@@ -20,6 +20,8 @@
 
 ![DSH Desktop model provider settings](docs/images/model-provider-settings-v011.png)
 
+<p align="center"><strong>Beyond official DeepSeek models, DSH Desktop supports mainstream third-party model providers.</strong></p>
+
 DSH Desktop packages the local DeepSeek Harness web experience as a desktop application. Choose a workspace and the app launches a local Harness instance, manages a random loopback port, persists profiles, plugins, and sessions, and opens the full interface as soon as Harness is ready.
 
 > [!IMPORTANT]

@@ -20,6 +20,8 @@
 
 ![DSH Desktop 模型提供方设置界面](docs/images/model-provider-settings-v011.png)
 
+<p align="center"><strong>不止 DeepSeek 官方模型，也支持接入主流第三方模型提供方。</strong></p>
+
 DSH Desktop 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：选择一个工作区，应用会启动本地 Harness、管理随机回环端口、持久化 Profile/插件/会话，并在 Harness 就绪后直接进入完整界面。
 
 > [!IMPORTANT]
