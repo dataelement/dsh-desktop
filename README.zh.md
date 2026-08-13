@@ -1,3 +1,5 @@
+![DSH Desktop 模型提供方接入界面](docs/images/model-provider-onboarding.png)
+
 <p align="center">
   <img src="build/icon.png" width="144" alt="DSH Desktop logo" />
 </p>
@@ -60,8 +62,6 @@ DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop �
 ## 模型提供方
 
 首次配置时可选择模型提供方并直接填写 API Key。DSH Desktop 复用 Harness 的真实 Settings/Credentials API：Key 只写入凭据存储，对应 Provider 路由会自动创建，并继承其内置模型目录，无需手工填写模型 ID。
-
-![在 DSH Desktop 中选择模型提供方并填写 API Key](docs/images/model-provider-onboarding.png)
 
 当前首启列表包括：
 

@@ -1,3 +1,5 @@
+![DSH Desktop model provider setup](docs/images/model-provider-onboarding.png)
+
 <p align="center">
   <img src="build/icon.png" width="144" alt="DSH Desktop logo" />
 </p>
@@ -60,8 +62,6 @@ DeepSeek Harness already provides a complete agent runtime and Web UI. DSH Deskt
 ## Model providers
 
 During initial setup, you can choose a model provider and enter its API key directly. DSH Desktop uses the real Harness Settings and Credentials APIs: the key is written only to the credential store, the corresponding provider route is created automatically, and its built-in model catalog is inherited without requiring model IDs to be entered manually.
-
-![Choose a model provider and enter an API key in DSH Desktop](docs/images/model-provider-onboarding.png)
 
 The initial setup currently includes:
 
