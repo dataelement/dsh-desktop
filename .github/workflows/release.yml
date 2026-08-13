@@ -1,0 +1,112 @@
+name: Release desktop installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-apple-silicon:
+    name: macOS Apple Silicon
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run package:mac:arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-apple-silicon
+          path: |
+            dist/dsh-desktop-mac-arm64.dmg
+            dist/dsh-desktop-mac-arm64.zip
+          if-no-files-found: error
+
+  macos-intel:
+    name: macOS Intel
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run package:mac:x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel
+          path: |
+            dist/dsh-desktop-mac-x64.dmg
+            dist/dsh-desktop-mac-x64.zip
+          if-no-files-found: error
+
+  windows-x64:
+    name: Windows x64
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run package:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            dist/dsh-desktop-windows-x64-setup.exe
+            dist/dsh-desktop-windows-x64-portable.exe
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: >-
+      always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.macos-apple-silicon.result == 'success' &&
+      needs.macos-intel.result == 'success' &&
+      needs.windows-x64.result == 'success'
+    needs:
+      - macos-apple-silicon
+      - macos-intel
+      - windows-x64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --verify-tag \
+              --generate-notes \
+              --title "DSH Desktop $RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY"
+          fi

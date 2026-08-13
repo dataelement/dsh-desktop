@@ -24,6 +24,17 @@ DSH Desktop 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：选
 > [!IMPORTANT]
 > DSH Desktop 当前处于早期预览阶段，并依赖仍在快速迭代的 `@deepseek-ai/dsh@0.1.0-rc.6`。当前构建尚未代码签名或 Apple 公证，不建议直接用于生产环境。
 
+## 下载安装
+
+| 平台 | 安装包 | 下载 |
+| --- | --- | --- |
+| macOS Apple Silicon | DMG 安装包 | [下载 Apple 芯片版](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-mac-arm64.dmg) |
+| macOS Intel | DMG 安装包 | [下载 Intel 芯片版](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-mac-x64.dmg) |
+| Windows x64 | EXE 安装版 | [下载 Windows 安装版](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-windows-x64-setup.exe) |
+| Windows x64 | EXE 便携版 | [下载 Windows 便携版](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-windows-x64-portable.exe) |
+
+所有当前及历史版本可以在 [GitHub Releases 页面](https://github.com/dataelement/dsh-desktop/releases)查看。
+
 ## 为什么做这个项目
 
 DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop 不重新实现 Harness，而是补上桌面产品所需的宿主能力：
@@ -43,6 +54,7 @@ DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop �
 - 退出桌面应用时优雅终止 Harness 子进程
 - 每次启动仅监听随机的 `127.0.0.1` 端口
 - Renderer 关闭 Node.js 权限，启用 `contextIsolation`、sandbox 与导航限制
+- 在桌面窗口与 Harness 侧栏统一使用 DSH 品牌 Logo
 - 正式 DSH 应用图标，支持 macOS ICNS 与 Windows ICO
 
 ## 模型提供方
@@ -76,7 +88,7 @@ npm install
 npm run dev
 ```
 
-`npm install` 会运行 `patch-package`，重放 DSH Desktop 对 Harness 首次模型配置界面的定制，然后安装 Electron Runtime。
+`npm install` 会运行 `patch-package`，重放 DSH Desktop 对 Harness 首次模型配置和侧栏品牌的定制，安装品牌静态资源，然后安装 Electron Runtime。
 
 ### 质量检查
 
@@ -130,7 +142,7 @@ Harness 运行在独立的 Electron Node 子进程中。Cordis HMR 所需的 `--
 src/main/             Electron 主进程、窗口与 Harness 生命周期
 src/shared/           共享运行时类型
 patches/              对固定 DSH 版本的可复现界面定制
-scripts/              目标平台打包检查
+scripts/              品牌资源安装与目标平台打包检查
 test/                 设置、运行时、安全和 Provider 覆盖测试
 build/                应用图标资源
 ```

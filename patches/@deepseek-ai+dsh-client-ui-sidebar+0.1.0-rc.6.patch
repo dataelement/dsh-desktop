@@ -1,0 +1,63 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
+index 629e313..9f234b3 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
+@@ -56,6 +56,37 @@ window.__ModuleLoader__.load({
+ 			"newSessionLabel": "hHd-Xa_newSessionLabel"
+ 		};
+ 		//#endregion
++		//#region lib/types/client/DshDesktopLogo.js
++		const DSH_DESKTOP_LOGO_URL = "/dsh-desktop-logo.png";
++		function DshDesktopLogo({ collapsed = false, className }) {
++			const height = collapsed ? 16 : 34;
++			return (0, react_jsx_runtime.jsxs)("svg", {
++				width: height * 1030 / 590,
++				height,
++				className,
++				viewBox: "150 330 1030 590",
++				fill: "none",
++				"aria-hidden": "true",
++				children: [(0, react_jsx_runtime.jsx)("defs", {
++					children: (0, react_jsx_runtime.jsx)("filter", {
++						id: "dsh-desktop-logo-knockout",
++						colorInterpolationFilters: "sRGB",
++						children: (0, react_jsx_runtime.jsx)("feColorMatrix", {
++							values: "1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  -1 -1 -1 0 3"
++						})
++					})
++				}), (0, react_jsx_runtime.jsx)("image", {
++					href: DSH_DESKTOP_LOGO_URL,
++					x: 0,
++					y: 0,
++					width: 1254,
++					height: 1254,
++					preserveAspectRatio: "none",
++					filter: "url(#dsh-desktop-logo-knockout)"
++				})]
++			});
++		}
++		//#endregion
+ 		//#region lib/types/client/SidebarRoot.js
+ 		/**
+ 		* Sidebar shell: column geometry only. Collapse is a slide plus crossfade:
+@@ -157,7 +188,7 @@ window.__ModuleLoader__.load({
+ 							onClick: () => {
+ 								startSession();
+ 							},
+-							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.BrandWordmark, {})
++							children: (0, react_jsx_runtime.jsx)(DshDesktopLogo, {})
+ 						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+ 							label: collapsed ? t("toggle.open") : t("toggle.collapse"),
+ 							delayMs: 500,
+@@ -168,9 +199,9 @@ window.__ModuleLoader__.load({
+ 								onClick: () => {
+ 									toggleSidebar();
+ 								},
+-								children: [!wide && (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FishLogo, {
++								children: [!wide && (0, react_jsx_runtime.jsx)(DshDesktopLogo, {
+ 									className: SidebarRoot_module_css_default.railFish,
+-									size: 24
++									collapsed: true
+ 								}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPanelLeftOutline16, {
+ 									className: SidebarRoot_module_css_default.panelIcon,
+ 									size: wide ? 16 : 18

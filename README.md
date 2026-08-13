@@ -24,6 +24,17 @@ DSH Desktop packages the local DeepSeek Harness web experience as a desktop appl
 > [!IMPORTANT]
 > DSH Desktop is currently an early preview and depends on the rapidly evolving `@deepseek-ai/dsh@0.1.0-rc.6`. Current builds are not code-signed or notarized by Apple and are not recommended for production use.
 
+## Download
+
+| Platform | Package | Download |
+| --- | --- | --- |
+| macOS Apple Silicon | DMG installer | [Download for Apple Silicon](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-mac-arm64.dmg) |
+| macOS Intel | DMG installer | [Download for Intel Mac](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-mac-x64.dmg) |
+| Windows x64 | Setup installer | [Download Windows installer](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-windows-x64-setup.exe) |
+| Windows x64 | Portable executable | [Download portable version](https://github.com/dataelement/dsh-desktop/releases/latest/download/dsh-desktop-windows-x64-portable.exe) |
+
+All current and historical packages are available on the [GitHub Releases page](https://github.com/dataelement/dsh-desktop/releases).
+
 ## Why this project exists
 
 DeepSeek Harness already provides a complete agent runtime and Web UI. DSH Desktop does not reimplement Harness; it supplies the host capabilities needed for a desktop product:
@@ -43,6 +54,7 @@ DeepSeek Harness already provides a complete agent runtime and Web UI. DSH Deskt
 - Gracefully terminates the Harness child process when the desktop app exits
 - Listens only on a random `127.0.0.1` port for each launch
 - Removes Node.js privileges from the renderer and enables `contextIsolation`, sandboxing, and navigation restrictions
+- Uses the DSH brand logo consistently in the desktop window and Harness sidebar
 - Includes a production DSH app icon in macOS ICNS and Windows ICO formats
 
 ## Model providers
@@ -76,7 +88,7 @@ npm install
 npm run dev
 ```
 
-`npm install` runs `patch-package` to reapply DSH Desktop's customized Harness model-provider onboarding, then installs the Electron runtime.
+`npm install` runs `patch-package` to reapply DSH Desktop's model-provider onboarding and sidebar branding, installs the brand asset, and then installs the Electron runtime.
 
 ### Quality checks
 
@@ -130,7 +142,7 @@ Harness runs in a separate Electron Node child process. The `--expose-internals`
 src/main/             Electron main process, windows, and Harness lifecycle
 src/shared/           Shared runtime types
 patches/              Reproducible UI customizations for the pinned DSH version
-scripts/              Target-platform packaging checks
+scripts/              Brand-asset installation and target-platform packaging checks
 test/                 Settings, runtime, security, and provider coverage tests
 build/                Application icon assets
 ```

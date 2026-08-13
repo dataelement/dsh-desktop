@@ -23,7 +23,7 @@
     "agent"
   ],
   "scripts": {
-    "postinstall": "patch-package && install-electron --no",
+    "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -62,7 +62,7 @@
       "node_modules/**/*",
       "package.json"
     ],
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "artifactName": "dsh-desktop-${os}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
@@ -91,10 +91,14 @@
       ]
     },
     "nsis": {
+      "artifactName": "dsh-desktop-windows-${arch}-setup.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "dsh-desktop-windows-${arch}-portable.${ext}"
     }
   }
 }
