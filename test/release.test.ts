@@ -32,6 +32,21 @@ describe('GitHub release contract', () => {
     )
   })
 
+  it('keeps builder jobs from attempting implicit tag publishing', async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as { scripts: Record<string, string> }
+
+    for (const script of [
+      'package:mac',
+      'package:mac:arm64',
+      'package:mac:x64',
+      'package:win'
+    ]) {
+      expect(packageJson.scripts[script]).toContain('--publish never')
+    }
+  })
+
   it('builds and publishes every supported platform', async () => {
     const workflow = await readFile(
       path.join(projectRoot, '.github', 'workflows', 'release.yml'),

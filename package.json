@@ -31,10 +31,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "package:dir": "npm run build && electron-builder --dir",
-    "package:mac": "npm run build && electron-builder --mac",
-    "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64",
-    "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64"
+    "package:mac": "npm run build && electron-builder --mac --publish never",
+    "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
+    "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
+    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.0-rc.6"
