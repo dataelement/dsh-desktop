@@ -18,7 +18,7 @@
   <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-171513.svg" />
 </p>
 
-![DSH Desktop model provider setup](docs/images/model-provider-onboarding.png)
+![DSH Desktop model provider settings](docs/images/model-provider-settings-v011.png)
 
 DSH Desktop packages the local DeepSeek Harness web experience as a desktop application. Choose a workspace and the app launches a local Harness instance, manages a random loopback port, persists profiles, plugins, and sessions, and opens the full interface as soon as Harness is ready.
 
