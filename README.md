@@ -37,7 +37,7 @@ Installed macOS and Windows builds check for updates automatically after startup
 
 <p align="center">
   Scan the QR code below with WeChat to join the DSH Desktop community group.<br />
-  <img src="docs/images/wechat-group.jpg" width="280" alt="DSH Desktop WeChat group QR code" />
+  <img src="docs/images/wechat-group.jpg" width="220" alt="DSH Desktop WeChat group QR code" />
 </p>
 
 ## Why this project exists

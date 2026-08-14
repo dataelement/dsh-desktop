@@ -37,7 +37,7 @@ DSH Desktop 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：应
 
 <p align="center">
   使用微信扫描下方二维码，加入 DSH Desktop 微信交流群。<br />
-  <img src="docs/images/wechat-group.jpg" width="280" alt="DSH Desktop 微信群二维码" />
+  <img src="docs/images/wechat-group.jpg" width="220" alt="DSH Desktop 微信群二维码" />
 </p>
 
 ## 为什么做这个项目
