@@ -1,0 +1,450 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
+index 9f92ac8..0c78cb2 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
+@@ -64,7 +64,25 @@ window.__ModuleLoader__.load({
+ 			deleteTitle: "Delete this preset?",
+ 			deleteDescription: "The preset directory is deleted. Sessions already running on it keep working; new sessions cannot select it.",
+ 			deleteConfirm: "Delete",
+-			deleting: "Deleting…"
++			deleting: "Deleting…",
++			importPreset: "Import preset",
++			exportPreset: "Export preset",
++			importTitle: "Review preset package",
++			importIntro: "Check the package details and choose the local identifier before importing it.",
++			importSecurity: "Custom presets can run tools and commands with the same access as the agent. Import packages only from people you trust.",
++			packageFile: "Package",
++			packageContents: "Contents",
++			packageContentsValue: "{count} files",
++			packageVersion: "Created with DSH {version}",
++			importWarningAbsolutePaths: "Some files contain absolute paths and may need editing on this computer.",
++			importWarningPossibleSecrets: "Some files may contain API keys, tokens, or other secrets. Review them after importing.",
++			importWarningVersionMismatch: "This package was created with another DSH version and may need changes.",
++			importConfirm: "Import",
++			importing: "Importing…",
++			readingPackage: "Reading package…",
++			exporting: "Exporting…",
++			importFailed: "Could not import the preset package.",
++			exportFailed: "Could not export the preset."
+ 		};
+ 		/** Simplified Chinese copy. */
+ 		const zh = {
+@@ -120,7 +138,25 @@ window.__ModuleLoader__.load({
+ 			deleteTitle: "删除该预设？",
+ 			deleteDescription: "预设目录将被删除。已在其上运行的会话不受影响；新会话将无法再选择它。",
+ 			deleteConfirm: "删除",
+-			deleting: "正在删除…"
++			deleting: "正在删除…",
++			importPreset: "导入预设",
++			exportPreset: "导出预设",
++			importTitle: "确认预设包",
++			importIntro: "导入前请确认压缩包信息，并选择它在本机使用的标识符。",
++			importSecurity: "自定义预设可以使用与 Agent 相同权限的工具和命令。请只导入来自可信来源的预设包。",
++			packageFile: "压缩包",
++			packageContents: "内容",
++			packageContentsValue: "{count} 个文件",
++			packageVersion: "由 DSH {version} 创建",
++			importWarningAbsolutePaths: "部分文件包含绝对路径，换到这台电脑后可能需要调整。",
++			importWarningPossibleSecrets: "部分文件可能包含 API Key、Token 或其他密钥，请在导入后检查。",
++			importWarningVersionMismatch: "该压缩包由另一个 DSH 版本创建，可能需要调整。",
++			importConfirm: "导入",
++			importing: "正在导入…",
++			readingPackage: "正在读取压缩包…",
++			exporting: "正在导出…",
++			importFailed: "无法导入该预设压缩包。",
++			exportFailed: "无法导出该预设。"
+ 		};
+ 		const BUILT_IN_PRESET_KEYS = {
+ 			standard: {
+@@ -707,6 +743,8 @@ window.__ModuleLoader__.load({
+ 			rows: [],
+ 			copy: null,
+ 			view: null,
++			import: null,
++			exporting: null,
+ 			pendingDelete: null,
+ 			deleting: false,
+ 			revealedPaths: {}
+@@ -724,6 +762,13 @@ window.__ModuleLoader__.load({
+ 			if (!PRESET_ID.test(draft.id)) return "idInvalid";
+ 			if (rows.some((row) => row.id === draft.id)) return "idTaken";
+ 		}
++		async function presetTransferError(response, fallback) {
++			try {
++				const body = await response.json();
++				if (typeof body?.error === "string" && body.error !== "") return body.error;
++			} catch {}
++			return fallback;
++		}
+ 		/** Reads the roster and drives the copy dialog, viewer, and location reveals. */
+ 		var AgentPresetSectionController = class {
+ 			api;
+@@ -911,6 +956,143 @@ window.__ModuleLoader__.load({
+ 					this.set({ error: messageOf(error) });
+ 				}
+ 			}
++			async previewImport(file) {
++				this.set({
++					error: null,
++					import: {
++						fileName: file.name,
++						data: null,
++						id: "",
++						name: void 0,
++						description: void 0,
++						fileCount: 0,
++						warnings: [],
++						conflict: false,
++						reading: true,
++						installing: false,
++						error: null
++					}
++				});
++				try {
++					const data = await file.arrayBuffer();
++					const response = await fetch("/api/agent-preset.import", {
++						method: "POST",
++						headers: { "content-type": "application/vnd.dsh.preset+zip" },
++						body: data
++					});
++					if (!response.ok) {
++						const draft = this.store.getSnapshot().import;
++						if (draft !== null) this.set({ import: {
++							...draft,
++							reading: false,
++							error: await presetTransferError(response, "Could not import the preset package.")
++						} });
++						return;
++					}
++					const preview = await response.json();
++					this.set({ import: {
++						fileName: file.name,
++						data,
++						id: preview.agentPreset,
++						name: preview.name,
++						description: preview.description,
++						sourceDshVersion: preview.sourceDshVersion,
++						fileCount: preview.fileCount,
++						warnings: preview.warnings,
++						conflict: preview.conflict,
++						reading: false,
++						installing: false,
++						error: null
++					} });
++				} catch (error) {
++					const draft = this.store.getSnapshot().import;
++					if (draft !== null) this.set({ import: {
++						...draft,
++						reading: false,
++						error: messageOf(error)
++					} });
++				}
++			}
++			setImportId(id) {
++				const draft = this.store.getSnapshot().import;
++				if (draft === null) return;
++				this.set({ import: {
++					...draft,
++					id,
++					conflict: this.store.getSnapshot().rows.some((row) => row.id === id),
++					error: null
++				} });
++			}
++			cancelImport() {
++				if (this.store.getSnapshot().import?.installing === true) return;
++				this.set({ import: null });
++			}
++			async confirmImport() {
++				const draft = this.store.getSnapshot().import;
++				if (draft === null || draft.reading || draft.installing || draft.data === null || !PRESET_ID.test(draft.id) || draft.conflict) return;
++				this.set({ import: {
++					...draft,
++					installing: true,
++					error: null
++				} });
++				try {
++					const query = new URLSearchParams({
++						agentPreset: draft.id,
++						install: "1"
++					});
++					const response = await fetch(`/api/agent-preset.import?${query}`, {
++						method: "POST",
++						headers: { "content-type": "application/vnd.dsh.preset+zip" },
++						body: draft.data
++					});
++					if (!response.ok) {
++						this.set({ import: {
++							...draft,
++							installing: false,
++							error: await presetTransferError(response, "Could not import the preset package.")
++						} });
++						return;
++					}
++					this.set({ import: null });
++					await this.load();
++					this.rosterChanged();
++				} catch (error) {
++					this.set({ import: {
++						...draft,
++						installing: false,
++						error: messageOf(error)
++					} });
++				}
++			}
++			async exportPreset(id) {
++				if (this.store.getSnapshot().exporting !== null) return;
++				this.set({
++					exporting: id,
++					error: null
++				});
++				try {
++					const query = new URLSearchParams({ agentPreset: id });
++					const response = await fetch(`/api/agent-preset.export?${query}`);
++					if (!response.ok) {
++						this.set({ error: await presetTransferError(response, "Could not export the preset.") });
++						return;
++					}
++					const blob = await response.blob();
++					const href = URL.createObjectURL(blob);
++					const anchor = document.createElement("a");
++					anchor.href = href;
++					anchor.download = `${id}.dshpreset`;
++					anchor.style.display = "none";
++					document.body.appendChild(anchor);
++					anchor.click();
++					anchor.remove();
++					URL.revokeObjectURL(href);
++				} catch (error) {
++					this.set({ error: messageOf(error) });
++				} finally {
++					this.set({ exporting: null });
++				}
++			}
+ 			/**
+ 			* Ask for confirmation before deleting one preset.
+ 			* @param id - the preset to delete, or null to dismiss the confirmation.
+@@ -974,7 +1156,7 @@ window.__ModuleLoader__.load({
+ 		};
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-agent-preset/src/client/AgentPresetSection.module.css.mjs
+-		const css = ".rtSEdW_section{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;gap:12px;display:flex}.rtSEdW_title{margin:0;font-size:18px;font-weight:600}.rtSEdW_intro{color:var(--dsw-alias-label-tertiary);margin:0;font-size:13px}.rtSEdW_group{flex-direction:column;gap:10px;display:flex}.rtSEdW_group+.rtSEdW_group{margin-top:20px}.rtSEdW_groupHead{letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;font-weight:600}.rtSEdW_cards{grid-template-columns:repeat(auto-fill,minmax(268px,1fr));grid-auto-rows:1fr;gap:12px;margin:0;padding:0;list-style:none;display:grid}.rtSEdW_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;flex-direction:column;transition:border-color .16s,background .16s;display:flex}.rtSEdW_card:hover:not(.rtSEdW_cardActive){border-color:var(--dsw-alias-label-dimmed)}.rtSEdW_cardActive{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-primary)}.rtSEdW_cardBroken,.rtSEdW_cardBroken:hover{border-color:var(--dsw-alias-state-error-primary)}.rtSEdW_brokenBadge{white-space:nowrap;background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-bg-layer-3);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.rtSEdW_cardBrokenReason{color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;font-size:12px;line-height:1.5}.rtSEdW_cardMain{appearance:none;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px 12px 0 0;flex-direction:column;flex:1;gap:8px;padding:14px 16px 12px;display:flex}.rtSEdW_cardMain:disabled{cursor:default}.rtSEdW_cardMain:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.rtSEdW_cardHead{align-items:center;gap:8px;display:flex}.rtSEdW_cardName{font-size:15px;font-weight:600;line-height:1.4}.rtSEdW_badge,.rtSEdW_inUse{white-space:nowrap;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.rtSEdW_badge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}.rtSEdW_inUse{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3);margin-left:auto}.rtSEdW_cardDesc{color:var(--dsw-alias-label-secondary);-webkit-line-clamp:4;overflow-wrap:anywhere;-webkit-box-orient:vertical;min-height:42px;font-size:13px;line-height:1.55;display:-webkit-box;overflow:hidden}.rtSEdW_cardId{font-family:var(--dsw-font-mono,ui-monospace, SFMono-Regular, Menlo, monospace);color:var(--dsw-alias-label-dimmed);margin-top:auto;font-size:11px}.rtSEdW_cardFoot{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;gap:2px;padding:6px 10px;display:flex}.rtSEdW_iconButton{appearance:none;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:7px;align-items:center;padding:6px;display:inline-flex;position:relative}.rtSEdW_iconButton:disabled{opacity:.4;cursor:default}.rtSEdW_iconButton:hover:not(:disabled){background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary)}.rtSEdW_iconButton:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-1px}.rtSEdW_iconButton:after{content:attr(data-tip);background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3);white-space:nowrap;opacity:0;pointer-events:none;border-radius:6px;padding:3px 8px;font-size:11px;line-height:17px;transition:opacity .12s;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translate(-50%)}.rtSEdW_iconButton:hover:after,.rtSEdW_iconButton:focus-visible:after{opacity:1}.rtSEdW_iconDanger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger);color:var(--dsw-alias-state-error-primary)}.rtSEdW_revealedPath{color:var(--dsw-alias-label-tertiary);align-items:baseline;gap:6px;margin:0;padding:6px 16px 10px;font-size:11px;display:flex}.rtSEdW_revealedPath code{font-family:var(--dsw-font-mono,ui-monospace, SFMono-Regular, Menlo, monospace);color:var(--dsw-alias-label-secondary);user-select:all;overflow-wrap:anywhere}.rtSEdW_revealedPathLabel{white-space:nowrap}.rtSEdW_secondaryButton{color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;background:0 0;border:none;border-radius:7px;padding:5px 8px;font-size:12.5px}.rtSEdW_secondaryButton:hover:not(:disabled){background:var(--dsw-alias-bg-layer-1)}.rtSEdW_secondaryButton:disabled{opacity:.5;cursor:default}.rtSEdW_field{flex-direction:column;gap:6px;display:flex}.rtSEdW_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500}.rtSEdW_input{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);font:inherit;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-radius:10px;padding:9px 12px;font-size:13px}.rtSEdW_input:focus{border-color:var(--dsw-alias-brand-primary);outline:none}.rtSEdW_input::placeholder{color:var(--dsw-alias-label-dimmed)}.rtSEdW_dialog{width:min(560px,100%)}.rtSEdW_dialogFields{flex-direction:column;gap:12px;display:flex}.rtSEdW_viewerCode{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-height:min(52vh,480px);color:var(--dsw-alias-label-secondary);font-family:var(--dsw-font-mono,ui-monospace, SFMono-Regular, Menlo, monospace);white-space:pre;tab-size:2;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:10px;margin:0;padding:12px;font-size:12.5px;line-height:1.5;overflow:auto}.rtSEdW_error{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.rtSEdW_deleteDialog{width:min(480px,100%)}.rtSEdW_deleteConfirm:not(:disabled){border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.rtSEdW_deleteConfirm:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger)}.rtSEdW_creatorButton{box-sizing:border-box;border:1px dashed var(--dsw-alias-border-l3);height:44px;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border-radius:12px;justify-content:center;align-self:stretch;align-items:center;gap:6px;font-size:14px;line-height:22px;display:flex}.rtSEdW_creatorButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.rtSEdW_creatorButton:disabled{opacity:.4;cursor:default}";
++		const css = ".rtSEdW_section{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;gap:12px;display:flex}.rtSEdW_title{margin:0;font-size:18px;font-weight:600}.rtSEdW_intro{color:var(--dsw-alias-label-tertiary);margin:0;font-size:13px}.rtSEdW_group{flex-direction:column;gap:10px;display:flex}.rtSEdW_group+.rtSEdW_group{margin-top:20px}.rtSEdW_groupHead{letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;font-weight:600}.rtSEdW_cards{grid-template-columns:repeat(auto-fill,minmax(268px,1fr));grid-auto-rows:1fr;gap:12px;margin:0;padding:0;list-style:none;display:grid}.rtSEdW_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;flex-direction:column;transition:border-color .16s,background .16s;display:flex}.rtSEdW_card:hover:not(.rtSEdW_cardActive){border-color:var(--dsw-alias-label-dimmed)}.rtSEdW_cardActive{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-primary)}.rtSEdW_cardBroken,.rtSEdW_cardBroken:hover{border-color:var(--dsw-alias-state-error-primary)}.rtSEdW_brokenBadge{white-space:nowrap;background:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-bg-layer-3);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.rtSEdW_cardBrokenReason{color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;font-size:12px;line-height:1.5}.rtSEdW_cardMain{appearance:none;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px 12px 0 0;flex-direction:column;flex:1;gap:8px;padding:14px 16px 12px;display:flex}.rtSEdW_cardMain:disabled{cursor:default}.rtSEdW_cardMain:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.rtSEdW_cardHead{align-items:center;gap:8px;display:flex}.rtSEdW_cardName{font-size:15px;font-weight:600;line-height:1.4}.rtSEdW_badge,.rtSEdW_inUse{white-space:nowrap;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.rtSEdW_badge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}.rtSEdW_inUse{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3);margin-left:auto}.rtSEdW_cardDesc{color:var(--dsw-alias-label-secondary);-webkit-line-clamp:4;overflow-wrap:anywhere;-webkit-box-orient:vertical;min-height:42px;font-size:13px;line-height:1.55;display:-webkit-box;overflow:hidden}.rtSEdW_cardId{font-family:var(--dsw-font-mono,ui-monospace, SFMono-Regular, Menlo, monospace);color:var(--dsw-alias-label-dimmed);margin-top:auto;font-size:11px}.rtSEdW_cardFoot{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;gap:2px;padding:6px 10px;display:flex}.rtSEdW_iconButton{appearance:none;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:7px;align-items:center;padding:6px;display:inline-flex;position:relative}.rtSEdW_iconButton:disabled{opacity:.4;cursor:default}.rtSEdW_iconButton:hover:not(:disabled){background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary)}.rtSEdW_iconButton:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-1px}.rtSEdW_iconButton:after{content:attr(data-tip);background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3);white-space:nowrap;opacity:0;pointer-events:none;border-radius:6px;padding:3px 8px;font-size:11px;line-height:17px;transition:opacity .12s;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translate(-50%)}.rtSEdW_iconButton:hover:after,.rtSEdW_iconButton:focus-visible:after{opacity:1}.rtSEdW_iconDanger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger);color:var(--dsw-alias-state-error-primary)}.rtSEdW_revealedPath{color:var(--dsw-alias-label-tertiary);align-items:baseline;gap:6px;margin:0;padding:6px 16px 10px;font-size:11px;display:flex}.rtSEdW_revealedPath code{font-family:var(--dsw-font-mono,ui-monospace, SFMono-Regular, Menlo, monospace);color:var(--dsw-alias-label-secondary);user-select:all;overflow-wrap:anywhere}.rtSEdW_revealedPathLabel{white-space:nowrap}.rtSEdW_secondaryButton{color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;background:0 0;border:none;border-radius:7px;padding:5px 8px;font-size:12.5px}.rtSEdW_secondaryButton:hover:not(:disabled){background:var(--dsw-alias-bg-layer-1)}.rtSEdW_secondaryButton:disabled{opacity:.5;cursor:default}.rtSEdW_field{flex-direction:column;gap:6px;display:flex}.rtSEdW_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500}.rtSEdW_input{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);font:inherit;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-radius:10px;padding:9px 12px;font-size:13px}.rtSEdW_input:focus{border-color:var(--dsw-alias-brand-primary);outline:none}.rtSEdW_input::placeholder{color:var(--dsw-alias-label-dimmed)}.rtSEdW_dialog{width:min(560px,100%)}.rtSEdW_dialogFields{flex-direction:column;gap:12px;display:flex}.rtSEdW_viewerCode{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);max-height:min(52vh,480px);color:var(--dsw-alias-label-secondary);font-family:var(--dsw-font-mono,ui-monospace, SFMono-Regular, Menlo, monospace);white-space:pre;tab-size:2;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:10px;margin:0;padding:12px;font-size:12.5px;line-height:1.5;overflow:auto}.rtSEdW_error{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.rtSEdW_deleteDialog{width:min(480px,100%)}.rtSEdW_deleteConfirm:not(:disabled){border-color:var(--dsw-alias-state-error-primary);color:var(--dsw-alias-state-error-primary)}.rtSEdW_deleteConfirm:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger)}.rtSEdW_creatorButton{box-sizing:border-box;border:1px dashed var(--dsw-alias-border-l3);height:44px;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border-radius:12px;justify-content:center;align-self:stretch;align-items:center;gap:6px;font-size:14px;line-height:22px;display:flex}.rtSEdW_creatorButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.rtSEdW_creatorButton:disabled{opacity:.4;cursor:default}.rtSEdW_sectionHead{justify-content:space-between;align-items:center;gap:12px;display:flex}.rtSEdW_importButton{flex:none}.rtSEdW_hiddenInput{display:none}.rtSEdW_importSecurity{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);border-radius:10px;margin:0;padding:10px 12px;font-size:12px;line-height:1.5}.rtSEdW_importSummary{grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;font-size:12px}.rtSEdW_importSummary dt{color:var(--dsw-alias-label-tertiary)}.rtSEdW_importSummary dd{overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary);margin:0}.rtSEdW_importWarnings{color:var(--dsw-alias-state-warning-primary,var(--dsw-alias-label-secondary));margin:0;padding-left:20px;font-size:12px;line-height:1.5}";
+ 		const tagId = "@deepseek-ai/dsh-client-ui-agent-preset/AgentPresetSection.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -985,6 +1167,12 @@ window.__ModuleLoader__.load({
+ 		}
+ 		var AgentPresetSection_module_css_default = {
+ 			"cardMain": "rtSEdW_cardMain",
++			"sectionHead": "rtSEdW_sectionHead",
++			"importButton": "rtSEdW_importButton",
++			"hiddenInput": "rtSEdW_hiddenInput",
++			"importSecurity": "rtSEdW_importSecurity",
++			"importSummary": "rtSEdW_importSummary",
++			"importWarnings": "rtSEdW_importWarnings",
+ 			"field": "rtSEdW_field",
+ 			"cardDesc": "rtSEdW_cardDesc",
+ 			"dialog": "rtSEdW_dialog",
+@@ -1104,6 +1292,84 @@ window.__ModuleLoader__.load({
+ 				})
+ 			});
+ 		}
++		function ImportDialog({ state, t, actions }) {
++			const draft = state.import;
++			const blocker = draft === null || draft.reading ? void 0 : draft.id === "" ? "idRequired" : !PRESET_ID.test(draft.id) ? "idInvalid" : draft.conflict ? "idTaken" : void 0;
++			const warningText = {
++				"absolute-paths": "importWarningAbsolutePaths",
++				"possible-secrets": "importWarningPossibleSecrets",
++				"version-mismatch": "importWarningVersionMismatch"
++			};
++			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
++				open: draft !== null,
++				onClose: () => {
++					actions.cancelImport();
++				},
++				title: t("importTitle"),
++				closeLabel: t("close"),
++				description: t("importIntro"),
++				className: AgentPresetSection_module_css_default.dialog,
++				footer: (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++					variant: "outline",
++					disabled: draft?.installing === true,
++					onClick: () => {
++						actions.cancelImport();
++					},
++					children: t("cancel")
++				}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++					disabled: draft === null || draft.reading || draft.installing || draft.data === null || blocker !== void 0,
++					onClick: () => {
++						actions.confirmImport();
++					},
++					children: draft?.installing === true ? t("importing") : t("importConfirm")
++				})] }),
++				children: draft === null ? null : draft.reading ? (0, react_jsx_runtime.jsx)("p", { children: t("readingPackage") }) : (0, react_jsx_runtime.jsxs)("div", {
++					className: AgentPresetSection_module_css_default.dialogFields,
++					children: [
++						(0, react_jsx_runtime.jsx)("p", {
++							className: AgentPresetSection_module_css_default.importSecurity,
++							children: t("importSecurity")
++						}),
++						(0, react_jsx_runtime.jsxs)("dl", {
++							className: AgentPresetSection_module_css_default.importSummary,
++							children: [
++								(0, react_jsx_runtime.jsx)("dt", { children: t("packageFile") }),
++								(0, react_jsx_runtime.jsx)("dd", { children: draft.fileName }),
++								(0, react_jsx_runtime.jsx)("dt", { children: t("packageContents") }),
++								(0, react_jsx_runtime.jsx)("dd", { children: t("packageContentsValue", { count: draft.fileCount }) }),
++								draft.sourceDshVersion === void 0 ? null : (0, react_jsx_runtime.jsx)("dt", { children: "DSH" }),
++								draft.sourceDshVersion === void 0 ? null : (0, react_jsx_runtime.jsx)("dd", { children: t("packageVersion", { version: draft.sourceDshVersion }) })
++							]
++						}),
++						(0, react_jsx_runtime.jsxs)("label", {
++							className: AgentPresetSection_module_css_default.field,
++							children: [(0, react_jsx_runtime.jsx)("span", {
++								className: AgentPresetSection_module_css_default.fieldLabel,
++								children: t("presetId")
++							}), (0, react_jsx_runtime.jsx)("input", {
++								className: AgentPresetSection_module_css_default.input,
++								value: draft.id,
++								autoFocus: true,
++								spellCheck: false,
++								placeholder: t("presetIdPlaceholder"),
++								onChange: (event) => {
++									actions.setImportId(event.target.value);
++								}
++							})]
++						}),
++						draft.warnings.length === 0 ? null : (0, react_jsx_runtime.jsx)("ul", {
++							className: AgentPresetSection_module_css_default.importWarnings,
++							children: draft.warnings.map((warning) => (0, react_jsx_runtime.jsx)("li", { children: t(warningText[warning] ?? warning) }, warning))
++						}),
++						draft.error === null && blocker === void 0 ? null : (0, react_jsx_runtime.jsx)("p", {
++							className: AgentPresetSection_module_css_default.error,
++							role: "alert",
++							children: draft.error ?? t(blocker)
++						})
++					]
++				})
++			});
++		}
+ 		/**
+ 		* Render one card's description, clamped by CSS and offered in full on hover.
+ 		* The tooltip is attached only while the text is actually cut off, so a short
+@@ -1151,6 +1417,7 @@ window.__ModuleLoader__.load({
+ 		function AgentPresetSection(props) {
+ 			const { useAgentPresetSection, t, load } = props;
+ 			const state = useAgentPresetSection((snapshot) => snapshot);
++			const importInput = (0, react.useRef)(null);
+ 			const viewedId = state.view?.id;
+ 			const viewedRow = viewedId === void 0 ? void 0 : state.rows.find((row) => row.id === viewedId);
+ 			const viewedTitle = state.view === null ? "" : viewedRow === void 0 ? state.view.title : presetDisplayText(viewedRow, t).name;
+@@ -1191,9 +1458,31 @@ window.__ModuleLoader__.load({
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: AgentPresetSection_module_css_default.section,
+ 				children: [
+-					(0, react_jsx_runtime.jsx)("h2", {
+-						className: AgentPresetSection_module_css_default.title,
+-						children: t("nav")
++					(0, react_jsx_runtime.jsxs)("div", {
++						className: AgentPresetSection_module_css_default.sectionHead,
++						children: [(0, react_jsx_runtime.jsx)("h2", {
++							className: AgentPresetSection_module_css_default.title,
++							children: t("nav")
++						}), (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)("input", {
++							ref: importInput,
++							type: "file",
++							accept: ".dshpreset,application/vnd.dsh.preset+zip,application/zip",
++							className: AgentPresetSection_module_css_default.hiddenInput,
++							onChange: (event) => {
++								const file = event.target.files?.[0];
++								event.target.value = "";
++								if (file !== void 0) props.previewImport(file);
++							}
++						}), (0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++							variant: "outline",
++							className: AgentPresetSection_module_css_default.importButton,
++							disabled: !state.authorable,
++							title: state.authorable ? void 0 : t("duplicateUnavailable"),
++							onClick: () => {
++								importInput.current?.click();
++							},
++							children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutline20, { size: 16 }), t("importPreset")]
++						})] })]
+ 					}),
+ 					(0, react_jsx_runtime.jsx)("p", {
+ 						className: AgentPresetSection_module_css_default.intro,
+@@ -1289,7 +1578,7 @@ window.__ModuleLoader__.load({
+ 														},
+ 														children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpenOutline16, {})
+ 													}),
+-													(0, react_jsx_runtime.jsx)("button", {
++											(0, react_jsx_runtime.jsx)("button", {
+ 														type: "button",
+ 														className: AgentPresetSection_module_css_default.iconButton,
+ 														disabled: !state.authorable || row.broken !== void 0,
+@@ -1298,9 +1587,20 @@ window.__ModuleLoader__.load({
+ 														onClick: () => {
+ 															props.beginCopy(row.id);
+ 														},
+-														children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCopyOutline16, {})
+-													}),
+-													row.trust === "user" ? (0, react_jsx_runtime.jsx)("button", {
++												children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCopyOutline16, {})
++											}),
++											row.trust === "user" ? (0, react_jsx_runtime.jsx)("button", {
++												type: "button",
++												className: AgentPresetSection_module_css_default.iconButton,
++												disabled: state.exporting !== null || row.broken !== void 0,
++												"data-tip": state.exporting === row.id ? t("exporting") : t("exportPreset"),
++												"aria-label": `${t("exportPreset")}: ${text.name}`,
++												onClick: () => {
++													props.exportPreset(row.id);
++												},
++												children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconDownloadOutline16, {})
++											}) : null,
++											row.trust === "user" ? (0, react_jsx_runtime.jsx)("button", {
+ 														type: "button",
+ 														className: `${AgentPresetSection_module_css_default.iconButton} ${AgentPresetSection_module_css_default.iconDanger}`,
+ 														"data-tip": t("delete"),
+@@ -1329,13 +1629,22 @@ window.__ModuleLoader__.load({
+ 					(0, react_jsx_runtime.jsx)(CopyDialog, {
+ 						state,
+ 						t,
+-						actions: {
++					actions: {
+ 							cancelCopy: props.cancelCopy,
+ 							confirmCopy: props.confirmCopy,
+ 							setCopyId: props.setCopyId,
+ 							setCopyName: props.setCopyName
+-						}
+-					}),
++					}
++				}),
++				(0, react_jsx_runtime.jsx)(ImportDialog, {
++					state,
++					t,
++					actions: {
++						cancelImport: props.cancelImport,
++						confirmImport: props.confirmImport,
++						setImportId: props.setImportId
++					}
++				}),
+ 					(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+ 						open: state.view !== null,
+ 						onClose: () => {
+@@ -1689,6 +1998,15 @@ window.__ModuleLoader__.load({
+ 				},
+ 				confirmCopy: () => section.confirmCopy(),
+ 				openLocation: (id) => section.openLocation(id),
++				previewImport: (file) => section.previewImport(file),
++				setImportId: (id) => {
++					section.setImportId(id);
++				},
++				cancelImport: () => {
++					section.cancelImport();
++				},
++				confirmImport: () => section.confirmImport(),
++				exportPreset: (id) => section.exportPreset(id),
+ 				...creatorDraft === void 0 ? {} : { startCreatorDraft: creatorDraft },
+ 				confirmDelete: (id) => {
+ 					section.confirmDelete(id);
