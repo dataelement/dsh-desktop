@@ -19,7 +19,7 @@ describe('DSH Desktop sidebar branding', () => {
     expect(main).toContain('background: #141416')
   })
 
-  it('uses a compact brand lockup in the expanded and collapsed sidebar states', async () => {
+  it('pairs the DSH logo with the original Harness wordmark in the expanded sidebar', async () => {
     const patch = await readFile(
       path.join(projectRoot, 'patches', '@deepseek-ai+dsh-client-ui-sidebar+0.1.0-rc.6.patch'),
       'utf8'
@@ -27,9 +27,12 @@ describe('DSH Desktop sidebar branding', () => {
 
     expect(patch).toContain('DshDesktopLogo')
     expect(patch).toContain('DshDesktopBrand')
+    expect(patch).toContain('BrandWordmark')
     expect(patch).toContain('/dsh-desktop-logo-light.png')
     expect(patch).toContain('/dsh-desktop-logo-dark.png')
-    expect(patch).toContain('children: "DSH Desktop"')
+    expect(patch).toContain('brandWordmark')
+    expect(patch).toContain('transform:translateX(-24px)')
+    expect(patch).not.toContain('children: "DSH Desktop"')
     expect(patch).toContain('height = 20')
     expect(patch).toContain('height: 18')
     expect(patch).toContain('.hHd-Xa_brand:hover')
