@@ -33,6 +33,13 @@ DSH Desktop 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：应
 
 已安装的 macOS 和 Windows 版本会在启动后及每六小时自动检查更新。更新将在后台下载，准备完成后提示重启安装；也可以从应用菜单选择 **检查更新…** 手动检查。
 
+## 加入社区
+
+<p align="center">
+  使用微信扫描下方二维码，加入 DSH Desktop 微信交流群。<br />
+  <img src="docs/images/wechat-group.jpg" width="280" alt="DSH Desktop 微信群二维码" />
+</p>
+
 ## 为什么做这个项目
 
 DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop 不重新实现 Harness，而是补上桌面产品所需的宿主能力：
