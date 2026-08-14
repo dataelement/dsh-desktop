@@ -1,8 +1,106 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 86e7906..1914a46 100644
+index 86e7906..473930c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-@@ -6728,9 +6728,13 @@ window.__ModuleLoader__.load({
+@@ -5102,9 +5102,25 @@ window.__ModuleLoader__.load({
+ 				})
+ 			});
+ 		}
++		/** Edit action for text-only durable user messages. Editing creates a branch
++		* before the original message, then restores its text in the child composer. */
++		function EditMessageAction({ onEdit, t }) {
++			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++				label: t("message.edit"),
++				side: "bottom",
++				children: (0, react_jsx_runtime.jsx)("button", {
++					type: "button",
++					className: MessageIconActions_module_css_default.action,
++					"aria-label": t("message.edit"),
++					onClick: onEdit,
++					children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
++				})
++			});
++		}
+ 		/** User and admitted-steering keyed Chat renderer. */
+-		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, loadImage, t }) {
++		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, loadImage, editMessage, t }) {
+ 			const data = node.data;
++			const editable = data.content.every((block) => block.type === "text");
+ 			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
+ 				content: data.content,
+ 				imageLoader: loadImage,
+@@ -5114,6 +5130,12 @@ window.__ModuleLoader__.load({
+ 					time: data.time,
+ 					clock: "start",
+ 					className: MessageItem_module_css_default.actions,
++					extraActions: editable ? (0, react_jsx_runtime.jsx)(EditMessageAction, {
++						onEdit: () => {
++							editMessage(data.seq, text);
++						},
++						t
++					}) : null,
+ 					t
+ 				})
+ 			});
+@@ -5197,7 +5219,7 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		//#region lib/types/client/chat/ChatNodeSeat.js
+ 		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
+-		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, selectedCallId, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions, useSession, renderSlot, t }) {
++		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, selectedCallId, cwd, openFile, inspectCall, forkAt, editMessage, loadImage, fileMentions, useSession, renderSlot, t }) {
+ 			const node = useSession((snapshot) => snapshot.chat.nodes.get(nodeKey));
+ 			const routedNode = node;
+ 			const owner = (0, react.useMemo)(() => node === void 0 ? null : {
+@@ -5206,6 +5228,7 @@ window.__ModuleLoader__.load({
+ 				openFile,
+ 				inspectCall,
+ 				forkAt,
++				editMessage,
+ 				loadImage,
+ 				fileMentions
+ 			}, [
+@@ -5215,6 +5238,7 @@ window.__ModuleLoader__.load({
+ 				openFile,
+ 				inspectCall,
+ 				forkAt,
++				editMessage,
+ 				loadImage,
+ 				fileMentions
+ 			]);
+@@ -5329,7 +5353,7 @@ window.__ModuleLoader__.load({
+ 		* The chat view slot entry: pure component over the composed props; each
+ 		* ordered business Node crosses the keyed renderer seat.
+ 		*/
+-		function ChatView({ useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt, fileMentions, t }) {
++		function ChatView({ useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt, editMessage, fileMentions, t }) {
+ 			const order = useSession((s) => s.chat.order);
+ 			const nodeStore = useSession((s) => s.chat.nodes);
+ 			const timeline = useSession((s) => s.chat.timeline);
+@@ -5539,6 +5563,7 @@ window.__ModuleLoader__.load({
+ 								openFile,
+ 								inspectCall,
+ 								forkAt,
++								editMessage,
+ 								loadImage,
+ 								fileMentions,
+ 								renderSlot,
+@@ -5878,6 +5903,7 @@ window.__ModuleLoader__.load({
+ 			"message.unknownSurface": "未知 surface 事件：{type}",
+ 			"message.unknownBlock": "未知内容块",
+ 			"message.stopped": "已停止",
++			"message.edit": "编辑消息",
+ 			"message.branch": "在新对话中分支",
+ 			"message.branchUnavailable": "仅可从已完成轮次的最后一条消息分支",
+ 			"message.retry.active": "正在重试模型请求",
+@@ -6043,6 +6069,7 @@ window.__ModuleLoader__.load({
+ 			"message.unknownSurface": "Unknown surface event: {type}",
+ 			"message.unknownBlock": "Unknown content block",
+ 			"message.stopped": "Stopped",
++			"message.edit": "Edit message",
+ 			"message.branch": "Branch into a new conversation",
+ 			"message.branchUnavailable": "Available only on the last message of a completed turn",
+ 			"message.retry.active": "Retrying model request",
+@@ -6728,9 +6755,13 @@ window.__ModuleLoader__.load({
  						children: [
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.fishHitbox,
@@ -19,3 +117,35 @@ index 86e7906..1914a46 100644
  								})
  							}),
  							(0, react_jsx_runtime.jsx)("span", {
+@@ -9755,6 +9786,31 @@ window.__ModuleLoader__.load({
+ 							}).then((childId) => {
+ 								sessions.open(childId);
+ 							}).catch(() => {});
++						},
++						editMessage: (seq, text) => {
++							const source = sessions.list.getSnapshot().byId[sessionId];
++							const workspace = workspaces.list.getSnapshot().items.find((item) => item.sessionIds.includes(sessionId));
++							const snapshot = sessions.binding(sessionId)?.session.getSnapshot();
++							const previousTurnEnd = snapshot === void 0 ? -Infinity : Math.max(...[...snapshot.turnEnds.values()].filter((value) => value < seq));
++							const target = Number.isFinite(previousTurnEnd) ? sessions.fork({
++								sessionId,
++								atSeq: previousTurnEnd,
++								increaseTitle: true
++							}) : (workspace === void 0 ? sessions.create(source?.cwd === void 0 ? {} : { cwd: source.cwd }) : workspaces.connectWorkspace(workspace.workspaceId)).then(async (childId) => {
++								if (source?.agentPreset !== void 0) {
++									const response = await ctx.get("connection").api.agentPresets.select({
++										sessionId: childId,
++										agentPreset: source.agentPreset
++									});
++									if (!response.result.ok) throw new Error(response.result.error.message);
++									sessions.noteAgentPreset(childId, response.result.value.agentPreset);
++								}
++								return childId;
++							});
++							target.then((childId) => {
++								inputHub.shell(childId).setDraft(text);
++								sessions.open(childId);
++							}).catch(() => {});
+ 						}
+ 					};
+ 				}
