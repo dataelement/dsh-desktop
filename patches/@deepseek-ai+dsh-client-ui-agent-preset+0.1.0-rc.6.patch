@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-index 9f92ac8..0c78cb2 100644
+index 9f92ac8..321ea28 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
 @@ -64,7 +64,25 @@ window.__ModuleLoader__.load({
@@ -223,7 +223,7 @@ index 9f92ac8..0c78cb2 100644
  			/**
  			* Ask for confirmation before deleting one preset.
  			* @param id - the preset to delete, or null to dismiss the confirmation.
-@@ -974,7 +1156,7 @@ window.__ModuleLoader__.load({
+@@ -974,17 +1156,23 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-agent-preset/src/client/AgentPresetSection.module.css.mjs
@@ -232,7 +232,11 @@ index 9f92ac8..0c78cb2 100644
  		const tagId = "@deepseek-ai/dsh-client-ui-agent-preset/AgentPresetSection.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -985,6 +1167,12 @@ window.__ModuleLoader__.load({
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-agent-preset";
+ 			tag.dataset.pluginCss = tagId;
+-			tag.textContent = css;
++			tag.textContent = `${css}.rtSEdW_importButton{margin-right:12px}`;
+ 			document.head.appendChild(tag);
  		}
  		var AgentPresetSection_module_css_default = {
  			"cardMain": "rtSEdW_cardMain",
