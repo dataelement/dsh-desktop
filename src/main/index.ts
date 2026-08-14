@@ -28,37 +28,13 @@ let failureDialogVisible = false
 async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   if (window.isDestroyed()) return
 
-  // The traffic-light strip remains dark in both Harness appearances. Harness
-  // exposes its resolved appearance on body[data-ds-dark-theme], which the
-  // sidebar branding follows directly.
-  nativeTheme.themeSource = 'dark'
-  window.setBackgroundColor('#141416')
-  await window.webContents.executeJavaScript(`
-    (() => {
-      if (${process.platform === 'darwin'}) {
-        let style = document.getElementById('dsh-desktop-titlebar-style')
-        if (!style) {
-          style = document.createElement('style')
-          style.id = 'dsh-desktop-titlebar-style'
-          document.head.appendChild(style)
-        }
-        style.textContent = \`
-          html { --dsh-desktop-titlebar-height: 30px; }
-          body { box-sizing: border-box; padding-top: var(--dsh-desktop-titlebar-height); }
-          html::before {
-            content: '';
-            position: fixed;
-            z-index: 2147483647;
-            inset: 0 0 auto 0;
-            height: var(--dsh-desktop-titlebar-height);
-            background: #141416;
-            -webkit-app-region: drag;
-          }
-        \`
-      }
-
-    })()
-  `)
+  // The sidebar already reserves enough room for macOS traffic lights. Read
+  // Harness's resolved theme before showing the window so the native surface
+  // matches the first rendered frame without injecting a second titlebar.
+  const isDark = await window.webContents.executeJavaScript(
+    "document.body.hasAttribute('data-ds-dark-theme')"
+  )
+  window.setBackgroundColor(isDark ? '#141416' : '#ffffff')
 }
 
 function dshEntryPath(): string {
@@ -83,9 +59,6 @@ function desktopIconPath(): string {
 }
 
 function createWindow(): BrowserWindow {
-  // Harness restores its own theme after navigation. Start macOS in dark mode so
-  // the native traffic-light strip never flashes light before that state is readable.
-  if (process.platform === 'darwin') nativeTheme.themeSource = 'dark'
   const window = new BrowserWindow({
     width: 1380,
     height: 900,

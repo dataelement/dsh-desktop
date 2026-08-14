@@ -5,18 +5,17 @@ import { describe, expect, it } from 'vitest'
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
 describe('DSH Desktop sidebar branding', () => {
-  it('keeps macOS chrome dark while tracking the page theme for branding', async () => {
+  it('matches the native window surface to the initial Harness theme', async () => {
     const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
 
     expect(main).toContain("frame: process.platform !== 'darwin'")
-    expect(main).toContain("if (process.platform === 'darwin') nativeTheme.themeSource = 'dark'")
-    expect(main).toContain("window.setBackgroundColor('#141416')")
+    expect(main).toContain("document.body.hasAttribute('data-ds-dark-theme')")
+    expect(main).toContain("window.setBackgroundColor(isDark ? '#141416' : '#ffffff')")
     expect(main).toContain('window.setWindowButtonVisibility(true)')
     expect(main).toContain('window.setWindowButtonPosition({ x: 12, y: 9 })')
-    expect(main).toContain('body[data-ds-dark-theme]')
-    expect(main).not.toContain('new MutationObserver')
-    expect(main).not.toContain('detectDarkPage')
-    expect(main).toContain('background: #141416')
+    expect(main).not.toContain('dsh-desktop-titlebar-style')
+    expect(main).not.toContain('--dsh-desktop-titlebar-height')
+    expect(main).not.toContain('body { box-sizing: border-box; padding-top:')
   })
 
   it('pairs the DSH logo with the original Harness wordmark in the expanded sidebar', async () => {
@@ -31,14 +30,27 @@ describe('DSH Desktop sidebar branding', () => {
     expect(patch).toContain('/dsh-desktop-logo-light.png')
     expect(patch).toContain('/dsh-desktop-logo-dark.png')
     expect(patch).toContain('brandWordmark')
+    expect(patch).toContain('gap:4px')
     expect(patch).toContain('transform:translateX(-24px)')
     expect(patch).not.toContain('children: "DSH Desktop"')
     expect(patch).toContain('height = 20')
     expect(patch).toContain('height: 18')
     expect(patch).toContain('.hHd-Xa_brand:hover')
-    expect(patch).toContain('padding-top:22px')
+    expect(patch).toContain('padding-top:32px')
+    expect(patch).toContain('navigator.userAgent.includes("Macintosh")')
+    expect(patch).toContain('.hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}')
     expect(patch).toContain('body[data-ds-dark-theme] .dshDesktopLogoLight')
     expect(patch).toContain('body[data-ds-dark-theme] .dshDesktopLogoDark')
+  })
+
+  it('uses an 80px macOS rail that clears the traffic lights', async () => {
+    const patch = await readFile(
+      path.join(projectRoot, 'patches', '@deepseek-ai+dsh-client-ui-layout+0.1.0-rc.6.patch'),
+      'utf8'
+    )
+
+    expect(patch).toContain('navigator.userAgent.includes("Macintosh") ? 80 : 56')
+    expect(patch).toContain('sidebar === 0 ? COLLAPSED_SIDEBAR_WIDTH')
   })
 
   it('installs the source logo into the Harness static frontend', async () => {

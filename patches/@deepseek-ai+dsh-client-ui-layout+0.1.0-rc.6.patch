@@ -1,0 +1,21 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
+index a85b668..8d2bccf 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
+@@ -11,6 +11,7 @@ window.__ModuleLoader__.load({
+ 		* LG breakpoint); a manual toggle below it re-expands over the squeezed center
+ 		* (stores.ts narrowExpanded). */
+ 		const SIDEBAR_AUTO_COLLAPSE = 1024;
++		const COLLAPSED_SIDEBAR_WIDTH = navigator.userAgent.includes("Macintosh") ? 80 : 56;
+ 		/**
+ 		* Clamp a panel width into its contract range.
+ 		* @param px - requested width.
+@@ -32,7 +33,7 @@ window.__ModuleLoader__.load({
+ 		* @returns resolved widths; details 0 means visually closed (never unmounted), while a closed sidebar keeps its compact rail.
+ 		*/
+ 		function computeColumns(viewport, sidebar, details) {
+-			const s = sidebar === 0 ? 56 : clampWidth(sidebar, 264, 420);
++			const s = sidebar === 0 ? COLLAPSED_SIDEBAR_WIDTH : clampWidth(sidebar, 264, 420);
+ 			const d0 = details === 0 ? 0 : clampWidth(details, 300, 520);
+ 			if (s + d0 + 640 <= viewport) return {
+ 				sidebar: s,
