@@ -101,4 +101,25 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('draft.conflict ? "idTaken"')
     expect(patch).toContain('.dshpreset')
   })
+
+  it('keeps the loopback API discoverable by an explicitly requested online Skill', async () => {
+    const webApp = await readFile(
+      path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-web-app', 'lib', 'index.js'),
+      'utf8'
+    )
+    const hostPatch = await readFile(
+      path.join(
+        projectRoot,
+        'patches',
+        '@deepseek-ai+dsh-host-apiproxy+0.1.0-rc.6.patch'
+      ),
+      'utf8'
+    )
+
+    expect(webApp).toContain('const DSH_WEB_URL = "DSH_WEB_URL"')
+    expect(webApp).toContain('variables: { [DSH_WEB_URL]')
+    expect(hostPatch).toContain('path === "/api/agent-preset.export"')
+    expect(hostPatch).toContain('path === "/api/agent-preset.import"')
+    expect(hostPatch).toContain('url.searchParams.get("install") === "1"')
+  })
 })
