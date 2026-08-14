@@ -1,0 +1,45 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
+index 4ba85c4..a1790c1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
+@@ -139,7 +139,7 @@ window.__ModuleLoader__.load({
+ 		*/
+ 		function producedFileMentions(paths, openFile, label) {
+ 			return { resolve(value) {
+-				const path = paths.includes(value) ? value : onlyPathWithBasename(paths, value);
++				const path = paths.includes(value) ? value : onlyPathWithBasename(paths, value) ?? localPathReference(value);
+ 				if (path === void 0) return void 0;
+ 				return {
+ 					open: () => {
+@@ -150,6 +150,21 @@ window.__ModuleLoader__.load({
+ 				};
+ 			} };
+ 		}
++		/**
++		* Resolve Codex-style local path references that were not produced by a tool
++		* in the current turn. Keep bare identifiers inert: without a slash, an
++		* absolute-path prefix, or a conventional filename suffix, inline code is
++		* much more likely to be a command, package, or symbol than a local path.
++		*/
++		function localPathReference(value) {
++			const candidate = value.trim();
++			if (candidate === "" || /[\r\n]/.test(candidate) || /^(?:https?|data|javascript):/i.test(candidate)) return void 0;
++			const path = candidate.replace(/(?:#L\d+(?:C\d+)?|:\d+(?::\d+)?)$/, "");
++			if (/^(?:\/|~[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path)) return path;
++			if (/[\\/]/.test(path) || /[\\/]$/.test(path)) return path;
++			if (/^[^\\/]+\.[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(path)) return path;
++			return void 0;
++		}
+ 		/** The single produced path whose basename is exactly `value`, else undefined. */
+ 		function onlyPathWithBasename(paths, value) {
+ 			const matches = paths.filter((path) => basename(path) === value);
+@@ -357,8 +372,7 @@ window.__ModuleLoader__.load({
+ 			const t = ctx.locale.bind(NS);
+ 			ctx.provide("chatFileMentions", { forClosing(owner) {
+ 				const paths = selectProducedFiles(owner);
+-				if (paths === null) return void 0;
+-				return producedFileMentions(paths, owner.openFile, (path) => t("produced.open", { name: path }));
++				return producedFileMentions(paths ?? [], owner.openFile, (path) => t("produced.open", { name: path }));
+ 			} });
+ 		}
+ 		//#endregion
