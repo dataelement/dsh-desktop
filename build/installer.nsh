@@ -7,14 +7,24 @@
     Var DshDirectoryEdit
     Var DshDirectoryNormalizationActive
 
-    ; MUI invokes this after the assisted installer's directory page is ready.
-    ; Normalize a selected drive root immediately so the page does not reject it
-    ; before electron-builder's later install-time sanitization can run.
+    ; electron-builder declares its install-mode page before the directory page.
+    ; MUI consumes this callback on that first page, so use it to start a short
+    ; polling timer and attach to the directory edit control once that page exists.
     !define MUI_PAGE_CUSTOMFUNCTION_SHOW DshDirectoryPageShow
 
     Function DshDirectoryPageShow
+      ${NSD_CreateTimer} DshAttachDirectoryPage 50
+    FunctionEnd
+
+    Function DshAttachDirectoryPage
       FindWindow $DshDirectoryPage "#32770" "" $HWNDPARENT
       GetDlgItem $DshDirectoryEdit $DshDirectoryPage 1019
+
+      ${If} $DshDirectoryEdit == 0
+        Return
+      ${EndIf}
+
+      ${NSD_KillTimer} DshAttachDirectoryPage
       ${NSD_OnChange} $DshDirectoryEdit DshDirectoryChanged
       Call DshNormalizeDriveRoot
     FunctionEnd
@@ -39,7 +49,7 @@
         ${If} $2 != ":"
           Return
         ${EndIf}
-        StrCpy $3 "$0\${APP_FILENAME}"
+        StrCpy $3 "$0\DSH Desktop"
       ${ElseIf} $1 == 3
         StrCpy $2 $0 1 1
         ${If} $2 != ":"
@@ -49,7 +59,7 @@
         ${If} $2 != "\"
           Return
         ${EndIf}
-        StrCpy $3 "$0${APP_FILENAME}"
+        StrCpy $3 "$0DSH Desktop"
       ${Else}
         Return
       ${EndIf}

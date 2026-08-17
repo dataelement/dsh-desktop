@@ -83,9 +83,11 @@ describe('GitHub release contract', () => {
     )
 
     expect(installer).toContain('!define MUI_PAGE_CUSTOMFUNCTION_SHOW DshDirectoryPageShow')
+    expect(installer).toContain('${NSD_CreateTimer} DshAttachDirectoryPage 50')
+    expect(installer).toContain('${NSD_KillTimer} DshAttachDirectoryPage')
     expect(installer).toContain('${NSD_OnChange} $DshDirectoryEdit DshDirectoryChanged')
-    expect(installer).toContain('StrCpy $3 "$0\\${APP_FILENAME}"')
-    expect(installer).toContain('StrCpy $3 "$0${APP_FILENAME}"')
+    expect(installer).toContain('StrCpy $3 "$0\\DSH Desktop"')
+    expect(installer).toContain('StrCpy $3 "$0DSH Desktop"')
     expect(installer).toContain('${NSD_SetText} $DshDirectoryEdit $3')
   })
 
