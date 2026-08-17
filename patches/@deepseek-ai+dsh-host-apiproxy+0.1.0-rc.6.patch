@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
-index 9e3afa7..1c97a67 100644
+index 9e3afa7..7e092ca 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 @@ -1,8 +1,8 @@
@@ -135,7 +135,159 @@ index 9e3afa7..1c97a67 100644
  //#region lib/types/session-export.js
  /**
  * Host-side session-log download: streams one ZIP archive whose files are the
-@@ -3299,6 +3403,127 @@ function createApiProxy(ctx, defaults) {
+@@ -473,6 +577,9 @@ const sessionRenameValueSchema = z$1.object({
+ 	title: z$1.string().min(1),
+ 	seq: z$1.number().int().nonnegative()
+ });
++/** session.delete request and response. */
++const sessionDeleteRequestSchema = z$1.object({ sessionId: sessionIdSchema });
++const sessionDeleteValueSchema = z$1.object({ deleted: z$1.literal(true) });
+ /** session.fork request payload (atSeq anchors the completed-turn cut). */
+ const sessionForkRequestSchema = z$1.object({
+ 	sessionId: sessionIdSchema,
+@@ -1723,12 +1830,18 @@ function createApiProxy(ctx, defaults) {
+ 	const presetSwitches = /* @__PURE__ */ new Map();
+ 	/** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
+ 	const sessionCreations = /* @__PURE__ */ new Map();
++	/** Teardown capabilities for ordinary Agents this proxy created directly. */
++	const ownedSessionHandles = /* @__PURE__ */ new Map();
+ 	/** Serializes path ownership and explicit title checks with Workspace mutations. */
+ 	let workspaceCreationChain = Promise.resolve();
+ 	const pendingQuestions = /* @__PURE__ */ new Map();
+ 	const pendingApprovals = /* @__PURE__ */ new Map();
+ 	const muxQueues = /* @__PURE__ */ new Set();
++	const hostQueues = /* @__PURE__ */ new Set();
+ 	const imageAdmissionChains = /* @__PURE__ */ new WeakMap();
++	ctx.on("session/disposed", (session) => {
++		ownedSessionHandles.delete(session.id);
++	});
+ 	/** Serialize image admission with model selection for one agent. */
+ 	function serializeImageAdmission(agent, operation) {
+ 		const result = (imageAdmissionChains.get(agent) ?? Promise.resolve()).then(operation);
+@@ -1839,6 +1952,10 @@ function createApiProxy(ctx, defaults) {
+ 		const envelope = frame(payload);
+ 		for (const queue of muxQueues) queue.push(envelope);
+ 	}
++	function broadcastHost(payload) {
++		const envelope = frame(payload);
++		for (const queue of hostQueues) queue.push(envelope);
++	}
+ 	ctx.inject(["sessionProjections"], (projectionCtx) => {
+ 		projectionCtx.sessionProjections.onChanged((session, key, value, seq) => {
+ 			broadcast({
+@@ -2147,11 +2264,13 @@ function createApiProxy(ctx, defaults) {
+ 						events: inspected.events
+ 					});
+ 					assertPresetUnchanged(sessionId, presetId, storedPreset);
+-					return (await ctx.agents.resume({
++					const handle = await ctx.agents.resume({
+ 						resumeSessionId: sessionId,
+ 						agentOptions: agentOptions(),
+ 						setup: (await composeAgent(storedPreset)).setup
+-					})).agent;
++					});
++					ownedSessionHandles.set(sessionId, handle);
++					return handle.agent;
+ 				}
+ 				try {
+ 					await mkdir(cwd, { recursive: true });
+@@ -2159,7 +2278,7 @@ function createApiProxy(ctx, defaults) {
+ 					throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error });
+ 				}
+ 				const composition = await composeAgent(presetId);
+-				return (await ctx.agents.create({
++				const handle = await ctx.agents.create({
+ 					sessionId,
+ 					agentOptions: agentOptions(),
+ 					meta: {
+@@ -2167,7 +2286,9 @@ function createApiProxy(ctx, defaults) {
+ 						...composition.agentPreset === void 0 ? {} : { agentPreset: composition.agentPreset }
+ 					},
+ 					setup: composition.setup
+-				})).agent;
++				});
++				ownedSessionHandles.set(sessionId, handle);
++				return handle.agent;
+ 			})().catch((error) => {
+ 				const live = ctx.agents.get(sessionId);
+ 				if (live !== void 0) {
+@@ -2746,6 +2867,58 @@ function createApiProxy(ctx, defaults) {
+ 					});
+ 				}
+ 			},
++			async delete(request) {
++				const { sessionId } = request.payload;
++				let state;
++				try {
++					state = await readSessionState(sessionId);
++				} catch (error) {
++					if (error instanceof ApiRemoteSessionNotFound) return err(request, {
++						code: "session-not-found",
++						message: error.message,
++						details: { sessionId }
++					});
++					return err(request, {
++						code: "internal",
++						message: `delete source unavailable for session "${sessionId}": ${String(error)}`,
++						details: {}
++					});
++				}
++				const live = ctx.agents.get(sessionId);
++				const hadLiveSession = ctx.sessions.get(sessionId) !== void 0;
++				if (hasSubagentOwner({ header: state.header }, live)) return err(request, subagentOwnershipError(sessionId));
++				const persistence = ctx.get("sessionPersistence");
++				if (persistence === void 0) return err(request, {
++					code: "internal",
++					message: "session deletion is unavailable: this deployment mounts no session-persistence service",
++					details: {}
++				});
++				try {
++					await sessionCreations.get(sessionId)?.catch(() => void 0);
++					await agentFor.disposeOwned(sessionId);
++					const handle = ownedSessionHandles.get(sessionId);
++					if (handle !== void 0) await handle.dispose();
++					if (ctx.agents.get(sessionId) !== void 0 || ctx.sessions.get(sessionId) !== void 0) return err(request, {
++						code: "agent-busy",
++						message: `session "${sessionId}" is owned by another live component`,
++						details: { reason: "stop the owning component before permanently deleting this session" }
++					});
++					if (!await persistence.delete(sessionId)) return err(request, {
++						code: "session-not-found",
++						message: `session "${sessionId}" not found`,
++						details: { sessionId }
++					});
++					if (!hadLiveSession) broadcastHost({ type: "host/session-removed", sessionId });
++					await ctx.workspaceRegistry.forgetSession(sessionId);
++					return ok(request, { deleted: true });
++				} catch (error) {
++					return err(request, {
++						code: "internal",
++						message: `failed to delete session "${sessionId}": ${String(error)}`,
++						details: {}
++					});
++				}
++			},
+ 			async fork(request) {
+ 				const { sessionId, atSeq } = request.payload;
+ 				let source;
+@@ -2786,7 +2959,7 @@ function createApiProxy(ctx, defaults) {
+ 				const childId = `session-${randomUUID()}`;
+ 				const forkComposition = await composeAgent(resolveSessionPreset(source));
+ 				try {
+-					await ctx.agents.create({
++					const handle = await ctx.agents.create({
+ 						sessionId: childId,
+ 						seed: events.slice(0, cut),
+ 						meta: {
+@@ -2798,6 +2971,7 @@ function createApiProxy(ctx, defaults) {
+ 						agentOptions: agentOptions(),
+ 						setup: forkComposition.setup
+ 					});
++					ownedSessionHandles.set(childId, handle);
+ 				} catch (error) {
+ 					return err(request, {
+ 						code: "internal",
+@@ -3299,6 +3473,127 @@ function createApiProxy(ctx, defaults) {
  			}
  		},
  		agentPresets: {
@@ -263,7 +415,34 @@ index 9e3afa7..1c97a67 100644
  			async list(request) {
  				const presets = ctx.get("agentPresets");
  				if (presets === void 0) return ok(request, {
-@@ -4993,6 +5218,34 @@ function toFetchHandler(api) {
+@@ -3697,6 +3992,7 @@ function createApiProxy(ctx, defaults) {
+ 			},
+ 			host(_request, signal) {
+ 				const queue = new FrameQueue();
++				hostQueues.add(queue);
+ 				const committedWorkspaces = ctx.workspaceRegistry.list();
+ 				const committedWorkspaceIds = new Set(committedWorkspaces.map((workspace) => String(workspace.id)));
+ 				let committedWorkspaceOrder = committedWorkspaces.map((workspace) => workspace.id);
+@@ -3784,6 +4080,7 @@ function createApiProxy(ctx, defaults) {
+ 					})))
+ 				];
+ 				return queue.iterate(signal, () => {
++					hostQueues.delete(queue);
+ 					for (const dispose of disposers) dispose();
+ 				});
+ 			}
+@@ -4695,6 +4992,10 @@ const UNARY_ROUTES = {
+ 		schema: sessionRenameRequestSchema,
+ 		invoke: (api, r) => api.sessions.rename(r)
+ 	},
++	"session.delete": {
++		schema: sessionDeleteRequestSchema,
++		invoke: (api, r) => api.sessions.delete(r)
++	},
+ 	"session.fork": {
+ 		schema: sessionForkRequestSchema,
+ 		invoke: (api, r) => api.sessions.fork(r)
+@@ -4993,6 +5294,34 @@ function toFetchHandler(api) {
  			rpcId: RpcId(randomUUID()),
  			payload: {}
  		}, req.signal));
@@ -298,3 +477,19 @@ index 9e3afa7..1c97a67 100644
  		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
  			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
  			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
+@@ -5246,6 +5575,7 @@ const UNARY_VALUE_SCHEMAS = {
+ 	"session.models": sessionModelsValueSchema,
+ 	"session.selectModel": sessionSelectModelValueSchema,
+ 	"session.rename": sessionRenameValueSchema,
++	"session.delete": sessionDeleteValueSchema,
+ 	"session.fork": sessionForkValueSchema,
+ 	"session.prompt": sessionPromptValueSchema,
+ 	"session.attachment": sessionAttachmentValueSchema,
+@@ -5458,6 +5788,7 @@ var AbstractApiClient = class {
+ 		models: (payload, signal) => this.callUnary("session.models", payload, signal),
+ 		selectModel: (payload, signal) => this.callUnary("session.selectModel", payload, signal),
+ 		rename: (payload, signal) => this.callUnary("session.rename", payload, signal),
++		delete: (payload, signal) => this.callUnary("session.delete", payload, signal),
+ 		fork: (payload, signal) => this.callUnary("session.fork", payload, signal),
+ 		prompt: (payload, signal) => this.callUnary("session.prompt", payload, signal),
+ 		attachment: (payload, signal) => this.callUnary("session.attachment", payload, signal),

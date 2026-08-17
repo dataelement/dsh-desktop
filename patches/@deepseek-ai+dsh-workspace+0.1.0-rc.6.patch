@@ -1,0 +1,31 @@
+diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
+index b9d5a8e..11646af 100644
+--- a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
+@@ -430,6 +430,26 @@ var WorkspaceRegistry = class extends Service {
+ 			});
+ 		});
+ 	}
++	/** Remove a permanently deleted session from Workspace and archive state. */
++	forgetSession(sessionId) {
++		return this.enqueueOperation(async () => {
++			for (const [workspaceId, record] of this.requireTable().entries()) {
++				if (!record.sessionIds.includes(sessionId)) continue;
++				const entity = this.entities.get(workspaceId);
++				if (entity === void 0) throw new Error(`cannot forget session '${sessionId}': workspace '${workspaceId}' is not published`);
++				await entity.detachSession(sessionId);
++				break;
++			}
++			const state = this.requireState();
++			if (state.archivedSessionIds.includes(sessionId)) await this.setState({
++				...state,
++				archivedSessionIds: state.archivedSessionIds.filter((id) => id !== sessionId)
++			});
++			this.headers.delete(sessionId);
++			this.sessionPaths.delete(sessionId);
++			this.invalidSessionPaths.delete(sessionId);
++		});
++	}
+ 	/**
+ 	* Whether a session is live, header-indexed, or present in a fresh
+ 	* persistence listing. Only a definite miss returns false — a failing

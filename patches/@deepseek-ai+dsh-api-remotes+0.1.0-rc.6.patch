@@ -1,0 +1,46 @@
+diff --git a/node_modules/@deepseek-ai/dsh-api-remotes/lib/index.js b/node_modules/@deepseek-ai/dsh-api-remotes/lib/index.js
+index 1946294..c9145c0 100644
+--- a/node_modules/@deepseek-ai/dsh-api-remotes/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-api-remotes/lib/index.js
+@@ -100,6 +100,10 @@ async function inspectApiRemoteSession(ctx, sessionId) {
+ */
+ function createApiRemoteAgentResolver(ctx, options) {
+ 	const resumes = /* @__PURE__ */ new Map();
++	const handles = /* @__PURE__ */ new Map();
++	ctx.on("session/disposed", (session) => {
++		handles.delete(session.id);
++	});
+ 	const fencedLiveAgent = (sessionId) => {
+ 		const live = ctx.agents.get(sessionId);
+ 		if (live === void 0) return void 0;
+@@ -121,11 +125,13 @@ function createApiRemoteAgentResolver(ctx, options) {
+ 					const publishedSession = ctx.sessions.get(sessionId);
+ 					const publishedAgent = ctx.agents.get(sessionId);
+ 					if (publishedSession !== void 0 && hasApiRemoteSubagentOwner(ctx, publishedSession, publishedAgent)) throw new ApiRemoteSubagentSessionOwnership(sessionId);
+-					return (await ctx.agents.resume({
++					const handle = await ctx.agents.resume({
+ 						resumeSessionId: sessionId,
+ 						...options.agentOptions === void 0 ? {} : { agentOptions: options.agentOptions() },
+ 						...setup === void 0 ? {} : { setup }
+-					})).agent;
++					});
++					handles.set(sessionId, handle);
++					return handle.agent;
+ 				} finally {
+ 					resumes.delete(sessionId);
+ 				}
+@@ -152,6 +158,14 @@ function createApiRemoteAgentResolver(ctx, options) {
+ 			} };
+ 		}
+ 	};
++	agentFor.disposeOwned = async (sessionId) => {
++		await resumes.get(sessionId)?.catch(() => void 0);
++		const handle = handles.get(sessionId);
++		if (handle === void 0) return false;
++		await handle.dispose();
++		handles.delete(sessionId);
++		return true;
++	};
+ 	ctx.inject(["typert"], (typeCtx) => {
+ 		const resolveAgent = async (sessionId) => {
+ 			const found = await agentFor(sessionId);

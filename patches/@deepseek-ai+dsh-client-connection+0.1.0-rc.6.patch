@@ -1,0 +1,37 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js b/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js
+index 3e4ae0e..71af086 100644
+--- a/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js
+@@ -5284,6 +5284,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 			title: string().min(1),
+ 			seq: number().int().nonnegative()
+ 		});
++		/** session.delete response value. */
++		const sessionDeleteValueSchema = object({ deleted: literal(true) });
+ 		object({
+ 			sessionId: sessionIdSchema,
+ 			atSeq: number().int().nonnegative().optional()
+@@ -6077,6 +6079,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 			"session.models": sessionModelsValueSchema,
+ 			"session.selectModel": sessionSelectModelValueSchema,
+ 			"session.rename": sessionRenameValueSchema,
++			"session.delete": sessionDeleteValueSchema,
+ 			"session.fork": sessionForkValueSchema,
+ 			"session.prompt": sessionPromptValueSchema,
+ 			"session.attachment": sessionAttachmentValueSchema,
+@@ -6289,6 +6292,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 				models: (payload, signal) => this.callUnary("session.models", payload, signal),
+ 				selectModel: (payload, signal) => this.callUnary("session.selectModel", payload, signal),
+ 				rename: (payload, signal) => this.callUnary("session.rename", payload, signal),
++				delete: (payload, signal) => this.callUnary("session.delete", payload, signal),
+ 				fork: (payload, signal) => this.callUnary("session.fork", payload, signal),
+ 				prompt: (payload, signal) => this.callUnary("session.prompt", payload, signal),
+ 				attachment: (payload, signal) => this.callUnary("session.attachment", payload, signal),
+@@ -9899,6 +9903,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 					case "session.models": return this.api.sessions.models(request);
+ 					case "session.selectModel": return this.api.sessions.selectModel(request);
+ 					case "session.rename": return this.api.sessions.rename(request);
++					case "session.delete": return this.api.sessions.delete(request);
+ 					case "session.fork": return this.api.sessions.fork(request);
+ 					case "session.prompt": return this.api.sessions.prompt(request);
+ 					case "session.attachment": return this.api.sessions.attachment(request);

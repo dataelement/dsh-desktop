@@ -1,0 +1,35 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+index 66db7ec..76c18b1 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+@@ -812,6 +812,9 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 	append(id, events) {
+ 		return this.coordinator.append(id, events);
+ 	}
++	delete(id) {
++		return this.coordinator.delete(id);
++	}
+ 	prepare(id, signal) {
+ 		return this.coordinator.prepare(id, signal);
+ 	}
+@@ -833,6 +836,20 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 		if (path === void 0) return void 0;
+ 		return this.readPrefix(path, id, signal);
+ 	}
++	/** Remove one exact log file; leave shared project directories in place. */
++	async deleteStored(id) {
++		await this.ensureRootEncoding();
++		const path = await this.findLog(id);
++		if (path === void 0) return false;
++		try {
++			await rm(path);
++		} catch (error) {
++			if (isENOENT(error)) return false;
++			throw error;
++		}
++		if (process.platform !== "win32") await this.syncDirPosix(dirname(path));
++		return true;
++	}
+ 	/**
+ 	* Read one log's stat-derived revision without loading its event bytes.
+ 	* Resolving an id with unknown cwd still scans the project directories.

@@ -1,0 +1,38 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js
+index 178ec2d..f57e98b 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js
+@@ -171,6 +171,11 @@ var SessionPreparations = class {
+ 		const phase = this.entries.get(id)?.phase;
+ 		if (phase === "committing" || phase === "reserved") throw new Error(`cannot append session "${id}" while its persisted preparation is reserved`);
+ 	}
++	/** Reject deletion while an unpublished Session exclusively owns the id. */
++	assertDeletable(id) {
++		const phase = this.entries.get(id)?.phase;
++		if (phase === "committing" || phase === "reserved") throw new Error(`cannot delete session "${id}" while its persisted preparation is reserved`);
++	}
+ 	/**
+ 	* Remove a completed entry for an already-serialized append adoption.
+ 	* @param id - adopted session identity.
+@@ -838,6 +843,21 @@ var PersistenceCoordinator = class {
+ 		state.cursor += events.length;
+ 		this.preparations.invalidate(id);
+ 	}
++	/** Permanently remove a cold session identity. */
++	async delete(id) {
++		await this.waitForRetirement(id);
++		if (this.ctx.sessions.get(id) !== void 0) throw new Error(`cannot delete session "${id}" while it is live`);
++		return this.serialize(id, async () => {
++			if (this.ctx.sessions.get(id) !== void 0) throw new Error(`cannot delete session "${id}" while it is live`);
++			this.preparations.assertDeletable(id);
++			const tracked = this.states.get(id);
++			const deleted = await this.backend.deleteStored(id);
++			if (!deleted && tracked?.materialized === true) throw new Error(`cannot delete session "${id}": its tracked durable artifact is missing`);
++			this.states.delete(id);
++			this.preparations.invalidate(id);
++			return deleted || tracked !== void 0;
++		});
++	}
+ 	/**
+ 	* Prepare and reserve the exact unpublished Session used by resume.
+ 	* Revision retries converge once the durable log remains unchanged for one

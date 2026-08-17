@@ -1,0 +1,198 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+index 53be4bb..09b79b9 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+@@ -689,7 +689,7 @@ window.__ModuleLoader__.load({
+ 		* @param props.t - the browser root's locale seat.
+ 		* @returns the session row.
+ 		*/
+-		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false, t }) {
++		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, drag, flat = false, t }) {
+ 			const row = node;
+ 			const title = displayTitle(node, t);
+ 			const selected = node.id === currentId;
+@@ -711,6 +711,12 @@ window.__ModuleLoader__.load({
+ 					id: "archive",
+ 					label: t("menu.archiveSession"),
+ 					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutline20, { size: 16 })
++				},
++				{
++					id: "delete",
++					label: t("delete.session"),
++					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
++					danger: true
+ 				}
+ 			];
+ 			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.HoverCard, {
+@@ -765,6 +771,7 @@ window.__ModuleLoader__.load({
+ 									if (id === "rename") onRename(node.id, row.title);
+ 									if (id === "fork") onFork(node.id);
+ 									if (id === "archive") onArchive(node.id);
++									if (id === "delete") onDelete(node.id, title);
+ 								},
+ 								portal: true,
+ 								closeOnPointerLeave: true,
+@@ -1196,7 +1203,7 @@ window.__ModuleLoader__.load({
+ 			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+ 		}
+ 		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
+-		function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
++		function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionDelete, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
+ 			const list = useSessions((s) => s);
+ 			const current = list.current;
+ 			const [expandedSessionGroups, setExpandedSessionGroups] = (0, react.useState)([]);
+@@ -1409,6 +1416,7 @@ window.__ModuleLoader__.load({
+ 											onRename: onSessionRename,
+ 											onFork: forkSession,
+ 											onArchive: onSessionArchive,
++											onDelete: onSessionDelete,
+ 											drag: {
+ 												start: () => {
+ 													sessionDropCommitted.current = false;
+@@ -1465,7 +1473,7 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		/** The flat "In one list" body: every session is one draggable top-level row. */
+-		function FlatList({ useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
++		function FlatList({ useSessions, open, forkSession, onSessionRename, onSessionArchive, onSessionDelete, archivedSessionIds, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
+ 			const list = useSessions((s) => s);
+ 			const baseRows = (0, react.useMemo)(() => deriveFlat(list, archivedSessionIds), [list, archivedSessionIds]);
+ 			const sessionIds = (0, react.useMemo)(() => baseRows.map((row) => row.id), [baseRows]);
+@@ -1540,9 +1548,10 @@ window.__ModuleLoader__.load({
+ 							currentId: list.current,
+ 							now,
+ 							onOpen: open,
+-							onRename: onSessionRename,
+-							onFork: forkSession,
+-							onArchive: onSessionArchive,
++									onRename: onSessionRename,
++									onFork: forkSession,
++									onArchive: onSessionArchive,
++									onDelete: onSessionDelete,
+ 							flat: true,
+ 							drag: {
+ 								start: () => {
+@@ -1644,7 +1653,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - composed slot props (shell owner share + store + injected actions).
+ 		* @returns the region element tree.
+ 		*/
+-		function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, renderSlot, t }) {
++		function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, deleteSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, renderSlot, t }) {
+ 			const workspaces = useWorkspaces((state) => state.items);
+ 			const workspacePhase = useWorkspaces((state) => state.phase);
+ 			const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
+@@ -1818,6 +1827,33 @@ window.__ModuleLoader__.load({
+ 					console.warn("session archive rejected:", reason);
+ 				});
+ 			};
++			const [sessionDeleteTarget, setSessionDeleteTarget] = (0, react.useState)(null);
++			const [sessionDeleting, setSessionDeleting] = (0, react.useState)(false);
++			const [sessionDeleteError, setSessionDeleteError] = (0, react.useState)(null);
++			const closeSessionDelete = () => {
++				if (sessionDeleting) return;
++				setSessionDeleteTarget(null);
++				setSessionDeleteError(null);
++			};
++			const confirmSessionDelete = () => {
++				if (sessionDeleting || sessionDeleteTarget === null) return;
++				setSessionDeleting(true);
++				setSessionDeleteError(null);
++				deleteSession(sessionDeleteTarget.sessionId).then(() => {
++					setSessionDeleting(false);
++					setSessionDeleteTarget(null);
++				}).catch((reason) => {
++					setSessionDeleting(false);
++					setSessionDeleteError(reason instanceof Error ? reason.message : String(reason));
++				});
++			};
++			const onSessionDelete = (sessionId, title) => {
++				setSessionDeleteTarget({
++					sessionId,
++					title
++				});
++				setSessionDeleteError(null);
++			};
+ 			const [deleteTarget, setDeleteTarget] = (0, react.useState)(null);
+ 			const [deleting, setDeleting] = (0, react.useState)(false);
+ 			const [deleteCommittedId, setDeleteCommittedId] = (0, react.useState)(null);
+@@ -1997,6 +2033,7 @@ window.__ModuleLoader__.load({
+ 							forkSession,
+ 							onSessionRename,
+ 							onSessionArchive,
++							onSessionDelete,
+ 							archivedSessionIds,
+ 							orderBy,
+ 							sessionOrderByAccount,
+@@ -2008,6 +2045,7 @@ window.__ModuleLoader__.load({
+ 							useSessions,
+ 							onSessionRename,
+ 							onSessionArchive,
++							onSessionDelete,
+ 							forkSession,
+ 							workspaces,
+ 							groupExpansion,
+@@ -2142,6 +2180,34 @@ window.__ModuleLoader__.load({
+ 							children: sessionRenameError
+ 						})]
+ 					}),
++					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
++						open: sessionDeleteTarget !== null,
++						onClose: closeSessionDelete,
++						closeLabel: t("close"),
++						title: t("delete.session"),
++						...sessionDeleteTarget === null ? {} : { description: t("delete.session.desc", { name: sessionDeleteTarget.title }) },
++						footer: (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++							variant: "outline",
++							disabled: sessionDeleting,
++							onClick: closeSessionDelete,
++							children: t("cancel")
++						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++							variant: "outline",
++							className: WorkspaceBrowser_module_css_default.deleteAction,
++							disabled: sessionDeleting,
++							onClick: confirmSessionDelete,
++							children: t("delete.session")
++						})] }),
++						children: [sessionDeleting && (0, react_jsx_runtime.jsx)("div", {
++							className: WorkspaceBrowser_module_css_default.deleteStatus,
++							role: "status",
++							children: t("delete.session.pending")
++						}), sessionDeleteError !== null && (0, react_jsx_runtime.jsx)("div", {
++							className: WorkspaceBrowser_module_css_default.renameError,
++							role: "alert",
++							children: sessionDeleteError
++						})]
++					}),
+ 					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+ 						open: deleteTarget !== null,
+ 						onClose: closeDelete,
+@@ -2219,6 +2285,9 @@ window.__ModuleLoader__.load({
+ 			"delete.workspace": "删除工作区",
+ 			"delete.desc": "将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。",
+ 			"delete.pending": "正在删除工作区…",
++			"delete.session": "删除会话",
++			"delete.session.desc": "将永久删除“{name}”的会话记录与执行轨迹。工作区文件会保留。此操作无法撤销。",
++			"delete.session.pending": "正在删除会话…",
+ 			"menu.fork": "分叉会话",
+ 			"menu.archiveSession": "归档会话",
+ 			"sessions.count.one": "{n} 个会话",
+@@ -2284,6 +2353,9 @@ window.__ModuleLoader__.load({
+ 			"delete.workspace": "Delete workspace",
+ 			"delete.desc": "This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.",
+ 			"delete.pending": "Deleting workspace…",
++			"delete.session": "Delete session",
++			"delete.session.desc": "This permanently deletes the conversation history and execution trace for “{name}”. Workspace files are kept. This can’t be undone.",
++			"delete.session.pending": "Deleting session…",
+ 			"menu.fork": "Fork session",
+ 			"menu.archiveSession": "Archive session",
+ 			"sessions.count.one": "{n} session",
+@@ -2385,6 +2457,9 @@ window.__ModuleLoader__.load({
+ 				archiveSession: async (sessionId) => {
+ 					await ctx.workspaces.archiveSession(sessionId);
+ 				},
++				deleteSession: async (sessionId) => {
++					await ctx.sessions.delete(sessionId);
++				},
+ 				insertSessionBefore: async (workspaceId, sessionId, beforeSessionId) => {
+ 					await ctx.workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId);
+ 				},

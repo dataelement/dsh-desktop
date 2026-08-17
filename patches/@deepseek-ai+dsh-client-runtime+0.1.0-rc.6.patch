@@ -1,0 +1,72 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
+index 32d17c8..e6916cb 100644
+--- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
+@@ -8188,6 +8188,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 				}
+ 			}
+ 			/**
++			* Contract session.delete; on success remove the row immediately instead of
++			* waiting for the host push echo.
++			* @param sessionId - ordinary session to permanently delete.
++			* @returns the Host result or a folded transport error.
++			*/
++			async delete(sessionId) {
++				try {
++					const { result } = await this.api.sessions.delete({ sessionId });
++					if (result.ok) this.recordMutation({
++						kind: "remove",
++						sessionId
++					});
++					return result;
++				} catch (error) {
++					return transportError(error);
++				}
++			}
++			/**
+ 			* Contract session.fork; on success merge the child into summaries
+ 			* immediately (same synchronous-addressability guarantee as create). The
+ 			* child carries the source's history, so it is never blank; lineage rides
+@@ -8813,6 +8831,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 				this.sourceSessionId = sourceSessionId;
+ 			}
+ 		};
++		/** Structured permanent session-deletion failure. */
++		var SessionDeleteError = class extends Error {
++			rpcError;
++			sessionId;
++			name = "SessionDeleteError";
++			/**
++			* @param rpcError - Host business or folded transport error.
++			* @param sessionId - session the caller tried to remove.
++			*/
++			constructor(rpcError, sessionId) {
++				super("session delete failed: " + rpcError.code + ": " + rpcError.message);
++				this.rpcError = rpcError;
++				this.sessionId = sessionId;
++			}
++		};
+ 		/**
+ 		* Workspace display title of a session cwd: the path's last non-empty
+ 		* segment (both separators accepted; trailing separators ignored), or ''
+@@ -9073,6 +9106,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 				return result.value.sessionId;
+ 			}
+ 			/**
++			* Permanently delete one ordinary session and clear it from the stage.
++			* @param sessionId - session identity to remove.
++			* @throws {SessionDeleteError} when the Host rejects or cannot commit deletion.
++			*/
++			async delete(sessionId) {
++				const deletingCurrent = this.list.getSnapshot().current === sessionId;
++				const result = await this.manager.delete(sessionId);
++				if (!result.ok) throw new SessionDeleteError(result.error, sessionId);
++				const current = this.list.getSnapshot().current;
++				if (deletingCurrent && (current === void 0 || current === sessionId)) this.clear();
++				if (this.watched === sessionId) this.watched = void 0;
++				this.projectList();
++			}
++			/**
+ 			* Fork a session from a completed-turn prefix of the source (same
+ 			* synchronous-addressability guarantee as {@link SessionRuntime.create}:
+ 			* on resolution the child is in the list store and open() can target it).
