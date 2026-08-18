@@ -5,6 +5,8 @@
 
     Var DshDirectoryPage
     Var DshDirectoryEdit
+    Var DshDirectorySearchAfter
+    Var DshDirectoryAttached
     Var DshDirectoryNormalizationActive
 
     ; electron-builder declares its install-mode page before the directory page.
@@ -17,51 +19,93 @@
     FunctionEnd
 
     Function DshAttachDirectoryPage
-      FindWindow $DshDirectoryPage "#32770" "" $HWNDPARENT
-      GetDlgItem $DshDirectoryEdit $DshDirectoryPage 1019
+      ${If} $DshDirectoryAttached == "1"
+        System::Call 'USER32::IsWindowVisible(p $DshDirectoryPage)i.r0'
+        ${If} $0 == 0
+          ; The user can navigate back to the install-mode page and then return.
+          ; Keep the timer alive so the directory page can be attached again.
+          StrCpy $DshDirectoryAttached "0"
+          StrCpy $DshDirectoryPage 0
+          StrCpy $DshDirectoryEdit 0
+        ${Else}
+          ; Keep polling while the directory page is visible. This also catches a
+          ; manually entered parent path as soon as the edit control loses focus.
+          Call DshNormalizeSelectedDirectory
+          Return
+        ${EndIf}
+      ${EndIf}
 
-      ${If} $DshDirectoryEdit == 0
+      StrCpy $DshDirectorySearchAfter 0
+
+      DshFindDirectoryPage:
+      FindWindow $DshDirectoryPage "#32770" "" $HWNDPARENT $DshDirectorySearchAfter
+
+      ${If} $DshDirectoryPage == 0
         Return
       ${EndIf}
 
-      ${NSD_KillTimer} DshAttachDirectoryPage
+      GetDlgItem $DshDirectoryEdit $DshDirectoryPage 1019
+
+      ${If} $DshDirectoryEdit == 0
+        ; MUI keeps earlier custom pages as hidden child dialogs. Continue until
+        ; the child containing the actual directory edit control is found.
+        StrCpy $DshDirectorySearchAfter $DshDirectoryPage
+        Goto DshFindDirectoryPage
+      ${EndIf}
+
+      System::Call 'USER32::IsWindowVisible(p $DshDirectoryPage)i.r0'
+      ${If} $0 == 0
+        StrCpy $DshDirectorySearchAfter $DshDirectoryPage
+        Goto DshFindDirectoryPage
+      ${EndIf}
+
       ${NSD_OnChange} $DshDirectoryEdit DshDirectoryChanged
-      Call DshNormalizeDriveRoot
+      StrCpy $DshDirectoryAttached "1"
+      Call DshNormalizeSelectedDirectory
     FunctionEnd
 
     Function DshDirectoryChanged
       Pop $0
-      Call DshNormalizeDriveRoot
+      Call DshNormalizeSelectedDirectory
     FunctionEnd
 
-    Function DshNormalizeDriveRoot
+    Function DshNormalizeSelectedDirectory
       ${If} $DshDirectoryNormalizationActive == "1"
         Return
       ${EndIf}
 
-      ${NSD_GetText} $DshDirectoryEdit $0
-      StrLen $1 $0
-
-      ; Accept both forms produced by typing or the Windows folder picker:
-      ; "D:" and "D:\". Any non-root directory is left untouched.
-      ${If} $1 == 2
-        StrCpy $2 $0 1 1
-        ${If} $2 != ":"
-          Return
-        ${EndIf}
-        StrCpy $3 "$0\DSH Desktop"
-      ${ElseIf} $1 == 3
-        StrCpy $2 $0 1 1
-        ${If} $2 != ":"
-          Return
-        ${EndIf}
-        StrCpy $2 $0 1 2
-        ${If} $2 != "\"
-          Return
-        ${EndIf}
-        StrCpy $3 "$0DSH Desktop"
-      ${Else}
+      ; A Browse selection updates the edit while focus remains on the Browse
+      ; button. Do not rewrite the path character-by-character when the user is
+      ; typing directly into the edit control.
+      System::Call 'USER32::GetFocus()p.r4'
+      ${If} $4 == $DshDirectoryEdit
         Return
+      ${EndIf}
+
+      ${NSD_GetText} $DshDirectoryEdit $0
+
+      ${If} $0 == ""
+        Return
+      ${EndIf}
+
+      ; Keep the default path and an already-normalized custom path unchanged.
+      StrLen $1 "${APP_FILENAME}"
+      StrLen $2 $0
+      ${If} $2 >= $1
+        IntOp $4 $2 - $1
+        StrCpy $3 $0 $1 $4
+        ${If} $3 == "${APP_FILENAME}"
+          Return
+        ${EndIf}
+      ${EndIf}
+
+      ; The directory picker returns the selected parent directory. Make the
+      ; application subdirectory visible immediately for every custom location.
+      StrCpy $1 $0 1 -1
+      ${If} $1 == "\"
+        StrCpy $3 "$0${APP_FILENAME}"
+      ${Else}
+        StrCpy $3 "$0\${APP_FILENAME}"
       ${EndIf}
 
       StrCpy $DshDirectoryNormalizationActive "1"

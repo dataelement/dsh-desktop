@@ -76,7 +76,7 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.portable).toBeUndefined()
   })
 
-  it('turns a selected Windows drive root into an application directory', async () => {
+  it('shows the application subdirectory for every custom Windows install location', async () => {
     const installer = await readFile(
       path.join(projectRoot, 'build', 'installer.nsh'),
       'utf8'
@@ -84,10 +84,19 @@ describe('GitHub release contract', () => {
 
     expect(installer).toContain('!define MUI_PAGE_CUSTOMFUNCTION_SHOW DshDirectoryPageShow')
     expect(installer).toContain('${NSD_CreateTimer} DshAttachDirectoryPage 50')
-    expect(installer).toContain('${NSD_KillTimer} DshAttachDirectoryPage')
+    expect(installer).toContain(
+      'FindWindow $DshDirectoryPage "#32770" "" $HWNDPARENT $DshDirectorySearchAfter'
+    )
+    expect(installer).toContain('Goto DshFindDirectoryPage')
+    expect(installer).toContain('StrCpy $DshDirectoryAttached "0"')
     expect(installer).toContain('${NSD_OnChange} $DshDirectoryEdit DshDirectoryChanged')
-    expect(installer).toContain('StrCpy $3 "$0\\DSH Desktop"')
-    expect(installer).toContain('StrCpy $3 "$0DSH Desktop"')
+    expect(installer).toContain(
+      "System::Call 'USER32::IsWindowVisible(p $DshDirectoryPage)i.r0'"
+    )
+    expect(installer).toContain("System::Call 'USER32::GetFocus()p.r4'")
+    expect(installer).toContain('StrLen $1 "${APP_FILENAME}"')
+    expect(installer).toContain('StrCpy $3 "$0\\${APP_FILENAME}"')
+    expect(installer).toContain('StrCpy $3 "$0${APP_FILENAME}"')
     expect(installer).toContain('${NSD_SetText} $DshDirectoryEdit $3')
   })
 
