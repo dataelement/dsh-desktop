@@ -9,6 +9,7 @@ export interface HarnessRuntimeOptions {
   dshEntryPath: string
   nodeExecutablePath: string
   nodeEntryPath: string
+  profileModulePathsPath: string
   dshPatchPath: string
   dshHome: string
   logPath: string
@@ -36,7 +37,8 @@ export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
   platform: NodeJS.Platform = process.platform,
-  environment: NodeJS.ProcessEnv = process.env
+  environment: NodeJS.ProcessEnv = process.env,
+  profileModulePathsPath?: string
 ): SpawnOptionsWithoutStdio {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -47,6 +49,7 @@ export function buildHarnessSpawnOptions(
       ...parentEnvironment,
       DSH_HOME: dshHome,
       NO_COLOR: '1',
+      ...(profileModulePathsPath ? { DSH_DESKTOP_PROFILE_MODULE_PATHS: profileModulePathsPath } : {}),
       [pathKey]: environment[pathKey] ?? environment.PATH ?? ''
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -58,10 +61,12 @@ export function buildNodeArguments(
   nodeEntryPath: string,
   dshEntryPath: string,
   port: number,
-  patchPath?: string
+  patchPath?: string,
+  profileModulePathsPath?: string
 ): string[] {
   return [
     '--expose-internals',
+    ...(profileModulePathsPath ? ['--import', profileModulePathsPath] : []),
     nodeEntryPath,
     dshEntryPath,
     ...buildHarnessArguments(port, patchPath)
@@ -121,7 +126,8 @@ export class HarnessRuntime {
       this.options.nodeEntryPath,
       this.options.dshEntryPath,
       port,
-      this.options.dshPatchPath
+      this.options.dshPatchPath,
+      this.options.profileModulePathsPath
     )
     const startupTimeoutMs =
       this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 120_000 : 45_000)
@@ -136,7 +142,7 @@ export class HarnessRuntime {
       child = this.options.launchProcess(
         this.options.nodeExecutablePath,
         args,
-        buildHarnessSpawnOptions(launchDirectory, this.options.dshHome)
+        buildHarnessSpawnOptions(launchDirectory, this.options.dshHome, undefined, undefined, this.options.profileModulePathsPath)
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

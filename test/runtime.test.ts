@@ -56,6 +56,27 @@ describe('Harness launch contract', () => {
         Path: 'windows-path'
       }
     })
+    expect(options.env).not.toHaveProperty('DSH_DESKTOP_PROFILE_MODULE_PATHS')
+  })
+
+  it('passes profile module paths env when provided', () => {
+    const options = buildHarnessSpawnOptions(
+      'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\launch-root',
+      'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
+      'win32',
+      {
+        ELECTRON_RUN_AS_NODE: '1',
+        PATH: 'fallback-path',
+        Path: 'windows-path'
+      },
+      'C:\\app\\profile-module-paths.mjs'
+    )
+
+    expect(options.env).toMatchObject({
+      DSH_HOME: 'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
+      DSH_DESKTOP_PROFILE_MODULE_PATHS: 'C:\\app\\profile-module-paths.mjs',
+      NO_COLOR: '1'
+    })
     expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
   })
 
@@ -80,6 +101,32 @@ describe('Harness launch contract', () => {
       '43127'
     ])
   })
+
+  it('injects profile module paths via --import when provided', () => {
+    expect(
+      buildNodeArguments(
+        'C:\\app\\harness-node-entry.mjs',
+        'C:\\app\\dsh\\lib\\bin.js',
+        43127,
+        'C:\\app\\dsh-desktop.patch.yml',
+        'C:\\app\\profile-module-paths.mjs'
+      )
+    ).toEqual([
+      '--expose-internals',
+      '--import',
+      'C:\\app\\profile-module-paths.mjs',
+      'C:\\app\\harness-node-entry.mjs',
+      'C:\\app\\dsh\\lib\\bin.js',
+      'web',
+      '--patch',
+      'C:\\app\\dsh-desktop.patch.yml',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '43127'
+    ])
+  })
+
 
   it('makes native Windows termination codes diagnosable', () => {
     expect(formatExitCode(4294930435)).toContain(

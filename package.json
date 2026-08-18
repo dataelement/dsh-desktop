@@ -112,6 +112,14 @@
         "to": "harness-node-entry.mjs"
       },
       {
+        "from": "build/profile-module-paths.mjs",
+        "to": "profile-module-paths.mjs"
+      },
+      {
+        "from": "build/profile-esm-resolver.mjs",
+        "to": "profile-esm-resolver.mjs"
+      },
+      {
         "from": "build/dsh-desktop.patch.yml",
         "to": "dsh-desktop.patch.yml"
       },

@@ -457,6 +457,7 @@ async function bootstrap(): Promise<void> {
     dshEntryPath: dshEntryPath(),
     nodeExecutablePath: bundledNodePath(),
     nodeEntryPath: harnessNodeEntryPath(),
+    profileModulePathsPath: desktopResourcePath('profile-module-paths.mjs'),
     dshPatchPath: desktopResourcePath('dsh-desktop.patch.yml'),
     dshHome: join(app.getPath('userData'), 'harness'),
     logPath: join(app.getPath('logs'), 'harness.log'),
