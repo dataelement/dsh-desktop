@@ -1,0 +1,20 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js
+index c653bea..f8e6358 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-slots/lib/index.js
+@@ -65,6 +65,15 @@ var SlotCore = class {
+ 		const rec = this.records.get(options.name);
+ 		if (!rec?.spec) throw new Error(`slot "${options.name}" is not declared (a parent entry's children table must declare it)`);
+ 		const spec = rec.spec;
++		// rc.6 exposed the plugin settings surface as a list slot, so existing
++		// third-party bundles register an id. rc.7 made this one slot keyed;
++		// preserve the old identity while leaving explicit keys authoritative.
++		if (options.name === "settings.plugin.item" && spec.kind === "keyed" && options.key === void 0 && options.id !== void 0) {
++			options = {
++				...options,
++				key: options.id
++			};
++		}
+ 		const priority = options.priority ?? 0;
+ 		const occupantHint = (occupant) => `at priority ${priority}${occupant.registrant !== void 0 ? ` (registered by ${occupant.registrant})` : ""} — register at a different priority to shadow it (lowest renders)`;
+ 		switch (spec.kind) {
