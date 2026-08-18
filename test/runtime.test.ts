@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest'
+import { spawn } from 'node:child_process'
+import { readFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { parse } from 'yaml'
 import {
   buildHarnessArguments,
   buildHarnessSpawnOptions,
   buildNodeArguments,
-  formatExitCode
+  formatExitCode,
+  HarnessRuntime
 } from '../src/main/runtime/harness-runtime'
+import {
+  disableIncompatibleUserPlugins,
+  extractLoaderEntryFailures,
+  marketStatePath,
+  profilePatchPath
+} from '../src/main/runtime/plugin-recovery'
 import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
 import {
   isAbortedNavigationError,
@@ -85,6 +97,217 @@ describe('Harness launch contract', () => {
     expect(formatExitCode(4294930435)).toContain(
       '0xFFFF7003, Crashpad handler unavailable'
     )
+  })
+})
+
+describe('incompatible user plugin recovery', () => {
+  it('disables only failed entries backed by user-installed packages', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-recovery-'))
+    const pluginDirectory = join(home, 'profiles', 'web', 'node_modules', 'broken-plugin')
+    const transientPluginDirectory = join(
+      home,
+      'profiles',
+      'web',
+      'node_modules',
+      'transient-plugin'
+    )
+    await mkdir(pluginDirectory, { recursive: true })
+    await mkdir(transientPluginDirectory, { recursive: true })
+    await writeFile(
+      join(pluginDirectory, 'package.json'),
+      JSON.stringify({ name: 'broken-plugin' }),
+      'utf8'
+    )
+    await writeFile(
+      join(transientPluginDirectory, 'package.json'),
+      JSON.stringify({ name: 'transient-plugin' }),
+      'utf8'
+    )
+    await writeFile(
+      profilePatchPath(home),
+      [
+        '# profile comment',
+        '- id: broken',
+        '  disabled: true',
+        '- id: broken',
+        '  disabled: false',
+        '- id: kept',
+        '  disabled: !!js process.env.KEEP_PLUGIN_DISABLED',
+        '- id: forced',
+        '  disabled: false',
+        ''
+      ].join('\n'),
+      'utf8'
+    )
+    await mkdir(join(home, 'profiles', 'web', '.dsh-market'), { recursive: true })
+    await writeFile(
+      marketStatePath(home),
+      JSON.stringify({
+        disabled: ['already-disabled'],
+        groups: { pinned: ['already-disabled'] },
+        groupOrder: ['pinned']
+      }),
+      'utf8'
+    )
+    const stderr = [
+      'Error: failed to apply loader entry broken (broken-plugin): unsupported JSON schema: schema.required is not supported',
+      'Error: failed to apply loader entry transient (transient-plugin): ENOENT: missing user config',
+      'Error: failed to apply loader entry core (@deepseek-ai/dsh-core): internal failure'
+    ].join('\n')
+
+    try {
+      expect(extractLoaderEntryFailures(stderr)).toEqual([
+        {
+          id: 'broken',
+          name: 'broken-plugin',
+          reason: 'unsupported JSON schema: schema.required is not supported'
+        },
+        {
+          id: 'transient',
+          name: 'transient-plugin',
+          reason: 'ENOENT: missing user config'
+        },
+        { id: 'core', name: '@deepseek-ai/dsh-core', reason: 'internal failure' }
+      ])
+      await expect(disableIncompatibleUserPlugins(home, stderr)).resolves.toEqual([
+        'broken-plugin'
+      ])
+      const patchText = await readFile(profilePatchPath(home), 'utf8')
+      expect(patchText).toContain('# profile comment')
+      expect(patchText).toContain('disabled: !!js process.env.KEEP_PLUGIN_DISABLED')
+      expect(patchText).toContain('- id: forced\n  disabled: false')
+      expect(patchText.match(/- id: broken\n  disabled: true/g)).toHaveLength(2)
+      expect(parse(patchText.replace('!!js ', ''))).toEqual([
+        { id: 'broken', disabled: true },
+        { id: 'broken', disabled: false },
+        {
+          id: 'kept',
+          disabled: 'process.env.KEEP_PLUGIN_DISABLED'
+        },
+        { id: 'forced', disabled: false },
+        { id: 'broken', disabled: true }
+      ])
+      expect(JSON.parse(await readFile(marketStatePath(home), 'utf8'))).toEqual({
+        disabled: ['already-disabled', 'broken-plugin'],
+        groups: { pinned: ['already-disabled'] },
+        groupOrder: ['pinned']
+      })
+      await expect(disableIncompatibleUserPlugins(home, stderr)).resolves.toEqual([])
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('does not disable plugins for ENOENT startup errors', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-recovery-'))
+    const pluginDirectory = join(home, 'profiles', 'web', 'node_modules', 'missing-config')
+    await mkdir(pluginDirectory, { recursive: true })
+    await writeFile(join(pluginDirectory, 'package.json'), '{"name":"missing-config"}', 'utf8')
+    const stderr =
+      'Error: failed to apply loader entry missing (missing-config): ENOENT: no such file or directory'
+
+    try {
+      await expect(disableIncompatibleUserPlugins(home, stderr)).resolves.toEqual([])
+      await expect(readFile(profilePatchPath(home), 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT'
+      })
+      await expect(readFile(marketStatePath(home), 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT'
+      })
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('does not overwrite invalid plugin market state', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-recovery-'))
+    const pluginDirectory = join(home, 'profiles', 'web', 'node_modules', 'broken-plugin')
+    await mkdir(pluginDirectory, { recursive: true })
+    await writeFile(join(pluginDirectory, 'package.json'), '{"name":"broken-plugin"}', 'utf8')
+    await mkdir(join(home, 'profiles', 'web', '.dsh-market'), { recursive: true })
+    await writeFile(marketStatePath(home), '{invalid', 'utf8')
+    const stderr =
+      'Error: failed to apply loader entry broken (broken-plugin): unsupported JSON schema: unsupported'
+
+    try {
+      await expect(disableIncompatibleUserPlugins(home, stderr)).rejects.toThrow()
+      await expect(readFile(marketStatePath(home), 'utf8')).resolves.toBe('{invalid')
+      await expect(readFile(profilePatchPath(home), 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT'
+      })
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('retries startup after disabling a failed user plugin', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-runtime-'))
+    const home = join(root, 'harness')
+    const profileDirectory = join(home, 'profiles', 'web')
+    const pluginDirectory = join(profileDirectory, 'node_modules', 'broken-plugin')
+    const dshEntry = join(root, 'fake-dsh.mjs')
+    const desktopPatch = join(root, 'desktop.yml')
+    await mkdir(pluginDirectory, { recursive: true })
+    await writeFile(join(pluginDirectory, 'package.json'), '{"name":"broken-plugin"}', 'utf8')
+    await writeFile(
+      profilePatchPath(home),
+      '# profile comment\n[]\n',
+      'utf8'
+    )
+    await writeFile(desktopPatch, '[]\n', 'utf8')
+    await writeFile(
+      dshEntry,
+      `import { existsSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { join } from 'node:path'
+const patch = join(process.env.DSH_HOME, 'profiles', 'web', 'cordis.patch.yml')
+if (!existsSync(patch) || !String(await import('node:fs/promises').then(fs => fs.readFile(patch, 'utf8'))).includes('id: broken')) {
+  const port = Number(process.argv[process.argv.indexOf('--port') + 1])
+  const transientServer = createServer((_request, response) => response.end('not ready'))
+  await new Promise(resolve => transientServer.listen(port, '127.0.0.1', resolve))
+  await new Promise(resolve => setTimeout(resolve, 500))
+  await new Promise((resolve, reject) => transientServer.close(error => error ? reject(error) : resolve()))
+  throw new Error('profile failed', { cause: new AggregateError([
+    new Error('failed to apply loader entry broken (broken-plugin): service "example" has been registered')
+  ]) })
+}
+const port = Number(process.argv[process.argv.indexOf('--port') + 1])
+createServer((_request, response) => response.end('ok')).listen(port, '127.0.0.1')
+`,
+      'utf8'
+    )
+
+    const runtime = new HarnessRuntime({
+      dshEntryPath: dshEntry,
+      nodeExecutablePath: process.execPath,
+      nodeEntryPath: resolve('build/harness-node-entry.mjs'),
+      dshPatchPath: desktopPatch,
+      dshHome: home,
+      logPath: join(root, 'harness.log'),
+      launchProcess: (executablePath, args, options) => spawn(executablePath, args, options),
+      startupTimeoutMs: 5_000,
+      onChanged: () => undefined
+    })
+
+    try {
+      await runtime.start(root)
+      expect(runtime.snapshot().phase).toBe('ready')
+      expect(runtime.snapshot().logs.join('\n')).toContain(
+        '[desktop] disabled incompatible plugins: broken-plugin'
+      )
+      expect(runtime.snapshot().disabledPlugins).toEqual(['broken-plugin'])
+      expect(parse(await readFile(profilePatchPath(home), 'utf8'))).toEqual([
+        { id: 'broken', disabled: true }
+      ])
+      expect(JSON.parse(await readFile(marketStatePath(home), 'utf8'))).toEqual({
+        disabled: ['broken-plugin'],
+        groups: {},
+        groupOrder: []
+      })
+    } finally {
+      await runtime.stop()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

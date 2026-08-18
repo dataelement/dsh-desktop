@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
+import { disableIncompatibleUserPlugins } from './plugin-recovery'
 
 export interface HarnessRuntimeOptions {
   dshEntryPath: string
@@ -21,7 +22,10 @@ export interface HarnessRuntimeOptions {
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
-export function buildHarnessArguments(port: number, patchPath?: string): string[] {
+export function buildHarnessArguments(
+  port: number,
+  patchPath?: string
+): string[] {
   return [
     'web',
     ...(patchPath ? ['--patch', patchPath] : []),
@@ -75,6 +79,7 @@ export class HarnessRuntime {
   private message = 'Harness is not running.'
   private launchDirectory?: string
   private url?: string
+  private disabledPlugins: string[] = []
   private readonly logLines: string[] = []
 
   constructor(private readonly options: HarnessRuntimeOptions) {}
@@ -85,6 +90,7 @@ export class HarnessRuntime {
       message: this.message,
       launchDirectory: this.launchDirectory,
       url: this.url,
+      disabledPlugins: this.disabledPlugins.length > 0 ? [...this.disabledPlugins] : undefined,
       logs: [...this.logLines]
     }
   }
@@ -93,6 +99,7 @@ export class HarnessRuntime {
     await this.stop()
     this.launchDirectory = launchDirectory
     this.url = undefined
+    this.disabledPlugins = []
 
     if (!existsSync(this.options.dshEntryPath)) {
       this.setState('failed', `Harness entry was not found: ${this.options.dshEntryPath}`)
@@ -115,77 +122,113 @@ export class HarnessRuntime {
     await mkdir(dirname(this.options.logPath), { recursive: true })
     this.logStream = createWriteStream(this.options.logPath, { flags: 'a' })
 
-    const port = await reservePort()
-    const url = `http://127.0.0.1:${port}`
-    const args = buildNodeArguments(
-      this.options.nodeEntryPath,
-      this.options.dshEntryPath,
-      port,
-      this.options.dshPatchPath
-    )
     const startupTimeoutMs =
       this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 120_000 : 45_000)
 
     this.writeLog(`\n[desktop] starting ${new Date().toISOString()}`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
-    this.writeLog(`[desktop] endpoint ${url}`)
     this.setState('starting', 'Starting DeepSeek Harness…')
 
-    let child: ChildProcessWithoutNullStreams
-    try {
-      child = this.options.launchProcess(
-        this.options.nodeExecutablePath,
-        args,
-        buildHarnessSpawnOptions(launchDirectory, this.options.dshHome)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const port = await reservePort()
+      const url = `http://127.0.0.1:${port}`
+      const args = buildNodeArguments(
+        this.options.nodeEntryPath,
+        this.options.dshEntryPath,
+        port,
+        this.options.dshPatchPath
       )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      this.writeLog(`[utility] launch failed: ${message}`)
-      this.setState('failed', `Harness could not start: ${message}`)
+      this.writeLog(`[desktop] endpoint ${url}`)
+
+      let child: ChildProcessWithoutNullStreams
+      try {
+        child = this.options.launchProcess(
+          this.options.nodeExecutablePath,
+          args,
+          buildHarnessSpawnOptions(launchDirectory, this.options.dshHome)
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.writeLog(`[utility] launch failed: ${message}`)
+        this.setState('failed', `Harness could not start: ${message}`)
+        return
+      }
+      this.child = child
+
+      let startupComplete = false
+      let failureMessage: string | undefined
+      let stdout = ''
+      let stderr = ''
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout = `${stdout}${chunk.toString('utf8')}`.slice(-32 * 1024)
+        this.writeChunk('stdout', chunk)
+      })
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr = `${stderr}${chunk.toString('utf8')}`.slice(-128 * 1024)
+        this.writeChunk('stderr', chunk)
+      })
+      child.once('spawn', () => this.writeLog('[desktop] Bundled Node.js Harness process started'))
+      child.once('error', (error) => {
+        this.writeLog(`[node] ${error.stack ?? error.message}`)
+        if (this.child !== child) return
+        this.child = undefined
+        failureMessage = `Harness could not start: ${error.message}`
+        if (startupComplete) this.setState('failed', failureMessage)
+      })
+      child.once('exit', (code, signal) => {
+        const detail = signal ? `signal ${signal}` : formatExitCode(code ?? -1)
+        this.writeLog(`[node] Harness process exited (${detail})`)
+        if (this.child !== child) return
+        this.child = undefined
+        failureMessage = `Harness stopped unexpectedly (${detail}).`
+        if (startupComplete) this.setState('failed', failureMessage)
+      })
+
+      const startedAt = Date.now()
+      const progressTimer = setInterval(
+        () => this.writeLog(`[desktop] waiting for Harness (${Math.round((Date.now() - startedAt) / 1000)}s)`),
+        10_000
+      )
+      const ready = await waitUntilReady(
+        url,
+        () => this.child === child && child.exitCode === null,
+        () => stdout.includes('[harness-node] DSH entry loaded'),
+        startupTimeoutMs
+      ).finally(() => clearInterval(progressTimer))
+
+      if (this.child !== child) {
+        if (this.phase === 'idle' || this.phase === 'stopping') return
+        if (attempt === 0) {
+          try {
+            const disabled = await disableIncompatibleUserPlugins(this.options.dshHome, stderr)
+            if (disabled.length > 0) {
+              this.disabledPlugins = disabled
+              this.writeLog(`[desktop] disabled incompatible plugins: ${disabled.join(', ')}`)
+              this.writeLog('[desktop] retrying Harness startup once')
+              continue
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            this.writeLog(`[desktop] plugin recovery failed: ${message}`)
+          }
+        }
+        this.setState('failed', failureMessage ?? 'Harness stopped unexpectedly during startup.')
+        return
+      }
+      if (!ready) {
+        await this.stopChild(child)
+        this.setState(
+          'failed',
+          `Harness did not become ready within ${Math.round(startupTimeoutMs / 1000)} seconds.`
+        )
+        return
+      }
+
+      startupComplete = true
+      this.url = url
+      this.setState('ready', 'Harness is ready.')
       return
     }
-    this.child = child
-
-    child.stdout.on('data', (chunk: Buffer) => this.writeChunk('stdout', chunk))
-    child.stderr.on('data', (chunk: Buffer) => this.writeChunk('stderr', chunk))
-    child.once('spawn', () => this.writeLog('[desktop] Bundled Node.js Harness process started'))
-    child.once('error', (error) => {
-      this.writeLog(`[node] ${error.stack ?? error.message}`)
-      if (this.child !== child) return
-      this.child = undefined
-      this.setState('failed', `Harness could not start: ${error.message}`)
-    })
-    child.once('exit', (code, signal) => {
-      const detail = signal ? `signal ${signal}` : formatExitCode(code ?? -1)
-      this.writeLog(`[node] Harness process exited (${detail})`)
-      if (this.child !== child) return
-      this.child = undefined
-      this.setState('failed', `Harness stopped unexpectedly (${detail}).`)
-    })
-
-    const startedAt = Date.now()
-    const progressTimer = setInterval(
-      () => this.writeLog(`[desktop] waiting for Harness (${Math.round((Date.now() - startedAt) / 1000)}s)`),
-      10_000
-    )
-    const ready = await waitUntilReady(
-      url,
-      () => this.child === child && child.exitCode === null,
-      startupTimeoutMs
-    ).finally(() => clearInterval(progressTimer))
-
-    if (this.child !== child) return
-    if (!ready) {
-      await this.stopChild(child)
-      this.setState(
-        'failed',
-        `Harness did not become ready within ${Math.round(startupTimeoutMs / 1000)} seconds.`
-      )
-      return
-    }
-
-    this.url = url
-    this.setState('ready', 'Harness is ready.')
   }
 
   async stop(): Promise<void> {
@@ -271,15 +314,18 @@ async function reservePort(): Promise<number> {
 async function waitUntilReady(
   url: string,
   isAlive: () => boolean,
+  isBooted: () => boolean,
   timeoutMs: number
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline && isAlive()) {
-    try {
-      const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1_000) })
-      if (response.status >= 200 && response.status < 500) return true
-    } catch {
-      // The server is expected to reject connections while it is booting.
+    if (isBooted()) {
+      try {
+        const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1_000) })
+        if (response.status >= 200 && response.status < 500) return true
+      } catch {
+        // The server is expected to reject connections while it is booting.
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 250))
   }

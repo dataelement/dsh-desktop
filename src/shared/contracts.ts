@@ -11,6 +11,7 @@ export interface RuntimeSnapshot {
   launchDirectory?: string
   logs: string[]
   url?: string
+  disabledPlugins?: string[]
 }
 
 export type UpdatePhase =

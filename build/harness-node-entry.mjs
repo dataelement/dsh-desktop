@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url'
+import { inspect } from 'node:util'
 
 const [dshEntryPath, ...dshArguments] = process.argv.slice(2)
 
@@ -6,8 +7,12 @@ function report(label, value) {
   process.stderr.write(`[harness-node] ${label}: ${value}\n`)
 }
 
-process.on('uncaughtException', (error) => report('uncaught exception', error?.stack ?? error))
-process.on('unhandledRejection', (error) => report('unhandled rejection', error?.stack ?? error))
+function formatError(error) {
+  return error instanceof Error ? inspect(error, { depth: null }) : String(error)
+}
+
+process.on('uncaughtException', (error) => report('uncaught exception', formatError(error)))
+process.on('unhandledRejection', (error) => report('unhandled rejection', formatError(error)))
 
 process.stdout.write(
   `[harness-node] runtime node=${process.version} platform=${process.platform} arch=${process.arch}\n`
@@ -26,7 +31,7 @@ if (!dshEntryPath) {
     await import(pathToFileURL(dshEntryPath).href)
     process.stdout.write('[harness-node] DSH entry loaded\n')
   } catch (error) {
-    report('DSH entry failed', error?.stack ?? error)
+    report('DSH entry failed', formatError(error))
     process.exitCode = 1
   }
 }

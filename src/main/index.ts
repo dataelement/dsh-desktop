@@ -265,6 +265,31 @@ function showUnexpectedError(error: unknown): void {
   dialog.showErrorBox('DSH Desktop encountered an error', message)
 }
 
+async function showPluginRecoveryNotice(snapshot: RuntimeSnapshot): Promise<void> {
+  if (!snapshot.disabledPlugins?.length || quitting) return
+  const isChinese = harnessLocale() === 'zh'
+  const options: MessageBoxOptions = {
+    type: 'warning',
+    title: isChinese ? '已禁用不兼容插件' : 'Incompatible plugins disabled',
+    message: isChinese
+      ? 'DSH Desktop 已自动禁用不兼容插件并恢复启动。'
+      : 'DSH Desktop disabled incompatible plugins and recovered startup.',
+    detail: `${snapshot.disabledPlugins.join('\n')}\n\n${
+      isChinese
+        ? '请更新这些插件后再重新启用。'
+        : 'Update these plugins before enabling them again.'
+    }`,
+    buttons: [isChinese ? '知道了' : 'OK'],
+    defaultId: 0,
+    noLink: true
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    await dialog.showMessageBox(mainWindow, options)
+  } else {
+    await dialog.showMessageBox(options)
+  }
+}
+
 async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
   if (failureDialogVisible || quitting) return
   failureDialogVisible = true
@@ -463,7 +488,9 @@ async function bootstrap(): Promise<void> {
     launchProcess: (executablePath, args, options) => spawn(executablePath, args, options),
     onChanged: (snapshot) => {
       if (snapshot.phase === 'ready' && snapshot.url) {
-        void openHarness(snapshot.url).catch(showUnexpectedError)
+        void openHarness(snapshot.url)
+          .then(() => showPluginRecoveryNotice(snapshot))
+          .catch(showUnexpectedError)
       } else if (snapshot.phase === 'failed') {
         void showRuntimeFailure(snapshot)
       }
