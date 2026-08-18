@@ -60,6 +60,12 @@ describe('LAN mobile page', () => {
     expect(html).toContain("status.classList.add('error-state')")
     expect(html).toContain('archived=new Set(value.archivedSessionIds||[])')
     expect(html).toContain('!archived.has(s.sessionId)')
+    expect(html).toContain('archive-btn')
+    expect(html).toContain('data-action="archive"')
+    expect(html).toContain('function archiveSession(')
+    expect(html).toContain("rpc('workspace.archiveSession'")
+    expect(html).toContain('归档会话')
+    expect(html).toContain('已归档')
   })
 
   it('uses DSH styling on both pairing surfaces', () => {

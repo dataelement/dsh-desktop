@@ -119,6 +119,13 @@ describe('LAN mobile bridge pairing surface', () => {
       value: { items: [], archivedSessionIds: [] }
     })
 
+    const archiveForwarded = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ method: 'workspace.archiveSession', payload: { sessionId: 'test' } })
+    })
+    expect(archiveForwarded.status).toBe(200)
+
     const sameBridge = await bridge.start()
     expect(sameBridge.port).toBe(snapshot.port)
     const stillAuthorized = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {

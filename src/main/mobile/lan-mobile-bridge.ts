@@ -11,6 +11,7 @@ const PAIRING_TTL_MS = 5 * 60 * 1000
 
 const RPC_ALLOWLIST = new Set([
   'workspace.list',
+  'workspace.archiveSession',
   'session.list',
   'session.history',
   'session.create',
