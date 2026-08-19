@@ -6,6 +6,7 @@ import {
   updateMessage,
   type UpdateLocale
 } from './update-view'
+import { mountWindowsTitlebar } from './windows-titlebar'
 
 const ROOT_ID = 'dsh-desktop-update-root'
 const MOBILE_BUTTON_ID = 'dsh-desktop-mobile-button'
@@ -77,6 +78,9 @@ async function refreshMobileStatus(): Promise<void> {
 }
 
 function initializeUi(): void {
+  if (process.platform === 'win32') {
+    mountWindowsTitlebar({ document, ipcRenderer, locale })
+  }
   mount()
   mountMobileButton()
   mobileButtonObserver.observe(document.documentElement, {
