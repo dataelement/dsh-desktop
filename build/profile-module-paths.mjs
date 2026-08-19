@@ -33,6 +33,30 @@ if (profileNodeModules.length > 0) {
   try {
     const require = createRequire(import.meta.url)
     const Module = require('node:module')
+
+    // Project-level (profile) node_modules take priority over the app bundle,
+    // matching Node's "local first" resolution semantics.
+    const isBareSpecifier = (request) =>
+      !request.startsWith('.') &&
+      !request.startsWith('/') &&
+      !request.startsWith('node:') &&
+      !/^[a-zA-Z]:[\\/]/.test(request)
+
+    const originalResolveFilename = Module._resolveFilename
+    Module._resolveFilename = function (request, parent, isMain, options) {
+      if (isBareSpecifier(request)) {
+        try {
+          return originalResolveFilename.call(this, request, parent, isMain, {
+            ...options,
+            paths: profileNodeModules
+          })
+        } catch {
+          // fall through to default resolution
+        }
+      }
+      return originalResolveFilename.call(this, request, parent, isMain, options)
+    }
+
     if (Module.globalPaths) {
       for (const dir of profileNodeModules) {
         if (!Module.globalPaths.includes(dir)) {

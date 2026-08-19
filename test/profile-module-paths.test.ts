@@ -3,6 +3,10 @@ import { mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const execFileAsync = promisify(execFile)
 
 describe('Profile module paths resolution', () => {
   it('resolves bare specifiers from profile node_modules via synthetic parent', async () => {
@@ -68,5 +72,84 @@ describe('Profile module paths resolution', () => {
 
     await mod.resolve('file:///some/file.js', { parentURL: fakeParent }, nextResolve)
     expect(capturedSpecifier).toBe('file:///some/file.js')
+  })
+
+  it('prefers profile node_modules over default app-bundle resolution', async () => {
+    const resolverUrl = pathToFileURL(join(process.cwd(), 'build', 'profile-esm-resolver.mjs')).href
+    const mod = await import(resolverUrl)
+
+    const profileNodeModules = '/fake/profiles/web/node_modules'
+    mod.initialize({ profileNodeModules: [profileNodeModules] })
+
+    const nextResolve = (specifier: string, context: { parentURL?: string }) => {
+      if (context.parentURL?.startsWith(pathToFileURL(profileNodeModules).href)) {
+        return Promise.resolve({ url: `file:///profile-version/${specifier}`, shortCircuit: true })
+      }
+      return Promise.resolve({ url: `file:///bundle-version/${specifier}`, shortCircuit: true })
+    }
+
+    const result = await mod.resolve(
+      'shared-pkg',
+      { parentURL: 'file:///app/bundle/module.js', conditions: ['import'] },
+      nextResolve
+    )
+
+    expect(result.url).toBe('file:///profile-version/shared-pkg')
+  })
+
+  it('falls back to default resolution when no profile provides the package', async () => {
+    const resolverUrl = pathToFileURL(join(process.cwd(), 'build', 'profile-esm-resolver.mjs')).href
+    const mod = await import(resolverUrl)
+
+    mod.initialize({ profileNodeModules: ['/fake/profiles/web/node_modules'] })
+
+    const nextResolve = (specifier: string, context: { parentURL?: string }) => {
+      if (context.parentURL?.includes('/fake/profiles/')) {
+        return Promise.reject(new Error('not in profile'))
+      }
+      return Promise.resolve({ url: `file:///bundle-version/${specifier}`, shortCircuit: true })
+    }
+
+    const result = await mod.resolve(
+      'bundle-only-pkg',
+      { parentURL: 'file:///app/bundle/module.js', conditions: ['import'] },
+      nextResolve
+    )
+
+    expect(result.url).toBe('file:///bundle-version/bundle-only-pkg')
+  })
+
+  it('resolves CJS requires from profile node_modules before the app bundle', async () => {
+    const testDir = join(tmpdir(), `dsh-desktop-cjs-${Date.now()}`)
+    const dshHome = join(testDir, 'home')
+    const appDir = join(testDir, 'app')
+    const profilePkgDir = join(dshHome, 'profiles', 'web', 'node_modules', 'test-cjs-pkg')
+    const bundlePkgDir = join(appDir, 'node_modules', 'test-cjs-pkg')
+
+    await mkdir(profilePkgDir, { recursive: true })
+    await mkdir(bundlePkgDir, { recursive: true })
+    await writeFile(
+      join(profilePkgDir, 'package.json'),
+      JSON.stringify({ name: 'test-cjs-pkg', version: '1.0.0', main: 'index.js' })
+    )
+    await writeFile(join(profilePkgDir, 'index.js'), "module.exports = { marker: 'profile' };\n")
+    await writeFile(
+      join(bundlePkgDir, 'package.json'),
+      JSON.stringify({ name: 'test-cjs-pkg', version: '2.0.0', main: 'index.js' })
+    )
+    await writeFile(join(bundlePkgDir, 'index.js'), "module.exports = { marker: 'bundle' };\n")
+
+    try {
+      const setupPath = join(process.cwd(), 'build', 'profile-module-paths.mjs')
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        ['--import', setupPath, '-e', "process.stdout.write(require('test-cjs-pkg').marker)"],
+        { cwd: appDir, env: { ...process.env, DSH_HOME: dshHome } }
+      )
+
+      expect(stdout).toBe('profile')
+    } finally {
+      await rm(testDir, { recursive: true, force: true })
+    }
   })
 })
