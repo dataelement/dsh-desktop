@@ -120,6 +120,10 @@
         "to": "profile-esm-resolver.mjs"
       },
       {
+        "from": "build/profile-node-modules.mjs",
+        "to": "profile-node-modules.mjs"
+      },
+      {
         "from": "build/dsh-desktop.patch.yml",
         "to": "dsh-desktop.patch.yml"
       },

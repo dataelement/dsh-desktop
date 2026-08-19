@@ -1,73 +1,65 @@
-import { readdirSync, existsSync } from 'node:fs'
 import { createRequire, register } from 'node:module'
-import { join, delimiter, dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  isBareSpecifier,
+  listProfileNodeModules,
+  parseProfileNames
+} from './profile-node-modules.mjs'
 
+// Plugins installed from the market live in DSH_HOME/profiles/<name>/node_modules,
+// while the harness and its plugin loader run from the packaged app bundle. After
+// packaging those are different trees, so a bare import of an installed plugin has
+// to be able to fall back to the profile.
 const dshHome = process.env.DSH_HOME
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+const profiles = parseProfileNames(process.env.DSH_DESKTOP_PROFILES)
 
-function collectProfileNodeModules(home) {
-  if (!home) return []
-  const profilesDir = join(home, 'profiles')
-  try {
-    return readdirSync(profilesDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join(profilesDir, entry.name, 'node_modules'))
-      .filter((dir) => existsSync(dir))
-  } catch {
-    return []
-  }
+if (dshHome) {
+  installCommonJsFallback()
+  installEsmFallback()
 }
 
-const profileNodeModules = collectProfileNodeModules(dshHome)
-
-if (profileNodeModules.length > 0) {
-  const paths = profileNodeModules.join(delimiter)
-  if (process.env.NODE_PATH) {
-    process.env.NODE_PATH = process.env.NODE_PATH + delimiter + paths
-  } else {
-    process.env.NODE_PATH = paths
-  }
-
+function installCommonJsFallback() {
   try {
     const require = createRequire(import.meta.url)
     const Module = require('node:module')
-
-    // Project-level (profile) node_modules take priority over the app bundle,
-    // matching Node's "local first" resolution semantics.
-    const isBareSpecifier = (request) =>
-      !request.startsWith('.') &&
-      !request.startsWith('/') &&
-      !request.startsWith('node:') &&
-      !/^[a-zA-Z]:[\\/]/.test(request)
-
     const originalResolveFilename = Module._resolveFilename
+
     Module._resolveFilename = function (request, parent, isMain, options) {
-      if (isBareSpecifier(request)) {
-        try {
-          return originalResolveFilename.call(this, request, parent, isMain, {
-            ...options,
-            paths: profileNodeModules
-          })
-        } catch {
-          // fall through to default resolution
+      try {
+        return originalResolveFilename.call(this, request, parent, isMain, options)
+      } catch (error) {
+        if (!isBareSpecifier(request)) throw error
+        for (const directory of listProfileNodeModules(dshHome, profiles)) {
+          try {
+            return originalResolveFilename.call(this, request, parent, isMain, {
+              ...options,
+              paths: [directory]
+            })
+          } catch {
+            // this profile does not provide the package
+          }
         }
-      }
-      return originalResolveFilename.call(this, request, parent, isMain, options)
-    }
-
-    if (Module.globalPaths) {
-      for (const dir of profileNodeModules) {
-        if (!Module.globalPaths.includes(dir)) {
-          Module.globalPaths.push(dir)
-        }
+        throw error
       }
     }
-  } catch {
-      // Best effort for CJS fallback
+  } catch (error) {
+    warn('CommonJS', error)
   }
+}
 
-  const resolverUrl = pathToFileURL(join(__dirname, 'profile-esm-resolver.mjs')).href
-  register(resolverUrl, { data: { profileNodeModules } })
+function installEsmFallback() {
+  try {
+    const resolver = join(dirname(fileURLToPath(import.meta.url)), 'profile-esm-resolver.mjs')
+    register(pathToFileURL(resolver).href, { data: { dshHome, profiles } })
+  } catch (error) {
+    warn('ESM', error)
+  }
+}
+
+function warn(loader, error) {
+  const message = error instanceof Error ? error.message : String(error)
+  process.stderr.write(
+    `[dsh-desktop] profile plugin resolution is unavailable for ${loader} imports: ${message}\n`
+  )
 }

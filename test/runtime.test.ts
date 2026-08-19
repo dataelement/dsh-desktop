@@ -1,9 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { EventEmitter } from 'node:events'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { ChildProcessWithoutNullStreams, SpawnOptionsWithoutStdio } from 'node:child_process'
 import {
   buildHarnessArguments,
   buildHarnessSpawnOptions,
   buildNodeArguments,
-  formatExitCode
+  formatExitCode,
+  HarnessRuntime,
+  HARNESS_PROFILE
 } from '../src/main/runtime/harness-runtime'
 import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
 import {
@@ -56,27 +63,7 @@ describe('Harness launch contract', () => {
         Path: 'windows-path'
       }
     })
-    expect(options.env).not.toHaveProperty('DSH_DESKTOP_PROFILE_MODULE_PATHS')
-  })
-
-  it('passes profile module paths env when provided', () => {
-    const options = buildHarnessSpawnOptions(
-      'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\launch-root',
-      'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
-      'win32',
-      {
-        ELECTRON_RUN_AS_NODE: '1',
-        PATH: 'fallback-path',
-        Path: 'windows-path'
-      },
-      'C:\\app\\profile-module-paths.mjs'
-    )
-
-    expect(options.env).toMatchObject({
-      DSH_HOME: 'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
-      DSH_DESKTOP_PROFILE_MODULE_PATHS: 'C:\\app\\profile-module-paths.mjs',
-      NO_COLOR: '1'
-    })
+    expect(options.env).toMatchObject({ DSH_DESKTOP_PROFILES: HARNESS_PROFILE })
     expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
   })
 
@@ -102,19 +89,21 @@ describe('Harness launch contract', () => {
     ])
   })
 
-  it('injects profile module paths via --import when provided', () => {
+  // `--import` takes a module specifier: a bare Windows path is read as a `c:`
+  // URL scheme and Node exits before the harness entry ever runs.
+  it('injects profile module paths via --import as a file URL', () => {
     expect(
       buildNodeArguments(
         'C:\\app\\harness-node-entry.mjs',
         'C:\\app\\dsh\\lib\\bin.js',
         43127,
         'C:\\app\\dsh-desktop.patch.yml',
-        'C:\\app\\profile-module-paths.mjs'
+        'file:///C:/app/profile-module-paths.mjs'
       )
     ).toEqual([
       '--expose-internals',
       '--import',
-      'C:\\app\\profile-module-paths.mjs',
+      'file:///C:/app/profile-module-paths.mjs',
       'C:\\app\\harness-node-entry.mjs',
       'C:\\app\\dsh\\lib\\bin.js',
       'web',
@@ -127,11 +116,75 @@ describe('Harness launch contract', () => {
     ])
   })
 
-
   it('makes native Windows termination codes diagnosable', () => {
     expect(formatExitCode(4294930435)).toContain(
       '0xFFFF7003, Crashpad handler unavailable'
     )
+  })
+})
+
+describe('Harness launch wiring', () => {
+  const roots: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  })
+
+  async function launchOnce(
+    options: { withProfileModulePaths: boolean }
+  ): Promise<{ args: string[]; environment: NodeJS.ProcessEnv }> {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-runtime-'))
+    roots.push(root)
+
+    const paths: Record<string, string> = {}
+    for (const name of ['bin.js', 'node', 'harness-node-entry.mjs', 'dsh-desktop.patch.yml']) {
+      paths[name] = join(root, name)
+      await writeFile(paths[name]!, '')
+    }
+    const profileModulePathsPath = join(root, 'profile-module-paths.mjs')
+    if (options.withProfileModulePaths) await writeFile(profileModulePathsPath, '')
+
+    let captured: { args: string[]; environment: NodeJS.ProcessEnv } | undefined
+    const runtime = new HarnessRuntime({
+      dshEntryPath: paths['bin.js']!,
+      nodeExecutablePath: paths['node']!,
+      nodeEntryPath: paths['harness-node-entry.mjs']!,
+      profileModulePathsPath,
+      dshPatchPath: paths['dsh-desktop.patch.yml']!,
+      dshHome: join(root, 'harness'),
+      logPath: join(root, 'logs', 'harness.log'),
+      startupTimeoutMs: 1,
+      onChanged: () => {},
+      launchProcess: (_executable, args, spawnOptions: SpawnOptionsWithoutStdio) => {
+        captured = { args, environment: spawnOptions.env ?? {} }
+        const child = new EventEmitter() as unknown as ChildProcessWithoutNullStreams
+        Object.assign(child, { stdout: new EventEmitter(), stderr: new EventEmitter(), exitCode: 0 })
+        return child
+      }
+    })
+
+    await runtime.start(join(root, 'launch'))
+    await runtime.stop()
+    expect(captured).toBeDefined()
+    return captured!
+  }
+
+  // A bare Windows path is read as a `c:` URL scheme and Node exits before the
+  // harness entry runs, so the preload has to be handed over as a file URL.
+  it('preloads the profile resolution shim as a file URL', async () => {
+    const { args, environment } = await launchOnce({ withProfileModulePaths: true })
+
+    const specifier = args[args.indexOf('--import') + 1]
+    expect(specifier).toMatch(/^file:\/\//)
+    expect(new URL(specifier!).pathname).toContain('profile-module-paths.mjs')
+    expect(environment.DSH_DESKTOP_PROFILES).toBe(HARNESS_PROFILE)
+  })
+
+  it('starts without the shim rather than crashing when it is missing', async () => {
+    const { args } = await launchOnce({ withProfileModulePaths: false })
+
+    expect(args).not.toContain('--import')
+    expect(args[0]).toBe('--expose-internals')
   })
 })
 

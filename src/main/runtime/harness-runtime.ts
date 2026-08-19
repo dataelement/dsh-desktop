@@ -3,6 +3,7 @@ import { createWriteStream, existsSync, type WriteStream } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 
 export interface HarnessRuntimeOptions {
@@ -22,9 +23,13 @@ export interface HarnessRuntimeOptions {
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
+// The desktop app always runs the `web` profile, which is also where the plugin
+// market installs packages (DSH_HOME/profiles/web/node_modules).
+export const HARNESS_PROFILE = 'web'
+
 export function buildHarnessArguments(port: number, patchPath?: string): string[] {
   return [
-    'web',
+    HARNESS_PROFILE,
     ...(patchPath ? ['--patch', patchPath] : []),
     '--host',
     '127.0.0.1',
@@ -37,8 +42,7 @@ export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
   platform: NodeJS.Platform = process.platform,
-  environment: NodeJS.ProcessEnv = process.env,
-  profileModulePathsPath?: string
+  environment: NodeJS.ProcessEnv = process.env
 ): SpawnOptionsWithoutStdio {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -49,7 +53,7 @@ export function buildHarnessSpawnOptions(
       ...parentEnvironment,
       DSH_HOME: dshHome,
       NO_COLOR: '1',
-      ...(profileModulePathsPath ? { DSH_DESKTOP_PROFILE_MODULE_PATHS: profileModulePathsPath } : {}),
+      DSH_DESKTOP_PROFILES: HARNESS_PROFILE,
       [pathKey]: environment[pathKey] ?? environment.PATH ?? ''
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -62,11 +66,11 @@ export function buildNodeArguments(
   dshEntryPath: string,
   port: number,
   patchPath?: string,
-  profileModulePathsPath?: string
+  profileModulePathsUrl?: string
 ): string[] {
   return [
     '--expose-internals',
-    ...(profileModulePathsPath ? ['--import', profileModulePathsPath] : []),
+    ...(profileModulePathsUrl ? ['--import', profileModulePathsUrl] : []),
     nodeEntryPath,
     dshEntryPath,
     ...buildHarnessArguments(port, patchPath)
@@ -122,18 +126,28 @@ export class HarnessRuntime {
 
     const port = await reservePort()
     const url = `http://127.0.0.1:${port}`
+    // Resolving profile plugins is best effort: a missing shim must not turn
+    // into an unexplained `--import` crash before the harness entry even runs.
+    const profileModulePathsUrl = existsSync(this.options.profileModulePathsPath)
+      ? pathToFileURL(this.options.profileModulePathsPath).href
+      : undefined
     const args = buildNodeArguments(
       this.options.nodeEntryPath,
       this.options.dshEntryPath,
       port,
       this.options.dshPatchPath,
-      this.options.profileModulePathsPath
+      profileModulePathsUrl
     )
     const startupTimeoutMs =
       this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 120_000 : 45_000)
 
     this.writeLog(`\n[desktop] starting ${new Date().toISOString()}`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
+    if (!profileModulePathsUrl) {
+      this.writeLog(
+        `[desktop] profile plugin resolution is disabled: ${this.options.profileModulePathsPath} was not found`
+      )
+    }
     this.writeLog(`[desktop] endpoint ${url}`)
     this.setState('starting', 'Starting DeepSeek Harness…')
 
@@ -142,7 +156,7 @@ export class HarnessRuntime {
       child = this.options.launchProcess(
         this.options.nodeExecutablePath,
         args,
-        buildHarnessSpawnOptions(launchDirectory, this.options.dshHome, undefined, undefined, this.options.profileModulePathsPath)
+        buildHarnessSpawnOptions(launchDirectory, this.options.dshHome)
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
