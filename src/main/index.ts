@@ -17,7 +17,7 @@ import { extractFailureCause, extractOffendingPlugins, HarnessRuntime } from './
 import { LanMobileBridge } from './mobile/lan-mobile-bridge'
 import { secureWindow } from './security'
 import { ensureLaunchRoot } from './state/launch-root'
-import { resetPluginProfile, uninstallPluginFromProfile } from './state/plugin-recovery'
+import { getInstalledThirdPartyPlugins, resetPluginProfile, uninstallPluginFromProfile } from './state/plugin-recovery'
 import { isAbortedNavigationError, shouldLoadHarnessUrl } from './window-navigation'
 import {
   checkForUpdates,
@@ -523,7 +523,13 @@ async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
   try {
     while (!quitting && runtime.snapshot().phase === 'failed') {
       snapshot = runtime.snapshot()
-      const offendingPlugins = extractOffendingPlugins(snapshot.logs)
+      let offendingPlugins = extractOffendingPlugins(snapshot.logs)
+      if (offendingPlugins.length === 0) {
+        const thirdParty = await getInstalledThirdPartyPlugins(dshHome)
+        if (thirdParty.length > 0) {
+          offendingPlugins = thirdParty
+        }
+      }
       const action = await waitForPluginRecoveryAction({
         snapshot,
         plugins: offendingPlugins,

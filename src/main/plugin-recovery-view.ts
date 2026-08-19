@@ -62,6 +62,19 @@ export function describePluginFailure(
         }
   }
 
+  if (/duplicate loader entry id/i.test(text)) {
+    const entryId = text.match(/duplicate loader entry id:\s*([^\s]+)/i)?.[1]
+    return locale === 'zh'
+      ? {
+          title: '插件注册了重复的服务组件',
+          detail: `启动日志显示组件 ${entryId ? `"${entryId}"` : ''} 被重复定义，插件之间存在加载冲突，因此 Harness 无法继续启动。`
+        }
+      : {
+          title: 'A plugin registered a duplicate service component',
+          detail: `The startup log shows that component ${entryId ? `"${entryId}"` : ''} was registered more than once due to a plugin conflict.`
+        }
+  }
+
   if (/cannot resolve profile bundle/i.test(text)) {
     return locale === 'zh'
       ? {

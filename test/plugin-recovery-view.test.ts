@@ -38,7 +38,8 @@ describe('plugin recovery view model', () => {
   it.each([
     ['cannot resolve profile bundle example', '插件没有完整安装'],
     ['package declares no dsh.bundle', '安装的包不是兼容的 DSH 插件'],
-    ['failed to import loader entry example', '插件代码加载失败']
+    ['failed to import loader entry example', '插件代码加载失败'],
+    ['duplicate loader entry id: storage', '插件注册了重复的服务组件']
   ])('describes known startup failures: %s', (log, expectedTitle) => {
     expect(describePluginFailure([`[stderr] ${log}`], 'zh').title).toBe(expectedTitle)
   })
