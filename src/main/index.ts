@@ -22,6 +22,7 @@ import {
 } from './plugin-recovery-detection'
 import { secureWindow } from './security'
 import { ensureLaunchRoot } from './state/launch-root'
+import { resolveDesktopHarnessHome } from './state/harness-home'
 import {
   resetPluginProfile,
   uninstallPluginFromProfile
@@ -161,6 +162,10 @@ function isDevelopmentBuild(): boolean {
 
 const developmentBuild = isDevelopmentBuild()
 
+function harnessHome(): string {
+  return resolveDesktopHarnessHome(app.getPath('userData'), developmentBuild)
+}
+
 function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOptions {
   return {
     color: '#00000000',
@@ -292,7 +297,7 @@ function dshBrandLogoPath(variant: 'light' | 'dark'): string {
 function harnessLocale(): 'en' | 'zh' {
   try {
     const settings = parse(
-      readFileSync(join(app.getPath('userData'), 'harness', 'settings.yaml'), 'utf8')
+      readFileSync(join(harnessHome(), 'settings.yaml'), 'utf8')
     ) as { locale?: { preference?: unknown } }
     return resolveHarnessLocale(
       settings.locale?.preference,
@@ -310,7 +315,7 @@ function configureApplicationLocale(): void {
 function harnessThemePreference(): 'light' | 'dark' | 'system' {
   try {
     const settings = parse(
-      readFileSync(join(app.getPath('userData'), 'harness', 'settings.yaml'), 'utf8')
+      readFileSync(join(harnessHome(), 'settings.yaml'), 'utf8')
     ) as { 'ui-theme'?: { preference?: unknown } }
     const preference = settings['ui-theme']?.preference
     return preference === 'light' || preference === 'dark' || preference === 'system'
@@ -625,7 +630,7 @@ async function showPluginRecovery(options?: {
   if (failureRecoveryVisible || quitting) return
   failureRecoveryVisible = true
 
-  const dshHome = join(app.getPath('userData'), 'harness')
+  const dshHome = harnessHome()
   const isChinese = harnessLocale() === 'zh'
   cancelPluginRecoverySessionReset()
   const removedPlugins = pluginRecoveryRemovedPlugins
@@ -913,7 +918,7 @@ async function bootstrap(): Promise<void> {
     nodeExecutablePath: bundledNodePath(),
     nodeEntryPath: harnessNodeEntryPath(),
     dshPatchPath: desktopResourcePath('dsh-desktop.patch.yml'),
-    dshHome: join(app.getPath('userData'), 'harness'),
+    dshHome: harnessHome(),
     logPath: join(app.getPath('logs'), 'harness.log'),
     launchProcess: (executablePath, args, options) => spawn(executablePath, args, options),
     onChanged: (snapshot) => {
@@ -989,7 +994,7 @@ async function bootstrap(): Promise<void> {
     if (pluginName !== undefined && typeof pluginName !== 'string') {
       throw new Error('The failing plugin name must be a string.')
     }
-    const dshHome = join(app.getPath('userData'), 'harness')
+    const dshHome = harnessHome()
     await resetPluginProfile(dshHome, pluginName)
     await launchHarness()
     return { ok: runtime.snapshot().phase === 'ready' }

@@ -125,14 +125,15 @@ DSH Desktop (Electron Main)
 
 Electron userData
 ├── launch-root/
-├── logs/harness.log
-└── harness/
-    ├── profiles/
-    ├── sessions/
-    └── Plugins and user data
+└── logs/harness.log
+
+~/.dsh (shared with standalone Harness)
+├── profiles/
+├── sessions/
+└── Plugins and user data
 ```
 
-Harness runs in a separate Electron Node child process. The `--expose-internals` permission required by Cordis HMR is granted only to that child process and never to the web renderer.
+Production builds use Harness's canonical `~/.dsh` data home, so projects and conversation history remain available when switching between standalone Harness and DSH Desktop. Development builds remain isolated under Electron `userData`. Harness runs in a separate Electron Node child process. The `--expose-internals` permission required by Cordis HMR is granted only to that child process and never to the web renderer.
 
 ## Project structure
 

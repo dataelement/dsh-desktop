@@ -125,14 +125,15 @@ DSH Desktop (Electron Main)
 
 Electron userData
 ├── launch-root/
-├── logs/harness.log
-└── harness/
-    ├── profiles/
-    ├── sessions/
-    └── 插件与用户数据
+└── logs/harness.log
+
+~/.dsh（与独立 Harness 共享）
+├── profiles/
+├── sessions/
+└── 插件与用户数据
 ```
 
-Harness 运行在独立的 Electron Node 子进程中。Cordis HMR 所需的 `--expose-internals` 只授予该子进程，不会授予 Web Renderer。
+正式版使用 Harness 标准的 `~/.dsh` 数据目录，因此在独立 Harness 和 DSH Desktop 之间切换时，项目与历史对话会保持可见。开发版仍隔离在 Electron `userData` 下。Harness 运行在独立的 Electron Node 子进程中。Cordis HMR 所需的 `--expose-internals` 只授予该子进程，不会授予 Web Renderer。
 
 ## 项目结构
 
