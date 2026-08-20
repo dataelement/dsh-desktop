@@ -13,6 +13,7 @@
 # The desktop shell has the real lifecycle authority, so keep that behavior off
 # whenever the optional plugin is present in the composed profile.
 - id: dsh-market
+  inject: [desktopProfiles]
   config:
     profile: web
     allowRestart: false
