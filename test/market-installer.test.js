@@ -8,8 +8,11 @@ import {
   RECOMMENDED_MARKET_VERSION,
   STATUS_PATH,
   UNINSTALL_PATH,
+  buildPnpmEnvironment,
   buildInstallArguments,
   buildUninstallArguments,
+  createDesktopPnpmService,
+  createDesktopProfilesService,
   ensurePnpmShim,
   isTrustedRequest,
   readMarketInstallation,
@@ -64,6 +67,92 @@ describe('desktop plugin market installer', () => {
       expect(pnpmScript).toContain('pnpm')
       expect(nodeScript).toContain(process.execPath)
     }
+  })
+
+  it('exposes the active Desktop profile without inferring it from argv', async () => {
+    const home = join('C:\\Users\\tester', 'AppData', 'Roaming', 'dsh-desktop', 'harness')
+    const profiles = createDesktopProfilesService(home)
+
+    expect(profiles.current).toEqual({
+      name: 'web',
+      dir: join(home, 'profiles', 'web')
+    })
+    expect(profiles.list()).toEqual([profiles.current])
+    await expect(profiles.select('web')).resolves.toBeUndefined()
+    await expect(profiles.select('other')).rejects.toThrow('only exposes the web profile')
+  })
+
+  it('runs plugin mutations through one packaged pnpm operation boundary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-pnpm-service-'))
+    const binDirectory = join(root, '.desktop-bin')
+    const fakeDshEntry = join(root, 'fake-dsh.mjs')
+    await mkdir(binDirectory, { recursive: true })
+    await writeFile(
+      fakeDshEntry,
+      [
+        "process.stdout.write(JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), path: process.env.PATH }))",
+        "await new Promise((resolve) => setTimeout(resolve, Number(process.env.DSH_DESKTOP_TEST_DELAY_MS ?? '0')))"
+      ].join('\n'),
+      'utf8'
+    )
+
+    const environment = {
+      ...process.env,
+      DSH_DESKTOP_TEST_DELAY_MS: '80',
+      ELECTRON_RUN_AS_NODE: '1'
+    }
+    const service = createDesktopPnpmService({
+      binDirectory,
+      dshEntryPath: fakeDshEntry,
+      executablePath: process.execPath,
+      environment
+    })
+    const handle = service.runPlugin(['remove', 'example-plugin'], root)
+    expect(() => service.runPlugin(['install'], root)).toThrow(
+      'Another desktop pnpm operation is already running.'
+    )
+
+    let stdout = ''
+    handle.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8')
+    })
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    const invocation = JSON.parse(stdout)
+    expect(invocation.args).toEqual([
+      'plugin',
+      '--profile',
+      'web',
+      'remove',
+      'example-plugin'
+    ])
+    expect(invocation.cwd).toBe(root)
+    expect(invocation.path.split(process.platform === 'win32' ? ';' : ':')[0]).toBe(
+      binDirectory
+    )
+    expect(buildPnpmEnvironment(binDirectory, environment)).not.toHaveProperty(
+      'ELECTRON_RUN_AS_NODE'
+    )
+
+    const next = service.runPlugin(['install'], root)
+    await expect(next.done).resolves.toEqual({ exitCode: 0, signal: null })
+    await service.dispose()
+    expect(() => service.runPlugin(['install'], root)).toThrow('has been disposed')
+  })
+
+  it('rejects a package operation that was already aborted', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-pnpm-abort-'))
+    const controller = new AbortController()
+    controller.abort(new Error('cancelled before start'))
+    const service = createDesktopPnpmService({
+      binDirectory: join(root, '.desktop-bin'),
+      dshEntryPath: join(root, 'unused-dsh-entry.mjs'),
+      executablePath: process.execPath
+    })
+
+    expect(() => service.runPlugin(['install'], root, controller.signal)).toThrow(
+      'cancelled before start'
+    )
+    await service.dispose()
   })
 
   it('reports both the requested dependency and installed package version', async () => {
@@ -132,6 +221,7 @@ describe('desktop plugin market installer', () => {
       '只会移除 dsh-market。通过插件市场安装的其他插件将继续保留。'
     )
     expect(desktopPatch).toContain('name: dsh-desktop-market-installer')
+    expect(desktopPatch).toContain('inject: [desktopProfiles]')
     expect(desktopPatch).toContain('allowRestart: false')
     expect(preload).toContain("restartHarness: (): Promise<{ ok: boolean }>")
   })
