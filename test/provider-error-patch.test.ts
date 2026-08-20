@@ -11,9 +11,9 @@ async function readPatch(name: string): Promise<string> {
 describe('provider error classification patches', () => {
   it('distinguishes quota, authentication, and forbidden failures', async () => {
     const deepseekPatch = await readPatch(
-      '@deepseek-ai+dsh-llm-deepseek+0.1.0-rc.7.patch'
+      '@deepseek-ai+dsh-llm-deepseek+0.1.0-rc.8.patch'
     )
-    const piAiPatch = await readPatch('@deepseek-ai+dsh-llm-pi-ai+0.1.0-rc.7.patch')
+    const piAiPatch = await readPatch('@deepseek-ai+dsh-llm-pi-ai+0.1.0-rc.8.patch')
 
     expect(deepseekPatch).toContain('+\tif (status === 401) return "AUTH";')
     expect(deepseekPatch).toContain(
@@ -35,7 +35,7 @@ describe('provider error classification patches', () => {
 
   it('shows distinct English quota, forbidden, and authentication messages', async () => {
     const runtimePatch = await readPatch(
-      '@deepseek-ai+dsh-client-runtime+0.1.0-rc.7.patch'
+      '@deepseek-ai+dsh-client-runtime+0.1.0-rc.8.patch'
     )
 
     expect(runtimePatch).toContain('record.code === "QUOTA"')

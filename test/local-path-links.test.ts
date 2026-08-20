@@ -10,7 +10,7 @@ describe('assistant local path links', () => {
       path.join(
         projectRoot,
         'patches',
-        '@deepseek-ai+dsh-client-ui-deliverables+0.1.0-rc.7.patch'
+        '@deepseek-ai+dsh-client-ui-deliverables+0.1.0-rc.8.patch'
       ),
       'utf8'
     )

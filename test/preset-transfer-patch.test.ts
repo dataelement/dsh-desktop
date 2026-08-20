@@ -61,7 +61,7 @@ describe('agent preset package transfer', () => {
       path.join(
         projectRoot,
         'patches',
-        '@deepseek-ai+dsh-host-apiproxy+0.1.0-rc.7.patch'
+        '@deepseek-ai+dsh-host-apiproxy+0.1.0-rc.8.patch'
       ),
       'utf8'
     )
@@ -85,7 +85,7 @@ describe('agent preset package transfer', () => {
       path.join(
         projectRoot,
         'patches',
-        '@deepseek-ai+dsh-client-ui-agent-preset+0.1.0-rc.7.patch'
+        '@deepseek-ai+dsh-client-ui-agent-preset+0.1.0-rc.8.patch'
       ),
       'utf8'
     )
@@ -112,7 +112,7 @@ describe('agent preset package transfer', () => {
       path.join(
         projectRoot,
         'patches',
-        '@deepseek-ai+dsh-client-ui-agent-preset+0.1.0-rc.7.patch'
+        '@deepseek-ai+dsh-client-ui-agent-preset+0.1.0-rc.8.patch'
       ),
       'utf8'
     )
@@ -144,7 +144,7 @@ describe('agent preset package transfer', () => {
       path.join(
         projectRoot,
         'patches',
-        '@deepseek-ai+dsh-host-apiproxy+0.1.0-rc.7.patch'
+        '@deepseek-ai+dsh-host-apiproxy+0.1.0-rc.8.patch'
       ),
       'utf8'
     )

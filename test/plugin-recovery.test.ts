@@ -88,7 +88,7 @@ describe('plugin-recovery', () => {
     const pkgPath = profilePackageJsonPath(testDir)
     const manifest = {
       dependencies: {
-        '@deepseek-ai/dsh-client-ui-directory-picker-native': '^0.1.0-rc.7',
+        '@deepseek-ai/dsh-client-ui-directory-picker-native': '^0.1.0-rc.8',
         dshmarket: '1.15.0'
       },
       dsh: {

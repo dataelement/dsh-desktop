@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-index 88204d4..6b4800c 100644
+index 9a68841..e24994b 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -416,8 +416,9 @@ function mapUsage(usage) {
+@@ -421,8 +421,9 @@ function mapUsage(usage) {
  	};
  }
  function classifyPiAiError(message) {
@@ -11,5 +11,5 @@ index 88204d4..6b4800c 100644
 +	if (/\b401\b/.test(message)) return "AUTH";
 +	if (/\b403\b/.test(message)) return "FORBIDDEN";
  	if (/\b429\b|rate.?limit/i.test(message)) return "RATE_LIMIT";
+ 	if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return "INVALID_REQUEST";
  	if (/\b400\b|invalid.?request/i.test(message)) return "INVALID_REQUEST";
- 	if (/\b5\d\d\b/.test(message)) return "SERVER";

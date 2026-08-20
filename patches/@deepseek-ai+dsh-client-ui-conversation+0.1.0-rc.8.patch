@@ -1,10 +1,10 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..dd1c233 100644
+index 4b7dd35..d93cb9e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-@@ -5233,6 +5233,15 @@ window.__ModuleLoader__.load({
- 			"toBottom": "Md3f7G_toBottom",
- 			"scroll": "Md3f7G_scroll"
+@@ -5376,6 +5376,15 @@ window.__ModuleLoader__.load({
+ 			"turnStatus": "Md3f7G_turnStatus",
+ 			"turnStatusClock": "Md3f7G_turnStatusClock"
  		};
 +		const queryRailCss = ".dshQueryRail_root{z-index:7;width:46px;pointer-events:none;position:fixed}.dshQueryRail_scroller{width:40px;height:100%;padding:8px 2px;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-width:none;flex-direction:column;align-items:flex-start;gap:2px;display:flex;position:relative}.dshQueryRail_scroller::-webkit-scrollbar{width:0;height:0;display:none}.dshQueryRail_item{width:34px;height:12px;min-height:12px;cursor:pointer;background:transparent;border:0;outline:none;flex:none;padding:0;position:relative}.dshQueryRail_item:before{content:\"\";width:10px;height:1px;background:var(--dsw-alias-label-dimmed);border-radius:2px;transition:width .14s ease,background-color .14s ease,opacity .14s ease;display:block}.dshQueryRail_item:hover:before,.dshQueryRail_item:focus-visible:before{width:20px;background:var(--dsw-alias-label-secondary)}.dshQueryRail_itemActive:before{width:28px;height:2px;background:var(--dsw-alias-label-primary)}.dshQueryRail_tooltip{width:276px;max-width:min(276px,calc(100vw - 64px));color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-module-platform);border:1px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-shadow-lv2);pointer-events:none;border-radius:12px;padding:10px 12px;position:absolute;left:42px}.dshQueryRail_tooltipLabel{color:var(--dsw-alias-label-caption);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;font-size:11px;line-height:16px}.dshQueryRail_tooltipText{-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-size:13px;line-height:19px;display:-webkit-box}@media(max-width:980px){.dshQueryRail_root{display:none}}@media(prefers-reduced-motion:reduce){.dshQueryRail_item:before{transition:none}}";
 +		const queryRailTagId = "@deepseek-ai/dsh-client-ui-conversation/QueryRail.css";
@@ -18,7 +18,7 @@ index 1dd0e89..dd1c233 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatNodeSeat.js
  		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
-@@ -5289,6 +5298,21 @@ window.__ModuleLoader__.load({
+@@ -5432,6 +5441,21 @@ window.__ModuleLoader__.load({
  			for (const row of list.querySelectorAll("[data-chat-anchor-key]")) if (row.dataset.chatAnchorKey === key) return row;
  			return null;
  		}
@@ -40,7 +40,7 @@ index 1dd0e89..dd1c233 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5364,6 +5388,106 @@ window.__ModuleLoader__.load({
+@@ -5516,6 +5540,106 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -147,10 +147,10 @@ index 1dd0e89..dd1c233 100644
  		/**
  		* The chat view slot entry: pure component over the composed props; each
  		* ordered business Node crosses the keyed renderer seat.
-@@ -5381,11 +5505,25 @@ window.__ModuleLoader__.load({
- 			const loadingOlder = useSession((s) => s.loadingOlder);
- 			const selectedCallId = useStore((s) => s.selection?.callId);
- 			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
+@@ -5561,11 +5685,25 @@ window.__ModuleLoader__.load({
+ 				...owner,
+ 				loadImage
+ 			}), [loadImage, renderSlot]);
 +			const queries = (0, react.useMemo)(() => order.flatMap((key) => {
 +				const node = nodeStore.get(key);
 +				if (node?.kind !== "user" && node?.kind !== "steering") return [];
@@ -173,7 +173,7 @@ index 1dd0e89..dd1c233 100644
  			/** Last position delivered or written on the main thread. */
  			const observedTopRef = (0, react.useRef)(0);
  			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5405,6 +5543,12 @@ window.__ModuleLoader__.load({
+@@ -5585,6 +5723,12 @@ window.__ModuleLoader__.load({
  			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
  			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
  			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
@@ -186,7 +186,7 @@ index 1dd0e89..dd1c233 100644
  			const toBottom = (el) => {
  				anchorRef.current = null;
  				el.scrollTop = el.scrollHeight;
-@@ -5412,6 +5556,8 @@ window.__ModuleLoader__.load({
+@@ -5592,6 +5736,8 @@ window.__ModuleLoader__.load({
  				atBottomRef.current = true;
  				setAtBottom(true);
  				chatScroll.save(null);
@@ -195,7 +195,7 @@ index 1dd0e89..dd1c233 100644
  			};
  			(0, react.useLayoutEffect)(() => {
  				const local = listRef.current;
-@@ -5468,6 +5614,7 @@ window.__ModuleLoader__.load({
+@@ -5648,6 +5794,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -203,7 +203,7 @@ index 1dd0e89..dd1c233 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5487,6 +5634,10 @@ window.__ModuleLoader__.load({
+@@ -5667,6 +5814,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -214,10 +214,11 @@ index 1dd0e89..dd1c233 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5540,9 +5691,29 @@ window.__ModuleLoader__.load({
+@@ -5720,9 +5871,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
+-			return (0, react_jsx_runtime.jsxs)("div", {
 +			const scrollToQuery = (key) => {
 +				const local = listRef.current;
 +				if (local === null) return;
@@ -232,9 +233,9 @@ index 1dd0e89..dd1c233 100644
 +				activeQueryKeyRef.current = key;
 +				setActiveQueryKey(key);
 +			};
- 			return (0, react_jsx_runtime.jsx)("div", {
++			return (0, react_jsx_runtime.jsx)("div", {
  				className: ChatView_module_css_default.root,
--				children: (0, react_jsx_runtime.jsxs)("div", {
+-				children: [(0, react_jsx_runtime.jsxs)("div", {
 +				children: [(0, react_jsx_runtime.jsx)(QueryRail, {
 +					queries,
 +					activeKey: activeQueryKey,
@@ -245,12 +246,21 @@ index 1dd0e89..dd1c233 100644
  					ref: listRef,
  					className: ChatView_module_css_default.scroll,
  					children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -5607,7 +5778,7 @@ window.__ModuleLoader__.load({
- 							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {})
- 						})
- 					})]
--				})
-+				})]
- 			});
+@@ -5818,8 +5989,8 @@ window.__ModuleLoader__.load({
+ 					disabled: busy,
+ 					onClick: onRetry,
+ 					children: t("retry")
+-				})] })
+-			});
++					})] })
++				});
  		}
  		//#endregion
+ 		//#region lib/types/client/contract/slots.js
+@@ -10150,4 +10321,4 @@ window.__ModuleLoader__.load({
+ 	}
+ });
+ 
+-//# sourceMappingURL=client.js.map
+\ No newline at end of file
++//# sourceMappingURL=client.js.map

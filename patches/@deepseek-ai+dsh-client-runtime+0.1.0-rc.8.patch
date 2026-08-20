@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-index 37b931e..ed1f7fd 100644
+index ba3cb21..5ad73ee 100644
 --- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-@@ -10448,6 +10448,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+@@ -10481,6 +10481,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
  		function displayFailureMessage(failure) {
  			if (failure === null || typeof failure !== "object") return String(failure);
  			const record = failure;

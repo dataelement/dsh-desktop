@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-index 259765c..ca9dd68 100644
+index 84b746e..53c536b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
 @@ -64,7 +64,32 @@ window.__ModuleLoader__.load({
@@ -79,10 +79,10 @@ index 259765c..ca9dd68 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-agent-preset/AgentPresetSeat.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -346,6 +396,21 @@ window.__ModuleLoader__.load({
- 			"seatIcon": "cubgiG_seatIcon",
- 			"introChar": "cubgiG_introChar",
+@@ -345,6 +395,22 @@ window.__ModuleLoader__.load({
+ 		var AgentPresetSeat_module_css_default = {
  			"chevron": "cubgiG_chevron",
+ 			"introChar": "cubgiG_introChar",
 +			"seat": "cubgiG_seat",
 +			"seat-icon-in": "cubgiG_seat-icon-in",
 +			"item": "cubgiG_item",
@@ -98,10 +98,11 @@ index 259765c..ca9dd68 100644
 +			"awesomeIcon": "cubgiG_awesomeIcon",
 +			"awesomeText": "cubgiG_awesomeText",
 +			"awesomeArrow": "cubgiG_awesomeArrow",
- 			"itemName": "cubgiG_itemName",
++			"itemName": "cubgiG_itemName",
  			"introIcon": "cubgiG_introIcon",
- 			"itemDesc": "cubgiG_itemDesc",
-@@ -374,6 +439,8 @@ window.__ModuleLoader__.load({
+ 			"introText": "cubgiG_introText",
+ 			"item": "cubgiG_item",
+@@ -374,6 +440,8 @@ window.__ModuleLoader__.load({
  		const INTRO_CHAR_STAGGER_MS = 40;
  		const INTRO_TEXT_REVEAL_MS = 200;
  		const INTRO_CHAR_FADE_MS = 400;
@@ -110,7 +111,7 @@ index 259765c..ca9dd68 100644
  		/**
  		* Per-character start offset for the introduce reveal.
  		* @param count - character count of the shown preset name.
-@@ -391,6 +458,15 @@ window.__ModuleLoader__.load({
+@@ -391,6 +459,15 @@ window.__ModuleLoader__.load({
  		function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, t }) {
  			const state = useAgentPresetSeat((snapshot) => snapshot);
  			const [open, setOpen] = (0, react.useState)(false);
@@ -126,7 +127,7 @@ index 259765c..ca9dd68 100644
  			(0, react.useEffect)(() => {
  				load();
  			}, [load]);
-@@ -430,34 +506,114 @@ window.__ModuleLoader__.load({
+@@ -430,34 +507,114 @@ window.__ModuleLoader__.load({
  					children: character
  				}, index))
  			}) : label;
@@ -257,7 +258,7 @@ index 259765c..ca9dd68 100644
  				anchor: (0, react_jsx_runtime.jsxs)("button", {
  					type: "button",
  					className: AgentPresetSeat_module_css_default.seat,
-@@ -707,6 +863,8 @@ window.__ModuleLoader__.load({
+@@ -706,6 +863,8 @@ window.__ModuleLoader__.load({
  			rows: [],
  			copy: null,
  			view: null,
@@ -266,7 +267,7 @@ index 259765c..ca9dd68 100644
  			pendingDelete: null,
  			deleting: false,
  			revealedPaths: {}
-@@ -724,6 +882,13 @@ window.__ModuleLoader__.load({
+@@ -723,6 +882,13 @@ window.__ModuleLoader__.load({
  			if (!PRESET_ID.test(draft.id)) return "idInvalid";
  			if (rows.some((row) => row.id === draft.id)) return "idTaken";
  		}
@@ -280,7 +281,7 @@ index 259765c..ca9dd68 100644
  		/** Reads the roster and drives the copy dialog, viewer, and location reveals. */
  		var AgentPresetSectionController = class {
  			api;
-@@ -911,6 +1076,143 @@ window.__ModuleLoader__.load({
+@@ -910,6 +1076,143 @@ window.__ModuleLoader__.load({
  					this.set({ error: messageOf(error) });
  				}
  			}
@@ -424,7 +425,7 @@ index 259765c..ca9dd68 100644
  			/**
  			* Ask for confirmation before deleting one preset.
  			* @param id - the preset to delete, or null to dismiss the confirmation.
-@@ -974,16 +1276,25 @@ window.__ModuleLoader__.load({
+@@ -973,17 +1276,26 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-agent-preset/src/client/AgentPresetSection.module.css.mjs
@@ -440,6 +441,7 @@ index 259765c..ca9dd68 100644
  			document.head.appendChild(tag);
  		}
  		var AgentPresetSection_module_css_default = {
+ 			"badge": "rtSEdW_badge",
 +			"cardMain": "rtSEdW_cardMain",
 +			"sectionHead": "rtSEdW_sectionHead",
 +			"sectionActions": "rtSEdW_sectionActions",
@@ -450,9 +452,9 @@ index 259765c..ca9dd68 100644
 +			"importWarnings": "rtSEdW_importWarnings",
 +			"field": "rtSEdW_field",
  			"brokenBadge": "rtSEdW_brokenBadge",
- 			"inUse": "rtSEdW_inUse",
- 			"cards": "rtSEdW_cards",
-@@ -1104,6 +1415,84 @@ window.__ModuleLoader__.load({
+ 			"card": "rtSEdW_card",
+ 			"cardActive": "rtSEdW_cardActive",
+@@ -1103,6 +1415,84 @@ window.__ModuleLoader__.load({
  				})
  			});
  		}
@@ -537,7 +539,7 @@ index 259765c..ca9dd68 100644
  		/**
  		* Render one card's description, clamped by CSS and offered in full on hover.
  		* The tooltip is attached only while the text is actually cut off, so a short
-@@ -1151,6 +1540,7 @@ window.__ModuleLoader__.load({
+@@ -1150,6 +1540,7 @@ window.__ModuleLoader__.load({
  		function AgentPresetSection(props) {
  			const { useAgentPresetSection, t, load } = props;
  			const state = useAgentPresetSection((snapshot) => snapshot);
@@ -545,7 +547,7 @@ index 259765c..ca9dd68 100644
  			const viewedId = state.view?.id;
  			const viewedRow = viewedId === void 0 ? void 0 : state.rows.find((row) => row.id === viewedId);
  			const viewedTitle = state.view === null ? "" : viewedRow === void 0 ? state.view.title : presetDisplayText(viewedRow, t).name;
-@@ -1191,9 +1581,40 @@ window.__ModuleLoader__.load({
+@@ -1190,9 +1581,40 @@ window.__ModuleLoader__.load({
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: AgentPresetSection_module_css_default.section,
  				children: [
@@ -589,7 +591,7 @@ index 259765c..ca9dd68 100644
  					}),
  					(0, react_jsx_runtime.jsx)("p", {
  						className: AgentPresetSection_module_css_default.intro,
-@@ -1289,7 +1710,7 @@ window.__ModuleLoader__.load({
+@@ -1288,7 +1710,7 @@ window.__ModuleLoader__.load({
  														},
  														children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpenOutline16, {})
  													}),
@@ -598,7 +600,7 @@ index 259765c..ca9dd68 100644
  														type: "button",
  														className: AgentPresetSection_module_css_default.iconButton,
  														disabled: !state.authorable || row.broken !== void 0,
-@@ -1298,9 +1719,20 @@ window.__ModuleLoader__.load({
+@@ -1297,9 +1719,20 @@ window.__ModuleLoader__.load({
  														onClick: () => {
  															props.beginCopy(row.id);
  														},
@@ -622,7 +624,7 @@ index 259765c..ca9dd68 100644
  														type: "button",
  														className: `${AgentPresetSection_module_css_default.iconButton} ${AgentPresetSection_module_css_default.iconDanger}`,
  														"data-tip": t("delete"),
-@@ -1329,13 +1761,22 @@ window.__ModuleLoader__.load({
+@@ -1328,13 +1761,22 @@ window.__ModuleLoader__.load({
  					(0, react_jsx_runtime.jsx)(CopyDialog, {
  						state,
  						t,
@@ -648,7 +650,7 @@ index 259765c..ca9dd68 100644
  					(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
  						open: state.view !== null,
  						onClose: () => {
-@@ -1689,6 +2130,15 @@ window.__ModuleLoader__.load({
+@@ -1689,6 +2131,15 @@ window.__ModuleLoader__.load({
  				},
  				confirmCopy: () => section.confirmCopy(),
  				openLocation: (id) => section.openLocation(id),

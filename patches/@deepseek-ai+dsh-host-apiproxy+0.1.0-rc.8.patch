@@ -1,19 +1,20 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
-index 11ee6c4..bf19e6c 100644
+index 0bb5994..5d3577e 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
-@@ -1,8 +1,8 @@
+@@ -1,9 +1,9 @@
  import { Service } from "@deepseek-ai/cordis";
  import z from "@deepseek-ai/schemastery";
  import { randomUUID } from "node:crypto";
 -import { mkdir, stat } from "node:fs/promises";
+ import { homedir, release } from "node:os";
 -import { dirname, extname } from "node:path";
 +import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 +import { dirname, extname, join, relative, resolve, sep } from "node:path";
  import { installModelSelection } from "@deepseek-ai/dsh-agent";
- import { AttachmentError } from "@deepseek-ai/dsh-attachment";
+ import { AttachmentError, admitEncodedImages } from "@deepseek-ai/dsh-attachment";
  import { ReasoningEffortId, contentHasImage, createUserMessage, errorChain, freezeMessage } from "@deepseek-ai/dsh-llm";
-@@ -11,8 +11,8 @@ import { SessionQueryError } from "@deepseek-ai/dsh-session-query";
+@@ -12,8 +12,8 @@ import { SessionQueryError } from "@deepseek-ai/dsh-session-query";
  import { SubagentError } from "@deepseek-ai/dsh-subagent";
  import { isUserInvocable } from "@deepseek-ai/dsh-skill";
  import { WorkspaceId, WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceUnknownSessionError, workspaceDomainState, workspaceRecord } from "@deepseek-ai/dsh-workspace";
@@ -24,9 +25,9 @@ index 11ee6c4..bf19e6c 100644
  import { GoalError } from "@deepseek-ai/dsh-goal";
  import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
  import { credentialRef } from "@deepseek-ai/dsh-credentials";
-@@ -23,6 +23,110 @@ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
+@@ -23,6 +23,110 @@ import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
+ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
  import { API_REMOTE_FORWARDED_EVENTS, ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, createApiRemoteAgentResolver, hasApiRemoteSubagentOwner, inspectApiRemoteSession } from "@deepseek-ai/dsh-api-remotes";
- import { release } from "node:os";
  import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
 +//#region lib/types/preset-archive.js
 +const PRESET_ARCHIVE_FORMAT = "dsh-preset";
@@ -135,7 +136,7 @@ index 11ee6c4..bf19e6c 100644
  //#region lib/types/session-export.js
  /**
  * Host-side session-log download: streams one ZIP archive whose files are the
-@@ -3150,7 +3254,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3126,7 +3230,13 @@ function createApiProxy(ctx, defaults) {
  				}));
  			},
  			async pickDirectory(request, signal) {
@@ -150,7 +151,7 @@ index 11ee6c4..bf19e6c 100644
  				if (capability.kind !== "native") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
-@@ -3172,7 +3282,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3148,7 +3258,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async listDirectory(request, signal) {
@@ -165,7 +166,7 @@ index 11ee6c4..bf19e6c 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3190,7 +3306,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3166,7 +3282,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async createDirectory(request) {
@@ -180,7 +181,7 @@ index 11ee6c4..bf19e6c 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3244,6 +3366,127 @@ function createApiProxy(ctx, defaults) {
+@@ -3220,6 +3342,127 @@ function createApiProxy(ctx, defaults) {
  			}
  		},
  		agentPresets: {
@@ -199,7 +200,7 @@ index 11ee6c4..bf19e6c 100644
 +						id: preset.id,
 +						...preset.name === void 0 ? {} : { name: preset.name },
 +						...preset.description === void 0 ? {} : { description: preset.description },
-+						sourceDshVersion: "0.1.0-rc.7",
++					sourceDshVersion: "0.1.0-rc.8",
 +						exportedAt: (/* @__PURE__ */ new Date()).toISOString()
 +					};
 +					const data = zipSync({
@@ -238,7 +239,7 @@ index 11ee6c4..bf19e6c 100644
 +				const conflict = rows.some((row) => row.id === agentPreset);
 +				const warnings = [
 +					...parsed.warnings,
-+					...typeof parsed.manifest.sourceDshVersion === "string" && parsed.manifest.sourceDshVersion !== "0.1.0-rc.7" ? ["version-mismatch"] : []
++					...typeof parsed.manifest.sourceDshVersion === "string" && parsed.manifest.sourceDshVersion !== "0.1.0-rc.8" ? ["version-mismatch"] : []
 +				];
 +				const preview = {
 +					ok: true,
@@ -308,7 +309,7 @@ index 11ee6c4..bf19e6c 100644
  			async list(request) {
  				const presets = ctx.get("agentPresets");
  				if (presets === void 0) return ok(request, {
-@@ -4932,6 +5175,34 @@ function toFetchHandler(api) {
+@@ -4909,6 +5152,34 @@ function toFetchHandler(api) {
  			rpcId: RpcId(randomUUID()),
  			payload: {}
  		}, req.signal));
@@ -343,7 +344,7 @@ index 11ee6c4..bf19e6c 100644
  		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
  			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
  			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
-@@ -5531,7 +5802,6 @@ var ApiProxyService = class extends Service {
+@@ -5508,7 +5779,6 @@ var ApiProxyService = class extends Service {
  		"agentDefaultModel",
  		"agents",
  		"attachments",

@@ -6,7 +6,7 @@ const projectRoot = path.resolve(import.meta.dirname, '..')
 const patchPath = path.join(
   projectRoot,
   'patches',
-  '@deepseek-ai+dsh-client-ui-conversation+0.1.0-rc.7.patch'
+  '@deepseek-ai+dsh-client-ui-conversation+0.1.0-rc.8.patch'
 )
 
 describe('conversation Query navigation rail', () => {

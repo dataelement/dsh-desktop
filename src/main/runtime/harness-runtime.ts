@@ -25,6 +25,7 @@ export function buildHarnessArguments(port: number, patchPath?: string): string[
   return [
     'web',
     ...(patchPath ? ['--patch', patchPath] : []),
+    '--no-open',
     '--host',
     '127.0.0.1',
     '--port',
@@ -405,8 +406,15 @@ export function extractSlotConflictName(
 ): string | undefined {
   for (const line of latestHarnessAttemptLogs(logLines)) {
     if (!line.startsWith('[stderr] ')) continue
-    const match = line.slice(8).match(/single slot\s+["']([^"']+)["']\s+already has a registration/i)
-    if (match?.[1]) return match[1].trim()
+    const text = line.slice(8)
+    const loaderMatch = text.match(
+      /single slot\s+["']([^"']+)["']\s+already has a registration/i
+    )
+    if (loaderMatch?.[1]) return loaderMatch[1].trim()
+    const rendererMatch = text.match(
+      /UI slot\s+["']([^"']+)["']\s+has duplicate registrations/i
+    )
+    if (rendererMatch?.[1]) return rendererMatch[1].trim()
   }
   return undefined
 }

@@ -23,7 +23,7 @@ describe('desktop provider onboarding patch', () => {
 
   it('is captured as a reproducible dependency patch', async () => {
     const [patch, installed] = await Promise.all([
-      readFile('patches/@deepseek-ai+dsh-client-ui-settings-models+0.1.0-rc.7.patch', 'utf8'),
+      readFile('patches/@deepseek-ai+dsh-client-ui-settings-models+0.1.0-rc.8.patch', 'utf8'),
       readFile('node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js', 'utf8')
     ])
     expect(patch).toContain('ONBOARDING_PROVIDERS')

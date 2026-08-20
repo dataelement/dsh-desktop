@@ -1,15 +1,16 @@
 diff --git a/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js
-index 6e62a9c..c95c213 100644
+index b2cadf0..bbed5b4 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js
-@@ -467,13 +467,14 @@ function requestId(headers) {
+@@ -603,7 +603,6 @@ function requestId(headers) {
  * @returns the normalized harness error code.
  */
  function httpErrorCode(status, error) {
 -	if (status === 401 || status === 403) return "AUTH";
+ 	if (status === 413) return "INVALID_REQUEST";
  	const detail = [
  		error?.code,
- 		error?.type,
+@@ -611,6 +610,8 @@ function httpErrorCode(status, error) {
  		error?.message
  	].filter(Boolean).join(" ");
  	if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE;
