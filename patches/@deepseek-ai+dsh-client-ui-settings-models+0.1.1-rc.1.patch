@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index 12ebd55..418b1bb 100644
+index fff5f43..5e218fd 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -64,6 +64,30 @@ window.__ModuleLoader__.load({
@@ -19,7 +19,7 @@ index 12ebd55..418b1bb 100644
 +			const tag = document.createElement("style");
 +			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-models";
 +			tag.dataset.pluginCss = modelModalityTagId;
-+			tag.textContent = ".dshModelModalityToggle{grid-column:1/-1;align-items:flex-start;gap:9px;min-height:36px;padding:4px;display:flex;cursor:pointer}.dshModelModalityToggle[aria-disabled=true]{cursor:default;opacity:.6}.dshModelModalityToggle input{accent-color:var(--dsw-alias-brand-primary);flex:none;width:16px;height:16px;margin:2px 0 0}.dshModelModalityCopy{flex-direction:column;gap:1px;display:flex}.dshModelModalityTitle{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;line-height:18px}.dshModelModalityHint{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}";
++			tag.textContent = ".dshModelModalityToggle{grid-column:1/-1;align-items:flex-start;gap:9px;min-height:36px;padding:4px;display:flex;cursor:pointer}.dshModelModalityToggle[aria-disabled=true]{cursor:default;opacity:.6}.dshModelModalityToggle input{accent-color:var(--dsw-alias-brand-primary);flex:none;width:16px;height:16px;margin:2px 0 0}.dshModelModalityCopy{flex-direction:column;gap:1px;display:flex}.dshModelModalityTitle{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:500;line-height:18px}.dshModelModalityHint{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.dshModelModalityToggleCompact{grid-column:auto;align-items:center;gap:5px;min-height:28px;white-space:nowrap;border-radius:6px;padding:0 4px;position:relative}.dshModelModalityToggleCompact:hover{background:var(--dsw-alias-interactive-bg-hover)}.dshModelModalityToggleCompact input{width:14px;height:14px;margin:0}.dshModelModalityToggleCompact .dshModelModalityCopy{display:block}.dshModelModalityToggleCompact .dshModelModalityTitle{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.dshModelModalityToggleCompact:after{content:attr(data-tooltip);z-index:12;pointer-events:none;box-sizing:border-box;width:max-content;max-width:260px;color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 8px;font-size:11px;font-weight:400;line-height:16px;white-space:normal;visibility:hidden;opacity:0;position:absolute;top:calc(100% + 5px);right:0}.dshModelModalityToggleCompact:hover:after,.dshModelModalityToggleCompact:focus-within:after{visibility:visible;opacity:1}.zGbnIq_modelRow{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto auto auto}";
 +			document.head.appendChild(tag);
 +		}
 +		const modelCatalogUxTagId = "@deepseek-ai/dsh-client-ui-settings-models/ModelCatalogUx";
@@ -33,7 +33,7 @@ index 12ebd55..418b1bb 100644
  		var ModelsSection_module_css_default = {
  			"addActions": "zGbnIq_addActions",
  			"addBlock": "zGbnIq_addBlock",
-@@ -155,6 +179,67 @@ window.__ModuleLoader__.load({
+@@ -155,6 +179,68 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -50,8 +50,9 @@ index 12ebd55..418b1bb 100644
 +		/** Render the shared per-model image-input declaration control. */
 +		function ModelImageInputToggle(props) {
 +			return (0, react_jsx_runtime.jsxs)("label", {
-+				className: "dshModelModalityToggle",
++				className: props.compact ? "dshModelModalityToggle dshModelModalityToggleCompact" : "dshModelModalityToggle",
 +				"aria-disabled": props.disabled,
++				"data-tooltip": props.compact ? `${props.t("modelImageInput")}: ${props.t("modelImageInputHint")}` : void 0,
 +				children: [(0, react_jsx_runtime.jsx)("input", {
 +					type: "checkbox",
 +					checked: imageInputEnabled(props.model, props.field),
@@ -64,8 +65,8 @@ index 12ebd55..418b1bb 100644
 +					className: "dshModelModalityCopy",
 +					children: [(0, react_jsx_runtime.jsx)("span", {
 +						className: "dshModelModalityTitle",
-+						children: props.t("modelImageInput")
-+					}), (0, react_jsx_runtime.jsx)("span", {
++						children: props.t(props.compact ? "modelImageInputShort" : "modelImageInput")
++					}), props.compact ? null : (0, react_jsx_runtime.jsx)("span", {
 +						className: "dshModelModalityHint",
 +						children: props.t("modelImageInputHint")
 +					})]
@@ -101,7 +102,7 @@ index 12ebd55..418b1bb 100644
  		//#region lib/types/client/DeepSeekModelsEditor.js
  		/**
  		* Curated editor for the direct DeepSeek adapter's advisory model catalog.
-@@ -256,6 +341,7 @@ window.__ModuleLoader__.load({
+@@ -256,6 +342,7 @@ window.__ModuleLoader__.load({
  		function DeepSeekModelsEditor(props) {
  			const [editing, setEditing] = (0, react.useState)(() => /* @__PURE__ */ new Map());
  			const [expanded, setExpanded] = (0, react.useState)(() => /* @__PURE__ */ new Set());
@@ -109,7 +110,7 @@ index 12ebd55..418b1bb 100644
  			const update = (index, key, value) => {
  				const next = props.models.map((model, at) => {
  					const copy = { ...model };
-@@ -364,12 +450,20 @@ window.__ModuleLoader__.load({
+@@ -364,12 +451,20 @@ window.__ModuleLoader__.load({
  							children: props.t("resetModels")
  						}) : null]
  					}),
@@ -131,21 +132,42 @@ index 12ebd55..418b1bb 100644
  							className: ModelsSection_module_css_default["modelEntry"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["modelRow"],
-@@ -425,18 +519,18 @@ window.__ModuleLoader__.load({
+@@ -395,12 +490,23 @@ window.__ModuleLoader__.load({
+ 										value: typeof model["name"] === "string" ? model["name"] : "",
+ 										placeholder: props.t("modelName"),
+ 										"aria-label": `${props.t("modelName")} ${String(index + 1)}`,
+-										disabled: props.disabled,
+-										onChange: (event) => {
+-											update(index, "name", event.target.value === "" ? void 0 : event.target.value);
+-										}
+-									}),
+-									(0, react_jsx_runtime.jsx)("button", {
++						disabled: props.disabled,
++						onChange: (event) => {
++							update(index, "name", event.target.value === "" ? void 0 : event.target.value);
++						}
++					}),
++					(0, react_jsx_runtime.jsx)(ModelImageInputToggle, {
++						model,
++						field: "inputModalities",
++						index,
++						t: props.t,
++						disabled: props.disabled,
++						compact: true,
++						onChange: (enabled) => {
++							update(index, "inputModalities", imageInputModalities(enabled));
++						}
++					}),
++					(0, react_jsx_runtime.jsx)("button", {
+ 										type: "button",
+ 										className: ModelsSection_module_css_default["iconButton"],
+ 										"aria-label": `${props.t("modelAdvanced")} ${String(index + 1)}`,
+@@ -425,18 +531,9 @@ window.__ModuleLoader__.load({
  								]
  							}), expanded.has(index) ? (0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["modelAdvanced"],
 -								children: [capacityField(model, index, "contextWindow", props.defaultContextWindow), capacityField(model, index, "maxTokens", props.defaultMaxTokens)]
-+								children: [capacityField(model, index, "contextWindow", props.defaultContextWindow), capacityField(model, index, "maxTokens", props.defaultMaxTokens), (0, react_jsx_runtime.jsx)(ModelImageInputToggle, {
-+									model,
-+									field: "inputModalities",
-+									index,
-+									t: props.t,
-+									disabled: props.disabled,
-+									onChange: (enabled) => {
-+										update(index, "inputModalities", imageInputModalities(enabled));
-+									}
-+								})]
++				children: [capacityField(model, index, "contextWindow", props.defaultContextWindow), capacityField(model, index, "maxTokens", props.defaultMaxTokens)]
  							}) : null]
  						}, index))
 -					}),
@@ -160,7 +182,7 @@ index 12ebd55..418b1bb 100644
  					})
  				]
  			});
-@@ -759,6 +853,7 @@ window.__ModuleLoader__.load({
+@@ -759,6 +856,7 @@ window.__ModuleLoader__.load({
  			const [picked, setPicked] = (0, react.useState)(/* @__PURE__ */ new Set());
  			const [expanded, setExpanded] = (0, react.useState)(/* @__PURE__ */ new Set());
  			const [editing, setEditing] = (0, react.useState)(/* @__PURE__ */ new Map());
@@ -168,7 +190,7 @@ index 12ebd55..418b1bb 100644
  			/** Buffer key for one capacity field; the row half moves when rows do. */
  			const bufferKey = (index, field) => `${String(index)}:${field}`;
  			const editCapacity = (index, field, text) => {
-@@ -889,11 +984,19 @@ window.__ModuleLoader__.load({
+@@ -889,11 +987,19 @@ window.__ModuleLoader__.load({
  							})
  						]
  					}),
@@ -189,19 +211,37 @@ index 12ebd55..418b1bb 100644
  						className: ModelsSection_module_css_default["modelEntry"],
  						children: [(0, react_jsx_runtime.jsxs)("div", {
  							className: ModelsSection_module_css_default["modelRow"],
-@@ -986,18 +1089,18 @@ window.__ModuleLoader__.load({
- 										editCapacity(index, "maxTokens", event.target.value);
- 									}
- 								})]
-+							}), (0, react_jsx_runtime.jsx)(ModelImageInputToggle, {
-+								model,
-+								field: "input",
-+								index,
-+								t,
-+								disabled,
-+								onChange: (enabled) => {
-+									patch(index, { input: imageInputModalities(enabled) });
-+								}
+@@ -915,12 +1021,23 @@ window.__ModuleLoader__.load({
+ 									value: textOf(model, "name"),
+ 									placeholder: t("modelName"),
+ 									"aria-label": `${t("modelName")} ${index + 1}`,
+-									disabled,
+-									onChange: (event) => {
+-										patch(index, { name: event.target.value === "" ? void 0 : event.target.value });
+-									}
+-								}),
+-								(0, react_jsx_runtime.jsx)("button", {
++						disabled,
++						onChange: (event) => {
++							patch(index, { name: event.target.value === "" ? void 0 : event.target.value });
++						}
++					}),
++					(0, react_jsx_runtime.jsx)(ModelImageInputToggle, {
++						model,
++						field: "input",
++						index,
++						t,
++						disabled,
++						compact: true,
++						onChange: (enabled) => {
++							patch(index, { input: imageInputModalities(enabled) });
++						}
++					}),
++					(0, react_jsx_runtime.jsx)("button", {
+ 									type: "button",
+ 									className: ModelsSection_module_css_default["iconButton"],
+ 									"aria-label": `${t("modelAdvanced")} ${index + 1}`,
+@@ -989,15 +1106,6 @@ window.__ModuleLoader__.load({
  							})]
  						}) : null]
  					}, index)),
@@ -217,7 +257,7 @@ index 12ebd55..418b1bb 100644
  					failure !== void 0 ? (0, react_jsx_runtime.jsx)("p", {
  						className: ModelsSection_module_css_default["error"],
  						children: failure
-@@ -1098,6 +1201,7 @@ window.__ModuleLoader__.load({
+@@ -1098,6 +1206,7 @@ window.__ModuleLoader__.load({
  			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
  			const [keyDraft, setKeyDraft] = (0, react.useState)("");
  			const [models, setModels] = (0, react.useState)([]);
@@ -225,7 +265,7 @@ index 12ebd55..418b1bb 100644
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
  			/**
-@@ -1279,6 +1383,8 @@ window.__ModuleLoader__.load({
+@@ -1279,6 +1388,8 @@ window.__ModuleLoader__.load({
  					(0, react_jsx_runtime.jsx)(ModelListEditor, {
  						models,
  						onChange: setModels,
@@ -234,7 +274,7 @@ index 12ebd55..418b1bb 100644
  						probe: {
  							settingsNs: NS$1,
  							baseURL,
-@@ -1397,6 +1503,8 @@ window.__ModuleLoader__.load({
+@@ -1397,6 +1508,8 @@ window.__ModuleLoader__.load({
  			const [keyState, setKeyState] = (0, react.useState)(void 0);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -243,7 +283,7 @@ index 12ebd55..418b1bb 100644
  			const [committedOriginal, setCommittedOriginal] = (0, react.useState)(() => schema.getPath(namespace.user, settingsPath));
  			const [expectedRevision, setExpectedRevision] = (0, react.useState)(() => namespace.revision);
  			const root = (0, react.useMemo)(() => schema.rehydrate(namespace.schema), [namespace.schema, schema]);
-@@ -1522,6 +1630,15 @@ window.__ModuleLoader__.load({
+@@ -1522,6 +1635,15 @@ window.__ModuleLoader__.load({
  			const inheritedModels = () => {
  				return schema.getPath(namespace.base, [...settingsPath, "models"]) ?? schema.nodeAtPath(root, [...settingsPath, "models"])?.meta.default;
  			};
@@ -259,7 +299,7 @@ index 12ebd55..418b1bb 100644
  			/**
  			* The curated fields of one known adapter family. The family arrives
  			* narrowed so the per-family branches below are total: an unknown namespace
-@@ -1539,6 +1656,8 @@ window.__ModuleLoader__.load({
+@@ -1539,6 +1661,8 @@ window.__ModuleLoader__.load({
  				const catalogProps = {
  					models,
  					overridden: modelsOverridden,
@@ -268,7 +308,7 @@ index 12ebd55..418b1bb 100644
  					t,
  					disabled,
  					onChange: (next) => {
-@@ -1577,6 +1696,10 @@ window.__ModuleLoader__.load({
+@@ -1577,6 +1701,10 @@ window.__ModuleLoader__.load({
  					]
  				}), props.credentialOnly === true ? null : (0, react_jsx_runtime.jsxs)("details", {
  					className: ModelsSection_module_css_default["customized"],
@@ -279,7 +319,7 @@ index 12ebd55..418b1bb 100644
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -1653,8 +1776,22 @@ window.__ModuleLoader__.load({
+@@ -1653,8 +1781,22 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -303,7 +343,7 @@ index 12ebd55..418b1bb 100644
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -1678,19 +1815,15 @@ window.__ModuleLoader__.load({
+@@ -1678,19 +1820,15 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
  					}),
@@ -332,7 +372,7 @@ index 12ebd55..418b1bb 100644
  					})
  				]
  			});
-@@ -1784,6 +1917,26 @@ window.__ModuleLoader__.load({
+@@ -1784,6 +1922,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -359,7 +399,7 @@ index 12ebd55..418b1bb 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1810,6 +1963,8 @@ window.__ModuleLoader__.load({
+@@ -1810,6 +1968,8 @@ window.__ModuleLoader__.load({
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
  			const [declaring, setDeclaring] = (0, react.useState)(false);
@@ -368,7 +408,7 @@ index 12ebd55..418b1bb 100644
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -1879,10 +2034,16 @@ window.__ModuleLoader__.load({
+@@ -1879,10 +2039,16 @@ window.__ModuleLoader__.load({
  			};
  			const anyUsable = state.rows.some(providerUsable);
  			const configured = state.rows.filter((row) => row.configured);
@@ -386,7 +426,7 @@ index 12ebd55..418b1bb 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["section"],
  				children: [
-@@ -2001,24 +2162,66 @@ window.__ModuleLoader__.load({
+@@ -2001,24 +2167,66 @@ window.__ModuleLoader__.load({
  							className: ModelsSection_module_css_default["addCard"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["field"],
@@ -468,7 +508,7 @@ index 12ebd55..418b1bb 100644
  							}), (0, react_jsx_runtime.jsx)(ProviderEditor, {
  								provider: addTarget.provider,
  								displayName: addTarget.displayName,
-@@ -2062,6 +2265,8 @@ window.__ModuleLoader__.load({
+@@ -2062,6 +2270,8 @@ window.__ModuleLoader__.load({
  									setDeclaring(false);
  									setAdding(true);
  									setEditing(targetOf(first));
@@ -477,7 +517,7 @@ index 12ebd55..418b1bb 100644
  								},
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
  							}), (0, react_jsx_runtime.jsxs)("button", {
-@@ -2170,7 +2375,7 @@ window.__ModuleLoader__.load({
+@@ -2170,7 +2380,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.module.css.mjs
@@ -486,7 +526,7 @@ index 12ebd55..418b1bb 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2181,6 +2386,12 @@ window.__ModuleLoader__.load({
+@@ -2181,6 +2391,12 @@ window.__ModuleLoader__.load({
  		}
  		var DeepSeekOnboardingDialog_module_css_default = {
  			"description": "GL8Viq_description",
@@ -499,7 +539,7 @@ index 12ebd55..418b1bb 100644
  			"editor": "GL8Viq_editor"
  		};
  		//#endregion
-@@ -2196,35 +2407,50 @@ window.__ModuleLoader__.load({
+@@ -2196,35 +2412,50 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -568,7 +608,7 @@ index 12ebd55..418b1bb 100644
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2237,26 +2463,48 @@ window.__ModuleLoader__.load({
+@@ -2237,26 +2468,48 @@ window.__ModuleLoader__.load({
  				children: [(0, react_jsx_runtime.jsx)("p", {
  					className: DeepSeekOnboardingDialog_module_css_default.description,
  					children: t("onboardingDescription")
@@ -620,7 +660,7 @@ index 12ebd55..418b1bb 100644
  				})]
  			});
  		}
-@@ -2520,6 +2768,8 @@ window.__ModuleLoader__.load({
+@@ -2520,6 +2773,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -629,20 +669,21 @@ index 12ebd55..418b1bb 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2551,7 +2801,11 @@ window.__ModuleLoader__.load({
+@@ -2551,7 +2806,12 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "Uses the provider default",
  			maxTokens: "Max output tokens",
  			maxTokensPlaceholder: "Uses the provider default",
 -			modelAdvanced: "Capacities",
 +			modelAdvanced: "Model settings",
 +			modelImageInput: "Image input",
++			modelImageInputShort: "Vision",
 +			modelImageInputHint: "Declare that this model accepts images; the endpoint must support them.",
 +			modelSearch: "Search models",
 +			modelSearchEmpty: "No matching models.",
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2595,10 +2849,14 @@ window.__ModuleLoader__.load({
+@@ -2595,10 +2855,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.en.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.en.continueLabel,
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -660,7 +701,7 @@ index 12ebd55..418b1bb 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2618,6 +2876,8 @@ window.__ModuleLoader__.load({
+@@ -2618,6 +2882,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -669,20 +710,21 @@ index 12ebd55..418b1bb 100644
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2649,7 +2909,11 @@ window.__ModuleLoader__.load({
+@@ -2649,7 +2915,12 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "使用提供方默认值",
  			maxTokens: "最大输出 token 数",
  			maxTokensPlaceholder: "使用提供方默认值",
 -			modelAdvanced: "容量",
 +			modelAdvanced: "模型设置",
 +			modelImageInput: "支持图片输入",
++			modelImageInputShort: "视觉",
 +			modelImageInputHint: "声明该模型可接收图片；请确认接口实际支持。",
 +			modelSearch: "搜索模型",
 +			modelSearchEmpty: "没有找到匹配的模型。",
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2693,10 +2957,14 @@ window.__ModuleLoader__.load({
+@@ -2693,10 +2964,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.zh.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
  			welcomeError: "暂时无法保存确认状态，请重试。",

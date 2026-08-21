@@ -25,7 +25,7 @@
 DSH Desktop 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：应用会自动启动本地 Harness、管理随机回环端口、持久化 Profile/插件/会话，并在 Harness 就绪后直接进入完整界面。项目工作区在 Harness 界面中统一添加和管理。
 
 > [!IMPORTANT]
-> DSH Desktop 当前处于早期预览阶段，并依赖仍在快速迭代的 `@deepseek-ai/dsh@0.1.0-rc.8`。macOS 正式包已完成代码签名并通过 Apple 公证，当前安装包统一通过官网分发。
+> DSH Desktop 当前处于早期预览阶段，并依赖仍在快速迭代的 `@deepseek-ai/dsh@0.1.1-rc.1`。macOS 正式包已完成代码签名并通过 Apple 公证，当前安装包统一通过官网分发。
 
 ## 下载安装
 
@@ -155,7 +155,7 @@ build/                应用图标资源
 
 ## 上游版本与补丁
 
-项目当前固定依赖 `@deepseek-ai/dsh@0.1.0-rc.8`。首启 Provider 列表与桌面端 Preset 导入导出界面由 [`patch-package`](https://github.com/ds300/patch-package) 固化在 [`patches/`](patches/) 中，而不是依赖未跟踪的 `node_modules` 修改。侧边栏品牌标识与手机配对入口改为填充 Harness 提供的 `sidebar.brand.*` 与 `sidebar.footer.action` 插槽，不再需要补丁。
+项目当前固定依赖 `@deepseek-ai/dsh@0.1.1-rc.1`。首启 Provider 列表与桌面端 Preset 导入导出界面由 [`patch-package`](https://github.com/ds300/patch-package) 固化在 [`patches/`](patches/) 中，而不是依赖未跟踪的 `node_modules` 修改。侧边栏品牌标识与手机配对入口改为填充 Harness 提供的 `sidebar.brand.*` 与 `sidebar.footer.action` 插槽，不再需要补丁。
 
 升级 DSH 时必须：
 
