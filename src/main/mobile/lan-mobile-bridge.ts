@@ -67,9 +67,12 @@ interface MobileSession {
 interface PendingPairing {
   id: string
   remoteAddress: string
+  mode: MobileConnectionMode
   expiresAt: number
   decision?: boolean
 }
+
+type MobileConnectionMode = 'lan' | 'tunnel'
 
 interface MobileQuestionOption {
   label: string
@@ -247,8 +250,14 @@ export class LanMobileBridge {
       "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
     )
 
-    const remoteAddress = normalizeRemoteAddress(request.socket.remoteAddress ?? '')
-    if (!isPrivateAddress(remoteAddress)) return this.text(response, 403, 'Private network only.')
+    const transportAddress = normalizeRemoteAddress(request.socket.remoteAddress ?? '')
+    if (!isPrivateAddress(transportAddress)) return this.text(response, 403, 'Private network only.')
+    const connectionMode = this.requestConnectionMode(request, transportAddress)
+    const forwardedAddress = firstHeaderValue(request.headers['cf-connecting-ip'])
+    const remoteAddress =
+      connectionMode === 'tunnel' && forwardedAddress
+        ? normalizeRemoteAddress(forwardedAddress)
+        : transportAddress
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
     if (request.method === 'GET' && url.pathname.startsWith('/brand-logo/')) {
@@ -308,7 +317,11 @@ export class LanMobileBridge {
       const pending = [...this.pendingPairings.values()].find(
         (item) => item.decision === undefined && item.expiresAt >= this.now()
       )
-      return this.json(response, 200, pending ? { id: pending.id, remoteAddress: pending.remoteAddress } : {})
+      return this.json(
+        response,
+        200,
+        pending ? { id: pending.id, remoteAddress: pending.remoteAddress, mode: pending.mode } : {}
+      )
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop/status') {
@@ -335,6 +348,12 @@ export class LanMobileBridge {
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/toggle') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.sessions.size > 0) {
+        return this.json(response, 409, {
+          ok: false,
+          error: 'Disconnect the phone before switching connection modes.'
+        })
+      }
       let enable: boolean | undefined
       try {
         const bodyText = await readBody(request)
@@ -378,23 +397,31 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'GET' && url.pathname === '/disconnected') {
-      return this.html(response, renderMobileReconnectPage(this.locale()))
+      const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
+      if (migrationUrl) return this.redirect(response, migrationUrl)
+      return this.html(response, renderMobileReconnectPage(this.locale(), connectionMode))
     }
 
     if (request.method === 'GET' && url.pathname === '/reconnect') {
-      const pending = this.reconnectPairing(remoteAddress)
+      const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
+      if (migrationUrl) return this.redirect(response, migrationUrl)
+      const pending = this.reconnectPairing(remoteAddress, connectionMode)
       this.options.onReconnectRequested?.()
       return this.html(response, renderPairingWaitPage(pending.id, this.locale()))
     }
 
     if (request.method === 'POST' && url.pathname === '/pair/retry') {
       this.verifySameOrigin(request)
-      const pending = this.reconnectPairing(remoteAddress)
+      const migrationUrl = this.tunnelMigrationUrl(new URL('/reconnect', url), connectionMode)
+      if (migrationUrl) return this.json(response, 200, { redirectUrl: migrationUrl })
+      const pending = this.reconnectPairing(remoteAddress, connectionMode)
       this.options.onReconnectRequested?.()
       return this.json(response, 200, { id: pending.id, expiresAt: pending.expiresAt })
     }
 
     if (request.method === 'GET' && url.pathname === '/pair') {
+      const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
+      if (migrationUrl) return this.redirect(response, migrationUrl)
       if (this.authorized(request, remoteAddress)) {
         response.statusCode = 302
         response.setHeader('location', '/')
@@ -408,6 +435,7 @@ export class LanMobileBridge {
       this.pendingPairings.set(id, {
         id,
         remoteAddress,
+        mode: connectionMode,
         expiresAt: this.pairingExpiresAt!
       })
       return this.html(response, renderPairingWaitPage(id, this.locale()))
@@ -444,7 +472,9 @@ export class LanMobileBridge {
       this.rememberMobileContext(request, remoteAddress)
       if (!this.authorized(request, remoteAddress)) {
         if (request.method === 'GET' && url.pathname === '/') {
-          return this.html(response, renderMobileReconnectPage(this.locale()))
+          const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
+          if (migrationUrl) return this.redirect(response, migrationUrl)
+          return this.html(response, renderMobileReconnectPage(this.locale(), connectionMode))
         }
         return this.text(response, 401, 'Pair your phone again.')
       }
@@ -511,10 +541,14 @@ export class LanMobileBridge {
     return left.length === right.length && timingSafeEqual(left, right)
   }
 
-  private reconnectPairing(remoteAddress: string): PendingPairing {
+  private reconnectPairing(
+    remoteAddress: string,
+    mode: MobileConnectionMode
+  ): PendingPairing {
     const current = [...this.pendingPairings.values()].find(
       (item) =>
         item.remoteAddress === remoteAddress &&
+        item.mode === mode &&
         item.decision === undefined &&
         item.expiresAt >= this.now()
     )
@@ -522,6 +556,7 @@ export class LanMobileBridge {
     const pending = {
       id: randomUUID(),
       remoteAddress,
+      mode,
       expiresAt: this.now() + PAIRING_TTL_MS
     }
     this.pendingPairings.set(pending.id, pending)
@@ -561,6 +596,24 @@ export class LanMobileBridge {
     const origin = request.headers.origin
     const host = request.headers.host
     if (origin && host && new URL(origin).host !== host) throw new Error('Cross-origin request rejected.')
+  }
+
+  private requestConnectionMode(
+    request: IncomingMessage,
+    transportAddress: string
+  ): MobileConnectionMode {
+    if (!isLoopbackAddress(transportAddress)) return 'lan'
+    const host = (request.headers.host ?? '').split(':', 1)[0]?.toLowerCase() ?? ''
+    const forwardedAddress = firstHeaderValue(request.headers['cf-connecting-ip'])
+    const ray = firstHeaderValue(request.headers['cf-ray'])
+    return host.endsWith('.trycloudflare.com') || Boolean(forwardedAddress && ray)
+      ? 'tunnel'
+      : 'lan'
+  }
+
+  private tunnelMigrationUrl(url: URL, connectionMode: MobileConnectionMode): string | undefined {
+    if (connectionMode === 'tunnel' || !this.tunnelActive || !this.tunnelInstance?.url) return undefined
+    return new URL(`${url.pathname}${url.search}`, this.tunnelInstance.url).toString()
   }
 
   private async forwardRpc(method: string, payload: unknown): Promise<{ ok: boolean; value?: unknown; error?: string }> {
@@ -722,6 +775,12 @@ export class LanMobileBridge {
     response.end(body)
   }
 
+  private redirect(response: ServerResponse, location: string): void {
+    response.statusCode = 302
+    response.setHeader('location', location)
+    response.end()
+  }
+
   private text(response: ServerResponse, status: number, body: string): void {
     response.statusCode = status
     response.setHeader('content-type', 'text/plain; charset=utf-8')
@@ -774,6 +833,12 @@ async function readBody(request: IncomingMessage): Promise<string> {
     chunks.push(buffer)
   }
   return Buffer.concat(chunks).toString('utf8')
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  const first = Array.isArray(value) ? value[0] : value?.split(',', 1)[0]
+  const normalized = first?.trim()
+  return normalized || undefined
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

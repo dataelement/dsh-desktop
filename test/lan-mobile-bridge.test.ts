@@ -73,7 +73,7 @@ describe('LAN mobile bridge pairing surface', () => {
     expect(snapshot.desktopUrl).toBeTruthy()
     const response = await fetch(snapshot.desktopUrl!)
     expect(response.status).toBe(200)
-    expect(await response.text()).toContain('Connect your phone')
+    expect(await response.text()).toContain('Connect a mobile device')
   })
 
   it('offers a reconnect page without exposing mobile APIs before approval', async () => {
@@ -87,6 +87,100 @@ describe('LAN mobile bridge pairing surface', () => {
     expect(await response.text()).toContain('Reconnect')
     const blocked = await fetch(`http://127.0.0.1:${snapshot.port}/api/status`)
     expect(blocked.status).toBe(401)
+  })
+
+  it('migrates a stale WiFi reconnect into the active internet entry point', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    let tunnelStopped = false
+    Object.assign(bridge as unknown as Record<string, unknown>, {
+      tunnelActive: true,
+      tunnelInstance: {
+        url: 'https://active-mobile.trycloudflare.com',
+        process: {},
+        stop: async () => {
+          tunnelStopped = true
+        }
+      }
+    })
+
+    const lanReconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`, {
+      redirect: 'manual'
+    })
+    expect(lanReconnect.status).toBe(302)
+    expect(lanReconnect.headers.get('location')).toBe(
+      'https://active-mobile.trycloudflare.com/reconnect'
+    )
+
+    const lanRetry = await fetch(`http://127.0.0.1:${snapshot.port}/pair/retry`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: `http://127.0.0.1:${snapshot.port}`
+      },
+      body: '{}'
+    })
+    expect(await lanRetry.json()).toEqual({
+      redirectUrl: 'https://active-mobile.trycloudflare.com/reconnect'
+    })
+
+    const tunnelReconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`, {
+      headers: {
+        host: 'active-mobile.trycloudflare.com',
+        'cf-connecting-ip': '203.0.113.8',
+        'cf-ray': 'test-ray'
+      }
+    })
+    expect(tunnelReconnect.status).toBe(200)
+    expect(await tunnelReconnect.text()).toContain('Approve this phone')
+    const pending = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/pending`)
+    expect(await pending.json()).toMatchObject({
+      remoteAddress: '203.0.113.8',
+      mode: 'tunnel'
+    })
+    expect(tunnelStopped).toBe(false)
+  })
+
+  it('keeps the active internet tunnel available after desktop disconnect', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    let tunnelStopped = false
+    Object.assign(bridge as unknown as Record<string, unknown>, {
+      tunnelActive: true,
+      tunnelInstance: {
+        url: 'https://active-mobile.trycloudflare.com',
+        process: {},
+        stop: async () => {
+          tunnelStopped = true
+        }
+      }
+    })
+
+    const disconnected = await fetch(
+      `http://127.0.0.1:${snapshot.port}/desktop/disconnect`,
+      { method: 'POST' }
+    )
+    expect(disconnected.status).toBe(200)
+    expect(bridge.snapshot().tunnelActive).toBe(true)
+    expect(tunnelStopped).toBe(false)
+
+    const reconnectPage = await fetch(`http://127.0.0.1:${snapshot.port}/disconnected`, {
+      headers: {
+        host: 'active-mobile.trycloudflare.com',
+        'cf-connecting-ip': '203.0.113.8',
+        'cf-ray': 'test-ray'
+      }
+    })
+    expect(reconnectPage.status).toBe(200)
+    const reconnectHtml = await reconnectPage.text()
+    expect(reconnectHtml).toContain('Reconnect')
+    expect(reconnectHtml).not.toContain('same Wi-Fi')
   })
 
   it('retries an expired approval inside the same Home Screen browser context', async () => {
@@ -250,6 +344,19 @@ describe('LAN mobile bridge pairing surface', () => {
     expect(await status.json()).toEqual({ connected: true })
     const managementPage = await fetch(`http://127.0.0.1:${snapshot.port}/desktop`)
     expect(await managementPage.text()).toContain('Manage phone connection')
+    const blockedModeSwitch = await fetch(
+      `http://127.0.0.1:${snapshot.port}/desktop/tunnel/toggle`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enable: true })
+      }
+    )
+    expect(blockedModeSwitch.status).toBe(409)
+    expect(await blockedModeSwitch.json()).toEqual({
+      ok: false,
+      error: 'Disconnect the phone before switching connection modes.'
+    })
     const mobileStatus = await fetch(`http://127.0.0.1:${snapshot.port}/api/status`, {
       headers: { cookie }
     })

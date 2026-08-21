@@ -914,7 +914,7 @@ async function showMobilePairing(): Promise<void> {
     height: 720,
     minWidth: 420,
     minHeight: 560,
-    title: harnessLocale() === 'zh' ? '连接手机' : 'Connect Phone',
+    title: harnessLocale() === 'zh' ? '连接移动设备' : 'Connect Mobile Device',
     icon: desktopIconPath(),
     parent: mainWindow,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#ffffff',
