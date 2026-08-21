@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index 12ebd55..ec97bfb 100644
+index 12ebd55..418b1bb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -64,6 +64,30 @@ window.__ModuleLoader__.load({
@@ -217,7 +217,24 @@ index 12ebd55..ec97bfb 100644
  					failure !== void 0 ? (0, react_jsx_runtime.jsx)("p", {
  						className: ModelsSection_module_css_default["error"],
  						children: failure
-@@ -1397,6 +1500,8 @@ window.__ModuleLoader__.load({
+@@ -1098,6 +1201,7 @@ window.__ModuleLoader__.load({
+ 			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
+ 			const [keyDraft, setKeyDraft] = (0, react.useState)("");
+ 			const [models, setModels] = (0, react.useState)([]);
++			const [modelQuery, setModelQuery] = (0, react.useState)("");
+ 			const [busy, setBusy] = (0, react.useState)(false);
+ 			const [failure, setFailure] = (0, react.useState)(void 0);
+ 			/**
+@@ -1279,6 +1383,8 @@ window.__ModuleLoader__.load({
+ 					(0, react_jsx_runtime.jsx)(ModelListEditor, {
+ 						models,
+ 						onChange: setModels,
++						modelQuery,
++						onModelQueryChange: setModelQuery,
+ 						probe: {
+ 							settingsNs: NS$1,
+ 							baseURL,
+@@ -1397,6 +1503,8 @@ window.__ModuleLoader__.load({
  			const [keyState, setKeyState] = (0, react.useState)(void 0);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -226,7 +243,7 @@ index 12ebd55..ec97bfb 100644
  			const [committedOriginal, setCommittedOriginal] = (0, react.useState)(() => schema.getPath(namespace.user, settingsPath));
  			const [expectedRevision, setExpectedRevision] = (0, react.useState)(() => namespace.revision);
  			const root = (0, react.useMemo)(() => schema.rehydrate(namespace.schema), [namespace.schema, schema]);
-@@ -1522,6 +1627,15 @@ window.__ModuleLoader__.load({
+@@ -1522,6 +1630,15 @@ window.__ModuleLoader__.load({
  			const inheritedModels = () => {
  				return schema.getPath(namespace.base, [...settingsPath, "models"]) ?? schema.nodeAtPath(root, [...settingsPath, "models"])?.meta.default;
  			};
@@ -242,7 +259,7 @@ index 12ebd55..ec97bfb 100644
  			/**
  			* The curated fields of one known adapter family. The family arrives
  			* narrowed so the per-family branches below are total: an unknown namespace
-@@ -1539,6 +1653,8 @@ window.__ModuleLoader__.load({
+@@ -1539,6 +1656,8 @@ window.__ModuleLoader__.load({
  				const catalogProps = {
  					models,
  					overridden: modelsOverridden,
@@ -251,7 +268,7 @@ index 12ebd55..ec97bfb 100644
  					t,
  					disabled,
  					onChange: (next) => {
-@@ -1577,6 +1693,10 @@ window.__ModuleLoader__.load({
+@@ -1577,6 +1696,10 @@ window.__ModuleLoader__.load({
  					]
  				}), props.credentialOnly === true ? null : (0, react_jsx_runtime.jsxs)("details", {
  					className: ModelsSection_module_css_default["customized"],
@@ -262,7 +279,7 @@ index 12ebd55..ec97bfb 100644
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -1653,8 +1773,22 @@ window.__ModuleLoader__.load({
+@@ -1653,8 +1776,22 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -286,7 +303,7 @@ index 12ebd55..ec97bfb 100644
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -1678,19 +1812,15 @@ window.__ModuleLoader__.load({
+@@ -1678,19 +1815,15 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
  					}),
@@ -315,7 +332,7 @@ index 12ebd55..ec97bfb 100644
  					})
  				]
  			});
-@@ -1784,6 +1914,26 @@ window.__ModuleLoader__.load({
+@@ -1784,6 +1917,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -342,7 +359,7 @@ index 12ebd55..ec97bfb 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1810,6 +1960,8 @@ window.__ModuleLoader__.load({
+@@ -1810,6 +1963,8 @@ window.__ModuleLoader__.load({
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
  			const [declaring, setDeclaring] = (0, react.useState)(false);
@@ -351,7 +368,7 @@ index 12ebd55..ec97bfb 100644
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -1879,10 +2031,16 @@ window.__ModuleLoader__.load({
+@@ -1879,10 +2034,16 @@ window.__ModuleLoader__.load({
  			};
  			const anyUsable = state.rows.some(providerUsable);
  			const configured = state.rows.filter((row) => row.configured);
@@ -369,7 +386,7 @@ index 12ebd55..ec97bfb 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["section"],
  				children: [
-@@ -2001,24 +2159,66 @@ window.__ModuleLoader__.load({
+@@ -2001,24 +2162,66 @@ window.__ModuleLoader__.load({
  							className: ModelsSection_module_css_default["addCard"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["field"],
@@ -451,7 +468,7 @@ index 12ebd55..ec97bfb 100644
  							}), (0, react_jsx_runtime.jsx)(ProviderEditor, {
  								provider: addTarget.provider,
  								displayName: addTarget.displayName,
-@@ -2062,6 +2262,8 @@ window.__ModuleLoader__.load({
+@@ -2062,6 +2265,8 @@ window.__ModuleLoader__.load({
  									setDeclaring(false);
  									setAdding(true);
  									setEditing(targetOf(first));
@@ -460,7 +477,7 @@ index 12ebd55..ec97bfb 100644
  								},
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
  							}), (0, react_jsx_runtime.jsxs)("button", {
-@@ -2170,7 +2372,7 @@ window.__ModuleLoader__.load({
+@@ -2170,7 +2375,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.module.css.mjs
@@ -469,7 +486,7 @@ index 12ebd55..ec97bfb 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2181,6 +2383,12 @@ window.__ModuleLoader__.load({
+@@ -2181,6 +2386,12 @@ window.__ModuleLoader__.load({
  		}
  		var DeepSeekOnboardingDialog_module_css_default = {
  			"description": "GL8Viq_description",
@@ -482,7 +499,7 @@ index 12ebd55..ec97bfb 100644
  			"editor": "GL8Viq_editor"
  		};
  		//#endregion
-@@ -2196,35 +2404,50 @@ window.__ModuleLoader__.load({
+@@ -2196,35 +2407,50 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -551,7 +568,7 @@ index 12ebd55..ec97bfb 100644
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2237,26 +2460,48 @@ window.__ModuleLoader__.load({
+@@ -2237,26 +2463,48 @@ window.__ModuleLoader__.load({
  				children: [(0, react_jsx_runtime.jsx)("p", {
  					className: DeepSeekOnboardingDialog_module_css_default.description,
  					children: t("onboardingDescription")
@@ -603,7 +620,7 @@ index 12ebd55..ec97bfb 100644
  				})]
  			});
  		}
-@@ -2520,6 +2765,8 @@ window.__ModuleLoader__.load({
+@@ -2520,6 +2768,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -612,7 +629,7 @@ index 12ebd55..ec97bfb 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2551,7 +2798,11 @@ window.__ModuleLoader__.load({
+@@ -2551,7 +2801,11 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "Uses the provider default",
  			maxTokens: "Max output tokens",
  			maxTokensPlaceholder: "Uses the provider default",
@@ -625,7 +642,7 @@ index 12ebd55..ec97bfb 100644
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2595,10 +2846,14 @@ window.__ModuleLoader__.load({
+@@ -2595,10 +2849,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.en.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.en.continueLabel,
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -643,7 +660,7 @@ index 12ebd55..ec97bfb 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2618,6 +2873,8 @@ window.__ModuleLoader__.load({
+@@ -2618,6 +2876,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -652,7 +669,7 @@ index 12ebd55..ec97bfb 100644
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2649,7 +2906,11 @@ window.__ModuleLoader__.load({
+@@ -2649,7 +2909,11 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "使用提供方默认值",
  			maxTokens: "最大输出 token 数",
  			maxTokensPlaceholder: "使用提供方默认值",
@@ -665,7 +682,7 @@ index 12ebd55..ec97bfb 100644
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2693,10 +2954,14 @@ window.__ModuleLoader__.load({
+@@ -2693,10 +2957,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.zh.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
  			welcomeError: "暂时无法保存确认状态，请重试。",
