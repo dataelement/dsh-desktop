@@ -5,6 +5,8 @@ dist-dev/
 .DS_Store
 *.log
 coverage/
+/doc/
+/deliverables/
 build/icon.iconset/
 build/app-icon.iconset/
 build/icon-1024.png
