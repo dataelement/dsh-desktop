@@ -1,9 +1,15 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { networkInterfaces } from 'node:os'
+import { networkInterfaces, tmpdir } from 'node:os'
 import type { AddressInfo } from 'node:net'
 import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import QRCode from 'qrcode'
+import {
+  ensureCloudflaredBinary,
+  startCloudflareQuickTunnel,
+  type CloudflareTunnelInstance
+} from './cloudflared-tunnel'
 import {
   renderDesktopPairingPage,
   renderMobilePage,
@@ -34,6 +40,8 @@ export interface LanMobileBridgeOptions {
   brandLogoPaths?: { light: string; dark: string }
   appIconPath?: string
   port?: number
+  cloudflaredCacheDir?: string
+  cloudflaredPath?: string
   now?: () => number
   onReconnectRequested?: () => void
 }
@@ -45,6 +53,10 @@ export interface LanMobileBridgeSnapshot {
   pairingUrl?: string
   desktopUrl?: string
   expiresAt?: number
+  tunnelActive?: boolean
+  tunnelLoading?: boolean
+  tunnelUrl?: string
+  tunnelError?: string
 }
 
 interface MobileSession {
@@ -91,6 +103,10 @@ export class LanMobileBridge {
   private port?: number
   private pairingToken?: string
   private pairingExpiresAt?: number
+  private tunnelInstance?: CloudflareTunnelInstance
+  private tunnelActive = false
+  private tunnelLoading = false
+  private tunnelError?: string
   private readonly sessions = new Map<string, MobileSession>()
   private readonly suspendedSessions = new Map<string, MobileSession>()
   private readonly pendingPairings = new Map<string, PendingPairing>()
@@ -133,6 +149,13 @@ export class LanMobileBridge {
     this.port = undefined
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
+    if (this.tunnelInstance) {
+      await this.tunnelInstance.stop().catch(() => undefined)
+      this.tunnelInstance = undefined
+    }
+    this.tunnelActive = false
+    this.tunnelLoading = false
+    this.tunnelError = undefined
     this.sessions.clear()
     this.suspendedSessions.clear()
     this.pendingPairings.clear()
@@ -146,19 +169,66 @@ export class LanMobileBridge {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 
+  async toggleTunnel(enable?: boolean): Promise<LanMobileBridgeSnapshot> {
+    const targetState = enable !== undefined ? enable : !this.tunnelActive
+    if (!targetState) {
+      if (this.tunnelInstance) {
+        await this.tunnelInstance.stop().catch(() => undefined)
+        this.tunnelInstance = undefined
+      }
+      this.tunnelActive = false
+      this.tunnelLoading = false
+      this.tunnelError = undefined
+      return this.snapshot()
+    }
+
+    if (this.tunnelActive && this.tunnelInstance?.url) {
+      return this.snapshot()
+    }
+
+    this.tunnelLoading = true
+    this.tunnelError = undefined
+    try {
+      const binaryPath = await ensureCloudflaredBinary({
+        cacheDir: this.options.cloudflaredCacheDir ?? join(tmpdir(), 'dsh-cloudflared'),
+        customPath: this.options.cloudflaredPath
+      })
+      this.tunnelInstance = await startCloudflareQuickTunnel({
+        port: this.port!,
+        binaryPath
+      })
+      this.tunnelActive = true
+      this.tunnelLoading = false
+    } catch (error) {
+      this.tunnelActive = false
+      this.tunnelLoading = false
+      this.tunnelError = error instanceof Error ? error.message : String(error)
+    }
+    return this.snapshot()
+  }
+
   snapshot(): LanMobileBridgeSnapshot {
     const address = preferredLanAddress()
-    if (!this.server || !this.port || !this.pairingToken || !this.pairingExpiresAt || !address) {
+    if (!this.server || !this.port || !this.pairingToken || !this.pairingExpiresAt) {
       return { running: Boolean(this.server), connected: this.sessions.size > 0 }
     }
-    const pairingUrl = `http://${address}:${this.port}/pair?token=${this.pairingToken}`
+    const pairingUrl =
+      this.tunnelActive && this.tunnelInstance?.url
+        ? `${this.tunnelInstance.url}/pair?token=${this.pairingToken}`
+        : address
+          ? `http://${address}:${this.port}/pair?token=${this.pairingToken}`
+          : undefined
     return {
       running: true,
       connected: this.sessions.size > 0,
       port: this.port,
       pairingUrl,
       desktopUrl: `http://127.0.0.1:${this.port}/desktop`,
-      expiresAt: this.pairingExpiresAt
+      expiresAt: this.pairingExpiresAt,
+      tunnelActive: this.tunnelActive,
+      tunnelLoading: this.tunnelLoading,
+      tunnelUrl: this.tunnelInstance?.url,
+      tunnelError: this.tunnelError
     }
   }
 
@@ -224,7 +294,11 @@ export class LanMobileBridge {
           pairingUrl: snapshot.pairingUrl,
           expiresAt: snapshot.expiresAt,
           locale: this.locale(),
-          connected: this.sessions.size > 0
+          connected: this.sessions.size > 0,
+          tunnelActive: snapshot.tunnelActive,
+          tunnelLoading: snapshot.tunnelLoading,
+          tunnelUrl: snapshot.tunnelUrl,
+          tunnelError: snapshot.tunnelError
         })
       )
     }
@@ -240,6 +314,49 @@ export class LanMobileBridge {
     if (request.method === 'GET' && url.pathname === '/desktop/status') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
       return this.json(response, 200, { connected: this.sessions.size > 0 })
+    }
+
+    if (request.method === 'GET' && url.pathname === '/desktop/tunnel/status') {
+      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      const snapshot = this.snapshot()
+      const qrSvg = snapshot.pairingUrl
+        ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
+        : undefined
+      return this.json(response, 200, {
+        active: snapshot.tunnelActive,
+        loading: snapshot.tunnelLoading,
+        url: snapshot.tunnelUrl,
+        error: snapshot.tunnelError,
+        pairingUrl: snapshot.pairingUrl,
+        qrSvg,
+        expiresAt: snapshot.expiresAt
+      })
+    }
+
+    if (request.method === 'POST' && url.pathname === '/desktop/tunnel/toggle') {
+      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      let enable: boolean | undefined
+      try {
+        const bodyText = await readBody(request)
+        if (bodyText) {
+          const parsed = JSON.parse(bodyText) as { enable?: unknown }
+          if (typeof parsed.enable === 'boolean') enable = parsed.enable
+        }
+      } catch {}
+      const snapshot = await this.toggleTunnel(enable)
+      const qrSvg = snapshot.pairingUrl
+        ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
+        : undefined
+      return this.json(response, 200, {
+        ok: !snapshot.tunnelError,
+        active: snapshot.tunnelActive,
+        loading: snapshot.tunnelLoading,
+        url: snapshot.tunnelUrl,
+        error: snapshot.tunnelError,
+        pairingUrl: snapshot.pairingUrl,
+        qrSvg,
+        expiresAt: snapshot.expiresAt
+      })
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {

@@ -890,24 +890,28 @@ async function showMobilePairing(): Promise<void> {
     return
   }
 
-  const snapshot = await mobileBridge.start()
-  if (!snapshot.desktopUrl || !snapshot.pairingUrl) {
+  let snapshot = await mobileBridge.start()
+  if (!snapshot.desktopUrl) {
     await mobileBridge.stop()
     const options: MessageBoxOptions = {
       type: 'warning',
-      message: 'No private Wi-Fi network was found.',
-      detail: 'Connect this computer to the same private Wi-Fi as your phone and try again.',
+      message: 'Failed to start mobile bridge.',
+      detail: 'Please try again.',
       buttons: ['OK']
     }
     await (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options))
     return
   }
 
+  if (!snapshot.pairingUrl && !snapshot.tunnelActive) {
+    snapshot = await mobileBridge.toggleTunnel(true)
+  }
+
   if (mobileWindow && !mobileWindow.isDestroyed()) mobileWindow.destroy()
   nativeTheme.themeSource = harnessThemePreference()
   mobileWindow = new BrowserWindow({
     width: 560,
-    height: 700,
+    height: 720,
     minWidth: 420,
     minHeight: 560,
     title: harnessLocale() === 'zh' ? '连接手机' : 'Connect Phone',
@@ -925,6 +929,7 @@ async function showMobilePairing(): Promise<void> {
   mobileWindow.on('closed', () => {
     mobileWindow = undefined
   })
+  if (!snapshot.desktopUrl) return
   await mobileWindow.loadURL(snapshot.desktopUrl)
   mobileWindow.show()
   mobileWindow.focus()
@@ -963,6 +968,7 @@ async function bootstrap(): Promise<void> {
       dark: dshBrandLogoPath('dark')
     },
     appIconPath: desktopIconPath(),
+    cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
     port: developmentBuild ? 43128 : 43127,
     onReconnectRequested: () => {
       void showMobilePairing().catch(showUnexpectedError)
