@@ -26,11 +26,12 @@ describe('desktop Electron directory picker', () => {
     )
   })
 
-  it('keeps only the client surface and removes the crashing Host worker', async () => {
+  it('keeps the stock picker composition: the seam comes from the stock auto row', async () => {
     const desktopPatch = await readFile('build/dsh-desktop.patch.yml', 'utf8')
 
-    expect(desktopPatch).toContain("name: '@deepseek-ai/dsh-client-ui-directory-picker-native'")
-    expect(desktopPatch).not.toContain("name: '@deepseek-ai/dsh-host-directory-picker-native'")
+    // No picker rows at all - the stock auto row mounts the native backend.
+    expect(desktopPatch).not.toMatch(/id:\s*directory-picker/)
+    expect(desktopPatch).not.toContain('dsh-client-ui-directory-picker-native')
   })
 
   it('captures the client bridge as a reproducible dependency patch', async () => {

@@ -1,13 +1,8 @@
-# DSH Desktop delegates directory selection to Electron's system dialog. Keep
-# the renderless client surface, but do not load the Koffi-based Host worker:
-# on Windows it can exit before reporting a result inside packaged Electron.
-- id: directory-picker
-  disabled: true
-
+# Keep the stock directory-picker (auto) row active: the native backend
+# serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
+# plugins reading the seam) work unmodified. The client surface keeps its
+# Electron-dialog bridge via the client-ui patch in patches/.
 - insert:
-    - id: directory-picker-electron-desktop-surface
-      name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
-
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.
