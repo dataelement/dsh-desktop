@@ -87,9 +87,15 @@ export async function readMarketInstallation(home = dshHome()) {
   const directory = profileDirectory(home)
   const manifest = await readJson(join(directory, 'package.json'))
   const dependency = manifest?.dependencies?.[MARKET_PACKAGE]
+  if (typeof dependency !== 'string') {
+    return {
+      dependency: undefined,
+      installedVersion: undefined
+    }
+  }
   const installed = await readJson(join(directory, 'node_modules', MARKET_PACKAGE, 'package.json'))
   return {
-    dependency: typeof dependency === 'string' ? dependency : undefined,
+    dependency,
     installedVersion: typeof installed?.version === 'string' ? installed.version : undefined
   }
 }
@@ -618,9 +624,6 @@ export async function apply(ctx) {
       restartRequired = true
     } catch (error) {
       await cleanStaleTemporaryDirectories(home).catch(() => undefined)
-      if (manifestSnapshot !== undefined) {
-        await atomicWrite(manifestPath, manifestSnapshot).catch(() => undefined)
-      }
       const lockfilePath = join(directory, 'pnpm-lock.yaml')
       await rm(lockfilePath, { force: true }).catch(() => undefined)
       phase = 'error'
