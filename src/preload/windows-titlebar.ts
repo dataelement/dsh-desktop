@@ -133,6 +133,15 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
       padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;
     }
+    body.dsh-desktop-windows-titlebar-layout button,
+    body.dsh-desktop-windows-titlebar-layout a,
+    body.dsh-desktop-windows-titlebar-layout input,
+    body.dsh-desktop-windows-titlebar-layout select,
+    body.dsh-desktop-windows-titlebar-layout textarea,
+    body.dsh-desktop-windows-titlebar-layout [role="button"],
+    body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
+      -webkit-app-region: no-drag !important;
+    }
   `
   document.head.appendChild(style)
 }
@@ -142,22 +151,22 @@ function trackSidebarLayout(document: Document): void {
   const resizeObserver = new ResizeObserver(() => updateSidebarWidth())
 
   const updateSidebarWidth = (): void => {
-    if (!observedSidebarColumn) return
-    const width = observedSidebarColumn.getBoundingClientRect().width
-    if (width > 0) {
-      document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, `${width}px`)
+    if (!observedSidebarColumn) {
+      document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')
+      return
     }
+    const width = observedSidebarColumn.getBoundingClientRect().width
+    document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, `${Math.max(0, width)}px`)
   }
 
   const sync = (): void => {
     const sidebarRoot = document.querySelector<HTMLElement>('[data-dsh-sidebar-root]')
     const sidebarColumn = sidebarRoot?.parentElement ?? null
-    if (!sidebarColumn) return
 
     if (sidebarColumn !== observedSidebarColumn) {
       if (observedSidebarColumn) resizeObserver.unobserve(observedSidebarColumn)
       observedSidebarColumn = sidebarColumn
-      resizeObserver.observe(sidebarColumn)
+      if (sidebarColumn) resizeObserver.observe(sidebarColumn)
     }
     updateSidebarWidth()
   }
@@ -361,10 +370,10 @@ const titlebarStyles = `
     content: "";
     position: absolute;
     top: 0;
+    left: 0;
     right: 44px;
     height: ${WINDOWS_TITLEBAR_HEIGHT}px;
-    left: var(${SIDEBAR_WIDTH_PROPERTY}, 280px);
-    pointer-events: auto;
+    pointer-events: none;
     -webkit-app-region: drag;
   }
   .menuButton {

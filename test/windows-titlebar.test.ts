@@ -35,12 +35,11 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain('.safeArea::before')
     expect(preload).toContain('height: ${WINDOWS_TITLEBAR_HEIGHT}px')
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout > #root')
-    expect(preload).toContain('-webkit-app-region: drag')
-    expect(preload).toContain('-webkit-app-region: no-drag')
-    expect(preload).toContain('env(titlebar-area-width')
-    expect(preload).toContain("const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'")
-    expect(preload).toContain('[data-slot="conversation.session.header"] > header')
-    expect(preload).toContain('padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important')
+    expect(preload).toContain('left: 0')
+    expect(preload).toContain('pointer-events: none')
+    expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout button')
+    expect(preload).toContain('-webkit-app-region: no-drag !important')
+    expect(preload).toContain("document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')")
   })
 
   it('accepts only the fixed menu command allowlist', async () => {
