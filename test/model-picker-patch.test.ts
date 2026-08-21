@@ -57,6 +57,16 @@ describe('DSH Desktop model image-input declarations', () => {
     expect(client).toContain('function ModelImageInputToggle(props)')
     expect(client).toContain('field: "inputModalities"')
     expect(client).toContain('field: "input"')
+    expect(client.match(/compact: true/g)).toHaveLength(2)
+    expect(client).toContain('dshModelModalityToggleCompact')
+    expect(client).toContain(
+      '"data-tooltip": props.compact ? `${props.t("modelImageInput")}: ${props.t("modelImageInputHint")}`'
+    )
+    expect(client).toContain('.dshModelModalityToggleCompact:hover:after')
+    expect(client).toContain('.dshModelModalityToggleCompact:focus-within:after')
+    expect(client).toContain(
+      'children: props.t(props.compact ? "modelImageInputShort" : "modelImageInput")'
+    )
     expect(client).toContain('return enabled ? ["text", "image"] : ["text"]')
   })
 
@@ -64,8 +74,10 @@ describe('DSH Desktop model image-input declarations', () => {
     const client = await readFile(settingsModelsClient, 'utf8')
 
     expect(client).toContain('modelImageInput: "Image input"')
+    expect(client).toContain('modelImageInputShort: "Vision"')
     expect(client).toContain('the endpoint must support them')
     expect(client).toContain('modelImageInput: "支持图片输入"')
+    expect(client).toContain('modelImageInputShort: "视觉"')
     expect(client).toContain('请确认接口实际支持')
   })
 
