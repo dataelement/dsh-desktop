@@ -156,7 +156,8 @@ describe('Harness launch contract', () => {
     })
 
     expect(
-      buildDisclaimedUtilityProcessSpec(nodeArguments, spawnOptions, false).options.disclaim
+      buildDisclaimedUtilityProcessSpec(nodeArguments, spawnOptions, { disclaim: false }).options
+        .disclaim
     ).toBe(false)
   })
 

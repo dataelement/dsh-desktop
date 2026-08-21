@@ -1,0 +1,361 @@
+diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
+index 5075798..fb882a8 100644
+--- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
+@@ -1,9 +1,9 @@
+ import { Service } from "@deepseek-ai/cordis";
+ import z from "@deepseek-ai/schemastery";
+ import { randomUUID } from "node:crypto";
+-import { mkdir, stat } from "node:fs/promises";
++import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+ import { homedir, release } from "node:os";
+-import { dirname, extname } from "node:path";
++import { dirname, extname, join, relative, resolve, sep } from "node:path";
+ import { z as z$1 } from "zod";
+ import { installModelSelection } from "@deepseek-ai/dsh-agent";
+ import { AttachmentError, admitEncodedImages } from "@deepseek-ai/dsh-attachment";
+@@ -13,8 +13,8 @@ import { SessionQueryError } from "@deepseek-ai/dsh-session-query";
+ import { SubagentError } from "@deepseek-ai/dsh-subagent";
+ import { isUserInvocable } from "@deepseek-ai/dsh-skill";
+ import { WorkspaceId, WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceUnknownSessionError, workspaceDomainState, workspaceRecord } from "@deepseek-ai/dsh-workspace";
+-import { InvalidPresetIdError, PresetExistsError, PresetMountError, PresetNotWritableError, UnknownPresetError, resolveSessionPreset } from "@deepseek-ai/dsh-agent-presets";
+-import { Zip, ZipDeflate } from "fflate";
++import { COMPOSITION_FILE, InvalidPresetIdError, PresetExistsError, PresetMountError, PresetNotWritableError, SETTINGS_NAMESPACE, UnknownPresetError, resolveSessionPreset, scanRoot, writableRoot } from "@deepseek-ai/dsh-agent-presets";
++import { Zip, ZipDeflate, strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+ import { GoalError } from "@deepseek-ai/dsh-goal";
+ import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
+ import { credentialRef } from "@deepseek-ai/dsh-credentials";
+@@ -23,6 +23,99 @@ import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
+ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
+ import { API_REMOTE_FORWARDED_EVENTS, ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, createApiRemoteAgentResolver, hasApiRemoteSubagentOwner, inspectApiRemoteSession } from "@deepseek-ai/dsh-api-remotes";
+ import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
++//#region lib/types/preset-archive.js
++const PRESET_ARCHIVE_FORMAT = "dsh-preset";
++const PRESET_ARCHIVE_VERSION = 1;
++const PRESET_ARCHIVE_MIME = "application/vnd.dsh.preset+zip";
++const PRESET_ARCHIVE_MAX_COMPRESSED = 16 * 1024 * 1024;
++const PRESET_ARCHIVE_MAX_UNCOMPRESSED = 32 * 1024 * 1024;
++const PRESET_ARCHIVE_MAX_FILE = 12 * 1024 * 1024;
++const PRESET_ARCHIVE_MAX_FILES = 512;
++const PRESET_ARCHIVE_ID = /^[a-z0-9][a-z0-9-]*$/;
++const PRESET_ARCHIVE_IGNORED_FILES = new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
++const PRESET_TEXT_EXTENSIONS = new Set([".json", ".jsonc", ".md", ".txt", ".yaml", ".yml", ".toml", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".py", ".sh", ".ps1", ".html", ".css"]);
++function presetArchiveFailure(message, status = 400) {
++	return Response.json({
++		ok: false,
++		error: message
++	}, { status });
++}
++function safePresetArchivePath(entry) {
++	const normalized = entry.replace(/\\/g, "/").trim();
++	if (normalized === "" || normalized.startsWith("/") || /^[a-zA-Z]:/.test(normalized)) return null;
++	const segments = normalized.split("/");
++	const safe = [];
++	for (const seg of segments) {
++		if (seg === "" || seg === ".") continue;
++		if (seg === "..") return null;
++		safe.push(seg);
++	}
++	return safe.length === 0 ? null : safe.join("/");
++}
++function presetArchiveWarnings(files, fromVersion) {
++	const warnings = [];
++	if (typeof fromVersion === "string" && fromVersion.trim() !== "" && fromVersion.trim() !== "0.1.1-rc.1") {
++		warnings.push({
++			code: "version-mismatch",
++			message: `Package created by DSH ${fromVersion}, current version is 0.1.1-rc.1`
++		});
++	}
++	let hasSecrets = false;
++	let hasAbsolutePaths = false;
++	for (const [rel, bytes] of Object.entries(files)) {
++		const ext = extname(rel).toLowerCase();
++		if (!PRESET_TEXT_EXTENSIONS.has(ext)) continue;
++		let text;
++		try {
++			text = strFromU8(bytes);
++		} catch {
++			continue;
++		}
++		if (!hasSecrets && /(?:sk-[a-zA-Z0-9]{20,}|api[_-]?key\s*[:=]\s*["\x27]?[a-zA-Z0-9_-]{16,}|ghp_[a-zA-Z0-9]{30,}|bearer\s+[a-zA-Z0-9._-]{20,})/i.test(text)) {
++			hasSecrets = true;
++			warnings.push({
++				code: "possible-secrets",
++				message: "Package appears to contain API keys or tokens. Verify contents before using."
++			});
++		}
++		if (!hasAbsolutePaths && /(?:\/(?:Users|home|root|var|etc)\/|[a-zA-Z]:\\(?:Users|Documents|Program))/i.test(text)) {
++			hasAbsolutePaths = true;
++			warnings.push({
++				code: "absolute-paths",
++				message: "Package contains hardcoded file paths that may not exist on this machine."
++			});
++		}
++	}
++	return warnings;
++}
++async function collectPresetArchiveFiles(dir) {
++	const files = {};
++	let count = 0;
++	let total = 0;
++	async function visit(current, relPrefix) {
++		const entries = await readdir(current, { withFileTypes: true });
++		for (const entry of entries) {
++			if (PRESET_ARCHIVE_IGNORED_FILES.has(entry.name)) continue;
++			const full = join(current, entry.name);
++			const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
++			if (entry.isDirectory()) {
++				await visit(full, rel);
++				continue;
++			}
++			const info = await lstat(full);
++			if (info.isSymbolicLink()) continue;
++			if (++count > PRESET_ARCHIVE_MAX_FILES) throw new Error(`Preset contains more than ${PRESET_ARCHIVE_MAX_FILES} files`);
++			if (info.size > PRESET_ARCHIVE_MAX_FILE) throw new Error(`Preset file is too large to export: ${rel}`);
++			total += info.size;
++			if (total > PRESET_ARCHIVE_MAX_UNCOMPRESSED) throw new Error("Preset is too large to export");
++			files[rel] = new Uint8Array(await readFile(full));
++		}
++	}
++	await visit(dir, "");
++	return files;
++}
++//#endregion
++
+ //#region lib/types/session-export.js
+ /**
+ * Host-side session-log download: streams one ZIP archive whose files are the
+@@ -3137,7 +3230,13 @@ function createApiProxy(ctx, defaults) {
+ 				}));
+ 			},
+ 			async pickDirectory(request, signal) {
+-				const capability = ctx.directoryPicker.capability();
++				const directoryPicker = ctx.get("directoryPicker");
++				if (!directoryPicker) return err(request, {
++					code: "directory-picker-unavailable",
++					message: "host.pickDirectory needs a composed directory picker",
++					details: { capability: "none" }
++				});
++				const capability = directoryPicker.capability();
+ 				if (capability.kind !== "native") return err(request, {
+ 					code: "directory-picker-unavailable",
+ 					message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
+@@ -3159,7 +3258,13 @@ function createApiProxy(ctx, defaults) {
+ 				}
+ 			},
+ 			async listDirectory(request, signal) {
+-				const capability = ctx.directoryPicker.capability();
++				const directoryPicker = ctx.get("directoryPicker");
++				if (!directoryPicker) return err(request, {
++					code: "directory-picker-unavailable",
++					message: "host.listDirectory needs a composed directory picker",
++					details: { capability: "none" }
++				});
++				const capability = directoryPicker.capability();
+ 				if (capability.kind !== "browse") return err(request, {
+ 					code: "directory-picker-unavailable",
+ 					message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
+@@ -3177,7 +3282,13 @@ function createApiProxy(ctx, defaults) {
+ 				}
+ 			},
+ 			async createDirectory(request) {
+-				const capability = ctx.directoryPicker.capability();
++				const directoryPicker = ctx.get("directoryPicker");
++				if (!directoryPicker) return err(request, {
++					code: "directory-picker-unavailable",
++					message: "host.createDirectory needs a composed directory picker",
++					details: { capability: "none" }
++				});
++				const capability = directoryPicker.capability();
+ 				if (capability.kind !== "browse") return err(request, {
+ 					code: "directory-picker-unavailable",
+ 					message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
+@@ -3231,6 +3342,145 @@ function createApiProxy(ctx, defaults) {
+ 			}
+ 		},
+ 		agentPresets: {
++			async exportArchive(agentPreset, signal) {
++				const presets = ctx.get("agentPresets");
++				if (presets === void 0) return presetArchiveFailure("This deployment has no agent presets.", 503);
++				try {
++					signal?.throwIfAborted();
++					const preset = await presets.resolve(agentPreset);
++					if (preset.trust !== "user") return presetArchiveFailure("Built-in presets cannot be exported. Duplicate this preset first, then export the custom copy.", 403);
++					if (preset.broken !== void 0) return presetArchiveFailure(`This preset cannot be exported because it failed to load: ${preset.broken}`);
++					const files = await collectPresetArchiveFiles(dirname(preset.path));
++					const manifest = {
++						format: PRESET_ARCHIVE_FORMAT,
++						version: PRESET_ARCHIVE_VERSION,
++						id: preset.id,
++						name: preset.name,
++						description: preset.description,
++						icon: preset.icon,
++						createdAt: (/* @__PURE__ */ new Date()).toISOString(),
++						dshVersion: "0.1.1-rc.1"
++					};
++					files["manifest.json"] = strToU8(JSON.stringify(manifest, null, 2));
++					signal?.throwIfAborted();
++					const data = zipSync(files, { level: 6 });
++					if (data.length > PRESET_ARCHIVE_MAX_COMPRESSED) return presetArchiveFailure("The compressed preset package is larger than 16 MB.", 413);
++					return new Response(data, {
++						headers: {
++							"content-type": PRESET_ARCHIVE_MIME,
++							"content-disposition": `attachment; filename="${preset.id}.dshpreset"`
++						}
++					});
++				} catch (error) {
++					if (signal?.aborted) return presetArchiveFailure("Preset export was cancelled.", 499);
++					return presetArchiveFailure(error instanceof Error ? error.message : "Failed to export preset package.");
++				}
++			},
++			async importArchive(data, options, signal) {
++				const presets = ctx.get("agentPresets");
++				if (presets === void 0) return presetArchiveFailure("This deployment has no agent presets.", 503);
++				const install = options.install === true;
++				let requestedId = options.agentPreset?.trim().toLowerCase();
++				if (requestedId === "") requestedId = void 0;
++				if (requestedId !== void 0 && !PRESET_ARCHIVE_ID.test(requestedId)) return presetArchiveFailure("Use lowercase letters, digits, and hyphens, starting with a letter or digit.");
++				let unzipped;
++				try {
++					signal?.throwIfAborted();
++					unzipped = unzipSync(data);
++				} catch {
++					return presetArchiveFailure("The file is not a valid ZIP archive.");
++				}
++				const manifestBytes = unzipped["manifest.json"];
++				if (!manifestBytes) return presetArchiveFailure("Missing manifest.json in preset package.");
++				let manifest;
++				try {
++					manifest = JSON.parse(strFromU8(manifestBytes));
++				} catch {
++					return presetArchiveFailure("Invalid JSON in manifest.json.");
++				}
++				if (manifest.format !== PRESET_ARCHIVE_FORMAT) return presetArchiveFailure(`Unsupported package format "${manifest.format}". Expected "${PRESET_ARCHIVE_FORMAT}".`);
++				if (manifest.version !== PRESET_ARCHIVE_VERSION) return presetArchiveFailure(`Unsupported package version ${manifest.version}. Maximum supported is ${PRESET_ARCHIVE_VERSION}.`);
++				const originalId = typeof manifest.id === "string" ? manifest.id.trim().toLowerCase() : "";
++				if (!PRESET_ARCHIVE_ID.test(originalId)) return presetArchiveFailure(`Invalid preset id "${manifest.id}" in manifest.`);
++				const targetId = requestedId ?? originalId;
++				const files = {};
++				let fileCount = 0;
++				let totalUncompressed = 0;
++				for (const [entryName, bytes] of Object.entries(unzipped)) {
++					if (entryName === "manifest.json") continue;
++					const safe = safePresetArchivePath(entryName);
++					if (safe === null) continue;
++					const baseName = safe.split("/").pop() ?? "";
++					if (PRESET_ARCHIVE_IGNORED_FILES.has(baseName)) continue;
++					if (++fileCount > PRESET_ARCHIVE_MAX_FILES) return presetArchiveFailure(`Package contains more than ${PRESET_ARCHIVE_MAX_FILES} files.`);
++					if (bytes.length > PRESET_ARCHIVE_MAX_FILE) return presetArchiveFailure(`File "${safe}" exceeds the 12 MB limit.`);
++					totalUncompressed += bytes.length;
++					if (totalUncompressed > PRESET_ARCHIVE_MAX_UNCOMPRESSED) return presetArchiveFailure("Uncompressed package exceeds the 32 MB limit.");
++					files[safe] = bytes;
++				}
++				if (!files[COMPOSITION_FILE]) return presetArchiveFailure(`Package is missing required composition file "${COMPOSITION_FILE}".`);
++				let conflict = false;
++				try {
++					const existing = await presets.resolve(targetId);
++					if (existing) conflict = true;
++				} catch {}
++				const warnings = presetArchiveWarnings(files, manifest.dshVersion);
++				if (!install) {
++					return Response.json({
++						ok: true,
++						manifest: {
++							id: targetId,
++							originalId,
++							name: manifest.name ?? targetId,
++							description: manifest.description ?? "",
++							icon: manifest.icon ?? "sparkle",
++							dshVersion: manifest.dshVersion,
++							createdAt: manifest.createdAt
++						},
++						fileCount,
++						totalSize: totalUncompressed,
++						conflict,
++						warnings
++					});
++				}
++				if (conflict) return presetArchiveFailure(`A preset named "${targetId}" already exists. Choose a different name or remove the existing preset first.`, 409);
++				const root = writableRoot();
++				const target = resolve(root, targetId);
++				const imported = await mkdtemp(resolve(root, `.${targetId}-import-`));
++				try {
++					signal?.throwIfAborted();
++					for (const [relPath, bytes] of Object.entries(files)) {
++						const fullPath = resolve(imported, relPath);
++						if (!fullPath.startsWith(imported + sep)) throw new Error(`Path traversal detected: ${relPath}`);
++						await mkdir(dirname(fullPath), { recursive: true });
++						await writeFile(fullPath, bytes);
++					}
++					const scanned = await scanRoot({
++						path: imported,
++						trust: "user",
++						id: targetId
++					});
++					const parsed = scanned.get(targetId);
++					if (!parsed || parsed.broken !== void 0) {
++						throw new Error(parsed?.broken ? `Invalid preset configuration: ${parsed.broken}` : "Failed to load imported preset configuration.");
++					}
++					signal?.throwIfAborted();
++					await rename(imported, target);
++				} catch (error) {
++					await rm(imported, { recursive: true, force: true }).catch(() => {});
++					if (signal?.aborted) return presetArchiveFailure("Preset import was cancelled.", 499);
++					return presetArchiveFailure(error instanceof Error ? error.message : "Failed to install preset files.");
++				}
++				try {
++					const resolved = await presets.resolve(targetId);
++					return Response.json({
++						ok: true,
++						preset: resolved
++					});
++				} catch (error) {
++					return presetArchiveFailure(error instanceof Error ? error.message : "Preset was installed but could not be resolved.");
++				}
++			},
+ 			async list(request) {
+ 				const presets = ctx.get("agentPresets");
+ 				if (presets === void 0) return ok(request, {
+@@ -4920,6 +5170,34 @@ function toFetchHandler(api) {
+ 			rpcId: RpcId(randomUUID()),
+ 			payload: {}
+ 		}, req.signal));
++		if (path === "/api/agent-preset.export" && (req.method === "GET" || req.method === "HEAD")) {
++			const agentPreset = url.searchParams.get("agentPreset");
++			if (agentPreset === null || !PRESET_ARCHIVE_ID.test(agentPreset)) return presetArchiveFailure("Missing or invalid agentPreset query parameter.");
++			const response = await api.agentPresets.exportArchive(agentPreset, req.signal);
++			if (req.method === "GET") return response;
++			await response.body?.cancel();
++			return new Response(null, {
++				status: response.status,
++				headers: response.headers
++			});
++		}
++		if (path === "/api/agent-preset.import" && req.method === "POST") {
++			const contentType = req.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
++			if (contentType !== PRESET_ARCHIVE_MIME && contentType !== "application/zip" && contentType !== "application/octet-stream") return presetArchiveFailure("Content type must be a DSH preset package.", 415);
++			const contentLength = Number(req.headers.get("content-length"));
++			if (Number.isFinite(contentLength) && contentLength > PRESET_ARCHIVE_MAX_COMPRESSED) return presetArchiveFailure("Preset package is larger than 16 MB.", 413);
++			let data;
++			try {
++				data = new Uint8Array(await req.arrayBuffer());
++			} catch {
++				return presetArchiveFailure("Could not read the preset package.");
++			}
++			if (data.length > PRESET_ARCHIVE_MAX_COMPRESSED) return presetArchiveFailure("Preset package is larger than 16 MB.", 413);
++			return api.agentPresets.importArchive(data, {
++				agentPreset: url.searchParams.get("agentPreset") ?? void 0,
++				install: url.searchParams.get("install") === "1"
++			}, req.signal);
++		}
+ 		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
+ 			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
+ 			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
+@@ -5519,7 +5797,6 @@ var ApiProxyService = class extends Service {
+ 		"agentDefaultModel",
+ 		"agents",
+ 		"attachments",
+-		"directoryPicker",
+ 		"llm",
+ 		"sessions",
+ 		"subagents",
