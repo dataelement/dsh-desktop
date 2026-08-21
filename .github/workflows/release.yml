@@ -322,10 +322,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm run package:win
       - name: Build isolated Windows development package
-        if: github.event_name == 'workflow_dispatch'
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npm run package:dev:win
       - name: Smoke test packaged Windows Harness
-        if: github.event_name == 'workflow_dispatch'
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         shell: pwsh
         run: |
           $userData = Join-Path $env:APPDATA 'dsh-desktop-dev'
@@ -431,7 +431,7 @@ jobs:
             dist/latest.yml
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
           name: windows-x64-dev
           path: |
