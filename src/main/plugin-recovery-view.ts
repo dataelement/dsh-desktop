@@ -27,6 +27,11 @@ export interface PluginRecoveryViewModel {
   rawError: string
   quitLabel: string
   canUninstall: boolean
+  canResetData: boolean
+  resetLabel: string
+  resetBusyLabel: string
+  resetDetail: string
+  resetSafetyNote: string
 }
 
 interface FailureDescription {
@@ -167,7 +172,7 @@ export function buildPluginRecoveryViewModel(options: {
         : 'Harness 暂时无法启动',
       summary: canUninstall
         ? ''
-        : '目前还无法定位到具体插件。请打开 Harness 日志查看详细错误。',
+        : '目前还无法定位到具体插件。可以重置 Harness 数据（自动备份后重建）后再次启动，或打开日志查看详细错误。',
       reasonTitle: description.title,
       reasonDetail: description.detail,
       plugins,
@@ -179,8 +184,8 @@ export function buildPluginRecoveryViewModel(options: {
       safetyNote: '工作区、会话、模型配置和其他插件不会被删除。',
       primaryLabel: canUninstall
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
-        : '打开 Harness 日志',
-      primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在打开日志…',
+        : '重置 Harness 数据',
+      primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在备份并重置…',
       restartLabel: '重启 Harness',
       restartBusyLabel: '正在重启…',
       logLabel: '打开 Harness 日志',
@@ -190,7 +195,12 @@ export function buildPluginRecoveryViewModel(options: {
       launchDirectory: snapshot.launchDirectory,
       rawError: snapshot.message,
       quitLabel: '退出 DSH Desktop',
-      canUninstall
+      canUninstall,
+      canResetData: !canUninstall,
+      resetLabel: '重置 Harness 数据',
+      resetBusyLabel: '正在备份并重置…',
+      resetDetail: '备份当前的 Harness 数据后重新创建一个干净的工作目录，再自动尝试启动。',
+      resetSafetyNote: '会先备份当前数据再清理；工作区和模型配置会被保留。'
     }
   }
 
@@ -203,7 +213,7 @@ export function buildPluginRecoveryViewModel(options: {
       : 'Harness could not start',
     summary: canUninstall
       ? ''
-      : 'No specific plugin could be identified. Open the Harness log to inspect the detailed error.',
+      : 'No specific plugin could be identified. Reset Harness data to back up the current directory and recreate a clean working folder, or open the log to inspect the detailed error.',
     reasonTitle: description.title,
     reasonDetail: description.detail,
     plugins,
@@ -215,8 +225,8 @@ export function buildPluginRecoveryViewModel(options: {
     safetyNote: 'Your workspaces, sessions, model settings, and other plugins will not be removed.',
     primaryLabel: canUninstall
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
-      : 'Open Harness log',
-    primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Opening log…',
+      : 'Reset Harness data',
+    primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Backing up and resetting…',
     restartLabel: 'Restart Harness',
     restartBusyLabel: 'Restarting…',
     logLabel: 'Open Harness log',
@@ -226,6 +236,11 @@ export function buildPluginRecoveryViewModel(options: {
     launchDirectory: snapshot.launchDirectory,
     rawError: snapshot.message,
     quitLabel: 'Quit DSH Desktop',
-    canUninstall
+    canUninstall,
+    canResetData: !canUninstall,
+    resetLabel: 'Reset Harness data',
+    resetBusyLabel: 'Backing up and resetting…',
+    resetDetail: 'Back up the current Harness data and recreate a clean working folder, then retry startup automatically.',
+    resetSafetyNote: 'Backs up existing data first; your workspaces and model settings will be preserved.'
   }
 }

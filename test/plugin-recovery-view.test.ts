@@ -85,7 +85,7 @@ describe('plugin recovery view model', () => {
     expect(model.canUninstall).toBe(true)
   })
 
-  it('falls back to the log when no plugin can be identified', () => {
+  it('falls back to resetting harness data when no plugin can be identified', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(),
       plugins: [],
@@ -93,8 +93,26 @@ describe('plugin recovery view model', () => {
       locale: 'en'
     })
     expect(model.canUninstall).toBe(false)
-    expect(model.primaryLabel).toBe('Open Harness log')
+    expect(model.canResetData).toBe(true)
+    expect(model.primaryLabel).toBe('Reset Harness data')
+    expect(model.primaryBusyLabel).toBe('Backing up and resetting…')
+    expect(model.resetLabel).toBe('Reset Harness data')
+    expect(model.resetDetail).toContain('Back up')
+    expect(model.resetSafetyNote).toContain('Backs up')
+    expect(model.logLabel).toBe('Open Harness log')
     expect(model.restartLabel).toBe('Restart Harness')
     expect(model.restartBusyLabel).toBe('Restarting…')
+  })
+
+  it('hides the reset option when a removable plugin is identified', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(),
+      plugins: ['some-bad-plugin'],
+      removedPlugins: [],
+      locale: 'en'
+    })
+    expect(model.canUninstall).toBe(true)
+    expect(model.canResetData).toBe(false)
+    expect(model.primaryLabel).toBe('Remove this plugin and continue')
   })
 })

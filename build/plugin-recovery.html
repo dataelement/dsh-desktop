@@ -464,7 +464,13 @@
         primary.disabled = true
         primary.textContent = model.primaryBusyLabel
         restart.disabled = true
-        navigate(model.canUninstall ? 'uninstall' : 'show-log')
+        if (model.canUninstall) {
+          navigate('uninstall')
+        } else if (model.canResetData) {
+          navigate('reset-data')
+        } else {
+          navigate('show-log')
+        }
       })
       restart.addEventListener('click', () => {
         restart.disabled = true

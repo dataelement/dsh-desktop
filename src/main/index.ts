@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { mkdir, rename } from 'node:fs/promises'
 import { parse } from 'yaml'
 import {
   app,
@@ -51,13 +52,14 @@ import {
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 
-type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh'
+type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'reset-data'
 
 const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
   'uninstall',
   'show-log',
   'quit',
-  'restart'
+  'restart',
+  'reset-data'
 ])
 
 let mainWindow: BrowserWindow | undefined
@@ -637,6 +639,28 @@ function showUnexpectedError(error: unknown): void {
   dialog.showErrorBox('DSH Desktop encountered an error', message)
 }
 
+async function resetHarnessData(): Promise<boolean> {
+  const harnessHome = join(app.getPath('userData'), 'harness')
+  if (!existsSync(harnessHome)) {
+    await mkdir(harnessHome, { recursive: true })
+    return true
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupPath = join(app.getPath('userData'), `harness-backup-${timestamp}`)
+
+  try {
+    await rename(harnessHome, backupPath)
+    await mkdir(harnessHome, { recursive: true })
+    return true
+  } catch (error) {
+    console.warn(
+      `[plugin-recovery] Failed to reset Harness data: ${error instanceof Error ? error.message : String(error)}`
+    )
+    return false
+  }
+}
+
 async function showPluginRecovery(options?: {
   message?: string
   logs?: readonly string[]
@@ -742,6 +766,22 @@ async function showPluginRecovery(options?: {
         }
         continue
       } else if (action === 'restart') {
+        await launchHarness()
+        if (applyPendingFrontendEvidence()) continue
+        if (runtime.snapshot().phase === 'ready') {
+          schedulePluginRecoverySessionReset()
+          return
+        }
+        continue
+      } else if (action === 'reset-data') {
+        const resetOk = await resetHarnessData()
+        if (!resetOk) {
+          notice = isChinese
+            ? '无法备份或重置 Harness 数据。请打开 Harness 日志查看详情，或手动重试。'
+            : 'The Harness data could not be backed up or reset. Open the Harness log for details or try again manually.'
+          continue
+        }
+        pluginRecoveryRemovedPlugins.length = 0
         await launchHarness()
         if (applyPendingFrontendEvidence()) continue
         if (runtime.snapshot().phase === 'ready') {
