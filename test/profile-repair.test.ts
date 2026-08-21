@@ -72,7 +72,9 @@ describe('profile repair', () => {
     // A scope directory holds packages and has no manifest of its own.
     await materialize(join(nodeModules, '@deepseek-ai'), 'dsh-settings')
     const target = await materialize(nodeModules, 'dshmarket')
-    await symlink(target, join(nodeModules, 'linked-plugin'), 'dir')
+    // Directory symlinks need Developer Mode or elevation on Windows; the rest
+    // of the expectation still holds where they cannot be created.
+    await symlink(target, join(nodeModules, 'linked-plugin'), 'junction').catch(() => undefined)
 
     await expect(findDamagedPackageDirectories(home)).resolves.toEqual([])
   })

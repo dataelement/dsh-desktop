@@ -140,6 +140,7 @@ describe('packaged pnpm runner', () => {
     const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
       spawnProcess,
       idleTimeoutMs: 5,
+      kill: (child) => child.kill(),
       report: (message) => lines.push(message)
     })
 
@@ -148,6 +149,23 @@ describe('packaged pnpm runner', () => {
     // A wedged run is not retried — three stuck runs are three times the wait.
     expect(calls).toHaveLength(1)
     expect(lines[0]).toContain('said nothing')
+  })
+
+  it('gives up on a run whose kill never lands', async () => {
+    // taskkill can miss on Windows. Waiting for an exit that never comes would
+    // be the very hang the idle timeout exists to prevent.
+    const { spawnProcess } = fakePnpm([{ silent: true }])
+
+    const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
+      spawnProcess,
+      idleTimeoutMs: 5,
+      killGraceMs: 5,
+      kill: () => undefined,
+      report: () => undefined
+    })
+
+    expect(result.code).toBe(1)
+    expect(result.idleTimedOut).toBe(true)
   })
 
   it('says what it did, so a report without those lines names an unwrapped pnpm', async () => {

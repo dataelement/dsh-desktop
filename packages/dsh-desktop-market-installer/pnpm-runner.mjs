@@ -34,6 +34,8 @@ export const RETRY_DELAY_MS = 750
  * ceiling, which is what makes a failed install feel like a hang.
  */
 export const IDLE_TIMEOUT_MS = Number(process.env.DSH_DESKTOP_PNPM_IDLE_TIMEOUT_MS) || 120_000
+/** How long a killed run may take to actually go away before it is written off. */
+export const KILL_GRACE_MS = 5_000
 /** Prefix of every line this runner contributes to a package operation's output. */
 export const MARKER = 'dsh-desktop pnpm runner:'
 
@@ -88,6 +90,8 @@ function runPnpm(executable, args, options = {}) {
   const {
     spawnProcess = spawn,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
+    killGraceMs = KILL_GRACE_MS,
+    kill = killTree,
     report = () => undefined
   } = options
 
@@ -98,10 +102,15 @@ function runPnpm(executable, args, options = {}) {
     })
     let output = ''
     let idle
+    let grace
     let stopped = false
+    let settled = false
 
     const finish = (result) => {
+      if (settled) return
+      settled = true
       clearTimeout(idle)
+      clearTimeout(grace)
       resolve({ ...result, output, idleTimedOut: stopped })
     }
     const heartbeat = () => {
@@ -110,7 +119,11 @@ function runPnpm(executable, args, options = {}) {
       idle = setTimeout(() => {
         stopped = true
         report(`pnpm said nothing for ${Math.round(idleTimeoutMs / 1000)}s; stopping it`)
-        killTree(child)
+        kill(child)
+        // A kill that does not land must not become the hang this guards
+        // against, so the run is written off either way.
+        grace = setTimeout(() => finish({ code: 1, signal: null }), killGraceMs)
+        grace.unref?.()
       }, idleTimeoutMs)
       idle.unref?.()
     }
@@ -124,13 +137,23 @@ function runPnpm(executable, args, options = {}) {
     child.stderr.on('data', (chunk) => observe(chunk, process.stderr))
     child.once('error', (error) => {
       clearTimeout(idle)
-      reject(error)
+      clearTimeout(grace)
+      if (!settled) {
+        settled = true
+        reject(error)
+      }
     })
     child.once('exit', (code, signal) => finish({ code: stopped ? 1 : code, signal }))
     heartbeat()
   })
 }
 
+/**
+ * Stop a pnpm run and everything it started. On Windows `kill` reaches only
+ * the wrapper, so the tree goes through taskkill — but never *instead of* the
+ * direct kill: a taskkill that does not land would leave this runner waiting
+ * on an exit that never comes, which is the hang it exists to prevent.
+ */
 function killTree(child) {
   if (process.platform === 'win32' && child.pid !== undefined) {
     try {
@@ -138,9 +161,8 @@ function killTree(child) {
         stdio: 'ignore',
         windowsHide: true
       })
-      return
     } catch {
-      // fall through to the plain kill below
+      // The direct kill below is the guarantee.
     }
   }
   child.kill('SIGKILL')
@@ -159,13 +181,16 @@ export async function runWithLockRecovery(executable, args, options = {}) {
     now = Date.now,
     retryDelayMs = RETRY_DELAY_MS,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
+    killGraceMs = KILL_GRACE_MS,
+    kill = killTree,
     // Every step announces itself on the same stream pnpm's own diagnostics
     // travel, because the market reports that stream verbatim: a report
     // without these lines is a report from a pnpm this runner never wrapped.
     report = (message) => process.stderr.write(`${MARKER} ${message}\n`)
   } = options
 
-  const run = () => runPnpm(executable, args, { spawnProcess, idleTimeoutMs, report })
+  const run = () =>
+    runPnpm(executable, args, { spawnProcess, idleTimeoutMs, killGraceMs, kill, report })
 
   const first = await run()
   const blocked = first.code === 0 ? undefined : lockedRenameTarget(first.output)
