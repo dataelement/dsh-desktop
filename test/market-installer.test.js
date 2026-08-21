@@ -52,11 +52,15 @@ describe('desktop plugin market installer', () => {
     const binDir = await ensurePnpmShim(home)
     expect(binDir).toBe(join(home, '.desktop-bin'))
 
+    const runner = await readFile(join(binDir, 'pnpm-runner.mjs'), 'utf8')
+    expect(runner).toContain('runWithLockRecovery')
+
     if (process.platform === 'win32') {
       const pnpmCmd = await readFile(join(binDir, 'pnpm.cmd'), 'utf8')
       const nodeCmd = await readFile(join(binDir, 'node.cmd'), 'utf8')
       expect(pnpmCmd).toContain(process.execPath)
       expect(pnpmCmd).toContain('pnpm')
+      expect(pnpmCmd).toContain(join(binDir, 'pnpm-runner.mjs'))
       expect(pnpmCmd).toContain('set ELECTRON_RUN_AS_NODE=1')
       expect(nodeCmd).toContain(process.execPath)
       expect(nodeCmd).toContain('set ELECTRON_RUN_AS_NODE=1')
@@ -65,6 +69,7 @@ describe('desktop plugin market installer', () => {
       const nodeScript = await readFile(join(binDir, 'node'), 'utf8')
       expect(pnpmScript).toContain(process.execPath)
       expect(pnpmScript).toContain('pnpm')
+      expect(pnpmScript).toContain(join(binDir, 'pnpm-runner.mjs'))
       expect(pnpmScript).toContain('export ELECTRON_RUN_AS_NODE=1')
       expect(nodeScript).toContain(process.execPath)
       expect(nodeScript).toContain('export ELECTRON_RUN_AS_NODE=1')
@@ -75,18 +80,21 @@ describe('desktop plugin market installer', () => {
     expect(npmrc).toContain('child-concurrency=1')
   })
 
-  it('cleans up stale _tmp_ directories left by interrupted installations', async () => {
+  it('cleans up staging and sidelined directories left by interrupted installations', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-market-clean-'))
     const nodeModules = join(home, 'profiles', 'web', 'node_modules')
     const staleTmpDir = join(nodeModules, 'argparse_tmp_12345_1')
+    const sidelinedDir = join(nodeModules, 'argparse.dsh-old-1787317710932')
     const validDir = join(nodeModules, 'argparse')
     await mkdir(staleTmpDir, { recursive: true })
+    await mkdir(sidelinedDir, { recursive: true })
     await mkdir(validDir, { recursive: true })
 
     await cleanStaleTemporaryDirectories(home)
 
     const { existsSync } = await import('node:fs')
     expect(existsSync(staleTmpDir)).toBe(false)
+    expect(existsSync(sidelinedDir)).toBe(false)
     expect(existsSync(validDir)).toBe(true)
   })
 

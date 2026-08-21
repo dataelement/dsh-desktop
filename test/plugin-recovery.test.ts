@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parse, stringify } from 'yaml'
 import {
+  isDisposableModuleDirectory,
   isThirdPartyPackageName,
   profilePackageJsonPath,
   pruneMissingProfileBundles,
@@ -696,6 +697,17 @@ describe('plugin-recovery', () => {
 
     const modified = await pruneMissingProfileBundles(testDir)
     expect(modified).toBe(false)
+  })
+
+  it('sweeps pnpm staging and sidelined package directories before launch', () => {
+    // Windows refuses to replace a directory something still holds open, so
+    // the packaged pnpm runner moves the blocked package aside and lets pnpm
+    // install over the freed name. Nothing holds either leftover before
+    // Harness starts, which is when this sweep runs.
+    expect(isDisposableModuleDirectory('argparse_tmp_19856_4')).toBe(true)
+    expect(isDisposableModuleDirectory('argparse.dsh-old-1787317710932')).toBe(true)
+    expect(isDisposableModuleDirectory('argparse')).toBe(false)
+    expect(isDisposableModuleDirectory('js-yaml')).toBe(false)
   })
 })
 

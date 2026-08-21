@@ -1,9 +1,12 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 
 export const RECOMMENDED_MARKET_VERSION = '1.15.0'
 export const MARKET_PACKAGE = 'dshmarket'
@@ -26,13 +29,18 @@ export function profileDirectory(home = dshHome()) {
   return join(home, 'profiles', MARKET_PROFILE)
 }
 
+/** Leftovers of an interrupted pnpm run, or of a Windows locked-rename recovery. */
+export function isDisposableModuleDirectory(name) {
+  return name.includes('_tmp_') || name.includes(SIDELINE_MARKER)
+}
+
 export async function cleanStaleTemporaryDirectories(home = dshHome()) {
   const directory = profileDirectory(home)
   const nodeModulesPath = join(directory, 'node_modules')
   try {
     const entries = await readdir(nodeModulesPath, { withFileTypes: true })
     for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.includes('_tmp_')) {
+      if (entry.isDirectory() && isDisposableModuleDirectory(entry.name)) {
         await rm(join(nodeModulesPath, entry.name), { recursive: true, force: true }).catch(() => undefined)
       }
     }
@@ -134,6 +142,12 @@ export async function ensurePnpmShim(home = dshHome()) {
   const pnpmEntry = resolvePnpmEntry()
   const executable = process.execPath
 
+  // pnpm is reached through this shim by every profile package operation —
+  // DSH Desktop's installer and the community market alike — so the runner it
+  // points at is where a Windows locked rename gets recovered for both.
+  const runnerPath = join(directory, 'pnpm-runner.mjs')
+  await copyFile(fileURLToPath(new URL('./pnpm-runner.mjs', import.meta.url)), runnerPath)
+
   // The packaged executable is Electron on macOS, where Harness runs as a
   // utility process. Anything invoked through these shims expects Node
   // semantics — a leading node flag included — so the shims declare Node mode
@@ -143,7 +157,7 @@ export async function ensurePnpmShim(home = dshHome()) {
     const pnpmPath = join(directory, 'pnpm.cmd')
     await writeFile(
       pnpmPath,
-      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" \"${pnpmEntry}\" %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" \"${runnerPath}\" \"${pnpmEntry}\" %*\r\n`,
       'utf8'
     )
     const nodePath = join(directory, 'node.cmd')
@@ -156,7 +170,7 @@ export async function ensurePnpmShim(home = dshHome()) {
     const pnpmPath = join(directory, 'pnpm')
     await writeFile(
       pnpmPath,
-      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(executable)} ${shellQuote(pnpmEntry)} \"$@\"\n`,
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(executable)} ${shellQuote(runnerPath)} ${shellQuote(pnpmEntry)} \"$@\"\n`,
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(pnpmPath, 0o755)
