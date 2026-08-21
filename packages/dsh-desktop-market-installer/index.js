@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
@@ -24,6 +24,21 @@ function dshHome() {
 
 export function profileDirectory(home = dshHome()) {
   return join(home, 'profiles', MARKET_PROFILE)
+}
+
+export async function cleanStaleTemporaryDirectories(home = dshHome()) {
+  const directory = profileDirectory(home)
+  const nodeModulesPath = join(directory, 'node_modules')
+  try {
+    const entries = await readdir(nodeModulesPath, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.includes('_tmp_')) {
+        await rm(join(nodeModulesPath, entry.name), { recursive: true, force: true }).catch(() => undefined)
+      }
+    }
+  } catch {
+    // node_modules directory may not exist yet
+  }
 }
 
 function readObject(text) {
@@ -147,6 +162,23 @@ export async function ensurePnpmShim(home = dshHome()) {
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(nodePath, 0o755)
+  }
+
+  // Also write .npmrc in profiles/web to prevent Windows file lock conflicts and racing worker threads
+  const profileDir = profileDirectory(home)
+  await mkdir(profileDir, { recursive: true })
+  const npmrcPath = join(profileDir, '.npmrc')
+  const npmrcContent = [
+    'package-import-method=clone-or-copy',
+    'child-concurrency=1',
+    'side-effects-cache=false'
+  ].join('\n') + '\n'
+  try {
+    if (!existsSync(npmrcPath)) {
+      await writeFile(npmrcPath, npmrcContent, 'utf8')
+    }
+  } catch {
+    // ignore
   }
 
   const nodeDir = dirname(executable)
@@ -274,6 +306,7 @@ export function apply(ctx) {
       return
     }
 
+    await cleanStaleTemporaryDirectories(home)
     await ensurePnpmShim(home)
     await mkdir(directory, { recursive: true })
     let manifestSnapshot
@@ -292,7 +325,10 @@ export function apply(ctx) {
         PATH: envPath,
         Path: envPath,
         CI: 'true',
-        NO_COLOR: '1'
+        NO_COLOR: '1',
+        PNPM_CONFIG_CHILD_CONCURRENCY: '1',
+        PNPM_CONFIG_PACKAGE_IMPORT_METHOD: 'clone-or-copy',
+        PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false'
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -336,9 +372,12 @@ export function apply(ctx) {
       detail = undefined
       restartRequired = true
     } catch (error) {
+      await cleanStaleTemporaryDirectories(home).catch(() => undefined)
       if (manifestSnapshot !== undefined) {
         await atomicWrite(manifestPath, manifestSnapshot).catch(() => undefined)
       }
+      const lockfilePath = join(directory, 'pnpm-lock.yaml')
+      await rm(lockfilePath, { force: true }).catch(() => undefined)
       phase = 'error'
       detail = error instanceof Error ? error.message : String(error)
       ctx.logger.warn(error instanceof Error ? error : new Error(detail))
@@ -359,6 +398,7 @@ export function apply(ctx) {
       return
     }
 
+    await cleanStaleTemporaryDirectories(home)
     await ensurePnpmShim(home)
     let manifestSnapshot
     try {
@@ -376,7 +416,10 @@ export function apply(ctx) {
         PATH: envPath,
         Path: envPath,
         CI: 'true',
-        NO_COLOR: '1'
+        NO_COLOR: '1',
+        PNPM_CONFIG_CHILD_CONCURRENCY: '1',
+        PNPM_CONFIG_PACKAGE_IMPORT_METHOD: 'clone-or-copy',
+        PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false'
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -420,9 +463,12 @@ export function apply(ctx) {
       detail = undefined
       restartRequired = true
     } catch (error) {
+      await cleanStaleTemporaryDirectories(home).catch(() => undefined)
       if (manifestSnapshot !== undefined) {
         await atomicWrite(manifestPath, manifestSnapshot).catch(() => undefined)
       }
+      const lockfilePath = join(directory, 'pnpm-lock.yaml')
+      await rm(lockfilePath, { force: true }).catch(() => undefined)
       phase = 'error'
       detail = error instanceof Error ? error.message : String(error)
       ctx.logger.warn(error instanceof Error ? error : new Error(detail))

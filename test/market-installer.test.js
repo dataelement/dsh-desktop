@@ -10,6 +10,7 @@ import {
   UNINSTALL_PATH,
   buildInstallArguments,
   buildUninstallArguments,
+  cleanStaleTemporaryDirectories,
   ensurePnpmShim,
   isTrustedRequest,
   readMarketInstallation,
@@ -64,6 +65,25 @@ describe('desktop plugin market installer', () => {
       expect(pnpmScript).toContain('pnpm')
       expect(nodeScript).toContain(process.execPath)
     }
+
+    const npmrc = await readFile(join(home, 'profiles', 'web', '.npmrc'), 'utf8')
+    expect(npmrc).toContain('package-import-method=clone-or-copy')
+    expect(npmrc).toContain('child-concurrency=1')
+  })
+
+  it('cleans up stale _tmp_ directories left by interrupted installations', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-market-clean-'))
+    const nodeModules = join(home, 'profiles', 'web', 'node_modules')
+    const staleTmpDir = join(nodeModules, 'argparse_tmp_12345_1')
+    const validDir = join(nodeModules, 'argparse')
+    await mkdir(staleTmpDir, { recursive: true })
+    await mkdir(validDir, { recursive: true })
+
+    await cleanStaleTemporaryDirectories(home)
+
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(staleTmpDir)).toBe(false)
+    expect(existsSync(validDir)).toBe(true)
   })
 
   it('reports both the requested dependency and installed package version', async () => {
