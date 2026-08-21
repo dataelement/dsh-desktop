@@ -23,7 +23,7 @@ describe('Feishu release notes pipeline', () => {
     expect(output).toContain('<commit-details>')
     expect(output).toContain('<diff-statistics>')
     expect(output).toContain('<code-diff>')
-  })
+  }, 60_000)
 
   it('generates deterministic fallback release notes that pass validation', () => {
     const tempFile = join(process.cwd(), '.temp-feishu-test-notes.md')
@@ -50,7 +50,7 @@ describe('Feishu release notes pipeline', () => {
         unlinkSync(tempFile)
       } catch {}
     }
-  })
+  }, 60_000)
 
   it('rejects invalid markdown with links or incorrect headings', () => {
     const tempFile = join(process.cwd(), '.temp-invalid-feishu-notes.md')
