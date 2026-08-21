@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron'
 import electronUpdater from 'electron-updater'
 import type { UpdateStatus } from '../../shared/contracts'
 import {
+  AUTO_INSTALL_ON_APP_QUIT,
   shouldCheckAfterResume,
   supportsAutoUpdates,
   UPDATE_CHECK_INTERVAL_MS,
@@ -120,7 +121,7 @@ export function stopUpdateManager(): void {
 
 function configureUpdater(): void {
   autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoInstallOnAppQuit = AUTO_INSTALL_ON_APP_QUIT
   autoUpdater.allowPrerelease = false
   autoUpdater.logger = {
     info: (...args: unknown[]) => console.info('[updater]', ...args),

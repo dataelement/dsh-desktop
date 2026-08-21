@@ -287,20 +287,16 @@ function render(): void {
         render()
       })
     })
-    const later = button(locale === 'zh' ? '稍后' : 'Later', 'secondary')
-    later.addEventListener('click', dismissCurrent)
-    actions.append(install, later)
+    actions.append(install)
     body.appendChild(actions)
   }
 
   row.appendChild(body)
 
-  if (status.phase !== 'downloaded') {
-    const close = button('×', 'close')
-    close.setAttribute('aria-label', locale === 'zh' ? '关闭' : 'Close')
-    close.addEventListener('click', dismissCurrent)
-    row.appendChild(close)
-  }
+  const close = button('×', 'close')
+  close.setAttribute('aria-label', locale === 'zh' ? '关闭' : 'Close')
+  close.addEventListener('click', dismissCurrent)
+  row.appendChild(close)
 
   card.appendChild(row)
   content.replaceChildren(card)
