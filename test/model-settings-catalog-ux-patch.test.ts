@@ -67,6 +67,21 @@ describe('settings model catalog search', () => {
     expect(client).toContain('modelSearch: "搜索模型"')
     expect(client).toContain('modelSearchEmpty: "没有找到匹配的模型。"')
   })
+
+  it('provides search state when the custom-provider form renders its model editor', async () => {
+    const client = await readFile(settingsModelsClient, 'utf8')
+    const customProviderCard = client.match(
+      /function CustomProviderCard\(props\) \{[\s\S]*?\n\t\t\}/
+    )?.[0]
+
+    expect(customProviderCard).toBeDefined()
+    expect(customProviderCard).toContain(
+      'const [modelQuery, setModelQuery] = (0, react.useState)("")'
+    )
+    expect(customProviderCard).toMatch(
+      /jsx\)\(ModelListEditor, \{[\s\S]*?modelQuery,[\s\S]*?onModelQueryChange: setModelQuery/
+    )
+  })
 })
 
 describe('settings provider editor sticky actions', () => {
@@ -95,6 +110,10 @@ describe('settings provider editor sticky actions', () => {
 
     expect(patch).toContain('function searchableModelEntries(models, query)')
     expect(patch).toContain('ModelCatalogSearch')
+    expect(patch).toContain(
+      'const [modelQuery, setModelQuery] = (0, react.useState)("")'
+    )
+    expect(patch).toContain('onModelQueryChange: setModelQuery')
     expect(patch).toContain('dshProviderEditorStickyFooter')
     expect(patch).toContain('onClick: addModel')
   })
