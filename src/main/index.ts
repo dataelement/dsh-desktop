@@ -990,6 +990,15 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle('harness:show-log', () => {
     shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
   })
+  ipcMain.handle('harness:open-in-finder', async (event, path?: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (typeof path !== 'string' || path.length === 0) {
+      throw new Error('A directory path is required.')
+    }
+    const errorMessage = await shell.openPath(path)
+    if (errorMessage) throw new Error(errorMessage)
+    return { ok: true }
+  })
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
     assertTrustedMainWindowEvent(event)

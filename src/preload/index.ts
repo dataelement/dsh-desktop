@@ -174,7 +174,8 @@ window.addEventListener('unhandledrejection', (event) => {
 contextBridge.exposeInMainWorld(
   'dshDesktop',
   Object.freeze({
-    restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart')
+    restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart'),
+    openInFinder: (path: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:open-in-finder', path)
   })
 )
 
