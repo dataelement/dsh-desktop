@@ -141,7 +141,10 @@ describe('Harness launch contract', () => {
         env: {
           PATH: '/usr/bin',
           DSH_HOME: '/Users/tester/Library/Application Support/dsh-desktop/harness',
-          NO_COLOR: '1'
+          NO_COLOR: '1',
+          PNPM_CONFIG_CHILD_CONCURRENCY: '1',
+          PNPM_CONFIG_PACKAGE_IMPORT_METHOD: 'clone-or-copy',
+          PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false'
         },
         execArgv: ['--expose-internals'],
         stdio: 'pipe',
