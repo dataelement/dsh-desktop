@@ -33,7 +33,7 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain("document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY")
     expect(preload).toContain('background: transparent')
     expect(preload).toContain('.safeArea::before')
-    expect(preload).toContain('height: 5px')
+    expect(preload).toContain('height: ${WINDOWS_TITLEBAR_HEIGHT}px')
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout > #root')
     expect(preload).toContain('-webkit-app-region: drag')
     expect(preload).toContain('-webkit-app-region: no-drag')

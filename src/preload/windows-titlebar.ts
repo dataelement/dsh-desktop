@@ -362,7 +362,7 @@ const titlebarStyles = `
     position: absolute;
     top: 0;
     right: 44px;
-    height: 5px;
+    height: ${WINDOWS_TITLEBAR_HEIGHT}px;
     left: var(${SIDEBAR_WIDTH_PROPERTY}, 280px);
     pointer-events: auto;
     -webkit-app-region: drag;
