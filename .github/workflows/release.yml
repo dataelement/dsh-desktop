@@ -9,6 +9,15 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      target:
+        description: Platform to build
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
       windows_prerelease_tag:
         description: Optional non-v tag for a Windows Dev pre-release
         required: false
@@ -24,6 +33,10 @@ concurrency:
 jobs:
   macos-apple-silicon:
     name: macOS Apple Silicon
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos' || (inputs.target == '' && inputs.windows_prerelease_tag == '')))
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -154,7 +167,9 @@ jobs:
 
   macos-intel:
     name: macOS Intel
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos' || (inputs.target == '' && inputs.windows_prerelease_tag == '')))
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -285,7 +300,9 @@ jobs:
 
   windows-x64:
     name: Windows x64
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'windows' || inputs.target == '' || inputs.windows_prerelease_tag != ''))
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4

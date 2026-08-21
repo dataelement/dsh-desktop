@@ -167,7 +167,7 @@ export async function ensurePnpmShim(home = dshHome()) {
   // one.
   const runnerPath = await stagePnpmRunner(directory)
   const pnpmCommand = runnerPath === undefined ? [pnpmEntry] : [runnerPath, pnpmEntry]
-  process.stderr.write(
+  process.stdout.write(
     runnerPath === undefined
       ? 'dsh-desktop: pnpm shim written without the lock-recovery runner\n'
       : `dsh-desktop: pnpm shim written via ${runnerPath}\n`
