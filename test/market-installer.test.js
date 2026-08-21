@@ -14,7 +14,8 @@ import {
   ensurePnpmShim,
   isTrustedRequest,
   readMarketInstallation,
-  resolvePnpmEntry
+  resolvePnpmEntry,
+  stagePnpmRunner
 } from '../packages/dsh-desktop-market-installer/index.js'
 
 describe('desktop plugin market installer', () => {
@@ -54,6 +55,12 @@ describe('desktop plugin market installer', () => {
 
     const runner = await readFile(join(binDir, 'pnpm-runner.mjs'), 'utf8')
     expect(runner).toContain('runWithLockRecovery')
+    await expect(stagePnpmRunner(binDir)).resolves.toBe(join(binDir, 'pnpm-runner.mjs'))
+    // A directory that cannot hold the staged copy still leaves pnpm reachable
+    // through the packaged original rather than taking the shims down.
+    await expect(stagePnpmRunner(join(binDir, 'missing', 'deeper'))).resolves.toMatch(
+      /packages[/\\]dsh-desktop-market-installer[/\\]pnpm-runner\.mjs$/u
+    )
 
     if (process.platform === 'win32') {
       const pnpmCmd = await readFile(join(binDir, 'pnpm.cmd'), 'utf8')

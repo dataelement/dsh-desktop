@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  MARKER,
   SIDELINE_MARKER,
   lockedRenameTarget,
   runWithLockRecovery,
@@ -24,6 +25,12 @@ function fakePnpm(runs) {
     const child = new EventEmitter()
     child.stdout = new EventEmitter()
     child.stderr = new EventEmitter()
+    child.pid = 4242
+    child.kill = () => {
+      child.emit('exit', null, 'SIGKILL')
+      return true
+    }
+    if (run.silent) return child
     queueMicrotask(() => {
       if (run.output) child.stderr.emit('data', run.output)
       child.emit('exit', run.code, null)
@@ -124,6 +131,47 @@ describe('packaged pnpm runner', () => {
       BLOCKED_TARGET,
       `${BLOCKED_TARGET}${SIDELINE_MARKER}1234`
     )
+  })
+
+  it('stops a pnpm that has gone silent instead of waiting out the host timeout', async () => {
+    const { spawnProcess, calls } = fakePnpm([{ silent: true }])
+    const lines = []
+
+    const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
+      spawnProcess,
+      idleTimeoutMs: 5,
+      report: (message) => lines.push(message)
+    })
+
+    expect(result.code).toBe(1)
+    expect(result.idleTimedOut).toBe(true)
+    // A wedged run is not retried — three stuck runs are three times the wait.
+    expect(calls).toHaveLength(1)
+    expect(lines[0]).toContain('said nothing')
+  })
+
+  it('says what it did, so a report without those lines names an unwrapped pnpm', async () => {
+    const { spawnProcess } = fakePnpm([
+      { code: 1, output: WINDOWS_LOCK_FAILURE },
+      { code: 1, output: WINDOWS_LOCK_FAILURE },
+      { code: 0, output: '' }
+    ])
+    const lines = []
+
+    await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
+      spawnProcess,
+      moveAside: async () => undefined,
+      exists: () => true,
+      wait: async () => undefined,
+      now: () => 1234,
+      report: (message) => lines.push(message)
+    })
+
+    expect(lines[0]).toContain('retrying')
+    expect(lines[1]).toContain(`moved ${BLOCKED_TARGET}`)
+    expect(lines[1]).toContain(SIDELINE_MARKER)
+    expect(lines.at(-1)).toContain('succeeded')
+    expect(MARKER).toContain('dsh-desktop')
   })
 
   it('reports pnpm\u2019s own failure when the directory cannot be moved either', async () => {

@@ -136,6 +136,22 @@ export function resolvePnpmEntry(requireFrom = import.meta.url) {
   return entry
 }
 
+/**
+ * Put the lock-recovery runner where the shims can invoke it.
+ * @returns the staged runner path, or undefined when neither the staged copy
+ * nor the packaged original can be used — the shims then call pnpm directly.
+ */
+export async function stagePnpmRunner(directory) {
+  const source = fileURLToPath(new URL('./pnpm-runner.mjs', import.meta.url))
+  const staged = join(directory, 'pnpm-runner.mjs')
+  try {
+    await copyFile(source, staged)
+    return staged
+  } catch {
+    return existsSync(source) ? source : undefined
+  }
+}
+
 export async function ensurePnpmShim(home = dshHome()) {
   const directory = join(home, '.desktop-bin')
   await mkdir(directory, { recursive: true })
@@ -144,9 +160,18 @@ export async function ensurePnpmShim(home = dshHome()) {
 
   // pnpm is reached through this shim by every profile package operation —
   // DSH Desktop's installer and the community market alike — so the runner it
-  // points at is where a Windows locked rename gets recovered for both.
-  const runnerPath = join(directory, 'pnpm-runner.mjs')
-  await copyFile(fileURLToPath(new URL('./pnpm-runner.mjs', import.meta.url)), runnerPath)
+  // points at is where a Windows locked rename gets recovered for both. A
+  // runner that cannot be staged must not take the shims down with it: pnpm
+  // still has to be reachable, just without the recovery, and the harness log
+  // has to say so rather than leaving a stale shim to be mistaken for a fresh
+  // one.
+  const runnerPath = await stagePnpmRunner(directory)
+  const pnpmCommand = runnerPath === undefined ? [pnpmEntry] : [runnerPath, pnpmEntry]
+  process.stderr.write(
+    runnerPath === undefined
+      ? 'dsh-desktop: pnpm shim written without the lock-recovery runner\n'
+      : `dsh-desktop: pnpm shim written via ${runnerPath}\n`
+  )
 
   // The packaged executable is Electron on macOS, where Harness runs as a
   // utility process. Anything invoked through these shims expects Node
@@ -157,7 +182,7 @@ export async function ensurePnpmShim(home = dshHome()) {
     const pnpmPath = join(directory, 'pnpm.cmd')
     await writeFile(
       pnpmPath,
-      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" \"${runnerPath}\" \"${pnpmEntry}\" %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" ${pnpmCommand.map((part) => `\"${part}\"`).join(' ')} %*\r\n`,
       'utf8'
     )
     const nodePath = join(directory, 'node.cmd')
@@ -170,7 +195,7 @@ export async function ensurePnpmShim(home = dshHome()) {
     const pnpmPath = join(directory, 'pnpm')
     await writeFile(
       pnpmPath,
-      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(executable)} ${shellQuote(runnerPath)} ${shellQuote(pnpmEntry)} \"$@\"\n`,
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(executable)} ${pnpmCommand.map(shellQuote).join(' ')} \"$@\"\n`,
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(pnpmPath, 0o755)

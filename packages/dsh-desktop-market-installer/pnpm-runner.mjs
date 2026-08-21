@@ -27,6 +27,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const SIDELINE_MARKER = '.dsh-old-'
 export const RETRY_DELAY_MS = 750
+/**
+ * How long pnpm may stay silent before this runner stops it. pnpm narrates
+ * resolution, fetching and linking as it goes, so silence this long is a stuck
+ * run, not a slow one — and failing here beats the hosts' fifteen-minute
+ * ceiling, which is what makes a failed install feel like a hang.
+ */
+export const IDLE_TIMEOUT_MS = Number(process.env.DSH_DESKTOP_PNPM_IDLE_TIMEOUT_MS) || 120_000
+/** Prefix of every line this runner contributes to a package operation's output. */
+export const MARKER = 'dsh-desktop pnpm runner:'
+
+function errorText(error) {
+  return error instanceof Error ? error.message : String(error)
+}
 
 /**
  * The destination pnpm could not claim, or undefined when the failure is not a
@@ -65,28 +78,72 @@ function delay(milliseconds) {
 /**
  * Run pnpm once, mirroring its streams to this process while keeping a copy
  * for failure classification.
+ *
+ * A run that stops saying anything is stopped rather than waited out: pnpm
+ * narrates its progress line by line, so silence is not slow work, and the
+ * hosts above only bound the whole operation at fifteen minutes — long enough
+ * for a wedged install to look like a hang to the person watching.
  */
-function runPnpm(executable, args, spawnProcess = spawn) {
+function runPnpm(executable, args, options = {}) {
+  const {
+    spawnProcess = spawn,
+    idleTimeoutMs = IDLE_TIMEOUT_MS,
+    report = () => undefined
+  } = options
+
   return new Promise((resolve, reject) => {
     const child = spawnProcess(executable, args, {
       stdio: ['inherit', 'pipe', 'pipe'],
       windowsHide: true
     })
     let output = ''
-    const keep = (chunk) => {
-      output = `${output}${chunk}`.slice(-256 * 1024)
+    let idle
+    let stopped = false
+
+    const finish = (result) => {
+      clearTimeout(idle)
+      resolve({ ...result, output, idleTimedOut: stopped })
     }
-    child.stdout.on('data', (chunk) => {
-      keep(chunk)
-      process.stdout.write(chunk)
+    const heartbeat = () => {
+      clearTimeout(idle)
+      if (idleTimeoutMs <= 0) return
+      idle = setTimeout(() => {
+        stopped = true
+        report(`pnpm said nothing for ${Math.round(idleTimeoutMs / 1000)}s; stopping it`)
+        killTree(child)
+      }, idleTimeoutMs)
+      idle.unref?.()
+    }
+    const observe = (chunk, stream) => {
+      output = `${output}${chunk}`.slice(-256 * 1024)
+      stream.write(chunk)
+      heartbeat()
+    }
+
+    child.stdout.on('data', (chunk) => observe(chunk, process.stdout))
+    child.stderr.on('data', (chunk) => observe(chunk, process.stderr))
+    child.once('error', (error) => {
+      clearTimeout(idle)
+      reject(error)
     })
-    child.stderr.on('data', (chunk) => {
-      keep(chunk)
-      process.stderr.write(chunk)
-    })
-    child.once('error', reject)
-    child.once('exit', (code, signal) => resolve({ code, signal, output }))
+    child.once('exit', (code, signal) => finish({ code: stopped ? 1 : code, signal }))
+    heartbeat()
   })
+}
+
+function killTree(child) {
+  if (process.platform === 'win32' && child.pid !== undefined) {
+    try {
+      spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+        stdio: 'ignore',
+        windowsHide: true
+      })
+      return
+    } catch {
+      // fall through to the plain kill below
+    }
+  }
+  child.kill('SIGKILL')
 }
 
 /**
@@ -100,26 +157,48 @@ export async function runWithLockRecovery(executable, args, options = {}) {
     exists = existsSync,
     wait = delay,
     now = Date.now,
-    retryDelayMs = RETRY_DELAY_MS
+    retryDelayMs = RETRY_DELAY_MS,
+    idleTimeoutMs = IDLE_TIMEOUT_MS,
+    // Every step announces itself on the same stream pnpm's own diagnostics
+    // travel, because the market reports that stream verbatim: a report
+    // without these lines is a report from a pnpm this runner never wrapped.
+    report = (message) => process.stderr.write(`${MARKER} ${message}\n`)
   } = options
 
-  const first = await runPnpm(executable, args, spawnProcess)
-  if (first.code === 0 || lockedRenameTarget(first.output) === undefined) return first
+  const run = () => runPnpm(executable, args, { spawnProcess, idleTimeoutMs, report })
 
+  const first = await run()
+  const blocked = first.code === 0 ? undefined : lockedRenameTarget(first.output)
+  // A run stopped for silence is not retried: whatever wedged it is still
+  // there, and three stuck runs are three times the wait for the same answer.
+  if (blocked === undefined || first.idleTimedOut) return first
+
+  report(`${blocked} could not be replaced; retrying in ${retryDelayMs}ms (2 of 3)`)
   await wait(retryDelayMs)
-  const second = await runPnpm(executable, args, spawnProcess)
+  const second = await run()
   const target = second.code === 0 ? undefined : lockedRenameTarget(second.output)
-  if (target === undefined) return second
-
-  if (!exists(target)) return second
-  try {
-    await moveAside(target, sidelinePath(target, now()))
-  } catch {
-    // The directory itself is held too — nothing left to try, and the run's
-    // own diagnostics are already on stderr.
+  if (target === undefined) {
+    if (second.code === 0) report('the retry succeeded')
     return second
   }
-  return runPnpm(executable, args, spawnProcess)
+
+  if (!exists(target)) {
+    report(`${target} is gone; leaving pnpm's own diagnosis in place`)
+    return second
+  }
+  const sideline = sidelinePath(target, now())
+  try {
+    await moveAside(target, sideline)
+  } catch (error) {
+    // The directory itself is held too — nothing left to try, and the run's
+    // own diagnostics are already on stderr.
+    report(`${target} could not be moved aside either (${errorText(error)})`)
+    return second
+  }
+  report(`moved ${target} to ${sideline}; installing over the freed name (3 of 3)`)
+  const third = await run()
+  report(third.code === 0 ? 'the install succeeded' : 'the install failed again')
+  return third
 }
 
 /* v8 ignore start -- the process wrapper around the tested runner */
