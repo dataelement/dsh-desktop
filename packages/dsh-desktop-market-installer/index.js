@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
 
-export const RECOMMENDED_MARKET_VERSION = '1.9.0'
+export const RECOMMENDED_MARKET_VERSION = '1.15.0'
 export const MARKET_PACKAGE = 'dshmarket'
 export const MARKET_PROFILE = 'web'
 export const STATUS_PATH = '/dsh-desktop/market-installer/status'

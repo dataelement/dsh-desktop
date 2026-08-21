@@ -501,7 +501,7 @@ window.__ModuleLoader__.load({
         setStatus((current) => ({
           ...current,
           phase: 'installing',
-          recommendedVersion: current?.recommendedVersion || '1.9.0'
+          recommendedVersion: current?.recommendedVersion || '1.15.0'
         }))
         try {
           const response = await fetch(INSTALL_PATH, {
@@ -539,7 +539,7 @@ window.__ModuleLoader__.load({
       const busy = phase === 'installing'
       const installed = phase === 'installed'
       const failed = phase === 'error' || phase === 'incomplete' || Boolean(error)
-      const version = status?.recommendedVersion || '1.9.0'
+      const version = status?.recommendedVersion || '1.15.0'
 
       return React.createElement(
         'section',
