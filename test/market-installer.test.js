@@ -57,13 +57,17 @@ describe('desktop plugin market installer', () => {
       const nodeCmd = await readFile(join(binDir, 'node.cmd'), 'utf8')
       expect(pnpmCmd).toContain(process.execPath)
       expect(pnpmCmd).toContain('pnpm')
+      expect(pnpmCmd).toContain('set ELECTRON_RUN_AS_NODE=1')
       expect(nodeCmd).toContain(process.execPath)
+      expect(nodeCmd).toContain('set ELECTRON_RUN_AS_NODE=1')
     } else {
       const pnpmScript = await readFile(join(binDir, 'pnpm'), 'utf8')
       const nodeScript = await readFile(join(binDir, 'node'), 'utf8')
       expect(pnpmScript).toContain(process.execPath)
       expect(pnpmScript).toContain('pnpm')
+      expect(pnpmScript).toContain('export ELECTRON_RUN_AS_NODE=1')
       expect(nodeScript).toContain(process.execPath)
+      expect(nodeScript).toContain('export ELECTRON_RUN_AS_NODE=1')
     }
 
     const npmrc = await readFile(join(home, 'profiles', 'web', '.npmrc'), 'utf8')

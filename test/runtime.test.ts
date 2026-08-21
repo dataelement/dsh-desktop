@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildHarnessArguments,
@@ -156,6 +158,25 @@ describe('Harness launch contract', () => {
     expect(
       buildDisclaimedUtilityProcessSpec(nodeArguments, spawnOptions, false).options.disclaim
     ).toBe(false)
+  })
+
+  it('declares Node mode for Harness children without imposing it on the utility process', async () => {
+    // dsh-market re-runs the dsh CLI as `execPath [...execArgv] bin.js plugin
+    // --profile web add …`. On macOS execPath is the Electron helper, so
+    // without Node mode that child boots as an Electron app, the leading
+    // `--expose-internals` shifts argv, and the CLI answers "--profile <name>
+    // is required" instead of installing. The flag cannot travel in the
+    // process environment: the utility process is launched with Chromium
+    // switches Node rejects, so the entry sets it from the inside instead.
+    const macOptions = buildHarnessSpawnOptions('/launch-root', '/harness', 'darwin', {
+      PATH: '/usr/bin',
+      ELECTRON_RUN_AS_NODE: '1'
+    })
+    expect(macOptions.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+
+    const entry = await readFile(join(process.cwd(), 'build', 'harness-node-entry.mjs'), 'utf8')
+    expect(entry).toContain('process.versions.electron !== undefined')
+    expect(entry).toContain("process.env.ELECTRON_RUN_AS_NODE = '1'")
   })
 
   it('rejects an unexpected macOS Harness argument layout', () => {

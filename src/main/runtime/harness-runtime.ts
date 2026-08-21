@@ -52,6 +52,10 @@ export function buildHarnessSpawnOptions(
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
 
+  // ELECTRON_RUN_AS_NODE must not reach the Harness process itself: the macOS
+  // utility process is launched with Chromium switches (--type=utility, …)
+  // that Node rejects as bad options. The Harness entry re-declares Node mode
+  // from the inside, for its children only.
   return {
     cwd: launchDirectory,
     env: {

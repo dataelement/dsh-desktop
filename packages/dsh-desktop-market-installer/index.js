@@ -134,31 +134,36 @@ export async function ensurePnpmShim(home = dshHome()) {
   const pnpmEntry = resolvePnpmEntry()
   const executable = process.execPath
 
+  // The packaged executable is Electron on macOS, where Harness runs as a
+  // utility process. Anything invoked through these shims expects Node
+  // semantics — a leading node flag included — so the shims declare Node mode
+  // themselves instead of relying on the caller's environment. The real Node
+  // runtime bundled on the other platforms ignores the variable.
   if (process.platform === 'win32') {
     const pnpmPath = join(directory, 'pnpm.cmd')
     await writeFile(
       pnpmPath,
-      `@chcp 65001 >nul\r\n@echo off\r\n\"${executable}\" \"${pnpmEntry}\" %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" \"${pnpmEntry}\" %*\r\n`,
       'utf8'
     )
     const nodePath = join(directory, 'node.cmd')
     await writeFile(
       nodePath,
-      `@chcp 65001 >nul\r\n@echo off\r\n\"${executable}\" %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" %*\r\n`,
       'utf8'
     )
   } else {
     const pnpmPath = join(directory, 'pnpm')
     await writeFile(
       pnpmPath,
-      `#!/bin/sh\nexec ${shellQuote(executable)} ${shellQuote(pnpmEntry)} \"$@\"\n`,
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(executable)} ${shellQuote(pnpmEntry)} \"$@\"\n`,
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(pnpmPath, 0o755)
     const nodePath = join(directory, 'node')
     await writeFile(
       nodePath,
-      `#!/bin/sh\nexec ${shellQuote(executable)} \"$@\"\n`,
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(executable)} \"$@\"\n`,
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(nodePath, 0o755)

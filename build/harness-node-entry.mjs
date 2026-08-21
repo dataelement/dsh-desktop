@@ -1,5 +1,18 @@
 import { pathToFileURL } from 'node:url'
 
+// On macOS Harness runs inside an Electron utility process (TCC responsibility
+// isolation), so `process.execPath` and `argv0` point at the Electron helper
+// instead of a Node binary. Plugins re-invoke the dsh CLI through the
+// executable running them — dsh-market forwards `process.execArgv` with it —
+// and without Node mode that child boots as an Electron app, where the leading
+// `--expose-internals` shifts argv and the CLI answers "--profile <name> is
+// required" instead of installing. Declaring it here, after this process has
+// already parsed the Chromium switches it was launched with, marks only the
+// children as Node processes. Bundled-Node hosts (Windows, Linux) skip it.
+if (process.versions.electron !== undefined) {
+  process.env.ELECTRON_RUN_AS_NODE = '1'
+}
+
 const [dshEntryPath, ...dshArguments] = process.argv.slice(2)
 
 function report(label, value) {
