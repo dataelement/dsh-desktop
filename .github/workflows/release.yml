@@ -35,8 +35,7 @@ jobs:
     name: macOS Apple Silicon
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos' || (inputs.target == '' && inputs.windows_prerelease_tag == '')))
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -169,7 +168,7 @@ jobs:
     name: macOS Intel
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos' || (inputs.target == '' && inputs.windows_prerelease_tag == '')))
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -302,6 +301,7 @@ jobs:
     name: Windows x64
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
+      github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'windows' || inputs.target == '' || inputs.windows_prerelease_tag != ''))
     runs-on: windows-2022
     steps:
