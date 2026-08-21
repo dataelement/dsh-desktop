@@ -207,9 +207,12 @@ describe('desktop plugin market installer', () => {
     expect(invocation.path.split(process.platform === 'win32' ? ';' : ':')[0]).toBe(
       binDirectory
     )
-    expect(buildPnpmEnvironment(binDirectory, environment)).not.toHaveProperty(
-      'ELECTRON_RUN_AS_NODE'
-    )
+    const pnpmEnv = buildPnpmEnvironment(binDirectory, environment)
+    expect(pnpmEnv).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+    expect(pnpmEnv.PNPM_MAX_WORKERS).toBe('1')
+    expect(pnpmEnv.npm_config_child_concurrency).toBe('1')
+    expect(pnpmEnv.npm_config_package_import_method).toBe('clone-or-copy')
+    expect(pnpmEnv.npm_config_side_effects_cache).toBe('false')
 
     const next = service.runPlugin(['install'], root)
     await expect(next.done).resolves.toEqual({ exitCode: 0, signal: null })

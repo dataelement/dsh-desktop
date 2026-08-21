@@ -291,6 +291,10 @@ export function buildPnpmEnvironment(
   if (process.platform === 'win32') result.Path = value
   result.CI = 'true'
   result.NO_COLOR = '1'
+  result.PNPM_MAX_WORKERS = '1'
+  result.npm_config_child_concurrency = '1'
+  result.npm_config_package_import_method = 'clone-or-copy'
+  result.npm_config_side_effects_cache = 'false'
   result.PNPM_CONFIG_CHILD_CONCURRENCY = '1'
   result.PNPM_CONFIG_PACKAGE_IMPORT_METHOD = 'clone-or-copy'
   result.PNPM_CONFIG_SIDE_EFFECTS_CACHE = 'false'
@@ -331,7 +335,8 @@ export function createDesktopPnpmService(options) {
     dshEntryPath = resolveDshEntry(),
     executablePath = process.execPath,
     environment = process.env,
-    spawnProcess = spawn
+    spawnProcess = spawn,
+    home = dshHome()
   } = options
   let active
   let closed = false
@@ -341,6 +346,8 @@ export function createDesktopPnpmService(options) {
     if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
+
+    void cleanStaleTemporaryDirectories(home).catch(() => undefined)
 
     const child = spawnProcess(
       executablePath,

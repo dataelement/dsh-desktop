@@ -129,6 +129,13 @@ export function buildProfilePluginCommandEnvironment(
   result.DSH_HOME = result.DSH_HOME ?? ''
   result.CI = 'true'
   result.NO_COLOR = '1'
+  result.PNPM_MAX_WORKERS = '1'
+  result.npm_config_child_concurrency = '1'
+  result.npm_config_package_import_method = 'clone-or-copy'
+  result.npm_config_side_effects_cache = 'false'
+  result.PNPM_CONFIG_CHILD_CONCURRENCY = '1'
+  result.PNPM_CONFIG_PACKAGE_IMPORT_METHOD = 'clone-or-copy'
+  result.PNPM_CONFIG_SIDE_EFFECTS_CACHE = 'false'
   return result
 }
 
