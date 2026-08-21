@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
 
-export const RECOMMENDED_MARKET_VERSION = '1.15.0'
+export const RECOMMENDED_MARKET_VERSION = 'latest'
 export const MARKET_PACKAGE = 'dshmarket'
 export const MARKET_PROFILE = 'web'
 export const STATUS_PATH = '/dsh-desktop/market-installer/status'
@@ -413,7 +413,6 @@ export function buildInstallArguments(dshEntry = resolveDshEntry()) {
     '--profile',
     MARKET_PROFILE,
     'add',
-    '--save-exact',
     `${MARKET_PACKAGE}@${RECOMMENDED_MARKET_VERSION}`
   ]
 }
@@ -563,7 +562,7 @@ export async function apply(ctx) {
 
     try {
       await runProfileCommand(
-        ['add', '--save-exact', `${MARKET_PACKAGE}@${RECOMMENDED_MARKET_VERSION}`],
+        ['add', `${MARKET_PACKAGE}@${RECOMMENDED_MARKET_VERSION}`],
         'Installation'
       )
 
