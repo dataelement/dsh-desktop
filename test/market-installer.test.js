@@ -105,6 +105,45 @@ describe('desktop plugin market installer', () => {
     expect(existsSync(validDir)).toBe(true)
   })
 
+  it('cleans the leftovers inside a package’s own node_modules', async () => {
+    // A replaced dependency of a dependency stages under the dependent, so a
+    // sweep that stops at the top level leaves one copy behind per attempt.
+    const home = await mkdtemp(join(tmpdir(), 'dsh-market-clean-nested-'))
+    const nodeModules = join(home, 'profiles', 'web', 'node_modules')
+    const nested = join(nodeModules, 'cytoscape-fcose', 'node_modules')
+    const scoped = join(nodeModules, '@deepseek-ai')
+    const nestedStale = join(nested, 'cose-base.dsh-old-1787327060846')
+    const scopedStale = join(scoped, 'dsh-settings_tmp_7408_2')
+    const kept = join(nested, 'cose-base')
+    await mkdir(nestedStale, { recursive: true })
+    await mkdir(scopedStale, { recursive: true })
+    await mkdir(kept, { recursive: true })
+    await writeFile(join(kept, 'package.json'), JSON.stringify({ name: 'cose-base' }), 'utf8')
+
+    await cleanStaleTemporaryDirectories(home)
+
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(nestedStale)).toBe(false)
+    expect(existsSync(scopedStale)).toBe(false)
+    expect(existsSync(kept)).toBe(true)
+  })
+
+  it('clears a tree whose path is not ASCII', async () => {
+    // Node's recursive `rm` reports success and removes nothing under such a
+    // path on Windows. A profile lives under the user's home, so one non-ASCII
+    // character in the account name used to disable this sweep entirely.
+    const home = join(await mkdtemp(join(tmpdir(), 'dsh-market-unicode-')), '数据项素')
+    const nodeModules = join(home, 'profiles', 'web', 'node_modules')
+    const stale = join(nodeModules, 'dshmarket_tmp_7408_13', 'lib')
+    await mkdir(stale, { recursive: true })
+    await writeFile(join(stale, 'index.js'), 'export default 1', 'utf8')
+
+    await cleanStaleTemporaryDirectories(home)
+
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(join(nodeModules, 'dshmarket_tmp_7408_13'))).toBe(false)
+  })
+
   it('reports both the requested dependency and installed package version', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-market-status-'))
     const profile = join(home, 'profiles', 'web')

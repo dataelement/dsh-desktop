@@ -7,6 +7,7 @@ import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
+import { removeTree } from './remove-tree.mjs'
 
 export const RECOMMENDED_MARKET_VERSION = '1.15.0'
 export const MARKET_PACKAGE = 'dshmarket'
@@ -34,19 +35,35 @@ export function isDisposableModuleDirectory(name) {
   return name.includes('_tmp_') || name.includes(SIDELINE_MARKER)
 }
 
+/**
+ * Sweep the leftovers of interrupted pnpm runs from a profile's node_modules.
+ *
+ * A package's own node_modules is swept too. Once the package being replaced
+ * is a dependency of a dependency, that is where the leftovers land —
+ * `cytoscape-fcose/node_modules/cose-base.dsh-old-…` — and a sweep that stops
+ * at the top level leaves one copy behind per attempt.
+ */
 export async function cleanStaleTemporaryDirectories(home = dshHome()) {
   const directory = profileDirectory(home)
-  const nodeModulesPath = join(directory, 'node_modules')
-  try {
-    const entries = await readdir(nodeModulesPath, { withFileTypes: true })
-    for (const entry of entries) {
-      if (entry.isDirectory() && isDisposableModuleDirectory(entry.name)) {
-        await rm(join(nodeModulesPath, entry.name), { recursive: true, force: true }).catch(() => undefined)
-      }
+  const sweep = async (nodeModulesPath) => {
+    let entries
+    try {
+      entries = await readdir(nodeModulesPath, { withFileTypes: true })
+    } catch {
+      // node_modules directory may not exist yet
+      return
     }
-  } catch {
-    // node_modules directory may not exist yet
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue
+      const path = join(nodeModulesPath, entry.name)
+      if (isDisposableModuleDirectory(entry.name)) {
+        await removeTree(path).catch(() => undefined)
+        continue
+      }
+      await sweep(entry.name.startsWith('@') ? path : join(path, 'node_modules'))
+    }
   }
+  await sweep(join(directory, 'node_modules'))
 }
 
 function readObject(text) {

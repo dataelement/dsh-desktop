@@ -22,7 +22,7 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync, watch } from 'node:fs'
-import { rename } from 'node:fs/promises'
+import { readdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -258,6 +258,10 @@ export async function runWithLockRecovery(executable, args, options = {}) {
     spawnProcess = spawn,
     moveAside = rename,
     exists = existsSync,
+    listEntries = readEntries,
+    // pnpm runs with the profile as its working directory, so that is where
+    // the staging left by a failed run is found.
+    profileDirectory = process.cwd(),
     wait = delay,
     now = Date.now,
     retryDelayMs = RETRY_DELAY_MS,
@@ -295,29 +299,90 @@ export async function runWithLockRecovery(executable, args, options = {}) {
   report(`${blocked} could not be replaced; retrying in ${retryDelayMs}ms (2 of 3)`)
   await wait(retryDelayMs)
   const second = await run()
-  const target = second.code === 0 ? undefined : lockedRenameTarget(second.output)
-  if (target === undefined) {
+  const named = second.code === 0 ? undefined : lockedRenameTarget(second.output)
+  if (named === undefined) {
     if (second.code === 0) report('the retry succeeded')
     return second
   }
 
-  if (!exists(target)) {
-    report(`${target} is gone; leaving pnpm's own diagnosis in place`)
+  // pnpm names one blocked destination per run — the first its workers hit —
+  // but an update blocks on every package it has to replace. Freeing only the
+  // named one buys a single package per attempt, so an update that replaces
+  // four of them can never finish inside three. Every destination pnpm staged
+  // for is already on disk next to its `<pkg>_tmp_<pid>_<n>`, so the whole set
+  // is knowable from one failure, and the whole set is what gets freed here.
+  const targets = await blockedTargets(named, profileDirectory, { listEntries, exists })
+  const freed = []
+  for (const target of targets) {
+    const sideline = sidelinePath(target, now())
+    try {
+      await moveAside(target, sideline)
+      freed.push(target)
+    } catch (error) {
+      // The directory itself is held too — nothing left to try for this one,
+      // and the run's own diagnostics are already on stderr.
+      report(`${target} could not be moved aside (${errorText(error)})`)
+    }
+  }
+
+  if (freed.length === 0) {
+    report(`nothing could be freed; leaving pnpm's own diagnosis in place`)
     return second
   }
-  const sideline = sidelinePath(target, now())
-  try {
-    await moveAside(target, sideline)
-  } catch (error) {
-    // The directory itself is held too — nothing left to try, and the run's
-    // own diagnostics are already on stderr.
-    report(`${target} could not be moved aside either (${errorText(error)})`)
-    return second
-  }
-  report(`moved ${target} to ${sideline}; installing over the freed name (3 of 3)`)
+  report(
+    `freed ${freed.length} blocked ${
+      freed.length === 1 ? 'destination' : 'destinations'
+    } (${freed.join(', ')}); installing over them (3 of 3)`
+  )
   const third = await run()
   report(third.code === 0 ? 'the install succeeded' : 'the install failed again')
   return third
+}
+
+/** The `<pkg>_tmp_<pid>_<n>` staging name pnpm leaves beside its destination. */
+const STAGING_PATTERN = /^(?<packageName>.+)_tmp_\d+_\d+$/u
+
+/**
+ * Every destination the failed run still has staging for, plus the one pnpm
+ * named. A staging directory sits beside the destination it was built for, so
+ * stripping the suffix names that destination without parsing pnpm's output
+ * twice — and it finds the ones pnpm never got far enough to report.
+ *
+ * Nested node_modules are walked because a replaced dependency of a dependency
+ * stages there, not at the top level.
+ * @param named - the destination pnpm reported, always included when present.
+ * @param root - the profile directory pnpm ran in.
+ * @returns absolute destination paths, deduplicated, each one present on disk.
+ */
+export async function blockedTargets(named, root, options = {}) {
+  const { listEntries = readEntries, exists = existsSync } = options
+  const found = new Set()
+
+  const walk = async (directory) => {
+    for (const entry of await listEntries(directory)) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue
+      const path = join(directory, entry.name)
+      const staged = STAGING_PATTERN.exec(entry.name)
+      if (staged !== null) {
+        found.add(join(directory, staged.groups.packageName))
+        continue
+      }
+      await walk(entry.name.startsWith('@') ? path : join(path, 'node_modules'))
+    }
+  }
+  await walk(join(root, 'node_modules'))
+
+  // pnpm's own diagnosis leads, because it names what actually blocked the run.
+  const ordered = [named, ...found].filter((path) => path !== undefined)
+  return [...new Set(ordered)].filter((path) => exists(path))
+}
+
+async function readEntries(directory) {
+  try {
+    return await readdir(directory, { withFileTypes: true })
+  } catch {
+    return []
+  }
 }
 
 /* v8 ignore start -- the process wrapper around the tested runner */

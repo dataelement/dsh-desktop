@@ -44,9 +44,18 @@ export function buildProfilePluginRemoveArguments(
  * starts, which is the only moment the packages it would otherwise hold open
  * can be replaced — so it is also how a profile left damaged by an earlier
  * failure gets its packages back.
+ *
+ * The lockfile is explicitly allowed to move. This repair runs with CI set,
+ * which is pnpm's signal to install with a frozen lockfile, and the profile it
+ * has to repair is exactly the one where the lockfile cannot be trusted: a
+ * `pnpm add` that fails while linking has already written the new version into
+ * pnpm-lock.yaml while package.json still names the old one. Frozen there
+ * fails on the divergence — `ERR_PNPM_OUTDATED_LOCKFILE` — which turns the one
+ * path out of a damaged profile into another way to stay in it. The manifest
+ * is what the profile is meant to be; the lockfile follows it.
  */
 export function buildProfileInstallArguments(dshEntryPath: string): string[] {
-  return [dshEntryPath, 'plugin', '--profile', PROFILE, 'install']
+  return [dshEntryPath, 'plugin', '--profile', PROFILE, 'install', '--no-frozen-lockfile']
 }
 
 export function buildPnpmShimCommand(options: ProfilePluginCommandOptions): string[] {

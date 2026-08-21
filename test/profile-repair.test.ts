@@ -99,6 +99,44 @@ describe('profile repair', () => {
     await expect(findDamagedPackageDirectories(home)).resolves.toEqual([])
   })
 
+  it('finds the leftovers inside a package’s own node_modules', async () => {
+    // Once the package being replaced is a dependency of a dependency, its
+    // staging lands under the dependent, not at the top level — and a sweep
+    // that stops at the top level leaves one copy behind per attempt.
+    const { home, nodeModules } = await profileHome()
+    const dependent = await materialize(nodeModules, 'cytoscape-fcose')
+    const nested = join(dependent, 'node_modules')
+    await materialize(nested, 'cose-base')
+    const sidelined = join(nested, 'cose-base.dsh-old-1787327060846')
+    await mkdir(sidelined, { recursive: true })
+    const staging = join(nested, 'cose-base_tmp_7408_7')
+    await mkdir(staging, { recursive: true })
+
+    const damaged = await findDamagedPackageDirectories(home)
+
+    expect(new Set(damaged)).toEqual(new Set([sidelined, staging]))
+    await expect(clearDamagedPackageDirectories(home)).resolves.toHaveLength(2)
+    expect(existsSync(sidelined)).toBe(false)
+    expect(existsSync(staging)).toBe(false)
+    expect(existsSync(join(nested, 'cose-base'))).toBe(true)
+  })
+
+  it('reports only the directories that are actually gone', async () => {
+    // Node's recursive `rm` resolves successfully without removing anything
+    // under a non-ASCII path, and a sweep that trusted it announced twelve
+    // cleared directories over a profile where all twelve were still there.
+    // Whatever the platform does, the count has to match the disk.
+    const { home, nodeModules } = await profileHome()
+    const staging = join(nodeModules, 'dshmarket_tmp_7408_13')
+    await mkdir(join(staging, 'lib'), { recursive: true })
+    await writeFile(join(staging, 'lib', 'index.js'), '', 'utf8')
+
+    const cleared = await clearDamagedPackageDirectories(home)
+
+    expect(cleared).toEqual([staging])
+    expect(existsSync(staging)).toBe(false)
+  })
+
   it('leaves a home without a profile alone', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-profile-repair-empty-'))
     homes.push(home)
@@ -108,12 +146,17 @@ describe('profile repair', () => {
   })
 
   it('restores the cleared packages through the profile’s own installer', () => {
+    // The repair runs with CI set, which is pnpm's cue to freeze the lockfile.
+    // A profile worth repairing is one where a failed `add` already wrote the
+    // new version into the lockfile while package.json still names the old, so
+    // freezing there fails on the divergence instead of healing it.
     expect(buildProfileInstallArguments('/app/dsh/bin.js')).toEqual([
       '/app/dsh/bin.js',
       'plugin',
       '--profile',
       'web',
-      'install'
+      'install',
+      '--no-frozen-lockfile'
     ])
   })
 })

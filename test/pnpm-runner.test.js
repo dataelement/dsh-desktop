@@ -1,8 +1,10 @@
 import { EventEmitter } from 'node:events'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   MARKER,
   SIDELINE_MARKER,
+  blockedTargets,
   lockedRenameTarget,
   runWithLockRecovery,
   sidelinePath
@@ -121,6 +123,7 @@ describe('packaged pnpm runner', () => {
       spawnProcess,
       moveAside,
       exists: () => true,
+      listEntries: async () => [],
       wait: async () => undefined,
       now: () => 1234
     })
@@ -222,6 +225,7 @@ describe('packaged pnpm runner', () => {
       spawnProcess,
       moveAside,
       exists: () => true,
+      listEntries: async () => [],
       wait: async () => undefined,
       now: () => 99,
       idleTimeoutMs: 10_000,
@@ -270,14 +274,15 @@ describe('packaged pnpm runner', () => {
       spawnProcess,
       moveAside: async () => undefined,
       exists: () => true,
+      listEntries: async () => [],
       wait: async () => undefined,
       now: () => 1234,
       report: (message) => lines.push(message)
     })
 
     expect(lines.join('\n')).toContain('retrying')
-    const moved = lines.find((line) => line.startsWith(`moved ${BLOCKED_TARGET}`))
-    expect(moved).toContain(SIDELINE_MARKER)
+    const freed = lines.find((line) => line.startsWith('freed '))
+    expect(freed).toContain(BLOCKED_TARGET)
     expect(lines.at(-1)).toContain('succeeded')
     expect(MARKER).toContain('dsh-desktop')
   })
@@ -294,6 +299,7 @@ describe('packaged pnpm runner', () => {
         throw new Error('EPERM')
       },
       exists: () => true,
+      listEntries: async () => [],
       wait: async () => undefined
     })
 
@@ -301,4 +307,71 @@ describe('packaged pnpm runner', () => {
     expect(result.output).toContain('EPERM')
     expect(calls).toHaveLength(2)
   })
+
+  it('frees every destination the run staged for, not only the one pnpm named', async () => {
+    // pnpm reports the first blocked destination its workers hit, but an
+    // update blocks on every package it has to replace. Freeing one per
+    // attempt cannot finish an update that replaces four of them.
+    const tree = {
+      [modules()]: [
+        directory('dshmarket'),
+        directory('dshmarket_tmp_7408_13'),
+        directory('layout-base'),
+        directory('layout-base_tmp_7408_4'),
+        directory('cytoscape-fcose'),
+        directory('.pnpm'),
+        directory('@scope')
+      ],
+      [modules('@scope')]: [directory('inner'), directory('inner_tmp_7408_9')],
+      [modules('cytoscape-fcose', 'node_modules')]: [directory('cose-base_tmp_7408_7')]
+    }
+
+    const targets = await blockedTargets(modules('argparse'), ROOT, {
+      listEntries: async (path) => tree[path] ?? [],
+      exists: () => true
+    })
+
+    // pnpm's own diagnosis leads; the rest come from the staging left behind,
+    // nested node_modules and scoped packages included.
+    expect(targets).toEqual([
+      modules('argparse'),
+      modules('dshmarket'),
+      modules('layout-base'),
+      modules('cytoscape-fcose', 'node_modules', 'cose-base'),
+      modules('@scope', 'inner')
+    ])
+  })
+
+  it('offers only destinations that are actually there', async () => {
+    const targets = await blockedTargets(undefined, ROOT, {
+      listEntries: async (path) =>
+        path === modules() ? [directory('gone_tmp_1_1'), directory('kept_tmp_1_1')] : [],
+      exists: (path) => path.endsWith('kept')
+    })
+
+    expect(targets).toEqual([modules('kept')])
+  })
+
+  it('does not mistake a sidelined copy for staging', async () => {
+    // `<pkg>.dsh-old-<ts>` is this runner's own leftover. Deriving a target
+    // from it would name a package that was never being replaced.
+    const targets = await blockedTargets(undefined, ROOT, {
+      listEntries: async (path) =>
+        path === modules() ? [directory(`cose-base${SIDELINE_MARKER}17`)] : [],
+      exists: () => true
+    })
+
+    expect(targets).toEqual([])
+  })
 })
+
+const ROOT = join('/', 'p')
+
+/** A path under the fake profile's node_modules, in the host's own separators. */
+function modules(...segments) {
+  return join(ROOT, 'node_modules', ...segments)
+}
+
+function directory(name) {
+  return { name, isDirectory: () => true, isSymbolicLink: () => false }
+}

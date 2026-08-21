@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
-import { readFile, readdir, rm } from 'node:fs/promises'
+import { lstat, readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { isDisposableModuleDirectory, profilePackageJsonPath } from './plugin-recovery'
+import { removeTree } from './remove-tree'
 
 /**
  * What a failed package operation leaves behind, and how the next launch gets
@@ -40,6 +41,12 @@ async function isMaterializedPackage(directory: string): Promise<boolean> {
  * manifest behind it. Scoped directories are inspected one level down, where
  * the packages actually live. Symlinks are left alone — pnpm's isolated layout
  * points them into the virtual store, and a broken link is not ours to judge.
+ *
+ * A package that is intact still gets its own node_modules looked through,
+ * because that is where the leftovers hide once a dependency of a dependency
+ * is the one being replaced: `cytoscape-fcose/node_modules/cose-base.dsh-old-…`
+ * is invisible to a scan that stops at the top level, and it accumulates one
+ * copy per attempt.
  * @param dshHome - the desktop's DSH home.
  * @returns absolute paths, in the order found.
  */
@@ -67,7 +74,11 @@ export async function findDamagedPackageDirectories(dshHome: string): Promise<st
         await scan(path, false)
         continue
       }
-      if (!(await isMaterializedPackage(path))) damaged.push(path)
+      if (!(await isMaterializedPackage(path))) {
+        damaged.push(path)
+        continue
+      }
+      await scan(join(path, 'node_modules'), true)
     }
   }
 
@@ -77,6 +88,12 @@ export async function findDamagedPackageDirectories(dshHome: string): Promise<st
 
 /**
  * Clear what {@link findDamagedPackageDirectories} found.
+ *
+ * Every removal is confirmed rather than assumed. Node's recursive `rm`
+ * reports success without removing anything under a non-ASCII path — see
+ * {@link removeTree} — and a sweep that trusted it announced twelve cleared
+ * directories over a profile where all twelve were still on disk, which made
+ * the log the least reliable account of the profile's state.
  * @returns the paths actually removed.
  */
 export async function clearDamagedPackageDirectories(dshHome: string): Promise<string[]> {
@@ -85,8 +102,8 @@ export async function clearDamagedPackageDirectories(dshHome: string): Promise<s
 
   for (const path of damaged) {
     try {
-      await rm(path, { recursive: true, force: true })
-      removed.push(path)
+      await removeTree(path)
+      if (!(await exists(path))) removed.push(path)
     } catch {
       // Still held by something. The install below will fail on this name and
       // report it, which beats deleting half of it here.
@@ -94,6 +111,15 @@ export async function clearDamagedPackageDirectories(dshHome: string): Promise<s
   }
 
   return removed
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Whether the profile is worth repairing at all — no profile, nothing to do. */
