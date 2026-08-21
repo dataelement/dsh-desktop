@@ -5,6 +5,7 @@ import { delimiter, dirname, join } from 'node:path'
 
 const PROFILE = 'web'
 const OPERATION_TIMEOUT_MS = 15 * 60 * 1000
+const REPAIR_TIMEOUT_MS = 5 * 60 * 1000
 const MAX_OUTPUT_BYTES = 32 * 1024
 
 export interface ProfilePluginCommandOptions {
@@ -29,6 +30,16 @@ export function buildProfilePluginRemoveArguments(
   pluginName: string
 ): string[] {
   return [dshEntryPath, 'plugin', '--profile', PROFILE, 'remove', pluginName]
+}
+
+/**
+ * Reinstall everything the profile manifest asks for. This runs before Harness
+ * starts, which is the only moment the packages it would otherwise hold open
+ * can be replaced — so it is also how a profile left damaged by an earlier
+ * failure gets its packages back.
+ */
+export function buildProfileInstallArguments(dshEntryPath: string): string[] {
+  return [dshEntryPath, 'plugin', '--profile', PROFILE, 'install']
 }
 
 export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions): Promise<string> {
@@ -112,6 +123,28 @@ export async function removeProfilePluginWithDsh(
   options: ProfilePluginCommandOptions,
   pluginName: string
 ): Promise<ProfilePluginCommandResult> {
+  return runProfileCommand(options, buildProfilePluginRemoveArguments(options.dshEntryPath, pluginName), 'Plugin removal', OPERATION_TIMEOUT_MS)
+}
+
+/**
+ * Restore the profile's packages with Harness stopped.
+ * @param timeoutMs - shorter than a user-initiated operation on purpose: this
+ * one sits between the user and their window, so it gives up rather than
+ * turning a damaged profile into a launch that looks hung.
+ */
+export async function installProfileDependenciesWithDsh(
+  options: ProfilePluginCommandOptions,
+  timeoutMs = REPAIR_TIMEOUT_MS
+): Promise<ProfilePluginCommandResult> {
+  return runProfileCommand(options, buildProfileInstallArguments(options.dshEntryPath), 'Profile repair', timeoutMs)
+}
+
+async function runProfileCommand(
+  options: ProfilePluginCommandOptions,
+  commandArguments: string[],
+  label: string,
+  timeoutMs: number
+): Promise<ProfilePluginCommandResult> {
   const requiredPaths = [
     options.dshEntryPath,
     options.nodeExecutablePath,
@@ -137,7 +170,7 @@ export async function removeProfilePluginWithDsh(
 
     const child = spawn(
       options.nodeExecutablePath,
-      buildProfilePluginRemoveArguments(options.dshEntryPath, pluginName),
+      commandArguments,
       {
         cwd: profileDirectory,
         env: environment,
@@ -158,7 +191,7 @@ export async function removeProfilePluginWithDsh(
     const timer = setTimeout(() => {
       timedOut = true
       killProcessTree(child)
-    }, OPERATION_TIMEOUT_MS)
+    }, timeoutMs)
 
     try {
       const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
@@ -168,7 +201,10 @@ export async function removeProfilePluginWithDsh(
         }
       )
       if (timedOut) {
-        return { ok: false, detail: 'Plugin removal timed out after 15 minutes.' }
+        return {
+          ok: false,
+          detail: `${label} timed out after ${Math.round(timeoutMs / 60_000)} minutes.`
+        }
       }
       if (exit.code !== 0) {
         const detail = output.trim().split(/\r?\n/u).at(-1)?.slice(0, 800)
@@ -176,7 +212,7 @@ export async function removeProfilePluginWithDsh(
           ok: false,
           detail:
             detail ||
-            `Plugin removal exited with ${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`}.`
+            `${label} exited with ${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`}.`
         }
       }
       return { ok: true }
