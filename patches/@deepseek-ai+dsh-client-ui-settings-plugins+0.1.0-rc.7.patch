@@ -1,0 +1,16 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
+index aa98760..6967420 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
+@@ -982,7 +982,10 @@ window.__ModuleLoader__.load({
+ 			}
+ 			publish() {
+ 				const served = new Set(this.served);
+-				const namespaces = this.entries().flatMap((entry) => entry.options.key !== void 0 && served.has(entry.options.key) ? [entry.options.key] : []);
++				// rc.6 list registrations gain key=id in the shell compatibility shim.
++				// Keep those self-contained cards visible; modern key-only cards still
++				// require a matching Host settings namespace.
++				const namespaces = this.entries().flatMap((entry) => entry.options.key !== void 0 && (entry.options.id === entry.options.key || served.has(entry.options.key)) ? [entry.options.key] : []);
+ 				const previous = this.store.getSnapshot();
+ 				if (previous.loaded === this.loaded && previous.namespaces.length === namespaces.length && previous.namespaces.every((ns, index) => ns === namespaces[index])) return;
+ 				this.store.set({
