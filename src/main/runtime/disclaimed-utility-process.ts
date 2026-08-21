@@ -16,7 +16,8 @@ export interface DisclaimedUtilityProcessSpec {
 
 export function buildDisclaimedUtilityProcessSpec(
   nodeArguments: readonly string[],
-  spawnOptions: SpawnOptionsWithoutStdio
+  spawnOptions: SpawnOptionsWithoutStdio,
+  utilityProcessOptions?: { disclaim?: boolean }
 ): DisclaimedUtilityProcessSpec {
   const [internalLoaderFlag, modulePath, ...args] = nodeArguments
   if (internalLoaderFlag !== '--expose-internals' || !modulePath) {
@@ -38,8 +39,8 @@ export function buildDisclaimedUtilityProcessSpec(
       stdio: 'pipe',
       serviceName: 'DSH Harness',
       // Harness loads user-installed plugins and can launch third-party tools.
-      // Keep their TCC requests out of DSH Desktop's responsibility chain.
-      disclaim: true
+      // Keep their TCC requests out of DSH Desktop's responsibility chain in production.
+      disclaim: utilityProcessOptions?.disclaim ?? true
     }
   }
 }
@@ -47,9 +48,14 @@ export function buildDisclaimedUtilityProcessSpec(
 export function launchDisclaimedUtilityProcess(
   launcher: UtilityProcessLauncher,
   nodeArguments: readonly string[],
-  spawnOptions: SpawnOptionsWithoutStdio
+  spawnOptions: SpawnOptionsWithoutStdio,
+  utilityProcessOptions?: { disclaim?: boolean }
 ): HarnessChildProcess {
-  const spec = buildDisclaimedUtilityProcessSpec(nodeArguments, spawnOptions)
+  const spec = buildDisclaimedUtilityProcessSpec(
+    nodeArguments,
+    spawnOptions,
+    utilityProcessOptions
+  )
   return new UtilityProcessAdapter(
     launcher.fork(spec.modulePath, spec.args, spec.options)
   )

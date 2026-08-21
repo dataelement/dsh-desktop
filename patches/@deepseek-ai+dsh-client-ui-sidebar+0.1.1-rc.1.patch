@@ -106,7 +106,7 @@ index acfa7ad..46f5f50 100644
 -										children: "DSH Local Build"
 -									}), (0, react_jsx_runtime.jsx)("span", {
 -										className: SidebarRoot_module_css_default.buildRevision,
--										children: "fcbad14"
+-										children: "9a439af"
 -									})] }) })
 -								})]
 -							})

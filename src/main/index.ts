@@ -944,7 +944,9 @@ async function bootstrap(): Promise<void> {
     logPath: join(app.getPath('logs'), 'harness.log'),
     launchProcess: (executablePath, args, options) =>
       process.platform === 'darwin'
-        ? launchDisclaimedUtilityProcess(utilityProcess, args, options)
+        ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
+            disclaim: !developmentBuild
+          })
         : spawn(executablePath, args, options),
     onChanged: (snapshot) => {
       if (snapshot.phase === 'ready' && snapshot.url) {

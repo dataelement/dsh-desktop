@@ -152,6 +152,11 @@ describe('Harness launch contract', () => {
         disclaim: true
       }
     })
+
+    expect(
+      buildDisclaimedUtilityProcessSpec(nodeArguments, spawnOptions, { disclaim: false }).options
+        .disclaim
+    ).toBe(false)
   })
 
   it('rejects an unexpected macOS Harness argument layout', () => {

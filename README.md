@@ -25,7 +25,7 @@
 DSH Desktop packages the local DeepSeek Harness web experience as a desktop application. It launches a local Harness instance automatically, manages a random loopback port, persists profiles, plugins, and sessions, and opens the full interface as soon as Harness is ready. Project workspaces are added and managed entirely in the Harness interface.
 
 > [!IMPORTANT]
-> DSH Desktop is currently an early preview and depends on the rapidly evolving `@deepseek-ai/dsh@0.1.0-rc.8`. macOS releases are code-signed and notarized by Apple; current installers are distributed through the official website.
+> DSH Desktop is currently an early preview and depends on the rapidly evolving `@deepseek-ai/dsh@0.1.1-rc.1`. macOS releases are code-signed and notarized by Apple; current installers are distributed through the official website.
 
 ## Download
 
@@ -155,7 +155,7 @@ build/                Application icon assets
 
 ## Upstream version and patches
 
-The project currently pins `@deepseek-ai/dsh@0.1.0-rc.8`. The initial provider list and desktop preset-transfer surface are captured with [`patch-package`](https://github.com/ds300/patch-package) under [`patches/`](patches/) rather than relying on untracked changes in `node_modules`.
+The project currently pins `@deepseek-ai/dsh@0.1.1-rc.1`. The initial provider list and desktop preset-transfer surface are captured with [`patch-package`](https://github.com/ds300/patch-package) under [`patches/`](patches/) rather than relying on untracked changes in `node_modules`.
 
 When upgrading DSH:
 
