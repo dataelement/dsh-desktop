@@ -491,6 +491,19 @@ export async function pruneMissingProfileBundles(dshHome: string): Promise<boole
   const profileDirectory = dirname(manifestPath)
   const nodeModulesPath = join(profileDirectory, 'node_modules')
 
+  if (existsSync(nodeModulesPath)) {
+    try {
+      const entries = await readdir(nodeModulesPath, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.includes('_tmp_')) {
+          await rm(join(nodeModulesPath, entry.name), { recursive: true, force: true }).catch(() => undefined)
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   try {
     const raw = await readFile(manifestPath, 'utf8')
     const manifest = JSON.parse(raw) as ProfileManifest

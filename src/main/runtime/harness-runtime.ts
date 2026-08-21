@@ -58,6 +58,9 @@ export function buildHarnessSpawnOptions(
       ...parentEnvironment,
       DSH_HOME: dshHome,
       NO_COLOR: '1',
+      PNPM_CONFIG_CHILD_CONCURRENCY: '1',
+      PNPM_CONFIG_PACKAGE_IMPORT_METHOD: 'clone-or-copy',
+      PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false',
       [pathKey]: environment[pathKey] ?? environment.PATH ?? ''
     },
     stdio: ['pipe', 'pipe', 'pipe'],

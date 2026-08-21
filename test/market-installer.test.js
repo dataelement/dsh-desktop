@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -11,6 +11,7 @@ import {
   buildPnpmEnvironment,
   buildInstallArguments,
   buildUninstallArguments,
+  cleanStaleTemporaryDirectories,
   createDesktopPnpmService,
   createDesktopProfilesService,
   ensurePnpmShim,
@@ -67,6 +68,25 @@ describe('desktop plugin market installer', () => {
       expect(pnpmScript).toContain('pnpm')
       expect(nodeScript).toContain(process.execPath)
     }
+
+    const npmrc = await readFile(join(home, 'profiles', 'web', '.npmrc'), 'utf8')
+    expect(npmrc).toContain('package-import-method=clone-or-copy')
+    expect(npmrc).toContain('child-concurrency=1')
+  })
+
+  it('cleans up stale _tmp_ directories left by interrupted installations', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-market-clean-'))
+    const nodeModules = join(home, 'profiles', 'web', 'node_modules')
+    const staleTmpDir = join(nodeModules, 'argparse_tmp_12345_1')
+    const validDir = join(nodeModules, 'argparse')
+    await mkdir(staleTmpDir, { recursive: true })
+    await mkdir(validDir, { recursive: true })
+
+    await cleanStaleTemporaryDirectories(home)
+
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(staleTmpDir)).toBe(false)
+    expect(existsSync(validDir)).toBe(true)
   })
 
   it('exposes the active Desktop profile without inferring it from argv', async () => {
@@ -83,7 +103,7 @@ describe('desktop plugin market installer', () => {
   })
 
   it('runs plugin mutations through one packaged pnpm operation boundary', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-pnpm-service-'))
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-desktop-pnpm-service-')))
     const binDirectory = join(root, '.desktop-bin')
     const fakeDshEntry = join(root, 'fake-dsh.mjs')
     await mkdir(binDirectory, { recursive: true })
