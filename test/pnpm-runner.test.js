@@ -190,6 +190,56 @@ describe('packaged pnpm runner', () => {
     expect(stopWatching).toBe(1)
   })
 
+  it('recovers a run that named its blocker and then hung', async () => {
+    // pnpm raises the locked rename inside a worker and has been seen never to
+    // unwind from it. That run has to be stopped — and it is also the exact
+    // run this recovery exists for, so being stopped must not skip it.
+    const calls = []
+    const spawnProcess = () => {
+      const attempt = calls.length
+      calls.push(attempt)
+      const child = new EventEmitter()
+      child.stdout = new EventEmitter()
+      child.stderr = new EventEmitter()
+      child.pid = 4242
+      child.kill = () => {
+        child.emit('exit', null, 'SIGKILL')
+        return true
+      }
+      queueMicrotask(() => {
+        if (attempt < 2) {
+          // Reports the failure, then never exits.
+          child.stderr.emit('data', WINDOWS_LOCK_FAILURE)
+          return
+        }
+        child.emit('exit', 0, null)
+      })
+      return child
+    }
+    const moveAside = vi.fn(async () => undefined)
+
+    const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
+      spawnProcess,
+      moveAside,
+      exists: () => true,
+      wait: async () => undefined,
+      now: () => 99,
+      idleTimeoutMs: 10_000,
+      stallAfterFailureMs: 5,
+      killGraceMs: 5,
+      kill: (child) => child.kill(),
+      watchActivity: () => () => undefined,
+      report: () => undefined
+    })
+
+    expect(result.code).toBe(0)
+    expect(calls).toHaveLength(3)
+    expect(moveAside).toHaveBeenCalledWith(
+      BLOCKED_TARGET,
+      `${BLOCKED_TARGET}${SIDELINE_MARKER}99`
+    )
+  })
+
   it('gives up on a run whose kill never lands', async () => {
     // taskkill can miss on Windows. Waiting for an exit that never comes would
     // be the very hang the idle timeout exists to prevent.
@@ -225,9 +275,9 @@ describe('packaged pnpm runner', () => {
       report: (message) => lines.push(message)
     })
 
-    expect(lines[0]).toContain('retrying')
-    expect(lines[1]).toContain(`moved ${BLOCKED_TARGET}`)
-    expect(lines[1]).toContain(SIDELINE_MARKER)
+    expect(lines.join('\n')).toContain('retrying')
+    const moved = lines.find((line) => line.startsWith(`moved ${BLOCKED_TARGET}`))
+    expect(moved).toContain(SIDELINE_MARKER)
     expect(lines.at(-1)).toContain('succeeded')
     expect(MARKER).toContain('dsh-desktop')
   })

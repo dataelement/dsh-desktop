@@ -39,6 +39,14 @@ export const RETRY_DELAY_MS = 750
 export const IDLE_TIMEOUT_MS = Number(process.env.DSH_DESKTOP_PNPM_IDLE_TIMEOUT_MS) || 300_000
 /** How long a killed run may take to actually go away before it is written off. */
 export const KILL_GRACE_MS = 5_000
+/**
+ * How long a run gets to exit on its own after it has already reported the
+ * failure that decides it. pnpm raises the locked rename inside a worker and
+ * has been seen never to unwind from it, so the outcome is known long before
+ * the process admits it — waiting out the idle allowance there is pure delay.
+ */
+export const STALL_AFTER_FAILURE_MS =
+  Number(process.env.DSH_DESKTOP_PNPM_FAILURE_STALL_MS) || 20_000
 /** Prefix of every line this runner contributes to a package operation's output. */
 export const MARKER = 'dsh-desktop pnpm runner:'
 
@@ -97,6 +105,7 @@ function runPnpm(executable, args, options = {}) {
     spawnProcess = spawn,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
     killGraceMs = KILL_GRACE_MS,
+    stallAfterFailureMs = STALL_AFTER_FAILURE_MS,
     kill = killTree,
     watchActivity = watchProfileActivity,
     report = () => undefined
@@ -112,6 +121,7 @@ function runPnpm(executable, args, options = {}) {
     let grace
     let stopped = false
     let settled = false
+    let doomed = false
     let lastActivity = Date.now()
     const touch = () => {
       lastActivity = Date.now()
@@ -152,10 +162,31 @@ function runPnpm(executable, args, options = {}) {
       }, Math.max(idleTimeoutMs - quietFor, 1_000))
       idle.unref?.()
     }
+    const stopWhenDoomed = () => {
+      if (doomed || lockedRenameTarget(output) === undefined) return
+      doomed = true
+      report(
+        `pnpm reported a blocked rename; giving it ${Math.round(
+          stallAfterFailureMs / 1000
+        )}s to exit before stopping it`
+      )
+      const stall = setTimeout(() => {
+        if (settled) return
+        stopped = true
+        kill(child)
+        grace = setTimeout(() => finish({ code: 1, signal: null }), killGraceMs)
+        grace.unref?.()
+      }, stallAfterFailureMs)
+      stall.unref?.()
+    }
     const observe = (chunk, stream) => {
       output = `${output}${chunk}`.slice(-256 * 1024)
       stream.write(chunk)
       touch()
+      // pnpm can raise the locked rename in a worker and then never unwind.
+      // The outcome is already decided, so the run is not owed the full idle
+      // allowance from here.
+      stopWhenDoomed()
     }
 
     child.stdout.on('data', (chunk) => observe(chunk, process.stdout))
@@ -232,6 +263,7 @@ export async function runWithLockRecovery(executable, args, options = {}) {
     retryDelayMs = RETRY_DELAY_MS,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
     killGraceMs = KILL_GRACE_MS,
+    stallAfterFailureMs = STALL_AFTER_FAILURE_MS,
     kill = killTree,
     watchActivity = watchProfileActivity,
     // Every step announces itself on the same stream pnpm's own diagnostics
@@ -245,6 +277,7 @@ export async function runWithLockRecovery(executable, args, options = {}) {
       spawnProcess,
       idleTimeoutMs,
       killGraceMs,
+      stallAfterFailureMs,
       kill,
       watchActivity,
       report
@@ -252,9 +285,12 @@ export async function runWithLockRecovery(executable, args, options = {}) {
 
   const first = await run()
   const blocked = first.code === 0 ? undefined : lockedRenameTarget(first.output)
-  // A run stopped for silence is not retried: whatever wedged it is still
-  // there, and three stuck runs are three times the wait for the same answer.
-  if (blocked === undefined || first.idleTimedOut) return first
+  // Whether the run exited on its own or had to be stopped says nothing about
+  // whether the blocked rename can be recovered — and a run that names its
+  // blocker before hanging is exactly the one this recovery is for. Only a
+  // failure with no diagnosis is left alone: retrying that is three times the
+  // wait for the same answer.
+  if (blocked === undefined) return first
 
   report(`${blocked} could not be replaced; retrying in ${retryDelayMs}ms (2 of 3)`)
   await wait(retryDelayMs)
