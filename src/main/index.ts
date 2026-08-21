@@ -265,6 +265,21 @@ function bundledNodePath(): string {
   return join(app.getAppPath(), 'node_modules', 'node', 'bin', executable)
 }
 
+/**
+ * The packaged lock-recovery runner. The Harness-side installer stages its own
+ * copy into .desktop-bin; the desktop writes shims to that same directory, so
+ * it points at the same runner rather than replacing them with a plain pnpm
+ * call that would silently drop the recovery.
+ */
+function bundledPnpmRunnerPath(): string {
+  return join(
+    app.getAppPath(),
+    'node_modules',
+    'dsh-desktop-market-installer',
+    'pnpm-runner.mjs'
+  )
+}
+
 function bundledPnpmEntryPath(): string {
   const root = join(app.getAppPath(), 'node_modules', 'pnpm', 'bin')
   const candidates = [join(root, 'pnpm.cjs'), join(root, 'pnpm.mjs')]
@@ -472,7 +487,8 @@ async function repairProfilePackages(dshHome: string): Promise<void> {
       dshHome,
       dshEntryPath: dshEntryPath(),
       nodeExecutablePath: bundledNodePath(),
-      pnpmEntryPath: bundledPnpmEntryPath()
+      pnpmEntryPath: bundledPnpmEntryPath(),
+      pnpmRunnerPath: bundledPnpmRunnerPath()
     })
     runtime.note(
       result.ok
@@ -492,6 +508,10 @@ function launchHarness(): Promise<void> {
   harnessLaunchOperation = (async () => {
     const dshHome = join(app.getPath('userData'), 'harness')
     await showSplash()
+    // The repair only holds on a stopped Harness, and a restart still has the
+    // previous one running: start() stops it, but that is after the repair.
+    // Stopping here is what makes the window this launch path assumes.
+    await runtime.stop()
     await repairProfilePackages(dshHome)
     await pruneMissingProfileBundles(dshHome).catch(() => false)
     await runtime.start(launchDirectory)
@@ -747,6 +767,7 @@ async function showPluginRecovery(options?: {
                 dshEntryPath: dshEntryPath(),
                 nodeExecutablePath: bundledNodePath(),
                 pnpmEntryPath: bundledPnpmEntryPath(),
+                pnpmRunnerPath: bundledPnpmRunnerPath(),
                 environment: process.env
               },
               pluginName

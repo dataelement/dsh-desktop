@@ -13,6 +13,13 @@ export interface ProfilePluginCommandOptions {
   dshEntryPath: string
   nodeExecutablePath: string
   pnpmEntryPath: string
+  /**
+   * The packaged lock-recovery runner. The shims below share a directory with
+   * the ones the Harness-side installer writes, so leaving this out would
+   * replace a runner-routed pnpm with a plain one and silently drop the
+   * recovery until Harness next rewrote them.
+   */
+  pnpmRunnerPath?: string
   environment?: NodeJS.ProcessEnv
 }
 
@@ -42,14 +49,25 @@ export function buildProfileInstallArguments(dshEntryPath: string): string[] {
   return [dshEntryPath, 'plugin', '--profile', PROFILE, 'install']
 }
 
+export function buildPnpmShimCommand(options: ProfilePluginCommandOptions): string[] {
+  const runner =
+    options.pnpmRunnerPath !== undefined && existsSync(options.pnpmRunnerPath)
+      ? [options.pnpmRunnerPath]
+      : []
+  return [...runner, options.pnpmEntryPath]
+}
+
 export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions): Promise<string> {
   const directory = join(options.dshHome, '.desktop-bin')
   await mkdir(directory, { recursive: true })
+  const command = buildPnpmShimCommand(options)
 
   if (process.platform === 'win32') {
     await writeFile(
       join(directory, 'pnpm.cmd'),
-      `@chcp 65001 >nul\r\n@echo off\r\n"${options.nodeExecutablePath}" "${options.pnpmEntryPath}" %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n"${options.nodeExecutablePath}" ${command
+        .map((part) => `"${part}"`)
+        .join(' ')} %*\r\n`,
       'utf8'
     )
     await writeFile(
@@ -61,7 +79,9 @@ export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions
     const pnpmPath = join(directory, 'pnpm')
     await writeFile(
       pnpmPath,
-      `#!/bin/sh\nexec ${shellQuote(options.nodeExecutablePath)} ${shellQuote(options.pnpmEntryPath)} "$@"\n`,
+      `#!/bin/sh\nexec ${shellQuote(options.nodeExecutablePath)} ${command
+        .map(shellQuote)
+        .join(' ')} "$@"\n`,
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(pnpmPath, 0o755)
@@ -101,6 +121,23 @@ export function buildProfilePluginCommandEnvironment(
   result.CI = 'true'
   result.NO_COLOR = '1'
   return result
+}
+
+/**
+ * The line worth reporting from a failed run. dsh's own wrapper ("pnpm failed
+ * in profile directory …") is always last and names no cause, so a line that
+ * does name one wins — otherwise a failure reads as a dead end.
+ */
+export function diagnosticLine(output: string): string | undefined {
+  const lines = output
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const named = lines.filter((line: string) =>
+    /EPERM|EBUSY|EACCES|EEXIST|ENOTEMPTY|ENOENT|ERR_PNPM|error:/u.test(line)
+  )
+  return (named.at(-1) ?? lines.at(-1))?.slice(0, 800)
 }
 
 function killProcessTree(child: ReturnType<typeof spawn>): void {
@@ -207,7 +244,7 @@ async function runProfileCommand(
         }
       }
       if (exit.code !== 0) {
-        const detail = output.trim().split(/\r?\n/u).at(-1)?.slice(0, 800)
+        const detail = diagnosticLine(output)
         return {
           ok: false,
           detail:
