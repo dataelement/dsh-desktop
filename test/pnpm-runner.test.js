@@ -141,6 +141,7 @@ describe('packaged pnpm runner', () => {
       spawnProcess,
       idleTimeoutMs: 5,
       kill: (child) => child.kill(),
+      watchActivity: () => () => undefined,
       report: (message) => lines.push(message)
     })
 
@@ -148,7 +149,45 @@ describe('packaged pnpm runner', () => {
     expect(result.idleTimedOut).toBe(true)
     // A wedged run is not retried — three stuck runs are three times the wait.
     expect(calls).toHaveLength(1)
-    expect(lines[0]).toContain('said nothing')
+    expect(lines[0]).toContain('touched nothing')
+  })
+
+  it('keeps a quiet run that is still writing packages', async () => {
+    // Without a TTY pnpm drops its progress display: resolution, a cold
+    // download and a large link phase can each pass without a line. Killing
+    // those would turn a slow install into a failed one.
+    const { spawnProcess } = fakePnpm([{ silent: true }])
+    let stopWatching = 0
+    let signalActivity = () => undefined
+
+    const running = runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'x'], {
+      spawnProcess,
+      idleTimeoutMs: 40,
+      kill: (child) => child.kill(),
+      watchActivity: (onActivity) => {
+        signalActivity = onActivity
+        return () => {
+          stopWatching += 1
+        }
+      },
+      report: () => undefined
+    })
+
+    // Three quiet-but-busy stretches, each shorter than the allowance.
+    for (let beat = 0; beat < 3; beat += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      signalActivity()
+    }
+    signalActivity()
+    const result = await Promise.race([
+      running,
+      new Promise((resolve) => setTimeout(() => resolve('still running'), 20))
+    ])
+
+    expect(result).toBe('still running')
+    signalActivity = () => undefined
+    await expect(running).resolves.toMatchObject({ idleTimedOut: true })
+    expect(stopWatching).toBe(1)
   })
 
   it('gives up on a run whose kill never lands', async () => {
@@ -161,6 +200,7 @@ describe('packaged pnpm runner', () => {
       idleTimeoutMs: 5,
       killGraceMs: 5,
       kill: () => undefined,
+      watchActivity: () => () => undefined,
       report: () => undefined
     })
 

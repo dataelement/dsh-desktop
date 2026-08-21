@@ -21,19 +21,22 @@
  * output, one pnpm run.
  */
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, watch } from 'node:fs'
 import { rename } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const SIDELINE_MARKER = '.dsh-old-'
 export const RETRY_DELAY_MS = 750
 /**
- * How long pnpm may stay silent before this runner stops it. pnpm narrates
- * resolution, fetching and linking as it goes, so silence this long is a stuck
- * run, not a slow one — and failing here beats the hosts' fifteen-minute
- * ceiling, which is what makes a failed install feel like a hang.
+ * How long a run may show no sign of life — no output, no change under the
+ * profile — before this runner stops it. Generous on purpose: pnpm without a
+ * TTY says nothing for long stretches, and packages download into a store that
+ * lives outside the profile, so a quiet minute is ordinary. Five is not, and
+ * failing there still beats the hosts' fifteen-minute ceiling, which is what
+ * makes a wedged install feel like a hang.
  */
-export const IDLE_TIMEOUT_MS = Number(process.env.DSH_DESKTOP_PNPM_IDLE_TIMEOUT_MS) || 120_000
+export const IDLE_TIMEOUT_MS = Number(process.env.DSH_DESKTOP_PNPM_IDLE_TIMEOUT_MS) || 300_000
 /** How long a killed run may take to actually go away before it is written off. */
 export const KILL_GRACE_MS = 5_000
 /** Prefix of every line this runner contributes to a package operation's output. */
@@ -81,10 +84,13 @@ function delay(milliseconds) {
  * Run pnpm once, mirroring its streams to this process while keeping a copy
  * for failure classification.
  *
- * A run that stops saying anything is stopped rather than waited out: pnpm
- * narrates its progress line by line, so silence is not slow work, and the
- * hosts above only bound the whole operation at fifteen minutes — long enough
- * for a wedged install to look like a hang to the person watching.
+ * A run that has stopped doing anything is stopped rather than waited out —
+ * the hosts above only bound the whole operation at fifteen minutes, which is
+ * what makes a wedged install look like a hang. But silence alone does not
+ * mean stuck: without a TTY pnpm drops its progress display, and resolution,
+ * a cold download or a large link phase can pass without a single line. What
+ * a live run cannot do is leave the profile untouched, so the store and the
+ * profile's node_modules count as much as output does.
  */
 function runPnpm(executable, args, options = {}) {
   const {
@@ -92,6 +98,7 @@ function runPnpm(executable, args, options = {}) {
     idleTimeoutMs = IDLE_TIMEOUT_MS,
     killGraceMs = KILL_GRACE_MS,
     kill = killTree,
+    watchActivity = watchProfileActivity,
     report = () => undefined
   } = options
 
@@ -105,32 +112,50 @@ function runPnpm(executable, args, options = {}) {
     let grace
     let stopped = false
     let settled = false
+    let lastActivity = Date.now()
+    const touch = () => {
+      lastActivity = Date.now()
+    }
+    const stopWatching = idleTimeoutMs > 0 ? watchActivity(touch) : undefined
 
     const finish = (result) => {
       if (settled) return
       settled = true
       clearTimeout(idle)
       clearTimeout(grace)
+      stopWatching?.()
       resolve({ ...result, output, idleTimedOut: stopped })
     }
     const heartbeat = () => {
       clearTimeout(idle)
       if (idleTimeoutMs <= 0) return
+      const quietFor = Date.now() - lastActivity
+      // Work seen since the last check keeps the run: a quiet pnpm that is
+      // still writing packages is slow, not stuck.
       idle = setTimeout(() => {
+        const silence = Date.now() - lastActivity
+        if (silence < idleTimeoutMs) {
+          heartbeat()
+          return
+        }
         stopped = true
-        report(`pnpm said nothing for ${Math.round(idleTimeoutMs / 1000)}s; stopping it`)
+        report(
+          `pnpm produced no output and touched nothing for ${Math.round(
+            silence / 1000
+          )}s; stopping it`
+        )
         kill(child)
         // A kill that does not land must not become the hang this guards
         // against, so the run is written off either way.
         grace = setTimeout(() => finish({ code: 1, signal: null }), killGraceMs)
         grace.unref?.()
-      }, idleTimeoutMs)
+      }, Math.max(idleTimeoutMs - quietFor, 1_000))
       idle.unref?.()
     }
     const observe = (chunk, stream) => {
       output = `${output}${chunk}`.slice(-256 * 1024)
       stream.write(chunk)
-      heartbeat()
+      touch()
     }
 
     child.stdout.on('data', (chunk) => observe(chunk, process.stdout))
@@ -138,6 +163,7 @@ function runPnpm(executable, args, options = {}) {
     child.once('error', (error) => {
       clearTimeout(idle)
       clearTimeout(grace)
+      stopWatching?.()
       if (!settled) {
         settled = true
         reject(error)
@@ -146,6 +172,30 @@ function runPnpm(executable, args, options = {}) {
     child.once('exit', (code, signal) => finish({ code: stopped ? 1 : code, signal }))
     heartbeat()
   })
+}
+
+/**
+ * Signal progress whenever the profile's package directories change. pnpm runs
+ * with the profile as its working directory, so that is where a live install
+ * shows up even while it says nothing.
+ * @param onActivity - called on any change; may fire often, so it stays cheap.
+ * @returns a function that stops watching.
+ */
+function watchProfileActivity(onActivity, cwd = process.cwd()) {
+  const watchers = []
+  for (const directory of [cwd, join(cwd, 'node_modules'), join(cwd, 'node_modules', '.pnpm')]) {
+    try {
+      if (!existsSync(directory)) continue
+      const watcher = watch(directory, { persistent: false }, onActivity)
+      watcher.on('error', () => undefined)
+      watchers.push(watcher)
+    } catch {
+      // An unwatchable directory just does not contribute liveness.
+    }
+  }
+  return () => {
+    for (const watcher of watchers) watcher.close()
+  }
 }
 
 /**
@@ -183,6 +233,7 @@ export async function runWithLockRecovery(executable, args, options = {}) {
     idleTimeoutMs = IDLE_TIMEOUT_MS,
     killGraceMs = KILL_GRACE_MS,
     kill = killTree,
+    watchActivity = watchProfileActivity,
     // Every step announces itself on the same stream pnpm's own diagnostics
     // travel, because the market reports that stream verbatim: a report
     // without these lines is a report from a pnpm this runner never wrapped.
@@ -190,7 +241,14 @@ export async function runWithLockRecovery(executable, args, options = {}) {
   } = options
 
   const run = () =>
-    runPnpm(executable, args, { spawnProcess, idleTimeoutMs, killGraceMs, kill, report })
+    runPnpm(executable, args, {
+      spawnProcess,
+      idleTimeoutMs,
+      killGraceMs,
+      kill,
+      watchActivity,
+      report
+    })
 
   const first = await run()
   const blocked = first.code === 0 ? undefined : lockedRenameTarget(first.output)
