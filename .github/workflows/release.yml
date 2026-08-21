@@ -501,42 +501,19 @@ jobs:
           print(f"✅ Uploaded {src} -> {repo_id}/releases/latest")
           PY
 
-      - name: Build Feishu release note prompt
+      - name: Generate bilingual Feishu release note
         env:
+          OPENAI_API_KEY: ${{ secrets.MODELS_TOKEN || secrets.OPENAI_API_KEY || secrets.DEEPSEEK_API_KEY || secrets.RELEASE_LLM_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL || secrets.LLM_BASE_URL || 'https://api.deepseek.com/v1' }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || secrets.LLM_MODEL || 'deepseek-chat' }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p .github/release-artifacts
           git fetch --force --tags
-          python3 .github/scripts/feishu_release_notes.py build-prompt \
+          python3 .github/scripts/feishu_release_notes.py generate \
             --tag "$RELEASE_TAG" \
-            --output .github/release-artifacts/feishu-release-prompt.txt
-
-      - name: Generate bilingual Feishu release note
-        env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.MODELS_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
-            echo "Generating release notes via Copilot CLI..."
-            npm install -g @github/copilot@latest || true
-            prompt="$(cat .github/release-artifacts/feishu-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-terra --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
-               python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --input .github/release-artifacts/feishu-release-notes.md; then
-              echo "✅ AI release notes generated and validated."
-            else
-              echo "⚠️ AI generation fell back to deterministic release note generator."
-              python3 .github/scripts/feishu_release_notes.py generate-fallback \
-                --tag "$RELEASE_TAG" \
-                --output .github/release-artifacts/feishu-release-notes.md
-            fi
-          else
-            echo "Generating release notes from git evidence..."
-            python3 .github/scripts/feishu_release_notes.py generate-fallback \
-              --tag "$RELEASE_TAG" \
-              --output .github/release-artifacts/feishu-release-notes.md
-          fi
+            --output .github/release-artifacts/feishu-release-notes.md
 
       - name: Send Feishu release success notification
         if: success()

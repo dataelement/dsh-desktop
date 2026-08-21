@@ -335,27 +335,121 @@ def validate_release_note(release_tag: str, text: str) -> str:
     return text
 
 
+def generate_ai_release_notes(
+    release_tag: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> str | None:
+    """Generate bilingual release notes via an OpenAI-compatible LLM endpoint."""
+    api_key = (
+        api_key
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("DEEPSEEK_API_KEY")
+        or os.getenv("MODELS_TOKEN")
+        or os.getenv("RELEASE_LLM_KEY")
+        or os.getenv("COPILOT_GITHUB_TOKEN")
+    )
+    if not api_key:
+        return None
+
+    raw_base_url = (
+        base_url
+        or os.getenv("OPENAI_BASE_URL")
+        or os.getenv("LLM_BASE_URL")
+        or "https://api.deepseek.com/v1"
+    ).rstrip("/")
+
+    if raw_base_url.endswith("/chat/completions"):
+        endpoint = raw_base_url
+    elif raw_base_url.endswith("/v1"):
+        endpoint = f"{raw_base_url}/chat/completions"
+    else:
+        endpoint = f"{raw_base_url}/v1/chat/completions"
+
+    resolved_model = (
+        model
+        or os.getenv("OPENAI_MODEL")
+        or os.getenv("LLM_MODEL")
+        or ("deepseek-chat" if "deepseek" in raw_base_url else "gpt-4o-mini")
+    )
+
+    prompt = build_prompt(release_tag)
+    payload = {
+        "model": resolved_model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are DSH Desktop's Release Bot. Follow the requested release note format and evidence rules strictly.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+    }
+
+    try:
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            content = data["choices"][0]["message"]["content"].strip()
+            if content.startswith("```"):
+                lines = content.splitlines()
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                content = "\n".join(lines).strip()
+            return content
+    except Exception as e:
+        print(f"⚠️ AI release note generation error: {e}", file=sys.stderr)
+        return None
+
+
 def generate_deterministic_fallback(release_tag: str) -> str:
     """Generate a clean bilingual fallback release note directly from git evidence."""
     evidence = collect_release_evidence(release_tag)
     version = release_tag.removeprefix("v")
+
+    # Extract commit subjects from evidence
+    subjects = [
+        line.removeprefix("Subject: ").strip()
+        for line in evidence.commit_details.splitlines()
+        if line.startswith("Subject: ")
+    ]
+
+    has_titlebar = any("titlebar" in s.lower() or "drag" in s.lower() for s in subjects)
+    has_market = any("market" in s.lower() or "pnpm" in s.lower() or "loader" in s.lower() for s in subjects)
+    has_picker = any("picker" in s.lower() or "directory" in s.lower() for s in subjects)
+    has_update = any("update" in s.lower() for s in subjects)
+    has_model = any("model" in s.lower() or "provider" in s.lower() for s in subjects)
+
+    theme1_zh = "**🪟 1. 窗口交互与视觉体验优化**\n\n优化桌面端标题栏与窗口顶部拖拽响应，改善侧边栏折叠/展开交互，提升整体操作流畅度。"
+    theme1_en = "**🪟 1. Window Interaction and Visual Polish**\n\nImproves top titlebar dragging responsiveness and sidebar collapse/expand interaction for a smoother desktop experience."
+
+    theme2_zh = "**🧩 2. 插件生态与包管理器兼容增强**\n\n优化社区第三方插件加载路径与内置包管理服务，提升插件安装与运行稳定性。"
+    theme2_en = "**🧩 2. Plugin Ecosystem and Package Manager Enhancements**\n\nImproves third-party plugin resolution and bundled package management service for better installation and runtime stability."
+
+    theme3_zh = "**🛡️ 3. 系统稳定性与功能体验完善**\n\n增强模型配置与系统目录选择兼容性，改进更新提示与权限隔离，保障客户端安全稳定运行。"
+    theme3_en = "**🛡️ 3. System Stability and Feature Refinements**\n\nEnhances model configuration safeguards, native directory selection, update confirmations, and permission isolation."
 
     return textwrap.dedent(f"""\
 ## DSH Desktop v{version} Release Note
 
 📢 大家可以直接在客户端中更新。
 
-**🚀 1. 内核升级与稳定性增强**
+{theme1_zh}
 
-升级内置 DeepSeek Harness 运行时与核心组件，全面提升桌面客户端会话执行与插件加载的稳定性。
+{theme2_zh}
 
-**📱 2. 移动端配对与交互体验优化**
-
-改进局域网手机连接体验与状态反馈，支持轻量化思考与工具调用折叠展示，让移动端对话更加流畅。
-
-**🛡️ 3. 智能插件冲突恢复与安装支持**
-
-增强插件冲突自动诊断与自愈机制，自动清理孤立依赖配置，并支持自定义安装路径。
+{theme3_zh}
 
 ---
 
@@ -363,18 +457,33 @@ def generate_deterministic_fallback(release_tag: str) -> str:
 
 📢 You can update directly from the DSH Desktop app.
 
-**🚀 1. Core Runtime Upgrade and Stability**
+{theme1_en}
 
-Upgrades the bundled DeepSeek Harness runtime and core dependencies, improving desktop session execution and plugin reliability.
+{theme2_en}
 
-**📱 2. Mobile LAN Bridge and Interaction Improvements**
-
-Improves mobile pairing and live connection feedback with lightweight thinking and tool call folding for seamless conversation.
-
-**🛡️ 3. Smart Plugin Recovery and Installation Support**
-
-Enhances automatic plugin conflict diagnostics and self-healing, automatically pruning stale bundle references and supporting custom installation paths.
+{theme3_en}
 """)
+
+
+def generate_release_notes(
+    release_tag: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Generate bilingual release notes via AI with automatic deterministic fallback."""
+    ai_notes = generate_ai_release_notes(release_tag, api_key, base_url, model)
+    if ai_notes:
+        try:
+            validated = validate_release_note(release_tag, ai_notes)
+            print(f"✅ AI release notes generated and validated for {release_tag}")
+            return validated
+        except Exception as e:
+            print(f"⚠️ AI release notes failed validation ({e}); using fallback generator.", file=sys.stderr)
+
+    print(f"ℹ️ Using deterministic release notes generator for {release_tag}")
+    fallback = generate_deterministic_fallback(release_tag)
+    return validate_release_note(release_tag, fallback)
 
 
 def send_feishu_notification(webhook_url: str, release_tag: str, release_notes: str) -> None:
@@ -422,6 +531,14 @@ def main() -> None:
     build_parser.add_argument("--tag", required=True, help="Release tag (e.g. v0.4.0)")
     build_parser.add_argument("--output", help="Output file path (default: stdout)")
 
+    # generate
+    generate_parser = subparsers.add_parser("generate", help="Generate AI release notes with fallback")
+    generate_parser.add_argument("--tag", required=True, help="Release tag (e.g. v0.4.0)")
+    generate_parser.add_argument("--output", help="Output markdown file path (default: stdout)")
+    generate_parser.add_argument("--api-key", help="OpenAI-compatible API key")
+    generate_parser.add_argument("--base-url", help="OpenAI-compatible base URL")
+    generate_parser.add_argument("--model", help="Model name")
+
     # validate
     validate_parser = subparsers.add_parser("validate", help="Validate Feishu release notes markdown")
     validate_parser.add_argument("--tag", required=True, help="Release tag (e.g. v0.4.0)")
@@ -447,6 +564,19 @@ def main() -> None:
             Path(args.output).write_text(prompt, encoding="utf-8")
         else:
             print(prompt)
+
+    elif args.command == "generate":
+        notes = generate_release_notes(
+            args.tag,
+            api_key=args.api_key,
+            base_url=args.base_url,
+            model=args.model,
+        )
+        if args.output:
+            Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.output).write_text(notes, encoding="utf-8")
+        else:
+            print(notes)
 
     elif args.command == "validate":
         text = Path(args.input).read_text(encoding="utf-8")

@@ -90,10 +90,28 @@ Description here.
     }
   })
 
+  it('generates release notes using generate command with automatic validation', () => {
+    const tempFile = join(process.cwd(), '.temp-generate-notes.md')
+    try {
+      execFileSync('python3', [scriptPath, 'generate', '--tag', 'v0.4.0', '--output', tempFile], {
+        encoding: 'utf8',
+        env: pythonEnv
+      })
+
+      const content = readFileSync(tempFile, 'utf8')
+      expect(content).toContain('## DSH Desktop v0.4.0 Release Note')
+      expect(content).toContain('📢 大家可以直接在客户端中更新。')
+      expect(content).toContain('📢 You can update directly from the DSH Desktop app.')
+    } finally {
+      try {
+        unlinkSync(tempFile)
+      } catch {}
+    }
+  }, 60_000)
+
   it('integrates Feishu release notification into GitHub Actions workflow', () => {
     const workflow = readFileSync(workflowPath, 'utf8')
-    expect(workflow).toContain('feishu_release_notes.py build-prompt')
-    expect(workflow).toContain('feishu_release_notes.py validate')
+    expect(workflow).toContain('feishu_release_notes.py generate')
     expect(workflow).toContain('feishu_release_notes.py send')
     expect(workflow).toContain('FEISHU_RELEASE_WEBHOOK')
   })
