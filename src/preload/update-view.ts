@@ -24,7 +24,9 @@ export function updateMessage(status: UpdateStatus, locale: UpdateLocale): strin
     case 'checking':
       return zh ? '正在检查更新…' : 'Checking for updates…'
     case 'available':
-      return zh ? `发现新版本${version}，正在准备下载…` : `Update${version} is available. Preparing download…`
+      return zh
+        ? `发现新版本${version}，是否更新？`
+        : `DSH Desktop${version} is available. Update now?`
     case 'downloading': {
       const percent = Math.round(status.percent ?? 0)
       return zh ? `正在下载更新 ${percent}%` : `Downloading update ${percent}%`

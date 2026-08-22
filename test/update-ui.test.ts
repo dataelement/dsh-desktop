@@ -69,3 +69,16 @@ describe('secure update card wiring', () => {
     expect(preload).toContain("'bottom:20px'")
   })
 })
+
+describe('accepting an update is what starts the download', () => {
+  it('asks rather than announcing a download already under way', () => {
+    const available: UpdateStatus = {
+      phase: 'available',
+      currentVersion: '0.4.3',
+      availableVersion: '0.4.4',
+      manual: false
+    }
+    expect(updateMessage(available, 'zh')).toBe('发现新版本 0.4.4，是否更新？')
+    expect(updateMessage(available, 'en')).toBe('DSH Desktop 0.4.4 is available. Update now?')
+  })
+})

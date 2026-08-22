@@ -19,6 +19,7 @@ let currentStatus: UpdateStatus | undefined
 let dismissedVersion: string | null = null
 let dismissedTransientPhase: UpdateStatus['phase'] | null = null
 let installing = false
+let accepting = false
 let receivedStatusEvent = false
 let phoneConnected = false
 let mobileStatusTimer: number | undefined
@@ -216,6 +217,7 @@ function applyStatus(status: UpdateStatus): void {
     host.dataset.updateManual = String(status.manual)
   }
   if (status.phase === 'error') installing = false
+  if (status.phase !== 'available') accepting = false
   render()
 }
 
@@ -265,6 +267,29 @@ function render(): void {
     body.appendChild(progress)
   }
 
+  if (status.phase === 'available') {
+    const actions = element('div', 'actions')
+    const accept = button(locale === 'zh' ? '同意更新' : 'Update now', 'primary')
+    accept.disabled = accepting
+    accept.addEventListener('click', () => {
+      accepting = true
+      render()
+      void ipcRenderer.invoke('updates:download').catch((error: unknown) => {
+        accepting = false
+        console.error('[updater] unable to download update', error)
+        render()
+      })
+    })
+    actions.append(accept, skipButton(status))
+    body.appendChild(actions)
+  }
+
+  if (status.phase === 'downloading') {
+    const actions = element('div', 'actions')
+    actions.appendChild(skipButton(status))
+    body.appendChild(actions)
+  }
+
   if (status.phase === 'downloaded') {
     const actions = element('div', 'actions')
     const install = button(
@@ -287,7 +312,7 @@ function render(): void {
         render()
       })
     })
-    actions.append(install)
+    actions.append(install, skipButton(status))
     body.appendChild(actions)
   }
 
@@ -300,6 +325,25 @@ function render(): void {
 
   card.appendChild(row)
   content.replaceChildren(card)
+}
+
+/**
+ * Stop being told about this version at all. The close button silences the
+ * banner for this sitting only, so a release the user has decided against
+ * comes back every launch; this one is remembered. A later release still asks,
+ * and a manual check offers the skipped one again.
+ */
+function skipButton(status: UpdateStatus): HTMLButtonElement {
+  const skip = button(locale === 'zh' ? '跳过此版本' : 'Skip this version', 'secondary')
+  skip.addEventListener('click', () => {
+    const version = status.availableVersion
+    if (!version) return
+    dismissCurrent()
+    void ipcRenderer.invoke('updates:skip', version).catch((error: unknown) => {
+      console.error('[updater] unable to skip update', error)
+    })
+  })
+  return skip
 }
 
 function dismissCurrent(): void {
