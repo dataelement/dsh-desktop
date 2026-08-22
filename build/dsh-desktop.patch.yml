@@ -17,3 +17,13 @@
   config:
     profile: web
     allowRestart: false
+
+# Harness creates the full Cordis HMR service after boot when no `hmr` service
+# exists, and that service throws without Node's internal module loader —
+# which a packaged Electron app cannot provide, so every signed macOS launch
+# failed profile boot at that step. This row supplies the config-watching
+# subset `watchUserPatches` actually needs; where the internals are reachable
+# it stands aside and the real service loads unchanged.
+- insert:
+    - id: dsh-desktop-hmr-fallback
+      name: dsh-desktop-hmr-fallback

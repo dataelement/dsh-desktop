@@ -1,0 +1,16 @@
+{
+  "name": "dsh-desktop-hmr-fallback",
+  "version": "0.1.0",
+  "description": "Config-watch HMR service for hosts where Node's internal module loader is unavailable.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}
