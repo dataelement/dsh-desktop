@@ -1,0 +1,281 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
+index 86e7906..641c8e1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
+@@ -5056,7 +5056,7 @@ window.__ModuleLoader__.load({
+ 			return (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: parts });
+ 		}
+ 		/** Right-aligned bubble shared by user and steering rows. */
+-		function UserStyleBubble({ content, imageLoader, actions, pending = false, t }) {
++		function UserStyleBubble({ content, imageLoader, actions, editor, pending = false, t }) {
+ 			const { text, images, rest } = contentParts(content);
+ 			const truncated = (total) => t("json.truncated", { total });
+ 			const showBubble = text !== "" || rest.length > 0;
+@@ -5071,14 +5071,14 @@ window.__ModuleLoader__.load({
+ 						load: imageLoader,
+ 						align: "end",
+ 						labels: messageImageLabels(t)
+-					}), showBubble && (0, react_jsx_runtime.jsxs)("div", {
++					}), editor ?? (showBubble && (0, react_jsx_runtime.jsxs)("div", {
+ 						className: MessageItem_module_css_default.bubble,
+ 						children: [projectUserText(text), rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
+ 							label: t("message.extraBlock"),
+ 							payload: block,
+ 							truncatedLabel: truncated
+ 						}, i))]
+-					})]
++					}))]
+ 				}), actions?.(text)]
+ 			});
+ 		}
+@@ -5102,18 +5102,115 @@ window.__ModuleLoader__.load({
+ 				})
+ 			});
+ 		}
++		const editMessageCss = ".dsh-message-edit-bubble{box-sizing:border-box;width:min(525px,82vw);min-width:min(360px,82vw);background:var(--dsw-specific-bubble);border-radius:22px;padding:12px;display:flex;flex-direction:column;gap:10px}.dsh-message-edit-textarea{box-sizing:border-box;width:100%;min-height:96px;max-height:336px;resize:vertical;color:var(--dsw-alias-label-primary);background:transparent;border:none;outline:none;padding:0 4px;font:inherit;font-size:16px;line-height:24px}.dsh-message-edit-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px}.dsh-message-edit-error{color:var(--dsw-alias-state-error-primary);padding:0 4px;font-size:12px;line-height:18px}";
++		const editMessageStyleId = "@deepseek-ai/dsh-client-ui-conversation/message-edit";
++		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(editMessageStyleId) + "]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
++			tag.dataset.pluginCss = editMessageStyleId;
++			tag.textContent = editMessageCss;
++			document.head.appendChild(tag);
++		}
++		/** Enter the inline editor for one text-only durable user message. */
++		function EditMessageAction({ onEdit, t }) {
++			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++				label: t("message.edit"),
++				side: "bottom",
++				children: (0, react_jsx_runtime.jsx)("button", {
++					type: "button",
++					className: MessageIconActions_module_css_default.action,
++					"aria-label": t("message.edit"),
++					onClick: onEdit,
++					children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
++				})
++			});
++		}
++		function MessageInlineEditor({ initialText, onCancel, onSubmit, t }) {
++			const [draft, setDraft] = (0, react.useState)(initialText);
++			const [submitting, setSubmitting] = (0, react.useState)(false);
++			const [error, setError] = (0, react.useState)(null);
++			const textareaRef = (0, react.useRef)(null);
++			(0, react.useEffect)(() => {
++				textareaRef.current?.focus();
++				textareaRef.current?.setSelectionRange(draft.length, draft.length);
++			}, []);
++			const submit = () => {
++				if (submitting || draft.trim() === "") return;
++				setSubmitting(true);
++				setError(null);
++				Promise.resolve(onSubmit(draft)).catch((reason) => {
++					setSubmitting(false);
++					setError(reason instanceof Error ? reason.message : String(reason));
++				});
++			};
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: "dsh-message-edit-bubble",
++				children: [(0, react_jsx_runtime.jsx)("textarea", {
++					ref: textareaRef,
++					className: "dsh-message-edit-textarea",
++					"aria-label": t("message.edit.input"),
++					value: draft,
++					disabled: submitting,
++					onChange: (event) => {
++						setDraft(event.currentTarget.value);
++					},
++					onKeyDown: (event) => {
++						if (event.key === "Escape") {
++							event.preventDefault();
++							onCancel();
++						} else if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
++							event.preventDefault();
++							submit();
++						}
++					}
++				}), error !== null && (0, react_jsx_runtime.jsx)("div", {
++					className: "dsh-message-edit-error",
++					role: "alert",
++					children: t("message.edit.failed", { message: error })
++				}), (0, react_jsx_runtime.jsxs)("div", {
++					className: "dsh-message-edit-actions",
++					children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++						variant: "outline",
++						disabled: submitting,
++						onClick: onCancel,
++						children: t("message.edit.cancel")
++					}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++						variant: "primary",
++						disabled: submitting || draft.trim() === "",
++						onClick: submit,
++						children: submitting ? t("message.edit.submitting") : t("message.edit.submit")
++					})]
++				})]
++			});
++		}
+ 		/** User and admitted-steering keyed Chat renderer. */
+-		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, loadImage, t }) {
++		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, loadImage, editMessage, canEditMessage, t }) {
+ 			const data = node.data;
++			const editable = canEditMessage && data.content.every((block) => block.type === "text");
++			const [editing, setEditing] = (0, react.useState)(false);
+ 			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
+ 				content: data.content,
+ 				imageLoader: loadImage,
++				editor: editing ? (0, react_jsx_runtime.jsx)(MessageInlineEditor, {
++					initialText: contentParts(data.content).text,
++					onCancel: () => {
++						setEditing(false);
++					},
++					onSubmit: (text) => editMessage(data.seq, text),
++					t
++				}) : void 0,
+ 				t,
+-				actions: (text) => (0, react_jsx_runtime.jsx)(MessageIconActions, {
++				actions: editing ? void 0 : (text) => (0, react_jsx_runtime.jsx)(MessageIconActions, {
+ 					text,
+ 					time: data.time,
+ 					clock: "start",
+ 					className: MessageItem_module_css_default.actions,
++					extraActions: editable ? (0, react_jsx_runtime.jsx)(EditMessageAction, {
++						onEdit: () => {
++							setEditing(true);
++						},
++						t
++					}) : null,
+ 					t
+ 				})
+ 			});
+@@ -5197,7 +5294,7 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		//#region lib/types/client/chat/ChatNodeSeat.js
+ 		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
+-		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, selectedCallId, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions, useSession, renderSlot, t }) {
++		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, lastUserMessageKey, selectedCallId, cwd, openFile, inspectCall, forkAt, editMessage, loadImage, fileMentions, useSession, renderSlot, t }) {
+ 			const node = useSession((snapshot) => snapshot.chat.nodes.get(nodeKey));
+ 			const routedNode = node;
+ 			const owner = (0, react.useMemo)(() => node === void 0 ? null : {
+@@ -5206,6 +5303,8 @@ window.__ModuleLoader__.load({
+ 				openFile,
+ 				inspectCall,
+ 				forkAt,
++				editMessage,
++				canEditMessage: node.kind === "user" && node.key === lastUserMessageKey,
+ 				loadImage,
+ 				fileMentions
+ 			}, [
+@@ -5215,6 +5314,8 @@ window.__ModuleLoader__.load({
+ 				openFile,
+ 				inspectCall,
+ 				forkAt,
++				editMessage,
++				lastUserMessageKey,
+ 				loadImage,
+ 				fileMentions
+ 			]);
+@@ -5329,7 +5430,7 @@ window.__ModuleLoader__.load({
+ 		* The chat view slot entry: pure component over the composed props; each
+ 		* ordered business Node crosses the keyed renderer seat.
+ 		*/
+-		function ChatView({ useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt, fileMentions, t }) {
++		function ChatView({ useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt, editMessage, fileMentions, t }) {
+ 			const order = useSession((s) => s.chat.order);
+ 			const nodeStore = useSession((s) => s.chat.nodes);
+ 			const timeline = useSession((s) => s.chat.timeline);
+@@ -5364,6 +5465,13 @@ window.__ModuleLoader__.load({
+ 			const firstSeq = firstKey === void 0 ? null : nodeStore.get(firstKey)?.anchorSeq ?? null;
+ 			const lastKey = order.at(-1) ?? null;
+ 			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
++			const lastUserMessageKey = (0, react.useMemo)(() => {
++				for (let index = order.length - 1; index >= 0; index -= 1) {
++					const key = order[index];
++					if (key !== void 0 && nodeStore.get(key)?.kind === "user") return key;
++				}
++				return null;
++			}, [order, nodeStore]);
+ 			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
+ 			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
+ 			const toBottom = (el) => {
+@@ -5533,12 +5641,14 @@ window.__ModuleLoader__.load({
+ 							}),
+ 							order.map((nodeKey) => (0, react_jsx_runtime.jsx)(ChatNodeSeat, {
+ 								nodeKey,
++								lastUserMessageKey,
+ 								useSession,
+ 								selectedCallId,
+ 								cwd,
+ 								openFile,
+ 								inspectCall,
+ 								forkAt,
++								editMessage,
+ 								loadImage,
+ 								fileMentions,
+ 								renderSlot,
+@@ -5878,6 +5988,12 @@ window.__ModuleLoader__.load({
+ 			"message.unknownSurface": "未知 surface 事件：{type}",
+ 			"message.unknownBlock": "未知内容块",
+ 			"message.stopped": "已停止",
++			"message.edit": "编辑消息",
++			"message.edit.input": "编辑已发送的消息",
++			"message.edit.cancel": "取消",
++			"message.edit.submit": "发送",
++			"message.edit.submitting": "发送中…",
++			"message.edit.failed": "编辑失败：{message}",
+ 			"message.branch": "在新对话中分支",
+ 			"message.branchUnavailable": "仅可从已完成轮次的最后一条消息分支",
+ 			"message.retry.active": "正在重试模型请求",
+@@ -6043,6 +6159,12 @@ window.__ModuleLoader__.load({
+ 			"message.unknownSurface": "Unknown surface event: {type}",
+ 			"message.unknownBlock": "Unknown content block",
+ 			"message.stopped": "Stopped",
++			"message.edit": "Edit message",
++			"message.edit.input": "Edit sent message",
++			"message.edit.cancel": "Cancel",
++			"message.edit.submit": "Send",
++			"message.edit.submitting": "Sending…",
++			"message.edit.failed": "Edit failed: {message}",
+ 			"message.branch": "Branch into a new conversation",
+ 			"message.branchUnavailable": "Available only on the last message of a completed turn",
+ 			"message.retry.active": "Retrying model request",
+@@ -9755,6 +9877,41 @@ window.__ModuleLoader__.load({
+ 							}).then((childId) => {
+ 								sessions.open(childId);
+ 							}).catch(() => {});
++						},
++						editMessage: (seq, text) => {
++							const source = sessions.list.getSnapshot().byId[sessionId];
++							const workspace = workspaces.list.getSnapshot().items.find((item) => item.sessionIds.includes(sessionId));
++							const snapshot = sessions.binding(sessionId)?.session.getSnapshot();
++							const previousTurnEnd = snapshot === void 0 ? -Infinity : Math.max(...[...snapshot.turnEnds.values()].filter((value) => value < seq));
++							return (async () => {
++								const childId = Number.isFinite(previousTurnEnd) ? await sessions.fork({
++									sessionId,
++									atSeq: previousTurnEnd
++								}) : await sessions.create(workspace === void 0 ? source?.cwd === void 0 ? {} : { cwd: source.cwd } : { workspaceId: workspace.workspaceId });
++								try {
++									if (!Number.isFinite(previousTurnEnd) && source?.agentPreset !== void 0) {
++										const response = await ctx.get("connection").api.agentPresets.select({
++											sessionId: childId,
++											agentPreset: source.agentPreset
++										});
++										if (!response.result.ok) throw new Error(response.result.error.message);
++										sessions.noteAgentPreset(childId, response.result.value.agentPreset);
++									}
++									const child = sessions.binding(childId)?.session;
++									if (child === void 0) throw new Error("Edited conversation is unavailable");
++									if (!Number.isFinite(previousTurnEnd) && source?.title !== void 0) {
++										const renamed = await child.rename(source.title);
++										if (!renamed.ok) throw new Error(renamed.error.message);
++									}
++									const result = await child.prompt([{ type: "text", text }], "queue");
++									if (!result.ok) throw new Error(result.error.message);
++									await workspaces.archiveSession(sessionId);
++								} catch (reason) {
++									await workspaces.archiveSession(childId).catch(() => {});
++									throw reason;
++								}
++								sessions.open(childId);
++							})();
+ 						}
+ 					};
+ 				}
