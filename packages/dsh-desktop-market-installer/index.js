@@ -277,10 +277,14 @@ export function buildPnpmEnvironment(
   environment = process.env,
   executablePath = process.execPath
 ) {
+  // The child is spawned as `process.execPath`, which on macOS is the Electron
+  // helper binary: it only runs the dsh CLI as Node when ELECTRON_RUN_AS_NODE
+  // is set. The harness entry (harness-node-entry.mjs) declares that flag in
+  // its own environment so that children spawned here inherit Node mode —
+  // deleting it here makes the helper exit 0 without ever running the CLI,
+  // which the market then mistakes for a successful pnpm run. Pass it through;
+  // the bundled-Node hosts (Windows, Linux) never set it and are unaffected.
   const result = { ...environment }
-  for (const key of Object.keys(result)) {
-    if (key.toUpperCase() === 'ELECTRON_RUN_AS_NODE') delete result[key]
-  }
 
   const seen = new Set()
   const paths = [binDirectory, dirname(executablePath), ...processPath(environment).split(delimiter)]

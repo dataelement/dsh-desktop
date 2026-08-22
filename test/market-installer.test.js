@@ -167,7 +167,7 @@ describe('desktop plugin market installer', () => {
     await writeFile(
       fakeDshEntry,
       [
-        "process.stdout.write(JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), path: process.env.PATH }))",
+        "process.stdout.write(JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), path: process.env.PATH, runAsNode: process.env.ELECTRON_RUN_AS_NODE }))",
         "await new Promise((resolve) => setTimeout(resolve, Number(process.env.DSH_DESKTOP_TEST_DELAY_MS ?? '0')))"
       ].join('\n'),
       'utf8'
@@ -206,8 +206,15 @@ describe('desktop plugin market installer', () => {
     expect(invocation.path.split(process.platform === 'win32' ? ';' : ':')[0]).toBe(
       binDirectory
     )
+    // The macOS helper binary only runs the dsh CLI as Node when the child
+    // environment carries ELECTRON_RUN_AS_NODE, so the spawn must not strip it.
+    expect(invocation.runAsNode).toBe('1')
     const pnpmEnv = buildPnpmEnvironment(binDirectory, environment)
-    expect(pnpmEnv).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+    // On macOS the child is spawned as the Electron helper binary, which only
+    // runs the dsh CLI as Node when ELECTRON_RUN_AS_NODE is set; the harness
+    // entry declares it for its children, so the environment must pass it
+    // through rather than stripping it.
+    expect(pnpmEnv.ELECTRON_RUN_AS_NODE).toBe('1')
     expect(pnpmEnv.PNPM_MAX_WORKERS).toBe('1')
     expect(pnpmEnv.npm_config_child_concurrency).toBe('1')
     expect(pnpmEnv.npm_config_package_import_method).toBe('clone-or-copy')
