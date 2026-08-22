@@ -3,6 +3,7 @@ import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { parse } from 'yaml'
 import { removeTree } from './remove-tree'
+import { bundleEntryIds, prunePatchLayer } from './patch-layer'
 
 /**
  * Directories under the profile's node_modules that no longer belong to any
@@ -333,6 +334,49 @@ export async function resolveProfileRecoveryPlugins(
   }
 }
 
+/**
+ * Loader entry ids the installed plugin declares. Read before removal — the
+ * bundle patch that names them goes away with the package.
+ */
+export async function pluginDeclaredEntryIds(
+  profileDirectory: string,
+  pluginName: string
+): Promise<string[]> {
+  const packageDirectory = join(profileDirectory, 'node_modules', pluginName)
+  try {
+    const manifest = JSON.parse(
+      await readFile(join(packageDirectory, 'package.json'), 'utf8')
+    ) as BundleManifest
+    const patch = manifest.dsh?.bundle?.patch
+    if (!patch) return []
+    return bundleEntryIds(await readFile(resolve(packageDirectory, patch), 'utf8'))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Drop the user patch-layer rows aimed at a plugin that is being removed.
+ * @returns a description of each row dropped, empty when the layer said
+ * nothing about this plugin.
+ */
+export async function prunePluginPatchLayer(
+  dshHome: string,
+  pluginName: string,
+  entryIds: readonly string[]
+): Promise<string[]> {
+  const patchPath = profileCordisPatchPath(dshHome)
+  try {
+    const text = await readFile(patchPath, 'utf8')
+    const pruned = prunePatchLayer(text, pluginName, entryIds)
+    if (pruned.removed.length === 0) return []
+    await writeFile(patchPath, pruned.text, 'utf8')
+    return pruned.removed
+  } catch {
+    return []
+  }
+}
+
 export async function uninstallPluginFromProfile(
   dshHome: string,
   pluginName: string,
@@ -352,6 +396,7 @@ export async function uninstallPluginFromProfile(
     if (!configured) return false
 
     const lockfileExisted = existsSync(lockfilePath)
+    const entryIds = await pluginDeclaredEntryIds(dirname(manifestPath), pluginName)
     if (!(await removePlugin(pluginName))) return false
 
     const updatedManifest = JSON.parse(await readFile(manifestPath, 'utf8')) as ProfileManifest
@@ -374,6 +419,8 @@ export async function uninstallPluginFromProfile(
         return false
       }
     }
+
+    await prunePluginPatchLayer(dshHome, pluginName, entryIds)
 
     return true
   } catch {
@@ -447,13 +494,21 @@ export async function resetPluginProfile(
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
     }
 
-    // Reset cordis.patch.yml to clean state
+    // The user patch layer is the user's own work. Removing one plugin takes
+    // the rows aimed at that plugin and nothing else; only a reset with no
+    // plugin named — the deliberate "start over" — clears the whole layer.
     const patchPath = profileCordisPatchPath(dshHome)
     if (existsSync(patchPath)) {
-      const patchContent = await readFile(patchPath, 'utf8')
-      if (patchContent.trim() !== '[]') {
-        await writeFile(patchPath, '[]\n', 'utf8')
-        modified = true
+      if (failingPlugin) {
+        const entryIds = await pluginDeclaredEntryIds(dirname(manifestPath), failingPlugin)
+        const removed = await prunePluginPatchLayer(dshHome, failingPlugin, entryIds)
+        if (removed.length > 0) modified = true
+      } else {
+        const patchContent = await readFile(patchPath, 'utf8')
+        if (patchContent.trim() !== '[]') {
+          await writeFile(patchPath, '[]\n', 'utf8')
+          modified = true
+        }
       }
     }
 

@@ -21,6 +21,7 @@ import {
   removeProfilePluginWithDsh
 } from './runtime/profile-plugin-command'
 import { clearDamagedPackageDirectories, hasProfile } from './state/profile-repair'
+import { inspectProfileConsistency } from './state/profile-consistency'
 import { LanMobileBridge } from './mobile/lan-mobile-bridge'
 import {
   detectPluginRecovery,
@@ -502,6 +503,22 @@ async function repairProfilePackages(dshHome: string): Promise<void> {
   }
 }
 
+/**
+ * Name what the profile contradicts about itself, once the repair above has
+ * had its turn. A dangling declaration does not throw — it leaves a service
+ * waiting on a provider that never arrives — so without this the profile reads
+ * as a slow start and the fault is found by reading logs for an afternoon.
+ * Reporting only: the launch continues either way.
+ */
+async function reportProfileConsistency(dshHome: string): Promise<void> {
+  try {
+    const findings = await inspectProfileConsistency(dshHome)
+    for (const finding of findings) runtime.note(`[desktop] profile inconsistency: ${finding}`)
+  } catch {
+    // A profile that cannot be inspected is not a reason to refuse a launch.
+  }
+}
+
 function launchHarness(): Promise<void> {
   if (harnessLaunchOperation) return harnessLaunchOperation
 
@@ -514,6 +531,7 @@ function launchHarness(): Promise<void> {
     await runtime.stop()
     await repairProfilePackages(dshHome)
     await pruneMissingProfileBundles(dshHome).catch(() => false)
+    await reportProfileConsistency(dshHome)
     await runtime.start(launchDirectory)
   })().finally(() => {
     harnessLaunchOperation = undefined

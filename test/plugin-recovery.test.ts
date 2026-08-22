@@ -711,3 +711,61 @@ describe('plugin-recovery', () => {
   })
 })
 
+
+describe('uninstall clears what the patch layer said about the plugin', () => {
+  const testDir = join(__dirname, '.temp-uninstall-patch-layer')
+  const profile = join(testDir, 'profiles', 'web')
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true })
+  })
+
+  it('drops the plugin’s rows and keeps the user’s own', async () => {
+    // The residue this closes: rows aimed at a plugin outlive its uninstall and
+    // keep routing services at a provider that no longer composes, which reads
+    // as a slow start rather than a fault.
+    await mkdir(join(profile, 'node_modules', 'dsh-doudizhu'), { recursive: true })
+    await writeFile(
+      join(profile, 'node_modules', 'dsh-doudizhu', 'package.json'),
+      JSON.stringify({ name: 'dsh-doudizhu', dsh: { bundle: { patch: './cordis.patch.yml' } } })
+    )
+    await writeFile(
+      join(profile, 'node_modules', 'dsh-doudizhu', 'cordis.patch.yml'),
+      '- insert:\n    - id: doudizhu\n      name: dsh-doudizhu\n'
+    )
+    await writeFile(
+      join(profile, 'package.json'),
+      JSON.stringify({
+        dependencies: { 'dsh-doudizhu': '^1.0.0' },
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dsh-doudizhu'] } }
+      })
+    )
+    await writeFile(
+      join(profile, 'cordis.patch.yml'),
+      [
+        '- id: doudizhu',
+        '  config:',
+        '    backend: sqlite',
+        '- id: theme',
+        '  config:',
+        '    accent: violet',
+        ''
+      ].join('\n')
+    )
+
+    const success = await uninstallPluginFromProfile(testDir, 'dsh-doudizhu', async () => {
+      const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+      delete manifest.dependencies['dsh-doudizhu']
+      manifest.dsh.profile.bundles = ['@deepseek-ai/dsh-base']
+      await writeFile(join(profile, 'package.json'), JSON.stringify(manifest))
+      await rm(join(profile, 'node_modules', 'dsh-doudizhu'), { recursive: true, force: true })
+      return true
+    })
+
+    expect(success).toBe(true)
+    const layer = await readFile(join(profile, 'cordis.patch.yml'), 'utf8')
+    expect(layer).not.toContain('doudizhu')
+    expect(layer).not.toContain('sqlite')
+    expect(layer).toContain('accent: violet')
+  })
+})
