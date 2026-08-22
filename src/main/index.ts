@@ -22,6 +22,7 @@ import {
 } from './runtime/profile-plugin-command'
 import { clearDamagedPackageDirectories, hasProfile } from './state/profile-repair'
 import { inspectProfileConsistency } from './state/profile-consistency'
+import { ensureStoreDirPinned, inspectStoreConsistency } from './state/profile-store'
 import { LanMobileBridge } from './mobile/lan-mobile-bridge'
 import {
   detectPluginRecovery,
@@ -513,6 +514,8 @@ async function repairProfilePackages(dshHome: string): Promise<void> {
 async function reportProfileConsistency(dshHome: string): Promise<void> {
   try {
     const findings = await inspectProfileConsistency(dshHome)
+    const store = await inspectStoreConsistency(dshHome)
+    if (store) findings.push(store)
     for (const finding of findings) runtime.note(`[desktop] profile inconsistency: ${finding}`)
   } catch {
     // A profile that cannot be inspected is not a reason to refuse a launch.
@@ -529,6 +532,10 @@ function launchHarness(): Promise<void> {
     // previous one running: start() stops it, but that is after the repair.
     // Stopping here is what makes the window this launch path assumes.
     await runtime.stop()
+    // Before anything else runs pnpm: a store the profile does not pin makes
+    // every package operation fail, repairs included.
+    const pinned = await ensureStoreDirPinned(dshHome).catch(() => undefined)
+    if (pinned) runtime.note(`[desktop] pinned the profile's pnpm store: ${pinned}`)
     await repairProfilePackages(dshHome)
     await pruneMissingProfileBundles(dshHome).catch(() => false)
     await reportProfileConsistency(dshHome)
