@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -311,6 +312,33 @@ describe('plugin-recovery', () => {
       '@deepseek-ai/dsh-web-app',
       'dshmarket'
     ])
+  })
+
+  it('removes workspace packages and stale lockfile when resetting a plugin', async () => {
+    const pkgPath = profilePackageJsonPath(testDir)
+    const profileDir = join(testDir, 'profiles', 'web')
+    const workspacePkgDir = join(profileDir, 'packages', 'dsh-doudizhu')
+    const nodeModulesPkgDir = join(profileDir, 'node_modules', 'dsh-doudizhu')
+    const lockfilePath = join(profileDir, 'pnpm-lock.yaml')
+
+    await mkdir(workspacePkgDir, { recursive: true })
+    await mkdir(nodeModulesPkgDir, { recursive: true })
+    await writeFile(join(workspacePkgDir, 'package.json'), '{"name":"dsh-doudizhu"}')
+    await writeFile(join(nodeModulesPkgDir, 'package.json'), '{"name":"dsh-doudizhu"}')
+    await writeFile(lockfilePath, 'lockfileVersion: 9.0')
+    await writeFile(
+      pkgPath,
+      JSON.stringify({
+        dependencies: { 'dsh-doudizhu': 'workspace:^' },
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dsh-doudizhu'] } }
+      })
+    )
+
+    const success = await resetPluginProfile(testDir, 'dsh-doudizhu')
+    expect(success).toBe(true)
+    expect(existsSync(workspacePkgDir)).toBe(false)
+    expect(existsSync(nodeModulesPkgDir)).toBe(false)
+    expect(existsSync(lockfilePath)).toBe(false)
   })
 
   it('resolves root package when a scoped sub-module fails', async () => {

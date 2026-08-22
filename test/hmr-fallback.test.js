@@ -51,6 +51,12 @@ describe('desktop HMR fallback', () => {
     expect(manifest.dependencies['dsh-desktop-hmr-fallback']).toBe(
       'file:packages/dsh-desktop-hmr-fallback'
     )
+
+    const dshPatch = await readFile(
+      join(process.cwd(), 'patches', '@deepseek-ai+dsh+0.1.1-rc.1.patch'),
+      'utf8'
+    )
+    expect(dshPatch).toContain('"dsh-desktop-hmr-fallback": "0.1.0"')
   })
 
   it('refreshes on a change to the watched config, and not on its neighbours', async () => {

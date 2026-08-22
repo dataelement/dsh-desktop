@@ -167,7 +167,7 @@ async function pluginMatchesSlot(
     try {
       const content = await readFile(join(packageDir, file), 'utf8')
       if (content.includes(slotName)) return true
-    } catch {}
+    } catch { }
   }
   return false
 }
@@ -193,10 +193,10 @@ async function packagesProvidingSlot(
             providers.push(packageName)
             break
           }
-        } catch {}
+        } catch { }
       }
     }
-  } catch {}
+  } catch { }
 
   return providers
 }
@@ -216,13 +216,13 @@ async function pluginReferencesPackage(
       ...Object.keys(manifest.optionalDependencies ?? {})
     ])
     if ([...packageNames].some((packageName) => declaredPackages.has(packageName))) return true
-  } catch {}
+  } catch { }
 
   for (const file of ['cordis.patch.yml', 'index.js', 'lib/index.js', 'dist/index.js']) {
     try {
       const content = await readFile(join(packageDirectory, file), 'utf8')
       if ([...packageNames].some((packageName) => content.includes(packageName))) return true
-    } catch {}
+    } catch { }
   }
   return false
 }
@@ -527,9 +527,17 @@ export async function resetPluginProfile(
               if (files.length === 0) {
                 await removeTree(scopeDir).catch(() => undefined)
               }
-            } catch {}
+            } catch { }
           }
         }
+      }
+    }
+
+    const packagesDir = join(dshHome, 'profiles', 'web', 'packages')
+    if (failingPlugin && existsSync(packagesDir)) {
+      const packageSourceDir = join(packagesDir, failingPlugin)
+      if (existsSync(packageSourceDir)) {
+        await removeTree(packageSourceDir).catch(() => undefined)
       }
     }
 

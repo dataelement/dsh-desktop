@@ -807,7 +807,12 @@ async function showPluginRecovery(options?: {
           if (removed) {
             if (!removedPlugins.includes(plugin)) removedPlugins.push(plugin)
           } else {
-            failedPlugins.push(plugin)
+            const fallbackRemoved = await resetPluginProfile(dshHome, plugin)
+            if (fallbackRemoved) {
+              if (!removedPlugins.includes(plugin)) removedPlugins.push(plugin)
+            } else {
+              failedPlugins.push(plugin)
+            }
           }
         }
 
