@@ -8,6 +8,7 @@ import {
   inject,
   name
 } from '../packages/dsh-desktop-hmr-fallback/index.js'
+import { patchPath } from './patch-path'
 
 /**
  * The plugin registers a Cordis service, which needs a real context to
@@ -52,10 +53,7 @@ describe('desktop HMR fallback', () => {
       'file:packages/dsh-desktop-hmr-fallback'
     )
 
-    const dshPatch = await readFile(
-      join(process.cwd(), 'patches', '@deepseek-ai+dsh+0.1.1-rc.1.patch'),
-      'utf8'
-    )
+    const dshPatch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
     expect(dshPatch).toContain('"dsh-desktop-hmr-fallback": "0.1.0"')
   })
 

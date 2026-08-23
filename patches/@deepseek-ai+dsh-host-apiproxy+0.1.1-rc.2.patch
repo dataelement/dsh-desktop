@@ -60,10 +60,10 @@ index 5075798..fb882a8 100644
 +}
 +function presetArchiveWarnings(files, fromVersion) {
 +	const warnings = [];
-+	if (typeof fromVersion === "string" && fromVersion.trim() !== "" && fromVersion.trim() !== "0.1.1-rc.1") {
++	if (typeof fromVersion === "string" && fromVersion.trim() !== "" && fromVersion.trim() !== "0.1.1-rc.2") {
 +		warnings.push({
 +			code: "version-mismatch",
-+			message: `Package created by DSH ${fromVersion}, current version is 0.1.1-rc.1`
++			message: `Package created by DSH ${fromVersion}, current version is 0.1.1-rc.2`
 +		});
 +	}
 +	let hasSecrets = false;
@@ -191,7 +191,7 @@ index 5075798..fb882a8 100644
 +						description: preset.description,
 +						icon: preset.icon,
 +						createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-+						dshVersion: "0.1.1-rc.1"
++						dshVersion: "0.1.1-rc.2"
 +					};
 +					files["manifest.json"] = strToU8(JSON.stringify(manifest, null, 2));
 +					signal?.throwIfAborted();
