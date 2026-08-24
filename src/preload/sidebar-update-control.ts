@@ -132,7 +132,7 @@ export class SidebarUpdateControl {
             ? `安装 Sherlock ${action.version} 更新`
             : `Install Sherlock ${action.version} update`
         )
-        button.innerHTML = restartIcon
+        button.innerHTML = downloadIcon
         this.renderInstallPanel(status)
         return
       case 'retry':
@@ -216,11 +216,6 @@ const downloadIcon = `
 const progressIcon = `
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M12 7v10M7 12h10" />
-  </svg>`
-
-const restartIcon = `
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M19 8a8 8 0 1 0 .5 7M19 4v4h-4" />
   </svg>`
 
 const retryIcon = `

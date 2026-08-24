@@ -141,7 +141,11 @@ describe('Sherlock sidebar update control', () => {
       manual: false
     })
 
-    document.querySelector<HTMLButtonElement>('#sherlock-sidebar-update-button')!.click()
+    const button = document.querySelector<HTMLButtonElement>(
+      '#sherlock-sidebar-update-button'
+    )!
+    expect(button.innerHTML).toContain('M12 3v11')
+    button.click()
     const panel = document.querySelector<HTMLElement>('#sherlock-sidebar-update-panel')!
     expect(panel.hidden).toBe(false)
     expect(panel.textContent).toContain('Sherlock 0.6.0 已下载完成')
