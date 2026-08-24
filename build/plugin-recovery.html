@@ -7,7 +7,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     />
-    <title>DSH Desktop</title>
+    <title>Sherlock</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -397,7 +397,7 @@
       const model = JSON.parse(params.get('state') || '{}')
       document.documentElement.lang = model.locale === 'zh' ? 'zh-CN' : 'en'
       document.documentElement.dataset.theme = params.get('theme') || 'system'
-      document.title = model.badge || 'DSH Desktop'
+      document.title = model.badge || 'Sherlock'
 
       const setText = (id, value) => {
         const node = document.getElementById(id)

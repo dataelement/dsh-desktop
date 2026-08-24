@@ -17,6 +17,34 @@ import {
 } from '../packages/dsh-desktop-market-installer/index.js'
 
 describe('desktop plugin market installer', () => {
+  it('keeps the installer package name aligned with the Harness dependency closure', async () => {
+    const [desktopManifest, harnessManifest, installerManifest, desktopPatch, clientBundle] = await Promise.all([
+      readFile(join(process.cwd(), 'package.json'), 'utf8').then(JSON.parse),
+      readFile(
+        join(process.cwd(), 'node_modules', '@deepseek-ai', 'dsh', 'package.json'),
+        'utf8'
+      ).then(JSON.parse),
+      readFile(
+        join(process.cwd(), 'packages', 'dsh-desktop-market-installer', 'package.json'),
+        'utf8'
+      ).then(JSON.parse),
+      readFile(join(process.cwd(), 'build', 'dsh-desktop.patch.yml'), 'utf8'),
+      readFile(
+        join(process.cwd(), 'packages', 'dsh-desktop-market-installer', 'client.js'),
+        'utf8'
+      )
+    ])
+    const compatibilityPackageName = 'dsh-desktop-market-installer'
+
+    expect(harnessManifest.dependencies[compatibilityPackageName]).toBeDefined()
+    expect(installerManifest.name).toBe(compatibilityPackageName)
+    expect(desktopManifest.dependencies[compatibilityPackageName]).toBe(
+      'file:packages/dsh-desktop-market-installer'
+    )
+    expect(desktopPatch).toContain(`name: ${compatibilityPackageName}`)
+    expect(clientBundle).toContain(`id: '${compatibilityPackageName}'`)
+  })
+
   it('pins the only install target accepted by the host', () => {
     expect(buildInstallArguments('/app/dsh/bin.js')).toEqual([
       '/app/dsh/bin.js',
@@ -29,9 +57,9 @@ describe('desktop plugin market installer', () => {
     ])
     expect(MARKET_PACKAGE).toBe('dshmarket')
     expect(RECOMMENDED_MARKET_VERSION).toBe('1.9.0')
-    expect(STATUS_PATH).toBe('/dsh-desktop/market-installer/status')
-    expect(INSTALL_PATH).toBe('/dsh-desktop/market-installer/install')
-    expect(UNINSTALL_PATH).toBe('/dsh-desktop/market-installer/uninstall')
+    expect(STATUS_PATH).toBe('/sherlock/market-installer/status')
+    expect(INSTALL_PATH).toBe('/sherlock/market-installer/install')
+    expect(UNINSTALL_PATH).toBe('/sherlock/market-installer/uninstall')
     expect(buildUninstallArguments('/app/dsh/bin.js')).toEqual([
       '/app/dsh/bin.js',
       'plugin',

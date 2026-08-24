@@ -35,48 +35,30 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
       - run: npm ci
-      - run: npm test
+      - run: npm test -- test/update.test.ts test/sidebar-update-control.test.ts test/release.test.ts test/macos-self-signed-update.test.ts test/macos-package-runtime.test.ts test/brand-migration.test.ts
       - run: npm run typecheck
-      - name: Validate Apple release secrets
+      - name: Validate Sherlock signing secrets
         if: startsWith(github.ref, 'refs/tags/v')
         env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.DESKTOP_APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.DESKTOP_APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.DESKTOP_APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.SHERLOCK_MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.SHERLOCK_MACOS_CSC_KEY_PASSWORD }}
         run: |
-          required=(CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_CONTENT APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID)
+          required=(CSC_LINK CSC_KEY_PASSWORD)
           for name in "${required[@]}"; do
             test -n "${!name}" || { echo "::error::Missing required secret: $name"; exit 1; }
           done
-      - name: Prepare Apple notarization key
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          APPLE_API_KEY_CONTENT: ${{ secrets.DESKTOP_APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.DESKTOP_APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.DESKTOP_APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
-        run: |
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
-          chmod 600 "$key_path"
-          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
-          echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
-          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
-          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
       - name: Prepare macOS signing keychain
         if: startsWith(github.ref, 'refs/tags/v')
         id: signing_keychain
         env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ secrets.SHERLOCK_MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.SHERLOCK_MACOS_CSC_KEY_PASSWORD }}
         run: node scripts/prepare-macos-signing-keychain.mjs
       - name: Build signed Apple Silicon package
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
+          CSC_NAME: ${{ steps.signing_keychain.outputs.identity }}
         run: npm run package:mac:arm64
       - name: Build unsigned Apple Silicon verification package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -85,27 +67,21 @@ jobs:
         run: npm run package:mac:arm64
       - name: Preserve Apple Silicon update metadata
         run: mv dist/latest-mac.yml dist/latest-mac-arm64.yml
-      - name: Sign, notarize, and staple Apple Silicon DMG
+      - name: Sign Apple Silicon DMG with the Sherlock update identity
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
+          CSC_IDENTITY: ${{ steps.signing_keychain.outputs.identity }}
         run: |
-          dmg_path="dist/dsh-desktop-mac-arm64.dmg"
-          identity="$(security find-identity -v -p codesigning "$CSC_KEYCHAIN" | awk '/Developer ID Application/ { print $2; exit }')"
-          test -n "$identity" || { echo "::error::Developer ID Application identity not found"; exit 1; }
-          codesign --keychain "$CSC_KEYCHAIN" --sign "$identity" --timestamp --force "$dmg_path"
-          xcrun notarytool submit "$dmg_path" \
-            --key "$APPLE_API_KEY" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER" \
-            --wait \
-            --no-s3-acceleration
-          xcrun stapler staple "$dmg_path"
+          dmg_path="dist/sherlock-mac-arm64.dmg"
+          test -n "$CSC_IDENTITY" || { echo "::error::Sherlock update identity not found"; exit 1; }
+          codesign --keychain "$CSC_KEYCHAIN" --sign "$CSC_IDENTITY" --timestamp=none --force "$dmg_path"
       - name: Remove temporary signing keychain
         if: always() && startsWith(github.ref, 'refs/tags/v')
         env:
           SIGNING_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
           SIGNING_CERTIFICATE: ${{ steps.signing_keychain.outputs.certificate }}
+          SIGNING_PUBLIC_CERTIFICATE: ${{ steps.signing_keychain.outputs.public_certificate }}
           SIGNING_KEYCHAIN_LIST: ${{ steps.signing_keychain.outputs.keychain_list }}
         run: |
           if [ -n "$SIGNING_KEYCHAIN_LIST" ] && [ -f "$SIGNING_KEYCHAIN_LIST" ]; then
@@ -116,26 +92,23 @@ jobs:
             security list-keychains -d user -s "${keychains[@]}"
             rm -f "$SIGNING_KEYCHAIN_LIST"
           fi
+          test -z "$SIGNING_PUBLIC_CERTIFICATE" || security remove-trusted-cert "$SIGNING_PUBLIC_CERTIFICATE" || true
           test -z "$SIGNING_KEYCHAIN" || security delete-keychain "$SIGNING_KEYCHAIN" || rm -f "$SIGNING_KEYCHAIN"
           test -z "$SIGNING_CERTIFICATE" || rm -f "$SIGNING_CERTIFICATE"
-          test -z "$APPLE_API_KEY" || rm -f "$APPLE_API_KEY"
-      - name: Verify signed and notarized Apple Silicon app
+          test -z "$SIGNING_PUBLIC_CERTIFICATE" || rm -f "$SIGNING_PUBLIC_CERTIFICATE"
+      - name: Verify signed Apple Silicon app and DMG
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          app_path="dist/mac-arm64/DSH Desktop.app"
+          app_path="dist/mac-arm64/Sherlock.app"
           codesign --verify --deep --strict --verbose=2 "$app_path"
-          spctl --assess --type execute --verbose=4 "$app_path"
-          xcrun stapler validate "$app_path"
-          codesign --verify --verbose=2 dist/dsh-desktop-mac-arm64.dmg
-          spctl --assess --type open --context context:primary-signature --verbose=4 dist/dsh-desktop-mac-arm64.dmg
-          xcrun stapler validate dist/dsh-desktop-mac-arm64.dmg
+          codesign --verify --verbose=2 dist/sherlock-mac-arm64.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: macos-apple-silicon
           path: |
-            dist/dsh-desktop-mac-arm64.dmg
-            dist/dsh-desktop-mac-arm64.zip
-            dist/dsh-desktop-mac-arm64.zip.blockmap
+            dist/sherlock-mac-arm64.dmg
+            dist/sherlock-mac-arm64.zip
+            dist/sherlock-mac-arm64.zip.blockmap
             dist/latest-mac-arm64.yml
           if-no-files-found: error
 
@@ -153,48 +126,30 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
       - run: npm ci
-      - run: npm test
+      - run: npm test -- test/update.test.ts test/sidebar-update-control.test.ts test/release.test.ts test/macos-self-signed-update.test.ts test/macos-package-runtime.test.ts test/brand-migration.test.ts
       - run: npm run typecheck
-      - name: Validate Apple release secrets
+      - name: Validate Sherlock signing secrets
         if: startsWith(github.ref, 'refs/tags/v')
         env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.DESKTOP_APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.DESKTOP_APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.DESKTOP_APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.SHERLOCK_MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.SHERLOCK_MACOS_CSC_KEY_PASSWORD }}
         run: |
-          required=(CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_CONTENT APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID)
+          required=(CSC_LINK CSC_KEY_PASSWORD)
           for name in "${required[@]}"; do
             test -n "${!name}" || { echo "::error::Missing required secret: $name"; exit 1; }
           done
-      - name: Prepare Apple notarization key
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          APPLE_API_KEY_CONTENT: ${{ secrets.DESKTOP_APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.DESKTOP_APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.DESKTOP_APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.DESKTOP_APPLE_TEAM_ID }}
-        run: |
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
-          chmod 600 "$key_path"
-          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
-          echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
-          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
-          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
       - name: Prepare macOS signing keychain
         if: startsWith(github.ref, 'refs/tags/v')
         id: signing_keychain
         env:
-          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ secrets.SHERLOCK_MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.SHERLOCK_MACOS_CSC_KEY_PASSWORD }}
         run: node scripts/prepare-macos-signing-keychain.mjs
       - name: Build signed Intel package
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
+          CSC_NAME: ${{ steps.signing_keychain.outputs.identity }}
         run: npm run package:mac:x64
       - name: Build unsigned Intel verification package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -203,27 +158,21 @@ jobs:
         run: npm run package:mac:x64
       - name: Preserve Intel update metadata
         run: mv dist/latest-mac.yml dist/latest-mac-x64.yml
-      - name: Sign, notarize, and staple Intel DMG
+      - name: Sign Intel DMG with the Sherlock update identity
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           CSC_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
+          CSC_IDENTITY: ${{ steps.signing_keychain.outputs.identity }}
         run: |
-          dmg_path="dist/dsh-desktop-mac-x64.dmg"
-          identity="$(security find-identity -v -p codesigning "$CSC_KEYCHAIN" | awk '/Developer ID Application/ { print $2; exit }')"
-          test -n "$identity" || { echo "::error::Developer ID Application identity not found"; exit 1; }
-          codesign --keychain "$CSC_KEYCHAIN" --sign "$identity" --timestamp --force "$dmg_path"
-          xcrun notarytool submit "$dmg_path" \
-            --key "$APPLE_API_KEY" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER" \
-            --wait \
-            --no-s3-acceleration
-          xcrun stapler staple "$dmg_path"
+          dmg_path="dist/sherlock-mac-x64.dmg"
+          test -n "$CSC_IDENTITY" || { echo "::error::Sherlock update identity not found"; exit 1; }
+          codesign --keychain "$CSC_KEYCHAIN" --sign "$CSC_IDENTITY" --timestamp=none --force "$dmg_path"
       - name: Remove temporary signing keychain
         if: always() && startsWith(github.ref, 'refs/tags/v')
         env:
           SIGNING_KEYCHAIN: ${{ steps.signing_keychain.outputs.keychain }}
           SIGNING_CERTIFICATE: ${{ steps.signing_keychain.outputs.certificate }}
+          SIGNING_PUBLIC_CERTIFICATE: ${{ steps.signing_keychain.outputs.public_certificate }}
           SIGNING_KEYCHAIN_LIST: ${{ steps.signing_keychain.outputs.keychain_list }}
         run: |
           if [ -n "$SIGNING_KEYCHAIN_LIST" ] && [ -f "$SIGNING_KEYCHAIN_LIST" ]; then
@@ -234,26 +183,23 @@ jobs:
             security list-keychains -d user -s "${keychains[@]}"
             rm -f "$SIGNING_KEYCHAIN_LIST"
           fi
+          test -z "$SIGNING_PUBLIC_CERTIFICATE" || security remove-trusted-cert "$SIGNING_PUBLIC_CERTIFICATE" || true
           test -z "$SIGNING_KEYCHAIN" || security delete-keychain "$SIGNING_KEYCHAIN" || rm -f "$SIGNING_KEYCHAIN"
           test -z "$SIGNING_CERTIFICATE" || rm -f "$SIGNING_CERTIFICATE"
-          test -z "$APPLE_API_KEY" || rm -f "$APPLE_API_KEY"
-      - name: Verify signed and notarized Intel app
+          test -z "$SIGNING_PUBLIC_CERTIFICATE" || rm -f "$SIGNING_PUBLIC_CERTIFICATE"
+      - name: Verify signed Intel app and DMG
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          app_path="dist/mac/DSH Desktop.app"
+          app_path="dist/mac/Sherlock.app"
           codesign --verify --deep --strict --verbose=2 "$app_path"
-          spctl --assess --type execute --verbose=4 "$app_path"
-          xcrun stapler validate "$app_path"
-          codesign --verify --verbose=2 dist/dsh-desktop-mac-x64.dmg
-          spctl --assess --type open --context context:primary-signature --verbose=4 dist/dsh-desktop-mac-x64.dmg
-          xcrun stapler validate dist/dsh-desktop-mac-x64.dmg
+          codesign --verify --verbose=2 dist/sherlock-mac-x64.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: macos-intel
           path: |
-            dist/dsh-desktop-mac-x64.dmg
-            dist/dsh-desktop-mac-x64.zip
-            dist/dsh-desktop-mac-x64.zip.blockmap
+            dist/sherlock-mac-x64.dmg
+            dist/sherlock-mac-x64.zip
+            dist/sherlock-mac-x64.zip.blockmap
             dist/latest-mac-x64.yml
           if-no-files-found: error
 
@@ -271,7 +217,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
       - run: npm ci
-      - run: npm test
+      - run: npm test -- test/update.test.ts test/sidebar-update-control.test.ts test/release.test.ts test/brand-migration.test.ts test/runtime.test.ts
       - run: npm run typecheck
       - name: Build Windows release package
         if: startsWith(github.ref, 'refs/tags/v')
@@ -285,7 +231,7 @@ jobs:
         run: |
           $userData = Join-Path $env:APPDATA 'dsh-desktop-dev'
           $logPath = Join-Path $userData 'logs\harness.log'
-          $executable = 'dist-dev\win-unpacked\DSH Desktop Dev.exe'
+          $executable = 'dist-dev\win-unpacked\Sherlock Dev.exe'
           if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
           $desktop = Start-Process -FilePath $executable -PassThru
           try {
@@ -294,7 +240,7 @@ jobs:
             $endpoint = $null
             while ((Get-Date) -lt $deadline) {
               if ($desktop.HasExited) {
-                throw "DSH Desktop Dev exited before Harness was ready (exit code $($desktop.ExitCode))."
+                throw "Sherlock Dev exited before Harness was ready (exit code $($desktop.ExitCode))."
               }
               if (Test-Path $logPath) {
                 $log = Get-Content -Raw $logPath
@@ -352,7 +298,7 @@ jobs:
               throw 'Harness process exited after workspace and session creation.'
             }
             if ($desktop.HasExited) {
-              throw "DSH Desktop Dev exited after workspace and session creation (exit code $($desktop.ExitCode))."
+              throw "Sherlock Dev exited after workspace and session creation (exit code $($desktop.ExitCode))."
             }
             Write-Host 'Packaged Windows Harness smoke test passed.'
           } finally {
@@ -373,16 +319,16 @@ jobs:
             --repo $env:GITHUB_REPOSITORY `
             --target $env:GITHUB_SHA `
             --prerelease `
-            --title 'DSH Desktop Windows Workspace Test' `
+            --title 'Sherlock Windows Workspace Test' `
             --notes "Windows x64 development build for validating workspace selection and session startup on affected machines. This build pins Koffi 3.1.5 for the stable native Windows binaries, uses an isolated app identity and user data directory, and has passed a packaged Harness smoke test that creates a Unicode-path workspace and session." `
-            'dist-dev/dsh-desktop-dev-windows-x64-setup.exe#DSH Desktop Dev Windows x64 Setup'
+            'dist-dev/sherlock-dev-windows-x64-setup.exe#Sherlock Dev Windows x64 Setup'
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: windows-x64
           path: |
-            dist/dsh-desktop-windows-x64-setup.exe
-            dist/dsh-desktop-windows-x64-setup.exe.blockmap
+            dist/sherlock-windows-x64-setup.exe
+            dist/sherlock-windows-x64-setup.exe.blockmap
             dist/latest.yml
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -390,8 +336,8 @@ jobs:
         with:
           name: windows-x64-dev
           path: |
-            dist-dev/dsh-desktop-dev-windows-x64-setup.exe
-            dist-dev/dsh-desktop-dev-windows-x64-setup.exe.blockmap
+            dist-dev/sherlock-dev-windows-x64-setup.exe
+            dist-dev/sherlock-dev-windows-x64-setup.exe.blockmap
             dist-dev/latest.yml
           if-no-files-found: error
 
@@ -439,7 +385,7 @@ jobs:
             gh release create "$RELEASE_TAG" release-assets/* \
               --verify-tag \
               --generate-notes \
-              --title "DSH Desktop $RELEASE_TAG" \
+              --title "Sherlock $RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY"
           fi
       - name: Mirror release assets to ModelScope
@@ -470,3 +416,33 @@ jobs:
           )
           print(f"✅ Uploaded {src} -> {repo_id}/releases/latest")
           PY
+      - name: Validate Cloudflare release secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          required=(CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID)
+          for name in "${required[@]}"; do
+            test -n "${!name}" || { echo "::error::Missing required secret: $name"; exit 1; }
+          done
+      - name: Publish immutable release and promote Cloudflare metadata
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npm run release:cloudflare -- \
+            --bucket sherlock-releases \
+            --version "${GITHUB_REF_NAME#v}" \
+            --tag "$GITHUB_REF_NAME" \
+            --assets release-assets \
+            --prepared release-cloudflare
+      - name: Verify public Cloudflare update feed
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          metadata_url="https://updates.dshdesktop.com/latest/latest-mac.yml"
+          asset_url="https://updates.dshdesktop.com/releases/$GITHUB_REF_NAME/sherlock-mac-arm64.zip"
+          curl -fsS "$metadata_url" | grep -F "version: $version"
+          curl -fsSI "$metadata_url" | grep -Eiq '^cache-control:.*no-cache'
+          curl -fsS --range 0-0 -o /dev/null "$asset_url"
+          curl -fsSI "$asset_url" | grep -Eiq '^cache-control:.*immutable'

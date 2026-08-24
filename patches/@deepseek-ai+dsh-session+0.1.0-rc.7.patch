@@ -1,0 +1,25 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session/lib/index.js b/node_modules/@deepseek-ai/dsh-session/lib/index.js
+index 1102035..44606ad 100644
+--- a/node_modules/@deepseek-ai/dsh-session/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session/lib/index.js
+@@ -1095,7 +1095,8 @@ const KNOWN_SESSION_EVENT_TYPES = new Set([
+ 	"turn/end",
+ 	"turn/start",
+ 	"user/message",
+-	"web/deepseek-search-llm-request"
++	"web/deepseek-search-llm-request",
++	"web/session-model-search-llm-request"
+ ]);
+ //#endregion
+ //#region lib/types/index.js
+diff --git a/node_modules/@deepseek-ai/dsh-session/lib/types/known-event-types.js b/node_modules/@deepseek-ai/dsh-session/lib/types/known-event-types.js
+index 7541caa..f2af323 100644
+--- a/node_modules/@deepseek-ai/dsh-session/lib/types/known-event-types.js
++++ b/node_modules/@deepseek-ai/dsh-session/lib/types/known-event-types.js
+@@ -60,5 +60,6 @@ export const KNOWN_SESSION_EVENT_TYPES = new Set([
+     'turn/start',
+     'user/message',
+     'web/deepseek-search-llm-request',
++    'web/session-model-search-llm-request',
+ ]);
+ //# sourceMappingURL=known-event-types.js.map

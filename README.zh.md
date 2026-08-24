@@ -1,6 +1,6 @@
 <h1 align="center">
   <img src="docs/images/readme-logo-black-v020.png" width="64" alt="DSH Desktop logo" valign="middle" />
-  DSH Desktop
+  Sherlock
 </h1>
 
 <p align="center">
@@ -18,20 +18,22 @@
   <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-171513.svg" />
 </p>
 
-![DSH Desktop 的 Preset、模型提供方与手机控制能力](docs/images/dsh-desktop-hero-v020.png)
+![Sherlock 的 Preset、模型提供方与手机控制能力](docs/images/dsh-desktop-hero-v020.png)
 
 <p align="center"><strong>除了 DeepSeek 官方模型，DSH Desktop 也支持主流第三方模型提供方。更多基于 DSH 的有趣桌面体验即将推出。</strong></p>
 
-DSH Desktop 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：应用会自动启动本地 Harness、管理随机回环端口、持久化 Profile/插件/会话，并在 Harness 就绪后直接进入完整界面。项目工作区在 Harness 界面中统一添加和管理。
+Sherlock 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：应用会自动启动本地 Harness、管理随机回环端口、持久化 Profile/插件/会话，并在 Harness 就绪后直接进入完整界面。项目工作区在 Harness 界面中统一添加和管理。
 
 > [!IMPORTANT]
-> DSH Desktop 当前处于早期预览阶段，并依赖仍在快速迭代的 `@deepseek-ai/dsh@0.1.0-rc.7`。macOS 正式包已完成代码签名并通过 Apple 公证，当前安装包统一通过官网分发。
+> Sherlock 当前依赖仍在快速迭代的 `@deepseek-ai/dsh@0.1.0-rc.7`。macOS 正式包使用同一个长期稳定的 Sherlock 自签名升级身份，不依赖 Apple 公证，也不通过 Mac App Store 分发。
 
 ## 下载安装
 
-请前往 [DSH Desktop 官网](https://www.dshdesktop.com/#download)下载 macOS 和 Windows 安装包。
+请前往 [Sherlock 官网](https://www.dshdesktop.com/#download)下载 macOS 和 Windows 安装包。
 
-已安装的 macOS 和 Windows 版本会在启动后及每六小时自动检查更新。更新将在后台下载，准备完成后提示重启安装；也可以从应用菜单选择 **检查更新…** 手动检查。
+macOS 首次安装时，请打开 DMG、把 Sherlock 拖入“应用程序”，然后在“应用程序”里右键或按住 Control 点击 **Sherlock.app**，选择 **打开**。由于本版本不使用 Apple 公证，这一步只需在首次启动时完成一次。
+
+已安装版本会在启动后及每六小时检查更新。有新版本时，左侧边栏右下角才会出现蓝色圆形下载按钮；点击后开始下载，下载完成后再次点击并确认重启即可安装。没有更新时按钮保持隐藏。也可以从应用菜单选择 **检查更新…** 手动检查。
 
 ## 加入社区
 
@@ -61,9 +63,9 @@ DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop �
 - 退出桌面应用时优雅终止 Harness 子进程
 - 每次启动仅监听随机的 `127.0.0.1` 端口
 - Renderer 关闭 Node.js 权限，启用 `contextIsolation`、sandbox 与导航限制
-- 在桌面窗口与 Harness 侧栏统一使用 DSH 品牌 Logo
+- 在桌面窗口与 Harness 侧栏统一使用 Sherlock 品牌 Logo
 - 可把完整的自定义 Agent 预设导入/导出为便携的 [`.dshpreset` 压缩包](docs/preset-packages.md)，安装前会检查命名冲突并提示信任风险
-- 正式 DSH 应用图标，支持 macOS ICNS 与 Windows ICO
+- 正式 Sherlock 应用图标，支持 macOS ICNS 与 Windows ICO
 
 ## 友情链接
 
@@ -147,11 +149,11 @@ build/                应用图标资源
 
 ## 当前验证状态
 
-- macOS Apple Silicon：开发运行、真实 Harness 启动、DMG 打包、代码签名、Apple 公证与挂载验证均已完成
+- macOS Apple Silicon：已提供开发运行、真实 Harness 启动、DMG 打包与稳定自签名代码签名链路
 - macOS Intel：打包配置与平台检查已提供，需要在 Intel Mac/Runner 上完成运行验证
 - Windows x64：NSIS/Portable 配置与平台检查已提供，需要在 Windows/Runner 上完成运行验证
 - Windows ARM64：当前不支持
-- 自动更新：尚未接入
+- 自动更新：已接入 Cloudflare 更新源与侧边栏显式下载/安装流程
 
 ## 上游版本与补丁
 

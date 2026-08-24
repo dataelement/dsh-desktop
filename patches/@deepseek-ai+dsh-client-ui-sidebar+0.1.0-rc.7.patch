@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 9ca3639..16d58b0 100644
+index 9ca3639..1b212bf 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-@@ -23,16 +23,20 @@ window.__ModuleLoader__.load({
+@@ -23,16 +23,17 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-sidebar/src/client/SidebarRoot.module.css.mjs
@@ -14,70 +14,35 @@ index 9ca3639..16d58b0 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
++			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}.hHd-Xa_sherlockLogo{display:block;width:120px;height:17px;flex:none;background:currentColor;-webkit-mask:url(/sherlock-logo.svg) center/contain no-repeat;mask:url(/sherlock-logo.svg) center/contain no-repeat}.hHd-Xa_collapsed .hHd-Xa_toggle .hHd-Xa_panelIcon{display:inline}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root{background:rgba(255,255,255,.62)}body[data-ds-dark-theme] .hHd-Xa_root{background:rgba(18,18,20,.46)}" : "") + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
-+			"brandLockup": "hHd-Xa_brandLockup",
-+			"brandMark": "hHd-Xa_brandMark",
-+			"brandWordmark": "hHd-Xa_brandWordmark",
-+			"railFish": "hHd-Xa_railFish",
++			"sherlockLogo": "hHd-Xa_sherlockLogo",
  			"iconButton": "hHd-Xa_iconButton",
  			"settingsArea": "hHd-Xa_settingsArea",
  			"wide": "hHd-Xa_wide",
-@@ -56,6 +60,51 @@ window.__ModuleLoader__.load({
+@@ -52,10 +53,18 @@ window.__ModuleLoader__.load({
+ 			"collapsed": "hHd-Xa_collapsed",
+ 			"regionArea": "hHd-Xa_regionArea",
+ 			"panelIcon": "hHd-Xa_panelIcon",
+-			"railFish": "hHd-Xa_railFish",
  			"newSession": "hHd-Xa_newSession"
  		};
  		//#endregion
-+		//#region lib/types/client/DshDesktopLogo.js
-+		const DSH_DESKTOP_LIGHT_LOGO_URL = "/dsh-desktop-logo-light.png";
-+		const DSH_DESKTOP_DARK_LOGO_URL = "/dsh-desktop-logo-dark.png";
-+		function DshDesktopLogo({ height = 20, className }) {
-+			return (0, react_jsx_runtime.jsxs)("svg", {
-+				width: height * 1030 / 590,
-+				height,
-+				className,
-+				viewBox: "150 330 1030 590",
-+				fill: "none",
-+				"aria-hidden": "true",
-+				children: [(0, react_jsx_runtime.jsx)("style", {
-+					children: ".dshDesktopLogoDark{display:none}body[data-ds-dark-theme] .dshDesktopLogoLight{display:none}body[data-ds-dark-theme] .dshDesktopLogoDark{display:block}"
-+				}), (0, react_jsx_runtime.jsx)("image", {
-+					className: "dshDesktopLogoLight",
-+					href: DSH_DESKTOP_LIGHT_LOGO_URL,
-+					x: 150,
-+					y: 330,
-+					width: 1030,
-+					height: 590,
-+					preserveAspectRatio: "xMidYMid meet"
-+				}), (0, react_jsx_runtime.jsx)("image", {
-+					className: "dshDesktopLogoDark",
-+					href: DSH_DESKTOP_DARK_LOGO_URL,
-+					x: 150,
-+					y: 330,
-+					width: 1030,
-+					height: 590,
-+					preserveAspectRatio: "xMidYMid meet"
-+				})]
-+			});
-+		}
-+		function DshDesktopBrand() {
-+			return (0, react_jsx_runtime.jsxs)("span", {
-+				className: SidebarRoot_module_css_default.brandLockup,
-+				children: [(0, react_jsx_runtime.jsx)("span", {
-+					className: SidebarRoot_module_css_default.brandMark,
-+					children: (0, react_jsx_runtime.jsx)(DshDesktopLogo, {})
-+				}), (0, react_jsx_runtime.jsx)("span", {
-+					className: SidebarRoot_module_css_default.brandWordmark,
-+					children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.BrandWordmark, {})
-+				})]
++		//#region lib/types/client/SherlockLogo.js
++		function SherlockLogo() {
++			return (0, react_jsx_runtime.jsx)("span", {
++				className: SidebarRoot_module_css_default.sherlockLogo,
++				role: "img",
++				"aria-label": "Sherlock"
 +			});
 +		}
 +		//#endregion
  		//#region lib/types/client/SidebarRoot.js
  		/**
  		* Sidebar shell: column geometry only. Collapse is a slide plus crossfade:
-@@ -138,6 +187,8 @@ window.__ModuleLoader__.load({
+@@ -138,6 +147,8 @@ window.__ModuleLoader__.load({
  			}, [pointerInside]);
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -86,32 +51,35 @@ index 9ca3639..16d58b0 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -157,7 +208,7 @@ window.__ModuleLoader__.load({
+@@ -153,11 +164,12 @@ window.__ModuleLoader__.load({
+ 						children: [wide && (0, react_jsx_runtime.jsx)("button", {
+ 							type: "button",
+ 							className: clsx(SidebarRoot_module_css_default.brand, SidebarRoot_module_css_default.wide),
+-							"aria-label": t("session.new.label"),
++							"aria-label": "Sherlock",
++							"data-sherlock-developer-trigger": "",
  							onClick: () => {
- 								startSession();
+-								startSession();
++								window.sherlockDeveloperMode?.logoClick();
  							},
 -							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.BrandWordmark, {})
-+							children: (0, react_jsx_runtime.jsx)(DshDesktopBrand, {})
++							children: (0, react_jsx_runtime.jsx)(SherlockLogo, {})
  						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
  							label: collapsed ? t("toggle.open") : t("toggle.collapse"),
  							delayMs: 500,
-@@ -168,9 +219,9 @@ window.__ModuleLoader__.load({
+@@ -168,13 +180,10 @@ window.__ModuleLoader__.load({
  								onClick: () => {
  									toggleSidebar();
  								},
 -								children: [!wide && (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FishLogo, {
-+								children: [!wide && (0, react_jsx_runtime.jsx)(DshDesktopLogo, {
- 									className: SidebarRoot_module_css_default.railFish,
+-									className: SidebarRoot_module_css_default.railFish,
 -									size: 24
-+									height: 18
- 								}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPanelLeftOutline16, {
+-								}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPanelLeftOutline16, {
++								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPanelLeftOutline16, {
  									className: SidebarRoot_module_css_default.panelIcon,
  									size: wide ? 16 : 18
-@@ -205,6 +256,7 @@ window.__ModuleLoader__.load({
- 						})
+-								})]
++								})
+ 							})
+ 						})]
  					}),
- 					(0, react_jsx_runtime.jsxs)("div", {
-+						"data-dsh-sidebar-footer": "",
- 						className: SidebarRoot_module_css_default.footArea,
- 						children: [(0, react_jsx_runtime.jsx)("div", {
- 							className: SidebarRoot_module_css_default.footerActions,

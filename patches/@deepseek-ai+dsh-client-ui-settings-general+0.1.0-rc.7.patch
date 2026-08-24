@@ -1,0 +1,26 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+index 6797c5c..9bccd81 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+@@ -132,6 +132,7 @@ window.__ModuleLoader__.load({
+ 							children: rows.map((row) => (0, react_jsx_runtime.jsxs)("button", {
+ 								type: "button",
+ 								className: clsx(SettingsRoot_module_css_default.navCell, row.id === active && SettingsRoot_module_css_default.active),
++								"data-settings-section-id": row.id,
+ 								"aria-current": row.id === active ? "true" : void 0,
+ 								onClick: () => {
+ 									onSelect(row.id);
+@@ -575,13 +575,6 @@ window.__ModuleLoader__.load({
+ 				name: "settings.header",
+ 				locale: NS
+ 			}, HeaderContent));
+-			if (documentInjected !== void 0) ctx.slots.inject("settings.action", () => ctx.slots.register({
+-				name: "settings.action",
+-				id: "open-document",
+-				order: 0,
+-				locale: NS,
+-				inject: documentInjected
+-			}, SettingsDocumentAction));
+ 			ctx.slots.inject("settings.close", () => ctx.slots.register({
+ 				name: "settings.close",
+ 				locale: NS

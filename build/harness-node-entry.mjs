@@ -1,3 +1,4 @@
+import { registerHooks } from 'node:module'
 import { pathToFileURL } from 'node:url'
 
 const [dshEntryPath, ...dshArguments] = process.argv.slice(2)
@@ -15,6 +16,19 @@ process.stdout.write(
 process.stdout.write(`[harness-node] execPath=${process.execPath}\n`)
 process.stdout.write(`[harness-node] cwd=${process.cwd()}\n`)
 process.stdout.write(`[harness-node] DSH_HOME=${process.env.DSH_HOME ?? ''}\n`)
+
+const bundledWebSearchEntry = process.env.DSH_DESKTOP_WEB_SEARCH_ENTRY
+if (bundledWebSearchEntry) {
+  registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier === 'dsh-web-search-session-model') {
+        return { url: bundledWebSearchEntry, shortCircuit: true }
+      }
+      return nextResolve(specifier, context)
+    }
+  })
+  process.stdout.write('[harness-node] bundled session-model web search mapped\n')
+}
 
 if (!dshEntryPath) {
   report('startup error', 'missing DSH entry path')

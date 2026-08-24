@@ -43,10 +43,11 @@ describe('Windows titlebar menu', () => {
   it('accepts only the fixed menu command allowlist', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
 
-    expect(desktopMenuCommands).toContain('connect-phone')
+    expect(desktopMenuCommands).not.toContain('connect-phone')
     expect(desktopMenuCommands).toContain('check-for-updates')
     expect(desktopMenuCommands).toContain('toggle-fullscreen')
     expect(isDesktopMenuCommand('copy')).toBe(true)
+    expect(isDesktopMenuCommand('connect-phone')).toBe(false)
     expect(isDesktopMenuCommand('run-shell-command')).toBe(false)
     expect(isDesktopMenuCommand({ command: 'quit' })).toBe(false)
     expect(main).toContain("ipcMain.handle('desktop-menu:execute'")
@@ -60,7 +61,7 @@ describe('Windows titlebar menu', () => {
 
     expect(main).toContain('window.setTitleBarOverlay(windowsTitleBarOverlay(isDark))')
     expect(main).toContain("ipcMain.handle('desktop-titlebar:set-theme'")
-    expect(preload).toContain("attributeFilter: ['data-ds-dark-theme', 'class', 'style']")
+    expect(preload).toContain("attributeFilter: ['data-ds-dark-theme']")
     expect(preload).toContain("ipcRenderer.invoke('desktop-titlebar:set-theme', isDark)")
   })
 })

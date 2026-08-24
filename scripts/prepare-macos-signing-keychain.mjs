@@ -1,14 +1,11 @@
 import { appendFile, chmod, rm, writeFile } from 'node:fs/promises'
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { execFile as execFileCallback } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
 
 const execFile = promisify(execFileCallback)
-const developerIdG2CertificateUrl =
-  'https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer'
-const developerIdG2CertificateSha256 =
-  'f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a'
+const signingIdentityName = 'Sherlock Desktop Update Signing'
 
 function required(name) {
   const value = process.env[name]?.trim()
@@ -41,29 +38,13 @@ async function writeCertificate(source, destination) {
   })
 }
 
-async function downloadVerifiedCertificate(source, expectedSha256, destination) {
-  const response = await fetch(source)
-  if (!response.ok) {
-    throw new Error(`Unable to download Apple intermediate certificate: ${response.status}`)
-  }
-  const certificate = Buffer.from(await response.arrayBuffer())
-  const actualSha256 = createHash('sha256').update(certificate).digest('hex')
-  if (actualSha256 !== expectedSha256) {
-    throw new Error(`Apple intermediate certificate checksum mismatch: ${actualSha256}`)
-  }
-  await writeFile(destination, certificate, { mode: 0o600 })
-}
-
 const runnerTemp = required('RUNNER_TEMP')
 const githubOutput = required('GITHUB_OUTPUT')
 const certificateSource = required('CSC_LINK')
 const certificatePassword = required('CSC_KEY_PASSWORD')
 const token = randomBytes(12).toString('hex')
 const certificatePath = path.join(runnerTemp, `dsh-desktop-signing-${token}.p12`)
-const intermediateCertificatePath = path.join(
-  runnerTemp,
-  `dsh-desktop-developer-id-g2-${token}.cer`
-)
+const publicCertificatePath = path.join(runnerTemp, `sherlock-update-signing-${token}.pem`)
 const keychainPath = path.join(runnerTemp, `dsh-desktop-signing-${token}.keychain-db`)
 const keychainListPath = path.join(runnerTemp, `dsh-desktop-keychains-${token}.txt`)
 const keychainPassword = randomBytes(32).toString('base64')
@@ -93,13 +74,6 @@ try {
     '-P',
     certificatePassword
   )
-  await downloadVerifiedCertificate(
-    developerIdG2CertificateUrl,
-    developerIdG2CertificateSha256,
-    intermediateCertificatePath
-  )
-  await security('import', intermediateCertificatePath, '-k', keychainPath)
-  await rm(intermediateCertificatePath, { force: true })
   await security(
     'set-key-partition-list',
     '-S',
@@ -108,6 +82,27 @@ try {
     '-k',
     keychainPassword,
     keychainPath
+  )
+  const { stdout: publicCertificate } = await security(
+    'find-certificate',
+    '-c',
+    signingIdentityName,
+    '-p',
+    keychainPath
+  )
+  if (!publicCertificate.includes('BEGIN CERTIFICATE')) {
+    throw new Error(`The ${signingIdentityName} certificate was not found in the supplied P12.`)
+  }
+  await writeFile(publicCertificatePath, publicCertificate, { mode: 0o600 })
+  await security(
+    'add-trusted-cert',
+    '-r',
+    'trustRoot',
+    '-p',
+    'codeSign',
+    '-k',
+    keychainPath,
+    publicCertificatePath
   )
   await security(
     'list-keychains',
@@ -119,13 +114,16 @@ try {
   )
 
   const { stdout } = await security('find-identity', '-v', '-p', 'codesigning', keychainPath)
-  if (!/^\s*\d+\)/m.test(stdout)) {
-    throw new Error('No valid code-signing identity was imported into the temporary keychain')
-  }
+  const escapedIdentityName = signingIdentityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const identity = new RegExp(
+    `^\\s*\\d+\\)\\s+([0-9A-F]{40})\\s+"${escapedIdentityName}"$`,
+    'm'
+  ).exec(stdout)?.[1]
+  if (!identity) throw new Error(`No valid ${signingIdentityName} code-signing identity was imported.`)
 
   await appendFile(
     githubOutput,
-    `keychain=${keychainPath}\ncertificate=${certificatePath}\nkeychain_list=${keychainListPath}\n`
+    `keychain=${keychainPath}\ncertificate=${certificatePath}\npublic_certificate=${publicCertificatePath}\nkeychain_list=${keychainListPath}\nidentity=${identity}\n`
   )
   console.log('Prepared temporary macOS signing keychain.')
 } catch (error) {
@@ -134,7 +132,7 @@ try {
   }
   await security('delete-keychain', keychainPath).catch(() => rm(keychainPath, { force: true }))
   await rm(certificatePath, { force: true })
-  await rm(intermediateCertificatePath, { force: true })
+  await rm(publicCertificatePath, { force: true })
   await rm(keychainListPath, { force: true })
   throw error
 }

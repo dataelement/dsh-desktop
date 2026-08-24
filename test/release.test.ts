@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest'
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
 const releaseAssets = [
-  'dsh-desktop-mac-arm64.dmg',
-  'dsh-desktop-mac-x64.dmg',
-  'dsh-desktop-windows-x64-setup.exe'
+  'sherlock-mac-arm64.dmg',
+  'sherlock-mac-x64.dmg',
+  'sherlock-windows-x64-setup.exe'
 ]
 
 describe('GitHub release contract', () => {
@@ -55,7 +55,7 @@ describe('GitHub release contract', () => {
       }
     }
 
-    expect(packageJson.build.artifactName).toBe('dsh-desktop-${os}-${arch}.${ext}')
+    expect(packageJson.build.artifactName).toBe('sherlock-${os}-${arch}.${ext}')
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/app-icon.png',
       to: 'icon.png'
@@ -73,7 +73,7 @@ describe('GitHub release contract', () => {
       to: 'dsh-desktop.patch.yml'
     })
     expect(packageJson.build.nsis.artifactName).toBe(
-      'dsh-desktop-windows-${arch}-setup.${ext}'
+      'sherlock-windows-${arch}-setup.${ext}'
     )
     expect(packageJson.build.nsis.include).toBe('build/installer.nsh')
     expect(packageJson.build.win.target).toEqual([{ target: 'nsis', arch: ['x64'] }])
@@ -103,7 +103,7 @@ describe('GitHub release contract', () => {
 
     expect(main).toContain("desktopResourcePath('splash.html')")
     expect(main).toContain('await showSplash()')
-    expect(splash).toContain('Starting DSH Desktop')
+    expect(splash).toContain('Starting Sherlock')
     expect(splash).toContain('src="dsh-loader.gif"')
     expect(splash).not.toContain('class="track"')
     expect(patch).toMatch(/id: directory-picker\r?\n  disabled: true/)
@@ -137,7 +137,7 @@ describe('GitHub release contract', () => {
 
     expect(packageJson.dependencies['electron-updater']).toBeTruthy()
     expect(packageJson.build.publish).toEqual([
-      { provider: 'generic', url: 'https://dshdesktop.com/updates/latest/' }
+      { provider: 'generic', url: 'https://updates.dshdesktop.com/latest/' }
     ])
     expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(false)
     for (const asset of [
@@ -145,9 +145,9 @@ describe('GitHub release contract', () => {
       'latest-mac-x64.yml',
       'latest-mac.yml',
       'latest.yml',
-      'dsh-desktop-mac-arm64.zip.blockmap',
-      'dsh-desktop-mac-x64.zip.blockmap',
-      'dsh-desktop-windows-x64-setup.exe.blockmap'
+      'sherlock-mac-arm64.zip.blockmap',
+      'sherlock-mac-x64.zip.blockmap',
+      'sherlock-windows-x64-setup.exe.blockmap'
     ]) {
       expect(workflow).toContain(asset)
     }
@@ -185,14 +185,15 @@ describe('GitHub release contract', () => {
     expect(packageJson.scripts['package:dev:win']).toContain('electron-builder.dev.cjs')
     expect(packageJson.scripts['package:dev:win']).toContain('--publish never')
     expect(developmentConfig).toContain("appId: 'io.dsh.desktop.dev'")
-    expect(developmentConfig).toContain("productName: 'DSH Desktop Dev'")
+    expect(developmentConfig).toContain("productName: 'Sherlock Dev'")
     expect(developmentConfig).toContain("output: 'dist-dev'")
     expect(developmentConfig).toContain("dshDesktopChannel: 'development'")
     expect(developmentConfig).toContain(
-      "artifactName: 'dsh-desktop-dev-windows-${arch}-setup.${ext}'"
+      "artifactName: 'sherlock-dev-windows-${arch}-setup.${ext}'"
     )
-    expect(main).toContain("app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop-dev'))")
-    expect(main).toContain("app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))")
+    expect(main).toContain('resolveDesktopIdentity(')
+    expect(main).toContain("app.commandLine.getSwitchValue('sherlock-user-data-dir')")
+    expect(main).toContain("app.setPath('userData', identity.userData)")
     expect(main).toContain('if (!developmentBuild)')
   })
 
@@ -207,7 +208,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('runs-on: windows-2022')
     expect(workflow).toContain('npm run package:dev:win')
     expect(workflow).toContain('Smoke test packaged Windows Harness')
-    expect(workflow).toContain("$executable = 'dist-dev\\win-unpacked\\DSH Desktop Dev.exe'")
+    expect(workflow).toContain("$executable = 'dist-dev\\win-unpacked\\Sherlock Dev.exe'")
     expect(workflow).toContain('Packaged Windows Harness smoke test passed.')
     expect(workflow).toContain("Invoke-HarnessRpc 'workspace.create'")
     expect(workflow).toContain("Invoke-HarnessRpc 'session.create'")
@@ -217,7 +218,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('gh release create $env:PRERELEASE_TAG')
     expect(workflow).toContain('--prerelease')
     expect(workflow).toContain('name: windows-x64-dev')
-    expect(workflow).toContain('dist-dev/dsh-desktop-dev-windows-x64-setup.exe')
+    expect(workflow).toContain('dist-dev/sherlock-dev-windows-x64-setup.exe')
     for (const asset of releaseAssets) expect(workflow).toContain(asset)
     expect(
       workflow.match(
@@ -226,26 +227,34 @@ describe('GitHub release contract', () => {
     ).toHaveLength(3)
   })
 
-  it('signs and notarizes both macOS architectures on tag releases', async () => {
+  it('signs both macOS architectures without Apple services and atomically publishes Cloudflare', async () => {
     const workflow = await readFile(
       path.join(projectRoot, '.github', 'workflows', 'release.yml'),
       'utf8'
     )
 
     for (const secret of [
-      'DESKTOP_CSC_LINK',
-      'DESKTOP_CSC_KEY_PASSWORD',
-      'DESKTOP_APPLE_API_KEY',
-      'DESKTOP_APPLE_API_KEY_ID',
-      'DESKTOP_APPLE_API_ISSUER',
-      'DESKTOP_APPLE_TEAM_ID'
+      'SHERLOCK_MACOS_CSC_LINK',
+      'SHERLOCK_MACOS_CSC_KEY_PASSWORD',
+      'CLOUDFLARE_API_TOKEN',
+      'CLOUDFLARE_ACCOUNT_ID'
     ]) {
       expect(workflow).toContain(`secrets.${secret}`)
     }
     expect(workflow.match(/Prepare macOS signing keychain/g)).toHaveLength(2)
-    expect(workflow.match(/xcrun stapler validate/g)).toHaveLength(4)
-    expect(workflow.match(/xcrun notarytool submit/g)).toHaveLength(2)
+    expect(workflow.match(/CSC_NAME: \$\{\{ steps\.signing_keychain\.outputs\.identity \}\}/g)).toHaveLength(2)
+    expect(workflow.match(/codesign --verify --deep --strict/g)).toHaveLength(2)
+    expect(workflow.match(/codesign --keychain .*--timestamp=none --force/g)).toHaveLength(2)
     expect(workflow.match(/CSC_IDENTITY_AUTO_DISCOVERY: 'false'/g)).toHaveLength(2)
+    expect(workflow).toContain('npm run release:cloudflare')
+    expect(workflow).toContain('--bucket sherlock-releases')
+    expect(workflow).toContain('https://updates.dshdesktop.com/latest/latest-mac.yml')
+    expect(workflow).toContain('Mirror release assets to ModelScope')
+    expect(workflow).not.toContain('notarytool')
+    expect(workflow).not.toContain('stapler')
+    expect(workflow).not.toContain('spctl --assess')
+    expect(workflow).not.toContain('DESKTOP_APPLE_')
+    expect(workflow).not.toContain('Developer ID Application')
     expect(workflow).not.toContain("CSC_LINK: ''")
     expect(workflow).toMatch(
       /macos-apple-silicon:\r?\n    name: macOS Apple Silicon\r?\n    runs-on: macos-15\r?\n    steps:/

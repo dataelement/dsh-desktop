@@ -13,7 +13,7 @@ describe('LAN mobile page', () => {
     for (const script of scripts) expect(() => new Function(script)).not.toThrow()
   })
 
-  it('uses the DSH brand color and follows system dark mode', () => {
+  it('uses the Sherlock brand color and follows system dark mode', () => {
     const html = renderMobilePage({ locale: 'en' })
     expect(html).toContain('--brand:#4d6bfe')
     expect(html).toContain('prefers-color-scheme:dark')
@@ -64,7 +64,7 @@ describe('LAN mobile page', () => {
     expect(html).toContain('!archived.has(s.sessionId)')
   })
 
-  it('uses DSH styling on both pairing surfaces', () => {
+  it('uses Sherlock styling on both pairing surfaces', () => {
     const desktop = renderDesktopPairingPage({
       qrSvg: '<svg></svg>',
       pairingUrl: 'http://192.168.1.2/pair?token=test',
@@ -106,7 +106,7 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('断开连接')
     expect(desktop).toContain('现在可以关闭此窗口。')
     expect(desktop).toContain('onclick="window.close()">完成</button>')
-    expect(phone).toContain('请在 DSH Desktop 中确认连接请求。')
+    expect(phone).toContain('请在 Sherlock 中确认连接请求。')
   })
 
   it('renders a compact management state when a phone is already connected', () => {
@@ -119,7 +119,7 @@ describe('LAN mobile page', () => {
     })
     expect(desktop).toContain('class="phone-connected manage-connected"')
     expect(desktop).toContain('Manage phone connection')
-    expect(desktop).toContain('Your phone is currently connected to DSH Desktop.')
+    expect(desktop).toContain('Your phone is currently connected to Sherlock.')
     expect(desktop).toContain('.manage-connected .connection-hint,.manage-connected .done{display:none}')
   })
 })

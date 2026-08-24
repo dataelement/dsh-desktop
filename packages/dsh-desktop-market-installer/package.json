@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop-market-installer",
   "version": "0.1.0",
-  "description": "DSH Desktop's fixed-target installer entry for the optional dsh-market community plugin.",
+  "description": "Sherlock's fixed-target installer entry for the optional dsh-market community plugin.",
   "private": true,
   "type": "module",
   "main": "./index.js",

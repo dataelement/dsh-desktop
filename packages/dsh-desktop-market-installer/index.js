@@ -8,14 +8,14 @@ import { delimiter, dirname, join, resolve } from 'node:path'
 export const RECOMMENDED_MARKET_VERSION = '1.9.0'
 export const MARKET_PACKAGE = 'dshmarket'
 export const MARKET_PROFILE = 'web'
-export const STATUS_PATH = '/dsh-desktop/market-installer/status'
-export const INSTALL_PATH = '/dsh-desktop/market-installer/install'
-export const UNINSTALL_PATH = '/dsh-desktop/market-installer/uninstall'
+export const STATUS_PATH = '/sherlock/market-installer/status'
+export const INSTALL_PATH = '/sherlock/market-installer/install'
+export const UNINSTALL_PATH = '/sherlock/market-installer/uninstall'
 
 const OPERATION_TIMEOUT_MS = 15 * 60 * 1000
 const MAX_LOG_BYTES = 32 * 1024
 
-export const name = 'dsh-desktop-market-installer'
+export const name = 'sherlock-market-installer'
 export const inject = ['webServer']
 
 function dshHome() {
@@ -167,7 +167,7 @@ export async function ensurePnpmShim(home = dshHome()) {
 export function resolveDshEntry(argv = process.argv) {
   const entry = argv[1]
   if (!entry || !/[/\\]bin\.js$/u.test(entry)) {
-    throw new Error('The running DSH entry could not be identified.')
+    throw new Error('The bundled runtime entry could not be identified.')
   }
   return resolve(entry)
 }
@@ -189,7 +189,7 @@ export function buildUninstallArguments(dshEntry = resolveDshEntry()) {
 }
 
 async function atomicWrite(path, contents) {
-  const temporary = `${path}.dsh-desktop-${process.pid}-${Date.now()}.tmp`
+  const temporary = `${path}.sherlock-${process.pid}-${Date.now()}.tmp`
   await writeFile(temporary, contents, 'utf8')
   await rename(temporary, path)
 }
@@ -524,11 +524,11 @@ export function apply(ctx) {
       killProcessTree(activeChild)
       await operationPromise?.catch(() => undefined)
     }
-  }, 'dsh-desktop-market-installer: fixed package routes')
+  }, 'sherlock-market-installer: fixed package routes')
 
   ctx.effect(() => {
     void ensurePnpmShim(home).catch((error) => {
       ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
     })
-  }, 'dsh-desktop-market-installer: packaged pnpm shim')
+  }, 'sherlock-market-installer: packaged pnpm shim')
 }

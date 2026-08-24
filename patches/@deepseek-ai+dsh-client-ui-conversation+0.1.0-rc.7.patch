@@ -1,8 +1,192 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..dd1c233 100644
+index 1dd0e89..fa8a30d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-@@ -5233,6 +5233,15 @@ window.__ModuleLoader__.load({
+@@ -348,6 +348,17 @@ window.__ModuleLoader__.load({
+ 				subscribe: (fn) => session.subscribe(fn)
+ 			};
+ 		}
++		const INTERNAL_SUBAGENT_QUEUE_SOURCES = /* @__PURE__ */ new Set([
++			"subagent-report",
++			"subagent-settled"
++		]);
++		/** Only user-controlled next-turn messages belong in queue controls. */
++		function isUserQueuedMessage(item) {
++			return item.placement === "queued" && !INTERNAL_SUBAGENT_QUEUE_SOURCES.has(item.source?.kind);
++		}
++		function userQueuedMessages(items) {
++			return items.filter(isUserQueuedMessage);
++		}
+ 		/** The machine never writes the queue; the wiring layer overlays the queue store's projection. */
+ 		const EMPTY_QUEUE$1 = [];
+ 		/** Undo ring depth (bounded self-managed transaction log). */
+@@ -1462,7 +1473,7 @@ window.__ModuleLoader__.load({
+ 			* @param shell - the resident shell (notice outlet).
+ 			*/
+ 			async steerQueue(session, shell) {
+-				const queued = session.getSnapshot().queue.filter((item) => item.placement === "queued");
++				const queued = userQueuedMessages(session.getSnapshot().queue);
+ 				if (queued.length === 0) return;
+ 				for (const item of queued) {
+ 					const result = await session.updateQueue(item.id, { kind: "steer" });
+@@ -3304,7 +3315,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
+ 			tag.dataset.pluginCss = tagId$17;
+-			tag.textContent = css$17;
++			tag.textContent = css$17 + ".uV2eYG_primary{background:#0f1115}.uV2eYG_primary:hover:not(:disabled){background:#23262b}body[data-ds-dark-theme] .uV2eYG_primary{background:#f5f5f5;color:#202124}body[data-ds-dark-theme] .uV2eYG_primary:hover:not(:disabled){background:#fff}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var InputBar_module_css_default = {
+@@ -3356,6 +3367,36 @@ window.__ModuleLoader__.load({
+ 			textRefs: [],
+ 			hint: null
+ 		};
++		/** Command-menu trigger branded as Sherlock's slash key. */
++		function CommandLauncherButton({ label, expanded, disabled, onMouseDown, onClick }) {
++			return (0, react_jsx_runtime.jsx)("button", {
++				type: "button",
++				className: InputBar_module_css_default.add,
++				style: {
++					width: 32,
++					height: 32,
++					borderRadius: 9
++				},
++				"aria-label": label,
++				"aria-haspopup": "listbox",
++				"aria-expanded": expanded,
++				disabled,
++				onMouseDown,
++				onClick,
++				children: (0, react_jsx_runtime.jsx)("span", {
++					"aria-hidden": true,
++					children: "/"
++				})
++			});
++		}
++		/** Stable leading-control order: command, attachment extensions, permissions. */
++		function ComposerLeadingControls({ command, attachments, permissions }) {
++			return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
++				command,
++				attachments,
++				permissions
++			] });
++		}
+ 		function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, overlay, leftItems, rightItems, footer }) {
+ 			const input = useInput((s) => s);
+ 			const notice = useNotices((s) => s);
+@@ -3420,7 +3461,7 @@ window.__ModuleLoader__.load({
+ 			const machineBusy = input?.phase === "adjudicating" || input?.phase === "submitting";
+ 			const workspaceTrigger = inert && !removed && onRequestWorkspace !== void 0;
+ 			const textareaDisabled = removed || locked && !workspaceTrigger;
+-			const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null && input.queue.some((row) => row.placement === "queued");
++			const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null && input.queue.some(isUserQueuedMessage);
+ 			(0, react.useEffect)(() => {
+ 				if (input === void 0 || inputActions === void 0) return;
+ 				if (attachments.length !== input.imageIds.length) inputActions.pruneImages(attachments.map((attachment) => attachment.id));
+@@ -3866,29 +3907,25 @@ window.__ModuleLoader__.load({
+ 								className: InputBar_module_css_default.row,
+ 								children: [(0, react_jsx_runtime.jsxs)("div", {
+ 									className: InputBar_module_css_default.tools,
+-									children: [
+-										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++									children: (0, react_jsx_runtime.jsx)(ComposerLeadingControls, {
++										command: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+ 											label: t("input.commands"),
+ 											side: "top",
+ 											delayMs: 500,
+-											children: (0, react_jsx_runtime.jsx)("button", {
+-												type: "button",
+-												className: InputBar_module_css_default.add,
+-												"aria-label": t("input.commands"),
+-												"aria-haspopup": "listbox",
+-												"aria-expanded": commandMenuOpen,
++											children: (0, react_jsx_runtime.jsx)(CommandLauncherButton, {
++												label: t("input.commands"),
++												expanded: commandMenuOpen,
+ 												disabled: locked || toggleCommandMenu === void 0,
+ 												onMouseDown: keepFocus,
+-												onClick: onToggleCommandMenu,
+-												children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 })
++												onClick: onToggleCommandMenu
+ 											})
+ 										}),
+-										(0, react_jsx_runtime.jsxs)("div", {
++										attachments: leftItems,
++										permissions: (0, react_jsx_runtime.jsxs)("div", {
+ 											className: InputBar_module_css_default.modes,
+ 											children: [accessSelect, renderSlot("conversation.input.plan", { locked })]
+-										}),
+-										leftItems
+-									]
++										})
++									})
+ 								}), (0, react_jsx_runtime.jsxs)("div", {
+ 									className: InputBar_module_css_default.trailing,
+ 									children: [
+@@ -4103,7 +4140,8 @@ window.__ModuleLoader__.load({
+ 		*/
+ 		const CompactionItem = (0, react.memo)(function CompactionItem({ node, title, fallbackSummary, t }) {
+ 			const [expanded, setExpanded] = (0, react.useState)(false);
+-			const expandable = node.summary !== null;
++			const running = node.running === true;
++			const expandable = !running && node.summary !== null;
+ 			const open = expandable && expanded;
+ 			const summary = node.shadowedItemCount !== null && node.shadowedTokenCount !== null ? t("message.compaction.completed", {
+ 				items: node.shadowedItemCount,
+@@ -4135,13 +4173,13 @@ window.__ModuleLoader__.load({
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: MessageItem_module_css_default.compactionTitle,
+-							children: title ?? t("message.compaction")
++							children: running ? t("execution.status.compacting") : title ?? t("message.compaction")
+ 						}),
+-						(0, react_jsx_runtime.jsx)("span", {
++						!running && (0, react_jsx_runtime.jsx)("span", {
+ 							className: MessageItem_module_css_default.compactionSep,
+ 							"aria-hidden": true
+ 						}),
+-						(0, react_jsx_runtime.jsx)("span", {
++						!running && (0, react_jsx_runtime.jsx)("span", {
+ 							className: MessageItem_module_css_default.compactionSummary,
+ 							children: summary
+ 						})
+@@ -5209,7 +5247,7 @@ window.__ModuleLoader__.load({
+ 		});
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/ChatView.module.css.mjs
+-		const css$11 = ".Md3f7G_root{flex-direction:column;flex:auto;min-height:0;display:flex;position:relative}.Md3f7G_scroll{min-height:0;padding:16px calc(var(--dsh-composer-side-clearance) + 16px);flex:auto;overflow-y:auto}[data-conversation-scroll] .Md3f7G_root{flex:none;height:auto;min-height:auto}[data-conversation-scroll] .Md3f7G_scroll{flex:none;min-height:auto;overflow:visible}.Md3f7G_column{max-width:var(--dsh-chat-content-width);flex-direction:column;gap:16px;width:100%;margin:0 auto;display:flex}.Md3f7G_flowItem{min-width:0}.Md3f7G_flowItem:empty{display:none}.Md3f7G_callRow{border-radius:6px}.Md3f7G_turnStatus{height:26px;font:var(--dsw-font-s-strong-14);white-space:nowrap;background:linear-gradient(90deg, var(--dsw-static-deepseek-500) 0%, var(--dsw-static-deepseek-500) 40%, var(--dsw-static-deepseek-200) 50%, var(--dsw-static-deepseek-500) 60%, var(--dsw-static-deepseek-500) 100%);color:#0000;-webkit-text-fill-color:transparent;background-position:100% 0;background-size:250% 100%;-webkit-background-clip:text;background-clip:text;flex:none;align-self:flex-start;align-items:center;animation:1.8s linear infinite Md3f7G_dsh-turn-status-shimmer;display:inline-flex}.Md3f7G_turnStatusClock{font:var(--dsw-font-xs-13);font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption);-webkit-text-fill-color:var(--dsw-alias-label-caption);margin-left:8px;font-weight:400}@keyframes Md3f7G_dsh-turn-status-shimmer{to{background-position:0 0}}@media (prefers-reduced-motion:reduce){.Md3f7G_turnStatus{background-position:0 0;background-size:100% 100%;animation:none}}.Md3f7G_hint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}.Md3f7G_openError{color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}.Md3f7G_older{justify-content:center;display:flex}.Md3f7G_older button{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover-solid);cursor:pointer;border:none;border-radius:14px;padding:4px 12px;font-size:12px}.Md3f7G_older button:disabled{cursor:default;opacity:.6}.Md3f7G_toBottomSlot{z-index:8;height:0;padding-right:max(0px, calc((100% - var(--dsh-chat-content-width)) / 2));pointer-events:none;justify-content:flex-end;display:flex;position:sticky;bottom:16px}[data-conversation-scroll] .Md3f7G_toBottomSlot{bottom:calc(var(--dsh-composer-height,152px) + 16px)}.Md3f7G_toBottom{border:1px solid var(--dsw-alias-border-l2);width:34px;height:34px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-button-floating-fill);box-shadow:var(--dsw-shadow-lv2);cursor:pointer;pointer-events:auto;border-radius:100px;justify-content:center;align-items:center;margin-top:-34px;padding:0;display:flex}.Md3f7G_toBottom:hover{background:var(--dsw-alias-button-floating-hover)}";
++		const css$11 = ".Md3f7G_root{flex-direction:column;flex:auto;min-height:0;display:flex;position:relative}.Md3f7G_scroll{min-height:0;padding:16px calc(var(--dsh-composer-side-clearance) + 16px);flex:auto;overflow-y:auto}[data-conversation-scroll] .Md3f7G_root{flex:none;height:auto;min-height:auto}[data-conversation-scroll] .Md3f7G_scroll{flex:none;min-height:auto;overflow:visible}.Md3f7G_column{max-width:var(--dsh-chat-content-width);flex-direction:column;gap:16px;width:100%;margin:0 auto;display:flex}.Md3f7G_flowItem{min-width:0}.Md3f7G_flowItem:empty{display:none}.Md3f7G_callRow{border-radius:6px}.Md3f7G_executionGroup{min-width:0;flex-direction:column;display:flex}.Md3f7G_executionProgress{max-width:100%;flex-direction:column;gap:14px;margin:0 0 8px;padding-left:23px;display:flex}.Md3f7G_executionProgressItem{min-width:0;animation:.2s ease-out Md3f7G_dsh-execution-progress-enter}.Md3f7G_executionProgressItem p{margin-top:0}.Md3f7G_executionProgressItem p:last-child{margin-bottom:0}.Md3f7G_executionTrigger{font:inherit;color:inherit;cursor:pointer;background:0 0;border:0;border-radius:7px;align-self:flex-start;align-items:center;min-width:0;max-width:100%;height:28px;margin:0;padding:0 6px 0 0;display:flex}.Md3f7G_executionTrigger:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}.Md3f7G_executionTrigger:disabled{cursor:default}.Md3f7G_executionLeading{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;margin-right:5px;display:grid}.Md3f7G_executionChevron{transition:transform .16s ease;display:inline-flex}.Md3f7G_executionGroup[data-expanded=true] .Md3f7G_executionChevron{transform:rotate(90deg)}.Md3f7G_executionText{color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:24px;overflow:hidden}.Md3f7G_executionGroup[data-state=running] .Md3f7G_executionText{background:linear-gradient(90deg,var(--dsw-alias-label-tertiary) 0%,var(--dsw-alias-label-tertiary) 38%,var(--dsw-alias-label-primary) 50%,var(--dsw-alias-label-tertiary) 62%,var(--dsw-alias-label-tertiary) 100%);color:#0000;-webkit-text-fill-color:transparent;background-position:100% 0;background-size:250% 100%;-webkit-background-clip:text;background-clip:text;animation:1.8s linear infinite Md3f7G_dsh-execution-status-shimmer}.Md3f7G_executionMeta{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption);white-space:nowrap;flex:none;margin-left:8px;font-size:12px;line-height:20px}.Md3f7G_executionDetails{border-left:1px solid var(--dsw-alias-border-l2);flex-direction:column;gap:6px;margin:4px 0 2px 8px;padding:2px 0 2px 14px;display:flex}.Md3f7G_executionDetailsLabel{color:var(--dsw-alias-label-caption);letter-spacing:.02em;margin-bottom:2px;font-size:11px;line-height:18px}@keyframes Md3f7G_dsh-execution-status-shimmer{to{background-position:0 0}}@keyframes Md3f7G_dsh-execution-progress-enter{0%{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}@media (prefers-reduced-motion:reduce){.Md3f7G_executionGroup[data-state=running] .Md3f7G_executionText{color:var(--dsw-alias-label-secondary);-webkit-text-fill-color:currentColor;background:0 0;animation:none}.Md3f7G_executionChevron{transition:none}.Md3f7G_executionProgressItem{animation:none}}.Md3f7G_hint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}.Md3f7G_openError{color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}.Md3f7G_older{justify-content:center;display:flex}.Md3f7G_older button{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover-solid);cursor:pointer;border:none;border-radius:14px;padding:4px 12px;font-size:12px}.Md3f7G_older button:disabled{cursor:default;opacity:.6}.Md3f7G_toBottomSlot{z-index:8;height:0;padding-right:max(0px, calc((100% - var(--dsh-chat-content-width)) / 2));pointer-events:none;justify-content:flex-end;display:flex;position:sticky;bottom:16px}[data-conversation-scroll] .Md3f7G_toBottomSlot{bottom:calc(var(--dsh-composer-height,152px) + 16px)}.Md3f7G_toBottom{border:1px solid var(--dsw-alias-border-l2);width:34px;height:34px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-button-floating-fill);box-shadow:var(--dsw-shadow-lv2);cursor:pointer;pointer-events:auto;border-radius:100px;justify-content:center;align-items:center;margin-top:-34px;padding:0;display:flex}.Md3f7G_toBottom:hover{background:var(--dsw-alias-button-floating-hover)}";
+ 		const tagId$11 = "@deepseek-ai/dsh-client-ui-conversation/ChatView.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -5219,8 +5257,18 @@ window.__ModuleLoader__.load({
+ 			document.head.appendChild(tag);
+ 		}
+ 		var ChatView_module_css_default = {
+-			"dsh-turn-status-shimmer": "Md3f7G_dsh-turn-status-shimmer",
+-			"turnStatusClock": "Md3f7G_turnStatusClock",
++			"dsh-execution-status-shimmer": "Md3f7G_dsh-execution-status-shimmer",
++			"dsh-execution-progress-enter": "Md3f7G_dsh-execution-progress-enter",
++			"executionGroup": "Md3f7G_executionGroup",
++			"executionProgress": "Md3f7G_executionProgress",
++			"executionProgressItem": "Md3f7G_executionProgressItem",
++			"executionTrigger": "Md3f7G_executionTrigger",
++			"executionLeading": "Md3f7G_executionLeading",
++			"executionChevron": "Md3f7G_executionChevron",
++			"executionText": "Md3f7G_executionText",
++			"executionMeta": "Md3f7G_executionMeta",
++			"executionDetails": "Md3f7G_executionDetails",
++			"executionDetailsLabel": "Md3f7G_executionDetailsLabel",
+ 			"callRow": "Md3f7G_callRow",
+ 			"hint": "Md3f7G_hint",
+ 			"root": "Md3f7G_root",
+@@ -5228,11 +5276,19 @@ window.__ModuleLoader__.load({
+ 			"older": "Md3f7G_older",
+ 			"flowItem": "Md3f7G_flowItem",
+ 			"toBottomSlot": "Md3f7G_toBottomSlot",
+-			"turnStatus": "Md3f7G_turnStatus",
+ 			"column": "Md3f7G_column",
  			"toBottom": "Md3f7G_toBottom",
  			"scroll": "Md3f7G_scroll"
  		};
@@ -18,7 +202,99 @@ index 1dd0e89..dd1c233 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatNodeSeat.js
  		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
-@@ -5289,6 +5298,21 @@ window.__ModuleLoader__.load({
+@@ -5278,6 +5334,91 @@ window.__ModuleLoader__.load({
+ 				})
+ 			});
+ 		});
++		/** One turn-level status row whose disclosure owns all process detail. */
++		const ExecutionStatusGroup = (0, react.memo)(function ExecutionStatusGroup({ entry, activityNodes, startTime, endTime, seatProps, t }) {
++			const [expanded, setExpanded] = (0, react.useState)(false);
++			const wasRunning = (0, react.useRef)(entry.running);
++			const [mountedAt] = (0, react.useState)(() => Date.now());
++			const anchor = startTime ?? mountedAt;
++			const [now, setNow] = (0, react.useState)(() => Date.now());
++			(0, react.useEffect)(() => {
++				if (!entry.running) return;
++				const tick = () => setNow(Date.now());
++				tick();
++				const id = setInterval(tick, 1e3);
++				return () => clearInterval(id);
++			}, [entry.running]);
++			(0, react.useEffect)(() => {
++				if (wasRunning.current && !entry.running) setExpanded(false);
++				wasRunning.current = entry.running;
++			}, [entry.running]);
++			const expandable = entry.nodeKeys.length > 0;
++			const open = expandable && expanded;
++			const progressSurface = (0, react.useMemo)(() => executionProgressSurface(activityNodes, entry.running, open, { t }), [
++				activityNodes,
++				entry.running,
++				open,
++				t
++			]);
++			const elapsedMs = endTime !== null && startTime !== null ? Math.max(0, endTime - startTime) : Math.max(0, now - anchor);
++			const showElapsed = entry.running ? elapsedMs >= 15e3 : elapsedMs >= 1e3;
++			const status = executionSummaryStatus(activityNodes, entry.running, t);
++			const toggleLabel = open ? t("execution.details.collapse") : t("execution.details.expand");
++			return (0, react_jsx_runtime.jsxs)("section", {
++				className: `${ChatView_module_css_default.flowItem} ${ChatView_module_css_default.executionGroup}`,
++				"data-chat-anchor-key": entry.key,
++				"data-chat-flow-key": entry.key,
++				"data-chat-flow-kind": "execution",
++				"data-state": entry.running ? "running" : "complete",
++				"data-expanded": open,
++				children: [progressSurface.showProgress && (0, react_jsx_runtime.jsx)("div", {
++					className: ChatView_module_css_default.executionProgress,
++					role: "log",
++					"aria-live": "polite",
++					"aria-relevant": "additions",
++					children: progressSurface.updates.map((update) => (0, react_jsx_runtime.jsx)("div", {
++						className: ChatView_module_css_default.executionProgressItem,
++						children: (0, react_jsx_runtime.jsx)(AssistantMarkdown, {
++							blocks: update.blocks,
++							streaming: update.streaming,
++							interrupted: false,
++							loadImage: seatProps.loadImage,
++							t
++						})
++					}, update.key))
++				}), (0, react_jsx_runtime.jsxs)("button", {
++					type: "button",
++					className: ChatView_module_css_default.executionTrigger,
++					disabled: !expandable,
++					"aria-expanded": expandable ? open : void 0,
++					"aria-label": expandable ? toggleLabel : status,
++					onClick: () => setExpanded((value) => !value),
++					children: [(0, react_jsx_runtime.jsx)("span", {
++						className: ChatView_module_css_default.executionLeading,
++						"aria-hidden": true,
++						children: expandable ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutline14, { className: ChatView_module_css_default.executionChevron }) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconThinkOutline14, { size: 14 })
++					}), (0, react_jsx_runtime.jsx)("span", {
++						className: ChatView_module_css_default.executionText,
++						role: "status",
++						"aria-live": "polite",
++						children: status
++					}), showElapsed && (0, react_jsx_runtime.jsx)("span", {
++						className: ChatView_module_css_default.executionMeta,
++						"aria-hidden": true,
++						children: t("execution.status.elapsed", { duration: formatRunDuration(elapsedMs, t) })
++					})]
++				}), open && progressSurface.detailNodeKeys.length > 0 && (0, react_jsx_runtime.jsxs)("div", {
++					className: ChatView_module_css_default.executionDetails,
++					children: [(0, react_jsx_runtime.jsx)("div", {
++						className: ChatView_module_css_default.executionDetailsLabel,
++						children: t("execution.details.title")
++						}), progressSurface.detailNodeKeys.map((nodeKey) => (0, react_jsx_runtime.jsx)(ChatNodeSeat, {
++						nodeKey,
++						...seatProps
++					}, nodeKey))]
++				})]
++			});
++		});
+ 		//#endregion
+ 		//#region lib/types/client/chat/ChatView.js
+ 		/** Active column host when present; otherwise the view-local scroller. */
+@@ -5289,6 +5430,21 @@ window.__ModuleLoader__.load({
  			for (const row of list.querySelectorAll("[data-chat-anchor-key]")) if (row.dataset.chatAnchorKey === key) return row;
  			return null;
  		}
@@ -40,10 +316,295 @@ index 1dd0e89..dd1c233 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5364,6 +5388,106 @@ window.__ModuleLoader__.load({
- 				})]
- 			});
+@@ -5332,35 +5488,375 @@ window.__ModuleLoader__.load({
+ 				scrollTop: scrollport.scrollTop
+ 			};
  		}
+-		function runningTurnStartTime(timeline) {
++		/** The currently open Turn, used by the compact activity projection. */
++		function runningTurnInfo(timeline) {
+ 			let latest = null;
+-			for (const turn of timeline.turns.values()) if (turn.status === "open" && turn.start !== void 0) latest = turn.start.time;
+-			return latest;
++			for (const turn of timeline.turns.values()) {
++				if (turn.status !== "open") continue;
++				if (latest === null || (turn.start?.time ?? 0) >= (latest.start?.time ?? 0)) latest = turn;
++			}
++			return latest === null ? null : {
++				turn: latest.turn,
++				startTime: latest.start?.time ?? null
++			};
+ 		}
+-		/** Turn-level model activity label retained across first-token, tool, and streaming phases. */
+-		function TurnStatus({ startTime, t }) {
+-			const [mountedAt] = (0, react.useState)(() => Date.now());
+-			const anchor = startTime ?? mountedAt;
+-			const [elapsedMs, setElapsedMs] = (0, react.useState)(() => Math.max(0, Date.now() - anchor));
+-			(0, react.useEffect)(() => {
+-				const tick = () => {
+-					setElapsedMs(Math.max(0, Date.now() - anchor));
++		/** Stable Turn identity for every Chat node shape. */
++		function conversationNodeTurn(node) {
++			const location = node?.location;
++			if (location?.kind === "turn" || location?.kind === "step") {
++				const turn = location.turn?.turn;
++				if (typeof turn === "number") return turn;
++			}
++			return typeof node?.data?.turn === "number" ? node.data.turn : null;
++		}
++		/** Keep model reasoning and wire calls out of the completed answer surface. */
++		function finalAnswerBlocks(blocks) {
++			return blocks.filter((block) => block.kind === "text" || block.kind === "image");
++		}
++		/** Keep the latest distinct model-authored commentary paragraphs, never reasoning or Tool payloads. */
++		function executionProgressUpdates(nodes, options = {}) {
++			const limit = options.limit ?? 6;
++			const t = typeof options.t === "function" ? options.t : null;
++			const byText = /* @__PURE__ */ new Map();
++			const push = (key, blocks, streaming = false) => {
++				const text = blocks.map((block) => block.text).join("\n").replace(/\s+/gu, " ").trim();
++				if (text.length < 4) return;
++				if (byText.has(text)) byText.delete(text);
++				byText.set(text, {
++					key,
++					blocks,
++					streaming
++				});
++			};
++			for (const node of nodes) {
++				if (node?.kind !== "assistant-step") continue;
++				const source = Array.isArray(node.data?.blocks) ? node.data.blocks : [];
++				const blocks = source.filter((block) => block?.kind === "text" && typeof block.text === "string" && block.text.trim().length > 0);
++				const key = typeof node.key === "string" ? node.key : `execution-progress:${byText.size}`;
++				push(key, blocks, node.data?.status === "running");
++			}
++			if (byText.size === 0 && t !== null) for (const node of nodes) {
++				if (node?.kind !== "tool-call") continue;
++				const root = node.data?.root;
++				if (root === null || typeof root !== "object" || !("kind" in root)) continue;
++				const { name, args } = executionToolArgs(root);
++				const key = typeof node.key === "string" ? node.key : `execution-milestone:${byText.size}`;
++				if (/todo|plan/.test(name) && Array.isArray(args?.todos)) {
++					for (const [index, todo] of args.todos.entries()) {
++						if (todo === null || typeof todo !== "object" || todo.status !== "completed") continue;
++						const task = safeExecutionTask(todo.content);
++						if (task !== null && hasHanText(task)) push(`${key}:todo:${index}`, [{
++							kind: "text",
++							text: t("execution.progress.completed", { task })
++						}]);
++					}
++					continue;
++				}
++				if (name === "web_search") {
++					const task = safeExecutionTask(args?.query);
++					if (task !== null && hasHanText(task)) push(`${key}:search`, [{
++						kind: "text",
++						text: t("execution.progress.researched", { task })
++					}]);
++					continue;
++				}
++				const task = safeExecutionTask(args?.description);
++				if (task !== null && hasHanText(task)) push(`${key}:description`, [{
++					kind: "text",
++					text: t("execution.progress.completed", { task })
++				}]);
++			}
++			if (byText.size === 0 && t !== null) {
++				const stages = /* @__PURE__ */ new Map();
++				for (const node of nodes) {
++					if (node?.kind !== "tool-call") continue;
++					const root = node.data?.root;
++					if (root === null || typeof root !== "object" || !("kind" in root)) continue;
++					const { name, args } = executionToolArgs(root);
++					const stage = executionProgressStage(name, args);
++					if (stage === null) continue;
++					if (stages.has(stage)) stages.delete(stage);
++					stages.set(stage, typeof node.key === "string" ? node.key : `execution-stage:${stages.size}`);
++				}
++				for (const [stage, key] of stages) push(`${key}:${stage}`, [{
++					kind: "text",
++					text: t(stage)
++				}]);
++			}
++			return [...byText.values()].slice(-Math.max(0, limit));
++		}
++		/** Derive the visible progress feed and keep assistant commentary out of raw execution detail. */
++		function executionProgressSurface(nodes, running, expanded, options = {}) {
++			const updates = executionProgressUpdates(nodes, options);
++			const detailNodeKeys = [];
++			for (const node of nodes) if (node?.kind !== "assistant-step" && typeof node?.key === "string") detailNodeKeys.push(node.key);
++			return {
++				updates,
++				showProgress: updates.length > 0 && (running || expanded),
++				detailNodeKeys
++			};
++		}
++		/** Read only the structured arguments owned by a Tool call. Malformed or non-object input has no intent value. */
++		function executionToolArgs(root) {
++			const call = root !== null && typeof root === "object" && "kind" in root ? root.call : root;
++			const raw = call?.argsRaw;
++			if (typeof raw !== "string") return { name: String(call?.name ?? "").toLowerCase(), args: null };
++			try {
++				const args = JSON.parse(raw);
++				return {
++					name: String(call?.name ?? "").toLowerCase(),
++					args: typeof args === "object" && args !== null && !Array.isArray(args) ? args : null
+ 				};
+-				tick();
+-				const id = setInterval(tick, 1e3);
++			} catch {
++				return { name: String(call?.name ?? "").toLowerCase(), args: null };
++			}
++		}
++		/** Convert settled Tool metadata into a localized, privacy-safe milestone for older transcripts. */
++		function executionProgressStage(name, args) {
++			const description = typeof args?.description === "string" ? args.description : "";
++			const path = typeof args?.path === "string" ? args.path : typeof args?.file_path === "string" ? args.file_path : "";
++			const semantic = `${name} ${description} ${path}`.toLowerCase();
++			if (/(?:verify|validate|check|inspect|audit|review|test|lint|qa|compare|sanitize|\u6821\u9a8c|\u9a8c\u8bc1|\u68c0\u67e5|\u5ba1\u67e5|\u6d4b\u8bd5)/iu.test(semantic)) return "execution.progress.verificationReady";
++			if (/(?:read_image|render|preview|screenshot|raster|contact.?sheet|\u6e32\u67d3|\u9884\u89c8|\u622a\u56fe)/iu.test(semantic)) return "execution.progress.previewReady";
++			if (/(?:web_search|web_fetch|browse|search|glob|grep|find|(?:^|[\s_-])read(?:[\s_-]|$)|\u68c0\u7d22|\u641c\u7d22|\u8bfb\u53d6)/iu.test(semantic)) return "execution.progress.researchReady";
++			if (/(?:write|edit|patch|replace|mutation|build|create|generate|author|compose|export|save|\u64b0\u5199|\u521b\u5efa|\u751f\u6210|\u5236\u4f5c|\u7f16\u8f91|\u66f4\u65b0|\u5bfc\u51fa)/iu.test(semantic)) return "execution.progress.draftReady";
++			return null;
++		}
++		/** A model-authored intent may be shown only when it is short and contains no path, command, URL, or credential marker. */
++		function safeExecutionTask(value) {
++			if (typeof value !== "string") return null;
++			const task = value.split(/\r?\n/, 1)[0]?.trim().replace(/^\u6b63\u5728/u, "").replace(/[\s\u3002.!\uff01?\uff1f\u2026\uff1a:;\uff1b]+$/u, "").replace(/\s+/g, " ") ?? "";
++			if (task.length < 2 || task.length > 48) return null;
++			if (/[\u0000-\u001f\u007f]/u.test(task)) return null;
++			if (/(?:https?|file):\/\/|(?:^|\s)(?:\/{1,2}|~\/)[\w.@+-]+(?:[\\/][^\s]+)*|[a-z]:\\|(?:api[ _-]?key|access[ _-]?token|authorization|bearer|cookie|credential|password|secret|token|\u5bc6\u7801|\u5bc6\u94a5|\u53e3\u4ee4|\u4ee4\u724c|\u51ed\u8bc1)/iu.test(task)) return null;
++			if (/&&|\|\||[;`$<>]/u.test(task)) return null;
++			return task;
++		}
++		function hasHanText(value) {
++			return /\p{Script=Han}/u.test(value);
++		}
++		function pptCommandStatusKey(args) {
++			const description = typeof args?.description === "string" ? args.description : "";
++			const command = typeof args?.command === "string" ? args.command : "";
++			const semantic = `${description} ${command}`.toLowerCase();
++			if (!/(?:pptx?|powerpoint|presentation|slide|deck|\u6f14\u793a\u6587\u7a3f|\u5e7b\u706f\u7247)/iu.test(semantic)) return null;
++			if (/(?:render|preview|screenshot|export.*image|\u6e32\u67d3|\u9884\u89c8|\u622a\u56fe)/iu.test(semantic)) return "execution.status.pptRendering";
++			if (/(?:verify|validate|check|inspect|audit|review|test|lint|qa|\u6821\u9a8c|\u9a8c\u8bc1|\u68c0\u67e5|\u5ba1\u67e5|\u5ba1\u6838)/iu.test(semantic)) return "execution.status.pptVerifying";
++			if (/(?:write|create|generate|build|author|compose|edit|update|\u64b0\u5199|\u521b\u5efa|\u751f\u6210|\u5236\u4f5c|\u7f16\u8f91|\u66f4\u65b0)/iu.test(semantic)) return "execution.status.pptWriting";
++			return null;
++		}
++		/** Privacy-safe current activity copy, derived from the Tool that is actually running. */
++		function executionActivityLabel(node, t, context = {}) {
++			if (node === void 0 || node === null) return t("execution.status.analyzing");
++			if (node.kind === "context") return t("execution.status.context");
++			if (node.kind === "assistant-step") return t("execution.status.analyzing");
++			if (node.kind === "command") return t("execution.status.command");
++			if (node.kind === "compaction") return node.data?.running === true ? t("execution.status.compacting") : t("execution.status.working");
++			if (node.kind === "manual-compaction") return node.data?.command?.outcome === null ? t("execution.status.manualCompacting") : t("execution.status.working");
++			if (node.kind === "model-retry") return t("execution.status.retrying");
++			if (node.kind !== "tool-call") return t("execution.status.working");
++			const root = node.data?.root;
++			const { name, args } = executionToolArgs(root);
++			if (/todo|plan/.test(name)) {
++				const settled = root !== null && typeof root === "object" && "kind" in root;
++				if (!settled) return t("execution.status.planning");
++				const activeTask = safeExecutionTask(context.activeTask);
++				return activeTask === null ? t("execution.status.working") : t("execution.status.currentTask", { task: activeTask });
++			}
++			if (name === "web_search") {
++				const topic = safeExecutionTask(args?.query);
++				return topic === null ? t("execution.status.researching") : t("execution.status.webSearchTopic", { topic });
++			}
++			if (name === "web_fetch") return t("execution.status.researching");
++			if (/skill/.test(name) && /(?:ppt|slide|presentation)/iu.test(String(args?.name ?? ""))) return t("execution.status.pptSkill");
++			if (/bash|shell|exec|terminal|command|pwsh/.test(name)) {
++				const describedTask = safeExecutionTask(args?.description);
++				if (describedTask !== null && hasHanText(describedTask)) return t("execution.status.currentTask", { task: describedTask });
++				const pptStatusKey = pptCommandStatusKey(args);
++				if (pptStatusKey === "execution.status.pptRendering" || pptStatusKey === "execution.status.pptVerifying") return t(pptStatusKey);
++				const activeTask = safeExecutionTask(context.activeTask);
++				if (activeTask !== null) return t("execution.status.currentTask", { task: activeTask });
++				if (pptStatusKey !== null) return t(pptStatusKey);
++				return t("execution.status.executing");
++			}
++			if (/read|browse|file_read/.test(name)) return t("execution.status.reading");
++			if (/grep|glob|search|find/.test(name)) return t("execution.status.searching");
++			if (/write|edit|patch|replace|mutation/.test(name)) {
++				const path = typeof args?.path === "string" ? args.path : typeof args?.file_path === "string" ? args.file_path : "";
++				if (/\.pptx?$/iu.test(path)) return t("execution.status.pptWriting");
++				return t("execution.status.updating");
++			}
++			if (/playwright|browser|screenshot|simulator|test|verify/.test(name)) return t("execution.status.verifying");
++			if (/web|fetch|http/.test(name)) return t("execution.status.researching");
++			if (/skill/.test(name)) return t("execution.status.skill");
++			return t("execution.status.working");
++		}
++		/** Combine the latest Tool with the current plan item so vague commands still explain their real purpose. */
++		function executionStatusForNodes(nodes, t) {
++			let activeTask = null;
++			for (const node of nodes) {
++				if (node?.kind !== "tool-call") continue;
++				const { name, args } = executionToolArgs(node.data?.root);
++				if (!/todo|plan/.test(name) || !Array.isArray(args?.todos)) continue;
++				const active = args.todos.find((todo) => todo !== null && typeof todo === "object" && todo.status === "in_progress");
++				activeTask = safeExecutionTask(active?.content);
++			}
++			return executionActivityLabel(nodes.at(-1), t, { activeTask });
++		}
++		/** Running work names its current intent; settled work is a neutral process record, not a task-completion claim. */
++		function executionSummaryStatus(nodes, running, t) {
++			return running ? executionStatusForNodes(nodes, t) : t("execution.status.history");
++		}
++		/** Whether a node belongs inside the turn's private-by-default activity disclosure. */
++		function isExecutionDetailNode(node, closingSeqByTurn) {
++			if (node === void 0) return false;
++			if (node.kind === "user" || node.kind === "steering" || node.kind === "turn-tail" || node.kind === "turn-error" || node.kind === "turn-max-tokens") return false;
++			if (node.kind !== "assistant-step") return true;
++			const turn = conversationNodeTurn(node);
++			const closingSeq = turn === null ? void 0 : closingSeqByTurn.get(turn);
++			return closingSeq === void 0 || node.data?.finalNode?.seq !== closingSeq;
++		}
++		/** Collapse every Turn's internal nodes into one stable flow entry. */
++		function compactConversationFlow(order, nodeStore, runningTurn) {
++			const closingSeqByTurn = /* @__PURE__ */ new Map();
++			for (const key of order) {
++				const node = nodeStore.get(key);
++				if (node?.kind !== "turn-tail") continue;
++				const turn = conversationNodeTurn(node);
++				const seq = node.data?.closing?.finalNode?.seq;
++				if (turn !== null && typeof seq === "number") closingSeqByTurn.set(turn, seq);
++			}
++			const entries = [];
++			const groups = /* @__PURE__ */ new Map();
++			for (const key of order) {
++				const node = nodeStore.get(key);
++				if (!isExecutionDetailNode(node, closingSeqByTurn)) {
++					entries.push({ kind: "node", key });
++					continue;
++				}
++				const turn = conversationNodeTurn(node);
++				const identity = turn === null ? "session" : String(turn);
++				let group = groups.get(identity);
++				if (group === void 0) {
++					group = {
++						kind: "execution",
++						key: `execution:${identity}`,
++						turn,
++						nodeKeys: [],
++						running: turn !== null && turn === runningTurn
++					};
++					groups.set(identity, group);
++					entries.push(group);
++				}
++				group.nodeKeys.push(key);
++				if (node?.kind === "compaction" && node.data?.running === true) group.running = true;
++			}
++			if (runningTurn !== null && !groups.has(String(runningTurn))) entries.push({
++				kind: "execution",
++				key: `execution:${runningTurn}`,
++				turn: runningTurn,
++				nodeKeys: [],
++				running: true
++			});
++			return entries;
++		}
 +		/** Compact, independently scrollable navigation for durable user queries. */
 +		function QueryRail({ queries, activeKey, listRef, columnRef, onNavigate }) {
 +			const railRef = (0, react.useRef)(null);
@@ -77,10 +638,21 @@ index 1dd0e89..dd1c233 100644
 +				observer?.observe(scrollport);
 +				observer?.observe(column);
 +				if (composer !== null) observer?.observe(composer);
-+				return () => {
+ 				return () => {
+-					clearInterval(id);
 +					window.removeEventListener("resize", update);
 +					observer?.disconnect();
-+				};
+ 				};
+-			}, [anchor]);
+-			const showClock = elapsedMs >= 15e3;
+-			return (0, react_jsx_runtime.jsxs)("div", {
+-				className: ChatView_module_css_default.turnStatus,
+-				role: "status",
+-				"aria-live": "polite",
+-				children: ["Deep diving...", showClock && (0, react_jsx_runtime.jsx)("span", {
+-					className: ChatView_module_css_default.turnStatusClock,
+-					"aria-hidden": true,
+-					children: formatRunDuration(elapsedMs, t)
 +			}, [queries.length, listRef, columnRef]);
 +			(0, react.useLayoutEffect)(() => {
 +				const scroller = scrollerRef.current;
@@ -141,16 +713,14 @@ index 1dd0e89..dd1c233 100644
 +						className: "dshQueryRail_tooltipText",
 +						children: hovered.query.preview
 +					})]
-+				})]
-+			});
-+		}
- 		/**
- 		* The chat view slot entry: pure component over the composed props; each
- 		* ordered business Node crosses the keyed renderer seat.
-@@ -5381,11 +5505,25 @@ window.__ModuleLoader__.load({
+ 				})]
+ 			});
+ 		}
+@@ -5381,11 +5877,58 @@ window.__ModuleLoader__.load({
  			const loadingOlder = useSession((s) => s.loadingOlder);
  			const selectedCallId = useStore((s) => s.selection?.callId);
  			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
+-			const runningTurnStart = (0, react.useMemo)(() => runningTurnStartTime(timeline), [timeline]);
 +			const queries = (0, react.useMemo)(() => order.flatMap((key) => {
 +				const node = nodeStore.get(key);
 +				if (node?.kind !== "user" && node?.kind !== "steering") return [];
@@ -163,7 +733,40 @@ index 1dd0e89..dd1c233 100644
 +				const preview = (text || (content.images.length > 0 ? document.documentElement.lang.startsWith("zh") ? "图片 Query" : "Image query" : document.documentElement.lang.startsWith("zh") ? "无文本 Query" : "Query without text")).slice(0, 240);
 +				return [{ key, preview }];
 +			}), [order, nodeStore]);
- 			const runningTurnStart = (0, react.useMemo)(() => runningTurnStartTime(timeline), [timeline]);
++			const runningTurn = (0, react.useMemo)(() => running ? runningTurnInfo(timeline) : null, [running, timeline]);
++			const runningTurnNumber = (0, react.useMemo)(() => {
++				if (!running) return null;
++				if (runningTurn !== null && typeof runningTurn.turn === "number") return runningTurn.turn;
++				for (let index = order.length - 1; index >= 0; index--) {
++					const turn = conversationNodeTurn(nodeStore.get(order[index]));
++					if (turn !== null) return turn;
++				}
++				return null;
++			}, [running, runningTurn, order, nodeStore]);
++			const compactFlow = (0, react.useMemo)(() => compactConversationFlow(order, nodeStore, runningTurnNumber), [order, nodeStore, runningTurnNumber]);
++			const seatProps = (0, react.useMemo)(() => ({
++				useSession,
++				selectedCallId,
++				cwd,
++				openFile,
++				inspectCall,
++				forkAt,
++				loadImage,
++				fileMentions,
++				renderSlot,
++				t
++			}), [
++				useSession,
++				selectedCallId,
++				cwd,
++				openFile,
++				inspectCall,
++				forkAt,
++				loadImage,
++				fileMentions,
++				renderSlot,
++				t
++			]);
  			const listRef = (0, react.useRef)(null);
  			const columnRef = (0, react.useRef)(null);
  			const atBottomRef = (0, react.useRef)(true);
@@ -173,7 +776,7 @@ index 1dd0e89..dd1c233 100644
  			/** Last position delivered or written on the main thread. */
  			const observedTopRef = (0, react.useRef)(0);
  			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5405,6 +5543,12 @@ window.__ModuleLoader__.load({
+@@ -5405,6 +5948,12 @@ window.__ModuleLoader__.load({
  			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
  			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
  			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
@@ -186,7 +789,7 @@ index 1dd0e89..dd1c233 100644
  			const toBottom = (el) => {
  				anchorRef.current = null;
  				el.scrollTop = el.scrollHeight;
-@@ -5412,6 +5556,8 @@ window.__ModuleLoader__.load({
+@@ -5412,6 +5961,8 @@ window.__ModuleLoader__.load({
  				atBottomRef.current = true;
  				setAtBottom(true);
  				chatScroll.save(null);
@@ -195,7 +798,7 @@ index 1dd0e89..dd1c233 100644
  			};
  			(0, react.useLayoutEffect)(() => {
  				const local = listRef.current;
-@@ -5468,6 +5614,7 @@ window.__ModuleLoader__.load({
+@@ -5468,6 +6019,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -203,7 +806,7 @@ index 1dd0e89..dd1c233 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5487,6 +5634,10 @@ window.__ModuleLoader__.load({
+@@ -5487,6 +6039,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -214,7 +817,7 @@ index 1dd0e89..dd1c233 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5540,9 +5691,29 @@ window.__ModuleLoader__.load({
+@@ -5540,9 +6096,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
@@ -245,7 +848,45 @@ index 1dd0e89..dd1c233 100644
  					ref: listRef,
  					className: ChatView_module_css_default.scroll,
  					children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -5607,7 +5778,7 @@ window.__ModuleLoader__.load({
+@@ -5570,22 +6146,21 @@ window.__ModuleLoader__.load({
+ 									children: loadingOlder ? t("loading") : t("chat.loadOlder")
+ 								})
+ 							}),
+-							order.map((nodeKey) => (0, react_jsx_runtime.jsx)(ChatNodeSeat, {
+-								nodeKey,
+-								useSession,
+-								selectedCallId,
+-								cwd,
+-								openFile,
+-								inspectCall,
+-								forkAt,
+-								loadImage,
+-								fileMentions,
+-								renderSlot,
+-								t
+-							}, nodeKey)),
+-							running && (0, react_jsx_runtime.jsx)(TurnStatus, {
+-								startTime: runningTurnStart,
+-								t
++							compactFlow.map((entry) => {
++								if (entry.kind === "node") return (0, react_jsx_runtime.jsx)(ChatNodeSeat, {
++									nodeKey: entry.key,
++									...seatProps
++								}, entry.key);
++								const turn = entry.turn === null ? void 0 : timeline.turns.get(entry.turn);
++								const activityNodes = entry.nodeKeys.map((key) => nodeStore.get(key)).filter((node) => node !== void 0);
++								return (0, react_jsx_runtime.jsx)(ExecutionStatusGroup, {
++									entry,
++									activityNodes,
++									startTime: turn?.start?.time ?? (entry.running ? runningTurn?.startTime ?? null : null),
++									endTime: turn?.end?.time ?? null,
++									seatProps,
++									t
++								}, entry.key);
+ 							}),
+ 							pendingSteering.map((item) => (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
+ 								content: item.content,
+@@ -5607,7 +6182,7 @@ window.__ModuleLoader__.load({
  							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {})
  						})
  					})]
@@ -254,3 +895,257 @@ index 1dd0e89..dd1c233 100644
  			});
  		}
  		//#endregion
+@@ -5875,7 +6450,7 @@ window.__ModuleLoader__.load({
+ 			"access.confirm.acknowledge": "我已了解风险，并愿意继续",
+ 			"access.confirm.cancel": "取消",
+ 			"access.confirm.enable": "启用 Full access",
+-			"hero.headline": "探索未至之境",
++			"hero.headline": "迷雾之中，洞见真相",
+ 			"hero.preview": "预览版",
+ 			"hero.chooseWorkspace": "选择工作区",
+ 			"session.hierarchy": "会话层级",
+@@ -5896,6 +6471,39 @@ window.__ModuleLoader__.load({
+ 			"chat.loadError": "历史加载失败：{message}（{code}）",
+ 			"chat.loadOlder": "加载更早",
+ 			"chat.toBottom": "回到底部",
++			"execution.status.analyzing": "正在分析任务…",
++			"execution.status.context": "正在准备任务上下文…",
++			"execution.status.planning": "正在制定任务计划…",
++			"execution.status.reading": "正在读取相关内容…",
++			"execution.status.searching": "正在检索项目内容…",
++			"execution.status.updating": "正在更新文件…",
++			"execution.status.verifying": "正在验证运行结果…",
++			"execution.status.researching": "正在使用互联网搜索…",
++			"execution.status.webSearchTopic": "正在使用互联网搜索“{topic}”…",
++			"execution.status.currentTask": "正在{task}…",
++			"execution.status.pptSkill": "正在加载 PPT 制作能力…",
++			"execution.status.pptWriting": "正在撰写 PPT 文件…",
++			"execution.status.pptRendering": "正在渲染 PPT 预览…",
++			"execution.status.pptVerifying": "正在校验 PPT 文件…",
++			"execution.status.skill": "正在加载专业能力…",
++			"execution.status.executing": "正在执行检查…",
++			"execution.status.command": "正在处理指令…",
++			"execution.status.compacting": "正在自动压缩上下文…",
++			"execution.status.manualCompacting": "正在压缩上下文…",
++			"execution.status.retrying": "正在重试任务…",
++			"execution.status.working": "正在执行任务…",
++			"execution.status.completed": "已完成",
++			"execution.status.history": "执行过程",
++			"execution.status.elapsed": "· 用时 {duration}",
++			"execution.progress.completed": "阶段进展：{task}。",
++			"execution.progress.researched": "资料检索进展：{task}。",
++			"execution.progress.researchReady": "资料检索与信息整理取得阶段进展。",
++			"execution.progress.draftReady": "内容编写与文件更新取得阶段进展。",
++			"execution.progress.previewReady": "预览渲染与视觉检查取得阶段进展。",
++			"execution.progress.verificationReady": "方案检查与结果校验取得阶段进展。",
++			"execution.details.title": "执行详情",
++			"execution.details.expand": "展开执行详情",
++			"execution.details.collapse": "收起执行详情",
+ 			"message.extraBlock": "附加内容块",
+ 			"message.contextInjection": "上下文注入",
+ 			"message.contextRecall": "跨会话召回",
+@@ -6040,7 +6648,7 @@ window.__ModuleLoader__.load({
+ 			"access.confirm.acknowledge": "I understand the risks and want to continue",
+ 			"access.confirm.cancel": "Cancel",
+ 			"access.confirm.enable": "Enable Full access",
+-			"hero.headline": "Into the Unknown",
++			"hero.headline": "Through the Mist, See the Truth",
+ 			"hero.preview": "Preview",
+ 			"hero.chooseWorkspace": "Choose workspace",
+ 			"session.hierarchy": "Session hierarchy",
+@@ -6061,6 +6669,39 @@ window.__ModuleLoader__.load({
+ 			"chat.loadError": "Failed to load history: {message} ({code})",
+ 			"chat.loadOlder": "Load earlier",
+ 			"chat.toBottom": "Back to bottom",
++			"execution.status.analyzing": "Analyzing the task…",
++			"execution.status.context": "Preparing task context…",
++			"execution.status.planning": "Planning the task…",
++			"execution.status.reading": "Reading relevant content…",
++			"execution.status.searching": "Searching the project…",
++			"execution.status.updating": "Updating files…",
++			"execution.status.verifying": "Verifying the result…",
++			"execution.status.researching": "Searching the internet…",
++			"execution.status.webSearchTopic": "Searching the internet for “{topic}”…",
++			"execution.status.currentTask": "Working on {task}…",
++			"execution.status.pptSkill": "Loading PPT authoring capabilities…",
++			"execution.status.pptWriting": "Writing the PPT file…",
++			"execution.status.pptRendering": "Rendering the PPT preview…",
++			"execution.status.pptVerifying": "Validating the PPT file…",
++			"execution.status.skill": "Loading specialist capabilities…",
++			"execution.status.executing": "Running checks…",
++			"execution.status.command": "Processing the command…",
++			"execution.status.compacting": "Automatically compacting context…",
++			"execution.status.manualCompacting": "Compacting context…",
++			"execution.status.retrying": "Retrying the task…",
++			"execution.status.working": "Working on the task…",
++			"execution.status.completed": "Completed",
++			"execution.status.history": "Process",
++			"execution.status.elapsed": "· {duration}",
++			"execution.progress.completed": "Milestone update: {task}.",
++			"execution.progress.researched": "Research update: {task}.",
++			"execution.progress.researchReady": "Research and source review made progress.",
++			"execution.progress.draftReady": "Content authoring and file updates made progress.",
++			"execution.progress.previewReady": "Preview rendering and visual review made progress.",
++			"execution.progress.verificationReady": "Validation and result checks made progress.",
++			"execution.details.title": "Execution details",
++			"execution.details.expand": "Expand execution details",
++			"execution.details.collapse": "Collapse execution details",
+ 			"message.extraBlock": "Extra content block",
+ 			"message.contextInjection": "Context injection",
+ 			"message.contextRecall": "Session recall",
+@@ -6383,7 +7024,7 @@ window.__ModuleLoader__.load({
+ 		*/
+ 		function QueueDock({ useSession, updateQueue, notify, t }) {
+ 			const inbox = useSession((s) => s.queue);
+-			const queue = (0, react.useMemo)(() => inbox.filter((row) => row.placement === "queued"), [inbox]);
++			const queue = (0, react.useMemo)(() => userQueuedMessages(inbox), [inbox]);
+ 			const running = useSession((s) => s.running);
+ 			const queueMutable = useSession((s) => s.subagent === null);
+ 			const [editing, setEditing] = (0, react.useState)(null);
+@@ -6627,7 +7268,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
+ 			tag.dataset.pluginCss = tagId$7;
+-			tag.textContent = css$7;
++			tag.textContent = css$7 + ".pXSMma_headline{grid-template-columns:auto auto}.pXSMma_headlineText{grid-area:1/1}.pXSMma_previewBadge{grid-area:1/2}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var HeroShell_module_css_default = {
+@@ -6765,13 +7406,6 @@ window.__ModuleLoader__.load({
+ 					children: [(0, react_jsx_runtime.jsxs)("div", {
+ 						className: HeroShell_module_css_default.headline,
+ 						children: [
+-							(0, react_jsx_runtime.jsx)("span", {
+-								className: HeroShell_module_css_default.fishHitbox,
+-								children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FishLogo, {
+-									size: 34,
+-									className: HeroShell_module_css_default.fish
+-								})
+-							}),
+ 							(0, react_jsx_runtime.jsx)("span", {
+ 								className: HeroShell_module_css_default.headlineText,
+ 								children: t("hero.headline")
+@@ -8066,13 +8700,30 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		//#region lib/types/client/conversation-nodes/compaction.js
+ 		function fallbackState$2(context) {
++			const start = context.matches.find((match) => match.event.type === "compaction/start");
++			const end = context.matches.find((match) => match.event.type === "compaction/end");
+ 			const summary = context.matches.find((match) => match.event.type === "compaction/summary");
+ 			const checkpoint = context.matches.find((match) => compactSource(match.event) !== void 0);
+ 			return {
++				...start === void 0 ? {} : { start },
++				...end === void 0 ? {} : { end },
+ 				...summary === void 0 ? {} : { summary },
+ 				...checkpoint === void 0 ? {} : { checkpoint }
+ 			};
+ 		}
++		/** Build a temporary visible marker while an automatic compaction transaction is open. */
++		function runningCompaction(start) {
++			return {
++				kind: "compaction",
++				seq: start.event.seq,
++				time: start.event.time,
++				summary: null,
++				summaryEventSeq: null,
++				shadowedItemCount: null,
++				shadowedTokenCount: null,
++				running: true
++			};
++		}
+ 		/** Automatic compaction lifecycle and landed checkpoint Definition. */
+ 		const compactionDefinition = {
+ 			kind: "compaction",
+@@ -8094,11 +8745,21 @@ window.__ModuleLoader__.load({
+ 				}
+ 				return null;
+ 			},
+-			start: () => ({}),
+-			update: (context, match) => updateCompactionState(context.state, match),
++			start: (_context, match) => ({ start: match }),
++			update: (context, match) => {
++				if (match.event.type === "compaction/end") return {
++					...context.state,
++					end: match
++				};
++				return updateCompactionState(context.state, match);
++			},
+ 			buildViewNode: (context) => {
+ 				const state = context.state ?? fallbackState$2(context);
+-				if (state.checkpoint === void 0) return null;
++				if (state.checkpoint === void 0) {
++					if (state.start === void 0 || state.end !== void 0) return null;
++					const marker = runningCompaction(state.start);
++					return chatNode(context, "compaction", marker.seq, marker);
++				}
+ 				const marker = compactSummary(state.summary, state.checkpoint);
+ 				return chatNode(context, "compaction", marker.seq, marker);
+ 			}
+@@ -9038,7 +9699,7 @@ window.__ModuleLoader__.load({
+ 		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
+-		const css$2 = ".Sxvs8a_root{color:var(--dsw-alias-label-primary);flex-direction:column;font-size:16px;line-height:28px;display:flex}.Sxvs8a_body{flex-direction:column;gap:16px;display:flex}.Sxvs8a_stopped{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);border-radius:6px;align-self:flex-start;padding:0 6px;font-size:11px;line-height:18px}.Sxvs8a_actions{margin-top:16px;margin-left:-6px}";
++		const css$2 = ".Sxvs8a_root{text-align:left;color:var(--dsw-alias-label-primary);flex-direction:column;font-size:16px;line-height:28px;display:flex}.Sxvs8a_body{flex-direction:column;gap:16px;display:flex}.Sxvs8a_body code>button{text-align:left}.Sxvs8a_stopped{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);border-radius:6px;align-self:flex-start;padding:0 6px;font-size:11px;line-height:18px}.Sxvs8a_actions{margin-top:16px;margin-left:-6px}";
+ 		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -9128,23 +9789,24 @@ window.__ModuleLoader__.load({
+ 			const data = node.data;
+ 			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
+ 			const tail = useTurnData("turn-tail");
++			const completedFinal = turn?.status === "closed" && data.finalNode !== void 0 && tail?.closing?.finalNode.seq === data.finalNode.seq;
+ 			const owner = (0, react.useMemo)(() => {
+-				if (turn?.status !== "closed" || data.finalNode === void 0) return void 0;
+-				if (tail?.closing?.finalNode.seq !== data.finalNode.seq) return void 0;
++				if (!completedFinal || data.finalNode === void 0) return void 0;
+ 				return {
+ 					turn,
+ 					seq: data.finalNode.seq,
+ 					openFile
+ 				};
+ 			}, [
++				completedFinal,
+ 				data.finalNode,
+ 				openFile,
+-				tail,
+ 				turn
+ 			]);
+ 			const mentions = (0, react.useMemo)(() => owner === void 0 ? void 0 : fileMentions(owner), [fileMentions, owner]);
++			const visibleBlocks = (0, react.useMemo)(() => completedFinal ? finalAnswerBlocks(data.blocks) : data.blocks, [completedFinal, data.blocks]);
+ 			return (0, react_jsx_runtime.jsx)(AssistantMarkdown, {
+-				blocks: data.blocks,
++				blocks: visibleBlocks,
+ 				streaming: data.status === "running",
+ 				interrupted: data.status === "interrupted",
+ 				loadImage,
+@@ -9766,7 +10428,10 @@ window.__ModuleLoader__.load({
+ 							actions.select(target);
+ 							layout.openDetails();
+ 						},
+-						fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner),
++						fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing({
++							...owner,
++							cwd: sessions.list.getSnapshot().byId[sessionId]?.cwd
++						}),
+ 						openFile: (path) => {
+ 							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
+ 							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
+@@ -9825,6 +10490,17 @@ window.__ModuleLoader__.load({
+ 		}
+ 		//#endregion
+ 		exports.ConversationController = ConversationController;
++		exports.CommandLauncherButton = CommandLauncherButton;
++		exports.ComposerLeadingControls = ComposerLeadingControls;
++		exports.compactionDefinition = compactionDefinition;
++		exports.compactConversationFlow = compactConversationFlow;
++		exports.executionActivityLabel = executionActivityLabel;
++		exports.executionProgressSurface = executionProgressSurface;
++		exports.executionProgressUpdates = executionProgressUpdates;
++		exports.executionSummaryStatus = executionSummaryStatus;
++		exports.executionStatusForNodes = executionStatusForNodes;
++		exports.finalAnswerBlocks = finalAnswerBlocks;
++		exports.userQueuedMessages = userQueuedMessages;
+ 		exports.apply = apply;
+ 		exports.inject = inject;
+ 		return module.exports;

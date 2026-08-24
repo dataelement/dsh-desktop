@@ -1,0 +1,66 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
+index 0d58268..6195cdc 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
+@@ -25,17 +25,7 @@ import "katex/dist/katex.min.css";
+ var StateDot_module_css_default = {};
+ //#endregion
+ //#region lib/types/StateDot.js
+-/** Outer 3x3 matrix cells (2px pixels on a 10px grid), clockwise from top-left. */
+-const MATRIX_CELLS = [
+-	[0, 0],
+-	[4, 0],
+-	[8, 0],
+-	[8, 4],
+-	[8, 8],
+-	[4, 8],
+-	[0, 8],
+-	[0, 4]
+-];
++const STATE_RING_STYLES = ".dshStateRingSlot{color:var(--dsw-alias-label-secondary);flex:none;align-items:center;justify-content:center;display:inline-flex}.dshStateRingMotion{animation:1s linear infinite dsh-state-ring-spin}@keyframes dsh-state-ring-spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.dshStateRingMotion{animation:none}}";
+ /**
+ * Render a state dot.
+ * @param props.state - which of the four states to show.
+@@ -44,22 +34,18 @@ const MATRIX_CELLS = [
+ * @returns the dot element (aria-hidden; pair with text for accessibility).
+ */
+ function StateDot({ state, size = 10, className }) {
+-	if (state === "ongoing") return jsx("svg", {
+-		className: clsx(StateDot_module_css_default.matrix, className),
++	if (state === "ongoing") return jsxs("span", {
++		className: clsx("dshStateRingSlot", className),
+ 		"data-state": "ongoing",
+-		width: size,
+-		height: size,
+-		viewBox: "0 0 10 10",
+-		shapeRendering: "crispEdges",
++		style: {
++			width: size,
++			height: size
++		},
+ 		"aria-hidden": "true",
+-		children: MATRIX_CELLS.map(([x, y], index) => jsx("rect", {
+-			className: StateDot_module_css_default.cell,
+-			x,
+-			y,
+-			width: "2",
+-			height: "2",
+-			style: { animationDelay: `${(index - MATRIX_CELLS.length) * 125}ms` }
+-		}, `${x}-${y}`))
++		children: [jsx("style", { children: STATE_RING_STYLES }, "motion-style"), jsx(IconLoadingOutline16, {
++			size,
++			className: "dshStateRingMotion"
++		}, "ring")]
+ 	});
+ 	return jsx("span", {
+ 		className: clsx(StateDot_module_css_default.dot, className),
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/StateDot.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/StateDot.d.ts
+index a6b3156..88e7a1b 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/StateDot.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/StateDot.d.ts
+@@ -1,4 +1,4 @@
+-/** Four-color state semantic (green done / amber user-attention / blue running ring / red error). */
++/** Four-color state semantic (green done / amber user-attention / white running ring / red error). */
+ export type StateDotState = 'done' | 'warning' | 'ongoing' | 'error';
+ /**
+  * Render a state dot.

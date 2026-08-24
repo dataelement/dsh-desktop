@@ -1,0 +1,22 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
+index aa98760..e37ffd8 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
+@@ -1165,7 +1165,7 @@ window.__ModuleLoader__.load({
+ 			agentLoopMaxParallel: "Parallel tool calls",
+ 			agentLoopMaxParallelHint: "Upper bound on parallel-safe calls running at once within one step.",
+ 			webSearchTitle: "Web search",
+-			webSearchDescription: "The DeepSeek search provider.",
++			webSearchDescription: "Optional web search provider.",
+ 			webSearchApiKey: "API key",
+ 			webSearchApiKeyHint: "Stored outside the settings file. Leave blank to keep the current key.",
+ 			webSearchApiKeySet: "A key is configured.",
+@@ -1205,7 +1205,7 @@ window.__ModuleLoader__.load({
+ 			agentLoopMaxParallel: "并行工具调用数",
+ 			agentLoopMaxParallelHint: "同一步内最多同时运行多少个可并行的调用。",
+ 			webSearchTitle: "网页搜索",
+-			webSearchDescription: "DeepSeek 搜索提供方。",
++			webSearchDescription: "可选网页搜索提供方。",
+ 			webSearchApiKey: "API Key",
+ 			webSearchApiKeyHint: "不写入设置文件。留空表示保持当前密钥。",
+ 			webSearchApiKeySet: "已配置密钥。",

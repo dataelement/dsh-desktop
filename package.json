@@ -1,7 +1,7 @@
 {
-  "name": "dsh-desktop",
-  "version": "0.1.1",
-  "description": "A cross-platform desktop shell for DeepSeek Harness.",
+  "name": "sherlock",
+  "version": "0.6.0",
+  "description": "Sherlock local-first desktop knowledge assistant.",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
@@ -16,14 +16,16 @@
   },
   "homepage": "https://github.com/dataelement/dsh-desktop#readme",
   "keywords": [
-    "deepseek",
+    "sherlock",
+    "local-first",
+    "knowledge-assistant",
     "harness",
     "electron",
     "desktop",
     "agent"
   ],
   "scripts": {
-    "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
+    "postinstall": "patch-package && node scripts/patch-web-frontend-loading.mjs && node scripts/install-brand-assets.mjs && install-electron --no",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "icons:generate": "node scripts/generate-app-icons.mjs",
@@ -34,10 +36,14 @@
     "package:dir": "npm run build && electron-builder --dir",
     "package:dev:dir": "npm run build && electron-builder --dir --config electron-builder.dev.cjs",
     "package:dev:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never --config electron-builder.dev.cjs",
-    "package:mac": "npm run build && electron-builder --mac --publish never",
-    "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
-    "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never"
+    "package:mac": "npm run build && electron-builder --mac --publish never && npm run verify:package:mac -- --app auto",
+    "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never && npm run verify:package:mac -- --app \"dist/mac-arm64/Sherlock.app\"",
+    "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never && npm run verify:package:mac -- --app \"dist/mac/Sherlock.app\"",
+    "verify:package:mac": "node scripts/verify-packaged-macos.mjs",
+    "release:cloudflare": "node scripts/publish-cloudflare-release.mjs",
+    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never",
+    "sync:plugins:to-dev": "node scripts/sync-plugin-profile.mjs formal-to-dev",
+    "sync:plugins:to-formal": "node scripts/sync-plugin-profile.mjs dev-to-formal"
   },
   "dependencies": {
     "@deepseek-ai/cordis-plugin-group": "1.0.1",
@@ -60,7 +66,9 @@
     "@deepseek-ai/dsh-subprocess": "0.1.0-rc.7",
     "@deepseek-ai/dsh-timeout": "0.1.0-rc.7",
     "@deepseek-ai/dsh-workflow": "0.1.0-rc.7",
+    "apache-arrow": "18.1.0",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
+    "dsh-web-search-session-model": "file:packages/dsh-web-search-session-model",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",
     "pnpm": "10.34.5",
@@ -72,9 +80,11 @@
     "electron": "43.4.0",
     "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
+    "happy-dom": "^20.11.6",
     "patch-package": "^8.0.1",
     "typescript": "5.9.3",
     "vitest": "^4.1.10",
+    "wrangler": "4.125.0",
     "yaml": "^2.8.3"
   },
   "overrides": {
@@ -82,7 +92,7 @@
   },
   "build": {
     "appId": "io.dsh.desktop",
-    "productName": "DSH Desktop",
+    "productName": "Sherlock",
     "asar": false,
     "npmRebuild": false,
     "compression": "maximum",
@@ -128,15 +138,19 @@
       {
         "from": "build/plugin-recovery.html",
         "to": "plugin-recovery.html"
+      },
+      {
+        "from": "skills",
+        "to": "sherlock-skills"
       }
     ],
     "publish": [
       {
         "provider": "generic",
-        "url": "https://dshdesktop.com/updates/latest/"
+        "url": "https://updates.dshdesktop.com/latest/"
       }
     ],
-    "artifactName": "dsh-desktop-${os}-${arch}.${ext}",
+    "artifactName": "sherlock-${os}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
@@ -163,7 +177,7 @@
       ]
     },
     "nsis": {
-      "artifactName": "dsh-desktop-windows-${arch}-setup.${ext}",
+      "artifactName": "sherlock-windows-${arch}-setup.${ext}",
       "include": "build/installer.nsh",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

@@ -2,6 +2,10 @@ node_modules/
 out/
 dist/
 dist-dev/
+release-assets/
+release-cloudflare/
+.playwright-cli/
+artifacts/
 .DS_Store
 *.log
 coverage/
@@ -13,4 +17,3 @@ build/icon-1024.png
 !.env.example
 .coaligne/
 .coaligneignore
-

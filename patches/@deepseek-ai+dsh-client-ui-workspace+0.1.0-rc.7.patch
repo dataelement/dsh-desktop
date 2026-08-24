@@ -1,0 +1,194 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+index ec779d5..e4773f0 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+@@ -337,7 +337,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-workspace";
+ 			tag.dataset.pluginCss = tagId$2;
+-			tag.textContent = css$2;
++			tag.textContent = css$2 + ".YDXeBa_folderActive{color:var(--dsw-alias-label-secondary)}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var Rows_module_css_default = {
+@@ -413,6 +413,10 @@ window.__ModuleLoader__.load({
+ 				d: d.getDate()
+ 			})} ${pad2(d.getHours())}:${pad2(d.getMinutes())}` });
+ 		}
++		/** Keep the current workspace glyph as a neutral outline instead of a blue duotone fill. */
++		function WorkspaceFolderIcon({ expanded }) {
++			return expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpenOutline16, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderClose16, {});
++		}
+ 		/** Hover-card body: workspace title, full directory path, absolute creation time. */
+ 		function WorkspaceHoverContent({ label, cwd, createdAt, t }) {
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+@@ -438,6 +442,39 @@ window.__ModuleLoader__.load({
+ 			const rect = e.currentTarget.getBoundingClientRect();
+ 			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+ 		}
++		/** Build the real-workspace action menu in product order. */
++		function workspaceMenuItems(t) {
++			return [{
++				id: "finder",
++				label: t("openInFinder"),
++				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpenOutline16, {})
++			}, {
++				id: "rename",
++				label: t("rename"),
++				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
++			}, {
++				id: "delete",
++				label: t("delete.workspace"),
++				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
++				danger: true
++			}];
++		}
++		/** Dispatch one workspace action-menu selection. */
++		function runWorkspaceMenuAction(id, actions) {
++			if (id === "finder") actions.open();
++			else if (id === "rename") actions.rename();
++			else if (id === "delete") actions.delete();
++		}
++		/** Reveal one workspace through the native Desktop bridge, with a web-host fallback. */
++		async function showWorkspaceInFinder(path, fallback) {
++			const desktop = typeof window === "undefined" ? void 0 : window.dshDesktop;
++			if (typeof desktop?.showItemInFolder === "function") {
++				const result = await desktop.showItemInFolder(path);
++				if (result?.ok !== true) throw new Error("Finder reveal was not acknowledged by Sherlock.");
++				return;
++			}
++			await fallback(path);
++		}
+ 		/**
+ 		* Project (workspace) header row: folder + title;
+ 		* hover reveals the chevron and create button, and dwelling on a real
+@@ -455,16 +492,7 @@ window.__ModuleLoader__.load({
+ 			const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
+ 			const active = group.expanded && group.containsCurrent;
+ 			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
+-			const workspaceMenuItems = [{
+-				id: "rename",
+-				label: t("rename"),
+-				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
+-			}, {
+-				id: "delete",
+-				label: t("delete.workspace"),
+-				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
+-				danger: true
+-			}];
++			const menuItems = workspaceMenuItems(t);
+ 			const ownRow = (0, react_jsx_runtime.jsxs)("div", {
+ 				className: clsx(Rows_module_css_default.projectRow, menuOpen && Rows_module_css_default.menuOpen),
+ 				role: "treeitem",
+@@ -480,7 +508,7 @@ window.__ModuleLoader__.load({
+ 				children: [
+ 					(0, react_jsx_runtime.jsx)("span", {
+ 						className: clsx(Rows_module_css_default.slot, Rows_module_css_default.folder, active && Rows_module_css_default.folderActive),
+-						children: row.expanded ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpen16, {}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderClose16, {})
++						children: (0, react_jsx_runtime.jsx)(WorkspaceFolderIcon, { expanded: row.expanded })
+ 					}),
+ 					(0, react_jsx_runtime.jsx)("span", {
+ 						className: clsx(Rows_module_css_default.slot, Rows_module_css_default.chevron),
+@@ -500,13 +528,10 @@ window.__ModuleLoader__.load({
+ 							onClose: () => {
+ 								setMenuOpen(false);
+ 							},
+-							items: workspaceMenuItems,
++							items: menuItems,
+ 							onSelect: (id) => {
+ 								setMenuOpen(false);
+-								/* v8 ignore next -- workspaceMenuItems carries exactly these two rows today. */
+-								if (id !== "rename" && id !== "delete") return;
+-								if (id === "rename") actions.rename();
+-								else actions.delete();
++								runWorkspaceMenuAction(id, actions);
+ 							},
+ 							portal: true,
+ 							closeOnPointerLeave: true,
+@@ -971,7 +996,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-workspace";
+ 			tag.dataset.pluginCss = tagId;
+-			tag.textContent = css;
++			tag.textContent = css + ".qDHVXG_fade{display:none}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var WorkspaceBrowser_module_css_default = {
+@@ -1196,7 +1221,7 @@ window.__ModuleLoader__.load({
+ 			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+ 		}
+ 		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
+-		function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
++		function SessionTree({ useSessions, startSession, open, openWorkspacePath, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
+ 			const list = useSessions((s) => s);
+ 			const current = list.current;
+ 			const [expandedSessionGroups, setExpandedSessionGroups] = (0, react.useState)([]);
+@@ -1388,8 +1413,14 @@ window.__ModuleLoader__.load({
+ 											}
+ 										},
+ 										drag: workspaceDragProps,
+-										actions: group.workspaceId === void 0 ? void 0 : {
+-											rename: () => {
++									actions: group.workspaceId === void 0 ? void 0 : {
++										open: () => {
++											/* v8 ignore next -- real workspace groups always carry their Host path. */
++											if (group.cwd !== void 0) openWorkspacePath(group.cwd).catch((reason) => {
++												console.warn("workspace path open rejected:", reason);
++											});
++										},
++										rename: () => {
+ 												/* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
+ 												if (group.workspaceId !== void 0) onRenameRequest(group.workspaceId, group.label);
+ 											},
+@@ -1644,7 +1675,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - composed slot props (shell owner share + store + injected actions).
+ 		* @returns the region element tree.
+ 		*/
+-		function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, renderSlot, t }) {
++		function WorkspaceBrowser({ wide, expandSidebar, useSessions, useWorkspaces, useStore, actions, startSession, open, openWorkspacePath, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, renderSlot, t }) {
+ 			const workspaces = useWorkspaces((state) => state.items);
+ 			const workspacePhase = useWorkspaces((state) => state.phase);
+ 			const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
+@@ -2006,6 +2037,7 @@ window.__ModuleLoader__.load({
+ 							t
+ 						}) : (0, react_jsx_runtime.jsx)(SessionTree, {
+ 							useSessions,
++							openWorkspacePath,
+ 							onSessionRename,
+ 							onSessionArchive,
+ 							forkSession,
+@@ -2211,6 +2243,7 @@ window.__ModuleLoader__.load({
+ 			"conflict.named": "已存在名为“{name}”的工作区。",
+ 			"folderError.title": "无法打开文件夹",
+ 			"folderError.retry": "重新选择",
++			"openInFinder": "在 Finder 中显示",
+ 			"rename": "重命名",
+ 			"rename.workspace.title": "重命名工作区",
+ 			"rename.session.title": "重命名会话",
+@@ -2276,6 +2309,7 @@ window.__ModuleLoader__.load({
+ 			"conflict.named": "A workspace named “{name}” already exists.",
+ 			"folderError.title": "Couldn’t open folder",
+ 			"folderError.retry": "Choose again",
++			"openInFinder": "Show in Finder",
+ 			"rename": "Rename",
+ 			"rename.workspace.title": "Rename workspace",
+ 			"rename.session.title": "Rename session",
+@@ -2357,6 +2391,7 @@ window.__ModuleLoader__.load({
+ 				open: (sessionId) => {
+ 					ctx.sessions.open(sessionId);
+ 				},
++				openWorkspacePath: (path) => showWorkspaceInFinder(path, (fallbackPath) => ctx.workspaces.openPath(fallbackPath)),
+ 				searchSessions,
+ 				searchResultLimit: ctx.sessions.searchResultLimit,
+ 				renameSession: async (sessionId, title) => {
+@@ -2418,6 +2453,10 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		exports.apply = apply;
+ 		exports.inject = inject;
++		exports.runWorkspaceMenuAction = runWorkspaceMenuAction;
++		exports.showWorkspaceInFinder = showWorkspaceInFinder;
++		exports.WorkspaceFolderIcon = WorkspaceFolderIcon;
++		exports.workspaceMenuItems = workspaceMenuItems;
+ 		return module.exports;
+ 	}
+ });

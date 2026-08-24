@@ -1,8 +1,16 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-index 37b931e..ed1f7fd 100644
+index 37b931e..3bf673c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-@@ -10448,6 +10448,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+@@ -7051,6 +7051,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 					id: item.id,
+ 					messageId: item.message.id,
+ 					placement: item.placement,
++					source: item.message.source,
+ 					content: item.message.content,
+ 					preview: previewOf(item.message.content),
+ 					text: textOf(item.message.content)
+@@ -10448,6 +10449,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
  		function displayFailureMessage(failure) {
  			if (failure === null || typeof failure !== "object") return String(failure);
  			const record = failure;
@@ -11,3 +19,11 @@ index 37b931e..ed1f7fd 100644
  			if (record.code === "AUTH") return "API key is invalid";
  			return typeof record.message === "string" ? record.message : JSON.stringify(failure);
  		}
+@@ -10508,6 +10511,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 		exports.PendingWait = PendingWait;
+ 		exports.SessionCreateError = SessionCreateError;
+ 		exports.SessionProvideChannel = SessionProvideChannel;
++		exports.SessionQueueMirror = SessionQueueMirror;
+ 		exports.SessionRuntime = SessionRuntime;
+ 		exports.SlotRegistry = SlotRegistry;
+ 		exports.WorkspaceCreateError = WorkspaceCreateError;

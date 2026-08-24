@@ -1,0 +1,28 @@
+diff --git a/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js b/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js
+--- a/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js
+@@ -762,8 +762,8 @@ function resolveSessionPreset(session) {
+ 	for (let index = session.events.length - 1; index >= 0; index -= 1) {
+ 		const event = session.events[index];
+-		if (event?.type === "agent-preset/selected") return event.data.agentPreset;
++		if (event?.type === "agent-preset/selected") return event.data.agentPreset === void 0 ? void 0 : "standard";
+ 	}
+-	return session.header.agentPreset;
++	return session.header.agentPreset === void 0 ? void 0 : "standard";
+ }
+ //#endregion
+ //#region lib/types/index.js
+diff --git a/node_modules/@deepseek-ai/dsh-agent-presets/lib/types/session.js b/node_modules/@deepseek-ai/dsh-agent-presets/lib/types/session.js
+--- a/node_modules/@deepseek-ai/dsh-agent-presets/lib/types/session.js
++++ b/node_modules/@deepseek-ai/dsh-agent-presets/lib/types/session.js
+@@ -26,8 +26,8 @@ export function resolveSessionPreset(session) {
+     for (let index = session.events.length - 1; index >= 0; index -= 1) {
+         const event = session.events[index];
+         if (event?.type === 'agent-preset/selected')
+-            return event.data.agentPreset;
++            return event.data.agentPreset === undefined ? undefined : 'standard';
+     }
+-    return session.header.agentPreset;
++    return session.header.agentPreset === undefined ? undefined : 'standard';
+ }
+ //# sourceMappingURL=session.js.map

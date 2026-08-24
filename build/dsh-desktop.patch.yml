@@ -1,17 +1,37 @@
-# DSH Desktop delegates directory selection to Electron's system dialog. Keep
+# Sherlock delegates directory selection to Electron's system dialog. Keep
 # the renderless client surface, but do not load the Koffi-based Host worker:
 # on Windows it can exit before reporting a result inside packaged Electron.
 - id: directory-picker
+  disabled: true
+
+# Sherlock is provider-neutral. Keep the user-configured providers, but do not
+# mount the upstream built-in DeepSeek adapter in the desktop profile.
+- id: llm-deepseek
+  disabled: true
+
+# Search follows the model selected for the active session. The provider reads
+# that route's user-configured endpoint and credential for each request, so the
+# desktop never requires or silently falls back to DEEPSEEK_API_KEY.
+- id: web
+  config:
+    searchProvider: sherlock-session-model
+
+- id: web-search-deepseek
   disabled: true
 
 - insert:
     - id: directory-picker-electron-desktop-surface
       name: '@deepseek-ai/dsh-client-ui-directory-picker-native'
 
-    # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
+    - id: web-search-session-model
+      name: dsh-web-search-session-model
+
+    # Sherlock owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.
-    - id: dsh-desktop-market-installer
+    - id: sherlock-market-installer
+      # Compatibility: this package name is part of the upstream Harness
+      # dependency closure; the plugin's visible identity remains Sherlock.
       name: dsh-desktop-market-installer
 
 # dsh-market normally offers to restart its own Node process after mutations.

@@ -20,6 +20,26 @@ interface TitlebarMountOptions {
   locale: 'en' | 'zh'
 }
 
+const nativeThemeSyncedDocuments = new WeakSet<Document>()
+
+export function mountNativeThemeSync(
+  options: Pick<TitlebarMountOptions, 'document' | 'ipcRenderer'>
+): void {
+  const { document, ipcRenderer } = options
+  if (!document.body || nativeThemeSyncedDocuments.has(document)) return
+  nativeThemeSyncedDocuments.add(document)
+
+  syncTheme(document, ipcRenderer)
+  const themeObserver = new MutationObserver(() => syncTheme(document, ipcRenderer))
+  themeObserver.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['data-ds-dark-theme']
+  })
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    syncTheme(document, ipcRenderer)
+  })
+}
+
 export function mountWindowsTitlebar(options: TitlebarMountOptions): void {
   const { document, ipcRenderer, locale } = options
   if (!document.body || document.getElementById(HOST_ID)) return
@@ -29,7 +49,7 @@ export function mountWindowsTitlebar(options: TitlebarMountOptions): void {
 
   const host = document.createElement('div')
   host.id = HOST_ID
-  host.setAttribute('aria-label', locale === 'zh' ? 'DSH Desktop 标题栏' : 'DSH Desktop title bar')
+  host.setAttribute('aria-label', locale === 'zh' ? 'Sherlock 标题栏' : 'Sherlock title bar')
   const shadow = host.attachShadow({ mode: 'closed' })
   const style = document.createElement('style')
   style.textContent = titlebarStyles
@@ -96,16 +116,7 @@ export function mountWindowsTitlebar(options: TitlebarMountOptions): void {
   bar.appendChild(safeArea)
   shadow.append(style, bar)
   document.body.appendChild(host)
-  syncTheme(document, ipcRenderer)
-
-  const themeObserver = new MutationObserver(() => syncTheme(document, ipcRenderer))
-  themeObserver.observe(document.body, {
-    attributes: true,
-    attributeFilter: ['data-ds-dark-theme', 'class', 'style']
-  })
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    syncTheme(document, ipcRenderer)
-  })
+  mountNativeThemeSync({ document, ipcRenderer })
 }
 
 function installLayout(document: Document): void {
@@ -262,12 +273,6 @@ function menuEntries(locale: 'en' | 'zh'): MenuEntry[] {
     { kind: 'label', label: 'HARNESS' },
     {
       kind: 'command',
-      command: 'connect-phone',
-      label: zh ? '连接手机…' : 'Connect Phone…',
-      shortcut: 'Ctrl+Shift+M'
-    },
-    {
-      kind: 'command',
       command: 'restart-harness',
       label: zh ? '重启 Harness' : 'Restart Harness',
       shortcut: 'Ctrl+Shift+R'
@@ -316,7 +321,7 @@ function menuEntries(locale: 'en' | 'zh'): MenuEntry[] {
     {
       kind: 'command',
       command: 'about',
-      label: zh ? '关于 DSH Desktop' : 'About DSH Desktop'
+      label: zh ? '关于 Sherlock' : 'About Sherlock'
     },
     { kind: 'command', command: 'quit', label: zh ? '退出' : 'Exit' }
   ]

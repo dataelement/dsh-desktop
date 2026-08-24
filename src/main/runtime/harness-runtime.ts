@@ -10,6 +10,8 @@ export interface HarnessRuntimeOptions {
   nodeExecutablePath: string
   nodeEntryPath: string
   dshPatchPath: string
+  bundledSkillDirectory: string
+  bundledWebSearchEntry: string
   dshHome: string
   logPath: string
   launchProcess(
@@ -36,7 +38,9 @@ export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
   platform: NodeJS.Platform = process.platform,
-  environment: NodeJS.ProcessEnv = process.env
+  environment: NodeJS.ProcessEnv = process.env,
+  bundledSkillDirectory?: string,
+  bundledWebSearchEntry?: string
 ): SpawnOptionsWithoutStdio {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -46,6 +50,12 @@ export function buildHarnessSpawnOptions(
     env: {
       ...parentEnvironment,
       DSH_HOME: dshHome,
+      ...(bundledSkillDirectory
+        ? { DSH_BUNDLED_SKILL_DIR: bundledSkillDirectory }
+        : {}),
+      ...(bundledWebSearchEntry
+        ? { DSH_DESKTOP_WEB_SEARCH_ENTRY: bundledWebSearchEntry }
+        : {}),
       NO_COLOR: '1',
       [pathKey]: environment[pathKey] ?? environment.PATH ?? ''
     },
@@ -121,7 +131,7 @@ export class HarnessRuntime {
       return
     }
     if (!existsSync(this.options.dshPatchPath)) {
-      this.setState('failed', `DSH Desktop patch was not found: ${this.options.dshPatchPath}`)
+      this.setState('failed', `Sherlock runtime patch was not found: ${this.options.dshPatchPath}`)
       return
     }
 
@@ -143,14 +153,21 @@ export class HarnessRuntime {
     this.writeLog(`\n[desktop] starting ${new Date().toISOString()}`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
     this.writeLog(`[desktop] endpoint ${url}`)
-    this.setState('starting', 'Starting DeepSeek Harness…')
+    this.setState('starting', 'Starting Sherlock…')
 
     let child: ChildProcessWithoutNullStreams
     try {
       child = this.options.launchProcess(
         this.options.nodeExecutablePath,
         args,
-        buildHarnessSpawnOptions(launchDirectory, this.options.dshHome)
+        buildHarnessSpawnOptions(
+          launchDirectory,
+          this.options.dshHome,
+          process.platform,
+          process.env,
+          this.options.bundledSkillDirectory,
+          this.options.bundledWebSearchEntry
+        )
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

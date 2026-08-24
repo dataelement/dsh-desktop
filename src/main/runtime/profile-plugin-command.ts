@@ -118,7 +118,7 @@ export async function removeProfilePluginWithDsh(
     options.pnpmEntryPath
   ]
   if (requiredPaths.some((path) => !existsSync(path))) {
-    return { ok: false, detail: 'The bundled DSH, Node.js, or pnpm runtime was not found.' }
+    return { ok: false, detail: 'The bundled Sherlock, Node.js, or pnpm runtime was not found.' }
   }
 
   const profileDirectory = join(options.dshHome, 'profiles', PROFILE)

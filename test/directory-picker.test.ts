@@ -11,7 +11,7 @@ describe('desktop Electron directory picker', () => {
     expect(main).toContain("ipcMain.handle('directory-picker:open'")
     expect(main).toContain('event.senderFrame !== mainWindow.webContents.mainFrame')
     expect(main).toContain('dialog.showOpenDialog(mainWindow')
-    expect(main).toContain("properties: ['openDirectory']")
+    expect(main).toContain("properties: ['openDirectory', 'createDirectory']")
     expect(main).toContain("app.commandLine.appendSwitch('lang', harnessLocale() === 'zh' ? 'zh-CN' : 'en-US')")
   })
 
@@ -39,7 +39,7 @@ describe('desktop Electron directory picker', () => {
     )
 
     expect(dependencyPatch).toContain('window.dshDesktopDirectoryPicker')
-    expect(dependencyPatch).toContain('DSH Desktop directory picker bridge is unavailable')
+    expect(dependencyPatch).toContain('Sherlock directory picker bridge is unavailable')
   })
 
   it('keeps the Host API proxy active when the legacy picker service is absent', async () => {

@@ -77,6 +77,37 @@ describe('Harness launch contract', () => {
     expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
   })
 
+  it('exposes Sherlock bundled skills to the Harness process', () => {
+    const options = buildHarnessSpawnOptions(
+      '/Users/tester/Library/Application Support/dsh-desktop/launch-root',
+      '/Users/tester/Library/Application Support/dsh-desktop/harness',
+      'darwin',
+      { PATH: '/usr/bin' },
+      '/Applications/Sherlock.app/Contents/Resources/sherlock-skills'
+    )
+
+    expect(options.env).toMatchObject({
+      DSH_BUNDLED_SKILL_DIR:
+        '/Applications/Sherlock.app/Contents/Resources/sherlock-skills'
+    })
+  })
+
+  it('exposes the bundled session-model web search entry to Harness', () => {
+    const options = buildHarnessSpawnOptions(
+      '/Users/tester/Library/Application Support/dsh-desktop/launch-root',
+      '/Users/tester/Library/Application Support/dsh-desktop/harness',
+      'darwin',
+      { PATH: '/usr/bin' },
+      '/Applications/Sherlock.app/Contents/Resources/sherlock-skills',
+      'file:///Applications/Sherlock.app/Contents/Resources/app/node_modules/dsh-web-search-session-model/index.js'
+    )
+
+    expect(options.env).toMatchObject({
+      DSH_DESKTOP_WEB_SEARCH_ENTRY:
+        'file:///Applications/Sherlock.app/Contents/Resources/app/node_modules/dsh-web-search-session-model/index.js'
+    })
+  })
+
   it('passes the internal-loader flag directly to bundled Node.js', () => {
     expect(
       buildNodeArguments(

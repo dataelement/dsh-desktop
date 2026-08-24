@@ -1,0 +1,32 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-log-export/lib/client.js b/node_modules/@deepseek-ai/dsh-session-log-export/lib/client.js
+index 80481e4..6b961f3 100644
+--- a/node_modules/@deepseek-ai/dsh-session-log-export/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-session-log-export/lib/client.js
+@@ -187,18 +187,7 @@ window.__ModuleLoader__.load({
+ 		* @returns the persistent Header action and Session-scoped dialog.
+ 		*/
+ 		function SessionLogDownloadHeaderAction(props) {
+-			const { sessionId, useSessionLogDownload, request } = props;
+-			const busy = useSessionLogDownload((state) => state.bySession[String(sessionId)])?.status === "downloading";
+-			return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsxs)("button", {
+-				type: "button",
+-				className: HeaderAction_module_css_default.sessionLogButton,
+-				disabled: busy,
+-				"aria-busy": busy,
+-				onClick: () => {
+-					request(sessionId);
+-				},
+-				children: [(0, react_jsx_runtime.jsx)("span", { children: "Session log" }), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconDownloadOutline16, { size: 12 })]
+-			}), (0, react_jsx_runtime.jsx)(SessionLogDownloadDialog, { ...props })] });
++			return (0, react_jsx_runtime.jsx)(SessionLogDownloadDialog, { ...props });
+ 		}
+ 		//#endregion
+ 		//#region lib/types/client/locales.js
+@@ -261,6 +250,7 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		exports.apply = apply;
+ 		exports.inject = inject;
++		exports.SessionLogDownloadHeaderAction = SessionLogDownloadHeaderAction;
+ 		return module.exports;
+ 	}
+ });

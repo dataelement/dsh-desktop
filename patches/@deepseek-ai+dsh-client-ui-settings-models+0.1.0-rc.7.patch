@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index 02caaf7..935dceb 100644
+index 02caaf7..8cb68d9 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -66,6 +66,14 @@ window.__ModuleLoader__.load({
@@ -209,7 +209,7 @@ index 02caaf7..935dceb 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2146,50 +2239,60 @@ window.__ModuleLoader__.load({
+@@ -2146,50 +2239,59 @@ window.__ModuleLoader__.load({
  		}
  		var DeepSeekOnboardingDialog_module_css_default = {
  			"description": "GL8Viq_description",
@@ -225,7 +225,6 @@ index 02caaf7..935dceb 100644
  		//#region lib/types/client/DeepSeekOnboardingDialog.js
 +		/** Mainstream catalog routes exposed during first-run setup. */
 +		const ONBOARDING_PROVIDERS = [
-+			{ provider: "deepseek-official", displayName: "DeepSeek", kind: "onboardingManufacturer" },
 +			{ provider: "openai", displayName: "OpenAI", kind: "onboardingManufacturer" },
 +			{ provider: "anthropic", displayName: "Anthropic", kind: "onboardingManufacturer" },
 +			{ provider: "google", displayName: "Google Gemini", kind: "onboardingManufacturer" },
@@ -261,7 +260,7 @@ index 02caaf7..935dceb 100644
  			const { complete, controller, useModels, api, t } = props;
  			const state = useModels((snapshot) => snapshot);
 -			const readiness = onboardingReadiness(state);
-+			const [selectedProvider, setSelectedProvider] = (0, react.useState)("deepseek-official");
++			const [selectedProvider, setSelectedProvider] = (0, react.useState)("openai");
 +			const choices = ONBOARDING_PROVIDERS.flatMap((choice) => {
 +				const row = state.rows.find((candidate) => candidate.entry.provider === choice.provider && candidate.entry.settingsNs !== "");
 +				return row === void 0 || state.namespaces.get(row.entry.settingsNs) === void 0 ? [] : [{
@@ -299,7 +298,7 @@ index 02caaf7..935dceb 100644
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2199,28 +2302,54 @@ window.__ModuleLoader__.load({
+@@ -2199,28 +2301,54 @@ window.__ModuleLoader__.load({
  			};
  			return (0, react_jsx_runtime.jsxs)(OnboardingModal, {
  				title: t("onboardingTitle"),
@@ -359,7 +358,28 @@ index 02caaf7..935dceb 100644
  				})]
  			});
  		}
-@@ -2457,6 +2586,8 @@ window.__ModuleLoader__.load({
+@@ -2307,17 +2435,17 @@ window.__ModuleLoader__.load({
+ 		* Bump only when the notice changes materially and every user should see it
+ 		* again. The acknowledgement is compared for exact equality.
+ 		*/
+-		const WELCOME_NOTICE_VERSION = "2026-08-13.1";
++		const WELCOME_NOTICE_VERSION = "2026-08-24.1";
+ 		/** The complete editable internal-testing notice in both supported GUI locales. */
+ 		const WELCOME_NOTICE_COPY = {
+ 			zh: {
+ 				title: "内测声明",
+-				body: "DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。",
++				body: "Sherlock 目前仍处于早期测试阶段，还有许多地方需要持续改进和打磨，欢迎反馈使用中遇到的问题和建议。Sherlock 的核心能力与基础 API 会继续快速迭代。\n\n我们期待与用户一起，在本地优先、开放、可复用、可组合的基础设施之上，探索个人知识与智能协作的更多可能。",
+ 				continueLabel: "继续"
+ 			},
+ 			en: {
+ 				title: "Internal Testing Notice",
+-				body: "DeepSeek Harness 0.1 remains in testing for Harness developers. Many areas need further improvement, and we welcome feedback from the developer community. DeepSeek Harness's core plugins and foundational APIs will continue to evolve rapidly over the coming months.\n\nWe look forward to exploring the limits of intelligence with developers around the world, building on open-source, open, reusable, and composable infrastructure. We welcome Harness developers everywhere to join the DSH plugin ecosystem.",
++				body: "Sherlock remains in early testing. Many areas still need improvement, and we welcome feedback about issues and ideas from real use. Sherlock's core capabilities and foundational APIs will continue to evolve rapidly.\n\nWe look forward to exploring new possibilities for personal knowledge and intelligent collaboration on local-first, open, reusable, and composable infrastructure.",
+ 				continueLabel: "Continue"
+ 			}
+ 		};
+@@ -2457,6 +2585,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -368,7 +388,7 @@ index 02caaf7..935dceb 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2511,6 +2642,8 @@ window.__ModuleLoader__.load({
+@@ -2511,6 +2641,8 @@ window.__ModuleLoader__.load({
  			fetchEmpty: "The provider listed no models. Add them by hand.",
  			fetchTitle: "Choose models to add",
  			fetchDescription: "These are the models this provider has available. Choose the ones to add.",
@@ -377,14 +397,14 @@ index 02caaf7..935dceb 100644
  			fetchAdopt: "Add selected",
  			customAdd: "Add a custom provider",
  			customTitle: "Custom provider",
-@@ -2530,10 +2663,14 @@ window.__ModuleLoader__.load({
+@@ -2530,10 +2662,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.en.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.en.continueLabel,
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
 -			onboardingTitle: "Add an API key to get started",
 -			onboardingDescription: "Configure the official DeepSeek provider to start building.",
 +			onboardingTitle: "Connect a model provider",
-+			onboardingDescription: "Choose a provider and enter its API key. DSH will enable that provider's built-in model catalog automatically.",
++			onboardingDescription: "Choose a provider and enter its API key. Sherlock will enable that provider's built-in model catalog automatically.",
 +			onboardingProvider: "Model provider",
 +			onboardingManufacturer: "Model developer",
 +			onboardingAggregator: "Model aggregation platform",
@@ -395,7 +415,7 @@ index 02caaf7..935dceb 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2553,6 +2690,8 @@ window.__ModuleLoader__.load({
+@@ -2553,6 +2689,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -404,7 +424,7 @@ index 02caaf7..935dceb 100644
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2607,6 +2746,8 @@ window.__ModuleLoader__.load({
+@@ -2607,6 +2745,8 @@ window.__ModuleLoader__.load({
  			fetchEmpty: "该提供方没有列出任何模型，请手动添加。",
  			fetchTitle: "选择要添加的模型",
  			fetchDescription: "以下是模型提供方的可用模型，勾选要添加的模型。",
@@ -413,14 +433,14 @@ index 02caaf7..935dceb 100644
  			fetchAdopt: "添加所选",
  			customAdd: "添加自定义提供方",
  			customTitle: "自定义提供方",
-@@ -2626,10 +2767,14 @@ window.__ModuleLoader__.load({
+@@ -2626,10 +2766,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.zh.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
  			welcomeError: "暂时无法保存确认状态，请重试。",
 -			onboardingTitle: "添加一个 API Key 开始使用",
 -			onboardingDescription: "配置 DeepSeek 官方模型，即可开始使用。",
 +			onboardingTitle: "接入模型提供方",
-+			onboardingDescription: "选择提供方并填写 API Key，DSH 会自动启用该提供方的内置模型目录。之后可在「设置 → 模型」中添加更多提供方。",
++			onboardingDescription: "选择提供方并填写 API Key，Sherlock 会自动启用该提供方的内置模型目录。之后可在「设置 → 模型」中添加更多提供方。",
 +			onboardingProvider: "选择模型提供方",
 +			onboardingManufacturer: "模型厂商",
 +			onboardingAggregator: "模型聚合平台",

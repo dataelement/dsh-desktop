@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import * as contextMenuModule from '../src/main/context-menu-template'
 import {
   buildContextMenuTemplate,
   isExternalWebUrl,
@@ -6,7 +7,7 @@ import {
   type ContextMenuState
 } from '../src/main/context-menu-template'
 
-function state(overrides: Partial<ContextMenuState> = {}): ContextMenuState {
+function state(overrides: Partial<ContextMenuState> & { finderPath?: string } = {}): ContextMenuState {
   return {
     isEditable: false,
     selectionText: '',
@@ -20,16 +21,18 @@ function state(overrides: Partial<ContextMenuState> = {}): ContextMenuState {
       canPaste: false,
       canSelectAll: true
     },
+    finderPath: '',
     ...overrides
-  }
+  } as ContextMenuState
 }
 
-function actions(): ContextMenuActions {
+function actions(): ContextMenuActions & { revealItem: ReturnType<typeof vi.fn> } {
   return {
     openLink: vi.fn(),
     copyLink: vi.fn(),
-    copyImage: vi.fn()
-  }
+    copyImage: vi.fn(),
+    revealItem: vi.fn()
+  } as ContextMenuActions & { revealItem: ReturnType<typeof vi.fn> }
 }
 
 describe('conversation context menu', () => {
@@ -113,6 +116,34 @@ describe('conversation context menu', () => {
 
     template[0]?.click?.({} as never, undefined, {} as never)
     expect(callbacks.copyImage).toHaveBeenCalledOnce()
+  })
+
+  it('offers Finder reveal for a recognized local path and invokes the exact item', () => {
+    const callbacks = actions()
+    const template = buildContextMenuTemplate(
+      state({ selectionText: 'report.pdf', finderPath: '/tmp/project/report.pdf' }),
+      'zh',
+      callbacks
+    )
+
+    expect(template[0]?.label).toBe('在 Finder 中显示')
+    template[0]?.click?.({} as never, undefined, {} as never)
+    expect(callbacks.revealItem).toHaveBeenCalledWith('/tmp/project/report.pdf')
+  })
+
+  it('resolves only existing absolute paths from selected text or clicked-element metadata', () => {
+    const resolver = (contextMenuModule as Record<string, unknown>).resolveFinderPath
+    expect(resolver).toBeTypeOf('function')
+    const exists = (candidate: string): boolean => candidate === '/Users/me/Project/index.html'
+
+    expect((resolver as (values: string[], exists: (path: string) => boolean) => string)([
+      'index.html',
+      '打开 /Users/me/Project/index.html',
+    ], exists)).toBe('/Users/me/Project/index.html')
+    expect((resolver as (values: string[], exists: (path: string) => boolean) => string)([
+      'index.html',
+      'https://example.com/index.html',
+    ], exists)).toBe('')
   })
 
   it('recognizes only HTTP and HTTPS as external web URLs', () => {

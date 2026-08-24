@@ -37,7 +37,7 @@ describe('plugin recovery view model', () => {
 
   it.each([
     ['cannot resolve profile bundle example', '插件没有完整安装'],
-    ['package declares no dsh.bundle', '安装的包不是兼容的 DSH 插件'],
+    ['package declares no dsh.bundle', '安装的包不是兼容的 Sherlock 插件'],
     ['failed to import loader entry example', '插件代码加载失败'],
     ['duplicate loader entry id: storage', '插件注册了重复的服务组件'],
     ['single slot "conversation.hero.workspace.directoryFlow" already has a registration at priority 0', '插件存在界面插槽冲突']

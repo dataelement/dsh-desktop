@@ -1,20 +1,32 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-index 83590ee..fa47077 100644
+index 83590ee..79511b4 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-@@ -139,7 +139,7 @@ window.__ModuleLoader__.load({
+@@ -137,19 +137,39 @@ window.__ModuleLoader__.load({
+ 		* @returns The resolver MarkdownText consumes; the full path rides `title`,
+ 		* the same disambiguator the row's chips carry.
  		*/
- 		function producedFileMentions(paths, openFile, label) {
+-		function producedFileMentions(paths, openFile, label) {
++		function producedFileMentions(paths, cwd, openFile, label) {
  			return { resolve(value) {
 -				const path = paths.includes(value) ? value : onlyPathWithBasename(paths, value);
 +				const path = paths.includes(value) ? value : onlyPathWithBasename(paths, value) ?? localPathReference(value);
  				if (path === void 0) return void 0;
  				return {
  					open: () => {
-@@ -150,6 +150,21 @@ window.__ModuleLoader__.load({
+ 						openFile(path);
+ 					},
+ 					label: label(path),
+-					title: path
++					title: absoluteMentionPath(cwd, path)
  				};
  			} };
  		}
++		/** Resolve a mention's display path against the active session workspace. */
++		function absoluteMentionPath(cwd, path) {
++			if (/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(path) || cwd === void 0 || cwd === "") return path;
++			return `${cwd.replace(/[\\/]+$/, "")}/${path.replace(/^\.?[\\/]+/, "")}`;
++		}
 +		/**
 +		* Resolve Codex-style local path references that were not produced by a tool
 +		* in the current turn. Keep bare identifiers inert: without a slash, an
@@ -33,13 +45,13 @@ index 83590ee..fa47077 100644
  		/** The single produced path whose basename is exactly `value`, else undefined. */
  		function onlyPathWithBasename(paths, value) {
  			const matches = paths.filter((path) => basename(path) === value);
-@@ -357,8 +372,7 @@ window.__ModuleLoader__.load({
+@@ -357,8 +377,7 @@ window.__ModuleLoader__.load({
  			const t = ctx.locale.bind(NS);
  			ctx.provide("chatFileMentions", { forClosing(owner) {
  				const paths = selectProducedFiles(owner);
 -				if (paths === null) return void 0;
 -				return producedFileMentions(paths, owner.openFile, (path) => t("produced.open", { name: path }));
-+				return producedFileMentions(paths ?? [], owner.openFile, (path) => t("produced.open", { name: path }));
++				return producedFileMentions(paths ?? [], owner.cwd, owner.openFile, (path) => t("produced.open", { name: path }));
  			} });
  		}
  		//#endregion

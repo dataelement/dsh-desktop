@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import {
@@ -10,8 +11,7 @@ import {
   Menu,
   nativeTheme,
   shell,
-  type IpcMainInvokeEvent,
-  type MessageBoxOptions
+  type IpcMainInvokeEvent
 } from 'electron'
 import {
   extractDuplicateLoaderEntryId,
@@ -21,7 +21,6 @@ import {
   HarnessRuntime
 } from './runtime/harness-runtime'
 import { removeProfilePluginWithDsh } from './runtime/profile-plugin-command'
-import { LanMobileBridge } from './mobile/lan-mobile-bridge'
 import { secureWindow } from './security'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
@@ -39,12 +38,15 @@ import {
 import type { RuntimeSnapshot } from '../shared/contracts'
 import { resolveHarnessLocale } from './application-locale'
 import { installContextMenu } from './context-menu'
+import { isDeveloperModeEnabled, setDeveloperModeEnabled } from './developer-mode-state'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
   isDesktopMenuCommand,
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
+import { developerModeArgument } from '../shared/developer-mode'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
+import { resolveDesktopIdentity } from './app-identity'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -55,9 +57,7 @@ const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
 ])
 
 let mainWindow: BrowserWindow | undefined
-let mobileWindow: BrowserWindow | undefined
 let runtime: HarnessRuntime
-let mobileBridge: LanMobileBridge
 let launchDirectory: string
 let quitting = false
 let failureRecoveryVisible = false
@@ -67,6 +67,7 @@ let mainWindowNavigationVersion = 0
 let rendererPluginFailureLogs: string[] = []
 let pluginRecoveryRemovedPlugins: string[] = []
 let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
+let harnessThemePreferenceSyncTimer: ReturnType<typeof setInterval> | undefined
 
 function cancelPluginRecoverySessionReset(): void {
   if (pluginRecoveryResetTimer) clearTimeout(pluginRecoveryResetTimer)
@@ -127,8 +128,30 @@ function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOption
   }
 }
 
+function startHarnessThemePreferenceSync(): void {
+  if (harnessThemePreferenceSyncTimer) return
+  const sync = (): void => {
+    const preference = harnessThemePreference()
+    if (nativeTheme.themeSource !== preference) nativeTheme.themeSource = preference
+  }
+  sync()
+  harnessThemePreferenceSyncTimer = setInterval(sync, 250)
+  harnessThemePreferenceSyncTimer.unref?.()
+}
+
+function stopHarnessThemePreferenceSync(): void {
+  if (harnessThemePreferenceSyncTimer) clearInterval(harnessThemePreferenceSyncTimer)
+  harnessThemePreferenceSyncTimer = undefined
+}
+
 function applyWindowChromeTheme(window: BrowserWindow, isDark: boolean): void {
   if (window.isDestroyed()) return
+  if (process.platform === 'darwin') {
+    window.setBackgroundColor('#00000000')
+    window.setVibrancy('menu')
+    return
+  }
+
   window.setBackgroundColor(isDark ? '#141416' : '#ffffff')
   if (process.platform === 'win32') {
     window.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
@@ -136,18 +159,17 @@ function applyWindowChromeTheme(window: BrowserWindow, isDark: boolean): void {
 }
 
 function configureAppIdentity(): void {
-  if (developmentBuild) {
-    app.setName('DSH Desktop Dev')
-    app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop-dev'))
-    return
-  }
-
-  app.setName('DSH Desktop')
   // Keep the historical lowercase directory stable across product-name and
   // branding changes. Harness stores workspaces, sessions, credentials, and
   // custom presets below userData, so deriving this path from app.getName()
   // would make an ordinary upgrade look like a fresh installation.
-  app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
+  const identity = resolveDesktopIdentity(
+    app.getPath('appData'),
+    developmentBuild,
+    app.commandLine.getSwitchValue('sherlock-user-data-dir')
+  )
+  app.setName(identity.name)
+  app.setPath('userData', identity.userData)
 }
 
 async function syncNativeTheme(window: BrowserWindow): Promise<void> {
@@ -171,7 +193,7 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
             zIndex: '18',
             top: '0',
             left: '80px',
-            right: '220px',
+            right: 'max(220px, var(--dsh-sidebar-width, 0px))',
             height: '24px',
             background: 'transparent',
             pointerEvents: 'auto',
@@ -230,21 +252,22 @@ function desktopResourcePath(name: string): string {
   return app.isPackaged ? join(process.resourcesPath, name) : join(app.getAppPath(), 'build', name)
 }
 
+function bundledSkillDirectory(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'sherlock-skills')
+    : join(app.getAppPath(), 'skills')
+}
+
+function bundledWebSearchEntry(): string {
+  return pathToFileURL(
+    join(app.getAppPath(), 'node_modules', 'dsh-web-search-session-model', 'index.js')
+  ).href
+}
+
 function desktopIconPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'icon.png')
     : join(app.getAppPath(), 'build', 'app-icon.png')
-}
-
-function dshBrandLogoPath(variant: 'light' | 'dark'): string {
-  return join(
-    app.getAppPath(),
-    'node_modules',
-    '@deepseek-ai',
-    'dsh-web-frontend',
-    'dist',
-    `dsh-desktop-logo-${variant}.png`
-  )
 }
 
 function harnessLocale(): 'en' | 'zh' {
@@ -310,6 +333,7 @@ function installPluginRecoveryNavigation(window: BrowserWindow): void {
 }
 
 function createWindow(): BrowserWindow {
+  const isMacOS = process.platform === 'darwin'
   const isWindows = process.platform === 'win32'
   const window = new BrowserWindow({
     width: 1380,
@@ -327,11 +351,20 @@ function createWindow(): BrowserWindow {
           autoHideMenuBar: true
         }
       : {}),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#f8f8f6',
+    ...(isMacOS
+      ? {
+          vibrancy: 'menu' as const,
+          visualEffectState: 'active' as const,
+          backgroundColor: '#00000000'
+        }
+      : {
+          backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#f8f8f6'
+        }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(import.meta.dirname, '../preload/index.cjs'),
+      additionalArguments: [developerModeArgument(isDeveloperModeEnabled(app.getPath('userData')))],
       sandbox: true,
       webSecurity: true
     }
@@ -421,7 +454,7 @@ function registerHarnessHandlers(): void {
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-      throw new Error('Harness restart is only available from the DSH Desktop window.')
+      throw new Error('Harness restart is only available from the Sherlock window.')
     }
     if (runtime.snapshot().phase !== 'ready') {
       throw new Error('Harness is not ready to restart.')
@@ -435,7 +468,7 @@ function registerHarnessHandlers(): void {
   ipcMain.handle('desktop-menu:execute', async (event, command: unknown) => {
     assertTrustedMainWindowEvent(event)
     if (!isDesktopMenuCommand(command)) {
-      throw new Error('Unknown DSH Desktop menu command.')
+      throw new Error('Unknown Sherlock menu command.')
     }
     await executeDesktopMenuCommand(command)
     return { ok: true }
@@ -445,11 +478,24 @@ function registerHarnessHandlers(): void {
   ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
     assertTrustedMainWindowEvent(event)
     if (typeof isDark !== 'boolean') {
-      throw new Error('The DSH Desktop titlebar theme must be a boolean.')
+      throw new Error('The Sherlock titlebar theme must be a boolean.')
     }
-    if (process.platform === 'win32' && mainWindow) {
+    if (
+      (process.platform === 'win32' || process.platform === 'darwin') &&
+      mainWindow
+    ) {
       applyWindowChromeTheme(mainWindow, isDark)
     }
+    return { ok: true }
+  })
+
+  ipcMain.removeHandler('filesystem:show-item-in-folder')
+  ipcMain.handle('filesystem:show-item-in-folder', (event, path: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (typeof path !== 'string' || !isAbsolute(path) || !existsSync(path)) {
+      throw new Error('Finder reveal requires an existing absolute filesystem path.')
+    }
+    shell.showItemInFolder(path)
     return { ok: true }
   })
 }
@@ -461,7 +507,7 @@ function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
     event.sender !== mainWindow.webContents ||
     event.senderFrame !== mainWindow.webContents.mainFrame
   ) {
-    throw new Error('This action is only available from the main DSH Desktop window.')
+    throw new Error('This action is only available from the main Sherlock window.')
   }
 }
 
@@ -471,9 +517,6 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<v
   const contents = window.webContents
 
   switch (command) {
-    case 'connect-phone':
-      await showMobilePairing()
-      break
     case 'restart-harness':
       await restartHarness()
       break
@@ -522,9 +565,9 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<v
     case 'about':
       await dialog.showMessageBox(window, {
         type: 'info',
-        title: 'DSH Desktop',
-        message: `DSH Desktop ${app.getVersion()}`,
-        detail: 'A desktop application for DeepSeek Harness.',
+        title: 'Sherlock',
+        message: `Sherlock ${app.getVersion()}`,
+        detail: 'A local-first desktop knowledge assistant.',
         buttons: ['OK'],
         noLink: true
       })
@@ -574,7 +617,7 @@ async function waitForPluginRecoveryAction(options: {
 
 function showUnexpectedError(error: unknown): void {
   const message = error instanceof Error ? error.stack ?? error.message : String(error)
-  dialog.showErrorBox('DSH Desktop encountered an error', message)
+  dialog.showErrorBox('Sherlock encountered an error', message)
 }
 
 async function showPluginRecovery(options?: {
@@ -715,12 +758,6 @@ function installMenu(): void {
       label: 'Harness',
       submenu: [
         {
-          label: isChinese ? '连接手机…' : 'Connect Phone…',
-          accelerator: 'CmdOrCtrl+Shift+M',
-          click: () => void showMobilePairing().catch(showUnexpectedError)
-        },
-        { type: 'separator' },
-        {
           label: isChinese ? '重启 Harness' : 'Restart Harness',
           accelerator: 'CmdOrCtrl+Shift+R',
           click: () => void restartHarness().catch(showUnexpectedError)
@@ -777,68 +814,19 @@ function installMenu(): void {
   }
 }
 
-async function showMobilePairing(): Promise<void> {
-  if (runtime.snapshot().phase !== 'ready') {
-    const options: MessageBoxOptions = {
-      type: 'info',
-      message: 'Harness is still starting.',
-      detail: 'Wait until DSH Desktop is ready, then connect your phone again.',
-      buttons: ['OK']
-    }
-    await (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options))
-    return
-  }
-
-  const snapshot = await mobileBridge.start()
-  if (!snapshot.desktopUrl || !snapshot.pairingUrl) {
-    await mobileBridge.stop()
-    const options: MessageBoxOptions = {
-      type: 'warning',
-      message: 'No private Wi-Fi network was found.',
-      detail: 'Connect this computer to the same private Wi-Fi as your phone and try again.',
-      buttons: ['OK']
-    }
-    await (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options))
-    return
-  }
-
-  if (mobileWindow && !mobileWindow.isDestroyed()) mobileWindow.destroy()
-  nativeTheme.themeSource = harnessThemePreference()
-  mobileWindow = new BrowserWindow({
-    width: 560,
-    height: 700,
-    minWidth: 420,
-    minHeight: 560,
-    title: harnessLocale() === 'zh' ? '连接手机' : 'Connect Phone',
-    icon: desktopIconPath(),
-    parent: mainWindow,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#ffffff',
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true
-    }
-  })
-  secureWindow(mobileWindow)
-  mobileWindow.on('closed', () => {
-    mobileWindow = undefined
-  })
-  await mobileWindow.loadURL(snapshot.desktopUrl)
-  mobileWindow.show()
-  mobileWindow.focus()
-}
-
 async function bootstrap(): Promise<void> {
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
+  if (process.platform === 'darwin') startHarnessThemePreferenceSync()
   createWindow()
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),
     nodeExecutablePath: bundledNodePath(),
     nodeEntryPath: harnessNodeEntryPath(),
     dshPatchPath: desktopResourcePath('dsh-desktop.patch.yml'),
+    bundledSkillDirectory: bundledSkillDirectory(),
+    bundledWebSearchEntry: bundledWebSearchEntry(),
     dshHome: join(app.getPath('userData'), 'harness'),
     logPath: join(app.getPath('logs'), 'harness.log'),
     launchProcess: (executablePath, args, options) => spawn(executablePath, args, options),
@@ -851,15 +839,13 @@ async function bootstrap(): Promise<void> {
     }
   })
   registerHarnessHandlers()
-  mobileBridge = new LanMobileBridge({
-    harnessUrl: () => runtime.snapshot().url,
-    locale: harnessLocale,
-    brandLogoPaths: {
-      light: dshBrandLogoPath('light'),
-      dark: dshBrandLogoPath('dark')
-    },
-    appIconPath: desktopIconPath(),
-    port: developmentBuild ? 43128 : 43127
+  ipcMain.handle('developer-mode:set-enabled', (event, enabled: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (typeof enabled !== 'boolean') {
+      throw new Error('Developer mode state must be a boolean.')
+    }
+    setDeveloperModeEnabled(app.getPath('userData'), enabled)
+    return { ok: true }
   })
   ipcMain.handle('directory-picker:open', async (event) => {
     if (
@@ -873,12 +859,10 @@ async function bootstrap(): Promise<void> {
 
     const result = await dialog.showOpenDialog(mainWindow, {
       title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
-      properties: ['openDirectory']
+      properties: ['openDirectory', 'createDirectory']
     })
     return result.canceled ? null : result.filePaths[0] ?? null
   })
-  ipcMain.handle('mobile:open-pairing', () => showMobilePairing())
-  ipcMain.handle('mobile:status', () => ({ connected: mobileBridge.snapshot().connected }))
   ipcMain.handle('harness:show-log', () => {
     shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
   })
@@ -958,7 +942,8 @@ if (!singleInstance) {
     if (quitting || !runtime) return
     event.preventDefault()
     quitting = true
+    stopHarnessThemePreferenceSync()
     stopUpdateManager()
-    void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
+    void runtime.stop().finally(() => app.quit())
   })
 }
