@@ -5,6 +5,9 @@ const BUTTON_ID = 'sherlock-sidebar-update-button'
 const PANEL_ID = 'sherlock-sidebar-update-panel'
 const STYLE_ID = 'sherlock-sidebar-update-style'
 const FOOTER_SELECTOR = '[data-dsh-sidebar-footer]'
+const SETTINGS_SLOT_SELECTOR =
+  '[data-dsh-sidebar-root] [data-slot="sidebar.settings"]'
+const UPDATE_FOOTER_ATTRIBUTE = 'data-sherlock-update-footer'
 
 export interface SidebarUpdateCallbacks {
   download(): void | Promise<unknown>
@@ -24,7 +27,7 @@ export class SidebarUpdateControl {
   ) {}
 
   mount(): boolean {
-    const footer = this.document.querySelector<HTMLElement>(FOOTER_SELECTOR)
+    const footer = this.resolveFooter()
     if (!footer) return false
 
     if (this.button?.isConnected && this.button.parentElement === footer) return true
@@ -52,6 +55,23 @@ export class SidebarUpdateControl {
 
     if (this.status) this.render(this.status)
     return true
+  }
+
+  private resolveFooter(): HTMLElement | null {
+    const explicitFooter = this.document.querySelector<HTMLElement>(FOOTER_SELECTOR)
+    if (explicitFooter) {
+      explicitFooter.setAttribute(UPDATE_FOOTER_ATTRIBUTE, '')
+      return explicitFooter
+    }
+
+    const settingsSlot = this.document.querySelector<HTMLElement>(
+      SETTINGS_SLOT_SELECTOR
+    )
+    const settingsArea = settingsSlot?.parentElement
+    if (!settingsArea) return null
+
+    settingsArea.setAttribute(UPDATE_FOOTER_ATTRIBUTE, '')
+    return settingsArea
   }
 
   render(status: UpdateStatus): void {
@@ -210,6 +230,11 @@ const retryIcon = `
 
 const styles = `
   #${BUTTON_ID}[hidden], #${PANEL_ID}[hidden] { display: none !important; }
+  [${UPDATE_FOOTER_ATTRIBUTE}] {
+    display: flex !important;
+    align-items: center;
+    position: relative;
+  }
   #${BUTTON_ID} {
     appearance: none;
     box-sizing: border-box;

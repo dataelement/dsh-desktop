@@ -11,6 +11,24 @@ function fixture(): Document {
   return window.document as unknown as Document
 }
 
+function currentHarnessFixture(): Document {
+  const window = new Window()
+  window.document.body.innerHTML = `
+    <aside data-dsh-sidebar-root>
+      <div class="hHd-Xa_footArea">
+        <div class="hHd-Xa_footerActions">
+          <div data-slot="sidebar.footer.action" style="display: contents"></div>
+        </div>
+        <div class="hHd-Xa_settingsArea">
+          <div data-slot="sidebar.settings" style="display: contents">
+            <button id="settings">设置</button>
+          </div>
+        </div>
+      </div>
+    </aside>`
+  return window.document as unknown as Document
+}
+
 function actions() {
   return {
     download: vi.fn(),
@@ -33,6 +51,19 @@ describe('Sherlock sidebar update control', () => {
     expect(button.hidden).toBe(true)
     expect(document.querySelectorAll('#sherlock-sidebar-update-button')).toHaveLength(1)
     expect(footer.firstElementChild?.id).toBe('settings')
+  })
+
+  it('mounts beside Settings in the current Harness sidebar structure', () => {
+    const document = currentHarnessFixture()
+    const control = new SidebarUpdateControl(document, 'zh', actions())
+
+    expect(control.mount()).toBe(true)
+
+    const settingsArea = document.querySelector('.hHd-Xa_settingsArea')!
+    const button = settingsArea.lastElementChild as HTMLButtonElement
+    expect(settingsArea.hasAttribute('data-sherlock-update-footer')).toBe(true)
+    expect(button.id).toBe('sherlock-sidebar-update-button')
+    expect(settingsArea.querySelector('#settings')).not.toBeNull()
   })
 
   it('shows the blue download action only for an available update', () => {
