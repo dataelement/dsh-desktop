@@ -240,8 +240,10 @@ const styles = `
     box-sizing: border-box;
     width: 36px;
     height: 36px;
-    margin-left: auto;
-    flex: 0 0 36px;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
     display: grid;
     place-items: center;
     border: 0;

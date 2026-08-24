@@ -66,6 +66,20 @@ describe('Sherlock sidebar update control', () => {
     expect(settingsArea.querySelector('#settings')).not.toBeNull()
   })
 
+  it('anchors the update control inside the Harness settings area', () => {
+    const document = currentHarnessFixture()
+    const control = new SidebarUpdateControl(document, 'zh', actions())
+
+    control.mount()
+
+    const styles = document.querySelector<HTMLStyleElement>(
+      '#sherlock-sidebar-update-style'
+    )!.textContent
+    expect(styles).toMatch(
+      /#sherlock-sidebar-update-button\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*bottom:\s*0;/s
+    )
+  })
+
   it('shows the blue download action only for an available update', () => {
     const document = fixture()
     const callbacks = actions()
