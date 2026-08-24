@@ -1,4 +1,5 @@
 import { execFile as execFileCallback } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -6,6 +7,7 @@ import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parse, stringify } from 'yaml'
 import { buildCloudflareReleasePlan } from '../scripts/cloudflare-release-plan.mjs'
+import { refreshMacUpdateMetadata } from '../scripts/refresh-mac-update-metadata.mjs'
 
 const temporaryRoots: string[] = []
 const execFile = promisify(execFileCallback)
@@ -53,6 +55,43 @@ async function fixture(): Promise<{ assets: string; prepared: string }> {
 }
 
 describe('Cloudflare release plan', () => {
+  it('refreshes the signed DMG hash and size before publishing metadata', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sherlock-mac-metadata-'))
+    temporaryRoots.push(root)
+    const dmg = path.join(root, 'sherlock-mac-arm64.dmg')
+    const metadataPath = path.join(root, 'latest-mac.yml')
+    const signedDmg = Buffer.from('signed dmg contents')
+    await writeFile(dmg, signedDmg)
+    await writeFile(
+      metadataPath,
+      stringify({
+        version: '0.6.0',
+        files: [
+          { url: 'sherlock-mac-arm64.zip', sha512: 'zip-sha', size: 7 },
+          { url: 'sherlock-mac-arm64.dmg', sha512: 'pre-signing-sha', size: 1 }
+        ],
+        path: 'sherlock-mac-arm64.zip',
+        sha512: 'zip-sha'
+      })
+    )
+
+    await refreshMacUpdateMetadata({ metadataPath, dmgPath: dmg })
+
+    const metadata = parse(await readFile(metadataPath, 'utf8')) as {
+      files: Array<{ url: string; sha512: string; size: number }>
+    }
+    expect(metadata.files[0]).toEqual({
+      url: 'sherlock-mac-arm64.zip',
+      sha512: 'zip-sha',
+      size: 7
+    })
+    expect(metadata.files[1]).toEqual({
+      url: 'sherlock-mac-arm64.dmg',
+      sha512: createHash('sha512').update(signedDmg).digest('base64'),
+      size: signedDmg.length
+    })
+  })
+
   it('uploads immutable assets before stable downloads and metadata promotion', async () => {
     const { assets, prepared } = await fixture()
     const plan = await buildCloudflareReleasePlan({

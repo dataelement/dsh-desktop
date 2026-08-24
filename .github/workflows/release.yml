@@ -76,6 +76,8 @@ jobs:
           dmg_path="dist/sherlock-mac-arm64.dmg"
           test -n "$CSC_IDENTITY" || { echo "::error::Sherlock update identity not found"; exit 1; }
           codesign --keychain "$CSC_KEYCHAIN" --sign "$CSC_IDENTITY" --timestamp=none --force "$dmg_path"
+      - name: Refresh Apple Silicon update metadata after DMG signing
+        run: node scripts/refresh-mac-update-metadata.mjs --metadata dist/latest-mac-arm64.yml --dmg dist/sherlock-mac-arm64.dmg
       - name: Remove temporary signing keychain
         if: always() && startsWith(github.ref, 'refs/tags/v')
         env:
@@ -167,6 +169,8 @@ jobs:
           dmg_path="dist/sherlock-mac-x64.dmg"
           test -n "$CSC_IDENTITY" || { echo "::error::Sherlock update identity not found"; exit 1; }
           codesign --keychain "$CSC_KEYCHAIN" --sign "$CSC_IDENTITY" --timestamp=none --force "$dmg_path"
+      - name: Refresh Intel update metadata after DMG signing
+        run: node scripts/refresh-mac-update-metadata.mjs --metadata dist/latest-mac-x64.yml --dmg dist/sherlock-mac-x64.dmg
       - name: Remove temporary signing keychain
         if: always() && startsWith(github.ref, 'refs/tags/v')
         env:

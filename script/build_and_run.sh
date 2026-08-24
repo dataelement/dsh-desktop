@@ -77,6 +77,9 @@ case "$mode" in
       --timestamp=none \
       --force \
       "$project_root/dist/sherlock-mac-arm64.dmg"
+    node "$project_root/scripts/refresh-mac-update-metadata.mjs" \
+      --metadata "$project_root/dist/latest-mac.yml" \
+      --dmg "$project_root/dist/sherlock-mac-arm64.dmg"
     codesign --verify --verbose=2 "$project_root/dist/sherlock-mac-arm64.dmg"
     test -d "$formal_app" || {
       echo "Formal Sherlock app was not built at: $formal_app" >&2

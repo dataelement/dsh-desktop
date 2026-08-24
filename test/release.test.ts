@@ -180,6 +180,7 @@ describe('GitHub release contract', () => {
     expect(buildAndRun).toContain('--timestamp=none')
     expect(buildAndRun).toContain('codesign --verify --verbose=2')
     expect(buildAndRun).toContain('dist/sherlock-mac-arm64.dmg')
+    expect(buildAndRun).toContain('scripts/refresh-mac-update-metadata.mjs')
   })
 
   it('packages an isolated development channel from the current workspace', async () => {
@@ -258,6 +259,7 @@ describe('GitHub release contract', () => {
     expect(workflow.match(/CSC_NAME: \$\{\{ steps\.signing_keychain\.outputs\.identity \}\}/g)).toHaveLength(2)
     expect(workflow.match(/codesign --verify --deep --strict/g)).toHaveLength(2)
     expect(workflow.match(/codesign --keychain .*--timestamp=none --force/g)).toHaveLength(2)
+    expect(workflow.match(/refresh-mac-update-metadata\.mjs/g)).toHaveLength(2)
     expect(workflow.match(/CSC_IDENTITY_AUTO_DISCOVERY: 'false'/g)).toHaveLength(2)
     expect(workflow).toContain('npm run release:cloudflare')
     expect(workflow).toContain('--bucket sherlock-releases')
