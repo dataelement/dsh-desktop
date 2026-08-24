@@ -77,6 +77,10 @@ describe('GitHub release contract', () => {
       to: 'dsh-loader.gif'
     })
     expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/dsh-loader-dark.gif',
+      to: 'dsh-loader-dark.gif'
+    })
+    expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/dsh-desktop.patch.yml',
       to: 'dsh-desktop.patch.yml'
     })
@@ -111,8 +115,14 @@ describe('GitHub release contract', () => {
 
     expect(main).toContain("desktopResourcePath('splash.html')")
     expect(main).toContain('await showSplash()')
+    expect(main).toContain("query: { theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }")
+    expect(main).toContain('nativeTheme.themeSource = harnessThemePreference()')
     expect(splash).toContain('Starting DSH Desktop')
     expect(splash).toContain('src="dsh-loader.gif"')
+    expect(splash).toContain('src="dsh-loader-dark.gif"')
+    expect(splash).toContain("document.documentElement.dataset.theme = splashTheme === 'dark'")
+    expect(splash).toContain(":root[data-theme='dark']")
+    expect(splash).not.toContain('filter: invert(1)')
     expect(splash).not.toContain('class="track"')
     expect(patch).not.toMatch(/id:\s*directory-picker/)
     expect(patch).not.toContain("name: '@deepseek-ai/dsh-host-directory-picker-native'")

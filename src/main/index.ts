@@ -52,6 +52,7 @@ import { installContextMenu } from './context-menu'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
   isDesktopMenuCommand,
+  isZoomMenuCommand,
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
@@ -460,7 +461,9 @@ async function showSplash(): Promise<void> {
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const navigationVersion = ++mainWindowNavigationVersion
   window.webContents.stop()
-  await window.loadFile(desktopResourcePath('splash.html'))
+  await window.loadFile(desktopResourcePath('splash.html'), {
+    query: { theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }
+  })
   if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
   window.show()
   window.focus()
@@ -571,8 +574,14 @@ function registerHarnessHandlers(): void {
     if (!isDesktopMenuCommand(command)) {
       throw new Error('Unknown DSH Desktop menu command.')
     }
-    await executeDesktopMenuCommand(command)
-    return { ok: true }
+    const zoomFactor = await executeDesktopMenuCommand(command)
+    return zoomFactor === undefined ? { ok: true } : { ok: true, zoomFactor }
+  })
+
+  ipcMain.removeHandler('desktop-menu:get-zoom-factor')
+  ipcMain.handle('desktop-menu:get-zoom-factor', (event) => {
+    assertTrustedMainWindowEvent(event)
+    return { zoomFactor: mainWindow?.webContents.getZoomFactor() ?? 1 }
   })
 
   ipcMain.removeHandler('desktop-titlebar:set-theme')
@@ -619,7 +628,7 @@ async function showAbout(window: BrowserWindow): Promise<void> {
   if (result.response === 0) await checkForUpdates(true)
 }
 
-async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<void> {
+async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<number | undefined> {
   const window = mainWindow
   if (!window || window.isDestroyed()) return
   const contents = window.webContents
@@ -680,6 +689,8 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<v
       app.quit()
       break
   }
+
+  return isZoomMenuCommand(command) ? contents.getZoomFactor() : undefined
 }
 
 async function waitForPluginRecoveryAction(options: {
@@ -1032,6 +1043,7 @@ async function bootstrap(): Promise<void> {
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
+  nativeTheme.themeSource = harnessThemePreference()
   createWindow()
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),

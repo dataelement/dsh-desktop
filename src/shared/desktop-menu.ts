@@ -25,6 +25,14 @@ export type DesktopMenuCommand = (typeof desktopMenuCommands)[number]
 
 const desktopMenuCommandSet = new Set<string>(desktopMenuCommands)
 
+export function isZoomMenuCommand(command: DesktopMenuCommand): boolean {
+  return command === 'zoom-reset' || command === 'zoom-in' || command === 'zoom-out'
+}
+
+export function formatZoomPercentage(zoomFactor: number): string {
+  return `${Math.round(zoomFactor * 100)}%`
+}
+
 export function isDesktopMenuCommand(value: unknown): value is DesktopMenuCommand {
   return typeof value === 'string' && desktopMenuCommandSet.has(value)
 }

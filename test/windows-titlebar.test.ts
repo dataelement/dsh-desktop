@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
   desktopMenuCommands,
+  formatZoomPercentage,
   isDesktopMenuCommand
 } from '../src/shared/desktop-menu'
 
@@ -52,8 +53,24 @@ describe('Windows titlebar menu', () => {
     expect(isDesktopMenuCommand('run-shell-command')).toBe(false)
     expect(isDesktopMenuCommand({ command: 'quit' })).toBe(false)
     expect(main).toContain("ipcMain.handle('desktop-menu:execute'")
+    expect(main).toContain("ipcMain.handle('desktop-menu:get-zoom-factor'")
     expect(main).toContain('event.senderFrame !== mainWindow.webContents.mainFrame')
     expect(main).toContain('if (!isDesktopMenuCommand(command))')
+  })
+
+  it('shows the live zoom percentage and counter-scales the renderer menu button', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
+
+    expect(formatZoomPercentage(1)).toBe('100%')
+    expect(formatZoomPercentage(Math.sqrt(1.2))).toBe('110%')
+    expect(formatZoomPercentage(1 / Math.sqrt(1.2))).toBe('91%')
+    expect(main).toContain('contents.getZoomFactor()')
+    expect(preload).toContain("ipcRenderer.invoke('desktop-menu:get-zoom-factor')")
+    expect(preload).toContain('formatZoomPercentage(zoomFactor)')
+    expect(preload).toContain('zoom: var(${INVERSE_ZOOM_PROPERTY}, 1)')
+    expect(preload).not.toContain('border-left:')
+    expect(preload).not.toContain('border-left-color:')
   })
 
   it('shows the bundled Harness version and offers an update check from About', async () => {

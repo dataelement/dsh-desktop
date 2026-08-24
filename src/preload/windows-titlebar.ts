@@ -1,6 +1,7 @@
 import type { IpcRenderer } from 'electron'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
+  formatZoomPercentage,
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
 
@@ -8,6 +9,7 @@ const HOST_ID = 'dsh-desktop-windows-titlebar'
 const LAYOUT_STYLE_ID = `${HOST_ID}-layout`
 const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
 const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
+const INVERSE_ZOOM_PROPERTY = '--dsh-desktop-inverse-zoom'
 
 type MenuEntry =
   | { kind: 'command'; command: DesktopMenuCommand; label: string; shortcut?: string }
@@ -53,9 +55,41 @@ export function mountWindowsTitlebar(options: TitlebarMountOptions): void {
   menu.hidden = true
   menu.setAttribute('role', 'menu')
   menu.setAttribute('aria-label', locale === 'zh' ? '应用菜单' : 'Application menu')
-  renderMenu(document, menu, menuEntries(locale), ipcRenderer, () => closeMenu(false))
+  let zoomDisplay: HTMLButtonElement | null = null
+
+  const applyZoomState = (result: unknown): void => {
+    const zoomFactor = readZoomFactor(result)
+    if (zoomFactor === undefined) return
+    document.documentElement.style.setProperty(INVERSE_ZOOM_PROPERTY, String(1 / zoomFactor))
+    if (zoomDisplay) zoomDisplay.textContent = formatZoomPercentage(zoomFactor)
+  }
+
+  const refreshZoomState = (): void => {
+    void ipcRenderer.invoke('desktop-menu:get-zoom-factor').then(applyZoomState).catch((error: unknown) => {
+      console.warn('[desktop-menu] unable to read zoom factor', error)
+    })
+  }
+
+  let zoomRefreshFrame: number | undefined
+  const scheduleZoomStateRefresh = (): void => {
+    if (zoomRefreshFrame !== undefined) return
+    zoomRefreshFrame = window.requestAnimationFrame(() => {
+      zoomRefreshFrame = undefined
+      refreshZoomState()
+    })
+  }
+
+  zoomDisplay = renderMenu(
+    document,
+    menu,
+    menuEntries(locale),
+    ipcRenderer,
+    () => closeMenu(false),
+    applyZoomState
+  )
 
   function openMenu(): void {
+    refreshZoomState()
     menu.hidden = false
     menuButton.classList.add('isOpen')
     menuButton.setAttribute('aria-expanded', 'true')
@@ -92,11 +126,13 @@ export function mountWindowsTitlebar(options: TitlebarMountOptions): void {
     if (!menu.hidden && !event.composedPath().includes(host)) closeMenu(false)
   })
   window.addEventListener('blur', () => closeMenu(false))
+  window.addEventListener('resize', scheduleZoomStateRefresh)
 
   safeArea.append(menuButton, menu)
   bar.appendChild(safeArea)
   shadow.append(style, bar)
   document.body.appendChild(host)
+  refreshZoomState()
   syncTheme(document, ipcRenderer)
 
   const themeObserver = new MutationObserver(() => syncTheme(document, ipcRenderer))
@@ -181,8 +217,10 @@ function renderMenu(
   menu: HTMLElement,
   entries: MenuEntry[],
   ipcRenderer: Pick<IpcRenderer, 'invoke'>,
-  close: () => void
-): void {
+  close: () => void,
+  applyZoomState: (result: unknown) => void
+): HTMLButtonElement | null {
+  let zoomDisplay: HTMLButtonElement | null = null
   for (const entry of entries) {
     if (entry.kind === 'separator') {
       const separator = document.createElement('div')
@@ -216,7 +254,8 @@ function renderMenu(
         zoom.title = title
         zoom.setAttribute('aria-label', title)
         zoom.addEventListener('pointerdown', (event) => event.preventDefault())
-        zoom.addEventListener('click', () => execute(ipcRenderer, command, close))
+        zoom.addEventListener('click', () => executeZoom(ipcRenderer, command, applyZoomState))
+        if (command === 'zoom-reset') zoomDisplay = zoom
         row.appendChild(zoom)
       }
       menu.appendChild(row)
@@ -239,6 +278,17 @@ function renderMenu(
     item.addEventListener('click', () => execute(ipcRenderer, entry.command, close))
     menu.appendChild(item)
   }
+  return zoomDisplay
+}
+
+function executeZoom(
+  ipcRenderer: Pick<IpcRenderer, 'invoke'>,
+  command: Extract<DesktopMenuCommand, 'zoom-reset' | 'zoom-in' | 'zoom-out'>,
+  applyZoomState: (result: unknown) => void
+): void {
+  void ipcRenderer.invoke('desktop-menu:execute', command).then(applyZoomState).catch((error: unknown) => {
+    console.error(`[desktop-menu] unable to execute ${command}`, error)
+  })
 }
 
 function execute(
@@ -250,6 +300,14 @@ function execute(
   void ipcRenderer.invoke('desktop-menu:execute', command).catch((error: unknown) => {
     console.error(`[desktop-menu] unable to execute ${command}`, error)
   })
+}
+
+function readZoomFactor(result: unknown): number | undefined {
+  if (typeof result !== 'object' || result === null || !('zoomFactor' in result)) return undefined
+  const zoomFactor = result.zoomFactor
+  return typeof zoomFactor === 'number' && Number.isFinite(zoomFactor) && zoomFactor > 0
+    ? zoomFactor
+    : undefined
 }
 
 function syncTheme(document: Document, ipcRenderer: Pick<IpcRenderer, 'invoke'>): void {
@@ -383,10 +441,10 @@ const titlebarStyles = `
     display: grid;
     place-items: center;
     padding: 0;
+    zoom: var(${INVERSE_ZOOM_PROPERTY}, 1);
     color: var(--dsw-alias-label-secondary, #61666b);
     background: transparent;
     border: 0;
-    border-left: 1px solid var(--dsw-alias-border-l1, rgba(32, 33, 36, 0.08));
     cursor: pointer;
     pointer-events: auto;
     -webkit-app-region: no-drag;
@@ -482,7 +540,7 @@ const titlebarStyles = `
   @media (prefers-color-scheme: dark) {
     .bar { color: var(--dsw-alias-label-primary, #f3f4f6); }
     .menu { color: var(--dsw-alias-label-primary, #f3f4f6); background: var(--dsw-specific-menu, #28282b); border-color: rgba(255,255,255,.12); box-shadow: 0 18px 42px rgba(0,0,0,.46); }
-    .menuButton { color: var(--dsw-alias-label-secondary, #b5b7bd); border-left-color: rgba(255,255,255,.08); }
+    .menuButton { color: var(--dsw-alias-label-secondary, #b5b7bd); }
   }
   @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 `
