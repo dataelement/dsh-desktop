@@ -234,7 +234,7 @@ const styles = `
     appearance: none;
     box-sizing: border-box;
     width: 32px;
-    height: 32px;
+    height: 24px;
     position: absolute;
     right: 0;
     top: 50%;
@@ -243,7 +243,7 @@ const styles = `
     display: grid;
     place-items: center;
     border: 0;
-    border-radius: 999px;
+    border-radius: 8px;
     color: #fff;
     background: #1677ff;
     box-shadow: none;
@@ -262,8 +262,8 @@ const styles = `
     border: 3px solid #1677ff;
   }
   #${BUTTON_ID} svg {
-    width: 17px;
-    height: 17px;
+    width: 15px;
+    height: 15px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.9;
