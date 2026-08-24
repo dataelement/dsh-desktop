@@ -36,6 +36,7 @@ export function registerUpdateHandlers(): void {
   if (handlersRegistered) return
   handlersRegistered = true
   ipcMain.handle('updates:status', () => getUpdateStatus())
+  ipcMain.handle('updates:download', () => downloadAvailableUpdate())
   ipcMain.handle('updates:install', () => installDownloadedUpdate())
 }
 
@@ -108,6 +109,18 @@ export async function installDownloadedUpdate(): Promise<void> {
   }
 }
 
+export async function downloadAvailableUpdate(): Promise<UpdateStatus> {
+  if (status.phase !== 'available') return getUpdateStatus()
+
+  try {
+    await autoUpdater.downloadUpdate()
+  } catch (error) {
+    transition({ type: 'error', message: errorMessage(error) }, true)
+  }
+
+  return getUpdateStatus()
+}
+
 export function stopUpdateManager(): void {
   if (startupTimer) clearTimeout(startupTimer)
   if (intervalTimer) clearInterval(intervalTimer)
@@ -119,7 +132,7 @@ export function stopUpdateManager(): void {
 }
 
 function configureUpdater(): void {
-  autoUpdater.autoDownload = true
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowPrerelease = false
   autoUpdater.logger = {
