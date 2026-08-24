@@ -72,6 +72,12 @@ case "$mode" in
       exit 1
     }
     CSC_NAME="$signing_identity" npm run package:mac:arm64
+    codesign \
+      --sign "$signing_identity" \
+      --timestamp=none \
+      --force \
+      "$project_root/dist/sherlock-mac-arm64.dmg"
+    codesign --verify --verbose=2 "$project_root/dist/sherlock-mac-arm64.dmg"
     test -d "$formal_app" || {
       echo "Formal Sherlock app was not built at: $formal_app" >&2
       exit 1

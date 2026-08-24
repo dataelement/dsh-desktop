@@ -169,6 +169,19 @@ describe('GitHub release contract', () => {
     }
   })
 
+  it('signs and verifies the DMG in the local formal build entrypoint', async () => {
+    const buildAndRun = await readFile(
+      path.join(projectRoot, 'script', 'build_and_run.sh'),
+      'utf8'
+    )
+
+    expect(buildAndRun).toContain("security find-identity -v -p codesigning")
+    expect(buildAndRun).toContain('Sherlock Desktop Update Signing')
+    expect(buildAndRun).toContain('--timestamp=none')
+    expect(buildAndRun).toContain('codesign --verify --verbose=2')
+    expect(buildAndRun).toContain('dist/sherlock-mac-arm64.dmg')
+  })
+
   it('packages an isolated development channel from the current workspace', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
