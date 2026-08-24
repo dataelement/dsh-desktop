@@ -66,7 +66,7 @@ describe('Sherlock sidebar update control', () => {
     expect(settingsArea.querySelector('#settings')).not.toBeNull()
   })
 
-  it('anchors the update control inside the Harness settings area', () => {
+  it('centers a compact update control on the Harness Settings row', () => {
     const document = currentHarnessFixture()
     const control = new SidebarUpdateControl(document, 'zh', actions())
 
@@ -76,7 +76,10 @@ describe('Sherlock sidebar update control', () => {
       '#sherlock-sidebar-update-style'
     )!.textContent
     expect(styles).toMatch(
-      /#sherlock-sidebar-update-button\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*bottom:\s*0;/s
+      /#sherlock-sidebar-update-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*top:\s*50%;[^}]*transform:\s*translateY\(-50%\);/s
+    )
+    expect(styles).toMatch(
+      /#sherlock-sidebar-update-button\s*\{[^}]*box-shadow:\s*none;/s
     )
   })
 

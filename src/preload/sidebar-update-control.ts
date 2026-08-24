@@ -238,11 +238,12 @@ const styles = `
   #${BUTTON_ID} {
     appearance: none;
     box-sizing: border-box;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     position: absolute;
     right: 0;
-    bottom: 0;
+    top: 50%;
+    transform: translateY(-50%);
     z-index: 1;
     display: grid;
     place-items: center;
@@ -250,25 +251,24 @@ const styles = `
     border-radius: 999px;
     color: #fff;
     background: #1677ff;
-    box-shadow: 0 5px 14px rgba(22, 119, 255, .32);
+    box-shadow: none;
     cursor: pointer;
-    transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+    transition: transform 150ms ease, background-color 150ms ease;
   }
   #${BUTTON_ID}:hover:not(:disabled) {
-    transform: translateY(-1px);
+    transform: translateY(calc(-50% - 1px));
     background: #0f6fe8;
-    box-shadow: 0 7px 18px rgba(22, 119, 255, .38);
   }
-  #${BUTTON_ID}:active:not(:disabled) { transform: translateY(0) scale(.96); }
+  #${BUTTON_ID}:active:not(:disabled) { transform: translateY(-50%) scale(.96); }
   #${BUTTON_ID}:focus-visible { outline: 2px solid #69a7ff; outline-offset: 2px; }
   #${BUTTON_ID}:disabled { cursor: default; }
   #${BUTTON_ID}[data-action="progress"] {
     background: conic-gradient(#fff var(--sherlock-update-progress, 0deg), rgba(255,255,255,.25) 0), #1677ff;
-    border: 4px solid #1677ff;
+    border: 3px solid #1677ff;
   }
   #${BUTTON_ID} svg {
-    width: 19px;
-    height: 19px;
+    width: 17px;
+    height: 17px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.9;
