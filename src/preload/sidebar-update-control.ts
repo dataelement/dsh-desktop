@@ -233,8 +233,8 @@ const styles = `
   #${BUTTON_ID} {
     appearance: none;
     box-sizing: border-box;
-    width: 32px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     position: absolute;
     right: 0;
     top: 50%;

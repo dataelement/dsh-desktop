@@ -76,7 +76,7 @@ describe('Sherlock sidebar update control', () => {
       '#sherlock-sidebar-update-style'
     )!.textContent
     expect(styles).toMatch(
-      /#sherlock-sidebar-update-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*24px;[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*top:\s*50%;[^}]*transform:\s*translateY\(-50%\);/s
+      /#sherlock-sidebar-update-button\s*\{[^}]*width:\s*28px;[^}]*height:\s*28px;[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*top:\s*50%;[^}]*transform:\s*translateY\(-50%\);/s
     )
     expect(styles).toMatch(
       /#sherlock-sidebar-update-button\s*\{[^}]*border-radius:\s*8px;[^}]*box-shadow:\s*none;/s
