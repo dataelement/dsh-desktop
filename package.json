@@ -1,6 +1,6 @@
 {
   "name": "sherlock",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Sherlock local-first desktop knowledge assistant.",
   "private": true,
   "type": "module",
