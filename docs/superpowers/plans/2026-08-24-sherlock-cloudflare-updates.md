@@ -587,7 +587,7 @@ Create/import the long-lived self-signed `Sherlock Desktop Update Signing` ident
 
 - [ ] **Step 2: Create R2 storage and custom domain**
 
-Create private bucket `sherlock-releases`, bind the Cloudflare custom domain `updates.dshdesktop.com`, and confirm DNS/TLS. Configure metadata to revalidate and immutable objects to allow long caching. Do not alter unrelated `dshdesktop.com` website routes.
+Create private bucket `sherlock-releases`, bind the Cloudflare custom domain `updates.evanarts.com`, and confirm DNS/TLS. Configure metadata to revalidate and immutable objects to allow long caching. The user selected the accessible `evanarts.com` zone after the signed-in Cloudflare account was found not to contain `dshdesktop.com`.
 
 - [ ] **Step 3: Build and validate the local formal Apple Silicon package**
 
@@ -626,7 +626,7 @@ Confirm separately:
 
 - GitHub Release contains the expected formal artifacts and update metadata;
 - ModelScope `releases/latest` advertises 0.6.0 for legacy 0.5.0 clients;
-- `https://updates.dshdesktop.com/latest/latest-mac.yml` advertises 0.6.0 and versioned ZIP URLs;
+- `https://updates.evanarts.com/latest/latest-mac.yml` advertises 0.6.0 and versioned ZIP URLs;
 - immutable ZIP/DMG URLs support byte ranges and match local sizes/hashes;
 - stable human download returns the formal DMG;
 - Cloudflare headers have revalidating metadata and immutable versioned payloads.

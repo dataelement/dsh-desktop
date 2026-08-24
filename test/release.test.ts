@@ -137,7 +137,7 @@ describe('GitHub release contract', () => {
 
     expect(packageJson.dependencies['electron-updater']).toBeTruthy()
     expect(packageJson.build.publish).toEqual([
-      { provider: 'generic', url: 'https://updates.dshdesktop.com/latest/' }
+      { provider: 'generic', url: 'https://updates.evanarts.com/latest/' }
     ])
     expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(false)
     for (const asset of [
@@ -263,7 +263,7 @@ describe('GitHub release contract', () => {
     expect(workflow.match(/CSC_IDENTITY_AUTO_DISCOVERY: 'false'/g)).toHaveLength(2)
     expect(workflow).toContain('npm run release:cloudflare')
     expect(workflow).toContain('--bucket sherlock-releases')
-    expect(workflow).toContain('https://updates.dshdesktop.com/latest/latest-mac.yml')
+    expect(workflow).toContain('https://updates.evanarts.com/latest/latest-mac.yml')
     expect(workflow).toContain('Mirror release assets to ModelScope')
     expect(workflow).not.toContain('notarytool')
     expect(workflow).not.toContain('stapler')

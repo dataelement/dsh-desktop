@@ -147,7 +147,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://updates.dshdesktop.com/latest/"
+        "url": "https://updates.evanarts.com/latest/"
       }
     ],
     "artifactName": "sherlock-${os}-${arch}.${ext}",

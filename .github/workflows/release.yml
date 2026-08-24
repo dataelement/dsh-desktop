@@ -444,8 +444,8 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          metadata_url="https://updates.dshdesktop.com/latest/latest-mac.yml"
-          asset_url="https://updates.dshdesktop.com/releases/$GITHUB_REF_NAME/sherlock-mac-arm64.zip"
+          metadata_url="https://updates.evanarts.com/latest/latest-mac.yml"
+          asset_url="https://updates.evanarts.com/releases/$GITHUB_REF_NAME/sherlock-mac-arm64.zip"
           curl -fsS "$metadata_url" | grep -F "version: $version"
           curl -fsSI "$metadata_url" | grep -Eiq '^cache-control:.*no-cache'
           curl -fsS --range 0-0 -o /dev/null "$asset_url"
