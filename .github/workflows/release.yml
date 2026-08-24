@@ -424,12 +424,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          name: windows-x64
+          name: windows-x64-unsigned
           path: |
             dist/dsh-desktop-windows-x64-setup.exe
             dist/dsh-desktop-windows-x64-setup.exe.blockmap
             dist/latest.yml
           if-no-files-found: error
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
@@ -440,6 +441,102 @@ jobs:
             dist-dev/latest.yml
           if-no-files-found: error
 
+  sign-windows:
+    name: Sign Windows package locally with UKey
+    needs: windows-x64
+    if: >-
+      always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.windows-x64.result == 'success'
+    runs-on: [self-hosted, macOS, ARM64]
+    env:
+      CI: 'true'
+      JSIGN_VERSION: '7.5'
+      JSIGN_SHA256: '602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install release tooling
+        run: npm ci --ignore-scripts
+      - name: Prepare unsigned Windows package
+        run: |
+          work_dir="$RUNNER_TEMP/dsh-windows-${{ github.run_id }}"
+          mkdir -p "$work_dir/release"
+          echo "WINDOWS_SIGNING_WORK_DIR=$work_dir" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64-unsigned
+          path: ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release
+      - name: Download and verify Jsign
+        run: |
+          jsign_jar="$WINDOWS_SIGNING_WORK_DIR/jsign-${JSIGN_VERSION}.jar"
+          curl --fail --location --retry 3 \
+            --output "$jsign_jar" \
+            "https://github.com/ebourg/jsign/releases/download/${JSIGN_VERSION}/jsign-${JSIGN_VERSION}.jar"
+          printf '%s  %s\n' "$JSIGN_SHA256" "$jsign_jar" | shasum -a 256 --check
+          java -jar "$jsign_jar" --version
+          echo "JSIGN_JAR=$jsign_jar" >> "$GITHUB_ENV"
+      - name: Sign Windows installer with SafeNet UKey
+        env:
+          WINDOWS_SIGNING_PIN: ${{ secrets.DESKTOP_WINDOWS_SIGNING_PIN }}
+        run: |
+          test -r /usr/local/lib/libeTPkcs11.dylib
+          test -n "$WINDOWS_SIGNING_PIN" || { echo "::error::Missing required secret: DESKTOP_WINDOWS_SIGNING_PIN"; exit 1; }
+          installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
+          test "$installer_count" = '1'
+          installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          pin_file="$(mktemp "$WINDOWS_SIGNING_WORK_DIR/jsign-pin.XXXXXX")"
+          trap 'rm -f "$pin_file"' EXIT
+          chmod 600 "$pin_file"
+          printf '%s' "$WINDOWS_SIGNING_PIN" > "$pin_file"
+          unset WINDOWS_SIGNING_PIN
+          java -jar "$JSIGN_JAR" \
+            --storetype ETOKEN \
+            --storepass "file:$pin_file" \
+            --alg SHA-256 \
+            --tsaurl http://timestamp.digicert.com \
+            --tsmode RFC3161 \
+            --tsretries 3 \
+            --tsretrywait 10 \
+            --name 'DSH Desktop' \
+            --url https://www.dshdesktop.com \
+            --verbose \
+            "$installer"
+          java -jar "$JSIGN_JAR" extract --format DER "$installer"
+          test -s "$installer.sig"
+          rm -f "$installer.sig"
+      - name: Rebuild Windows update metadata
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          node scripts/finalize-windows-release.mjs \
+            "$WINDOWS_SIGNING_WORK_DIR/release" \
+            "$version"
+          test -f "$WINDOWS_SIGNING_WORK_DIR/release/latest.yml"
+          test -f "$WINDOWS_SIGNING_WORK_DIR"/release/*.exe.blockmap
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: |
+            ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe
+            ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe.blockmap
+            ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/latest.yml
+          if-no-files-found: error
+      - name: Remove local signing files
+        if: always()
+        run: |
+          case "$WINDOWS_SIGNING_WORK_DIR" in
+            "$RUNNER_TEMP"/dsh-windows-*) rm -rf "$WINDOWS_SIGNING_WORK_DIR" ;;
+            '') ;;
+            *) echo "Refusing to remove unexpected signing path: $WINDOWS_SIGNING_WORK_DIR"; exit 1 ;;
+          esac
+
   publish:
     name: Publish GitHub Release
     if: >-
@@ -447,11 +544,11 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') &&
       needs.macos-apple-silicon.result == 'success' &&
       needs.macos-intel.result == 'success' &&
-      needs.windows-x64.result == 'success'
+      needs.sign-windows.result == 'success'
     needs:
       - macos-apple-silicon
       - macos-intel
-      - windows-x64
+      - sign-windows
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -464,8 +561,13 @@ jobs:
       - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@v4
         with:
+          pattern: macos-*
           path: release-assets
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: release-assets
       - name: Merge macOS update metadata
         run: |
           node scripts/merge-mac-update-metadata.mjs \
@@ -570,4 +672,3 @@ jobs:
             --tag "$RELEASE_TAG" \
             --notes .github/release-artifacts/feishu-release-notes.md \
             --webhook "$FEISHU_RELEASE_WEBHOOK"
-
