@@ -29,4 +29,18 @@ describe('conversation Query navigation rail', () => {
     expect(patch).toContain('dshQueryRail_itemActive')
     expect(patch).toContain('dshQueryRail_tooltipText')
   })
+
+  it('recovers from a sub-threshold initial measurement via a rAF retry chain', async () => {
+    const patch = await readFile(conversationPatch, 'utf8')
+
+    // The measurement effect's only meaningful dependency change is
+    // `queries.length`, and ResizeObserver only fires on size changes — so a
+    // loading/settling → active transition (which flips the composer's
+    // `position:sticky` without resizing observed nodes) can leave `layout`
+    // stuck at null. The patch must keep retrying the measurement for a short
+    // window so the rail can recover without waiting for a user resize.
+    expect(patch).toContain('requestAnimationFrame(tick)')
+    expect(patch).toMatch(/attempts\s*<\s*12/)
+    expect(patch).toContain('cancelAnimationFrame(rafId)')
+  })
 })
