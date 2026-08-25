@@ -488,7 +488,7 @@ describe('Sherlock workspace and composer controls', () => {
       .toBe('translate(30px, -10px) scale(1.5)')
   })
 
-  it('owns accepted drops at the canvas root and restores their cards by session', async () => {
+  it('routes canvas file drops ahead of global composer capture and preserves composer drops elsewhere', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
     const client = await loadClientBundle('dsh-client-ui-conversation', {
@@ -511,6 +511,35 @@ describe('Sherlock workspace and composer controls', () => {
     const root = createRoot(host)
     let documentDragovers = 0
     let documentDrops = 0
+    let composerDraft = ''
+    const composerOwnsFileDrop = typeof client.composerOwnsFileDrop === 'function'
+      ? client.composerOwnsFileDrop as (event: unknown) => boolean
+      : (event: unknown) => {
+          const drag = event as { dataTransfer?: { types?: string[] } }
+          return drag.dataTransfer?.types?.includes('Files') ?? false
+        }
+    const captureComposerFileDrop = (event: HappyDOMEvent) => {
+      if (!composerOwnsFileDrop(event)) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.type === 'drop') composerDraft = '/tmp/report.pdf'
+    }
+    browserWindow.document.addEventListener(
+      'dragenter', captureComposerFileDrop, true
+    )
+    browserWindow.document.addEventListener(
+      'dragover', captureComposerFileDrop, true
+    )
+    browserWindow.document.addEventListener(
+      'drop', captureComposerFileDrop, true
+    )
+    const removeCaptureListener = browserWindow.document.removeEventListener.bind(
+      browserWindow.document
+    ) as unknown as (
+      type: string,
+      listener: (event: HappyDOMEvent) => void,
+      capture: boolean
+    ) => void
     browserWindow.document.addEventListener('dragover', () => { documentDragovers += 1 })
     browserWindow.document.addEventListener('drop', () => { documentDrops += 1 })
 
@@ -571,6 +600,16 @@ describe('Sherlock workspace and composer controls', () => {
       expect(canvas.hasAttribute('data-file-drop-active')).toBe(false)
       expect(host.querySelector('[data-research-file-card]')?.textContent)
         .toContain('report.pdf')
+      expect(composerDraft).toBe('')
+
+      const outside = browserWindow.document.createElement('div')
+      browserWindow.document.body.appendChild(outside)
+      const outsideDrop = dispatchDrag(
+        browserWindow, outside, 'drop', accepted
+      )
+      expect(outsideDrop.defaultPrevented).toBe(true)
+      expect(composerDraft).toBe('/tmp/report.pdf')
+      expect(client.composerOwnsFileDrop).toBeTypeOf('function')
 
       await act(async () => { root.unmount() })
       const remount = createRoot(host)
@@ -584,6 +623,15 @@ describe('Sherlock workspace and composer controls', () => {
         .toContain('report.pdf')
       await act(async () => { remount.unmount() })
     } finally {
+      removeCaptureListener(
+        'dragenter', captureComposerFileDrop, true
+      )
+      removeCaptureListener(
+        'dragover', captureComposerFileDrop, true
+      )
+      removeCaptureListener(
+        'drop', captureComposerFileDrop, true
+      )
       restoreGlobals()
     }
   })
