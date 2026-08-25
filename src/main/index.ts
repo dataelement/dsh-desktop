@@ -21,6 +21,11 @@ import {
   removeProfilePluginWithDsh
 } from './runtime/profile-plugin-command'
 import { clearDamagedPackageDirectories, hasProfile } from './state/profile-repair'
+import {
+  clearProfileInstallMarker,
+  isProfileInstallComplete,
+  markProfileInstallComplete
+} from './state/profile-install-marker'
 import { inspectProfileConsistency } from './state/profile-consistency'
 import { ensureStoreDirPinned, inspectStoreConsistency } from './state/profile-store'
 import { LanMobileBridge } from './mobile/lan-mobile-bridge'
@@ -512,13 +517,23 @@ async function repairProfilePackages(dshHome: string): Promise<void> {
   try {
     if (!hasProfile(dshHome)) return
     const removed = await clearDamagedPackageDirectories(dshHome)
-    if (removed.length === 0) return
+    // An install that never finished leaves nothing a damage scan can see: the
+    // directories it did write are real packages, and the ones it never
+    // reached are simply absent. Skipping the install on "nothing damaged" is
+    // what let a half-built profile stay half-built across every later launch.
+    const complete = await isProfileInstallComplete(dshHome)
+    if (removed.length === 0 && complete) return
 
     runtime.note(
-      `[desktop] repairing profile: cleared ${removed.length} damaged package ${
-        removed.length === 1 ? 'directory' : 'directories'
-      }`
+      removed.length === 0
+        ? '[desktop] repairing profile: the last install did not finish'
+        : `[desktop] repairing profile: cleared ${removed.length} damaged package ${
+            removed.length === 1 ? 'directory' : 'directories'
+          }`
     )
+    // Withdrawn first: whatever happens to the run below, an interrupted
+    // install must not leave a marker claiming the profile is whole.
+    await clearProfileInstallMarker(dshHome)
     const result = await installProfileDependenciesWithDsh({
       dshHome,
       dshEntryPath: dshEntryPath(),
@@ -526,6 +541,7 @@ async function repairProfilePackages(dshHome: string): Promise<void> {
       pnpmEntryPath: bundledPnpmEntryPath(),
       pnpmRunnerPath: bundledPnpmRunnerPath()
     })
+    if (result.ok) await markProfileInstallComplete(dshHome)
     runtime.note(
       result.ok
         ? '[desktop] profile repair completed'
