@@ -278,7 +278,9 @@ describe('Research canvas file drops', () => {
     })
     expect(client.ToolDetails).toBeTypeOf('function')
     if (typeof client.ToolDetails !== 'function') return
-    const react = requireModule('react') as typeof import('react')
+    const react = requireModule('react') as {
+      createElement: (type: unknown, props?: unknown, ...children: unknown[]) => unknown
+    }
     const { renderToStaticMarkup } = requireModule('react-dom/server') as {
       renderToStaticMarkup(node: unknown): string
     }

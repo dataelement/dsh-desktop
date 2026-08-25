@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
-import { Window } from 'happy-dom'
+import { Window, type Element as HappyDOMElement, type Event as HappyDOMEvent } from 'happy-dom'
 import { describe, expect, it } from 'vitest'
 
 type ClientBundle = Record<string, unknown>
@@ -19,7 +19,7 @@ const { act } = requireModule('react') as {
   act: (callback: () => void | Promise<void>) => Promise<void>
 }
 const { createRoot } = requireModule('react-dom/client') as {
-  createRoot: (container: Element) => {
+  createRoot: (container: unknown) => {
     render(node: unknown): void
     unmount(): void
   }
@@ -135,7 +135,7 @@ function installBrowserGlobals(browserWindow: Window): () => void {
 
 function dispatchDrag(
   browserWindow: Window,
-  target: Element,
+  target: HappyDOMElement,
   type: string,
   dataTransfer: {
     types: string[]
@@ -144,7 +144,7 @@ function dispatchDrag(
     dropEffect: string
   },
   point = { x: 120, y: 90 }
-): Event {
+): HappyDOMEvent {
   const event = new browserWindow.Event(type, { bubbles: true, cancelable: true })
   Object.defineProperties(event, {
     dataTransfer: { value: dataTransfer },
