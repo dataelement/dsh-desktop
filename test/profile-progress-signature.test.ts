@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -18,6 +18,18 @@ describe('install progress signature', () => {
     const nodeModules = join(directory, 'node_modules')
     await mkdir(nodeModules, { recursive: true })
     return { directory, nodeModules }
+  }
+
+  /**
+   * Windows moves the system clock in ~15ms steps, so a directory created and
+   * written to inside one tick carries the same mtime for both samples. Aging
+   * the tree first makes any later write strictly newer, which is what the
+   * assertions are actually about — the poll interval is seconds, so the
+   * granularity never matters in production.
+   */
+  async function age(path: string): Promise<void> {
+    const past = new Date(Date.now() - 60_000)
+    await utimes(path, past, past)
   }
 
   afterEach(async () => {
@@ -41,6 +53,7 @@ describe('install progress signature', () => {
       const { directory, nodeModules } = await profile()
       const packagePath = join(nodeModules, 'typescript', 'lib')
       await mkdir(packagePath, { recursive: true })
+      await age(packagePath)
       const before = await progressSignature(directory)
       await writeFile(join(packagePath, 'tsc.js'), 'x', 'utf8')
       expect(await progressSignature(directory)).not.toBe(before)
@@ -67,6 +80,7 @@ describe('install progress signature', () => {
       const { directory, nodeModules } = await profile()
       const packagePath = await materialize(nodeModules, 'typescript@5.4.5', 'typescript')
       await mkdir(join(packagePath, 'lib'), { recursive: true })
+      await age(join(packagePath, 'lib'))
       const before = await progressSignature(directory)
       await writeFile(join(packagePath, 'lib', 'tsc.js'), 'x', 'utf8')
       expect(await progressSignature(directory)).not.toBe(before)
