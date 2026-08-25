@@ -14,7 +14,7 @@ index b75d41b..6d6d7e7 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
++			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}.hHd-Xa_brandMark{width:30px;height:26px}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
@@ -35,7 +35,7 @@ index b75d41b..6d6d7e7 100644
 +		//#region lib/types/client/DshDesktopLogo.js
 +		const DSH_DESKTOP_LIGHT_LOGO_URL = "/dsh-desktop-logo-light.png";
 +		const DSH_DESKTOP_DARK_LOGO_URL = "/dsh-desktop-logo-dark.png";
-+		function DshDesktopLogo({ height = 18, className }) {
++		function DshDesktopLogo({ height = 20, className }) {
 +			return (0, react_jsx_runtime.jsxs)("svg", {
 +				width: height * 1030 / 590,
 +				height,
