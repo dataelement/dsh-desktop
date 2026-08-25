@@ -68,6 +68,16 @@ export function resolveShellEnvironment(): NodeJS.ProcessEnv {
           '-NonInteractive',
           '-OutputFormat', 'Text',
           '-Command',
+          // Windows PowerShell writes stdout in the console codepage, not
+          // UTF-8, and we decode as UTF-8 below. On a CJK install (ACP 936)
+          // every non-ASCII byte then arrives as U+FFFD, so a user profile
+          // directory like C:\Users\数据项素 comes back as eight replacement
+          // characters — and TEMP, captured here and passed to Harness
+          // unchanged, points nowhere. Harness dies in mkdtemp before it can
+          // load a plugin tree. Pinning the output encoding is what makes the
+          // decode below true; dropping undecodable values is the belt to its
+          // braces.
+          '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ' +
           // Dot-source the profile (suppress errors if it doesn't exist),
           // then emit NAME=VALUE for every environment variable.
           '. $PROFILE 2>$null; Get-ChildItem Env: | ForEach-Object { "$($_.Name)=$($_.Value)" }'
@@ -78,7 +88,10 @@ export function resolveShellEnvironment(): NodeJS.ProcessEnv {
           stdio: ['ignore', 'pipe', 'ignore']
         }
       )
-      resolvedShellEnvironment = parseEnvOutput(output, /\r?\n/)
+      resolvedShellEnvironment = withoutUndecodableValues(
+        parseEnvOutput(output, /\r?\n/),
+        process.env
+      )
     } else {
       // macOS / Linux: run a login + interactive shell so both .zprofile
       // (Homebrew, OrbStack) and .zshrc (mise shims, ~/.local/bin, cargo,
@@ -97,6 +110,39 @@ export function resolveShellEnvironment(): NodeJS.ProcessEnv {
   }
 
   return resolvedShellEnvironment
+}
+
+/**
+ * Replace captured values that lost characters in decoding with the ones this
+ * process already holds.
+ *
+ * A value carrying U+FFFD did not survive the trip out of the shell, and there
+ * is no recovering the original from it — the byte that produced it is gone.
+ * Passing it on is the harmful option: `TEMP` from a mis-decoded capture names
+ * a directory that does not exist, and Harness fails in `mkdtemp` before it
+ * loads anything, which reads as a launch that hangs. The inherited value is
+ * always intact, because it never went through a console.
+ *
+ * A variable that exists only in the shell profile and mis-decoded has no
+ * fallback to take; it is dropped rather than passed on broken, which leaves
+ * the consumer to its own default instead of pointing it somewhere wrong.
+ * @param captured - what the shell reported.
+ * @param inherited - this process's own environment.
+ */
+export function withoutUndecodableValues(
+  captured: NodeJS.ProcessEnv,
+  inherited: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {}
+  for (const [name, value] of Object.entries(captured)) {
+    if (value === undefined || !value.includes('�')) {
+      result[name] = value
+      continue
+    }
+    const fallback = inherited[name]
+    if (fallback !== undefined) result[name] = fallback
+  }
+  return result
 }
 
 function parseEnvOutput(output: string, lineSeparator: RegExp): NodeJS.ProcessEnv {
