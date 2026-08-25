@@ -43,6 +43,10 @@ import {
   shouldLoadHarnessUrl
 } from './window-navigation'
 import {
+  raiseWindowWithoutStealingFocus,
+  type WindowFocusIntent
+} from './window-raise'
+import {
   checkForUpdates,
   registerUpdateHandlers,
   startUpdateManager,
@@ -453,7 +457,10 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-async function openHarness(url: string): Promise<void> {
+async function openHarness(
+  url: string,
+  focusIntent: WindowFocusIntent = 'automatic'
+): Promise<void> {
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const rendererUrl = desktopHarnessUrl(url, process.platform)
   if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
@@ -473,9 +480,12 @@ async function openHarness(url: string): Promise<void> {
   }
   if (runtime.snapshot().url !== url || window.isDestroyed()) return
   await syncNativeTheme(window)
-  if (window.isMinimized()) window.restore()
-  window.show()
-  window.focus()
+  raiseWindowWithoutStealingFocus(
+    window,
+    process.platform,
+    () => app.isActive(),
+    focusIntent
+  )
 }
 
 async function showSplash(): Promise<void> {
@@ -486,8 +496,7 @@ async function showSplash(): Promise<void> {
     query: { theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }
   })
   if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
-  window.show()
-  window.focus()
+  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
 }
 
 /**
@@ -784,9 +793,7 @@ async function waitForPluginRecoveryAction(options: {
   }
 
   if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return 'quit'
-  if (window.isMinimized()) window.restore()
-  window.show()
-  window.focus()
+  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
   return actionPromise
 }
 
@@ -1015,9 +1022,7 @@ async function waitForSafeModeAction(options: {
   if (window.isDestroyed()) {
     return { type: 'quit' }
   }
-  if (window.isMinimized()) window.restore()
-  window.show()
-  window.focus()
+  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
   return actionPromise
 }
 
@@ -1451,7 +1456,7 @@ if (!singleInstance) {
     }
     const snapshot = runtime?.snapshot()
     if (snapshot?.phase === 'ready' && snapshot.url) {
-      void openHarness(snapshot.url).catch(showUnexpectedError)
+      void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
     }
   })
   app.whenReady().then(bootstrap).catch((error: unknown) => {
@@ -1466,7 +1471,7 @@ if (!singleInstance) {
     }
     const snapshot = runtime?.snapshot()
     if (snapshot?.phase === 'ready' && snapshot.url) {
-      void openHarness(snapshot.url).catch(showUnexpectedError)
+      void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
     } else if (snapshot?.phase === 'idle') {
       void launchHarness().catch(showUnexpectedError)
     }
