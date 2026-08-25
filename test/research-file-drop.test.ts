@@ -87,6 +87,17 @@ describe('Research canvas file drops', () => {
     expect(client.parseSherlockFileDrag(JSON.stringify({ name: 'x'.repeat(513) }))).toBeNull()
   })
 
+  it('rejects an oversized raw Sherlock file drag payload before parsing', async () => {
+    const client = await loadConversationClient()
+    expect(client.parseSherlockFileDrag).toBeTypeOf('function')
+    if (typeof client.parseSherlockFileDrag !== 'function') return
+
+    expect(client.parseSherlockFileDrag(JSON.stringify({
+      name: 'x',
+      ignored: 'x'.repeat(2_048)
+    }))).toBeNull()
+  })
+
   it('reads Finder files and gives the Sherlock MIME payload precedence', async () => {
     const client = await loadConversationClient()
     expect(client.researchCanvasDropFiles).toBeTypeOf('function')
@@ -178,5 +189,16 @@ describe('Research canvas file drops', () => {
     expect(client.parseResearchCanvasFileNodes(JSON.stringify(valid))).toEqual(valid)
     expect(client.parseResearchCanvasFileNodes('[{"id":"1","name":"a","source":"computer","x":null,"y":2}]')).toEqual([])
     expect(client.parseResearchCanvasFileNodes('bad-json')).toEqual([])
+  })
+
+  it('rejects an oversized raw persisted file payload before parsing', async () => {
+    const client = await loadConversationClient()
+    expect(client.parseResearchCanvasFileNodes).toBeTypeOf('function')
+    if (typeof client.parseResearchCanvasFileNodes !== 'function') return
+
+    expect(client.parseResearchCanvasFileNodes(JSON.stringify([{
+      id: '1', name: 'a.pdf', source: 'computer', x: 12, y: 24,
+      ignored: 'x'.repeat(300_000)
+    }]))).toEqual([])
   })
 })
