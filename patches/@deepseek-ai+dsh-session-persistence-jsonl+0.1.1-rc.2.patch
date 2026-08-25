@@ -1,0 +1,32 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+index 66db7ec..e0ab9d9 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+@@ -282,7 +282,12 @@ var SessionLogScanner = class {
+ 			return;
+ 		}
+ 		if (this.issue !== void 0) {
+-			if (decoded.some((event) => event.type === "turn/end")) throw this.issue;
++			// dsh-desktop patch: do not throw on a previously-recorded issue. The
++			// historical check threw so an inspector would refuse the session the
++			// moment a later turn closed, but a torn write on a single session
++			// then renders the entire transcript unloadable even when every byte
++			// before the gap is intact. Surface the issue for the caller's
++			// diagnostics and keep returning whatever events were read so far.
+ 			return;
+ 		}
+ 		const rowStart = this.events.length;
+@@ -291,7 +296,12 @@ var SessionLogScanner = class {
+ 				const expected = this.events.length;
+ 				this.events.length = rowStart;
+ 				this.issue = /* @__PURE__ */ new Error(`corrupt session log: seq gap in committed region at line ${this.eventLine} (expected ${expected}, got ${event.seq})`);
+-				if (decoded.some((candidate) => candidate.type === "turn/end")) throw this.issue;
++				// dsh-desktop patch: do not throw on a seq gap. Without this, a
++				// single out-of-order or torn row poisons the rest of the read
++				// and the user loses the entire session (e.g. issue #97: client
++				// restart mid-write left the committed log with a small gap and
++				// every later history call failed with
++				// `history unavailable for session "..."`).
+ 				return;
+ 			}
+ 			this.events.push(event);
