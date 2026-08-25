@@ -125,7 +125,7 @@ export class LanMobileBridge {
 
   async start(): Promise<LanMobileBridgeSnapshot> {
     if (this.server) {
-      if (!this.pairingToken || !this.pairingExpiresAt || this.pairingExpiresAt < this.now()) {
+      if (!this.pairingTokenValid()) {
         this.rotatePairingToken()
       }
       this.startMuxMonitor()
@@ -245,23 +245,28 @@ export class LanMobileBridge {
   }
 
   snapshot(): LanMobileBridgeSnapshot {
-    const address = preferredLanAddress()
-    if (!this.server || !this.port || !this.pairingToken || !this.pairingExpiresAt) {
-      return { running: Boolean(this.server), connected: this.sessions.size > 0 }
+    if (!this.server || !this.port) {
+      return { running: false, connected: this.sessions.size > 0 }
     }
+    // The pairing token is single-use (consumed on approval) and short-lived.
+    // Tunnel and listener state must stay visible regardless, otherwise the
+    // desktop window loses the connection-mode UI right after a phone pairs.
+    const tokenValid = this.pairingTokenValid()
+    const address = preferredLanAddress()
     const pairingUrl =
-      this.tunnelActive && this.tunnelInstance?.url
-        ? `${this.tunnelInstance.url}/pair?token=${this.pairingToken}`
-        : address
-          ? `http://${address}:${this.port}/pair?token=${this.pairingToken}`
-          : undefined
+      !tokenValid
+        ? undefined
+        : this.tunnelActive && this.tunnelInstance?.url
+          ? `${this.tunnelInstance.url}/pair?token=${this.pairingToken}`
+          : address
+            ? `http://${address}:${this.port}/pair?token=${this.pairingToken}`
+            : undefined
     return {
       running: true,
       connected: this.sessions.size > 0,
       port: this.port,
-      pairingUrl,
+      ...(tokenValid && pairingUrl ? { pairingUrl, expiresAt: this.pairingExpiresAt } : {}),
       desktopUrl: `http://127.0.0.1:${this.port}/desktop`,
-      expiresAt: this.pairingExpiresAt,
       tunnelActive: this.tunnelActive,
       tunnelLoading: this.tunnelLoading,
       tunnelUrl: this.tunnelInstance?.url,
@@ -272,6 +277,10 @@ export class LanMobileBridge {
   private rotatePairingToken(): void {
     this.pairingToken = randomBytes(32).toString('base64url')
     this.pairingExpiresAt = this.now() + PAIRING_TTL_MS
+  }
+
+  private pairingTokenValid(): boolean {
+    return Boolean(this.pairingToken && this.pairingExpiresAt && this.pairingExpiresAt >= this.now())
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -327,6 +336,13 @@ export class LanMobileBridge {
 
     if (request.method === 'GET' && url.pathname === '/desktop') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (!this.server || !this.port) return this.text(response, 503, 'Bridge unavailable.')
+      // The token is consumed once a phone pairs, and expires after five
+      // minutes. The desktop window stays open across both: rotate so it
+      // keeps showing a scannable code instead of a dead one (or a 503).
+      if (!this.pairingTokenValid()) {
+        this.rotatePairingToken()
+      }
       const snapshot = this.snapshot()
       if (!snapshot.pairingUrl || !snapshot.expiresAt) return this.text(response, 503, 'Bridge unavailable.')
       const qrSvg = await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
