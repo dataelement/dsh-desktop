@@ -1,0 +1,51 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+index 66db7ec..489c62d 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+@@ -1075,12 +1075,31 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 				const pathExists = await this.exists(path);
+ 				signal?.throwIfAborted();
+ 				if (!pathExists) continue;
+-				const first = this.compression === "zstd" ? await this.readFirstZstdLine(path, signal) : await this.readFirstLine(path, signal);
++				let first;
++				try {
++					first = this.compression === "zstd" ? await this.readFirstZstdLine(path, signal) : await this.readFirstLine(path, signal);
++				} catch (error) {
++					/* A torn write (crash during append), an invalid zstd frame, or
++					a malformed header line must not poison the whole workspace —
++					skip the unreadable session and let the remaining sessions load. */
++					signal?.throwIfAborted();
++					this.warnUnreadableSession(path, error);
++					continue;
++				}
+ 				signal?.throwIfAborted();
+ 				if (first === void 0) continue;
+ 				const meta = parseHeaderMeta(first);
+-				if (meta === void 0) continue;
+-				await this.assertStoredIdentity(path, meta, void 0, signal);
++				if (meta === void 0) {
++					this.warnUnreadableSession(path, "first line is not a valid session header");
++					continue;
++				}
++				try {
++					await this.assertStoredIdentity(path, meta, void 0, signal);
++				} catch (error) {
++					signal?.throwIfAborted();
++					this.warnUnreadableSession(path, error);
++					continue;
++				}
+ 				signal?.throwIfAborted();
+ 				if (ids.has(meta.id)) throw new Error(`duplicate JSONL session id "${meta.id}" appears in multiple project directories`);
+ 				ids.add(meta.id);
+@@ -1093,6 +1112,11 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 		signal?.throwIfAborted();
+ 		return artifacts;
+ 	}
++	/** Log that a stored session log is unreadable; the workspace still boots. */
++	warnUnreadableSession(path, reason) {
++		const detail = reason instanceof Error ? reason.message : String(reason);
++		this.ctx?.logger?.warn?.(`${this.name}: skipping unreadable session log ${JSON.stringify(path)}: ${detail}`);
++	}
+ 	/** Atomically write the header line + first batch (temp-write, fsync, publish). */
+ 	async materialize(meta, events) {
+ 		const project = projectDir(this.root, meta.cwd);
