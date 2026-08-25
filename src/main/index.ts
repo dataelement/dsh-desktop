@@ -11,6 +11,7 @@ import {
   nativeTheme,
   shell,
   utilityProcess,
+  WebContentsView,
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
@@ -70,6 +71,7 @@ import {
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
+import { windowsMenuViewBounds } from './windows-menu-view'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
@@ -87,6 +89,9 @@ const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
 ])
 
 let mainWindow: BrowserWindow | undefined
+let windowsMenuView: WebContentsView | undefined
+let windowsMenuOpen = false
+let windowsMenuDark = false
 let mobileWindow: BrowserWindow | undefined
 let runtime: HarnessRuntime
 let mobileBridge: LanMobileBridge
@@ -209,8 +214,68 @@ function applyWindowChromeTheme(window: BrowserWindow, isDark: boolean): void {
   if (window.isDestroyed()) return
   window.setBackgroundColor(isDark ? '#141416' : '#ffffff')
   if (process.platform === 'win32') {
+    windowsMenuDark = isDark
     window.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
+    if (windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
+      windowsMenuView.webContents.send('desktop-titlebar:theme-changed', isDark)
+    }
   }
+}
+
+function updateWindowsMenuViewBounds(window: BrowserWindow): void {
+  if (!windowsMenuView || windowsMenuView.webContents.isDestroyed() || window.isDestroyed()) return
+  const contentSize = window.getContentSize()
+  const width = contentSize[0] ?? 0
+  const height = contentSize[1] ?? 0
+  windowsMenuView.setBounds(
+    windowsMenuViewBounds({ width, height }, windowsMenuOpen, window.isFullScreen())
+  )
+}
+
+function setWindowsMenuOpen(window: BrowserWindow, open: boolean, notifyRenderer = false): void {
+  windowsMenuOpen = open
+  updateWindowsMenuViewBounds(window)
+  if (notifyRenderer && windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
+    windowsMenuView.webContents.send('desktop-titlebar:close-menu')
+  }
+}
+
+function attachWindowsMenuView(window: BrowserWindow): void {
+  const menuView = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: join(import.meta.dirname, '../preload/windows-menu.cjs'),
+      sandbox: true,
+      webSecurity: true
+    }
+  })
+  windowsMenuView = menuView
+  windowsMenuOpen = false
+  windowsMenuDark = nativeTheme.shouldUseDarkColors
+  menuView.setBackgroundColor('#00000000')
+  menuView.webContents.setZoomFactor(1)
+  menuView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  menuView.webContents.on('did-finish-load', () => {
+    if (!menuView.webContents.isDestroyed()) {
+      menuView.webContents.send('desktop-titlebar:theme-changed', windowsMenuDark)
+    }
+  })
+  window.contentView.addChildView(menuView)
+  updateWindowsMenuViewBounds(window)
+
+  const updateBounds = (): void => updateWindowsMenuViewBounds(window)
+  window.on('resize', updateBounds)
+  window.on('enter-full-screen', updateBounds)
+  window.on('leave-full-screen', updateBounds)
+  window.on('blur', () => setWindowsMenuOpen(window, false, true))
+
+  void menuView.webContents.loadFile(desktopResourcePath('windows-menu.html'), {
+    query: {
+      locale: harnessLocale(),
+      theme: windowsMenuDark ? 'dark' : 'light'
+    }
+  }).catch(showUnexpectedError)
 }
 
 function configureAppIdentity(): void {
@@ -456,10 +521,16 @@ function createWindow(): BrowserWindow {
   installContextMenu(window, harnessLocale)
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
+    if (windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
+      windowsMenuView.webContents.close()
+    }
+    windowsMenuView = undefined
+    windowsMenuOpen = false
     resolvePluginRecoveryAction('quit')
     resolveSafeModeAction({ type: 'quit' })
   })
   mainWindow = window
+  if (isWindows) attachWindowsMenuView(window)
   return window
 }
 
@@ -642,7 +713,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('desktop-menu:execute')
   ipcMain.handle('desktop-menu:execute', async (event, command: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedDesktopMenuEvent(event)
     if (!isDesktopMenuCommand(command)) {
       throw new Error('Unknown DSH Desktop menu command.')
     }
@@ -652,8 +723,25 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('desktop-menu:get-zoom-factor')
   ipcMain.handle('desktop-menu:get-zoom-factor', (event) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedDesktopMenuEvent(event)
     return { zoomFactor: mainWindow?.webContents.getZoomFactor() ?? 1 }
+  })
+
+  ipcMain.removeHandler('desktop-titlebar:set-menu-open')
+  ipcMain.handle('desktop-titlebar:set-menu-open', (event, open: unknown) => {
+    assertTrustedWindowsMenuEvent(event)
+    if (typeof open !== 'boolean') {
+      throw new Error('The application menu state must be a boolean.')
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) setWindowsMenuOpen(mainWindow, open)
+    return { ok: true }
+  })
+
+  ipcMain.removeHandler('desktop-titlebar:close-menu')
+  ipcMain.handle('desktop-titlebar:close-menu', (event) => {
+    assertTrustedMainWindowEvent(event)
+    if (mainWindow && !mainWindow.isDestroyed()) setWindowsMenuOpen(mainWindow, false, true)
+    return { ok: true }
   })
 
   ipcMain.removeHandler('desktop-titlebar:set-theme')
@@ -667,6 +755,33 @@ function registerHarnessHandlers(): void {
     }
     return { ok: true }
   })
+}
+
+function assertTrustedDesktopMenuEvent(event: IpcMainInvokeEvent): void {
+  const fromMainWindow =
+    mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame
+  const fromWindowsMenu =
+    windowsMenuView &&
+    !windowsMenuView.webContents.isDestroyed() &&
+    event.sender === windowsMenuView.webContents &&
+    event.senderFrame === windowsMenuView.webContents.mainFrame
+  if (!fromMainWindow && !fromWindowsMenu) {
+    throw new Error('This action is only available from the DSH Desktop window.')
+  }
+}
+
+function assertTrustedWindowsMenuEvent(event: IpcMainInvokeEvent): void {
+  if (
+    !windowsMenuView ||
+    windowsMenuView.webContents.isDestroyed() ||
+    event.sender !== windowsMenuView.webContents ||
+    event.senderFrame !== windowsMenuView.webContents.mainFrame
+  ) {
+    throw new Error('This action is only available from the Windows application menu.')
+  }
 }
 
 function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {

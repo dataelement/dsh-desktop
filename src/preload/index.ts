@@ -8,7 +8,7 @@ import {
 } from './update-view'
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
-import { mountWindowsTitlebar } from './windows-titlebar'
+import { mountWindowsTitlebarLayout } from './windows-titlebar'
 
 const ROOT_ID = 'dsh-desktop-update-root'
 const MOBILE_BUTTON_ID = 'dsh-desktop-mobile-button'
@@ -213,7 +213,7 @@ async function refreshMobileStatus(): Promise<void> {
 
 function initializeUi(): void {
   if (process.platform === 'win32') {
-    mountWindowsTitlebar({ document, ipcRenderer, locale })
+    mountWindowsTitlebarLayout({ document, ipcRenderer })
   }
   mount()
   mountMobileButton()

@@ -142,6 +142,10 @@
       {
         "from": "build/safe-mode.html",
         "to": "safe-mode.html"
+      },
+      {
+        "from": "build/windows-menu.html",
+        "to": "windows-menu.html"
       }
     ],
     "publish": [
