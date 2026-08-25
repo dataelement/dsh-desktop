@@ -135,6 +135,45 @@ describe('Research canvas file drops', () => {
     ])
   })
 
+  it('bounds Finder descriptors before resolution and keeps unusable metadata name-only', async () => {
+    const client = await loadConversationClient()
+    expect(client.RESEARCH_CANVAS_MAX_FILES_PER_DROP).toBe(64)
+    expect(client.RESEARCH_CANVAS_MAX_FILES_PER_SESSION).toBe(256)
+    if (typeof client.researchCanvasDropFiles !== 'function') return
+
+    const files = Array.from(
+      { length: client.RESEARCH_CANVAS_MAX_FILES_PER_DROP + 1 },
+      (_, index) => ({ name: `file-${index}.txt`, type: 'text/plain' })
+    )
+    const resolved: string[] = []
+    const dropped = client.researchCanvasDropFiles({ files, getData: () => '' }, (file: File) => {
+      resolved.push(file.name)
+      return `/tmp/${file.name}`
+    })
+
+    expect(dropped).toHaveLength(client.RESEARCH_CANVAS_MAX_FILES_PER_DROP)
+    expect(resolved).toHaveLength(client.RESEARCH_CANVAS_MAX_FILES_PER_DROP)
+    expect(dropped.at(-1)).toMatchObject({ name: 'file-63.txt', source: 'computer' })
+    expect(client.researchCanvasDropFiles({
+      files: [{ name: 'fallback.txt', type: 'x'.repeat(513) }],
+      getData: () => ''
+    }, () => '/'.repeat(513))).toEqual([
+      { name: 'fallback.txt', source: 'computer' }
+    ])
+    expect(client.researchCanvasDropFiles({
+      files: [
+        { name: 'overlong-path.txt', type: 'text/plain' },
+        { name: 'overlong-media.txt', type: 'x'.repeat(513) }
+      ],
+      getData: () => ''
+    }, (file: File) => file.name === 'overlong-path.txt'
+      ? '/'.repeat(513)
+      : '/tmp/overlong-media.txt')).toEqual([
+      { name: 'overlong-path.txt', source: 'computer' },
+      { name: 'overlong-media.txt', source: 'computer' }
+    ])
+  })
+
   it('owns only Finder files and the exact Sherlock MIME type', async () => {
     const client = await loadConversationClient()
     expect(client.researchCanvasOwnsFileDrag).toBeTypeOf('function')
@@ -175,6 +214,42 @@ describe('Research canvas file drops', () => {
     ])
   })
 
+  it('bounds session placement while preserving stable repeated-path placement', async () => {
+    const client = await loadConversationClient()
+    expect(client.RESEARCH_CANVAS_MAX_FILES_PER_DROP).toBe(64)
+    expect(client.RESEARCH_CANVAS_MAX_FILES_PER_SESSION).toBe(256)
+    if (typeof client.placeResearchCanvasFiles !== 'function') return
+    const sessionLimit = client.RESEARCH_CANVAS_MAX_FILES_PER_SESSION
+    const dropLimit = client.RESEARCH_CANVAS_MAX_FILES_PER_DROP
+    const existing = Array.from({ length: sessionLimit }, (_, index) => ({
+      id: `old-${index}`, path: `/w/${index}.txt`, name: `old-${index}.txt`,
+      source: 'computer', x: index, y: index
+    }))
+    const files = [
+      ...Array.from({ length: dropLimit - 1 }, (_, index) => ({
+        path: `/w/new-${index}.txt`, name: `new-${index}.txt`, source: 'computer'
+      })),
+      { path: '/w/255.txt', name: 'moved.txt', source: 'computer' },
+      { path: '/w/254.txt', name: 'ignored-after-limit.txt', source: 'computer' }
+    ]
+    const created: string[] = []
+    const placed = client.placeResearchCanvasFiles(existing, files, { x: 100, y: 200 }, () => {
+      const id = `new-${created.length}`
+      created.push(id)
+      return id
+    })
+
+    expect(placed).toHaveLength(sessionLimit)
+    expect(created).toEqual([])
+    expect(placed[255]).toMatchObject({
+      id: 'old-255', name: 'moved.txt', x: 100 + (dropLimit - 1) * 18,
+      y: 200 + (dropLimit - 1) * 18
+    })
+    expect(placed[254]).toMatchObject({
+      id: 'old-254', name: 'old-254.txt', x: 254, y: 254
+    })
+  })
+
   it('loads only finite, well-shaped persisted file nodes', async () => {
     const client = await loadConversationClient()
     expect(client.researchCanvasStorageKey).toBeTypeOf('function')
@@ -189,6 +264,47 @@ describe('Research canvas file drops', () => {
     expect(client.parseResearchCanvasFileNodes(JSON.stringify(valid))).toEqual(valid)
     expect(client.parseResearchCanvasFileNodes('[{"id":"1","name":"a","source":"computer","x":null,"y":2}]')).toEqual([])
     expect(client.parseResearchCanvasFileNodes('bad-json')).toEqual([])
+  })
+
+  it('canonicalizes persisted nodes and retains only first unique ids and paths', async () => {
+    const client = await loadConversationClient()
+    expect(client.parseResearchCanvasFileNodes).toBeTypeOf('function')
+    if (typeof client.parseResearchCanvasFileNodes !== 'function') return
+
+    expect(client.parseResearchCanvasFileNodes(JSON.stringify([
+      {
+        id: 'first', path: '/w/first.txt', name: 'first.txt', mediaType: 'text/plain',
+        source: 'computer', x: 1, y: 2, ignored: 'discard me'
+      },
+      { id: 'first', name: 'duplicate-id.txt', source: 'computer', x: 3, y: 4 },
+      { id: 'second', path: '/w/first.txt', name: 'duplicate-path.txt', source: 'computer', x: 5, y: 6 },
+      { id: 'invalid', name: 'invalid.txt', source: 'computer', x: null, y: 8 },
+      { id: 'name-only', name: 'name-only.txt', source: 'sherlock', x: 9, y: 10, ignored: true }
+    ]))).toEqual([
+      {
+        id: 'first', path: '/w/first.txt', name: 'first.txt', mediaType: 'text/plain',
+        source: 'computer', x: 1, y: 2
+      },
+      { id: 'name-only', name: 'name-only.txt', source: 'sherlock', x: 9, y: 10 }
+    ])
+  })
+
+  it('restores no more than the bounded session node count', async () => {
+    const client = await loadConversationClient()
+    expect(client.RESEARCH_CANVAS_MAX_FILES_PER_SESSION).toBe(256)
+    expect(client.parseResearchCanvasFileNodes).toBeTypeOf('function')
+    if (typeof client.parseResearchCanvasFileNodes !== 'function') return
+    const nodes = Array.from(
+      { length: client.RESEARCH_CANVAS_MAX_FILES_PER_SESSION + 1 },
+      (_, index) => ({
+        id: `node-${index}`, path: `/w/node-${index}.txt`, name: `node-${index}.txt`,
+        source: 'computer', x: index, y: index
+      })
+    )
+
+    const restored = client.parseResearchCanvasFileNodes(JSON.stringify(nodes))
+    expect(restored).toHaveLength(client.RESEARCH_CANVAS_MAX_FILES_PER_SESSION)
+    expect(restored.at(-1)).toMatchObject({ id: 'node-255', path: '/w/node-255.txt' })
   })
 
   it('round-trips nodes and keeps them usable when Research storage is unavailable', async () => {
