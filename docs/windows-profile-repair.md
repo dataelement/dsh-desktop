@@ -78,8 +78,11 @@ npm_config_side_effects_cache: 'false',
 
 **关键在于这形成了闭环**：5 分钟超时 → SIGTERM 打断 pnpm 的 copy/rename → 制造出新的坏包 →
 下次启动清掉更多、要装的更多 → 更装不完 → 再超时。**修复机制本身成了坏包的主要生产者**，
-4 → 6 → 15 正是这个循环的读数。node-pty 只是第一张骨牌（它的 `build/Release` 缺失、只剩 `prebuilds/`），
-真正让机器无法自愈的是循环本身。
+4 → 6 → 15 正是这个循环的读数。
+
+第一张骨牌是 node-pty 的 `AttachConsole failed` —— 那是它在无控制台进程里的运行时故障，**不是安装残缺**
+（该包随发 prebuilds，`prebuilds/win32-x64/` 完整，`build/Release` 本就不该存在）。它值得单独查，
+但真正让机器无法自愈的是循环本身：任何一次 harness 崩溃都足以点燃它，起因是什么并不重要。
 
 ## 建议修改
 
@@ -112,7 +115,7 @@ profile 仅 2 个直接依赖（`dshmarket`、`dsh-better-sidebar`）展开成 1
 
 ## 验证建议
 
-- NTFS + Defender 开启下构造残缺 node-pty，触发 repair，断言坏包数不再单调增长；
+- NTFS + Defender 开启下构造一次 harness 崩溃，触发 repair，断言坏包数不再单调增长；
 - 安装中途 kill 进程，重启后断言 profile 仍可用（marker 未写 → 走重建，而非半截）；
 - 对比 `clone-or-copy` 与 `hardlink` 在冷/热 store 下的耗时。
 
