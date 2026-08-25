@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index fff5f43..5e218fd 100644
+index fff5f43..6d1789d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -64,6 +64,30 @@ window.__ModuleLoader__.load({
@@ -265,7 +265,19 @@ index fff5f43..5e218fd 100644
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
  			/**
-@@ -1279,6 +1388,8 @@ window.__ModuleLoader__.load({
+@@ -1164,6 +1273,11 @@ window.__ModuleLoader__.load({
+ 					setBusy(false);
+ 				}
+ 			};
++			/** Add an explicit model row to the custom-provider draft. */
++			const addModel = () => {
++				setModels((current) => [...current.map((model) => ({ ...model })), { id: "" }]);
++				setModelQuery("");
++			};
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: ModelsSection_module_css_default["editor"],
+ 				children: [
+@@ -1279,6 +1393,8 @@ window.__ModuleLoader__.load({
  					(0, react_jsx_runtime.jsx)(ModelListEditor, {
  						models,
  						onChange: setModels,
@@ -274,7 +286,47 @@ index fff5f43..5e218fd 100644
  						probe: {
  							settingsNs: NS$1,
  							baseURL,
-@@ -1397,6 +1508,8 @@ window.__ModuleLoader__.load({
+@@ -1298,18 +1414,27 @@ window.__ModuleLoader__.load({
+ 						className: ModelsSection_module_css_default["advancedHint"],
+ 						children: hint
+ 					}),
+-					(0, react_jsx_runtime.jsx)(EditorFooter, {
+-						t,
+-						busy,
+-						submitDisabled: disabled || !ready,
+-						submitLabel: "create",
+-						submitBusyLabel: "creating",
+-						onCancel: () => {
+-							props.onClose(committed);
+-						},
+-						onSubmit: () => {
+-							create();
+-						}
++					(0, react_jsx_runtime.jsxs)("div", {
++						className: "dshProviderEditorStickyFooter",
++						children: [(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: ModelsSection_module_css_default["addModelButton"],
++							disabled: profileDisabled,
++							onClick: addModel,
++							children: t("addModel")
++						}), (0, react_jsx_runtime.jsx)(EditorFooter, {
++							t,
++							busy,
++							submitDisabled: disabled || !ready,
++							submitLabel: "create",
++							submitBusyLabel: "creating",
++							onCancel: () => {
++								props.onClose(committed);
++							},
++							onSubmit: () => {
++								create();
++							}
++						})]
+ 					})
+ 				]
+ 			});
+@@ -1397,6 +1522,8 @@ window.__ModuleLoader__.load({
  			const [keyState, setKeyState] = (0, react.useState)(void 0);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -283,7 +335,7 @@ index fff5f43..5e218fd 100644
  			const [committedOriginal, setCommittedOriginal] = (0, react.useState)(() => schema.getPath(namespace.user, settingsPath));
  			const [expectedRevision, setExpectedRevision] = (0, react.useState)(() => namespace.revision);
  			const root = (0, react.useMemo)(() => schema.rehydrate(namespace.schema), [namespace.schema, schema]);
-@@ -1522,6 +1635,15 @@ window.__ModuleLoader__.load({
+@@ -1522,6 +1649,15 @@ window.__ModuleLoader__.load({
  			const inheritedModels = () => {
  				return schema.getPath(namespace.base, [...settingsPath, "models"]) ?? schema.nodeAtPath(root, [...settingsPath, "models"])?.meta.default;
  			};
@@ -299,7 +351,7 @@ index fff5f43..5e218fd 100644
  			/**
  			* The curated fields of one known adapter family. The family arrives
  			* narrowed so the per-family branches below are total: an unknown namespace
-@@ -1539,6 +1661,8 @@ window.__ModuleLoader__.load({
+@@ -1539,6 +1675,8 @@ window.__ModuleLoader__.load({
  				const catalogProps = {
  					models,
  					overridden: modelsOverridden,
@@ -308,7 +360,7 @@ index fff5f43..5e218fd 100644
  					t,
  					disabled,
  					onChange: (next) => {
-@@ -1577,6 +1701,10 @@ window.__ModuleLoader__.load({
+@@ -1577,6 +1715,10 @@ window.__ModuleLoader__.load({
  					]
  				}), props.credentialOnly === true ? null : (0, react_jsx_runtime.jsxs)("details", {
  					className: ModelsSection_module_css_default["customized"],
@@ -319,7 +371,7 @@ index fff5f43..5e218fd 100644
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -1653,8 +1781,22 @@ window.__ModuleLoader__.load({
+@@ -1653,8 +1795,22 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -343,7 +395,7 @@ index fff5f43..5e218fd 100644
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -1678,19 +1820,15 @@ window.__ModuleLoader__.load({
+@@ -1678,19 +1834,15 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
  					}),
@@ -372,7 +424,7 @@ index fff5f43..5e218fd 100644
  					})
  				]
  			});
-@@ -1784,6 +1922,26 @@ window.__ModuleLoader__.load({
+@@ -1784,6 +1936,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -399,7 +451,7 @@ index fff5f43..5e218fd 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1810,6 +1968,8 @@ window.__ModuleLoader__.load({
+@@ -1810,6 +1982,8 @@ window.__ModuleLoader__.load({
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
  			const [declaring, setDeclaring] = (0, react.useState)(false);
@@ -408,7 +460,7 @@ index fff5f43..5e218fd 100644
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -1879,10 +2039,16 @@ window.__ModuleLoader__.load({
+@@ -1879,10 +2053,16 @@ window.__ModuleLoader__.load({
  			};
  			const anyUsable = state.rows.some(providerUsable);
  			const configured = state.rows.filter((row) => row.configured);
@@ -426,7 +478,7 @@ index fff5f43..5e218fd 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["section"],
  				children: [
-@@ -2001,24 +2167,66 @@ window.__ModuleLoader__.load({
+@@ -2001,24 +2181,66 @@ window.__ModuleLoader__.load({
  							className: ModelsSection_module_css_default["addCard"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["field"],
@@ -508,7 +560,7 @@ index fff5f43..5e218fd 100644
  							}), (0, react_jsx_runtime.jsx)(ProviderEditor, {
  								provider: addTarget.provider,
  								displayName: addTarget.displayName,
-@@ -2062,6 +2270,8 @@ window.__ModuleLoader__.load({
+@@ -2062,6 +2284,8 @@ window.__ModuleLoader__.load({
  									setDeclaring(false);
  									setAdding(true);
  									setEditing(targetOf(first));
@@ -517,7 +569,7 @@ index fff5f43..5e218fd 100644
  								},
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
  							}), (0, react_jsx_runtime.jsxs)("button", {
-@@ -2170,7 +2380,7 @@ window.__ModuleLoader__.load({
+@@ -2170,7 +2394,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.module.css.mjs
@@ -526,7 +578,7 @@ index fff5f43..5e218fd 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2181,6 +2391,12 @@ window.__ModuleLoader__.load({
+@@ -2181,6 +2405,12 @@ window.__ModuleLoader__.load({
  		}
  		var DeepSeekOnboardingDialog_module_css_default = {
  			"description": "GL8Viq_description",
@@ -539,7 +591,7 @@ index fff5f43..5e218fd 100644
  			"editor": "GL8Viq_editor"
  		};
  		//#endregion
-@@ -2196,35 +2412,50 @@ window.__ModuleLoader__.load({
+@@ -2196,35 +2426,50 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -608,7 +660,7 @@ index fff5f43..5e218fd 100644
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2237,26 +2468,48 @@ window.__ModuleLoader__.load({
+@@ -2237,26 +2482,48 @@ window.__ModuleLoader__.load({
  				children: [(0, react_jsx_runtime.jsx)("p", {
  					className: DeepSeekOnboardingDialog_module_css_default.description,
  					children: t("onboardingDescription")
@@ -660,7 +712,7 @@ index fff5f43..5e218fd 100644
  				})]
  			});
  		}
-@@ -2520,6 +2773,8 @@ window.__ModuleLoader__.load({
+@@ -2520,6 +2787,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -669,7 +721,7 @@ index fff5f43..5e218fd 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2551,7 +2806,12 @@ window.__ModuleLoader__.load({
+@@ -2551,7 +2820,12 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "Uses the provider default",
  			maxTokens: "Max output tokens",
  			maxTokensPlaceholder: "Uses the provider default",
@@ -683,7 +735,7 @@ index fff5f43..5e218fd 100644
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2595,10 +2855,14 @@ window.__ModuleLoader__.load({
+@@ -2595,10 +2869,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.en.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.en.continueLabel,
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -701,7 +753,7 @@ index fff5f43..5e218fd 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2618,6 +2882,8 @@ window.__ModuleLoader__.load({
+@@ -2618,6 +2896,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -710,7 +762,7 @@ index fff5f43..5e218fd 100644
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2649,7 +2915,12 @@ window.__ModuleLoader__.load({
+@@ -2649,7 +2929,12 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "使用提供方默认值",
  			maxTokens: "最大输出 token 数",
  			maxTokensPlaceholder: "使用提供方默认值",
@@ -724,7 +776,7 @@ index fff5f43..5e218fd 100644
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2693,10 +2964,14 @@ window.__ModuleLoader__.load({
+@@ -2693,10 +2978,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.zh.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
  			welcomeError: "暂时无法保存确认状态，请重试。",
