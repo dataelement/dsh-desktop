@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile
+} from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,68 +24,10 @@ import {
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 
 const temporaryDirectories: string[] = []
-
-const CAPTURE_CLIENT = `
-window.__ModuleLoader__.load({
-  id: 'dsh-file-drop',
-  factory: (require) => {
-    const React = require('react')
-    const exports = {}
-
-    function DropZone(props) {
-      const [drag, setDrag] = React.useState(false)
-      const depthRef = React.useRef(0)
-      React.useEffect(() => {
-        const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')
-        const onDragEnter = (e) => {
-          if (!hasFiles(e)) return
-          e.preventDefault()
-          e.stopPropagation()
-          depthRef.current += 1
-          setDrag(true)
-        }
-        const onDragOver = (e) => {
-          if (!hasFiles(e)) return
-          e.preventDefault()
-          e.stopPropagation()
-          if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-        }
-        const onDragLeave = (e) => {
-          e.stopPropagation()
-          depthRef.current -= 1
-        }
-        const onDrop = (e) => {
-          if (!hasFiles(e)) return
-          e.preventDefault()
-          e.stopPropagation()
-          depthRef.current = 0
-          setDrag(false)
-          void handleDrop(e)
-        }
-        window.addEventListener('dragenter', onDragEnter, true)
-        window.addEventListener('dragover', onDragOver, true)
-        window.addEventListener('dragleave', onDragLeave, true)
-        window.addEventListener('drop', onDrop, true)
-        return () => {
-          window.removeEventListener('dragenter', onDragEnter, true)
-          window.removeEventListener('dragover', onDragOver, true)
-          window.removeEventListener('dragleave', onDragLeave, true)
-          window.removeEventListener('drop', onDrop, true)
-        }
-      }, [])
-
-      function handleDrop(e) {
-        props.onDrop(e)
-      }
-
-      return drag
-    }
-
-    exports.DropZone = DropZone
-    return exports
-  }
-})
-`
+const PRISTINE_CLIENT_FIXTURE = new URL(
+  './fixtures/dsh-file-drop-1.0.0-client.js',
+  import.meta.url
+)
 
 afterEach(async () => {
   await Promise.all(
@@ -87,8 +37,23 @@ afterEach(async () => {
   )
 })
 
-async function makeDshHome(clientSource = CAPTURE_CLIENT): Promise<{
+async function pristineClientSource(): Promise<string> {
+  return readFile(PRISTINE_CLIENT_FIXTURE, 'utf8')
+}
+
+async function writePlugin(pluginDirectory: string, clientSource: string): Promise<void> {
+  await mkdir(pluginDirectory, { recursive: true })
+  await writeFile(
+    join(pluginDirectory, 'package.json'),
+    `${JSON.stringify({ name: 'dsh-file-drop', version: '1.0.0' }, null, 2)}\n`,
+    'utf8'
+  )
+  await writeFile(join(pluginDirectory, 'client.js'), clientSource, 'utf8')
+}
+
+async function makeDshHome(clientSource?: string): Promise<{
   dshHome: string
+  pluginDirectory: string
   clientPath: string
 }> {
   const root = await mkdtemp(join(tmpdir(), 'sherlock-dsh-file-drop-'))
@@ -102,14 +67,8 @@ async function makeDshHome(clientSource = CAPTURE_CLIENT): Promise<{
     'dsh-file-drop'
   )
   const clientPath = join(pluginDirectory, 'client.js')
-  await mkdir(pluginDirectory, { recursive: true })
-  await writeFile(
-    join(pluginDirectory, 'package.json'),
-    `${JSON.stringify({ name: 'dsh-file-drop', version: '1.0.0' }, null, 2)}\n`,
-    'utf8'
-  )
-  await writeFile(clientPath, clientSource, 'utf8')
-  return { dshHome, clientPath }
+  await writePlugin(pluginDirectory, clientSource ?? await pristineClientSource())
+  return { dshHome, pluginDirectory, clientPath }
 }
 
 function installCaptureClient(
@@ -119,22 +78,38 @@ function installCaptureClient(
   onDragState: (active: boolean) => void
 ): () => void {
   let descriptor: {
-    factory(require: (id: string) => unknown): { DropZone: (props: unknown) => unknown }
+    factory(require: (id: string) => unknown): Record<string, unknown>
   } | undefined
   const cleanups: Array<() => void> = []
   Object.assign(browserWindow, {
+    dshDesktop: {
+      getPathForFile: () => '/tmp/report.pdf'
+    },
     __ModuleLoader__: {
       load(value: typeof descriptor) {
         descriptor = value
       }
     }
   })
-  runInNewContext(source, { window: browserWindow })
+  runInNewContext(source, {
+    window: browserWindow,
+    document: browserWindow.document,
+    setTimeout: () => 1,
+    clearTimeout: () => undefined
+  })
   if (!descriptor) throw new Error('capture fixture did not register')
   const client = descriptor.factory((id) => {
     if (id !== 'react') throw new Error(`unexpected fixture module: ${id}`)
     return {
-      useState: () => [false, onDragState],
+      Fragment: Symbol('Fragment'),
+      createElement: (type: unknown, props?: unknown) =>
+        typeof type === 'function'
+          ? (type as (value: unknown) => unknown)(props ?? {})
+          : null,
+      useState: (value: unknown) => [
+        value,
+        typeof value === 'boolean' ? onDragState : () => undefined
+      ],
       useRef: (value: unknown) => ({ current: value }),
       useEffect: (effect: () => void | (() => void)) => {
         const cleanup = effect()
@@ -142,7 +117,37 @@ function installCaptureClient(
       }
     }
   })
-  client.DropZone({ onDrop })
+  const bundle = client as unknown as {
+    apply(ctx: {
+      effect(effect: () => void | (() => void)): void
+      slots: {
+        inject(name: string, register: () => void): void
+        register(
+          options: { id: string },
+          render: (props: unknown) => unknown
+        ): void
+      }
+    }): void
+  }
+  bundle.apply({
+    effect(effect) {
+      const cleanup = effect()
+      if (cleanup) cleanups.push(cleanup)
+    },
+    slots: {
+      inject(_name, register) {
+        register()
+      },
+      register(options, render) {
+        if (options.id !== 'file-drop') return
+        render({
+          sessionId: 'session-1',
+          input: { draft: '' },
+          inputActions: { setDraft: onDrop }
+        })
+      }
+    }
+  })
   return () => cleanups.splice(0).forEach((cleanup) => cleanup())
 }
 
@@ -274,10 +279,100 @@ describe('dsh-file-drop Research canvas compatibility', () => {
     expect(result).toEqual({
       status: 'unsupported',
       clientPath,
-      reason: 'The dsh-file-drop 1.0.0 client capture handlers did not match.'
+      reason: 'The dsh-file-drop 1.0.0 client source identity did not match.'
     })
     expect(await readFile(clientPath, 'utf8')).toBe(
       'window.addEventListener("drop", unknown)\n'
     )
+  })
+
+  it('rejects a marked client when part of the known helper was deleted', async () => {
+    const { dshHome, clientPath } = await makeDshHome()
+    expect((await ensureDshFileDropResearchCanvasCompatibility(dshHome)).status)
+      .toBe('patched')
+    const patched = await readFile(clientPath, 'utf8')
+    const corrupt = patched.replace(
+      '          depthRef.current = 0\n          setDrag(false)\n          return true',
+      '          setDrag(false)\n          return true'
+    )
+    expect(corrupt).not.toBe(patched)
+    await writeFile(clientPath, corrupt, 'utf8')
+
+    const result = await ensureDshFileDropResearchCanvasCompatibility(dshHome)
+
+    expect(result.status).toBe('unsupported')
+    expect(await readFile(clientPath, 'utf8')).toBe(corrupt)
+  })
+
+  it('rejects a partially corrupted compatibility marker', async () => {
+    const { dshHome, clientPath } = await makeDshHome()
+    expect((await ensureDshFileDropResearchCanvasCompatibility(dshHome)).status)
+      .toBe('patched')
+    const patched = await readFile(clientPath, 'utf8')
+    const corrupt = patched.replace(
+      DSH_FILE_DROP_RESEARCH_CANVAS_MARKER,
+      'Sherlock dsh-file-drop compatibility: Research owns its canvas'
+    )
+    expect(corrupt).not.toBe(patched)
+    await writeFile(clientPath, corrupt, 'utf8')
+
+    const result = await ensureDshFileDropResearchCanvasCompatibility(dshHome)
+
+    expect(result.status).toBe('unsupported')
+    expect(await readFile(clientPath, 'utf8')).toBe(corrupt)
+  })
+
+  it('rejects semantic drift even when every capture anchor still matches', async () => {
+    const pristine = await pristineClientSource()
+    const drifted = pristine.replace(
+      'const MAX_BYTES = 25 * 1024 * 1024',
+      'const MAX_BYTES = 25 * 1024 * 1024 + 1'
+    )
+    expect(drifted).not.toBe(pristine)
+    const { dshHome, clientPath } = await makeDshHome(drifted)
+
+    const result = await ensureDshFileDropResearchCanvasCompatibility(dshHome)
+
+    expect(result.status).toBe('unsupported')
+    expect(await readFile(clientPath, 'utf8')).toBe(drifted)
+  })
+
+  it('refuses a symlinked named plugin directory without mutating its target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sherlock-dsh-file-drop-link-'))
+    temporaryDirectories.push(root)
+    const dshHome = join(root, 'harness')
+    const realPluginDirectory = join(root, 'outside-plugin')
+    const pristine = await pristineClientSource()
+    await writePlugin(realPluginDirectory, pristine)
+    const nodeModules = join(dshHome, 'profiles', 'web', 'node_modules')
+    const pluginDirectory = join(nodeModules, 'dsh-file-drop')
+    const clientPath = join(pluginDirectory, 'client.js')
+    await mkdir(nodeModules, { recursive: true })
+    await symlink(
+      realPluginDirectory,
+      pluginDirectory,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    )
+
+    const result = await ensureDshFileDropResearchCanvasCompatibility(dshHome)
+
+    expect(result.status).toBe('unsupported')
+    expect((await lstat(pluginDirectory)).isSymbolicLink()).toBe(true)
+    expect(await readFile(join(realPluginDirectory, 'client.js'), 'utf8')).toBe(pristine)
+  })
+
+  it('refuses a symlinked client file without replacing the link or target', async () => {
+    const pristine = await pristineClientSource()
+    const { dshHome, clientPath } = await makeDshHome()
+    const outsideClient = join(dshHome, '..', 'outside-client.js')
+    await writeFile(outsideClient, pristine, 'utf8')
+    await rm(clientPath)
+    await symlink(outsideClient, clientPath, 'file')
+
+    const result = await ensureDshFileDropResearchCanvasCompatibility(dshHome)
+
+    expect(result.status).toBe('unsupported')
+    expect((await lstat(clientPath)).isSymbolicLink()).toBe(true)
+    expect(await readFile(outsideClient, 'utf8')).toBe(pristine)
   })
 })

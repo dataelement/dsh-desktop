@@ -1,8 +1,21 @@
-import { chmod, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
+import {
+  chmod,
+  lstat,
+  open,
+  readFile,
+  realpath,
+  rename,
+  rm
+} from 'node:fs/promises'
+import { isAbsolute, join, relative, sep } from 'node:path'
 
 const PLUGIN_NAME = 'dsh-file-drop'
 const SUPPORTED_VERSION = '1.0.0'
+const PRISTINE_CLIENT_SHA256 =
+  '51260b81dcee8c091ab708698d9c247b190d3e3b9884e930ad9e3742cb7c6377'
+const PATCHED_CLIENT_SHA256 =
+  'ef70d5f01c43a4a2451e46f6ef01eea8614a838a043a9eabe8a5e5597bf4ca77'
 const ORIGINAL_FILE_GUARD = '          if (!hasFiles(e)) return'
 const RESEARCH_FILE_GUARD =
   '          if (!hasFiles(e) || releaseResearchCanvasEvent(e)) return'
@@ -25,18 +38,14 @@ function occurrenceCount(source: string, needle: string): number {
   return source.split(needle).length - 1
 }
 
-function hasCompleteCompatibility(source: string): boolean {
-  return (
-    source.includes(DSH_FILE_DROP_RESEARCH_CANVAS_MARKER) &&
-    occurrenceCount(source, RESEARCH_FILE_GUARD) === 3 &&
-    occurrenceCount(source, RESEARCH_LEAVE_START) === 1
-  )
+function sourceIdentity(source: string): string {
+  return createHash('sha256').update(source).digest('hex')
 }
 
 export function patchDshFileDropClientSource(source: string): string | undefined {
-  if (source.includes(DSH_FILE_DROP_RESEARCH_CANVAS_MARKER)) {
-    return hasCompleteCompatibility(source) ? source : undefined
-  }
+  const identity = sourceIdentity(source)
+  if (identity === PATCHED_CLIENT_SHA256) return source
+  if (identity !== PRISTINE_CLIENT_SHA256) return undefined
   if (
     occurrenceCount(source, ORIGINAL_FILE_GUARD) !== 3 ||
     occurrenceCount(source, ORIGINAL_LEAVE_START) !== 1
@@ -64,10 +73,11 @@ export function patchDshFileDropClientSource(source: string): string | undefined
     .replace(hasFiles, researchOwnership)
     .replaceAll(ORIGINAL_FILE_GUARD, RESEARCH_FILE_GUARD)
     .replace(ORIGINAL_LEAVE_START, RESEARCH_LEAVE_START)
-  return hasCompleteCompatibility(patched) ? patched : undefined
+  return sourceIdentity(patched) === PATCHED_CLIENT_SHA256 ? patched : undefined
 }
 
 function pluginPaths(dshHome: string): {
+  pluginDirectory: string
   manifestPath: string
   clientPath: string
 } {
@@ -79,9 +89,56 @@ function pluginPaths(dshHome: string): {
     PLUGIN_NAME
   )
   return {
+    pluginDirectory,
     manifestPath: join(pluginDirectory, 'package.json'),
     clientPath: join(pluginDirectory, 'client.js')
   }
+}
+
+function isContainedPath(boundary: string, candidate: string): boolean {
+  const path = relative(boundary, candidate)
+  return (
+    path.length > 0 &&
+    !isAbsolute(path) &&
+    path !== '..' &&
+    !path.startsWith(`..${sep}`)
+  )
+}
+
+async function validatePluginPaths(paths: {
+  pluginDirectory: string
+  manifestPath: string
+  clientPath: string
+}): Promise<{ sourceMode: number } | { reason: string }> {
+  const [pluginInfo, manifestInfo, clientInfo] = await Promise.all([
+    lstat(paths.pluginDirectory),
+    lstat(paths.manifestPath),
+    lstat(paths.clientPath)
+  ])
+  if (pluginInfo.isSymbolicLink() || !pluginInfo.isDirectory()) {
+    return { reason: 'The dsh-file-drop package directory must be a real directory.' }
+  }
+  if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile()) {
+    return { reason: 'The dsh-file-drop package manifest must be a real file.' }
+  }
+  if (clientInfo.isSymbolicLink() || !clientInfo.isFile()) {
+    return { reason: 'The dsh-file-drop client must be a real file.' }
+  }
+
+  const [realPluginDirectory, realManifestPath, realClientPath] = await Promise.all([
+    realpath(paths.pluginDirectory),
+    realpath(paths.manifestPath),
+    realpath(paths.clientPath)
+  ])
+  if (
+    !isContainedPath(realPluginDirectory, realManifestPath) ||
+    !isContainedPath(realPluginDirectory, realClientPath)
+  ) {
+    return {
+      reason: 'The dsh-file-drop package files must remain inside the resolved package directory.'
+    }
+  }
+  return { sourceMode: clientInfo.mode }
 }
 
 function isMissing(error: unknown): boolean {
@@ -96,19 +153,23 @@ function isMissing(error: unknown): boolean {
 export async function ensureDshFileDropResearchCanvasCompatibility(
   dshHome: string
 ): Promise<DshFileDropCompatibilityResult> {
-  const { manifestPath, clientPath } = pluginPaths(dshHome)
+  const paths = pluginPaths(dshHome)
+  const { manifestPath, clientPath } = paths
   let manifestRaw: string
   let source: string
   let sourceMode: number
   try {
-    const [rawManifest, rawSource, sourceStat] = await Promise.all([
+    const pathValidation = await validatePluginPaths(paths)
+    if ('reason' in pathValidation) {
+      return { status: 'unsupported', clientPath, reason: pathValidation.reason }
+    }
+    const [rawManifest, rawSource] = await Promise.all([
       readFile(manifestPath, 'utf8'),
-      readFile(clientPath, 'utf8'),
-      stat(clientPath)
+      readFile(clientPath, 'utf8')
     ])
     manifestRaw = rawManifest
     source = rawSource
-    sourceMode = sourceStat.mode
+    sourceMode = pathValidation.sourceMode
   } catch (error) {
     if (isMissing(error)) return { status: 'not-installed', clientPath }
     throw error
@@ -131,8 +192,16 @@ export async function ensureDshFileDropResearchCanvasCompatibility(
       reason: `Expected ${PLUGIN_NAME} ${SUPPORTED_VERSION}.`
     }
   }
-  if (hasCompleteCompatibility(source)) {
+  const identity = sourceIdentity(source)
+  if (identity === PATCHED_CLIENT_SHA256) {
     return { status: 'already-compatible', clientPath }
+  }
+  if (identity !== PRISTINE_CLIENT_SHA256) {
+    return {
+      status: 'unsupported',
+      clientPath,
+      reason: 'The dsh-file-drop 1.0.0 client source identity did not match.'
+    }
   }
 
   const patched = patchDshFileDropClientSource(source)
@@ -140,16 +209,23 @@ export async function ensureDshFileDropResearchCanvasCompatibility(
     return {
       status: 'unsupported',
       clientPath,
-      reason: 'The dsh-file-drop 1.0.0 client capture handlers did not match.'
+      reason: 'The dsh-file-drop 1.0.0 client compatibility transform did not match.'
     }
   }
 
-  const temporaryPath = `${clientPath}.sherlock-${process.pid}.tmp`
+  const temporaryPath = `${clientPath}.sherlock-${process.pid}-${randomUUID()}.tmp`
+  const sourcePermissions = sourceMode & 0o7777
+  let temporaryFile: Awaited<ReturnType<typeof open>> | undefined
   try {
-    await writeFile(temporaryPath, patched, { encoding: 'utf8', mode: sourceMode })
-    await chmod(temporaryPath, sourceMode)
+    temporaryFile = await open(temporaryPath, 'wx', sourcePermissions)
+    await temporaryFile.writeFile(patched, 'utf8')
+    await temporaryFile.sync()
+    await temporaryFile.close()
+    temporaryFile = undefined
+    await chmod(temporaryPath, sourcePermissions)
     await rename(temporaryPath, clientPath)
   } finally {
+    await temporaryFile?.close()
     await rm(temporaryPath, { force: true })
   }
   return { status: 'patched', clientPath }
