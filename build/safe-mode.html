@@ -72,10 +72,10 @@
         <p class="safety" id="safety-note"></p>
         <div class="actions">
           <button class="button" id="uninstall" type="button" disabled></button>
-          <button class="button primary" id="restart" type="button"></button>
+          <button class="button primary" id="agent" type="button"></button>
         </div>
       </section>
-      <footer class="footer"><button class="quit" id="quit" type="button"></button></footer>
+      <footer class="footer"><button class="quit" id="restart" type="button"></button><button class="quit" id="quit" type="button"></button></footer>
     </main>
     <script>
       const params = new URLSearchParams(location.search)
@@ -92,6 +92,7 @@
       setText('selection-hint', model.selectionHint)
       setText('safety-note', model.safetyNote)
       setText('uninstall', model.uninstallLabel)
+      setText('agent', model.agentLabel)
       setText('restart', model.restartLabel)
       setText('quit', model.quitLabel)
       setText('select-all', model.selectAllLabel)
@@ -100,6 +101,7 @@
       const list = document.getElementById('plugins')
       const empty = document.getElementById('empty')
       const uninstall = document.getElementById('uninstall')
+      const agent = document.getElementById('agent')
       const restart = document.getElementById('restart')
       const checkboxes = []
       for (const plugin of Array.isArray(model.plugins) ? model.plugins : []) {
@@ -116,10 +118,11 @@
       uninstall.addEventListener('click', () => {
         const plugins = checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
         if (plugins.length === 0) return
-        uninstall.disabled = true; uninstall.textContent = model.uninstallBusyLabel; restart.disabled = true
+        uninstall.disabled = true; uninstall.textContent = model.uninstallBusyLabel; agent.disabled = true
         void window.dshSafeMode.action('uninstall', plugins)
       })
-      restart.addEventListener('click', () => { restart.disabled = true; restart.textContent = model.restartBusyLabel; uninstall.disabled = true; void window.dshSafeMode.action('restart', []) })
+      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; uninstall.disabled = true; void window.dshSafeMode.action('agent', []) })
+      restart.addEventListener('click', () => { restart.disabled = true; restart.textContent = model.restartBusyLabel; void window.dshSafeMode.action('restart', []) })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', []))
     </script>
   </body>

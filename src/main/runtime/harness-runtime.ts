@@ -29,9 +29,13 @@ export interface HarnessChildProcess extends EventEmitter {
   kill(signal?: NodeJS.Signals): boolean
 }
 
-export function buildHarnessArguments(port: number, patchPath?: string): string[] {
+export function buildHarnessArguments(
+  port: number,
+  patchPath?: string,
+  profile = 'web'
+): string[] {
   return [
-    'web',
+    ...(profile === 'web' ? ['web'] : ['--profile', profile]),
     ...(patchPath ? ['--patch', patchPath] : []),
     // The desktop window is the only intended surface. Without this, Harness
     // hands the same loopback URL to the system browser on every launch.
@@ -80,13 +84,14 @@ export function buildNodeArguments(
   nodeEntryPath: string,
   dshEntryPath: string,
   port: number,
-  patchPath?: string
+  patchPath?: string,
+  profile = 'web'
 ): string[] {
   return [
     '--expose-internals',
     nodeEntryPath,
     dshEntryPath,
-    ...buildHarnessArguments(port, patchPath)
+    ...buildHarnessArguments(port, patchPath, profile)
   ]
 }
 
@@ -125,7 +130,7 @@ export class HarnessRuntime {
     }
   }
 
-  async start(launchDirectory: string): Promise<void> {
+  async start(launchDirectory: string, profile = 'web'): Promise<void> {
     await this.stop()
     this.launchDirectory = launchDirectory
     this.url = undefined
@@ -157,13 +162,15 @@ export class HarnessRuntime {
       this.options.nodeEntryPath,
       this.options.dshEntryPath,
       port,
-      this.options.dshPatchPath
+      this.options.dshPatchPath,
+      profile
     )
     const startupTimeoutMs =
       this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 120_000 : 45_000)
 
     this.writeLog(`\n[desktop] starting ${new Date().toISOString()}`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
+    this.writeLog(`[desktop] profile ${profile}`)
     this.writeLog(`[desktop] endpoint ${url}`)
     this.setState('starting', 'Starting DeepSeek Harness…')
 

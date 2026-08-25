@@ -71,7 +71,7 @@ DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop �
 
 ### 安全模式
 
-如果第三方插件影响正常使用，可从 `Harness` 菜单选择“进入安全模式…”。DSH Desktop 会先停止 Harness，屏蔽所有第三方插件启动，并显示当前 Profile 中可卸载的插件。卸载完成后选择“退出安全模式并启动 Harness”即可恢复正常启动。
+如果第三方插件影响正常使用，可从 `Harness` 菜单选择“进入安全模式…”。DSH Desktop 会使用一个仅包含官方核心 bundle 的隔离 Profile 启动 Harness，屏蔽正常 web Profile 中的第三方插件；Agent、会话、模型配置和工作区仍可正常使用。页面顶部的安全模式提示可以打开插件管理页，卸载问题插件或恢复正常启动。
 
 当界面无法进入时，也可以在启动 DSH Desktop 时传入 `--safe-mode`。例如 macOS：
 

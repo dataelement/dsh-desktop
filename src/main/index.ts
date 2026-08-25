@@ -36,6 +36,7 @@ import {
   resetPluginProfile,
   uninstallPluginFromProfile
 } from './state/plugin-recovery'
+import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
 import {
   desktopHarnessUrl,
   isAbortedNavigationError,
@@ -62,6 +63,7 @@ import { aboutDetail, bundledHarnessVersion } from './version-info'
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
   | { type: 'uninstall'; plugins: string[] }
+  | { type: 'agent' }
   | { type: 'restart' }
   | { type: 'quit' }
 
@@ -89,6 +91,7 @@ let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
 let pendingFrontendPluginRecovery = false
 let pendingFrontendPluginRecoveryMessage: string | undefined
 let safeModeVisible = false
+let safeModeManagerVisible = false
 let safeModeActionResolver: ((action: SafeModeAction) => void) | undefined
 const startInSafeMode = shouldStartInSafeMode(process.argv)
 
@@ -543,6 +546,7 @@ function launchHarness(): Promise<void> {
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
+    safeModeVisible = false
     const dshHome = join(app.getPath('userData'), 'harness')
     await showSplash()
     // The repair only holds on a stopped Harness, and a restart still has the
@@ -563,11 +567,31 @@ function launchHarness(): Promise<void> {
   return harnessLaunchOperation
 }
 
+function launchSafeHarness(): Promise<void> {
+  if (harnessLaunchOperation) return harnessLaunchOperation
+
+  harnessLaunchOperation = (async () => {
+    safeModeVisible = true
+    const dshHome = join(app.getPath('userData'), 'harness')
+    await showSplash()
+    await runtime.stop()
+    await ensureSafeModeProfile(dshHome)
+    runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
+    await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
+    if (runtime.snapshot().phase === 'ready') {
+      void mobileBridge.start().catch(showUnexpectedError)
+    }
+  })().finally(() => {
+    harnessLaunchOperation = undefined
+  })
+  return harnessLaunchOperation
+}
+
 function restartHarness(): Promise<void> {
   if (failureRecoveryVisible) resolvePluginRecoveryAction('restart')
   if (safeModeVisible) {
-    resolveSafeModeAction({ type: 'restart' })
-    return Promise.resolve()
+    resolveSafeModeAction({ type: 'agent' })
+    return launchSafeHarness()
   }
   return launchHarness()
 }
@@ -859,7 +883,7 @@ async function showPluginRecovery(options?: {
         }
         continue
       } else if (action === 'restart') {
-        await launchHarness()
+        await (safeModeVisible ? launchSafeHarness() : launchHarness())
         if (applyPendingFrontendEvidence()) continue
         if (runtime.snapshot().phase === 'ready') {
           schedulePluginRecoverySessionReset()
@@ -964,22 +988,31 @@ async function removeSafeModePlugin(dshHome: string, pluginName: string): Promis
 }
 
 async function showSafeMode(): Promise<void> {
-  if (safeModeVisible || quitting) return
+  if (quitting) return
   if (failureRecoveryVisible) {
     resolvePluginRecoveryAction('safe-mode')
     return
   }
-  safeModeVisible = true
+  if (safeModeVisible) {
+    const snapshot = runtime.snapshot()
+    if (snapshot.phase === 'ready' && snapshot.url) {
+      await openHarness(snapshot.url)
+    } else {
+      await launchSafeHarness()
+    }
+    return
+  }
+  await launchSafeHarness()
+}
+
+async function showSafeModeManager(): Promise<void> {
+  if (!safeModeVisible || safeModeManagerVisible || quitting) return
+  safeModeManagerVisible = true
   const dshHome = join(app.getPath('userData'), 'harness')
   const isChinese = harnessLocale() === 'zh'
   let notice: string | undefined
 
   try {
-    // Safe Mode never starts Harness: stopping it first guarantees plugin code
-    // cannot run while the user inspects or removes profile bundles.
-    await runtime.stop()
-    await mobileBridge?.stop()
-
     while (!quitting) {
       const installed = await listInstalledProfilePlugins(dshHome)
       const action = await waitForSafeModeAction({ plugins: installed, notice })
@@ -989,8 +1022,12 @@ async function showSafeMode(): Promise<void> {
         app.quit()
         return
       }
+      if (action.type === 'agent') {
+        const snapshot = runtime.snapshot()
+        if (snapshot.phase === 'ready' && snapshot.url) await openHarness(snapshot.url)
+        return
+      }
       if (action.type === 'restart') {
-        safeModeVisible = false
         await launchHarness()
         void mobileBridge.start().catch(showUnexpectedError)
         return
@@ -1017,7 +1054,7 @@ async function showSafeMode(): Promise<void> {
     }
   } finally {
     safeModeActionResolver = undefined
-    safeModeVisible = false
+    safeModeManagerVisible = false
   }
 }
 
@@ -1271,7 +1308,11 @@ async function bootstrap(): Promise<void> {
   ipcMain.removeHandler('safe-mode:action')
   ipcMain.handle('safe-mode:action', (event, action: unknown, plugins: unknown) => {
     assertTrustedMainWindowEvent(event)
-    if (!safeModeVisible || (action !== 'uninstall' && action !== 'restart' && action !== 'quit')) {
+    if (
+      !safeModeVisible ||
+      !safeModeManagerVisible ||
+      (action !== 'uninstall' && action !== 'agent' && action !== 'restart' && action !== 'quit')
+    ) {
       return { ok: false }
     }
     if (action === 'uninstall') {
@@ -1282,6 +1323,26 @@ async function bootstrap(): Promise<void> {
     } else {
       resolveSafeModeAction({ type: action })
     }
+    return { ok: true }
+  })
+  ipcMain.removeHandler('safe-mode:status')
+  ipcMain.handle('safe-mode:status', (event) => {
+    assertTrustedMainWindowEvent(event)
+    return { active: safeModeVisible }
+  })
+  ipcMain.removeHandler('safe-mode:manage')
+  ipcMain.handle('safe-mode:manage', (event) => {
+    assertTrustedMainWindowEvent(event)
+    if (!safeModeVisible) return { ok: false }
+    void showSafeModeManager().catch(showUnexpectedError)
+    return { ok: true }
+  })
+  ipcMain.removeHandler('safe-mode:exit')
+  ipcMain.handle('safe-mode:exit', (event) => {
+    assertTrustedMainWindowEvent(event)
+    if (!safeModeVisible) return { ok: false }
+    resolveSafeModeAction({ type: 'agent' })
+    void launchHarness().then(() => mobileBridge.start()).catch(showUnexpectedError)
     return { ok: true }
   })
   ipcMain.removeHandler('harness:reset-plugins')

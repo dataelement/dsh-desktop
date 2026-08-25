@@ -11,6 +11,7 @@ import { mountWindowsTitlebar } from './windows-titlebar'
 
 const ROOT_ID = 'dsh-desktop-update-root'
 const MOBILE_BUTTON_ID = 'dsh-desktop-mobile-button'
+const SAFE_MODE_BANNER_ID = 'dsh-desktop-safe-mode-banner'
 const locale: UpdateLocale = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 
 let host: HTMLDivElement | undefined
@@ -131,6 +132,62 @@ function renderMobileButton(): void {
   button.title = label
 }
 
+async function mountSafeModeBanner(): Promise<void> {
+  if (location.protocol === 'file:' || document.getElementById(SAFE_MODE_BANNER_ID)) return
+  try {
+    const status = (await ipcRenderer.invoke('safe-mode:status')) as { active?: boolean }
+    if (status.active !== true) return
+
+    const host = document.createElement('div')
+    host.id = SAFE_MODE_BANNER_ID
+    host.style.cssText = [
+      'position:fixed',
+      'top:8px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'z-index:2147483645',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
+    ].join(';')
+    const shadow = host.attachShadow({ mode: 'closed' })
+    const style = document.createElement('style')
+    style.textContent = `
+      .bar { display:flex; align-items:center; gap:8px; min-height:30px; padding:4px 6px 4px 10px; border:1px solid rgba(120,120,125,.35); border-radius:999px; color:#27272a; background:rgba(255,255,255,.94); box-shadow:0 5px 18px rgba(0,0,0,.12); backdrop-filter:blur(12px); font-size:12px; font-weight:650; white-space:nowrap; }
+      .dot { width:7px; height:7px; border-radius:50%; background:#d97706; }
+      button { min-height:22px; padding:2px 8px; border:0; border-radius:999px; color:#3f3f46; background:#f1f1f3; cursor:pointer; font:inherit; font-size:11px; }
+      button:hover { background:#e4e4e7; }
+      button:disabled { opacity:.55; cursor:default; }
+      @media (prefers-color-scheme:dark) { .bar { color:#f4f4f5; background:rgba(32,32,35,.94); border-color:rgba(180,180,190,.28); } button { color:#e4e4e7; background:#343438; } button:hover { background:#44444a; } }
+    `
+    const bar = document.createElement('div')
+    bar.className = 'bar'
+    const dot = document.createElement('span')
+    dot.className = 'dot'
+    const label = document.createElement('span')
+    label.textContent = locale === 'zh'
+      ? '安全模式：web Profile 插件已屏蔽'
+      : 'Safe Mode: web profile plugins blocked'
+    const manage = document.createElement('button')
+    manage.type = 'button'
+    manage.textContent = locale === 'zh' ? '管理插件' : 'Manage plugins'
+    manage.addEventListener('click', () => {
+      void ipcRenderer.invoke('safe-mode:manage')
+    })
+    const exit = document.createElement('button')
+    exit.type = 'button'
+    exit.textContent = locale === 'zh' ? '正常启动' : 'Start normally'
+    exit.addEventListener('click', () => {
+      manage.disabled = true
+      exit.disabled = true
+      void ipcRenderer.invoke('safe-mode:exit')
+    })
+    bar.append(dot, label, manage, exit)
+    shadow.append(style, bar)
+    document.documentElement.appendChild(host)
+  } catch (error) {
+    console.warn('[safe-mode] unable to mount status banner', error)
+  }
+}
+
 async function refreshMobileStatus(): Promise<void> {
   try {
     const status = (await ipcRenderer.invoke('mobile:status')) as { connected?: boolean }
@@ -153,6 +210,7 @@ function initializeUi(): void {
     subtree: true
   })
   void refreshMobileStatus()
+  void mountSafeModeBanner()
   mobileStatusTimer ??= window.setInterval(() => void refreshMobileStatus(), 1000)
 }
 

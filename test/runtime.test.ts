@@ -63,6 +63,22 @@ describe('Harness launch contract', () => {
     ])
   })
 
+  it('boots an isolated profile while preserving the web server arguments', () => {
+    expect(
+      buildHarnessArguments(43127, 'C:\\app\\dsh-desktop.patch.yml', 'desktop-safe-mode')
+    ).toEqual([
+      '--profile',
+      'desktop-safe-mode',
+      '--patch',
+      'C:\\app\\dsh-desktop.patch.yml',
+      '--no-open',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '43127'
+    ])
+  })
+
   it('launches Harness with the bundled Node.js runtime', () => {
     const options = buildHarnessSpawnOptions(
       'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\launch-root',
