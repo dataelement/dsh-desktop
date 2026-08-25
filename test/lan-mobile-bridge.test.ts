@@ -810,4 +810,34 @@ describe('pairing token boundary and desktop origin hardening', () => {
     const rotated = bridge.snapshot()
     expect(rotated.pairingUrl).toBe(tokenBefore)
   })
+
+  it('rejects cross-site browser requests to desktop endpoints', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    const base = `http://127.0.0.1:${snapshot.port}`
+    const origin = `http://127.0.0.1:${snapshot.port}`
+
+    const crossSiteGet = await fetch(`${base}/desktop`, {
+      headers: { 'sec-fetch-site': 'cross-site' }
+    })
+    expect(crossSiteGet.status).toBe(500)
+    expect(await crossSiteGet.text()).toContain('Cross-site request rejected')
+
+    const crossOriginPost = await fetch(`${base}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { origin: 'https://evil.example.com' }
+    })
+    expect(crossOriginPost.status).toBe(500)
+
+    // Same-origin and no-header requests keep working (local tooling, tests).
+    const sameOrigin = await fetch(`${base}/desktop`, {
+      headers: { 'sec-fetch-site': 'same-origin', origin }
+    })
+    expect(sameOrigin.status).toBe(200)
+    const noHeaders = await fetch(`${base}/desktop`)
+    expect(noHeaders.status).toBe(200)
+  })
 })

@@ -336,6 +336,7 @@ export class LanMobileBridge {
 
     if (request.method === 'GET' && url.pathname === '/desktop') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifyTrustedOrigin(request)
       if (!this.server || !this.port) return this.text(response, 503, 'Bridge unavailable.')
       // The token is consumed once a phone pairs, and expires after five
       // minutes. The desktop window stays open across both: rotate so it
@@ -398,6 +399,7 @@ export class LanMobileBridge {
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/toggle') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
           ok: false,
@@ -438,6 +440,7 @@ export class LanMobileBridge {
 
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifySameOrigin(request)
       for (const [token, session] of this.sessions) this.suspendedSessions.set(token, session)
       this.sessions.clear()
       this.pendingPairings.clear()
@@ -447,6 +450,7 @@ export class LanMobileBridge {
 
     if (request.method === 'POST' && url.pathname === '/desktop/decide') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifySameOrigin(request)
       const input = JSON.parse(await readBody(request)) as { id?: unknown; approved?: unknown }
       const pending = typeof input.id === 'string' ? this.pendingPairings.get(input.id) : undefined
       if (!pending || typeof input.approved !== 'boolean') return this.text(response, 404, 'Pairing request not found.')
@@ -651,6 +655,20 @@ export class LanMobileBridge {
   }
 
   private verifySameOrigin(request: IncomingMessage): void {
+    this.verifyTrustedOrigin(request)
+  }
+
+  /**
+   * Rejects browser-driven cross-site requests (CSRF / drive-by) against the
+   * loopback-only desktop surface. The pairing window's own navigations and
+   * same-origin fetches pass; requests without Fetch Metadata and Origin
+   * headers (local tooling, tests) pass as well.
+   */
+  private verifyTrustedOrigin(request: IncomingMessage): void {
+    const site = firstHeaderValue(request.headers['sec-fetch-site'])
+    if (site && site !== 'same-origin' && site !== 'none') {
+      throw new Error('Cross-site request rejected.')
+    }
     const origin = request.headers.origin
     const host = request.headers.host
     if (origin && host && new URL(origin).host !== host) throw new Error('Cross-origin request rejected.')
@@ -828,6 +846,7 @@ export class LanMobileBridge {
   }
 
   private html(response: ServerResponse, body: string): void {
+    if (response.destroyed) return
     response.statusCode = 200
     response.setHeader('content-type', 'text/html; charset=utf-8')
     response.end(body)
@@ -840,12 +859,14 @@ export class LanMobileBridge {
   }
 
   private text(response: ServerResponse, status: number, body: string): void {
+    if (response.destroyed) return
     response.statusCode = status
     response.setHeader('content-type', 'text/plain; charset=utf-8')
     response.end(body)
   }
 
   private json(response: ServerResponse, status: number, body: unknown): void {
+    if (response.destroyed) return
     if (response.headersSent) {
       response.end()
       return
