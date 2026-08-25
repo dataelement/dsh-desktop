@@ -16,6 +16,7 @@ import {
 } from 'electron'
 import { extractFailureCause, HarnessRuntime } from './runtime/harness-runtime'
 import { launchDisclaimedUtilityProcess } from './runtime/disclaimed-utility-process'
+import { cleanupDoctorLaunchAgent } from './runtime/doctor-launchagent-cleanup'
 import {
   installProfileDependenciesWithDsh,
   removeProfilePluginWithDsh
@@ -1031,6 +1032,23 @@ async function showMobilePairing(): Promise<void> {
 async function bootstrap(): Promise<void> {
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
+  // The DSH Doctor plugin (@linxin666/dsh-doctor <= 0.3.3) writes a
+  // macOS LaunchAgent that points the service at the Electron Helper
+  // without `ELECTRON_RUN_AS_NODE=1`, which makes launchd start the
+  // Helper in Electron mode and crash with `EXC_BREAKPOINT` roughly
+  // every ten seconds. The repeated launches are the launchd half of
+  // the focus stealing reported in #157. PR #174 only covers the
+  // desktop's own `BrowserWindow.focus()` calls, so an affected
+  // machine keeps yanking focus until the bad plist is gone. Removing
+  // it before any window is shown is the safe moment to do it.
+  const doctorCleanup = cleanupDoctorLaunchAgent({
+    log: (message) => console.log(message)
+  })
+  if (doctorCleanup.removed) {
+    console.log(
+      `[desktop] cleared the legacy com.dsh.doctor LaunchAgent (unregistered=${doctorCleanup.unregistered})`
+    )
+  }
   registerUpdateHandlers()
   createWindow()
   runtime = new HarnessRuntime({
