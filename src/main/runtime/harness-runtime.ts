@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
+import { ensureDshFileDropResearchCanvasCompatibility } from '../state/dsh-file-drop-compat'
 
 export interface HarnessRuntimeOptions {
   dshEntryPath: string
@@ -138,6 +139,20 @@ export class HarnessRuntime {
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })
     this.logStream = createWriteStream(this.options.logPath, { flags: 'a' })
+
+    try {
+      const compatibility = await ensureDshFileDropResearchCanvasCompatibility(
+        this.options.dshHome
+      )
+      if (compatibility.status === 'patched') {
+        this.writeLog('[desktop] applied dsh-file-drop Research canvas compatibility')
+      } else if (compatibility.status === 'unsupported') {
+        this.writeLog(`[desktop] skipped dsh-file-drop compatibility: ${compatibility.reason}`)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.writeLog(`[desktop] failed to apply dsh-file-drop compatibility: ${message}`)
+    }
 
     const port = await reservePort()
     const url = `http://127.0.0.1:${port}`
