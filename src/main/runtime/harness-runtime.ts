@@ -1,4 +1,4 @@
-import type { SpawnOptionsWithoutStdio } from 'node:child_process'
+import { execFileSync, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -27,6 +27,86 @@ export interface HarnessChildProcess extends EventEmitter {
   readonly stderr: NodeJS.ReadableStream
   readonly exitCode: number | null
   kill(signal?: NodeJS.Signals): boolean
+}
+
+/**
+ * Resolve the user's interactive login shell environment.
+ *
+ * Electron apps launched from macOS Finder/Spotlight inherit a minimal
+ * environment from launchd that never sources the user's shell profile
+ * (~/.zshenv, ~/.zprofile, ~/.zshrc). This leaves PATH without Homebrew,
+ * mise shims, ~/.local/bin, etc., so CLIs like bun, lark-cli, and docker
+ * are invisible to the Harness process and every subprocess it spawns.
+ *
+ * On Windows the same gap exists when tools are added via a PowerShell
+ * profile ($PROFILE) rather than the user-level registry environment —
+ * `cmd /c set` only sees registry vars, so we use PowerShell with the
+ * profile loaded to capture the full set.
+ *
+ * This function shells out once to capture the full environment the user
+ * would have in a terminal, and returns it for use as the Harness spawn
+ * base. On any failure it falls back to `process.env` to preserve the
+ * current behavior.
+ *
+ * The result is memoised for the process lifetime.
+ */
+let resolvedShellEnvironment: NodeJS.ProcessEnv | undefined
+
+export function resolveShellEnvironment(): NodeJS.ProcessEnv {
+  if (resolvedShellEnvironment !== undefined) return resolvedShellEnvironment
+
+  try {
+    if (process.platform === 'win32') {
+      // PowerShell with the user profile loaded captures both registry
+      // environment variables and any PATH additions sourced in $PROFILE
+      // (e.g. conda activate, nvm use, scoop shim).  -OutputFormat Text
+      // avoids BOM/XML wrapping.
+      const output = execFileSync(
+        'powershell',
+        [
+          '-NoLogo',
+          '-NonInteractive',
+          '-OutputFormat', 'Text',
+          '-Command',
+          // Dot-source the profile (suppress errors if it doesn't exist),
+          // then emit NAME=VALUE for every environment variable.
+          '. $PROFILE 2>$null; Get-ChildItem Env: | ForEach-Object { "$($_.Name)=$($_.Value)" }'
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 15_000,
+          stdio: ['ignore', 'pipe', 'ignore']
+        }
+      )
+      resolvedShellEnvironment = parseEnvOutput(output, /\r?\n/)
+    } else {
+      // macOS / Linux: run a login + interactive shell so both .zprofile
+      // (Homebrew, OrbStack) and .zshrc (mise shims, ~/.local/bin, cargo,
+      // go, etc.) are sourced.  stderr is ignored to suppress prompt noise.
+      const shell = process.env.SHELL ?? '/bin/sh'
+      const output = execFileSync(shell, ['-l', '-i', '-c', 'env'], {
+        encoding: 'utf8',
+        timeout: 10_000,
+        stdio: ['ignore', 'pipe', 'ignore']
+      })
+      resolvedShellEnvironment = parseEnvOutput(output, /\n/)
+    }
+  } catch {
+    // Shell capture failed — stay silent and keep the inherited environment.
+    resolvedShellEnvironment = process.env
+  }
+
+  return resolvedShellEnvironment
+}
+
+function parseEnvOutput(output: string, lineSeparator: RegExp): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const line of output.split(lineSeparator)) {
+    const eq = line.indexOf('=')
+    if (eq <= 0) continue
+    env[line.slice(0, eq)] = line.slice(eq + 1)
+  }
+  return env
 }
 
 export function buildHarnessArguments(
@@ -185,7 +265,12 @@ export class HarnessRuntime {
       child = this.options.launchProcess(
         this.options.nodeExecutablePath,
         args,
-        buildHarnessSpawnOptions(launchDirectory, this.options.dshHome)
+        buildHarnessSpawnOptions(
+          launchDirectory,
+          this.options.dshHome,
+          process.platform,
+          resolveShellEnvironment()
+        )
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

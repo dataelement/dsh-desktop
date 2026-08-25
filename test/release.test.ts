@@ -290,6 +290,31 @@ describe('GitHub release contract', () => {
     )
   })
 
+  it('signs Windows installers on the local UKey runner before publishing', async () => {
+    const workflow = await readFile(
+      path.join(projectRoot, '.github', 'workflows', 'release.yml'),
+      'utf8'
+    )
+
+    expect(workflow).toContain('name: windows-x64-unsigned')
+    expect(workflow).toContain('Sign Windows package locally with UKey')
+    expect(workflow).toContain('runs-on: [self-hosted, macOS, ARM64]')
+    expect(workflow).toContain('--storetype ETOKEN')
+    expect(workflow).toContain('--storepass "file:$pin_file"')
+    expect(workflow).toContain('--tsmode RFC3161')
+    expect(workflow).toContain('secrets.DESKTOP_WINDOWS_SIGNING_PIN')
+    expect(workflow).toContain(`printf '%s' "$WINDOWS_SIGNING_PIN" > "$pin_file"`)
+    expect(workflow).toContain('unset WINDOWS_SIGNING_PIN')
+    expect(workflow).not.toContain('security find-generic-password')
+    expect(workflow).not.toContain('WINDOWS_SIGNING_KEYCHAIN_SERVICE')
+    expect(workflow).toContain('finalize-windows-release.mjs')
+    expect(workflow).toContain('version="${GITHUB_REF_NAME#v}"')
+    expect(workflow).toContain('pattern: macos-*')
+    expect(workflow).toMatch(
+      /publish:[\s\S]*?needs\.sign-windows\.result == 'success'[\s\S]*?- sign-windows/
+    )
+  })
+
   it('routes the published download through the official website', async () => {
     const readmes = await Promise.all(
       ['README.md', 'README.zh.md'].map((file) =>
