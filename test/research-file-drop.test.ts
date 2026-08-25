@@ -174,6 +174,48 @@ describe('Research canvas file drops', () => {
     ])
   })
 
+  it('never enumerates a Finder FileList beyond the per-drop cap', async () => {
+    const client = await loadConversationClient()
+    expect(client.RESEARCH_CANVAS_MAX_FILES_PER_DROP).toBe(64)
+    if (typeof client.researchCanvasDropFiles !== 'function') return
+    const limit = client.RESEARCH_CANVAS_MAX_FILES_PER_DROP
+    const sourceAccesses: number[] = []
+    const makeFile = (index: number) => ({ name: `lazy-${index}.txt`, type: 'text/plain' })
+    const files = new Proxy({ length: limit + 1 }, {
+      get(_target, property) {
+        if (property === 'length') return limit + 1
+        if (property === 'item') return (index: number) => {
+          if (index >= limit) throw new Error('accessed FileList item past cap')
+          sourceAccesses.push(index)
+          return makeFile(index)
+        }
+        if (property === Symbol.iterator) return function * () {
+          for (let index = 0; ; index += 1) {
+            if (index >= limit) throw new Error('iterated FileList past cap')
+            sourceAccesses.push(index)
+            yield makeFile(index)
+          }
+        }
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          const index = Number(property)
+          if (index >= limit) throw new Error('accessed FileList index past cap')
+          sourceAccesses.push(index)
+          return makeFile(index)
+        }
+      }
+    })
+    const resolverCalls: string[] = []
+
+    const dropped = client.researchCanvasDropFiles({ files, getData: () => '' }, (file: File) => {
+      resolverCalls.push(file.name)
+      return `/tmp/${file.name}`
+    })
+
+    expect(dropped).toHaveLength(limit)
+    expect(sourceAccesses).toEqual(Array.from({ length: limit }, (_, index) => index))
+    expect(resolverCalls).toEqual(Array.from({ length: limit }, (_, index) => `lazy-${index}.txt`))
+  })
+
   it('owns only Finder files and the exact Sherlock MIME type', async () => {
     const client = await loadConversationClient()
     expect(client.researchCanvasOwnsFileDrag).toBeTypeOf('function')
