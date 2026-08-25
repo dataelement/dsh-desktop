@@ -176,6 +176,10 @@ export class LanMobileBridge {
     this.muxTask = undefined
     if (muxTask) await muxTask.catch(() => undefined)
     if (!server) return
+    // An in-flight mobile RPC can hold its socket for up to the 30s abort
+    // timeout; close() alone waits for active connections to drain, which
+    // would stall app shutdown. Drop every live socket explicitly.
+    server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 

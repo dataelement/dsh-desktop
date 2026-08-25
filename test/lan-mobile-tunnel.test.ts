@@ -5,6 +5,7 @@ import { mkdtemp, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { LanMobileBridge } from '../src/main/mobile/lan-mobile-bridge'
 import {
   CLOUDFLARED_ASSETS,
@@ -16,9 +17,16 @@ import {
 } from '../src/main/mobile/cloudflared-tunnel'
 
 const bridges: LanMobileBridge[] = []
+const harnessServers: ReturnType<typeof createServer>[] = []
 
 afterEach(async () => {
   await Promise.all(bridges.splice(0).map((bridge) => bridge.stop()))
+  await Promise.all(
+    harnessServers.splice(0).map((server) => {
+      server.closeAllConnections()
+      return new Promise<void>((resolve) => server.close(() => resolve()))
+    })
+  )
 })
 
 describe('Cloudflare Quick Tunnel utilities', () => {
@@ -368,3 +376,48 @@ describe('LanMobileBridge launch lifecycle', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
 })
+describe('LanMobileBridge shutdown with live connections', () => {
+  it('resolves stop() promptly even while an authorized mobile RPC is still in flight', async () => {
+    // A harness that accepts connections but never answers: the forwarded
+    // session.list hangs until its 30s abort timeout.
+    const unresponsiveHarness = createServer(() => {})
+    await new Promise<void>((resolve) => unresponsiveHarness.listen(0, '127.0.0.1', resolve))
+    harnessServers.push(unresponsiveHarness)
+    const harnessPort = (unresponsiveHarness.address() as AddressInfo).port
+
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+
+    // Pair one phone through the reconnect surface to get an auth cookie.
+    const reconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`)
+    const pairingId = /let id="([^"]+)"/.exec(await reconnect.text())?.[1]
+    expect(pairingId).toBeTruthy()
+    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/decide`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: pairingId, approved: true })
+    })
+    const approved = await fetch(
+      `http://127.0.0.1:${snapshot.port}/pair/status?id=${pairingId}`
+    )
+    expect(await approved.clone().json()).toEqual({ approved: true })
+    const cookie = approved.headers.get('set-cookie')!.split(';', 1)[0]!
+
+    void fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ method: 'session.list', payload: {} })
+    }).catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    const winner = await Promise.race([
+      bridge.stop().then(() => 'stopped' as const),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 3_000))
+    ])
+    expect(winner).toBe('stopped')
+  })
+})
+
