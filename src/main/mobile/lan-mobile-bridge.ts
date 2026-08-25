@@ -110,6 +110,7 @@ export class LanMobileBridge {
   private tunnelActive = false
   private tunnelLoading = false
   private tunnelError?: string
+  private tunnelLaunch?: Promise<void>
   private readonly sessions = new Map<string, MobileSession>()
   private readonly suspendedSessions = new Map<string, MobileSession>()
   private readonly pendingPairings = new Map<string, PendingPairing>()
@@ -152,6 +153,12 @@ export class LanMobileBridge {
     this.port = undefined
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
+    // Wait for an in-flight launch so the tunnel it spawns is stopped below
+    // instead of outliving the bridge (and the app).
+    if (this.tunnelLaunch) {
+      await this.tunnelLaunch.catch(() => undefined)
+      this.tunnelLaunch = undefined
+    }
     if (this.tunnelInstance) {
       await this.tunnelInstance.stop().catch(() => undefined)
       this.tunnelInstance = undefined
@@ -175,6 +182,13 @@ export class LanMobileBridge {
   async toggleTunnel(enable?: boolean): Promise<LanMobileBridgeSnapshot> {
     const targetState = enable !== undefined ? enable : !this.tunnelActive
     if (!targetState) {
+      // Wait for an in-flight launch, then stop the tunnel it spawned:
+      // otherwise the just-launched process is orphaned (or silently revives
+      // the tunnel the user asked to disable).
+      if (this.tunnelLaunch) {
+        await this.tunnelLaunch.catch(() => undefined)
+        this.tunnelLaunch = undefined
+      }
       if (this.tunnelInstance) {
         await this.tunnelInstance.stop().catch(() => undefined)
         this.tunnelInstance = undefined
@@ -189,25 +203,41 @@ export class LanMobileBridge {
       return this.snapshot()
     }
 
+    // A launch is already in flight (the cloudflared download alone can take
+    // seconds): report the loading state instead of racing a second tunnel,
+    // which would orphan the first cloudflared process.
+    if (this.tunnelLaunch) {
+      return this.snapshot()
+    }
+
     this.tunnelLoading = true
     this.tunnelError = undefined
+    const launch = this.launchTunnel()
+    this.tunnelLaunch = launch
     try {
-      const binaryPath = await ensureCloudflaredBinary({
-        cacheDir: this.options.cloudflaredCacheDir ?? join(tmpdir(), 'dsh-cloudflared'),
-        customPath: this.options.cloudflaredPath
-      })
-      this.tunnelInstance = await startCloudflareQuickTunnel({
-        port: this.port!,
-        binaryPath
-      })
+      await launch
       this.tunnelActive = true
-      this.tunnelLoading = false
     } catch (error) {
       this.tunnelActive = false
-      this.tunnelLoading = false
       this.tunnelError = error instanceof Error ? error.message : String(error)
+    } finally {
+      this.tunnelLoading = false
+      if (this.tunnelLaunch === launch) this.tunnelLaunch = undefined
     }
     return this.snapshot()
+  }
+
+  private async launchTunnel(): Promise<void> {
+    const port = this.port
+    if (!port) throw new Error('Bridge is not running.')
+    const binaryPath = await ensureCloudflaredBinary({
+      cacheDir: this.options.cloudflaredCacheDir ?? join(tmpdir(), 'dsh-cloudflared'),
+      customPath: this.options.cloudflaredPath
+    })
+    this.tunnelInstance = await startCloudflareQuickTunnel({
+      port,
+      binaryPath
+    })
   }
 
   snapshot(): LanMobileBridgeSnapshot {
@@ -362,6 +392,14 @@ export class LanMobileBridge {
           if (typeof parsed.enable === 'boolean') enable = parsed.enable
         }
       } catch {}
+      // Report an in-progress switch honestly instead of answering with the
+      // current (stale) snapshot the desktop UI cannot render.
+      if (enable === true && this.tunnelLoading && !this.tunnelActive) {
+        return this.json(response, 409, {
+          ok: false,
+          error: 'A tunnel switch is already in progress.'
+        })
+      }
       const snapshot = await this.toggleTunnel(enable)
       const qrSvg = snapshot.pairingUrl
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
