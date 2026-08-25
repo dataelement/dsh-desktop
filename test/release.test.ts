@@ -107,8 +107,18 @@ describe('GitHub release contract', () => {
     expect(splash).toContain('src="dsh-loader.gif"')
     expect(splash).not.toContain('class="track"')
     expect(patch).toMatch(/id: directory-picker\r?\n  disabled: true/)
+    expect(patch).not.toContain('dsh-update-checker')
     expect(patch).not.toContain("name: '@deepseek-ai/dsh-host-directory-picker-native'")
     expect(patch).toContain("name: '@deepseek-ai/dsh-client-ui-directory-picker-native'")
+  })
+
+  it('does not ship the community plugin update checker', async () => {
+    const policy = JSON.parse(
+      await readFile(path.join(projectRoot, 'build', 'sherlock-bundled-plugins.json'), 'utf8')
+    ) as { plugins: string[]; bundles: string[] }
+
+    expect(policy.plugins).not.toContain('dsh-update-checker')
+    expect(policy.bundles).not.toContain('dsh-update-checker')
   })
 
   it('routes manual restarts through the active plugin recovery flow', async () => {
@@ -211,6 +221,8 @@ describe('GitHub release contract', () => {
     expect(legacyBridgeSource).toContain('"-na"')
     expect(notarizedConfig).toContain("appId: 'com.evanarts.sherlock'")
     expect(notarizedConfig).toContain("dshDesktopChannel: 'notarized'")
+    expect(notarizedConfig).toContain("from: 'build/sherlock-plugin-profile'")
+    expect(notarizedConfig).toContain("to: 'sherlock-plugin-profile'")
     expect(notarizedConfig).toContain('https://updates.evanarts.com/notarized/latest/')
     expect(notarizedConfig).toContain('notarize: true')
     expect(notarizedConfig).toMatch(/dmg:\s*\{[\s\S]*sign:\s*true/)

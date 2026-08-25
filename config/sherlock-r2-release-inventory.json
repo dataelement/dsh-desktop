@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "releases": {
+    "0.6.1": [
+      "releases/v0.6.1/sherlock-mac-arm64.dmg",
+      "releases/v0.6.1/sherlock-mac-arm64.zip",
+      "releases/v0.6.1/sherlock-mac-arm64.zip.blockmap"
+    ],
+    "0.6.2": [
+      "releases/v0.6.2/sherlock-mac-arm64.dmg",
+      "releases/v0.6.2/sherlock-mac-arm64.zip",
+      "releases/v0.6.2/sherlock-mac-arm64.zip.blockmap"
+    ],
+    "0.6.3": [
+      "releases/v0.6.3/sherlock-mac-arm64.dmg",
+      "releases/v0.6.3/sherlock-mac-arm64.zip",
+      "releases/v0.6.3/sherlock-mac-arm64.zip.blockmap"
+    ],
+    "0.6.4": [
+      "releases/v0.6.4/sherlock-mac-arm64-legacy.zip",
+      "releases/v0.6.4/sherlock-mac-arm64-legacy.zip.blockmap",
+      "releases/v0.6.4/sherlock-mac-arm64.dmg",
+      "releases/v0.6.4/sherlock-mac-arm64.zip",
+      "releases/v0.6.4/sherlock-mac-arm64.zip.blockmap"
+    ],
+    "0.6.5": [
+      "releases/v0.6.5/sherlock-mac-arm64-legacy.zip",
+      "releases/v0.6.5/sherlock-mac-arm64-legacy.zip.blockmap",
+      "releases/v0.6.5/sherlock-mac-arm64.dmg",
+      "releases/v0.6.5/sherlock-mac-arm64.zip",
+      "releases/v0.6.5/sherlock-mac-arm64.zip.blockmap"
+    ],
+    "0.6.6": [
+      "releases/v0.6.6/sherlock-mac-arm64-legacy.zip",
+      "releases/v0.6.6/sherlock-mac-arm64-legacy.zip.blockmap",
+      "releases/v0.6.6/sherlock-mac-arm64.dmg",
+      "releases/v0.6.6/sherlock-mac-arm64.zip",
+      "releases/v0.6.6/sherlock-mac-arm64.zip.blockmap"
+    ],
+    "0.6.8": [
+      "releases/v0.6.8/sherlock-mac-arm64-legacy.zip",
+      "releases/v0.6.8/sherlock-mac-arm64-legacy.zip.blockmap",
+      "releases/v0.6.8/sherlock-mac-arm64.dmg",
+      "releases/v0.6.8/sherlock-mac-arm64.zip",
+      "releases/v0.6.8/sherlock-mac-arm64.zip.blockmap"
+    ]
+  }
+}

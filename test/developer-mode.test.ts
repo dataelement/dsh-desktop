@@ -3,6 +3,7 @@ import {
   DEVELOPER_MODE_STORAGE_KEY,
   DeveloperModeController,
   developerModeNoticeText,
+  setDeveloperConversationTabsVisibility,
   setDeveloperSettingsVisibility
 } from '../src/preload/developer-mode'
 
@@ -22,6 +23,22 @@ function settingsRow(id: string): { dataset: { settingsSectionId: string }; hidd
   return {
     dataset: { settingsSectionId: id },
     hidden: false
+  }
+}
+
+function conversationTab(label: string, selected = false) {
+  return {
+    dataset: {} as { sherlockDeveloperTab?: string },
+    hidden: false,
+    textContent: label,
+    selected,
+    clicks: 0,
+    getAttribute(name: string): string | null {
+      return name === 'aria-selected' ? String(this.selected) : null
+    },
+    click(): void {
+      this.clicks += 1
+    }
   }
 }
 
@@ -92,6 +109,74 @@ describe('Sherlock developer mode', () => {
 
     setDeveloperSettingsVisibility(rows, true)
     expect(rows.some((row) => row.hidden)).toBe(false)
+  })
+
+  it('hides only the four Memory Evolve conversation tabs outside developer mode', () => {
+    const tabs = [
+      conversationTab('对话'),
+      conversationTab('研究'),
+      conversationTab('轨迹'),
+      conversationTab('记忆'),
+      conversationTab('技能'),
+      conversationTab('待办'),
+      conversationTab('Memory Evolve 设置')
+    ]
+
+    setDeveloperConversationTabsVisibility(tabs, false)
+
+    expect(tabs.filter((tab) => tab.hidden).map((tab) => tab.textContent)).toEqual([
+      '记忆',
+      '技能',
+      '待办',
+      'Memory Evolve 设置'
+    ])
+    expect(
+      tabs
+        .filter((tab) => tab.dataset.sherlockDeveloperTab === 'true')
+        .map((tab) => tab.textContent)
+    ).toEqual(['记忆', '技能', '待办', 'Memory Evolve 设置'])
+
+    setDeveloperConversationTabsVisibility(tabs, true)
+    expect(tabs.some((tab) => tab.hidden)).toBe(false)
+  })
+
+  it('recognizes English and pending-badge Memory Evolve tab labels', () => {
+    const tabs = [
+      conversationTab('Chat'),
+      conversationTab('Research'),
+      conversationTab('Trajectory'),
+      conversationTab('🔴 Memory (2)'),
+      conversationTab('🔴 Skills (1)'),
+      conversationTab('🔴 Todos (3)'),
+      conversationTab('🔴 Memory Evolve Settings')
+    ]
+
+    setDeveloperConversationTabsVisibility(tabs, false)
+
+    expect(tabs.filter((tab) => tab.hidden).map((tab) => tab.textContent)).toEqual([
+      '🔴 Memory (2)',
+      '🔴 Skills (1)',
+      '🔴 Todos (3)',
+      '🔴 Memory Evolve Settings'
+    ])
+  })
+
+  it('returns to Chat before hiding the active developer-only tab', () => {
+    const chat = conversationTab('对话')
+    const settings = conversationTab('Memory Evolve 设置', true)
+
+    setDeveloperConversationTabsVisibility([chat, settings], false)
+
+    expect(chat.clicks).toBe(1)
+    expect(settings.hidden).toBe(true)
+  })
+
+  it('does not hide same-named tabs outside the conversation tab list', () => {
+    const tabs = [conversationTab('概览'), conversationTab('记忆')]
+
+    setDeveloperConversationTabsVisibility(tabs, false)
+
+    expect(tabs.some((tab) => tab.hidden)).toBe(false)
   })
 
   it('describes both entering and exiting developer mode in each supported locale', () => {

@@ -31,6 +31,36 @@ type SettingsSectionRow = {
   hidden: boolean
 }
 
+type ConversationTab = {
+  dataset: {
+    sherlockDeveloperTab?: string
+  }
+  hidden: boolean
+  textContent: string | null
+  getAttribute(name: string): string | null
+  click(): void
+}
+
+const developerConversationTabLabels = [
+  /^(?:🔴\s*)?(?:记忆|Memory)(?:\s*\(\d+\))?$/u,
+  /^(?:🔴\s*)?(?:技能|Skills)(?:\s*\(\d+\))?$/u,
+  /^(?:🔴\s*)?(?:待办|Todos)(?:\s*\(\d+\))?$/u,
+  /^(?:🔴\s*)?Memory Evolve (?:设置|Settings)$/u
+]
+
+function normalizedTabLabel(tab: ConversationTab): string {
+  return (tab.textContent ?? '').replace(/\s+/gu, ' ').trim()
+}
+
+function isConversationChatTab(tab: ConversationTab): boolean {
+  return /^(?:对话|Chat)$/u.test(normalizedTabLabel(tab))
+}
+
+function isDeveloperConversationTab(tab: ConversationTab): boolean {
+  const label = normalizedTabLabel(tab)
+  return developerConversationTabLabels.some((pattern) => pattern.test(label))
+}
+
 export class DeveloperModeController {
   private enabled: boolean
   private clickCount = 0
@@ -91,6 +121,28 @@ export function setDeveloperSettingsVisibility(
   for (const row of rows) {
     const id = row.dataset.settingsSectionId
     row.hidden = !developerModeEnabled && id !== undefined && developerSettingsSectionIds.has(id)
+  }
+}
+
+export function setDeveloperConversationTabsVisibility(
+  tabs: Iterable<ConversationTab>,
+  developerModeEnabled: boolean
+): void {
+  const conversationTabs = [...tabs]
+  const chatTab = conversationTabs.find(isConversationChatTab)
+  if (chatTab === undefined) return
+
+  const developerTabs = conversationTabs.filter(isDeveloperConversationTab)
+  if (
+    !developerModeEnabled &&
+    developerTabs.some((tab) => tab.getAttribute('aria-selected') === 'true')
+  ) {
+    chatTab.click()
+  }
+
+  for (const tab of developerTabs) {
+    tab.dataset.sherlockDeveloperTab = 'true'
+    tab.hidden = !developerModeEnabled
   }
 }
 

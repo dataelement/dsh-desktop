@@ -12,6 +12,7 @@ coverage/
 build/icon.iconset/
 build/app-icon.iconset/
 build/icon-1024.png
+build/sherlock-plugin-profile/
 .env
 .env.*
 !.env.example

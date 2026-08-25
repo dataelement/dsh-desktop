@@ -15,6 +15,7 @@
 7. 不丢弃、覆盖或顺手提交用户的无关改动；禁止 `git add -A`、强推和直接推送上游 `origin/main`。
 8. 当前正式渠道是 macOS Apple Silicon。没有同时构建 Intel/Windows 时，不宣称这两个平台已发布。
 9. 已安装 0.6.3 的用户长期走旧证书兼容 feed；新下载用户走 Developer ID 公证 feed。每次发布都必须维护两套签名 ZIP，除非未来另行实现并真实验证签名迁移安装器。
+10. R2 采用滚动版本保留：新版本全部公开验证成功后，只删除 `releases/v*` 中版本号最早的一个目录。禁止删除 `latest/`、`notarized/latest/`、`download/`、当前版本或一次删除多个旧版本；发布或公开验证失败时禁止清理旧版本。
 
 ## 1. 发布前检查
 
@@ -135,13 +136,14 @@ hdiutil verify dist-notarized/sherlock-mac-arm64.dmg
 先预演，不写远端：
 
 ```bash
-npm run release:cloudflare -- \
+node scripts/publish-cloudflare-release.mjs \
   --bucket sherlock-releases \
   --version 0.6.4 \
   --tag v0.6.4 \
   --assets dist-release \
   --prepared "$sherlock_release_tmp/prepared" \
-  --dry-run
+  --dry-run > "$sherlock_release_tmp/cloudflare-upload-plan.json"
+cat "$sherlock_release_tmp/cloudflare-upload-plan.json"
 ```
 
 确认计划中 `immutable` 在前、`stable` 居中、`metadata` 最后，再去掉 `--dry-run` 正式发布。不要手工提前上传 `latest-mac.yml`。
@@ -250,6 +252,25 @@ hdiutil detach "$mount_point"
   sherlock-releases/notarized/latest/latest-mac.yml --remote
 ```
 
+全部公开元数据、不可变资源、真实旧版升级、迁移/共存和 Gatekeeper 检查均成功后，才执行滚动清理。先预演并确认 `deletedVersion` 是服务器中最早的版本，`deleteKeys` 全部严格位于同一个 `releases/v<deletedVersion>/` 下；再执行正式清理：
+
+```bash
+npm run release:cloudflare:prune-oldest -- \
+  --bucket sherlock-releases \
+  --version 0.6.4 \
+  --plan "$sherlock_release_tmp/cloudflare-upload-plan.json" \
+  --inventory config/sherlock-r2-release-inventory.json \
+  --dry-run
+
+npm run release:cloudflare:prune-oldest -- \
+  --bucket sherlock-releases \
+  --version 0.6.4 \
+  --plan "$sherlock_release_tmp/cloudflare-upload-plan.json" \
+  --inventory config/sherlock-r2-release-inventory.json
+```
+
+清理脚本只接受上传预演中标记为 `immutable` 且严格属于当前版本的 key；它逐个精确删除清单中最早版本的对象，并且仅在全部删除成功后更新仓库内的版本清单。若预演版本不符合预期、清单缺失或删除失败，停止清理并保留现场，不能改用模糊前缀或批量删除补救。
+
 ## 6. 源码同步
 
 线上验证成功后，检查并仅暂存本次发布相关文件，提交信息使用 `release: publish Sherlock <version>`。推送到：
@@ -272,4 +293,4 @@ git push https://github.com/hyf901111-design/dsh-desktop.git \
 
 ## 完成标准
 
-最终汇报分别列出：版本与提交、聚焦测试和类型检查、应用/DMG 签名、Cloudflare 元数据与 Range/缓存验证、真实旧版升级验证、GitHub Fork 推送。所有发布步骤成功且无待处理故障后才称为“正式版发布完成”。
+最终汇报分别列出：版本与提交、聚焦测试和类型检查、应用/DMG 签名、Cloudflare 元数据与 Range/缓存验证、真实旧版升级验证、R2 最早版本精确清理、GitHub Fork 推送。所有发布步骤成功且无待处理故障后才称为“正式版发布完成”。

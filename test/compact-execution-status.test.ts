@@ -274,6 +274,76 @@ describe('compact execution status', () => {
     ])
   })
 
+  it('starts a new execution segment after steering so its reply renders below the inserted input', async () => {
+    const client = await loadConversationBundle()
+    expect(client.compactConversationFlow).toBeTypeOf('function')
+    if (typeof client.compactConversationFlow !== 'function') return
+
+    const nodes = new Map([
+      ['user', { key: 'user', kind: 'user', location: turnLocation(8), data: {} }],
+      [
+        'assistant-before-steering',
+        {
+          key: 'assistant-before-steering',
+          kind: 'assistant-step',
+          location: turnLocation(8),
+          data: {
+            finalNode: { seq: 20 },
+            blocks: [{ kind: 'text', text: '先按默认页数规划。' }]
+          }
+        }
+      ],
+      [
+        'steering',
+        {
+          key: 'steering',
+          kind: 'steering',
+          location: turnLocation(8),
+          data: { content: [{ type: 'text', text: '做5页就行' }] }
+        }
+      ],
+      [
+        'assistant-after-steering',
+        {
+          key: 'assistant-after-steering',
+          kind: 'assistant-step',
+          location: turnLocation(8),
+          data: {
+            finalNode: { seq: 40 },
+            blocks: [{ kind: 'text', text: '已按你的要求压缩为5页。' }]
+          }
+        }
+      ]
+    ])
+
+    expect(
+      client.compactConversationFlow(
+        ['user', 'assistant-before-steering', 'steering', 'assistant-after-steering'],
+        nodes,
+        8
+      )
+    ).toEqual([
+      { kind: 'node', key: 'user' },
+      {
+        kind: 'execution',
+        key: 'execution:8',
+        turn: 8,
+        nodeKeys: ['assistant-before-steering'],
+        running: false,
+        preserveProgress: true
+      },
+      { kind: 'node', key: 'steering' },
+      {
+        kind: 'execution',
+        key: 'execution:8:1',
+        turn: 8,
+        nodeKeys: ['assistant-after-steering'],
+        running: true,
+        preserveProgress: true
+      }
+    ])
+  })
+
   it('keeps automatic compaction visibly running when the runtime turn signal is briefly absent', async () => {
     const client = await loadConversationBundle()
     expect(client.compactConversationFlow).toBeTypeOf('function')
@@ -489,6 +559,44 @@ describe('compact execution status', () => {
     })
     expect(client.executionProgressSurface(nodes, false, true)).toMatchObject({
       showProgress: true,
+      detailNodeKeys: ['tool-detail']
+    })
+  })
+
+  it('keeps user-facing body text visible in a steering-split execution without expanding details', async () => {
+    const client = await loadConversationBundle()
+    expect(client.executionProgressSurface).toBeTypeOf('function')
+    if (typeof client.executionProgressSurface !== 'function') return
+
+    const surface = client.executionProgressSurface(
+      [
+        {
+          key: 'assistant-before-steering',
+          kind: 'assistant-step',
+          data: {
+            status: 'complete',
+            blocks: [{ kind: 'text', text: '规范已确认，接下来进入逐页制作。' }]
+          }
+        },
+        {
+          key: 'tool-detail',
+          kind: 'tool-call',
+          data: { root: { name: 'skill', argsRaw: '{}' } }
+        }
+      ],
+      false,
+      false,
+      { preserveProgress: true }
+    )
+
+    expect(surface).toMatchObject({
+      showProgress: true,
+      updates: [
+        {
+          key: 'assistant-before-steering',
+          blocks: [{ kind: 'text', text: '规范已确认，接下来进入逐页制作。' }]
+        }
+      ],
       detailNodeKeys: ['tool-detail']
     })
   })

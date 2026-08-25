@@ -1,6 +1,6 @@
 {
   "name": "sherlock",
-  "version": "0.6.6",
+  "version": "0.6.8",
   "description": "Sherlock local-first desktop knowledge assistant.",
   "private": true,
   "type": "module",
@@ -39,9 +39,11 @@
     "package:mac": "npm run build && electron-builder --mac --publish never && npm run verify:package:mac -- --app auto",
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never && npm run verify:package:mac -- --app \"dist/mac-arm64/Sherlock.app\"",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never && npm run verify:package:mac -- --app \"dist/mac/Sherlock.app\"",
-    "package:mac:notarized:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.notarized.cjs && npm run verify:package:mac -- --app \"dist-notarized/mac-arm64/Sherlock.app\"",
+    "prepare:bundled-plugin-profile": "node scripts/prepare-bundled-plugin-profile.mjs",
+    "package:mac:notarized:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run prepare:bundled-plugin-profile && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.notarized.cjs && npm run verify:package:mac -- --app \"dist-notarized/mac-arm64/Sherlock.app\"",
     "verify:package:mac": "node scripts/verify-packaged-macos.mjs",
     "release:cloudflare": "node scripts/publish-cloudflare-release.mjs",
+    "release:cloudflare:prune-oldest": "node scripts/prune-oldest-cloudflare-release.mjs",
     "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never",
     "sync:plugins:to-dev": "node scripts/sync-plugin-profile.mjs formal-to-dev",
     "sync:plugins:to-formal": "node scripts/sync-plugin-profile.mjs dev-to-formal"

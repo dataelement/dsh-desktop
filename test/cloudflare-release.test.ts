@@ -7,7 +7,16 @@ import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parse, stringify } from 'yaml'
 import { buildCloudflareReleasePlan } from '../scripts/cloudflare-release-plan.mjs'
+import {
+  WRANGLER_MAX_UPLOAD_BYTES,
+  assertMultipartReleaseKey,
+  copyR2Object,
+  selectUploadTransport,
+  uploadFileMultipart,
+  validateExistingImmutableResponse
+} from '../scripts/cloudflare-r2-multipart-client.mjs'
 import { refreshMacUpdateMetadata } from '../scripts/refresh-mac-update-metadata.mjs'
+import multipartWorker from '../scripts/cloudflare-r2-multipart-worker.mjs'
 
 const temporaryRoots: string[] = []
 const execFile = promisify(execFileCallback)
@@ -55,6 +64,210 @@ async function fixture(): Promise<{ assets: string; prepared: string }> {
 }
 
 describe('Cloudflare release plan', () => {
+  it('routes only files above Wranglers 300 MiB limit through multipart upload', () => {
+    expect(selectUploadTransport(WRANGLER_MAX_UPLOAD_BYTES)).toBe('wrangler')
+    expect(selectUploadTransport(WRANGLER_MAX_UPLOAD_BYTES + 1)).toBe('multipart')
+  })
+
+  it('limits multipart writes to the current release payloads and stable DMG', () => {
+    expect(() =>
+      assertMultipartReleaseKey('releases/v0.6.8/sherlock-mac-arm64.zip', '0.6.8')
+    ).not.toThrow()
+    expect(() =>
+      assertMultipartReleaseKey('releases/v0.6.8/sherlock-mac-arm64-legacy.zip', '0.6.8')
+    ).not.toThrow()
+    expect(() =>
+      assertMultipartReleaseKey('download/sherlock-mac-arm64.dmg', '0.6.8')
+    ).not.toThrow()
+    expect(() =>
+      assertMultipartReleaseKey('releases/v0.6.7/sherlock-mac-arm64.zip', '0.6.8')
+    ).toThrow('current release')
+    expect(() => assertMultipartReleaseKey('latest/latest-mac.yml', '0.6.8')).toThrow(
+      'release payload'
+    )
+  })
+
+  it('resumes only byte-identical immutable objects with immutable caching', () => {
+    const matching = new Response(null, {
+      status: 200,
+      headers: {
+        'content-length': '442072706',
+        'cache-control': 'public, max-age=31536000, immutable'
+      }
+    })
+    expect(() =>
+      validateExistingImmutableResponse({
+        key: 'releases/v0.6.8/sherlock-mac-arm64-legacy.zip',
+        localSize: 442072706,
+        response: matching
+      })
+    ).not.toThrow()
+    expect(() =>
+      validateExistingImmutableResponse({
+        key: 'releases/v0.6.8/sherlock-mac-arm64-legacy.zip',
+        localSize: 1,
+        response: matching
+      })
+    ).toThrow('size mismatch')
+    expect(() =>
+      validateExistingImmutableResponse({
+        key: 'releases/v0.6.8/sherlock-mac-arm64-legacy.zip',
+        localSize: 442072706,
+        response: new Response(null, {
+          status: 200,
+          headers: { 'content-length': '442072706', 'cache-control': 'no-cache' }
+        })
+      })
+    ).toThrow('unsafe cache')
+  })
+
+  it('creates, uploads, and completes multipart objects in deterministic part order', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sherlock-multipart-upload-'))
+    temporaryRoots.push(root)
+    const source = path.join(root, 'payload.zip')
+    await writeFile(source, 'abcdefghijk')
+    const calls: Array<{ method: string; path: string; body?: string }> = []
+
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const url = new URL(String(input))
+      const body = init.body ? Buffer.from(init.body as ArrayBuffer).toString('utf8') : undefined
+      calls.push({ method: init.method ?? 'GET', path: `${url.pathname}${url.search}`, body })
+      if (url.pathname.endsWith('/create')) {
+        return Response.json({ uploadId: 'upload-123' })
+      }
+      if (url.pathname.endsWith('/part')) {
+        return Response.json({ etag: `etag-${url.searchParams.get('partNumber')}` })
+      }
+      return Response.json({ ok: true })
+    }
+
+    await uploadFileMultipart({
+      endpoint: 'http://127.0.0.1:9786',
+      token: 'ephemeral-token',
+      version: '0.6.8',
+      key: 'releases/v0.6.8/sherlock-mac-arm64.zip',
+      source,
+      contentType: 'application/zip',
+      cacheControl: 'public, max-age=31536000, immutable',
+      partSize: 5,
+      concurrency: 1,
+      fetchImpl
+    })
+
+    expect(calls.map((call) => call.method)).toEqual(['POST', 'PUT', 'PUT', 'PUT', 'POST'])
+    expect(calls.filter((call) => call.method === 'PUT').map((call) => call.body)).toEqual([
+      'abcde',
+      'fghij',
+      'k'
+    ])
+    expect(calls.at(-1)?.body).toContain('etag-3')
+  })
+
+  it('retries a failed multipart part without restarting the whole object', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sherlock-multipart-retry-'))
+    temporaryRoots.push(root)
+    const source = path.join(root, 'payload.zip')
+    await writeFile(source, 'retry-me')
+    let partAttempts = 0
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/create')) return Response.json({ uploadId: 'upload-123' })
+      if (url.pathname.endsWith('/part')) {
+        partAttempts += 1
+        if (partAttempts === 1) return new Response('temporary', { status: 503 })
+        return Response.json({ etag: 'etag-1' })
+      }
+      return Response.json({ ok: true })
+    }
+    await uploadFileMultipart({
+      endpoint: 'http://127.0.0.1:9786',
+      token: 'ephemeral-token',
+      version: '0.6.8',
+      key: 'releases/v0.6.8/sherlock-mac-arm64.zip',
+      source,
+      contentType: 'application/zip',
+      cacheControl: 'public, max-age=31536000, immutable',
+      partSize: 16,
+      concurrency: 1,
+      maxPartAttempts: 2,
+      retryDelayMs: 0,
+      fetchImpl
+    })
+    expect(partAttempts).toBe(2)
+  })
+
+  it('keeps the temporary multipart Worker token- and version-scoped', async () => {
+    const created: string[] = []
+    const env = {
+      RELEASE_UPLOAD_TOKEN: 'ephemeral-token',
+      RELEASE_VERSION: '0.6.8',
+      SHERLOCK_RELEASES: {
+        async createMultipartUpload(key: string) {
+          created.push(key)
+          return { uploadId: 'upload-123' }
+        }
+      }
+    }
+    const create = (key: string, token = 'ephemeral-token') =>
+      multipartWorker.fetch(
+        new Request('https://release-uploader.invalid/multipart/create', {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            key,
+            version: '0.6.8',
+            contentType: 'application/zip',
+            cacheControl: 'public, max-age=31536000, immutable'
+          })
+        }),
+        env
+      )
+
+    expect((await create('releases/v0.6.8/sherlock-mac-arm64.zip', 'wrong')).status).toBe(401)
+    expect((await create('releases/v0.6.7/sherlock-mac-arm64.zip')).status).toBe(400)
+    expect((await create('latest/latest-mac.yml')).status).toBe(400)
+    expect((await create('releases/v0.6.8/sherlock-mac-arm64.zip')).status).toBe(200)
+    expect(created).toEqual(['releases/v0.6.8/sherlock-mac-arm64.zip'])
+  })
+
+  it('promotes only the current immutable DMG to the stable download key', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    await copyR2Object({
+      endpoint: 'http://127.0.0.1:9786',
+      token: 'ephemeral-token',
+      version: '0.6.8',
+      sourceKey: 'releases/v0.6.8/sherlock-mac-arm64.dmg',
+      targetKey: 'download/sherlock-mac-arm64.dmg',
+      contentType: 'application/x-apple-diskimage',
+      cacheControl: 'no-cache, max-age=0, must-revalidate',
+      fetchImpl: async (_input, init) => {
+        requests.push(JSON.parse(String(init?.body)))
+        return Response.json({ ok: true })
+      }
+    })
+    expect(requests).toEqual([
+      expect.objectContaining({
+        sourceKey: 'releases/v0.6.8/sherlock-mac-arm64.dmg',
+        targetKey: 'download/sherlock-mac-arm64.dmg'
+      })
+    ])
+    await expect(
+      copyR2Object({
+        endpoint: 'http://127.0.0.1:9786',
+        token: 'ephemeral-token',
+        version: '0.6.8',
+        sourceKey: 'releases/v0.6.7/sherlock-mac-arm64.dmg',
+        targetKey: 'download/sherlock-mac-arm64.dmg',
+        contentType: 'application/x-apple-diskimage',
+        cacheControl: 'no-cache',
+        fetchImpl: async () => Response.json({ ok: true })
+      })
+    ).rejects.toThrow('current release')
+  })
+
   it('refreshes the signed DMG hash and size before publishing metadata', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sherlock-mac-metadata-'))
     temporaryRoots.push(root)

@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { UpdateStatus } from '../shared/contracts'
 import { developerModeEnabledFromArguments } from '../shared/developer-mode'
+import { createSherlockAboutBridge } from './about-info'
 import {
   DEVELOPER_SETTINGS_SECTION_IDS,
   DeveloperModeController,
   developerModeNoticeText,
+  setDeveloperConversationTabsVisibility,
   setDeveloperSettingsVisibility
 } from './developer-mode'
 import { isPluginLoadError } from './plugin-error-view'
@@ -96,7 +98,7 @@ function checkBootFailureInDom(): void {
 
 const domObserver = new MutationObserver(() => {
   checkBootFailureInDom()
-  syncDeveloperSettingsVisibility()
+  syncDeveloperModeVisibility()
   sidebarUpdateControl.mount()
 })
 
@@ -146,6 +148,14 @@ contextBridge.exposeInMainWorld(
 )
 
 contextBridge.exposeInMainWorld(
+  'sherlockAbout',
+  createSherlockAboutBridge(
+    () => ipcRenderer.invoke('updates:status') as Promise<UpdateStatus>,
+    locale
+  )
+)
+
+contextBridge.exposeInMainWorld(
   'dshRecovery',
   Object.freeze({
     action: (action: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('recovery:action', action)
@@ -161,7 +171,7 @@ contextBridge.exposeInMainWorld(
 
       const enabled = result.status === 'activated'
       document.documentElement.dataset.sherlockDeveloperMode = String(enabled)
-      syncDeveloperSettingsVisibility()
+      syncDeveloperModeVisibility()
       showDeveloperModeNotice(enabled)
     }
   })
@@ -173,21 +183,31 @@ function mountDeveloperModeUi(): void {
   if (!document.getElementById(DEVELOPER_MODE_STYLE_ID)) {
     const style = document.createElement('style')
     style.id = DEVELOPER_MODE_STYLE_ID
-    style.textContent = `${DEVELOPER_SETTINGS_SECTION_IDS.map(
-      (id) =>
-        `html:not([data-sherlock-developer-mode="true"]) [data-settings-section-id="${id}"]`
-    ).join(',\n')} { display: none !important; }`
+    style.textContent = `${[
+      ...DEVELOPER_SETTINGS_SECTION_IDS.map(
+        (id) =>
+          `html:not([data-sherlock-developer-mode="true"]) [data-settings-section-id="${id}"]`
+      ),
+      'html:not([data-sherlock-developer-mode="true"]) [data-sherlock-developer-tab="true"]'
+    ].join(',\n')} { display: none !important; }`
     document.documentElement.appendChild(style)
   }
 
-  syncDeveloperSettingsVisibility()
+  syncDeveloperModeVisibility()
 }
 
-function syncDeveloperSettingsVisibility(): void {
+function syncDeveloperModeVisibility(): void {
   setDeveloperSettingsVisibility(
     document.querySelectorAll<HTMLElement>('[data-settings-section-id]'),
     developerMode.isEnabled()
   )
+
+  for (const tabList of document.querySelectorAll<HTMLElement>('[role="tablist"]')) {
+    setDeveloperConversationTabsVisibility(
+      tabList.querySelectorAll<HTMLElement>(':scope > [role="tab"]'),
+      developerMode.isEnabled()
+    )
+  }
 }
 
 function showDeveloperModeNotice(enabled: boolean): void {
