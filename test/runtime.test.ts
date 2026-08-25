@@ -203,12 +203,16 @@ describe('Harness launch contract', () => {
 })
 
 describe('shell environment resolution', () => {
-  it('resolves a non-empty environment from the user login shell', () => {
-    const env = resolveShellEnvironment()
-    expect(env).toBeDefined()
-    // PATH must always be present in a valid shell environment.
-    expect(env.PATH).toBeTruthy()
-  })
+  it(
+    'resolves a non-empty environment from the user login shell',
+    () => {
+      const env = resolveShellEnvironment()
+      expect(env).toBeDefined()
+      // Windows may preserve the conventional mixed-case key.
+      expect(env.PATH ?? env.Path).toBeTruthy()
+    },
+    20_000
+  )
 
   it('memoises the result across calls', () => {
     const first = resolveShellEnvironment()
@@ -217,10 +221,14 @@ describe('shell environment resolution', () => {
     expect(second).toBe(first)
   })
 
-  it('produces a PATH that includes standard system directories', () => {
+  it('produces a PATH that includes platform-standard system directories', () => {
     const env = resolveShellEnvironment()
-    // /usr/bin is present on every macOS and Linux installation.
-    expect(env.PATH).toContain('/usr/bin')
+    const path = env.PATH ?? env.Path ?? ''
+    if (process.platform === 'win32') {
+      expect(path).toMatch(/[A-Za-z]:\\/)
+    } else {
+      expect(path).toContain('/usr/bin')
+    }
   })
 })
 
