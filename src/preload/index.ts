@@ -7,6 +7,7 @@ import {
   type UpdateLocale
 } from './update-view'
 import { isPluginLoadError } from './plugin-error-view'
+import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebar } from './windows-titlebar'
 
 const ROOT_ID = 'dsh-desktop-update-root'
@@ -31,20 +32,10 @@ const pendingBootFailureMessages: string[] = []
 const BOOT_FAILURE_SETTLE_MS = 400
 
 function currentBootFailureText(): string | undefined {
-  const root = document.body || document.documentElement
-  if (!root) return undefined
-
-  // The package list and loader detail are rendered in separate sibling
-  // containers on Harness's boot-failure page. Reading only the title's
-  // parent drops exactly the evidence Desktop needs to identify the second
-  // conflicting plugin, so capture the full failure page instead.
-  const text = document.body?.innerText || root.textContent
-  if (!text?.includes('Failed to load plugins')) return undefined
-  return text
-    ?.split(/\r?\n/)
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .join('\n')
+  // Harness removes this root once the application starts. Scoping the check
+  // to it prevents a quoted error in a conversation from being mistaken for a
+  // startup failure by the document-wide mutation observer.
+  return findBootFailureText(document)
 }
 
 function addBootFailureMessage(message: string | undefined): void {

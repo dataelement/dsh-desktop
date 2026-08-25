@@ -75,6 +75,20 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('absolute-paths')
   })
 
+  it('creates and resolves the writable preset root inside the structured import failure boundary', async () => {
+    const patch = await readFile(
+      patchPath('@deepseek-ai/dsh-host-apiproxy'),
+      'utf8'
+    )
+
+    expect(patch).toContain('const root = writableRoot(presets.roots)')
+    expect(patch).not.toContain('const root = writableRoot();')
+    expect(patch).toContain('await mkdir(root, { recursive: true })')
+    expect(patch).toContain('let imported;')
+    expect(patch).toContain('imported = await mkdtemp')
+    expect(patch).toContain('if (imported !== void 0) await rm(imported')
+  })
+
   it('adds import preview, conflict rename, trust warning, and custom-card export controls', async () => {
     const patch = await readFile(
       patchPath('@deepseek-ai/dsh-client-ui-agent-preset'),

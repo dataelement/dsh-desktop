@@ -114,6 +114,8 @@ describe('GitHub release contract', () => {
     expect(splash).toContain('Starting DSH Desktop')
     expect(splash).toContain('src="dsh-loader.gif"')
     expect(splash).not.toContain('class="track"')
+    expect(splash).toContain('position: fixed;')
+    expect(splash).toContain('html[data-platform="windows"] main { padding-top: 70px; }')
     expect(patch).not.toMatch(/id:\s*directory-picker/)
     expect(patch).not.toContain("name: '@deepseek-ai/dsh-host-directory-picker-native'")
     expect(patch).not.toContain("name: '@deepseek-ai/dsh-client-ui-directory-picker-native'")
