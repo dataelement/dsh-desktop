@@ -117,6 +117,10 @@ export class HarnessRuntime {
   private launchDirectory?: string
   private url?: string
   private readonly logLines: string[] = []
+  private readonly logRemainders: Record<'stdout' | 'stderr', string> = {
+    stdout: '',
+    stderr: ''
+  }
 
   constructor(private readonly options: HarnessRuntimeOptions) {}
 
@@ -132,6 +136,8 @@ export class HarnessRuntime {
 
   async start(launchDirectory: string, profile = 'web'): Promise<void> {
     await this.stop()
+    this.logRemainders.stdout = ''
+    this.logRemainders.stderr = ''
     this.launchDirectory = launchDirectory
     this.url = undefined
 
@@ -190,7 +196,26 @@ export class HarnessRuntime {
     this.child = child
 
     child.stdout.on('data', (chunk: Buffer) => this.writeChunk('stdout', chunk))
-    child.stderr.on('data', (chunk: Buffer) => this.writeChunk('stderr', chunk))
+    child.stderr.on('data', (chunk: Buffer) => {
+      this.writeChunk('stderr', chunk)
+      if (this.child !== child || this.phase !== 'starting') return
+
+      const cause = extractDshEntryFailureCause(this.logLines)
+      if (!cause) return
+
+      // The Harness entry has already rejected, so waiting for the HTTP
+      // readiness timeout can no longer succeed. Detach this launch before
+      // stopping it so the later OS exit code cannot replace the real DSH
+      // failure (a graceful SIGTERM may otherwise be reported as exit 0).
+      this.child = undefined
+      this.url = undefined
+      this.writeLog('[desktop] Harness entry failed during startup; stopping immediately')
+      this.setState('failed', `Harness could not start.\n${cause}`)
+      void this.stopChild(child).catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error)
+        this.writeLog(`[desktop] failed to stop rejected Harness launch: ${detail}`)
+      })
+    })
     child.once('spawn', () => this.writeLog('[desktop] Bundled Node.js Harness process started'))
     child.once('error', (error) => {
       this.writeLog(`[node] ${error.stack ?? error.message}`)
@@ -199,6 +224,7 @@ export class HarnessRuntime {
       this.setState('failed', `Harness could not start: ${error.message}`)
     })
     child.once('exit', (code, signal) => {
+      this.flushLogRemainders()
       const detail = signal ? `signal ${signal}` : formatExitCode(code ?? -1)
       this.writeLog(`[node] Harness process exited (${detail})`)
       if (this.child !== child) return
@@ -274,7 +300,17 @@ ${cause}`
   }
 
   private writeChunk(source: 'stdout' | 'stderr', chunk: Buffer): void {
-    for (const line of chunk.toString('utf8').split(/\r?\n/)) {
+    const lines = `${this.logRemainders[source]}${chunk.toString('utf8')}`.split(/\r?\n/)
+    this.logRemainders[source] = lines.pop() ?? ''
+    for (const line of lines) {
+      if (line.length > 0) this.writeLog(`[${source}] ${line}`)
+    }
+  }
+
+  private flushLogRemainders(): void {
+    for (const source of ['stdout', 'stderr'] as const) {
+      const line = this.logRemainders[source]
+      this.logRemainders[source] = ''
       if (line.length > 0) this.writeLog(`[${source}] ${line}`)
     }
   }
@@ -362,6 +398,17 @@ export function extractFailureCause(logLines: readonly string[]): string | undef
   return undefined
 }
 
+export function extractDshEntryFailureCause(
+  logLines: readonly string[]
+): string | undefined {
+  for (const line of latestHarnessAttemptLogs(logLines)) {
+    if (!line.startsWith('[stderr] ')) continue
+    const match = line.slice(8).match(/DSH entry failed:\s*(.+)/)
+    if (match?.[1]) return match[1].trim()
+  }
+  return undefined
+}
+
 const CORE_BUNDLES = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dshmarket'])
 const PACKAGE_REFERENCE_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i
 
@@ -390,9 +437,13 @@ function extractPluginReferences(
     if (!line.startsWith('[stderr] ')) continue
     const text = line.slice(8)
 
-    const m1 = text.match(/failed to apply loader entry [^\s]+ \((@[^)]+|[^)]+)\)/i)
-    if (m1 && m1[1] && accepts(m1[1])) {
-      plugins.add(m1[1].trim())
+    // Loader failures are nested (for example the internal `cordis:include`
+    // entry wrapping a third-party bundle). Collect every entry in the chain;
+    // taking only the first one loses the actual uninstallable owner.
+    for (const match of text.matchAll(
+      /failed to (?:apply|import) loader entry [^\s]+ \((@[^)]+|[^)]+)\)/gi
+    )) {
+      if (match[1] && accepts(match[1])) plugins.add(match[1].trim())
     }
 
     const m2 = text.match(/cannot resolve profile bundle ["']([^"']+)["']/i)
@@ -403,11 +454,6 @@ function extractPluginReferences(
     const m3 = text.match(/profile bundle ["']([^"']+)["'] declares no dsh\.bundle/i)
     if (m3 && m3[1] && accepts(m3[1])) {
       plugins.add(m3[1].trim())
-    }
-
-    const m4 = text.match(/failed to import loader entry [^\s]+ \((@[^)]+|[^)]+)\)/i)
-    if (m4 && m4[1] && accepts(m4[1])) {
-      plugins.add(m4[1].trim())
     }
 
     const m5 = text.match(/plugin\(s\) failed to load:\s*([a-zA-Z0-9@/_-]+)/i)
