@@ -250,6 +250,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('npm run package:dev:win')
     expect(workflow).toContain('Smoke test packaged Windows Harness')
     expect(workflow).toContain("$executable = 'dist-dev\\win-unpacked\\DSH Desktop Dev.exe'")
+    expect(workflow).toContain('if (-not [string]::IsNullOrEmpty($log))')
     expect(workflow).toContain('Packaged Windows Harness smoke test passed.')
     expect(workflow).toContain("Invoke-HarnessRpc 'workspace.create'")
     expect(workflow).toContain("Invoke-HarnessRpc 'session.create'")
