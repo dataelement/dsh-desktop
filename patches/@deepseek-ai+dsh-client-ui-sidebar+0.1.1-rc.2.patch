@@ -124,7 +124,7 @@ index b75d41b..6d6d7e7 100644
 -									children: renderSlot("sidebar.brand.mark", { size: 24 }, { fallback: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FishLogo, { size: 24 }) })
 +								children: [!wide && (0, react_jsx_runtime.jsx)(DshDesktopLogo, {
 +									className: SidebarRoot_module_css_default.railFish,
-+									height: 15
++									height: 17
  								}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPanelLeftOutline16, {
  									className: SidebarRoot_module_css_default.panelIcon,
  									size: wide ? 16 : 18
