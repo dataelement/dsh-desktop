@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..18d235b 100644
+index 1dd0e89..0c81abb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -348,6 +348,17 @@ window.__ModuleLoader__.load({
@@ -1067,7 +1067,7 @@ index 1dd0e89..18d235b 100644
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.headlineText,
  								children: t("hero.headline")
-@@ -6786,6 +7448,187 @@ window.__ModuleLoader__.load({
+@@ -6786,6 +7448,274 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -1075,6 +1075,93 @@ index 1dd0e89..18d235b 100644
 +		const RESEARCH_CANVAS_MIN_SCALE = .35;
 +		const RESEARCH_CANVAS_MAX_SCALE = 4;
 +		const RESEARCH_CANVAS_GRID_SIZE = 22;
++		const SHERLOCK_FILE_DRAG_TYPE = "application/x-sherlock-file";
++		const RESEARCH_CANVAS_STORAGE_PREFIX = "sherlock.research.canvas.files.v1:";
++		const RESEARCH_CANVAS_FILE_STACK_OFFSET = 18;
++		const RESEARCH_CANVAS_TEXT_LIMIT = 512;
++		let researchCanvasFileSequence = 0;
++		function createResearchCanvasFileId() {
++			researchCanvasFileSequence += 1;
++			return globalThis.crypto?.randomUUID?.() ?? `research-file-${Date.now()}-${researchCanvasFileSequence}`;
++		}
++		function boundedString(value, optional = false) {
++			if (value === void 0 && optional) return void 0;
++			return typeof value === "string" && value.length > 0 && value.length <= RESEARCH_CANVAS_TEXT_LIMIT ? value : null;
++		}
++		function parseSherlockFileDrag(raw) {
++			try {
++				const value = JSON.parse(raw);
++				if (typeof value !== "object" || value === null) return null;
++				const name = boundedString(value.name);
++				const path = boundedString(value.path, true);
++				if (name === null || path === null) return null;
++				return { ...(path === void 0 ? {} : { path }), name, source: "sherlock" };
++			} catch {
++				return null;
++			}
++		}
++		function researchCanvasWorldPoint(viewport, pointer) {
++			return {
++				x: (pointer.x - viewport.x) / viewport.scale,
++				y: (pointer.y - viewport.y) / viewport.scale
++			};
++		}
++		function researchCanvasOwnsFileDrag(types) {
++			return Array.from(types ?? []).includes("Files") || Array.from(types ?? []).includes(SHERLOCK_FILE_DRAG_TYPE);
++		}
++		function researchCanvasDropFiles(transfer, getPathForFile) {
++			const internal = parseSherlockFileDrag(transfer.getData?.(SHERLOCK_FILE_DRAG_TYPE) ?? "");
++			if (internal !== null) return [internal];
++			return Array.from(transfer.files ?? []).flatMap((file) => {
++				const name = boundedString(file.name);
++				if (name === null) return [];
++				let resolved = "";
++				try {
++					resolved = getPathForFile(file);
++				} catch {}
++				const path = resolved === "" ? void 0 : boundedString(resolved, true);
++				if (path === null) return [];
++				const mediaType = file.type === "" ? void 0 : boundedString(file.type, true);
++				if (mediaType === null) return [];
++				return [{
++					...(path === void 0 ? {} : { path }),
++					...(mediaType === void 0 ? {} : { mediaType }),
++					name,
++					source: "computer"
++				}];
++			});
++		}
++		function placeResearchCanvasFiles(nodes, files, point, createId) {
++			const next = nodes.slice();
++			for (const [index, file] of files.entries()) {
++				const position = {
++					x: point.x + index * RESEARCH_CANVAS_FILE_STACK_OFFSET,
++					y: point.y + index * RESEARCH_CANVAS_FILE_STACK_OFFSET
++				};
++				const found = file.path === void 0 ? -1 : next.findIndex((node) => node.path === file.path);
++				if (found >= 0) next[found] = { ...next[found], ...file, ...position };
++				else next.push({ id: createId(), ...file, ...position });
++			}
++			return next;
++		}
++		function researchCanvasStorageKey(sessionId) {
++			return `${RESEARCH_CANVAS_STORAGE_PREFIX}${sessionId}`;
++		}
++		function validResearchCanvasFileNode(value) {
++			if (typeof value !== "object" || value === null) return false;
++			const source = value.source === "computer" || value.source === "sherlock";
++			const optionalPath = value.path === void 0 || boundedString(value.path, true) !== null;
++			const optionalMedia = value.mediaType === void 0 || boundedString(value.mediaType, true) !== null;
++			return boundedString(value.id) !== null && boundedString(value.name) !== null && source && optionalPath && optionalMedia && Number.isFinite(value.x) && Number.isFinite(value.y);
++		}
++		function parseResearchCanvasFileNodes(raw) {
++			try {
++				const value = JSON.parse(raw);
++				return Array.isArray(value) && value.every(validResearchCanvasFileNode) ? value : [];
++			} catch {
++				return [];
++			}
++		}
 +		/** Resolve one Command-wheel gesture into a pointer-anchored infinite-canvas viewport. */
 +		function nextResearchCanvasViewport(viewport, gesture) {
 +			if (!gesture.metaKey) return viewport;
@@ -1255,7 +1342,7 @@ index 1dd0e89..18d235b 100644
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
  		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
-@@ -8066,13 +8909,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +8996,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -1286,7 +1373,7 @@ index 1dd0e89..18d235b 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +8954,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +9041,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -1311,7 +1398,7 @@ index 1dd0e89..18d235b 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +9908,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +9995,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -1320,7 +1407,7 @@ index 1dd0e89..18d235b 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,23 +9998,24 @@ window.__ModuleLoader__.load({
+@@ -9128,23 +10085,24 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -1349,7 +1436,7 @@ index 1dd0e89..18d235b 100644
  				streaming: data.status === "running",
  				interrupted: data.status === "interrupted",
  				loadImage,
-@@ -9766,7 +10637,10 @@ window.__ModuleLoader__.load({
+@@ -9766,7 +10724,10 @@ window.__ModuleLoader__.load({
  							actions.select(target);
  							layout.openDetails();
  						},
@@ -1361,7 +1448,7 @@ index 1dd0e89..18d235b 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9798,6 +10672,7 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +10759,7 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -1369,7 +1456,7 @@ index 1dd0e89..18d235b 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9825,6 +10700,22 @@ window.__ModuleLoader__.load({
+@@ -9825,6 +10787,30 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.ConversationController = ConversationController;
@@ -1384,9 +1471,17 @@ index 1dd0e89..18d235b 100644
 +		exports.executionSummaryStatus = executionSummaryStatus;
 +		exports.executionStatusForNodes = executionStatusForNodes;
 +		exports.finalAnswerBlocks = finalAnswerBlocks;
++		exports.createResearchCanvasFileId = createResearchCanvasFileId;
 +		exports.nextResearchCanvasPan = nextResearchCanvasPan;
 +		exports.nextResearchCanvasViewport = nextResearchCanvasViewport;
 +		exports.nextResearchCanvasWheel = nextResearchCanvasWheel;
++		exports.parseResearchCanvasFileNodes = parseResearchCanvasFileNodes;
++		exports.parseSherlockFileDrag = parseSherlockFileDrag;
++		exports.placeResearchCanvasFiles = placeResearchCanvasFiles;
++		exports.researchCanvasDropFiles = researchCanvasDropFiles;
++		exports.researchCanvasOwnsFileDrag = researchCanvasOwnsFileDrag;
++		exports.researchCanvasStorageKey = researchCanvasStorageKey;
++		exports.researchCanvasWorldPoint = researchCanvasWorldPoint;
 +		exports.registerResearchCanvasView = registerResearchCanvasView;
 +		exports.userQueuedMessages = userQueuedMessages;
  		exports.apply = apply;

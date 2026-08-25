@@ -73,4 +73,110 @@ describe('Research canvas file drops', () => {
     expect(safePathForFile(file, () => undefined)).toBe('')
     expect(safePathForFile(file, () => { throw new Error('unavailable') })).toBe('')
   })
+
+  it('parses only bounded Sherlock file drag payloads', async () => {
+    const client = await loadConversationClient()
+    expect(client.parseSherlockFileDrag).toBeTypeOf('function')
+    if (typeof client.parseSherlockFileDrag !== 'function') return
+
+    expect(client.parseSherlockFileDrag(
+      '{"path":"/w/report.pdf","name":"report.pdf"}'
+    )).toEqual({ path: '/w/report.pdf', name: 'report.pdf', source: 'sherlock' })
+    expect(client.parseSherlockFileDrag('not-json')).toBeNull()
+    expect(client.parseSherlockFileDrag('{"path":42,"name":"x"}')).toBeNull()
+    expect(client.parseSherlockFileDrag(JSON.stringify({ name: 'x'.repeat(513) }))).toBeNull()
+  })
+
+  it('reads Finder files and gives the Sherlock MIME payload precedence', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchCanvasDropFiles).toBeTypeOf('function')
+    if (typeof client.researchCanvasDropFiles !== 'function') return
+    const transfer = {
+      files: [{ name: 'finder.pdf', type: 'application/pdf' }],
+      getData: (type: string) => type === 'application/x-sherlock-file'
+        ? '{"path":"/w/internal.md","name":"internal.md"}'
+        : '',
+      types: ['Files', 'application/x-sherlock-file']
+    }
+
+    expect(client.researchCanvasDropFiles(transfer, () => '/tmp/finder.pdf')).toEqual([
+      { path: '/w/internal.md', name: 'internal.md', source: 'sherlock' }
+    ])
+
+    const finderTransfer = {
+      files: [
+        { name: 'local.pdf', type: 'application/pdf' },
+        { name: 'README', type: '' }
+      ],
+      getData: () => '',
+      types: ['Files']
+    }
+    const paths = ['/tmp/local.pdf', '']
+    expect(client.researchCanvasDropFiles(
+      finderTransfer,
+      () => paths.shift() ?? ''
+    )).toEqual([
+      {
+        path: '/tmp/local.pdf', name: 'local.pdf',
+        mediaType: 'application/pdf', source: 'computer'
+      },
+      { name: 'README', source: 'computer' }
+    ])
+  })
+
+  it('owns only Finder files and the exact Sherlock MIME type', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchCanvasOwnsFileDrag).toBeTypeOf('function')
+    if (typeof client.researchCanvasOwnsFileDrag !== 'function') return
+
+    expect(client.researchCanvasOwnsFileDrag(['Files'])).toBe(true)
+    expect(client.researchCanvasOwnsFileDrag([
+      'application/x-sherlock-file'
+    ])).toBe(true)
+    expect(client.researchCanvasOwnsFileDrag(['text/plain'])).toBe(false)
+  })
+
+  it('places dropped files in world coordinates and repositions a repeated path', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchCanvasWorldPoint).toBeTypeOf('function')
+    expect(client.placeResearchCanvasFiles).toBeTypeOf('function')
+    if (typeof client.researchCanvasWorldPoint !== 'function' ||
+        typeof client.placeResearchCanvasFiles !== 'function') return
+    const point = client.researchCanvasWorldPoint(
+      { scale: 2, x: 40, y: -20 },
+      { x: 240, y: 180 }
+    )
+    expect(point).toEqual({ x: 100, y: 100 })
+
+    const nodes = client.placeResearchCanvasFiles(
+      [{ id: 'old', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 1, y: 2 }],
+      [
+        { path: '/w/a.pdf', name: 'a.pdf', source: 'computer' },
+        { path: '/w/b.md', name: 'b.md', source: 'computer' }
+      ],
+      point,
+      (() => { let n = 0; return () => `new-${++n}` })()
+    )
+
+    expect(nodes).toEqual([
+      { id: 'old', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
+      { id: 'new-1', path: '/w/b.md', name: 'b.md', source: 'computer', x: 118, y: 118 }
+    ])
+  })
+
+  it('loads only finite, well-shaped persisted file nodes', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchCanvasStorageKey).toBeTypeOf('function')
+    expect(client.parseResearchCanvasFileNodes).toBeTypeOf('function')
+    if (typeof client.researchCanvasStorageKey !== 'function' ||
+        typeof client.parseResearchCanvasFileNodes !== 'function') return
+    const valid = [{ id: '1', name: 'a.pdf', source: 'computer', x: 12, y: 24 }]
+
+    expect(client.researchCanvasStorageKey('session-7')).toBe(
+      'sherlock.research.canvas.files.v1:session-7'
+    )
+    expect(client.parseResearchCanvasFileNodes(JSON.stringify(valid))).toEqual(valid)
+    expect(client.parseResearchCanvasFileNodes('[{"id":"1","name":"a","source":"computer","x":null,"y":2}]')).toEqual([])
+    expect(client.parseResearchCanvasFileNodes('bad-json')).toEqual([])
+  })
 })
