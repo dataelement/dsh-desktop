@@ -41,7 +41,7 @@ describe('DSH Desktop sidebar branding', () => {
     expect(patch).not.toContain('children: "DSH Desktop"')
     expect(patch).toContain('height = 18')
     expect(patch).toContain('brandMark{width:27px;height:23.4px')
-    expect(patch).toContain('height: 18')
+    expect(patch).toContain('height: 20')
     expect(patch).toContain('.hHd-Xa_brand:hover')
     expect(patch).toContain('padding-top:32px')
     expect(patch).toContain('navigator.userAgent.includes("Macintosh")')
