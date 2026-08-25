@@ -12,6 +12,7 @@ import {
   extractPluginFailureReferences,
   extractSlotConflictName,
   formatExitCode,
+  resolveShellEnvironment,
   updateReadyStability
 } from '../src/main/runtime/harness-runtime'
 import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
@@ -201,7 +202,27 @@ describe('Harness launch contract', () => {
   })
 })
 
+describe('shell environment resolution', () => {
+  it('resolves a non-empty environment from the user login shell', () => {
+    const env = resolveShellEnvironment()
+    expect(env).toBeDefined()
+    // PATH must always be present in a valid shell environment.
+    expect(env.PATH).toBeTruthy()
+  })
 
+  it('memoises the result across calls', () => {
+    const first = resolveShellEnvironment()
+    const second = resolveShellEnvironment()
+    // Same object reference — the result is cached for the process lifetime.
+    expect(second).toBe(first)
+  })
+
+  it('produces a PATH that includes standard system directories', () => {
+    const env = resolveShellEnvironment()
+    // /usr/bin is present on every macOS and Linux installation.
+    expect(env.PATH).toContain('/usr/bin')
+  })
+})
 
 describe('harness failure cause extraction', () => {
   it('extracts the DSH entry failure message from stderr', () => {

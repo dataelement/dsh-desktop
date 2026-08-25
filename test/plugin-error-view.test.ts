@@ -5,6 +5,10 @@ import {
   isPluginLoadError,
   pluginErrorMessage
 } from '../src/preload/plugin-error-view'
+import {
+  BOOT_FAILURE_ROOT_SELECTOR,
+  findBootFailureText
+} from '../src/preload/boot-failure'
 
 const sampleLoaderError =
   'failed to import loader entry 516a3af0 (@linxin666/dsh-client-ui-web-ui-settings): client-modules: bundle script /plugins/@linxin666/dsh-client-ui-web-ui-settings/client.js?rev=54840dfe7860 failed to load'
@@ -59,7 +63,41 @@ describe('preload wiring for plugin error handling', () => {
     expect(preload).toContain('checkBootFailureInDom')
     expect(preload).toContain('queueBootFailure(errorText)')
     expect(preload).toContain('pendingBootFailureMessages.join')
-    expect(preload).toContain("document.body?.innerText")
-    expect(preload).toContain("text?.includes('Failed to load plugins')")
+    expect(preload).toContain('findBootFailureText(document)')
+    expect(preload).not.toContain('document.body?.innerText')
+  })
+})
+
+describe('boot failure page detection', () => {
+  it('only accepts the dedicated boot page and preserves its diagnostics', () => {
+    let queriedSelector: string | undefined
+    const bootFailure = findBootFailureText({
+      querySelector: (selector: string) => {
+        queriedSelector = selector
+        return { innerText: 'Failed to load plugins' }
+      }
+    } as unknown as Document)
+
+    expect(queriedSelector).toBe(BOOT_FAILURE_ROOT_SELECTOR)
+    expect(bootFailure).toBe(
+      'Failed to load plugins'
+    )
+    expect(findBootFailureText({
+      querySelector: () => ({
+        innerText:
+          'Failed to load plugins\n@deepseek-ai/dsh-client-ui-example\nweb boot: 1 entry did not activate'
+      })
+    } as unknown as Document)).toBe(
+      'Failed to load plugins\n@deepseek-ai/dsh-client-ui-example\nweb boot: 1 entry did not activate'
+    )
+  })
+
+  it('does not inspect ordinary document text such as a conversation', () => {
+    const conversationOnlyDocument = {
+      body: { innerText: 'The screenshot says “Failed to load plugins”, but the app recovered.' },
+      querySelector: () => null
+    }
+
+    expect(findBootFailureText(conversationOnlyDocument as unknown as Document)).toBeUndefined()
   })
 })
