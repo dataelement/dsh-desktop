@@ -156,6 +156,20 @@ function dispatchDrag(
 }
 
 describe('Sherlock workspace and composer controls', () => {
+  it('opens details for the selected Inspect call while preserving trajectory', async () => {
+    const source = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js',
+      'utf8'
+    )
+
+    expect(source).toContain(`inspectCall: (callId) => {
+\t\t\t\t\t\t\tactions.select({ callId });
+\t\t\t\t\t\t\tlayout.openDetails();
+\t\t\t\t\t\t\tactions.setInspect({ callId });
+\t\t\t\t\t\t\tactions.setView("trajectory");
+\t\t\t\t\t\t}`)
+  })
+
   it('omits the Session log button from the conversation header', async () => {
     const primitives = new Proxy(
       {
