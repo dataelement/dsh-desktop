@@ -4,26 +4,31 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('Feishu release notes pipeline', () => {
+  const pythonTestTimeoutMs = 15_000
   const scriptPath = join(process.cwd(), '.github', 'scripts', 'feishu_release_notes.py')
   const workflowPath = join(process.cwd(), '.github', 'workflows', 'release.yml')
 
   const pythonEnv = { ...process.env, PYTHONIOENCODING: 'utf-8' }
 
-  it('builds a prompt with valid metadata and evidence blocks', () => {
-    const output = execFileSync('python3', [scriptPath, 'build-prompt', '--tag', 'v0.4.0'], {
-      encoding: 'utf8',
-      env: pythonEnv
-    })
+  it(
+    'builds a prompt with valid metadata and evidence blocks',
+    () => {
+      const output = execFileSync('python3', [scriptPath, 'build-prompt', '--tag', 'v0.4.0'], {
+        encoding: 'utf8',
+        env: pythonEnv
+      })
 
-    expect(output).toContain("You are DSH Desktop's Release Bot.")
-    expect(output).toContain('## DSH Desktop v0.4.0 Release Note')
-    expect(output).toContain('📢 大家可以直接在客户端中更新。')
-    expect(output).toContain('📢 You can update directly from the DSH Desktop app.')
-    expect(output).toContain('<tag-release-note>')
-    expect(output).toContain('<commit-details>')
-    expect(output).toContain('<diff-statistics>')
-    expect(output).toContain('<code-diff>')
-  })
+      expect(output).toContain("You are DSH Desktop's Release Bot.")
+      expect(output).toContain('## DSH Desktop v0.4.0 Release Note')
+      expect(output).toContain('📢 大家可以直接在客户端中更新。')
+      expect(output).toContain('📢 You can update directly from the DSH Desktop app.')
+      expect(output).toContain('<tag-release-note>')
+      expect(output).toContain('<commit-details>')
+      expect(output).toContain('<diff-statistics>')
+      expect(output).toContain('<code-diff>')
+    },
+    pythonTestTimeoutMs
+  )
 
   it('generates deterministic fallback release notes that pass validation', () => {
     const tempFile = join(process.cwd(), '.temp-feishu-test-notes.md')

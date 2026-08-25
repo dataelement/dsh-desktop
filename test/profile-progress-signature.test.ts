@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -27,8 +27,14 @@ describe('install progress signature', () => {
    * assertions are actually about — the poll interval is seconds, so the
    * granularity never matters in production.
    */
-  async function age(path: string): Promise<void> {
+  async function ageTree(path: string): Promise<void> {
     const past = new Date(Date.now() - 60_000)
+    const entries = await readdir(path, { withFileTypes: true })
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+        .map((entry) => ageTree(join(path, entry.name)))
+    )
     await utimes(path, past, past)
   }
 
@@ -53,7 +59,7 @@ describe('install progress signature', () => {
       const { directory, nodeModules } = await profile()
       const packagePath = join(nodeModules, 'typescript', 'lib')
       await mkdir(packagePath, { recursive: true })
-      await age(packagePath)
+      await ageTree(nodeModules)
       const before = await progressSignature(directory)
       await writeFile(join(packagePath, 'tsc.js'), 'x', 'utf8')
       expect(await progressSignature(directory)).not.toBe(before)
@@ -80,7 +86,7 @@ describe('install progress signature', () => {
       const { directory, nodeModules } = await profile()
       const packagePath = await materialize(nodeModules, 'typescript@5.4.5', 'typescript')
       await mkdir(join(packagePath, 'lib'), { recursive: true })
-      await age(join(packagePath, 'lib'))
+      await ageTree(nodeModules)
       const before = await progressSignature(directory)
       await writeFile(join(packagePath, 'lib', 'tsc.js'), 'x', 'utf8')
       expect(await progressSignature(directory)).not.toBe(before)
