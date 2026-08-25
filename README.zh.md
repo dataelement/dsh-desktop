@@ -69,6 +69,16 @@ DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop �
 
 [dsh-market](https://github.com/dsh-market/dsh-market) — DeepSeek Harness 插件市场：浏览、搜索社区 900+ 插件，截图预览、一键安装 / 更新 / 启停 / 换主题，多数插件免重启即时生效。
 
+### 安全模式
+
+如果第三方插件影响正常使用，可从 `Harness` 菜单选择“进入安全模式…”。DSH Desktop 会先停止 Harness，屏蔽所有第三方插件启动，并显示当前 Profile 中可卸载的插件。卸载完成后选择“退出安全模式并启动 Harness”即可恢复正常启动。
+
+当界面无法进入时，也可以在启动 DSH Desktop 时传入 `--safe-mode`。例如 macOS：
+
+```sh
+open -a "DSH Desktop" --args --safe-mode
+```
+
 ## 快速开始
 
 ### 环境要求

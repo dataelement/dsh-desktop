@@ -288,6 +288,11 @@ function menuEntries(locale: 'en' | 'zh'): MenuEntry[] {
     },
     {
       kind: 'command',
+      command: 'safe-mode',
+      label: zh ? '进入安全模式…' : 'Enter Safe Mode…'
+    },
+    {
+      kind: 'command',
       command: 'show-harness-log',
       label: zh ? '显示 Harness 日志' : 'Show Harness Log'
     },

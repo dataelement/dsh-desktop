@@ -91,6 +91,23 @@ function configuredProfilePlugins(manifest: ProfileManifest): string[] {
   return plugins
 }
 
+/**
+ * User-installed bundle packages that Safe Mode can manage without starting
+ * Harness. Reading both dependencies and bundles avoids presenting transitive
+ * packages as plugins, or offering to remove a package that is not active in
+ * the profile.
+ */
+export async function listInstalledProfilePlugins(dshHome: string): Promise<string[]> {
+  try {
+    const manifest = JSON.parse(
+      await readFile(profilePackageJsonPath(dshHome), 'utf8')
+    ) as ProfileManifest
+    return configuredProfilePlugins(manifest)
+  } catch {
+    return []
+  }
+}
+
 async function bundleOwnsPackage(
   profileDirectory: string,
   bundle: string,
@@ -430,7 +447,8 @@ export async function uninstallPluginFromProfile(
 
 export async function resetPluginProfile(
   dshHome: string,
-  failingPlugin?: string
+  failingPlugin?: string,
+  matchRelatedPackages = true
 ): Promise<boolean> {
   const manifestPath = profilePackageJsonPath(dshHome)
   if (!existsSync(manifestPath)) return false
@@ -450,9 +468,11 @@ export async function resetPluginProfile(
         }
         for (const dep of Object.keys(manifest.dependencies)) {
           if (
-            failingPlugin.includes(dep) ||
-            dep.includes(failingPlugin) ||
-            (scope && dep.startsWith(scope))
+            matchRelatedPackages && (
+              failingPlugin.includes(dep) ||
+              dep.includes(failingPlugin) ||
+              (scope && dep.startsWith(scope))
+            )
           ) {
             delete manifest.dependencies[dep]
             modified = true
@@ -464,9 +484,11 @@ export async function resetPluginProfile(
         manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(
           (b) =>
             b !== failingPlugin &&
-            !failingPlugin.includes(b) &&
-            !b.includes(failingPlugin) &&
-            (!scope || !b.startsWith(scope))
+            (!matchRelatedPackages || (
+              !failingPlugin.includes(b) &&
+              !b.includes(failingPlugin) &&
+              (!scope || !b.startsWith(scope))
+            ))
         )
         if (manifest.dsh.profile.bundles.length !== origLen) {
           modified = true
@@ -625,4 +647,3 @@ export async function pruneMissingProfileBundles(dshHome: string): Promise<boole
     return false
   }
 }
-

@@ -31,6 +31,7 @@ import {
 import { secureWindow } from './security'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
+  listInstalledProfilePlugins,
   pruneMissingProfileBundles,
   resetPluginProfile,
   uninstallPluginFromProfile
@@ -55,15 +56,21 @@ import {
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
+import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 
-type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh'
+type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
+type SafeModeAction =
+  | { type: 'uninstall'; plugins: string[] }
+  | { type: 'restart' }
+  | { type: 'quit' }
 
 const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
   'uninstall',
   'show-log',
   'quit',
-  'restart'
+  'restart',
+  'safe-mode'
 ])
 
 let mainWindow: BrowserWindow | undefined
@@ -81,6 +88,9 @@ let pluginRecoveryRemovedPlugins: string[] = []
 let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
 let pendingFrontendPluginRecovery = false
 let pendingFrontendPluginRecoveryMessage: string | undefined
+let safeModeVisible = false
+let safeModeActionResolver: ((action: SafeModeAction) => void) | undefined
+const startInSafeMode = shouldStartInSafeMode(process.argv)
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -362,6 +372,12 @@ function resolvePluginRecoveryAction(action: PluginRecoveryAction): void {
   resolve?.(action)
 }
 
+function resolveSafeModeAction(action: SafeModeAction): void {
+  const resolve = safeModeActionResolver
+  safeModeActionResolver = undefined
+  resolve?.(action)
+}
+
 function installPluginRecoveryNavigation(window: BrowserWindow): void {
   window.webContents.on('will-navigate', (event, targetUrl) => {
     if (!targetUrl.startsWith('dsh-recovery://')) return
@@ -426,6 +442,7 @@ function createWindow(): BrowserWindow {
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
     resolvePluginRecoveryAction('quit')
+    resolveSafeModeAction({ type: 'quit' })
   })
   mainWindow = window
   return window
@@ -548,6 +565,10 @@ function launchHarness(): Promise<void> {
 
 function restartHarness(): Promise<void> {
   if (failureRecoveryVisible) resolvePluginRecoveryAction('restart')
+  if (safeModeVisible) {
+    resolveSafeModeAction({ type: 'restart' })
+    return Promise.resolve()
+  }
   return launchHarness()
 }
 
@@ -630,6 +651,9 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<v
       break
     case 'restart-harness':
       await restartHarness()
+      break
+    case 'safe-mode':
+      void showSafeMode().catch(showUnexpectedError)
       break
     case 'show-harness-log':
       shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
@@ -845,6 +869,10 @@ async function showPluginRecovery(options?: {
       } else if (action === 'show-log') {
         shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
         continue
+      } else if (action === 'safe-mode') {
+        takePendingFrontendPluginRecovery()
+        queueMicrotask(() => void showSafeMode().catch(showUnexpectedError))
+        return
       } else {
         app.quit()
         return
@@ -869,6 +897,128 @@ async function showPluginRecovery(options?: {
 
 async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
   await showPluginRecovery({ message: snapshot.message, logs: snapshot.logs })
+}
+
+async function waitForSafeModeAction(options: {
+  plugins: readonly string[]
+  notice?: string
+}): Promise<SafeModeAction> {
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const model = buildSafeModeViewModel({
+    locale: harnessLocale(),
+    plugins: options.plugins,
+    notice: options.notice
+  })
+  const actionPromise = new Promise<SafeModeAction>((resolve) => {
+    safeModeActionResolver = resolve
+  })
+  const navigationVersion = ++mainWindowNavigationVersion
+  window.webContents.stop()
+  try {
+    await window.loadFile(desktopResourcePath('safe-mode.html'), {
+      query: {
+        state: JSON.stringify(model),
+        icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
+        theme: harnessThemePreference()
+      }
+    })
+  } catch (error) {
+    safeModeActionResolver = undefined
+    throw error
+  }
+  if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) {
+    return { type: 'quit' }
+  }
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+  return actionPromise
+}
+
+async function removeSafeModePlugin(dshHome: string, pluginName: string): Promise<boolean> {
+  const removed = await uninstallPluginFromProfile(dshHome, pluginName, async (name) => {
+    const result = await removeProfilePluginWithDsh(
+      {
+        dshHome,
+        dshEntryPath: dshEntryPath(),
+        nodeExecutablePath: bundledNodePath(),
+        pnpmEntryPath: bundledPnpmEntryPath(),
+        pnpmRunnerPath: bundledPnpmRunnerPath(),
+        environment: process.env
+      },
+      name
+    )
+    if (!result.ok) {
+      runtime.note(`[safe-mode] failed to remove ${name}: ${result.detail ?? 'unknown error'}`)
+    }
+    return result.ok
+  })
+  // Unlike failure attribution, Safe Mode already receives an exact root
+  // bundle selected by the user. Never widen that selection to sibling
+  // packages from the same npm scope.
+  if (removed || await resetPluginProfile(dshHome, pluginName, false)) return true
+  // A package command can finish the profile edit but fail its own final
+  // verification (for example after a lockfile cleanup). Treat the observable
+  // profile state as authoritative instead of reporting a false failure.
+  return !(await listInstalledProfilePlugins(dshHome)).includes(pluginName)
+}
+
+async function showSafeMode(): Promise<void> {
+  if (safeModeVisible || quitting) return
+  if (failureRecoveryVisible) {
+    resolvePluginRecoveryAction('safe-mode')
+    return
+  }
+  safeModeVisible = true
+  const dshHome = join(app.getPath('userData'), 'harness')
+  const isChinese = harnessLocale() === 'zh'
+  let notice: string | undefined
+
+  try {
+    // Safe Mode never starts Harness: stopping it first guarantees plugin code
+    // cannot run while the user inspects or removes profile bundles.
+    await runtime.stop()
+    await mobileBridge?.stop()
+
+    while (!quitting) {
+      const installed = await listInstalledProfilePlugins(dshHome)
+      const action = await waitForSafeModeAction({ plugins: installed, notice })
+      notice = undefined
+
+      if (action.type === 'quit') {
+        app.quit()
+        return
+      }
+      if (action.type === 'restart') {
+        safeModeVisible = false
+        await launchHarness()
+        void mobileBridge.start().catch(showUnexpectedError)
+        return
+      }
+
+      const installedSet = new Set(installed)
+      const selected = [...new Set(action.plugins)].filter((plugin) => installedSet.has(plugin))
+      if (selected.length === 0) {
+        notice = isChinese ? '请选择要卸载的插件。' : 'Select at least one plugin to remove.'
+        continue
+      }
+
+      const failed: string[] = []
+      for (const plugin of selected) {
+        if (!(await removeSafeModePlugin(dshHome, plugin))) failed.push(plugin)
+      }
+      notice = failed.length === 0
+        ? isChinese
+          ? `已卸载 ${selected.length} 个插件。你可以继续处理，或退出安全模式。`
+          : `Removed ${selected.length} plugin${selected.length === 1 ? '' : 's'}. You can continue or exit Safe Mode.`
+        : isChinese
+          ? `以下插件未能卸载：${failed.join('、')}`
+          : `These plugins could not be removed: ${failed.join(', ')}`
+    }
+  } finally {
+    safeModeActionResolver = undefined
+    safeModeVisible = false
+  }
 }
 
 function installMenu(): void {
@@ -918,6 +1068,10 @@ function installMenu(): void {
           label: isChinese ? '重启 Harness' : 'Restart Harness',
           accelerator: 'CmdOrCtrl+Shift+R',
           click: () => void restartHarness().catch(showUnexpectedError)
+        },
+        {
+          label: isChinese ? '进入安全模式…' : 'Enter Safe Mode…',
+          click: () => void showSafeMode().catch(showUnexpectedError)
         },
         {
           label: isChinese ? '查看 Harness 日志' : 'Show Harness Log',
@@ -1069,7 +1223,7 @@ async function bootstrap(): Promise<void> {
       void showMobilePairing().catch(showUnexpectedError)
     }
   })
-  void mobileBridge.start().catch(showUnexpectedError)
+  if (!startInSafeMode) void mobileBridge.start().catch(showUnexpectedError)
   ipcMain.handle('directory-picker:open', async (event) => {
     if (
       !mainWindow ||
@@ -1114,6 +1268,22 @@ async function bootstrap(): Promise<void> {
     }
     return { ok: false }
   })
+  ipcMain.removeHandler('safe-mode:action')
+  ipcMain.handle('safe-mode:action', (event, action: unknown, plugins: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (!safeModeVisible || (action !== 'uninstall' && action !== 'restart' && action !== 'quit')) {
+      return { ok: false }
+    }
+    if (action === 'uninstall') {
+      if (!Array.isArray(plugins) || !plugins.every((plugin) => typeof plugin === 'string')) {
+        return { ok: false }
+      }
+      resolveSafeModeAction({ type: 'uninstall', plugins })
+    } else {
+      resolveSafeModeAction({ type: action })
+    }
+    return { ok: true }
+  })
   ipcMain.removeHandler('harness:reset-plugins')
   ipcMain.handle('harness:reset-plugins', async (event, pluginName?: unknown) => {
     assertTrustedMainWindowEvent(event)
@@ -1126,7 +1296,11 @@ async function bootstrap(): Promise<void> {
     return { ok: runtime.snapshot().phase === 'ready' }
   })
   installMenu()
-  await launchHarness()
+  if (startInSafeMode) {
+    void showSafeMode().catch(showUnexpectedError)
+  } else {
+    await launchHarness()
+  }
   if (!developmentBuild) {
     startUpdateManager({
       prepareToInstall: async () => {
@@ -1144,7 +1318,11 @@ const singleInstance = app.requestSingleInstanceLock()
 if (!singleInstance) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    if (shouldStartInSafeMode(argv)) {
+      void showSafeMode().catch(showUnexpectedError)
+      return
+    }
     const snapshot = runtime?.snapshot()
     if (snapshot?.phase === 'ready' && snapshot.url) {
       void openHarness(snapshot.url).catch(showUnexpectedError)
@@ -1155,6 +1333,11 @@ if (!singleInstance) {
     app.quit()
   })
   app.on('activate', () => {
+    if (safeModeVisible && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+      return
+    }
     const snapshot = runtime?.snapshot()
     if (snapshot?.phase === 'ready' && snapshot.url) {
       void openHarness(snapshot.url).catch(showUnexpectedError)

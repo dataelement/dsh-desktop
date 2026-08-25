@@ -6,6 +6,7 @@ import { parse, stringify } from 'yaml'
 import {
   isDisposableModuleDirectory,
   isThirdPartyPackageName,
+  listInstalledProfilePlugins,
   profilePackageJsonPath,
   pruneMissingProfileBundles,
   resetPluginProfile,
@@ -45,6 +46,40 @@ describe('plugin-recovery', () => {
 
   afterEach(async () => {
     await rm(testDir, { recursive: true, force: true })
+  })
+
+  it('lists only configured third-party root bundles for Safe Mode', async () => {
+    await writeFile(
+      profilePackageJsonPath(testDir),
+      JSON.stringify({
+        dependencies: {
+          '@deepseek-ai/dsh-base': '0.1.0',
+          dshmarket: '1.9.0',
+          'plugin-a': '1.0.0',
+          '@example/plugin-b': '2.0.0',
+          'transitive-only': '3.0.0'
+        },
+        dsh: {
+          profile: {
+            bundles: [
+              '@deepseek-ai/dsh-base',
+              'dshmarket',
+              'plugin-a',
+              '@example/plugin-b'
+            ]
+          }
+        }
+      })
+    )
+
+    await expect(listInstalledProfilePlugins(testDir)).resolves.toEqual([
+      'plugin-a',
+      '@example/plugin-b'
+    ])
+  })
+
+  it('returns an empty Safe Mode list when the profile is unavailable', async () => {
+    await expect(listInstalledProfilePlugins(join(testDir, 'missing'))).resolves.toEqual([])
   })
 
   it('uninstalls specific offending plugin from package.json dependencies and bundles', async () => {
@@ -339,6 +374,26 @@ describe('plugin-recovery', () => {
     expect(existsSync(workspacePkgDir)).toBe(false)
     expect(existsSync(nodeModulesPkgDir)).toBe(false)
     expect(existsSync(lockfilePath)).toBe(false)
+  })
+
+  it('can remove one exact scoped plugin without touching an unselected sibling', async () => {
+    const pkgPath = profilePackageJsonPath(testDir)
+    await writeFile(
+      pkgPath,
+      JSON.stringify({
+        dependencies: {
+          '@example/plugin-a': '1.0.0',
+          '@example/plugin-b': '1.0.0'
+        },
+        dsh: { profile: { bundles: ['@example/plugin-a', '@example/plugin-b'] } }
+      })
+    )
+
+    const success = await resetPluginProfile(testDir, '@example/plugin-a', false)
+    expect(success).toBe(true)
+    const manifest = JSON.parse(await readFile(pkgPath, 'utf8'))
+    expect(manifest.dependencies).toEqual({ '@example/plugin-b': '1.0.0' })
+    expect(manifest.dsh.profile.bundles).toEqual(['@example/plugin-b'])
   })
 
   it('resolves root package when a scoped sub-module fails', async () => {

@@ -46,6 +46,7 @@ describe('Windows titlebar menu', () => {
     const main = await readFile('src/main/index.ts', 'utf8')
 
     expect(desktopMenuCommands).toContain('connect-phone')
+    expect(desktopMenuCommands).toContain('safe-mode')
     expect(desktopMenuCommands).toContain('check-for-updates')
     expect(desktopMenuCommands).toContain('toggle-fullscreen')
     expect(isDesktopMenuCommand('copy')).toBe(true)

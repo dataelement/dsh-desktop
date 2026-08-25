@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>DSH Desktop Safe Mode</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --canvas: #f7f7f8; --surface: #fff; --soft: #f5f6f7; --ink: #18181b;
+        --muted: #71717a; --line: #e4e4e7; --strong: #d4d4d8;
+        --button: #18181b; --button-ink: #fff; --danger: #c33b38;
+      }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; }
+      body { min-height: 100vh; display: grid; place-items: center; padding: 40px 24px; color: var(--ink); background: var(--canvas); }
+      button { font: inherit; }
+      .shell { width: min(720px, 100%); overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: 0 12px 34px rgba(24,24,27,.1); }
+      .header { display: flex; align-items: center; padding: 18px 26px; border-bottom: 1px solid var(--line); }
+      .brand { display: flex; align-items: center; gap: 11px; }
+      .brand img { width: 28px; height: 28px; border-radius: 8px; }
+      .brand-name { font-size: 14px; font-weight: 650; }
+      .badge { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 600; }
+      .content { padding: 30px 32px 24px; }
+      h1 { margin: 0; font-size: 22px; line-height: 1.35; letter-spacing: -.025em; }
+      .summary { margin: 9px 0 22px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+      .notice { display: none; margin: 0 0 18px; padding: 11px 13px; border-radius: 10px; color: var(--danger); background: rgba(195,59,56,.08); font-size: 12px; line-height: 1.5; }
+      .notice.visible { display: block; }
+      .list-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
+      .list-heading { display: flex; justify-content: space-between; align-items: center; min-height: 43px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650; }
+      .select-all { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+      .plugins { max-height: 310px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+      .plugins li { border-top: 1px solid var(--line); background: var(--surface); }
+      .plugins li:first-child { border-top: 0; }
+      .plugin { display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 10px 16px; cursor: pointer; }
+      .plugin input { width: 16px; height: 16px; margin: 0; accent-color: var(--button); }
+      .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
+      .empty { display: none; margin: 0; padding: 24px 18px; color: var(--muted); background: var(--surface); text-align: center; font-size: 13px; }
+      .empty.visible { display: block; }
+      .safety { margin: 15px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+      .button { min-height: 39px; padding: 9px 15px; border: 1px solid var(--strong); border-radius: 10px; color: var(--ink); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 620; }
+      .button:hover { background: var(--soft); }
+      .button.primary { border-color: var(--button); color: var(--button-ink); background: var(--button); }
+      .button[disabled] { opacity: .55; cursor: default; }
+      .footer { display: flex; justify-content: flex-end; padding: 11px 26px; border-top: 1px solid var(--line); }
+      .quit { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+      :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; }
+      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; } }
+      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); border:0; border-radius:0; box-shadow:none; } .content { padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } }
+    </style>
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="heading">
+      <header class="header">
+        <div class="brand"><img id="icon" alt="" /><span class="brand-name" id="brand"></span><span class="badge" id="badge"></span></div>
+      </header>
+      <section class="content">
+        <p class="notice" id="notice" role="alert"></p>
+        <h1 id="heading"></h1>
+        <p class="summary" id="summary"></p>
+        <section class="list-card" aria-labelledby="selection-hint">
+          <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
+          <ul class="plugins" id="plugins"></ul>
+          <p class="empty" id="empty"></p>
+        </section>
+        <p class="safety" id="safety-note"></p>
+        <div class="actions">
+          <button class="button" id="uninstall" type="button" disabled></button>
+          <button class="button primary" id="restart" type="button"></button>
+        </div>
+      </section>
+      <footer class="footer"><button class="quit" id="quit" type="button"></button></footer>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.search)
+      const model = JSON.parse(params.get('state') || '{}')
+      document.documentElement.lang = model.locale === 'zh' ? 'zh-CN' : 'en'
+      document.documentElement.dataset.theme = params.get('theme') || 'system'
+      const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value || '' }
+      document.getElementById('icon').src = params.get('icon') || 'icon.png'
+      setText('brand', model.brand)
+      setText('badge', model.badge)
+      setText('heading', model.heading)
+      setText('summary', model.summary)
+      setText('empty', model.emptyMessage)
+      setText('selection-hint', model.selectionHint)
+      setText('safety-note', model.safetyNote)
+      setText('uninstall', model.uninstallLabel)
+      setText('restart', model.restartLabel)
+      setText('quit', model.quitLabel)
+      setText('select-all', model.selectAllLabel)
+      const notice = document.getElementById('notice')
+      if (model.notice) { notice.textContent = model.notice; notice.classList.add('visible') }
+      const list = document.getElementById('plugins')
+      const empty = document.getElementById('empty')
+      const uninstall = document.getElementById('uninstall')
+      const restart = document.getElementById('restart')
+      const checkboxes = []
+      for (const plugin of Array.isArray(model.plugins) ? model.plugins : []) {
+        const item = document.createElement('li')
+        const label = document.createElement('label'); label.className = 'plugin'
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin)
+        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin)
+        label.append(checkbox, name); item.appendChild(label); list.appendChild(item); checkboxes.push(checkbox)
+      }
+      if (checkboxes.length === 0) empty.classList.add('visible')
+      const updateSelection = () => { uninstall.disabled = !checkboxes.some((checkbox) => checkbox.checked) }
+      for (const checkbox of checkboxes) checkbox.addEventListener('change', updateSelection)
+      document.getElementById('select-all').addEventListener('click', () => { const selected = checkboxes.every((checkbox) => checkbox.checked); for (const checkbox of checkboxes) checkbox.checked = !selected; updateSelection() })
+      uninstall.addEventListener('click', () => {
+        const plugins = checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
+        if (plugins.length === 0) return
+        uninstall.disabled = true; uninstall.textContent = model.uninstallBusyLabel; restart.disabled = true
+        void window.dshSafeMode.action('uninstall', plugins)
+      })
+      restart.addEventListener('click', () => { restart.disabled = true; restart.textContent = model.restartBusyLabel; uninstall.disabled = true; void window.dshSafeMode.action('restart', []) })
+      document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', []))
+    </script>
+  </body>
+</html>

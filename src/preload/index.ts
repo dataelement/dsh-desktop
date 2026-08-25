@@ -186,6 +186,14 @@ contextBridge.exposeInMainWorld(
   })
 )
 
+contextBridge.exposeInMainWorld(
+  'dshSafeMode',
+  Object.freeze({
+    action: (action: string, plugins: string[]): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('safe-mode:action', action, plugins)
+  })
+)
+
 function mount(): void {
   if (document.getElementById(ROOT_ID)) return
 

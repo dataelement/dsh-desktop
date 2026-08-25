@@ -3,6 +3,7 @@ export const WINDOWS_TITLEBAR_HEIGHT = 36
 export const desktopMenuCommands = [
   'connect-phone',
   'restart-harness',
+  'safe-mode',
   'show-harness-log',
   'check-for-updates',
   'undo',

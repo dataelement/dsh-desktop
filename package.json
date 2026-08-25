@@ -134,6 +134,10 @@
       {
         "from": "build/plugin-recovery.html",
         "to": "plugin-recovery.html"
+      },
+      {
+        "from": "build/safe-mode.html",
+        "to": "safe-mode.html"
       }
     ],
     "publish": [
