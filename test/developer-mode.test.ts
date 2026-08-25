@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEVELOPER_CONVERSATION_VIEW_IDS,
   DEVELOPER_MODE_STORAGE_KEY,
   DeveloperModeController,
   developerModeNoticeText,
+  setDeveloperConversationTabsVisibility,
   setDeveloperSettingsVisibility
 } from '../src/preload/developer-mode'
 
@@ -22,6 +24,31 @@ function settingsRow(id: string): { dataset: { settingsSectionId: string }; hidd
   return {
     dataset: { settingsSectionId: id },
     hidden: false
+  }
+}
+
+function conversationTab(id: string): {
+  dataset: { conversationViewId: string }
+  hidden: boolean
+} {
+  return {
+    dataset: { conversationViewId: id },
+    hidden: false
+  }
+}
+
+function localizedConversationTab(label: string, selected = false) {
+  return {
+    dataset: {} as { conversationViewId?: string; sherlockDeveloperTab?: string },
+    hidden: false,
+    textContent: label,
+    clicks: 0,
+    getAttribute(name: string): string | null {
+      return name === 'aria-selected' ? String(selected) : null
+    },
+    click(): void {
+      this.clicks += 1
+    }
   }
 }
 
@@ -70,7 +97,7 @@ describe('Sherlock developer mode', () => {
     expect(storage.getItem(DEVELOPER_MODE_STORAGE_KEY)).toBe('false')
   })
 
-  it('hides only the five developer settings rows until developer mode is enabled', () => {
+  it('keeps About visible while hiding only developer settings rows', () => {
     const rows = [
       settingsRow('general'),
       settingsRow('models'),
@@ -92,6 +119,38 @@ describe('Sherlock developer mode', () => {
 
     setDeveloperSettingsVisibility(rows, true)
     expect(rows.some((row) => row.hidden)).toBe(false)
+  })
+
+  it('falls back to localized Memory Evolve labels and returns to Chat', () => {
+    const chat = localizedConversationTab('对话')
+    const memory = localizedConversationTab('🔴 记忆 (2)')
+    const skills = localizedConversationTab('技能')
+    const todos = localizedConversationTab('待办')
+    const settings = localizedConversationTab('Memory Evolve 设置', true)
+
+    setDeveloperConversationTabsVisibility([chat, memory, skills, todos, settings], false)
+
+    expect(chat.clicks).toBe(1)
+    expect([memory, skills, todos, settings].every((tab) => tab.hidden)).toBe(true)
+    expect(settings.dataset.sherlockDeveloperTab).toBe('true')
+  })
+
+  it('hides Memory Evolve conversation tabs outside developer mode', () => {
+    const tabs = [
+      conversationTab('chat'),
+      conversationTab('research'),
+      conversationTab('trajectory'),
+      ...DEVELOPER_CONVERSATION_VIEW_IDS.map(conversationTab)
+    ]
+
+    setDeveloperConversationTabsVisibility(tabs, false)
+    expect(tabs.filter((tab) => tab.hidden).map((tab) => tab.dataset.conversationViewId))
+      .toEqual([...DEVELOPER_CONVERSATION_VIEW_IDS])
+    expect(tabs.filter((tab) => !tab.hidden).map((tab) => tab.dataset.conversationViewId))
+      .toEqual(['chat', 'research', 'trajectory'])
+
+    setDeveloperConversationTabsVisibility(tabs, true)
+    expect(tabs.some((tab) => tab.hidden)).toBe(false)
   })
 
   it('describes both entering and exiting developer mode in each supported locale', () => {

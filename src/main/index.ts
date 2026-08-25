@@ -45,9 +45,11 @@ import {
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
 import { developerModeArgument } from '../shared/developer-mode'
+import { appVersionArgument } from '../shared/app-info'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { resolveDesktopIdentity } from './app-identity'
 import { migrateLegacyUserData } from './app-data-migration'
+import { installBundledPluginProfile } from './bundled-plugin-profile'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -193,6 +195,22 @@ function configureAppIdentity(): void {
   }
   app.setName(identity.name)
   app.setPath('userData', identity.userData)
+  if (app.isPackaged) {
+    const bundledProfilePath = join(process.resourcesPath, 'sherlock-plugin-profile')
+    try {
+      const result = installBundledPluginProfile({
+        userDataPath: identity.userData,
+        bundledProfilePath,
+        appVersion: app.getVersion()
+      })
+      if (result.installed) {
+        console.info('[desktop] installed bundled Sherlock plugin profile', result.plugins)
+      }
+    } catch (error) {
+      console.error('[desktop] failed to install bundled Sherlock plugin profile', error)
+      throw error
+    }
+  }
 }
 
 async function syncNativeTheme(window: BrowserWindow): Promise<void> {
@@ -387,7 +405,10 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(import.meta.dirname, '../preload/index.cjs'),
-      additionalArguments: [developerModeArgument(isDeveloperModeEnabled(app.getPath('userData')))],
+      additionalArguments: [
+        developerModeArgument(isDeveloperModeEnabled(app.getPath('userData'))),
+        appVersionArgument(app.getVersion())
+      ],
       sandbox: true,
       webSecurity: true
     }

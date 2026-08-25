@@ -1,8 +1,19 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-index 6797c5c..9bccd81 100644
+index 6797c5c..d52e5b0 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-@@ -132,6 +132,7 @@ window.__ModuleLoader__.load({
+@@ -76,6 +76,10 @@ window.__ModuleLoader__.load({
+ 				className: SettingsRoot_module_css_default.navIcon,
+ 				size: 16
+ 			});
++			if (id === "about") return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconQuestionOutline14, {
++				className: SettingsRoot_module_css_default.navIcon,
++				size: 16
++			});
+ 			if (id === "agent-presets") return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconAgentPresetOutline16, {
+ 				className: SettingsRoot_module_css_default.navIcon,
+ 				size: 16
+@@ -133,6 +137,7 @@ window.__ModuleLoader__.load({
  							children: rows.map((row) => (0, react_jsx_runtime.jsxs)("button", {
  								type: "button",
  								className: clsx(SettingsRoot_module_css_default.navCell, row.id === active && SettingsRoot_module_css_default.active),
@@ -10,7 +21,126 @@ index 6797c5c..9bccd81 100644
  								"aria-current": row.id === active ? "true" : void 0,
  								onClick: () => {
  									onSelect(row.id);
-@@ -575,13 +575,6 @@ window.__ModuleLoader__.load({
+@@ -299,6 +304,88 @@ window.__ModuleLoader__.load({
+ 				children: renderSlot("settings.general.item", {})
+ 			});
+ 		}
++		const sherlockAboutCss = ".sherlock-about{box-sizing:border-box;color:var(--dsw-alias-label-primary);flex-direction:column;width:100%;display:flex}.sherlock-about-hero{border-bottom:1px solid var(--dsw-alias-border-l2);align-items:center;gap:16px;padding:16px 0 28px;display:flex}.sherlock-about-mark{color:#fff;letter-spacing:.08em;background:linear-gradient(145deg,#34363b,#111216);border:1px solid rgba(255,255,255,.12);border-radius:14px;justify-content:center;align-items:center;width:52px;height:52px;font-size:21px;font-weight:700;display:flex;box-shadow:0 8px 24px rgba(0,0,0,.18)}.sherlock-about-product{letter-spacing:.02em;margin:0;font-size:24px;font-weight:650;line-height:32px}.sherlock-about-version{color:var(--dsw-alias-label-secondary);margin:4px 0 0;font-size:13px;line-height:20px}.sherlock-about-changelog{padding-top:24px}.sherlock-about-title{margin:0 0 8px;font-size:16px;font-weight:600;line-height:24px}.sherlock-about-release{border-bottom:1px solid var(--dsw-alias-border-l2);padding:14px 0 18px}.sherlock-about-release:last-child{border-bottom:none}.sherlock-about-release-header{justify-content:space-between;align-items:center;gap:16px;display:flex}.sherlock-about-release-version{font-size:14px;font-weight:600;line-height:22px}.sherlock-about-release-date{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px}.sherlock-about-release-items{color:var(--dsw-alias-label-secondary);flex-direction:column;gap:7px;margin:11px 0 0;padding-left:20px;font-size:13px;line-height:21px;display:flex}.sherlock-about-state{color:var(--dsw-alias-label-secondary);padding:28px 0;font-size:14px;line-height:22px}";
++		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"sherlock-about\"]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.plugin = "sherlock";
++			tag.dataset.pluginCss = "sherlock-about";
++			tag.textContent = sherlockAboutCss;
++			document.head.appendChild(tag);
++		}
++		function SherlockAboutContent({ info, t }) {
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: "sherlock-about",
++				children: [(0, react_jsx_runtime.jsxs)("div", {
++					className: "sherlock-about-hero",
++					children: [(0, react_jsx_runtime.jsx)("div", {
++						className: "sherlock-about-mark",
++						"aria-hidden": "true",
++						children: "S"
++					}), (0, react_jsx_runtime.jsxs)("div", { children: [(0, react_jsx_runtime.jsx)("h2", {
++						className: "sherlock-about-product",
++						children: info.productName
++					}), (0, react_jsx_runtime.jsx)("p", {
++						className: "sherlock-about-version",
++						children: `${t("about.version")} ${info.version}`
++					})] })]
++				}), (0, react_jsx_runtime.jsxs)("section", {
++					className: "sherlock-about-changelog",
++					children: [(0, react_jsx_runtime.jsx)("h3", {
++						className: "sherlock-about-title",
++						children: t("about.changelog")
++					}), info.releaseNotes.length === 0 ? (0, react_jsx_runtime.jsx)("p", {
++						className: "sherlock-about-state",
++						children: t("about.empty")
++					}) : info.releaseNotes.map((note) => (0, react_jsx_runtime.jsxs)("article", {
++						className: "sherlock-about-release",
++						children: [(0, react_jsx_runtime.jsxs)("div", {
++							className: "sherlock-about-release-header",
++							children: [(0, react_jsx_runtime.jsx)("span", {
++								className: "sherlock-about-release-version",
++								children: `v${note.version}`
++							}), (0, react_jsx_runtime.jsx)("time", {
++								className: "sherlock-about-release-date",
++								dateTime: note.date,
++								children: note.date
++							})]
++						}), (0, react_jsx_runtime.jsx)("ul", {
++							className: "sherlock-about-release-items",
++							children: note.items.map((item) => (0, react_jsx_runtime.jsx)("li", { children: item }, item))
++						})]
++					}, note.version))]
++				})]
++			});
++		}
++		function SherlockAboutSection({ t }) {
++			const [state, setState] = (0, react.useState)({ status: "loading" });
++			(0, react.useEffect)(() => {
++				let active = true;
++				const getInfo = window.sherlockAbout?.getInfo;
++				if (typeof getInfo !== "function") {
++					setState({ status: "error" });
++					return () => {
++						active = false;
++					};
++				}
++				Promise.resolve(getInfo()).then((info) => {
++					if (active) setState({ status: "ready", info });
++				}).catch(() => {
++					if (active) setState({ status: "error" });
++				});
++				return () => {
++					active = false;
++				};
++			}, []);
++			if (state.status === "ready") return (0, react_jsx_runtime.jsx)(SherlockAboutContent, {
++				info: state.info,
++				t
++			});
++			return (0, react_jsx_runtime.jsx)("p", {
++				className: "sherlock-about-state",
++				role: state.status === "error" ? "alert" : "status",
++				children: t(state.status === "error" ? "about.error" : "about.loading")
++			});
++		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-general/src/client/SettingsDocumentAction.module.css.mjs
+ 		const css = ".me01iq_action{align-items:center;gap:8px;min-width:0;display:flex}.me01iq_error{max-width:180px;color:var(--dsw-alias-state-error-primary);text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;overflow:hidden}";
+@@ -442,7 +529,13 @@ window.__ModuleLoader__.load({
+ 			"close": "关闭",
+ 			"openDocument": "打开配置文件",
+ 			"openDocument.error": "无法打开配置文件",
+-			"general.nav": "通用设置"
++			"general.nav": "通用设置",
++			"about.nav": "关于",
++			"about.version": "当前版本",
++			"about.changelog": "更新日志",
++			"about.loading": "正在读取版本信息…",
++			"about.error": "暂时无法读取版本信息",
++			"about.empty": "暂无更新日志"
+ 		};
+ 		/** English dictionary, checked complete against the zh key set. */
+ 		const en = {
+@@ -451,7 +544,13 @@ window.__ModuleLoader__.load({
+ 			"close": "Close",
+ 			"openDocument": "Open configuration file",
+ 			"openDocument.error": "Could not open configuration file",
+-			"general.nav": "General"
++			"general.nav": "General",
++			"about.nav": "About",
++			"about.version": "Current version",
++			"about.changelog": "Release notes",
++			"about.loading": "Loading version information…",
++			"about.error": "Version information is temporarily unavailable",
++			"about.empty": "No release notes yet"
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/index.js
+@@ -575,13 +674,6 @@ window.__ModuleLoader__.load({
  				name: "settings.header",
  				locale: NS
  			}, HeaderContent));
@@ -24,3 +154,21 @@ index 6797c5c..9bccd81 100644
  			ctx.slots.inject("settings.close", () => ctx.slots.register({
  				name: "settings.close",
  				locale: NS
+@@ -597,8 +689,17 @@ window.__ModuleLoader__.load({
+ 					scope: "root"
+ 				} }
+ 			}, GeneralSection));
++			ctx.slots.inject("settings.section", () => ctx.slots.register({
++				name: "settings.section",
++				id: "about",
++				order: 11,
++				label: () => t("about.nav"),
++				locale: NS
++			}, SherlockAboutSection));
+ 		}
+ 		//#endregion
++		exports.SherlockAboutContent = SherlockAboutContent;
++		exports.SherlockAboutSection = SherlockAboutSection;
+ 		exports.SettingsDocumentStore = SettingsDocumentStore;
+ 		exports.apply = apply;
+ 		exports.inject = inject;

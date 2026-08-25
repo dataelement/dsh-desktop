@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "plugins": [
+    "@huanlin/dsh-plugin-better-sidebar-plugin-office",
+    "@vectorize-io/hindsight-coding-agents",
+    "dsh-better-sidebar",
+    "dsh-file-drop",
+    "dsh-memory-evolve",
+    "dshmarket"
+  ],
+  "runtimePackages": [
+    "dsh-desktop-market-installer",
+    "dsh-web-search-session-model"
+  ],
+  "bundles": [
+    "@deepseek-ai/dsh-base",
+    "@deepseek-ai/dsh-web-app",
+    "dshmarket",
+    "dsh-file-drop",
+    "dsh-better-sidebar",
+    "@huanlin/dsh-plugin-better-sidebar-plugin-office",
+    "@vectorize-io/hindsight-coding-agents",
+    "dsh-memory-evolve"
+  ]
+}

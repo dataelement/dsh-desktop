@@ -9,6 +9,13 @@ module.exports = {
     ...packageJson.build.directories,
     output: 'dist-notarized'
   },
+  extraResources: [
+    ...(packageJson.build.extraResources || []),
+    {
+      from: 'build/sherlock-plugin-profile',
+      to: 'sherlock-plugin-profile'
+    }
+  ],
   extraMetadata: {
     name: 'sherlock',
     productName: 'Sherlock',

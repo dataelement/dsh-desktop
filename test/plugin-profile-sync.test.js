@@ -1,10 +1,11 @@
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { rm } from 'node:fs/promises'
 
 import {
+  resolveSyncEndpoints,
   rewriteLocalPluginReferences,
   syncHarnessPluginProfile
 } from '../scripts/sync-plugin-profile.mjs'
@@ -31,12 +32,13 @@ async function writeJson(filePath, value) {
 }
 
 describe('rewriteLocalPluginReferences', () => {
-  it('moves only file dependencies rooted in the source custom-plugin directory', () => {
+  it('moves file and link dependencies rooted in the source custom-plugin directory', () => {
     const source = '/formal/harness/custom-plugins'
     const target = '/dev/harness/custom-plugins'
     const manifest = {
       dependencies: {
         local: `file:${source}/local-plugin`,
+        linked: `link:${source}/linked-plugin`,
         remote: '^1.2.3'
       }
     }
@@ -44,10 +46,18 @@ describe('rewriteLocalPluginReferences', () => {
     expect(rewriteLocalPluginReferences(manifest, source, target)).toEqual({
       dependencies: {
         local: `file:${target}/local-plugin`,
+        linked: `link:${target}/linked-plugin`,
         remote: '^1.2.3'
       }
     })
     expect(manifest.dependencies.local).toBe(`file:${source}/local-plugin`)
+  })
+
+  it('treats sherlock-desktop as the single formal profile', () => {
+    expect(resolveSyncEndpoints('dev-to-formal', '/app-data')).toEqual({
+      sourceUserData: path.join('/app-data', 'dsh-desktop-dev'),
+      targetUserData: path.join('/app-data', 'sherlock-desktop')
+    })
   })
 })
 
@@ -83,6 +93,11 @@ describe('syncHarnessPluginProfile', () => {
     await writeFile(path.join(sourceProfile, 'node_modules', 'dshmarket', 'index.js'), 'formal-market\n')
     await mkdir(path.join(sourceCustom, 'local-sidebar', 'lib'), { recursive: true })
     await writeFile(path.join(sourceCustom, 'local-sidebar', 'lib', 'index.js'), 'optimized-sidebar\n')
+    await symlink(
+      path.join(sourceCustom, 'local-sidebar'),
+      path.join(sourceProfile, 'node_modules', 'local-sidebar'),
+      'dir'
+    )
 
     await writeJson(path.join(targetProfile, 'package.json'), {
       dependencies: {},
@@ -111,6 +126,8 @@ describe('syncHarnessPluginProfile', () => {
       .toBe('formal-market\n')
     expect(await readFile(path.join(targetCustom, 'local-sidebar', 'lib', 'index.js'), 'utf8'))
       .toBe('optimized-sidebar\n')
+    expect(await readlink(path.join(targetProfile, 'node_modules', 'local-sidebar')))
+      .toBe(path.join(targetCustom, 'local-sidebar'))
     expect(await readFile(path.join(targetHarness, 'settings.yaml'), 'utf8'))
       .toBe('locale:\n  preference: zh\n')
     expect(

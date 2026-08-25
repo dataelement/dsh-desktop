@@ -31,6 +31,25 @@ describe('Sherlock client brand migration', () => {
     expect(developmentConfig).toContain("artifactName: 'sherlock-dev-windows-${arch}-setup.${ext}'")
   })
 
+  it('uses the formal Sherlock identity for everyday build and run', async () => {
+    const packageJson = JSON.parse(await projectFile('package.json')) as {
+      scripts: Record<string, string>
+    }
+    const buildAndRun = await projectFile('script/build_and_run.sh')
+
+    expect(packageJson.scripts['package:formal:dir']).toContain(
+      '--config electron-builder.notarized.cjs'
+    )
+    expect(buildAndRun).toContain('dist-notarized/mac-arm64/Sherlock.app')
+    expect(buildAndRun).toContain('build_formal_app')
+    expect(buildAndRun).toContain("echo 'Sherlock is running.'")
+    expect(buildAndRun).toContain('codesign --verify --deep --strict')
+    expect(buildAndRun).toContain('stable_checks=0')
+    expect(buildAndRun).toContain('[ "$stable_checks" -ge 4 ]')
+    expect(buildAndRun).not.toContain('package:dev:dir')
+    expect(buildAndRun).not.toContain('Sherlock Dev is running.')
+  })
+
   it('uses Sherlock across Electron-owned user interfaces', async () => {
     const files = await Promise.all([
       'src/main/index.ts',
@@ -49,6 +68,36 @@ describe('Sherlock client brand migration', () => {
     expect(ownedSurfaces).toContain('Sherlock')
     expect(ownedSurfaces).not.toMatch(/DSH Desktop|DSH Mobile|DeepSeek Harness/)
     expect(ownedSurfaces).not.toMatch(/compatible DSH plugin|兼容的 DSH 插件/)
+  })
+
+  it('owns a product About section instead of relabeling the update plugin', async () => {
+    const [settingsGeneral, preload] = await Promise.all([
+      projectFile('node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js'),
+      projectFile('src/preload/index.ts')
+    ])
+
+    expect(settingsGeneral).toContain('id: "about"')
+    expect(settingsGeneral).toContain('function SherlockAboutContent({ info, t })')
+    expect(settingsGeneral).toContain('className: "sherlock-about-changelog"')
+    expect(settingsGeneral).toContain('"about.nav": "关于"')
+    expect(settingsGeneral).toContain('"about.changelog": "更新日志"')
+    expect(settingsGeneral).not.toContain('本地优先的桌面知识助手')
+    expect(preload).toContain("'sherlockAbout'")
+    expect(preload).toContain('createSherlockAboutBridge(')
+    expect(preload).not.toContain('publicSettingsSectionLabel')
+  })
+
+  it('mounts public-mode visibility before optional shell styling', async () => {
+    const preload = await projectFile('src/preload/index.ts')
+    const initialize = preload.slice(
+      preload.indexOf('function initializeUi()'),
+      preload.indexOf("window.addEventListener('error'")
+    )
+
+    expect(initialize.indexOf('mountDeveloperModeUi()')).toBeGreaterThan(-1)
+    expect(initialize.indexOf('mountDeveloperModeUi()')).toBeLessThan(
+      initialize.indexOf('mountDesktopShellStyles(document)')
+    )
   })
 
   it('brands the embedded web shell and patched visible copy as Sherlock', async () => {

@@ -214,9 +214,30 @@ describe('GitHub release contract', () => {
     expect(notarizedConfig).toContain('https://updates.evanarts.com/notarized/latest/')
     expect(notarizedConfig).toContain('notarize: true')
     expect(notarizedConfig).toMatch(/dmg:\s*\{[\s\S]*sign:\s*true/)
+    expect(notarizedConfig).toContain("from: 'build/sherlock-plugin-profile'")
+    expect(notarizedConfig).toContain("to: 'sherlock-plugin-profile'")
 
     expect(legacyBridgeBuilder).toMatch(/'--identifier',[\s\S]*'io\.dsh\.desktop'/)
     expect(legacyBridgeBuilder).toMatch(/'\/usr\/bin\/codesign',[\s\S]*'--verify'/)
+  })
+
+  it('prepares the same embedded plugin profile for local formal and release packages', async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as { scripts: Record<string, string> }
+    const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
+
+    expect(packageJson.scripts['prepare:bundled-plugin-profile']).toContain(
+      'prepare-bundled-plugin-profile.mjs'
+    )
+    expect(packageJson.scripts['package:formal:dir']).toContain(
+      'npm run prepare:bundled-plugin-profile'
+    )
+    expect(packageJson.scripts['package:mac:notarized:arm64']).toContain(
+      'npm run prepare:bundled-plugin-profile'
+    )
+    expect(main).toContain('installBundledPluginProfile({')
+    expect(main).toContain("join(process.resourcesPath, 'sherlock-plugin-profile')")
   })
 
   it('packages an isolated development channel from the current workspace', async () => {

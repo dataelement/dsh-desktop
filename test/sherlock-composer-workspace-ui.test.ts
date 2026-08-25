@@ -423,6 +423,26 @@ describe('Sherlock workspace and composer controls', () => {
     expect(registrations[0]?.component).toBe(client.ResearchCanvas)
   })
 
+  it('marks conversation tabs with their stable view id for desktop visibility gates', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.conversationViewTabProps).toBeTypeOf('function')
+    if (typeof client.conversationViewTabProps !== 'function') return
+
+    const selected: string[] = []
+    const props = client.conversationViewTabProps(
+      { id: 'memory-files', label: '记忆' },
+      'research',
+      (id: string) => selected.push(id)
+    ) as Record<string, unknown>
+
+    expect(props['data-conversation-view-id']).toBe('memory-files')
+    expect(props['aria-selected']).toBe(false)
+    expect(props.children).toBe('记忆')
+    expect(props.onClick).toBeTypeOf('function')
+    if (typeof props.onClick === 'function') props.onClick()
+    expect(selected).toEqual(['memory-files'])
+  })
+
   it('renders theme-aware light and dark dotted research surfaces', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
