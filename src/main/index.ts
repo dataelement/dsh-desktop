@@ -14,7 +14,7 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
-import { extractFailureCause, HarnessRuntime } from './runtime/harness-runtime'
+import { extractFailureCause, HarnessRuntime, resolveShellEnvironment } from './runtime/harness-runtime'
 import { launchDisclaimedUtilityProcess } from './runtime/disclaimed-utility-process'
 import {
   installProfileDependenciesWithDsh,
@@ -795,7 +795,7 @@ async function showPluginRecovery(options?: {
                 nodeExecutablePath: bundledNodePath(),
                 pnpmEntryPath: bundledPnpmEntryPath(),
                 pnpmRunnerPath: bundledPnpmRunnerPath(),
-                environment: process.env
+                environment: resolveShellEnvironment()
               },
               pluginName
             )

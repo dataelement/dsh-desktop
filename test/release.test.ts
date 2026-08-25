@@ -125,6 +125,8 @@ describe('GitHub release contract', () => {
     expect(splash).toContain('brightness(2.4) saturate(0.72)')
     expect(splash).not.toContain('filter: invert(1)')
     expect(splash).not.toContain('class="track"')
+    expect(splash).toContain('position: fixed;')
+    expect(splash).toContain('html[data-platform="windows"] main { padding-top: 70px; }')
     expect(patch).not.toMatch(/id:\s*directory-picker/)
     expect(patch).not.toContain("name: '@deepseek-ai/dsh-host-directory-picker-native'")
     expect(patch).not.toContain("name: '@deepseek-ai/dsh-client-ui-directory-picker-native'")
@@ -249,6 +251,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('npm run package:dev:win')
     expect(workflow).toContain('Smoke test packaged Windows Harness')
     expect(workflow).toContain("$executable = 'dist-dev\\win-unpacked\\DSH Desktop Dev.exe'")
+    expect(workflow).toContain('if (-not [string]::IsNullOrEmpty($log))')
     expect(workflow).toContain('Packaged Windows Harness smoke test passed.')
     expect(workflow).toContain("Invoke-HarnessRpc 'workspace.create'")
     expect(workflow).toContain("Invoke-HarnessRpc 'session.create'")
@@ -296,6 +299,31 @@ describe('GitHub release contract', () => {
     )
     expect(workflow).toMatch(
       /windows-x64:\r?\n\s+name: Windows x64\r?\n(?:[\s\S]*?)runs-on: windows-2022\r?\n\s+steps:/
+    )
+  })
+
+  it('signs Windows installers on the local UKey runner before publishing', async () => {
+    const workflow = await readFile(
+      path.join(projectRoot, '.github', 'workflows', 'release.yml'),
+      'utf8'
+    )
+
+    expect(workflow).toContain('name: windows-x64-unsigned')
+    expect(workflow).toContain('Sign Windows package locally with UKey')
+    expect(workflow).toContain('runs-on: [self-hosted, macOS, ARM64]')
+    expect(workflow).toContain('--storetype ETOKEN')
+    expect(workflow).toContain('--storepass "file:$pin_file"')
+    expect(workflow).toContain('--tsmode RFC3161')
+    expect(workflow).toContain('secrets.DESKTOP_WINDOWS_SIGNING_PIN')
+    expect(workflow).toContain(`printf '%s' "$WINDOWS_SIGNING_PIN" > "$pin_file"`)
+    expect(workflow).toContain('unset WINDOWS_SIGNING_PIN')
+    expect(workflow).not.toContain('security find-generic-password')
+    expect(workflow).not.toContain('WINDOWS_SIGNING_KEYCHAIN_SERVICE')
+    expect(workflow).toContain('finalize-windows-release.mjs')
+    expect(workflow).toContain('version="${GITHUB_REF_NAME#v}"')
+    expect(workflow).toContain('pattern: macos-*')
+    expect(workflow).toMatch(
+      /publish:[\s\S]*?needs\.sign-windows\.result == 'success'[\s\S]*?- sign-windows/
     )
   })
 

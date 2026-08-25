@@ -12,6 +12,7 @@ import {
   extractPluginFailureReferences,
   extractSlotConflictName,
   formatExitCode,
+  resolveShellEnvironment,
   updateReadyStability
 } from '../src/main/runtime/harness-runtime'
 import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
@@ -201,7 +202,35 @@ describe('Harness launch contract', () => {
   })
 })
 
+describe('shell environment resolution', () => {
+  it(
+    'resolves a non-empty environment from the user login shell',
+    () => {
+      const env = resolveShellEnvironment()
+      expect(env).toBeDefined()
+      // Windows may preserve the conventional mixed-case key.
+      expect(env.PATH ?? env.Path).toBeTruthy()
+    },
+    20_000
+  )
 
+  it('memoises the result across calls', () => {
+    const first = resolveShellEnvironment()
+    const second = resolveShellEnvironment()
+    // Same object reference — the result is cached for the process lifetime.
+    expect(second).toBe(first)
+  })
+
+  it('produces a PATH that includes platform-standard system directories', () => {
+    const env = resolveShellEnvironment()
+    const path = env.PATH ?? env.Path ?? ''
+    if (process.platform === 'win32') {
+      expect(path).toMatch(/[A-Za-z]:\\/)
+    } else {
+      expect(path).toContain('/usr/bin')
+    }
+  })
+})
 
 describe('harness failure cause extraction', () => {
   it('extracts the DSH entry failure message from stderr', () => {
