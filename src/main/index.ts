@@ -37,6 +37,7 @@ import {
   uninstallPluginFromProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
+import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
 import {
   desktopHarnessUrl,
   isAbortedNavigationError,
@@ -856,34 +857,16 @@ async function showPluginRecovery(options?: {
       } else if (action === 'uninstall' && detection.plugins.length > 0) {
         const failedPlugins: string[] = []
         for (const plugin of detection.plugins) {
-          const removed = await uninstallPluginFromProfile(dshHome, plugin, async (pluginName) => {
-            const result = await removeProfilePluginWithDsh(
-              {
-                dshHome,
-                dshEntryPath: dshEntryPath(),
-                nodeExecutablePath: bundledNodePath(),
-                pnpmEntryPath: bundledPnpmEntryPath(),
-                pnpmRunnerPath: bundledPnpmRunnerPath(),
-                environment: resolveShellEnvironment()
-              },
-              pluginName
-            )
-            if (!result.ok) {
-              console.warn(
-                `[plugin-recovery] Failed to remove ${pluginName}: ${result.detail ?? 'unknown error'}`
-              )
-            }
-            return result.ok
-          })
+          const removed = await removeProfilePluginCompletely(
+            dshHome,
+            plugin,
+            resolveShellEnvironment(),
+            'plugin-recovery'
+          )
           if (removed) {
             if (!removedPlugins.includes(plugin)) removedPlugins.push(plugin)
           } else {
-            const fallbackRemoved = await resetPluginProfile(dshHome, plugin)
-            if (fallbackRemoved) {
-              if (!removedPlugins.includes(plugin)) removedPlugins.push(plugin)
-            } else {
-              failedPlugins.push(plugin)
-            }
+            failedPlugins.push(plugin)
           }
         }
 
@@ -1022,6 +1005,32 @@ async function waitForSafeModeAction(options: {
 }
 
 async function removeSafeModePlugin(dshHome: string, pluginName: string): Promise<boolean> {
+  return removeProfilePluginCompletely(
+    dshHome,
+    pluginName,
+    process.env,
+    'safe-mode'
+  )
+}
+
+async function removeProfilePluginCompletely(
+  dshHome: string,
+  pluginName: string,
+  environment: NodeJS.ProcessEnv,
+  logPrefix: string
+): Promise<boolean> {
+  const cleanup = await cleanupPluginOwnedComponents({
+    dshHome,
+    pluginName,
+    log: (message) => runtime.note(`[${logPrefix}] ${message}`)
+  })
+  if (!cleanup.ok) {
+    for (const failure of cleanup.failures) {
+      runtime.note(`[${logPrefix}] failed to clean components for ${pluginName}: ${failure}`)
+    }
+    return false
+  }
+
   const removed = await uninstallPluginFromProfile(dshHome, pluginName, async (name) => {
     const result = await removeProfilePluginWithDsh(
       {
@@ -1030,18 +1039,17 @@ async function removeSafeModePlugin(dshHome: string, pluginName: string): Promis
         nodeExecutablePath: bundledNodePath(),
         pnpmEntryPath: bundledPnpmEntryPath(),
         pnpmRunnerPath: bundledPnpmRunnerPath(),
-        environment: process.env
+        environment
       },
       name
     )
     if (!result.ok) {
-      runtime.note(`[safe-mode] failed to remove ${name}: ${result.detail ?? 'unknown error'}`)
+      runtime.note(`[${logPrefix}] failed to remove ${name}: ${result.detail ?? 'unknown error'}`)
     }
     return result.ok
   })
-  // Unlike failure attribution, Safe Mode already receives an exact root
-  // bundle selected by the user. Never widen that selection to sibling
-  // packages from the same npm scope.
+  // Both recovery paths pass an exact configured root bundle. The fallback
+  // must not widen that ownership to similarly-named or same-scope siblings.
   if (removed || await resetPluginProfile(dshHome, pluginName, false)) return true
   // A package command can finish the profile edit but fail its own final
   // verification (for example after a lockfile cleanup). Treat the observable
