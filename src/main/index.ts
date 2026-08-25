@@ -460,7 +460,9 @@ async function showSplash(): Promise<void> {
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const navigationVersion = ++mainWindowNavigationVersion
   window.webContents.stop()
-  await window.loadFile(desktopResourcePath('splash.html'))
+  await window.loadFile(desktopResourcePath('splash.html'), {
+    query: { theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }
+  })
   if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
   window.show()
   window.focus()
@@ -1032,6 +1034,7 @@ async function bootstrap(): Promise<void> {
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
+  nativeTheme.themeSource = harnessThemePreference()
   createWindow()
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),

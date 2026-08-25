@@ -132,6 +132,10 @@
         "to": "dsh-loader.gif"
       },
       {
+        "from": "build/dsh-loader-dark.gif",
+        "to": "dsh-loader-dark.gif"
+      },
+      {
         "from": "build/plugin-recovery.html",
         "to": "plugin-recovery.html"
       }
