@@ -191,6 +191,35 @@ describe('Research canvas file drops', () => {
     expect(client.parseResearchCanvasFileNodes('bad-json')).toEqual([])
   })
 
+  it('round-trips nodes and keeps them usable when Research storage is unavailable', async () => {
+    const client = await loadConversationClient()
+    expect(client.loadResearchCanvasFiles).toBeTypeOf('function')
+    expect(client.saveResearchCanvasFiles).toBeTypeOf('function')
+    if (typeof client.loadResearchCanvasFiles !== 'function' ||
+        typeof client.saveResearchCanvasFiles !== 'function') return
+    const values = new Map<string, string>()
+    const memoryStorage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value) }
+    }
+    const nodes = [{
+      id: '1', name: 'a.pdf', source: 'computer', x: 1, y: 2
+    }]
+
+    client.saveResearchCanvasFiles(memoryStorage, 's1', nodes)
+    expect(client.loadResearchCanvasFiles(memoryStorage, 's1')).toEqual(nodes)
+
+    const storage = {
+      getItem: () => { throw new Error('denied') },
+      setItem: () => { throw new Error('full') }
+    }
+
+    expect(client.loadResearchCanvasFiles(storage, 's1')).toEqual([])
+    expect(() => client.saveResearchCanvasFiles(storage, 's1', [
+      { id: '1', name: 'a.pdf', source: 'computer', x: 1, y: 2 }
+    ])).not.toThrow()
+  })
+
   it('rejects an oversized raw persisted file payload before parsing', async () => {
     const client = await loadConversationClient()
     expect(client.parseResearchCanvasFileNodes).toBeTypeOf('function')

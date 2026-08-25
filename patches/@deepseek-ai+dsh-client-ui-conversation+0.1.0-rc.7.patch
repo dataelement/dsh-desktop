@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..61a3eb6 100644
+index 1dd0e89..79d961e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -348,6 +348,17 @@ window.__ModuleLoader__.load({
@@ -1067,7 +1067,7 @@ index 1dd0e89..61a3eb6 100644
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.headlineText,
  								children: t("hero.headline")
-@@ -6786,6 +7448,278 @@ window.__ModuleLoader__.load({
+@@ -6786,6 +7448,408 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -1166,6 +1166,70 @@ index 1dd0e89..61a3eb6 100644
 +				return [];
 +			}
 +		}
++		function researchCanvasContentTransform(viewport) {
++			return `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`;
++		}
++		function loadResearchCanvasFiles(storage, sessionId) {
++			if (storage === null) return [];
++			try {
++				return parseResearchCanvasFileNodes(storage.getItem(researchCanvasStorageKey(sessionId)) ?? "[]");
++			} catch {
++				return [];
++			}
++		}
++		function saveResearchCanvasFiles(storage, sessionId, nodes) {
++			if (storage === null) return;
++			try {
++				storage.setItem(researchCanvasStorageKey(sessionId), JSON.stringify(nodes));
++			} catch {}
++		}
++		function researchCanvasStorage() {
++			try {
++				return typeof localStorage === "undefined" ? null : localStorage;
++			} catch {
++				return null;
++			}
++		}
++		function researchCanvasFileCaption(node) {
++			const extension = /\.([^.]+)$/.exec(node.name)?.[1];
++			if (extension !== void 0) return extension.slice(0, 12).toUpperCase();
++			const media = node.mediaType?.split("/").at(-1);
++			if (media !== void 0 && media !== "") return media.slice(0, 12).toUpperCase();
++			return node.source === "sherlock" ? "SHERLOCK" : "FILE";
++		}
++		function ResearchCanvasFileCard({ node }) {
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: "rScV5Q_fileCard",
++				"data-research-file-card": node.id,
++				title: node.path ?? node.name,
++				style: {
++					left: `${node.x}px`,
++					top: `${node.y}px`,
++					transform: "translate(-50%, -50%)"
++				},
++				children: [(0, react_jsx_runtime.jsx)("svg", {
++					className: "rScV5Q_fileIcon",
++					viewBox: "0 0 20 20",
++					"aria-hidden": true,
++					children: (0, react_jsx_runtime.jsx)("path", {
++						d: "M4.5 2.5h6l5 5v10h-11zM10.5 2.5v5h5",
++						fill: "none",
++						stroke: "currentColor",
++						strokeWidth: "1.4",
++						strokeLinejoin: "round"
++					})
++				}), (0, react_jsx_runtime.jsxs)("span", {
++					className: "rScV5Q_fileText",
++					children: [(0, react_jsx_runtime.jsx)("span", {
++						className: "rScV5Q_fileName",
++						children: node.name
++					}), (0, react_jsx_runtime.jsx)("span", {
++						className: "rScV5Q_fileCaption",
++						children: researchCanvasFileCaption(node)
++					})]
++				})]
++			});
++		}
 +		/** Resolve one Command-wheel gesture into a pointer-anchored infinite-canvas viewport. */
 +		function nextResearchCanvasViewport(viewport, gesture) {
 +			if (!gesture.metaKey) return viewport;
@@ -1195,7 +1259,7 @@ index 1dd0e89..61a3eb6 100644
 +				deltaY: -gesture.deltaY
 +			});
 +		}
-+		const cssResearchCanvas = ".rScV5Q_root{--sherlock-research-dot:rgba(82,88,98,.22);background-color:rgb(247,248,250);background-image:radial-gradient(circle,var(--sherlock-research-dot) 1px,transparent 1.2px);background-repeat:repeat;overscroll-behavior:none;touch-action:none;user-select:none;cursor:default;flex:1;min-width:0;min-height:0;height:100%;position:relative;overflow:hidden}.rScV5Q_root:focus{outline:none}.rScV5Q_root[data-space-pressed=true]{cursor:grab}.rScV5Q_root[data-dragging=true]{cursor:grabbing}body[data-ds-dark-theme] .rScV5Q_root{--sherlock-research-dot:rgba(151,157,168,.18);background-color:rgb(23,25,29)}.wSkVaW_root[data-phase=active] .wSkVaW_scrollBody:has(.rScV5Q_root)>.wSkVaW_composerSeat{background:none}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_header:after{bottom:0}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}";
++		const cssResearchCanvas = ".rScV5Q_root{--sherlock-research-dot:rgba(82,88,98,.22);background-color:rgb(247,248,250);background-image:radial-gradient(circle,var(--sherlock-research-dot) 1px,transparent 1.2px);background-repeat:repeat;overscroll-behavior:none;touch-action:none;user-select:none;cursor:default;flex:1;min-width:0;min-height:0;height:100%;position:relative;overflow:hidden}.rScV5Q_root:focus{outline:none}.rScV5Q_root[data-space-pressed=true]{cursor:grab}.rScV5Q_root[data-dragging=true]{cursor:grabbing}body[data-ds-dark-theme] .rScV5Q_root{--sherlock-research-dot:rgba(151,157,168,.18);background-color:rgb(23,25,29)}.rScV5Q_contentLayer{pointer-events:none;transform-origin:0 0;position:absolute;inset:0}.rScV5Q_fileCard{box-sizing:border-box;pointer-events:auto;width:220px;min-height:64px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;align-items:center;gap:10px;padding:11px 12px;display:flex;position:absolute;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_fileIcon{color:var(--dsw-alias-state-business-primary);flex:none;width:20px;height:20px}.rScV5Q_fileText{min-width:0;display:flex;flex-direction:column;gap:2px}.rScV5Q_fileName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_fileCaption{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}.rScV5Q_root[data-file-drop-active=true]{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent)}body[data-ds-dark-theme] .rScV5Q_fileCard{background:var(--dsw-alias-bg-layer-2)}.wSkVaW_root[data-phase=active] .wSkVaW_scrollBody:has(.rScV5Q_root)>.wSkVaW_composerSeat{background:none}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_header:after{bottom:0}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}";
 +		const tagIdResearchCanvas = "@deepseek-ai/dsh-client-ui-conversation/ResearchCanvas.module.css";
 +		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagIdResearchCanvas) + "]") === null) {
 +			const tag = document.createElement("style");
@@ -1206,18 +1270,66 @@ index 1dd0e89..61a3eb6 100644
 +		}
 +		const ResearchCanvas_module_css_default = { root: "rScV5Q_root" };
 +		/** Theme-aware infinite dotted canvas. The resident conversation shell continues to own the composer. */
-+		function ResearchCanvas({ t }) {
++		function ResearchCanvas({ sessionId, t }) {
 +			const rootRef = (0, react.useRef)(null);
 +			const spacePressedRef = (0, react.useRef)(false);
 +			const dragRef = (0, react.useRef)(null);
++			const storageRef = (0, react.useRef)(researchCanvasStorage());
++			const [files, setFiles] = (0, react.useState)(() => loadResearchCanvasFiles(storageRef.current, sessionId));
 +			const [viewport, setViewport] = (0, react.useState)({
 +				scale: 1,
 +				x: 1,
 +				y: 1
 +			});
++			const viewportRef = (0, react.useRef)(viewport);
++			viewportRef.current = viewport;
++			(0, react.useEffect)(() => {
++				saveResearchCanvasFiles(storageRef.current, sessionId, files);
++			}, [files, sessionId]);
 +			(0, react.useEffect)(() => {
 +				const root = rootRef.current;
 +				if (root === null) return;
++				let fileDragDepth = 0;
++				const resetFileDrag = () => {
++					fileDragDepth = 0;
++					root.removeAttribute("data-file-drop-active");
++				};
++				const ownsFileDrag = (event) => researchCanvasOwnsFileDrag(event.dataTransfer?.types);
++				const onDragEnter = (event) => {
++					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					event.preventDefault();
++					event.stopPropagation();
++					event.dataTransfer.dropEffect = "copy";
++					fileDragDepth += 1;
++					root.setAttribute("data-file-drop-active", "true");
++				};
++				const onDragOver = (event) => {
++					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					event.preventDefault();
++					event.stopPropagation();
++					event.dataTransfer.dropEffect = "copy";
++					root.setAttribute("data-file-drop-active", "true");
++				};
++				const onDragLeave = (event) => {
++					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					event.stopPropagation();
++					fileDragDepth = Math.max(0, fileDragDepth - 1);
++					if (fileDragDepth === 0) resetFileDrag();
++				};
++				const onDrop = (event) => {
++					resetFileDrag();
++					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					const dropped = researchCanvasDropFiles(event.dataTransfer, (file) => window.dshDesktop?.getPathForFile?.(file) ?? "");
++					if (dropped.length === 0) return;
++					event.preventDefault();
++					event.stopPropagation();
++					const bounds = root.getBoundingClientRect();
++					const point = researchCanvasWorldPoint(viewportRef.current, {
++						x: event.clientX - bounds.left,
++						y: event.clientY - bounds.top
++					});
++					setFiles((current) => placeResearchCanvasFiles(current, dropped, point, createResearchCanvasFileId));
++				};
 +				const onWheel = (event) => {
 +					event.preventDefault();
 +					const bounds = root.getBoundingClientRect();
@@ -1290,7 +1402,12 @@ index 1dd0e89..61a3eb6 100644
 +					spacePressedRef.current = false;
 +					finishDrag();
 +					setSpaceVisual(false);
++					resetFileDrag();
 +				};
++				root.addEventListener("dragenter", onDragEnter);
++				root.addEventListener("dragover", onDragOver);
++				root.addEventListener("dragleave", onDragLeave);
++				root.addEventListener("drop", onDrop);
 +				root.addEventListener("wheel", onWheel, { passive: false });
 +				root.addEventListener("pointerenter", onPointerEnter);
 +				root.addEventListener("pointerleave", onPointerLeave);
@@ -1301,7 +1418,12 @@ index 1dd0e89..61a3eb6 100644
 +				window.addEventListener("keydown", onKeyDown);
 +				window.addEventListener("keyup", onKeyUp);
 +				window.addEventListener("blur", onWindowBlur);
++				window.addEventListener("dragend", resetFileDrag);
 +				return () => {
++					root.removeEventListener("dragenter", onDragEnter);
++					root.removeEventListener("dragover", onDragOver);
++					root.removeEventListener("dragleave", onDragLeave);
++					root.removeEventListener("drop", onDrop);
 +					root.removeEventListener("wheel", onWheel);
 +					root.removeEventListener("pointerenter", onPointerEnter);
 +					root.removeEventListener("pointerleave", onPointerLeave);
@@ -1312,8 +1434,10 @@ index 1dd0e89..61a3eb6 100644
 +					window.removeEventListener("keydown", onKeyDown);
 +					window.removeEventListener("keyup", onKeyUp);
 +					window.removeEventListener("blur", onWindowBlur);
++					window.removeEventListener("dragend", resetFileDrag);
 +					spacePressedRef.current = false;
 +					finishDrag();
++					resetFileDrag();
 +				};
 +			}, []);
 +			const gridSize = RESEARCH_CANVAS_GRID_SIZE * viewport.scale;
@@ -1329,7 +1453,13 @@ index 1dd0e89..61a3eb6 100644
 +				style: {
 +					backgroundPosition: `${viewport.x - gridSize / 2}px ${viewport.y - gridSize / 2}px`,
 +					backgroundSize: `${gridSize}px ${gridSize}px`
-+				}
++				},
++				children: (0, react_jsx_runtime.jsx)("div", {
++					className: "rScV5Q_contentLayer",
++					"data-research-content-layer": "",
++					style: { transform: researchCanvasContentTransform(viewport) },
++					children: files.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasFileCard, { node }, node.id))
++				})
 +			});
 +		}
 +		/** Register the Research tab between Chat (0) and Trajectory (10). */
@@ -1346,7 +1476,7 @@ index 1dd0e89..61a3eb6 100644
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
  		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
-@@ -8066,13 +9000,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +9130,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -1377,7 +1507,7 @@ index 1dd0e89..61a3eb6 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +9045,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +9175,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -1402,7 +1532,7 @@ index 1dd0e89..61a3eb6 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +9999,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +10129,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -1411,7 +1541,7 @@ index 1dd0e89..61a3eb6 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,23 +10089,24 @@ window.__ModuleLoader__.load({
+@@ -9128,23 +10219,24 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -1440,7 +1570,7 @@ index 1dd0e89..61a3eb6 100644
  				streaming: data.status === "running",
  				interrupted: data.status === "interrupted",
  				loadImage,
-@@ -9766,7 +10728,10 @@ window.__ModuleLoader__.load({
+@@ -9766,7 +10858,10 @@ window.__ModuleLoader__.load({
  							actions.select(target);
  							layout.openDetails();
  						},
@@ -1452,7 +1582,7 @@ index 1dd0e89..61a3eb6 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9798,6 +10763,7 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +10893,7 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -1460,13 +1590,14 @@ index 1dd0e89..61a3eb6 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9825,6 +10791,30 @@ window.__ModuleLoader__.load({
+@@ -9825,6 +10921,34 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.ConversationController = ConversationController;
 +		exports.CommandLauncherButton = CommandLauncherButton;
 +		exports.ComposerLeadingControls = ComposerLeadingControls;
 +		exports.ResearchCanvas = ResearchCanvas;
++		exports.ResearchCanvasFileCard = ResearchCanvasFileCard;
 +		exports.compactionDefinition = compactionDefinition;
 +		exports.compactConversationFlow = compactConversationFlow;
 +		exports.executionActivityLabel = executionActivityLabel;
@@ -1476,17 +1607,20 @@ index 1dd0e89..61a3eb6 100644
 +		exports.executionStatusForNodes = executionStatusForNodes;
 +		exports.finalAnswerBlocks = finalAnswerBlocks;
 +		exports.createResearchCanvasFileId = createResearchCanvasFileId;
++		exports.loadResearchCanvasFiles = loadResearchCanvasFiles;
 +		exports.nextResearchCanvasPan = nextResearchCanvasPan;
 +		exports.nextResearchCanvasViewport = nextResearchCanvasViewport;
 +		exports.nextResearchCanvasWheel = nextResearchCanvasWheel;
 +		exports.parseResearchCanvasFileNodes = parseResearchCanvasFileNodes;
 +		exports.parseSherlockFileDrag = parseSherlockFileDrag;
 +		exports.placeResearchCanvasFiles = placeResearchCanvasFiles;
++		exports.researchCanvasContentTransform = researchCanvasContentTransform;
 +		exports.researchCanvasDropFiles = researchCanvasDropFiles;
 +		exports.researchCanvasOwnsFileDrag = researchCanvasOwnsFileDrag;
 +		exports.researchCanvasStorageKey = researchCanvasStorageKey;
 +		exports.researchCanvasWorldPoint = researchCanvasWorldPoint;
 +		exports.registerResearchCanvasView = registerResearchCanvasView;
++		exports.saveResearchCanvasFiles = saveResearchCanvasFiles;
 +		exports.userQueuedMessages = userQueuedMessages;
  		exports.apply = apply;
  		exports.inject = inject;
