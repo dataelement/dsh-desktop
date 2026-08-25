@@ -8,9 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { parse, stringify } from 'yaml'
 
 /**
- * Refresh the electron-updater entry for a DMG after the disk image is signed.
- * Signing happens after electron-builder writes latest-mac.yml and changes both
- * the file size and SHA-512 digest.
+ * Refresh the electron-updater entry for a DMG after the disk image is signed,
+ * notarized, and stapled. These operations can change both its size and digest.
  *
  * @param {{ metadataPath: string, dmgPath: string }} options
  */

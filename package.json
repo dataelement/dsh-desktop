@@ -1,6 +1,6 @@
 {
   "name": "sherlock",
-  "version": "0.6.3",
+  "version": "0.6.6",
   "description": "Sherlock local-first desktop knowledge assistant.",
   "private": true,
   "type": "module",
@@ -39,6 +39,7 @@
     "package:mac": "npm run build && electron-builder --mac --publish never && npm run verify:package:mac -- --app auto",
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never && npm run verify:package:mac -- --app \"dist/mac-arm64/Sherlock.app\"",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never && npm run verify:package:mac -- --app \"dist/mac/Sherlock.app\"",
+    "package:mac:notarized:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.notarized.cjs && npm run verify:package:mac -- --app \"dist-notarized/mac-arm64/Sherlock.app\"",
     "verify:package:mac": "node scripts/verify-packaged-macos.mjs",
     "release:cloudflare": "node scripts/publish-cloudflare-release.mjs",
     "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never",

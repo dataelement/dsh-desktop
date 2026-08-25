@@ -5,13 +5,20 @@ export interface DesktopIdentity {
   userData: string
 }
 
+export type DesktopChannel = 'development' | 'legacy' | 'legacy-bridge' | 'notarized'
+
 export function resolveDesktopIdentity(
   appDataPath: string,
-  developmentBuild: boolean,
+  channel: DesktopChannel,
   explicitUserDataPath: string
 ): DesktopIdentity {
-  const name = developmentBuild ? 'Sherlock Dev' : 'Sherlock'
-  const defaultDirectory = developmentBuild ? 'dsh-desktop-dev' : 'dsh-desktop'
+  const name = channel === 'development' ? 'Sherlock Dev' : 'Sherlock'
+  const defaultDirectory =
+    channel === 'development'
+      ? 'dsh-desktop-dev'
+      : channel === 'notarized' || channel === 'legacy-bridge'
+        ? 'sherlock-desktop'
+        : 'dsh-desktop'
   const explicitPath = explicitUserDataPath.trim()
 
   if (explicitPath && !isAbsolute(explicitPath)) {

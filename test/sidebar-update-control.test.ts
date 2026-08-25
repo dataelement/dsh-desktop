@@ -126,6 +126,13 @@ describe('Sherlock sidebar update control', () => {
     expect(button.getAttribute('role')).toBe('progressbar')
     expect(button.getAttribute('aria-valuenow')).toBe('43')
     expect(button.disabled).toBe(true)
+    expect(button.innerHTML).toContain('M12 3v11')
+    expect(button.style.getPropertyValue('--sherlock-update-progress')).toBe('43%')
+
+    const styles = document.querySelector<HTMLStyleElement>(
+      '#sherlock-sidebar-update-style'
+    )!.textContent
+    expect(styles).not.toContain('conic-gradient')
   })
 
   it('asks before restarting to install a downloaded update', () => {

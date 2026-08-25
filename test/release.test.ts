@@ -169,18 +169,54 @@ describe('GitHub release contract', () => {
     }
   })
 
-  it('signs and verifies the DMG in the local formal build entrypoint', async () => {
+  it('builds a legacy updater bridge and an Apple-notarized public installer', async () => {
     const buildAndRun = await readFile(
       path.join(projectRoot, 'script', 'build_and_run.sh'),
       'utf8'
     )
 
+    const [legacyBridgeBuilder, legacyBridgeSource, notarizedConfig] = await Promise.all([
+      readFile(path.join(projectRoot, 'scripts', 'build-legacy-migration-bridge.mjs'), 'utf8'),
+      readFile(path.join(projectRoot, 'scripts', 'macos', 'legacy-migration-bridge.swift'), 'utf8'),
+      readFile(path.join(projectRoot, 'electron-builder.notarized.cjs'), 'utf8')
+    ])
+
     expect(buildAndRun).toContain("security find-identity -v -p codesigning")
     expect(buildAndRun).toContain('Sherlock Desktop Update Signing')
-    expect(buildAndRun).toContain('--timestamp=none')
-    expect(buildAndRun).toContain('codesign --verify --verbose=2')
-    expect(buildAndRun).toContain('dist/sherlock-mac-arm64.dmg')
+    expect(buildAndRun).toContain('Developer ID Application')
+    expect(buildAndRun).toContain('8B8FCCFB659D94D5C9A9CE2B735EB0FAE457CC7B')
+    expect(buildAndRun).toContain('DDFBC7F4DA5EC49721E454BB06329C6D1E8A7B9F')
+    expect(buildAndRun).toContain('notarytool submit')
+    expect(buildAndRun).toContain('stapler staple')
+    expect(buildAndRun).toContain('spctl --assess')
+    expect(buildAndRun).toContain('dist-notarized/sherlock-mac-arm64.dmg')
     expect(buildAndRun).toContain('scripts/refresh-mac-update-metadata.mjs')
+    expect(buildAndRun).toContain('scripts/build-legacy-migration-bridge.mjs')
+    expect(buildAndRun.indexOf('package:mac:notarized:arm64')).toBeLessThan(
+      buildAndRun.indexOf('scripts/build-legacy-migration-bridge.mjs')
+    )
+    expect(legacyBridgeBuilder).toContain("bundleIdentifier: 'io.dsh.desktop'")
+    expect(legacyBridgeBuilder).toContain("embeddedBundleIdentifier: 'com.evanarts.sherlock'")
+    expect(legacyBridgeBuilder).toContain('Sherlock Desktop Update Signing')
+    expect(legacyBridgeBuilder).toContain('buildBlockMap')
+    expect(legacyBridgeBuilder).toContain('sherlock-mac-arm64-legacy.zip')
+    expect(legacyBridgeBuilder).toContain('Squirrel.framework')
+    expect(legacyBridgeBuilder).toContain('Mantle.framework')
+    expect(legacyBridgeBuilder).toContain('ReactiveObjC.framework')
+    expect(legacyBridgeSource).toContain('Contents/Resources/Sherlock.app')
+    expect(legacyBridgeSource).toContain('com.evanarts.sherlock')
+    expect(legacyBridgeSource).toContain('io.dsh.desktop')
+    expect(legacyBridgeSource).toContain('moveItem')
+    expect(legacyBridgeSource).toContain('/usr/bin/open')
+    expect(legacyBridgeSource).toContain('"-na"')
+    expect(notarizedConfig).toContain("appId: 'com.evanarts.sherlock'")
+    expect(notarizedConfig).toContain("dshDesktopChannel: 'notarized'")
+    expect(notarizedConfig).toContain('https://updates.evanarts.com/notarized/latest/')
+    expect(notarizedConfig).toContain('notarize: true')
+    expect(notarizedConfig).toMatch(/dmg:\s*\{[\s\S]*sign:\s*true/)
+
+    expect(legacyBridgeBuilder).toMatch(/'--identifier',[\s\S]*'io\.dsh\.desktop'/)
+    expect(legacyBridgeBuilder).toMatch(/'\/usr\/bin\/codesign',[\s\S]*'--verify'/)
   })
 
   it('packages an isolated development channel from the current workspace', async () => {
@@ -207,6 +243,7 @@ describe('GitHub release contract', () => {
     )
     expect(main).toContain('resolveDesktopIdentity(')
     expect(main).toContain("app.commandLine.getSwitchValue('sherlock-user-data-dir')")
+    expect(main).toContain("app.commandLine.getSwitchValue('sherlock-app-data-dir')")
     expect(main).toContain("app.setPath('userData', identity.userData)")
     expect(main).toContain('if (!developmentBuild)')
   })

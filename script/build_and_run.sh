@@ -9,10 +9,10 @@ mode="${1:---run}"
 machine_arch="$(uname -m)"
 if [ "$machine_arch" = "arm64" ]; then
   dev_app="$project_root/dist-dev/mac-arm64/Sherlock Dev.app"
-  formal_app="$project_root/dist/mac-arm64/Sherlock.app"
+  formal_app="$project_root/dist-notarized/mac-arm64/Sherlock.app"
 else
   dev_app="$project_root/dist-dev/mac/Sherlock Dev.app"
-  formal_app="$project_root/dist/mac/Sherlock.app"
+  formal_app="$project_root/dist-notarized/mac/Sherlock.app"
 fi
 dev_executable="$dev_app/Contents/MacOS/Sherlock Dev"
 
@@ -66,26 +66,68 @@ case "$mode" in
     exec /usr/bin/log stream --style compact --predicate 'subsystem == "io.dsh.desktop.dev"'
     ;;
   --formal)
-    signing_identity="$(security find-identity -v -p codesigning | awk '/"Sherlock Desktop Update Signing"/ { print $2; exit }')"
-    test -n "$signing_identity" || {
+    test "$machine_arch" = "arm64" || {
+      echo 'The local formal release currently supports Apple Silicon only.' >&2
+      exit 1
+    }
+    legacy_identity='8B8FCCFB659D94D5C9A9CE2B735EB0FAE457CC7B'
+    developer_identity='DDFBC7F4DA5EC49721E454BB06329C6D1E8A7B9F'
+    signing_identities="$(security find-identity -v -p codesigning)"
+    printf '%s\n' "$signing_identities" | grep -F "$legacy_identity" | grep -F 'Sherlock Desktop Update Signing' >/dev/null || {
       echo 'The Sherlock Desktop Update Signing identity is not prepared.' >&2
       exit 1
     }
-    CSC_NAME="$signing_identity" npm run package:mac:arm64
-    codesign \
-      --sign "$signing_identity" \
-      --timestamp=none \
-      --force \
-      "$project_root/dist/sherlock-mac-arm64.dmg"
+    printf '%s\n' "$signing_identities" | grep -F "$developer_identity" | grep -F 'Developer ID Application: yafeng he (FAV8TLDK73)' >/dev/null || {
+      echo 'The Developer ID Application identity is not prepared.' >&2
+      exit 1
+    }
+    APPLE_API_KEY="${APPLE_API_KEY:-/Users/heyafeng/Downloads/AuthKey_KSJ7725349.p8}"
+    APPLE_API_KEY_ID="${APPLE_API_KEY_ID:-KSJ7725349}"
+    APPLE_API_ISSUER="${APPLE_API_ISSUER:-840d0b5c-4924-4f62-8a86-6201e832a4d6}"
+    export APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+    test -f "$APPLE_API_KEY" || {
+      echo "The App Store Connect API key is missing: $APPLE_API_KEY" >&2
+      exit 1
+    }
+
+    CSC_NAME="$developer_identity" npm run package:mac:notarized:arm64
+
+    notarized_dmg="$project_root/dist-notarized/sherlock-mac-arm64.dmg"
+    release_version="$(node -p "require('./package.json').version")"
+    xcrun stapler validate "$formal_app"
+    node "$project_root/scripts/build-legacy-migration-bridge.mjs" \
+      --version "$release_version" \
+      --app "$formal_app" \
+      --output "$project_root/dist-legacy" \
+      --identity "$legacy_identity"
+    xcrun notarytool submit "$notarized_dmg" \
+      --key "$APPLE_API_KEY" \
+      --key-id "$APPLE_API_KEY_ID" \
+      --issuer "$APPLE_API_ISSUER" \
+      --wait
+    xcrun stapler staple "$notarized_dmg"
+    xcrun stapler validate "$formal_app"
+    xcrun stapler validate "$notarized_dmg"
     node "$project_root/scripts/refresh-mac-update-metadata.mjs" \
-      --metadata "$project_root/dist/latest-mac.yml" \
-      --dmg "$project_root/dist/sherlock-mac-arm64.dmg"
-    codesign --verify --verbose=2 "$project_root/dist/sherlock-mac-arm64.dmg"
+      --metadata "$project_root/dist-notarized/latest-mac.yml" \
+      --dmg "$notarized_dmg"
+    codesign --verify --deep --strict --verbose=2 "$formal_app"
+    codesign --verify --verbose=2 "$notarized_dmg"
+    spctl --assess --type execute --verbose=2 "$formal_app"
+    spctl --assess --type open --context context:primary-signature --verbose=2 "$notarized_dmg"
+    hdiutil verify "$notarized_dmg"
+    node "$project_root/scripts/prepare-macos-dual-release.mjs" \
+      --version "$release_version" \
+      --arch arm64 \
+      --legacy "$project_root/dist-legacy" \
+      --notarized "$project_root/dist-notarized" \
+      --output "$project_root/dist-release"
     test -d "$formal_app" || {
       echo "Formal Sherlock app was not built at: $formal_app" >&2
       exit 1
     }
-    open "$formal_app"
+    formal_smoke_user_data="$(mktemp -d /tmp/sherlock-formal-smoke.XXXXXX)"
+    open -na "$formal_app" --args "--sherlock-user-data-dir=$formal_smoke_user_data"
     ;;
   *)
     echo 'Usage: ./script/build_and_run.sh [--run|--verify|--debug|--logs|--telemetry|--formal]' >&2

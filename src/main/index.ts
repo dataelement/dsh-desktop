@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, normalize } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { parse } from 'yaml'
@@ -47,6 +47,7 @@ import {
 import { developerModeArgument } from '../shared/developer-mode'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { resolveDesktopIdentity } from './app-identity'
+import { migrateLegacyUserData } from './app-data-migration'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -105,20 +106,29 @@ function appendRendererPluginRecoveryLog(logs: readonly string[]): void {
   }
 }
 
-function isDevelopmentBuild(): boolean {
-  if (!app.isPackaged) return true
+function resolveDesktopChannel(): 'development' | 'legacy' | 'legacy-bridge' | 'notarized' {
+  if (!app.isPackaged) return 'development'
 
   try {
     const metadata = JSON.parse(
       readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')
     ) as { dshDesktopChannel?: unknown }
-    return metadata.dshDesktopChannel === 'development'
+    if (
+      metadata.dshDesktopChannel === 'development' ||
+      metadata.dshDesktopChannel === 'notarized' ||
+      metadata.dshDesktopChannel === 'legacy-bridge' ||
+      metadata.dshDesktopChannel === 'legacy'
+    ) {
+      return metadata.dshDesktopChannel
+    }
+    return 'legacy'
   } catch {
-    return false
+    return 'legacy'
   }
 }
 
-const developmentBuild = isDevelopmentBuild()
+const desktopChannel = resolveDesktopChannel()
+const developmentBuild = desktopChannel === 'development'
 
 function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOptions {
   return {
@@ -163,11 +173,24 @@ function configureAppIdentity(): void {
   // branding changes. Harness stores workspaces, sessions, credentials, and
   // custom presets below userData, so deriving this path from app.getName()
   // would make an ordinary upgrade look like a fresh installation.
-  const identity = resolveDesktopIdentity(
-    app.getPath('appData'),
-    developmentBuild,
-    app.commandLine.getSwitchValue('sherlock-user-data-dir')
-  )
+  const explicitAppDataPath = app.commandLine.getSwitchValue('sherlock-app-data-dir').trim()
+  if (explicitAppDataPath && !isAbsolute(explicitAppDataPath)) {
+    throw new Error('The Sherlock app-data path must be absolute.')
+  }
+  const appDataPath = explicitAppDataPath ? normalize(explicitAppDataPath) : app.getPath('appData')
+  if (explicitAppDataPath) app.setPath('appData', appDataPath)
+  const explicitUserDataPath = app.commandLine.getSwitchValue('sherlock-user-data-dir')
+  const identity = resolveDesktopIdentity(appDataPath, desktopChannel, explicitUserDataPath)
+  if (
+    !explicitUserDataPath &&
+    (desktopChannel === 'legacy-bridge' || desktopChannel === 'notarized')
+  ) {
+    try {
+      migrateLegacyUserData(join(appDataPath, 'dsh-desktop'), identity.userData)
+    } catch (error) {
+      console.warn('[desktop] failed to migrate legacy Sherlock user data', error)
+    }
+  }
   app.setName(identity.name)
   app.setPath('userData', identity.userData)
 }

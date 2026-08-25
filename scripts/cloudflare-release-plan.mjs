@@ -4,7 +4,12 @@ import { parse, stringify } from 'yaml'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 const REVALIDATE_CACHE = 'no-cache, max-age=0, must-revalidate'
-const METADATA_FILES = ['latest.yml', 'latest-mac.yml']
+const METADATA_TARGETS = new Map([
+  ['latest.yml', 'latest/latest.yml'],
+  ['latest-mac.yml', 'latest/latest-mac.yml'],
+  ['latest-mac-notarized.yml', 'notarized/latest/latest-mac.yml']
+])
+const METADATA_FILES = [...METADATA_TARGETS.keys()]
 
 /**
  * @typedef {'immutable' | 'stable' | 'metadata'} UploadPhase
@@ -49,7 +54,7 @@ export async function buildCloudflareReleasePlan(options) {
     const source = path.join(assetDirectory, name)
     const metadata = parse(await readFile(source, 'utf8'))
     validateMetadata(metadata, name, version)
-    await validateAndRewriteReferences(metadata, assetDirectory, tag)
+    await validateAndRewriteReferences(metadata, assetDirectory, tag, name)
     await writeFile(path.join(outputDirectory, name), stringify(metadata), 'utf8')
   }
 
@@ -76,7 +81,7 @@ export async function buildCloudflareReleasePlan(options) {
     plan.push({
       phase: 'metadata',
       source: path.join(outputDirectory, name),
-      key: `latest/${name}`,
+      key: METADATA_TARGETS.get(name),
       contentType: contentTypeFor(name),
       cacheControl: REVALIDATE_CACHE
     })
@@ -113,17 +118,19 @@ function validateMetadata(metadata, name, version) {
   }
 }
 
-async function validateAndRewriteReferences(metadata, assetDirectory, tag) {
+async function validateAndRewriteReferences(metadata, assetDirectory, tag, metadataName) {
+  const releasesPrefix =
+    metadataName === 'latest-mac-notarized.yml' ? '../../releases' : '../releases'
   for (const file of metadata.files) {
     const filename = safeAssetFilename(file.url)
     await requireFile(path.join(assetDirectory, filename), filename)
-    file.url = `../releases/${tag}/${filename}`
+    file.url = `${releasesPrefix}/${tag}/${filename}`
   }
 
   if (metadata.path !== undefined) {
     const filename = safeAssetFilename(metadata.path)
     await requireFile(path.join(assetDirectory, filename), filename)
-    metadata.path = `../releases/${tag}/${filename}`
+    metadata.path = `${releasesPrefix}/${tag}/${filename}`
   }
 }
 

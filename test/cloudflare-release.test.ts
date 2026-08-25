@@ -130,6 +130,49 @@ describe('Cloudflare release plan', () => {
     expect(plan.at(-1)?.cacheControl).toBe('no-cache, max-age=0, must-revalidate')
   })
 
+  it('publishes an independent notarized macOS channel while keeping the legacy channel', async () => {
+    const { assets, prepared } = await fixture()
+    await Promise.all([
+      writeFile(path.join(assets, 'sherlock-mac-arm64-notarized.zip'), 'notarized zip'),
+      writeFile(
+        path.join(assets, 'latest-mac-notarized.yml'),
+        stringify({
+          version: '0.6.0',
+          files: [
+            {
+              url: 'sherlock-mac-arm64-notarized.zip',
+              sha512: 'notarized-sha',
+              size: 14
+            }
+          ],
+          path: 'sherlock-mac-arm64-notarized.zip',
+          sha512: 'notarized-sha'
+        })
+      )
+    ])
+
+    const plan = await buildCloudflareReleasePlan({
+      version: '0.6.0',
+      assetDirectory: assets,
+      outputDirectory: prepared
+    })
+
+    expect(plan.filter((item) => item.phase === 'metadata').map((item) => item.key)).toEqual([
+      'latest/latest.yml',
+      'latest/latest-mac.yml',
+      'notarized/latest/latest-mac.yml'
+    ])
+    expect(plan.filter((item) => item.phase === 'stable').map((item) => item.key)).toEqual([
+      'download/sherlock-mac-arm64.dmg'
+    ])
+    const notarized = parse(
+      await readFile(path.join(prepared, 'latest-mac-notarized.yml'), 'utf8')
+    ) as { path: string }
+    expect(notarized.path).toBe(
+      '../../releases/v0.6.0/sherlock-mac-arm64-notarized.zip'
+    )
+  })
+
   it('rejects missing referenced files and empty hashes', async () => {
     const missing = await fixture()
     await rm(path.join(missing.assets, 'sherlock-mac-arm64.zip'))

@@ -94,7 +94,9 @@ describe('Sherlock client brand migration', () => {
     ])
 
     expect(main).toContain('resolveDesktopIdentity(')
-    expect(appIdentity).toContain("developmentBuild ? 'dsh-desktop-dev' : 'dsh-desktop'")
+    expect(appIdentity).toContain("channel === 'notarized'")
+    expect(appIdentity).toContain("'sherlock-desktop'")
+    expect(appIdentity).toContain("'dsh-desktop'")
     expect(runtime).toContain('DSH_BUNDLED_SKILL_DIR')
     expect(packageJson).toContain('"@deepseek-ai/dsh"')
   })

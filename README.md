@@ -25,15 +25,15 @@
 Sherlock packages the local DeepSeek Harness web experience as a desktop application. It launches a local Harness instance automatically, manages a random loopback port, persists profiles, plugins, and sessions, and opens the full interface as soon as Harness is ready. Project workspaces are added and managed entirely in the Harness interface.
 
 > [!IMPORTANT]
-> Sherlock currently depends on the rapidly evolving `@deepseek-ai/dsh@0.1.0-rc.7`. macOS releases use one stable Sherlock self-signed update identity and are not notarized by Apple or distributed through the Mac App Store.
+> Sherlock currently depends on the rapidly evolving `@deepseek-ai/dsh@0.1.0-rc.7`. Public macOS releases are signed with a Developer ID certificate and notarized by Apple. A stable legacy Sherlock signing identity is retained only inside the compatibility update bridge for existing 0.6.3 installations.
 
 ## Download
 
 Download Sherlock for macOS and Windows from the [official website](https://www.dshdesktop.com/#download).
 
-On macOS, open the DMG, drag Sherlock into Applications, then Control-click or right-click **Sherlock.app** and choose **Open** for the first launch. This one-time step is required because the build does not use Apple notarization.
+On macOS, open the DMG and drag Sherlock into Applications. The Developer ID signature and stapled Apple notarization ticket allow Gatekeeper to verify the download normally.
 
-Installed builds check for updates after startup and every six hours. When a release is available, a blue circular download button appears at the lower-right of the sidebar. Click it to download; once ready, click again and confirm the restart to install. The button stays hidden when no update is available. You can also choose **Check for Updates…** from the application menu.
+Installed builds check for updates after startup and every six hours. When a release is available, a compact blue 28×28 rounded-rectangle download button appears at the lower-right of the sidebar. Click it to download; once ready, click again and confirm the restart to install. The button stays hidden when no update is available. You can also choose **Check for Updates…** from the application menu.
 
 ## Community
 

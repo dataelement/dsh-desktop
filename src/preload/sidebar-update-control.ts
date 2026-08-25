@@ -120,8 +120,8 @@ export class SidebarUpdateControl {
           'aria-label',
           this.locale === 'zh' ? `正在下载更新 ${percent}%` : `Downloading update ${percent}%`
         )
-        button.style.setProperty('--sherlock-update-progress', `${percent * 3.6}deg`)
-        button.innerHTML = progressIcon
+        button.style.setProperty('--sherlock-update-progress', `${percent}%`)
+        button.innerHTML = downloadIcon
         return
       }
       case 'install':
@@ -213,11 +213,6 @@ const downloadIcon = `
     <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 19h14" />
   </svg>`
 
-const progressIcon = `
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M12 7v10M7 12h10" />
-  </svg>`
-
 const retryIcon = `
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M19 8a8 8 0 1 0 .5 7M19 4v4h-4" />
@@ -258,8 +253,14 @@ const styles = `
   #${BUTTON_ID}:focus-visible { outline: 2px solid #69a7ff; outline-offset: 2px; }
   #${BUTTON_ID}:disabled { cursor: default; }
   #${BUTTON_ID}[data-action="progress"] {
-    background: conic-gradient(#fff var(--sherlock-update-progress, 0deg), rgba(255,255,255,.25) 0), #1677ff;
-    border: 3px solid #1677ff;
+    border: 0;
+    background:
+      linear-gradient(
+        to right,
+        rgba(255,255,255,.92) var(--sherlock-update-progress, 0%),
+        rgba(255,255,255,.28) 0
+      ) left 4px bottom 3px / calc(100% - 8px) 2px no-repeat,
+      #1677ff;
   }
   #${BUTTON_ID} svg {
     width: 15px;
@@ -269,13 +270,6 @@ const styles = `
     stroke-width: 1.9;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-  #${BUTTON_ID}[data-action="progress"] svg {
-    width: 14px;
-    height: 14px;
-    padding: 3px;
-    border-radius: 999px;
-    background: #1677ff;
   }
   #${PANEL_ID} {
     box-sizing: border-box;
