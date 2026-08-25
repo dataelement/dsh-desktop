@@ -994,12 +994,7 @@ async function showSafeMode(): Promise<void> {
     return
   }
   if (safeModeVisible) {
-    const snapshot = runtime.snapshot()
-    if (snapshot.phase === 'ready' && snapshot.url) {
-      await openHarness(snapshot.url)
-    } else {
-      await launchSafeHarness()
-    }
+    await launchSafeHarness()
     return
   }
   await launchSafeHarness()
@@ -1059,7 +1054,7 @@ async function showSafeModeManager(): Promise<void> {
 }
 
 function installMenu(): void {
-  const isChinese = app.getLocale().toLowerCase().startsWith('zh')
+  const isChinese = harnessLocale() === 'zh'
   const checkForUpdatesLabel = isChinese
     ? '检查更新…'
     : 'Check for Updates…'
@@ -1107,7 +1102,7 @@ function installMenu(): void {
           click: () => void restartHarness().catch(showUnexpectedError)
         },
         {
-          label: isChinese ? '进入安全模式…' : 'Enter Safe Mode…',
+          label: isChinese ? '以安全模式重启…' : 'Restart as Safe Mode…',
           click: () => void showSafeMode().catch(showUnexpectedError)
         },
         {
@@ -1328,7 +1323,7 @@ async function bootstrap(): Promise<void> {
   ipcMain.removeHandler('safe-mode:status')
   ipcMain.handle('safe-mode:status', (event) => {
     assertTrustedMainWindowEvent(event)
-    return { active: safeModeVisible }
+    return { active: safeModeVisible, locale: harnessLocale() }
   })
   ipcMain.removeHandler('safe-mode:manage')
   ipcMain.handle('safe-mode:manage', (event) => {

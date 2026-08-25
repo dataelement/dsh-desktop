@@ -82,6 +82,7 @@
       const model = JSON.parse(params.get('state') || '{}')
       document.documentElement.lang = model.locale === 'zh' ? 'zh-CN' : 'en'
       document.documentElement.dataset.theme = params.get('theme') || 'system'
+      document.title = `${model.badge || 'Safe Mode'} · ${model.brand || 'DSH Desktop'}`
       const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value || '' }
       document.getElementById('icon').src = params.get('icon') || 'icon.png'
       setText('brand', model.brand)

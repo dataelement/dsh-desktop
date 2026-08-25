@@ -135,8 +135,12 @@ function renderMobileButton(): void {
 async function mountSafeModeBanner(): Promise<void> {
   if (location.protocol === 'file:' || document.getElementById(SAFE_MODE_BANNER_ID)) return
   try {
-    const status = (await ipcRenderer.invoke('safe-mode:status')) as { active?: boolean }
+    const status = (await ipcRenderer.invoke('safe-mode:status')) as {
+      active?: boolean
+      locale?: 'en' | 'zh'
+    }
     if (status.active !== true) return
+    const safeModeLocale = status.locale === 'zh' ? 'zh' : 'en'
 
     const host = document.createElement('div')
     host.id = SAFE_MODE_BANNER_ID
@@ -163,18 +167,20 @@ async function mountSafeModeBanner(): Promise<void> {
     const dot = document.createElement('span')
     dot.className = 'dot'
     const label = document.createElement('span')
-    label.textContent = locale === 'zh'
+    label.textContent = safeModeLocale === 'zh'
       ? '安全模式：web Profile 插件已屏蔽'
       : 'Safe Mode: web profile plugins blocked'
     const manage = document.createElement('button')
     manage.type = 'button'
-    manage.textContent = locale === 'zh' ? '管理插件' : 'Manage plugins'
+    manage.textContent = safeModeLocale === 'zh' ? '管理插件' : 'Manage plugins'
+    manage.setAttribute('aria-label', safeModeLocale === 'zh' ? '管理被屏蔽的插件' : 'Manage blocked plugins')
     manage.addEventListener('click', () => {
       void ipcRenderer.invoke('safe-mode:manage')
     })
     const exit = document.createElement('button')
     exit.type = 'button'
-    exit.textContent = locale === 'zh' ? '正常启动' : 'Start normally'
+    exit.textContent = safeModeLocale === 'zh' ? '正常启动' : 'Start normally'
+    exit.setAttribute('aria-label', safeModeLocale === 'zh' ? '退出安全模式并正常启动' : 'Exit Safe Mode and start normally')
     exit.addEventListener('click', () => {
       manage.disabled = true
       exit.disabled = true

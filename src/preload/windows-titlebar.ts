@@ -289,7 +289,7 @@ function menuEntries(locale: 'en' | 'zh'): MenuEntry[] {
     {
       kind: 'command',
       command: 'safe-mode',
-      label: zh ? '进入安全模式…' : 'Enter Safe Mode…'
+      label: zh ? '以安全模式重启…' : 'Restart as Safe Mode…'
     },
     {
       kind: 'command',

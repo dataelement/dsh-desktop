@@ -47,6 +47,9 @@ describe('Windows titlebar menu', () => {
 
     expect(desktopMenuCommands).toContain('connect-phone')
     expect(desktopMenuCommands).toContain('safe-mode')
+    expect(await readFile('src/preload/windows-titlebar.ts', 'utf8')).toContain(
+      "label: zh ? '以安全模式重启…' : 'Restart as Safe Mode…'"
+    )
     expect(desktopMenuCommands).toContain('check-for-updates')
     expect(desktopMenuCommands).toContain('toggle-fullscreen')
     expect(isDesktopMenuCommand('copy')).toBe(true)

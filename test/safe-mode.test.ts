@@ -26,6 +26,19 @@ describe('Safe Mode', () => {
     expect(model.safetyNote).toContain('未选中的插件不会被删除')
   })
 
+  it('provides complete English labels for every Safe Mode action', () => {
+    const model = buildSafeModeViewModel({ locale: 'en', plugins: ['plugin-a'] })
+    expect(model).toMatchObject({
+      badge: 'Safe Mode',
+      heading: 'Manage blocked third-party plugins',
+      selectionHint: 'Select plugins to remove',
+      uninstallLabel: 'Remove selected plugins',
+      agentLabel: 'Return to Agent',
+      restartLabel: 'Exit Safe Mode and start normally',
+      quitLabel: 'Quit DSH Desktop'
+    })
+  })
+
   it('ships a selectable management page with no remote content', async () => {
     const html = await readFile('build/safe-mode.html', 'utf8')
     expect(html).toContain('id="plugins"')
@@ -48,7 +61,10 @@ describe('Safe Mode', () => {
     expect(main).toContain('runtime.start(launchDirectory, SAFE_MODE_PROFILE)')
     expect(main).toContain("ipcMain.handle('safe-mode:action'")
     expect(main).toContain("ipcMain.handle('safe-mode:manage'")
+    expect(main).toContain("label: isChinese ? '以安全模式重启…' : 'Restart as Safe Mode…'")
+    expect(main).toContain("return { active: safeModeVisible, locale: harnessLocale() }")
     expect(preload).toContain('Safe Mode: web profile plugins blocked')
+    expect(preload).toContain("safeModeLocale === 'zh'")
     expect(preload).toContain("ipcRenderer.invoke('safe-mode:action', action, plugins)")
     expect(JSON.parse(manifest).build.extraResources).toContainEqual({
       from: 'build/safe-mode.html',
