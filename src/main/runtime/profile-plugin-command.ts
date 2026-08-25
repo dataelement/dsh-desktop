@@ -22,13 +22,13 @@ const IDLE_TIMEOUT_MS = 2 * 60 * 1000
 /** How often progress is sampled from the filesystem. */
 const PROGRESS_POLL_MS = 5 * 1000
 /**
- * Depth of the progress walk, counted from the virtual store: an entry, its
- * `node_modules`, the package, and one level of the package's own contents —
- * far enough that copying into a package is visible.
+ * Depth of the progress walk, counted from `node_modules`: the virtual store, an
+ * entry inside it, that entry’s `node_modules`, the package, and one level of
+ * the package’s own contents — far enough that a copy in progress is visible.
  */
-const PROGRESS_SCAN_DEPTH = 4
+const PROGRESS_SCAN_DEPTH = 5
 /** Directories one walk may visit, so sampling stays cheap on a large profile. */
-const PROGRESS_SCAN_LIMIT = 512
+const PROGRESS_SCAN_LIMIT = 1024
 const MAX_OUTPUT_BYTES = 32 * 1024
 
 export interface ProfilePluginCommandOptions {
@@ -184,15 +184,22 @@ export function diagnosticLine(output: string): string | undefined {
  *
  * stdout alone cannot answer this. These runs set CI and NO_COLOR, which
  * suppress pnpm's progress reporter, so a long copy and a hang look identical
- * from the pipe. The virtual store is where the work lands, so its shape is
- * the signal.
+ * from the pipe. The profile's `node_modules` is where the work lands, so its
+ * shape is the signal.
  *
- * The shape has to be sampled below the top level. A directory's mtime moves
- * only when its own entries change, so a package being copied file by file —
- * one package at a time, with child-concurrency pinned to 1 — leaves
- * `.pnpm` untouched for as long as the copy takes. Watching only the top would
- * read a healthy install of one large package as a stall, and killing that is
- * how damaged directories get made in the first place.
+ * The walk starts at `node_modules`, not at the virtual store. This profile
+ * sets `nodeLinker: hoisted`, so packages land directly under `node_modules`
+ * and `.pnpm` holds nothing but a lockfile for the profile's whole life —
+ * watching it would report a healthy install as motionless from the first
+ * sample to the last. Starting a level up covers the hoisted layout and the
+ * isolated one alike, since `.pnpm` is simply one of the entries walked.
+ *
+ * The shape also has to be sampled below the top level. A directory's mtime
+ * moves only when its own entries change, so a package being copied file by
+ * file — one package at a time, with child-concurrency pinned to 1 — leaves
+ * everything above it untouched for as long as the copy takes. Reading that as
+ * a stall would kill a healthy install mid-rename, which is how damaged
+ * directories get made in the first place.
  *
  * Symlinks are skipped: pnpm's layout is mostly links into the store, they
  * lead back out of the tree, and none of them is where writing happens. The
@@ -201,7 +208,7 @@ export function diagnosticLine(output: string): string | undefined {
  * @returns a value to compare against the previous sample, never an error.
  */
 export async function progressSignature(profileDirectory: string): Promise<string> {
-  const root = join(profileDirectory, 'node_modules', '.pnpm')
+  const root = join(profileDirectory, 'node_modules')
   const queue: Array<{ path: string; depth: number }> = [{ path: root, depth: 0 }]
   let directories = 0
   let latest = 0

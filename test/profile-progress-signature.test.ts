@@ -12,53 +12,77 @@ import { progressSignature } from '../src/main/runtime/profile-plugin-command'
 describe('install progress signature', () => {
   const roots: string[] = []
 
-  async function profile(): Promise<{ directory: string; store: string }> {
+  async function profile(): Promise<{ directory: string; nodeModules: string }> {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-progress-'))
     roots.push(directory)
-    const store = join(directory, 'node_modules', '.pnpm')
-    await mkdir(store, { recursive: true })
-    return { directory, store }
-  }
-
-  /** A package as pnpm materializes it: .pnpm/<id>/node_modules/<name>. */
-  async function materialize(store: string, id: string, name: string): Promise<string> {
-    const path = join(store, id, 'node_modules', name)
-    await mkdir(path, { recursive: true })
-    return path
+    const nodeModules = join(directory, 'node_modules')
+    await mkdir(nodeModules, { recursive: true })
+    return { directory, nodeModules }
   }
 
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
   })
 
-  it('changes when a package is added to the store', async () => {
-    const { directory, store } = await profile()
-    const before = await progressSignature(directory)
-    await materialize(store, 'left-pad@1.3.0', 'left-pad')
-    expect(await progressSignature(directory)).not.toBe(before)
+  // The layout this profile actually uses: nodeLinker is hoisted, so packages
+  // land directly under node_modules and .pnpm never holds more than a
+  // lockfile. A probe anchored at .pnpm reads a healthy install as motionless.
+  describe('hoisted layout', () => {
+    it('changes when a package appears at the top level', async () => {
+      const { directory, nodeModules } = await profile()
+      await mkdir(join(nodeModules, '.pnpm'), { recursive: true })
+      await writeFile(join(nodeModules, '.pnpm', 'lock.yaml'), 'x', 'utf8')
+      const before = await progressSignature(directory)
+      await mkdir(join(nodeModules, 'dshmarket'), { recursive: true })
+      expect(await progressSignature(directory)).not.toBe(before)
+    })
+
+    it('changes when a file lands inside a package already present', async () => {
+      const { directory, nodeModules } = await profile()
+      const packagePath = join(nodeModules, 'typescript', 'lib')
+      await mkdir(packagePath, { recursive: true })
+      const before = await progressSignature(directory)
+      await writeFile(join(packagePath, 'tsc.js'), 'x', 'utf8')
+      expect(await progressSignature(directory)).not.toBe(before)
+    })
   })
 
-  // The case a top-level-only probe misses: one package copied file by file,
-  // with child-concurrency pinned to 1, leaves .pnpm itself untouched for as
-  // long as the copy takes.
-  it('changes when a file lands deep inside a package already present', async () => {
-    const { directory, store } = await profile()
-    const packagePath = await materialize(store, 'typescript@5.4.5', 'typescript')
-    await mkdir(join(packagePath, 'lib'), { recursive: true })
-    const before = await progressSignature(directory)
-    await writeFile(join(packagePath, 'lib', 'tsc.js'), 'x', 'utf8')
-    expect(await progressSignature(directory)).not.toBe(before)
+  describe('isolated layout', () => {
+    /** .pnpm/<id>/node_modules/<name>, as pnpm materializes it. */
+    async function materialize(nodeModules: string, id: string, name: string): Promise<string> {
+      const path = join(nodeModules, '.pnpm', id, 'node_modules', name)
+      await mkdir(path, { recursive: true })
+      return path
+    }
+
+    it('changes when a package is added to the virtual store', async () => {
+      const { directory, nodeModules } = await profile()
+      await mkdir(join(nodeModules, '.pnpm'), { recursive: true })
+      const before = await progressSignature(directory)
+      await materialize(nodeModules, 'left-pad@1.3.0', 'left-pad')
+      expect(await progressSignature(directory)).not.toBe(before)
+    })
+
+    it('changes when a file lands deep inside a materialized package', async () => {
+      const { directory, nodeModules } = await profile()
+      const packagePath = await materialize(nodeModules, 'typescript@5.4.5', 'typescript')
+      await mkdir(join(packagePath, 'lib'), { recursive: true })
+      const before = await progressSignature(directory)
+      await writeFile(join(packagePath, 'lib', 'tsc.js'), 'x', 'utf8')
+      expect(await progressSignature(directory)).not.toBe(before)
+    })
   })
 
   it('is stable while nothing is written', async () => {
-    const { directory, store } = await profile()
-    await materialize(store, 'left-pad@1.3.0', 'left-pad')
+    const { directory, nodeModules } = await profile()
+    await mkdir(join(nodeModules, 'left-pad'), { recursive: true })
     expect(await progressSignature(directory)).toBe(await progressSignature(directory))
   })
 
-  it('does not follow symlinks out of the store', async () => {
-    const { directory, store } = await profile()
-    const packagePath = await materialize(store, 'a@1.0.0', 'a')
+  it('does not follow symlinks out of the profile', async () => {
+    const { directory, nodeModules } = await profile()
+    const packagePath = join(nodeModules, 'a')
+    await mkdir(packagePath, { recursive: true })
     const outside = join(directory, 'outside')
     await mkdir(join(outside, 'nested'), { recursive: true })
     try {
@@ -71,7 +95,7 @@ describe('install progress signature', () => {
     expect(await progressSignature(directory)).toBe(before)
   })
 
-  it('reports a missing store without throwing', async () => {
+  it('reports a missing node_modules without throwing', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-progress-empty-'))
     roots.push(directory)
     await expect(progressSignature(directory)).resolves.toBe('0:0')
