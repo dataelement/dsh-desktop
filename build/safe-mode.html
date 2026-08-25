@@ -14,22 +14,26 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --canvas: #f7f7f8; --surface: #fff; --soft: #f5f6f7; --ink: #18181b;
         --muted: #71717a; --line: #e4e4e7; --strong: #d4d4d8;
-        --button: #18181b; --button-ink: #fff; --danger: #c33b38;
+        --button: #18181b; --button-ink: #fff; --danger: #c33b38; --success: #267a4a;
       }
       * { box-sizing: border-box; }
-      html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; }
-      body { min-height: 100vh; display: grid; place-items: center; padding: 40px 24px; color: var(--ink); background: var(--canvas); }
+      html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; background: transparent; }
+      body { min-height: 100vh; display: grid; place-items: center; padding: 40px 24px; color: var(--ink); background: rgba(18,18,20,.28); }
       button { font: inherit; }
-      .shell { width: min(720px, 100%); overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: 0 12px 34px rgba(24,24,27,.1); }
-      .header { display: flex; align-items: center; padding: 18px 26px; border-bottom: 1px solid var(--line); }
+      .shell { width: min(760px, 100%); max-height: min(760px, calc(100vh - 80px)); overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: 0 22px 64px rgba(24,24,27,.2); }
+      .header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 18px 26px; border-bottom: 1px solid var(--line); }
       .brand { display: flex; align-items: center; gap: 11px; }
       .brand img { width: 28px; height: 28px; border-radius: 8px; }
       .brand-name { font-size: 14px; font-weight: 650; }
       .badge { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 600; }
-      .content { padding: 30px 32px 24px; }
-      h1 { margin: 0; font-size: 22px; line-height: 1.35; letter-spacing: -.025em; }
-      .summary { margin: 9px 0 22px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-      .notice { display: none; margin: 0 0 18px; padding: 11px 13px; border-radius: 10px; color: var(--danger); background: rgba(195,59,56,.08); font-size: 12px; line-height: 1.5; }
+      .close { width:32px; height:32px; display:grid; place-items:center; padding:0; border:0; border-radius:9px; color:var(--muted); background:transparent; cursor:pointer; font-size:25px; font-weight:300; line-height:1; }
+      .close:hover { color:var(--ink); background:var(--soft); }
+      .content { max-height:calc(min(760px, 100vh - 80px) - 70px); padding:26px 32px 24px; overflow:auto; }
+      h1:empty { display:none; }
+      .summary { margin: 0 0 22px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+      .notice { display: none; margin: 0 0 18px; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
+      .notice.error { color: var(--danger); background: rgba(195,59,56,.08); }
+      .notice.success { color: var(--success); background: rgba(38,122,74,.09); }
       .notice.visible { display: block; }
       .list-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
       .list-heading { display: flex; justify-content: space-between; align-items: center; min-height: 43px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650; }
@@ -48,17 +52,18 @@
       .button:hover { background: var(--soft); }
       .button.primary { border-color: var(--button); color: var(--button-ink); background: var(--button); }
       .button[disabled] { opacity: .55; cursor: default; }
-      .footer { display: flex; justify-content: flex-end; padding: 11px 26px; border-top: 1px solid var(--line); }
+      .footer { display: flex; justify-content: flex-end; padding: 0 32px 18px; }
       .quit { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
-      :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; }
-      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; } }
-      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); border:0; border-radius:0; box-shadow:none; } .content { padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } }
+      :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; }
+      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; } }
+      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } }
     </style>
   </head>
   <body>
     <main class="shell" aria-labelledby="heading">
       <header class="header">
         <div class="brand"><img id="icon" alt="" /><span class="brand-name" id="brand"></span><span class="badge" id="badge"></span></div>
+        <button class="close" id="agent" type="button" aria-label="Close">×</button>
       </header>
       <section class="content">
         <p class="notice" id="notice" role="alert"></p>
@@ -72,10 +77,10 @@
         <p class="safety" id="safety-note"></p>
         <div class="actions">
           <button class="button" id="uninstall" type="button" disabled></button>
-          <button class="button primary" id="agent" type="button"></button>
+          <button class="button primary" id="restart" type="button"></button>
         </div>
       </section>
-      <footer class="footer"><button class="quit" id="restart" type="button"></button><button class="quit" id="quit" type="button"></button></footer>
+      <footer class="footer"><button class="quit" id="quit" type="button"></button></footer>
     </main>
     <script>
       const params = new URLSearchParams(location.search)
@@ -93,12 +98,15 @@
       setText('selection-hint', model.selectionHint)
       setText('safety-note', model.safetyNote)
       setText('uninstall', model.uninstallLabel)
-      setText('agent', model.agentLabel)
       setText('restart', model.restartLabel)
       setText('quit', model.quitLabel)
       setText('select-all', model.selectAllLabel)
+      document.getElementById('agent').setAttribute('aria-label', model.agentLabel || 'Close')
       const notice = document.getElementById('notice')
-      if (model.notice) { notice.textContent = model.notice; notice.classList.add('visible') }
+      if (model.notice) {
+        notice.textContent = model.notice
+        notice.classList.add('visible', model.noticeTone === 'success' ? 'success' : 'error')
+      }
       const list = document.getElementById('plugins')
       const empty = document.getElementById('empty')
       const uninstall = document.getElementById('uninstall')

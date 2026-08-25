@@ -17,8 +17,6 @@ export interface PluginRecoveryViewModel {
   safetyNote: string
   primaryLabel: string
   primaryBusyLabel: string
-  restartLabel: string
-  restartBusyLabel: string
   logLabel: string
   advancedLabel: string
   errorLabel: string
@@ -167,7 +165,7 @@ export function buildPluginRecoveryViewModel(options: {
         : 'Harness 暂时无法启动',
       summary: canUninstall
         ? ''
-        : '目前还无法定位到具体插件。请打开 Harness 日志查看详细错误。',
+        : '暂时无法定位到具体插件。你可以进入安全模式，停用所有第三方插件并继续使用 Agent。',
       reasonTitle: description.title,
       reasonDetail: description.detail,
       plugins,
@@ -179,10 +177,8 @@ export function buildPluginRecoveryViewModel(options: {
       safetyNote: '工作区、会话、模型配置和其他插件不会被删除。',
       primaryLabel: canUninstall
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
-        : '打开 Harness 日志',
-      primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在打开日志…',
-      restartLabel: '重启 Harness',
-      restartBusyLabel: '正在重启…',
+        : '进入安全模式',
+      primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在进入安全模式…',
       logLabel: '打开 Harness 日志',
       advancedLabel: '查看技术详情',
       errorLabel: '错误信息',
@@ -203,7 +199,7 @@ export function buildPluginRecoveryViewModel(options: {
       : 'Harness could not start',
     summary: canUninstall
       ? ''
-      : 'No specific plugin could be identified. Open the Harness log to inspect the detailed error.',
+      : 'No specific plugin could be identified. Enter Safe Mode to disable all third-party plugins and keep using the Agent.',
     reasonTitle: description.title,
     reasonDetail: description.detail,
     plugins,
@@ -215,10 +211,8 @@ export function buildPluginRecoveryViewModel(options: {
     safetyNote: 'Your workspaces, sessions, model settings, and other plugins will not be removed.',
     primaryLabel: canUninstall
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
-      : 'Open Harness log',
-    primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Opening log…',
-    restartLabel: 'Restart Harness',
-    restartBusyLabel: 'Restarting…',
+      : 'Enter Safe Mode',
+    primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Entering Safe Mode…',
     logLabel: 'Open Harness log',
     advancedLabel: 'View technical details',
     errorLabel: 'Error details',

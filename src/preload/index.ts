@@ -141,43 +141,59 @@ async function mountSafeModeBanner(): Promise<void> {
       'left:50%',
       'transform:translateX(-50%)',
       'z-index:2147483645',
+      'max-width:calc(100vw - 32px)',
       'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
     ].join(';')
     const shadow = host.attachShadow({ mode: 'closed' })
     const style = document.createElement('style')
     style.textContent = `
-      .bar { display:flex; align-items:center; gap:8px; min-height:30px; padding:4px 6px 4px 10px; border:1px solid rgba(120,120,125,.35); border-radius:999px; color:#27272a; background:rgba(255,255,255,.94); box-shadow:0 5px 18px rgba(0,0,0,.12); backdrop-filter:blur(12px); font-size:12px; font-weight:650; white-space:nowrap; }
+      .bar { display:flex; align-items:center; gap:10px; min-height:42px; padding:5px 6px 5px 12px; border:1px solid rgba(120,120,125,.35); border-radius:14px; color:#27272a; background:rgba(255,255,255,.94); box-shadow:0 5px 18px rgba(0,0,0,.12); backdrop-filter:blur(12px); white-space:nowrap; }
       .dot { width:7px; height:7px; border-radius:50%; background:#d97706; }
+      .copy { display:grid; gap:1px; min-width:0; }
+      .title { font-size:12px; font-weight:700; }
+      .description { max-width:390px; overflow:hidden; color:#71717a; font-size:10px; font-weight:500; text-overflow:ellipsis; }
+      .actions { display:flex; align-items:center; gap:4px; }
       button { min-height:22px; padding:2px 8px; border:0; border-radius:999px; color:#3f3f46; background:#f1f1f3; cursor:pointer; font:inherit; font-size:11px; }
       button:hover { background:#e4e4e7; }
       button:disabled { opacity:.55; cursor:default; }
-      @media (prefers-color-scheme:dark) { .bar { color:#f4f4f5; background:rgba(32,32,35,.94); border-color:rgba(180,180,190,.28); } button { color:#e4e4e7; background:#343438; } button:hover { background:#44444a; } }
+      @media (prefers-color-scheme:dark) { .bar { color:#f4f4f5; background:rgba(32,32,35,.94); border-color:rgba(180,180,190,.28); } .description { color:#a5a7ad; } button { color:#e4e4e7; background:#343438; } button:hover { background:#44444a; } }
+      @media (max-width:760px) { .description { display:none; } }
     `
     const bar = document.createElement('div')
     bar.className = 'bar'
     const dot = document.createElement('span')
     dot.className = 'dot'
+    const copy = document.createElement('span')
+    copy.className = 'copy'
     const label = document.createElement('span')
-    label.textContent = safeModeLocale === 'zh'
-      ? '安全模式：web Profile 插件已屏蔽'
-      : 'Safe Mode: web profile plugins blocked'
+    label.className = 'title'
+    label.textContent = safeModeLocale === 'zh' ? '安全模式' : 'Safe Mode'
+    const description = document.createElement('span')
+    description.className = 'description'
+    description.textContent = safeModeLocale === 'zh'
+      ? '已暂时停用所有第三方插件，可卸载有问题的插件后重启。'
+      : 'All third-party plugins are temporarily disabled. Remove a problematic plugin, then restart.'
+    copy.append(label, description)
+    const actions = document.createElement('span')
+    actions.className = 'actions'
     const manage = document.createElement('button')
     manage.type = 'button'
-    manage.textContent = safeModeLocale === 'zh' ? '管理插件' : 'Manage plugins'
-    manage.setAttribute('aria-label', safeModeLocale === 'zh' ? '管理被屏蔽的插件' : 'Manage blocked plugins')
+    manage.textContent = safeModeLocale === 'zh' ? '卸载插件' : 'Remove plugins'
+    manage.setAttribute('aria-label', safeModeLocale === 'zh' ? '卸载第三方插件' : 'Remove third-party plugins')
     manage.addEventListener('click', () => {
       void ipcRenderer.invoke('safe-mode:manage')
     })
     const exit = document.createElement('button')
     exit.type = 'button'
-    exit.textContent = safeModeLocale === 'zh' ? '正常启动' : 'Start normally'
-    exit.setAttribute('aria-label', safeModeLocale === 'zh' ? '退出安全模式并正常启动' : 'Exit Safe Mode and start normally')
+    exit.textContent = safeModeLocale === 'zh' ? '退出安全模式' : 'Exit Safe Mode'
+    exit.setAttribute('aria-label', safeModeLocale === 'zh' ? '退出安全模式并重启' : 'Exit Safe Mode and restart')
     exit.addEventListener('click', () => {
       manage.disabled = true
       exit.disabled = true
       void ipcRenderer.invoke('safe-mode:exit')
     })
-    bar.append(dot, label, manage, exit)
+    actions.append(manage, exit)
+    bar.append(dot, copy, actions)
     shadow.append(style, bar)
     document.documentElement.appendChild(host)
   } catch (error) {

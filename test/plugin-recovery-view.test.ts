@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import type { RuntimeSnapshot } from '../src/shared/contracts'
 import {
@@ -57,8 +58,7 @@ describe('plugin recovery view model', () => {
     expect(model.plugins).toEqual(['plugin-a', 'plugin-b'])
     expect(model.primaryLabel).toBe('卸载这 2 个插件并继续检测')
     expect(model.canUninstall).toBe(true)
-    expect(model.restartLabel).toBe('重启 Harness')
-    expect(model.restartBusyLabel).toBe('正在重启…')
+    expect(model).not.toHaveProperty('restartLabel')
     expect(model).not.toHaveProperty('status')
     expect(model.advancedLabel).toBe('查看技术详情')
   })
@@ -85,7 +85,7 @@ describe('plugin recovery view model', () => {
     expect(model.canUninstall).toBe(true)
   })
 
-  it('falls back to the log when no plugin can be identified', () => {
+  it('offers Safe Mode when no plugin can be identified', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(),
       plugins: [],
@@ -93,8 +93,15 @@ describe('plugin recovery view model', () => {
       locale: 'en'
     })
     expect(model.canUninstall).toBe(false)
-    expect(model.primaryLabel).toBe('Open Harness log')
-    expect(model.restartLabel).toBe('Restart Harness')
-    expect(model.restartBusyLabel).toBe('Restarting…')
+    expect(model.summary).toContain('Enter Safe Mode')
+    expect(model.primaryLabel).toBe('Enter Safe Mode')
+    expect(model.primaryBusyLabel).toBe('Entering Safe Mode…')
+  })
+
+  it('wires the unresolved recovery action to Safe Mode', async () => {
+    const html = await readFile('build/plugin-recovery.html', 'utf8')
+    expect(html).toContain("model.canUninstall ? 'uninstall' : 'safe-mode'")
+    expect(html).toContain("navigate('show-log')")
+    expect(html).not.toContain('id="restart"')
   })
 })

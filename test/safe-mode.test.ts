@@ -20,8 +20,11 @@ describe('Safe Mode', () => {
       plugins: ['plugin-a', '@example/plugin-b', 'plugin-a']
     })
     expect(model.badge).toBe('安全模式')
-    expect(model.heading).toContain('管理被屏蔽的第三方插件')
-    expect(model.summary).toContain('Agent 会继续')
+    expect(model.heading).toBe('')
+    expect(model.summary).toContain('暂时停用所有第三方插件')
+    expect(model.summary).toContain('确保基础功能正常使用')
+    expect(model.summary).toContain('但不会删除插件')
+    expect(model.summary).toContain('如需恢复正常模式')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.safetyNote).toContain('未选中的插件不会被删除')
   })
@@ -30,13 +33,24 @@ describe('Safe Mode', () => {
     const model = buildSafeModeViewModel({ locale: 'en', plugins: ['plugin-a'] })
     expect(model).toMatchObject({
       badge: 'Safe Mode',
-      heading: 'Manage blocked third-party plugins',
+      heading: '',
       selectionHint: 'Select plugins to remove',
       uninstallLabel: 'Remove selected plugins',
-      agentLabel: 'Return to Agent',
-      restartLabel: 'Exit Safe Mode and start normally',
+      agentLabel: 'Close',
+      restartLabel: 'Exit Safe Mode and restart',
       quitLabel: 'Quit DSH Desktop'
     })
+  })
+
+  it('marks successful removal notices for green presentation', () => {
+    const model = buildSafeModeViewModel({
+      locale: 'zh',
+      plugins: ['plugin-a'],
+      notice: '成功卸载 1 个插件。',
+      noticeTone: 'success'
+    })
+    expect(model.notice).toBe('成功卸载 1 个插件。')
+    expect(model.noticeTone).toBe('success')
   })
 
   it('ships a selectable management page with no remote content', async () => {
@@ -45,6 +59,10 @@ describe('Safe Mode', () => {
     expect(html).toContain('type = \'checkbox\'')
     expect(html).toContain("window.dshSafeMode.action('uninstall', plugins)")
     expect(html).toContain("window.dshSafeMode.action('agent', [])")
+    expect(html).toContain('class="close" id="agent"')
+    expect(html).toContain('class="button primary" id="restart"')
+    expect(html).toContain('background: rgba(18,18,20,.28)')
+    expect(html).toContain("model.noticeTone === 'success'")
     expect(html).toContain("default-src 'none'")
     expect(html).not.toContain('http://')
     expect(html).not.toContain('https://')
@@ -61,9 +79,15 @@ describe('Safe Mode', () => {
     expect(main).toContain('runtime.start(launchDirectory, SAFE_MODE_PROFILE)')
     expect(main).toContain("ipcMain.handle('safe-mode:action'")
     expect(main).toContain("ipcMain.handle('safe-mode:manage'")
+    expect(main).toContain('safeModeManagerWindow')
+    expect(main).toContain('modal: true')
+    expect(main).toContain('assertTrustedSafeModeManagerEvent(event)')
+    expect(main).toContain('`成功卸载 ${selected.length} 个插件。`')
     expect(main).toContain("label: isChinese ? '以安全模式重启…' : 'Restart as Safe Mode…'")
     expect(main).toContain("return { active: safeModeVisible, locale: harnessLocale() }")
-    expect(preload).toContain('Safe Mode: web profile plugins blocked')
+    expect(preload).toContain("safeModeLocale === 'zh' ? '安全模式' : 'Safe Mode'")
+    expect(preload).toContain("safeModeLocale === 'zh' ? '卸载插件' : 'Remove plugins'")
+    expect(preload).toContain("safeModeLocale === 'zh' ? '退出安全模式' : 'Exit Safe Mode'")
     expect(preload).toContain("safeModeLocale === 'zh'")
     expect(preload).toContain("ipcRenderer.invoke('safe-mode:action', action, plugins)")
     expect(JSON.parse(manifest).build.extraResources).toContainEqual({

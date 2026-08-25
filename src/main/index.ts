@@ -92,6 +92,7 @@ let pendingFrontendPluginRecovery = false
 let pendingFrontendPluginRecoveryMessage: string | undefined
 let safeModeVisible = false
 let safeModeManagerVisible = false
+let safeModeManagerWindow: BrowserWindow | undefined
 let safeModeActionResolver: ((action: SafeModeAction) => void) | undefined
 const startInSafeMode = shouldStartInSafeMode(process.argv)
 
@@ -644,6 +645,17 @@ function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
   }
 }
 
+function assertTrustedSafeModeManagerEvent(event: IpcMainInvokeEvent): void {
+  if (
+    !safeModeManagerWindow ||
+    safeModeManagerWindow.isDestroyed() ||
+    event.sender !== safeModeManagerWindow.webContents ||
+    event.senderFrame !== safeModeManagerWindow.webContents.mainFrame
+  ) {
+    throw new Error('This action is only available from the Safe Mode manager.')
+  }
+}
+
 async function showAbout(window: BrowserWindow): Promise<void> {
   const locale = harnessLocale()
   const checkForUpdatesLabel = locale === 'zh' ? '检查更新' : 'Check for Updates'
@@ -926,17 +938,56 @@ async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
 async function waitForSafeModeAction(options: {
   plugins: readonly string[]
   notice?: string
+  noticeTone?: 'success' | 'error'
 }): Promise<SafeModeAction> {
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const window = safeModeManagerWindow && !safeModeManagerWindow.isDestroyed()
+    ? safeModeManagerWindow
+    : (() => {
+        const bounds = parent.getBounds()
+        const manager = new BrowserWindow({
+          parent,
+          modal: true,
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          minWidth: 640,
+          minHeight: 520,
+          show: false,
+          frame: false,
+          transparent: true,
+          backgroundColor: '#00000000',
+          resizable: false,
+          movable: false,
+          minimizable: false,
+          maximizable: false,
+          fullscreenable: false,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            preload: join(import.meta.dirname, '../preload/index.cjs'),
+            sandbox: true,
+            webSecurity: true
+          }
+        })
+        secureWindow(manager)
+        manager.on('closed', () => {
+          if (safeModeManagerWindow === manager) safeModeManagerWindow = undefined
+          resolveSafeModeAction({ type: 'agent' })
+        })
+        safeModeManagerWindow = manager
+        return manager
+      })()
   const model = buildSafeModeViewModel({
     locale: harnessLocale(),
     plugins: options.plugins,
-    notice: options.notice
+    notice: options.notice,
+    noticeTone: options.noticeTone
   })
   const actionPromise = new Promise<SafeModeAction>((resolve) => {
     safeModeActionResolver = resolve
   })
-  const navigationVersion = ++mainWindowNavigationVersion
   window.webContents.stop()
   try {
     await window.loadFile(desktopResourcePath('safe-mode.html'), {
@@ -950,7 +1001,7 @@ async function waitForSafeModeAction(options: {
     safeModeActionResolver = undefined
     throw error
   }
-  if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) {
+  if (window.isDestroyed()) {
     return { type: 'quit' }
   }
   if (window.isMinimized()) window.restore()
@@ -1006,12 +1057,14 @@ async function showSafeModeManager(): Promise<void> {
   const dshHome = join(app.getPath('userData'), 'harness')
   const isChinese = harnessLocale() === 'zh'
   let notice: string | undefined
+  let noticeTone: 'success' | 'error' | undefined
 
   try {
     while (!quitting) {
       const installed = await listInstalledProfilePlugins(dshHome)
-      const action = await waitForSafeModeAction({ plugins: installed, notice })
+      const action = await waitForSafeModeAction({ plugins: installed, notice, noticeTone })
       notice = undefined
+      noticeTone = undefined
 
       if (action.type === 'quit') {
         app.quit()
@@ -1032,6 +1085,7 @@ async function showSafeModeManager(): Promise<void> {
       const selected = [...new Set(action.plugins)].filter((plugin) => installedSet.has(plugin))
       if (selected.length === 0) {
         notice = isChinese ? '请选择要卸载的插件。' : 'Select at least one plugin to remove.'
+        noticeTone = 'error'
         continue
       }
 
@@ -1041,15 +1095,19 @@ async function showSafeModeManager(): Promise<void> {
       }
       notice = failed.length === 0
         ? isChinese
-          ? `已卸载 ${selected.length} 个插件。你可以继续处理，或退出安全模式。`
-          : `Removed ${selected.length} plugin${selected.length === 1 ? '' : 's'}. You can continue or exit Safe Mode.`
+          ? `成功卸载 ${selected.length} 个插件。`
+          : `Successfully removed ${selected.length} plugin${selected.length === 1 ? '' : 's'}.`
         : isChinese
           ? `以下插件未能卸载：${failed.join('、')}`
           : `These plugins could not be removed: ${failed.join(', ')}`
+      noticeTone = failed.length === 0 ? 'success' : 'error'
     }
   } finally {
     safeModeActionResolver = undefined
     safeModeManagerVisible = false
+    const window = safeModeManagerWindow
+    safeModeManagerWindow = undefined
+    if (window && !window.isDestroyed()) window.close()
   }
 }
 
@@ -1302,7 +1360,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('safe-mode:action')
   ipcMain.handle('safe-mode:action', (event, action: unknown, plugins: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedSafeModeManagerEvent(event)
     if (
       !safeModeVisible ||
       !safeModeManagerVisible ||

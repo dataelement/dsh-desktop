@@ -19,6 +19,7 @@ export interface SafeModeViewModel {
   restartBusyLabel: string
   quitLabel: string
   notice?: string
+  noticeTone?: 'success' | 'error'
 }
 
 export function shouldStartInSafeMode(argv: readonly string[]): boolean {
@@ -29,6 +30,7 @@ export function buildSafeModeViewModel(options: {
   locale: SafeModeLocale
   plugins: readonly string[]
   notice?: string
+  noticeTone?: 'success' | 'error'
 }): SafeModeViewModel {
   const plugins = [...new Set(options.plugins)]
 
@@ -37,8 +39,8 @@ export function buildSafeModeViewModel(options: {
       locale: 'zh',
       brand: 'DSH Desktop',
       badge: '安全模式',
-      heading: '管理被屏蔽的第三方插件',
-      summary: '安全模式中的 Agent 会继续在隔离的核心 Profile 中运行。这里管理的是正常 web Profile 中被屏蔽的第三方插件。',
+      heading: '',
+      summary: '部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可尝试卸载近期安装的插件后重启。',
       plugins,
       emptyMessage: '当前 Profile 中没有可卸载的第三方插件。',
       selectionHint: '选择要卸载的插件',
@@ -46,12 +48,13 @@ export function buildSafeModeViewModel(options: {
       uninstallLabel: '卸载所选插件',
       uninstallBusyLabel: '正在卸载…',
       selectAllLabel: '全选',
-      agentLabel: '返回 Agent',
-      agentBusyLabel: '正在返回…',
-      restartLabel: '退出安全模式并正常启动',
-      restartBusyLabel: '正在启动…',
+      agentLabel: '关闭',
+      agentBusyLabel: '正在关闭…',
+      restartLabel: '退出安全模式并重启',
+      restartBusyLabel: '正在重启…',
       quitLabel: '退出 DSH Desktop',
-      notice: options.notice
+      notice: options.notice,
+      noticeTone: options.noticeTone
     }
   }
 
@@ -59,8 +62,8 @@ export function buildSafeModeViewModel(options: {
     locale: 'en',
     brand: 'DSH Desktop',
     badge: 'Safe Mode',
-    heading: 'Manage blocked third-party plugins',
-    summary: 'The Agent keeps running in Safe Mode with an isolated core profile. This page manages blocked plugins from the normal web profile.',
+    heading: '',
+    summary: 'Some third-party plugins may cause startup problems. Safe Mode temporarily disables all of them while the Agent remains available; the plugins are not deleted. Remove a recently installed plugin, then restart to try again.',
     plugins,
     emptyMessage: 'There are no removable third-party plugins in this profile.',
     selectionHint: 'Select plugins to remove',
@@ -68,11 +71,12 @@ export function buildSafeModeViewModel(options: {
     uninstallLabel: 'Remove selected plugins',
     uninstallBusyLabel: 'Removing…',
     selectAllLabel: 'Select all',
-    agentLabel: 'Return to Agent',
-    agentBusyLabel: 'Returning…',
-    restartLabel: 'Exit Safe Mode and start normally',
-    restartBusyLabel: 'Starting…',
+    agentLabel: 'Close',
+    agentBusyLabel: 'Closing…',
+    restartLabel: 'Exit Safe Mode and restart',
+    restartBusyLabel: 'Restarting…',
     quitLabel: 'Quit DSH Desktop',
-    notice: options.notice
+    notice: options.notice,
+    noticeTone: options.noticeTone
   }
 }
