@@ -21,6 +21,14 @@ const REPAIR_CAP_MS = 30 * 60 * 1000
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000
 /** How often progress is sampled from the filesystem. */
 const PROGRESS_POLL_MS = 5 * 1000
+/**
+ * Depth of the progress walk, counted from the virtual store: an entry, its
+ * `node_modules`, the package, and one level of the package's own contents —
+ * far enough that copying into a package is visible.
+ */
+const PROGRESS_SCAN_DEPTH = 4
+/** Directories one walk may visit, so sampling stays cheap on a large profile. */
+const PROGRESS_SCAN_LIMIT = 512
 const MAX_OUTPUT_BYTES = 32 * 1024
 
 export interface ProfilePluginCommandOptions {
@@ -176,19 +184,53 @@ export function diagnosticLine(output: string): string | undefined {
  *
  * stdout alone cannot answer this. These runs set CI and NO_COLOR, which
  * suppress pnpm's progress reporter, so a long copy and a hang look identical
- * from the pipe. The virtual store is where the work actually lands, so its
- * shape is the signal: how many entries it holds, and its own mtime, which
- * moves as each package is added.
+ * from the pipe. The virtual store is where the work lands, so its shape is
+ * the signal.
+ *
+ * The shape has to be sampled below the top level. A directory's mtime moves
+ * only when its own entries change, so a package being copied file by file —
+ * one package at a time, with child-concurrency pinned to 1 — leaves
+ * `.pnpm` untouched for as long as the copy takes. Watching only the top would
+ * read a healthy install of one large package as a stall, and killing that is
+ * how damaged directories get made in the first place.
+ *
+ * Symlinks are skipped: pnpm's layout is mostly links into the store, they
+ * lead back out of the tree, and none of them is where writing happens. The
+ * walk is bounded rather than complete — a truncated walk that shifts between
+ * samples reads as progress, which errs toward letting a run continue.
  * @returns a value to compare against the previous sample, never an error.
  */
-async function progressSignature(profileDirectory: string): Promise<string> {
-  const store = join(profileDirectory, 'node_modules', '.pnpm')
-  try {
-    const [entries, info] = await Promise.all([readdir(store), stat(store)])
-    return `${entries.length}:${info.mtimeMs}`
-  } catch {
-    return 'absent'
+export async function progressSignature(profileDirectory: string): Promise<string> {
+  const root = join(profileDirectory, 'node_modules', '.pnpm')
+  const queue: Array<{ path: string; depth: number }> = [{ path: root, depth: 0 }]
+  let directories = 0
+  let latest = 0
+
+  while (queue.length > 0 && directories < PROGRESS_SCAN_LIMIT) {
+    const { path, depth } = queue.shift() as { path: string; depth: number }
+    let entries
+    try {
+      entries = await readdir(path, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    directories += 1
+
+    try {
+      const info = await stat(path)
+      if (info.mtimeMs > latest) latest = info.mtimeMs
+    } catch {
+      // Gone between the two calls, which is itself the tree changing.
+    }
+
+    if (depth >= PROGRESS_SCAN_DEPTH) continue
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue
+      queue.push({ path: join(path, entry.name), depth: depth + 1 })
+    }
   }
+
+  return `${directories}:${latest}`
 }
 
 function killProcessTree(child: ReturnType<typeof spawn>): void {
