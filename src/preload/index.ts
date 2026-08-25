@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { UpdateStatus } from '../shared/contracts'
 import { developerModeEnabledFromArguments } from '../shared/developer-mode'
 import {
@@ -11,6 +11,7 @@ import { isPluginLoadError } from './plugin-error-view'
 import { mountDesktopShellStyles } from './shell-style'
 import { SidebarUpdateControl } from './sidebar-update-control'
 import { mountNativeThemeSync, mountWindowsTitlebar } from './windows-titlebar'
+import { safePathForFile } from './research-file-path'
 
 const DEVELOPER_MODE_STYLE_ID = 'sherlock-developer-mode-style'
 const DEVELOPER_MODE_NOTICE_ID = 'sherlock-developer-mode-notice'
@@ -141,7 +142,8 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart'),
     showItemInFolder: (path: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('filesystem:show-item-in-folder', path)
+      ipcRenderer.invoke('filesystem:show-item-in-folder', path),
+    getPathForFile: (file: File): string => safePathForFile(file, webUtils.getPathForFile)
   })
 )
 
