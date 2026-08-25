@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
+import { Window } from 'happy-dom'
 import { describe, expect, it } from 'vitest'
 
 type ClientBundle = Record<string, unknown>
@@ -39,6 +40,7 @@ async function loadClientBundle(
   packageName: string,
   dshDesktop?: { showItemInFolder(path: string): Promise<{ ok: boolean }> },
   options?: {
+    document?: unknown
     modules?: Record<string, unknown>
     styles?: InjectedStyle[]
   }
@@ -51,7 +53,7 @@ async function loadClientBundle(
   const jsxRuntime = requireModule('react/jsx-runtime')
   let descriptor: BundleDescriptor | undefined
 
-  const styleDocument = options?.styles === undefined
+  const styleDocument = options?.document ?? (options?.styles === undefined
     ? undefined
     : {
         querySelector: () => null,
@@ -70,7 +72,7 @@ async function loadClientBundle(
             })
           }
         }
-      }
+      })
 
   runInNewContext(source, {
     window: {
@@ -320,5 +322,180 @@ describe('Sherlock workspace and composer controls', () => {
     expect(html).toBe(
       '<span>slash</span><span>attachment</span><span>permission</span>'
     )
+  })
+
+  it('registers Research between Chat and Trajectory', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.registerResearchCanvasView).toBeTypeOf('function')
+    if (typeof client.registerResearchCanvasView !== 'function') return
+
+    const registrations: Array<{
+      options: { id: string; order: number; label: () => string }
+      component: unknown
+    }> = []
+    client.registerResearchCanvasView({
+      register(
+        options: { id: string; order: number; label: () => string },
+        component: unknown
+      ) {
+        registrations.push({ options, component })
+      }
+    }, (key: string) => key === 'view.research' ? '研究' : key)
+
+    expect(registrations).toHaveLength(1)
+    expect(registrations[0]?.options.id).toBe('research')
+    expect(registrations[0]?.options.order).toBe(5)
+    expect(registrations[0]?.options.label()).toBe('研究')
+    expect(registrations[0]?.component).toBe(client.ResearchCanvas)
+  })
+
+  it('renders theme-aware light and dark dotted research surfaces', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document
+    })
+    expect(client.ResearchCanvas).toBeTypeOf('function')
+    if (typeof client.ResearchCanvas !== 'function') return
+
+    const ResearchCanvas = client.ResearchCanvas as ComponentType<{
+      t: (key: string) => string
+    }>
+    browserWindow.document.body.innerHTML = renderToStaticMarkup(
+      createElement(ResearchCanvas, {
+        t: (key: string) => key === 'research.canvas' ? '研究画布' : key
+      })
+    )
+    const canvas = browserWindow.document.querySelector('[data-research-canvas]')
+    expect(canvas).not.toBeNull()
+    if (canvas === null) return
+
+    expect(canvas.getAttribute('tabindex')).toBe('0')
+    expect(browserWindow.getComputedStyle(canvas).backgroundPosition).toBe(
+      '-10px -10px'
+    )
+    expect(browserWindow.getComputedStyle(canvas).backgroundColor).toBe(
+      'rgb(247, 248, 250)'
+    )
+    browserWindow.document.body.setAttribute('data-ds-dark-theme', '')
+    expect(browserWindow.getComputedStyle(canvas).backgroundColor).toBe(
+      'rgb(23, 25, 29)'
+    )
+  })
+
+  it('keeps the dotted research canvas visible behind the floating composer', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document
+    })
+    expect(client.ResearchCanvas).toBeTypeOf('function')
+    if (typeof client.ResearchCanvas !== 'function') return
+
+    const ResearchCanvas = client.ResearchCanvas as ComponentType<{
+      t: (key: string) => string
+    }>
+    const canvasHtml = renderToStaticMarkup(
+      createElement(ResearchCanvas, { t: () => '研究画布' })
+    )
+    browserWindow.document.body.innerHTML = [
+      '<div class="wSkVaW_root" data-phase="active">',
+      '<div class="wSkVaW_scrollBody">',
+      canvasHtml,
+      '<div class="wSkVaW_composerSeat" data-composer-seat></div>',
+      '</div>',
+      '</div>'
+    ].join('')
+    const composerSeat = browserWindow.document.querySelector(
+      '[data-composer-seat]'
+    )
+    expect(composerSeat).not.toBeNull()
+    if (composerSeat === null) return
+
+    expect(browserWindow.getComputedStyle(composerSeat).backgroundImage).toBe(
+      'none'
+    )
+  })
+
+  it('places the Research divider chrome directly on the canvas edge', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const researchCss = styles.find(({ pluginCss }) =>
+      pluginCss?.endsWith('/ResearchCanvas.module.css')
+    )?.textContent
+
+    expect(researchCss).toContain(
+      '.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_header:after{bottom:0}'
+    )
+    expect(researchCss).toContain(
+      '.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}'
+    )
+    expect(researchCss).toContain('.rScV5Q_root:focus{outline:none}')
+  })
+
+  it('ignores wheel zoom when Command is not held', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.nextResearchCanvasViewport).toBeTypeOf('function')
+    if (typeof client.nextResearchCanvasViewport !== 'function') return
+
+    const initial = { scale: 1, x: 0, y: 0 }
+    const next = client.nextResearchCanvasViewport(initial, {
+      metaKey: false,
+      deltaY: -100,
+      pointerX: 100,
+      pointerY: 80
+    })
+
+    expect(next).toBe(initial)
+  })
+
+  it('keeps the pointer anchored while Command-wheel zooms the canvas', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.nextResearchCanvasViewport).toBeTypeOf('function')
+    if (typeof client.nextResearchCanvasViewport !== 'function') return
+
+    const next = client.nextResearchCanvasViewport(
+      { scale: 1, x: 0, y: 0 },
+      {
+        metaKey: true,
+        deltaY: -100,
+        pointerX: 100,
+        pointerY: 80
+      }
+    ) as { scale: number; x: number; y: number }
+
+    expect(next.scale).toBeCloseTo(1.105170918, 8)
+    expect(next.x).toBeCloseTo(-10.5170918, 7)
+    expect(next.y).toBeCloseTo(-8.41367344, 7)
+  })
+
+  it('pans the research viewport without changing its zoom', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.nextResearchCanvasPan).toBeTypeOf('function')
+    if (typeof client.nextResearchCanvasPan !== 'function') return
+
+    const next = client.nextResearchCanvasPan(
+      { scale: 1.75, x: -20, y: 10 },
+      { deltaX: 35, deltaY: -12 }
+    )
+
+    expect(next).toEqual({ scale: 1.75, x: 15, y: -2 })
+  })
+
+  it('uses unmodified vertical and horizontal wheel deltas to pan the canvas', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.nextResearchCanvasWheel).toBeTypeOf('function')
+    if (typeof client.nextResearchCanvasWheel !== 'function') return
+
+    const next = client.nextResearchCanvasWheel(
+      { scale: 1.25, x: 10, y: 20 },
+      {
+        metaKey: false,
+        deltaX: 24,
+        deltaY: 80,
+        pointerX: 300,
+        pointerY: 200
+      }
+    )
+
+    expect(next).toEqual({ scale: 1.25, x: -14, y: -60 })
   })
 })
