@@ -437,3 +437,43 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('.mode-btn:disabled{cursor:not-allowed;opacity:.5}')
   })
 })
+describe('desktop pairing page QR expiry self-healing', () => {
+  it('reloads the page when the pairing countdown reaches zero and no phone is connected', () => {
+    const html = renderDesktopPairingPage({
+      qrSvg: '<svg></svg>',
+      pairingUrl: 'http://192.168.1.4:39871/pair?token=abc123',
+      expiresAt: Date.now() + 60_000,
+      locale: 'en',
+      connected: false,
+      tunnelActive: false,
+      tunnelLoading: false,
+      tunnelUrl: undefined,
+      tunnelError: undefined
+    })
+    const countdown = /setInterval\(\(\)=>\{const n=[\s\S]*?\},1000\)/.exec(html)?.[0]
+    expect(countdown).toBeTruthy()
+    expect(countdown).toContain('T.expired')
+    expect(countdown).toContain('location.reload()')
+    expect(countdown).toContain('phoneConnected')
+    expect(countdown).toContain('pendingId')
+    expect(countdown).toContain('modeSwitching')
+  })
+})
+
+describe('desktop pairing page expiry copy', () => {
+  it('describes automatic refresh instead of asking the user to reopen the window', () => {
+    const html = renderDesktopPairingPage({
+      qrSvg: '<svg></svg>',
+      pairingUrl: 'http://192.168.1.4:39871/pair?token=abc123',
+      expiresAt: Date.now() + 60_000,
+      locale: 'en',
+      connected: false,
+      tunnelActive: false,
+      tunnelLoading: false,
+      tunnelUrl: undefined,
+      tunnelError: undefined
+    })
+    expect(html).toContain('QR expired. Refreshing automatically')
+    expect(html).not.toContain('Reopen this window')
+  })
+})
