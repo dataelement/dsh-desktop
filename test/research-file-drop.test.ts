@@ -230,4 +230,71 @@ describe('Research canvas file drops', () => {
       ignored: 'x'.repeat(300_000)
     }]))).toEqual([])
   })
+
+  it('writes the exact Sherlock file MIME payload with copy semantics', async () => {
+    const client = await loadClientBundle('dsh-client-ui-tool')
+    expect(client.writeSherlockFileDrag).toBeTypeOf('function')
+    if (typeof client.writeSherlockFileDrag !== 'function') return
+    const writes: Array<[string, string]> = []
+    const transfer = {
+      effectAllowed: 'none',
+      setData(type: string, value: string) { writes.push([type, value]) }
+    }
+
+    client.writeSherlockFileDrag(transfer, {
+      path: '/w/report.pdf',
+      name: 'report.pdf'
+    })
+
+    expect(transfer.effectAllowed).toBe('copy')
+    expect(writes).toEqual([[
+      'application/x-sherlock-file',
+      '{"path":"/w/report.pdf","name":"report.pdf"}'
+    ]])
+  })
+
+  it('resolves right-details relative paths before dragging', async () => {
+    const client = await loadClientBundle('dsh-client-ui-tool', {
+      '@deepseek-ai/dsh-client-runtime/client': {
+        resolveWorkspacePath: (cwd: string, path: string) => `${cwd}/${path}`,
+        shallowEqual: Object.is
+      }
+    })
+    expect(client.sherlockDetailsFileDescriptor).toBeTypeOf('function')
+    if (typeof client.sherlockDetailsFileDescriptor !== 'function') return
+
+    expect(client.sherlockDetailsFileDescriptor('outputs/report.pdf', '/w')).toEqual({
+      path: '/w/outputs/report.pdf',
+      name: 'report.pdf'
+    })
+  })
+
+  it('renders a draggable file chip for a file-bearing details block', async () => {
+    const client = await loadClientBundle('dsh-client-ui-tool', {
+      '@deepseek-ai/dsh-client-runtime/client': {
+        resolveWorkspacePath: (cwd: string, path: string) => `${cwd}/${path}`,
+        shallowEqual: Object.is
+      }
+    })
+    expect(client.ToolDetails).toBeTypeOf('function')
+    if (typeof client.ToolDetails !== 'function') return
+    const react = requireModule('react') as typeof import('react')
+    const { renderToStaticMarkup } = requireModule('react-dom/server') as {
+      renderToStaticMarkup(node: unknown): string
+    }
+
+    const html = renderToStaticMarkup(react.createElement(client.ToolDetails, {
+      block: {
+        callId: 'call-read',
+        name: 'read',
+        argsRaw: '{"path":"outputs/report.pdf"}'
+      },
+      cwd: '/w',
+      t: (key: string) => key
+    }))
+
+    expect(html).toContain('draggable="true"')
+    expect(html).toContain('data-sherlock-file-drag-source="/w/outputs/report.pdf"')
+    expect(html).toContain('>report.pdf</span>')
+  })
 })

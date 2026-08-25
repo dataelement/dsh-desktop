@@ -1,0 +1,88 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js
+index 5d397a8..9fcb5d4 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js
+@@ -939,7 +939,7 @@ window.__ModuleLoader__.load({
+ 		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-tool/src/client/tool/ToolDetails.module.css.mjs
+-		const css$1 = ".xDAfVq_description{color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xs-13);margin:0 0 6px}.xDAfVq_cardBody{margin:0}.xDAfVq_recovery{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xs-13);margin:6px 0 0}.xDAfVq_code{background:var(--dsw-alias-markdown-code-block);font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary);white-space:pre-wrap;word-break:break-word;border-radius:12px;margin:0;padding:16px;font-size:13px;line-height:22px}.xDAfVq_code[data-error]{color:var(--dsw-alias-state-error-primary)}.xDAfVq_read,.xDAfVq_web{margin:0}.xDAfVq_empty{color:var(--dsw-alias-label-tertiary);padding:8px 0;font-size:13px;line-height:20px}";
++		const css$1 = ".xDAfVq_description{color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xs-13);margin:0 0 6px}.xDAfVq_cardBody{margin:0}.xDAfVq_recovery{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xs-13);margin:6px 0 0}.xDAfVq_code{background:var(--dsw-alias-markdown-code-block);font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary);white-space:pre-wrap;word-break:break-word;border-radius:12px;margin:0;padding:16px;font-size:13px;line-height:22px}.xDAfVq_code[data-error]{color:var(--dsw-alias-state-error-primary)}.xDAfVq_read,.xDAfVq_web{margin:0}.xDAfVq_empty{color:var(--dsw-alias-label-tertiary);padding:8px 0;font-size:13px;line-height:20px}.xDAfVq_fileDrag{box-sizing:border-box;width:100%;min-width:0;height:32px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;align-items:center;gap:7px;margin:0 0 10px;padding:0 9px;display:flex;cursor:grab}.xDAfVq_fileDrag:active{cursor:grabbing}.xDAfVq_fileDrag:focus{outline:none}.xDAfVq_fileDrag span{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}";
+ 		const tagId$1 = "@deepseek-ai/dsh-client-ui-tool/ToolDetails.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -955,7 +955,8 @@ window.__ModuleLoader__.load({
+ 			"description": "xDAfVq_description",
+ 			"cardBody": "xDAfVq_cardBody",
+ 			"recovery": "xDAfVq_recovery",
+-			"code": "xDAfVq_code"
++			"code": "xDAfVq_code",
++			"fileDrag": "xDAfVq_fileDrag"
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/tool/ToolDetails.js
+@@ -966,7 +967,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - selected call slice, workspace root, and locale seat.
+ 		* @returns the details output body.
+ 		*/
+-		function ToolDetails({ block, cwd, t }) {
++		function ToolDetailsOutput({ block, cwd, t }) {
+ 			const terminal = terminalCardModel(block, cwd);
+ 			if (terminal !== null) return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [terminal.description !== void 0 ? (0, react_jsx_runtime.jsx)("div", {
+ 				className: ToolDetails_module_css_default.description,
+@@ -1015,6 +1016,45 @@ window.__ModuleLoader__.load({
+ 				children: resultText(block)
+ 			});
+ 		}
++		const SHERLOCK_FILE_DRAG_TYPE = "application/x-sherlock-file";
++		function sherlockDetailsFileDescriptor(filePath, cwd) {
++			const resolved = cwd === void 0 || cwd === "" || /^(?:[/\\]|[A-Za-z]:[/\\])/.test(filePath) ? filePath : (0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, filePath);
++			return {
++				path: resolved,
++				name: filePath.split(/[/\\]/).filter(Boolean).at(-1) ?? filePath
++			};
++		}
++		function writeSherlockFileDrag(dataTransfer, descriptor) {
++			dataTransfer.effectAllowed = "copy";
++			dataTransfer.setData(SHERLOCK_FILE_DRAG_TYPE, JSON.stringify(descriptor));
++		}
++		function ToolDetails({ block, cwd, t }) {
++			const { filePath } = toolRowModel(callName(block), block, cwd);
++			const descriptor = filePath === void 0 ? null : sherlockDetailsFileDescriptor(filePath, cwd);
++			const fileDragChip = descriptor === null ? null : (0, react_jsx_runtime.jsxs)("div", {
++				className: ToolDetails_module_css_default.fileDrag,
++				draggable: true,
++				"data-sherlock-file-drag-source": descriptor.path,
++				title: descriptor.path,
++				onDragStart: (event) => writeSherlockFileDrag(event.dataTransfer, descriptor),
++				children: [(0, react_jsx_runtime.jsx)("svg", {
++					viewBox: "0 0 16 16",
++					width: "14",
++					height: "14",
++					"aria-hidden": true,
++					children: (0, react_jsx_runtime.jsx)("path", {
++						d: "M3.5 1.5h5l4 4v9h-9zM8.5 1.5v4h4",
++						fill: "none",
++						stroke: "currentColor",
++						strokeWidth: "1.2",
++						strokeLinejoin: "round"
++					})
++				}), (0, react_jsx_runtime.jsx)("span", { children: descriptor.name })]
++			});
++			return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, {
++				children: [fileDragChip, (0, react_jsx_runtime.jsx)(ToolDetailsOutput, { block, cwd, t })]
++			});
++		}
+ 		//#endregion
+ 		//#region lib/types/client/locale.js
+ 		/** Locale namespace supplied by the conversation owner to Tool renderers. */
+@@ -1623,6 +1663,9 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		exports.apply = apply;
+ 		exports.inject = inject;
++		exports.ToolDetails = ToolDetails;
++		exports.sherlockDetailsFileDescriptor = sherlockDetailsFileDescriptor;
++		exports.writeSherlockFileDrag = writeSherlockFileDrag;
+ 		return module.exports;
+ 	}
+ });
