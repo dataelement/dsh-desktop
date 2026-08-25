@@ -122,6 +122,7 @@ describe('GitHub release contract', () => {
     expect(splash).toContain('src="dsh-loader-dark.gif"')
     expect(splash).toContain("document.documentElement.dataset.theme = splashTheme === 'dark'")
     expect(splash).toContain(":root[data-theme='dark']")
+    expect(splash).toContain('brightness(2.4) saturate(0.72)')
     expect(splash).not.toContain('filter: invert(1)')
     expect(splash).not.toContain('class="track"')
     expect(splash).toContain('position: fixed;')

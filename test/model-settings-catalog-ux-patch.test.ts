@@ -32,6 +32,15 @@ async function loadSearch(): Promise<
   ) => Array<{ model: ModelRow; index: number }>
 }
 
+function customProviderCardSource(client: string): string {
+  const start = client.indexOf('function CustomProviderCard(props) {')
+  const end = client.indexOf('\n\t\t//#endregion', start)
+
+  expect(start).toBeGreaterThanOrEqual(0)
+  expect(end).toBeGreaterThan(start)
+  return client.slice(start, end)
+}
+
 describe('settings model catalog search', () => {
   const models: ModelRow[] = [
     { id: 'qwen3.8-max', name: 'Qwen Max' },
@@ -70,17 +79,34 @@ describe('settings model catalog search', () => {
 
   it('provides search state when the custom-provider form renders its model editor', async () => {
     const client = await readFile(settingsModelsClient, 'utf8')
-    const customProviderCard = client.match(
-      /function CustomProviderCard\(props\) \{[\s\S]*?\n\t\t\}/
-    )?.[0]
+    const customProviderCard = customProviderCardSource(client)
 
-    expect(customProviderCard).toBeDefined()
     expect(customProviderCard).toContain(
       'const [modelQuery, setModelQuery] = (0, react.useState)("")'
     )
     expect(customProviderCard).toMatch(
       /jsx\)\(ModelListEditor, \{[\s\S]*?modelQuery,[\s\S]*?onModelQueryChange: setModelQuery/
     )
+  })
+
+  it('keeps an add-model action in the custom-provider creation form', async () => {
+    const client = await readFile(settingsModelsClient, 'utf8')
+    const customProviderCard = customProviderCardSource(client)
+
+    expect(customProviderCard).toContain(
+      'setModels((current) => [...current.map((model) => ({ ...model })), { id: "" }])'
+    )
+    expect(customProviderCard).toContain('setModelQuery("")')
+    expect(customProviderCard).toContain(
+      'className: ModelsSection_module_css_default["addModelButton"]'
+    )
+    expect(customProviderCard).toContain(
+      'className: "dshProviderEditorStickyFooter"'
+    )
+    expect(customProviderCard).toContain('disabled: profileDisabled')
+    expect(customProviderCard).toContain('onClick: addModel')
+    expect(customProviderCard).toContain('jsx)(EditorFooter, {')
+    expect(customProviderCard.match(/onClick: addModel/g)).toHaveLength(1)
   })
 })
 
@@ -116,5 +142,11 @@ describe('settings provider editor sticky actions', () => {
     expect(patch).toContain('onModelQueryChange: setModelQuery')
     expect(patch).toContain('dshProviderEditorStickyFooter')
     expect(patch).toContain('onClick: addModel')
+    expect(patch).toContain(
+      'setModels((current) => [...current.map((model) => ({ ...model })), { id: "" }])'
+    )
+    expect(patch).toContain(
+      'className: ModelsSection_module_css_default["addModelButton"]'
+    )
   })
 })

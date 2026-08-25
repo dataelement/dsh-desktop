@@ -40,7 +40,7 @@ index aa3c9c3..a4a07fc 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5623,6 +5647,106 @@ window.__ModuleLoader__.load({
+@@ -5623,6 +5647,124 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -72,6 +72,23 @@ index aa3c9c3..a4a07fc 100644
 +					setLayout((current) => current?.top === next?.top && current?.left === next?.left && current?.height === next?.height ? current : next);
 +				};
 +				update();
++				// Fall back to a short rAF retry chain when the initial measurement
++				// falls under the 144px height threshold. The dependency array only
++				// re-runs on `queries.length` changes, and the ResizeObserver only
++				// fires on size changes — but the loading → settling → active
++				// transition flips the composer's `position:sticky` and the host's
++				// `data-phase` without resizing the observed elements, so the rail
++				// can get stuck in the null state until the next user resize. The
++				// rAF chain covers that gap; `setLayout` is idempotent, so extra
++				// calls after layout is set are no-ops.
++				let attempts = 0;
++				let rafId = 0;
++				const tick = () => {
++					attempts += 1;
++					update();
++					if (attempts < 12) rafId = requestAnimationFrame(tick);
++				};
++				rafId = requestAnimationFrame(tick);
 +				window.addEventListener("resize", update);
 +				const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
 +				observer?.observe(scrollport);
@@ -80,6 +97,7 @@ index aa3c9c3..a4a07fc 100644
 +				return () => {
 +					window.removeEventListener("resize", update);
 +					observer?.disconnect();
++					if (rafId !== 0) cancelAnimationFrame(rafId);
 +				};
 +			}, [queries.length, listRef, columnRef]);
 +			(0, react.useLayoutEffect)(() => {
@@ -147,7 +165,7 @@ index aa3c9c3..a4a07fc 100644
  		/**
  		* The chat view slot entry: pure component over the composed props; each
  		* ordered business Node crosses the keyed renderer seat.
-@@ -5668,11 +5792,28 @@ window.__ModuleLoader__.load({
+@@ -5668,11 +5810,28 @@ window.__ModuleLoader__.load({
  				...owner,
  				loadImage
  			}), [loadImage, renderSlot]);
@@ -176,7 +194,7 @@ index aa3c9c3..a4a07fc 100644
  			/** Last position delivered or written on the main thread. */
  			const observedTopRef = (0, react.useRef)(0);
  			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5692,6 +5833,12 @@ window.__ModuleLoader__.load({
+@@ -5692,6 +5851,12 @@ window.__ModuleLoader__.load({
  			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
  			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
  			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
@@ -189,7 +207,7 @@ index aa3c9c3..a4a07fc 100644
  			const toBottom = (el) => {
  				anchorRef.current = null;
  				el.scrollTop = el.scrollHeight;
-@@ -5699,6 +5846,8 @@ window.__ModuleLoader__.load({
+@@ -5699,6 +5864,8 @@ window.__ModuleLoader__.load({
  				atBottomRef.current = true;
  				setAtBottom(true);
  				chatScroll.save(null);
@@ -198,7 +216,7 @@ index aa3c9c3..a4a07fc 100644
  			};
  			(0, react.useLayoutEffect)(() => {
  				const local = listRef.current;
-@@ -5755,6 +5904,7 @@ window.__ModuleLoader__.load({
+@@ -5755,6 +5922,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -206,7 +224,7 @@ index aa3c9c3..a4a07fc 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5774,6 +5924,10 @@ window.__ModuleLoader__.load({
+@@ -5774,6 +5942,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -217,7 +235,7 @@ index aa3c9c3..a4a07fc 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5827,9 +5981,29 @@ window.__ModuleLoader__.load({
+@@ -5827,9 +5999,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
