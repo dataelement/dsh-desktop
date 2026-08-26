@@ -105,18 +105,18 @@ describe('Sherlock About settings', () => {
     expect(zh.productName).toBe('Sherlock')
     expect(zh.version).toBe('9.8.7')
     expect(zh.releaseNotes[0]).toEqual({
-      version: '0.7.0',
-      date: '2026-08-25',
+      version: '0.7.1',
+      date: '2026-08-26',
       items: [
-        '新增研究画布，与对话和轨迹并列切换',
-        '新增关于页面，可查看当前版本和更新日志',
-        '正式安装包内置 Memory、附件上传与工作区插件',
-        '记忆、技能、待办与 Memory Evolve 设置仅在开发者模式显示'
+        '新增跨模型联网搜索，在模型原生搜索不可用时自动回退到本地浏览器搜索',
+        '内置 PPT Skill 升级至 1.0.6，并自动备份替换过期官方副本',
+        '新增正式构建 Git 门禁，防止遗漏其他会话的已提交改动'
       ]
     })
+    expect(zh.releaseNotes[1]?.version).toBe('0.7.0')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[0]).toBe(
-      'Added a Research canvas alongside Chat and Trajectory'
+      'Added cross-model web search with automatic local-browser fallback when native search is unavailable'
     )
 
     const bridge = aboutModule.createSherlockAboutBridge(
@@ -179,7 +179,7 @@ describe('Sherlock About settings', () => {
       version: '0.7.0',
       releaseNotes: [
         {
-      version: '0.7.0',
+          version: '0.7.0',
           date: '2026-08-25',
           items: ['新增研究画布', '隐藏开发者标签页']
         }

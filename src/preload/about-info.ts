@@ -17,6 +17,15 @@ type UpdateVersionReader = () => Promise<{ currentVersion: string }>
 const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
   zh: [
     {
+      version: '0.7.1',
+      date: '2026-08-26',
+      items: [
+        '新增跨模型联网搜索，在模型原生搜索不可用时自动回退到本地浏览器搜索',
+        '内置 PPT Skill 升级至 1.0.6，并自动备份替换过期官方副本',
+        '新增正式构建 Git 门禁，防止遗漏其他会话的已提交改动'
+      ]
+    },
+    {
       version: '0.7.0',
       date: '2026-08-25',
       items: [
@@ -28,6 +37,15 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
     }
   ],
   en: [
+    {
+      version: '0.7.1',
+      date: '2026-08-26',
+      items: [
+        'Added cross-model web search with automatic local-browser fallback when native search is unavailable',
+        'Updated the bundled PPT Skill to 1.0.6 and added automatic backup and replacement of stale official copies',
+        'Added formal-build Git gates to prevent committed work from other sessions being omitted'
+      ]
+    },
     {
       version: '0.7.0',
       date: '2026-08-25',
