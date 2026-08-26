@@ -389,6 +389,126 @@ describe('Research canvas file drops', () => {
     }]))).toEqual([])
   })
 
+  it('normalizes marquee geometry and intersects cards in viewport coordinates', async () => {
+    const client = await loadConversationClient()
+    expect(client.normalizeResearchRect).toBeTypeOf('function')
+    expect(client.researchNodesInMarquee).toBeTypeOf('function')
+    if (typeof client.normalizeResearchRect !== 'function' ||
+        typeof client.researchNodesInMarquee !== 'function') return
+
+    expect(client.normalizeResearchRect({ x: 180, y: 160 }, { x: 80, y: 60 }))
+      .toEqual({ left: 80, top: 60, right: 180, bottom: 160, width: 100, height: 100 })
+    const nodes = [
+      { id: 'a', name: 'a.pdf', source: 'computer', x: 50, y: 50 },
+      { id: 'b', name: 'b.pdf', source: 'computer', x: 220, y: 220 }
+    ]
+    expect(client.researchNodesInMarquee(
+      nodes,
+      { scale: 2, x: 10, y: 20 },
+      { left: 0, top: 0, right: 130, bottom: 140, width: 130, height: 140 }
+    )).toEqual(['a'])
+  })
+
+  it('keeps stable selection order and derives ordered files only', async () => {
+    const client = await loadConversationClient()
+    expect(client.updateResearchSelection).toBeTypeOf('function')
+    if (typeof client.updateResearchSelection !== 'function') return
+    const files = [
+      { id: 'f1', name: 'one.pdf', path: '/w/one.pdf', source: 'computer', x: 80, y: 20 },
+      { id: 'f2', name: 'two.pdf', path: '/w/two.pdf', source: 'computer', x: 20, y: 20 }
+    ]
+    const first = client.updateResearchSelection(
+      { selectedNodeIds: [], orderedFileIds: [] },
+      ['f2', 'f1'],
+      'replace',
+      files
+    )
+    expect(first).toEqual({ selectedNodeIds: ['f2', 'f1'], orderedFileIds: ['f2', 'f1'] })
+    expect(client.updateResearchSelection(first, ['f2'], 'toggle', files))
+      .toEqual({ selectedNodeIds: ['f1'], orderedFileIds: ['f1'] })
+  })
+
+  it('moves selected files and artifacts by screen delta divided by zoom', async () => {
+    const client = await loadConversationClient()
+    expect(client.moveResearchCanvasNodes).toBeTypeOf('function')
+    if (typeof client.moveResearchCanvasNodes !== 'function') return
+    const moved = client.moveResearchCanvasNodes(
+      [{ id: 'f1', name: 'a', source: 'computer', x: 10, y: 20 }],
+      [{ id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Text', x: 30, y: 40 }],
+      ['f1', 'a1'],
+      { x: 20, y: -10 },
+      2
+    )
+    expect(moved.files[0]).toMatchObject({ x: 20, y: 15 })
+    expect(moved.artifacts[0]).toMatchObject({ x: 40, y: 35 })
+  })
+
+  it('uses exact per-session keys and canonicalizes bounded persisted artifacts and selection', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchCanvasSelectionStorageKey).toBeTypeOf('function')
+    expect(client.researchCanvasArtifactsStorageKey).toBeTypeOf('function')
+    expect(client.parseResearchCanvasArtifactNodes).toBeTypeOf('function')
+    expect(client.parseResearchCanvasSelection).toBeTypeOf('function')
+    if (typeof client.researchCanvasSelectionStorageKey !== 'function' ||
+        typeof client.researchCanvasArtifactsStorageKey !== 'function' ||
+        typeof client.parseResearchCanvasArtifactNodes !== 'function' ||
+        typeof client.parseResearchCanvasSelection !== 'function') return
+
+    expect(client.researchCanvasSelectionStorageKey('session-7')).toBe(
+      'sherlock.research.canvas.selection.v1:session-7'
+    )
+    expect(client.researchCanvasArtifactsStorageKey('session-7')).toBe(
+      'sherlock.research.canvas.artifacts.v1:session-7'
+    )
+    const artifacts = client.parseResearchCanvasArtifactNodes(JSON.stringify([
+      { id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Text', x: 1, y: 2 },
+      { id: 'a1', kind: 'assistant-result', messageId: 'm2', title: 'Duplicate id', excerpt: 'Text', x: 3, y: 4 },
+      { id: 'a2', kind: 'assistant-result', messageId: 'm1', title: 'Duplicate source', excerpt: 'Text', x: 5, y: 6 }
+    ]))
+    expect(artifacts).toEqual([
+      { id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Text', x: 1, y: 2 }
+    ])
+    expect(client.parseResearchCanvasArtifactNodes('bad-json')).toEqual([])
+    expect(client.parseResearchCanvasArtifactNodes(JSON.stringify(Array.from({ length: 257 }, (_, index) => ({
+      id: `a-${index}`, kind: 'assistant-result', messageId: `m-${index}`,
+      title: 'Answer', excerpt: 'Text', x: index, y: index
+    }))))).toHaveLength(256)
+    expect(client.parseResearchCanvasArtifactNodes(JSON.stringify([{
+      id: 'long-title', kind: 'assistant-result', messageId: 'm-title',
+      title: 'x'.repeat(257), excerpt: 'Text', x: 1, y: 2
+    }]))).toEqual([])
+    expect(client.parseResearchCanvasArtifactNodes(JSON.stringify([{
+      id: 'long-excerpt', kind: 'assistant-result', messageId: 'm-excerpt',
+      title: 'Answer', excerpt: 'x'.repeat(16_385), x: 1, y: 2
+    }]))).toEqual([])
+    expect(client.parseResearchCanvasArtifactNodes(JSON.stringify([{
+      id: 'oversized', kind: 'assistant-result', messageId: 'm-oversized',
+      title: 'Answer', excerpt: 'x'.repeat(300_000), x: 1, y: 2
+    }]))).toEqual([])
+
+    const files = [{ id: 'f1', name: 'one.pdf', source: 'computer', x: 1, y: 2 }]
+    expect(client.parseResearchCanvasSelection(JSON.stringify({
+      selectedNodeIds: ['a1', 'f1', 'missing', 'a1'], orderedFileIds: ['f1', 'missing']
+    }), files, artifacts)).toEqual({ selectedNodeIds: ['a1', 'f1'], orderedFileIds: ['f1'] })
+    expect(client.parseResearchCanvasSelection('bad-json', files, artifacts))
+      .toEqual({ selectedNodeIds: [], orderedFileIds: [] })
+  })
+
+  it('accepts only the exact bounded Sherlock Research artifact drag shape', async () => {
+    const client = await loadConversationClient()
+    expect(client.parseResearchArtifactDrag).toBeTypeOf('function')
+    if (typeof client.parseResearchArtifactDrag !== 'function') return
+
+    const payload = {
+      sessionId: 's1', messageId: 'm1', kind: 'assistant-result', title: 'Answer', excerpt: 'Text'
+    }
+    expect(client.parseResearchArtifactDrag(JSON.stringify(payload))).toEqual(payload)
+    expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, id: 'untrusted' }))).toEqual(payload)
+    expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, title: 'x'.repeat(257) }))).toBeNull()
+    expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, excerpt: 'x'.repeat(16_385) }))).toBeNull()
+    expect(client.parseResearchArtifactDrag('not-json')).toBeNull()
+  })
+
   it('writes the exact Sherlock file MIME payload with copy semantics', async () => {
     const client = await loadClientBundle('dsh-client-ui-tool')
     expect(client.writeSherlockFileDrag).toBeTypeOf('function')
