@@ -642,6 +642,9 @@ describe('Research canvas file drops', () => {
     }
     expect(client.parseResearchArtifactDrag(JSON.stringify(payload))).toEqual(payload)
     expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, id: 'untrusted' }))).toEqual(payload)
+    expect(client.parseResearchArtifactDrag(JSON.stringify({
+      ...payload, kind: 'assistant-html'
+    }))).toBeNull()
     expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, title: 'x'.repeat(257) }))).toBeNull()
     expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, excerpt: 'x'.repeat(16_385) }))).toBeNull()
     expect(client.parseResearchArtifactDrag('not-json')).toBeNull()
@@ -668,6 +671,70 @@ describe('Research canvas file drops', () => {
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
       title: 'Revised', excerpt: 'Evidence', x: 240, y: 160
     }])
+  })
+
+  it('keeps one assistant result while normalized excerpts dedupe independently', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const values = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value) }
+    }
+    const Registry = client.ResearchWorkspaceRegistry as new (
+      storage: {
+        getItem(key: string): string | null
+        setItem(key: string, value: string): void
+      }
+    ) => {
+      for(id: string): {
+        getSnapshot(): {
+          artifacts: Array<Record<string, unknown>>
+          viewport: { scale: number; x: number; y: number }
+          canvasSize: { width: number; height: number }
+        }
+        addAssistantResult(input: {
+          messageId: string
+          text: string
+          at: { x: number; y: number }
+        }): void
+        addExcerpt(
+          messageId: string,
+          excerpt: string,
+          at: { x: number; y: number }
+        ): void
+      }
+    }
+    const workspace = new Registry(storage).for('s1')
+
+    workspace.addAssistantResult({
+      messageId: 'm1', text: 'Revenue improved.', at: { x: 120, y: 80 }
+    })
+    workspace.addAssistantResult({
+      messageId: 'm1', text: 'Revenue improved.', at: { x: 240, y: 160 }
+    })
+    workspace.addExcerpt('m1', '  Margin   expanded. ', { x: 300, y: 200 })
+    workspace.addExcerpt('m1', 'Margin expanded.', { x: 340, y: 220 })
+    workspace.addExcerpt('m1', 'Cash flow improved.', { x: 380, y: 240 })
+
+    expect(workspace.getSnapshot().artifacts).toMatchObject([
+      {
+        kind: 'assistant-result', messageId: 'm1', excerpt: 'Revenue improved.',
+        x: 240, y: 160
+      },
+      {
+        kind: 'assistant-excerpt', messageId: 'm1', excerpt: 'Margin expanded.',
+        x: 340, y: 220
+      },
+      {
+        kind: 'assistant-excerpt', messageId: 'm1', excerpt: 'Cash flow improved.',
+        x: 380, y: 240
+      }
+    ])
+    expect(JSON.parse(values.get(
+      'sherlock.research.canvas.artifacts.v1:s1'
+    ) ?? '[]')).toHaveLength(3)
   })
 
   it('publishes deeply immutable file and artifact nodes from a workspace snapshot', async () => {

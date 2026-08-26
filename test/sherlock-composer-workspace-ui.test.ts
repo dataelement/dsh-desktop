@@ -108,7 +108,9 @@ async function loadClientBundle(
     localStorage: options?.window?.localStorage,
     HTMLElement: options?.window?.HTMLElement,
     HTMLTextAreaElement: options?.window?.HTMLTextAreaElement,
-    ResizeObserver: options?.window?.ResizeObserver
+    ResizeObserver: options?.window?.ResizeObserver,
+    setTimeout,
+    clearTimeout
   })
   if (descriptor === undefined) throw new Error(`${packageName} did not register its client bundle`)
 
@@ -143,7 +145,10 @@ function createSelectorStore<State extends object>(initial: State) {
   }
 }
 
-async function mountConversationRoot(initialView: 'chat' | 'research' = 'research') {
+async function mountConversationRoot(
+  initialView: 'chat' | 'research' = 'research',
+  assistantMessage?: { messageId: string; text: string; settled?: boolean }
+) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const sessionId = 'session-research-right-panel'
   browserWindow.localStorage.setItem(
@@ -187,7 +192,16 @@ async function mountConversationRoot(initialView: 'chat' | 'research' = 'researc
   const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
     for(id: string): {
       subscribe(listener: () => void): () => void
-      getSnapshot(): { files: Array<Record<string, unknown>> }
+      getSnapshot(): {
+        files: Array<Record<string, unknown>>
+        artifacts: Array<Record<string, unknown>>
+        viewport: { scale: number; x: number; y: number }
+        canvasSize: { width: number; height: number }
+        pendingMessageJump: string | null
+      }
+      setArtifacts(artifacts: Array<Record<string, unknown>>): void
+      setViewport(viewport: { scale: number; x: number; y: number }): void
+      setCanvasSize(size: { width: number; height: number }): void
     }
   }
   const researchWorkspaces = new Registry(browserWindow.localStorage as Storage)
@@ -268,7 +282,16 @@ async function mountConversationRoot(initialView: 'chat' | 'research' = 'researc
       return createElement('div', { 'data-stats-footer': '' })
     }
     if (name === 'conversation.view' && options?.only === 'chat') {
-      return createElement('div', { 'data-chat-view': '' }, 'message-1')
+      return createElement('div', { 'data-chat-view': '' },
+        assistantMessage === undefined
+          ? 'message-1'
+          : createElement('div', {
+              'data-assistant-message-id': assistantMessage.messageId,
+              'data-assistant-message-settled': assistantMessage.settled === false
+                ? undefined
+                : ''
+            }, createElement('span', null, assistantMessage.text))
+      )
     }
     return null
   }
@@ -302,11 +325,15 @@ async function mountConversationRoot(initialView: 'chat' | 'research' = 'researc
     actions,
     browserWindow,
     chat,
+    client,
     detailsPortalHost,
     host,
     input,
+    researchWorkspaces,
     session,
+    sessionId,
     transitions,
+    workspace: researchWorkspaces.for(sessionId),
     async cleanup() {
       await act(async () => { root.unmount() })
       restoreGlobals()
@@ -731,6 +758,177 @@ describe('Sherlock workspace and composer controls', () => {
     expect(registrations[0]?.options.order).toBe(5)
     expect(registrations[0]?.options.label()).toBe('研究')
     expect(registrations[0]?.component).toBe(client.ResearchCanvas)
+  })
+
+  it('adds a finalized assistant response only through the explicit action strip', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const primitives = new Proxy({
+      Tooltip: ({ children }: { children: unknown }) => children,
+      IconCheckOutline16: () => createElement('span'),
+      IconCopyOutline16: () => createElement('span'),
+      IconBranchOutline16: () => createElement('span'),
+      writeClipboard: async () => true
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    try {
+      const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+        document: browserWindow.document,
+        window: browserWindow,
+        modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
+      })
+      expect(client.registerResearchAssistantActions).toBeTypeOf('function')
+      expect(client.TurnTailNodeView).toBeTruthy()
+      expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+      if (typeof client.registerResearchAssistantActions !== 'function' ||
+          client.TurnTailNodeView === undefined ||
+          typeof client.ResearchWorkspaceRegistry !== 'function') return
+
+      const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+        for(id: string): {
+          getSnapshot(): {
+            artifacts: Array<Record<string, unknown>>
+          }
+          setCanvasSize(size: { width: number; height: number }): void
+          setViewport(viewport: { scale: number; x: number; y: number }): void
+        }
+      }
+      const registry = new Registry(browserWindow.localStorage as Storage)
+      const workspace = registry.for('session-action')
+      workspace.setCanvasSize({ width: 800, height: 600 })
+      let registration: {
+        options: {
+          name: string
+          id: string
+          order: number
+          inject(sessionId: string): Record<string, unknown>
+        }
+        component: ComponentType<Record<string, unknown>>
+      } | undefined
+      client.registerResearchAssistantActions({
+        register(
+          options: {
+            name: string
+            id: string
+            order: number
+            inject(sessionId: string): Record<string, unknown>
+          },
+          component: ComponentType<Record<string, unknown>>
+        ) {
+          registration = { options, component }
+          return undefined
+        }
+      }, registry)
+      expect(registration?.options).toMatchObject({
+        name: 'conversation.chat.assistant-actions',
+        id: 'research-add-to-canvas'
+      })
+      if (registration === undefined) return
+
+      const host = browserWindow.document.createElement('div')
+      browserWindow.document.body.appendChild(host)
+      const root = createRoot(host)
+      const actionProps = registration.options.inject('session-action')
+      const owners: Array<Record<string, unknown>> = []
+      await act(async () => {
+        root.render(createElement(
+          client.TurnTailNodeView as ComponentType<Record<string, unknown>>,
+          {
+            node: {
+              key: 'tail-1',
+              location: { kind: 'turn', turn: {} },
+              data: {
+                turn: 1,
+                seq: 2,
+                closing: {
+                  finalNode: { seq: 2, messageId: 'm1' },
+                  blocks: [{ kind: 'text', text: 'Revenue improved.' }]
+                }
+              }
+            },
+            openFile: () => undefined,
+            forkAt: () => undefined,
+            renderSlot: (name: string, owner: Record<string, unknown>) => {
+              if (name !== 'conversation.chat.assistant-actions') return null
+              owners.push(owner)
+              return createElement(registration?.component as ComponentType<Record<string, unknown>>, {
+                ...owner,
+                ...actionProps
+              })
+            },
+            renderSlotChain: () => null,
+            t: (key: string) => key,
+            useSession: (select: (state: unknown) => unknown) => select({
+              chat: { locations: { getTurn: () => ['tail-1'] } }
+            })
+          }
+        ))
+      })
+
+      expect(owners).toEqual([{
+        messageId: 'm1', text: 'Revenue improved.'
+      }])
+      expect(workspace.getSnapshot().artifacts).toEqual([])
+      const add = host.querySelector('button[aria-label="添加到画布"]')
+      expect(add).not.toBeNull()
+      await act(async () => { click(browserWindow, add) })
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        messageId: 'm1', kind: 'assistant-result', excerpt: 'Revenue improved.',
+        x: 400, y: 300
+      }])
+
+      workspace.setViewport({ scale: 1, x: 100, y: 50 })
+      await act(async () => { click(browserWindow, add) })
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        messageId: 'm1', kind: 'assistant-result',
+        x: 300, y: 250
+      }])
+      expect(workspace.getSnapshot().artifacts).toHaveLength(1)
+      await act(async () => { root.unmount() })
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  it('marks the real settled assistant wrapper with its durable message identity', async () => {
+    const primitives = new Proxy({
+      MarkdownText: ({ text }: { text: string }) => createElement('span', null, text)
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
+    })
+    expect(client.AssistantNodeView).toBeTruthy()
+    if (client.AssistantNodeView === undefined) return
+
+    const html = renderToStaticMarkup(createElement(
+      client.AssistantNodeView as ComponentType<Record<string, unknown>>,
+      {
+        node: {
+          location: { kind: 'turn', turn: { status: 'closed' } },
+          data: {
+            status: 'complete',
+            finalNode: { seq: 2, messageId: 'm1' },
+            blocks: [{ kind: 'text', text: 'Revenue improved.' }]
+          }
+        },
+        useTurnData: () => ({ closing: { finalNode: { seq: 2 } } }),
+        openFile: () => undefined,
+        loadImage: async () => '',
+        fileMentions: () => undefined,
+        t: (key: string) => key
+      }
+    ))
+
+    expect(html).toContain('data-assistant-message-id="m1"')
+    expect(html).toContain('data-assistant-message-settled=""')
+    expect(html).toContain('Revenue improved.')
   })
 
   it('marks conversation tabs with their stable view id for desktop visibility gates', async () => {
@@ -1489,7 +1687,10 @@ describe('Sherlock workspace and composer controls', () => {
   })
 
   it('places a same-session research artifact through the shared workspace drop path', async () => {
-    const mounted = await mountResearchCanvas({ sessionId: 'session-artifact-drop' })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-artifact-drop',
+      viewport: { scale: 2, x: 50, y: 20 }
+    })
     try {
       const { browserWindow, canvas, host, workspace } = mounted
       const transfer = {
@@ -1504,12 +1705,12 @@ describe('Sherlock workspace and composer controls', () => {
         dropEffect: 'none'
       }
       await act(async () => {
-        const drop = dispatchDrag(browserWindow, canvas, 'drop', transfer, { x: 240, y: 160 })
+        const drop = dispatchDrag(browserWindow, canvas, 'drop', transfer, { x: 250, y: 180 })
         expect(drop.defaultPrevented).toBe(true)
       })
 
       expect(workspace.getSnapshot().artifacts).toMatchObject([
-        { messageId: 'm1', kind: 'assistant-result', x: 240, y: 160 }
+        { messageId: 'm1', kind: 'assistant-result', x: 100, y: 80 }
       ])
       expect(host.querySelector('[data-research-artifact-card]')?.textContent)
         .toContain('Answer')
@@ -1673,6 +1874,212 @@ describe('Sherlock workspace and composer controls', () => {
         .not.toBeNull()
       expect(detailsPortalHost.querySelector('[data-research-right-tab="details"]')).toBeNull()
     } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('captures and drags only a plain selection contained by one settled assistant message', async () => {
+    const mounted = await mountConversationRoot('research', {
+      messageId: 'm1', text: 'Margin expanded.'
+    })
+    try {
+      const { browserWindow, detailsPortalHost, sessionId, workspace } = mounted
+      const wrapper = detailsPortalHost.querySelector(
+        '[data-assistant-message-id="m1"]'
+      )
+      const text = wrapper?.querySelector('span')?.firstChild
+      const chatView = detailsPortalHost.querySelector('[data-chat-view]')
+      expect(wrapper).not.toBeNull()
+      expect(text).toBeDefined()
+      expect(chatView).not.toBeNull()
+      if (wrapper === null || text == null || chatView === null) return
+
+      const outside = browserWindow.document.createElement('span')
+      outside.textContent = 'Outside'
+      chatView.appendChild(outside)
+      const outsideText = outside.firstChild
+      expect(outsideText).toBeDefined()
+      if (outsideText === null) return
+      const invalid = browserWindow.document.createRange()
+      invalid.setStart(text, 0)
+      invalid.setEnd(outsideText, 3)
+      browserWindow.getSelection()?.removeAllRanges()
+      browserWindow.getSelection()?.addRange(invalid)
+      await act(async () => {
+        wrapper.dispatchEvent(new browserWindow.Event('mouseup', { bubbles: true }))
+      })
+      expect(detailsPortalHost.querySelector('button[aria-label="加入画布"]')).toBeNull()
+
+      const selection = browserWindow.document.createRange()
+      selection.setStart(text, 0)
+      selection.setEnd(text, 15)
+      browserWindow.getSelection()?.removeAllRanges()
+      browserWindow.getSelection()?.addRange(selection)
+      await act(async () => {
+        wrapper.dispatchEvent(new browserWindow.Event('mouseup', { bubbles: true }))
+      })
+      const add = detailsPortalHost.querySelector('button[aria-label="加入画布"]')
+      expect(add).not.toBeNull()
+
+      const payloads = new Map<string, string>()
+      const outsidePayloads = new Map<string, string>()
+      const outsideDrag = new browserWindow.Event('dragstart', {
+        bubbles: true, cancelable: true
+      })
+      Object.defineProperty(outsideDrag, 'dataTransfer', {
+        value: {
+          effectAllowed: 'none',
+          setData(type: string, value: string) { outsidePayloads.set(type, value) }
+        }
+      })
+      outside.dispatchEvent(outsideDrag)
+      expect(outsidePayloads.has(
+        'application/x-sherlock-research-artifact'
+      )).toBe(false)
+
+      const transfer = {
+        effectAllowed: 'none',
+        setData(type: string, value: string) { payloads.set(type, value) }
+      }
+      const dragStart = new browserWindow.Event('dragstart', {
+        bubbles: true, cancelable: true
+      })
+      Object.defineProperty(dragStart, 'dataTransfer', { value: transfer })
+      wrapper.dispatchEvent(dragStart)
+      const payload = JSON.parse(payloads.get(
+        'application/x-sherlock-research-artifact'
+      ) ?? '{}')
+      expect(Object.keys(payload).sort()).toEqual([
+        'excerpt', 'kind', 'messageId', 'sessionId', 'title'
+      ])
+      expect(payload).toEqual({
+        sessionId,
+        messageId: 'm1',
+        kind: 'assistant-excerpt',
+        title: '助手摘录',
+        excerpt: 'Margin expanded'
+      })
+      expect(transfer.effectAllowed).toBe('copy')
+
+      await act(async () => { click(browserWindow, add) })
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        messageId: 'm1', kind: 'assistant-excerpt',
+        title: '助手摘录', excerpt: 'Margin expanded'
+      }])
+
+      const passage = wrapper.querySelector('span')
+      if (passage === null) return
+      passage.textContent = 'x'.repeat(16_434)
+      const longText = passage.firstChild
+      if (longText === null) return
+      const longSelection = browserWindow.document.createRange()
+      longSelection.setStart(longText, 0)
+      longSelection.setEnd(longText, 16_434)
+      browserWindow.getSelection()?.removeAllRanges()
+      browserWindow.getSelection()?.addRange(longSelection)
+      await act(async () => {
+        wrapper.dispatchEvent(new browserWindow.Event('mouseup', { bubbles: true }))
+      })
+      const boundedPayloads = new Map<string, string>()
+      const boundedDrag = new browserWindow.Event('dragstart', {
+        bubbles: true, cancelable: true
+      })
+      Object.defineProperty(boundedDrag, 'dataTransfer', {
+        value: {
+          effectAllowed: 'none',
+          setData(type: string, value: string) { boundedPayloads.set(type, value) }
+        }
+      })
+      wrapper.dispatchEvent(boundedDrag)
+      expect(JSON.parse(boundedPayloads.get(
+        'application/x-sherlock-research-artifact'
+      ) ?? '{}').excerpt).toHaveLength(16_384)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('opens an artifact source safely and reports a missing source without removing its snapshot', async () => {
+    const sourceMessageId = 'm1"][data-owned="false'
+    const mounted = await mountConversationRoot('research', {
+      messageId: sourceMessageId, text: 'Revenue improved.'
+    })
+    const canvasHost = mounted.browserWindow.document.createElement('div')
+    mounted.browserWindow.document.body.appendChild(canvasHost)
+    const canvasRoot = createRoot(canvasHost)
+    try {
+      const {
+        actions, browserWindow, chat, client, detailsPortalHost,
+        researchWorkspaces, sessionId, workspace
+      } = mounted
+      await act(async () => {
+        workspace.setArtifacts([
+          {
+            id: 'artifact-source', kind: 'assistant-result', messageId: sourceMessageId,
+            title: '助手回复', excerpt: 'Revenue improved.', x: 100, y: 80
+          },
+          {
+            id: 'artifact-missing', kind: 'assistant-excerpt', messageId: 'm-missing',
+            title: '助手摘录', excerpt: 'Missing snapshot', x: 300, y: 160
+          }
+        ])
+      })
+      await act(async () => {
+        canvasRoot.render(createElement(client.ResearchCanvas as ComponentType<Record<string, unknown>>, {
+          sessionId,
+          researchWorkspaces,
+          actions,
+          t: (key: string) => key === 'research.canvas' ? '研究画布' : key
+        }))
+      })
+      const source = detailsPortalHost.querySelector(
+        '[data-assistant-message-id]'
+      ) as HappyDOMElement | null
+      expect(source).not.toBeNull()
+      expect(source?.getAttribute('data-assistant-message-id')).toBe(sourceMessageId)
+      if (source === null) return
+      let scrolls = 0
+      Object.defineProperty(source, 'scrollIntoView', {
+        configurable: true,
+        value: () => { scrolls += 1 }
+      })
+
+      await act(async () => { actions.setResearchRightTab('files') })
+      const sourceCard = canvasHost.querySelector(
+        '[data-research-artifact-card="artifact-source"]'
+      )
+      expect(sourceCard?.textContent).toContain('助手回复')
+      expect(sourceCard?.textContent).toContain('来源消息')
+      await act(async () => {
+        sourceCard?.dispatchEvent(new browserWindow.Event('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      expect(chat.get().researchRightTab).toBe('conversation')
+      expect(scrolls).toBe(1)
+      expect(browserWindow.document.activeElement).toBe(source)
+      expect(workspace.getSnapshot().pendingMessageJump).toBeNull()
+
+      await act(async () => { actions.setResearchRightTab('files') })
+      const missingCard = canvasHost.querySelector(
+        '[data-research-artifact-card="artifact-missing"]'
+      )
+      await act(async () => {
+        missingCard?.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+      expect(chat.get().researchRightTab).toBe('conversation')
+      expect(workspace.getSnapshot().pendingMessageJump).toBeNull()
+      expect(detailsPortalHost.querySelector('[role="status"]')?.textContent)
+        .toContain('来源消息不可用')
+      const missingSnapshot = canvasHost.querySelector(
+        '[data-research-artifact-card="artifact-missing"]'
+      )
+      expect(missingSnapshot).not.toBeNull()
+      expect(missingSnapshot?.textContent).toContain('来源消息不可用')
+    } finally {
+      await act(async () => { canvasRoot.unmount() })
       await mounted.cleanup()
     }
   })
