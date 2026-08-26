@@ -520,6 +520,29 @@ describe('Research canvas file drops', () => {
     expect(client.parseResearchArtifactDrag('not-json')).toBeNull()
   })
 
+  it('places and repositions a research artifact by its durable source identity', async () => {
+    const client = await loadConversationClient()
+    expect(client.placeResearchCanvasArtifact).toBeTypeOf('function')
+    if (typeof client.placeResearchCanvasArtifact !== 'function') return
+    const payload = {
+      sessionId: 's1', messageId: 'm1', kind: 'assistant-result',
+      title: 'Answer', excerpt: 'Evidence'
+    }
+    const placed = client.placeResearchCanvasArtifact(
+      [], payload, { x: 120, y: 80 }, () => 'artifact-1'
+    )
+    expect(placed).toEqual([{
+      id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
+      title: 'Answer', excerpt: 'Evidence', x: 120, y: 80
+    }])
+    expect(client.placeResearchCanvasArtifact(
+      placed, { ...payload, title: 'Revised' }, { x: 240, y: 160 }, () => 'unused'
+    )).toEqual([{
+      id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
+      title: 'Revised', excerpt: 'Evidence', x: 240, y: 160
+    }])
+  })
+
   it('publishes deeply immutable file and artifact nodes from a workspace snapshot', async () => {
     const client = await loadConversationClient()
     expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')

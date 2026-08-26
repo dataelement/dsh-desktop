@@ -155,6 +155,105 @@ function dispatchDrag(
   return event
 }
 
+function pointer(
+  browserWindow: Window,
+  type: string,
+  options: {
+    pointerId: number
+    x: number
+    y: number
+    button?: number
+    metaKey?: boolean
+    shiftKey?: boolean
+  }
+): HappyDOMEvent {
+  const event = new browserWindow.Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperties(event, {
+    pointerId: { value: options.pointerId },
+    clientX: { value: options.x },
+    clientY: { value: options.y },
+    button: { value: options.button ?? 0 },
+    metaKey: { value: options.metaKey ?? false },
+    shiftKey: { value: options.shiftKey ?? false }
+  })
+  return event
+}
+
+async function mountResearchCanvas(options: {
+  sessionId: string
+  files?: Array<Record<string, unknown>>
+  artifacts?: Array<Record<string, unknown>>
+  selection?: { selectedNodeIds: string[]; orderedFileIds: string[] }
+  viewport?: { scale: number; x: number; y: number }
+}) {
+  const browserWindow = new Window({ url: 'https://sherlock.local/' })
+  const { sessionId } = options
+  browserWindow.localStorage.setItem(
+    `sherlock.research.canvas.files.v1:${sessionId}`,
+    JSON.stringify(options.files ?? [])
+  )
+  browserWindow.localStorage.setItem(
+    `sherlock.research.canvas.artifacts.v1:${sessionId}`,
+    JSON.stringify(options.artifacts ?? [])
+  )
+  browserWindow.localStorage.setItem(
+    `sherlock.research.canvas.selection.v1:${sessionId}`,
+    JSON.stringify(options.selection ?? { selectedNodeIds: [], orderedFileIds: [] })
+  )
+  const restoreGlobals = installBrowserGlobals(browserWindow)
+  const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+    document: browserWindow.document,
+    window: browserWindow
+  })
+  const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+    for(id: string): {
+      getSnapshot(): {
+        files: Array<Record<string, unknown>>
+        artifacts: Array<Record<string, unknown>>
+        selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
+        viewport: { scale: number; x: number; y: number }
+      }
+      setViewport(viewport: { scale: number; x: number; y: number }): void
+    }
+  }
+  const researchWorkspaces = new Registry(browserWindow.localStorage)
+  const workspace = researchWorkspaces.for(sessionId)
+  if (options.viewport !== undefined) workspace.setViewport(options.viewport)
+  const ResearchCanvas = client.ResearchCanvas as ComponentType<{
+    sessionId: string
+    t: (key: string) => string
+    researchWorkspaces: InstanceType<typeof Registry>
+  }>
+  const host = browserWindow.document.createElement('div')
+  browserWindow.document.body.appendChild(host)
+  const root = createRoot(host)
+  await act(async () => {
+    root.render(createElement(ResearchCanvas, {
+      sessionId,
+      researchWorkspaces,
+      t: () => '研究画布'
+    }))
+  })
+  const canvas = host.querySelector('[data-research-canvas]') as HappyDOMElement | null
+  expect(canvas).not.toBeNull()
+  if (canvas === null) throw new Error('Research canvas did not render')
+  Object.defineProperty(canvas, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 })
+  })
+  return {
+    browserWindow,
+    canvas,
+    client,
+    host,
+    workspace,
+    async cleanup() {
+      await act(async () => { root.unmount() })
+      restoreGlobals()
+    }
+  }
+}
+
 describe('Sherlock workspace and composer controls', () => {
   it('opens details for the selected Inspect call while preserving trajectory', async () => {
     const source = await readFile(
@@ -502,6 +601,10 @@ describe('Sherlock workspace and composer controls', () => {
     }))
 
     expect(html).toContain('data-research-file-card="file-1"')
+    expect(html).toContain('data-research-node-id="file-1"')
+    expect(html).toContain('role="option"')
+    expect(html).toContain('tabindex="0"')
+    expect(html).toContain('aria-selected="false"')
     expect(html).toContain('report.pdf')
     expect(html).not.toContain('/w/report.pdf</')
     expect(client.researchCanvasContentTransform({ scale: 1.5, x: 30, y: -10 }))
@@ -608,6 +711,293 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('selects a persisted card and marquee-selects two cards', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-marquee',
+      files: [
+        { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
+        { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 300, y: 130 }
+      ]
+    })
+    try {
+      const { browserWindow, canvas, host } = mounted
+      const cardA = host.querySelector('[data-research-file-card="file-a"]')
+      expect(cardA).not.toBeNull()
+      if (cardA === null) return
+
+      expect(cardA.getAttribute('aria-selected')).toBe('false')
+      await act(async () => {
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 1, x: 100, y: 100
+        }))
+      })
+      expect(cardA.getAttribute('aria-selected')).toBe('true')
+
+      await act(async () => {
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 2, x: 20, y: 20
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+          pointerId: 2, x: 360, y: 180
+        }))
+      })
+      expect(canvas.querySelector('[data-research-marquee]')).not.toBeNull()
+      await act(async () => {
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 2, x: 360, y: 180
+        }))
+      })
+      expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(2)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('supports Command-toggle, Shift-add, blank clear, and Escape clear', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-selection-modes',
+      files: [
+        { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
+        { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 350, y: 100 }
+      ]
+    })
+    try {
+      const { browserWindow, canvas, host } = mounted
+      const cardA = host.querySelector('[data-research-file-card="file-a"]')
+      const cardB = host.querySelector('[data-research-file-card="file-b"]')
+      expect(cardA).not.toBeNull()
+      expect(cardB).not.toBeNull()
+      if (cardA === null || cardB === null) return
+
+      await act(async () => {
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 1, x: 100, y: 100, metaKey: true
+        }))
+      })
+      expect(cardA.getAttribute('aria-selected')).toBe('true')
+      await act(async () => {
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 2, x: 100, y: 100, metaKey: true
+        }))
+      })
+      expect(cardA.getAttribute('aria-selected')).toBe('false')
+
+      await act(async () => {
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 3, x: 100, y: 100
+        }))
+        cardB.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 4, x: 350, y: 100, shiftKey: true
+        }))
+      })
+      expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(2)
+
+      await act(async () => {
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 5, x: 700, y: 500
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 5, x: 700, y: 500
+        }))
+      })
+      expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(0)
+
+      await act(async () => {
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 6, x: 100, y: 100
+        }))
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          code: 'Escape', key: 'Escape', bubbles: true, cancelable: true
+        }))
+      })
+      expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(0)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('selects files and artifacts with Command-A only while the canvas owns focus', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-command-a',
+      files: [
+        { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 }
+      ],
+      artifacts: [
+        { id: 'artifact-a', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Evidence', x: 350, y: 100 }
+      ]
+    })
+    try {
+      const { browserWindow, canvas, host } = mounted
+      const outside = browserWindow.document.createElement('button')
+      browserWindow.document.body.appendChild(outside)
+      outside.focus()
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          code: 'KeyA', key: 'a', metaKey: true, bubbles: true, cancelable: true
+        }))
+      })
+      expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(0)
+
+      canvas.focus()
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          code: 'KeyA', key: 'a', metaKey: true, bubbles: true, cancelable: true
+        }))
+      })
+      expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(2)
+      expect(host.querySelector('[data-research-artifact-card="artifact-a"]')).not.toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('gives Space-pan priority over node selection and movement', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-space-pan',
+      files: [
+        { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 }
+      ]
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      const cardA = host.querySelector('[data-research-file-card="file-a"]')
+      expect(cardA).not.toBeNull()
+      if (cardA === null) return
+      canvas.focus()
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          code: 'Space', key: ' ', bubbles: true, cancelable: true
+        }))
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 1, x: 100, y: 100
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+          pointerId: 1, x: 120, y: 110
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 1, x: 120, y: 110
+        }))
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keyup', {
+          code: 'Space', key: ' ', bubbles: true
+        }))
+      })
+
+      expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([])
+      expect(workspace.getSnapshot().files[0]).toMatchObject({ x: 100, y: 100 })
+      expect(workspace.getSnapshot().viewport).toEqual({ scale: 1, x: 20, y: 10 })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('replaces selection before dragging an unselected node', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-unselected-drag',
+      files: [
+        { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
+        { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 350, y: 100 }
+      ],
+      selection: { selectedNodeIds: ['file-b'], orderedFileIds: ['file-b'] }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      const cardA = host.querySelector('[data-research-file-card="file-a"]')
+      expect(cardA).not.toBeNull()
+      if (cardA === null) return
+      await act(async () => {
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 1, x: 100, y: 100
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+          pointerId: 1, x: 120, y: 100
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 1, x: 120, y: 100
+        }))
+      })
+
+      expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual(['file-a'])
+      expect(workspace.getSnapshot().files).toMatchObject([
+        { id: 'file-a', x: 120, y: 100 },
+        { id: 'file-b', x: 350, y: 100 }
+      ])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('moves a selected group in world units at 2x zoom', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-group-drag',
+      files: [
+        { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
+        { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 350, y: 100 }
+      ],
+      selection: {
+        selectedNodeIds: ['file-a', 'file-b'], orderedFileIds: ['file-a', 'file-b']
+      },
+      viewport: { scale: 2, x: 0, y: 0 }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      const cardA = host.querySelector('[data-research-file-card="file-a"]')
+      expect(cardA).not.toBeNull()
+      if (cardA === null) return
+      await act(async () => {
+        cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 1, x: 200, y: 200
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+          pointerId: 1, x: 220, y: 200
+        }))
+      })
+      expect(canvas.querySelectorAll('[data-node-dragging="true"]')).toHaveLength(2)
+      await act(async () => {
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 1, x: 220, y: 200
+        }))
+      })
+
+      expect(workspace.getSnapshot().files).toMatchObject([
+        { id: 'file-a', x: 110, y: 100 },
+        { id: 'file-b', x: 360, y: 100 }
+      ])
+      expect(canvas.querySelector('[data-node-dragging="true"]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('places a same-session research artifact through the shared workspace drop path', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-artifact-drop' })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      const transfer = {
+        types: ['application/x-sherlock-research-artifact'],
+        files: [],
+        getData: (type: string) => type === 'application/x-sherlock-research-artifact'
+          ? JSON.stringify({
+              sessionId: 'session-artifact-drop', messageId: 'm1',
+              kind: 'assistant-result', title: 'Answer', excerpt: 'Evidence'
+            })
+          : '',
+        dropEffect: 'none'
+      }
+      await act(async () => {
+        const drop = dispatchDrag(browserWindow, canvas, 'drop', transfer, { x: 240, y: 160 })
+        expect(drop.defaultPrevented).toBe(true)
+      })
+
+      expect(workspace.getSnapshot().artifacts).toMatchObject([
+        { messageId: 'm1', kind: 'assistant-result', x: 240, y: 160 }
+      ])
+      expect(host.querySelector('[data-research-artifact-card]')?.textContent)
+        .toContain('Answer')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('keeps the dotted research canvas visible behind the floating composer', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
@@ -658,6 +1048,13 @@ describe('Sherlock workspace and composer controls', () => {
     expect(researchCss).toContain('[data-file-drop-active=true]')
     expect(researchCss).toContain('.rScV5Q_fileCard')
     expect(researchCss).toContain('body[data-ds-dark-theme] .rScV5Q_fileCard')
+    expect(researchCss).toContain('[data-selected=true]')
+    expect(researchCss).toContain('[data-path-unavailable=true]')
+    expect(researchCss).toContain('.rScV5Q_marquee')
+    expect(researchCss).toContain('.rScV5Q_artifactCard')
+    expect(researchCss).toContain('[data-node-dragging=true]')
+    expect(researchCss).toContain(':focus-visible')
+    expect(researchCss).toContain('body[data-ds-dark-theme] .rScV5Q_artifactCard')
   })
 
   it('ignores wheel zoom when Command is not held', async () => {
