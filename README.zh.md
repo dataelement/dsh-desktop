@@ -73,6 +73,14 @@ Harness 本身始终运行在随机的 `127.0.0.1` 端口。手机访问由独�
 open -a "DSH Desktop" --args --safe-mode
 ```
 
+## 插件兼容性
+
+DSH Desktop 通过 `dsh-market` 提供社区插件市场。需要注意：
+
+- 部分社区插件是 CLI-only 插件（例如终端 TUI 类插件），它们只针对命令行场景设计，在 DSH Desktop 的 Web Profile 中既无法运行，也可能与官方核心 Bundle 的 loader 条目 id 冲突，导致 Harness 启动失败。
+- `dsh-market` 1.10.1+ 会在安装前检测 loader 条目 id 冲突，并自动移除冲突的插件，因此请保持 `dsh-market` 为最新版本（DSH Desktop 的安装器默认会拉取 `latest`）。
+- 如果已经因为安装了不兼容的插件（例如 `dsh-tui`）而无法启动 Harness，请使用上面的安全模式重启，然后在安全模式提示中卸载问题插件；之后再回到正常启动。
+
 ## 本地数据与安全边界
 
 - Harness Web UI 只运行在随机回环端口。

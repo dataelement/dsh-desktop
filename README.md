@@ -74,6 +74,14 @@ If the normal interface cannot be reached, start DSH Desktop with `--safe-mode`.
 open -a "DSH Desktop" --args --safe-mode
 ```
 
+## Plugin compatibility
+
+DSH Desktop ships the community plugin market through `dsh-market`. Keep these constraints in mind:
+
+- Some community plugins are CLI-only (for example, terminal TUI plugins). They are built for the command-line harness, do not run inside the desktop's web profile, and may collide with the official core bundles' loader entry ids and break the next Harness launch.
+- `dsh-market` 1.10.1 and later detects loader-entry-id collisions at install time and auto-removes the conflicting package. The DSH Desktop installer pulls `dsh-market@latest`, so a fresh install gets the fix automatically.
+- If an incompatible plugin such as `dsh-tui` has already been installed and Harness can no longer start, restart in Safe Mode as above and uninstall the problematic plugin from the Safe Mode banner before returning to a normal launch.
+
 ## Local data and security
 
 - The Harness Web UI is served only on a random loopback port.
