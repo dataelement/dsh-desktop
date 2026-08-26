@@ -315,6 +315,12 @@ function bundledWebSearchEntry(): string {
   ).href
 }
 
+function bundledMarketInstallerEntry(): string {
+  return pathToFileURL(
+    join(app.getAppPath(), 'node_modules', 'dsh-desktop-market-installer', 'index.js')
+  ).href
+}
+
 function desktopIconPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'icon.png')
@@ -911,6 +917,7 @@ async function bootstrap(): Promise<void> {
     dshPatchPath: desktopResourcePath('dsh-desktop.patch.yml'),
     bundledSkillDirectory: bundledSkillDirectory(),
     bundledWebSearchEntry: bundledWebSearchEntry(),
+    bundledMarketInstallerEntry: bundledMarketInstallerEntry(),
     localSearchUrl: localSearchRuntime.endpoint.url,
     localSearchToken: localSearchRuntime.endpoint.token,
     dshHome: join(app.getPath('userData'), 'harness'),

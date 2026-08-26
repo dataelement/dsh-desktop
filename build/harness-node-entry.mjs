@@ -18,16 +18,29 @@ process.stdout.write(`[harness-node] cwd=${process.cwd()}\n`)
 process.stdout.write(`[harness-node] DSH_HOME=${process.env.DSH_HOME ?? ''}\n`)
 
 const bundledWebSearchEntry = process.env.DSH_DESKTOP_WEB_SEARCH_ENTRY
-if (bundledWebSearchEntry) {
+const bundledMarketInstallerEntry = process.env.DSH_DESKTOP_MARKET_INSTALLER_ENTRY
+const bundledPackageEntries = new Map([
+  ...(bundledWebSearchEntry
+    ? [['dsh-web-search-session-model', bundledWebSearchEntry]]
+    : []),
+  ...(bundledMarketInstallerEntry
+    ? [['dsh-desktop-market-installer', bundledMarketInstallerEntry]]
+    : [])
+])
+if (bundledPackageEntries.size > 0) {
   registerHooks({
     resolve(specifier, context, nextResolve) {
-      if (specifier === 'dsh-web-search-session-model') {
-        return { url: bundledWebSearchEntry, shortCircuit: true }
-      }
+      const bundledEntry = bundledPackageEntries.get(specifier)
+      if (bundledEntry) return { url: bundledEntry, shortCircuit: true }
       return nextResolve(specifier, context)
     }
   })
+}
+if (bundledWebSearchEntry) {
   process.stdout.write('[harness-node] bundled session-model web search mapped\n')
+}
+if (bundledMarketInstallerEntry) {
+  process.stdout.write('[harness-node] bundled market installer mapped\n')
 }
 
 if (!dshEntryPath) {

@@ -42,4 +42,37 @@ describe('bundled Harness package resolution', () => {
       await rm(fixture, { recursive: true, force: true })
     }
   })
+
+  it('maps the market installer package to Sherlock app resources', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'sherlock-bundled-market-installer-'))
+    try {
+      const installerEntry = join(fixture, 'bundled-installer.mjs')
+      const profileDirectory = join(fixture, 'profile')
+      const dshEntry = join(profileDirectory, 'runner.mjs')
+      await mkdir(profileDirectory)
+      await writeFile(installerEntry, "export const source = 'bundled-installer'\n", 'utf8')
+      await writeFile(
+        dshEntry,
+        "import { source } from 'dsh-desktop-market-installer'\nprocess.stdout.write(`installer=${source}\\n`)\n",
+        'utf8'
+      )
+
+      const result = spawnSync(
+        resolve('node_modules/node/bin/node'),
+        ['--expose-internals', resolve('build/harness-node-entry.mjs'), dshEntry],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            DSH_DESKTOP_MARKET_INSTALLER_ENTRY: pathToFileURL(installerEntry).href
+          }
+        }
+      )
+
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toContain('installer=bundled-installer')
+    } finally {
+      await rm(fixture, { recursive: true, force: true })
+    }
+  })
 })
