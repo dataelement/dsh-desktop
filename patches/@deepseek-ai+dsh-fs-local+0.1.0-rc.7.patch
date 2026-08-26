@@ -1,0 +1,41 @@
+diff --git a/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js b/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js
+index 9138759..d44a309 100644
+--- a/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js
+@@ -1,5 +1,6 @@
+ import { constants } from "node:buffer";
+ import { basename, dirname, isAbsolute, join, relative, resolve, sep, toNamespacedPath } from "node:path";
++import { homedir } from "node:os";
+ import { pathToFileURL } from "node:url";
+ import z from "@deepseek-ai/schemastery";
+ import { FileSystem, FsError, FsTargetKey, FsVersion } from "@deepseek-ai/dsh-fs";
+@@ -120,6 +121,11 @@ function errorMessage(error) {
+ function isPermissionError(error) {
+ 	return error instanceof Error && "code" in error && (error.code === "EACCES" || error.code === "EPERM");
+ }
++function expandHomePath(path) {
++	if (path === "~") return homedir();
++	if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2));
++	return path;
++}
+ function throwIfAborted(signal, verb) {
+ 	if (signal?.aborted) throw new FsError(`${verb} aborted`, "FS_ABORTED");
+ }
+@@ -152,7 +158,7 @@ function versionOf(info) {
+ */
+ async function resolveLocalTarget(cwd, path) {
+ 	if (path.trim().length === 0) throw new FsError("file_path must be a non-empty string", "FS_NOT_FOUND");
+-	const displayPath = resolve(cwd, path);
++	const displayPath = resolve(cwd, expandHomePath(path));
+ 	try {
+ 		return {
+ 			displayPath,
+@@ -734,7 +740,7 @@ var LocalFileSystem = class extends FileSystem {
+ 	async lstat(path, opts, signal) {
+ 		if (signal?.aborted) throw new FsError("lstat aborted", "FS_ABORTED");
+ 		if (path.trim().length === 0) throw new FsError("file_path must be a non-empty string", "FS_NOT_FOUND");
+-		const info = await probeNoFollow(resolve(opts?.cwd ?? this.config.cwd, path));
++		const info = await probeNoFollow(resolve(opts?.cwd ?? this.config.cwd, expandHomePath(path)));
+ 		if (signal?.aborted) throw new FsError("lstat aborted", "FS_ABORTED");
+ 		if (!info) return void 0;
+ 		return {

@@ -1,0 +1,27 @@
+diff --git a/node_modules/@deepseek-ai/dsh-tool-fs-search/lib/index.js b/node_modules/@deepseek-ai/dsh-tool-fs-search/lib/index.js
+index a5ca0d8..b0d9c25 100644
+--- a/node_modules/@deepseek-ai/dsh-tool-fs-search/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-tool-fs-search/lib/index.js
+@@ -191,10 +191,11 @@ async function runRipgrep(ctx, exec, toolName, argv, rawOutputMaxBytes, graceMs,
+ 	if (stdout === void 0 || stderr === void 0) throw new SearchError(`${toolName} search command produced no collected output streams`, "SEARCH_FAILED");
+ 	if (exec.signal.aborted) throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, "SEARCH_ABORTED");
+ 	if (outcome.signal !== null || outcome.exitCode === null) throw new SearchError(`${toolName} search command was killed by signal ${outcome.signal ?? "(unknown)"}`, "SEARCH_FAILED");
+-	if (outcome.exitCode !== 0 && outcome.exitCode !== 1) throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy);
++	const emptySearchScope = outcome.exitCode === 2 && /\bNo files were searched\b/i.test(stderr.text);
++	if (outcome.exitCode !== 0 && outcome.exitCode !== 1 && !emptySearchScope) throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy);
+ 	return {
+ 		stdout: completeStdout(toolName, stdout, rawOutputMaxBytes),
+-		noMatches: outcome.exitCode === 1,
++		noMatches: outcome.exitCode === 1 || emptySearchScope,
+ 		workdir
+ 	};
+ }
+@@ -1077,7 +1078,7 @@ function applyGrepTool(ctx, caps) {
+ 	ctx.systemPrompt.section({
+ 		name: "tool:grep",
+ 		order: 104,
+-		text: "Use the grep tool — not shell grep or rg — to search file contents. Use read on a matched file when you need surrounding context."
++		text: "Use the grep tool — not shell grep or rg — to search file contents. Use read on a matched file when you need surrounding context. Pass path when the target is outside the session workspace. After a zero-match result or failure, do not repeat the same grep arguments; change pattern/path or use another relevant tool."
+ 	});
+ 	const tool = defineTool({
+ 		name: "grep",
