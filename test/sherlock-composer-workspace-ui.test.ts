@@ -847,8 +847,9 @@ describe('Sherlock workspace and composer controls', () => {
     expect(client.serializeResearchPrompt).toBeTypeOf('function')
     if (typeof client.UserStyleBubble !== 'function' ||
         typeof client.serializeResearchPrompt !== 'function') return
+    const rawPath = '/w/private␟report.pdf'
     const prompt = client.serializeResearchPrompt([
-      { id: 'f1', name: 'report.pdf', path: '/w/report.pdf' }
+      { id: 'f1', name: rawPath, path: rawPath }
     ], 'compare these') as string
 
     const html = renderToStaticMarkup(createElement(client.UserStyleBubble, {
@@ -858,9 +859,9 @@ describe('Sherlock workspace and composer controls', () => {
     }))
 
     expect(html).toContain('data-research-message-file="f1"')
-    expect(html).toContain('report.pdf')
+    expect(html).toContain('private␟report.pdf')
     expect(html).toContain('compare these')
-    expect(html).not.toContain('/w/report.pdf')
+    expect(html).not.toContain(rawPath)
     expect(html).not.toContain('SHERLOCK_RESEARCH_FILES_V1')
   })
 

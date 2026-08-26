@@ -141,6 +141,27 @@ describe('Research canvas file drops', () => {
     }
   })
 
+  it('round-trips the Research prompt sentinel inside file descriptor values', async () => {
+    const client = await loadConversationClient()
+    expect(client.serializeResearchPrompt).toBeTypeOf('function')
+    expect(client.parseResearchPrompt).toBeTypeOf('function')
+    if (typeof client.serializeResearchPrompt !== 'function' ||
+        typeof client.parseResearchPrompt !== 'function') return
+
+    const files = [{
+      id: 'f-sentinel',
+      name: 'private␟report.pdf',
+      path: '/w/private␟report.pdf'
+    }]
+    const prompt = client.serializeResearchPrompt(files, 'inspect this') as string
+
+    expect(prompt).toContain('\\u241f')
+    expect(client.parseResearchPrompt(prompt)).toEqual({
+      text: 'inspect this',
+      files
+    })
+  })
+
   it('wires a bounded boolean-only Research file availability bridge to the trusted window', async () => {
     const [preload, main] = await Promise.all([
       readFile('src/preload/index.ts', 'utf8'),
@@ -851,6 +872,37 @@ describe('Research canvas file drops', () => {
     await operation
 
     expect(draft).toBe('new untouched work')
+  })
+
+  it('does not resurrect a submitted draft after the user types and clears before rejection', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const registry = new client.ResearchWorkspaceRegistry(memoryStorage({}))
+    const gate = deferred<void>()
+    const hub = new client.InputHub({
+      get: (name: string) => name === 'conversation'
+        ? { sendSession: () => gate.promise, releaseDraftImage: () => undefined }
+        : undefined
+    }, (key: string) => key, registry)
+    const session = { sessionId: 's-edited-then-cleared' }
+    let draft = 'first draft'
+    let draftRev = 1
+    const shell = {
+      get snapshot() { return { draft, draftRev, imageIds: [] } },
+      commitSend() { draft = ''; draftRev += 1 },
+      restoreImages() {},
+      setDraft(text: string) { draft = text; draftRev += 1 },
+      notify() {}
+    }
+    hub.shells.set(session.sessionId, shell)
+
+    const operation = hub.sink(session, draft, [], 'queue')
+    await vi.waitFor(() => { expect(draft).toBe('') })
+    shell.setDraft('new work')
+    shell.setDraft('')
+    gate.reject(new Error('send failed'))
+    await operation
+
+    expect(draft).toBe('')
   })
 
   it('lets the input shell submit selected Research files without text or images', async () => {
