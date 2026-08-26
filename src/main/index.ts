@@ -34,6 +34,7 @@ import {
   detectPluginRecovery,
   PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS
 } from './plugin-recovery-detection'
+import { isDaemonLaunch, isUserInitiatedInstance } from './launchd-guard'
 import { secureWindow } from './security'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
@@ -44,6 +45,7 @@ import {
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
+import { appBundlePathFromExecutable, auditLaunchAgents } from './state/launch-agent-audit'
 import {
   desktopHarnessUrl,
   isAbortedNavigationError,
@@ -643,6 +645,36 @@ async function reportProfileConsistency(dshHome: string): Promise<void> {
   }
 }
 
+/**
+ * Correct any LaunchAgent that would have launchd start this bundle as a
+ * desktop process. Those agents steal focus and crash on every restart, and
+ * the daemon guard only silences the symptom for as long as the job keeps
+ * failing, so the job itself is repaired here.
+ */
+async function auditInstalledLaunchAgents(dshHome: string): Promise<void> {
+  const appBundlePath = appBundlePathFromExecutable(process.execPath)
+  if (appBundlePath === undefined) return
+  try {
+    const result = await auditLaunchAgents({
+      dshHome,
+      appBundlePath,
+      log: (message) => runtime.note(message)
+    })
+    for (const finding of result.findings) {
+      const owner = finding.owner === undefined ? '' : ` installed by ${finding.owner}`
+      runtime.note(
+        finding.action === 'escalated'
+          ? `[desktop] ${finding.label}${owner} keeps recreating a background service that starts DSH Desktop; consider removing that plugin`
+          : `[desktop] ${finding.action} the background service ${finding.label}${owner}`
+      )
+    }
+    for (const failure of result.failures) runtime.note(`[desktop] launch agent audit: ${failure}`)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    runtime.note(`[desktop] launch agent audit failed: ${detail}`)
+  }
+}
+
 function launchHarness(): Promise<void> {
   if (harnessLaunchOperation) return harnessLaunchOperation
 
@@ -661,6 +693,7 @@ function launchHarness(): Promise<void> {
     await repairProfilePackages(dshHome)
     await pruneMissingProfileBundles(dshHome).catch(() => false)
     await reportProfileConsistency(dshHome)
+    await auditInstalledLaunchAgents(dshHome)
     await runtime.start(launchDirectory)
   })().finally(() => {
     harnessLaunchOperation = undefined
@@ -1582,47 +1615,56 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-configureAppIdentity()
-configureApplicationLocale()
-const singleInstance = app.requestSingleInstanceLock()
-if (!singleInstance) {
-  app.quit()
+if (isDaemonLaunch(process.env, process.platform)) {
+  // launchd started this bundle from a LaunchAgent instead of the user
+  // opening the app. Requesting the single instance lock here would reach
+  // the running app's second-instance handler, which raises and focuses
+  // its window as though the user had asked for it, so leave first.
+  app.exit(0)
 } else {
-  app.on('second-instance', (_event, argv) => {
-    if (shouldStartInSafeMode(argv)) {
-      void showSafeMode().catch(showUnexpectedError)
-      return
-    }
-    const snapshot = runtime?.snapshot()
-    if (snapshot?.phase === 'ready' && snapshot.url) {
-      void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
-    }
-  })
-  app.whenReady().then(bootstrap).catch((error: unknown) => {
-    showUnexpectedError(error)
+  configureAppIdentity()
+  configureApplicationLocale()
+  const singleInstance = app.requestSingleInstanceLock()
+  if (!singleInstance) {
     app.quit()
-  })
-  app.on('activate', () => {
-    if (safeModeVisible && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show()
-      mainWindow.focus()
-      return
-    }
-    const snapshot = runtime?.snapshot()
-    if (snapshot?.phase === 'ready' && snapshot.url) {
-      void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
-    } else if (snapshot?.phase === 'idle') {
-      void launchHarness().catch(showUnexpectedError)
-    }
-  })
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
-  })
-  app.on('before-quit', (event) => {
-    if (quitting || !runtime) return
-    event.preventDefault()
-    quitting = true
-    stopUpdateManager()
-    void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
-  })
+  } else {
+    app.on('second-instance', (_event, argv) => {
+      if (!isUserInitiatedInstance(argv)) return
+      if (shouldStartInSafeMode(argv)) {
+        void showSafeMode().catch(showUnexpectedError)
+        return
+      }
+      const snapshot = runtime?.snapshot()
+      if (snapshot?.phase === 'ready' && snapshot.url) {
+        void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
+      }
+    })
+    app.whenReady().then(bootstrap).catch((error: unknown) => {
+      showUnexpectedError(error)
+      app.quit()
+    })
+    app.on('activate', () => {
+      if (safeModeVisible && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show()
+        mainWindow.focus()
+        return
+      }
+      const snapshot = runtime?.snapshot()
+      if (snapshot?.phase === 'ready' && snapshot.url) {
+        void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
+      } else if (snapshot?.phase === 'idle') {
+        void launchHarness().catch(showUnexpectedError)
+      }
+    })
+    app.on('window-all-closed', () => {
+      if (process.platform !== 'darwin') app.quit()
+    })
+    app.on('before-quit', (event) => {
+      if (quitting || !runtime) return
+      event.preventDefault()
+      quitting = true
+      stopUpdateManager()
+      void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
+    })
+  }
 }
