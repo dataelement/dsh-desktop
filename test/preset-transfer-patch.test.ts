@@ -220,7 +220,7 @@ describe('agent preset package transfer', () => {
       expect(versionPreview.status).toBe(200)
       expect(await versionPreview.json()).toMatchObject({
         sourceDshVersion: '0.1.0-rc.8',
-        warnings: ['version-mismatch']
+        warnings: []
       })
     } finally {
       await rm(root, { recursive: true, force: true })

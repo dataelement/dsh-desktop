@@ -25,7 +25,7 @@ index 5398bce..6d6a35b 100644
  import { GoalError } from "@deepseek-ai/dsh-goal";
  import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
  import { credentialRef } from "@deepseek-ai/dsh-credentials";
-@@ -23,6 +23,91 @@ import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
+@@ -23,6 +23,88 @@ import { UserQuestionError } from "@deepseek-ai/dsh-user-questions";
  import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
  import { API_REMOTE_FORWARDED_EVENTS, ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, createApiRemoteAgentResolver, hasApiRemoteSubagentOwner, inspectApiRemoteSession } from "@deepseek-ai/dsh-api-remotes";
  import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
@@ -58,11 +58,8 @@ index 5398bce..6d6a35b 100644
 +	}
 +	return safe.length === 0 ? null : safe.join("/");
 +}
-+function presetArchiveWarnings(files, fromVersion) {
++function presetArchiveWarnings(files) {
 +	const warnings = [];
-+	if (typeof fromVersion === "string" && fromVersion.trim() !== "" && fromVersion.trim() !== "0.1.1-rc.2") {
-+		warnings.push("version-mismatch");
-+	}
 +	let hasSecrets = false;
 +	let hasAbsolutePaths = false;
 +	for (const [rel, bytes] of Object.entries(files)) {
@@ -117,7 +114,7 @@ index 5398bce..6d6a35b 100644
  //#region lib/types/session-export.js
  /**
  * Host-side session-log download: streams one ZIP archive whose files are the
-@@ -3117,7 +3202,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3117,7 +3199,13 @@ function createApiProxy(ctx, defaults) {
  				}));
  			},
  			async pickDirectory(request, signal) {
@@ -132,7 +129,7 @@ index 5398bce..6d6a35b 100644
  				if (capability.kind !== "native") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
-@@ -3139,7 +3230,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3139,7 +3227,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async listDirectory(request, signal) {
@@ -147,7 +144,7 @@ index 5398bce..6d6a35b 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3157,7 +3254,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3157,7 +3251,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async createDirectory(request) {
@@ -162,7 +159,7 @@ index 5398bce..6d6a35b 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3211,6 +3314,167 @@ function createApiProxy(ctx, defaults) {
+@@ -3211,6 +3311,167 @@ function createApiProxy(ctx, defaults) {
  			}
  		},
  		agentPresets: {
@@ -255,7 +252,7 @@ index 5398bce..6d6a35b 100644
 +				} catch {}
 +				const sourceDshVersion = typeof manifest.sourceDshVersion === "string" ? manifest.sourceDshVersion : manifest.dshVersion;
 +				const exportedAt = typeof manifest.exportedAt === "string" ? manifest.exportedAt : manifest.createdAt;
-+				const warnings = presetArchiveWarnings(files, sourceDshVersion);
++				const warnings = presetArchiveWarnings(files);
 +				const preview = {
 +					ok: true,
 +					agentPreset: targetId,
@@ -330,7 +327,7 @@ index 5398bce..6d6a35b 100644
  			async list(request) {
  				const presets = ctx.get("agentPresets");
  				if (presets === void 0) return ok(request, {
-@@ -4900,6 +5164,34 @@ function toFetchHandler(api) {
+@@ -4900,6 +5161,34 @@ function toFetchHandler(api) {
  			rpcId: RpcId(randomUUID()),
  			payload: {}
  		}, req.signal));
@@ -365,7 +362,7 @@ index 5398bce..6d6a35b 100644
  		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
  			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
  			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
-@@ -5499,7 +5791,6 @@ var ApiProxyService = class extends Service {
+@@ -5499,7 +5788,6 @@ var ApiProxyService = class extends Service {
  		"agentDefaultModel",
  		"agents",
  		"attachments",
