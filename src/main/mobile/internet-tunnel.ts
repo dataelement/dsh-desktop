@@ -12,9 +12,13 @@ export interface InternetTunnelInstance {
 export async function startTunnelWithFallback(options: {
   startCloudflare: () => Promise<InternetTunnelInstance>
   startPinggy: () => Promise<InternetTunnelInstance>
+  forceCloudflareFailure?: boolean
   log?: (message: string) => void
 }): Promise<InternetTunnelInstance> {
   try {
+    if (options.forceCloudflareFailure) {
+      throw new Error('Cloudflare failure forced by DSH_TUNNEL_FORCE_PINGGY')
+    }
     return await options.startCloudflare()
   } catch (cloudflareError) {
     const cloudflareMessage = errorMessage(cloudflareError)

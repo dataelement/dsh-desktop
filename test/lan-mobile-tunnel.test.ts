@@ -101,6 +101,30 @@ describe('Pinggy Tunnel utilities', () => {
     expect(pinggyStarted).toBe(false)
   })
 
+  it('can force the real fallback path for manual Pinggy testing', async () => {
+    const calls: string[] = []
+    const logs: string[] = []
+    const pinggy = fakeTunnel('pinggy', 'https://forced-fallback.a.pinggy.link')
+    const result = await startTunnelWithFallback({
+      forceCloudflareFailure: true,
+      startCloudflare: async () => {
+        calls.push('cloudflare')
+        return fakeTunnel('cloudflare', 'https://unused.trycloudflare.com')
+      },
+      startPinggy: async () => {
+        calls.push('pinggy')
+        return pinggy
+      },
+      log: (message) => logs.push(message)
+    })
+
+    expect(result).toBe(pinggy)
+    expect(calls).toEqual(['pinggy'])
+    expect(logs).toContain(
+      '[tunnel] Cloudflare unavailable, falling back to Pinggy: Cloudflare failure forced by DSH_TUNNEL_FORCE_PINGGY'
+    )
+  })
+
   it('preserves both provider errors when neither tunnel is available', async () => {
     await expect(
       startTunnelWithFallback({

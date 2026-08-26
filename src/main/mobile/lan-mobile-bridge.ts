@@ -48,6 +48,7 @@ export interface LanMobileBridgeOptions {
   cloudflaredCacheDir?: string
   cloudflaredPath?: string
   pinggySshPath?: string
+  forceCloudflareFailure?: boolean
   tunnelLog?: (message: string) => void
   now?: () => number
   onReconnectRequested?: () => void
@@ -202,6 +203,7 @@ export class LanMobileBridge {
     try {
       const cacheDir = this.options.cloudflaredCacheDir ?? join(tmpdir(), 'dsh-cloudflared')
       this.tunnelInstance = await startTunnelWithFallback({
+        forceCloudflareFailure: this.options.forceCloudflareFailure,
         startCloudflare: async () => {
           const binaryPath = await ensureCloudflaredBinary({
             cacheDir,
