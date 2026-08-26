@@ -188,9 +188,17 @@ async function mountConversationRoot(
     })
   )
   const restoreGlobals = installBrowserGlobals(browserWindow)
+  const primitives = new Proxy({
+    Tooltip: ({ children }: { children: unknown }) => children
+  }, {
+    get(target, property) {
+      return Reflect.get(target, property) ?? (() => null)
+    }
+  })
   const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
     document: browserWindow.document,
-    window: browserWindow
+    window: browserWindow,
+    modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
   })
   expect(client.ConversationRoot).toBeTypeOf('function')
   if (typeof client.ConversationRoot !== 'function') {
@@ -207,23 +215,50 @@ async function mountConversationRoot(
         canvasSize: { width: number; height: number }
         pendingMessageJump: string | null
       }
+      assistantActionsActive(): boolean
       setArtifacts(artifacts: Array<Record<string, unknown>>): void
       setViewport(viewport: { scale: number; x: number; y: number }): void
       setCanvasSize(size: { width: number; height: number }): void
     }
   }
   const researchWorkspaces = new Registry(browserWindow.localStorage as Storage)
-  const chat = createSelectorStore({
-    selection: {
-      callId: 'call-1', toolName: 'Web Search', turnSeq: 1
-    } as Record<string, unknown> | null,
-    draft: '研究草稿',
-    view: initialView as string | null,
-    inspect: null as { callId: string } | null,
-    researchRightTab: 'details' as 'conversation' | 'files' | 'details',
-    researchFilesTabOpen: true,
-    researchConversationUnread: false
-  })
+  type ResearchChatState = {
+    selection: Record<string, unknown> | null
+    draft: string
+    view: string | null
+    inspect: { callId: string } | null
+    researchRightTab: 'conversation' | 'files' | 'details'
+    researchFilesTabOpen: boolean
+    researchConversationUnread: boolean
+  }
+  const createSessionBinding = (overrides: Partial<ResearchChatState> = {}) => {
+    const chat = createSelectorStore<ResearchChatState>({
+      selection: {
+        callId: 'call-1', toolName: 'Web Search', turnSeq: 1
+      },
+      draft: '研究草稿',
+      view: initialView,
+      inspect: null,
+      researchRightTab: 'details',
+      researchFilesTabOpen: true,
+      researchConversationUnread: false,
+      ...overrides
+    })
+    const actions = {
+      select: (selection: Record<string, unknown> | null) => chat.update({ selection }),
+      setView: (view: string) => chat.update({ view }),
+      setInspect: (inspect: { callId: string } | null) => chat.update({ inspect }),
+      setResearchRightTab: (researchRightTab: 'conversation' | 'files' | 'details') =>
+        chat.update({ researchRightTab }),
+      setResearchFilesTabOpen: (researchFilesTabOpen: boolean) =>
+        chat.update({ researchFilesTabOpen }),
+      setResearchConversationUnread: (researchConversationUnread: boolean) =>
+        chat.update({ researchConversationUnread })
+    }
+    return { actions, chat }
+  }
+  const initialBinding = createSessionBinding()
+  const { actions, chat } = initialBinding
   const session = createSelectorStore({
     openState: 'open',
     composerPhase: 'active',
@@ -243,17 +278,6 @@ async function mountConversationRoot(
   browserWindow.document.body.appendChild(host)
   const root = createRoot(host)
   const transitions = { enter: 0, leave: 0 }
-  const actions = {
-    select: (selection: Record<string, unknown> | null) => chat.update({ selection }),
-    setView: (view: string) => chat.update({ view }),
-    setInspect: (inspect: { callId: string } | null) => chat.update({ inspect }),
-    setResearchRightTab: (researchRightTab: 'conversation' | 'files' | 'details') =>
-      chat.update({ researchRightTab }),
-    setResearchFilesTabOpen: (researchFilesTabOpen: boolean) =>
-      chat.update({ researchFilesTabOpen }),
-    setResearchConversationUnread: (researchConversationUnread: boolean) =>
-      chat.update({ researchConversationUnread })
-  }
   const translate = (key: string) => ({
     'research.right.conversation': '对话',
     'research.right.files': '文件',
@@ -264,7 +288,7 @@ async function mountConversationRoot(
     'research.right.source.computer': '本地电脑',
     'research.right.source.sherlock': 'Sherlock'
   }[key] ?? key)
-  const renderChatView = () => createElement('div', { 'data-chat-view': '' },
+  const renderChatView = (activeSessionId = sessionId) => createElement('div', { 'data-chat-view': '' },
     assistantMessage === undefined
       ? 'message-1'
       : createElement('div', {
@@ -272,31 +296,47 @@ async function mountConversationRoot(
           'data-assistant-message-settled': assistantMessage.settled === false
             ? undefined
             : ''
-        }, createElement('span', null, assistantMessage.text))
+        },
+        createElement('span', null, assistantMessage.text),
+        createElement(client.ResearchAssistantCanvasAction as ComponentType<Record<string, unknown>>, {
+          messageId: assistantMessage.messageId,
+          text: assistantMessage.text,
+          workspace: researchWorkspaces.for(activeSessionId)
+        }))
   )
-  const TestSessionBridge = ({ onResearchPresentation }: {
+  const TestSessionBridge = ({ onResearchPresentation, chatStore, sessionActions, activeSessionId }: {
     onResearchPresentation?: (value: Record<string, unknown> | null) => void
+    chatStore: typeof chat
+    sessionActions: typeof actions
+    activeSessionId: string
   }) => {
-    const snapshot = chat.useSelector((state) => state)
+    const snapshot = chatStore.useSelector((state) => state)
     useLayoutEffect(() => {
       onResearchPresentation?.({
         ...snapshot,
-        actions,
-        conversationView: renderChatView()
+        actions: sessionActions,
+        conversationView: renderChatView(activeSessionId)
       })
       return () => onResearchPresentation?.(null)
-    }, [onResearchPresentation, snapshot])
+    }, [activeSessionId, onResearchPresentation, sessionActions, snapshot])
     return createElement('div', {
       'data-center-session-view': snapshot.view ?? 'chat'
     })
   }
-  const renderSlot = (name: string, owner?: unknown, options?: { only?: string }) => {
+  const createRenderSlot = (
+    activeSessionId: string,
+    chatStore: typeof chat,
+    sessionActions: typeof actions
+  ) => (name: string, owner?: unknown, options?: { only?: string }) => {
     if (name === 'conversation.session.header') {
       return createElement('div', { 'data-session-header': '' })
     }
     if (name === 'conversation.session') {
-      return createElement(TestSessionBridge, owner as {
-        onResearchPresentation?: (value: Record<string, unknown> | null) => void
+      return createElement(TestSessionBridge, {
+        ...(owner as Record<string, unknown>),
+        activeSessionId,
+        chatStore,
+        sessionActions
       })
     }
     if (name === 'conversation.composer.bar') {
@@ -327,11 +367,14 @@ async function mountConversationRoot(
       return createElement('div', { 'data-stats-footer': '' })
     }
     if (name === 'conversation.view' && options?.only === 'chat') {
-      return renderChatView()
+      return renderChatView(activeSessionId)
     }
     return null
   }
-  const renderConversation = (activeSessionId: string) => createElement(client.ConversationRoot, {
+  const renderConversation = (
+    activeSessionId: string,
+    binding = initialBinding
+  ) => createElement(client.ConversationRoot, {
       sessionId: activeSessionId,
       useSession: session.useSelector,
       useSessions: (select: (state: unknown) => unknown) => select({
@@ -347,10 +390,10 @@ async function mountConversationRoot(
       }),
       useInput: input.useSelector,
       useComposerBlock: (select: (block: undefined) => unknown) => select(undefined),
-      useStore: chat.useSelector,
-      actions,
+      useStore: binding.chat.useSelector,
+      actions: binding.actions,
       researchWorkspaces,
-      renderSlot,
+      renderSlot: createRenderSlot(activeSessionId, binding.chat, binding.actions),
       renderSlotChain: (_name: string, _owner: unknown, options: { fallback: unknown }) =>
         options.fallback,
       selectWorkspace: async () => undefined,
@@ -372,6 +415,7 @@ async function mountConversationRoot(
     browserWindow,
     chat,
     client,
+    createSessionBinding,
     detailsPortalHost,
     host,
     input,
@@ -380,8 +424,11 @@ async function mountConversationRoot(
     sessionId,
     transitions,
     workspace: researchWorkspaces.for(sessionId),
-    async rerenderSession(activeSessionId: string) {
-      await act(async () => { root.render(renderConversation(activeSessionId)) })
+    async rerenderSession(
+      activeSessionId: string,
+      binding = initialBinding
+    ) {
+      await act(async () => { root.render(renderConversation(activeSessionId, binding)) })
     },
     async cleanup() {
       await act(async () => { root.unmount() })
@@ -975,12 +1022,18 @@ describe('Sherlock workspace and composer controls', () => {
           getSnapshot(): {
             artifacts: Array<Record<string, unknown>>
           }
+          assistantActionsActive(): boolean
+          setAssistantActionsActive(active: boolean): void
           setCanvasSize(size: { width: number; height: number }): void
           setViewport(viewport: { scale: number; x: number; y: number }): void
         }
       }
       const registry = new Registry(browserWindow.localStorage as Storage)
       const workspace = registry.for('session-action')
+      expect(workspace.assistantActionsActive).toBeTypeOf('function')
+      expect(workspace.setAssistantActionsActive).toBeTypeOf('function')
+      if (typeof workspace.assistantActionsActive !== 'function' ||
+          typeof workspace.setAssistantActionsActive !== 'function') return
       workspace.setCanvasSize({ width: 800, height: 600 })
       let registration: {
         options: {
@@ -1055,6 +1108,10 @@ describe('Sherlock workspace and composer controls', () => {
         messageId: 'm1', text: 'Revenue improved.'
       }])
       expect(workspace.getSnapshot().artifacts).toEqual([])
+      expect(workspace.assistantActionsActive()).toBe(false)
+      expect(host.querySelector('button[aria-label="添加到画布"]')).toBeNull()
+
+      await act(async () => { workspace.setAssistantActionsActive(true) })
       const add = host.querySelector('button[aria-label="添加到画布"]')
       expect(add).not.toBeNull()
       await act(async () => { click(browserWindow, add) })
@@ -1070,9 +1127,40 @@ describe('Sherlock workspace and composer controls', () => {
         x: 300, y: 250
       }])
       expect(workspace.getSnapshot().artifacts).toHaveLength(1)
+      await act(async () => { workspace.setAssistantActionsActive(false) })
+      expect(host.querySelector('button[aria-label="添加到画布"]')).toBeNull()
       await act(async () => { root.unmount() })
     } finally {
       restoreGlobals()
+    }
+  })
+
+  it('shows 添加到画布 only in the active Research right Conversation', async () => {
+    const mounted = await mountConversationRoot('chat', {
+      messageId: 'm-research-only', text: 'Research-only result.'
+    })
+    try {
+      const { actions, browserWindow, detailsPortalHost, host, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 800, height: 600 }) })
+      expect(host.querySelector('button[aria-label="添加到画布"]')).toBeNull()
+
+      await act(async () => { actions.setView('research') })
+      const add = detailsPortalHost.querySelector('button[aria-label="添加到画布"]')
+      expect(add).not.toBeNull()
+      await act(async () => { click(browserWindow, add) })
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        messageId: 'm-research-only', kind: 'assistant-result',
+        x: 400, y: 300
+      }])
+
+      await act(async () => { actions.setResearchRightTab('files') })
+      expect(detailsPortalHost.querySelector('button[aria-label="添加到画布"]')).toBeNull()
+      await act(async () => { actions.setResearchRightTab('conversation') })
+      expect(detailsPortalHost.querySelector('button[aria-label="添加到画布"]')).not.toBeNull()
+      await act(async () => { actions.setView('chat') })
+      expect(host.querySelector('button[aria-label="添加到画布"]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
     }
   })
 
@@ -2102,6 +2190,51 @@ describe('Sherlock workspace and composer controls', () => {
     expect(browserWindow.getComputedStyle(inactiveTab).pointerEvents).toBe('none')
   })
 
+  it('removes the mounted Research panel from keyboard and accessibility navigation outside Research', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      const { actions, browserWindow, detailsPortalHost, workspace } = mounted
+      const panel = detailsPortalHost.querySelector('[data-research-conversation-panel]')
+      const conversationTab = () => detailsPortalHost.querySelector(
+        '[data-research-right-tab="conversation"]'
+      ) as unknown as HTMLElement | null
+      const sequentiallyReachable = () => Array.from(panel?.querySelectorAll(
+        'button, textarea, input, select, a[href], [tabindex]'
+      ) ?? []).filter((node) => {
+        const element = node as unknown as HTMLElement
+        return element.tabIndex >= 0 && element.closest('[inert]') === null
+      })
+
+      expect(panel).not.toBeNull()
+      expect(panel?.hasAttribute('inert')).toBe(false)
+      expect(panel?.getAttribute('aria-hidden')).toBeNull()
+      expect(workspace.assistantActionsActive()).toBe(true)
+      conversationTab()?.focus()
+      expect(browserWindow.document.activeElement).toBe(conversationTab())
+
+      await act(async () => { actions.setView('chat') })
+      expect(panel?.hasAttribute('inert')).toBe(true)
+      expect(panel?.getAttribute('aria-hidden')).toBe('true')
+      expect(sequentiallyReachable()).toHaveLength(0)
+      expect(workspace.assistantActionsActive()).toBe(false)
+
+      await act(async () => { actions.setView('trajectory') })
+      expect(panel?.hasAttribute('inert')).toBe(true)
+      expect(panel?.getAttribute('aria-hidden')).toBe('true')
+      expect(sequentiallyReachable()).toHaveLength(0)
+      expect(workspace.assistantActionsActive()).toBe(false)
+
+      await act(async () => { actions.setView('research') })
+      expect(panel?.hasAttribute('inert')).toBe(false)
+      expect(panel?.getAttribute('aria-hidden')).toBeNull()
+      expect(workspace.assistantActionsActive()).toBe(true)
+      conversationTab()?.focus()
+      expect(browserWindow.document.activeElement).toBe(conversationTab())
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('pins Conversation first and keeps Files and temporary Details reversible', async () => {
     const mounted = await mountConversationRoot('research')
     try {
@@ -2426,6 +2559,21 @@ describe('Sherlock workspace and composer controls', () => {
       expect(missingSnapshot).not.toBeNull()
       expect(missingSnapshot?.textContent).toContain('来源消息不可用')
 
+      await act(async () => { actions.setResearchRightTab('files') })
+      expect(detailsPortalHost.querySelector('[role="status"]')).toBeNull()
+      await act(async () => { actions.setResearchRightTab('conversation') })
+      expect(detailsPortalHost.querySelector('[role="status"]')).toBeNull()
+
+      await act(async () => {
+        missingCard?.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+      expect(detailsPortalHost.querySelector('[role="status"]')?.textContent)
+        .toContain('来源消息不可用')
+      await act(async () => { actions.setView('chat') })
+      expect(detailsPortalHost.querySelector('[role="status"]')).toBeNull()
+
       await mounted.rerenderSession('session-research-second')
       expect(detailsPortalHost.querySelector('[role="status"]')).toBeNull()
     } finally {
@@ -2500,6 +2648,38 @@ describe('Sherlock workspace and composer controls', () => {
         callId: 'call-1', toolName: 'Web Search', turnSeq: 1
       })
       expect(browserWindow.document.querySelectorAll('[data-composer-seat]')).toHaveLength(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('restores each session own Details selection when switching Research sessions before leaving', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      const { actions: actionsA, chat: chatA, createSessionBinding } = mounted
+      await act(async () => {
+        actionsA.select({ callId: 'research-a', toolName: 'Research A', turnSeq: 11 })
+      })
+      const bindingB = createSessionBinding({
+        view: 'research',
+        selection: { callId: 'call-b', toolName: 'Search B', turnSeq: 21 }
+      })
+
+      await mounted.rerenderSession('session-research-b', bindingB)
+      expect(bindingB.chat.get().selection).toEqual({
+        callId: 'call-b', toolName: 'Search B', turnSeq: 21
+      })
+      await act(async () => {
+        bindingB.actions.select({ callId: 'research-b', toolName: 'Research B', turnSeq: 22 })
+        bindingB.actions.setView('chat')
+      })
+
+      expect(bindingB.chat.get().selection).toEqual({
+        callId: 'call-b', toolName: 'Search B', turnSeq: 21
+      })
+      expect(chatA.get().selection).toEqual({
+        callId: 'research-a', toolName: 'Research A', turnSeq: 11
+      })
     } finally {
       await mounted.cleanup()
     }

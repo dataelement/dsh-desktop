@@ -18,6 +18,7 @@
 ## 右栏与输入框聚焦比较
 
 - `对话` 位于右栏最左且处于选中态；DOM 与真实可访问性树均无 `关闭对话` 控件。`文件` 有独立关闭控件，右侧仍保留添加页签入口。
+- 为保留单一 composer 状态，右栏在离开 Research 后仍保持挂载，但根节点同时设置 `inert` 与 `aria-hidden`；普通对话和轨迹页的真实可访问性树均不再暴露右栏页签、`添加到画布` 或第二个输入框，回到 Research 后语义与焦点能力恢复。
 - 消息区独立滚动，输入框固定在右栏底部。实际 DOM 只有一个 `textarea`，占位文案为 `给智能体发消息`。
 - 输入框保留命令、上传、访问模式、模型、上下文、发送与统计区域。聚焦测试还正向断言任务、队列、统计和 input snapshot 随同一 composer 移入右栏。
 - 真实会话消息在窄栏中自然换行；长中文回复没有水平溢出，输入区与统计行不会覆盖消息动作。
@@ -34,7 +35,7 @@
 
 已在最终 1380 × 900 本地页面实际验证：Chat → Trajectory → Research 可往返；每个状态只有一个 composer；进入 Research 后中央出现唯一 `研究画布`，右侧默认选中 `对话`；切到 `文件` 后可返回 `对话`，且始终没有关闭对话控件；显式 `添加到画布` 后出现一个助手回复卡片；该卡片从 `{x: 510, y: 446}` 拖至 `{x: 605, y: 517}`；普通消息不会自动生成画布卡片。
 
-受当前 Computer Use 跨应用拖拽能力限制，Finder → Electron 文件拖入未能自动执行；两文件框选、组拖、两档缩放、附件标签排序/删除、真实发送的流式/失败恢复/未读提示，以及应用重启后的文件和附件持久化也没有冒充为人工验证。这些行为由 91/91 聚焦测试覆盖，仍应由用户在保持打开的真实包中完成手动试用。
+受当前 Computer Use 跨应用拖拽能力限制，Finder → Electron 文件拖入未能自动执行；两文件框选、组拖、两档缩放、附件标签排序/删除、真实发送的流式/失败恢复/未读提示，以及应用重启后的文件和附件持久化也没有冒充为人工验证。这些行为由 96/96 聚焦测试覆盖，仍应由用户在保持打开的真实包中完成手动试用。
 
 ## 控制台与运行时
 
@@ -47,6 +48,7 @@
 1. P0：打包应用进入 Harness recovery，原因为同一 conversation store handle 同时挂载到 `session` 与 `session-maybe`。增加打包运行时保护断言后，把 Research presentation 从 session owner 向可选根 owner 桥接，移除顶层重复 store 注册；修复后真实主界面可启动。
 2. P0：进入 Research 后中间和右栏 React 子树消失，控制台报 `slot 'conversation.view' is not declared by this entry's children`。改为由 `ConversationSession` 在其合法 slot 所有权内创建 chat view，再随 presentation 传给右栏；修复后画布和右对话均正常渲染。
 3. P1：Research 初次可见后顶部会话页签被条件隐藏，用户无退出路径。改为始终挂载 session header，并新增回归测试；最终真实界面保留 `对话 / 研究 / 轨迹`。
-4. 最终在 2760 × 900 同画面对照图中复核源图与实现后，没有残留可执行的 P0、P1 或 P2 视觉缺陷。
+4. P1：非 Research 状态下，保持挂载的右栏曾只用透明度和 `pointer-events` 隐藏，键盘与辅助功能仍可到达；现增加 `inert` 与 `aria-hidden`，并把 `添加到画布` 限定为 Research 右侧对话动作。精确打包应用复核显示，普通对话与轨迹页的 AX 树均无右栏/动作，Research 中恢复且仍只有一个 composer。
+5. 最终在 2760 × 900 同画面对照图及 PID 41769 的精确打包应用中复核后，没有残留可执行的 P0、P1 或 P2 视觉或可访问性缺陷。最终 Research 截图：`/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/com.openai.sky.CUAService/Sherlock Screenshot 2026-08-26 at 9.22.10 PM.jpeg`。
 
 final result: passed

@@ -850,7 +850,7 @@ describe('Research canvas file drops', () => {
     expect(snapshot.artifacts[0].title).toBe('Answer')
   })
 
-  it('releases only transient source jumps while preserving persisted Research state', async () => {
+  it('releases every transient source state while preserving persisted Research state', async () => {
     const client = await loadConversationClient()
     expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
     if (typeof client.ResearchWorkspaceRegistry !== 'function') return
@@ -868,12 +868,15 @@ describe('Research canvas file drops', () => {
     const registry = new client.ResearchWorkspaceRegistry(storage)
     const workspace = registry.for('s1')
     workspace.setPendingMessageJump('m1')
+    workspace.setSourceAvailability('m1', false)
     const before = workspace.getSnapshot()
+    expect(before.unavailableSourceMessageIds).toEqual(['m1'])
 
     registry.release('s1')
 
     const after = workspace.getSnapshot()
     expect(after.pendingMessageJump).toBeNull()
+    expect(after.unavailableSourceMessageIds).toEqual([])
     expect(after.files).toEqual(before.files)
     expect(after.artifacts).toEqual(before.artifacts)
     expect(after.selection).toEqual(before.selection)
