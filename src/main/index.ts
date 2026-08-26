@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { parse } from 'yaml'
 import {
   app,
@@ -611,6 +612,27 @@ function registerHarnessHandlers(): void {
     }
     shell.showItemInFolder(path)
     return { ok: true }
+  })
+
+  ipcMain.removeHandler('research:files-available')
+  ipcMain.handle('research:files-available', async (event, paths: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    const rejected = Array.isArray(paths)
+      ? Array.from({ length: Math.min(paths.length, 64) }, () => false)
+      : []
+    const values = Array.isArray(paths) ? Array.from(paths) : []
+    if (
+      !Array.isArray(paths) ||
+      values.length > 64 ||
+      values.some((path) =>
+        typeof path !== 'string' || path.length === 0 || path.length > 512
+      )
+    ) {
+      return rejected
+    }
+    return Promise.all(values.map((path) =>
+      stat(path).then((value) => value.isFile()).catch(() => false)
+    ))
   })
 }
 

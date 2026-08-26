@@ -167,6 +167,13 @@ async function mountConversationRoot(initialView: 'chat' | 'research' = 'researc
       }
     ])
   )
+  browserWindow.localStorage.setItem(
+    `sherlock.research.canvas.selection.v1:${sessionId}`,
+    JSON.stringify({
+      selectedNodeIds: ['file-a', 'file-b'],
+      orderedFileIds: ['file-b', 'file-a']
+    })
+  )
   const restoreGlobals = installBrowserGlobals(browserWindow)
   const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
     document: browserWindow.document,
@@ -232,7 +239,7 @@ async function mountConversationRoot(initialView: 'chat' | 'research' = 'researc
     'research.right.source.computer': '本地电脑',
     'research.right.source.sherlock': 'Sherlock'
   }[key] ?? key)
-  const renderSlot = (name: string, _owner?: unknown, options?: { only?: string }) => {
+  const renderSlot = (name: string, owner?: unknown, options?: { only?: string }) => {
     if (name === 'conversation.session.header') {
       return createElement('div', { 'data-session-header': '' })
     }
@@ -242,10 +249,14 @@ async function mountConversationRoot(initialView: 'chat' | 'research' = 'researc
       })
     }
     if (name === 'conversation.composer.bar') {
-      return createElement('textarea', {
-        defaultValue: input.get().draft,
-        'data-input-machine-snapshot': input.get().draft
-      })
+      const accessory = (owner as { accessory?: unknown } | undefined)?.accessory
+      return createElement('div', { 'data-test-composer-bar': '' },
+        accessory,
+        createElement('textarea', {
+          defaultValue: input.get().draft,
+          'data-input-machine-snapshot': input.get().draft
+        })
+      )
     }
     if (name === 'conversation.input.dock') {
       return createElement('div', null,
@@ -809,6 +820,188 @@ describe('Sherlock workspace and composer controls', () => {
     expect(html).not.toContain('/w/report.pdf</')
     expect(client.researchCanvasContentTransform({ scale: 1.5, x: 30, y: -10 }))
       .toBe('translate(30px, -10px) scale(1.5)')
+  })
+
+  it('projects only basenames from the owned Research prefix in sent user messages', async () => {
+    const primitives = new Proxy({
+      MessageText: ({ text }: { text: string }) => createElement('span', null, text)
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const attachment = new Proxy({
+      ImageGallery: () => null
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: {
+        '@deepseek-ai/dsh-client-ui-primitives': primitives,
+        '@deepseek-ai/dsh-client-ui-attachment': attachment
+      }
+    })
+    expect(client.UserStyleBubble).toBeTypeOf('function')
+    expect(client.serializeResearchPrompt).toBeTypeOf('function')
+    if (typeof client.UserStyleBubble !== 'function' ||
+        typeof client.serializeResearchPrompt !== 'function') return
+    const prompt = client.serializeResearchPrompt([
+      { id: 'f1', name: 'report.pdf', path: '/w/report.pdf' }
+    ], 'compare these') as string
+
+    const html = renderToStaticMarkup(createElement(client.UserStyleBubble, {
+      content: [{ type: 'text', text: prompt }],
+      imageLoader: async () => '',
+      t: (key: string) => key
+    }))
+
+    expect(html).toContain('data-research-message-file="f1"')
+    expect(html).toContain('report.pdf')
+    expect(html).toContain('compare these')
+    expect(html).not.toContain('/w/report.pdf')
+    expect(html).not.toContain('SHERLOCK_RESEARCH_FILES_V1')
+  })
+
+  it('renders ordered Research file tags from one workspace selection and mutates that selection', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const sessionId = 'session-file-tags'
+    browserWindow.localStorage.setItem(
+      `sherlock.research.canvas.files.v1:${sessionId}`,
+      JSON.stringify([
+        { id: 'f1', path: '/w/one.pdf', name: '/w/one.pdf', source: 'computer', x: 10, y: 20 },
+        { id: 'f2', name: 'two.pdf', source: 'sherlock', x: 30, y: 40 }
+      ])
+    )
+    browserWindow.localStorage.setItem(
+      `sherlock.research.canvas.selection.v1:${sessionId}`,
+      JSON.stringify({
+        selectedNodeIds: ['f1', 'f2'], orderedFileIds: ['f2', 'f1']
+      })
+    )
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    expect(client.ResearchFileTags).toBeTypeOf('function')
+    if (typeof client.ResearchFileTags !== 'function') {
+      restoreGlobals()
+      return
+    }
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): {
+        getSnapshot(): {
+          files: Array<Record<string, unknown>>
+          selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
+        }
+        selectionSnapshot(): { selectedNodeIds: string[]; orderedFileIds: string[] }
+      }
+    }
+    const registry = new Registry(browserWindow.localStorage as Storage)
+    const workspace = registry.for(sessionId)
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const tagOrder = () => Array.from(host.querySelectorAll('[data-research-file-tag]'))
+      .map((tag) => tag.getAttribute('data-research-file-tag'))
+
+    try {
+      await act(async () => {
+        root.render(createElement(client.ResearchFileTags, {
+          sessionId,
+          researchWorkspaces: registry
+        }))
+      })
+
+      expect(tagOrder()).toEqual(['f2', 'f1'])
+      expect(host.querySelector('[data-research-file-tag="f2"]')?.getAttribute('aria-invalid'))
+        .toBe('true')
+      expect(host.textContent).toContain('one.pdf')
+      expect(host.innerHTML).not.toContain('/w/one.pdf')
+      expect(workspace.getSnapshot().files).toMatchObject([
+        { id: 'f1', x: 10, y: 20 },
+        { id: 'f2', x: 30, y: 40 }
+      ])
+
+      await act(async () => {
+        click(browserWindow, host.querySelector(
+          '[data-research-file-tag="f2"] button[aria-label="右移"]'
+        ) as HappyDOMElement | null)
+      })
+      expect(tagOrder()).toEqual(['f1', 'f2'])
+      expect(workspace.selectionSnapshot()).toEqual({
+        selectedNodeIds: ['f1', 'f2'], orderedFileIds: ['f1', 'f2']
+      })
+
+      await act(async () => {
+        click(browserWindow, host.querySelector(
+          '[data-research-file-tag="f2"] button[aria-label="左移"]'
+        ) as HappyDOMElement | null)
+      })
+      expect(tagOrder()).toEqual(['f2', 'f1'])
+
+      const payloads = new Map<string, string>()
+      const source = host.querySelector('[data-research-file-tag="f1"]')
+      const target = host.querySelector('[data-research-file-tag="f2"]')
+      await act(async () => {
+        const dragStart = new browserWindow.Event('dragstart', { bubbles: true })
+        Object.defineProperty(dragStart, 'dataTransfer', {
+          value: {
+            effectAllowed: 'none',
+            setData: (type: string, value: string) => { payloads.set(type, value) }
+          }
+        })
+        source?.dispatchEvent(dragStart)
+        const dragOver = new browserWindow.Event('dragover', {
+          bubbles: true, cancelable: true
+        })
+        Object.defineProperty(dragOver, 'dataTransfer', {
+          value: { types: ['application/x-sherlock-research-file-tag'] }
+        })
+        target?.dispatchEvent(dragOver)
+        expect(dragOver.defaultPrevented).toBe(true)
+        const drop = new browserWindow.Event('drop', { bubbles: true, cancelable: true })
+        Object.defineProperty(drop, 'dataTransfer', {
+          value: { getData: (type: string) => payloads.get(type) ?? '' }
+        })
+        target?.dispatchEvent(drop)
+      })
+      expect(tagOrder()).toEqual(['f1', 'f2'])
+      expect(workspace.selectionSnapshot().selectedNodeIds).toEqual(['f1', 'f2'])
+      expect(workspace.getSnapshot().files).toMatchObject([
+        { id: 'f1', x: 10, y: 20 },
+        { id: 'f2', x: 30, y: 40 }
+      ])
+
+      await act(async () => {
+        host.querySelector('[data-research-file-tag="f1"]')?.dispatchEvent(
+          new browserWindow.KeyboardEvent('keydown', {
+            key: 'Delete', code: 'Delete', bubbles: true, cancelable: true
+          })
+        )
+      })
+      expect(tagOrder()).toEqual(['f2'])
+      expect(workspace.selectionSnapshot()).toEqual({
+        selectedNodeIds: ['f2'], orderedFileIds: ['f2']
+      })
+
+      await act(async () => {
+        host.querySelector('[data-research-file-tag="f2"]')?.dispatchEvent(
+          new browserWindow.KeyboardEvent('keydown', {
+            key: 'Backspace', code: 'Backspace', bubbles: true, cancelable: true
+          })
+        )
+      })
+      expect(tagOrder()).toEqual([])
+      expect(workspace.selectionSnapshot()).toEqual({
+        selectedNodeIds: [], orderedFileIds: []
+      })
+    } finally {
+      await act(async () => { root.unmount() })
+      restoreGlobals()
+    }
   })
 
   it('owns accepted drops at the canvas root and restores their cards by session', async () => {
@@ -1478,6 +1671,28 @@ describe('Sherlock workspace and composer controls', () => {
       expect(detailsPortalHost.querySelector('[data-research-right-tab="conversation"]'))
         .not.toBeNull()
       expect(detailsPortalHost.querySelector('[data-research-right-tab="details"]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('shows the workspace-backed file tags only while the top-level Research view is active', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      const { actions, browserWindow } = mounted
+      const tags = () => browserWindow.document.querySelectorAll('[data-research-file-tag]')
+
+      expect(Array.from(tags()).map((tag) => tag.getAttribute('data-research-file-tag')))
+        .toEqual(['file-b', 'file-a'])
+      expect(browserWindow.document.querySelector('[data-research-file-tag="file-b"]')
+        ?.getAttribute('aria-invalid')).toBe('true')
+
+      await act(async () => { actions.setView('chat') })
+      expect(tags()).toHaveLength(0)
+
+      await act(async () => { actions.setView('research') })
+      expect(Array.from(tags()).map((tag) => tag.getAttribute('data-research-file-tag')))
+        .toEqual(['file-b', 'file-a'])
     } finally {
       await mounted.cleanup()
     }

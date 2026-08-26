@@ -155,6 +155,8 @@ contextBridge.exposeInMainWorld(
     restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart'),
     showItemInFolder: (path: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('filesystem:show-item-in-folder', path),
+    researchFilesAvailable: (paths: string[]): Promise<boolean[]> =>
+      ipcRenderer.invoke('research:files-available', paths),
     getPathForFile: (file: File): string => safePathForFile(file, webUtils.getPathForFile)
   })
 )

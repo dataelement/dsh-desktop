@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { safePathForFile } from '../src/preload/research-file-path'
 
 type ClientBundle = Record<string, any>
@@ -24,7 +24,10 @@ function fakeModule(): unknown {
 
 async function loadClientBundle(
   packageName: string,
-  modules: Record<string, unknown> = {}
+  modules: Record<string, unknown> = {},
+  dshDesktop?: {
+    researchFilesAvailable?(paths: string[]): Promise<boolean[]>
+  }
 ): Promise<ClientBundle> {
   const source = await readFile(
     `node_modules/@deepseek-ai/${packageName}/lib/client.js`,
@@ -36,13 +39,16 @@ async function loadClientBundle(
 
   runInNewContext(source, {
     window: {
+      dshDesktop,
       __ModuleLoader__: {
         load(value: BundleDescriptor) {
           descriptor = value
         }
       }
     },
-    document: undefined
+    btoa: globalThis.btoa,
+    document: undefined,
+    URL: globalThis.URL
   })
   if (descriptor === undefined) throw new Error(`${packageName} did not register`)
 
@@ -57,7 +63,107 @@ async function loadClientBundle(
 const loadConversationClient = () =>
   loadClientBundle('dsh-client-ui-conversation')
 
+function memoryStorage(values: Record<string, string>) {
+  const data = new Map(Object.entries(values))
+  return {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => { data.set(key, value) }
+  }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, reject, resolve }
+}
+
+function createSnapshotStore<T>(initial: T) {
+  let value = initial
+  const listeners = new Set<() => void>()
+  return {
+    getSnapshot: () => value,
+    set(next: T) {
+      value = next
+      listeners.forEach((listener) => listener())
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    }
+  }
+}
+
 describe('Research canvas file drops', () => {
+  it('serializes only the exact bounded Research-owned prompt prefix at offset zero', async () => {
+    const client = await loadConversationClient()
+    expect(client.serializeResearchPrompt).toBeTypeOf('function')
+    expect(client.parseResearchPrompt).toBeTypeOf('function')
+    if (typeof client.serializeResearchPrompt !== 'function' ||
+        typeof client.parseResearchPrompt !== 'function') return
+
+    const files = [{ id: 'f1', name: 'report.pdf', path: '/w/report.pdf' }]
+    const prefix = '␞SHERLOCK_RESEARCH_FILES_V1 {"files":[{"id":"f1","name":"report.pdf","path":"/w/report.pdf"}]}␟'
+    const prompt = client.serializeResearchPrompt(files, 'compare these')
+
+    expect(prompt).toBe(`${prefix}compare these`)
+    expect(client.parseResearchPrompt(prompt)).toEqual({
+      text: 'compare these',
+      files
+    })
+    expect(client.parseResearchPrompt(`before ${prefix}compare these`)).toEqual({
+      text: `before ${prefix}compare these`,
+      files: []
+    })
+    expect(client.parseResearchPrompt(
+      'SHERLOCK_RESEARCH_FILES_V1 {"files":[{"path":"/w/report.pdf"}]}\nordinary prose'
+    )).toEqual({
+      text: 'SHERLOCK_RESEARCH_FILES_V1 {"files":[{"path":"/w/report.pdf"}]}\nordinary prose',
+      files: []
+    })
+
+    const invalidPrefixes = [
+      `␞SHERLOCK_RESEARCH_FILES_V1 {"files":[]}␟text`,
+      `␞SHERLOCK_RESEARCH_FILES_V1 {"files":[{"id":"","name":"report.pdf","path":"/w/report.pdf"}]}␟text`,
+      `␞SHERLOCK_RESEARCH_FILES_V1 {"files":[{"id":"f1","name":"report.pdf","path":"${'x'.repeat(513)}"}]}␟text`,
+      `␞SHERLOCK_RESEARCH_FILES_V1 ${JSON.stringify({
+        files: Array.from({ length: 65 }, (_, index) => ({
+          id: `f${index}`, name: `${index}.pdf`, path: `/w/${index}.pdf`
+        }))
+      })}␟text`,
+      '␞SHERLOCK_RESEARCH_FILES_V1 {bad-json}␟text'
+    ]
+    for (const value of invalidPrefixes) {
+      expect(client.parseResearchPrompt(value)).toEqual({ text: value, files: [] })
+    }
+  })
+
+  it('wires a bounded boolean-only Research file availability bridge to the trusted window', async () => {
+    const [preload, main] = await Promise.all([
+      readFile('src/preload/index.ts', 'utf8'),
+      readFile('src/main/index.ts', 'utf8')
+    ])
+
+    expect(preload).toContain(
+      'researchFilesAvailable: (paths: string[]): Promise<boolean[]> =>'
+    )
+    expect(preload).toContain(
+      "ipcRenderer.invoke('research:files-available', paths)"
+    )
+    expect(main).toContain("ipcMain.handle('research:files-available', async (event, paths: unknown) =>")
+    expect(main).toContain('assertTrustedMainWindowEvent(event)')
+    expect(main).toContain('const values = Array.isArray(paths) ? Array.from(paths) : []')
+    expect(main).toContain('values.length > 64')
+    expect(main).toContain('path.length > 512')
+    expect(main).toContain('Promise.all(values.map((path) =>')
+    expect(main).toContain('value.isFile()')
+    expect(main).not.toContain('readdir(')
+    expect(main).not.toContain('readFile(path')
+  })
+
   it('exposes Electron webUtils.getPathForFile through the existing desktop bridge', async () => {
     const preload = await readFile('src/preload/index.ts', 'utf8')
 
@@ -567,6 +673,269 @@ describe('Research canvas file drops', () => {
     expect(() => { snapshot.artifacts[0].title = 'Mutated' }).toThrow(TypeError)
     expect(snapshot.files[0].name).toBe('one.pdf')
     expect(snapshot.artifacts[0].title).toBe('Answer')
+  })
+
+  it('submits ordered Research files with images and restores one rejected attempt atomically', async () => {
+    const available = vi.fn(async (paths: string[]) => paths.map(() => true))
+    const client = await loadClientBundle(
+      'dsh-client-ui-conversation',
+      {},
+      { researchFilesAvailable: available }
+    )
+    expect(client.InputHub).toBeTypeOf('function')
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.InputHub !== 'function' ||
+        typeof client.ResearchWorkspaceRegistry !== 'function') return
+
+    const storage = memoryStorage({
+      'sherlock.research.canvas.files.v1:s1': JSON.stringify([
+        { id: 'f1', path: '/w/one.pdf', name: 'one.pdf', source: 'computer', x: 10, y: 20 },
+        { id: 'f2', path: '/w/two.pdf', name: 'two.pdf', source: 'computer', x: 30, y: 40 }
+      ]),
+      'sherlock.research.canvas.selection.v1:s1': JSON.stringify({
+        selectedNodeIds: ['f1', 'f2'], orderedFileIds: ['f2', 'f1']
+      })
+    })
+    const registry = new client.ResearchWorkspaceRegistry(storage)
+    const sendGate = deferred<void>()
+    const sendSession = vi.fn(() => sendGate.promise)
+    const released: string[] = []
+    const conversation = {
+      sendSession,
+      releaseDraftImage: (id: string) => { released.push(id) }
+    }
+    const rootCtx = {
+      get: (name: string) => name === 'conversation' ? conversation : undefined
+    }
+    const hub = new client.InputHub(rootCtx, (key: string) => key, registry)
+    expect(hub.setResearchActive).toBeTypeOf('function')
+    hub.setResearchActive('s1', true)
+
+    let draft = 'compare these'
+    let imageIds = ['i1']
+    const notices: string[] = []
+    const shell = {
+      get snapshot() { return { draft, imageIds: [...imageIds] } },
+      commitSend(admitted: string[]) {
+        const sent = new Set(admitted)
+        imageIds = imageIds.filter((id) => !sent.has(id))
+        draft = ''
+      },
+      restoreImages(admitted: string[]) {
+        const sent = new Set(admitted)
+        imageIds = [...admitted, ...imageIds.filter((id) => !sent.has(id))]
+      },
+      setDraft(text: string) { draft = text },
+      notify(_level: string, text: string) { notices.push(text) }
+    }
+    hub.shells.set('s1', shell)
+    const session = { sessionId: 's1' }
+
+    const operation = hub.sink(session, draft, [...imageIds], 'queue')
+    await vi.waitFor(() => { expect(sendSession).toHaveBeenCalledTimes(1) })
+
+    expect(available).toHaveBeenCalledWith(['/w/two.pdf', '/w/one.pdf'])
+    const [, prompt, admittedImages, mode] = sendSession.mock.calls[0] as unknown as [
+      unknown, string, string[], string
+    ]
+    expect(client.parseResearchPrompt(prompt).files.map((file: { id: string }) => file.id))
+      .toEqual(['f2', 'f1'])
+    expect(client.parseResearchPrompt(prompt).text).toBe('compare these')
+    expect(admittedImages).toEqual(['i1'])
+    expect(mode).toBe('queue')
+    expect((sendSession.mock.calls as unknown[][])[0]?.[0]).toBe(session)
+    expect(draft).toBe('')
+    expect(imageIds).toEqual([])
+    expect(registry.for('s1').selectionSnapshot()).toEqual({
+      selectedNodeIds: [], orderedFileIds: []
+    })
+
+    imageIds = ['i2', 'i1']
+    sendGate.reject(new Error('send failed'))
+    await operation
+
+    expect(draft).toBe('compare these')
+    expect(imageIds).toEqual(['i1', 'i2'])
+    expect(registry.for('s1').selectionSnapshot()).toEqual({
+      selectedNodeIds: ['f1', 'f2'], orderedFileIds: ['f2', 'f1']
+    })
+    expect(registry.for('s1').getSnapshot().files).toMatchObject([
+      { id: 'f1', x: 10, y: 20 },
+      { id: 'f2', x: 30, y: 40 }
+    ])
+    expect(released).toEqual([])
+    expect(notices).toEqual([])
+  })
+
+  it('admits file-only Research sends and blocks pathless or unavailable files without clearing', async () => {
+    const availability = vi.fn(async (paths: string[]) => paths.map((path) => !path.includes('missing')))
+    const client = await loadClientBundle(
+      'dsh-client-ui-conversation',
+      {},
+      { researchFilesAvailable: availability }
+    )
+    expect(client.InputHub).toBeTypeOf('function')
+    if (typeof client.InputHub !== 'function') return
+
+    const cases = [
+      { id: 'valid', path: '/w/report.pdf', sends: 1, cleared: true, draft: '', images: [] },
+      { id: 'pathless', path: undefined, sends: 0, cleared: false, draft: 'keep me', images: ['i1'] },
+      { id: 'missing', path: '/w/missing.pdf', sends: 0, cleared: false, draft: 'keep me', images: ['i1'] }
+    ] as const
+    for (const fixture of cases) {
+      const sessionId = `session-${fixture.id}`
+      const storage = memoryStorage({
+        [`sherlock.research.canvas.files.v1:${sessionId}`]: JSON.stringify([{
+          id: 'f1', name: 'report.pdf', source: 'computer', x: 1, y: 2,
+          ...(fixture.path === undefined ? {} : { path: fixture.path })
+        }]),
+        [`sherlock.research.canvas.selection.v1:${sessionId}`]: JSON.stringify({
+          selectedNodeIds: ['f1'], orderedFileIds: ['f1']
+        })
+      })
+      const registry = new client.ResearchWorkspaceRegistry(storage)
+      const sendSession = vi.fn(async () => undefined)
+      const hub = new client.InputHub({
+        get: (name: string) => name === 'conversation'
+          ? { sendSession, releaseDraftImage: () => undefined }
+          : undefined
+      }, (key: string) => key, registry)
+      hub.setResearchActive(sessionId, true)
+      let draft: string = fixture.draft
+      let imageIds: string[] = [...fixture.images]
+      const notices: string[] = []
+      const shell = {
+        get snapshot() { return { draft, imageIds } },
+        commitSend() { draft = ''; imageIds = [] },
+        restoreImages() {},
+        setDraft(text: string) { draft = text },
+        notify(_level: string, text: string) { notices.push(text) }
+      }
+      hub.shells.set(sessionId, shell)
+
+      await hub.sink({ sessionId }, draft, [...imageIds], 'queue')
+
+      expect(sendSession).toHaveBeenCalledTimes(fixture.sends)
+      expect(registry.for(sessionId).selectionSnapshot().orderedFileIds)
+        .toEqual(fixture.cleared ? [] : ['f1'])
+      expect(draft).toBe(fixture.cleared ? '' : fixture.draft)
+      expect(imageIds).toEqual(fixture.cleared ? [] : fixture.images)
+      expect(notices.length > 0).toBe(!fixture.cleared)
+    }
+  })
+
+  it('does not overwrite a draft edited after an optimistic Research clear', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const registry = new client.ResearchWorkspaceRegistry(memoryStorage({}))
+    const gate = deferred<void>()
+    const hub = new client.InputHub({
+      get: (name: string) => name === 'conversation'
+        ? { sendSession: () => gate.promise, releaseDraftImage: () => undefined }
+        : undefined
+    }, (key: string) => key, registry)
+    const session = { sessionId: 's-edited' }
+    let draft = 'first draft'
+    const shell = {
+      get snapshot() { return { draft, imageIds: [] } },
+      commitSend() { draft = '' },
+      restoreImages() {},
+      setDraft(text: string) { draft = text },
+      notify() {}
+    }
+    hub.shells.set(session.sessionId, shell)
+
+    const operation = hub.sink(session, draft, [], 'queue')
+    await vi.waitFor(() => { expect(draft).toBe('') })
+    draft = 'new untouched work'
+    gate.reject(new Error('send failed'))
+    await operation
+
+    expect(draft).toBe('new untouched work')
+  })
+
+  it('lets the input shell submit selected Research files without text or images', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function') return
+    const sends: Array<{ text: string, images: string[], mode: string }> = []
+    const shell = new client.SessionInputShell({
+      actx: {},
+      hasExternalAttachments: () => true,
+      defaultSink: (text: string, images: string[], mode: string) => {
+        sends.push({ text, images, mode })
+      }
+    })
+
+    shell.submit('queue')
+
+    expect(sends).toEqual([{ text: '', images: [], mode: 'queue' }])
+    expect(shell.snapshot.draft).toBe('')
+    expect(shell.snapshot.imageIds).toEqual([])
+  })
+
+  it('restores admitted image order before concurrent images without duplicates', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore }
+    })
+    const shell = new client.SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    shell.addImages(['i1'])
+    shell.commitSend(['i1'])
+    shell.addImages(['i2', 'i1'])
+    shell.restoreImages(['i1'])
+
+    expect(shell.snapshot.imageIds).toEqual(['i1', 'i2'])
+  })
+
+  it('keeps image blocks before one serialized Research text block and releases only admitted images', async () => {
+    class Service {
+      ctx: unknown
+      constructor(ctx: unknown) { this.ctx = ctx }
+    }
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      '@deepseek-ai/cordis': { Service }
+    })
+    expect(client.ConversationController).toBeTypeOf('function')
+    if (typeof client.ConversationController !== 'function') return
+    const ctx = { effect: () => undefined }
+    const controller = new client.ConversationController(ctx, { input: {}, blocks: {} })
+    controller.draftAttachments.set('i1', {
+      id: 'i1', previewUrl: 'blob:i1', kind: 'image',
+      file: {
+        name: 'chart.png', type: 'image/png',
+        arrayBuffer: async () => Uint8Array.of(1, 2).buffer
+      }
+    })
+    controller.draftAttachments.set('i2', {
+      id: 'i2', previewUrl: 'blob:i2', kind: 'image',
+      file: {
+        name: 'later.png', type: 'image/png',
+        arrayBuffer: async () => Uint8Array.of(3).buffer
+      }
+    })
+    const prompt = client.serializeResearchPrompt([
+      { id: 'f2', name: 'two.pdf', path: '/w/two.pdf' },
+      { id: 'f1', name: 'one.pdf', path: '/w/one.pdf' }
+    ], 'compare these')
+    const calls: Array<{ content: Array<Record<string, unknown>>, mode: string }> = []
+    const session = {
+      prompt: async (content: Array<Record<string, unknown>>, mode: string) => {
+        calls.push({ content, mode })
+        return { ok: true }
+      }
+    }
+
+    await controller.sendSession(session, prompt, ['i1'], 'queue')
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.content.map((block) => block.type)).toEqual(['image', 'text'])
+    const text = calls[0]?.content[1]?.text as string
+    expect(client.parseResearchPrompt(text).files.map((file: { id: string }) => file.id))
+      .toEqual(['f2', 'f1'])
+    expect(controller.draftImages(['i1'])).toEqual([])
+    expect(controller.draftImages(['i2']).map((attachment: { id: string }) => attachment.id))
+      .toEqual(['i2'])
   })
 
   it('writes the exact Sherlock file MIME payload with copy semantics', async () => {
