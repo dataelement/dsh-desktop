@@ -6,6 +6,11 @@ import {
   resolveCurrentAssetSpec,
   CLOUDFLARED_VERSION
 } from '../src/main/mobile/cloudflared-tunnel'
+import {
+  startTunnelWithFallback,
+  type InternetTunnelInstance
+} from '../src/main/mobile/internet-tunnel'
+import { extractPinggyUrl } from '../src/main/mobile/pinggy-tunnel'
 
 const bridges: LanMobileBridge[] = []
 
@@ -22,6 +27,11 @@ describe('Cloudflare Quick Tunnel utilities', () => {
     expect(extractTryCloudflareUrl(log1)).toBe('https://orange-forest-1234.trycloudflare.com')
     expect(extractTryCloudflareUrl(log2)).toBe('https://my-tunnel-preview-abc-xyz.trycloudflare.com')
     expect(extractTryCloudflareUrl(log3)).toBeNull()
+    expect(
+      extractTryCloudflareUrl(
+        'failed to request quick Tunnel: Post "https://api.trycloudflare.com/tunnel": connection reset'
+      )
+    ).toBeNull()
   })
 
   it('resolves supported platform and arch specs', () => {
@@ -37,6 +47,71 @@ describe('Cloudflare Quick Tunnel utilities', () => {
     expect(linuxArm64?.spec.asset).toBe('cloudflared-linux-arm64')
 
     expect(CLOUDFLARED_VERSION).toBeTruthy()
+  })
+})
+
+describe('Pinggy Tunnel utilities', () => {
+  it('extracts current Pinggy HTTPS URL formats without accepting the control host', () => {
+    expect(
+      extractPinggyUrl(
+        'You can access local server via following URL(s):\nhttps://fakqxzqrohxxx.a.pinggy.link'
+      )
+    ).toBe('https://fakqxzqrohxxx.a.pinggy.link')
+    expect(
+      extractPinggyUrl(
+        '{"urls":["https://rnckk-2405-201.run.pinggy-free.link"]}'
+      )
+    ).toBe('https://rnckk-2405-201.run.pinggy-free.link')
+    expect(extractPinggyUrl('ssh -p 443 free.pinggy.io')).toBeNull()
+  })
+
+  it('uses Pinggy only after Cloudflare fails', async () => {
+    const calls: string[] = []
+    const pinggy = fakeTunnel('pinggy', 'https://fallback.a.pinggy.link')
+    const result = await startTunnelWithFallback({
+      startCloudflare: async () => {
+        calls.push('cloudflare')
+        throw new Error('connection reset')
+      },
+      startPinggy: async () => {
+        calls.push('pinggy')
+        return pinggy
+      }
+    })
+
+    expect(result).toBe(pinggy)
+    expect(calls).toEqual(['cloudflare', 'pinggy'])
+  })
+
+  it('does not start Pinggy when Cloudflare succeeds', async () => {
+    const cloudflare = fakeTunnel(
+      'cloudflare',
+      'https://primary-mobile.trycloudflare.com'
+    )
+    let pinggyStarted = false
+    const result = await startTunnelWithFallback({
+      startCloudflare: async () => cloudflare,
+      startPinggy: async () => {
+        pinggyStarted = true
+        return fakeTunnel('pinggy', 'https://unused.a.pinggy.link')
+      }
+    })
+
+    expect(result).toBe(cloudflare)
+    expect(pinggyStarted).toBe(false)
+  })
+
+  it('preserves both provider errors when neither tunnel is available', async () => {
+    await expect(
+      startTunnelWithFallback({
+        startCloudflare: async () => {
+          throw new Error('Cloudflare reset')
+        },
+        startPinggy: async () => {
+          throw new Error('OpenSSH missing')
+        }
+      })
+    ).rejects.toThrow('Cloudflare: Cloudflare reset; Pinggy: OpenSSH missing')
   })
 })
 
@@ -68,3 +143,15 @@ describe('LanMobileBridge tunnel state and endpoints', () => {
     expect(toggleOffJson.active).toBe(false)
   })
 })
+
+function fakeTunnel(
+  provider: InternetTunnelInstance['provider'],
+  url: string
+): InternetTunnelInstance {
+  return {
+    provider,
+    url,
+    process: {} as InternetTunnelInstance['process'],
+    stop: async () => undefined
+  }
+}

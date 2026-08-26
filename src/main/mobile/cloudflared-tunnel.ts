@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import { arch, platform } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import type { InternetTunnelInstance } from './internet-tunnel'
 
 const execFileAsync = promisify(execFile)
 
@@ -49,7 +50,7 @@ export const CLOUDFLARED_ASSETS: Record<string, CloudflareAssetSpec> = {
 
 export function extractTryCloudflareUrl(text: string): string | null {
   const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/i)
-  return match ? match[0] : null
+  return match && match[0].toLowerCase() !== 'https://api.trycloudflare.com' ? match[0] : null
 }
 
 export async function findCloudflaredOnPath(): Promise<string | null> {
@@ -150,10 +151,8 @@ function downloadFileWithRedirects(url: string, destination: string, maxRedirect
   })
 }
 
-export interface CloudflareTunnelInstance {
-  url: string
-  process: ChildProcess
-  stop: () => Promise<void>
+export interface CloudflareTunnelInstance extends InternetTunnelInstance {
+  provider: 'cloudflare'
 }
 
 export async function startCloudflareQuickTunnel(options: {
@@ -189,6 +188,7 @@ export async function startCloudflareQuickTunnel(options: {
         resolved = true
         clearTimeout(timeoutTimer)
         resolvePromise({
+          provider: 'cloudflare',
           url: capturedUrl,
           process: child,
           stop: async () => {

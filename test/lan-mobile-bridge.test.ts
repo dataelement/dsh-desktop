@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createServer, type IncomingMessage } from 'node:http'
+import { createServer, request as httpRequest, type IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import {
+  isInternetTunnelHost,
   isPrivateAddress,
   LanMobileBridge,
   normalizeRemoteAddress
@@ -60,6 +61,15 @@ describe('LAN mobile bridge address policy', () => {
 
   it('normalizes IPv4-mapped IPv6 addresses', () => {
     expect(normalizeRemoteAddress('::ffff:192.168.1.4')).toBe('192.168.1.4')
+  })
+
+  it('recognizes Cloudflare and Pinggy public tunnel hosts', () => {
+    expect(isInternetTunnelHost('mobile.trycloudflare.com')).toBe(true)
+    expect(isInternetTunnelHost('api.trycloudflare.com')).toBe(false)
+    expect(isInternetTunnelHost('mobile.a.pinggy.link')).toBe(true)
+    expect(isInternetTunnelHost('mobile.run.pinggy-free.link')).toBe(true)
+    expect(isInternetTunnelHost('mobile.a.free.pinggy.online')).toBe(true)
+    expect(isInternetTunnelHost('free.pinggy.io')).toBe(false)
   })
 })
 
@@ -142,6 +152,35 @@ describe('LAN mobile bridge pairing surface', () => {
       mode: 'tunnel'
     })
     expect(tunnelStopped).toBe(false)
+  })
+
+  it('treats Pinggy forwarding headers as an internet tunnel request', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    Object.assign(bridge as unknown as Record<string, unknown>, {
+      tunnelActive: true,
+      tunnelInstance: {
+        provider: 'pinggy',
+        url: 'https://active-mobile.a.pinggy.link',
+        process: {},
+        stop: async () => undefined
+      }
+    })
+
+    const reconnectStatus = await requestStatus(snapshot.port!, '/reconnect', {
+      host: 'active-mobile.a.pinggy.link',
+      'x-forwarded-for': '203.0.113.18',
+      'x-forwarded-proto': 'https'
+    })
+    expect(reconnectStatus).toBe(200)
+    const pending = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/pending`)
+    expect(await pending.json()).toMatchObject({
+      remoteAddress: '203.0.113.18',
+      mode: 'tunnel'
+    })
   })
 
   it('keeps the active internet tunnel available after desktop disconnect', async () => {
@@ -676,6 +715,24 @@ async function pairBridge(bridge: LanMobileBridge): Promise<{ port: number; cook
     port: snapshot.port!,
     cookie: paired.headers.get('set-cookie')!.split(';', 1)[0]!
   }
+}
+
+function requestStatus(
+  port: number,
+  path: string,
+  headers: Record<string, string>
+): Promise<number | undefined> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      { host: '127.0.0.1', port, path, headers },
+      (response) => {
+        response.resume()
+        response.once('end', () => resolve(response.statusCode))
+      }
+    )
+    request.once('error', reject)
+    request.end()
+  })
 }
 
 function mobileRpc(
