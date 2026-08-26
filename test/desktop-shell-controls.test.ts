@@ -67,95 +67,32 @@ describe('Sherlock desktop shell controls', () => {
     expect(shellStyles).toContain('top: calc(8px + env(safe-area-inset-top)) !important')
   })
 
-  it('opens Research at the saved width and restores the exact prior details state', async () => {
+  it('keeps Research out of the native Details layout controller', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const client = await loadLayoutBundle(browserWindow)
     const LayoutController = client.LayoutController as new () => {
       attachPanels(actions: Record<string, (...args: unknown[]) => void>): void
-      observePanels(state: {
-        sidebar: number
-        details: number
-        narrow: boolean
-        narrowExpanded: boolean
-      }): void
-      enterResearch(): void
-      leaveResearch(): void
+      toggleSidebar(): void
+      openDetails(): void
+      closeDetails(): void
     }
     const layout = new LayoutController()
     const writes: unknown[][] = []
     layout.attachPanels({
-      setDetails: (px) => writes.push(['setDetails', px]),
+      toggleSidebar: () => writes.push(['toggleSidebar']),
+      openDetails: () => writes.push(['openDetails']),
       closeDetails: () => writes.push(['closeDetails'])
     })
 
-    layout.observePanels({ sidebar: 280, details: 0, narrow: false, narrowExpanded: false })
-    layout.enterResearch()
-    expect(writes).toEqual([['setDetails', 420]])
-
-    layout.observePanels({ sidebar: 280, details: 472, narrow: false, narrowExpanded: false })
-    layout.leaveResearch()
-    expect(writes.at(-1)).toEqual(['closeDetails'])
-
-    layout.observePanels({ sidebar: 280, details: 360, narrow: false, narrowExpanded: false })
-    layout.enterResearch()
-    layout.leaveResearch()
-    expect(writes.at(-1)).toEqual(['setDetails', 360])
+    layout.toggleSidebar()
+    layout.openDetails()
+    layout.closeDetails()
+    expect(writes).toEqual([['toggleSidebar'], ['openDetails'], ['closeDetails']])
+    expect('enterResearch' in layout).toBe(false)
+    expect('leaveResearch' in layout).toBe(false)
   })
 
-  it('ignores invalid saved width, enters idempotently, and reuses a resized 472px width', async () => {
-    const browserWindow = new Window({ url: 'https://sherlock.local/' })
-    browserWindow.localStorage.setItem('sherlock.research.panel.width.v1', 'invalid')
-    const client = await loadLayoutBundle(browserWindow)
-    const LayoutController = client.LayoutController as new () => {
-      attachPanels(actions: Record<string, (...args: unknown[]) => void>): void
-      observePanels(state: {
-        sidebar: number
-        details: number
-        narrow: boolean
-        narrowExpanded: boolean
-      }): void
-      enterResearch(): void
-      leaveResearch(): void
-    }
-    const layout = new LayoutController()
-    const writes: unknown[][] = []
-    let details = 0
-    const observe = () => layout.observePanels({
-      sidebar: 280, details, narrow: false, narrowExpanded: false
-    })
-    layout.attachPanels({
-      setDetails: (px) => {
-        details = Number(px)
-        writes.push(['setDetails', px])
-        observe()
-      },
-      closeDetails: () => {
-        details = 0
-        writes.push(['closeDetails'])
-        observe()
-      }
-    })
-    observe()
-
-    layout.enterResearch()
-    layout.enterResearch()
-    expect(writes).toEqual([['setDetails', 420]])
-
-    details = 472
-    observe()
-    expect(browserWindow.localStorage.getItem('sherlock.research.panel.width.v1'))
-      .toBe('472')
-    layout.leaveResearch()
-    expect(writes.at(-1)).toEqual(['closeDetails'])
-
-    layout.enterResearch()
-    expect(writes.at(-1)).toEqual(['setDetails', 472])
-    layout.leaveResearch()
-    layout.leaveResearch()
-    expect(writes.filter(([name]) => name === 'closeDetails')).toHaveLength(2)
-  })
-
-  it('reports AppFrame panel snapshots and owns a details portal host', async () => {
+  it('renders the native Details column without a Research-owned portal host', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const client = await loadLayoutBundle(browserWindow)
     expect(client.AppFrame).toBeTypeOf('function')
@@ -177,7 +114,6 @@ describe('Sherlock desktop shell controls', () => {
     browserWindow.document.body.appendChild(host)
     const root = createRoot(host)
     const panels = { sidebar: 280, details: 360, narrow: false, narrowExpanded: false }
-    const reports: Array<typeof panels> = []
     try {
       await act(async () => {
         root.render(createElement(client.AppFrame, {
@@ -192,16 +128,13 @@ describe('Sherlock desktop shell controls', () => {
             setSidebar: () => undefined,
             setDetails: () => undefined
           },
-          reportPanels: (snapshot: typeof panels) => reports.push(snapshot),
           renderSlot: (name: string) => createElement('div', { 'data-slot-name': name })
         }))
       })
 
       const portal = host.querySelector('[data-details-portal-host]')
-      expect(portal).not.toBeNull()
-      expect(portal?.parentElement?.querySelector('[data-slot-name="details"]'))
-        .not.toBeNull()
-      expect(reports).toEqual([panels])
+      expect(portal).toBeNull()
+      expect(host.querySelector('[data-slot-name="details"]')).not.toBeNull()
     } finally {
       await act(async () => { root.unmount() })
       for (const [key, descriptor] of Object.entries(previousEnvironment)) {

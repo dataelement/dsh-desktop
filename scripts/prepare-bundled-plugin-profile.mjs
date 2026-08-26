@@ -1,8 +1,10 @@
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { patchBetterSidebarPackage } from './lib/patch-sherlock-better-sidebar.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const policyPath = path.join(projectRoot, 'build', 'sherlock-bundled-plugins.json')
@@ -25,6 +27,26 @@ const excludedSourceNames = new Set([
   '.credentials.yaml',
   'settings.yaml'
 ])
+
+async function portableTreeFingerprint(root, relative = '', hash = createHash('sha256')) {
+  const entries = await readdir(path.join(root, relative), { withFileTypes: true })
+  entries.sort((left, right) => left.name.localeCompare(right.name))
+  for (const entry of entries) {
+    const childRelative = path.join(relative, entry.name)
+    const childPath = path.join(root, childRelative)
+    const stat = await lstat(childPath)
+    hash.update(`${childRelative}\0`)
+    if (stat.isDirectory()) {
+      hash.update('directory\0')
+      await portableTreeFingerprint(root, childRelative, hash)
+    } else if (stat.isFile()) {
+      hash.update('file\0')
+      hash.update(await readFile(childPath))
+      hash.update('\0')
+    }
+  }
+  return hash
+}
 
 function sameList(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index])
@@ -128,6 +150,7 @@ async function main() {
       if (copiedManifest.name !== packageName) {
         throw new Error(`Installed plugin name mismatch for ${packageName}: ${copiedManifest.name}`)
       }
+      if (packageName === 'dsh-better-sidebar') await patchBetterSidebarPackage(vendorPath)
       dependencies[packageName] = `file:${relativeVendorPath}`
     }
 
@@ -192,6 +215,12 @@ async function main() {
     // electron-builder excludes directory segments named node_modules from extraResources.
     // Ship the installed offline tree under a neutral name and restore it on first launch.
     await rename(path.join(stagedProfile, 'node_modules'), path.join(stagedProfile, 'modules'))
+    const contentFingerprint = (await portableTreeFingerprint(vendorRoot)).digest('hex')
+    await writeFile(
+      path.join(stagedProfile, 'sherlock-profile-content.sha256'),
+      `${contentFingerprint}\n`,
+      'utf8'
+    )
 
     for (const name of ['package.json', 'pnpm-lock.yaml']) {
       const content = await readFile(path.join(stagedProfile, name), 'utf8')

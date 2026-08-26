@@ -3,8 +3,11 @@ import {
   constants,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readlinkSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -13,6 +16,7 @@ import {
 import path from 'node:path'
 
 const RECEIPT_FILENAME = 'bundled-plugin-profile.json'
+const CONTENT_FINGERPRINT_FILENAME = 'sherlock-profile-content.sha256'
 
 export interface BundledPluginProfileInstallOptions {
   userDataPath: string
@@ -52,14 +56,48 @@ function safeTimestamp(date: Date): string {
   return date.toISOString().replaceAll(':', '-').replaceAll('.', '-')
 }
 
+function hashProfileTree(hash: ReturnType<typeof createHash>, root: string, relative = ''): void {
+  for (const entry of readdirSync(path.join(root, relative), { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name)
+  )) {
+    const childRelative = path.join(relative, entry.name)
+    const childPath = path.join(root, childRelative)
+    const stat = lstatSync(childPath)
+    hash.update(`${childRelative}\0`)
+    if (stat.isSymbolicLink()) {
+      hash.update(`link\0${readlinkSync(childPath)}\0`)
+    } else if (stat.isDirectory()) {
+      hash.update('directory\0')
+      hashProfileTree(hash, root, childRelative)
+    } else if (stat.isFile()) {
+      hash.update('file\0')
+      hash.update(readFileSync(childPath))
+      hash.update('\0')
+    }
+  }
+}
+
 function profileFingerprint(profilePath: string, appVersion: string): string {
   const hash = createHash('sha256')
   hash.update(`sherlock:${appVersion}\n`)
-  for (const name of ['package.json', 'pnpm-lock.yaml', 'cordis.patch.yml']) {
+  for (const name of [
+    'package.json',
+    'pnpm-lock.yaml',
+    'cordis.patch.yml',
+    CONTENT_FINGERPRINT_FILENAME
+  ]) {
     const filePath = path.join(profilePath, name)
     hash.update(`${name}\0`)
     if (existsSync(filePath)) hash.update(readFileSync(filePath))
     hash.update('\0')
+  }
+  if (!existsSync(path.join(profilePath, CONTENT_FINGERPRINT_FILENAME))) {
+    for (const directory of ['vendor', 'modules']) {
+      const root = path.join(profilePath, directory)
+      if (!existsSync(root)) continue
+      hash.update(`${directory}\0`)
+      hashProfileTree(hash, root)
+    }
   }
   return hash.digest('hex')
 }

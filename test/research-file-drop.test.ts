@@ -581,6 +581,33 @@ describe('Research canvas file drops', () => {
     expect(moved.artifacts[0]).toMatchObject({ x: 40, y: 35 })
   })
 
+  it('removes the requested canvas nodes without touching unrelated files or artifacts', async () => {
+    const client = await loadConversationClient()
+    expect(client.removeResearchCanvasNodes).toBeTypeOf('function')
+    if (typeof client.removeResearchCanvasNodes !== 'function') return
+
+    const removed = client.removeResearchCanvasNodes(
+      [
+        { id: 'f1', name: 'one.pdf', path: '/w/one.pdf', source: 'computer', x: 10, y: 20 },
+        { id: 'f2', name: 'two.pdf', path: '/w/two.pdf', source: 'computer', x: 30, y: 40 }
+      ],
+      [
+        { id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'One', excerpt: 'A', x: 50, y: 60 },
+        { id: 'a2', kind: 'assistant-result', messageId: 'm2', title: 'Two', excerpt: 'B', x: 70, y: 80 }
+      ],
+      ['f2', 'a1']
+    )
+
+    expect(removed).toEqual({
+      files: [
+        { id: 'f1', name: 'one.pdf', path: '/w/one.pdf', source: 'computer', x: 10, y: 20 }
+      ],
+      artifacts: [
+        { id: 'a2', kind: 'assistant-result', messageId: 'm2', title: 'Two', excerpt: 'B', x: 70, y: 80 }
+      ]
+    })
+  })
+
   it('uses exact per-session keys and canonicalizes bounded persisted artifacts and selection', async () => {
     const client = await loadConversationClient()
     expect(client.researchCanvasSelectionStorageKey).toBeTypeOf('function')

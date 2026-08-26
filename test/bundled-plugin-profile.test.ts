@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { installBundledPluginProfile } from '../src/main/bundled-plugin-profile'
+import { patchBetterSidebarClient } from '../scripts/lib/patch-sherlock-better-sidebar.mjs'
 
 const temporaryDirectories: string[] = []
 
@@ -55,6 +56,38 @@ afterEach(() => {
 })
 
 describe('bundled Sherlock plugin profile', () => {
+  it('keeps Sherlock pinned sidebar tabs first, fixed, and session-targetable', async () => {
+    const source = await readFile(
+      path.resolve(
+        import.meta.dirname,
+        '..',
+        'build',
+        'sherlock-plugin-profile',
+        'vendor',
+        'dsh-better-sidebar',
+        'lib',
+        'client.js'
+      ),
+      'utf8'
+    )
+
+    const patched = patchBetterSidebarClient(source)
+
+    expect(patchBetterSidebarClient(patched)).toBe(patched)
+    expect(patched).toContain('const pinned = tab.meta?.sherlockPinned === true;')
+    expect(patched).toContain('/* sherlock:pinned-sidebar-edge:v1 */')
+    expect(patched).toContain('/* sherlock:pinned-sidebar-reconcile:v1 */')
+    expect(patched).toContain(
+      'return openTabInActivePane(closeTab(state, leaf.id, existing.id), reconciled)'
+    )
+    expect(patched).toContain('if (moving?.meta?.sherlockPinned === true) return state;')
+    expect(patched).toContain('draggable: !pinned')
+    expect(patched).toContain('candidate?.meta?.sherlockClosable === false')
+    expect(patched).toContain('const setPanelState = (patch, scope) =>')
+    expect(patched).toContain('targetsInactiveSession ? store.reduceFor(scope.sessionId, reducer) : store.reduce(reducer)')
+    expect(patched).toContain('setPanelState')
+  })
+
   it('uses the formal profile as the exact six-plugin release baseline', async () => {
     const policy = JSON.parse(
       await readFile(
@@ -88,6 +121,7 @@ describe('bundled Sherlock plugin profile', () => {
     expect(preparation).toContain("'.credentials.yaml'")
     expect(preparation).toContain("'settings.yaml'")
     expect(preparation).toContain("part.startsWith('.env.')")
+    expect(preparation).toContain('patchBetterSidebarPackage(vendorPath)')
   })
 
   it('installs the packaged profile for a fresh user without touching model credentials', async () => {
@@ -196,5 +230,27 @@ describe('bundled Sherlock plugin profile', () => {
     })
 
     expect(result).toEqual({ installed: false, plugins: [] })
+  })
+
+  it('reinstalls when bundled plugin code changes without a manifest or version change', async () => {
+    const root = await temporaryDirectory('sherlock-bundled-profile-code-change')
+    const bundledProfilePath = await makeBundledProfile(root)
+    const userDataPath = path.join(root, 'user-data')
+    const options = { userDataPath, bundledProfilePath, appVersion: '0.6.6' }
+
+    expect(installBundledPluginProfile(options).installed).toBe(true)
+    await writeFile(
+      path.join(bundledProfilePath, 'modules', 'dsh-file-drop', 'index.js'),
+      'export default "patched"\n',
+      'utf8'
+    )
+
+    expect(installBundledPluginProfile(options).installed).toBe(true)
+    expect(
+      await readFile(
+        path.join(userDataPath, 'harness', 'profiles', 'web', 'node_modules', 'dsh-file-drop', 'index.js'),
+        'utf8'
+      )
+    ).toBe('export default "patched"\n')
   })
 })

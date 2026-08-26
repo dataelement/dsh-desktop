@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
-index 74e58cb..da4a57a 100644
+index 74e58cb..abc6ea7 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
 @@ -11,6 +11,7 @@ window.__ModuleLoader__.load({
@@ -10,29 +10,7 @@ index 74e58cb..da4a57a 100644
  		/**
  		* Clamp a panel width into its contract range.
  		* @param px - requested width.
-@@ -21,6 +22,21 @@ window.__ModuleLoader__.load({
- 		function clampWidth(px, min, max) {
- 			return Math.min(max, Math.max(min, Math.round(px)));
- 		}
-+		const RESEARCH_PANEL_WIDTH_KEY = "sherlock.research.panel.width.v1";
-+		function readResearchPanelWidth() {
-+			try {
-+				if (typeof localStorage === "undefined") return null;
-+				const value = Number(localStorage.getItem(RESEARCH_PANEL_WIDTH_KEY));
-+				return Number.isFinite(value) && value >= 300 && value <= 520 ? Math.round(value) : null;
-+			} catch {
-+				return null;
-+			}
-+		}
-+		function writeResearchPanelWidth(width) {
-+			try {
-+				if (typeof localStorage !== "undefined") localStorage.setItem(RESEARCH_PANEL_WIDTH_KEY, String(clampWidth(width, 300, 520)));
-+			} catch {}
-+		}
- 		/**
- 		* Solve the three column widths for one viewport frame. Pure: no hysteresis —
- 		* the output is a function of (viewport, preferences) only, so recovery on
-@@ -32,7 +48,7 @@ window.__ModuleLoader__.load({
+@@ -32,7 +33,7 @@ window.__ModuleLoader__.load({
  		* @returns resolved widths; details 0 means visually closed (never unmounted), while a closed sidebar keeps its compact rail.
  		*/
  		function computeColumns(viewport, sidebar, details) {
@@ -41,53 +19,16 @@ index 74e58cb..da4a57a 100644
  			const d0 = details === 0 ? 0 : clampWidth(details, 300, 520);
  			if (s + d0 + 640 <= viewport) return {
  				sidebar: s,
-@@ -53,13 +69,13 @@ window.__ModuleLoader__.load({
- 		}
- 		//#endregion
- 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-layout/src/client/AppFrame.module.css.mjs
--		const css = ".pI_x6G_frame{background:var(--dsw-alias-bg-base);height:100%;transition:grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);grid-template-rows:100%;display:grid;position:relative;overflow:hidden}.pI_x6G_frame[data-dragging]{transition:none}@media (prefers-reduced-motion:reduce){.pI_x6G_frame{transition:none}}.pI_x6G_sidebarCol{background:var(--dsw-specific-sidebar-fill);border-right:1px solid var(--dsw-alias-border-l1);min-width:0;overflow:hidden}.pI_x6G_centerCol{flex-direction:column;min-width:0;display:flex;overflow:hidden}.pI_x6G_detailsCol{border-left:1px solid var(--dsw-alias-border-l2);min-width:0;overflow:hidden}.pI_x6G_frame[data-details-collapsed] .pI_x6G_detailsCol{border-left:none}.pI_x6G_handle{cursor:col-resize;z-index:2;touch-action:none;width:8px;transition:left var(--ds-transition-duration-slow) var(--ds-ease-in-out);margin-left:-4px;position:absolute;top:0;bottom:0}.pI_x6G_frame[data-dragging] .pI_x6G_handle{transition:none}@media (prefers-reduced-motion:reduce){.pI_x6G_handle{transition:none}}.pI_x6G_handle[data-side=details]:after{content:\"\";box-sizing:border-box;background:var(--dsw-alias-button-floating-fill);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);opacity:0;width:12px;height:32px;transition:opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out), background var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:10px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}.pI_x6G_detailsCol:hover~.pI_x6G_handle[data-side=details]:after,.pI_x6G_handle[data-side=details]:hover:after,.pI_x6G_handle[data-side=details][data-dragging=true]:after{opacity:1}.pI_x6G_handle[data-side=details]:hover:after,.pI_x6G_handle[data-side=details][data-dragging=true]:after{background:var(--dsw-alias-button-floating-hover);border-color:var(--dsw-alias-border-l3)}.pI_x6G_overlayLayer{z-index:20;pointer-events:none;position:absolute;inset:0}.pI_x6G_overlayLayer>*{pointer-events:auto}";
-+		const css = ".pI_x6G_frame{background:var(--dsw-alias-bg-base);height:100%;transition:grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);grid-template-rows:100%;display:grid;position:relative;overflow:hidden}.pI_x6G_frame[data-dragging]{transition:none}@media (prefers-reduced-motion:reduce){.pI_x6G_frame{transition:none}}.pI_x6G_sidebarCol{background:var(--dsw-specific-sidebar-fill);border-right:1px solid var(--dsw-alias-border-l1);min-width:0;overflow:hidden}.pI_x6G_centerCol{flex-direction:column;min-width:0;display:flex;overflow:hidden}.pI_x6G_detailsCol{border-left:1px solid var(--dsw-alias-border-l2);min-width:0;position:relative;overflow:hidden}.pI_x6G_frame[data-details-collapsed] .pI_x6G_detailsCol{border-left:none}.pI_x6G_handle{cursor:col-resize;z-index:2;touch-action:none;width:8px;transition:left var(--ds-transition-duration-slow) var(--ds-ease-in-out);margin-left:-4px;position:absolute;top:0;bottom:0}.pI_x6G_frame[data-dragging] .pI_x6G_handle{transition:none}@media (prefers-reduced-motion:reduce){.pI_x6G_handle{transition:none}}.pI_x6G_handle[data-side=details]:after{content:\"\";box-sizing:border-box;background:var(--dsw-alias-button-floating-fill);border:1px solid var(--dsw-alias-border-l2-darkmode-thin);opacity:0;width:12px;height:32px;transition:opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out), background var(--ds-transition-duration-slow) var(--ds-ease-in-out);border-radius:10px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}.pI_x6G_detailsCol:hover~.pI_x6G_handle[data-side=details]:after,.pI_x6G_handle[data-side=details]:hover:after,.pI_x6G_handle[data-side=details][data-dragging=true]:after{opacity:1}.pI_x6G_handle[data-side=details]:hover:after,.pI_x6G_handle[data-side=details][data-dragging=true]:after{background:var(--dsw-alias-button-floating-hover);border-color:var(--dsw-alias-border-l3)}.pI_x6G_overlayLayer{z-index:20;pointer-events:none;position:absolute;inset:0}.pI_x6G_overlayLayer>*{pointer-events:auto}";
- 		const tagId = "@deepseek-ai/dsh-client-ui-layout/AppFrame.module.css";
- 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
+@@ -59,7 +60,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-layout";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + (navigator.userAgent.includes("Macintosh") ? "html,body,#root{background-color:transparent!important}.pI_x6G_frame,.pI_x6G_sidebarCol{background:transparent}.pI_x6G_sidebarCol{border-right:0}.pI_x6G_centerCol,.pI_x6G_detailsCol{background:var(--dsw-alias-bg-base)}" : "") + ".pI_x6G_detailsCol>[data-details-portal-host]{position:absolute;inset:0;z-index:2;pointer-events:none}";
++			tag.textContent = css + (navigator.userAgent.includes("Macintosh") ? "html,body,#root{background-color:transparent!important}.pI_x6G_frame,.pI_x6G_sidebarCol{background:transparent}.pI_x6G_sidebarCol{border-right:0}.pI_x6G_centerCol,.pI_x6G_detailsCol{background:var(--dsw-alias-bg-base)}" : "");
  			document.head.appendChild(tag);
  		}
  		var AppFrame_module_css_default = {
-@@ -93,9 +109,9 @@ window.__ModuleLoader__.load({
- 		}
- 		/** Details column grid item; width 0 keeps the subtree mounted (never unmount on close). */
- 		function DetailsColumn(props) {
--			return (0, react_jsx_runtime.jsx)("div", {
-+			return (0, react_jsx_runtime.jsxs)("div", {
- 				className: AppFrame_module_css_default.detailsCol,
--				children: props.children
-+				children: [props.children, (0, react_jsx_runtime.jsx)("div", { "data-details-portal-host": "" })]
- 			});
- 		}
- 		/**
-@@ -155,8 +171,16 @@ window.__ModuleLoader__.load({
- 			});
- 		}
- 		/** The three-column frame (see module doc). */
--		function AppFrame({ useStore, useSessions, actions, renderSlot }) {
-+		function AppFrame({ useStore, useSessions, actions, renderSlot, reportPanels }) {
- 			const panels = useStore((s) => s);
-+			(0, react.useEffect)(() => {
-+				reportPanels({
-+					sidebar: panels.sidebar,
-+					details: panels.details,
-+					narrow: panels.narrow,
-+					narrowExpanded: panels.narrowExpanded
-+				});
-+			}, [reportPanels, panels.sidebar, panels.details, panels.narrow, panels.narrowExpanded]);
- 			const detailsSession = useSessions((s) => {
- 				const current = s.current;
- 				return current !== void 0 && s.byId[current]?.blank === false ? current : void 0;
-@@ -287,7 +311,7 @@ window.__ModuleLoader__.load({
+@@ -287,7 +288,7 @@ window.__ModuleLoader__.load({
  						d.sidebar = clampWidth(px, 264, 420);
  					},
  					setDetails: (d, px) => {
@@ -96,57 +37,7 @@ index 74e58cb..da4a57a 100644
  					},
  					toggleSidebar: (d) => {
  						if (d.narrow) d.narrowExpanded = !d.narrowExpanded;
-@@ -312,6 +336,10 @@ window.__ModuleLoader__.load({
- 		/** Cross-plugin panel-action face (ctx.layout). */
- 		var LayoutController = class {
- 			#panels;
-+			#observed;
-+			#researchActive = false;
-+			#preResearchDetails = 0;
-+			#lastResearchDetails = 0;
- 			/**
- 			* Adopt the root entry's bound store actions. Called from the root
- 			* registration's inject hook (a sanctioned assembly side effect), so the
-@@ -322,6 +350,29 @@ window.__ModuleLoader__.load({
- 			attachPanels(actions) {
- 				this.#panels = actions;
- 			}
-+			/** Observe the current panel snapshot reported by AppFrame. */
-+			observePanels(state) {
-+				this.#observed = { ...state };
-+				if (!this.#researchActive || state.details === 0 || state.details === this.#lastResearchDetails) return;
-+				this.#lastResearchDetails = state.details;
-+				writeResearchPanelWidth(state.details);
-+			}
-+			/** Enter Research once, opening the right panel at its saved/default width. */
-+			enterResearch() {
-+				if (this.#researchActive) return;
-+				this.#preResearchDetails = this.#observed?.details ?? 0;
-+				const width = readResearchPanelWidth() ?? 420;
-+				this.#researchActive = true;
-+				this.#lastResearchDetails = width;
-+				this.#require().setDetails(width);
-+			}
-+			/** Leave Research once and restore the exact prior details open/width state. */
-+			leaveResearch() {
-+				if (!this.#researchActive) return;
-+				this.#researchActive = false;
-+				if (this.#preResearchDetails === 0) this.#require().closeDetails();
-+				else this.#require().setDetails(this.#preResearchDetails);
-+			}
- 			/** Toggle the sidebar panel (closed ⟷ contract default width). */
- 			toggleSidebar() {
- 				this.#require().toggleSidebar();
-@@ -425,7 +476,7 @@ window.__ModuleLoader__.load({
- 					store: createLayoutStore,
- 					inject: (actions) => {
- 						layout.attachPanels(actions);
--						return {};
-+						return { reportPanels: (state) => layout.observePanels(state) };
- 					}
- 				}, AppFrame);
- 				return () => {
-@@ -447,6 +498,8 @@ window.__ModuleLoader__.load({
+@@ -447,6 +448,8 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.LayoutController = LayoutController;
@@ -155,75 +46,3 @@ index 74e58cb..da4a57a 100644
  		exports.apply = apply;
  		exports.inject = inject;
  		return module.exports;
-diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts
-index 0ecd7f7..1199bcf 100644
---- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts
-+++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/AppFrame.d.ts
-@@ -1,7 +1,10 @@
- import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots';
- import type { createLayoutStore } from './stores.ts';
-+import type { LayoutState } from './stores.ts';
- /** Full composed props: runtime share + child-slot render share + store share. */
--export type AppFrameProps = PropsRuntime<'root'> & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'> & PropsStore<ReturnType<typeof createLayoutStore>>;
-+export type AppFrameProps = PropsRuntime<'root'> & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'> & PropsStore<ReturnType<typeof createLayoutStore>> & {
-+    reportPanels: (state: LayoutState) => void;
-+};
- /** The three-column frame (see module doc). */
--export declare function AppFrame({ useStore, useSessions, actions, renderSlot, }: AppFrameProps): import("react").JSX.Element;
-+export declare function AppFrame({ useStore, useSessions, actions, renderSlot, reportPanels, }: AppFrameProps): import("react").JSX.Element;
- //# sourceMappingURL=AppFrame.d.ts.map
-diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/service.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/service.d.ts
-index e2a1a0c..48d77ec 100644
---- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/service.d.ts
-+++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/service.d.ts
-@@ -9,7 +9,7 @@
-  * declared action set, delivered as the registration's bound actions.
-  */
- import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots';
--import type { createLayoutStore } from './stores.ts';
-+import type { createLayoutStore, LayoutState } from './stores.ts';
- /** The layout store's bound action set (framework-baked, draft params peeled). */
- export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>;
- /**
-@@ -25,6 +25,10 @@ export interface ILayout {
-     openDetails(): void;
-     /** Close the details panel. */
-     closeDetails(): void;
-+    /** Enter Research, opening the reversible right-panel layout. */
-+    enterResearch(): void;
-+    /** Leave Research, restoring the exact prior details layout. */
-+    leaveResearch(): void;
- }
- /** Cross-plugin panel-action face (ctx.layout). */
- export declare class LayoutController implements ILayout {
-@@ -37,11 +41,17 @@ export declare class LayoutController implements ILayout {
-      * @param actions - bound actions of the entry's layout store instance.
-      */
-     attachPanels(actions: PanelActions): void;
-+    /** Receive the latest panel snapshot from AppFrame. */
-+    observePanels(state: LayoutState): void;
-     /** Toggle the sidebar panel (closed ⟷ contract default width). */
-     toggleSidebar(): void;
-     /** Open the details panel (no-op when already open). */
-     openDetails(): void;
-     /** Close the details panel. */
-     closeDetails(): void;
-+    /** Enter Research once. */
-+    enterResearch(): void;
-+    /** Leave Research once. */
-+    leaveResearch(): void;
- }
- //# sourceMappingURL=service.d.ts.map
-diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/stores.d.ts
-index a79da9e..54c73a1 100644
---- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/stores.d.ts
-+++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/types/client/stores.d.ts
-@@ -15,7 +15,7 @@ import { type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client';
-  * `narrowExpanded` is the manual override that re-expands the auto-collapsed
-  * sidebar over the squeezed center without rewriting the width preference.
-  */
--type LayoutState = {
-+export type LayoutState = {
-     sidebar: number;
-     details: number;
-     narrow: boolean;
