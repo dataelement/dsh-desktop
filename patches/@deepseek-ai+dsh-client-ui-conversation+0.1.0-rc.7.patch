@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..7e92f5d 100644
+index 1dd0e89..c725d3b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -348,6 +348,17 @@ window.__ModuleLoader__.load({
@@ -160,9 +160,19 @@ index 1dd0e89..7e92f5d 100644
  		const tagId$11 = "@deepseek-ai/dsh-client-ui-conversation/ChatView.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -5219,8 +5257,18 @@ window.__ModuleLoader__.load({
+@@ -5218,9 +5256,28 @@ window.__ModuleLoader__.load({
+ 			tag.textContent = css$11;
  			document.head.appendChild(tag);
  		}
++		const executionDetailGroupsCss = ".dshExecutionDetailGroup{min-width:0}.dshExecutionDetailSummary{font:inherit;color:inherit;cursor:pointer;list-style:none;border-radius:6px;align-items:center;min-width:0;height:28px;padding:0 6px 0 0;display:flex}.dshExecutionDetailSummary::-webkit-details-marker{display:none}.dshExecutionDetailSummary:hover{background:var(--dsw-alias-interactive-bg-hover)}.dshExecutionDetailIcon{width:18px;height:18px;color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;margin-right:5px;display:grid}.dshExecutionDetailTitle{color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:13px;line-height:20px;overflow:hidden}.dshExecutionDetailMeta{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption);white-space:nowrap;flex:none;margin-left:8px;font-size:12px;line-height:20px}.dshExecutionDetailError{color:var(--dsw-alias-state-error-primary)}.dshExecutionDetailChevron{color:var(--dsw-alias-label-caption);flex:none;margin-left:auto;transition:transform .16s ease;display:inline-flex}.dshExecutionDetailGroup[open]>.dshExecutionDetailSummary .dshExecutionDetailChevron{transform:rotate(90deg)}.dshExecutionDetailItems{flex-direction:column;gap:6px;padding:3px 0 4px 23px;display:flex}@media(prefers-reduced-motion:reduce){.dshExecutionDetailChevron{transition:none}}";
++		const executionDetailGroupsTagId = "@deepseek-ai/dsh-client-ui-conversation/ExecutionDetailGroups.css";
++		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(executionDetailGroupsTagId) + "]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
++			tag.dataset.pluginCss = executionDetailGroupsTagId;
++			tag.textContent = executionDetailGroupsCss;
++			document.head.appendChild(tag);
++		}
  		var ChatView_module_css_default = {
 -			"dsh-turn-status-shimmer": "Md3f7G_dsh-turn-status-shimmer",
 -			"turnStatusClock": "Md3f7G_turnStatusClock",
@@ -181,7 +191,7 @@ index 1dd0e89..7e92f5d 100644
  			"callRow": "Md3f7G_callRow",
  			"hint": "Md3f7G_hint",
  			"root": "Md3f7G_root",
-@@ -5228,11 +5276,19 @@ window.__ModuleLoader__.load({
+@@ -5228,11 +5285,19 @@ window.__ModuleLoader__.load({
  			"older": "Md3f7G_older",
  			"flowItem": "Md3f7G_flowItem",
  			"toBottomSlot": "Md3f7G_toBottomSlot",
@@ -202,10 +212,17 @@ index 1dd0e89..7e92f5d 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatNodeSeat.js
  		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
-@@ -5278,6 +5334,95 @@ window.__ModuleLoader__.load({
+@@ -5278,6 +5343,131 @@ window.__ModuleLoader__.load({
  				})
  			});
  		});
++		function ExecutionDetailGroupIcon({ id }) {
++			if (id === "read-search") return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBrowseOutline16, { size: 14 });
++			if (id === "tools-skills") return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconApiOutline14, { size: 14 });
++			if (id === "run-change") return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, { size: 14 });
++			if (id === "task-verify") return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChecklistOutline14, { size: 14 });
++			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconThinkOutline14, { size: 14 });
++		}
 +		/** One turn-level status row whose disclosure owns all process detail. */
 +		const ExecutionStatusGroup = (0, react.memo)(function ExecutionStatusGroup({ entry, activityNodes, startTime, endTime, seatProps, t }) {
 +			const [expanded, setExpanded] = (0, react.useState)(false);
@@ -224,13 +241,16 @@ index 1dd0e89..7e92f5d 100644
 +				if (wasRunning.current && !entry.running) setExpanded(false);
 +				wasRunning.current = entry.running;
 +			}, [entry.running]);
-+			const expandable = entry.nodeKeys.length > 0;
++			const detailGroups = (0, react.useMemo)(() => executionDetailGroups(activityNodes), [activityNodes]);
++			const expandable = detailGroups.length > 0;
 +			const open = expandable && expanded;
 +			const progressSurface = (0, react.useMemo)(() => executionProgressSurface(activityNodes, entry.running, open, {
 +				t,
++				detailGroups,
 +				preserveProgress: entry.preserveProgress === true
 +			}), [
 +				activityNodes,
++				detailGroups,
 +				entry.running,
 +				entry.preserveProgress,
 +				open,
@@ -283,22 +303,48 @@ index 1dd0e89..7e92f5d 100644
 +						"aria-hidden": true,
 +						children: t("execution.status.elapsed", { duration: formatRunDuration(elapsedMs, t) })
 +					})]
-+				}), open && progressSurface.detailNodeKeys.length > 0 && (0, react_jsx_runtime.jsxs)("div", {
++				}), open && progressSurface.detailGroups.length > 0 && (0, react_jsx_runtime.jsx)("div", {
 +					className: ChatView_module_css_default.executionDetails,
-+					children: [(0, react_jsx_runtime.jsx)("div", {
-+						className: ChatView_module_css_default.executionDetailsLabel,
-+						children: t("execution.details.title")
-+						}), progressSurface.detailNodeKeys.map((nodeKey) => (0, react_jsx_runtime.jsx)(ChatNodeSeat, {
-+						nodeKey,
-+						...seatProps
-+					}, nodeKey))]
++					role: "group",
++					"aria-label": t("execution.details.title"),
++					children: progressSurface.detailGroups.map((group) => (0, react_jsx_runtime.jsxs)("details", {
++						className: "dshExecutionDetailGroup",
++						"data-execution-detail-group": group.id,
++						"data-error-count": group.errorCount || void 0,
++						children: [(0, react_jsx_runtime.jsxs)("summary", {
++							className: "dshExecutionDetailSummary",
++							children: [(0, react_jsx_runtime.jsx)("span", {
++								className: "dshExecutionDetailIcon",
++								"aria-hidden": true,
++								children: (0, react_jsx_runtime.jsx)(ExecutionDetailGroupIcon, { id: group.id })
++							}), (0, react_jsx_runtime.jsx)("span", {
++								className: "dshExecutionDetailTitle",
++								children: t(group.titleKey)
++							}), (0, react_jsx_runtime.jsx)("span", {
++								className: "dshExecutionDetailMeta",
++								children: t("execution.details.group.count", { count: group.nodeKeys.length })
++							}), group.errorCount > 0 && (0, react_jsx_runtime.jsx)("span", {
++								className: "dshExecutionDetailMeta dshExecutionDetailError",
++								children: t("execution.details.group.errors", { count: group.errorCount })
++							}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutline14, {
++								className: "dshExecutionDetailChevron",
++								"aria-hidden": true
++							})]
++						}), (0, react_jsx_runtime.jsx)("div", {
++							className: "dshExecutionDetailItems",
++							children: group.nodeKeys.map((nodeKey) => (0, react_jsx_runtime.jsx)(ChatNodeSeat, {
++								nodeKey,
++								...seatProps
++							}, nodeKey))
++						})]
++					}, group.id))
 +				})]
 +			});
 +		});
  		//#endregion
  		//#region lib/types/client/chat/ChatView.js
  		/** Active column host when present; otherwise the view-local scroller. */
-@@ -5289,6 +5434,21 @@ window.__ModuleLoader__.load({
+@@ -5289,6 +5479,21 @@ window.__ModuleLoader__.load({
  			for (const row of list.querySelectorAll("[data-chat-anchor-key]")) if (row.dataset.chatAnchorKey === key) return row;
  			return null;
  		}
@@ -320,7 +366,7 @@ index 1dd0e89..7e92f5d 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5332,35 +5492,395 @@ window.__ModuleLoader__.load({
+@@ -5332,35 +5537,468 @@ window.__ModuleLoader__.load({
  				scrollTop: scrollport.scrollTop
  			};
  		}
@@ -435,13 +481,86 @@ index 1dd0e89..7e92f5d 100644
 +		/** Derive the visible progress feed and keep assistant commentary out of raw execution detail. */
 +		function executionProgressSurface(nodes, running, expanded, options = {}) {
 +			const updates = executionProgressUpdates(nodes, options);
-+			const detailNodeKeys = [];
-+			for (const node of nodes) if (node?.kind !== "assistant-step" && typeof node?.key === "string") detailNodeKeys.push(node.key);
++			const detailGroups = options.detailGroups ?? executionDetailGroups(nodes);
++			const detailNodeKeys = detailGroups.flatMap((group) => group.nodeKeys);
 +			return {
 +				updates,
 +				showProgress: updates.length > 0 && (running || expanded || options.preserveProgress === true),
-+				detailNodeKeys
++				detailNodeKeys,
++				detailGroups
 +			};
++		}
++		const EXECUTION_DETAIL_GROUP_DEFINITIONS = [
++			{
++				id: "tools-skills",
++				titleKey: "execution.details.group.toolsSkills"
++			},
++			{
++				id: "read-search",
++				titleKey: "execution.details.group.readSearch"
++			},
++			{
++				id: "run-change",
++				titleKey: "execution.details.group.runChange"
++			},
++			{
++				id: "task-verify",
++				titleKey: "execution.details.group.taskVerify"
++			},
++			{
++				id: "other",
++				titleKey: "execution.details.group.other"
++			}
++		];
++		/** Assign one visible detail node to a stable, user-facing activity category. */
++		function executionDetailCategory(node) {
++			if (node?.kind === "command") return "run-change";
++			if (node?.kind !== "tool-call") return "other";
++			const { name } = executionToolArgs(node.data?.root);
++			if (/skill|subagent/.test(name)) return "tools-skills";
++			if (/todo|plan|playwright|browser|screenshot|simulator|test|verify|validation/.test(name)) return "task-verify";
++			if (/read|grep|glob|search|find|web|fetch|http|image/.test(name)) return "read-search";
++			if (/bash|shell|exec|terminal|command|pwsh|write|edit|patch|replace|mutation/.test(name)) return "run-change";
++			return "other";
++		}
++		/** Whether a root or nested Tool result reports a failure. */
++		function executionToolFailed(root) {
++			if (root === null || typeof root !== "object") return false;
++			const pending = [root];
++			const visited = /* @__PURE__ */ new Set();
++			while (pending.length > 0 && visited.size < 256) {
++				const block = pending.pop();
++				if (block === null || typeof block !== "object" || visited.has(block)) continue;
++				visited.add(block);
++				if (block.isError === true) return true;
++				if (Array.isArray(block.subCalls)) pending.push(...block.subCalls);
++			}
++			return false;
++		}
++		/** Hide injected context and organize the remaining raw execution rows into concise categories. */
++		function executionDetailGroups(nodes) {
++			const groups = /* @__PURE__ */ new Map();
++			for (const node of nodes) {
++				if (node?.kind === "assistant-step" || node?.kind === "context" || typeof node?.key !== "string") continue;
++				const id = executionDetailCategory(node);
++				let group = groups.get(id);
++				if (group === void 0) {
++					const definition = EXECUTION_DETAIL_GROUP_DEFINITIONS.find((candidate) => candidate.id === id);
++					if (definition === void 0) continue;
++					group = {
++						...definition,
++						nodeKeys: [],
++						errorCount: 0
++					};
++					groups.set(id, group);
++				}
++				group.nodeKeys.push(node.key);
++				if (node.kind === "tool-call" && executionToolFailed(node.data?.root)) group.errorCount += 1;
++			}
++			return EXECUTION_DETAIL_GROUP_DEFINITIONS.flatMap((definition) => {
++				const group = groups.get(definition.id);
++				return group === void 0 ? [] : [group];
++			});
 +		}
 +		/** Read only the structured arguments owned by a Tool call. Malformed or non-object input has no intent value. */
 +		function executionToolArgs(root) {
@@ -740,7 +859,7 @@ index 1dd0e89..7e92f5d 100644
  				})]
  			});
  		}
-@@ -5381,11 +5901,58 @@ window.__ModuleLoader__.load({
+@@ -5381,11 +6019,58 @@ window.__ModuleLoader__.load({
  			const loadingOlder = useSession((s) => s.loadingOlder);
  			const selectedCallId = useStore((s) => s.selection?.callId);
  			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
@@ -800,7 +919,7 @@ index 1dd0e89..7e92f5d 100644
  			/** Last position delivered or written on the main thread. */
  			const observedTopRef = (0, react.useRef)(0);
  			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5405,6 +5972,12 @@ window.__ModuleLoader__.load({
+@@ -5405,6 +6090,12 @@ window.__ModuleLoader__.load({
  			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
  			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
  			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
@@ -813,7 +932,7 @@ index 1dd0e89..7e92f5d 100644
  			const toBottom = (el) => {
  				anchorRef.current = null;
  				el.scrollTop = el.scrollHeight;
-@@ -5412,6 +5985,8 @@ window.__ModuleLoader__.load({
+@@ -5412,6 +6103,8 @@ window.__ModuleLoader__.load({
  				atBottomRef.current = true;
  				setAtBottom(true);
  				chatScroll.save(null);
@@ -822,7 +941,7 @@ index 1dd0e89..7e92f5d 100644
  			};
  			(0, react.useLayoutEffect)(() => {
  				const local = listRef.current;
-@@ -5468,6 +6043,7 @@ window.__ModuleLoader__.load({
+@@ -5468,6 +6161,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -830,7 +949,7 @@ index 1dd0e89..7e92f5d 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5487,6 +6063,10 @@ window.__ModuleLoader__.load({
+@@ -5487,6 +6181,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -841,7 +960,7 @@ index 1dd0e89..7e92f5d 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5540,9 +6120,29 @@ window.__ModuleLoader__.load({
+@@ -5540,9 +6238,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
@@ -872,7 +991,7 @@ index 1dd0e89..7e92f5d 100644
  					ref: listRef,
  					className: ChatView_module_css_default.scroll,
  					children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -5570,22 +6170,21 @@ window.__ModuleLoader__.load({
+@@ -5570,22 +6288,21 @@ window.__ModuleLoader__.load({
  									children: loadingOlder ? t("loading") : t("chat.loadOlder")
  								})
  							}),
@@ -910,7 +1029,7 @@ index 1dd0e89..7e92f5d 100644
  							}),
  							pendingSteering.map((item) => (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
  								content: item.content,
-@@ -5607,7 +6206,7 @@ window.__ModuleLoader__.load({
+@@ -5607,7 +6324,7 @@ window.__ModuleLoader__.load({
  							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {})
  						})
  					})]
@@ -919,7 +1038,7 @@ index 1dd0e89..7e92f5d 100644
  			});
  		}
  		//#endregion
-@@ -5816,6 +6415,8 @@ window.__ModuleLoader__.load({
+@@ -5816,6 +6533,8 @@ window.__ModuleLoader__.load({
  		/** Simplified Chinese dictionary (the key-set source of truth). */
  		const zh = {
  			"view.chat": "对话",
@@ -928,7 +1047,7 @@ index 1dd0e89..7e92f5d 100644
  			"hint.plan": PLAN_NEXT_ACTION_ZH,
  			"hint.goal": "输入目标，智能体将持续执行",
  			"hint.goal.active": "当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除",
-@@ -5875,7 +6476,7 @@ window.__ModuleLoader__.load({
+@@ -5875,7 +6594,7 @@ window.__ModuleLoader__.load({
  			"access.confirm.acknowledge": "我已了解风险，并愿意继续",
  			"access.confirm.cancel": "取消",
  			"access.confirm.enable": "启用 Full access",
@@ -937,7 +1056,7 @@ index 1dd0e89..7e92f5d 100644
  			"hero.preview": "预览版",
  			"hero.chooseWorkspace": "选择工作区",
  			"session.hierarchy": "会话层级",
-@@ -5896,6 +6497,39 @@ window.__ModuleLoader__.load({
+@@ -5896,6 +6615,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "历史加载失败：{message}（{code}）",
  			"chat.loadOlder": "加载更早",
  			"chat.toBottom": "回到底部",
@@ -974,10 +1093,17 @@ index 1dd0e89..7e92f5d 100644
 +			"execution.details.title": "执行详情",
 +			"execution.details.expand": "展开执行详情",
 +			"execution.details.collapse": "收起执行详情",
++			"execution.details.group.readSearch": "读取与检索",
++			"execution.details.group.toolsSkills": "工具与技能",
++			"execution.details.group.runChange": "执行与修改",
++			"execution.details.group.taskVerify": "任务与校验",
++			"execution.details.group.other": "其他记录",
++			"execution.details.group.count": "{count} 项",
++			"execution.details.group.errors": "{count} 个错误",
  			"message.extraBlock": "附加内容块",
  			"message.contextInjection": "上下文注入",
  			"message.contextRecall": "跨会话召回",
-@@ -5981,6 +6615,8 @@ window.__ModuleLoader__.load({
+@@ -5981,6 +6740,8 @@ window.__ModuleLoader__.load({
  		/** English dictionary, checked complete against the zh key set. */
  		const en = {
  			"view.chat": "Chat",
@@ -986,7 +1112,7 @@ index 1dd0e89..7e92f5d 100644
  			"hint.plan": PLAN_NEXT_ACTION_EN,
  			"hint.goal": "describe the objective for a long-running task",
  			"hint.goal.active": "goal active — edit / pause / resume / clear",
-@@ -6040,7 +6676,7 @@ window.__ModuleLoader__.load({
+@@ -6040,7 +6801,7 @@ window.__ModuleLoader__.load({
  			"access.confirm.acknowledge": "I understand the risks and want to continue",
  			"access.confirm.cancel": "Cancel",
  			"access.confirm.enable": "Enable Full access",
@@ -995,7 +1121,7 @@ index 1dd0e89..7e92f5d 100644
  			"hero.preview": "Preview",
  			"hero.chooseWorkspace": "Choose workspace",
  			"session.hierarchy": "Session hierarchy",
-@@ -6061,6 +6697,39 @@ window.__ModuleLoader__.load({
+@@ -6061,6 +6822,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "Failed to load history: {message} ({code})",
  			"chat.loadOlder": "Load earlier",
  			"chat.toBottom": "Back to bottom",
@@ -1032,10 +1158,17 @@ index 1dd0e89..7e92f5d 100644
 +			"execution.details.title": "Execution details",
 +			"execution.details.expand": "Expand execution details",
 +			"execution.details.collapse": "Collapse execution details",
++			"execution.details.group.readSearch": "Read and search",
++			"execution.details.group.toolsSkills": "Tools and skills",
++			"execution.details.group.runChange": "Run and change",
++			"execution.details.group.taskVerify": "Tasks and verification",
++			"execution.details.group.other": "Other activity",
++			"execution.details.group.count": "{count} items",
++			"execution.details.group.errors": "{count} errors",
  			"message.extraBlock": "Extra content block",
  			"message.contextInjection": "Context injection",
  			"message.contextRecall": "Session recall",
-@@ -6383,7 +7052,7 @@ window.__ModuleLoader__.load({
+@@ -6383,7 +7184,7 @@ window.__ModuleLoader__.load({
  		*/
  		function QueueDock({ useSession, updateQueue, notify, t }) {
  			const inbox = useSession((s) => s.queue);
@@ -1044,7 +1177,7 @@ index 1dd0e89..7e92f5d 100644
  			const running = useSession((s) => s.running);
  			const queueMutable = useSession((s) => s.subagent === null);
  			const [editing, setEditing] = (0, react.useState)(null);
-@@ -6627,7 +7296,7 @@ window.__ModuleLoader__.load({
+@@ -6627,7 +7428,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$7;
@@ -1053,7 +1186,7 @@ index 1dd0e89..7e92f5d 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6765,13 +7434,6 @@ window.__ModuleLoader__.load({
+@@ -6765,13 +7566,6 @@ window.__ModuleLoader__.load({
  					children: [(0, react_jsx_runtime.jsxs)("div", {
  						className: HeroShell_module_css_default.headline,
  						children: [
@@ -1067,7 +1200,7 @@ index 1dd0e89..7e92f5d 100644
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.headlineText,
  								children: t("hero.headline")
-@@ -6786,6 +7448,446 @@ window.__ModuleLoader__.load({
+@@ -6786,6 +7580,446 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -1514,7 +1647,7 @@ index 1dd0e89..7e92f5d 100644
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
  		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
-@@ -6980,6 +8082,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +8214,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -1535,7 +1668,7 @@ index 1dd0e89..7e92f5d 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +8150,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +8282,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -1553,7 +1686,7 @@ index 1dd0e89..7e92f5d 100644
  				})] })
  			});
  		}
-@@ -8066,13 +9173,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +9305,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -1584,7 +1717,7 @@ index 1dd0e89..7e92f5d 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +9218,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +9350,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -1609,7 +1742,7 @@ index 1dd0e89..7e92f5d 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +10172,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +10304,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -1618,7 +1751,7 @@ index 1dd0e89..7e92f5d 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,23 +10262,24 @@ window.__ModuleLoader__.load({
+@@ -9128,23 +10394,24 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -1647,7 +1780,7 @@ index 1dd0e89..7e92f5d 100644
  				streaming: data.status === "running",
  				interrupted: data.status === "interrupted",
  				loadImage,
-@@ -9766,7 +10901,10 @@ window.__ModuleLoader__.load({
+@@ -9766,7 +11033,10 @@ window.__ModuleLoader__.load({
  							actions.select(target);
  							layout.openDetails();
  						},
@@ -1659,7 +1792,7 @@ index 1dd0e89..7e92f5d 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +10914,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +11046,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -1668,7 +1801,7 @@ index 1dd0e89..7e92f5d 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +10938,7 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +11070,7 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -1676,7 +1809,7 @@ index 1dd0e89..7e92f5d 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9825,6 +10966,37 @@ window.__ModuleLoader__.load({
+@@ -9825,6 +11098,38 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.ConversationController = ConversationController;
@@ -1688,6 +1821,7 @@ index 1dd0e89..7e92f5d 100644
 +		exports.compactionDefinition = compactionDefinition;
 +		exports.compactConversationFlow = compactConversationFlow;
 +		exports.executionActivityLabel = executionActivityLabel;
++		exports.executionDetailGroups = executionDetailGroups;
 +		exports.executionProgressSurface = executionProgressSurface;
 +		exports.executionProgressUpdates = executionProgressUpdates;
 +		exports.executionSummaryStatus = executionSummaryStatus;
