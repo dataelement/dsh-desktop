@@ -13,6 +13,7 @@ else
   formal_app="$project_root/dist-notarized/mac/Sherlock.app"
 fi
 formal_executable="$formal_app/Contents/MacOS/Sherlock"
+formal_runtime_node="$formal_app/Contents/Resources/app/node_modules/node/bin/node"
 
 stop_sherlock_apps() {
   pkill -x 'Sherlock Dev' 2>/dev/null || true
@@ -24,6 +25,10 @@ build_formal_app() {
   npm run package:formal:dir
   test -x "$formal_executable" || {
     echo "Sherlock executable was not built at: $formal_executable" >&2
+    exit 1
+  }
+  test -x "$formal_runtime_node" || {
+    echo "Bundled Node.js runtime was not built at: $formal_runtime_node" >&2
     exit 1
   }
   codesign --verify --deep --strict --verbose=2 "$formal_app"
