@@ -108,6 +108,24 @@ describe('Harness launch contract', () => {
     })
   })
 
+  it('passes the authenticated local-search endpoint only to the Harness environment', () => {
+    const options = buildHarnessSpawnOptions(
+      '/Users/tester/Library/Application Support/dsh-desktop/launch-root',
+      '/Users/tester/Library/Application Support/dsh-desktop/harness',
+      'darwin',
+      { PATH: '/usr/bin' },
+      '/Applications/Sherlock.app/Contents/Resources/sherlock-skills',
+      'file:///Applications/Sherlock.app/Contents/Resources/app/node_modules/dsh-web-search-session-model/index.js',
+      { url: 'http://127.0.0.1:45123', token: 'ephemeral-token' }
+    )
+
+    expect(options.env).toMatchObject({
+      SHERLOCK_LOCAL_SEARCH_URL: 'http://127.0.0.1:45123',
+      SHERLOCK_LOCAL_SEARCH_TOKEN: 'ephemeral-token'
+    })
+    expect(JSON.stringify(options)).not.toContain('authorization')
+  })
+
   it('passes the internal-loader flag directly to bundled Node.js', () => {
     expect(
       buildNodeArguments(

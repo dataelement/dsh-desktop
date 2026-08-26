@@ -76,7 +76,9 @@ describe('Sherlock client brand migration', () => {
     expect(settings).toMatch(/Sherlock will|Sherlock 会/)
     expect(settings).toContain('useState)("openai")')
     expect(pluginSettings).not.toMatch(/The DeepSeek search provider|DeepSeek 搜索提供方/)
-    expect(pluginSettings).toMatch(/Optional web search provider|可选网页搜索提供方/)
+    expect(pluginSettings).toMatch(
+      /free local browser fallback|免费的本地浏览器/
+    )
 
     expect(presets).not.toMatch(/Created with DSH|another DSH version|由 DSH|另一个 DSH 版本/)
     expect(presets).toContain('Created with Sherlock')

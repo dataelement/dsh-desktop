@@ -10,7 +10,9 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  session,
   shell,
+  type BrowserWindowConstructorOptions,
   type IpcMainInvokeEvent
 } from 'electron'
 import {
@@ -49,6 +51,15 @@ import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { resolveDesktopIdentity } from './app-identity'
 import { migrateLegacyUserData } from './app-data-migration'
 import { installBundledPluginProfile } from './bundled-plugin-profile'
+import {
+  configureBrowserSearchSecurity,
+  type BrowserSearchWindow
+} from './search/browser-search-controller'
+import { isAllowedSearchLocation } from './search/search-engines'
+import {
+  startLocalSearchRuntime,
+  type LocalSearchRuntime
+} from './search/local-search-runtime'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -60,6 +71,7 @@ const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
 
 let mainWindow: BrowserWindow | undefined
 let runtime: HarnessRuntime
+let localSearchRuntime: LocalSearchRuntime | undefined
 let launchDirectory: string
 let quitting = false
 let failureRecoveryVisible = false
@@ -435,6 +447,36 @@ function createWindow(): BrowserWindow {
     resolvePluginRecoveryAction('quit')
   })
   mainWindow = window
+  return window
+}
+
+function createLocalSearchWindow(
+  options: BrowserWindowConstructorOptions
+): BrowserSearchWindow {
+  const window = new BrowserWindow(options)
+  const owner = mainWindow
+  const closeWithOwner = (): void => {
+    if (!window.isDestroyed()) window.destroy()
+  }
+  owner?.once('closed', closeWithOwner)
+  window.once('closed', () => {
+    owner?.removeListener('closed', closeWithOwner)
+  })
+  const partition = options.webPreferences?.partition
+  if (!partition) throw new Error('Local search browser requires an isolated partition.')
+  configureBrowserSearchSecurity(window, session.fromPartition(partition))
+  window.on('page-title-updated', (event) => {
+    event.preventDefault()
+  })
+  window.webContents.on('will-navigate', (event, url) => {
+    if (
+      isAllowedSearchLocation('bing', url) ||
+      isAllowedSearchLocation('duckduckgo', url)
+    ) {
+      return
+    }
+    event.preventDefault()
+  })
   return window
 }
 
@@ -859,6 +901,9 @@ async function bootstrap(): Promise<void> {
   registerUpdateHandlers()
   if (process.platform === 'darwin') startHarnessThemePreferenceSync()
   createWindow()
+  localSearchRuntime = await startLocalSearchRuntime({
+    createWindow: createLocalSearchWindow
+  })
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),
     nodeExecutablePath: bundledNodePath(),
@@ -866,6 +911,8 @@ async function bootstrap(): Promise<void> {
     dshPatchPath: desktopResourcePath('dsh-desktop.patch.yml'),
     bundledSkillDirectory: bundledSkillDirectory(),
     bundledWebSearchEntry: bundledWebSearchEntry(),
+    localSearchUrl: localSearchRuntime.endpoint.url,
+    localSearchToken: localSearchRuntime.endpoint.token,
     dshHome: join(app.getPath('userData'), 'harness'),
     logPath: join(app.getPath('logs'), 'harness.log'),
     launchProcess: (executablePath, args, options) => spawn(executablePath, args, options),
@@ -943,6 +990,7 @@ async function bootstrap(): Promise<void> {
     startUpdateManager({
       prepareToInstall: async () => {
         await runtime.stop()
+        await localSearchRuntime?.stop()
         quitting = true
         stopUpdateManager()
       }
@@ -962,8 +1010,9 @@ if (!singleInstance) {
       void openHarness(snapshot.url).catch(showUnexpectedError)
     }
   })
-  app.whenReady().then(bootstrap).catch((error: unknown) => {
+  app.whenReady().then(bootstrap).catch(async (error: unknown) => {
     showUnexpectedError(error)
+    await localSearchRuntime?.stop()
     app.quit()
   })
   app.on('activate', () => {
@@ -983,6 +1032,6 @@ if (!singleInstance) {
     quitting = true
     stopHarnessThemePreferenceSync()
     stopUpdateManager()
-    void runtime.stop().finally(() => app.quit())
+    void Promise.all([runtime.stop(), localSearchRuntime?.stop()]).finally(() => app.quit())
   })
 }

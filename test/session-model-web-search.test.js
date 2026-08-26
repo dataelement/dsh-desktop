@@ -4,7 +4,9 @@ import { KNOWN_SESSION_EVENT_TYPES, Session } from '@deepseek-ai/dsh-session'
 import { PersistenceCoordinator } from '@deepseek-ai/dsh-session-persistence'
 import {
   SessionModelSearchProvider,
-  resolveSessionSearchOptions
+  resolveSessionSearchOptions,
+  resolveSessionSearchRoute,
+  searchLocalBrowser
 } from '../packages/dsh-web-search-session-model/index.js'
 
 const servers = new Set()
@@ -30,7 +32,14 @@ async function listen(handler) {
   return `http://127.0.0.1:${address.port}`
 }
 
-function fakeContext({ baseURL, credential = 'user-model-key' }) {
+function fakeContext({
+  baseURL,
+  credential = 'user-model-key',
+  provider = 'openai',
+  model = 'gpt-5.6-sol',
+  api = 'openai-responses',
+  includeProfile = true
+}) {
   const credentialRefs = []
   const ctx = {
     agents: {
@@ -39,7 +48,7 @@ function fakeContext({ baseURL, credential = 'user-model-key' }) {
           session: {
             requestHeader() {
               return {
-                config: { provider: 'openai', model: 'gpt-5.6-sol' }
+                config: { provider, model }
               }
             },
             append() {}
@@ -51,23 +60,22 @@ function fakeContext({ baseURL, credential = 'user-model-key' }) {
       get(namespace) {
         if (namespace !== 'llm-pi-ai') return undefined
         return {
-          providers: {
-            openai: {
-              baseURL: `${baseURL}/llmapi/v1`,
-              apiKeyEnv: 'OPENAI_API_KEY'
-            },
-            'deepseek-official': {
-              baseURL: 'https://api.deepseek.com/anthropic/v1',
-              apiKeyEnv: 'DEEPSEEK_API_KEY'
-            }
-          }
+          providers: includeProfile
+            ? {
+                [provider]: {
+                  ...(baseURL ? { baseURL: `${baseURL}/llmapi/v1` } : {}),
+                  api,
+                  apiKeyEnv: `${provider.toUpperCase().replaceAll('-', '_')}_API_KEY`
+                }
+              }
+            : {}
         }
       }
     },
     credentials: {
       async resolve(ref) {
         credentialRefs.push(ref)
-        return ref === 'OPENAI_API_KEY' ? { value: credential } : undefined
+        return credential ? { value: credential } : undefined
       }
     },
     get(name) {
@@ -218,16 +226,168 @@ describe('current-session model web search', () => {
     })
   })
 
-  it('fails on the selected route credential without falling back to DeepSeek', async () => {
+  it('uses the authenticated local browser for Kimi Coding without resolving its model key', async () => {
+    const localRequests = []
+    const localURL = await listen(async (request, response) => {
+      let body = ''
+      for await (const chunk of request) body += chunk
+      localRequests.push({
+        url: request.url,
+        authorization: request.headers.authorization,
+        body: JSON.parse(body)
+      })
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(
+        JSON.stringify({
+          sources: [
+            {
+              url: 'https://example.com/kimi-result',
+              title: 'Kimi local result',
+              snippet: 'Current information'
+            }
+          ],
+          truncated: false
+        })
+      )
+    })
     const { ctx, credentialRefs } = fakeContext({
-      baseURL: 'http://127.0.0.1:9',
-      credential: ''
+      baseURL: 'https://api.kimi.com/coding',
+      provider: 'kimi-coding',
+      model: 'kimi-for-coding',
+      api: 'anthropic-messages'
     })
-    const provider = new SessionModelSearchProvider(() => resolveSessionSearchOptions(ctx))
+    const provider = new SessionModelSearchProvider({
+      mode: () => 'auto',
+      resolveRoute: () => resolveSessionSearchRoute(ctx),
+      resolveNativeOptions: () => resolveSessionSearchOptions(ctx),
+      searchLocal: (request, signal) =>
+        searchLocalBrowser(request, signal, {
+          url: localURL,
+          token: 'local-only-token'
+        })
+    })
 
-    await expect(provider.search({ query: 'anything', maxResults: 8 })).rejects.toMatchObject({
-      code: 'WEB_PROVIDER_CREDENTIAL_MISSING'
+    await expect(provider.search({ query: 'current facts', maxResults: 4 })).resolves.toEqual({
+      sources: [
+        {
+          url: 'https://example.com/kimi-result',
+          title: 'Kimi local result',
+          snippet: 'Current information'
+        }
+      ],
+      truncated: false
     })
-    expect(credentialRefs).toEqual(['OPENAI_API_KEY'])
+    expect(localRequests).toEqual([
+      {
+        url: '/search',
+        authorization: 'Bearer local-only-token',
+        body: { query: 'current facts', maxResults: 4 }
+      }
+    ])
+    expect(credentialRefs).toEqual([])
+  })
+
+  it('falls back locally when a native Responses route rejects web search', async () => {
+    const baseURL = await listen((_request, response) => {
+      response.writeHead(404, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ error: { message: 'unknown web_search tool' } }))
+    })
+    const { ctx } = fakeContext({ baseURL })
+    let localCalls = 0
+    const provider = new SessionModelSearchProvider({
+      mode: () => 'auto',
+      resolveRoute: () => resolveSessionSearchRoute(ctx),
+      resolveNativeOptions: () => resolveSessionSearchOptions(ctx),
+      searchLocal: async () => {
+        localCalls += 1
+        return {
+          sources: [{ url: 'https://example.com/fallback', title: 'Fallback' }],
+          truncated: false
+        }
+      }
+    })
+
+    await expect(provider.search({ query: 'fallback query', maxResults: 5 })).resolves.toEqual({
+      sources: [{ url: 'https://example.com/fallback', title: 'Fallback' }],
+      truncated: false
+    })
+    expect(localCalls).toBe(1)
+  })
+
+  it('uses local search for an unknown provider profile instead of demanding an API route', async () => {
+    const { ctx, credentialRefs } = fakeContext({
+      provider: 'custom-model',
+      model: 'private-model',
+      includeProfile: false
+    })
+    const provider = new SessionModelSearchProvider({
+      mode: () => 'auto',
+      resolveRoute: () => resolveSessionSearchRoute(ctx),
+      resolveNativeOptions: () => resolveSessionSearchOptions(ctx),
+      searchLocal: async () => ({
+        sources: [{ url: 'https://example.com/custom' }],
+        truncated: false
+      })
+    })
+
+    await expect(provider.search({ query: 'custom route', maxResults: 5 })).resolves.toMatchObject({
+      sources: [{ url: 'https://example.com/custom' }]
+    })
+    expect(credentialRefs).toEqual([])
+  })
+
+  it('does not fall back after cancellation', async () => {
+    const { ctx } = fakeContext({
+      provider: 'kimi-coding',
+      model: 'kimi-for-coding',
+      api: 'anthropic-messages'
+    })
+    let localCalls = 0
+    const provider = new SessionModelSearchProvider({
+      mode: () => 'auto',
+      resolveRoute: () => resolveSessionSearchRoute(ctx),
+      resolveNativeOptions: () => resolveSessionSearchOptions(ctx),
+      searchLocal: async () => {
+        localCalls += 1
+        return { sources: [], truncated: false }
+      }
+    })
+    const abort = new AbortController()
+    abort.abort(new Error('cancelled'))
+
+    await expect(provider.search({ query: 'cancelled', maxResults: 5 }, abort.signal)).rejects.toMatchObject({
+      code: 'WEB_ABORTED'
+    })
+    expect(localCalls).toBe(0)
+  })
+
+  it('honors native-only and off modes without silently using the browser', async () => {
+    const { ctx } = fakeContext({
+      provider: 'kimi-coding',
+      model: 'kimi-for-coding',
+      api: 'anthropic-messages'
+    })
+    let localCalls = 0
+    const dependencies = {
+      resolveRoute: () => resolveSessionSearchRoute(ctx),
+      resolveNativeOptions: () => resolveSessionSearchOptions(ctx),
+      searchLocal: async () => {
+        localCalls += 1
+        return { sources: [], truncated: false }
+      }
+    }
+    const nativeOnly = new SessionModelSearchProvider({
+      ...dependencies,
+      mode: () => 'native-only'
+    })
+    const off = new SessionModelSearchProvider({ ...dependencies, mode: () => 'off' })
+
+    await expect(nativeOnly.search({ query: 'native only', maxResults: 5 })).rejects.toMatchObject({
+      code: 'WEB_NATIVE_SEARCH_REQUIRED'
+    })
+    await expect(off.search({ query: 'off', maxResults: 5 })).rejects.toMatchObject({
+      code: 'WEB_SEARCH_DISABLED'
+    })
+    expect(localCalls).toBe(0)
   })
 })

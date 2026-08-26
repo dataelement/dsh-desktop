@@ -1,22 +1,355 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
-index aa98760..e37ffd8 100644
+index aa98760..ae1d379 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
-@@ -1165,7 +1165,7 @@ window.__ModuleLoader__.load({
+@@ -92,6 +92,51 @@ window.__ModuleLoader__.load({
+ 				]
+ 			});
+ 		}
++		/** A staged finite-choice field rendered as a native accessible selector. */
++		function SelectField(props) {
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: fields_module_css_default.field,
++				children: [
++					(0, react_jsx_runtime.jsxs)("div", {
++						className: fields_module_css_default.head,
++						children: [(0, react_jsx_runtime.jsx)("label", {
++							className: fields_module_css_default.label,
++							htmlFor: props.id,
++							children: props.label
++						}), props.overridden ? (0, react_jsx_runtime.jsxs)("span", {
++							className: fields_module_css_default.badges,
++							children: [(0, react_jsx_runtime.jsx)("span", {
++								className: fields_module_css_default.badge,
++								children: props.overriddenLabel
++							}), (0, react_jsx_runtime.jsx)("button", {
++								type: "button",
++								className: fields_module_css_default.reset,
++								disabled: props.disabled,
++								onClick: props.onReset,
++								children: props.resetLabel
++							})]
++						}) : null]
++					}),
++					(0, react_jsx_runtime.jsx)("select", {
++						id: props.id,
++						className: fields_module_css_default.input,
++						value: props.text,
++						disabled: props.disabled,
++						onChange: (event) => {
++							props.onEdit(event.target.value);
++						},
++						children: props.options.map((option) => (0, react_jsx_runtime.jsx)("option", {
++							value: option.value,
++							children: option.label
++						}, option.value))
++					}),
++					(0, react_jsx_runtime.jsx)("p", {
++						className: fields_module_css_default.hint,
++						children: props.hint
++					})
++				]
++			});
++		}
+ 		/**
+ 		* A write-only credential control. The value never rides a response, so the
+ 		* control reports only whether one is configured and starts blank; a blank
+@@ -518,53 +563,26 @@ window.__ModuleLoader__.load({
+ 				state,
+ 				onSave: props.save,
+ 				onDiscard: props.discard,
+-				children: [
+-					(0, react_jsx_runtime.jsx)(SecretField, {
+-						id: "plugin-config-web-search-key",
+-						label: t("webSearchApiKey"),
+-						hint: t("webSearchApiKeyHint"),
+-						disabled: !state.apiKeyWritable,
+-						text: state.apiKey.text,
+-						configured: state.apiKeyConfigured,
+-						stateLabel: state.apiKeyConfigured ? t("webSearchApiKeySet") : t("webSearchApiKeyUnset"),
+-						onEdit: (text) => {
+-							props.edit("apiKey", text);
+-						}
+-					}),
+-					(0, react_jsx_runtime.jsx)(ValueField, {
+-						id: "plugin-config-web-search-endpoint",
+-						label: t("webSearchBaseUrl"),
+-						hint: t("webSearchBaseUrlHint"),
+-						overriddenLabel: t("overridden"),
+-						resetLabel: t("reset"),
+-						invalidLabel: t("invalidNumber"),
+-						disabled,
+-						...state.baseURL,
+-						onEdit: (text) => {
+-							props.edit("baseURL", text);
+-						},
+-						onReset: () => {
+-							props.resetField("baseURL");
+-						}
+-					}),
+-					(0, react_jsx_runtime.jsx)(ValueField, {
+-						id: "plugin-config-web-search-max-uses",
+-						label: t("webSearchMaxUses"),
+-						hint: t("webSearchMaxUsesHint"),
+-						overriddenLabel: t("overridden"),
+-						resetLabel: t("reset"),
+-						invalidLabel: t("invalidNumber"),
+-						numeric: true,
+-						disabled,
+-						...state.maxUses,
+-						onEdit: (text) => {
+-							props.edit("maxUses", text);
+-						},
+-						onReset: () => {
+-							props.resetField("maxUses");
+-						}
+-					})
+-				]
++				children: (0, react_jsx_runtime.jsx)(SelectField, {
++					id: "plugin-config-web-search-mode",
++					label: t("webSearchMode"),
++					hint: t("webSearchModeHint"),
++					overriddenLabel: t("overridden"),
++					resetLabel: t("reset"),
++					disabled,
++					...state.mode,
++					options: [
++						{ value: "auto", label: t("webSearchModeAuto") },
++						{ value: "native-only", label: t("webSearchModeNativeOnly") },
++						{ value: "off", label: t("webSearchModeOff") }
++					],
++					onEdit: (text) => {
++						props.edit("mode", text);
++					},
++					onReset: () => {
++						props.resetField("mode");
++					}
++				})
+ 			});
+ 		}
+ 		//#endregion
+@@ -623,6 +641,17 @@ window.__ModuleLoader__.load({
+ 				}
+ 			};
+ 		}
++		function choiceField(field, choices) {
++			const allowed = new Set(choices);
++			return {
++				field,
++				format: (value) => typeof value === "string" && allowed.has(value) ? value : choices[0],
++				parse: (text) => allowed.has(text) ? {
++					kind: "set",
++					value: text
++				} : void 0
++			};
++		}
+ 		/**
+ 		* Stages one card's edits over one settings namespace and writes them on save.
+ 		*
+@@ -993,145 +1022,28 @@ window.__ModuleLoader__.load({
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/web-search-card-controller.js
+-		/**
+-		* The web-search card's staged form over the `web-search-deepseek` settings
+-		* namespace.
+-		*
+-		* The key is the one control that does not live in the section: its literal
+-		* never rides a response, so the card learns only whether one is configured
+-		* and writes it through the credentials domain, addressed by the reference the
+-		* section names. It is still staged with the rest of the form, so one save
+-		* covers everything the card shows.
+-		*/
+-		/**
+-		* Namespace of the DeepSeek search provider. Spelled here rather than
+-		* imported: a client package must not depend on a Host package.
+-		*/
+-		const WEB_SEARCH_NS = "web-search-deepseek";
+-		/** Credential reference the provider resolves when the section names none. */
+-		const DEFAULT_API_KEY_REF = "DEEPSEEK_API_KEY";
+-		/** Form field the credential control stages under. */
+-		const API_KEY_FIELD = "apiKey";
+-		/** Bridges the `web-search-deepseek` scope and the credentials domain onto the card. */
++		/** Search behavior is user-owned but carries no search-service credential. */
++		const WEB_SEARCH_NS = "web-search-session-model";
+ 		var WebSearchCardController = class {
+-			scope;
+-			api;
+ 			form;
+ 			store;
+-			credential = {
+-				ref: "",
+-				configured: false,
+-				writable: true
+-			};
+-			/**
+-			* @param scope - the bound settings scope for the `web-search-deepseek` namespace.
+-			* @param api - wire face used for the credential the section references.
+-			*/
+-			constructor(scope, api) {
+-				this.scope = scope;
+-				this.api = api;
+-				this.form = new CardForm(scope, [textField("baseURL"), numberField("maxUses")], [{
+-					field: API_KEY_FIELD,
+-					write: (text) => this.writeKey(text)
+-				}]);
++			constructor(scope) {
++				this.form = new CardForm(scope, [choiceField("mode", ["auto", "native-only", "off"])]);
+ 				this.store = this.form.bind(() => this.projection());
+-				scope.subscribe(() => {
+-					this.readCredential();
+-				});
+-				this.readCredential();
+ 			}
+ 			projection() {
+ 				return {
+ 					...this.form.shell(),
+-					baseURL: this.form.field("baseURL"),
+-					maxUses: this.form.field("maxUses"),
+-					apiKey: this.form.field(API_KEY_FIELD),
+-					apiKeyConfigured: this.credential.configured,
+-					apiKeyWritable: this.credential.writable
++					mode: this.form.field("mode")
+ 				};
+ 			}
+-			/**
+-			* Ask the credentials domain about the reference the section currently names.
+-			*
+-			* The answer is stored with the reference it describes: `apiKeyEnv` can
+-			* change between the request and its response, and two reads can settle out
+-			* of order, so a response is published only while it still answers for the
+-			* reference in force.
+-			*/
+-			async readCredential() {
+-				const ref = refOf(this.scope.getSnapshot());
+-				if (ref !== this.credential.ref) {
+-					this.credential = {
+-						ref,
+-						configured: false,
+-						writable: true
+-					};
+-					this.store.set(this.projection());
+-				}
+-				let response;
+-				try {
+-					response = await this.api.credentials.describe({ refs: [ref] });
+-				} catch (_credentialReadFailure) {
+-					return;
+-				}
+-				if (!response.result.ok || ref !== refOf(this.scope.getSnapshot())) return;
+-				const view = response.result.value.credentials[ref];
+-				const next = {
+-					ref,
+-					configured: view?.configured ?? false,
+-					writable: view?.writable ?? true
+-				};
+-				if (next.configured === this.credential.configured && next.writable === this.credential.writable) return;
+-				this.credential = next;
+-				this.store.set(this.projection());
+-			}
+-			/**
+-			* Re-read after the Host reports a change to the reference this card watches.
+-			*
+-			* A key can be written from somewhere else — the Models page addresses the
+-			* same reference — and the settings section does not change when it is, so
+-			* without this the badge keeps reporting a state the Host already replaced.
+-			* @param ref - the reference the Host reports as changed.
+-			*/
+-			refreshCredential(ref) {
+-				if (ref !== this.credential.ref) return;
+-				this.readCredential();
+-			}
+-			/**
+-			* Build the face the card's slot registration injects.
+-			* @returns the card's snapshot and its form actions.
+-			*/
+ 			inject() {
+ 				return {
+ 					hooks: { webSearchCard: this.store },
+ 					...this.form.actions()
+ 				};
+ 			}
+-			/**
+-			* Write the staged key, then re-read whether the Host now holds one.
+-			* @param value - the staged credential literal.
+-			* @returns whether the Host reports a configured credential afterwards.
+-			*/
+-			async writeKey(value) {
+-				try {
+-					await this.api.credentials.set({
+-						ref: refOf(this.scope.getSnapshot()),
+-						value
+-					});
+-				} catch (_credentialWriteFailure) {}
+-				await this.readCredential();
+-				return this.credential.configured;
+-			}
+ 		};
+-		/**
+-		* The credential reference the section names, or the provider's default.
+-		* @param snapshot - the current scope snapshot.
+-		* @returns the reference to address.
+-		*/
+-		function refOf(snapshot) {
+-			const declared = snapshot.value?.apiKeyEnv;
+-			return declared !== void 0 && declared.length > 0 ? declared : DEFAULT_API_KEY_REF;
+-		}
+ 		//#endregion
+ 		//#region lib/types/client/locales.js
+ 		/** Locale bundles for the plugin configuration section and its plugin cards. */
+@@ -1165,15 +1077,12 @@ window.__ModuleLoader__.load({
  			agentLoopMaxParallel: "Parallel tool calls",
  			agentLoopMaxParallelHint: "Upper bound on parallel-safe calls running at once within one step.",
  			webSearchTitle: "Web search",
 -			webSearchDescription: "The DeepSeek search provider.",
-+			webSearchDescription: "Optional web search provider.",
- 			webSearchApiKey: "API key",
- 			webSearchApiKeyHint: "Stored outside the settings file. Leave blank to keep the current key.",
- 			webSearchApiKeySet: "A key is configured.",
-@@ -1205,7 +1205,7 @@ window.__ModuleLoader__.load({
+-			webSearchApiKey: "API key",
+-			webSearchApiKeyHint: "Stored outside the settings file. Leave blank to keep the current key.",
+-			webSearchApiKeySet: "A key is configured.",
+-			webSearchApiKeyUnset: "No key is configured; search is unavailable until one is.",
+-			webSearchBaseUrl: "Endpoint",
+-			webSearchBaseUrlHint: "Leave blank to use the provider default.",
+-			webSearchMaxUses: "Max searches per request",
+-			webSearchMaxUsesHint: "How many times one request may search before it must answer."
++			webSearchDescription: "Use model-native search when available, with a free local browser fallback.",
++			webSearchMode: "Search mode",
++			webSearchModeHint: "Automatic needs no search-service account or key.",
++			webSearchModeAuto: "Automatic (recommended)",
++			webSearchModeNativeOnly: "Model native only",
++			webSearchModeOff: "Off"
+ 		};
+ 		/** Simplified Chinese copy. */
+ 		const zh = {
+@@ -1205,15 +1114,12 @@ window.__ModuleLoader__.load({
  			agentLoopMaxParallel: "并行工具调用数",
  			agentLoopMaxParallelHint: "同一步内最多同时运行多少个可并行的调用。",
  			webSearchTitle: "网页搜索",
 -			webSearchDescription: "DeepSeek 搜索提供方。",
-+			webSearchDescription: "可选网页搜索提供方。",
- 			webSearchApiKey: "API Key",
- 			webSearchApiKeyHint: "不写入设置文件。留空表示保持当前密钥。",
- 			webSearchApiKeySet: "已配置密钥。",
+-			webSearchApiKey: "API Key",
+-			webSearchApiKeyHint: "不写入设置文件。留空表示保持当前密钥。",
+-			webSearchApiKeySet: "已配置密钥。",
+-			webSearchApiKeyUnset: "未配置密钥；配置之前搜索不可用。",
+-			webSearchBaseUrl: "接口地址",
+-			webSearchBaseUrlHint: "留空则使用提供方默认地址。",
+-			webSearchMaxUses: "单次请求最多搜索次数",
+-			webSearchMaxUsesHint: "一次请求在必须作答前最多可以搜索多少次。"
++			webSearchDescription: "模型支持时优先原生搜索，否则自动使用免费的本地浏览器。",
++			webSearchMode: "搜索模式",
++			webSearchModeHint: "自动模式无需额外搜索服务账号或密钥。",
++			webSearchModeAuto: "自动（推荐）",
++			webSearchModeNativeOnly: "仅模型原生",
++			webSearchModeOff: "关闭"
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/index.js
+@@ -1250,10 +1156,7 @@ window.__ModuleLoader__.load({
+ 			}), "ui-settings-plugins: section dictionaries");
+ 			const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }));
+ 			const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }));
+-			const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), api);
+-			ctx.effect(() => ctx.remote.$on("credentials/updated", (ref) => {
+-				webSearch.refreshCredential(ref);
+-			}), "ui-settings-plugins: credential invalidations");
++			const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }));
+ 			const configurable = new ConfigurablePluginsTabController(api, () => ctx.slots.entries("settings.plugin.item"));
+ 			ctx.effect(() => () => {
+ 				configurable.dispose();

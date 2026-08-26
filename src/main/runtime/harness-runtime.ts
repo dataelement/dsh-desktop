@@ -12,6 +12,8 @@ export interface HarnessRuntimeOptions {
   dshPatchPath: string
   bundledSkillDirectory: string
   bundledWebSearchEntry: string
+  localSearchUrl: string
+  localSearchToken: string
   dshHome: string
   logPath: string
   launchProcess(
@@ -40,7 +42,8 @@ export function buildHarnessSpawnOptions(
   platform: NodeJS.Platform = process.platform,
   environment: NodeJS.ProcessEnv = process.env,
   bundledSkillDirectory?: string,
-  bundledWebSearchEntry?: string
+  bundledWebSearchEntry?: string,
+  localSearch?: { url: string; token: string }
 ): SpawnOptionsWithoutStdio {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -55,6 +58,12 @@ export function buildHarnessSpawnOptions(
         : {}),
       ...(bundledWebSearchEntry
         ? { DSH_DESKTOP_WEB_SEARCH_ENTRY: bundledWebSearchEntry }
+        : {}),
+      ...(localSearch
+        ? {
+            SHERLOCK_LOCAL_SEARCH_URL: localSearch.url,
+            SHERLOCK_LOCAL_SEARCH_TOKEN: localSearch.token
+          }
         : {}),
       NO_COLOR: '1',
       [pathKey]: environment[pathKey] ?? environment.PATH ?? ''
@@ -166,7 +175,11 @@ export class HarnessRuntime {
           process.platform,
           process.env,
           this.options.bundledSkillDirectory,
-          this.options.bundledWebSearchEntry
+          this.options.bundledWebSearchEntry,
+          {
+            url: this.options.localSearchUrl,
+            token: this.options.localSearchToken
+          }
         )
       )
     } catch (error) {
