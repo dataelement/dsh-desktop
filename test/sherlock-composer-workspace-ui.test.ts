@@ -9,8 +9,13 @@ type ComponentType<Props> = (props: Props) => unknown
 type ReactNode = unknown
 
 const requireModule = createRequire(import.meta.url)
-const { createElement } = requireModule('react') as {
+const { createElement, useSyncExternalStore } = requireModule('react') as {
   createElement: (type: unknown, props?: unknown, ...children: unknown[]) => unknown
+  useSyncExternalStore: <T>(
+    subscribe: (listener: () => void) => () => void,
+    getSnapshot: () => T,
+    getServerSnapshot?: () => T
+  ) => T
 }
 const { renderToStaticMarkup } = requireModule('react-dom/server') as {
   renderToStaticMarkup: (node: unknown) => string
@@ -100,7 +105,10 @@ async function loadClientBundle(
   runInNewContext(source, {
     window: bundleWindow,
     document: styleDocument,
-    localStorage: options?.window?.localStorage
+    localStorage: options?.window?.localStorage,
+    HTMLElement: options?.window?.HTMLElement,
+    HTMLTextAreaElement: options?.window?.HTMLTextAreaElement,
+    ResizeObserver: options?.window?.ResizeObserver
   })
   if (descriptor === undefined) throw new Error(`${packageName} did not register its client bundle`)
 
@@ -108,8 +116,191 @@ async function loadClientBundle(
     if (options?.modules?.[id] !== undefined) return options.modules[id]
     if (id === 'react') return react
     if (id === 'react/jsx-runtime') return jsxRuntime
+    if (id === 'react-dom') return requireModule('react-dom')
     return fakeModule()
   })
+}
+
+function createSelectorStore<State extends object>(initial: State) {
+  let state = initial
+  const listeners = new Set<() => void>()
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  }
+  return {
+    useSelector: <Selected>(select: (state: State) => Selected): Selected =>
+      useSyncExternalStore(
+        subscribe,
+        () => select(state),
+        () => select(state)
+      ),
+    get: () => state,
+    update(patch: Partial<State>) {
+      state = { ...state, ...patch }
+      listeners.forEach((listener) => listener())
+    }
+  }
+}
+
+async function mountConversationRoot(initialView: 'chat' | 'research' = 'research') {
+  const browserWindow = new Window({ url: 'https://sherlock.local/' })
+  const sessionId = 'session-research-right-panel'
+  browserWindow.localStorage.setItem(
+    `sherlock.research.canvas.files.v1:${sessionId}`,
+    JSON.stringify([
+      {
+        id: 'file-a',
+        path: '/tmp/research/evidence.pdf',
+        name: 'evidence.pdf',
+        mediaType: 'application/pdf',
+        source: 'computer',
+        x: 100,
+        y: 80
+      },
+      {
+        id: 'file-b',
+        name: 'unresolved.txt',
+        source: 'sherlock',
+        x: 150,
+        y: 120
+      }
+    ])
+  )
+  const restoreGlobals = installBrowserGlobals(browserWindow)
+  const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+    document: browserWindow.document,
+    window: browserWindow
+  })
+  expect(client.ConversationRoot).toBeTypeOf('function')
+  if (typeof client.ConversationRoot !== 'function') {
+    restoreGlobals()
+    throw new Error('ConversationRoot is not exported')
+  }
+  const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+    for(id: string): {
+      subscribe(listener: () => void): () => void
+      getSnapshot(): { files: Array<Record<string, unknown>> }
+    }
+  }
+  const researchWorkspaces = new Registry(browserWindow.localStorage as Storage)
+  const chat = createSelectorStore({
+    selection: {
+      callId: 'call-1', toolName: 'Web Search', turnSeq: 1
+    } as Record<string, unknown> | null,
+    draft: '研究草稿',
+    view: initialView as string | null,
+    inspect: null as { callId: string } | null,
+    researchRightTab: 'details' as 'conversation' | 'files' | 'details',
+    researchFilesTabOpen: true,
+    researchConversationUnread: false
+  })
+  const session = createSelectorStore({
+    openState: 'open',
+    composerPhase: 'active',
+    pending: [] as unknown[],
+    blank: false,
+    chat: { order: ['message-1'] },
+    running: false
+  })
+  const input = createSelectorStore({ draft: '研究草稿' })
+  const detailsPortalHost = browserWindow.document.createElement('div')
+  detailsPortalHost.setAttribute('data-details-portal-host', '')
+  browserWindow.document.body.appendChild(detailsPortalHost)
+  const host = browserWindow.document.createElement('div')
+  browserWindow.document.body.appendChild(host)
+  const root = createRoot(host)
+  const transitions = { enter: 0, leave: 0 }
+  const actions = {
+    select: (selection: Record<string, unknown> | null) => chat.update({ selection }),
+    setView: (view: string) => chat.update({ view }),
+    setInspect: (inspect: { callId: string } | null) => chat.update({ inspect }),
+    setResearchRightTab: (researchRightTab: 'conversation' | 'files' | 'details') =>
+      chat.update({ researchRightTab }),
+    setResearchFilesTabOpen: (researchFilesTabOpen: boolean) =>
+      chat.update({ researchFilesTabOpen }),
+    setResearchConversationUnread: (researchConversationUnread: boolean) =>
+      chat.update({ researchConversationUnread })
+  }
+  const translate = (key: string) => ({
+    'research.right.conversation': '对话',
+    'research.right.files': '文件',
+    'research.right.add': '添加标签页',
+    'research.right.closeFiles': '关闭文件',
+    'research.right.closeDetails': '关闭详情',
+    'research.right.pathUnavailable': '路径不可用',
+    'research.right.source.computer': '本地电脑',
+    'research.right.source.sherlock': 'Sherlock'
+  }[key] ?? key)
+  const renderSlot = (name: string, _owner?: unknown, options?: { only?: string }) => {
+    if (name === 'conversation.session.header') {
+      return createElement('div', { 'data-session-header': '' })
+    }
+    if (name === 'conversation.session') {
+      return createElement('div', {
+        'data-center-session-view': chat.get().view ?? 'chat'
+      })
+    }
+    if (name === 'conversation.composer.bar') {
+      return createElement('textarea', {
+        defaultValue: input.get().draft,
+        'data-input-machine-snapshot': input.get().draft
+      })
+    }
+    if (name === 'conversation.input.dock') {
+      return createElement('div', null,
+        createElement('div', { 'data-queue-strip': '' }),
+        createElement('div', { 'data-task-dock': '' })
+      )
+    }
+    if (name === 'conversation.composer.dock') {
+      return createElement('div', { 'data-stats-footer': '' })
+    }
+    if (name === 'conversation.view' && options?.only === 'chat') {
+      return createElement('div', { 'data-chat-view': '' }, 'message-1')
+    }
+    return null
+  }
+  await act(async () => {
+    root.render(createElement(client.ConversationRoot, {
+      sessionId,
+      useSession: session.useSelector,
+      useSessions: (select: (state: unknown) => unknown) => select({
+        current: sessionId,
+        byId: { [sessionId]: { cwd: '/tmp/research', blank: false } }
+      }),
+      useWorkspaces: (select: (state: unknown) => unknown) => select({
+        phase: 'ready',
+        items: []
+      }),
+      useInput: input.useSelector,
+      useComposerBlock: (select: (block: undefined) => unknown) => select(undefined),
+      useStore: chat.useSelector,
+      actions,
+      researchWorkspaces,
+      renderSlot,
+      renderSlotChain: (_name: string, _owner: unknown, options: { fallback: unknown }) =>
+        options.fallback,
+      selectWorkspace: async () => undefined,
+      enterResearch: () => { transitions.enter += 1 },
+      leaveResearch: () => { transitions.leave += 1 },
+      t: translate
+    }))
+  })
+  return {
+    actions,
+    browserWindow,
+    chat,
+    detailsPortalHost,
+    host,
+    input,
+    session,
+    transitions,
+    async cleanup() {
+      await act(async () => { root.unmount() })
+      restoreGlobals()
+    }
+  }
 }
 
 function installBrowserGlobals(browserWindow: Window): () => void {
@@ -177,6 +368,10 @@ function pointer(
     shiftKey: { value: options.shiftKey ?? false }
   })
   return event
+}
+
+function click(browserWindow: Window, target: HappyDOMElement | null): void {
+  target?.dispatchEvent(new browserWindow.Event('click', { bubbles: true, cancelable: true }))
 }
 
 async function mountResearchCanvas(options: {
@@ -896,7 +1091,7 @@ describe('Sherlock workspace and composer controls', () => {
       })
       expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(0)
 
-      canvas.focus()
+      ;(canvas as unknown as { focus(): void }).focus()
       await act(async () => {
         browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
           code: 'KeyA', key: 'a', metaKey: true, bubbles: true, cancelable: true
@@ -921,7 +1116,7 @@ describe('Sherlock workspace and composer controls', () => {
       const cardA = host.querySelector('[data-research-file-card="file-a"]')
       expect(cardA).not.toBeNull()
       if (cardA === null) return
-      canvas.focus()
+      ;(canvas as unknown as { focus(): void }).focus()
       await act(async () => {
         browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
           code: 'Space', key: ' ', bubbles: true, cancelable: true
@@ -1186,6 +1381,200 @@ describe('Sherlock workspace and composer controls', () => {
     expect(researchCss).toContain('[data-node-dragging=true]')
     expect(researchCss).toContain(':focus-visible')
     expect(researchCss).toContain('body[data-ds-dark-theme] .rScV5Q_artifactCard')
+  })
+
+  it('keeps the portal transparent over Details and inert after leaving Research', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    browserWindow.document.body.innerHTML = [
+      '<div class="ydkMvW_root" data-research-managed="true"></div>',
+      '<section class="sRp_root" data-research-active="false">',
+      '<button class="sRp_tab">对话</button>',
+      '</section>'
+    ].join('')
+    const details = browserWindow.document.querySelector('.ydkMvW_root')
+    const panel = browserWindow.document.querySelector('.sRp_root')
+    const inactiveTab = browserWindow.document.querySelector('.sRp_tab')
+    expect(details).not.toBeNull()
+    expect(panel).not.toBeNull()
+    expect(inactiveTab).not.toBeNull()
+    if (details === null || panel === null || inactiveTab === null) return
+
+    expect(browserWindow.getComputedStyle(details).boxSizing).toBe('border-box')
+    expect(browserWindow.getComputedStyle(panel).backgroundColor).toBe('transparent')
+    expect(browserWindow.getComputedStyle(inactiveTab).pointerEvents).toBe('none')
+  })
+
+  it('pins Conversation first and keeps Files and temporary Details reversible', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      const { browserWindow, chat, detailsPortalHost, host, transitions } = mounted
+      expect(transitions.enter).toBe(1)
+      expect(chat.get().researchRightTab).toBe('conversation')
+
+      const composerSeats = browserWindow.document.querySelectorAll('[data-composer-seat]')
+      expect(composerSeats).toHaveLength(1)
+      expect(composerSeats[0]?.closest('[data-research-conversation-panel]')).not.toBeNull()
+
+      const center = host.querySelector('[data-research-center]')
+      expect(center).not.toBeNull()
+      expect(center?.querySelector('[data-composer-seat]')).toBeNull()
+      expect(center?.querySelector('[data-queue-strip]')).toBeNull()
+      expect(center?.querySelector('[data-task-dock]')).toBeNull()
+      expect(center?.querySelector('[data-stats-footer]')).toBeNull()
+
+      const tablist = detailsPortalHost.querySelector('[role="tablist"]')
+      expect(tablist).not.toBeNull()
+      const tabOrder = Array.from(tablist?.querySelectorAll(
+        '[data-research-right-tab], [data-research-add-tab]'
+      ) ?? []).map((item) =>
+        item.getAttribute('data-research-right-tab') ?? 'add'
+      )
+      expect(tabOrder).toEqual(['conversation', 'files', 'details', 'add'])
+      const conversation = tablist?.querySelector(
+        '[data-research-right-tab="conversation"]'
+      )
+      expect(conversation?.textContent).toBe('对话')
+      expect(conversation?.querySelector('button[aria-label*="关闭"]')).toBeNull()
+
+      const resolvedFile = detailsPortalHost.querySelector(
+        '[data-research-file-row="file-a"]'
+      )
+      expect(resolvedFile?.textContent).toContain('evidence.pdf')
+      expect(resolvedFile?.getAttribute('draggable')).toBe('true')
+      const payloads = new Map<string, string>()
+      const dragStart = new browserWindow.Event('dragstart', { bubbles: true })
+      Object.defineProperty(dragStart, 'dataTransfer', {
+        value: {
+          effectAllowed: 'none',
+          setData(type: string, value: string) { payloads.set(type, value) }
+        }
+      })
+      resolvedFile?.dispatchEvent(dragStart)
+      expect(JSON.parse(payloads.get('application/x-sherlock-file') ?? '{}'))
+        .toEqual({ path: '/tmp/research/evidence.pdf', name: 'evidence.pdf' })
+      expect(detailsPortalHost.querySelector('[data-research-file-row="file-b"]')?.textContent)
+        .toContain('路径不可用')
+
+      await act(async () => {
+        click(browserWindow, detailsPortalHost.querySelector('[data-research-close-tab="files"]'))
+      })
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="conversation"]'))
+        .not.toBeNull()
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="files"]')).toBeNull()
+
+      await act(async () => {
+        click(browserWindow, detailsPortalHost.querySelector('[data-research-add-tab]'))
+      })
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="files"]')
+        ?.getAttribute('aria-selected')).toBe('true')
+
+      await act(async () => {
+        click(browserWindow, detailsPortalHost.querySelector('[data-research-close-tab="details"]'))
+      })
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="conversation"]'))
+        .not.toBeNull()
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="details"]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('moves one composer host without remounting the textarea or losing IME state', async () => {
+    const mounted = await mountConversationRoot('chat')
+    try {
+      const { actions, browserWindow, host, transitions } = mounted
+      const initialScroll = host.querySelector('[data-conversation-scroll]')
+      const textarea = host.querySelector('textarea')
+      expect(initialScroll).not.toBeNull()
+      expect(textarea).not.toBeNull()
+      if (!(textarea instanceof browserWindow.HTMLTextAreaElement)) return
+      textarea.value = '研究中的中文输入'
+      textarea.focus()
+      textarea.setSelectionRange(2, 6)
+      const compositionStart = new browserWindow.CompositionEvent('compositionstart', {
+        bubbles: true
+      })
+      Object.defineProperty(compositionStart, 'data', { value: '研究' })
+      textarea.dispatchEvent(compositionStart)
+
+      await act(async () => { actions.setView('research') })
+      const researchTextarea = browserWindow.document.querySelector('textarea')
+      expect(researchTextarea).toBe(textarea)
+      expect(browserWindow.document.activeElement).toBe(textarea)
+      expect(textarea.selectionStart).toBe(2)
+      expect(textarea.selectionEnd).toBe(6)
+      expect(textarea.value).toBe('研究中的中文输入')
+      expect(textarea.closest('[data-research-conversation-panel]')).not.toBeNull()
+      expect(host.querySelector('[data-conversation-scroll]')).toBe(initialScroll)
+      expect(transitions.enter).toBe(1)
+
+      await act(async () => {
+        actions.select({ callId: 'research-call', turnSeq: 2 })
+        actions.setView('chat')
+      })
+      expect(host.querySelector('textarea')).toBe(textarea)
+      expect(browserWindow.document.activeElement).toBe(textarea)
+      expect(textarea.selectionStart).toBe(2)
+      expect(textarea.selectionEnd).toBe(6)
+      expect(textarea.value).toBe('研究中的中文输入')
+      expect(host.querySelector('[data-conversation-scroll]')).toBe(initialScroll)
+      expect(transitions.leave).toBe(1)
+      expect(mounted.chat.get().selection).toEqual({
+        callId: 'call-1', toolName: 'Web Search', turnSeq: 1
+      })
+      expect(browserWindow.document.querySelectorAll('[data-composer-seat]')).toHaveLength(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('marks Conversation unread without stealing the active Details tab', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      const { browserWindow, detailsPortalHost, session } = mounted
+      await act(async () => {
+        click(browserWindow, detailsPortalHost.querySelector(
+          '[data-research-right-tab="details"]'
+        ))
+      })
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="details"]')
+        ?.getAttribute('aria-selected')).toBe('true')
+
+      await act(async () => {
+        session.update({ chat: { order: ['message-1', 'message-2'] } })
+      })
+      const conversation = detailsPortalHost.querySelector(
+        '[data-research-right-tab="conversation"]'
+      )
+      expect(conversation?.getAttribute('data-unread')).toBe('true')
+      expect(conversation?.getAttribute('aria-selected')).toBe('false')
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="details"]')
+        ?.getAttribute('aria-selected')).toBe('true')
+
+      await act(async () => {
+        click(browserWindow, detailsPortalHost.querySelector(
+          '[data-research-right-tab="conversation"]'
+        ))
+      })
+      expect(conversation?.getAttribute('data-unread')).not.toBe('true')
+
+      await act(async () => {
+        click(browserWindow, detailsPortalHost.querySelector(
+          '[data-research-right-tab="details"]'
+        ))
+        session.update({ running: true })
+      })
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="conversation"]')
+        ?.getAttribute('data-unread')).toBe('true')
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="details"]')
+        ?.getAttribute('aria-selected')).toBe('true')
+    } finally {
+      await mounted.cleanup()
+    }
   })
 
   it('ignores wheel zoom when Command is not held', async () => {
