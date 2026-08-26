@@ -1,8 +1,94 @@
-import { readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
-import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+import { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 import { patchPath, projectRoot } from './patch-path'
+
+const composition = [
+  '- id: persona',
+  "  name: '@deepseek-ai/dsh-persona'",
+  '  config:',
+  '    text: Test package transfer',
+  ''
+].join('\n')
+
+type PatchedApiProxy = Omit<ReturnType<typeof createApiProxy>, 'agentPresets'> & {
+  agentPresets: ReturnType<typeof createApiProxy>['agentPresets'] & {
+    exportArchive(id: string, signal: AbortSignal): Promise<Response>
+    importArchive(
+      data: Uint8Array,
+      options: { agentPreset?: string; install?: boolean },
+      signal: AbortSignal
+    ): Promise<Response>
+  }
+}
+
+function presetTransferApi(root: string) {
+  const presets = {
+    roots: [{ path: root, trust: 'user' }],
+    async resolve(id: string) {
+      const compositionPath = path.join(root, id, 'agent.cordis.yml')
+      await readFile(compositionPath)
+      return {
+        id,
+        trust: 'user',
+        path: compositionPath,
+        name: id
+      }
+    }
+  }
+  return createApiProxy(
+    {
+      get(name: string) {
+        return name === 'agentPresets' ? presets : undefined
+      },
+      inject() {},
+      on() {},
+      effect() {},
+      userQuestions: {
+        registerProvider: () => () => {}
+      }
+    } as never,
+    {
+      cwd: root,
+      defaultModelSelection: () => ({ provider: 'test', model: 'test' })
+    }
+  ) as unknown as PatchedApiProxy
+}
+
+function presetPackage(
+  id: string,
+  layout: 'nested' | 'flat',
+  sourceDshVersion = '0.1.1-rc.2'
+) {
+  const versionMetadata = layout === 'nested'
+    ? {
+        sourceDshVersion,
+        exportedAt: '2026-08-26T00:00:00.000Z'
+      }
+    : {
+        dshVersion: sourceDshVersion,
+        createdAt: '2026-08-26T00:00:00.000Z'
+      }
+  const manifest = strToU8(
+    JSON.stringify({
+      format: 'dsh-preset',
+      version: 1,
+      id,
+      name: 'Gallery preset',
+      ...versionMetadata
+    })
+  )
+  const compositionPath = layout === 'nested'
+    ? 'preset/agent.cordis.yml'
+    : 'agent.cordis.yml'
+  return zipSync({
+    'manifest.json': manifest,
+    [compositionPath]: strToU8(composition)
+  })
+}
 
 describe('agent preset package transfer', () => {
   it('routes binary export and two-phase import requests outside the JSON RPC carrier', async () => {
@@ -55,6 +141,146 @@ describe('agent preset package transfer', () => {
     )
   })
 
+  it('round-trips canonical gallery packages and accepts rc.1/rc.2 flat archives', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
+    const signal = new AbortController().signal
+    try {
+      const sourceId = 'source-preset'
+      const sourceDir = path.join(root, sourceId)
+      await mkdir(sourceDir, { recursive: true })
+      await writeFile(path.join(sourceDir, 'agent.cordis.yml'), composition)
+      await writeFile(path.join(sourceDir, 'preset.yml'), 'name: Source preset\n')
+      const api = presetTransferApi(root)
+
+      const exported = await api.agentPresets.exportArchive(sourceId, signal)
+      expect(exported.status).toBe(200)
+      const archive = unzipSync(new Uint8Array(await exported.arrayBuffer()))
+      expect(Object.keys(archive).sort()).toEqual([
+        'manifest.json',
+        'preset/agent.cordis.yml',
+        'preset/preset.yml'
+      ])
+      expect(archive['agent.cordis.yml']).toBeUndefined()
+      const manifestBytes = archive['manifest.json']
+      if (manifestBytes === undefined) throw new Error('exported package has no manifest')
+      const exportedManifest = JSON.parse(strFromU8(manifestBytes))
+      expect(exportedManifest).toMatchObject({
+        format: 'dsh-preset',
+        version: 1,
+        id: sourceId,
+        sourceDshVersion: '0.1.1-rc.2'
+      })
+      expect(exportedManifest.exportedAt).toEqual(expect.any(String))
+      expect(exportedManifest.dshVersion).toBeUndefined()
+      expect(exportedManifest.createdAt).toBeUndefined()
+
+      for (const [layout, targetId] of [
+        ['nested', 'gallery-import'],
+        ['flat', 'legacy-flat-import']
+      ] as const) {
+        const data = presetPackage(`${layout}-source`, layout)
+        const preview = await api.agentPresets.importArchive(
+          data,
+          { agentPreset: targetId, install: false },
+          signal
+        )
+        expect(preview.status).toBe(200)
+        expect(await preview.json()).toMatchObject({
+          ok: true,
+          agentPreset: targetId,
+          sourceAgentPreset: `${layout}-source`,
+          name: 'Gallery preset',
+          sourceDshVersion: '0.1.1-rc.2',
+          fileCount: 1,
+          conflict: false,
+          installed: false
+        })
+
+        const installed = await api.agentPresets.importArchive(
+          data,
+          { agentPreset: targetId, install: true },
+          signal
+        )
+        const installedBody = await installed.json()
+        expect(installed.status, JSON.stringify(installedBody)).toBe(200)
+        expect(installedBody).toMatchObject({
+          ok: true,
+          agentPreset: targetId,
+          installed: true
+        })
+        expect(await readFile(path.join(root, targetId, 'agent.cordis.yml'), 'utf8'))
+          .toBe(composition)
+      }
+
+      const versionPreview = await api.agentPresets.importArchive(
+        presetPackage('outdated-source', 'nested', '0.1.0-rc.8'),
+        { install: false },
+        signal
+      )
+      expect(versionPreview.status).toBe(200)
+      expect(await versionPreview.json()).toMatchObject({
+        sourceDshVersion: '0.1.0-rc.8',
+        warnings: ['version-mismatch']
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects ambiguous archives that contain both canonical and flat paths', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
+    try {
+      const data = zipSync({
+        'manifest.json': strToU8(JSON.stringify({
+          format: 'dsh-preset',
+          version: 1,
+          id: 'ambiguous-preset'
+        })),
+        'agent.cordis.yml': strToU8(composition),
+        'preset/agent.cordis.yml': strToU8(composition)
+      })
+      const response = await presetTransferApi(root).agentPresets.importArchive(
+        data,
+        { install: false },
+        new AbortController().signal
+      )
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        error: 'Package contains conflicting file "agent.cordis.yml".'
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects unsafe archive paths instead of silently ignoring them', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
+    try {
+      const data = zipSync({
+        'manifest.json': strToU8(JSON.stringify({
+          format: 'dsh-preset',
+          version: 1,
+          id: 'unsafe-preset'
+        })),
+        'preset/agent.cordis.yml': strToU8(composition),
+        'preset/../outside.yml': strToU8('unsafe')
+      })
+      const response = await presetTransferApi(root).agentPresets.importArchive(
+        data,
+        { install: false },
+        new AbortController().signal
+      )
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        error: 'Package contains an unsafe path "preset/../outside.yml".'
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('keeps the archive boundary strict and installs through an atomic validated directory move', async () => {
     const patch = await readFile(
       patchPath('@deepseek-ai/dsh-host-apiproxy'),
@@ -68,7 +294,11 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('PRESET_ARCHIVE_IGNORED_FILES')
     expect(patch).toContain('.DS_Store')
     expect(patch).toContain('info.isSymbolicLink()')
+    expect(patch).toContain('files[`preset/${rel}`]')
+    expect(patch).toContain('safe.slice("preset/".length)')
     expect(patch).toContain('scanRoot({')
+    expect(patch).toContain('scanned.find((candidate) => candidate.id === targetId)')
+    expect(patch).not.toContain('scanned.get(targetId)')
     expect(patch).toContain('await rename(imported, target)')
     expect(patch).toContain('A preset named')
     expect(patch).toContain('possible-secrets')
@@ -84,9 +314,9 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('const root = writableRoot(presets.roots)')
     expect(patch).not.toContain('const root = writableRoot();')
     expect(patch).toContain('await mkdir(root, { recursive: true })')
-    expect(patch).toContain('let imported;')
-    expect(patch).toContain('imported = await mkdtemp')
-    expect(patch).toContain('if (imported !== void 0) await rm(imported')
+    expect(patch).toContain('let container;')
+    expect(patch).toContain('container = await mkdtemp')
+    expect(patch).toContain('if (container !== void 0) await rm(container')
   })
 
   it('adds import preview, conflict rename, trust warning, and custom-card export controls', async () => {
