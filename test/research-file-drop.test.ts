@@ -641,12 +641,27 @@ describe('Research canvas file drops', () => {
       sessionId: 's1', messageId: 'm1', kind: 'assistant-result', title: 'Answer', excerpt: 'Text'
     }
     expect(client.parseResearchArtifactDrag(JSON.stringify(payload))).toEqual(payload)
-    expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, id: 'untrusted' }))).toEqual(payload)
+    expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, id: 'untrusted' }))).toBeNull()
+    expect(client.parseResearchArtifactDrag(JSON.stringify({
+      ...payload, html: '<strong>Text</strong>'
+    }))).toBeNull()
     expect(client.parseResearchArtifactDrag(JSON.stringify({
       ...payload, kind: 'assistant-html'
     }))).toBeNull()
     expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, title: 'x'.repeat(257) }))).toBeNull()
     expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, excerpt: 'x'.repeat(16_385) }))).toBeNull()
+    const maximallyEscaped = {
+      sessionId: '\u0001'.repeat(512),
+      messageId: '\u0002'.repeat(512),
+      kind: 'assistant-excerpt',
+      title: '\u0003'.repeat(256),
+      excerpt: '\u0004'.repeat(16_384)
+    }
+    const maximallyEscapedRaw = JSON.stringify(maximallyEscaped)
+    expect(client.parseResearchArtifactDrag(maximallyEscapedRaw)).toEqual(maximallyEscaped)
+    expect(client.parseResearchArtifactDrag(
+      `${' '.repeat(256)}${maximallyEscapedRaw}`
+    )).toBeNull()
     expect(client.parseResearchArtifactDrag('not-json')).toBeNull()
   })
 
@@ -671,6 +686,78 @@ describe('Research canvas file drops', () => {
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
       title: 'Revised', excerpt: 'Evidence', x: 240, y: 160
     }])
+  })
+
+  it('keeps delimiter-bearing excerpt identities distinct during placement', async () => {
+    const client = await loadConversationClient()
+    expect(client.placeResearchCanvasArtifact).toBeTypeOf('function')
+    if (typeof client.placeResearchCanvasArtifact !== 'function') return
+    const first = {
+      sessionId: 's1', messageId: 'm:a', kind: 'assistant-excerpt',
+      title: '助手摘录', excerpt: 'b'
+    }
+    const second = {
+      sessionId: 's1', messageId: 'm', kind: 'assistant-excerpt',
+      title: '助手摘录', excerpt: 'a:b'
+    }
+    const placed = client.placeResearchCanvasArtifact(
+      [], first, { x: 10, y: 20 }, () => 'artifact-1'
+    )
+    const together = client.placeResearchCanvasArtifact(
+      placed, second, { x: 30, y: 40 }, () => 'artifact-2'
+    )
+
+    expect(together).toMatchObject([
+      { id: 'artifact-1', messageId: 'm:a', excerpt: 'b', x: 10, y: 20 },
+      { id: 'artifact-2', messageId: 'm', excerpt: 'a:b', x: 30, y: 40 }
+    ])
+  })
+
+  it('restores delimiter-bearing excerpt identities independently from persistence', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const storage = memoryStorage({
+      'sherlock.research.canvas.artifacts.v1:s1': JSON.stringify([
+        {
+          id: 'artifact-1', kind: 'assistant-excerpt', messageId: 'm:a',
+          title: '助手摘录', excerpt: 'b', x: 10, y: 20
+        },
+        {
+          id: 'artifact-2', kind: 'assistant-excerpt', messageId: 'm',
+          title: '助手摘录', excerpt: 'a:b', x: 30, y: 40
+        }
+      ])
+    })
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for('s1')
+
+    expect(workspace.getSnapshot().artifacts).toMatchObject([
+      { id: 'artifact-1', messageId: 'm:a', excerpt: 'b' },
+      { id: 'artifact-2', messageId: 'm', excerpt: 'a:b' }
+    ])
+  })
+
+  it('rejects unsupported artifact kinds on set and localStorage restore', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const invalid = {
+      id: 'artifact-html', kind: 'assistant-html', messageId: 'm1',
+      title: 'HTML', excerpt: '<strong>unsafe</strong>', x: 10, y: 20
+    }
+    const restoredStorage = memoryStorage({
+      'sherlock.research.canvas.artifacts.v1:restored': JSON.stringify([invalid])
+    })
+    const restored = new client.ResearchWorkspaceRegistry(restoredStorage).for('restored')
+    expect(restored.getSnapshot().artifacts).toEqual([])
+
+    const setStorage = memoryStorage({})
+    const setWorkspace = new client.ResearchWorkspaceRegistry(setStorage).for('set')
+    setWorkspace.setArtifacts([invalid])
+    expect(setWorkspace.getSnapshot().artifacts).toEqual([])
+    expect(JSON.parse(setStorage.getItem(
+      'sherlock.research.canvas.artifacts.v1:set'
+    ) ?? 'null')).toEqual([])
   })
 
   it('keeps one assistant result while normalized excerpts dedupe independently', async () => {

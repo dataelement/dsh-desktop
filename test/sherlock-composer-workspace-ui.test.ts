@@ -1306,14 +1306,22 @@ describe('Sherlock workspace and composer controls', () => {
   it('does not claim malformed or cross-session proprietary drags', async () => {
     const mounted = await mountResearchCanvas({ sessionId: 'session-drag-ownership' })
     try {
-      const { browserWindow, canvas } = mounted
-      const bubbled = { dragenter: 0, dragover: 0 }
+      const { browserWindow, canvas, workspace } = mounted
+      const bubbled = { dragenter: 0, dragover: 0, drop: 0 }
       browserWindow.document.addEventListener('dragenter', () => { bubbled.dragenter += 1 })
       browserWindow.document.addEventListener('dragover', () => { bubbled.dragover += 1 })
+      browserWindow.document.addEventListener('drop', () => { bubbled.drop += 1 })
       const transfer = (type: string, raw: string) => ({
         types: [type],
         files: [],
         getData: (requested: string) => requested === type ? raw : '',
+        dropEffect: 'none'
+      })
+      const mixedArtifactTransfer = (raw: string) => ({
+        types: ['Files', 'application/x-sherlock-research-artifact'],
+        files: [{ name: 'fallback.pdf', type: 'application/pdf' }],
+        getData: (requested: string) =>
+          requested === 'application/x-sherlock-research-artifact' ? raw : '',
         dropEffect: 'none'
       })
       const invalid = [
@@ -1322,11 +1330,16 @@ describe('Sherlock workspace and composer controls', () => {
         transfer('application/x-sherlock-research-artifact', JSON.stringify({
           sessionId: 'another-session', messageId: 'm1', kind: 'assistant-result',
           title: 'Answer', excerpt: 'Evidence'
+        })),
+        mixedArtifactTransfer('{bad-json'),
+        mixedArtifactTransfer(JSON.stringify({
+          sessionId: 'another-session', messageId: 'm1', kind: 'assistant-result',
+          title: 'Answer', excerpt: 'Evidence'
         }))
       ]
 
       for (const dataTransfer of invalid) {
-        for (const type of ['dragenter', 'dragover'] as const) {
+        for (const type of ['dragenter', 'dragover', 'drop'] as const) {
           const before = bubbled[type]
           const event = dispatchDrag(browserWindow, canvas, type, dataTransfer)
           expect(event.defaultPrevented).toBe(false)
@@ -1351,6 +1364,19 @@ describe('Sherlock workspace and composer controls', () => {
           expect(bubbled[type]).toBe(before)
         }
       }
+
+      const validMixed = mixedArtifactTransfer(JSON.stringify({
+        sessionId: 'session-drag-ownership', messageId: 'm-mixed',
+        kind: 'assistant-result', title: 'Mixed answer', excerpt: 'Artifact wins'
+      }))
+      await act(async () => {
+        const drop = dispatchDrag(browserWindow, canvas, 'drop', validMixed)
+        expect(drop.defaultPrevented).toBe(true)
+      })
+      expect(workspace.getSnapshot().artifacts).toMatchObject([
+        { messageId: 'm-mixed', title: 'Mixed answer' }
+      ])
+      expect(workspace.getSnapshot().files).toEqual([])
     } finally {
       await mounted.cleanup()
     }
