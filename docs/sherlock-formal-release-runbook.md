@@ -12,7 +12,7 @@
 4. 公证通道必须使用 `Developer ID Application: yafeng he (FAV8TLDK73)`，指纹 `DDFBC7F4DA5EC49721E454BB06329C6D1E8A7B9F`，并通过 Apple notarization、stapling 和 Gatekeeper 检查。
 5. 旧自签名身份备份位于 `/Users/heyafeng/Documents/Sherlock Release Backup/Sherlock-Desktop-Update-Signing-8B8FCCFB.p12`；密码存于 macOS 钥匙串，service 为 `Sherlock Update Signing P12 Backup Password`，account 为 `Sherlock Release Backup`。
 6. 先上传不可变版本资源，再更新公证 DMG 稳定下载别名，最后分别提升 `latest/latest-mac.yml` 与 `notarized/latest/latest-mac.yml`。发布脚本已按此顺序执行。
-7. 不丢弃、覆盖或顺手提交用户的无关改动；禁止 `git add -A`、强推和直接推送上游 `origin/main`。
+7. 不丢弃、覆盖或顺手提交用户的无关改动；禁止 `git add -A`、强推和直接推送上游 `origin/main`。正式构建必须从干净的本地 `main` 提交执行，且不得遗漏其他本地分支中准备发布的提交。
 8. 当前正式渠道是 macOS Apple Silicon。没有同时构建 Intel/Windows 时，不宣称这两个平台已发布。
 9. 已安装 0.6.3 的用户长期走旧证书兼容 feed；新下载用户走 Developer ID 公证 feed。每次发布都必须维护两套签名 ZIP，除非未来另行实现并真实验证签名迁移安装器。
 10. R2 采用滚动版本保留：新版本全部公开验证成功后，只删除 `releases/v*` 中版本号最早的一个目录。禁止删除 `latest/`、`notarized/latest/`、`download/`、当前版本或一次删除多个旧版本；发布或公开验证失败时禁止清理旧版本。
@@ -24,6 +24,7 @@
 ```bash
 git status --short --branch
 git diff --check
+npm run git:formal:verify
 security find-identity -v -p codesigning
 xcrun notarytool history \
   --key /Users/heyafeng/Downloads/AuthKey_KSJ7725349.p8 \
@@ -93,6 +94,20 @@ npm test -- \
 npm run typecheck
 npm run build
 ```
+
+聚焦验证通过后，先只暂存本次正式版本相关文件并创建中文本地提交，例如：
+
+```bash
+git commit -m "发布：准备 Sherlock 0.6.4 正式版"
+```
+
+若版本是 `1.0.0`、`2.0.0` 等大版本，还必须在该提交上创建本地注释标签：
+
+```bash
+git tag -a V1.0.0 -m "Sherlock V1.0.0"
+```
+
+再次执行 `npm run git:formal:verify`，确认当前是干净的 `main`，其他 worktree 没有未提交修改，也没有其他本地分支包含尚未合并的提交。未经用户明确授权，不得把版本标签推送到远端。
 
 增加本次源码改动直接涉及的测试，但不运行全功能测试。任何失败都应先定位修复并重跑相关检查，不能带失败继续发布。
 
@@ -273,14 +288,14 @@ npm run release:cloudflare:prune-oldest -- \
 
 ## 6. 源码同步
 
-线上验证成功后，检查并仅暂存本次发布相关文件，提交信息使用 `release: publish Sherlock <version>`。推送到：
+线上验证成功后，检查是否产生发布清单等新的受跟踪改动；若有，只暂存这些发布相关文件并创建中文提交，例如 `发布：记录 Sherlock 0.6.4 正式发布结果`。推送到：
 
 ```bash
 git push https://github.com/hyf901111-design/dsh-desktop.git \
   HEAD:refs/heads/codex/sherlock-cloudflare-updates
 ```
 
-当前不要创建 `v<version>` Git 标签，因为 Fork 的完整 GitHub Release Secrets/Runner 尚未配置，标签会触发失败的工作流。GitHub 推送失败不回滚已经验证成功的 Cloudflare 版本；修复认证后重试源码同步。
+大版本的 `V<version>` 注释标签只保存在本地；当前不要推送任何版本标签，因为 Fork 的完整 GitHub Release Secrets/Runner 尚未配置，远端标签可能触发失败的工作流。GitHub 推送失败不回滚已经验证成功的 Cloudflare 版本；修复认证后重试源码同步。
 
 若既有 Fork 发布分支发生非快进分歧，禁止强推，也不要为了 Git 同步改写已经验证的发布提交。把当前发布提交推到新的版本化备份分支，例如：
 

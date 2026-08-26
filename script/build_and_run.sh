@@ -70,6 +70,7 @@ case "$mode" in
       echo 'The local formal release currently supports Apple Silicon only.' >&2
       exit 1
     }
+    node "$project_root/scripts/verify-formal-git-state.mjs" --repo "$project_root"
     legacy_identity='8B8FCCFB659D94D5C9A9CE2B735EB0FAE457CC7B'
     developer_identity='DDFBC7F4DA5EC49721E454BB06329C6D1E8A7B9F'
     signing_identities="$(security find-identity -v -p codesigning)"

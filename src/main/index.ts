@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { isAbsolute, join, normalize } from 'node:path'
+import { homedir } from 'node:os'
+import { isAbsolute, join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { parse } from 'yaml'
@@ -51,6 +52,7 @@ import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { resolveDesktopIdentity } from './app-identity'
 import { migrateLegacyUserData } from './app-data-migration'
 import { installBundledPluginProfile } from './bundled-plugin-profile'
+import { synchronizeBundledESkillOverrides } from './bundled-skill-sync'
 import {
   configureBrowserSearchSecurity,
   type BrowserSearchWindow
@@ -207,6 +209,26 @@ function configureAppIdentity(): void {
   app.setName(identity.name)
   app.setPath('userData', identity.userData)
   if (app.isPackaged) {
+    try {
+      const agentsHome = resolve(
+        process.env.DSH_AGENTS_HOME?.trim() || join(homedir(), '.agents')
+      )
+      const result = synchronizeBundledESkillOverrides({
+        bundledSkillDirectory: join(process.resourcesPath, 'sherlock-skills'),
+        overrideSkillDirectories: [
+          join(identity.userData, 'harness', 'skills'),
+          join(agentsHome, 'skills')
+        ]
+      })
+      for (const upgrade of result.upgraded) {
+        console.info(
+          `[desktop] upgraded official skill ${upgrade.slug} from ${upgrade.fromVersion} to ${upgrade.toVersion}`
+        )
+      }
+    } catch (error) {
+      console.warn('[desktop] failed to synchronize bundled Sherlock skills', error)
+    }
+
     const bundledProfilePath = join(process.resourcesPath, 'sherlock-plugin-profile')
     try {
       const result = installBundledPluginProfile({

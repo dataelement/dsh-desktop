@@ -1,0 +1,23 @@
+#!/bin/sh
+
+set -eu
+
+message_file="$1"
+node - "$message_file" <<'NODE'
+const fs = require('node:fs')
+
+const messagePath = process.argv[2]
+const message = fs
+  .readFileSync(messagePath, 'utf8')
+  .split(/\r?\n/)
+  .filter((line) => !line.trimStart().startsWith('#'))
+  .join('\n')
+  .trim()
+
+if (!/[\u3400-\u9fff\uf900-\ufaff]/u.test(message)) {
+  process.stderr.write(
+    '提交信息必须包含中文说明，例如：修复：确保正式版使用最新内置 Skill。\n'
+  )
+  process.exit(1)
+}
+NODE

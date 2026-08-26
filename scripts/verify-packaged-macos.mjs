@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
+import { verifyBundledSkillParity } from './bundled-skill-parity.mjs'
 
 const args = process.argv.slice(2)
 
@@ -109,9 +110,18 @@ try {
     const resourcesPath = path.join(appPath, 'Contents', 'Resources')
     const runtimeRoot = path.join(resourcesPath, 'app')
     const runtimeNode = path.join(runtimeRoot, 'node_modules', 'node', 'bin', 'node')
+    const bundledSkill = verifyBundledSkillParity({
+      sourceSkillDirectory: path.resolve('skills', 'efund-ppt-maker'),
+      packagedSkillDirectory: path.join(
+        resourcesPath,
+        'sherlock-skills',
+        'efund-ppt-maker'
+      )
+    })
 
     verifyRuntime(runtimeNode, runtimeRoot)
     verifySignature(appPath)
+    console.log(`bundled skill: ${bundledSkill.slug} ${bundledSkill.version} (source parity)`)
     console.log(`package: verified (${appPath})`)
   } else {
     if (!runtimeRootOption || !runtimeNodeOption) {
