@@ -1,8 +1,44 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..1ff7dd5 100644
+index 1dd0e89..11b2e39 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-@@ -348,6 +348,17 @@ window.__ModuleLoader__.load({
+@@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
+ 		let _deepseek_ai_cordis = require("@deepseek-ai/cordis");
+ 		let react_jsx_runtime = require("react/jsx-runtime");
+ 		let react = require("react");
++		let react_dom = require("react-dom");
+ 		let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+ 		let _deepseek_ai_dsh_client_ui_attachment = require("@deepseek-ai/dsh-client-ui-attachment");
+ 		//#region lib/types/client/stores.js
+@@ -26,7 +27,10 @@ window.__ModuleLoader__.load({
+ 					selection: null,
+ 					draft: "",
+ 					view: null,
+-					inspect: null
++					inspect: null,
++					researchRightTab: "conversation",
++					researchFilesTabOpen: true,
++					researchConversationUnread: false
+ 				}),
+ 				persist: "dsh.conversation.chat",
+ 				actions: {
+@@ -41,6 +45,15 @@ window.__ModuleLoader__.load({
+ 					},
+ 					setInspect: (d, target) => {
+ 						d.inspect = target;
++					},
++					setResearchRightTab: (d, tab) => {
++						d.researchRightTab = tab;
++					},
++					setResearchFilesTabOpen: (d, open) => {
++						d.researchFilesTabOpen = open;
++					},
++					setResearchConversationUnread: (d, unread) => {
++						d.researchConversationUnread = unread;
+ 					}
+ 				}
+ 			});
+@@ -348,6 +361,17 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => session.subscribe(fn)
  			};
  		}
@@ -20,7 +56,146 @@ index 1dd0e89..1ff7dd5 100644
  		/** The machine never writes the queue; the wiring layer overlays the queue store's projection. */
  		const EMPTY_QUEUE$1 = [];
  		/** Undo ring depth (bounded self-managed transaction log). */
-@@ -1462,7 +1473,7 @@ window.__ModuleLoader__.load({
+@@ -969,8 +993,9 @@ window.__ModuleLoader__.load({
+ 			* @param ids - failed attempt image ids.
+ 			*/
+ 			restoreImages(ids) {
+-				const current = new Set(this.imageIds);
+-				this.imageIds = [...ids.filter((id) => !current.has(id)), ...this.imageIds];
++				const admitted = [...new Set(ids)];
++				const admittedSet = new Set(admitted);
++				this.imageIds = [...admitted, ...this.imageIds.filter((id, index, current) => !admittedSet.has(id) && current.indexOf(id) === index)];
+ 				this.publish();
+ 			}
+ 			/**
+@@ -979,10 +1004,11 @@ window.__ModuleLoader__.load({
+ 			* (the command path gets the same discipline from submit-settled success).
+ 			* @param imageIds - admitted image ids to remove from this draft.
+ 			*/
+-			commitSend(imageIds) {
++			commitSend(imageIds, admittedDraft = this.snapshot.draft) {
+ 				const submitted = new Set(imageIds);
+ 				this.imageIds = this.imageIds.filter((id) => !submitted.has(id));
+-				this.run(this.core.dispatch({ type: "send-committed" }));
++				if (this.snapshot.draft === admittedDraft) this.run(this.core.dispatch({ type: "send-committed" }));
++				else this.publish();
+ 			}
+ 			/** Undo the latest transaction (InputBar intercepts the platform chord). */
+ 			undo() {
+@@ -1020,7 +1046,7 @@ window.__ModuleLoader__.load({
+ 			* dismisses and the menu tracks frozen.
+ 			*/
+ 			submit(mode = "queue") {
+-				if (this.snapshot.draft.trim() === "" && this.imageIds.length > 0) {
++				if (this.snapshot.draft.trim() === "" && (this.imageIds.length > 0 || this.deps.hasExternalAttachments?.() === true)) {
+ 					if (this.snapshot.phase === "plain") this.deps.defaultSink("", [...this.imageIds], mode);
+ 					return;
+ 				}
+@@ -1334,14 +1360,21 @@ window.__ModuleLoader__.load({
+ 		var InputHub = class {
+ 			rootCtx;
+ 			t;
++			researchWorkspaces;
++			researchActiveSessions = /* @__PURE__ */ new Set();
+ 			shells = /* @__PURE__ */ new Map();
+ 			/**
+ 			* @param ctx - client root context (services resolved lazily per call — boot order stays free).
+ 			* @param t - conversation-namespace translate thunk (reads the active locale at call time).
+ 			*/
+-			constructor(rootCtx, t) {
++			constructor(rootCtx, t, researchWorkspaces = defaultResearchWorkspaces) {
+ 				this.rootCtx = rootCtx;
+ 				this.t = t;
++				this.researchWorkspaces = researchWorkspaces;
++			}
++			setResearchActive(sessionId, active) {
++				if (active) this.researchActiveSessions.add(sessionId);
++				else this.researchActiveSessions.delete(sessionId);
+ 			}
+ 			/**
+ 			* Resolve the facade for one session-scope ctx (SessionInputResolver face).
+@@ -1373,6 +1406,7 @@ window.__ModuleLoader__.load({
+ 					defaultSink: (text, imageIds, mode) => {
+ 						this.sink(session, text, imageIds, mode);
+ 					},
++					hasExternalAttachments: () => this.researchActiveSessions.has(id) && this.researchWorkspaces.for(id).selectedFiles().length > 0,
+ 					steerQueue: () => {
+ 						this.steerQueue(session, shell);
+ 					}
+@@ -1390,6 +1424,7 @@ window.__ModuleLoader__.load({
+ 						const drafts = shell.snapshot.imageIds;
+ 						shell.dispose();
+ 						this.shells.delete(id);
++						this.researchActiveSessions.delete(id);
+ 						const conversation = this.rootCtx.get("conversation");
+ 						for (const imageId of drafts) conversation?.releaseDraftImage(imageId);
+ 					};
+@@ -1435,19 +1470,56 @@ window.__ModuleLoader__.load({
+ 			* exactly one path; a failed first prompt is an ordinary prompt failure
+ 			* (error strip via promptError, draft restored only while untouched).
+ 			*/
+-			sink(session, text, imageIds, mode) {
+-				if (text === "" && imageIds.length === 0) return;
++			async sink(session, text, imageIds, mode) {
+ 				const shell = this.shells.get(session.sessionId);
+-				shell?.commitSend(imageIds);
+-				this.conversation().sendSession(session, text, imageIds, mode).catch(() => {
++				const workspace = this.researchWorkspaces.for(session.sessionId);
++				const researchActive = this.researchActiveSessions.has(session.sessionId);
++				const selection = researchActive ? workspace.selectionSnapshot() : { selectedNodeIds: [], orderedFileIds: [] };
++				const attempt = {
++					text,
++					draft: shell?.snapshot.draft ?? text,
++					imageIds: [...imageIds],
++					files: researchActive ? workspace.selectedFiles().map((file) => ({ ...file })) : [],
++					selection,
++					session,
++					mode
++				};
++				if (attempt.text === "" && attempt.imageIds.length === 0 && attempt.files.length === 0) return;
++				if (attempt.files.length > RESEARCH_PROMPT_MAX_FILES || attempt.files.some((file) => typeof file.path !== "string" || file.path.length === 0 || file.path.length > RESEARCH_CANVAS_TEXT_LIMIT)) {
++					shell?.notify("error", this.t("research.files.unavailable"));
++					return;
++				}
++				if (attempt.files.length > 0) {
++					let available = [];
++					try {
++						available = await window.dshDesktop?.researchFilesAvailable?.(attempt.files.map((file) => file.path)) ?? [];
++					} catch {}
++					if (!Array.isArray(available) || available.length !== attempt.files.length || Array.from(available).some((value) => value !== true)) {
++						shell?.notify("error", this.t("research.files.unavailable"));
++						return;
++					}
++				}
++				if (shell !== void 0 && this.shells.get(session.sessionId) !== shell) return;
++				const prompt = serializeResearchPrompt(attempt.files.map((file) => ({
++					id: file.id,
++					name: researchPromptBasename(file.name),
++					path: file.path
++				})), attempt.text);
++				shell?.commitSend(attempt.imageIds, attempt.draft);
++				const committedDraftRev = shell?.snapshot.draftRev;
++				if (researchActive) workspace.commitSelection(attempt.selection);
++				try {
++					await this.conversation().sendSession(attempt.session, prompt, attempt.imageIds, attempt.mode);
++				} catch {
++					if (researchActive) workspace.restoreSelection(attempt.selection);
+ 					if (this.shells.get(session.sessionId) === shell) {
+-						shell?.restoreImages(imageIds);
+-						if (shell?.snapshot.draft === "") shell.setDraft(text);
++						shell?.restoreImages(attempt.imageIds);
++						if (shell?.snapshot.draft === "" && shell.snapshot.draftRev === committedDraftRev) shell.setDraft(attempt.draft);
+ 						return;
+ 					}
+ 					const conversation = this.rootCtx.get("conversation");
+-					for (const id of imageIds) conversation?.releaseDraftImage(id);
+-				});
++					for (const id of attempt.imageIds) conversation?.releaseDraftImage(id);
++				}
+ 			}
+ 			/**
+ 			* Steer every still-pending queued message into the running turn, in FIFO
+@@ -1462,7 +1534,7 @@ window.__ModuleLoader__.load({
  			* @param shell - the resident shell (notice outlet).
  			*/
  			async steerQueue(session, shell) {
@@ -29,48 +204,7 @@ index 1dd0e89..1ff7dd5 100644
  				if (queued.length === 0) return;
  				for (const item of queued) {
  					const result = await session.updateQueue(item.id, { kind: "steer" });
-@@ -3164,8 +3175,11 @@ window.__ModuleLoader__.load({
- 			if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) return name;
- 			return name.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
- 		}
--		function optionLabel(option) {
--			return option.value === FULL_ACCESS ? "Full access" : displayName(option.name);
-+		function permissionOptionLabel(option, t) {
-+			if (option.value === "read-only") return t("access.mode.readOnly");
-+			if (option.value === "workspace-write") return t("access.mode.workspaceWrite");
-+			if (option.value === FULL_ACCESS) return t("access.mode.fullAccess");
-+			return displayName(option.name);
- 		}
- 		function PermissionSelect({ value, locked, command, t }) {
- 			const [pick, setPick] = (0, react.useState)(null);
-@@ -3186,7 +3200,7 @@ window.__ModuleLoader__.load({
- 				const icon = permissionGlyph(option.value);
- 				return {
- 					id: option.value,
--					label: optionLabel(option),
-+					label: permissionOptionLabel(option, t),
- 					...icon === void 0 ? {} : { icon }
- 				};
- 			});
-@@ -3228,7 +3242,7 @@ window.__ModuleLoader__.load({
- 				anchor: (0, react_jsx_runtime.jsxs)("button", {
- 					type: "button",
- 					className: PermissionSelect_module_css_default.trigger,
--					"aria-label": t("input.accessMode", { name: current === void 0 ? displayName(currentValue) : optionLabel(current) }),
-+					"aria-label": t("input.accessMode", { name: current === void 0 ? displayName(currentValue) : permissionOptionLabel(current, t) }),
- 					title: current?.description,
- 					disabled: locked || busy,
- 					onClick: () => {
-@@ -3242,7 +3256,7 @@ window.__ModuleLoader__.load({
- 						}),
- 						(0, react_jsx_runtime.jsx)("span", {
- 							className: PermissionSelect_module_css_default.triggerLabel,
--							children: current === void 0 ? displayName(currentValue) : optionLabel(current)
-+							children: current === void 0 ? displayName(currentValue) : permissionOptionLabel(current, t)
- 						}),
- 						(0, react_jsx_runtime.jsx)("span", {
- 							className: clsx(PermissionSelect_module_css_default.chevron, open && PermissionSelect_module_css_default.chevronOpen),
-@@ -3304,7 +3318,7 @@ window.__ModuleLoader__.load({
+@@ -3304,7 +3376,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$17;
@@ -79,10 +213,11 @@ index 1dd0e89..1ff7dd5 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -3356,6 +3370,36 @@ window.__ModuleLoader__.load({
+@@ -3356,7 +3428,37 @@ window.__ModuleLoader__.load({
  			textRefs: [],
  			hint: null
  		};
+-		function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, overlay, leftItems, rightItems, footer }) {
 +		/** Command-menu trigger branded as Sherlock's slash key. */
 +		function CommandLauncherButton({ label, expanded, disabled, onMouseDown, onClick }) {
 +			return (0, react_jsx_runtime.jsx)("button", {
@@ -113,10 +248,20 @@ index 1dd0e89..1ff7dd5 100644
 +				permissions
 +			] });
 +		}
- 		function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, overlay, leftItems, rightItems, footer }) {
++		function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, hasExternalAttachments = false, overlay, leftItems, rightItems, footer }) {
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
-@@ -3420,7 +3464,7 @@ window.__ModuleLoader__.load({
+ 			const lexicon = useLexicon((s) => s);
+@@ -3370,7 +3472,7 @@ window.__ModuleLoader__.load({
+ 			const live = input !== void 0 && keyboard !== void 0 && inputActions !== void 0;
+ 			const draft = input?.draft ?? "";
+ 			const attachments = (0, react.useMemo)(() => input === void 0 || draftImages === void 0 ? [] : draftImages(input.imageIds), [draftImages, input?.imageIds]);
+-			const empty = draft.trim() === "" && attachments.length === 0;
++			const empty = draft.trim() === "" && attachments.length === 0 && !hasExternalAttachments;
+ 			const [preview, setPreview] = (0, react.useState)(null);
+ 			const [dragActive, setDragActive] = (0, react.useState)(false);
+ 			const [toast, setToast] = (0, react.useState)(null);
+@@ -3420,7 +3522,7 @@ window.__ModuleLoader__.load({
  			const machineBusy = input?.phase === "adjudicating" || input?.phase === "submitting";
  			const workspaceTrigger = inert && !removed && onRequestWorkspace !== void 0;
  			const textareaDisabled = removed || locked && !workspaceTrigger;
@@ -125,7 +270,7 @@ index 1dd0e89..1ff7dd5 100644
  			(0, react.useEffect)(() => {
  				if (input === void 0 || inputActions === void 0) return;
  				if (attachments.length !== input.imageIds.length) inputActions.pruneImages(attachments.map((attachment) => attachment.id));
-@@ -3866,29 +3910,25 @@ window.__ModuleLoader__.load({
+@@ -3866,29 +3968,25 @@ window.__ModuleLoader__.load({
  								className: InputBar_module_css_default.row,
  								children: [(0, react_jsx_runtime.jsxs)("div", {
  									className: InputBar_module_css_default.tools,
@@ -165,7 +310,7 @@ index 1dd0e89..1ff7dd5 100644
  								}), (0, react_jsx_runtime.jsxs)("div", {
  									className: InputBar_module_css_default.trailing,
  									children: [
-@@ -4103,7 +4143,8 @@ window.__ModuleLoader__.load({
+@@ -4103,7 +4201,8 @@ window.__ModuleLoader__.load({
  		*/
  		const CompactionItem = (0, react.memo)(function CompactionItem({ node, title, fallbackSummary, t }) {
  			const [expanded, setExpanded] = (0, react.useState)(false);
@@ -175,7 +320,7 @@ index 1dd0e89..1ff7dd5 100644
  			const open = expandable && expanded;
  			const summary = node.shadowedItemCount !== null && node.shadowedTokenCount !== null ? t("message.compaction.completed", {
  				items: node.shadowedItemCount,
-@@ -4135,13 +4176,13 @@ window.__ModuleLoader__.load({
+@@ -4135,13 +4234,13 @@ window.__ModuleLoader__.load({
  						}),
  						(0, react_jsx_runtime.jsx)("span", {
  							className: MessageItem_module_css_default.compactionTitle,
@@ -192,7 +337,42 @@ index 1dd0e89..1ff7dd5 100644
  							className: MessageItem_module_css_default.compactionSummary,
  							children: summary
  						})
-@@ -5209,7 +5250,7 @@ window.__ModuleLoader__.load({
+@@ -5097,8 +5196,9 @@ window.__ModuleLoader__.load({
+ 		/** Right-aligned bubble shared by user and steering rows. */
+ 		function UserStyleBubble({ content, imageLoader, actions, pending = false, t }) {
+ 			const { text, images, rest } = contentParts(content);
++			const research = parseResearchPrompt(text);
+ 			const truncated = (total) => t("json.truncated", { total });
+-			const showBubble = text !== "" || rest.length > 0;
++			const showBubble = research.text !== "" || research.files.length > 0 || rest.length > 0;
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: MessageItem_module_css_default.userRow,
+ 				"data-pending-steering": pending || void 0,
+@@ -5112,13 +5212,21 @@ window.__ModuleLoader__.load({
+ 						labels: messageImageLabels(t)
+ 					}), showBubble && (0, react_jsx_runtime.jsxs)("div", {
+ 						className: MessageItem_module_css_default.bubble,
+-						children: [projectUserText(text), rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
++						children: [research.files.length > 0 && (0, react_jsx_runtime.jsx)("div", {
++							"data-research-message-files": "",
++							style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: research.text === "" ? 0 : 8 },
++							children: research.files.map((file) => (0, react_jsx_runtime.jsx)("span", {
++								"data-research-message-file": file.id,
++								style: { display: "inline-flex", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", border: "1px solid var(--dsw-alias-border-l2)", borderRadius: 7, padding: "2px 7px" },
++								children: researchPromptBasename(file.name)
++							}, file.id))
++						}), research.text !== "" && projectUserText(research.text), rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
+ 							label: t("message.extraBlock"),
+ 							payload: block,
+ 							truncatedLabel: truncated
+ 						}, i))]
+ 					})]
+-				}), actions?.(text)]
++				}), actions?.(research.text)]
+ 			});
+ 		}
+ 		/**
+@@ -5209,7 +5317,7 @@ window.__ModuleLoader__.load({
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/ChatView.module.css.mjs
@@ -201,7 +381,7 @@ index 1dd0e89..1ff7dd5 100644
  		const tagId$11 = "@deepseek-ai/dsh-client-ui-conversation/ChatView.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -5218,9 +5259,28 @@ window.__ModuleLoader__.load({
+@@ -5218,9 +5326,28 @@ window.__ModuleLoader__.load({
  			tag.textContent = css$11;
  			document.head.appendChild(tag);
  		}
@@ -232,7 +412,7 @@ index 1dd0e89..1ff7dd5 100644
  			"callRow": "Md3f7G_callRow",
  			"hint": "Md3f7G_hint",
  			"root": "Md3f7G_root",
-@@ -5228,11 +5288,19 @@ window.__ModuleLoader__.load({
+@@ -5228,11 +5355,19 @@ window.__ModuleLoader__.load({
  			"older": "Md3f7G_older",
  			"flowItem": "Md3f7G_flowItem",
  			"toBottomSlot": "Md3f7G_toBottomSlot",
@@ -253,7 +433,7 @@ index 1dd0e89..1ff7dd5 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatNodeSeat.js
  		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
-@@ -5278,6 +5346,131 @@ window.__ModuleLoader__.load({
+@@ -5278,6 +5413,131 @@ window.__ModuleLoader__.load({
  				})
  			});
  		});
@@ -385,7 +565,7 @@ index 1dd0e89..1ff7dd5 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatView.js
  		/** Active column host when present; otherwise the view-local scroller. */
-@@ -5289,6 +5482,21 @@ window.__ModuleLoader__.load({
+@@ -5289,6 +5549,21 @@ window.__ModuleLoader__.load({
  			for (const row of list.querySelectorAll("[data-chat-anchor-key]")) if (row.dataset.chatAnchorKey === key) return row;
  			return null;
  		}
@@ -407,7 +587,7 @@ index 1dd0e89..1ff7dd5 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5332,35 +5540,468 @@ window.__ModuleLoader__.load({
+@@ -5332,35 +5607,468 @@ window.__ModuleLoader__.load({
  				scrollTop: scrollport.scrollTop
  			};
  		}
@@ -900,7 +1080,7 @@ index 1dd0e89..1ff7dd5 100644
  				})]
  			});
  		}
-@@ -5381,11 +6022,58 @@ window.__ModuleLoader__.load({
+@@ -5381,11 +6089,58 @@ window.__ModuleLoader__.load({
  			const loadingOlder = useSession((s) => s.loadingOlder);
  			const selectedCallId = useStore((s) => s.selection?.callId);
  			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
@@ -960,7 +1140,7 @@ index 1dd0e89..1ff7dd5 100644
  			/** Last position delivered or written on the main thread. */
  			const observedTopRef = (0, react.useRef)(0);
  			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5405,6 +6093,12 @@ window.__ModuleLoader__.load({
+@@ -5405,6 +6160,12 @@ window.__ModuleLoader__.load({
  			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
  			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
  			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
@@ -973,7 +1153,7 @@ index 1dd0e89..1ff7dd5 100644
  			const toBottom = (el) => {
  				anchorRef.current = null;
  				el.scrollTop = el.scrollHeight;
-@@ -5412,6 +6106,8 @@ window.__ModuleLoader__.load({
+@@ -5412,6 +6173,8 @@ window.__ModuleLoader__.load({
  				atBottomRef.current = true;
  				setAtBottom(true);
  				chatScroll.save(null);
@@ -982,7 +1162,7 @@ index 1dd0e89..1ff7dd5 100644
  			};
  			(0, react.useLayoutEffect)(() => {
  				const local = listRef.current;
-@@ -5468,6 +6164,7 @@ window.__ModuleLoader__.load({
+@@ -5468,6 +6231,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -990,7 +1170,7 @@ index 1dd0e89..1ff7dd5 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5487,6 +6184,10 @@ window.__ModuleLoader__.load({
+@@ -5487,6 +6251,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -1001,7 +1181,7 @@ index 1dd0e89..1ff7dd5 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5540,9 +6241,29 @@ window.__ModuleLoader__.load({
+@@ -5540,9 +6308,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
@@ -1032,7 +1212,7 @@ index 1dd0e89..1ff7dd5 100644
  					ref: listRef,
  					className: ChatView_module_css_default.scroll,
  					children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -5570,22 +6291,21 @@ window.__ModuleLoader__.load({
+@@ -5570,22 +6358,21 @@ window.__ModuleLoader__.load({
  									children: loadingOlder ? t("loading") : t("chat.loadOlder")
  								})
  							}),
@@ -1070,7 +1250,7 @@ index 1dd0e89..1ff7dd5 100644
  							}),
  							pendingSteering.map((item) => (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
  								content: item.content,
-@@ -5607,7 +6327,7 @@ window.__ModuleLoader__.load({
+@@ -5607,7 +6394,7 @@ window.__ModuleLoader__.load({
  							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {})
  						})
  					})]
@@ -1079,36 +1259,34 @@ index 1dd0e89..1ff7dd5 100644
  			});
  		}
  		//#endregion
-@@ -5816,6 +6536,8 @@ window.__ModuleLoader__.load({
+@@ -5816,6 +6603,17 @@ window.__ModuleLoader__.load({
  		/** Simplified Chinese dictionary (the key-set source of truth). */
  		const zh = {
  			"view.chat": "对话",
 +			"view.research": "研究",
++			"research.right.conversation": "对话",
++			"research.right.files": "文件",
++			"research.right.add": "添加标签页",
++			"research.right.closeFiles": "关闭文件",
++			"research.right.closeDetails": "关闭详情",
++			"research.right.pathUnavailable": "路径不可用",
++			"research.right.source.computer": "本地电脑",
++			"research.right.source.sherlock": "Sherlock",
++			"research.files.unavailable": "所选文件不可用，请重新选择",
 +			"research.canvas": "研究画布",
  			"hint.plan": PLAN_NEXT_ACTION_ZH,
  			"hint.goal": "输入目标，智能体将持续执行",
  			"hint.goal.active": "当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除",
-@@ -5870,12 +6592,15 @@ window.__ModuleLoader__.load({
- 			"settings.enter.description": "仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为",
- 			"settings.enter.queue": "排队发送",
- 			"settings.enter.steer": "插话发送",
--			"access.confirm.title": "确认启用 Full access？",
--			"access.confirm.description": "启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
-+			"access.mode.readOnly": "只读",
-+			"access.mode.workspaceWrite": "工作区写入",
-+			"access.mode.fullAccess": "完全访问",
-+			"access.confirm.title": "确认启用完全访问？",
-+			"access.confirm.description": "启用完全访问后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
+@@ -5875,7 +6673,7 @@ window.__ModuleLoader__.load({
  			"access.confirm.acknowledge": "我已了解风险，并愿意继续",
  			"access.confirm.cancel": "取消",
--			"access.confirm.enable": "启用 Full access",
+ 			"access.confirm.enable": "启用 Full access",
 -			"hero.headline": "探索未至之境",
-+			"access.confirm.enable": "启用完全访问",
 +			"hero.headline": "迷雾之中，洞见真相",
  			"hero.preview": "预览版",
  			"hero.chooseWorkspace": "选择工作区",
  			"session.hierarchy": "会话层级",
-@@ -5896,6 +6621,46 @@ window.__ModuleLoader__.load({
+@@ -5896,6 +6694,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "历史加载失败：{message}（{code}）",
  			"chat.loadOlder": "加载更早",
  			"chat.toBottom": "回到底部",
@@ -1155,24 +1333,25 @@ index 1dd0e89..1ff7dd5 100644
  			"message.extraBlock": "附加内容块",
  			"message.contextInjection": "上下文注入",
  			"message.contextRecall": "跨会话召回",
-@@ -5981,6 +6746,8 @@ window.__ModuleLoader__.load({
+@@ -5981,6 +6819,17 @@ window.__ModuleLoader__.load({
  		/** English dictionary, checked complete against the zh key set. */
  		const en = {
  			"view.chat": "Chat",
 +			"view.research": "Research",
++			"research.right.conversation": "Conversation",
++			"research.right.files": "Files",
++			"research.right.add": "Add tab",
++			"research.right.closeFiles": "Close Files",
++			"research.right.closeDetails": "Close Details",
++			"research.right.pathUnavailable": "Path unavailable",
++			"research.right.source.computer": "Computer",
++			"research.right.source.sherlock": "Sherlock",
++			"research.files.unavailable": "One or more selected files are unavailable. Please select them again.",
 +			"research.canvas": "Research canvas",
  			"hint.plan": PLAN_NEXT_ACTION_EN,
  			"hint.goal": "describe the objective for a long-running task",
  			"hint.goal.active": "goal active — edit / pause / resume / clear",
-@@ -6035,12 +6802,15 @@ window.__ModuleLoader__.load({
- 			"settings.enter.description": "Busy only; Cmd/Ctrl+Enter uses the other behavior",
- 			"settings.enter.queue": "Queue",
- 			"settings.enter.steer": "Steer",
-+			"access.mode.readOnly": "Read Only",
-+			"access.mode.workspaceWrite": "Workspace Write",
-+			"access.mode.fullAccess": "Full access",
- 			"access.confirm.title": "Enable Full access?",
- 			"access.confirm.description": "Full access reduces confirmation steps and lets the agent perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust the current task.",
+@@ -6040,7 +6889,7 @@ window.__ModuleLoader__.load({
  			"access.confirm.acknowledge": "I understand the risks and want to continue",
  			"access.confirm.cancel": "Cancel",
  			"access.confirm.enable": "Enable Full access",
@@ -1181,7 +1360,7 @@ index 1dd0e89..1ff7dd5 100644
  			"hero.preview": "Preview",
  			"hero.chooseWorkspace": "Choose workspace",
  			"session.hierarchy": "Session hierarchy",
-@@ -6061,6 +6831,46 @@ window.__ModuleLoader__.load({
+@@ -6061,6 +6910,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "Failed to load history: {message} ({code})",
  			"chat.loadOlder": "Load earlier",
  			"chat.toBottom": "Back to bottom",
@@ -1228,7 +1407,7 @@ index 1dd0e89..1ff7dd5 100644
  			"message.extraBlock": "Extra content block",
  			"message.contextInjection": "Context injection",
  			"message.contextRecall": "Session recall",
-@@ -6383,7 +7193,7 @@ window.__ModuleLoader__.load({
+@@ -6383,7 +7272,7 @@ window.__ModuleLoader__.load({
  		*/
  		function QueueDock({ useSession, updateQueue, notify, t }) {
  			const inbox = useSession((s) => s.queue);
@@ -1237,7 +1416,7 @@ index 1dd0e89..1ff7dd5 100644
  			const running = useSession((s) => s.running);
  			const queueMutable = useSession((s) => s.subagent === null);
  			const [editing, setEditing] = (0, react.useState)(null);
-@@ -6627,7 +7437,7 @@ window.__ModuleLoader__.load({
+@@ -6627,7 +7516,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$7;
@@ -1246,7 +1425,7 @@ index 1dd0e89..1ff7dd5 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6765,13 +7575,6 @@ window.__ModuleLoader__.load({
+@@ -6765,13 +7654,6 @@ window.__ModuleLoader__.load({
  					children: [(0, react_jsx_runtime.jsxs)("div", {
  						className: HeroShell_module_css_default.headline,
  						children: [
@@ -1260,31 +1439,147 @@ index 1dd0e89..1ff7dd5 100644
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.headlineText,
  								children: t("hero.headline")
-@@ -6786,6 +7589,446 @@ window.__ModuleLoader__.load({
+@@ -6786,60 +7668,1401 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
+-		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
+-		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
+-		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
+-		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$6) + "]") === null) {
+-			const tag = document.createElement("style");
+-			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
+-			tag.dataset.pluginCss = tagId$6;
+-			tag.textContent = css$6;
+-			document.head.appendChild(tag);
 +		//#region lib/types/client/skeleton/ResearchCanvas.js
 +		const RESEARCH_CANVAS_MIN_SCALE = .35;
 +		const RESEARCH_CANVAS_MAX_SCALE = 4;
 +		const RESEARCH_CANVAS_GRID_SIZE = 22;
 +		const SHERLOCK_FILE_DRAG_TYPE = "application/x-sherlock-file";
 +		const RESEARCH_CANVAS_STORAGE_PREFIX = "sherlock.research.canvas.files.v1:";
++		const RESEARCH_ARTIFACT_DRAG_TYPE = "application/x-sherlock-research-artifact";
++		const RESEARCH_CANVAS_SELECTION_PREFIX = "sherlock.research.canvas.selection.v1:";
++		const RESEARCH_CANVAS_ARTIFACTS_PREFIX = "sherlock.research.canvas.artifacts.v1:";
 +		const RESEARCH_CANVAS_FILE_STACK_OFFSET = 18;
 +		const RESEARCH_CANVAS_TEXT_LIMIT = 512;
 +		const SHERLOCK_FILE_DRAG_RAW_LIMIT = 2048;
 +		const RESEARCH_CANVAS_PERSISTED_FILES_RAW_LIMIT = 262144;
 +		const RESEARCH_CANVAS_MAX_FILES_PER_DROP = 64;
 +		const RESEARCH_CANVAS_MAX_FILES_PER_SESSION = 256;
++		const RESEARCH_CANVAS_MAX_ARTIFACTS_PER_SESSION = 256;
++		const RESEARCH_ARTIFACT_MAX_TITLE = 256;
++		const RESEARCH_ARTIFACT_MAX_EXCERPT = 16384;
++		const RESEARCH_ARTIFACT_KINDS = /* @__PURE__ */ new Set(["assistant-result", "assistant-excerpt"]);
++		const RESEARCH_ARTIFACT_DRAG_KEYS = ["sessionId", "messageId", "kind", "title", "excerpt"];
++		const RESEARCH_ARTIFACT_DRAG_RAW_LIMIT = JSON.stringify({ sessionId: "", messageId: "", kind: "", title: "", excerpt: "" }).length + 6 * (RESEARCH_CANVAS_TEXT_LIMIT * 2 + "assistant-excerpt".length + RESEARCH_ARTIFACT_MAX_TITLE + RESEARCH_ARTIFACT_MAX_EXCERPT);
++		const RESEARCH_PROMPT_PREFIX = "␞SHERLOCK_RESEARCH_FILES_V1 ";
++		const RESEARCH_PROMPT_SUFFIX = "␟";
++		const RESEARCH_PROMPT_MAX_FILES = 64;
++		const RESEARCH_PROMPT_MAX_HEADER = 131072;
++		const EMPTY_RESEARCH_SELECTION = Object.freeze({ selectedNodeIds: [], orderedFileIds: [] });
 +		let researchCanvasFileSequence = 0;
++		let researchCanvasArtifactSequence = 0;
 +		function createResearchCanvasFileId() {
 +			researchCanvasFileSequence += 1;
 +			return globalThis.crypto?.randomUUID?.() ?? `research-file-${Date.now()}-${researchCanvasFileSequence}`;
++		}
++		function createResearchCanvasArtifactId() {
++			researchCanvasArtifactSequence += 1;
++			return globalThis.crypto?.randomUUID?.() ?? `research-artifact-${Date.now()}-${researchCanvasArtifactSequence}`;
 +		}
 +		function boundedString(value, optional = false) {
 +			if (value === void 0 && optional) return void 0;
 +			return typeof value === "string" && value.length > 0 && value.length <= RESEARCH_CANVAS_TEXT_LIMIT ? value : null;
 +		}
++		function researchPromptBasename(value) {
++			const parts = String(value ?? "").split(/[\\/]/).filter(Boolean);
++			return parts.at(-1) ?? String(value ?? "");
++		}
++		function canonicalResearchPromptFile(value) {
++			if (typeof value !== "object" || value === null) return null;
++			const id = boundedString(value.id);
++			const name = boundedString(researchPromptBasename(value.name));
++			const path = boundedString(value.path);
++			return id === null || name === null || path === null ? null : { id, name, path };
++		}
++		function researchPromptFiles(value) {
++			if (!Array.isArray(value) || value.length === 0 || value.length > RESEARCH_PROMPT_MAX_FILES) return null;
++			const files = [];
++			const ids = /* @__PURE__ */ new Set();
++			for (const item of value) {
++				const file = canonicalResearchPromptFile(item);
++				if (file === null || ids.has(file.id)) return null;
++				ids.add(file.id);
++				files.push(file);
++			}
++			return files;
++		}
++		function serializeResearchPrompt(files, text) {
++			if (!Array.isArray(files) || files.length === 0) return String(text ?? "");
++			const descriptors = researchPromptFiles(files);
++			if (descriptors === null) throw new TypeError("Invalid Sherlock Research file descriptors");
++			const payload = JSON.stringify({ files: descriptors }).replaceAll(RESEARCH_PROMPT_SUFFIX, "\\u241f");
++			return `${RESEARCH_PROMPT_PREFIX}${payload}${RESEARCH_PROMPT_SUFFIX}${String(text ?? "")}`;
++		}
++		function parseResearchPrompt(text) {
++			const source = String(text ?? "");
++			if (!source.startsWith(RESEARCH_PROMPT_PREFIX)) return { text: source, files: [] };
++			const suffix = source.slice(0, RESEARCH_PROMPT_MAX_HEADER).indexOf(RESEARCH_PROMPT_SUFFIX, RESEARCH_PROMPT_PREFIX.length);
++			if (suffix === -1) return { text: source, files: [] };
++			try {
++				const value = JSON.parse(source.slice(RESEARCH_PROMPT_PREFIX.length, suffix));
++				if (typeof value !== "object" || value === null) return { text: source, files: [] };
++				const files = researchPromptFiles(value.files);
++				return files === null ? { text: source, files: [] } : { text: source.slice(suffix + 1), files };
++			} catch {
++				return { text: source, files: [] };
++			}
+ 		}
+-		var ConversationRoot_module_css_default = {
+-			"titleRow": "wSkVaW_titleRow",
+-			"viewArea": "wSkVaW_viewArea",
+-			"headerUtilities": "wSkVaW_headerUtilities",
+-			"composerHero": "wSkVaW_composerHero",
+-			"crumbs": "wSkVaW_crumbs",
+-			"composerSeat": "wSkVaW_composerSeat",
+-			"tabs": "wSkVaW_tabs",
+-			"heroGlow": "wSkVaW_heroGlow",
+-			"tabActive": "wSkVaW_tabActive",
+-			"crumbSep": "wSkVaW_crumbSep",
+-			"crumbCurrent": "wSkVaW_crumbCurrent",
+-			"headerActions": "wSkVaW_headerActions",
+-			"composerStack": "wSkVaW_composerStack",
+-			"scrollBody": "wSkVaW_scrollBody",
+-			"tab": "wSkVaW_tab",
+-			"crumbSeg": "wSkVaW_crumbSeg",
+-			"root": "wSkVaW_root",
+-			"headerHidden": "wSkVaW_headerHidden",
+-			"titleCluster": "wSkVaW_titleCluster",
+-			"header": "wSkVaW_header",
+-			"crumb": "wSkVaW_crumb",
+-			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow"
+-		};
+-		//#endregion
+-		//#region lib/types/client/skeleton/ConversationRoot.js
+-		function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain, selectWorkspace, t }) {
+-			const openState = useSession((s) => s.openState);
+-			const composerPhase = useSession((s) => s.composerPhase);
+-			const pending = useSession((s) => s.pending) ?? [];
+-			const session = useSession((s) => s);
+-			const inputState = useInput((s) => s);
+-			const cwd = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.cwd);
+-			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
+-			const workspaces = useWorkspaces((s) => s);
+-			const composerBlock = useComposerBlock((block) => block);
+-			const [pickerOpen, setPickerOpen] = (0, react.useState)(false);
+-			const [pendingWorkspaceId, setPendingWorkspaceId] = (0, react.useState)();
+-			const pickerAnchor = (0, react.useRef)(null);
+-			const seatObserver = (0, react.useRef)(null);
+-			const seatResizeRef = (0, react.useCallback)((seat) => {
+-				seatObserver.current?.disconnect();
+-				seatObserver.current = null;
+-				const scroller = seat?.parentElement ?? null;
 +		function parseSherlockFileDrag(raw) {
 +			if (typeof raw !== "string" || raw.length > SHERLOCK_FILE_DRAG_RAW_LIMIT) return null;
 +			try {
@@ -1397,6 +1692,307 @@ index 1dd0e89..1ff7dd5 100644
 +				return [];
 +			}
 +		}
++		function researchCanvasSelectionStorageKey(sessionId) {
++			return `${RESEARCH_CANVAS_SELECTION_PREFIX}${sessionId}`;
++		}
++		function researchCanvasArtifactsStorageKey(sessionId) {
++			return `${RESEARCH_CANVAS_ARTIFACTS_PREFIX}${sessionId}`;
++		}
++		function boundedResearchArtifactString(value, limit) {
++			return typeof value === "string" && value.length > 0 && value.length <= limit ? value : null;
++		}
++		function normalizeResearchArtifactText(value, limit = RESEARCH_ARTIFACT_MAX_EXCERPT) {
++			if (typeof value !== "string") return null;
++			const normalized = value.replace(/\s+/g, " ").trim();
++			if (normalized === "") return null;
++			return normalized.slice(0, limit);
++		}
++		function researchArtifactIdentity(value) {
++			if (value.kind === "assistant-excerpt") {
++				const excerpt = normalizeResearchArtifactText(value.excerpt);
++				return excerpt === null ? null : JSON.stringify([value.kind, value.messageId, excerpt]);
++			}
++			return JSON.stringify([value.kind, value.messageId]);
++		}
++		function canonicalResearchCanvasArtifactNode(value) {
++			if (typeof value !== "object" || value === null) return null;
++			const id = boundedResearchArtifactString(value.id, RESEARCH_CANVAS_TEXT_LIMIT);
++			const kind = boundedResearchArtifactString(value.kind, RESEARCH_CANVAS_TEXT_LIMIT);
++			const messageId = boundedResearchArtifactString(value.messageId, RESEARCH_CANVAS_TEXT_LIMIT);
++			const title = boundedResearchArtifactString(value.title, RESEARCH_ARTIFACT_MAX_TITLE);
++			const rawExcerpt = boundedResearchArtifactString(value.excerpt, RESEARCH_ARTIFACT_MAX_EXCERPT);
++			const excerpt = kind === "assistant-excerpt" ? normalizeResearchArtifactText(rawExcerpt) : rawExcerpt;
++			if (id === null || kind === null || !RESEARCH_ARTIFACT_KINDS.has(kind) || messageId === null || title === null || excerpt === null || !Number.isFinite(value.x) || !Number.isFinite(value.y)) return null;
++			return { id, kind, messageId, title, excerpt, x: value.x, y: value.y };
++		}
++		function parseResearchCanvasArtifactNodes(raw) {
++			if (typeof raw !== "string" || raw.length > RESEARCH_CANVAS_PERSISTED_FILES_RAW_LIMIT) return [];
++			try {
++				const value = JSON.parse(raw);
++				if (!Array.isArray(value)) return [];
++				const nodes = [];
++				const ids = /* @__PURE__ */ new Set();
++				const sources = /* @__PURE__ */ new Set();
++				for (const item of value) {
++					if (nodes.length >= RESEARCH_CANVAS_MAX_ARTIFACTS_PER_SESSION) break;
++					const node = canonicalResearchCanvasArtifactNode(item);
++					const source = node === null ? null : researchArtifactIdentity(node);
++					if (node === null || ids.has(node.id) || sources.has(source)) continue;
++					ids.add(node.id);
++					sources.add(source);
++					nodes.push(node);
++				}
++				return nodes;
++			} catch {
++				return [];
++			}
++		}
++		function parseResearchArtifactDrag(raw) {
++			if (typeof raw !== "string" || raw.length > RESEARCH_ARTIFACT_DRAG_RAW_LIMIT) return null;
++			try {
++				const value = JSON.parse(raw);
++				if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
++				const keys = Object.keys(value);
++				if (keys.length !== RESEARCH_ARTIFACT_DRAG_KEYS.length || keys.some((key) => !RESEARCH_ARTIFACT_DRAG_KEYS.includes(key))) return null;
++				const sessionId = boundedResearchArtifactString(value.sessionId, RESEARCH_CANVAS_TEXT_LIMIT);
++				const messageId = boundedResearchArtifactString(value.messageId, RESEARCH_CANVAS_TEXT_LIMIT);
++				const kind = boundedResearchArtifactString(value.kind, RESEARCH_CANVAS_TEXT_LIMIT);
++				const title = boundedResearchArtifactString(value.title, RESEARCH_ARTIFACT_MAX_TITLE);
++				const excerpt = boundedResearchArtifactString(value.excerpt, RESEARCH_ARTIFACT_MAX_EXCERPT);
++				return sessionId === null || messageId === null || kind === null || !RESEARCH_ARTIFACT_KINDS.has(kind) || title === null || excerpt === null ? null : { sessionId, messageId, kind, title, excerpt };
++			} catch {
++				return null;
++			}
++		}
++		function placeResearchCanvasArtifact(nodes, artifact, point, createId) {
++			const next = nodes.slice(0, RESEARCH_CANVAS_MAX_ARTIFACTS_PER_SESSION);
++			const identity = researchArtifactIdentity(artifact);
++			if (identity === null) return next;
++			const found = next.findIndex((node) => researchArtifactIdentity(node) === identity);
++			const excerpt = artifact.kind === "assistant-excerpt" ? normalizeResearchArtifactText(artifact.excerpt) : artifact.excerpt;
++			if (excerpt === null) return next;
++			const node = {
++				id: found === -1 ? createId() : next[found].id,
++				kind: artifact.kind,
++				messageId: artifact.messageId,
++				title: artifact.title,
++				excerpt,
++				x: point.x,
++				y: point.y
++			};
++			if (found !== -1) next[found] = node;
++			else if (next.length < RESEARCH_CANVAS_MAX_ARTIFACTS_PER_SESSION) next.push(node);
++			return next;
++		}
++		function normalizeResearchRect(a, b) {
++			const left = Math.min(a.x, b.x);
++			const top = Math.min(a.y, b.y);
++			const right = Math.max(a.x, b.x);
++			const bottom = Math.max(a.y, b.y);
++			return { left, top, right, bottom, width: right - left, height: bottom - top };
++		}
++		function researchNodeViewportRect(node, viewport) {
++			const scale = Number.isFinite(viewport.scale) && viewport.scale > 0 ? viewport.scale : 1;
++			const width = 220 * scale;
++			const height = 64 * scale;
++			const centerX = node.x * scale + viewport.x;
++			const centerY = node.y * scale + viewport.y;
++			return { left: centerX - width / 2, top: centerY - height / 2, right: centerX + width / 2, bottom: centerY + height / 2, width, height };
++		}
++		function researchNodesInMarquee(nodes, viewport, rect) {
++			return nodes.filter((node) => {
++				const nodeRect = researchNodeViewportRect(node, viewport);
++				return nodeRect.left <= rect.right && nodeRect.right >= rect.left && nodeRect.top <= rect.bottom && nodeRect.bottom >= rect.top;
++			}).map((node) => node.id);
++		}
++		function researchSelectionIds(value) {
++			return Array.isArray(value) ? value.filter((id, index, ids) => boundedString(id) !== null && ids.indexOf(id) === index) : [];
++		}
++		function updateResearchSelection(selection, nodeIds, mode, files) {
++			const current = researchSelectionIds(selection?.selectedNodeIds);
++			const incoming = researchSelectionIds(nodeIds);
++			let selectedNodeIds;
++			if (mode === "add") selectedNodeIds = [...current, ...incoming.filter((id) => !current.includes(id))];
++			else if (mode === "toggle") selectedNodeIds = current.filter((id) => !incoming.includes(id)).concat(incoming.filter((id) => !current.includes(id)));
++			else selectedNodeIds = incoming;
++			const fileIds = /* @__PURE__ */ new Set(files.map((file) => file.id));
++			const previousOrder = researchSelectionIds(selection?.orderedFileIds).filter((id) => selectedNodeIds.includes(id) && fileIds.has(id));
++			const orderedFileIds = [...previousOrder];
++			for (const id of selectedNodeIds) if (fileIds.has(id) && !orderedFileIds.includes(id)) orderedFileIds.push(id);
++			return { selectedNodeIds, orderedFileIds };
++		}
++		function parseResearchCanvasSelection(raw, files, artifacts) {
++			if (typeof raw !== "string" || raw.length > RESEARCH_CANVAS_PERSISTED_FILES_RAW_LIMIT) return { ...EMPTY_RESEARCH_SELECTION, selectedNodeIds: [], orderedFileIds: [] };
++			try {
++				const value = JSON.parse(raw);
++				if (typeof value !== "object" || value === null) return { selectedNodeIds: [], orderedFileIds: [] };
++				const liveNodeIds = /* @__PURE__ */ new Set([...files, ...artifacts].map((node) => node.id));
++				const selectedNodeIds = researchSelectionIds(value.selectedNodeIds).filter((id) => liveNodeIds.has(id));
++				const fileIds = /* @__PURE__ */ new Set(files.map((file) => file.id));
++				const orderedFileIds = researchSelectionIds(value.orderedFileIds).filter((id) => selectedNodeIds.includes(id) && fileIds.has(id));
++				for (const id of selectedNodeIds) if (fileIds.has(id) && !orderedFileIds.includes(id)) orderedFileIds.push(id);
++				return { selectedNodeIds, orderedFileIds };
++			} catch {
++				return { selectedNodeIds: [], orderedFileIds: [] };
++			}
++		}
++		function moveResearchCanvasNodes(files, artifacts, selectedIds, delta, scale) {
++			const selected = /* @__PURE__ */ new Set(researchSelectionIds(selectedIds));
++			const divisor = Number.isFinite(scale) && scale > 0 ? scale : 1;
++			const x = Number.isFinite(delta?.x) ? delta.x / divisor : 0;
++			const y = Number.isFinite(delta?.y) ? delta.y / divisor : 0;
++			const move = (node) => selected.has(node.id) ? { ...node, x: node.x + x, y: node.y + y } : node;
++			return { files: files.map(move), artifacts: artifacts.map(move) };
++		}
++		function loadResearchCanvasArtifacts(storage, sessionId) {
++			if (storage === null) return [];
++			try {
++				return parseResearchCanvasArtifactNodes(storage.getItem(researchCanvasArtifactsStorageKey(sessionId)) ?? "[]");
++			} catch {
++				return [];
++			}
++		}
++		function saveResearchCanvasArtifacts(storage, sessionId, nodes) {
++			if (storage === null) return;
++			try {
++				storage.setItem(researchCanvasArtifactsStorageKey(sessionId), JSON.stringify(nodes));
++			} catch {}
++		}
++		function loadResearchCanvasSelection(storage, sessionId, files, artifacts) {
++			if (storage === null) return { selectedNodeIds: [], orderedFileIds: [] };
++			try {
++				return parseResearchCanvasSelection(storage.getItem(researchCanvasSelectionStorageKey(sessionId)) ?? "{}", files, artifacts);
++			} catch {
++				return { selectedNodeIds: [], orderedFileIds: [] };
++			}
++		}
++		function saveResearchCanvasSelection(storage, sessionId, selection) {
++			if (storage === null) return;
++			try {
++				storage.setItem(researchCanvasSelectionStorageKey(sessionId), JSON.stringify(selection));
++			} catch {}
++		}
++		function researchWorkspaceSnapshot(snapshot) {
++			return Object.freeze({
++				files: Object.freeze(snapshot.files.map((node) => Object.freeze({ ...node }))),
++				artifacts: Object.freeze(snapshot.artifacts.map((node) => Object.freeze({ ...node }))),
++				selection: Object.freeze({ selectedNodeIds: Object.freeze([...snapshot.selection.selectedNodeIds]), orderedFileIds: Object.freeze([...snapshot.selection.orderedFileIds]) }),
++				viewport: Object.freeze({ ...snapshot.viewport }),
++				canvasSize: Object.freeze({ ...snapshot.canvasSize }),
++				pendingMessageJump: snapshot.pendingMessageJump,
++				unavailableSourceMessageIds: Object.freeze([...(snapshot.unavailableSourceMessageIds ?? [])])
++			});
++		}
++		function createResearchWorkspaceSession(storage, sessionId) {
++			const files = loadResearchCanvasFiles(storage, sessionId);
++			const artifacts = loadResearchCanvasArtifacts(storage, sessionId);
++			let snapshot = researchWorkspaceSnapshot({ files, artifacts, selection: loadResearchCanvasSelection(storage, sessionId, files, artifacts), viewport: { scale: 1, x: 0, y: 0 }, canvasSize: { width: 0, height: 0 }, pendingMessageJump: null, unavailableSourceMessageIds: [] });
++			const listeners = /* @__PURE__ */ new Set();
++			const persistSnapshot = () => {
++				saveResearchCanvasFiles(storage, sessionId, snapshot.files);
++				saveResearchCanvasArtifacts(storage, sessionId, snapshot.artifacts);
++				saveResearchCanvasSelection(storage, sessionId, snapshot.selection);
++			};
++			const publish = (next, persist = false) => {
++				snapshot = researchWorkspaceSnapshot(next);
++				if (persist) persistSnapshot();
++				listeners.forEach((listener) => listener());
++			};
++			const update = (patch, persist) => publish({ ...snapshot, ...patch }, persist);
++			const visibleCenter = () => researchCanvasWorldPoint(snapshot.viewport, {
++				x: snapshot.canvasSize.width / 2,
++				y: snapshot.canvasSize.height / 2
++			});
++			const addAssistantArtifact = (kind, messageId, text, title, at) => {
++				const normalizedMessageId = boundedResearchArtifactString(messageId, RESEARCH_CANVAS_TEXT_LIMIT);
++				const excerpt = normalizeResearchArtifactText(text);
++				if (normalizedMessageId === null || excerpt === null) return;
++				const point = Number.isFinite(at?.x) && Number.isFinite(at?.y) ? at : visibleCenter();
++				update({
++					artifacts: placeResearchCanvasArtifact(snapshot.artifacts, {
++						sessionId,
++						messageId: normalizedMessageId,
++						kind,
++						title,
++						excerpt
++					}, point, createResearchCanvasArtifactId)
++				}, true);
++			};
++			return {
++				subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
++				getSnapshot() { return snapshot; },
++				selectionSnapshot() { return { selectedNodeIds: [...snapshot.selection.selectedNodeIds], orderedFileIds: [...snapshot.selection.orderedFileIds] }; },
++				selectedFiles() { const byId = /* @__PURE__ */ new Map(snapshot.files.map((file) => [file.id, file])); return snapshot.selection.orderedFileIds.flatMap((id) => byId.has(id) ? [byId.get(id)] : []); },
++				setFiles(files2) { const nextFiles = parseResearchCanvasFileNodes(JSON.stringify(files2)); update({ files: nextFiles, selection: parseResearchCanvasSelection(JSON.stringify(snapshot.selection), nextFiles, snapshot.artifacts) }, true); },
++				setArtifacts(artifacts2) { const nextArtifacts = parseResearchCanvasArtifactNodes(JSON.stringify(artifacts2)); update({ artifacts: nextArtifacts, selection: parseResearchCanvasSelection(JSON.stringify(snapshot.selection), snapshot.files, nextArtifacts) }, true); },
++				setSelection(selection) { update({ selection: parseResearchCanvasSelection(JSON.stringify(selection), snapshot.files, snapshot.artifacts) }, true); },
++				updateSelection(nodeIds, mode) { this.setSelection(updateResearchSelection(snapshot.selection, nodeIds, mode, snapshot.files)); },
++				moveSelectedFile(id, delta) {
++					const order = [...snapshot.selection.orderedFileIds];
++					const from = order.indexOf(id);
++					const to = Math.max(0, Math.min(order.length - 1, from + delta));
++					if (from === -1 || from === to) return;
++					order.splice(from, 1);
++					order.splice(to, 0, id);
++					this.setSelection({ ...snapshot.selection, orderedFileIds: order });
++				},
++				placeSelectedFile(id, beforeId) {
++					const order = [...snapshot.selection.orderedFileIds];
++					const from = order.indexOf(id);
++					if (from === -1 || id === beforeId || !order.includes(beforeId)) return;
++					order.splice(from, 1);
++					order.splice(order.indexOf(beforeId), 0, id);
++					this.setSelection({ ...snapshot.selection, orderedFileIds: order });
++				},
++				removeSelectedFile(id) { this.updateSelection([id], "toggle"); },
++				commitSelection(selection) {
++					const admitted = /* @__PURE__ */ new Set(selection.selectedNodeIds);
++					this.setSelection({
++						selectedNodeIds: snapshot.selection.selectedNodeIds.filter((id) => !admitted.has(id)),
++						orderedFileIds: snapshot.selection.orderedFileIds.filter((id) => !admitted.has(id))
++					});
++				},
++				restoreSelection(selection) {
++					this.setSelection({
++						selectedNodeIds: [...selection.selectedNodeIds, ...snapshot.selection.selectedNodeIds.filter((id) => !selection.selectedNodeIds.includes(id))],
++						orderedFileIds: [...selection.orderedFileIds, ...snapshot.selection.orderedFileIds.filter((id) => !selection.orderedFileIds.includes(id))]
++					});
++				},
++				moveNodes(selectedIds, delta, scale, persist = true) { const moved = moveResearchCanvasNodes(snapshot.files, snapshot.artifacts, selectedIds, delta, scale); update(moved, persist); },
++				persist() { persistSnapshot(); },
++				setViewport(viewport) { update({ viewport: { ...snapshot.viewport, ...viewport } }, false); },
++				setCanvasSize(canvasSize) { update({ canvasSize: { ...snapshot.canvasSize, ...canvasSize } }, false); },
++				visibleCenter,
++				addAssistantResult({ messageId, text, at }) { addAssistantArtifact("assistant-result", messageId, text, "助手回复", at); },
++				addExcerpt(messageId, excerpt, at) { addAssistantArtifact("assistant-excerpt", messageId, excerpt, "助手摘录", at); },
++				setPendingMessageJump(messageId) { update({ pendingMessageJump: typeof messageId === "string" ? messageId : null }, false); },
++				clearPendingMessageJump() { update({ pendingMessageJump: null }, false); },
++				setSourceAvailability(messageId, available) {
++					const unavailable = new Set(snapshot.unavailableSourceMessageIds);
++					if (available) unavailable.delete(messageId);
++					else unavailable.add(messageId);
++					update({ unavailableSourceMessageIds: [...unavailable] }, false);
++				},
++				cancelTransient() { update({ pendingMessageJump: null }, false); }
++			};
++		}
++		class ResearchWorkspaceRegistry {
++			constructor(storage = researchCanvasStorage()) {
++				this.storage = storage;
++				this.sessions = /* @__PURE__ */ new Map();
++			}
++			for(sessionId) {
++				let workspace = this.sessions.get(sessionId);
++				if (workspace === void 0) {
++					workspace = createResearchWorkspaceSession(this.storage, sessionId);
++					this.sessions.set(sessionId, workspace);
++				}
++				return workspace;
++			}
++			release(sessionId) {
++				this.sessions.get(sessionId)?.cancelTransient();
++			}
++		}
 +		function researchCanvasContentTransform(viewport) {
 +			return `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`;
 +		}
@@ -1428,10 +2024,17 @@ index 1dd0e89..1ff7dd5 100644
 +			if (media !== void 0 && media !== "") return media.slice(0, 12).toUpperCase();
 +			return node.source === "sherlock" ? "SHERLOCK" : "FILE";
 +		}
-+		function ResearchCanvasFileCard({ node }) {
++		function ResearchCanvasFileCard({ node, selected = false, dragging = false }) {
 +			return (0, react_jsx_runtime.jsxs)("div", {
 +				className: "rScV5Q_fileCard",
 +				"data-research-file-card": node.id,
++				"data-research-node-id": node.id,
++				"data-selected": selected || void 0,
++				"data-node-dragging": dragging || void 0,
++				"data-path-unavailable": node.path === void 0 ? true : void 0,
++				role: "option",
++				tabIndex: 0,
++				"aria-selected": selected,
 +				title: node.path ?? node.name,
 +				style: {
 +					left: `${node.x}px`,
@@ -1459,6 +2062,100 @@ index 1dd0e89..1ff7dd5 100644
 +						children: researchCanvasFileCaption(node)
 +					})]
 +				})]
++			});
++		}
++		function ResearchCanvasArtifactCard({ node, selected = false, dragging = false, sourceUnavailable = false, onActivate }) {
++			const activate = () => onActivate?.(node);
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: "rScV5Q_artifactCard",
++				"data-research-artifact-card": node.id,
++				"data-research-node-id": node.id,
++				"data-selected": selected || void 0,
++				"data-node-dragging": dragging || void 0,
++				role: "option",
++				tabIndex: 0,
++				"aria-selected": selected,
++				title: node.title,
++				onDoubleClick: activate,
++				onKeyDown: (event) => {
++					if (event.key !== "Enter") return;
++					event.preventDefault();
++					event.stopPropagation();
++					activate();
++				},
++				style: {
++					left: `${node.x}px`,
++					top: `${node.y}px`,
++					transform: "translate(-50%, -50%)"
++				},
++				children: [(0, react_jsx_runtime.jsx)("span", {
++					className: "rScV5Q_artifactTitle",
++					children: node.title
++				}), (0, react_jsx_runtime.jsx)("span", {
++					className: "rScV5Q_artifactExcerpt",
++					children: node.excerpt
++				}), (0, react_jsx_runtime.jsxs)("span", {
++					className: "rScV5Q_artifactMeta",
++					children: [node.kind === "assistant-excerpt" ? "助手摘录" : "助手回复", sourceUnavailable ? " · 来源消息不可用" : " · 来源消息"]
++				})]
++			});
++		}
++		const RESEARCH_FILE_TAG_DRAG_TYPE = "application/x-sherlock-research-file-tag";
++		function ResearchFileTags({ sessionId, researchWorkspaces = defaultResearchWorkspaces }) {
++			const workspace = (0, react.useMemo)(() => researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
++			const snapshot = (0, react.useSyncExternalStore)(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
++			const byId = (0, react.useMemo)(() => new Map(snapshot.files.map((file) => [file.id, file])), [snapshot.files]);
++			const files = snapshot.selection.orderedFileIds.flatMap((id) => byId.has(id) ? [byId.get(id)] : []);
++			if (files.length === 0) return null;
++			return (0, react_jsx_runtime.jsx)("div", {
++				"data-research-file-tag-list": "",
++				style: { display: "flex", minWidth: 0, gap: 6, overflowX: "auto" },
++				children: files.map((file, index) => (0, react_jsx_runtime.jsxs)("div", {
++					"data-research-file-tag": file.id,
++					draggable: true,
++					tabIndex: 0,
++					"aria-invalid": file.path === void 0 ? true : void 0,
++					style: { display: "inline-flex", alignItems: "center", gap: 4, flex: "none", maxWidth: 260, border: "1px solid var(--dsw-alias-border-l2)", borderRadius: 8, padding: "3px 5px 3px 8px", background: "var(--dsw-alias-interactive-bg-hover)" },
++					onDragStart: (event) => {
++						event.dataTransfer.effectAllowed = "move";
++						event.dataTransfer.setData(RESEARCH_FILE_TAG_DRAG_TYPE, file.id);
++					},
++					onDragOver: (event) => {
++						if ((event.dataTransfer.types ?? []).includes?.(RESEARCH_FILE_TAG_DRAG_TYPE)) event.preventDefault();
++					},
++					onDrop: (event) => {
++						const id = event.dataTransfer.getData(RESEARCH_FILE_TAG_DRAG_TYPE);
++						if (!snapshot.selection.orderedFileIds.includes(id)) return;
++						event.preventDefault();
++						workspace.placeSelectedFile(id, file.id);
++					},
++					onKeyDown: (event) => {
++						if (event.key !== "Delete" && event.key !== "Backspace") return;
++						event.preventDefault();
++						workspace.removeSelectedFile(file.id);
++					},
++					children: [(0, react_jsx_runtime.jsx)("span", {
++						style: { maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
++						children: researchPromptBasename(file.name)
++					}), (0, react_jsx_runtime.jsx)("button", {
++						type: "button",
++						"aria-label": "左移",
++						disabled: index === 0,
++						onClick: () => workspace.moveSelectedFile(file.id, -1),
++						children: "←"
++					}), (0, react_jsx_runtime.jsx)("button", {
++						type: "button",
++						"aria-label": "右移",
++						disabled: index === files.length - 1,
++						onClick: () => workspace.moveSelectedFile(file.id, 1),
++						children: "→"
++					}), (0, react_jsx_runtime.jsx)("button", {
++						type: "button",
++						"aria-label": "删除附件",
++						onClick: () => workspace.removeSelectedFile(file.id),
++						children: "×"
++					})]
++				}, file.id))
 +			});
 +		}
 +		/** Resolve one Command-wheel gesture into a pointer-anchored infinite-canvas viewport. */
@@ -1490,7 +2187,7 @@ index 1dd0e89..1ff7dd5 100644
 +				deltaY: -gesture.deltaY
 +			});
 +		}
-+		const cssResearchCanvas = ".rScV5Q_root{--sherlock-research-dot:rgba(82,88,98,.22);background-color:rgb(247,248,250);background-image:radial-gradient(circle,var(--sherlock-research-dot) 1px,transparent 1.2px);background-repeat:repeat;overscroll-behavior:none;touch-action:none;user-select:none;cursor:default;flex:1;min-width:0;min-height:0;height:100%;position:relative;overflow:hidden}.rScV5Q_root:focus{outline:none}.rScV5Q_root[data-space-pressed=true]{cursor:grab}.rScV5Q_root[data-dragging=true]{cursor:grabbing}body[data-ds-dark-theme] .rScV5Q_root{--sherlock-research-dot:rgba(151,157,168,.18);background-color:rgb(23,25,29)}.rScV5Q_contentLayer{pointer-events:none;transform-origin:0 0;position:absolute;inset:0}.rScV5Q_fileCard{box-sizing:border-box;pointer-events:auto;width:220px;min-height:64px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;align-items:center;gap:10px;padding:11px 12px;display:flex;position:absolute;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_fileIcon{color:var(--dsw-alias-state-business-primary);flex:none;width:20px;height:20px}.rScV5Q_fileText{min-width:0;display:flex;flex-direction:column;gap:2px}.rScV5Q_fileName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_fileCaption{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}.rScV5Q_root[data-file-drop-active=true]{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent)}body[data-ds-dark-theme] .rScV5Q_fileCard{background:var(--dsw-alias-bg-layer-2)}.wSkVaW_root[data-phase=active] .wSkVaW_scrollBody:has(.rScV5Q_root)>.wSkVaW_composerSeat{background:none}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_header:after{bottom:0}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}";
++		const cssResearchCanvas = ".rScV5Q_root{--sherlock-research-dot:rgba(82,88,98,.22);background-color:rgb(247,248,250);background-image:radial-gradient(circle,var(--sherlock-research-dot) 1px,transparent 1.2px);background-repeat:repeat;overscroll-behavior:none;touch-action:none;user-select:none;cursor:default;flex:1;min-width:0;min-height:0;height:100%;position:relative;overflow:hidden}.rScV5Q_root:focus{outline:none}.rScV5Q_root:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}.rScV5Q_root[data-space-pressed=true]{cursor:grab}.rScV5Q_root[data-dragging=true]{cursor:grabbing}body[data-ds-dark-theme] .rScV5Q_root{--sherlock-research-dot:rgba(151,157,168,.18);background-color:rgb(23,25,29)}.rScV5Q_contentLayer{pointer-events:none;transform-origin:0 0;position:absolute;inset:0}.rScV5Q_fileCard,.rScV5Q_artifactCard{box-sizing:border-box;pointer-events:auto;width:220px;min-height:64px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;position:absolute;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_fileCard{align-items:center;gap:10px;padding:11px 12px;display:flex}.rScV5Q_fileCard[data-selected=true],.rScV5Q_artifactCard[data-selected=true]{border:2px solid var(--dsw-alias-state-business-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent),var(--dsw-shadow-lv1)}.rScV5Q_fileCard[data-path-unavailable=true]{border-style:dashed;opacity:.72}.rScV5Q_fileCard[data-node-dragging=true],.rScV5Q_artifactCard[data-node-dragging=true]{cursor:grabbing;opacity:.88}.rScV5Q_fileCard:focus-visible,.rScV5Q_artifactCard:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.rScV5Q_fileIcon{color:var(--dsw-alias-state-business-primary);flex:none;width:20px;height:20px}.rScV5Q_fileText{min-width:0;display:flex;flex-direction:column;gap:2px}.rScV5Q_fileName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_fileCaption{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}.rScV5Q_artifactCard{display:flex;flex-direction:column;justify-content:center;gap:3px;padding:10px 12px}.rScV5Q_artifactTitle{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_artifactExcerpt{color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xxs-12)}.rScV5Q_artifactMeta{color:var(--dsw-alias-label-caption);font:var(--dsw-font-xxs-12)}.rScV5Q_marquee{pointer-events:none;box-sizing:border-box;border:1.5px dashed var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent);position:absolute}.rScV5Q_root[data-file-drop-active=true]{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent)}body[data-ds-dark-theme] .rScV5Q_fileCard,body[data-ds-dark-theme] .rScV5Q_artifactCard{background:var(--dsw-alias-bg-layer-2)}body[data-ds-dark-theme] .rScV5Q_marquee{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 18%,transparent)}.wSkVaW_root[data-phase=active] .wSkVaW_scrollBody:has(.rScV5Q_root)>.wSkVaW_composerSeat{background:none}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_header:after{bottom:0}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}";
 +		const tagIdResearchCanvas = "@deepseek-ai/dsh-client-ui-conversation/ResearchCanvas.module.css";
 +		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagIdResearchCanvas) + "]") === null) {
 +			const tag = document.createElement("style");
@@ -1500,23 +2197,33 @@ index 1dd0e89..1ff7dd5 100644
 +			document.head.appendChild(tag);
 +		}
 +		const ResearchCanvas_module_css_default = { root: "rScV5Q_root" };
++		const defaultResearchWorkspaces = new ResearchWorkspaceRegistry();
 +		/** Theme-aware infinite dotted canvas. The resident conversation shell continues to own the composer. */
-+		function ResearchCanvas({ sessionId, t }) {
++		function ResearchCanvas({ sessionId, t, researchWorkspaces = defaultResearchWorkspaces, actions }) {
 +			const rootRef = (0, react.useRef)(null);
 +			const spacePressedRef = (0, react.useRef)(false);
-+			const dragRef = (0, react.useRef)(null);
-+			const storageRef = (0, react.useRef)(researchCanvasStorage());
-+			const [files, setFiles] = (0, react.useState)(() => loadResearchCanvasFiles(storageRef.current, sessionId));
-+			const [viewport, setViewport] = (0, react.useState)({
-+				scale: 1,
-+				x: 1,
-+				y: 1
-+			});
-+			const viewportRef = (0, react.useRef)(viewport);
-+			viewportRef.current = viewport;
-+			(0, react.useEffect)(() => {
-+				saveResearchCanvasFiles(storageRef.current, sessionId, files);
-+			}, [files, sessionId]);
++			const operationRef = (0, react.useRef)(null);
++			const workspace = (0, react.useMemo)(() => researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
++			const snapshot = (0, react.useSyncExternalStore)(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
++			const [marquee, setMarquee] = (0, react.useState)(null);
++			const [draggingNodeIds, setDraggingNodeIds] = (0, react.useState)([]);
++			(0, react.useLayoutEffect)(() => {
++				const root = rootRef.current;
++				if (root === null) return;
++				const syncSize = () => {
++					const bounds = root.getBoundingClientRect();
++					workspace.setCanvasSize({ width: bounds.width, height: bounds.height });
++				};
++				syncSize();
++				if (typeof ResizeObserver === "undefined") return;
++				const observer = new ResizeObserver(syncSize);
++				observer.observe(root);
++				return () => observer.disconnect();
++			}, [workspace]);
++			const activateArtifact = (node) => {
++				actions?.setResearchRightTab?.("conversation");
++				workspace.setPendingMessageJump(node.messageId);
++			};
 +			(0, react.useEffect)(() => {
 +				const root = rootRef.current;
 +				if (root === null) return;
@@ -1525,9 +2232,27 @@ index 1dd0e89..1ff7dd5 100644
 +					fileDragDepth = 0;
 +					root.removeAttribute("data-file-drop-active");
 +				};
-+				const ownsFileDrag = (event) => researchCanvasOwnsFileDrag(event.dataTransfer?.types);
++				const ownsResearchDrop = (event) => {
++					const transfer = event.dataTransfer;
++					if (transfer === null) return false;
++					const types = Array.from(transfer.types ?? []);
++					const getData = (type) => {
++						try {
++							return transfer.getData?.(type) ?? "";
++						} catch {
++							return "";
++						}
++					};
++					if (types.includes(RESEARCH_ARTIFACT_DRAG_TYPE)) {
++						const artifact = parseResearchArtifactDrag(getData(RESEARCH_ARTIFACT_DRAG_TYPE));
++						return artifact !== null && artifact.sessionId === sessionId;
++					}
++					if (types.includes("Files")) return true;
++					if (types.includes(SHERLOCK_FILE_DRAG_TYPE) && parseSherlockFileDrag(getData(SHERLOCK_FILE_DRAG_TYPE)) !== null) return true;
++					return false;
++				};
 +				const onDragEnter = (event) => {
-+					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					if (!ownsResearchDrop(event) || event.dataTransfer === null) return;
 +					event.preventDefault();
 +					event.stopPropagation();
 +					event.dataTransfer.dropEffect = "copy";
@@ -1535,36 +2260,44 @@ index 1dd0e89..1ff7dd5 100644
 +					root.setAttribute("data-file-drop-active", "true");
 +				};
 +				const onDragOver = (event) => {
-+					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					if (!ownsResearchDrop(event) || event.dataTransfer === null) return;
 +					event.preventDefault();
 +					event.stopPropagation();
 +					event.dataTransfer.dropEffect = "copy";
 +					root.setAttribute("data-file-drop-active", "true");
 +				};
 +				const onDragLeave = (event) => {
-+					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					if (!ownsResearchDrop(event) || event.dataTransfer === null) return;
 +					event.stopPropagation();
 +					fileDragDepth = Math.max(0, fileDragDepth - 1);
 +					if (fileDragDepth === 0) resetFileDrag();
 +				};
 +				const onDrop = (event) => {
 +					resetFileDrag();
-+					if (!ownsFileDrag(event) || event.dataTransfer === null) return;
++					if (!ownsResearchDrop(event) || event.dataTransfer === null) return;
++					const bounds = root.getBoundingClientRect();
++					const current = workspace.getSnapshot();
++					const point = researchCanvasWorldPoint(current.viewport, {
++						x: event.clientX - bounds.left,
++						y: event.clientY - bounds.top
++					});
++					const artifact = parseResearchArtifactDrag(event.dataTransfer.getData?.(RESEARCH_ARTIFACT_DRAG_TYPE) ?? "");
++					if (artifact !== null && artifact.sessionId === sessionId) {
++						event.preventDefault();
++						event.stopPropagation();
++						workspace.setArtifacts(placeResearchCanvasArtifact(current.artifacts, artifact, point, createResearchCanvasArtifactId));
++						return;
++					}
 +					const dropped = researchCanvasDropFiles(event.dataTransfer, (file) => window.dshDesktop?.getPathForFile?.(file) ?? "");
 +					if (dropped.length === 0) return;
 +					event.preventDefault();
 +					event.stopPropagation();
-+					const bounds = root.getBoundingClientRect();
-+					const point = researchCanvasWorldPoint(viewportRef.current, {
-+						x: event.clientX - bounds.left,
-+						y: event.clientY - bounds.top
-+					});
-+					setFiles((current) => placeResearchCanvasFiles(current, dropped, point, createResearchCanvasFileId));
++					workspace.setFiles(placeResearchCanvasFiles(current.files, dropped, point, createResearchCanvasFileId));
 +				};
 +				const onWheel = (event) => {
 +					event.preventDefault();
 +					const bounds = root.getBoundingClientRect();
-+					setViewport((current) => nextResearchCanvasWheel(current, {
++					workspace.setViewport(nextResearchCanvasWheel(workspace.getSnapshot().viewport, {
 +						metaKey: event.metaKey,
 +						deltaX: event.deltaX,
 +						deltaY: event.deltaY,
@@ -1573,22 +2306,46 @@ index 1dd0e89..1ff7dd5 100644
 +					}));
 +				};
 +				const isInteractiveTarget = (target) => typeof target?.closest === "function" && target.closest("input,textarea,button,select,a,[contenteditable=true]") !== null;
++				const canvasOwnsFocus = () => document.activeElement === root || root.contains(document.activeElement);
 +				const setSpaceVisual = (active) => {
 +					if (active) root.setAttribute("data-space-pressed", "true");
 +					else root.removeAttribute("data-space-pressed");
 +				};
-+				const finishDrag = (event) => {
-+					const drag = dragRef.current;
-+					if (drag === null || event && event.pointerId !== drag.pointerId) return;
-+					if (root.hasPointerCapture?.(drag.pointerId)) root.releasePointerCapture(drag.pointerId);
-+					dragRef.current = null;
++				const finishOperation = (event, commitMarquee = true, updateVisuals = true) => {
++					const operation = operationRef.current;
++					if (operation === null || event && event.pointerId !== operation.pointerId) return;
++					if (operation.kind === "move") workspace.persist();
++					if (commitMarquee && operation.kind === "marquee") {
++						const rect = normalizeResearchRect({ x: operation.startX, y: operation.startY }, { x: operation.currentX, y: operation.currentY });
++						const current = workspace.getSnapshot();
++						const nodes = [...current.files, ...current.artifacts].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
++						workspace.updateSelection(researchNodesInMarquee(nodes, current.viewport, rect), operation.mode);
++					}
++					if (root.hasPointerCapture?.(operation.pointerId)) root.releasePointerCapture(operation.pointerId);
++					operationRef.current = null;
 +					root.removeAttribute("data-dragging");
-+					setSpaceVisual(spacePressedRef.current && root.matches(":hover"));
++					if (updateVisuals) {
++						setDraggingNodeIds([]);
++						setMarquee(null);
++						setSpaceVisual(spacePressedRef.current && root.matches(":hover"));
++					}
 +				};
 +				const onKeyDown = (event) => {
++					if (event.code === "Escape" && canvasOwnsFocus()) {
++						event.preventDefault();
++						workspace.updateSelection([], "replace");
++						return;
++					}
++					if (event.metaKey && event.code === "KeyA" && canvasOwnsFocus() && !isInteractiveTarget(event.target)) {
++						event.preventDefault();
++						const current = workspace.getSnapshot();
++						const ids = [...current.files, ...current.artifacts].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)).map((node) => node.id);
++						workspace.updateSelection(ids, "replace");
++						return;
++					}
 +					if (event.code !== "Space" || isInteractiveTarget(event.target)) return;
 +					spacePressedRef.current = true;
-+					if (document.activeElement === root || root.matches(":hover")) {
++					if (canvasOwnsFocus() || root.matches(":hover")) {
 +						event.preventDefault();
 +						setSpaceVisual(true);
 +					}
@@ -1602,39 +2359,66 @@ index 1dd0e89..1ff7dd5 100644
 +					if (spacePressedRef.current) setSpaceVisual(true);
 +				};
 +				const onPointerLeave = () => {
-+					if (dragRef.current === null) setSpaceVisual(false);
++					if (operationRef.current === null) setSpaceVisual(false);
 +				};
 +				const onPointerDown = (event) => {
-+					if (event.button !== 0 || !spacePressedRef.current) return;
++					if (event.button !== 0) return;
 +					event.preventDefault();
 +					root.focus({ preventScroll: true });
 +					root.setPointerCapture?.(event.pointerId);
-+					dragRef.current = {
-+						pointerId: event.pointerId,
-+						x: event.clientX,
-+						y: event.clientY
-+					};
-+					setSpaceVisual(true);
-+					root.setAttribute("data-dragging", "true");
++					if (spacePressedRef.current) {
++						operationRef.current = { kind: "pan", pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
++						setSpaceVisual(true);
++						root.setAttribute("data-dragging", "true");
++						return;
++					}
++					const nodeElement = event.target?.closest?.("[data-research-node-id]");
++					const nodeId = nodeElement?.getAttribute("data-research-node-id");
++					if (nodeId !== null && nodeId !== void 0) {
++						const currentSnapshot = workspace.getSnapshot();
++						const current = currentSnapshot.selection;
++						const alreadySelected = current.selectedNodeIds.includes(nodeId);
++						const mode = event.metaKey ? "toggle" : event.shiftKey ? "add" : "replace";
++						const nextSelection = alreadySelected && !event.metaKey && !event.shiftKey ? current : updateResearchSelection(current, [nodeId], mode, currentSnapshot.files);
++						if (nextSelection !== current) workspace.setSelection(nextSelection);
++						operationRef.current = { kind: "move", pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY, selectedNodeIds: [...nextSelection.selectedNodeIds] };
++						setDraggingNodeIds([...nextSelection.selectedNodeIds]);
++						root.setAttribute("data-dragging", "true");
++						return;
++					}
++					const bounds = root.getBoundingClientRect();
++					const x = event.clientX - bounds.left;
++					const y = event.clientY - bounds.top;
++					const mode = event.metaKey ? "toggle" : event.shiftKey ? "add" : "replace";
++					if (mode === "replace") workspace.updateSelection([], "replace");
++					operationRef.current = { kind: "marquee", pointerId: event.pointerId, startX: x, startY: y, currentX: x, currentY: y, mode };
++					setMarquee(normalizeResearchRect({ x, y }, { x, y }));
 +				};
 +				const onPointerMove = (event) => {
-+					const drag = dragRef.current;
-+					if (drag === null || event.pointerId !== drag.pointerId) return;
-+					const deltaX = event.clientX - drag.x;
-+					const deltaY = event.clientY - drag.y;
-+					drag.x = event.clientX;
-+					drag.y = event.clientY;
-+					setViewport((current) => nextResearchCanvasPan(current, {
-+						deltaX,
-+						deltaY
-+					}));
++					const operation = operationRef.current;
++					if (operation === null || event.pointerId !== operation.pointerId) return;
++					if (operation.kind === "marquee") {
++						const bounds = root.getBoundingClientRect();
++						operation.currentX = event.clientX - bounds.left;
++						operation.currentY = event.clientY - bounds.top;
++						setMarquee(normalizeResearchRect({ x: operation.startX, y: operation.startY }, { x: operation.currentX, y: operation.currentY }));
++						return;
++					}
++					const deltaX = event.clientX - operation.lastX;
++					const deltaY = event.clientY - operation.lastY;
++					operation.lastX = event.clientX;
++					operation.lastY = event.clientY;
++					const current = workspace.getSnapshot();
++					if (operation.kind === "pan") workspace.setViewport(nextResearchCanvasPan(current.viewport, { deltaX, deltaY }));
++					else workspace.moveNodes(operation.selectedNodeIds, { x: deltaX, y: deltaY }, current.viewport.scale, false);
 +				};
 +				const onWindowBlur = () => {
 +					spacePressedRef.current = false;
-+					finishDrag();
++					finishOperation(void 0, false);
 +					setSpaceVisual(false);
 +					resetFileDrag();
 +				};
++				const onPointerCancel = (event) => finishOperation(event, false);
 +				root.addEventListener("dragenter", onDragEnter);
 +				root.addEventListener("dragover", onDragOver);
 +				root.addEventListener("dragleave", onDragLeave);
@@ -1644,8 +2428,8 @@ index 1dd0e89..1ff7dd5 100644
 +				root.addEventListener("pointerleave", onPointerLeave);
 +				root.addEventListener("pointerdown", onPointerDown);
 +				root.addEventListener("pointermove", onPointerMove);
-+				root.addEventListener("pointerup", finishDrag);
-+				root.addEventListener("pointercancel", finishDrag);
++				root.addEventListener("pointerup", finishOperation);
++				root.addEventListener("pointercancel", onPointerCancel);
 +				window.addEventListener("keydown", onKeyDown);
 +				window.addEventListener("keyup", onKeyUp);
 +				window.addEventListener("blur", onWindowBlur);
@@ -1660,19 +2444,22 @@ index 1dd0e89..1ff7dd5 100644
 +					root.removeEventListener("pointerleave", onPointerLeave);
 +					root.removeEventListener("pointerdown", onPointerDown);
 +					root.removeEventListener("pointermove", onPointerMove);
-+					root.removeEventListener("pointerup", finishDrag);
-+					root.removeEventListener("pointercancel", finishDrag);
++					root.removeEventListener("pointerup", finishOperation);
++					root.removeEventListener("pointercancel", onPointerCancel);
 +					window.removeEventListener("keydown", onKeyDown);
 +					window.removeEventListener("keyup", onKeyUp);
 +					window.removeEventListener("blur", onWindowBlur);
 +					window.removeEventListener("dragend", resetFileDrag);
 +					spacePressedRef.current = false;
-+					finishDrag();
++					finishOperation(void 0, false, false);
 +					resetFileDrag();
 +				};
-+			}, []);
++			}, [sessionId, workspace]);
++			const { files, artifacts, selection, viewport } = snapshot;
++			const selectedIds = new Set(selection.selectedNodeIds);
++			const draggingIds = new Set(draggingNodeIds);
 +			const gridSize = RESEARCH_CANVAS_GRID_SIZE * viewport.scale;
-+			return (0, react_jsx_runtime.jsx)("div", {
++			return (0, react_jsx_runtime.jsxs)("div", {
 +				ref: rootRef,
 +				className: ResearchCanvas_module_css_default.root,
 +				role: "region",
@@ -1682,32 +2469,569 @@ index 1dd0e89..1ff7dd5 100644
 +				"data-conversation-composer-overlay": "",
 +				"data-canvas-scale": viewport.scale.toFixed(3),
 +				style: {
-+					backgroundPosition: `${viewport.x - gridSize / 2}px ${viewport.y - gridSize / 2}px`,
++					backgroundPosition: `${viewport.x - gridSize / 2 + 1}px ${viewport.y - gridSize / 2 + 1}px`,
 +					backgroundSize: `${gridSize}px ${gridSize}px`
 +				},
-+				children: (0, react_jsx_runtime.jsx)("div", {
++				children: [(0, react_jsx_runtime.jsxs)("div", {
 +					className: "rScV5Q_contentLayer",
 +					"data-research-content-layer": "",
 +					style: { transform: researchCanvasContentTransform(viewport) },
-+					children: files.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasFileCard, { node }, node.id))
-+				})
++					children: [files.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasFileCard, {
++						node,
++						selected: selectedIds.has(node.id),
++						dragging: draggingIds.has(node.id)
++					}, node.id)), artifacts.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasArtifactCard, {
++						node,
++						selected: selectedIds.has(node.id),
++						dragging: draggingIds.has(node.id),
++						sourceUnavailable: snapshot.unavailableSourceMessageIds.includes(node.messageId),
++						onActivate: activateArtifact
++					}, node.id))]
++				}), marquee === null ? null : (0, react_jsx_runtime.jsx)("div", {
++					className: "rScV5Q_marquee",
++					"data-research-marquee": "",
++					"aria-hidden": true,
++					style: { left: `${marquee.left}px`, top: `${marquee.top}px`, width: `${marquee.width}px`, height: `${marquee.height}px` }
++				})]
 +			});
 +		}
 +		/** Register the Research tab between Chat (0) and Trajectory (10). */
-+		function registerResearchCanvasView(slots, t) {
++		function registerResearchCanvasView(slots, t, researchWorkspaces) {
 +			return slots.register({
 +				name: "conversation.view",
 +				id: "research",
 +				order: 5,
 +				label: () => t("view.research"),
-+				locale: NS
++				locale: NS,
++				inject: () => ({ researchWorkspaces })
 +			}, ResearchCanvas);
 +		}
++		function ResearchAssistantCanvasAction({ messageId, text, workspace }) {
++			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++				label: "添加到画布",
++				side: "bottom",
++				children: (0, react_jsx_runtime.jsx)("button", {
++					type: "button",
++					className: MessageIconActions_module_css_default.action,
++					"aria-label": "添加到画布",
++					onClick: () => workspace.addAssistantResult({ messageId, text, at: workspace.visibleCenter() }),
++					children: (0, react_jsx_runtime.jsxs)("svg", {
++						viewBox: "0 0 16 16",
++						width: "16",
++						height: "16",
++						"aria-hidden": true,
++						children: [(0, react_jsx_runtime.jsx)("path", { d: "M3 3.5h10v9H3z", fill: "none", stroke: "currentColor", strokeWidth: "1.3" }), (0, react_jsx_runtime.jsx)("path", { d: "M8 5.5v5M5.5 8h5", stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round" })]
++					})
++				})
++			});
++		}
++		function registerResearchAssistantActions(slots, researchWorkspaces) {
++			return slots.register({
++				name: "conversation.chat.assistant-actions",
++				id: "research-add-to-canvas",
++				order: 10,
++				inject: (sessionId) => ({ workspace: researchWorkspaces.for(sessionId) })
++			}, ResearchAssistantCanvasAction);
++		}
 +		//#endregion
- 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
- 		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
- 		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
-@@ -6980,6 +8223,20 @@ window.__ModuleLoader__.load({
++		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
++		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
++		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
++		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$6) + "]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
++			tag.dataset.pluginCss = tagId$6;
++			tag.textContent = css$6 + ".sRp_root{--dsh-chat-content-width:100%;--dsh-composer-card-max-width:100%;--dsh-composer-side-clearance:8px;--dsh-composer-dock-inset:4px;position:absolute;inset:0;z-index:2;min-width:0;height:100%;background:transparent;display:flex;flex-direction:column;pointer-events:none;overflow:hidden}.sRp_root[data-research-active=false]{opacity:0;pointer-events:none}.sRp_root[data-research-active=false] *{pointer-events:none!important}.sRp_tabs{pointer-events:auto;flex:none;min-width:0;height:44px;padding:7px 8px 6px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);display:flex;align-items:center;gap:4px;overflow:hidden}.sRp_tab{min-width:0;height:30px;padding:0 9px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:20px;white-space:nowrap;cursor:pointer;position:relative;display:inline-flex;align-items:center;gap:5px}.sRp_tab[aria-selected=true]{background:var(--dsw-alias-interactive-bg-hover-solid);color:var(--dsw-alias-label-primary)}.sRp_tab[data-unread=true]:after{content:\"\";width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-business-primary);flex:none}.sRp_tab[data-running=true]:before{content:\"\";width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-business-primary);animation:sRp_running 1s ease-in-out infinite alternate;flex:none}@keyframes sRp_running{from{opacity:.3}to{opacity:1}}.sRp_close,.sRp_add{width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-caption);cursor:pointer;display:grid;place-items:center;flex:none}.sRp_close:hover,.sRp_add:hover{background:var(--dsw-alias-interactive-bg-hover)}.sRp_close{margin-left:-6px}.sRp_add{margin-left:auto;font-size:18px}.sRp_body{pointer-events:auto;min-width:0;min-height:0;flex:1;background:var(--dsw-alias-bg-base);overflow:hidden}.sRp_body[hidden]{display:none}.sRp_conversation{min-height:0;height:100%;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}.sRp_messages{min-height:0;flex:1}.sRp_composer{position:sticky;bottom:0;flex:none;min-width:0;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 0%,transparent),var(--dsw-alias-bg-base) 24px);overflow:hidden}.sRp_composer .uV2eYG_tools{gap:8px}.sRp_composer .uV2eYG_modes,.sRp_composer .uV2eYG_trailing{gap:6px}.sRp_files{height:100%;padding:8px;overflow:auto}.sRp_file{width:100%;min-width:0;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px}.sRp_file[draggable=true]{cursor:grab}.sRp_file:hover{background:var(--dsw-alias-interactive-bg-hover)}.sRp_fileName{min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font-size:13px}.sRp_fileMeta{grid-column:1/-1;color:var(--dsw-alias-label-caption);font-size:11px}.sRp_fileUnavailable{color:var(--dsw-alias-state-warn-label)}.sRp_selectionAction{z-index:20;position:fixed;pointer-events:auto;border:0;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff;padding:5px 9px;font-size:12px;box-shadow:var(--dsw-shadow-lv2);cursor:pointer}.sRp_sourceStatus{z-index:19;position:absolute;right:10px;bottom:72px;pointer-events:none;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-warn-label);padding:7px 10px;font-size:12px;box-shadow:var(--dsw-shadow-lv1)}@media (prefers-reduced-motion:reduce){.sRp_tab[data-running=true]:before{animation:none}}";
++			document.head.appendChild(tag);
++		}
++		var ConversationRoot_module_css_default = {
++			"titleRow": "wSkVaW_titleRow",
++			"viewArea": "wSkVaW_viewArea",
++			"headerUtilities": "wSkVaW_headerUtilities",
++			"composerHero": "wSkVaW_composerHero",
++			"crumbs": "wSkVaW_crumbs",
++			"composerSeat": "wSkVaW_composerSeat",
++			"tabs": "wSkVaW_tabs",
++			"heroGlow": "wSkVaW_heroGlow",
++			"tabActive": "wSkVaW_tabActive",
++			"crumbSep": "wSkVaW_crumbSep",
++			"crumbCurrent": "wSkVaW_crumbCurrent",
++			"headerActions": "wSkVaW_headerActions",
++			"composerStack": "wSkVaW_composerStack",
++			"scrollBody": "wSkVaW_scrollBody",
++			"tab": "wSkVaW_tab",
++			"crumbSeg": "wSkVaW_crumbSeg",
++			"root": "wSkVaW_root",
++			"headerHidden": "wSkVaW_headerHidden",
++			"titleCluster": "wSkVaW_titleCluster",
++			"header": "wSkVaW_header",
++			"crumb": "wSkVaW_crumb",
++			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow"
++		};
++		//#endregion
++		//#region lib/types/client/skeleton/ConversationRoot.js
++		function ComposerSurface({ zone, hero, inputBar, pending, session, heroWorkspaceRow, renderSlot, renderSlotChain, seatResizeRef, t }) {
++			const composerBar = (0, react_jsx_runtime.jsxs)("div", {
++				className: clsx(ConversationRoot_module_css_default.composerStack, hero && ConversationRoot_module_css_default.composerHero),
++				children: [
++					hero && (0, react_jsx_runtime.jsx)(HeroGlow, { className: ConversationRoot_module_css_default.heroGlow }),
++					hero && (0, react_jsx_runtime.jsx)(HeroShell, { t }),
++					hero && heroWorkspaceRow,
++					zone !== void 0 && renderSlot("conversation.input.dock", zone),
++					inputBar
++				]
++			});
++			const composer = renderSlotChain("conversation.composer", {
++				interactions: pending,
++				session
++			}, {
++				fallback: composerBar,
++				overlay: true
++			});
++			return (0, react_jsx_runtime.jsx)("div", {
++				ref: seatResizeRef,
++				className: ConversationRoot_module_css_default.composerSeat,
++				"data-composer-seat": "",
++				children: composer
++			});
++		}
++		function researchFileBasename(value) {
++			const parts = String(value ?? "").split(/[\\/]/).filter(Boolean);
++			return parts.at(-1) ?? String(value ?? "");
++		}
++		function closeGlyph() {
++			return (0, react_jsx_runtime.jsx)("svg", {
++				viewBox: "0 0 16 16",
++				width: "12",
++				height: "12",
++				"aria-hidden": true,
++				children: (0, react_jsx_runtime.jsx)("path", {
++					d: "M4 4l8 8M12 4l-8 8",
++					stroke: "currentColor",
++					strokeWidth: "1.5",
++					strokeLinecap: "round"
++				})
++			});
++		}
++		function settledAssistantWrapper(node, root) {
++			const element = node?.nodeType === 1 ? node : node?.parentElement;
++			const wrapper = element?.closest?.("[data-assistant-message-id]") ?? null;
++			return wrapper !== null && root.contains(wrapper) && wrapper.hasAttribute("data-assistant-message-settled") ? wrapper : null;
++		}
++		function researchAssistantSelection(selection, root, sessionId) {
++			if (selection === null || selection.rangeCount !== 1 || selection.isCollapsed) return null;
++			const range = selection.getRangeAt(0);
++			const start = settledAssistantWrapper(range.startContainer, root);
++			const end = settledAssistantWrapper(range.endContainer, root);
++			if (start === null || start !== end) return null;
++			const boundedSessionId = boundedResearchArtifactString(sessionId, RESEARCH_CANVAS_TEXT_LIMIT);
++			const messageId = boundedResearchArtifactString(start.getAttribute("data-assistant-message-id"), RESEARCH_CANVAS_TEXT_LIMIT);
++			const excerpt = normalizeResearchArtifactText(range.toString());
++			if (boundedSessionId === null || messageId === null || excerpt === null) return null;
++			const rect = range.getBoundingClientRect();
++			return {
++				wrapper: start,
++				payload: { sessionId: boundedSessionId, messageId, kind: "assistant-excerpt", title: "助手摘录", excerpt },
++				position: { left: rect.right + 6, top: rect.bottom + 6 }
++			};
++		}
++		function ResearchConversationPanel({ active, sessionId, useSession, presentation, actions, renderSlot, researchWorkspaces, composerHostRef, t }) {
++			const panelRef = (0, react.useRef)(null);
++			const [selectionAction, setSelectionAction] = (0, react.useState)(null);
++			const [sourceStatus, setSourceStatus] = (0, react.useState)(null);
++			const requestedTab = presentation.researchRightTab ?? "conversation";
++			const filesOpen = presentation.researchFilesTabOpen ?? true;
++			const unread = presentation.researchConversationUnread ?? false;
++			const selection = presentation.selection;
++			const rightTab = requestedTab === "files" && filesOpen || requestedTab === "details" && selection !== null ? requestedTab : "conversation";
++			const running = useSession((s) => s.running);
++			const activity = useSession((s) => `${s.chat.order.length}:${s.running ? 1 : 0}`);
++			const previousActivity = (0, react.useRef)(activity);
++			(0, react.useEffect)(() => {
++				if (active && previousActivity.current !== activity && rightTab !== "conversation") actions.setResearchConversationUnread(true);
++				previousActivity.current = activity;
++			}, [actions, active, activity, rightTab]);
++			(0, react.useEffect)(() => {
++				if (requestedTab === rightTab) return;
++				actions.setResearchRightTab(rightTab);
++			}, [actions, requestedTab, rightTab]);
++			const workspace = (0, react.useMemo)(() => researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
++			const workspaceSnapshot = (0, react.useSyncExternalStore)(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
++			(0, react.useEffect)(() => {
++				setSelectionAction(null);
++			}, [sessionId]);
++			(0, react.useEffect)(() => {
++				if (!active || rightTab !== "conversation") setSelectionAction(null);
++			}, [active, rightTab]);
++			(0, react.useEffect)(() => {
++				if (active && workspaceSnapshot.pendingMessageJump !== null && rightTab !== "conversation") actions.setResearchRightTab("conversation");
++			}, [actions, active, rightTab, workspaceSnapshot.pendingMessageJump]);
++			(0, react.useLayoutEffect)(() => {
++				const messageId = workspaceSnapshot.pendingMessageJump;
++				const panel = panelRef.current;
++				if (!active || rightTab !== "conversation" || messageId === null || panel === null) return;
++				const source = Array.from(panel.querySelectorAll("[data-assistant-message-id]")).find((candidate) => candidate.getAttribute("data-assistant-message-id") === messageId) ?? null;
++				workspace.clearPendingMessageJump();
++				if (source === null) {
++					workspace.setSourceAvailability(messageId, false);
++					setSourceStatus("来源消息不可用");
++					return;
++				}
++				workspace.setSourceAvailability(messageId, true);
++				setSourceStatus(null);
++				if (!source.hasAttribute("tabindex")) source.setAttribute("tabindex", "-1");
++				source.scrollIntoView?.({ block: "center" });
++				source.focus({ preventScroll: true });
++			}, [active, rightTab, workspace, workspaceSnapshot.pendingMessageJump]);
++			const validateSelection = () => {
++				const panel = panelRef.current;
++				return panel === null ? null : researchAssistantSelection(window.getSelection?.() ?? null, panel, sessionId);
++			};
++			const onSelectionEnd = () => setSelectionAction(validateSelection());
++			const onSelectionDragStart = (event) => {
++				const selected = validateSelection();
++				const panel = panelRef.current;
++				const targetWrapper = panel === null ? null : settledAssistantWrapper(event.target, panel);
++				if (selected === null || selected.wrapper !== targetWrapper || event.dataTransfer === null) return;
++				event.dataTransfer.effectAllowed = "copy";
++				event.dataTransfer.setData(RESEARCH_ARTIFACT_DRAG_TYPE, JSON.stringify(selected.payload));
++			};
++			const selectTab = (tab) => {
++				actions.setResearchRightTab(tab);
++				if (tab === "conversation") actions.setResearchConversationUnread(false);
++			};
++			const tab = (id, label, extra = {}) => (0, react_jsx_runtime.jsx)("button", {
++				type: "button",
++				role: "tab",
++				className: "sRp_tab",
++				"data-research-right-tab": id,
++				"data-unread": id === "conversation" && unread || void 0,
++				"data-running": id === "conversation" && running || void 0,
++				"aria-selected": rightTab === id,
++				onClick: () => selectTab(id),
++				...extra,
++				children: label
++			}, id);
++			return (0, react_jsx_runtime.jsxs)("section", {
++				ref: panelRef,
++				className: "sRp_root",
++				"data-research-conversation-panel": "",
++				"data-research-active": active,
++				onMouseUp: onSelectionEnd,
++				onDragStartCapture: onSelectionDragStart,
++				children: [(0, react_jsx_runtime.jsxs)("div", {
++					className: "sRp_tabs",
++					role: "tablist",
++					children: [
++						tab("conversation", t("research.right.conversation")),
++						filesOpen && tab("files", t("research.right.files")),
++						filesOpen && (0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "sRp_close",
++							"data-research-close-tab": "files",
++							"aria-label": t("research.right.closeFiles"),
++							onClick: () => {
++								actions.setResearchFilesTabOpen(false);
++								if (rightTab === "files") selectTab("conversation");
++							},
++							children: closeGlyph()
++						}),
++						selection !== null && tab("details", selection.toolName ?? t("details.title")),
++						selection !== null && (0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "sRp_close",
++							"data-research-close-tab": "details",
++							"aria-label": t("research.right.closeDetails"),
++							onClick: () => {
++								actions.select(null);
++								selectTab("conversation");
++							},
++							children: closeGlyph()
++						}),
++						(0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "sRp_add",
++							"data-research-add-tab": "",
++							"aria-label": t("research.right.add"),
++							onClick: () => {
++								actions.setResearchFilesTabOpen(true);
++								selectTab("files");
++							},
++							children: "+"
++						})
++					]
++				}), (0, react_jsx_runtime.jsxs)("div", {
++					className: "sRp_body sRp_conversation",
++					"data-conversation-scroll": "",
++					hidden: !active || rightTab !== "conversation",
++					children: [(0, react_jsx_runtime.jsx)("div", {
++						className: "sRp_messages",
++						children: active ? presentation.conversationView : null
++					}), (0, react_jsx_runtime.jsx)("div", {
++						ref: composerHostRef,
++						className: "sRp_composer",
++						"data-research-composer-host": ""
++					})]
++				}), (0, react_jsx_runtime.jsx)("div", {
++					className: "sRp_body sRp_files",
++					"data-research-files-panel": "",
++					hidden: !active || rightTab !== "files",
++					children: active ? workspaceSnapshot.files.map((node) => {
++						const resolved = typeof node.path === "string" && node.path !== "";
++						const name = researchFileBasename(node.name);
++						return (0, react_jsx_runtime.jsxs)("div", {
++							className: "sRp_file",
++							"data-research-file-row": node.id,
++							"data-path-unavailable": !resolved || void 0,
++							draggable: resolved,
++							onDragStart: resolved ? (event) => {
++								event.dataTransfer.effectAllowed = "copy";
++								event.dataTransfer.setData(SHERLOCK_FILE_DRAG_TYPE, JSON.stringify({ path: node.path, name }));
++							} : void 0,
++							children: [(0, react_jsx_runtime.jsx)("span", {
++								className: "sRp_fileName",
++								children: name
++							}), (0, react_jsx_runtime.jsxs)("span", {
++								className: clsx("sRp_fileMeta", !resolved && "sRp_fileUnavailable"),
++								children: [t(`research.right.source.${node.source}`), " · ", resolved ? node.mediaType ?? researchFileBasename(node.path) : t("research.right.pathUnavailable")]
++							})]
++						}, node.id);
++					}) : null
++				}), !active || rightTab !== "conversation" || selectionAction === null ? null : (0, react_jsx_runtime.jsx)("button", {
++					type: "button",
++					className: "sRp_selectionAction",
++					"aria-label": "加入画布",
++					style: selectionAction.position,
++					onClick: () => workspace.addExcerpt(selectionAction.payload.messageId, selectionAction.payload.excerpt, workspace.visibleCenter()),
++					children: "加入画布"
++				}), sourceStatus === null ? null : (0, react_jsx_runtime.jsx)("div", {
++					className: "sRp_sourceStatus",
++					role: "status",
++					"aria-live": "polite",
++					children: sourceStatus
++				})]
++			});
++		}
++		const ABSENT_RESEARCH_WORKSPACE_SNAPSHOT = Object.freeze({ files: Object.freeze([]), selection: EMPTY_RESEARCH_SELECTION });
++		const ABSENT_RESEARCH_WORKSPACE = {
++			subscribe: () => () => {},
++			getSnapshot: () => ABSENT_RESEARCH_WORKSPACE_SNAPSHOT
++		};
++		const ABSENT_RESEARCH_PRESENTATION = Object.freeze({
++			view: "chat",
++			selection: null,
++			inspect: null,
++			conversationView: null,
++			researchRightTab: "conversation",
++			researchFilesTabOpen: true,
++			researchConversationUnread: false,
++			actions: null
++		});
++		const ABSENT_CHAT_ACTIONS = Object.freeze({
++			select: () => {},
++			setDraft: () => {},
++			setView: () => {},
++			setInspect: () => {},
++			setResearchRightTab: () => {},
++			setResearchFilesTabOpen: () => {},
++			setResearchConversationUnread: () => {}
++		});
++		function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, useStore, actions, renderSlot, renderSlotChain, selectWorkspace, enterResearch, leaveResearch, setResearchActive = () => {}, researchWorkspaces, t }) {
++			const openState = useSession((s) => s.openState);
++			const composerPhase = useSession((s) => s.composerPhase);
++			const pending = useSession((s) => s.pending) ?? [];
++			const session = useSession((s) => s);
++			const inputState = useInput((s) => s);
++			const cwd = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.cwd);
++			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
++			const workspaces = useWorkspaces((s) => s);
++			const composerBlock = useComposerBlock((block) => block);
++			const [sessionPresentationState, setSessionPresentationState] = (0, react.useState)({ sessionId, presentation: ABSENT_RESEARCH_PRESENTATION });
++			const sessionPresentation = sessionPresentationState.sessionId === sessionId ? sessionPresentationState.presentation : ABSENT_RESEARCH_PRESENTATION;
++			const directActiveView = useStore?.((s) => s.view ?? "chat");
++			const directDetailsSelection = useStore?.((s) => s.selection);
++			const directInspect = useStore?.((s) => s.inspect ?? null);
++			const directResearchRightTab = useStore?.((s) => s.researchRightTab ?? "conversation");
++			const directResearchFilesTabOpen = useStore?.((s) => s.researchFilesTabOpen ?? true);
++			const directResearchConversationUnread = useStore?.((s) => s.researchConversationUnread ?? false);
++			const activeView = directActiveView ?? sessionPresentation.view;
++			const detailsSelection = directDetailsSelection ?? sessionPresentation.selection;
++			const resolvedActions = actions ?? sessionPresentation.actions ?? ABSENT_CHAT_ACTIONS;
++			const researchPresentation = {
++				view: activeView,
++				selection: detailsSelection,
++				inspect: directInspect ?? sessionPresentation.inspect,
++				conversationView: sessionPresentation.conversationView,
++				researchRightTab: directResearchRightTab ?? sessionPresentation.researchRightTab,
++				researchFilesTabOpen: directResearchFilesTabOpen ?? sessionPresentation.researchFilesTabOpen,
++				researchConversationUnread: directResearchConversationUnread ?? sessionPresentation.researchConversationUnread
++			};
++			const research = activeView === "research";
++			const researchWorkspace = (0, react.useMemo)(() => sessionId === void 0 ? ABSENT_RESEARCH_WORKSPACE : researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
++			const researchWorkspaceSnapshot2 = (0, react.useSyncExternalStore)(researchWorkspace.subscribe, researchWorkspace.getSnapshot, researchWorkspace.getSnapshot);
++			const [pickerOpen, setPickerOpen] = (0, react.useState)(false);
++			const [pendingWorkspaceId, setPendingWorkspaceId] = (0, react.useState)();
++			const pickerAnchor = (0, react.useRef)(null);
++			const seatObserver = (0, react.useRef)(null);
++			const composerPortalHostRef = (0, react.useRef)(null);
++			if (composerPortalHostRef.current === null) {
++				composerPortalHostRef.current = document.createElement("div");
++				composerPortalHostRef.current.setAttribute("data-composer-portal-host", "");
++			}
++			const centerComposerHostRef = (0, react.useRef)(null);
++			const researchComposerHostRef = (0, react.useRef)(null);
++			const composerSelectionRef = (0, react.useRef)(null);
++			const [detailsPortalHost, setDetailsPortalHost] = (0, react.useState)(null);
++			const researchWasActive = (0, react.useRef)(false);
++			const preResearchSelection = (0, react.useRef)(null);
++			const publishResearchPresentation = (0, react.useCallback)((presentation) => {
++				setSessionPresentationState({ sessionId, presentation: presentation ?? ABSENT_RESEARCH_PRESENTATION });
++			}, [sessionId]);
++			const seatResizeRef = (0, react.useCallback)((seat) => {
++				seatObserver.current?.disconnect();
++				seatObserver.current = null;
++				const scroller = seat?.parentElement ?? null;
+ 				if (seat === null || scroller === null) return;
+ 				seatObserver.current = new ResizeObserver(() => {
+ 					scroller.style.setProperty("--dsh-composer-height", `${seat.offsetHeight}px`);
+@@ -6848,6 +9071,36 @@ window.__ModuleLoader__.load({
+ 			}, []);
+ 			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
+ 			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
++			(0, react.useLayoutEffect)(() => {
++				const host = document.querySelector("[data-details-portal-host]");
++				setDetailsPortalHost((current) => current === host ? current : host);
++			});
++			(0, react.useEffect)(() => {
++				if (sessionId === void 0) return;
++				setResearchActive(sessionId, research);
++				return () => {
++					setResearchActive(sessionId, false);
++				};
++			}, [research, sessionId, setResearchActive]);
++			(0, react.useEffect)(() => {
++				if (researchWasActive.current === research) return;
++				researchWasActive.current = research;
++				if (research) {
++					preResearchSelection.current = detailsSelection;
++					resolvedActions.setResearchRightTab("conversation");
++					resolvedActions.setResearchConversationUnread(false);
++					enterResearch();
++				} else {
++					resolvedActions.select(preResearchSelection.current);
++					leaveResearch();
++				}
++			}, [resolvedActions, detailsSelection, enterResearch, leaveResearch, research]);
++			(0, react.useEffect)(() => () => {
++				if (researchWasActive.current) {
++					resolvedActions.select(preResearchSelection.current);
++					leaveResearch();
++				}
++			}, [resolvedActions, leaveResearch]);
+ 			(0, react.useEffect)(() => {
+ 				if (pendingWorkspaceId === void 0) return;
+ 				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
+@@ -6897,6 +9150,8 @@ window.__ModuleLoader__.load({
+ 			const inert = sessionId === void 0 || hero && chipTitle === void 0;
+ 			const inputBar = renderSlot("conversation.composer.bar", {
+ 				variant: hero ? "hero" : "composer",
++				accessory: research && sessionId !== void 0 ? (0, react_jsx_runtime.jsx)(ResearchFileTags, { sessionId, researchWorkspaces }) : void 0,
++				hasExternalAttachments: research && researchWorkspaceSnapshot2.selection.orderedFileIds.length > 0,
+ 				...inert ? {
+ 					disabled: true,
+ 					placeholder: t("placeholder.workspace"),
+@@ -6913,38 +9168,66 @@ window.__ModuleLoader__.load({
+ 				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
+ 				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
+ 			});
+-			const composerBar = (0, react_jsx_runtime.jsxs)("div", {
+-				className: clsx(ConversationRoot_module_css_default.composerStack, hero && ConversationRoot_module_css_default.composerHero),
+-				children: [
+-					hero && (0, react_jsx_runtime.jsx)(HeroGlow, { className: ConversationRoot_module_css_default.heroGlow }),
+-					hero && (0, react_jsx_runtime.jsx)(HeroShell, { t }),
+-					hero && heroWorkspaceRow,
+-					zone !== void 0 && renderSlot("conversation.input.dock", zone),
+-					inputBar
+-				]
+-			});
+ 			const phase = settling ? "settling" : hero ? "hero" : "active";
+-			const composer = renderSlotChain("conversation.composer", {
+-				interactions: pending,
+-				session
+-			}, {
+-				fallback: composerBar,
+-				overlay: true
+-			});
+-			const composerSeat = (0, react_jsx_runtime.jsx)("div", {
+-				ref: seatResizeRef,
+-				className: ConversationRoot_module_css_default.composerSeat,
+-				"data-composer-seat": "",
+-				children: composer
++			const composerSurface = (0, react_jsx_runtime.jsx)(ComposerSurface, {
++				zone,
++				hero,
++				inputBar,
++				pending,
++				session,
++				heroWorkspaceRow,
++				renderSlot,
++				renderSlotChain,
++				seatResizeRef,
++				t
+ 			});
++			const composerPortalHost = composerPortalHostRef.current;
++			(0, react.useLayoutEffect)(() => {
++				const destination = research ? researchComposerHostRef.current : centerComposerHostRef.current;
++				if (destination === null || composerPortalHost.parentElement === destination) return;
++				const active = document.activeElement;
++				const selection = active instanceof HTMLTextAreaElement && composerPortalHost.contains(active) ? {
++					node: active,
++					start: active.selectionStart,
++					end: active.selectionEnd
++				} : composerSelectionRef.current;
++				destination.appendChild(composerPortalHost);
++				selection?.node.focus({ preventScroll: true });
++				selection?.node.setSelectionRange(selection.start, selection.end);
++				composerSelectionRef.current = null;
++				return () => {
++					const focused = document.activeElement;
++					if (focused instanceof HTMLTextAreaElement && composerPortalHost.contains(focused)) composerSelectionRef.current = {
++						node: focused,
++						start: focused.selectionStart,
++						end: focused.selectionEnd
++					};
++				};
++			}, [composerPortalHost, detailsPortalHost, research]);
++			const composerPortal = (0, react_dom.createPortal)(composerSurface, composerPortalHost);
++			const researchPanelPortal = detailsPortalHost !== null ? (0, react_dom.createPortal)((0, react_jsx_runtime.jsx)(ResearchConversationPanel, {
++				active: research,
++				sessionId,
++				useSession,
++				presentation: researchPresentation,
++				actions: resolvedActions,
++				renderSlot,
++				researchWorkspaces,
++				composerHostRef: researchComposerHostRef,
++				t
++			}), detailsPortalHost) : null;
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: ConversationRoot_module_css_default.root,
+ 				"data-phase": phase,
+ 				children: [renderSlot("conversation.session.header", {}), (0, react_jsx_runtime.jsxs)("div", {
+ 					className: ConversationRoot_module_css_default.scrollBody,
+ 					"data-conversation-scroll": "",
+-					children: [renderSlot("conversation.session", {}), composerSeat]
+-				})]
++					"data-research-center": research || void 0,
++					children: [renderSlot("conversation.session", { onResearchPresentation: publishResearchPresentation }), (0, react_jsx_runtime.jsx)("div", {
++						ref: centerComposerHostRef,
++						"data-center-composer-host": ""
++					})]
++				}), composerPortal, researchPanelPortal]
+ 			});
+ 		}
+ 		//#endregion
+@@ -6980,6 +9263,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -1728,7 +3052,7 @@ index 1dd0e89..1ff7dd5 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +8291,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +9331,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -1746,7 +3070,87 @@ index 1dd0e89..1ff7dd5 100644
  				})] })
  			});
  		}
-@@ -8066,13 +9314,30 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +9341,42 @@ window.__ModuleLoader__.load({
+ 		* @param props - Strict Session input/store, view ledger, and render shares.
+ 		* @returns the active view area, or null while the Session remains blank.
+ 		*/
+-		function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages }) {
++		function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, onResearchPresentation }) {
+ 			(0, react.useSyncExternalStore)(views.subscribe, views.version);
+-			const active = resolveActiveView(views.list(), useStore((s) => s.view));
++			const view = useStore((s) => s.view ?? "chat");
++			const active = resolveActiveView(views.list(), view);
+ 			const composerPhase = useSession((s) => s.composerPhase);
+ 			const blank = useSession((s) => s.blank);
+ 			const inputState = useInput((s) => s);
+ 			const storedDraft = useStore((s) => s.draft);
++			const selection = useStore((s) => s.selection);
+ 			const inspect = useStore((s) => s.inspect ?? null);
++			const researchRightTab = useStore((s) => s.researchRightTab ?? "conversation");
++			const researchFilesTabOpen = useStore((s) => s.researchFilesTabOpen ?? true);
++			const researchConversationUnread = useStore((s) => s.researchConversationUnread ?? false);
++			const onInspectDone = (0, react.useCallback)(() => {
++				actions.setInspect(null);
++			}, [actions]);
++			const researchConversationView = (0, react.useMemo)(() => renderSlot("conversation.view", {
++				inspect,
++				onInspectDone
++			}, { only: "chat" }), [inspect, onInspectDone, renderSlot]);
++			(0, react.useLayoutEffect)(() => {
++				if (onResearchPresentation === void 0) return;
++				onResearchPresentation({
++					view,
++					selection,
++					inspect,
++					conversationView: researchConversationView,
++					researchRightTab,
++					researchFilesTabOpen,
++					researchConversationUnread,
++					actions
++				});
++				return () => {
++					onResearchPresentation(null);
++				};
++			}, [actions, inspect, onResearchPresentation, researchConversationUnread, researchConversationView, researchFilesTabOpen, researchRightTab, selection, view]);
+ 			(0, react.useEffect)(() => {
+ 				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
+ 				const unmirror = bindDraftMirror(actions.setDraft);
+@@ -7090,7 +9406,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
+ 			tag.dataset.pluginCss = tagId$5;
+-			tag.textContent = css$5;
++			tag.textContent = css$5 + ".ydkMvW_root[data-research-managed=true]{box-sizing:border-box;padding-top:44px}.ydkMvW_root[data-research-managed=true]>.ydkMvW_header{display:none}.ydkMvW_root[data-research-managed=true]>.ydkMvW_body[hidden]{display:none}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var DetailsPanel_module_css_default = {
+@@ -7143,13 +9459,17 @@ window.__ModuleLoader__.load({
+ 		}
+ 		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
+ 			const selection = useStore((s) => s.selection);
++			const research = useStore((s) => s.view === "research");
++			const researchRightTab = useStore((s) => s.researchRightTab ?? "conversation");
+ 			const sessionCwd = useSessions((list) => list.byId[sessionId]?.cwd);
+ 			const callId = selection?.callId;
+ 			const material = useSession((s) => callId === void 0 ? null : materialFor(s, callId), (a, b) => (0, _deepseek_ai_dsh_client_runtime_client.shallowEqual)(a, b));
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: DetailsPanel_module_css_default.root,
++				"data-research-managed": research || void 0,
+ 				children: [(0, react_jsx_runtime.jsxs)("div", {
+ 					className: DetailsPanel_module_css_default.header,
++					hidden: research,
+ 					children: [(0, react_jsx_runtime.jsx)("div", {
+ 						className: DetailsPanel_module_css_default.title,
+ 						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
+@@ -7175,6 +9495,7 @@ window.__ModuleLoader__.load({
+ 					})]
+ 				}), (0, react_jsx_runtime.jsx)("div", {
+ 					className: DetailsPanel_module_css_default.body,
++					hidden: research && researchRightTab !== "details",
+ 					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
+ 						className: DetailsPanel_module_css_default.empty,
+ 						children: t("details.empty")
+@@ -8066,13 +10387,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -1777,7 +3181,7 @@ index 1dd0e89..1ff7dd5 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +9359,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +10432,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -1802,7 +3206,7 @@ index 1dd0e89..1ff7dd5 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +10313,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +11386,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -1811,7 +3215,7 @@ index 1dd0e89..1ff7dd5 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,23 +10403,24 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +11476,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -1833,15 +3237,93 @@ index 1dd0e89..1ff7dd5 100644
  				turn
  			]);
  			const mentions = (0, react.useMemo)(() => owner === void 0 ? void 0 : fileMentions(owner), [fileMentions, owner]);
-+			const visibleBlocks = (0, react.useMemo)(() => completedFinal ? finalAnswerBlocks(data.blocks) : data.blocks, [completedFinal, data.blocks]);
- 			return (0, react_jsx_runtime.jsx)(AssistantMarkdown, {
+-			return (0, react_jsx_runtime.jsx)(AssistantMarkdown, {
 -				blocks: data.blocks,
++			const visibleBlocks = (0, react.useMemo)(() => completedFinal ? finalAnswerBlocks(data.blocks) : data.blocks, [completedFinal, data.blocks]);
++			const content = (0, react_jsx_runtime.jsx)(AssistantMarkdown, {
 +				blocks: visibleBlocks,
  				streaming: data.status === "running",
  				interrupted: data.status === "interrupted",
  				loadImage,
-@@ -9766,7 +11042,10 @@ window.__ModuleLoader__.load({
+ 				mentions,
+ 				t
+ 			});
++			const messageId = data.finalNode?.messageId;
++			return messageId === void 0 ? content : (0, react_jsx_runtime.jsx)("div", {
++				"data-assistant-message-id": messageId,
++				"data-assistant-message-settled": data.status === "running" ? void 0 : "",
++				children: content
++			});
+ 		});
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
+@@ -9330,13 +11685,14 @@ window.__ModuleLoader__.load({
+ 			});
+ 			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
+ 			const messageId = closing.finalNode.messageId;
+-			const assistantActions = messageId === void 0 ? null : renderSlot("conversation.chat.assistant-actions", { messageId });
++			const text = assistantText(closing.blocks);
++			const assistantActions = messageId === void 0 ? null : renderSlot("conversation.chat.assistant-actions", { messageId, text });
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: TurnTailNodeView_module_css_default.root,
+ 				"data-turn-tail": data.turn,
+ 				"data-time-hover-root": true,
+ 				children: [tail, (0, react_jsx_runtime.jsx)(MessageIconActions, {
+-					text: assistantText(closing.blocks),
++					text,
+ 					time: closing.time,
+ 					runMs,
+ 					ttftMs: data.ttftMs,
+@@ -9499,6 +11855,7 @@ window.__ModuleLoader__.load({
+ 			const workspaces = ctx.workspaces;
+ 			const layout = ctx.layout;
+ 			const slots = ctx.slots;
++			const researchWorkspaces = new ResearchWorkspaceRegistry();
+ 			registerConversationNodes(ctx);
+ 			registerChatNodeRenderers(ctx);
+ 			ctx.effect(() => ctx.locale.register(NS, {
+@@ -9538,7 +11895,7 @@ window.__ModuleLoader__.load({
+ 				subscribe: (fn) => slots.subscribe("conversation.view", fn),
+ 				version: () => slots.getVersion("conversation.view")
+ 			};
+-			const inputHub = new InputHub(ctx, t);
++			const inputHub = new InputHub(ctx, t, researchWorkspaces);
+ 			const composerBlocks = new ComposerBlockRegistry();
+ 			ctx.effect(() => sessions.provide({
+ 				hooks: ["input"],
+@@ -9551,9 +11908,9 @@ window.__ModuleLoader__.load({
+ 					};
+ 				}
+ 			}), "ui-conversation: input standard-kit provider");
+-			slots.register({
+-				name: "conversation",
+-				locale: NS,
++				slots.register({
++					name: "conversation",
++					locale: NS,
+ 				children: {
+ 					"conversation.session": {
+ 						kind: "single",
+@@ -9600,8 +11957,12 @@ window.__ModuleLoader__.load({
+ 						scope: "root"
+ 					}
+ 				},
+-				inject: (sessionId) => ({
+-					hooks: { composerBlock: sessionId === void 0 ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
++					inject: (sessionId) => ({
++						hooks: { composerBlock: sessionId === void 0 ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
++						enterResearch: () => layout.enterResearch(),
++						leaveResearch: () => layout.leaveResearch(),
++						setResearchActive: (id, active) => inputHub.setResearchActive(id, active),
++						researchWorkspaces,
+ 					selectWorkspace: async (workspaceId) => {
+ 						const nextId = await workspaces.connectWorkspace(workspaceId);
+ 						if (sessionId !== void 0 && nextId !== sessionId) {
+@@ -9764,9 +12125,13 @@ window.__ModuleLoader__.load({
+ 					return {
+ 						openDetails: (target) => {
  							actions.select(target);
++							actions.setResearchRightTab("details");
  							layout.openDetails();
  						},
 -						fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner),
@@ -1852,7 +3334,7 @@ index 1dd0e89..1ff7dd5 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +11055,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +12141,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -1861,23 +3343,36 @@ index 1dd0e89..1ff7dd5 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +11079,7 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +12165,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
-+			registerResearchCanvasView(slots, t);
++			registerResearchCanvasView(slots, t, researchWorkspaces);
++			registerResearchAssistantActions(slots, researchWorkspaces);
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9825,6 +11107,39 @@ window.__ModuleLoader__.load({
+@@ -9825,6 +12194,74 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.ConversationController = ConversationController;
++		exports.AssistantNodeView = AssistantNodeView;
++		exports.InputHub = InputHub;
++		exports.SessionInputShell = SessionInputShell;
 +		exports.CommandLauncherButton = CommandLauncherButton;
 +		exports.ComposerLeadingControls = ComposerLeadingControls;
++		exports.ComposerSurface = ComposerSurface;
++		exports.ConversationRoot = ConversationRoot;
++		exports.ConversationSession = ConversationSession;
++		exports.ResearchConversationPanel = ResearchConversationPanel;
++		exports.ResearchAssistantCanvasAction = ResearchAssistantCanvasAction;
 +		exports.conversationViewTabProps = conversationViewTabProps;
 +		exports.ResearchCanvas = ResearchCanvas;
++		exports.ResearchCanvasArtifactCard = ResearchCanvasArtifactCard;
 +		exports.ResearchCanvasFileCard = ResearchCanvasFileCard;
++		exports.TurnTailNodeView = TurnTailNodeView;
++		exports.ResearchFileTags = ResearchFileTags;
++		exports.UserStyleBubble = UserStyleBubble;
 +		exports.compactionDefinition = compactionDefinition;
 +		exports.compactConversationFlow = compactConversationFlow;
 +		exports.executionActivityLabel = executionActivityLabel;
@@ -1886,26 +3381,294 @@ index 1dd0e89..1ff7dd5 100644
 +		exports.executionProgressUpdates = executionProgressUpdates;
 +		exports.executionSummaryStatus = executionSummaryStatus;
 +		exports.executionStatusForNodes = executionStatusForNodes;
-+		exports.permissionOptionLabel = permissionOptionLabel;
 +		exports.finalAnswerBlocks = finalAnswerBlocks;
 +		exports.RESEARCH_CANVAS_MAX_FILES_PER_DROP = RESEARCH_CANVAS_MAX_FILES_PER_DROP;
 +		exports.RESEARCH_CANVAS_MAX_FILES_PER_SESSION = RESEARCH_CANVAS_MAX_FILES_PER_SESSION;
++		exports.RESEARCH_CANVAS_MAX_ARTIFACTS_PER_SESSION = RESEARCH_CANVAS_MAX_ARTIFACTS_PER_SESSION;
++		exports.RESEARCH_ARTIFACT_DRAG_TYPE = RESEARCH_ARTIFACT_DRAG_TYPE;
++		exports.RESEARCH_ARTIFACT_MAX_EXCERPT = RESEARCH_ARTIFACT_MAX_EXCERPT;
++		exports.RESEARCH_ARTIFACT_MAX_TITLE = RESEARCH_ARTIFACT_MAX_TITLE;
++		exports.ResearchWorkspaceRegistry = ResearchWorkspaceRegistry;
 +		exports.createResearchCanvasFileId = createResearchCanvasFileId;
++		exports.createResearchWorkspaceSession = createResearchWorkspaceSession;
++		exports.loadResearchCanvasArtifacts = loadResearchCanvasArtifacts;
 +		exports.loadResearchCanvasFiles = loadResearchCanvasFiles;
++		exports.loadResearchCanvasSelection = loadResearchCanvasSelection;
++		exports.moveResearchCanvasNodes = moveResearchCanvasNodes;
 +		exports.nextResearchCanvasPan = nextResearchCanvasPan;
 +		exports.nextResearchCanvasViewport = nextResearchCanvasViewport;
 +		exports.nextResearchCanvasWheel = nextResearchCanvasWheel;
++		exports.normalizeResearchRect = normalizeResearchRect;
++		exports.parseResearchArtifactDrag = parseResearchArtifactDrag;
++		exports.parseResearchCanvasArtifactNodes = parseResearchCanvasArtifactNodes;
 +		exports.parseResearchCanvasFileNodes = parseResearchCanvasFileNodes;
++		exports.parseResearchCanvasSelection = parseResearchCanvasSelection;
++		exports.parseResearchPrompt = parseResearchPrompt;
 +		exports.parseSherlockFileDrag = parseSherlockFileDrag;
++		exports.placeResearchCanvasArtifact = placeResearchCanvasArtifact;
 +		exports.placeResearchCanvasFiles = placeResearchCanvasFiles;
 +		exports.researchCanvasContentTransform = researchCanvasContentTransform;
++		exports.researchCanvasArtifactsStorageKey = researchCanvasArtifactsStorageKey;
 +		exports.researchCanvasDropFiles = researchCanvasDropFiles;
 +		exports.researchCanvasOwnsFileDrag = researchCanvasOwnsFileDrag;
++		exports.researchCanvasSelectionStorageKey = researchCanvasSelectionStorageKey;
 +		exports.researchCanvasStorageKey = researchCanvasStorageKey;
 +		exports.researchCanvasWorldPoint = researchCanvasWorldPoint;
++		exports.researchNodeViewportRect = researchNodeViewportRect;
++		exports.researchNodesInMarquee = researchNodesInMarquee;
 +		exports.registerResearchCanvasView = registerResearchCanvasView;
++		exports.registerResearchAssistantActions = registerResearchAssistantActions;
++		exports.saveResearchCanvasArtifacts = saveResearchCanvasArtifacts;
 +		exports.saveResearchCanvasFiles = saveResearchCanvasFiles;
++		exports.saveResearchCanvasSelection = saveResearchCanvasSelection;
++		exports.serializeResearchPrompt = serializeResearchPrompt;
++		exports.updateResearchSelection = updateResearchSelection;
 +		exports.userQueuedMessages = userQueuedMessages;
  		exports.apply = apply;
  		exports.inject = inject;
  		return module.exports;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts
+index 7b2ae76..c9a55be 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts
+@@ -1,4 +1,4 @@
+ import type { ChatNodeViewProps } from '../contract/slots.ts';
+-/** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
++/** Streaming, settled, and interrupted Assistant states share one keyed renderer instance and expose settled message identity for Research selection. */
+ export declare const AssistantNodeView: import("react").MemoExoticComponent<({ node, useTurnData, openFile, loadImage, fileMentions, t, }: ChatNodeViewProps<"assistant-step">) => import("react").JSX.Element>;
+ //# sourceMappingURL=AssistantNodeView.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts
+index b485863..581e6e3 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts
+@@ -1,7 +1,7 @@
+ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots';
+ import type { ChatNodeViewProps } from '../contract/slots.ts';
+ type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'> & PropsRenderSlots<'conversation.chat.turnTail' | 'conversation.chat.assistant-actions'>;
+-/** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
++/** Turn-local actions and feature tail over the Location index, including finalized assistant text for contributed actions. */
+ export declare const TurnTailNodeView: import("react").MemoExoticComponent<({ node, openFile, forkAt, renderSlot, renderSlotChain, t, useSession, }: TurnTailNodeViewProps) => import("react").JSX.Element | null>;
+ export {};
+ //# sourceMappingURL=TurnTailNodeView.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
+index 50939b2..f027ed8 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
+@@ -1,7 +1,7 @@
+ /** Conversation slot declarations and their composed component props. */
+ import type { ReactNode, RefObject } from 'react';
+ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
+-import type { InjectFace, MaybeSnapshotSelectorHook, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore, SlotHookFactory, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots';
++import type { BoundActions, InjectFace, MaybeSnapshotSelectorHook, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore, SlotHookFactory, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots';
+ import type { CommandNode, CompactionSummaryNode, ConversationSnapshot, ConversationTurnDataMap, ObservableSnapshot, PendingInteraction, PendingWait, SessionId, ToolCallBlock, TurnLocation, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client';
+ import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives';
+ import type { MessageId } from '@deepseek-ai/dsh-client-connection/client';
+@@ -10,7 +10,7 @@ import type { ComposerKeyboard, DraftAttachmentId, EditSelection, InputActions,
+ import type { createChatStore } from '../stores.ts';
+ import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts';
+ import type { ChatNode, ChatNodeKind } from './chat-nodes.ts';
+-import type { CallId, SelectionTarget, ViewTab } from './views.ts';
++import type { CallId, ResearchRightTab, SelectionTarget, ViewTab } from './views.ts';
+ /** Browser-owned image that has not crossed the durable host boundary. */
+ export interface ComposerAttachment {
+     kind: 'image';
+@@ -313,6 +313,24 @@ export interface ConversationSessionOwnerProps {
+      * @returns the scrollport containing `view` and the sticky composer seat.
+      */
+     wrapActiveBody?: (view: ReactNode) => ReactNode;
++    /**
++     * Publish the strict session store fields needed by the optional resident
++     * conversation root. The root cannot mount the same store handle at its
++     * broader `session-maybe` scope, so the session-scoped child bridges this
++     * presentation upward instead.
++     */
++    onResearchPresentation?: (presentation: {
++        view: string;
++        selection: SelectionTarget | null;
++        inspect: {
++            callId: CallId;
++        } | null;
++        conversationView: ReactNode;
++        researchRightTab: ResearchRightTab;
++        researchFilesTabOpen: boolean;
++        researchConversationUnread: boolean;
++        actions: BoundActions<ChatStore>;
++    } | null) => void;
+ }
+ /** Header actions derive their state from the standard session/global kit. */
+ export interface ConversationHeaderActionOwnerProps {
+@@ -387,6 +405,8 @@ export interface TurnTailOwnerProps {
+ export interface AssistantActionOwnerProps {
+     /** Stable identity carried from the `assistant/message` event. */
+     messageId: MessageId;
++    /** Plain text of the finalized assistant response. */
++    text: string;
+ }
+ /** Hook constrained to business data published on the current Chat Node's Turn. */
+ export type UseChatNodeTurnData = <Key extends Extract<keyof ConversationTurnDataMap, string>>(key: Key) => Readonly<ConversationTurnDataMap[Key]> | undefined;
+@@ -516,6 +536,8 @@ export interface ComposerBarOwnerProps {
+     placeholder?: string;
+     /** Optional content rendered above the textarea. */
+     accessory?: ReactNode;
++    /** Selected Research files make an otherwise empty composer submittable. */
++    hasExternalAttachments?: boolean;
+     /** Floating overlay anchor content (menu / popup shell entries), rendered inside the card. */
+     overlay?: ReactNode;
+     /** input.left slot entries (tool row, beside the resident chrome). */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts
+index cbce2bd..b3e8de7 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts
+@@ -16,6 +16,8 @@ export interface ViewTab {
+     id: string;
+     label: string;
+ }
++/** Tabs owned by the reversible Research right panel. */
++export type ResearchRightTab = 'conversation' | 'files' | 'details';
+ /**
+  * Per-session state shared by conversation, chat-view, and details slots.
+  * Unknown persisted view ids fall back to the stable Chat view.
+@@ -35,5 +37,11 @@ export interface ChatStoreState {
+     inspect: {
+         callId: CallId;
+     } | null;
++    /** Selected Research right-panel tab; Conversation is pinned and cannot close. */
++    researchRightTab: ResearchRightTab;
++    /** Whether the optional Files tab is present. */
++    researchFilesTabOpen: boolean;
++    /** Background activity accumulated while another Research right tab was active. */
++    researchConversationUnread: boolean;
+ }
+ //# sourceMappingURL=views.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
+index 339e1ba..1cb063b 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
+@@ -34,6 +34,8 @@ export interface SessionInputDeps {
+      * order (the empty-draft accelerated-Enter gesture); absent = unsupported.
+      */
+     steerQueue?: (() => void) | undefined;
++    /** Whether the active surface owns selected non-image attachments. */
++    hasExternalAttachments?: (() => boolean) | undefined;
+     /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
+     defaultSink(text: string, imageIds: readonly DraftAttachmentId[], mode: InputSubmitMode): void;
+ }
+@@ -84,7 +86,7 @@ export declare class SessionInputShell implements SessionInput {
+      * (the command path gets the same discipline from submit-settled success).
+      * @param imageIds - admitted image ids to remove from this draft.
+      */
+-    commitSend(imageIds: readonly DraftAttachmentId[]): void;
++    commitSend(imageIds: readonly DraftAttachmentId[], admittedDraft?: string): void;
+     /** Undo the latest transaction (InputBar intercepts the platform chord). */
+     undo(): void;
+     /** Redo the latest undone transaction. */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
+index 00f283c..bda5df4 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
+@@ -13,6 +13,27 @@ import type { InputTriggerController } from '@deepseek-ai/dsh-client-ui-input-tr
+ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client';
+ import type { ComposerKeyboard, SessionInputResolver, SessionInput } from './contract.ts';
+ import { SessionInputShell } from './facade.ts';
++interface ResearchSubmissionWorkspaceRegistry {
++    for(sessionId: SessionId): {
++        selectedFiles(): readonly {
++            id: string;
++            name: string;
++            path?: string;
++        }[];
++        selectionSnapshot(): {
++            selectedNodeIds: string[];
++            orderedFileIds: string[];
++        };
++        commitSelection(selection: {
++            selectedNodeIds: readonly string[];
++            orderedFileIds: readonly string[];
++        }): void;
++        restoreSelection(selection: {
++            selectedNodeIds: readonly string[];
++            orderedFileIds: readonly string[];
++        }): void;
++    };
++}
+ /** Session-addressed input facade registry (SessionInputResolver face + composer-layer extras). */
+ export declare class InputHub implements SessionInputResolver {
+     private readonly rootCtx;
+@@ -22,7 +43,9 @@ export declare class InputHub implements SessionInputResolver {
+      * @param ctx - client root context (services resolved lazily per call — boot order stays free).
+      * @param t - conversation-namespace translate thunk (reads the active locale at call time).
+      */
+-    constructor(rootCtx: ClientContext, t: TranslateNS<'conversation'>);
++    constructor(rootCtx: ClientContext, t: TranslateNS<'conversation'>, researchWorkspaces?: ResearchSubmissionWorkspaceRegistry);
++    /** Mark whether one session's composer currently belongs to Research. */
++    setResearchActive(sessionId: SessionId, active: boolean): void;
+     /**
+      * Resolve the facade for one session-scope ctx (SessionInputResolver face).
+      * @param actx - session-scope context.
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
+index 627a46d..796b3e2 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
+@@ -1,5 +1,26 @@
+ import type { ConversationSlotProps } from '../contract/slots.ts';
++import type { PropsStore } from '@deepseek-ai/dsh-client-ui-slots';
++import type { createChatStore } from '../stores.ts';
++export interface ResearchWorkspaceRegistryLike {
++    for(sessionId: string): {
++        subscribe(listener: () => void): () => void;
++        getSnapshot(): {
++            files: readonly {
++                id: string;
++                name: string;
++                path?: string;
++                mediaType?: string;
++                source: 'computer' | 'sherlock';
++            }[];
++        };
++    };
++}
+ /** Full props composed from the slot contract. */
+-export type ConversationRootProps = ConversationSlotProps;
+-export declare function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain, selectWorkspace, t, }: ConversationRootProps): import("react").JSX.Element;
++export type ConversationRootProps = ConversationSlotProps & Partial<PropsStore<ReturnType<typeof createChatStore>>> & {
++    enterResearch: () => void;
++    leaveResearch: () => void;
++    setResearchActive?: (sessionId: string, active: boolean) => void;
++    researchWorkspaces: ResearchWorkspaceRegistryLike;
++};
++export declare function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, useStore, actions, renderSlot, renderSlotChain, selectWorkspace, enterResearch, leaveResearch, setResearchActive, researchWorkspaces, t, }: ConversationRootProps): import("react").JSX.Element;
+ //# sourceMappingURL=ConversationRoot.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts
+index e988aa0..7440222 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts
+@@ -1,5 +1,5 @@
+ import type { DetailsSlotProps } from '../contract/slots.ts';
+-/** Full props composed by reference from the contract (automatic shares & injected share). */
++/** Full props composed by reference from the contract; Research visibility reads the shared store. */
+ export type DetailsPanelProps = DetailsSlotProps;
+ export declare function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }: DetailsPanelProps): import("react").JSX.Element;
+ //# sourceMappingURL=DetailsPanel.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts
+index fc54eca..2e0c16a 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts
+@@ -3,7 +3,7 @@
+  * The plugin creates its handle at apply time so identity follows the fiber.
+  */
+ import { type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client';
+-import type { CallId, ChatStoreState, SelectionTarget } from './contract/views.ts';
++import type { CallId, ChatStoreState, ResearchRightTab, SelectionTarget } from './contract/views.ts';
+ /** Declared action shape used to give the exported factory a stable return type. */
+ type ChatActions = {
+     select: (draft: ChatStoreState, target: SelectionTarget | null) => void;
+@@ -12,6 +12,9 @@ type ChatActions = {
+     setInspect: (draft: ChatStoreState, target: {
+         callId: CallId;
+     } | null) => void;
++    setResearchRightTab: (draft: ChatStoreState, tab: ResearchRightTab) => void;
++    setResearchFilesTabOpen: (draft: ChatStoreState, open: boolean) => void;
++    setResearchConversationUnread: (draft: ChatStoreState, unread: boolean) => void;
+ };
+ /**
+  * Declares the per-session chat state and write surface.

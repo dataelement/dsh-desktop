@@ -102,6 +102,59 @@ describe('Sherlock desktop shell controls', () => {
     expect(writes.at(-1)).toEqual(['setDetails', 360])
   })
 
+  it('ignores invalid saved width, enters idempotently, and reuses a resized 472px width', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    browserWindow.localStorage.setItem('sherlock.research.panel.width.v1', 'invalid')
+    const client = await loadLayoutBundle(browserWindow)
+    const LayoutController = client.LayoutController as new () => {
+      attachPanels(actions: Record<string, (...args: unknown[]) => void>): void
+      observePanels(state: {
+        sidebar: number
+        details: number
+        narrow: boolean
+        narrowExpanded: boolean
+      }): void
+      enterResearch(): void
+      leaveResearch(): void
+    }
+    const layout = new LayoutController()
+    const writes: unknown[][] = []
+    let details = 0
+    const observe = () => layout.observePanels({
+      sidebar: 280, details, narrow: false, narrowExpanded: false
+    })
+    layout.attachPanels({
+      setDetails: (px) => {
+        details = Number(px)
+        writes.push(['setDetails', px])
+        observe()
+      },
+      closeDetails: () => {
+        details = 0
+        writes.push(['closeDetails'])
+        observe()
+      }
+    })
+    observe()
+
+    layout.enterResearch()
+    layout.enterResearch()
+    expect(writes).toEqual([['setDetails', 420]])
+
+    details = 472
+    observe()
+    expect(browserWindow.localStorage.getItem('sherlock.research.panel.width.v1'))
+      .toBe('472')
+    layout.leaveResearch()
+    expect(writes.at(-1)).toEqual(['closeDetails'])
+
+    layout.enterResearch()
+    expect(writes.at(-1)).toEqual(['setDetails', 472])
+    layout.leaveResearch()
+    layout.leaveResearch()
+    expect(writes.filter(([name]) => name === 'closeDetails')).toHaveLength(2)
+  })
+
   it('reports AppFrame panel snapshots and owns a details portal host', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const client = await loadLayoutBundle(browserWindow)

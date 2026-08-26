@@ -9,8 +9,9 @@ type ComponentType<Props> = (props: Props) => unknown
 type ReactNode = unknown
 
 const requireModule = createRequire(import.meta.url)
-const { createElement, useSyncExternalStore } = requireModule('react') as {
+const { createElement, useLayoutEffect, useSyncExternalStore } = requireModule('react') as {
   createElement: (type: unknown, props?: unknown, ...children: unknown[]) => unknown
+  useLayoutEffect: (effect: () => void | (() => void), dependencies: unknown[]) => void
   useSyncExternalStore: <T>(
     subscribe: (listener: () => void) => () => void,
     getSnapshot: () => T,
@@ -106,9 +107,12 @@ async function loadClientBundle(
     window: bundleWindow,
     document: styleDocument,
     localStorage: options?.window?.localStorage,
+    navigator: options?.window?.navigator,
     HTMLElement: options?.window?.HTMLElement,
     HTMLTextAreaElement: options?.window?.HTMLTextAreaElement,
     ResizeObserver: options?.window?.ResizeObserver,
+    requestAnimationFrame: options?.window?.requestAnimationFrame?.bind(options.window),
+    cancelAnimationFrame: options?.window?.cancelAnimationFrame?.bind(options.window),
     setTimeout,
     clearTimeout
   })
@@ -147,7 +151,11 @@ function createSelectorStore<State extends object>(initial: State) {
 
 async function mountConversationRoot(
   initialView: 'chat' | 'research' = 'research',
-  assistantMessage?: { messageId: string; text: string; settled?: boolean }
+  assistantMessage?: { messageId: string; text: string; settled?: boolean },
+  lifecycle?: {
+    enterResearch(): void
+    leaveResearch(): void
+  }
 ) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const sessionId = 'session-research-right-panel'
@@ -224,7 +232,10 @@ async function mountConversationRoot(
     chat: { order: ['message-1'] },
     running: false
   })
-  const input = createSelectorStore({ draft: '研究草稿' })
+  const input = createSelectorStore({
+    draft: '研究草稿',
+    images: [{ id: 'image-a' }, { id: 'image-b' }]
+  })
   const detailsPortalHost = browserWindow.document.createElement('div')
   detailsPortalHost.setAttribute('data-details-portal-host', '')
   browserWindow.document.body.appendChild(detailsPortalHost)
@@ -253,23 +264,57 @@ async function mountConversationRoot(
     'research.right.source.computer': '本地电脑',
     'research.right.source.sherlock': 'Sherlock'
   }[key] ?? key)
+  const renderChatView = () => createElement('div', { 'data-chat-view': '' },
+    assistantMessage === undefined
+      ? 'message-1'
+      : createElement('div', {
+          'data-assistant-message-id': assistantMessage.messageId,
+          'data-assistant-message-settled': assistantMessage.settled === false
+            ? undefined
+            : ''
+        }, createElement('span', null, assistantMessage.text))
+  )
+  const TestSessionBridge = ({ onResearchPresentation }: {
+    onResearchPresentation?: (value: Record<string, unknown> | null) => void
+  }) => {
+    const snapshot = chat.useSelector((state) => state)
+    useLayoutEffect(() => {
+      onResearchPresentation?.({
+        ...snapshot,
+        actions,
+        conversationView: renderChatView()
+      })
+      return () => onResearchPresentation?.(null)
+    }, [onResearchPresentation, snapshot])
+    return createElement('div', {
+      'data-center-session-view': snapshot.view ?? 'chat'
+    })
+  }
   const renderSlot = (name: string, owner?: unknown, options?: { only?: string }) => {
     if (name === 'conversation.session.header') {
       return createElement('div', { 'data-session-header': '' })
     }
     if (name === 'conversation.session') {
-      return createElement('div', {
-        'data-center-session-view': chat.get().view ?? 'chat'
+      return createElement(TestSessionBridge, owner as {
+        onResearchPresentation?: (value: Record<string, unknown> | null) => void
       })
     }
     if (name === 'conversation.composer.bar') {
-      const accessory = (owner as { accessory?: unknown } | undefined)?.accessory
+      const composerOwner = owner as {
+        accessory?: unknown
+        footer?: unknown
+      } | undefined
       return createElement('div', { 'data-test-composer-bar': '' },
-        accessory,
+        composerOwner?.accessory,
+        ...input.get().images.map((image) => createElement('span', {
+          key: image.id,
+          'data-composer-image-id': image.id
+        })),
         createElement('textarea', {
           defaultValue: input.get().draft,
           'data-input-machine-snapshot': input.get().draft
-        })
+        }),
+        composerOwner?.footer
       )
     }
     if (name === 'conversation.input.dock') {
@@ -282,26 +327,19 @@ async function mountConversationRoot(
       return createElement('div', { 'data-stats-footer': '' })
     }
     if (name === 'conversation.view' && options?.only === 'chat') {
-      return createElement('div', { 'data-chat-view': '' },
-        assistantMessage === undefined
-          ? 'message-1'
-          : createElement('div', {
-              'data-assistant-message-id': assistantMessage.messageId,
-              'data-assistant-message-settled': assistantMessage.settled === false
-                ? undefined
-                : ''
-            }, createElement('span', null, assistantMessage.text))
-      )
+      return renderChatView()
     }
     return null
   }
-  await act(async () => {
-    root.render(createElement(client.ConversationRoot, {
-      sessionId,
+  const renderConversation = (activeSessionId: string) => createElement(client.ConversationRoot, {
+      sessionId: activeSessionId,
       useSession: session.useSelector,
       useSessions: (select: (state: unknown) => unknown) => select({
-        current: sessionId,
-        byId: { [sessionId]: { cwd: '/tmp/research', blank: false } }
+        current: activeSessionId,
+        byId: {
+          [sessionId]: { cwd: '/tmp/research', blank: false },
+          [activeSessionId]: { cwd: '/tmp/research', blank: false }
+        }
       }),
       useWorkspaces: (select: (state: unknown) => unknown) => select({
         phase: 'ready',
@@ -316,10 +354,18 @@ async function mountConversationRoot(
       renderSlotChain: (_name: string, _owner: unknown, options: { fallback: unknown }) =>
         options.fallback,
       selectWorkspace: async () => undefined,
-      enterResearch: () => { transitions.enter += 1 },
-      leaveResearch: () => { transitions.leave += 1 },
+      enterResearch: () => {
+        transitions.enter += 1
+        lifecycle?.enterResearch()
+      },
+      leaveResearch: () => {
+        transitions.leave += 1
+        lifecycle?.leaveResearch()
+      },
       t: translate
-    }))
+    })
+  await act(async () => {
+    root.render(renderConversation(sessionId))
   })
   return {
     actions,
@@ -334,6 +380,9 @@ async function mountConversationRoot(
     sessionId,
     transitions,
     workspace: researchWorkspaces.for(sessionId),
+    async rerenderSession(activeSessionId: string) {
+      await act(async () => { root.render(renderConversation(activeSessionId)) })
+    },
     async cleanup() {
       await act(async () => { root.unmount() })
       restoreGlobals()
@@ -741,7 +790,7 @@ describe('Sherlock workspace and composer controls', () => {
     if (typeof client.registerResearchCanvasView !== 'function') return
 
     const registrations: Array<{
-      options: { id: string; order: number; label: () => string }
+      options: { id: string; order: number; label: () => string; store?: unknown }
       component: unknown
     }> = []
     client.registerResearchCanvasView({
@@ -757,7 +806,120 @@ describe('Sherlock workspace and composer controls', () => {
     expect(registrations[0]?.options.id).toBe('research')
     expect(registrations[0]?.options.order).toBe(5)
     expect(registrations[0]?.options.label()).toBe('研究')
+    expect('store' in (registrations[0]?.options ?? {})).toBe(false)
     expect(registrations[0]?.component).toBe(client.ResearchCanvas)
+  })
+
+  it('keeps the optional Conversation root free of the session-scoped chat store', async () => {
+    const source = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js',
+      'utf8'
+    )
+    const rootStart = source.indexOf('name: "conversation"')
+    const sessionStart = source.indexOf('name: "conversation.session"', rootStart + 1)
+    expect(rootStart).toBeGreaterThan(-1)
+    expect(sessionStart).toBeGreaterThan(rootStart)
+    expect(source.slice(rootStart, sessionStart)).not.toContain('store: chatStore')
+
+    const panelStart = source.indexOf('function ResearchConversationPanel')
+    const rootFunctionStart = source.indexOf('function ConversationRoot', panelStart)
+    expect(panelStart).toBeGreaterThan(-1)
+    expect(rootFunctionStart).toBeGreaterThan(panelStart)
+    expect(source.slice(panelStart, rootFunctionStart)).not.toContain(
+      'renderSlot("conversation.view"'
+    )
+  })
+
+  it('publishes the session-scoped Research presentation to the optional root owner', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    expect(client.ConversationSession).toBeTypeOf('function')
+    if (typeof client.ConversationSession !== 'function') {
+      restoreGlobals()
+      return
+    }
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const chat = createSelectorStore({
+      view: 'research',
+      selection: { callId: 'call-bridge', toolName: 'Bridge', turnSeq: 1 },
+      inspect: null,
+      draft: '',
+      researchRightTab: 'files',
+      researchFilesTabOpen: true,
+      researchConversationUnread: true
+    })
+    const presentations: Array<Record<string, unknown> | null> = []
+    const actions = {
+      select: () => undefined,
+      setDraft: () => undefined,
+      setView: () => undefined,
+      setInspect: () => undefined,
+      setResearchRightTab: () => undefined,
+      setResearchFilesTabOpen: () => undefined,
+      setResearchConversationUnread: () => undefined
+    }
+    try {
+      await act(async () => {
+        root.render(createElement(client.ConversationSession as ComponentType<Record<string, unknown>>, {
+          sessionId: 'session-bridge',
+          useSession: (select: (state: Record<string, unknown>) => unknown) => select({
+            composerPhase: 'active', blank: false
+          }),
+          useInput: (select: (state: Record<string, unknown>) => unknown) => select({
+            draft: ''
+          }),
+          inputActions: { setDraft: () => undefined },
+          useStore: chat.useSelector,
+          actions,
+          renderSlot: () => createElement('div', { 'data-bridged-view': '' }),
+          views: {
+            subscribe: () => () => undefined,
+            version: () => 1,
+            list: () => [
+              { id: 'chat', label: '对话' },
+              { id: 'research', label: '研究' }
+            ]
+          },
+          bindDraftMirror: () => () => undefined,
+          releaseSessionImages: () => undefined,
+          onResearchPresentation: (value: Record<string, unknown> | null) => {
+            presentations.push(value)
+          }
+        }))
+      })
+      expect(presentations.at(-1)).toMatchObject({
+        view: 'research',
+        selection: { callId: 'call-bridge' },
+        researchRightTab: 'files',
+        researchFilesTabOpen: true,
+        researchConversationUnread: true,
+        actions
+      })
+      expect(renderToStaticMarkup(
+        (presentations.at(-1)?.conversationView ?? null) as ReactNode
+      )).toContain('data-bridged-view')
+    } finally {
+      await act(async () => { root.unmount() })
+      restoreGlobals()
+    }
+  })
+
+  it('keeps the session header mounted in Research so Chat and Trajectory remain reachable', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      expect(mounted.host.querySelectorAll('[data-session-header]')).toHaveLength(1)
+      expect(mounted.host.querySelector('[data-center-session-view]')?.getAttribute(
+        'data-center-session-view'
+      )).toBe('research')
+    } finally {
+      await mounted.cleanup()
+    }
   })
 
   it('adds a finalized assistant response only through the explicit action strip', async () => {
@@ -1382,6 +1544,61 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('isolates valid Research file and artifact drops from the global composer listener', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-drop-isolation' })
+    try {
+      const { browserWindow, canvas } = mounted
+      const composerDrops: string[] = []
+      browserWindow.document.addEventListener('drop', (event) => {
+        const transfer = (event as unknown as { dataTransfer?: { types?: string[] } })
+          .dataTransfer
+        if (transfer?.types?.includes('Files')) composerDrops.push('files')
+        else composerDrops.push('unrelated')
+      })
+      const transfer = (types: string[], data: Record<string, string>, files: Array<{
+        name: string
+        type: string
+      }> = []) => ({
+        types,
+        files,
+        getData: (type: string) => data[type] ?? '',
+        dropEffect: 'none'
+      })
+
+      await act(async () => {
+        const fileDrop = dispatchDrag(browserWindow, canvas, 'drop', transfer(
+          ['application/x-sherlock-file'],
+          {
+            'application/x-sherlock-file': JSON.stringify({
+              path: '/tmp/research/drop.pdf', name: 'drop.pdf'
+            })
+          }
+        ))
+        expect(fileDrop.defaultPrevented).toBe(true)
+
+        const artifactDrop = dispatchDrag(browserWindow, canvas, 'drop', transfer(
+          ['application/x-sherlock-research-artifact'],
+          {
+            'application/x-sherlock-research-artifact': JSON.stringify({
+              sessionId: 'session-drop-isolation', messageId: 'message-drop',
+              kind: 'assistant-result', title: 'Answer', excerpt: 'Evidence'
+            })
+          }
+        ))
+        expect(artifactDrop.defaultPrevented).toBe(true)
+      })
+      expect(composerDrops).toEqual([])
+
+      const textDrop = dispatchDrag(browserWindow, canvas, 'drop', transfer(
+        ['text/plain'], { 'text/plain': 'ordinary dragged text' }
+      ))
+      expect(textDrop.defaultPrevented).toBe(false)
+      expect(composerDrops).toEqual(['unrelated'])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('selects a persisted card and marquee-selects two cards', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-marquee',
@@ -1846,6 +2063,12 @@ describe('Sherlock workspace and composer controls', () => {
       expect(center?.querySelector('[data-queue-strip]')).toBeNull()
       expect(center?.querySelector('[data-task-dock]')).toBeNull()
       expect(center?.querySelector('[data-stats-footer]')).toBeNull()
+      const rightComposer = detailsPortalHost.querySelector('[data-research-composer-host]')
+      expect(rightComposer?.querySelector('[data-queue-strip]')).not.toBeNull()
+      expect(rightComposer?.querySelector('[data-task-dock]')).not.toBeNull()
+      expect(rightComposer?.querySelector('[data-stats-footer]')).not.toBeNull()
+      expect(rightComposer?.querySelector('textarea')?.getAttribute('data-input-machine-snapshot'))
+        .toBe('研究草稿')
 
       const tablist = detailsPortalHost.querySelector('[role="tablist"]')
       expect(tablist).not.toBeNull()
@@ -1860,6 +2083,7 @@ describe('Sherlock workspace and composer controls', () => {
       )
       expect(conversation?.textContent).toBe('对话')
       expect(conversation?.querySelector('button[aria-label*="关闭"]')).toBeNull()
+      expect(tablist?.querySelector('[data-research-close-tab="conversation"]')).toBeNull()
 
       const resolvedFile = detailsPortalHost.querySelector(
         '[data-research-file-row="file-a"]'
@@ -2025,6 +2249,48 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('clears the saved excerpt action when Conversation is hidden or the session changes', async () => {
+    const mounted = await mountConversationRoot('research', {
+      messageId: 'm-selection', text: 'Selection belongs to one session.'
+    })
+    try {
+      const { actions, browserWindow, detailsPortalHost } = mounted
+      const selectExcerpt = async () => {
+        const wrapper = detailsPortalHost.querySelector(
+          '[data-assistant-message-id="m-selection"]'
+        )
+        const text = wrapper?.querySelector('span')?.firstChild
+        expect(wrapper).not.toBeNull()
+        expect(text).toBeDefined()
+        if (wrapper === null || text == null) return
+        const range = browserWindow.document.createRange()
+        range.setStart(text, 0)
+        range.setEnd(text, 9)
+        browserWindow.getSelection()?.removeAllRanges()
+        browserWindow.getSelection()?.addRange(range)
+        await act(async () => {
+          wrapper.dispatchEvent(new browserWindow.Event('mouseup', { bubbles: true }))
+        })
+      }
+
+      await selectExcerpt()
+      expect(detailsPortalHost.querySelector('button[aria-label="加入画布"]')).not.toBeNull()
+
+      await act(async () => { actions.setResearchRightTab('files') })
+      expect(detailsPortalHost.querySelector('button[aria-label="加入画布"]')).toBeNull()
+
+      await act(async () => { actions.setResearchRightTab('conversation') })
+      expect(detailsPortalHost.querySelector('button[aria-label="加入画布"]')).toBeNull()
+
+      await selectExcerpt()
+      expect(detailsPortalHost.querySelector('button[aria-label="加入画布"]')).not.toBeNull()
+      await mounted.rerenderSession('session-research-second')
+      expect(detailsPortalHost.querySelector('button[aria-label="加入画布"]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('opens an artifact source safely and reports a missing source without removing its snapshot', async () => {
     const sourceMessageId = 'm1"][data-owned="false'
     const mounted = await mountConversationRoot('research', {
@@ -2054,7 +2320,6 @@ describe('Sherlock workspace and composer controls', () => {
         canvasRoot.render(createElement(client.ResearchCanvas as ComponentType<Record<string, unknown>>, {
           sessionId,
           researchWorkspaces,
-          actions,
           t: (key: string) => key === 'research.canvas' ? '研究画布' : key
         }))
       })
@@ -2176,6 +2441,113 @@ describe('Sherlock workspace and composer controls', () => {
         callId: 'call-1', toolName: 'Web Search', turnSeq: 1
       })
       expect(browserWindow.document.querySelectorAll('[data-composer-seat]')).toHaveLength(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps one draft lifecycle across Chat, Research details, Trajectory, and Research re-entry', async () => {
+    const lifecycle: {
+      enterResearch(): void
+      leaveResearch(): void
+    } = {
+      enterResearch: () => undefined,
+      leaveResearch: () => undefined
+    }
+    const mounted = await mountConversationRoot('chat', undefined, lifecycle)
+    try {
+      const { actions, browserWindow, chat, client, detailsPortalHost, host, input, workspace } = mounted
+      const layoutClient = await loadClientBundle('dsh-client-ui-layout', undefined, {
+        document: browserWindow.document,
+        window: browserWindow,
+        modules: {
+          '@deepseek-ai/dsh-client-runtime/client': {
+            defineStore: (definition: unknown) => definition
+          }
+        }
+      })
+      const LayoutController = layoutClient.LayoutController as new () => {
+        attachPanels(actions: Record<string, (...args: unknown[]) => void>): void
+        observePanels(state: {
+          sidebar: number
+          details: number
+          narrow: boolean
+          narrowExpanded: boolean
+        }): void
+        enterResearch(): void
+        leaveResearch(): void
+      }
+      const layout = new LayoutController()
+      let detailsWidth = 360
+      const observe = () => layout.observePanels({
+        sidebar: 280, details: detailsWidth, narrow: false, narrowExpanded: false
+      })
+      layout.attachPanels({
+        setDetails: (px: unknown) => {
+          detailsWidth = Number(px)
+          observe()
+        },
+        closeDetails: () => {
+          detailsWidth = 0
+          observe()
+        }
+      })
+      observe()
+      browserWindow.localStorage.setItem('sherlock.research.panel.width.v1', '472')
+      lifecycle.enterResearch = () => layout.enterResearch()
+      lifecycle.leaveResearch = () => layout.leaveResearch()
+
+      const textarea = host.querySelector('textarea')
+      expect(textarea).not.toBeNull()
+      expect(browserWindow.document.querySelectorAll('[data-composer-seat]')).toHaveLength(1)
+      expect(detailsWidth).toBe(360)
+
+      await act(async () => { actions.setView('research') })
+      expect(detailsWidth).toBe(472)
+      expect(chat.get().researchRightTab).toBe('conversation')
+      expect(browserWindow.document.querySelectorAll('[data-composer-seat]')).toHaveLength(1)
+      expect(browserWindow.document.querySelector('textarea')).toBe(textarea)
+      expect(input.get()).toEqual({
+        draft: '研究草稿', images: [{ id: 'image-a' }, { id: 'image-b' }]
+      })
+      expect(Array.from(browserWindow.document.querySelectorAll('[data-composer-image-id]'))
+        .map((node) => node.getAttribute('data-composer-image-id')))
+        .toEqual(['image-a', 'image-b'])
+      expect(Array.from(browserWindow.document.querySelectorAll('[data-research-file-tag]'))
+        .map((node) => node.getAttribute('data-research-file-tag')))
+        .toEqual(['file-b', 'file-a'])
+      expect(workspace.getSnapshot().artifacts).toEqual([])
+      expect(host.querySelector('[data-research-artifact-card]')).toBeNull()
+
+      await act(async () => { actions.setResearchRightTab('details') })
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="details"]')
+        ?.getAttribute('aria-selected')).toBe('true')
+      await act(async () => { actions.setResearchRightTab('conversation') })
+      expect(detailsPortalHost.querySelector('[data-research-right-tab="conversation"]')
+        ?.getAttribute('aria-selected')).toBe('true')
+
+      await act(async () => {
+        actions.select({ callId: 'research-call', toolName: 'Research', turnSeq: 2 })
+        actions.setView('trajectory')
+      })
+      expect(detailsWidth).toBe(360)
+      expect(chat.get().selection).toEqual({
+        callId: 'call-1', toolName: 'Web Search', turnSeq: 1
+      })
+      expect(browserWindow.document.querySelectorAll('[data-composer-seat]')).toHaveLength(1)
+      expect(browserWindow.document.querySelector('textarea')).toBe(textarea)
+
+      await act(async () => { actions.setView('research') })
+      expect(detailsWidth).toBe(472)
+      expect(chat.get().researchRightTab).toBe('conversation')
+      expect(browserWindow.document.querySelectorAll('[data-composer-seat]')).toHaveLength(1)
+      expect(browserWindow.document.querySelector('textarea')).toBe(textarea)
+      expect(Array.from(browserWindow.document.querySelectorAll('[data-research-file-tag]'))
+        .map((node) => node.getAttribute('data-research-file-tag')))
+        .toEqual(['file-b', 'file-a'])
+      expect(workspace.getSnapshot().artifacts).toEqual([])
+      expect(workspace.getSnapshot().files).toHaveLength(2)
+      expect(client.ResearchCanvas).toBeTypeOf('function')
     } finally {
       await mounted.cleanup()
     }
