@@ -13,9 +13,19 @@ export type SherlockAboutInfo = {
 }
 
 type UpdateVersionReader = () => Promise<{ currentVersion: string }>
+type ManualUpdateChecker = () => Promise<UpdateStatus>
 
 const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
   zh: [
+    {
+      version: '0.7.2',
+      date: '2026-08-26',
+      items: [
+        '新增关于页手动检查更新，并在下载完成后自动退出终端、安装和重启',
+        '优化侧栏更新按钮的悬停提示与圆环下载进度',
+        '汉化权限菜单，并支持为模型标记视觉输入能力'
+      ]
+    },
     {
       version: '0.7.1',
       date: '2026-08-26',
@@ -37,6 +47,15 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
     }
   ],
   en: [
+    {
+      version: '0.7.2',
+      date: '2026-08-26',
+      items: [
+        'Added manual update checks in About, with automatic terminal shutdown, installation, and restart after download',
+        'Improved the sidebar update control with a hover label and circular download progress',
+        'Localized permission modes and added per-model Vision capability settings'
+      ]
+    },
     {
       version: '0.7.1',
       date: '2026-08-26',
@@ -75,12 +94,20 @@ export function buildSherlockAboutInfo(
 
 export function createSherlockAboutBridge(
   readUpdateStatus: UpdateVersionReader,
+  checkForUpdates: ManualUpdateChecker,
   locale: SherlockAboutLocale
-): { getInfo(): Promise<SherlockAboutInfo> } {
+): {
+  getInfo(): Promise<SherlockAboutInfo>
+  checkForUpdates(): Promise<UpdateStatus>
+} {
   return Object.freeze({
     async getInfo(): Promise<SherlockAboutInfo> {
       const status = await readUpdateStatus()
       return buildSherlockAboutInfo(status.currentVersion, locale)
+    },
+    checkForUpdates(): Promise<UpdateStatus> {
+      return checkForUpdates()
     }
   })
 }
+import type { UpdateStatus } from '../shared/contracts'

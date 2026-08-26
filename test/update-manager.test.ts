@@ -57,6 +57,7 @@ import {
   checkForUpdates,
   downloadAvailableUpdate,
   getUpdateStatus,
+  registerUpdateHandlers,
   startUpdateManager,
   stopUpdateManager
 } from '../src/main/update/update-manager'
@@ -64,9 +65,17 @@ import {
 afterEach(() => stopUpdateManager())
 
 describe('desktop update manager', () => {
+  it('exposes a dedicated manual update check to the trusted preload', () => {
+    registerUpdateHandlers()
+
+    expect(fakes.ipcHandle.mock.calls.map(([channel]) => channel)).toContain('updates:check')
+  })
+
   it('discovers without downloading and downloads only after the explicit action', async () => {
     const download = vi.spyOn(fakes.autoUpdater, 'downloadUpdate')
-    startUpdateManager({ prepareToInstall: async () => {} })
+    const quitAndInstall = vi.spyOn(fakes.autoUpdater, 'quitAndInstall')
+    const prepareToInstall = vi.fn(async () => {})
+    startUpdateManager({ prepareToInstall })
 
     await checkForUpdates()
     expect(getUpdateStatus()).toMatchObject({
@@ -81,6 +90,10 @@ describe('desktop update manager', () => {
     expect(getUpdateStatus()).toMatchObject({
       phase: 'downloaded',
       availableVersion: '0.6.0'
+    })
+    await vi.waitFor(() => {
+      expect(prepareToInstall).toHaveBeenCalledOnce()
+      expect(quitAndInstall).toHaveBeenCalledWith(false, true)
     })
   })
 })

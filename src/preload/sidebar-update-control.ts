@@ -106,7 +106,9 @@ export class SidebarUpdateControl {
             ? `下载 Sherlock ${action.version} 更新`
             : `Download Sherlock ${action.version} update`
         )
-        button.innerHTML = downloadIcon
+        button.innerHTML = `${downloadIcon}<span class="sherlock-sidebar-update-label">${
+          this.locale === 'zh' ? '下载更新' : 'Download'
+        }</span>`
         return
       case 'progress': {
         const percent = Math.max(0, Math.min(100, Math.round(action.percent)))
@@ -121,7 +123,7 @@ export class SidebarUpdateControl {
           this.locale === 'zh' ? `正在下载更新 ${percent}%` : `Downloading update ${percent}%`
         )
         button.style.setProperty('--sherlock-update-progress', `${percent}%`)
-        button.innerHTML = downloadIcon
+        button.innerHTML = progressRing(percent)
         return
       }
       case 'install':
@@ -218,6 +220,15 @@ const retryIcon = `
     <path d="M19 8a8 8 0 1 0 .5 7M19 4v4h-4" />
   </svg>`
 
+function progressRing(percent: number): string {
+  return `
+    <svg data-update-progress-ring viewBox="0 0 36 36" aria-hidden="true">
+      <circle class="sherlock-update-ring-track" cx="18" cy="18" r="15.9155" />
+      <circle class="sherlock-update-ring-value" cx="18" cy="18" r="15.9155"
+        stroke-dasharray="100" stroke-dashoffset="${100 - percent}" />
+    </svg>`
+}
+
 const styles = `
   #${BUTTON_ID}[hidden], #${PANEL_ID}[hidden] { display: none !important; }
   [${UPDATE_FOOTER_ATTRIBUTE}] {
@@ -243,8 +254,11 @@ const styles = `
     background: #1677ff;
     box-shadow: none;
     cursor: pointer;
-    transition: transform 150ms ease, background-color 150ms ease;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: width 160ms ease, transform 150ms ease, background-color 150ms ease;
   }
+  #${BUTTON_ID}[data-action="download"]:hover:not(:disabled) { width: 88px; }
   #${BUTTON_ID}:hover:not(:disabled) {
     transform: translateY(calc(-50% - 1px));
     background: #0f6fe8;
@@ -254,13 +268,7 @@ const styles = `
   #${BUTTON_ID}:disabled { cursor: default; }
   #${BUTTON_ID}[data-action="progress"] {
     border: 0;
-    background:
-      linear-gradient(
-        to right,
-        rgba(255,255,255,.92) var(--sherlock-update-progress, 0%),
-        rgba(255,255,255,.28) 0
-      ) left 4px bottom 3px / calc(100% - 8px) 2px no-repeat,
-      #1677ff;
+    background: #1677ff;
   }
   #${BUTTON_ID} svg {
     width: 15px;
@@ -270,6 +278,28 @@ const styles = `
     stroke-width: 1.9;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+  #${BUTTON_ID} .sherlock-sidebar-update-label {
+    display: none;
+    padding: 0 10px;
+    font: 600 12px/18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  #${BUTTON_ID}[data-action="download"]:hover svg { display: none; }
+  #${BUTTON_ID}[data-action="download"]:hover .sherlock-sidebar-update-label { display: inline; }
+  #${BUTTON_ID} [data-update-progress-ring] {
+    width: 17px;
+    height: 17px;
+    transform: rotate(-90deg);
+  }
+  #${BUTTON_ID} [data-update-progress-ring] circle {
+    fill: none;
+    stroke-width: 3;
+  }
+  #${BUTTON_ID} .sherlock-update-ring-track { stroke: rgba(255,255,255,.28); }
+  #${BUTTON_ID} .sherlock-update-ring-value {
+    stroke: #fff;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 120ms linear;
   }
   #${PANEL_ID} {
     box-sizing: border-box;

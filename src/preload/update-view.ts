@@ -16,8 +16,8 @@ export function updateAction(status: UpdateStatus): UpdateAction {
   if (status.phase === 'downloading') {
     return { kind: 'progress', percent: status.percent ?? 0 }
   }
-  if (status.phase === 'downloaded' && status.availableVersion) {
-    return { kind: 'install', version: status.availableVersion }
+  if (status.phase === 'downloaded') {
+    return { kind: 'progress', percent: 100 }
   }
   if (status.manual && status.phase === 'error') {
     return { kind: 'retry', message: status.message ?? '' }

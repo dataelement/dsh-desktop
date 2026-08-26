@@ -1,7 +1,8 @@
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import { runInNewContext } from 'node:vm'
-import { describe, expect, it } from 'vitest'
+import { Window } from 'happy-dom'
+import { describe, expect, it, vi } from 'vitest'
 
 type ClientBundle = Record<string, unknown>
 type ComponentType<Props> = (props: Props) => unknown
@@ -23,9 +24,14 @@ type BundleDescriptor = {
 const requireModule = createRequire(import.meta.url)
 const react = requireModule('react') as {
   createElement(type: unknown, props?: unknown, ...children: unknown[]): unknown
+  act(callback: () => void | Promise<void>): Promise<void>
 }
 const jsxRuntime = requireModule('react/jsx-runtime')
 const { createElement } = react
+const { act } = react
+const { createRoot } = requireModule('react-dom/client') as {
+  createRoot(container: unknown): { render(node: unknown): void; unmount(): void }
+}
 const { renderToStaticMarkup } = requireModule('react-dom/server') as {
   renderToStaticMarkup(node: unknown): string
 }
@@ -41,34 +47,54 @@ function fakeModule(): unknown {
   return fake
 }
 
-async function loadSettingsBundle(): Promise<ClientBundle> {
+type AboutBridge = {
+  getInfo(): Promise<AboutInfo>
+  checkForUpdates(): Promise<{
+    phase: string
+    currentVersion: string
+    availableVersion?: string
+    manual: boolean
+  }>
+}
+
+async function loadSettingsBundle(options?: {
+  browserWindow?: Window
+  aboutBridge?: AboutBridge
+}): Promise<ClientBundle> {
   const source = await readFile(
     'node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js',
     'utf8'
   )
   let descriptor: BundleDescriptor | undefined
-  const document = {
+  const document = options?.browserWindow?.document ?? {
     querySelector: () => null,
     createElement: () => ({ dataset: {} as Record<string, string>, textContent: '' }),
     head: { appendChild: () => undefined }
   }
+  const bundleWindow = options?.browserWindow ?? {}
+  Object.assign(bundleWindow, {
+    sherlockAbout: options?.aboutBridge ?? {
+      getInfo: async (): Promise<AboutInfo> => ({
+        productName: 'Sherlock',
+        version: '0.6.7',
+        releaseNotes: []
+      }),
+      checkForUpdates: async () => ({
+        phase: 'up-to-date',
+        currentVersion: '0.6.7',
+        manual: true
+      })
+    },
+    __ModuleLoader__: {
+      load(value: BundleDescriptor) {
+        descriptor = value
+      }
+    }
+  })
 
   runInNewContext(source, {
     document,
-    window: {
-      sherlockAbout: {
-        getInfo: async (): Promise<AboutInfo> => ({
-          productName: 'Sherlock',
-          version: '0.6.7',
-          releaseNotes: []
-        })
-      },
-      __ModuleLoader__: {
-        load(value: BundleDescriptor) {
-          descriptor = value
-        }
-      }
-    }
+    window: bundleWindow
   })
   if (descriptor === undefined) throw new Error('settings bundle did not register')
 
@@ -92,6 +118,26 @@ async function loadSettingsBundle(): Promise<ClientBundle> {
   })
 }
 
+function installBrowserGlobals(browserWindow: Window): () => void {
+  const keys = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'] as const
+  const descriptors = new Map(
+    keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
+  )
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: browserWindow },
+    document: { configurable: true, value: browserWindow.document },
+    navigator: { configurable: true, value: browserWindow.navigator },
+    IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true }
+  })
+  return () => {
+    for (const key of keys) {
+      const descriptor = descriptors.get(key)
+      if (descriptor === undefined) delete (globalThis as Record<string, unknown>)[key]
+      else Object.defineProperty(globalThis, key, descriptor)
+    }
+  }
+}
+
 describe('Sherlock About settings', () => {
   it('builds localized release notes around the real runtime version', async () => {
     const aboutModule = await import('../src/preload/about-info').catch(() => null)
@@ -105,25 +151,100 @@ describe('Sherlock About settings', () => {
     expect(zh.productName).toBe('Sherlock')
     expect(zh.version).toBe('9.8.7')
     expect(zh.releaseNotes[0]).toEqual({
-      version: '0.7.1',
+      version: '0.7.2',
       date: '2026-08-26',
       items: [
-        '新增跨模型联网搜索，在模型原生搜索不可用时自动回退到本地浏览器搜索',
-        '内置 PPT Skill 升级至 1.0.6，并自动备份替换过期官方副本',
-        '新增正式构建 Git 门禁，防止遗漏其他会话的已提交改动'
+        '新增关于页手动检查更新，并在下载完成后自动退出终端、安装和重启',
+        '优化侧栏更新按钮的悬停提示与圆环下载进度',
+        '汉化权限菜单，并支持为模型标记视觉输入能力'
       ]
     })
-    expect(zh.releaseNotes[1]?.version).toBe('0.7.0')
+    expect(zh.releaseNotes[1]?.version).toBe('0.7.1')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[0]).toBe(
-      'Added cross-model web search with automatic local-browser fallback when native search is unavailable'
+      'Added manual update checks in About, with automatic terminal shutdown, installation, and restart after download'
     )
 
+    const manualCheck = vi.fn(async () => ({
+      phase: 'up-to-date' as const,
+      currentVersion: '7.6.5',
+      manual: true
+    }))
     const bridge = aboutModule.createSherlockAboutBridge(
       async () => ({ currentVersion: '7.6.5' }),
+      manualCheck,
       'zh'
     )
     expect((await bridge.getInfo()).version).toBe('7.6.5')
+    await expect(bridge.checkForUpdates()).resolves.toMatchObject({ phase: 'up-to-date' })
+    expect(manualCheck).toHaveBeenCalledOnce()
+  })
+
+  it('checks for updates from About and reports the result in place', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/settings/about' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const checkForUpdates = vi.fn(async () => ({
+      phase: 'up-to-date',
+      currentVersion: '0.7.2',
+      manual: true
+    }))
+    const bundle = await loadSettingsBundle({
+      browserWindow,
+      aboutBridge: {
+        getInfo: async () => ({
+          productName: 'Sherlock',
+          version: '0.7.2',
+          releaseNotes: []
+        }),
+        checkForUpdates
+      }
+    })
+    const AboutSection = bundle.SherlockAboutSection
+    expect(AboutSection).toBeTypeOf('function')
+    if (typeof AboutSection !== 'function') {
+      restoreGlobals()
+      return
+    }
+
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const copy: Record<string, string> = {
+      'about.version': '当前版本',
+      'about.changelog': '更新日志',
+      'about.empty': '暂无更新日志',
+      'about.loading': '正在读取版本信息…',
+      'about.error': '暂时无法读取版本信息',
+      'about.check': '检查更新',
+      'about.checking': '正在检查更新…',
+      'about.upToDate': 'Sherlock 已是最新版本',
+      'about.updateAvailable': '发现新版本 {version}',
+      'about.checkFailed': '检查更新失败'
+    }
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(AboutSection as ComponentType<{ t(key: string): string }>, {
+            t: (key: string) => copy[key] ?? key
+          })
+        )
+      })
+      const button = host.querySelector('[data-about-check-update]') as {
+        textContent: string | null
+        click(): void
+      } | null
+      expect(button?.textContent).toBe('检查更新')
+
+      await act(async () => {
+        button?.click()
+      })
+      expect(checkForUpdates).toHaveBeenCalledOnce()
+      expect(host.textContent).toContain('Sherlock 已是最新版本')
+    } finally {
+      await act(async () => root.unmount())
+      restoreGlobals()
+    }
   })
 
   it('registers About immediately after Models in the settings navigation', async () => {

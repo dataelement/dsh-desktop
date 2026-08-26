@@ -14,6 +14,10 @@ module.exports = {
     {
       from: 'build/sherlock-plugin-profile',
       to: 'sherlock-plugin-profile'
+    },
+    {
+      from: 'build/app-update-notarized.yml',
+      to: 'app-update.yml'
     }
   ],
   extraMetadata: {

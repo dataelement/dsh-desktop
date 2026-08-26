@@ -16,6 +16,25 @@ afterEach(async () => {
 })
 
 describe('formal Sherlock build and run', () => {
+  it('embeds the notarized update feed in local directory builds', async () => {
+    const builderConfig = await readFile(
+      path.resolve('electron-builder.notarized.cjs'),
+      'utf8'
+    )
+    const updateConfig = await readFile(
+      path.resolve('build/app-update-notarized.yml'),
+      'utf8'
+    )
+
+    expect(builderConfig).toContain("from: 'build/app-update-notarized.yml'")
+    expect(builderConfig).toContain("to: 'app-update.yml'")
+    expect(updateConfig).toContain('provider: generic')
+    expect(updateConfig).toContain(
+      'url: https://updates.evanarts.com/notarized/latest/'
+    )
+    expect(updateConfig).toContain('updaterCacheDirName: sherlock-updater')
+  })
+
   it('repairs a missing workspace Node runtime before packaging a local test app', async () => {
     const fixture = await mkdtemp(path.join(tmpdir(), 'sherlock-build-and-run-repair-'))
     fixtures.push(fixture)

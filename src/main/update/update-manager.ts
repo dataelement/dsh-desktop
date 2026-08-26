@@ -36,6 +36,7 @@ export function registerUpdateHandlers(): void {
   if (handlersRegistered) return
   handlersRegistered = true
   ipcMain.handle('updates:status', () => getUpdateStatus())
+  ipcMain.handle('updates:check', () => checkForUpdates(true))
   ipcMain.handle('updates:download', () => downloadAvailableUpdate())
   ipcMain.handle('updates:install', () => installDownloadedUpdate())
 }
@@ -155,9 +156,10 @@ function configureUpdater(): void {
     transition({ type: 'not-available' })
     scheduleReset()
   })
-  autoUpdater.on('update-downloaded', (info) =>
+  autoUpdater.on('update-downloaded', (info) => {
     transition({ type: 'downloaded', version: info.version })
-  )
+    void installDownloadedUpdate()
+  })
   autoUpdater.on('error', (error) => {
     transition({ type: 'error', message: errorMessage(error) })
     if (status.manual) scheduleReset()

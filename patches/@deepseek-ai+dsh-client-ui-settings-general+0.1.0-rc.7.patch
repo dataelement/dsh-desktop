@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-index 6797c5c..d52e5b0 100644
+index 6797c5c..9aa022e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 @@ -76,6 +76,10 @@ window.__ModuleLoader__.load({
@@ -21,11 +21,11 @@ index 6797c5c..d52e5b0 100644
  								"aria-current": row.id === active ? "true" : void 0,
  								onClick: () => {
  									onSelect(row.id);
-@@ -299,6 +304,88 @@ window.__ModuleLoader__.load({
+@@ -299,6 +304,132 @@ window.__ModuleLoader__.load({
  				children: renderSlot("settings.general.item", {})
  			});
  		}
-+		const sherlockAboutCss = ".sherlock-about{box-sizing:border-box;color:var(--dsw-alias-label-primary);flex-direction:column;width:100%;display:flex}.sherlock-about-hero{border-bottom:1px solid var(--dsw-alias-border-l2);align-items:center;gap:16px;padding:16px 0 28px;display:flex}.sherlock-about-mark{color:#fff;letter-spacing:.08em;background:linear-gradient(145deg,#34363b,#111216);border:1px solid rgba(255,255,255,.12);border-radius:14px;justify-content:center;align-items:center;width:52px;height:52px;font-size:21px;font-weight:700;display:flex;box-shadow:0 8px 24px rgba(0,0,0,.18)}.sherlock-about-product{letter-spacing:.02em;margin:0;font-size:24px;font-weight:650;line-height:32px}.sherlock-about-version{color:var(--dsw-alias-label-secondary);margin:4px 0 0;font-size:13px;line-height:20px}.sherlock-about-changelog{padding-top:24px}.sherlock-about-title{margin:0 0 8px;font-size:16px;font-weight:600;line-height:24px}.sherlock-about-release{border-bottom:1px solid var(--dsw-alias-border-l2);padding:14px 0 18px}.sherlock-about-release:last-child{border-bottom:none}.sherlock-about-release-header{justify-content:space-between;align-items:center;gap:16px;display:flex}.sherlock-about-release-version{font-size:14px;font-weight:600;line-height:22px}.sherlock-about-release-date{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px}.sherlock-about-release-items{color:var(--dsw-alias-label-secondary);flex-direction:column;gap:7px;margin:11px 0 0;padding-left:20px;font-size:13px;line-height:21px;display:flex}.sherlock-about-state{color:var(--dsw-alias-label-secondary);padding:28px 0;font-size:14px;line-height:22px}";
++		const sherlockAboutCss = ".sherlock-about{box-sizing:border-box;color:var(--dsw-alias-label-primary);flex-direction:column;width:100%;display:flex}.sherlock-about-hero{border-bottom:1px solid var(--dsw-alias-border-l2);align-items:center;gap:16px;padding:16px 0 28px;display:flex}.sherlock-about-mark{color:#fff;letter-spacing:.08em;background:linear-gradient(145deg,#34363b,#111216);border:1px solid rgba(255,255,255,.12);border-radius:14px;justify-content:center;align-items:center;width:52px;height:52px;font-size:21px;font-weight:700;display:flex;box-shadow:0 8px 24px rgba(0,0,0,.18)}.sherlock-about-product-info{flex:1;min-width:0}.sherlock-about-product{letter-spacing:.02em;margin:0;font-size:24px;font-weight:650;line-height:32px}.sherlock-about-version-row{align-items:center;gap:10px;display:flex}.sherlock-about-version{color:var(--dsw-alias-label-secondary);margin:4px 0 0;font-size:13px;line-height:20px}.sherlock-about-check{color:var(--dsw-alias-label-primary);cursor:pointer;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:7px;margin-top:4px;padding:4px 10px;font-size:12px;line-height:18px}.sherlock-about-check:hover:not(:disabled){background:var(--dsw-alias-bg-layer-3)}.sherlock-about-check:disabled{cursor:default;opacity:.55}.sherlock-about-check-state{color:var(--dsw-alias-label-secondary);margin:6px 0 0;font-size:12px;line-height:18px}.sherlock-about-check-state[data-error=true]{color:var(--dsw-alias-state-error-primary)}.sherlock-about-changelog{padding-top:24px}.sherlock-about-title{margin:0 0 8px;font-size:16px;font-weight:600;line-height:24px}.sherlock-about-release{border-bottom:1px solid var(--dsw-alias-border-l2);padding:14px 0 18px}.sherlock-about-release:last-child{border-bottom:none}.sherlock-about-release-header{justify-content:space-between;align-items:center;gap:16px;display:flex}.sherlock-about-release-version{font-size:14px;font-weight:600;line-height:22px}.sherlock-about-release-date{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px}.sherlock-about-release-items{color:var(--dsw-alias-label-secondary);flex-direction:column;gap:7px;margin:11px 0 0;padding-left:20px;font-size:13px;line-height:21px;display:flex}.sherlock-about-state{color:var(--dsw-alias-label-secondary);padding:28px 0;font-size:14px;line-height:22px}";
 +		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"sherlock-about\"]") === null) {
 +			const tag = document.createElement("style");
 +			tag.dataset.plugin = "sherlock";
@@ -34,6 +34,32 @@ index 6797c5c..d52e5b0 100644
 +			document.head.appendChild(tag);
 +		}
 +		function SherlockAboutContent({ info, t }) {
++			const [checkState, setCheckState] = (0, react.useState)({ status: "idle" });
++			const checkForUpdates = async () => {
++				const check = window.sherlockAbout?.checkForUpdates;
++				if (typeof check !== "function") {
++					setCheckState({ status: "error" });
++					return;
++				}
++				setCheckState({ status: "checking" });
++				try {
++					setCheckState({ status: "result", update: await check() });
++				} catch {
++					setCheckState({ status: "error" });
++				}
++			};
++			let checkMessage = null;
++			if (checkState.status === "checking") checkMessage = t("about.checking");
++			else if (checkState.status === "error") checkMessage = t("about.checkFailed");
++			else if (checkState.status === "result") {
++				const update = checkState.update;
++				if (update.phase === "up-to-date") checkMessage = t("about.upToDate");
++				else if (update.phase === "available") checkMessage = t("about.updateAvailable").replace("{version}", update.availableVersion ?? "");
++				else if (update.phase === "downloading") checkMessage = t("about.downloading").replace("{percent}", String(Math.round(update.percent ?? 0)));
++				else if (update.phase === "downloaded") checkMessage = t("about.restarting");
++				else if (update.phase === "error" || update.phase === "unsupported") checkMessage = t("about.checkFailed");
++				else checkMessage = t("about.checking");
++			}
 +			return (0, react_jsx_runtime.jsxs)("div", {
 +				className: "sherlock-about",
 +				children: [(0, react_jsx_runtime.jsxs)("div", {
@@ -42,13 +68,31 @@ index 6797c5c..d52e5b0 100644
 +						className: "sherlock-about-mark",
 +						"aria-hidden": "true",
 +						children: "S"
-+					}), (0, react_jsx_runtime.jsxs)("div", { children: [(0, react_jsx_runtime.jsx)("h2", {
++					}), (0, react_jsx_runtime.jsxs)("div", {
++						className: "sherlock-about-product-info",
++						children: [(0, react_jsx_runtime.jsx)("h2", {
 +						className: "sherlock-about-product",
 +						children: info.productName
-+					}), (0, react_jsx_runtime.jsx)("p", {
-+						className: "sherlock-about-version",
-+						children: `${t("about.version")} ${info.version}`
-+					})] })]
++					}), (0, react_jsx_runtime.jsxs)("div", {
++						className: "sherlock-about-version-row",
++						children: [(0, react_jsx_runtime.jsx)("p", {
++							className: "sherlock-about-version",
++							children: `${t("about.version")} ${info.version}`
++						}), (0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: "sherlock-about-check",
++							"data-about-check-update": "true",
++							disabled: checkState.status === "checking",
++							onClick: () => void checkForUpdates(),
++							children: checkState.status === "checking" ? t("about.checking") : t("about.check")
++						})]
++					}), checkMessage === null ? null : (0, react_jsx_runtime.jsx)("p", {
++						className: "sherlock-about-check-state",
++						"data-error": checkState.status === "error" || checkState.status === "result" && (checkState.update.phase === "error" || checkState.update.phase === "unsupported"),
++						role: checkState.status === "error" ? "alert" : "status",
++						children: checkMessage
++					})]
++					})]
 +				}), (0, react_jsx_runtime.jsxs)("section", {
 +					className: "sherlock-about-changelog",
 +					children: [(0, react_jsx_runtime.jsx)("h3", {
@@ -110,7 +154,7 @@ index 6797c5c..d52e5b0 100644
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-general/src/client/SettingsDocumentAction.module.css.mjs
  		const css = ".me01iq_action{align-items:center;gap:8px;min-width:0;display:flex}.me01iq_error{max-width:180px;color:var(--dsw-alias-state-error-primary);text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;overflow:hidden}";
-@@ -442,7 +529,13 @@ window.__ModuleLoader__.load({
+@@ -442,7 +573,20 @@ window.__ModuleLoader__.load({
  			"close": "关闭",
  			"openDocument": "打开配置文件",
  			"openDocument.error": "无法打开配置文件",
@@ -121,11 +165,18 @@ index 6797c5c..d52e5b0 100644
 +			"about.changelog": "更新日志",
 +			"about.loading": "正在读取版本信息…",
 +			"about.error": "暂时无法读取版本信息",
-+			"about.empty": "暂无更新日志"
++			"about.empty": "暂无更新日志",
++			"about.check": "检查更新",
++			"about.checking": "正在检查更新…",
++			"about.upToDate": "Sherlock 已是最新版本",
++			"about.updateAvailable": "发现新版本 {version}",
++			"about.downloading": "正在下载更新 {percent}%",
++			"about.restarting": "更新已下载，正在重新启动…",
++			"about.checkFailed": "检查更新失败"
  		};
  		/** English dictionary, checked complete against the zh key set. */
  		const en = {
-@@ -451,7 +544,13 @@ window.__ModuleLoader__.load({
+@@ -451,7 +595,20 @@ window.__ModuleLoader__.load({
  			"close": "Close",
  			"openDocument": "Open configuration file",
  			"openDocument.error": "Could not open configuration file",
@@ -136,11 +187,18 @@ index 6797c5c..d52e5b0 100644
 +			"about.changelog": "Release notes",
 +			"about.loading": "Loading version information…",
 +			"about.error": "Version information is temporarily unavailable",
-+			"about.empty": "No release notes yet"
++			"about.empty": "No release notes yet",
++			"about.check": "Check for updates",
++			"about.checking": "Checking for updates…",
++			"about.upToDate": "Sherlock is up to date",
++			"about.updateAvailable": "Version {version} is available",
++			"about.downloading": "Downloading update {percent}%",
++			"about.restarting": "Update downloaded. Restarting…",
++			"about.checkFailed": "Could not check for updates"
  		};
  		//#endregion
  		//#region lib/types/client/index.js
-@@ -575,13 +674,6 @@ window.__ModuleLoader__.load({
+@@ -575,13 +732,6 @@ window.__ModuleLoader__.load({
  				name: "settings.header",
  				locale: NS
  			}, HeaderContent));
@@ -154,7 +212,7 @@ index 6797c5c..d52e5b0 100644
  			ctx.slots.inject("settings.close", () => ctx.slots.register({
  				name: "settings.close",
  				locale: NS
-@@ -597,8 +689,17 @@ window.__ModuleLoader__.load({
+@@ -597,8 +747,17 @@ window.__ModuleLoader__.load({
  					scope: "root"
  				} }
  			}, GeneralSection));

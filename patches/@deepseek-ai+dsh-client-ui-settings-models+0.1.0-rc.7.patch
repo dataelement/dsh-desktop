@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index 02caaf7..8cb68d9 100644
+index 02caaf7..bf68ca4 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-@@ -66,6 +66,14 @@ window.__ModuleLoader__.load({
+@@ -66,6 +66,22 @@ window.__ModuleLoader__.load({
  			tag.textContent = css$3;
  			document.head.appendChild(tag);
  		}
@@ -14,10 +14,70 @@ index 02caaf7..8cb68d9 100644
 +			tag.textContent = ".dshProviderPicker{flex-direction:column;gap:10px;display:flex}.dshProviderSearch{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);width:100%;height:36px;font:inherit;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 11px;font-size:13px}.dshProviderSearch:focus{border-color:var(--dsw-alias-border-l1);outline:none}.dshProviderSearch::placeholder{color:var(--dsw-alias-label-dimmed)}.dshProviderGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;display:grid}.dshProviderCard{box-sizing:border-box;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;flex-direction:column;align-items:flex-start;min-height:58px;padding:10px 12px;display:flex;cursor:pointer;text-align:left;font:inherit}.dshProviderCard:hover{background:var(--dsw-alias-interactive-bg-hover)}.dshProviderCard[aria-pressed=true]{border-color:var(--dsw-alias-border-l1);background:var(--dsw-alias-interactive-bg-hover)}.dshProviderCard:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}.dshProviderName{font-size:14px;font-weight:500;line-height:20px}.dshProviderRoute{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.dshProviderSummary{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:8px;align-items:center;gap:12px;min-height:52px;padding:8px 10px 8px 12px;display:flex}.dshProviderSummaryText{flex-direction:column;min-width:0;display:flex}.dshProviderChange{color:var(--dsw-alias-label-secondary);background:transparent;border:1px solid var(--dsw-alias-border-l2);border-radius:14px;margin-left:auto;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer}.dshProviderChange:hover{background:var(--dsw-alias-interactive-bg-hover)}@media (width<=620px){.dshProviderGrid{grid-template-columns:1fr}}";
 +			document.head.appendChild(tag);
 +		}
++		const modelVisionTagId = "@deepseek-ai/dsh-client-ui-settings-models/ModelVision";
++		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(modelVisionTagId) + "]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-models";
++			tag.dataset.pluginCss = modelVisionTagId;
++			tag.textContent = ".sherlockModelRow{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto auto auto}.sherlockModelVision{color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer;align-items:center;gap:5px;padding:0 4px;font-size:12px;line-height:18px;display:inline-flex}.sherlockModelVision input{accent-color:var(--dsw-alias-brand-primary);cursor:pointer;margin:0}.sherlockModelVision:has(input:disabled){cursor:default;opacity:.55}.sherlockModelVision input:disabled{cursor:default}";
++			document.head.appendChild(tag);
++		}
  		var ModelsSection_module_css_default = {
  			"editorRoute": "zGbnIq_editorRoute",
  			"section": "zGbnIq_section",
-@@ -837,6 +845,11 @@ window.__ModuleLoader__.load({
+@@ -210,6 +226,28 @@ window.__ModuleLoader__.load({
+ 			if (!Array.isArray(value)) return [];
+ 			return value.map((entry) => typeof entry === "object" && entry !== null && !Array.isArray(entry) ? entry : {});
+ 		}
++		/** Translate the Vision checkbox into the model schema consumed by Harness. */
++		function modelInputForVision(model, enabled) {
++			const input = Array.isArray(model.input) ? model.input.filter((value) => value === "text" || value === "image") : [];
++			const next = new Set(input);
++			next.add("text");
++			if (enabled) next.add("image");
++			else next.delete("image");
++			return [...next];
++		}
++		function ModelVisionToggle({ model, index, t, disabled, onChange }) {
++			return (0, react_jsx_runtime.jsxs)("label", {
++				className: "sherlockModelVision",
++				children: [(0, react_jsx_runtime.jsx)("input", {
++					type: "checkbox",
++					"data-model-vision": "true",
++					checked: Array.isArray(model.input) && model.input.includes("image"),
++					"aria-label": `${t("modelVision")} ${String(index + 1)}`,
++					disabled,
++					onChange: (event) => onChange(modelInputForVision(model, event.target.checked))
++				}), (0, react_jsx_runtime.jsx)("span", { children: t("modelVision") })]
++			});
++		}
+ 		/**
+ 		* Validate adapter constraints that the serialized schema cannot express.
+ 		* @param value - user-owned `models` value, or undefined while inherited.
+@@ -373,7 +411,7 @@ window.__ModuleLoader__.load({
+ 						children: props.models.map((model, index) => (0, react_jsx_runtime.jsxs)("div", {
+ 							className: ModelsSection_module_css_default["modelEntry"],
+ 							children: [(0, react_jsx_runtime.jsxs)("div", {
+-								className: ModelsSection_module_css_default["modelRow"],
++								className: `${ModelsSection_module_css_default["modelRow"]} sherlockModelRow`,
+ 								children: [
+ 									(0, react_jsx_runtime.jsx)("input", {
+ 										className: ModelsSection_module_css_default["input"],
+@@ -401,6 +439,13 @@ window.__ModuleLoader__.load({
+ 											update(index, "name", event.target.value === "" ? void 0 : event.target.value);
+ 										}
+ 									}),
++									(0, react_jsx_runtime.jsx)(ModelVisionToggle, {
++										model,
++										index,
++										t: props.t,
++										disabled: props.disabled,
++										onChange: (input) => update(index, "input", input)
++									}),
+ 									(0, react_jsx_runtime.jsx)("button", {
+ 										type: "button",
+ 										className: ModelsSection_module_css_default["iconButton"],
+@@ -837,6 +882,11 @@ window.__ModuleLoader__.load({
  					return next;
  				});
  			};
@@ -29,7 +89,30 @@ index 02caaf7..8cb68d9 100644
  			const askable = probe.provider !== void 0 || probe.baseURL !== void 0 && probe.baseURL.length > 0;
  			return (0, react_jsx_runtime.jsxs)("section", {
  				className: ModelsSection_module_css_default["modelCatalog"],
-@@ -1003,7 +1016,15 @@ window.__ModuleLoader__.load({
+@@ -881,7 +931,7 @@ window.__ModuleLoader__.load({
+ 					models.map((model, index) => (0, react_jsx_runtime.jsxs)("div", {
+ 						className: ModelsSection_module_css_default["modelEntry"],
+ 						children: [(0, react_jsx_runtime.jsxs)("div", {
+-							className: ModelsSection_module_css_default["modelRow"],
++							className: `${ModelsSection_module_css_default["modelRow"]} sherlockModelRow`,
+ 							children: [
+ 								(0, react_jsx_runtime.jsx)("input", {
+ 									className: ModelsSection_module_css_default["input"],
+@@ -905,6 +955,13 @@ window.__ModuleLoader__.load({
+ 										patch(index, { name: event.target.value === "" ? void 0 : event.target.value });
+ 									}
+ 								}),
++								(0, react_jsx_runtime.jsx)(ModelVisionToggle, {
++									model,
++									index,
++									t,
++									disabled,
++									onChange: (input) => patch(index, { input })
++								}),
+ 								(0, react_jsx_runtime.jsx)("button", {
+ 									type: "button",
+ 									className: ModelsSection_module_css_default["iconButton"],
+@@ -1003,7 +1060,15 @@ window.__ModuleLoader__.load({
  							onClick: adoptPicked,
  							children: t("fetchAdopt")
  						})] }),
@@ -46,7 +129,7 @@ index 02caaf7..8cb68d9 100644
  							className: ModelsSection_module_css_default["candidateList"],
  							children: (candidates ?? []).map((candidate) => (0, react_jsx_runtime.jsx)("li", {
  								className: ModelsSection_module_css_default["candidate"],
-@@ -1021,7 +1042,7 @@ window.__ModuleLoader__.load({
+@@ -1021,7 +1086,7 @@ window.__ModuleLoader__.load({
  									})]
  								})
  							}, candidate.id))
@@ -55,7 +138,7 @@ index 02caaf7..8cb68d9 100644
  					})
  				]
  			});
-@@ -1753,6 +1774,26 @@ window.__ModuleLoader__.load({
+@@ -1753,6 +1818,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -82,7 +165,7 @@ index 02caaf7..8cb68d9 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1778,6 +1819,8 @@ window.__ModuleLoader__.load({
+@@ -1778,6 +1863,8 @@ window.__ModuleLoader__.load({
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
  			const [declaring, setDeclaring] = (0, react.useState)(false);
@@ -91,7 +174,7 @@ index 02caaf7..8cb68d9 100644
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -1847,10 +1890,16 @@ window.__ModuleLoader__.load({
+@@ -1847,10 +1934,16 @@ window.__ModuleLoader__.load({
  			};
  			const anyUsable = state.rows.some(providerUsable);
  			const configured = state.rows.filter((row) => row.configured);
@@ -109,7 +192,7 @@ index 02caaf7..8cb68d9 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["section"],
  				children: [
-@@ -1967,24 +2016,66 @@ window.__ModuleLoader__.load({
+@@ -1967,24 +2060,66 @@ window.__ModuleLoader__.load({
  							className: ModelsSection_module_css_default["addCard"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["field"],
@@ -191,7 +274,7 @@ index 02caaf7..8cb68d9 100644
  							}), (0, react_jsx_runtime.jsx)(ProviderEditor, {
  								provider: addTarget.provider,
  								displayName: addTarget.displayName,
-@@ -2027,6 +2118,8 @@ window.__ModuleLoader__.load({
+@@ -2027,6 +2162,8 @@ window.__ModuleLoader__.load({
  									setDeclaring(false);
  									setAdding(true);
  									setEditing(targetOf(first));
@@ -200,7 +283,7 @@ index 02caaf7..8cb68d9 100644
  								},
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
  							}), (0, react_jsx_runtime.jsxs)("button", {
-@@ -2135,7 +2228,7 @@ window.__ModuleLoader__.load({
+@@ -2135,7 +2272,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.module.css.mjs
@@ -209,7 +292,7 @@ index 02caaf7..8cb68d9 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2146,50 +2239,59 @@ window.__ModuleLoader__.load({
+@@ -2146,50 +2283,59 @@ window.__ModuleLoader__.load({
  		}
  		var DeepSeekOnboardingDialog_module_css_default = {
  			"description": "GL8Viq_description",
@@ -298,7 +381,7 @@ index 02caaf7..8cb68d9 100644
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2199,28 +2301,54 @@ window.__ModuleLoader__.load({
+@@ -2199,28 +2345,54 @@ window.__ModuleLoader__.load({
  			};
  			return (0, react_jsx_runtime.jsxs)(OnboardingModal, {
  				title: t("onboardingTitle"),
@@ -358,7 +441,7 @@ index 02caaf7..8cb68d9 100644
  				})]
  			});
  		}
-@@ -2307,17 +2435,17 @@ window.__ModuleLoader__.load({
+@@ -2307,17 +2479,17 @@ window.__ModuleLoader__.load({
  		* Bump only when the notice changes materially and every user should see it
  		* again. The acknowledgement is compared for exact equality.
  		*/
@@ -379,7 +462,7 @@ index 02caaf7..8cb68d9 100644
  				continueLabel: "Continue"
  			}
  		};
-@@ -2457,6 +2585,8 @@ window.__ModuleLoader__.load({
+@@ -2457,6 +2629,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -388,7 +471,15 @@ index 02caaf7..8cb68d9 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2511,6 +2641,8 @@ window.__ModuleLoader__.load({
+@@ -2483,6 +2657,7 @@ window.__ModuleLoader__.load({
+ 			model: "Model",
+ 			modelId: "Model ID",
+ 			modelName: "Display name",
++			modelVision: "Vision",
+ 			modelNamePlaceholder: "Uses the model ID when empty",
+ 			contextWindow: "Context window",
+ 			contextWindowPlaceholder: "Uses the provider default",
+@@ -2511,6 +2686,8 @@ window.__ModuleLoader__.load({
  			fetchEmpty: "The provider listed no models. Add them by hand.",
  			fetchTitle: "Choose models to add",
  			fetchDescription: "These are the models this provider has available. Choose the ones to add.",
@@ -397,7 +488,7 @@ index 02caaf7..8cb68d9 100644
  			fetchAdopt: "Add selected",
  			customAdd: "Add a custom provider",
  			customTitle: "Custom provider",
-@@ -2530,10 +2662,14 @@ window.__ModuleLoader__.load({
+@@ -2530,10 +2707,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.en.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.en.continueLabel,
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -415,7 +506,7 @@ index 02caaf7..8cb68d9 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2553,6 +2689,8 @@ window.__ModuleLoader__.load({
+@@ -2553,6 +2734,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -424,7 +515,15 @@ index 02caaf7..8cb68d9 100644
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2607,6 +2745,8 @@ window.__ModuleLoader__.load({
+@@ -2579,6 +2762,7 @@ window.__ModuleLoader__.load({
+ 			model: "模型",
+ 			modelId: "模型 ID",
+ 			modelName: "显示名称",
++			modelVision: "视觉",
+ 			modelNamePlaceholder: "留空时使用模型 ID",
+ 			contextWindow: "上下文窗口",
+ 			contextWindowPlaceholder: "使用提供方默认值",
+@@ -2607,6 +2791,8 @@ window.__ModuleLoader__.load({
  			fetchEmpty: "该提供方没有列出任何模型，请手动添加。",
  			fetchTitle: "选择要添加的模型",
  			fetchDescription: "以下是模型提供方的可用模型，勾选要添加的模型。",
@@ -433,7 +532,7 @@ index 02caaf7..8cb68d9 100644
  			fetchAdopt: "添加所选",
  			customAdd: "添加自定义提供方",
  			customTitle: "自定义提供方",
-@@ -2626,10 +2766,14 @@ window.__ModuleLoader__.load({
+@@ -2626,10 +2812,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.zh.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
  			welcomeError: "暂时无法保存确认状态，请重试。",
@@ -451,3 +550,12 @@ index 02caaf7..8cb68d9 100644
  			onboardingSaving: "保存中…",
  			keyRequired: "请输入 API 密钥后继续。"
  		};
+@@ -2732,6 +2922,8 @@ window.__ModuleLoader__.load({
+ 			}, DeepSeekOnboardingDialog));
+ 		}
+ 		//#endregion
++		exports.ModelListEditor = ModelListEditor;
++		exports.modelInputForVision = modelInputForVision;
+ 		exports.apply = apply;
+ 		exports.inject = inject;
+ 		exports.refreshIfLoaded = refreshIfLoaded;

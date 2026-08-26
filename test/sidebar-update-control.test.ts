@@ -81,6 +81,9 @@ describe('Sherlock sidebar update control', () => {
     expect(styles).toMatch(
       /#sherlock-sidebar-update-button\s*\{[^}]*border-radius:\s*8px;[^}]*box-shadow:\s*none;/s
     )
+    expect(styles).toMatch(
+      /#sherlock-sidebar-update-button\[data-action="download"\]:hover[^}]*width:\s*88px;/s
+    )
   })
 
   it('shows the blue download action only for an available update', () => {
@@ -102,6 +105,8 @@ describe('Sherlock sidebar update control', () => {
     expect(button.hidden).toBe(false)
     expect(button.dataset.action).toBe('download')
     expect(button.getAttribute('aria-label')).toBe('下载 Sherlock 0.6.0 更新')
+    expect(button.querySelector('.sherlock-sidebar-update-label')?.textContent).toBe('下载更新')
+    expect(button.innerHTML).toContain('M12 3v11')
     button.click()
     expect(callbacks.download).toHaveBeenCalledOnce()
   })
@@ -126,7 +131,11 @@ describe('Sherlock sidebar update control', () => {
     expect(button.getAttribute('role')).toBe('progressbar')
     expect(button.getAttribute('aria-valuenow')).toBe('43')
     expect(button.disabled).toBe(true)
-    expect(button.innerHTML).toContain('M12 3v11')
+    expect(button.innerHTML).not.toContain('M12 3v11')
+    expect(button.querySelector('[data-update-progress-ring]')).not.toBeNull()
+    expect(
+      button.querySelector('.sherlock-update-ring-value')?.getAttribute('stroke-dashoffset')
+    ).toBe('57')
     expect(button.style.getPropertyValue('--sherlock-update-progress')).toBe('43%')
 
     const styles = document.querySelector<HTMLStyleElement>(
@@ -135,7 +144,7 @@ describe('Sherlock sidebar update control', () => {
     expect(styles).not.toContain('conic-gradient')
   })
 
-  it('asks before restarting to install a downloaded update', () => {
+  it('keeps the completed progress ring visible while automatic restart begins', () => {
     const document = fixture()
     const callbacks = actions()
     const control = new SidebarUpdateControl(document, 'zh', callbacks)
@@ -151,14 +160,16 @@ describe('Sherlock sidebar update control', () => {
     const button = document.querySelector<HTMLButtonElement>(
       '#sherlock-sidebar-update-button'
     )!
-    expect(button.innerHTML).toContain('M12 3v11')
+    expect(button.dataset.action).toBe('progress')
+    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-valuenow')).toBe('100')
+    expect(
+      button.querySelector('.sherlock-update-ring-value')?.getAttribute('stroke-dashoffset')
+    ).toBe('0')
     button.click()
     const panel = document.querySelector<HTMLElement>('#sherlock-sidebar-update-panel')!
-    expect(panel.hidden).toBe(false)
-    expect(panel.textContent).toContain('Sherlock 0.6.0 已下载完成')
-
-    panel.querySelector<HTMLButtonElement>('[data-update-confirm]')!.click()
-    expect(callbacks.install).toHaveBeenCalledOnce()
+    expect(panel.hidden).toBe(true)
+    expect(callbacks.install).not.toHaveBeenCalled()
   })
 
   it('remounts after Harness replaces the sidebar footer', () => {

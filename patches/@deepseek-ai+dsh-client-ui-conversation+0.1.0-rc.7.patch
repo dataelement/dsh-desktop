@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..c725d3b 100644
+index 1dd0e89..1ff7dd5 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -348,6 +348,17 @@ window.__ModuleLoader__.load({
@@ -29,7 +29,48 @@ index 1dd0e89..c725d3b 100644
  				if (queued.length === 0) return;
  				for (const item of queued) {
  					const result = await session.updateQueue(item.id, { kind: "steer" });
-@@ -3304,7 +3315,7 @@ window.__ModuleLoader__.load({
+@@ -3164,8 +3175,11 @@ window.__ModuleLoader__.load({
+ 			if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) return name;
+ 			return name.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+ 		}
+-		function optionLabel(option) {
+-			return option.value === FULL_ACCESS ? "Full access" : displayName(option.name);
++		function permissionOptionLabel(option, t) {
++			if (option.value === "read-only") return t("access.mode.readOnly");
++			if (option.value === "workspace-write") return t("access.mode.workspaceWrite");
++			if (option.value === FULL_ACCESS) return t("access.mode.fullAccess");
++			return displayName(option.name);
+ 		}
+ 		function PermissionSelect({ value, locked, command, t }) {
+ 			const [pick, setPick] = (0, react.useState)(null);
+@@ -3186,7 +3200,7 @@ window.__ModuleLoader__.load({
+ 				const icon = permissionGlyph(option.value);
+ 				return {
+ 					id: option.value,
+-					label: optionLabel(option),
++					label: permissionOptionLabel(option, t),
+ 					...icon === void 0 ? {} : { icon }
+ 				};
+ 			});
+@@ -3228,7 +3242,7 @@ window.__ModuleLoader__.load({
+ 				anchor: (0, react_jsx_runtime.jsxs)("button", {
+ 					type: "button",
+ 					className: PermissionSelect_module_css_default.trigger,
+-					"aria-label": t("input.accessMode", { name: current === void 0 ? displayName(currentValue) : optionLabel(current) }),
++					"aria-label": t("input.accessMode", { name: current === void 0 ? displayName(currentValue) : permissionOptionLabel(current, t) }),
+ 					title: current?.description,
+ 					disabled: locked || busy,
+ 					onClick: () => {
+@@ -3242,7 +3256,7 @@ window.__ModuleLoader__.load({
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: PermissionSelect_module_css_default.triggerLabel,
+-							children: current === void 0 ? displayName(currentValue) : optionLabel(current)
++							children: current === void 0 ? displayName(currentValue) : permissionOptionLabel(current, t)
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: clsx(PermissionSelect_module_css_default.chevron, open && PermissionSelect_module_css_default.chevronOpen),
+@@ -3304,7 +3318,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$17;
@@ -38,7 +79,7 @@ index 1dd0e89..c725d3b 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -3356,6 +3367,36 @@ window.__ModuleLoader__.load({
+@@ -3356,6 +3370,36 @@ window.__ModuleLoader__.load({
  			textRefs: [],
  			hint: null
  		};
@@ -75,7 +116,7 @@ index 1dd0e89..c725d3b 100644
  		function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, overlay, leftItems, rightItems, footer }) {
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
-@@ -3420,7 +3461,7 @@ window.__ModuleLoader__.load({
+@@ -3420,7 +3464,7 @@ window.__ModuleLoader__.load({
  			const machineBusy = input?.phase === "adjudicating" || input?.phase === "submitting";
  			const workspaceTrigger = inert && !removed && onRequestWorkspace !== void 0;
  			const textareaDisabled = removed || locked && !workspaceTrigger;
@@ -84,7 +125,7 @@ index 1dd0e89..c725d3b 100644
  			(0, react.useEffect)(() => {
  				if (input === void 0 || inputActions === void 0) return;
  				if (attachments.length !== input.imageIds.length) inputActions.pruneImages(attachments.map((attachment) => attachment.id));
-@@ -3866,29 +3907,25 @@ window.__ModuleLoader__.load({
+@@ -3866,29 +3910,25 @@ window.__ModuleLoader__.load({
  								className: InputBar_module_css_default.row,
  								children: [(0, react_jsx_runtime.jsxs)("div", {
  									className: InputBar_module_css_default.tools,
@@ -124,7 +165,7 @@ index 1dd0e89..c725d3b 100644
  								}), (0, react_jsx_runtime.jsxs)("div", {
  									className: InputBar_module_css_default.trailing,
  									children: [
-@@ -4103,7 +4140,8 @@ window.__ModuleLoader__.load({
+@@ -4103,7 +4143,8 @@ window.__ModuleLoader__.load({
  		*/
  		const CompactionItem = (0, react.memo)(function CompactionItem({ node, title, fallbackSummary, t }) {
  			const [expanded, setExpanded] = (0, react.useState)(false);
@@ -134,7 +175,7 @@ index 1dd0e89..c725d3b 100644
  			const open = expandable && expanded;
  			const summary = node.shadowedItemCount !== null && node.shadowedTokenCount !== null ? t("message.compaction.completed", {
  				items: node.shadowedItemCount,
-@@ -4135,13 +4173,13 @@ window.__ModuleLoader__.load({
+@@ -4135,13 +4176,13 @@ window.__ModuleLoader__.load({
  						}),
  						(0, react_jsx_runtime.jsx)("span", {
  							className: MessageItem_module_css_default.compactionTitle,
@@ -151,7 +192,7 @@ index 1dd0e89..c725d3b 100644
  							className: MessageItem_module_css_default.compactionSummary,
  							children: summary
  						})
-@@ -5209,7 +5247,7 @@ window.__ModuleLoader__.load({
+@@ -5209,7 +5250,7 @@ window.__ModuleLoader__.load({
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/ChatView.module.css.mjs
@@ -160,7 +201,7 @@ index 1dd0e89..c725d3b 100644
  		const tagId$11 = "@deepseek-ai/dsh-client-ui-conversation/ChatView.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -5218,9 +5256,28 @@ window.__ModuleLoader__.load({
+@@ -5218,9 +5259,28 @@ window.__ModuleLoader__.load({
  			tag.textContent = css$11;
  			document.head.appendChild(tag);
  		}
@@ -191,7 +232,7 @@ index 1dd0e89..c725d3b 100644
  			"callRow": "Md3f7G_callRow",
  			"hint": "Md3f7G_hint",
  			"root": "Md3f7G_root",
-@@ -5228,11 +5285,19 @@ window.__ModuleLoader__.load({
+@@ -5228,11 +5288,19 @@ window.__ModuleLoader__.load({
  			"older": "Md3f7G_older",
  			"flowItem": "Md3f7G_flowItem",
  			"toBottomSlot": "Md3f7G_toBottomSlot",
@@ -212,7 +253,7 @@ index 1dd0e89..c725d3b 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatNodeSeat.js
  		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
-@@ -5278,6 +5343,131 @@ window.__ModuleLoader__.load({
+@@ -5278,6 +5346,131 @@ window.__ModuleLoader__.load({
  				})
  			});
  		});
@@ -344,7 +385,7 @@ index 1dd0e89..c725d3b 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatView.js
  		/** Active column host when present; otherwise the view-local scroller. */
-@@ -5289,6 +5479,21 @@ window.__ModuleLoader__.load({
+@@ -5289,6 +5482,21 @@ window.__ModuleLoader__.load({
  			for (const row of list.querySelectorAll("[data-chat-anchor-key]")) if (row.dataset.chatAnchorKey === key) return row;
  			return null;
  		}
@@ -366,7 +407,7 @@ index 1dd0e89..c725d3b 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5332,35 +5537,468 @@ window.__ModuleLoader__.load({
+@@ -5332,35 +5540,468 @@ window.__ModuleLoader__.load({
  				scrollTop: scrollport.scrollTop
  			};
  		}
@@ -859,7 +900,7 @@ index 1dd0e89..c725d3b 100644
  				})]
  			});
  		}
-@@ -5381,11 +6019,58 @@ window.__ModuleLoader__.load({
+@@ -5381,11 +6022,58 @@ window.__ModuleLoader__.load({
  			const loadingOlder = useSession((s) => s.loadingOlder);
  			const selectedCallId = useStore((s) => s.selection?.callId);
  			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
@@ -919,7 +960,7 @@ index 1dd0e89..c725d3b 100644
  			/** Last position delivered or written on the main thread. */
  			const observedTopRef = (0, react.useRef)(0);
  			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5405,6 +6090,12 @@ window.__ModuleLoader__.load({
+@@ -5405,6 +6093,12 @@ window.__ModuleLoader__.load({
  			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
  			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
  			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
@@ -932,7 +973,7 @@ index 1dd0e89..c725d3b 100644
  			const toBottom = (el) => {
  				anchorRef.current = null;
  				el.scrollTop = el.scrollHeight;
-@@ -5412,6 +6103,8 @@ window.__ModuleLoader__.load({
+@@ -5412,6 +6106,8 @@ window.__ModuleLoader__.load({
  				atBottomRef.current = true;
  				setAtBottom(true);
  				chatScroll.save(null);
@@ -941,7 +982,7 @@ index 1dd0e89..c725d3b 100644
  			};
  			(0, react.useLayoutEffect)(() => {
  				const local = listRef.current;
-@@ -5468,6 +6161,7 @@ window.__ModuleLoader__.load({
+@@ -5468,6 +6164,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -949,7 +990,7 @@ index 1dd0e89..c725d3b 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5487,6 +6181,10 @@ window.__ModuleLoader__.load({
+@@ -5487,6 +6184,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -960,7 +1001,7 @@ index 1dd0e89..c725d3b 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5540,9 +6238,29 @@ window.__ModuleLoader__.load({
+@@ -5540,9 +6241,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
@@ -991,7 +1032,7 @@ index 1dd0e89..c725d3b 100644
  					ref: listRef,
  					className: ChatView_module_css_default.scroll,
  					children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -5570,22 +6288,21 @@ window.__ModuleLoader__.load({
+@@ -5570,22 +6291,21 @@ window.__ModuleLoader__.load({
  									children: loadingOlder ? t("loading") : t("chat.loadOlder")
  								})
  							}),
@@ -1029,7 +1070,7 @@ index 1dd0e89..c725d3b 100644
  							}),
  							pendingSteering.map((item) => (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
  								content: item.content,
-@@ -5607,7 +6324,7 @@ window.__ModuleLoader__.load({
+@@ -5607,7 +6327,7 @@ window.__ModuleLoader__.load({
  							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {})
  						})
  					})]
@@ -1038,7 +1079,7 @@ index 1dd0e89..c725d3b 100644
  			});
  		}
  		//#endregion
-@@ -5816,6 +6533,8 @@ window.__ModuleLoader__.load({
+@@ -5816,6 +6536,8 @@ window.__ModuleLoader__.load({
  		/** Simplified Chinese dictionary (the key-set source of truth). */
  		const zh = {
  			"view.chat": "对话",
@@ -1047,16 +1088,27 @@ index 1dd0e89..c725d3b 100644
  			"hint.plan": PLAN_NEXT_ACTION_ZH,
  			"hint.goal": "输入目标，智能体将持续执行",
  			"hint.goal.active": "当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除",
-@@ -5875,7 +6594,7 @@ window.__ModuleLoader__.load({
+@@ -5870,12 +6592,15 @@ window.__ModuleLoader__.load({
+ 			"settings.enter.description": "仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为",
+ 			"settings.enter.queue": "排队发送",
+ 			"settings.enter.steer": "插话发送",
+-			"access.confirm.title": "确认启用 Full access？",
+-			"access.confirm.description": "启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
++			"access.mode.readOnly": "只读",
++			"access.mode.workspaceWrite": "工作区写入",
++			"access.mode.fullAccess": "完全访问",
++			"access.confirm.title": "确认启用完全访问？",
++			"access.confirm.description": "启用完全访问后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
  			"access.confirm.acknowledge": "我已了解风险，并愿意继续",
  			"access.confirm.cancel": "取消",
- 			"access.confirm.enable": "启用 Full access",
+-			"access.confirm.enable": "启用 Full access",
 -			"hero.headline": "探索未至之境",
++			"access.confirm.enable": "启用完全访问",
 +			"hero.headline": "迷雾之中，洞见真相",
  			"hero.preview": "预览版",
  			"hero.chooseWorkspace": "选择工作区",
  			"session.hierarchy": "会话层级",
-@@ -5896,6 +6615,46 @@ window.__ModuleLoader__.load({
+@@ -5896,6 +6621,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "历史加载失败：{message}（{code}）",
  			"chat.loadOlder": "加载更早",
  			"chat.toBottom": "回到底部",
@@ -1103,7 +1155,7 @@ index 1dd0e89..c725d3b 100644
  			"message.extraBlock": "附加内容块",
  			"message.contextInjection": "上下文注入",
  			"message.contextRecall": "跨会话召回",
-@@ -5981,6 +6740,8 @@ window.__ModuleLoader__.load({
+@@ -5981,6 +6746,8 @@ window.__ModuleLoader__.load({
  		/** English dictionary, checked complete against the zh key set. */
  		const en = {
  			"view.chat": "Chat",
@@ -1112,7 +1164,15 @@ index 1dd0e89..c725d3b 100644
  			"hint.plan": PLAN_NEXT_ACTION_EN,
  			"hint.goal": "describe the objective for a long-running task",
  			"hint.goal.active": "goal active — edit / pause / resume / clear",
-@@ -6040,7 +6801,7 @@ window.__ModuleLoader__.load({
+@@ -6035,12 +6802,15 @@ window.__ModuleLoader__.load({
+ 			"settings.enter.description": "Busy only; Cmd/Ctrl+Enter uses the other behavior",
+ 			"settings.enter.queue": "Queue",
+ 			"settings.enter.steer": "Steer",
++			"access.mode.readOnly": "Read Only",
++			"access.mode.workspaceWrite": "Workspace Write",
++			"access.mode.fullAccess": "Full access",
+ 			"access.confirm.title": "Enable Full access?",
+ 			"access.confirm.description": "Full access reduces confirmation steps and lets the agent perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust the current task.",
  			"access.confirm.acknowledge": "I understand the risks and want to continue",
  			"access.confirm.cancel": "Cancel",
  			"access.confirm.enable": "Enable Full access",
@@ -1121,7 +1181,7 @@ index 1dd0e89..c725d3b 100644
  			"hero.preview": "Preview",
  			"hero.chooseWorkspace": "Choose workspace",
  			"session.hierarchy": "Session hierarchy",
-@@ -6061,6 +6822,46 @@ window.__ModuleLoader__.load({
+@@ -6061,6 +6831,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "Failed to load history: {message} ({code})",
  			"chat.loadOlder": "Load earlier",
  			"chat.toBottom": "Back to bottom",
@@ -1168,7 +1228,7 @@ index 1dd0e89..c725d3b 100644
  			"message.extraBlock": "Extra content block",
  			"message.contextInjection": "Context injection",
  			"message.contextRecall": "Session recall",
-@@ -6383,7 +7184,7 @@ window.__ModuleLoader__.load({
+@@ -6383,7 +7193,7 @@ window.__ModuleLoader__.load({
  		*/
  		function QueueDock({ useSession, updateQueue, notify, t }) {
  			const inbox = useSession((s) => s.queue);
@@ -1177,7 +1237,7 @@ index 1dd0e89..c725d3b 100644
  			const running = useSession((s) => s.running);
  			const queueMutable = useSession((s) => s.subagent === null);
  			const [editing, setEditing] = (0, react.useState)(null);
-@@ -6627,7 +7428,7 @@ window.__ModuleLoader__.load({
+@@ -6627,7 +7437,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$7;
@@ -1186,7 +1246,7 @@ index 1dd0e89..c725d3b 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6765,13 +7566,6 @@ window.__ModuleLoader__.load({
+@@ -6765,13 +7575,6 @@ window.__ModuleLoader__.load({
  					children: [(0, react_jsx_runtime.jsxs)("div", {
  						className: HeroShell_module_css_default.headline,
  						children: [
@@ -1200,7 +1260,7 @@ index 1dd0e89..c725d3b 100644
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.headlineText,
  								children: t("hero.headline")
-@@ -6786,6 +7580,446 @@ window.__ModuleLoader__.load({
+@@ -6786,6 +7589,446 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -1647,7 +1707,7 @@ index 1dd0e89..c725d3b 100644
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
  		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
-@@ -6980,6 +8214,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +8223,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -1668,7 +1728,7 @@ index 1dd0e89..c725d3b 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +8282,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +8291,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -1686,7 +1746,7 @@ index 1dd0e89..c725d3b 100644
  				})] })
  			});
  		}
-@@ -8066,13 +9305,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +9314,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -1717,7 +1777,7 @@ index 1dd0e89..c725d3b 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +9350,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +9359,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -1742,7 +1802,7 @@ index 1dd0e89..c725d3b 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +10304,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +10313,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -1751,7 +1811,7 @@ index 1dd0e89..c725d3b 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,23 +10394,24 @@ window.__ModuleLoader__.load({
+@@ -9128,23 +10403,24 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -1780,7 +1840,7 @@ index 1dd0e89..c725d3b 100644
  				streaming: data.status === "running",
  				interrupted: data.status === "interrupted",
  				loadImage,
-@@ -9766,7 +11033,10 @@ window.__ModuleLoader__.load({
+@@ -9766,7 +11042,10 @@ window.__ModuleLoader__.load({
  							actions.select(target);
  							layout.openDetails();
  						},
@@ -1792,7 +1852,7 @@ index 1dd0e89..c725d3b 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +11046,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +11055,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -1801,7 +1861,7 @@ index 1dd0e89..c725d3b 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +11070,7 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +11079,7 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -1809,7 +1869,7 @@ index 1dd0e89..c725d3b 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9825,6 +11098,38 @@ window.__ModuleLoader__.load({
+@@ -9825,6 +11107,39 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.ConversationController = ConversationController;
@@ -1826,6 +1886,7 @@ index 1dd0e89..c725d3b 100644
 +		exports.executionProgressUpdates = executionProgressUpdates;
 +		exports.executionSummaryStatus = executionSummaryStatus;
 +		exports.executionStatusForNodes = executionStatusForNodes;
++		exports.permissionOptionLabel = permissionOptionLabel;
 +		exports.finalAnswerBlocks = finalAnswerBlocks;
 +		exports.RESEARCH_CANVAS_MAX_FILES_PER_DROP = RESEARCH_CANVAS_MAX_FILES_PER_DROP;
 +		exports.RESEARCH_CANVAS_MAX_FILES_PER_SESSION = RESEARCH_CANVAS_MAX_FILES_PER_SESSION;
