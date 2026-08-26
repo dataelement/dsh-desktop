@@ -14,14 +14,27 @@ else
 fi
 formal_executable="$formal_app/Contents/MacOS/Sherlock"
 formal_runtime_node="$formal_app/Contents/Resources/app/node_modules/node/bin/node"
+workspace_runtime_node="$project_root/node_modules/node/bin/node"
 
 stop_sherlock_apps() {
   pkill -x 'Sherlock Dev' 2>/dev/null || true
   pkill -x 'Sherlock' 2>/dev/null || true
 }
 
+ensure_workspace_runtime() {
+  if [ ! -x "$workspace_runtime_node" ]; then
+    echo 'Workspace Node.js runtime is missing; rebuilding the node package.'
+    npm rebuild node
+  fi
+  test -x "$workspace_runtime_node" || {
+    echo "Workspace Node.js runtime could not be prepared at: $workspace_runtime_node" >&2
+    exit 1
+  }
+}
+
 build_formal_app() {
   stop_sherlock_apps
+  ensure_workspace_runtime
   npm run package:formal:dir
   test -x "$formal_executable" || {
     echo "Sherlock executable was not built at: $formal_executable" >&2

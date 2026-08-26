@@ -1,6 +1,7 @@
 # Sherlock 项目约定
 
-- 当用户说“更新上传发布正式版”或“发布 Sherlock 正式版”时，必须使用 `sherlock-release` 技能并完整执行 `docs/sherlock-formal-release-runbook.md`。
+- 当用户说“本地启动看看”“构建给我测试”“测试一下最新版本”或同义表达时，必须走 `docs/sherlock-local-test-runbook.md`：使用 `./script/build_and_run.sh --verify` 构建并启动本地测试版，明确跳过 Apple 公证，不上传 Cloudflare、不修改公开更新源、不递增版本、不推送源码或标签；完成后必须核验真实 Sherlock 主界面而非只检查进程，并让应用保持打开供用户测试。
+- 只有当用户明确说“更新上传发布正式版”“发布 Sherlock 正式版”“发布大版本”或明确要求对外发布/让现有用户升级时，才使用 `sherlock-release` 技能并完整执行 `docs/sherlock-formal-release-runbook.md`。这里的“发布大版本”指正式对外发行，不是日常本地预览。
 - 若用户未指定版本，默认把当前正式版本的补丁号加一，例如 `0.6.3` 升到 `0.6.4`；发布前仍须与 Cloudflare 线上版本比较，禁止复用或降低版本号。
 - 该触发语授权：同步当前开发成果到正式构建、修改版本号、运行聚焦检查、打包和签名、发布到 Sherlock 的 Cloudflare R2、验证公开更新源、提交并推送发布相关源码到既有 Fork 发布分支。
 - 不要强行合并 `dataelement/dsh-desktop` 的上游 `main`，不要覆盖或提交无关的用户改动。
