@@ -2,7 +2,7 @@
 
 ## Status
 
-Product direction approved; detailed specification pending user review. This
+Approved for implementation. This
 document combines the existing Research canvas file-drop work with the agreed
 canvas-selection, right-side conversation, and message-to-canvas behavior. It
 supersedes the earlier interaction scope in
