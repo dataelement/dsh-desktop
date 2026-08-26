@@ -828,6 +828,12 @@ describe('Sherlock workspace and composer controls', () => {
     expect(source.slice(panelStart, rootFunctionStart)).not.toContain(
       'renderSlot("conversation.view"'
     )
+
+    const sessionEnd = source.indexOf('}, ConversationSession);', sessionStart)
+    expect(sessionEnd).toBeGreaterThan(sessionStart)
+    const sessionRegistration = source.slice(sessionStart, sessionEnd)
+    expect(sessionRegistration).toContain('releaseResearchWorkspace:')
+    expect(sessionRegistration).toContain('researchWorkspaces.release(id)')
   })
 
   it('publishes the session-scoped Research presentation to the optional root owner', async () => {
@@ -864,34 +870,43 @@ describe('Sherlock workspace and composer controls', () => {
       setResearchFilesTabOpen: () => undefined,
       setResearchConversationUnread: () => undefined
     }
+    const releasedImages: string[] = []
+    const releasedResearchWorkspaces: string[] = []
+    const renderSession = (sessionId: string) => createElement(
+      client.ConversationSession as ComponentType<Record<string, unknown>>,
+      {
+        sessionId,
+        useSession: (select: (state: Record<string, unknown>) => unknown) => select({
+          composerPhase: 'active', blank: false
+        }),
+        useInput: (select: (state: Record<string, unknown>) => unknown) => select({
+          draft: ''
+        }),
+        inputActions: { setDraft: () => undefined },
+        useStore: chat.useSelector,
+        actions,
+        renderSlot: () => createElement('div', { 'data-bridged-view': '' }),
+        views: {
+          subscribe: () => () => undefined,
+          version: () => 1,
+          list: () => [
+            { id: 'chat', label: '对话' },
+            { id: 'research', label: '研究' }
+          ]
+        },
+        bindDraftMirror: () => () => undefined,
+        releaseSessionImages: (id: string) => { releasedImages.push(id) },
+        releaseResearchWorkspace: (id: string) => {
+          releasedResearchWorkspaces.push(id)
+        },
+        onResearchPresentation: (value: Record<string, unknown> | null) => {
+          presentations.push(value)
+        }
+      }
+    )
     try {
       await act(async () => {
-        root.render(createElement(client.ConversationSession as ComponentType<Record<string, unknown>>, {
-          sessionId: 'session-bridge',
-          useSession: (select: (state: Record<string, unknown>) => unknown) => select({
-            composerPhase: 'active', blank: false
-          }),
-          useInput: (select: (state: Record<string, unknown>) => unknown) => select({
-            draft: ''
-          }),
-          inputActions: { setDraft: () => undefined },
-          useStore: chat.useSelector,
-          actions,
-          renderSlot: () => createElement('div', { 'data-bridged-view': '' }),
-          views: {
-            subscribe: () => () => undefined,
-            version: () => 1,
-            list: () => [
-              { id: 'chat', label: '对话' },
-              { id: 'research', label: '研究' }
-            ]
-          },
-          bindDraftMirror: () => () => undefined,
-          releaseSessionImages: () => undefined,
-          onResearchPresentation: (value: Record<string, unknown> | null) => {
-            presentations.push(value)
-          }
-        }))
+        root.render(renderSession('session-bridge'))
       })
       expect(presentations.at(-1)).toMatchObject({
         view: 'research',
@@ -904,6 +919,12 @@ describe('Sherlock workspace and composer controls', () => {
       expect(renderToStaticMarkup(
         (presentations.at(-1)?.conversationView ?? null) as ReactNode
       )).toContain('data-bridged-view')
+
+      await act(async () => {
+        root.render(renderSession('session-bridge-next'))
+      })
+      expect(releasedImages).toEqual(['session-bridge'])
+      expect(releasedResearchWorkspaces).toEqual(['session-bridge'])
     } finally {
       await act(async () => { root.unmount() })
       restoreGlobals()
@@ -1180,6 +1201,41 @@ describe('Sherlock workspace and composer controls', () => {
     expect(html).not.toContain('/w/report.pdf</')
     expect(client.researchCanvasContentTransform({ scale: 1.5, x: 30, y: -10 }))
       .toBe('translate(30px, -10px) scale(1.5)')
+  })
+
+  it('selects the focused Research file card with Enter', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-keyboard-file',
+      files: [
+        { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
+        { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 300, y: 100 }
+      ],
+      selection: { selectedNodeIds: ['file-b'], orderedFileIds: ['file-b'] }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const cardA = host.querySelector(
+        '[data-research-file-card="file-a"]'
+      ) as HappyDOMElement | null
+      expect(cardA).not.toBeNull()
+      if (cardA === null) return
+      ;(cardA as unknown as { focus(): void }).focus()
+
+      await act(async () => {
+        cardA.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-a'], orderedFileIds: ['file-a']
+      })
+      expect(cardA.getAttribute('aria-selected')).toBe('true')
+      expect(host.querySelector('[data-research-file-card="file-b"]')
+        ?.getAttribute('aria-selected')).toBe('false')
+    } finally {
+      await mounted.cleanup()
+    }
   })
 
   it('projects only basenames from the owned Research prefix in sent user messages', async () => {
@@ -2369,6 +2425,9 @@ describe('Sherlock workspace and composer controls', () => {
       )
       expect(missingSnapshot).not.toBeNull()
       expect(missingSnapshot?.textContent).toContain('来源消息不可用')
+
+      await mounted.rerenderSession('session-research-second')
+      expect(detailsPortalHost.querySelector('[role="status"]')).toBeNull()
     } finally {
       await act(async () => { canvasRoot.unmount() })
       await mounted.cleanup()

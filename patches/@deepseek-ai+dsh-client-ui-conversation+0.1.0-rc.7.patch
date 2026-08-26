@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..11b2e39 100644
+index 1dd0e89..53ba5ab 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -1439,7 +1439,7 @@ index 1dd0e89..11b2e39 100644
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.headlineText,
  								children: t("hero.headline")
-@@ -6786,60 +7668,1401 @@ window.__ModuleLoader__.load({
+@@ -6786,60 +7668,1411 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -2024,7 +2024,7 @@ index 1dd0e89..11b2e39 100644
 +			if (media !== void 0 && media !== "") return media.slice(0, 12).toUpperCase();
 +			return node.source === "sherlock" ? "SHERLOCK" : "FILE";
 +		}
-+		function ResearchCanvasFileCard({ node, selected = false, dragging = false }) {
++		function ResearchCanvasFileCard({ node, selected = false, dragging = false, onSelect }) {
 +			return (0, react_jsx_runtime.jsxs)("div", {
 +				className: "rScV5Q_fileCard",
 +				"data-research-file-card": node.id,
@@ -2036,6 +2036,12 @@ index 1dd0e89..11b2e39 100644
 +				tabIndex: 0,
 +				"aria-selected": selected,
 +				title: node.path ?? node.name,
++				onKeyDown: (event) => {
++					if (event.key !== "Enter") return;
++					event.preventDefault();
++					event.stopPropagation();
++					onSelect?.(node);
++				},
 +				style: {
 +					left: `${node.x}px`,
 +					top: `${node.y}px`,
@@ -2479,7 +2485,8 @@ index 1dd0e89..11b2e39 100644
 +					children: [files.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasFileCard, {
 +						node,
 +						selected: selectedIds.has(node.id),
-+						dragging: draggingIds.has(node.id)
++						dragging: draggingIds.has(node.id),
++						onSelect: (file) => workspace.updateSelection([file.id], "replace")
 +					}, node.id)), artifacts.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasArtifactCard, {
 +						node,
 +						selected: selectedIds.has(node.id),
@@ -2659,6 +2666,9 @@ index 1dd0e89..11b2e39 100644
 +			const workspaceSnapshot = (0, react.useSyncExternalStore)(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
 +			(0, react.useEffect)(() => {
 +				setSelectionAction(null);
++			}, [sessionId]);
++			(0, react.useLayoutEffect)(() => {
++				setSourceStatus(null);
 +			}, [sessionId]);
 +			(0, react.useEffect)(() => {
 +				if (!active || rightTab !== "conversation") setSelectionAction(null);
@@ -2894,7 +2904,7 @@ index 1dd0e89..11b2e39 100644
  				if (seat === null || scroller === null) return;
  				seatObserver.current = new ResizeObserver(() => {
  					scroller.style.setProperty("--dsh-composer-height", `${seat.offsetHeight}px`);
-@@ -6848,6 +9071,36 @@ window.__ModuleLoader__.load({
+@@ -6848,6 +9081,36 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -2931,7 +2941,7 @@ index 1dd0e89..11b2e39 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +9150,8 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +9160,8 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -2940,7 +2950,7 @@ index 1dd0e89..11b2e39 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +9168,66 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +9178,66 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -3031,7 +3041,7 @@ index 1dd0e89..11b2e39 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +9263,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +9273,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -3052,7 +3062,7 @@ index 1dd0e89..11b2e39 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +9331,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +9341,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -3070,12 +3080,12 @@ index 1dd0e89..11b2e39 100644
  				})] })
  			});
  		}
-@@ -7053,14 +9341,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +9351,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
 -		function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages }) {
-+		function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, onResearchPresentation }) {
++		function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, releaseResearchWorkspace, onResearchPresentation }) {
  			(0, react.useSyncExternalStore)(views.subscribe, views.version);
 -			const active = resolveActiveView(views.list(), useStore((s) => s.view));
 +			const view = useStore((s) => s.view ?? "chat");
@@ -3115,7 +3125,17 @@ index 1dd0e89..11b2e39 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7090,7 +9406,7 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +9397,9 @@ window.__ModuleLoader__.load({
+ 			(0, react.useEffect)(() => () => {
+ 				releaseSessionImages(sessionId);
+ 			}, [releaseSessionImages, sessionId]);
++			(0, react.useEffect)(() => () => {
++				releaseResearchWorkspace(sessionId);
++			}, [releaseResearchWorkspace, sessionId]);
+ 			if (blank && composerPhase === "blank") return null;
+ 			return (0, react_jsx_runtime.jsx)("div", {
+ 				className: ConversationRoot_module_css_default.viewArea,
+@@ -7090,7 +9419,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -3124,7 +3144,7 @@ index 1dd0e89..11b2e39 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +9459,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +9472,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -3142,7 +3162,7 @@ index 1dd0e89..11b2e39 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +9495,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +9508,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -3150,7 +3170,7 @@ index 1dd0e89..11b2e39 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +10387,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +10400,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -3181,7 +3201,7 @@ index 1dd0e89..11b2e39 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +10432,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +10445,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -3206,7 +3226,7 @@ index 1dd0e89..11b2e39 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +11386,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +11399,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -3215,7 +3235,7 @@ index 1dd0e89..11b2e39 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +11476,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +11489,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -3257,7 +3277,7 @@ index 1dd0e89..11b2e39 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +11685,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +11698,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -3274,7 +3294,7 @@ index 1dd0e89..11b2e39 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +11855,7 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +11868,7 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -3282,7 +3302,7 @@ index 1dd0e89..11b2e39 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,7 +11895,7 @@ window.__ModuleLoader__.load({
+@@ -9538,7 +11908,7 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -3291,7 +3311,7 @@ index 1dd0e89..11b2e39 100644
  			const composerBlocks = new ComposerBlockRegistry();
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
-@@ -9551,9 +11908,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +11921,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -3304,7 +3324,7 @@ index 1dd0e89..11b2e39 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +11957,12 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +11970,12 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -3319,7 +3339,17 @@ index 1dd0e89..11b2e39 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9764,9 +12125,13 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +12009,9 @@ window.__ModuleLoader__.load({
+ 						releaseSessionImages: (id) => {
+ 							conversation.releaseSessionImages(id);
+ 						},
++						releaseResearchWorkspace: (id) => {
++							researchWorkspaces.release(id);
++						},
+ 						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
+ 					};
+ 				}
+@@ -9764,9 +12141,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -3334,7 +3364,7 @@ index 1dd0e89..11b2e39 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +12141,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +12157,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -3343,7 +3373,7 @@ index 1dd0e89..11b2e39 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +12165,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +12181,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -3352,7 +3382,7 @@ index 1dd0e89..11b2e39 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9825,6 +12194,74 @@ window.__ModuleLoader__.load({
+@@ -9825,6 +12210,74 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.ConversationController = ConversationController;
@@ -3451,7 +3481,7 @@ index b485863..581e6e3 100644
  export {};
  //# sourceMappingURL=TurnTailNodeView.d.ts.map
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 50939b2..f027ed8 100644
+index 50939b2..cb13d76 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -1,7 +1,7 @@
@@ -3506,7 +3536,16 @@ index 50939b2..f027ed8 100644
  }
  /** Hook constrained to business data published on the current Chat Node's Turn. */
  export type UseChatNodeTurnData = <Key extends Extract<keyof ConversationTurnDataMap, string>>(key: Key) => Readonly<ConversationTurnDataMap[Key]> | undefined;
-@@ -516,6 +536,8 @@ export interface ComposerBarOwnerProps {
+@@ -471,6 +491,8 @@ export interface ConversationSessionInjected {
+     };
+     /** Release historical image URLs when this rendered session scope unmounts. */
+     releaseSessionImages: (sessionId: SessionId) => void;
++    /** Release transient Research workspace state when this session scope unmounts. */
++    releaseResearchWorkspace: (sessionId: SessionId) => void;
+     /** Bind the input machine's draft persistence mirror to the session store. */
+     bindDraftMirror: (write: (text: string) => void) => () => void;
+ }
+@@ -516,6 +538,8 @@ export interface ComposerBarOwnerProps {
      placeholder?: string;
      /** Optional content rendered above the textarea. */
      accessory?: ReactNode;
@@ -3638,6 +3677,17 @@ index 627a46d..796b3e2 100644
 +};
 +export declare function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, useStore, actions, renderSlot, renderSlotChain, selectWorkspace, enterResearch, leaveResearch, setResearchActive, researchWorkspaces, t, }: ConversationRootProps): import("react").JSX.Element;
  //# sourceMappingURL=ConversationRoot.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts
+index b5dcdb9..2f26dcd 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts
+@@ -16,5 +16,5 @@ export declare function ConversationSessionHeader({ sessionId, useSession, useSe
+  * @param props - Strict Session input/store, view ledger, and render shares.
+  * @returns the active view area, or null while the Session remains blank.
+  */
+-export declare function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, }: ConversationSessionProps): import("react").JSX.Element | null;
++export declare function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, releaseResearchWorkspace, }: ConversationSessionProps): import("react").JSX.Element | null;
+ //# sourceMappingURL=ConversationSession.d.ts.map
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts
 index e988aa0..7440222 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts

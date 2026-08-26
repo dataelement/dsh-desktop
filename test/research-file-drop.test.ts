@@ -850,6 +850,40 @@ describe('Research canvas file drops', () => {
     expect(snapshot.artifacts[0].title).toBe('Answer')
   })
 
+  it('releases only transient source jumps while preserving persisted Research state', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const storage = memoryStorage({
+      'sherlock.research.canvas.files.v1:s1': JSON.stringify([
+        { id: 'f1', path: '/w/one.pdf', name: 'one.pdf', source: 'computer', x: 1, y: 2 }
+      ]),
+      'sherlock.research.canvas.artifacts.v1:s1': JSON.stringify([
+        { id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Text', x: 3, y: 4 }
+      ]),
+      'sherlock.research.canvas.selection.v1:s1': JSON.stringify({
+        selectedNodeIds: ['f1', 'a1'], orderedFileIds: ['f1']
+      })
+    })
+    const registry = new client.ResearchWorkspaceRegistry(storage)
+    const workspace = registry.for('s1')
+    workspace.setPendingMessageJump('m1')
+    const before = workspace.getSnapshot()
+
+    registry.release('s1')
+
+    const after = workspace.getSnapshot()
+    expect(after.pendingMessageJump).toBeNull()
+    expect(after.files).toEqual(before.files)
+    expect(after.artifacts).toEqual(before.artifacts)
+    expect(after.selection).toEqual(before.selection)
+    expect(JSON.parse(storage.getItem(
+      'sherlock.research.canvas.selection.v1:s1'
+    ) ?? 'null')).toEqual({
+      selectedNodeIds: ['f1', 'a1'], orderedFileIds: ['f1']
+    })
+  })
+
   it('submits ordered Research files with images and restores one rejected attempt atomically', async () => {
     const available = vi.fn(async (paths: string[]) => paths.map(() => true))
     const client = await loadClientBundle(
