@@ -409,6 +409,17 @@ describe('Research canvas file drops', () => {
     )).toEqual(['a'])
   })
 
+  it('scales marquee card bounds with the canvas viewport', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchNodeViewportRect).toBeTypeOf('function')
+    if (typeof client.researchNodeViewportRect !== 'function') return
+
+    expect(client.researchNodeViewportRect(
+      { id: 'a', name: 'a.pdf', source: 'computer', x: 50, y: 50 },
+      { scale: 2, x: 10, y: 20 }
+    )).toEqual({ left: -110, top: 56, right: 330, bottom: 184, width: 440, height: 128 })
+  })
+
   it('keeps stable selection order and derives ordered files only', async () => {
     const client = await loadConversationClient()
     expect(client.updateResearchSelection).toBeTypeOf('function')
@@ -507,6 +518,32 @@ describe('Research canvas file drops', () => {
     expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, title: 'x'.repeat(257) }))).toBeNull()
     expect(client.parseResearchArtifactDrag(JSON.stringify({ ...payload, excerpt: 'x'.repeat(16_385) }))).toBeNull()
     expect(client.parseResearchArtifactDrag('not-json')).toBeNull()
+  })
+
+  it('publishes deeply immutable file and artifact nodes from a workspace snapshot', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const storage = {
+      getItem(key: string) {
+        if (key === 'sherlock.research.canvas.files.v1:s1') return JSON.stringify([
+          { id: 'f1', name: 'one.pdf', source: 'computer', x: 1, y: 2 }
+        ])
+        if (key === 'sherlock.research.canvas.artifacts.v1:s1') return JSON.stringify([
+          { id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Text', x: 3, y: 4 }
+        ])
+        return null
+      },
+      setItem() {}
+    }
+    const snapshot = new client.ResearchWorkspaceRegistry(storage).for('s1').getSnapshot()
+
+    expect(Object.isFrozen(snapshot.files[0])).toBe(true)
+    expect(Object.isFrozen(snapshot.artifacts[0])).toBe(true)
+    expect(() => { snapshot.files[0].name = 'mutated.pdf' }).toThrow(TypeError)
+    expect(() => { snapshot.artifacts[0].title = 'Mutated' }).toThrow(TypeError)
+    expect(snapshot.files[0].name).toBe('one.pdf')
+    expect(snapshot.artifacts[0].title).toBe('Answer')
   })
 
   it('writes the exact Sherlock file MIME payload with copy semantics', async () => {
