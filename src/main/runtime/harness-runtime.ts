@@ -192,12 +192,14 @@ export function buildHarnessSpawnOptions(
       ...parentEnvironment,
       DSH_HOME: dshHome,
       NO_COLOR: '1',
-      PNPM_MAX_WORKERS: '1',
-      npm_config_child_concurrency: '1',
-      npm_config_package_import_method: 'clone-or-copy',
+      // package-import-method/child-concurrency are left at pnpm's defaults
+      // (hardlink, auto concurrency): forcing clone-or-copy made every
+      // install do a full physical file copy across the profile's 150+
+      // packages, which is what turned installs that should take seconds
+      // into multi-minute (up to 30-minute) waits on Windows. The Windows
+      // locked-rename problem this was meant to route around is handled by
+      // the dedicated lock-recovery runner instead (see pnpm-runner.mjs).
       npm_config_side_effects_cache: 'false',
-      PNPM_CONFIG_CHILD_CONCURRENCY: '1',
-      PNPM_CONFIG_PACKAGE_IMPORT_METHOD: 'clone-or-copy',
       PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false',
       [pathKey]: environment[pathKey] ?? environment.PATH ?? ''
     },
