@@ -185,18 +185,23 @@ async function mountResearchCanvas(options: {
   artifacts?: Array<Record<string, unknown>>
   selection?: { selectedNodeIds: string[]; orderedFileIds: string[] }
   viewport?: { scale: number; x: number; y: number }
+  storage?: {
+    getItem(key: string): string | null
+    setItem(key: string, value: string): void
+  }
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const { sessionId } = options
-  browserWindow.localStorage.setItem(
+  const storage = options.storage ?? browserWindow.localStorage
+  storage.setItem(
     `sherlock.research.canvas.files.v1:${sessionId}`,
     JSON.stringify(options.files ?? [])
   )
-  browserWindow.localStorage.setItem(
+  storage.setItem(
     `sherlock.research.canvas.artifacts.v1:${sessionId}`,
     JSON.stringify(options.artifacts ?? [])
   )
-  browserWindow.localStorage.setItem(
+  storage.setItem(
     `sherlock.research.canvas.selection.v1:${sessionId}`,
     JSON.stringify(options.selection ?? { selectedNodeIds: [], orderedFileIds: [] })
   )
@@ -216,7 +221,7 @@ async function mountResearchCanvas(options: {
       setViewport(viewport: { scale: number; x: number; y: number }): void
     }
   }
-  const researchWorkspaces = new Registry(browserWindow.localStorage)
+  const researchWorkspaces = new Registry(storage as Storage)
   const workspace = researchWorkspaces.for(sessionId)
   if (options.viewport !== undefined) workspace.setViewport(options.viewport)
   const ResearchCanvas = client.ResearchCanvas as ComponentType<{
@@ -711,6 +716,59 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('does not claim malformed or cross-session proprietary drags', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-drag-ownership' })
+    try {
+      const { browserWindow, canvas } = mounted
+      const bubbled = { dragenter: 0, dragover: 0 }
+      browserWindow.document.addEventListener('dragenter', () => { bubbled.dragenter += 1 })
+      browserWindow.document.addEventListener('dragover', () => { bubbled.dragover += 1 })
+      const transfer = (type: string, raw: string) => ({
+        types: [type],
+        files: [],
+        getData: (requested: string) => requested === type ? raw : '',
+        dropEffect: 'none'
+      })
+      const invalid = [
+        transfer('application/x-sherlock-file', '{bad-json'),
+        transfer('application/x-sherlock-research-artifact', '{bad-json'),
+        transfer('application/x-sherlock-research-artifact', JSON.stringify({
+          sessionId: 'another-session', messageId: 'm1', kind: 'assistant-result',
+          title: 'Answer', excerpt: 'Evidence'
+        }))
+      ]
+
+      for (const dataTransfer of invalid) {
+        for (const type of ['dragenter', 'dragover'] as const) {
+          const before = bubbled[type]
+          const event = dispatchDrag(browserWindow, canvas, type, dataTransfer)
+          expect(event.defaultPrevented).toBe(false)
+          expect(bubbled[type]).toBe(before + 1)
+        }
+      }
+
+      const valid = [
+        transfer('application/x-sherlock-file', JSON.stringify({
+          path: '/w/report.pdf', name: 'report.pdf'
+        })),
+        transfer('application/x-sherlock-research-artifact', JSON.stringify({
+          sessionId: 'session-drag-ownership', messageId: 'm1',
+          kind: 'assistant-result', title: 'Answer', excerpt: 'Evidence'
+        }))
+      ]
+      for (const dataTransfer of valid) {
+        for (const type of ['dragenter', 'dragover'] as const) {
+          const before = bubbled[type]
+          const event = dispatchDrag(browserWindow, canvas, type, dataTransfer)
+          expect(event.defaultPrevented).toBe(true)
+          expect(bubbled[type]).toBe(before)
+        }
+      }
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('selects a persisted card and marquee-selects two cards', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-marquee',
@@ -965,6 +1023,79 @@ describe('Sherlock workspace and composer controls', () => {
       expect(canvas.querySelector('[data-node-dragging="true"]')).toBeNull()
     } finally {
       await mounted.cleanup()
+    }
+  })
+
+  it('persists a moved group once at every pointer finish boundary', async () => {
+    const finishModes = ['pointerup', 'pointercancel', 'blur', 'cleanup'] as const
+    for (const finishMode of finishModes) {
+      const values = new Map<string, string>()
+      const writes: Array<{ key: string; value: string }> = []
+      const storage = {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem(key: string, value: string) {
+          values.set(key, value)
+          writes.push({ key, value })
+        }
+      }
+      const sessionId = `session-deferred-move-${finishMode}`
+      const mounted = await mountResearchCanvas({
+        sessionId,
+        storage,
+        files: [
+          { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 }
+        ],
+        selection: { selectedNodeIds: ['file-a'], orderedFileIds: ['file-a'] }
+      })
+      let cleaned = false
+      try {
+        const { browserWindow, canvas, host, workspace } = mounted
+        const cardA = host.querySelector('[data-research-file-card="file-a"]')
+        expect(cardA).not.toBeNull()
+        if (cardA === null) return
+        writes.length = 0
+
+        await act(async () => {
+          cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+            pointerId: 1, x: 100, y: 100
+          }))
+          canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+            pointerId: 1, x: 110, y: 100
+          }))
+          canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+            pointerId: 1, x: 130, y: 100
+          }))
+        })
+        expect(workspace.getSnapshot().files[0]).toMatchObject({ x: 130, y: 100 })
+        expect(JSON.parse(values.get(`sherlock.research.canvas.files.v1:${sessionId}`) ?? '[]')[0])
+          .toMatchObject({ x: 100, y: 100 })
+        expect(writes).toEqual([])
+
+        if (finishMode === 'cleanup') {
+          await mounted.cleanup()
+          cleaned = true
+        } else {
+          await act(async () => {
+            if (finishMode === 'blur') {
+              browserWindow.dispatchEvent(new browserWindow.Event('blur'))
+            } else {
+              canvas.dispatchEvent(pointer(browserWindow, finishMode, {
+                pointerId: 1, x: 130, y: 100
+              }))
+            }
+          })
+        }
+
+        expect(writes.map(({ key }) => key)).toEqual([
+          `sherlock.research.canvas.files.v1:${sessionId}`,
+          `sherlock.research.canvas.artifacts.v1:${sessionId}`,
+          `sherlock.research.canvas.selection.v1:${sessionId}`
+        ])
+        expect(JSON.parse(values.get(`sherlock.research.canvas.files.v1:${sessionId}`) ?? '[]')[0])
+          .toMatchObject({ x: 130, y: 100 })
+      } finally {
+        if (!cleaned) await mounted.cleanup()
+      }
     }
   })
 
