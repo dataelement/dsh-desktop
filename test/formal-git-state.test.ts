@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -42,6 +42,13 @@ afterEach(() => {
 })
 
 describe('formal Git source gate', () => {
+  it('allows Git status output larger than the Node default child-process buffer', () => {
+    const source = readFileSync(verifier, 'utf8')
+
+    expect(source).toMatch(/const gitOutputLimit = \d+ \* 1024 \* 1024/)
+    expect(source).toContain('maxBuffer: gitOutputLimit')
+  })
+
   it('accepts a clean patch release committed on main', () => {
     const repository = createRepository()
 

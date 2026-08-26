@@ -3,17 +3,21 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const gitOutputLimit = 64 * 1024 * 1024
+
 function git(repository, ...args) {
   return execFileSync('git', ['-C', repository, ...args], {
     encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: gitOutputLimit
   }).trim()
 }
 
 function gitRaw(repository, ...args) {
   return execFileSync('git', ['-C', repository, ...args], {
     encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: gitOutputLimit
   })
 }
 
