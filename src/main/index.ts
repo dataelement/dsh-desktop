@@ -74,6 +74,10 @@ import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { windowsMenuViewBounds } from './windows-menu-view'
+import {
+  MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
+  shouldReloadAfterMainWindowRendererLoss
+} from './main-window-recovery'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
@@ -112,6 +116,14 @@ let safeModeVisible = false
 let safeModeManagerVisible = false
 let safeModeManagerWindow: BrowserWindow | undefined
 let safeModeActionResolver: ((action: SafeModeAction) => void) | undefined
+// A renderer that crashes (render-process-gone) and reloads that fails the
+// same way produces a permanent black window the user has to close by hand.
+// The cooldown keeps reloads from stacking up when the underlying crash
+// (almost always the GPU process) keeps recurring, and the counter gives us
+// a way to give up after enough attempts and surface the harness failure
+// page instead of hammering the GPU.
+let mainWindowRecoveryReloadAt = 0
+let mainWindowRecoveryReloadCount = 0
 const startInSafeMode = shouldStartInSafeMode(process.argv)
 
 function appendRendererPluginFailureLog(message: string): void {
@@ -203,6 +215,95 @@ function isDevelopmentBuild(): boolean {
 }
 
 const developmentBuild = isDevelopmentBuild()
+
+/**
+ * Record a renderer/GPU process loss in the harness log so the cause survives
+ * a restart. Without this, a black window after running for a while leaves
+ * nothing to diagnose — the desktop keeps the BrowserWindow alive and the
+ * user has to close it by hand with no breadcrumb in the log.
+ */
+function recordMainWindowRendererLoss(
+  source: 'render-process-gone' | 'did-fail-load' | 'unresponsive',
+  details: string
+): void {
+  if (!runtime) return
+  runtime.note(`[desktop] main window ${source}: ${details}`)
+}
+
+function reloadMainWindowAfterRendererLoss(window: BrowserWindow): void {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return
+  const now = Date.now()
+  if (!shouldReloadAfterMainWindowRendererLoss({
+    now,
+    lastReloadAt: mainWindowRecoveryReloadAt,
+    reloadCount: mainWindowRecoveryReloadCount
+  })) {
+    recordMainWindowRendererLoss(
+      'render-process-gone',
+      'reload throttled; surfacing harness failure instead'
+    )
+    const snapshot = runtime?.snapshot()
+    if (snapshot && runtime?.snapshot().phase === 'ready') {
+      // Reloading is failing on its own. Step the runtime back to 'failed' so
+      // the plugin-recovery page is shown and the user can recover without a
+      // hard restart.
+      void showPluginRecovery({
+        message: 'Harness web view stopped responding. Reload it to continue.',
+        logs: snapshot.logs
+      }).catch(showUnexpectedError)
+    }
+    return
+  }
+  mainWindowRecoveryReloadAt = now
+  mainWindowRecoveryReloadCount += 1
+  // Schedule a counter reset long after the cooldown so a single, isolated
+  // crash recovers cleanly while a sustained failure still trips the cap.
+  setTimeout(() => {
+    mainWindowRecoveryReloadCount = 0
+  }, MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS * 4).unref?.()
+  try {
+    void window.webContents.reload()
+  } catch (error) {
+    recordMainWindowRendererLoss(
+      'render-process-gone',
+      `reload threw: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
+function installMainWindowRendererRecovery(window: BrowserWindow): void {
+  const webContents = window.webContents
+  webContents.on('render-process-gone', (event, details) => {
+    // Take control: by default the window stays drawn but blank, which is
+    // exactly the black screen this recovery is meant to prevent.
+    event.preventDefault()
+    const reason = details?.reason ?? 'unknown'
+    const exitCode = details?.exitCode ?? -1
+    recordMainWindowRendererLoss('render-process-gone', `reason=${reason} exitCode=${exitCode}`)
+    reloadMainWindowAfterRendererLoss(window)
+  })
+  webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    // The harness web server is local; a failure to reach it is almost
+    // always the renderer dropping, not a real network error. Surface the
+    // failure and let the recovery path try to reload the page.
+    recordMainWindowRendererLoss(
+      'did-fail-load',
+      `errorCode=${errorCode} description=${errorDescription} url=${validatedURL}`
+    )
+    reloadMainWindowAfterRendererLoss(window)
+  })
+  webContents.on('unresponsive', () => {
+    // unresponsive fires before the renderer actually dies, so logging here
+    // gives a useful "the GPU froze here" breadcrumb for the next time
+    // the user has to recover the window.
+    recordMainWindowRendererLoss('unresponsive', 'main window webContents became unresponsive')
+  })
+  webContents.on('responsive', () => {
+    if (!runtime) return
+    runtime.note('[desktop] main window webContents became responsive again')
+  })
+}
 
 function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOptions {
   return {
@@ -521,6 +622,7 @@ function createWindow(): BrowserWindow {
   installPluginRecoveryNavigation(window)
   secureWindow(window)
   installContextMenu(window, harnessLocale)
+  installMainWindowRendererRecovery(window)
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
     if (windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
