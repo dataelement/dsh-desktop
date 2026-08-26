@@ -10,6 +10,7 @@ import {
   Menu,
   nativeTheme,
   shell,
+  Tray,
   utilityProcess,
   WebContentsView,
   type IpcMainInvokeEvent,
@@ -74,6 +75,7 @@ import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { windowsMenuViewBounds } from './windows-menu-view'
+import { shouldKeepRunningInBackground } from './close-to-tray'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
@@ -95,6 +97,7 @@ let windowsMenuView: WebContentsView | undefined
 let windowsMenuOpen = false
 let windowsMenuDark = false
 let mobileWindow: BrowserWindow | undefined
+let tray: Tray | undefined
 let runtime: HarnessRuntime
 let mobileBridge: LanMobileBridge
 let launchDirectory: string
@@ -475,6 +478,39 @@ function installPluginRecoveryNavigation(window: BrowserWindow): void {
   })
 }
 
+function restoreMainWindow(): void {
+  const window = mainWindow
+  if (window && !window.isDestroyed()) {
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+    return
+  }
+
+  const snapshot = runtime?.snapshot()
+  if (snapshot?.phase === 'ready' && snapshot.url) {
+    void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
+  } else if (snapshot?.phase === 'idle') {
+    void launchHarness().catch(showUnexpectedError)
+  }
+}
+
+function ensureTray(): void {
+  if (process.platform !== 'win32' || tray) return
+
+  const locale = harnessLocale()
+  tray = new Tray(desktopIconPath())
+  tray.setToolTip('DSH Desktop')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: locale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: restoreMainWindow },
+      { type: 'separator' },
+      { label: locale === 'zh' ? '退出' : 'Exit', click: () => app.quit() }
+    ])
+  )
+  tray.on('click', restoreMainWindow)
+}
+
 function createWindow(): BrowserWindow {
   const isWindows = process.platform === 'win32'
   const window = new BrowserWindow({
@@ -508,6 +544,11 @@ function createWindow(): BrowserWindow {
   } else if (isWindows) {
     window.setMenuBarVisibility(false)
   }
+  window.on('close', (event) => {
+    if (!shouldKeepRunningInBackground(process.platform, quitting)) return
+    event.preventDefault()
+    window.hide()
+  })
   window.on('page-title-updated', (event) => {
     event.preventDefault()
     window.setTitle('')
@@ -1465,6 +1506,7 @@ async function bootstrap(): Promise<void> {
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
   nativeTheme.themeSource = harnessThemePreference()
+  ensureTray()
   createWindow()
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),
