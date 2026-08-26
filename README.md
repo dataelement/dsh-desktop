@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  A local-first, cross-platform desktop shell for
+  A local-first, cross-platform desktop app for
   <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>.
 </p>
 
@@ -20,18 +20,18 @@
 
 ![DSH Desktop overview with portable presets, model providers, and phone control](docs/images/dsh-desktop-hero-v020.png)
 
-<p align="center"><strong>Beyond official DeepSeek models, DSH Desktop supports mainstream third-party model providers—with more DSH-powered desktop experiences coming soon.</strong></p>
+<p align="center"><strong>Use official DeepSeek models or mainstream third-party model providers, manage portable Agent presets, and continue your Harness sessions from your phone.</strong></p>
 
-DSH Desktop packages the local DeepSeek Harness web experience as a desktop application. It launches a local Harness instance automatically, manages a random loopback port, persists profiles, plugins, and sessions, and opens the full interface as soon as Harness is ready. Project workspaces are added and managed entirely in the Harness interface.
+DSH Desktop packages the local DeepSeek Harness experience as an installed desktop application. It starts Harness automatically, keeps profiles, plugins, workspaces, model settings, and sessions outside the application directory, and opens the full Harness interface as soon as the local runtime is ready.
 
 > [!IMPORTANT]
-> DSH Desktop is currently an early preview and depends on the rapidly evolving `@deepseek-ai/dsh@0.1.1-rc.2`. macOS releases are code-signed and notarized by Apple; current installers are distributed through the official website.
+> DSH Desktop is an early preview built on the rapidly evolving `@deepseek-ai/dsh@0.1.1-rc.2`. macOS releases are code-signed and notarized by Apple. Windows x64 installers are code-signed; Windows security warnings may still decrease gradually as the publisher builds download and installation reputation.
 
 ## Download
 
 Download DSH Desktop for macOS and Windows from the [official website](https://www.dshdesktop.com/#download).
 
-Installed macOS and Windows builds check for updates automatically after startup and every six hours. Updates download in the background and prompt you to restart when they are ready. You can also choose **Check for Updates…** from the application menu.
+Installed builds check for updates shortly after startup and every six hours. When a new version is available, DSH Desktop asks before downloading it; installation begins only after you choose **Restart and install**. You can also check manually from the application menu or skip one version without hiding future releases.
 
 ## Community
 
@@ -41,153 +41,77 @@ Installed macOS and Windows builds check for updates automatically after startup
   Prefer Discord? <a href="https://discord.gg/he2gAKCpj">Join the DSH Desktop Discord community</a>.
 </p>
 
-## Why this project exists
+## What DSH Desktop adds
 
-DeepSeek Harness already provides a complete agent runtime and Web UI. DSH Desktop does not reimplement Harness; it supplies the host capabilities needed for a desktop product:
+DeepSeek Harness already provides the Agent runtime and Web UI. DSH Desktop adds the native host capabilities needed for a practical desktop product:
 
-- Run without manually starting a CLI or managing local ports
-- Create an application-owned Harness launch directory automatically at startup
-- Add and manage project workspaces through Harness's built-in directory picker
-- Manage the Harness child process, readiness checks, logs, and shutdown in one place
-- Store profiles, plugins, and sessions outside the application installation directory so upgrades do not remove user data
-- Provide packaging entry points for macOS and Windows
-
-## Features
-
-- Opens directly into Harness without an additional landing page
-- Starts without an initial directory prompt by creating and reusing an internal launch directory
-- Offers retry, log viewing, and exit actions when Harness fails to start
-- Provides Harness menu actions for restarting the child process and viewing its log
-- Gracefully terminates the Harness child process when the desktop app exits
-- Listens only on a random `127.0.0.1` port for each launch
-- Removes Node.js privileges from the renderer and enables `contextIsolation`, sandboxing, and navigation restrictions
-- Uses the DSH brand logo consistently in the desktop window and Harness sidebar
+- Starts and stops Harness without requiring a separate CLI or browser tab
+- Uses the native system directory picker to add and manage project workspaces
+- Supports official DeepSeek models and mainstream third-party model providers
 - Imports and exports complete custom Agent presets as portable [`.dshpreset` packages](docs/preset-packages.md), with conflict checks and a trust warning before installation
-- Includes a production DSH app icon in macOS ICNS and Windows ICO formats
+- Preserves profiles, plugins, workspaces, sessions, and model settings across app upgrades
+- Detects startup and frontend plugin failures, keeps diagnostics in `harness.log`, and offers guided recovery actions
+- Provides a non-destructive Safe Mode that temporarily blocks third-party plugins
+- Lets a paired phone continue sessions over the local network or an optional temporary public tunnel
+- Checks for desktop updates and keeps download and installation under user control
+- Adapts native menus, titlebar behavior, window focus, theme, and application branding for macOS and Windows
 
-## Friends
+## Phone access
 
-[dsh-market](https://github.com/dsh-market/dsh-market) — the DeepSeek Harness plugin market: browse and search 900+ community plugins, preview screenshots, and install, update, enable or disable plugins, or switch themes with one click. Most plugins take effect instantly without a restart.
+Choose **Connect Phone…** from the `Harness` menu and scan the pairing code. The desktop asks you to approve the connection before the phone can access sessions.
 
-### Safe Mode
+Harness itself remains on a random `127.0.0.1` port. Phone access uses a separate paired bridge. It can stay on the local network or, when you choose remote access, use a temporary Cloudflare Quick Tunnel. Disconnecting the phone from the desktop invalidates the mobile session.
 
-If a third-party plugin interferes with normal use, choose **Restart as Safe Mode…** from the `Harness` menu. DSH Desktop starts Harness with an isolated profile containing only official core bundles, so the Agent, sessions, model settings, and workspaces remain available while third-party plugins from the normal web profile stay blocked. Use the Safe Mode banner to manage those plugins or return to a normal launch.
+## Safe Mode and recovery
 
-If the normal interface cannot be reached, launch DSH Desktop with `--safe-mode`. On macOS, for example:
+If a third-party plugin interferes with startup or rendering, DSH Desktop can identify the implicated plugin from runtime and frontend evidence and open a guided recovery surface.
+
+Choose **Restart as Safe Mode…** from the `Harness` menu to start an isolated profile containing only official core bundles. The Agent, sessions, model settings, and workspaces remain available while third-party plugins from the normal profile stay blocked. You can remove selected plugins or return to a normal launch from the Safe Mode banner.
+
+If the normal interface cannot be reached, start DSH Desktop with `--safe-mode`. On macOS:
 
 ```sh
 open -a "DSH Desktop" --args --safe-mode
 ```
 
-## Quick start
+## Local data and security
 
-### Requirements
+- The Harness Web UI is served only on a random loopback port.
+- The renderer has no Node.js privileges and uses context isolation and sandboxing.
+- Webviews, untrusted in-app navigation, and unexpected permission requests are blocked.
+- External web links open in the system browser.
+- User profiles and sessions live under Electron's per-user application data directory, not inside the installed app.
+- Phone access requires a short-lived pairing token and explicit desktop approval.
 
-- Node.js 22 or later
-- npm
-- macOS on Apple Silicon or Intel, or Windows x64
+## Platform support
 
-### Local development
+| Platform | Distribution | Status |
+| --- | --- | --- |
+| macOS Apple Silicon | Signed and notarized DMG/ZIP | Supported |
+| macOS Intel | Signed and notarized DMG/ZIP | Supported |
+| Windows x64 | Code-signed NSIS installer | Supported |
+| Windows ARM64 | — | Not currently supported |
+| Linux | — | Not currently supported |
 
-```bash
-git clone https://github.com/dataelement/dsh-desktop.git
-cd dsh-desktop
-npm install
-npm run dev
-```
+Harness includes target-native dependencies, so every release artifact is built on the matching operating system and architecture.
 
-`npm install` runs `patch-package` to reapply DSH Desktop's model-provider onboarding, preset package transfer, and sidebar branding, installs the brand asset, and then installs the Electron runtime.
+## Development and architecture
 
-### Quality checks
+Contributions are welcome. Start with the public engineering documentation:
 
-```bash
-npm test
-npm run typecheck
-npm run build
-```
+- [Development guide](docs/development.md) — setup, validation, patch maintenance, and target-native packaging
+- [Architecture](docs/architecture.md) — runtime flow, persistent data, security boundaries, recovery, mobile access, and updates
+- [Release runbook](docs/release-runbook.md) — signing and publication controls
+- [Preset package format](docs/preset-packages.md) — portable Agent preset contract
 
-### Packaging
+Before submitting a change, run `npm test`, `npm run typecheck`, and `npm run build`, then exercise the affected real application flow. Never include real API keys in issues, logs, screenshots, or test data.
 
-```bash
-# Generate unsigned DMG and ZIP artifacts for the current Mac architecture
-npm run package:mac
+## Friends
 
-# Run each command on a Mac or CI runner with the matching architecture
-npm run package:mac:arm64
-npm run package:mac:x64
-
-# Generate NSIS and Portable artifacts on a Windows x64 machine or runner
-npm run package:win
-```
-
-Harness includes architecture-specific native modules. Dependencies must be reinstalled and built on the matching platform for macOS ARM64, macOS Intel, and Windows x64. The architecture-specific scripts validate the current `platform/arch` before packaging to prevent artifacts that appear successful but are missing native dependencies.
-
-## Runtime architecture
-
-```text
-DSH Desktop (Electron Main)
-├── Application-owned launch directory
-├── Harness child-process lifecycle
-├── Random loopback port and readiness checks
-├── Native logging and recovery actions
-└── Hardened BrowserWindow
-     └── http://127.0.0.1:<random>  DeepSeek Harness Web UI
-
-Electron userData
-├── launch-root/
-├── logs/harness.log
-└── harness/
-    ├── profiles/
-    ├── sessions/
-    └── Plugins and user data
-```
-
-Harness runs in a separate Electron Node child process. The `--expose-internals` permission required by Cordis HMR is granted only to that child process and never to the web renderer.
-
-## Project structure
-
-```text
-src/main/             Electron main process, windows, and Harness lifecycle
-src/shared/           Shared runtime types
-patches/              Reproducible UI customizations for the pinned DSH version
-scripts/              Brand-asset installation and target-platform packaging checks
-test/                 Settings, runtime, security, and provider coverage tests
-build/                Application icon assets
-```
-
-## Current validation status
-
-- macOS Apple Silicon: development workflow, real Harness startup, DMG packaging, code signing, Apple notarization, and mounted artifact verified
-- macOS Intel: packaging configuration and platform checks provided; runtime verification still requires an Intel Mac or runner
-- Windows x64: NSIS/Portable configuration and platform checks provided; runtime verification still requires a Windows runner
-- Windows ARM64: not currently supported
-- Automatic updates: not yet integrated
-
-## Upstream version and patches
-
-The project currently pins `@deepseek-ai/dsh@0.1.1-rc.2`. The initial provider list and desktop preset-transfer surface are captured with [`patch-package`](https://github.com/ds300/patch-package) under [`patches/`](patches/) rather than relying on untracked changes in `node_modules`.
-
-When upgrading DSH:
-
-1. Verify the upstream Settings, Credentials, and Provider Directory contracts.
-2. Reapply or rewrite the customized onboarding interface.
-3. Regenerate the patch.
-4. Run regression checks against a real Harness startup and provider configuration flow.
-
-## Contributing
-
-Issues and pull requests are welcome. Before submitting a change, run at least:
-
-```bash
-npm test
-npm run typecheck
-npm run build
-```
-
-Never include real API keys in issues, logs, screenshots, or test data.
+[dsh-market](https://github.com/dsh-market/dsh-market) is the community plugin market for DeepSeek Harness. Browse and search plugins, preview screenshots, install or update packages, enable or disable plugins, and switch themes from the Harness interface.
 
 ## License
 
-This project is open source under the [MIT License](LICENSE).
+DSH Desktop is open source under the [MIT License](LICENSE).
 
-DeepSeek Harness and its dependencies remain subject to their respective upstream licenses and trademark policies. DSH Desktop is an independent community desktop wrapper.
+DeepSeek Harness and its dependencies remain subject to their respective upstream licenses and trademark policies. DSH Desktop is an independent community desktop application.

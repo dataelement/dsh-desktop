@@ -18,166 +18,97 @@
   <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-171513.svg" />
 </p>
 
-![Visão geral do DSH Desktop com Preset portáteis, provedores de modelos e controle pelo celular](docs/images/dsh-desktop-hero-v020.png)
+![DSH Desktop com Preset portáteis, provedores de modelos e controle pelo celular](docs/images/dsh-desktop-hero-v020.png)
 
-<p align="center"><strong>Além dos modelos oficiais da DeepSeek, o DSH Desktop oferece suporte aos principais provedores de modelos de terceiros. Mais experiências desktop baseadas em DSH chegarão em breve.</strong></p>
+<p align="center"><strong>Use modelos oficiais da DeepSeek ou provedores de terceiros populares, gerencie Agent Preset portáteis e continue suas sessões do Harness pelo celular.</strong></p>
 
-O DSH Desktop transforma a experiência web local do DeepSeek Harness em um aplicativo desktop. Ele inicia automaticamente uma instância local do Harness, gerencia uma porta de loopback aleatória, mantém Profile, plugins e sessões e abre a interface completa assim que o Harness está pronto. Os espaços de trabalho dos projetos são adicionados e gerenciados inteiramente pela interface do Harness.
+O DSH Desktop transforma a experiência local do DeepSeek Harness em um aplicativo desktop instalável. Ele inicia o Harness automaticamente, armazena Profile, plugins, espaços de trabalho, configurações de modelos e sessões fora do diretório do aplicativo e abre a interface completa quando o Runtime local está pronto.
 
 > [!IMPORTANT]
-> O DSH Desktop está atualmente em uma fase inicial de prévia e depende do `@deepseek-ai/dsh@0.1.1-rc.1`, que evolui rapidamente. As versões para macOS são assinadas e notarizadas pela Apple; os instaladores atuais são distribuídos pelo site oficial.
+> O DSH Desktop é uma versão inicial baseada no `@deepseek-ai/dsh@0.1.1-rc.2`, que evolui rapidamente. As versões para macOS são assinadas e notarizadas pela Apple. Os instaladores para Windows x64 também são assinados; os avisos de segurança do Windows podem diminuir gradualmente à medida que o editor acumula reputação de downloads e instalações.
 
 ## Download
 
 Baixe o DSH Desktop para macOS e Windows no [site oficial](https://www.dshdesktop.com/#download).
 
-As versões instaladas para macOS e Windows verificam atualizações automaticamente após a inicialização e a cada seis horas. As atualizações são baixadas em segundo plano e, quando ficam prontas, o aplicativo solicita uma reinicialização. Também é possível selecionar **Check for Updates…** no menu do aplicativo para verificar manualmente.
+As versões instaladas verificam atualizações logo após a inicialização e a cada seis horas. Quando há uma nova versão, o DSH Desktop pede confirmação antes do download; a instalação só começa ao escolher **Restart and install**. Também é possível verificar manualmente ou ignorar uma versão sem ocultar lançamentos futuros.
 
 ## Comunidade
 
 <p align="center">
-  Leia o código QR abaixo com o WeChat para entrar no grupo da comunidade do DSH Desktop.<br />
+  Leia o código QR abaixo com o WeChat para entrar no grupo do DSH Desktop.<br />
   <img src="docs/images/wechat-group-20260815.png" width="220" alt="Código QR do grupo do DSH Desktop no WeChat" /><br />
-  Prefere o Discord? <a href="https://discord.gg/he2gAKCpj">Entre na comunidade do DSH Desktop no Discord</a>.
+  Você também pode entrar na <a href="https://discord.gg/he2gAKCpj">comunidade do DSH Desktop no Discord</a>.
 </p>
 
-## Por que este projeto existe
+## O que o DSH Desktop acrescenta
 
-O DeepSeek Harness já oferece um Agent Runtime completo e uma Web UI. O DSH Desktop não reimplementa o Harness; ele fornece as capacidades de host necessárias para um produto desktop:
+O DeepSeek Harness já fornece o Agent Runtime e a Web UI. O DSH Desktop acrescenta os recursos nativos necessários para um produto desktop:
 
-- Executar sem iniciar manualmente uma CLI ou gerenciar portas locais
-- Criar automaticamente, na inicialização, um diretório de execução do Harness pertencente ao aplicativo
-- Adicionar e gerenciar espaços de trabalho por meio do seletor de diretórios integrado ao Harness
-- Gerenciar em um só lugar o processo filho do Harness, as verificações de prontidão, os logs e o encerramento
-- Armazenar Profile, plugins e sessões fora do diretório de instalação para que as atualizações não removam dados do usuário
-- Fornecer pontos de entrada para empacotamento no macOS e Windows
+- Inicia e encerra o Harness sem uma CLI separada ou outra aba do navegador
+- Usa o seletor de diretórios do sistema para adicionar e gerenciar espaços de trabalho
+- Oferece suporte aos modelos oficiais da DeepSeek e a provedores de terceiros populares
+- Importa e exporta Agent Preset completos como [pacotes `.dshpreset`](docs/preset-packages.md) portáteis
+- Preserva Profile, plugins, espaços de trabalho, sessões e configurações de modelos durante atualizações
+- Detecta falhas de inicialização e de plugins da interface, guarda diagnósticos e oferece recuperação guiada
+- Inclui um Modo de segurança não destrutivo que bloqueia temporariamente plugins de terceiros
+- Permite que um celular pareado continue sessões pela LAN ou por um túnel público temporário opcional
+- Verifica atualizações do aplicativo e mantém download e instalação sob controle do usuário
+- Adapta menus, barra de título, foco da janela, tema e marca para macOS e Windows
 
-## Recursos
+## Acesso pelo celular
 
-- Abre diretamente no Harness, sem uma página inicial adicional
-- Inicia sem solicitar um diretório inicial, criando e reutilizando um diretório interno de execução
-- Oferece opções de tentar novamente, visualizar logs e sair quando o Harness não consegue iniciar
-- Disponibiliza ações no menu do Harness para reiniciar o processo filho e visualizar seu log
-- Encerra corretamente o processo filho do Harness quando o aplicativo desktop é fechado
-- Escuta apenas em uma porta aleatória de `127.0.0.1` a cada inicialização
-- Remove os privilégios de Node.js do Renderer e ativa `contextIsolation`, sandbox e restrições de navegação
-- Usa o logotipo da marca DSH de forma consistente na janela desktop e na barra lateral do Harness
-- Importa e exporta Preset personalizados completos como [pacotes `.dshpreset`](docs/preset-packages.md) portáteis, com verificação de conflitos e aviso de confiança antes da instalação
-- Inclui um ícone de produção do DSH nos formatos ICNS do macOS e ICO do Windows
+Selecione **Connect Phone…** no menu `Harness` e leia o código. O desktop precisa aprovar explicitamente a conexão antes que o celular acesse as sessões.
+
+O Harness permanece em uma porta aleatória de `127.0.0.1`. O celular usa um Bridge separado e pareado: ele pode ficar restrito à rede local ou ativar um Cloudflare Quick Tunnel temporário para acesso remoto.
+
+## Modo de segurança e recuperação
+
+Se um plugin de terceiros impedir a inicialização ou a renderização, o DSH Desktop relaciona as evidências do Runtime e do frontend aos plugins instalados e abre uma recuperação guiada.
+
+Selecione **Restart as Safe Mode…** no menu `Harness` para iniciar um Profile isolado apenas com os Bundle oficiais principais. Os plugins externos do Profile normal ficam bloqueados, mas o Agent, as sessões, as configurações de modelos e os espaços de trabalho continuam disponíveis.
+
+Se a interface normal não abrir, inicie o aplicativo com `--safe-mode`. No macOS:
+
+```sh
+open -a "DSH Desktop" --args --safe-mode
+```
+
+## Dados locais e segurança
+
+- A Web UI do Harness é servida somente em uma porta de loopback aleatória.
+- O Renderer não tem privilégios de Node.js e usa Context Isolation e sandbox.
+- WebView, navegação interna não confiável e solicitações inesperadas de permissões são bloqueados.
+- Profile e sessões ficam nos dados de usuário do aplicativo, não no diretório de instalação.
+- O celular exige um Token de curta duração e aprovação explícita do desktop.
+
+## Plataformas compatíveis
+
+| Plataforma | Distribuição | Status |
+| --- | --- | --- |
+| macOS Apple Silicon | DMG/ZIP assinados e notarizados | Compatível |
+| macOS Intel | DMG/ZIP assinados e notarizados | Compatível |
+| Windows x64 | Instalador NSIS assinado | Compatível |
+| Windows ARM64 | — | Não compatível atualmente |
+| Linux | — | Não compatível atualmente |
+
+O Harness inclui dependências nativas, portanto cada artefato é compilado no sistema operacional e na arquitetura correspondentes.
+
+## Desenvolvimento e arquitetura
+
+- [Guia de desenvolvimento](docs/development.md) — configuração, validação, manutenção de patches e empacotamento nativo
+- [Arquitetura](docs/architecture.md) — Runtime, dados, segurança, recuperação, celular e atualizações
+- [Guia de lançamento](docs/release-runbook.md) — assinatura e controles de publicação
+- [Formato de pacote Preset](docs/preset-packages.md) — contrato de Agent Preset portátil
+
+Antes de enviar alterações, execute `npm test`, `npm run typecheck` e `npm run build`, e teste o fluxo afetado no aplicativo real. Nunca inclua chaves de API reais em Issue, logs, capturas de tela ou dados de teste.
 
 ## Projetos amigos
 
-[dsh-market](https://github.com/dsh-market/dsh-market) — o mercado de plugins do DeepSeek Harness: navegue e pesquise entre mais de 900 plugins da comunidade, veja capturas de tela e instale, atualize, ative ou desative plugins, ou altere temas com um clique. A maioria das mudanças entra em vigor imediatamente, sem reinicialização.
-
-## Início rápido
-
-### Requisitos
-
-- Node.js 22 ou posterior
-- npm
-- macOS em Apple Silicon ou Intel, ou Windows x64
-
-### Desenvolvimento local
-
-```bash
-git clone https://github.com/dataelement/dsh-desktop.git
-cd dsh-desktop
-npm install
-npm run dev
-```
-
-O `npm install` executa o `patch-package` para reaplicar a configuração inicial de provedores de modelos, a transferência de pacotes Preset e a identidade visual da barra lateral do DSH Desktop; depois, instala os recursos da marca e o Electron Runtime.
-
-### Verificações de qualidade
-
-```bash
-npm test
-npm run typecheck
-npm run build
-```
-
-### Empacotamento
-
-```bash
-# Gerar artefatos DMG e ZIP não assinados para a arquitetura atual do Mac
-npm run package:mac
-
-# Executar cada comando em um Mac ou CI Runner com a arquitetura correspondente
-npm run package:mac:arm64
-npm run package:mac:x64
-
-# Gerar artefatos NSIS e Portable em uma máquina ou Runner Windows x64
-npm run package:win
-```
-
-O Harness inclui módulos nativos específicos de arquitetura. As dependências devem ser reinstaladas e compiladas na plataforma correspondente para macOS ARM64, macOS Intel e Windows x64. Os scripts específicos de arquitetura validam o `platform/arch` atual antes do empacotamento para impedir artefatos que parecem ter sido criados corretamente, mas não incluem as dependências nativas.
-
-## Arquitetura de execução
-
-```text
-DSH Desktop (Electron Main)
-├── Diretório de execução pertencente ao aplicativo
-├── Ciclo de vida do processo filho do Harness
-├── Porta de loopback aleatória e verificações de prontidão
-├── Logs nativos e ações de recuperação
-└── BrowserWindow reforçada
-     └── http://127.0.0.1:<random>  DeepSeek Harness Web UI
-
-Electron userData
-├── launch-root/
-├── logs/harness.log
-└── harness/
-    ├── profiles/
-    ├── sessions/
-    └── Plugins e dados do usuário
-```
-
-O Harness é executado em um processo filho independente do Electron Node. A permissão `--expose-internals`, necessária para o Cordis HMR, é concedida apenas a esse processo filho e nunca ao Web Renderer.
-
-## Estrutura do projeto
-
-```text
-src/main/             Processo principal do Electron, janelas e ciclo de vida do Harness
-src/shared/           Tipos compartilhados do ambiente de execução
-patches/              Personalizações reproduzíveis de UI para a versão fixada do DSH
-scripts/              Instalação de recursos da marca e verificações de empacotamento por plataforma
-test/                 Testes de configurações, execução, segurança e provedores
-build/                Recursos do ícone do aplicativo
-```
-
-## Status atual de validação
-
-- macOS Apple Silicon: fluxo de desenvolvimento, inicialização real do Harness, empacotamento DMG, assinatura de código, notarização da Apple e artefato montado verificados
-- macOS Intel: configuração de empacotamento e verificações de plataforma disponíveis; a validação em execução ainda requer um Intel Mac ou Runner
-- Windows x64: configuração NSIS/Portable e verificações de plataforma disponíveis; a validação em execução ainda requer um Windows Runner
-- Windows ARM64: não compatível no momento
-- Atualizações automáticas: ainda não integradas
-
-## Versão upstream e patches
-
-O projeto fixa atualmente `@deepseek-ai/dsh@0.1.1-rc.1`. A lista inicial de provedores e a interface desktop de transferência de Preset são mantidas com o [`patch-package`](https://github.com/ds300/patch-package) em [`patches/`](patches/), em vez de depender de alterações não rastreadas em `node_modules`.
-
-Ao atualizar o DSH:
-
-1. Verifique os contratos upstream de Settings, Credentials e Provider Directory.
-2. Reaplique ou reescreva a interface de integração personalizada.
-3. Gere novamente o patch.
-4. Execute verificações de regressão com uma inicialização real do Harness e o fluxo de configuração de provedores.
-
-## Contribuição
-
-Issue e Pull Request são bem-vindos. Antes de enviar uma alteração, execute pelo menos:
-
-```bash
-npm test
-npm run typecheck
-npm run build
-```
-
-Nunca inclua chaves de API reais em Issue, logs, capturas de tela ou dados de teste.
+[dsh-market](https://github.com/dsh-market/dsh-market) é o mercado comunitário de plugins do DeepSeek Harness. No Harness, você pode pesquisar e visualizar plugins, instalar ou atualizar pacotes, ativá-los ou desativá-los e mudar temas.
 
 ## Licença
 
-Este projeto é open source sob a [licença MIT](LICENSE).
+O DSH Desktop é distribuído sob a [Licença MIT](LICENSE).
 
-O DeepSeek Harness e suas dependências continuam sujeitos às respectivas licenças upstream e políticas de marcas. O DSH Desktop é um aplicativo desktop independente criado pela comunidade.
+O DeepSeek Harness e suas dependências continuam sujeitos às respectivas licenças e políticas de marcas. O DSH Desktop é um aplicativo desktop comunitário independente.
