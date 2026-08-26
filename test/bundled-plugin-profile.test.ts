@@ -55,6 +55,41 @@ afterEach(() => {
 })
 
 describe('bundled Sherlock plugin profile', () => {
+  it('uses the formal profile as the exact six-plugin release baseline', async () => {
+    const policy = JSON.parse(
+      await readFile(
+        path.resolve(import.meta.dirname, '..', 'build', 'sherlock-bundled-plugins.json'),
+        'utf8'
+      )
+    ) as { plugins: string[]; runtimePackages: string[] }
+    const preparation = await readFile(
+      path.resolve(import.meta.dirname, '..', 'scripts', 'prepare-bundled-plugin-profile.mjs'),
+      'utf8'
+    )
+
+    expect(policy.plugins).toEqual([
+      '@huanlin/dsh-plugin-better-sidebar-plugin-office',
+      '@vectorize-io/hindsight-coding-agents',
+      'dsh-better-sidebar',
+      'dsh-file-drop',
+      'dsh-memory-evolve',
+      'dshmarket'
+    ])
+    expect(policy.plugins).not.toContain('dsh-update-checker')
+    expect(policy.runtimePackages).toEqual([
+      'dsh-desktop-market-installer',
+      'dsh-web-search-session-model'
+    ])
+    expect(preparation).toContain("'sherlock-desktop'")
+    expect(preparation).not.toContain("'dsh-desktop-dev'")
+    expect(preparation).toContain("path.join(projectRoot, 'packages', packageName)")
+    expect(preparation).toContain('runtimePackages')
+    expect(preparation).toContain('sourceManifest.dsh?.sherlock?.plugins')
+    expect(preparation).toContain("'.credentials.yaml'")
+    expect(preparation).toContain("'settings.yaml'")
+    expect(preparation).toContain("part.startsWith('.env.')")
+  })
+
   it('installs the packaged profile for a fresh user without touching model credentials', async () => {
     const root = await temporaryDirectory('sherlock-bundled-profile-fresh')
     const bundledProfilePath = await makeBundledProfile(root)

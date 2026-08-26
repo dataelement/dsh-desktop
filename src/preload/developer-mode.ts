@@ -9,8 +9,23 @@ export const DEVELOPER_SETTINGS_SECTION_IDS = [
   'market',
   'better-sidebar'
 ] as const
+export const DEVELOPER_CONVERSATION_VIEW_IDS = [
+  'memory-files',
+  'skills-hub',
+  'todos-hub',
+  'coi-hub',
+  'broadcast-hub',
+  'prompt-hub',
+  'canvas-hub',
+  'memory-sync-hub',
+  'models-hub',
+  'bookmarks-hub',
+  'ui-settings-hub',
+  'settings-hub'
+] as const
 
 const developerSettingsSectionIds = new Set<string>(DEVELOPER_SETTINGS_SECTION_IDS)
+const developerConversationViewIds = new Set<string>(DEVELOPER_CONVERSATION_VIEW_IDS)
 
 type DeveloperModeStorage = {
   getItem(key: string): string | null
@@ -31,14 +46,15 @@ type SettingsSectionRow = {
   hidden: boolean
 }
 
-type ConversationTab = {
+type ConversationViewTab = {
   dataset: {
+    conversationViewId?: string
     sherlockDeveloperTab?: string
   }
   hidden: boolean
-  textContent: string | null
-  getAttribute(name: string): string | null
-  click(): void
+  textContent?: string | null
+  getAttribute?(name: string): string | null
+  click?(): void
 }
 
 const developerConversationTabLabels = [
@@ -48,15 +64,17 @@ const developerConversationTabLabels = [
   /^(?:🔴\s*)?Memory Evolve (?:设置|Settings)$/u
 ]
 
-function normalizedTabLabel(tab: ConversationTab): string {
+function normalizedTabLabel(tab: ConversationViewTab): string {
   return (tab.textContent ?? '').replace(/\s+/gu, ' ').trim()
 }
 
-function isConversationChatTab(tab: ConversationTab): boolean {
-  return /^(?:对话|Chat)$/u.test(normalizedTabLabel(tab))
+function isConversationChatTab(tab: ConversationViewTab): boolean {
+  return tab.dataset.conversationViewId === 'chat' || /^(?:对话|Chat)$/u.test(normalizedTabLabel(tab))
 }
 
-function isDeveloperConversationTab(tab: ConversationTab): boolean {
+function isDeveloperConversationTab(tab: ConversationViewTab): boolean {
+  const id = tab.dataset.conversationViewId
+  if (id !== undefined && developerConversationViewIds.has(id)) return true
   const label = normalizedTabLabel(tab)
   return developerConversationTabLabels.some((pattern) => pattern.test(label))
 }
@@ -125,19 +143,16 @@ export function setDeveloperSettingsVisibility(
 }
 
 export function setDeveloperConversationTabsVisibility(
-  tabs: Iterable<ConversationTab>,
+  tabs: Iterable<ConversationViewTab>,
   developerModeEnabled: boolean
 ): void {
   const conversationTabs = [...tabs]
-  const chatTab = conversationTabs.find(isConversationChatTab)
-  if (chatTab === undefined) return
-
   const developerTabs = conversationTabs.filter(isDeveloperConversationTab)
   if (
     !developerModeEnabled &&
-    developerTabs.some((tab) => tab.getAttribute('aria-selected') === 'true')
+    developerTabs.some((tab) => tab.getAttribute?.('aria-selected') === 'true')
   ) {
-    chatTab.click()
+    conversationTabs.find(isConversationChatTab)?.click?.()
   }
 
   for (const tab of developerTabs) {

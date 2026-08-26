@@ -17,7 +17,6 @@ const keychainPassword = 'temporary-keychain-password'
 const certificatePassword = 'temporary-certificate-password'
 let originalKeychains = []
 let keychainCreated = false
-let certificateTrusted = false
 
 function parseKeychains(stdout) {
   return stdout
@@ -95,17 +94,6 @@ try {
     keychain
   ])
   await run('/usr/bin/security', [
-    'add-trusted-cert',
-    '-r',
-    'trustRoot',
-    '-p',
-    'codeSign',
-    '-k',
-    keychain,
-    certificate
-  ])
-  certificateTrusted = true
-  await run('/usr/bin/security', [
     'list-keychains',
     '-d',
     'user',
@@ -115,10 +103,11 @@ try {
   ])
 
   const identities = await run('/usr/bin/security', [
-    'find-identity',
-    '-v',
-    '-p',
-    'codesigning',
+    'find-certificate',
+    '-a',
+    '-Z',
+    '-c',
+    'Sherlock Update Fixture',
     keychain
   ])
   if (process.env.SHERLOCK_SIGNING_DEBUG === '1') {
@@ -133,10 +122,8 @@ try {
     ])
     console.error(`[identity]\n${identities.stdout.trim()}\n[certificate]\n${certificateDetails.stdout.trim()}`)
   }
-  const identity = /^\s*\d+\)\s+([0-9A-F]{40})\s+"Sherlock Update Fixture"/m.exec(
-    identities.stdout
-  )?.[1]
-  if (!identity) throw new Error('Temporary self-signed code-signing identity is not valid.')
+  const identity = /^SHA-1 hash:\s*([0-9A-F]{40})$/m.exec(identities.stdout)?.[1]
+  if (!identity) throw new Error('Temporary self-signed code-signing certificate is unavailable.')
 
   await Promise.all([copyFile('/usr/bin/true', first), copyFile('/usr/bin/true', second)])
   for (const binary of [first, second]) {
@@ -172,9 +159,6 @@ try {
       '-s',
       ...originalKeychains
     ]).catch(() => {})
-  }
-  if (certificateTrusted) {
-    await run('/usr/bin/security', ['remove-trusted-cert', certificate]).catch(() => {})
   }
   if (keychainCreated) {
     await run('/usr/bin/security', ['delete-keychain', keychain]).catch(() => {})

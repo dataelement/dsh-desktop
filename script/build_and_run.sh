@@ -8,64 +8,71 @@ cd "$project_root"
 mode="${1:---run}"
 machine_arch="$(uname -m)"
 if [ "$machine_arch" = "arm64" ]; then
-  dev_app="$project_root/dist-dev/mac-arm64/Sherlock Dev.app"
   formal_app="$project_root/dist-notarized/mac-arm64/Sherlock.app"
 else
-  dev_app="$project_root/dist-dev/mac/Sherlock Dev.app"
   formal_app="$project_root/dist-notarized/mac/Sherlock.app"
 fi
-dev_executable="$dev_app/Contents/MacOS/Sherlock Dev"
+formal_executable="$formal_app/Contents/MacOS/Sherlock"
 
-stop_development_app() {
+stop_sherlock_apps() {
   pkill -x 'Sherlock Dev' 2>/dev/null || true
+  pkill -x 'Sherlock' 2>/dev/null || true
 }
 
-build_development_app() {
-  stop_development_app
-  npm run package:dev:dir
-  test -x "$dev_executable" || {
-    echo "Sherlock Dev executable was not built at: $dev_executable" >&2
+build_formal_app() {
+  stop_sherlock_apps
+  npm run package:formal:dir
+  test -x "$formal_executable" || {
+    echo "Sherlock executable was not built at: $formal_executable" >&2
     exit 1
   }
+  codesign --verify --deep --strict --verbose=2 "$formal_app"
 }
 
-open_development_app() {
-  open "$dev_app"
+open_formal_app() {
+  open -na "$formal_app"
 }
 
 case "$mode" in
   --run)
-    build_development_app
-    open_development_app
+    build_formal_app
+    open_formal_app
     ;;
   --verify)
-    build_development_app
-    open_development_app
-    for _attempt in $(seq 1 60); do
-      if pgrep -x 'Sherlock Dev' >/dev/null; then
-        echo 'Sherlock Dev is running.'
-        exit 0
+    build_formal_app
+    open_formal_app
+    stable_checks=0
+    for _attempt in $(seq 1 80); do
+      if pgrep -x 'Sherlock' >/dev/null; then
+        stable_checks=$((stable_checks + 1))
+        if [ "$stable_checks" -ge 4 ]; then
+          echo 'Sherlock is running.'
+          exit 0
+        fi
+      else
+        stable_checks=0
       fi
       sleep 0.5
     done
-    echo 'Sherlock Dev did not stay running.' >&2
+    echo 'Sherlock did not stay running.' >&2
     exit 1
     ;;
   --debug)
-    build_development_app
-    exec /usr/bin/lldb -- "$dev_executable"
+    build_formal_app
+    exec /usr/bin/lldb -- "$formal_executable"
     ;;
   --logs)
-    build_development_app
-    open_development_app
-    exec /usr/bin/log stream --style compact --predicate 'process == "Sherlock Dev"'
+    build_formal_app
+    open_formal_app
+    exec /usr/bin/log stream --style compact --predicate 'process == "Sherlock"'
     ;;
   --telemetry)
-    build_development_app
-    open_development_app
-    exec /usr/bin/log stream --style compact --predicate 'subsystem == "io.dsh.desktop.dev"'
+    build_formal_app
+    open_formal_app
+    exec /usr/bin/log stream --style compact --predicate 'subsystem == "com.evanarts.sherlock"'
     ;;
   --formal)
+    stop_sherlock_apps
     test "$machine_arch" = "arm64" || {
       echo 'The local formal release currently supports Apple Silicon only.' >&2
       exit 1

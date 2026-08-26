@@ -7,6 +7,7 @@ import {
   rename,
   rm,
   stat,
+  symlink,
   writeFile
 } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -33,21 +34,30 @@ function cloneJson(value) {
 export function rewriteLocalPluginReferences(manifest, sourceCustomRoot, targetCustomRoot) {
   const result = cloneJson(manifest)
   const dependencies = result.dependencies ?? {}
-  const sourcePrefix = `file:${sourceCustomRoot}${path.sep}`
 
   for (const [name, specifier] of Object.entries(dependencies)) {
-    if (typeof specifier !== 'string' || !specifier.startsWith(sourcePrefix)) continue
-    dependencies[name] = `file:${targetCustomRoot}${path.sep}${specifier.slice(sourcePrefix.length)}`
+    if (typeof specifier !== 'string') continue
+    const protocol = ['file:', 'link:'].find((candidate) =>
+      specifier.startsWith(`${candidate}${sourceCustomRoot}${path.sep}`)
+    )
+    if (!protocol) continue
+    const sourcePrefix = `${protocol}${sourceCustomRoot}${path.sep}`
+    dependencies[name] = `${protocol}${targetCustomRoot}${path.sep}${specifier.slice(sourcePrefix.length)}`
   }
 
   return result
 }
 
 function localPluginDirectories(manifest, customRoot) {
-  const prefix = `file:${customRoot}${path.sep}`
   return Object.entries(manifest.dependencies ?? {})
-    .filter((entry) => typeof entry[1] === 'string' && entry[1].startsWith(prefix))
-    .map(([name, specifier]) => ({ name, directory: specifier.slice('file:'.length) }))
+    .map(([name, specifier]) => {
+      if (typeof specifier !== 'string') return undefined
+      const protocol = ['file:', 'link:'].find((candidate) =>
+        specifier.startsWith(`${candidate}${customRoot}${path.sep}`)
+      )
+      return protocol ? { name, directory: specifier.slice(protocol.length) } : undefined
+    })
+    .filter(Boolean)
 }
 
 async function copyTree(source, target) {
@@ -86,6 +96,15 @@ async function rewriteStagedProfile(profileDirectory, sourceCustomRoot, targetCu
   }
 
   return rewritten
+}
+
+async function relinkLocalPlugins(profileDirectory, manifest, targetCustomRoot) {
+  for (const { name, directory } of localPluginDirectories(manifest, targetCustomRoot)) {
+    const pluginLink = path.join(profileDirectory, 'node_modules', name)
+    await rm(pluginLink, { recursive: true, force: true })
+    await mkdir(path.dirname(pluginLink), { recursive: true })
+    await symlink(directory, pluginLink, process.platform === 'win32' ? 'junction' : 'dir')
+  }
 }
 
 export async function syncHarnessPluginProfile({
@@ -149,6 +168,7 @@ export async function syncHarnessPluginProfile({
       sourceCustom,
       targetCustom
     )
+    await relinkLocalPlugins(stagedProfile, stagedManifest, targetCustom)
 
     if (await pathExists(targetProfile)) {
       await mkdir(path.dirname(backupProfile), { recursive: true })
@@ -217,7 +237,7 @@ export function resolveSyncEndpoints(direction, appDataRoot = applicationSupport
   if (!DIRECTIONS.has(direction)) {
     throw new Error('Use formal-to-dev or dev-to-formal.')
   }
-  const formal = path.join(appDataRoot, 'dsh-desktop')
+  const formal = path.join(appDataRoot, 'sherlock-desktop')
   const development = path.join(appDataRoot, 'dsh-desktop-dev')
   return direction === 'formal-to-dev'
     ? { sourceUserData: formal, targetUserData: development }

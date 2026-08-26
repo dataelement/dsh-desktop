@@ -11,7 +11,7 @@ const defaultSourceProfile = path.join(
   homedir(),
   'Library',
   'Application Support',
-  'dsh-desktop-dev',
+  'sherlock-desktop',
   'harness',
   'profiles',
   'web'
@@ -92,19 +92,20 @@ async function main() {
     readFile(policyPath, 'utf8').then(JSON.parse),
     readFile(sourceManifestPath, 'utf8').then(JSON.parse)
   ])
-  const sourcePlugins = Object.keys(sourceManifest.dependencies ?? {})
+  const sourcePlugins =
+    sourceManifest.dsh?.sherlock?.plugins ?? Object.keys(sourceManifest.dependencies ?? {})
   const sourceBundles = sourceManifest.dsh?.profile?.bundles ?? []
 
   if (!sameSet(sourcePlugins, policy.plugins)) {
     throw new Error(
-      `Sherlock Dev plugin set differs from the release policy.\nDev: ${sourcePlugins.join(', ')}\nPolicy: ${policy.plugins.join(', ')}`
+      `Sherlock formal plugin set differs from the release policy.\nFormal: ${sourcePlugins.join(', ')}\nPolicy: ${policy.plugins.join(', ')}`
     )
   }
   if (!sameList(sourceBundles, policy.bundles)) {
-    throw new Error('Sherlock Dev bundle order differs from the release policy.')
+    throw new Error('Sherlock formal bundle order differs from the release policy.')
   }
   if (!sourcePlugins.includes('dsh-file-drop')) {
-    throw new Error('Sherlock Dev is missing dsh-file-drop, which provides the attachment button.')
+    throw new Error('Sherlock formal is missing dsh-file-drop, which provides the attachment button.')
   }
 
   const buildRoot = path.dirname(outputPath)
@@ -130,11 +131,27 @@ async function main() {
       dependencies[packageName] = `file:${relativeVendorPath}`
     }
 
+    for (const packageName of policy.runtimePackages) {
+      const packageSource = path.join(projectRoot, 'packages', packageName)
+      const relativeVendorPath = vendorRelativePath(packageName)
+      const vendorPath = path.join(stagedProfile, ...relativeVendorPath.split('/'))
+      await mkdir(path.dirname(vendorPath), { recursive: true })
+      await copyInstalledPlugin(packageSource, vendorPath)
+      const copiedManifest = JSON.parse(await readFile(path.join(vendorPath, 'package.json'), 'utf8'))
+      if (copiedManifest.name !== packageName) {
+        throw new Error(`Sherlock runtime package name mismatch for ${packageName}: ${copiedManifest.name}`)
+      }
+      dependencies[packageName] = `file:${relativeVendorPath}`
+    }
+
     const stagedManifest = {
       name: 'dsh-profile-web',
       private: true,
       dependencies,
-      dsh: { profile: { bundles: [...policy.bundles] } }
+      dsh: {
+        profile: { bundles: [...policy.bundles] },
+        sherlock: { plugins: [...policy.plugins] }
+      }
     }
     await Promise.all([
       writeFile(
@@ -167,10 +184,13 @@ async function main() {
       if (typeof patch !== 'string') throw new Error(`${packageName} is not a DSH bundle.`)
       await lstat(path.join(packagePath, patch))
     }
+    for (const packageName of policy.runtimePackages) {
+      await lstat(path.join(stagedProfile, 'node_modules', packageName, 'package.json'))
+    }
     await validatePortableTree(stagedProfile)
 
     // electron-builder excludes directory segments named node_modules from extraResources.
-    // Ship the already-installed offline tree under a neutral name and restore it on first launch.
+    // Ship the installed offline tree under a neutral name and restore it on first launch.
     await rename(path.join(stagedProfile, 'node_modules'), path.join(stagedProfile, 'modules'))
 
     for (const name of ['package.json', 'pnpm-lock.yaml']) {
@@ -184,6 +204,8 @@ async function main() {
     await rename(stagedProfile, outputPath)
     console.log(`Prepared bundled Sherlock plugin profile with ${policy.plugins.length} plugins.`)
     for (const packageName of policy.plugins) console.log(`- ${packageName}`)
+    console.log(`Included ${policy.runtimePackages.length} Sherlock runtime packages.`)
+    for (const packageName of policy.runtimePackages) console.log(`- ${packageName}`)
   } finally {
     await rm(stageRoot, { recursive: true, force: true })
   }

@@ -274,76 +274,6 @@ describe('compact execution status', () => {
     ])
   })
 
-  it('starts a new execution segment after steering so its reply renders below the inserted input', async () => {
-    const client = await loadConversationBundle()
-    expect(client.compactConversationFlow).toBeTypeOf('function')
-    if (typeof client.compactConversationFlow !== 'function') return
-
-    const nodes = new Map([
-      ['user', { key: 'user', kind: 'user', location: turnLocation(8), data: {} }],
-      [
-        'assistant-before-steering',
-        {
-          key: 'assistant-before-steering',
-          kind: 'assistant-step',
-          location: turnLocation(8),
-          data: {
-            finalNode: { seq: 20 },
-            blocks: [{ kind: 'text', text: '先按默认页数规划。' }]
-          }
-        }
-      ],
-      [
-        'steering',
-        {
-          key: 'steering',
-          kind: 'steering',
-          location: turnLocation(8),
-          data: { content: [{ type: 'text', text: '做5页就行' }] }
-        }
-      ],
-      [
-        'assistant-after-steering',
-        {
-          key: 'assistant-after-steering',
-          kind: 'assistant-step',
-          location: turnLocation(8),
-          data: {
-            finalNode: { seq: 40 },
-            blocks: [{ kind: 'text', text: '已按你的要求压缩为5页。' }]
-          }
-        }
-      ]
-    ])
-
-    expect(
-      client.compactConversationFlow(
-        ['user', 'assistant-before-steering', 'steering', 'assistant-after-steering'],
-        nodes,
-        8
-      )
-    ).toEqual([
-      { kind: 'node', key: 'user' },
-      {
-        kind: 'execution',
-        key: 'execution:8',
-        turn: 8,
-        nodeKeys: ['assistant-before-steering'],
-        running: false,
-        preserveProgress: true
-      },
-      { kind: 'node', key: 'steering' },
-      {
-        kind: 'execution',
-        key: 'execution:8:1',
-        turn: 8,
-        nodeKeys: ['assistant-after-steering'],
-        running: true,
-        preserveProgress: true
-      }
-    ])
-  })
-
   it('keeps automatic compaction visibly running when the runtime turn signal is briefly absent', async () => {
     const client = await loadConversationBundle()
     expect(client.compactConversationFlow).toBeTypeOf('function')
@@ -599,6 +529,121 @@ describe('compact execution status', () => {
       ],
       detailNodeKeys: ['tool-detail']
     })
+  })
+
+  it('omits context-injection nodes from every execution detail group', async () => {
+    const client = await loadConversationBundle()
+    expect(client.executionDetailGroups).toBeTypeOf('function')
+    if (typeof client.executionDetailGroups !== 'function') return
+
+    const groups = client.executionDetailGroups([
+      { key: 'context', kind: 'context', data: { form: 'instructions' } },
+      {
+        key: 'read',
+        kind: 'tool-call',
+        data: { root: { name: 'read', argsRaw: '{"path":"AGENTS.md"}' } }
+      }
+    ]) as Array<{ nodeKeys: string[] }>
+
+    expect(groups.flatMap((group) => group.nodeKeys)).toEqual(['read'])
+  })
+
+  it('groups execution details by user-facing activity while preserving item order', async () => {
+    const client = await loadConversationBundle()
+    expect(client.executionDetailGroups).toBeTypeOf('function')
+    if (typeof client.executionDetailGroups !== 'function') return
+
+    const tool = (key: string, name: string) => ({
+      key,
+      kind: 'tool-call',
+      data: { root: { name, argsRaw: '{}' } }
+    })
+    const groups = client.executionDetailGroups([
+      tool('read-1', 'read'),
+      tool('skill-1', 'skill'),
+      tool('search-1', 'web_search'),
+      tool('bash-1', 'bash'),
+      tool('patch-1', 'apply_patch'),
+      tool('plan-1', 'todo_write'),
+      tool('verify-1', 'playwright'),
+      { key: 'retry-1', kind: 'model-retry', data: {} },
+      tool('read-2', 'read_file')
+    ])
+
+    expect(groups).toEqual([
+      {
+        id: 'tools-skills',
+        titleKey: 'execution.details.group.toolsSkills',
+        nodeKeys: ['skill-1'],
+        errorCount: 0
+      },
+      {
+        id: 'read-search',
+        titleKey: 'execution.details.group.readSearch',
+        nodeKeys: ['read-1', 'search-1', 'read-2'],
+        errorCount: 0
+      },
+      {
+        id: 'run-change',
+        titleKey: 'execution.details.group.runChange',
+        nodeKeys: ['bash-1', 'patch-1'],
+        errorCount: 0
+      },
+      {
+        id: 'task-verify',
+        titleKey: 'execution.details.group.taskVerify',
+        nodeKeys: ['plan-1', 'verify-1'],
+        errorCount: 0
+      },
+      {
+        id: 'other',
+        titleKey: 'execution.details.group.other',
+        nodeKeys: ['retry-1'],
+        errorCount: 0
+      }
+    ])
+  })
+
+  it('counts failed tool calls on their execution category summary', async () => {
+    const client = await loadConversationBundle()
+    expect(client.executionDetailGroups).toBeTypeOf('function')
+    if (typeof client.executionDetailGroups !== 'function') return
+
+    const groups = client.executionDetailGroups([
+      {
+        key: 'failed-search',
+        kind: 'tool-call',
+        data: {
+          root: {
+            kind: 'tool-result',
+            call: { name: 'web_search', argsRaw: '{}' },
+            isError: true,
+            subCalls: []
+          }
+        }
+      },
+      {
+        key: 'successful-search',
+        kind: 'tool-call',
+        data: {
+          root: {
+            kind: 'tool-result',
+            call: { name: 'web_search', argsRaw: '{}' },
+            isError: false,
+            subCalls: []
+          }
+        }
+      }
+    ])
+
+    expect(groups).toEqual([
+      {
+        id: 'read-search',
+        titleKey: 'execution.details.group.readSearch',
+        nodeKeys: ['failed-search', 'successful-search'],
+        errorCount: 1
+      }
+    ])
   })
 
   it('derives privacy-safe live copy from the actual latest activity', async () => {

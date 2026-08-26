@@ -2,6 +2,9 @@ node_modules/
 out/
 dist/
 dist-dev/
+dist-legacy/
+dist-notarized/
+dist-release/
 release-assets/
 release-cloudflare/
 .playwright-cli/

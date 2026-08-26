@@ -48,6 +48,7 @@ import {
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
 import { developerModeArgument } from '../shared/developer-mode'
+import { appVersionArgument } from '../shared/app-info'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { resolveDesktopIdentity } from './app-identity'
 import { migrateLegacyUserData } from './app-data-migration'
@@ -237,10 +238,11 @@ function configureAppIdentity(): void {
         appVersion: app.getVersion()
       })
       if (result.installed) {
-        console.info(`[desktop] installed ${result.plugins.length} bundled Sherlock plugins`)
+        console.info('[desktop] installed bundled Sherlock plugin profile', result.plugins)
       }
     } catch (error) {
-      console.error('[desktop] failed to install the bundled Sherlock plugin profile', error)
+      console.error('[desktop] failed to install bundled Sherlock plugin profile', error)
+      throw error
     }
   }
 }
@@ -443,7 +445,10 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       preload: join(import.meta.dirname, '../preload/index.cjs'),
-      additionalArguments: [developerModeArgument(isDeveloperModeEnabled(app.getPath('userData')))],
+      additionalArguments: [
+        developerModeArgument(isDeveloperModeEnabled(app.getPath('userData'))),
+        appVersionArgument(app.getVersion())
+      ],
       sandbox: true,
       webSecurity: true
     }

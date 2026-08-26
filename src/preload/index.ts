@@ -1,8 +1,10 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { UpdateStatus } from '../shared/contracts'
 import { developerModeEnabledFromArguments } from '../shared/developer-mode'
+import { appVersionFromArguments } from '../shared/app-info'
 import { createSherlockAboutBridge } from './about-info'
 import {
+  DEVELOPER_CONVERSATION_VIEW_IDS,
   DEVELOPER_SETTINGS_SECTION_IDS,
   DeveloperModeController,
   developerModeNoticeText,
@@ -13,6 +15,7 @@ import { isPluginLoadError } from './plugin-error-view'
 import { mountDesktopShellStyles } from './shell-style'
 import { SidebarUpdateControl } from './sidebar-update-control'
 import { mountNativeThemeSync, mountWindowsTitlebar } from './windows-titlebar'
+import { safePathForFile } from './research-file-path'
 
 const DEVELOPER_MODE_STYLE_ID = 'sherlock-developer-mode-style'
 const DEVELOPER_MODE_NOTICE_ID = 'sherlock-developer-mode-notice'
@@ -107,13 +110,13 @@ contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker', {
 })
 
 function initializeUi(): void {
+  mountDeveloperModeUi()
   if (process.platform === 'win32') {
     mountWindowsTitlebar({ document, ipcRenderer, locale })
   } else if (process.platform === 'darwin') {
     mountNativeThemeSync({ document, ipcRenderer })
     mountDesktopShellStyles(document)
   }
-  mountDeveloperModeUi()
   sidebarUpdateControl.mount()
   checkBootFailureInDom()
   domObserver.observe(document.documentElement, {
@@ -139,11 +142,20 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 contextBridge.exposeInMainWorld(
+  'sherlockDesktopInfo',
+  Object.freeze({
+    name: 'Sherlock',
+    version: appVersionFromArguments(process.argv)
+  })
+)
+
+contextBridge.exposeInMainWorld(
   'dshDesktop',
   Object.freeze({
     restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart'),
     showItemInFolder: (path: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('filesystem:show-item-in-folder', path)
+      ipcRenderer.invoke('filesystem:show-item-in-folder', path),
+    getPathForFile: (file: File): string => safePathForFile(file, webUtils.getPathForFile)
   })
 )
 
@@ -188,6 +200,10 @@ function mountDeveloperModeUi(): void {
         (id) =>
           `html:not([data-sherlock-developer-mode="true"]) [data-settings-section-id="${id}"]`
       ),
+      ...DEVELOPER_CONVERSATION_VIEW_IDS.map(
+        (id) =>
+          `html:not([data-sherlock-developer-mode="true"]) [data-conversation-view-id="${id}"]`
+      ),
       'html:not([data-sherlock-developer-mode="true"]) [data-sherlock-developer-tab="true"]'
     ].join(',\n')} { display: none !important; }`
     document.documentElement.appendChild(style)
@@ -197,17 +213,14 @@ function mountDeveloperModeUi(): void {
 }
 
 function syncDeveloperModeVisibility(): void {
-  setDeveloperSettingsVisibility(
-    document.querySelectorAll<HTMLElement>('[data-settings-section-id]'),
+  const settingsRows = document.querySelectorAll<HTMLElement>('[data-settings-section-id]')
+  setDeveloperSettingsVisibility(settingsRows, developerMode.isEnabled())
+  setDeveloperConversationTabsVisibility(
+    document.querySelectorAll<HTMLElement>(
+      '[data-conversation-view-id], [role="tablist"] > [role="tab"]'
+    ),
     developerMode.isEnabled()
   )
-
-  for (const tabList of document.querySelectorAll<HTMLElement>('[role="tablist"]')) {
-    setDeveloperConversationTabsVisibility(
-      tabList.querySelectorAll<HTMLElement>(':scope > [role="tab"]'),
-      developerMode.isEnabled()
-    )
-  }
 }
 
 function showDeveloperModeNotice(enabled: boolean): void {

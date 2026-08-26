@@ -8,6 +8,10 @@
     "dsh-memory-evolve",
     "dshmarket"
   ],
+  "runtimePackages": [
+    "dsh-desktop-market-installer",
+    "dsh-web-search-session-model"
+  ],
   "bundles": [
     "@deepseek-ai/dsh-base",
     "@deepseek-ai/dsh-web-app",

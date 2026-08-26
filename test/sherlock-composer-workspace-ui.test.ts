@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
-import { Window } from 'happy-dom'
+import { Window, type Element as HappyDOMElement, type Event as HappyDOMEvent } from 'happy-dom'
 import { describe, expect, it } from 'vitest'
 
 type ClientBundle = Record<string, unknown>
@@ -14,6 +14,15 @@ const { createElement } = requireModule('react') as {
 }
 const { renderToStaticMarkup } = requireModule('react-dom/server') as {
   renderToStaticMarkup: (node: unknown) => string
+}
+const { act } = requireModule('react') as {
+  act: (callback: () => void | Promise<void>) => Promise<void>
+}
+const { createRoot } = requireModule('react-dom/client') as {
+  createRoot: (container: unknown) => {
+    render(node: unknown): void
+    unmount(): void
+  }
 }
 
 type BundleDescriptor = {
@@ -38,9 +47,13 @@ function fakeModule(): unknown {
 
 async function loadClientBundle(
   packageName: string,
-  dshDesktop?: { showItemInFolder(path: string): Promise<{ ok: boolean }> },
+  dshDesktop?: {
+    showItemInFolder?(path: string): Promise<{ ok: boolean }>
+    getPathForFile?(file: File): string
+  },
   options?: {
     document?: unknown
+    window?: Window
     modules?: Record<string, unknown>
     styles?: InjectedStyle[]
   }
@@ -74,16 +87,20 @@ async function loadClientBundle(
         }
       })
 
-  runInNewContext(source, {
-    window: {
-      dshDesktop,
-      __ModuleLoader__: {
-        load(value: BundleDescriptor) {
-          descriptor = value
-        }
+  const bundleWindow = options?.window ?? {}
+  Object.assign(bundleWindow, {
+    dshDesktop,
+    __ModuleLoader__: {
+      load(value: BundleDescriptor) {
+        descriptor = value
       }
-    },
-    document: styleDocument
+    }
+  })
+
+  runInNewContext(source, {
+    window: bundleWindow,
+    document: styleDocument,
+    localStorage: options?.window?.localStorage
   })
   if (descriptor === undefined) throw new Error(`${packageName} did not register its client bundle`)
 
@@ -95,7 +112,64 @@ async function loadClientBundle(
   })
 }
 
+function installBrowserGlobals(browserWindow: Window): () => void {
+  const keys = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'] as const
+  const descriptors = new Map(keys.map((key) => [
+    key,
+    Object.getOwnPropertyDescriptor(globalThis, key)
+  ]))
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: browserWindow },
+    document: { configurable: true, value: browserWindow.document },
+    navigator: { configurable: true, value: browserWindow.navigator },
+    IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true }
+  })
+  return () => {
+    for (const key of keys) {
+      const descriptor = descriptors.get(key)
+      if (descriptor === undefined) delete (globalThis as Record<string, unknown>)[key]
+      else Object.defineProperty(globalThis, key, descriptor)
+    }
+  }
+}
+
+function dispatchDrag(
+  browserWindow: Window,
+  target: HappyDOMElement,
+  type: string,
+  dataTransfer: {
+    types: string[]
+    files: Array<{ name: string; type: string }>
+    getData(type: string): string
+    dropEffect: string
+  },
+  point = { x: 120, y: 90 }
+): HappyDOMEvent {
+  const event = new browserWindow.Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperties(event, {
+    dataTransfer: { value: dataTransfer },
+    clientX: { value: point.x },
+    clientY: { value: point.y }
+  })
+  target.dispatchEvent(event)
+  return event
+}
+
 describe('Sherlock workspace and composer controls', () => {
+  it('opens details for the selected Inspect call while preserving trajectory', async () => {
+    const source = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js',
+      'utf8'
+    )
+
+    expect(source).toContain(`inspectCall: (callId) => {
+\t\t\t\t\t\t\tactions.select({ callId });
+\t\t\t\t\t\t\tlayout.openDetails();
+\t\t\t\t\t\t\tactions.setInspect({ callId });
+\t\t\t\t\t\t\tactions.setView("trajectory");
+\t\t\t\t\t\t}`)
+  })
+
   it('omits the Session log button from the conversation header', async () => {
     const primitives = new Proxy(
       {
@@ -349,6 +423,26 @@ describe('Sherlock workspace and composer controls', () => {
     expect(registrations[0]?.component).toBe(client.ResearchCanvas)
   })
 
+  it('marks conversation tabs with their stable view id for desktop visibility gates', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.conversationViewTabProps).toBeTypeOf('function')
+    if (typeof client.conversationViewTabProps !== 'function') return
+
+    const selected: string[] = []
+    const props = client.conversationViewTabProps(
+      { id: 'memory-files', label: '记忆' },
+      'research',
+      (id: string) => selected.push(id)
+    ) as Record<string, unknown>
+
+    expect(props['data-conversation-view-id']).toBe('memory-files')
+    expect(props['aria-selected']).toBe(false)
+    expect(props.children).toBe('记忆')
+    expect(props.onClick).toBeTypeOf('function')
+    if (typeof props.onClick === 'function') props.onClick()
+    expect(selected).toEqual(['memory-files'])
+  })
+
   it('renders theme-aware light and dark dotted research surfaces', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
@@ -380,6 +474,138 @@ describe('Sherlock workspace and composer controls', () => {
     expect(browserWindow.getComputedStyle(canvas).backgroundColor).toBe(
       'rgb(23, 25, 29)'
     )
+  })
+
+  it('renders a compact file card inside the transformed Research world layer', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.ResearchCanvasFileCard).toBeTypeOf('function')
+    expect(client.researchCanvasContentTransform).toBeTypeOf('function')
+    if (typeof client.ResearchCanvasFileCard !== 'function' ||
+        typeof client.researchCanvasContentTransform !== 'function') return
+    const FileCard = client.ResearchCanvasFileCard as ComponentType<{
+      node: {
+        id: string
+        path: string
+        name: string
+        mediaType: string
+        source: string
+        x: number
+        y: number
+      }
+    }>
+
+    const html = renderToStaticMarkup(createElement(FileCard, {
+      node: {
+        id: 'file-1', path: '/w/report.pdf', name: 'report.pdf',
+        mediaType: 'application/pdf', source: 'computer', x: 120, y: 80
+      }
+    }))
+
+    expect(html).toContain('data-research-file-card="file-1"')
+    expect(html).toContain('report.pdf')
+    expect(html).not.toContain('/w/report.pdf</')
+    expect(client.researchCanvasContentTransform({ scale: 1.5, x: 30, y: -10 }))
+      .toBe('translate(30px, -10px) scale(1.5)')
+  })
+
+  it('owns accepted drops at the canvas root and restores their cards by session', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      getPathForFile: () => '/tmp/report.pdf'
+    }, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    expect(client.ResearchCanvas).toBeTypeOf('function')
+    if (typeof client.ResearchCanvas !== 'function') {
+      restoreGlobals()
+      return
+    }
+    const ResearchCanvas = client.ResearchCanvas as ComponentType<{
+      sessionId: string
+      t: (key: string) => string
+    }>
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    let documentDragovers = 0
+    let documentDrops = 0
+    browserWindow.document.addEventListener('dragover', () => { documentDragovers += 1 })
+    browserWindow.document.addEventListener('drop', () => { documentDrops += 1 })
+
+    try {
+      await act(async () => {
+        root.render(createElement(ResearchCanvas, {
+          sessionId: 'session-drop',
+          t: () => '研究画布'
+        }))
+      })
+      const canvas = host.querySelector('[data-research-canvas]')
+      expect(canvas).not.toBeNull()
+      if (canvas === null) return
+      const unrecognized = {
+        types: ['text/plain'], files: [], getData: () => '', dropEffect: 'none'
+      }
+      const invalidFiles = {
+        types: ['Files'], files: [], getData: () => '', dropEffect: 'none'
+      }
+      const accepted = {
+        types: ['Files'],
+        files: [{ name: 'report.pdf', type: 'application/pdf' }],
+        getData: () => '',
+        dropEffect: 'none'
+      }
+
+      const unrecognizedOver = dispatchDrag(
+        browserWindow, canvas, 'dragover', unrecognized
+      )
+      expect(unrecognizedOver.defaultPrevented).toBe(false)
+      expect(documentDragovers).toBe(1)
+
+      const acceptedEnter = dispatchDrag(
+        browserWindow, canvas, 'dragenter', accepted
+      )
+      expect(acceptedEnter.defaultPrevented).toBe(true)
+      expect(canvas.getAttribute('data-file-drop-active')).toBe('true')
+      const acceptedOver = dispatchDrag(
+        browserWindow, canvas, 'dragover', accepted
+      )
+      expect(acceptedOver.defaultPrevented).toBe(true)
+      expect(accepted.dropEffect).toBe('copy')
+      expect(documentDragovers).toBe(1)
+
+      const invalidDrop = dispatchDrag(
+        browserWindow, canvas, 'drop', invalidFiles
+      )
+      expect(invalidDrop.defaultPrevented).toBe(false)
+      expect(documentDrops).toBe(1)
+
+      await act(async () => {
+        const acceptedDrop = dispatchDrag(
+          browserWindow, canvas, 'drop', accepted
+        )
+        expect(acceptedDrop.defaultPrevented).toBe(true)
+      })
+      expect(documentDrops).toBe(1)
+      expect(canvas.hasAttribute('data-file-drop-active')).toBe(false)
+      expect(host.querySelector('[data-research-file-card]')?.textContent)
+        .toContain('report.pdf')
+
+      await act(async () => { root.unmount() })
+      const remount = createRoot(host)
+      await act(async () => {
+        remount.render(createElement(ResearchCanvas, {
+          sessionId: 'session-drop',
+          t: () => '研究画布'
+        }))
+      })
+      expect(host.querySelector('[data-research-file-card]')?.textContent)
+        .toContain('report.pdf')
+      await act(async () => { remount.unmount() })
+    } finally {
+      restoreGlobals()
+    }
   })
 
   it('keeps the dotted research canvas visible behind the floating composer', async () => {
@@ -429,6 +655,9 @@ describe('Sherlock workspace and composer controls', () => {
       '.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}'
     )
     expect(researchCss).toContain('.rScV5Q_root:focus{outline:none}')
+    expect(researchCss).toContain('[data-file-drop-active=true]')
+    expect(researchCss).toContain('.rScV5Q_fileCard')
+    expect(researchCss).toContain('body[data-ds-dark-theme] .rScV5Q_fileCard')
   })
 
   it('ignores wheel zoom when Command is not held', async () => {

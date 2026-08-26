@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   constants,
   cpSync,
@@ -9,7 +10,6 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs'
-import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 const RECEIPT_FILENAME = 'bundled-plugin-profile.json'
@@ -29,7 +29,10 @@ export interface BundledPluginProfileInstallResult {
 
 interface ProfileManifest {
   dependencies?: Record<string, string>
-  dsh?: { profile?: { bundles?: string[] } }
+  dsh?: {
+    profile?: { bundles?: string[] }
+    sherlock?: { plugins?: string[] }
+  }
 }
 
 interface InstallReceipt {
@@ -95,7 +98,7 @@ export function installBundledPluginProfile(
   if (!existsSync(bundledManifestPath)) return { installed: false, plugins: [] }
 
   const manifest = readJson<ProfileManifest>(bundledManifestPath)
-  const plugins = Object.keys(manifest.dependencies ?? {})
+  const plugins = manifest.dsh?.sherlock?.plugins ?? Object.keys(manifest.dependencies ?? {})
   const bundles = manifest.dsh?.profile?.bundles
   if (!Array.isArray(bundles) || !bundles.includes('dsh-file-drop')) {
     throw new Error('The packaged Sherlock plugin profile is missing its attachment bundle.')
