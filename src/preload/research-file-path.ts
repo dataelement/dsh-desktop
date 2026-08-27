@@ -7,6 +7,7 @@ export type ResearchPreviewIdentity = {
 
 export type ResearchPreviewDescriptor = {
   authorizationId: string
+  capabilityToken: string
   url: string
   contentType: string
   name: string
@@ -57,6 +58,12 @@ export function createResearchPreviewBridge(
     },
     restore(value: ResearchPreviewIdentity & { authorizationId: string }) {
       return invoke('research:preview:restore', value) as Promise<ResearchPreviewDescriptor | null>
+    },
+    release(value: ResearchPreviewIdentity & {
+      authorizationId: string
+      capabilityToken: string
+    }) {
+      return invoke('research:preview:release', value) as Promise<{ ok: boolean }>
     },
     revokeNode(identity: ResearchPreviewIdentity) {
       return invoke('research:preview:revoke-node', identity) as Promise<{ ok: boolean }>

@@ -66,6 +66,14 @@ async function loadClientBundle(
       getItem(key: string): string | null
       setItem(key: string, value: string): void
     }
+    researchPreview?: {
+      admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
+      admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
+      restore?(value: { sessionId: string; nodeId: string; authorizationId: string }): Promise<Record<string, string> | null>
+      release?(value: { sessionId: string; nodeId: string; authorizationId: string; capabilityToken: string }): Promise<{ ok: boolean }>
+      revokeNode?(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
+      revokeSession?(sessionId: string): Promise<{ ok: boolean }>
+    }
   },
   options?: {
     document?: unknown
@@ -142,6 +150,16 @@ async function loadClientBundle(
     if (id === 'react') return react
     if (id === 'react/jsx-runtime') return jsxRuntime
     if (id === 'react-dom') return requireModule('react-dom')
+    if (id === '@deepseek-ai/dsh-client-ui-primitives') {
+      const fallback = fakeModule() as object
+      return new Proxy({
+        MarkdownText: ({ text }: { text: string }) => createElement('div', null, text)
+      }, {
+        get(target, property) {
+          return Reflect.get(target, property) ?? Reflect.get(fallback, property)
+        }
+      })
+    }
     return fakeModule()
   })
 }
@@ -672,6 +690,18 @@ async function mountResearchCanvas(options: {
     getItem(key: string): string | null
     setItem(key: string, value: string): void
   }
+  dshDesktop?: {
+    getPathForFile?(file: File): string
+    researchPreview?: {
+      admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
+      admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
+      restore?(value: { sessionId: string; nodeId: string; authorizationId: string }): Promise<Record<string, string> | null>
+      release?(value: { sessionId: string; nodeId: string; authorizationId: string; capabilityToken: string }): Promise<{ ok: boolean }>
+      revokeNode?(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
+      revokeSession?(sessionId: string): Promise<{ ok: boolean }>
+    }
+  }
+  modules?: Record<string, unknown>
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const { sessionId } = options
@@ -689,9 +719,10 @@ async function mountResearchCanvas(options: {
     JSON.stringify(options.selection ?? { selectedNodeIds: [], orderedFileIds: [] })
   )
   const restoreGlobals = installBrowserGlobals(browserWindow)
-  const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+  const client = await loadClientBundle('dsh-client-ui-conversation', options.dshDesktop, {
     document: browserWindow.document,
-    window: browserWindow
+    window: browserWindow,
+    modules: options.modules
   })
   const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
     for(id: string): {
@@ -702,6 +733,9 @@ async function mountResearchCanvas(options: {
         viewport: { scale: number; x: number; y: number }
       }
       setViewport(viewport: { scale: number; x: number; y: number }): void
+      setCanvasSize(value: { width: number; height: number }): void
+      setSelection(value: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
+      selectedFiles(): Array<Record<string, unknown>>
     }
   }
   const researchWorkspaces = new Registry(storage as Storage)
@@ -1691,6 +1725,343 @@ describe('Sherlock workspace and composer controls', () => {
     expect(html).not.toContain('/w/report.pdf</')
     expect(client.researchCanvasContentTransform({ scale: 1.5, x: 30, y: -10 }))
       .toBe('translate(30px, -10px) scale(1.5)')
+  })
+
+  it('renders assistant-result source through production MarkdownText and auto-sizes only before manual resize', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const observed: Array<{ target: HappyDOMElement; callback: () => void; disconnected: boolean }> = []
+    class TestResizeObserver {
+      private readonly record: { target: HappyDOMElement; callback: () => void; disconnected: boolean }
+      constructor(callback: () => void) {
+        this.record = { target: browserWindow.document.body, callback, disconnected: false }
+        observed.push(this.record)
+      }
+      observe(target: HappyDOMElement) { this.record.target = target }
+      disconnect() { this.record.disconnected = true }
+    }
+    Object.defineProperty(browserWindow, 'ResizeObserver', {
+      configurable: true,
+      value: TestResizeObserver
+    })
+    const markdown = '\n## Finding\n\n- one\n- two\n\n```js\nanswer()\n```\n'
+    const renderedMarkdown: string[] = []
+    const primitives = new Proxy({
+      MarkdownText: ({ text }: { text: string }) => {
+        renderedMarkdown.push(text)
+        return createElement('div', { 'data-production-markdown': '' }, text)
+      }
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    try {
+      const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+        document: browserWindow.document,
+        window: browserWindow,
+        modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
+      })
+      const Card = client.ResearchCanvasArtifactCard as ComponentType<Record<string, unknown>>
+      const host = browserWindow.document.createElement('div')
+      browserWindow.document.body.appendChild(host)
+      const root = createRoot(host)
+      const heights: number[] = []
+      const autoNode = {
+        id: 'artifact-markdown', kind: 'assistant-result', messageId: 'm1',
+        title: '助手回复', excerpt: markdown, x: 100, y: 100,
+        width: 360, height: 240, sizeMode: 'auto'
+      }
+      await act(async () => {
+        root.render(createElement(Card, {
+          node: autoNode,
+          onAutoHeight: (_node: unknown, height: number) => heights.push(height)
+        }))
+      })
+      const body = host.querySelector('[data-research-artifact-content]') as HappyDOMElement | null
+      expect(body).not.toBeNull()
+      if (body === null) return
+      Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 301.4 })
+      await act(async () => { observed.at(-1)?.callback() })
+
+      expect(renderedMarkdown).toContain(markdown)
+      expect(host.querySelector('[data-production-markdown]')?.textContent).toBe(markdown)
+      expect(heights.at(-1)).toBe(333)
+
+      await act(async () => {
+        root.render(createElement(Card, {
+          node: { ...autoNode, height: 160, sizeMode: 'manual' },
+          onAutoHeight: (_node: unknown, height: number) => heights.push(height)
+        }))
+      })
+      expect(observed.at(-1)?.disconnected).toBe(true)
+      expect(browserWindow.getComputedStyle(
+        host.querySelector('[data-research-preview-body]') as HappyDOMElement
+      ).overflowY).toBe('auto')
+      expect(host.querySelector('[data-production-markdown]')?.textContent).toBe(markdown)
+      await act(async () => { root.unmount() })
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  it('mounts only near-viewport capability images, restores on re-entry, and releases the exact token offscreen', async () => {
+    const releases: Array<Record<string, string>> = []
+    const restores: Array<Record<string, string>> = []
+    const revocations: Array<Record<string, string>> = []
+    let tokenSequence = 0
+    let cleaned = false
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-image-lifecycle',
+      files: [{
+        id: 'image-1', name: 'revenue.png', source: 'computer',
+        authorizationId: 'authorization-1', contentType: 'image/png',
+        x: 200, y: 200, width: 320, height: 272, sizeMode: 'auto', aspectRatio: 4 / 3
+      }],
+      dshDesktop: {
+        researchPreview: {
+          async restore(value) {
+            restores.push(value)
+            tokenSequence += 1
+            return {
+              authorizationId: value.authorizationId,
+              capabilityToken: `capability-${tokenSequence}`,
+              url: `sherlock-preview://capability-${tokenSequence}/revenue.png`,
+              contentType: 'image/png',
+              name: 'revenue.png'
+            }
+          },
+          async release(value) {
+            releases.push(value)
+            return { ok: true }
+          },
+          async revokeNode(value) { revocations.push(value); return { ok: true } },
+          async revokeSession(sessionId) {
+            revocations.push({ sessionId, nodeId: 'session-revocation' })
+            return { ok: true }
+          }
+        }
+      }
+    })
+    try {
+      const { host, workspace } = mounted
+      await act(async () => {
+        ;(workspace as unknown as { setCanvasSize(value: { width: number; height: number }): void })
+          .setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve()
+      })
+      const image = host.querySelector('[data-research-image-preview]') as HappyDOMElement | null
+      expect(image).not.toBeNull()
+      expect(image?.getAttribute('src')).toBe('sherlock-preview://capability-1/revenue.png')
+      if (image === null) return
+      const viewportBeforeWheel = workspace.getSnapshot().viewport
+      image.dispatchEvent(new mounted.browserWindow.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, deltaY: 120
+      }))
+      expect(workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+      Object.defineProperties(image, {
+        naturalWidth: { configurable: true, value: 1600 },
+        naturalHeight: { configurable: true, value: 900 }
+      })
+      await act(async () => {
+        image.dispatchEvent(new mounted.browserWindow.Event('load', { bubbles: false }))
+      })
+      expect(workspace.getSnapshot().files[0]).toMatchObject({
+        authorizationId: 'authorization-1', contentType: 'image/png',
+        width: 320, height: 212, aspectRatio: 16 / 9
+      })
+
+      await act(async () => { workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
+      expect(host.querySelector('[data-research-image-preview]')).toBeNull()
+      expect(host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
+      expect(releases).toEqual([{
+        sessionId: 'session-image-lifecycle', nodeId: 'image-1',
+        authorizationId: 'authorization-1', capabilityToken: 'capability-1'
+      }])
+
+      await act(async () => {
+        workspace.setViewport({ scale: 1, x: 0, y: 0 })
+        await Promise.resolve()
+      })
+      expect(restores).toHaveLength(2)
+      expect(host.querySelector('[data-research-image-preview]')?.getAttribute('src'))
+        .toBe('sherlock-preview://capability-2/revenue.png')
+      await mounted.cleanup()
+      cleaned = true
+      expect(releases.at(-1)).toEqual({
+        sessionId: 'session-image-lifecycle', nodeId: 'image-1',
+        authorizationId: 'authorization-1', capabilityToken: 'capability-2'
+      })
+      expect(revocations).toEqual([])
+    } finally {
+      if (!cleaned) await mounted.cleanup()
+    }
+  })
+
+  it('admits only matching Better Sidebar preview identities and leaves mismatches generic', async () => {
+    const admissions: Array<Record<string, string>> = []
+    const releases: Array<Record<string, string>> = []
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-sidebar-drop',
+      dshDesktop: {
+        researchPreview: {
+          async admitSidebarFile(value) {
+            admissions.push(value)
+            return {
+              authorizationId: 'authorization-sidebar', capabilityToken: 'capability-sidebar',
+              url: 'sherlock-preview://capability-sidebar/', contentType: 'image/png',
+              name: 'chart.png'
+            }
+          },
+          async release(value) { releases.push(value); return { ok: true } },
+          async restore() { return null }
+        }
+      }
+    })
+    try {
+      const transfer = (sessionId: string, name = 'chart.png') => ({
+        types: ['application/x-sherlock-file'], files: [], dropEffect: 'none',
+        getData: () => JSON.stringify({
+          path: `/workspace/charts/${name}`, name,
+          sessionId, relativePath: `charts/${name}`
+        })
+      })
+      await act(async () => {
+        dispatchDrag(mounted.browserWindow, mounted.canvas, 'drop', transfer('session-sidebar-drop'))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      const admittedNode = mounted.workspace.getSnapshot().files[0]
+      expect(admissions).toEqual([{
+        sessionId: 'session-sidebar-drop', nodeId: admittedNode?.id,
+        relativePath: 'charts/chart.png'
+      }])
+      expect(admittedNode).toMatchObject({
+        authorizationId: 'authorization-sidebar', contentType: 'image/png',
+        path: '/workspace/charts/chart.png', width: 320
+      })
+      expect(releases[0]).toEqual({
+        sessionId: 'session-sidebar-drop', nodeId: admittedNode?.id,
+        authorizationId: 'authorization-sidebar', capabilityToken: 'capability-sidebar'
+      })
+
+      await act(async () => {
+        dispatchDrag(mounted.browserWindow, mounted.canvas, 'drop', transfer('other-session', 'other.png'), { x: 500, y: 200 })
+        await Promise.resolve()
+      })
+      expect(admissions).toHaveLength(1)
+      const mismatch = mounted.workspace.getSnapshot().files.find(
+        (node: Record<string, unknown>) => node.x === 500
+      )
+      expect(mismatch).toMatchObject({ name: 'other.png', width: 220, height: 64 })
+      expect(mismatch).not.toHaveProperty('authorizationId')
+
+      await act(async () => {
+        dispatchDrag(mounted.browserWindow, mounted.canvas, 'drop', {
+          types: ['application/x-sherlock-file'], files: [], dropEffect: 'none',
+          getData: () => JSON.stringify({
+            path: '/workspace/charts/legacy.png', name: 'legacy.png'
+          })
+        }, { x: 700, y: 200 })
+        await Promise.resolve()
+      })
+      expect(admissions).toHaveLength(1)
+      const legacy = mounted.workspace.getSnapshot().files.find(
+        (node: Record<string, unknown>) => node.x === 700
+      )
+      expect(legacy).toMatchObject({ name: 'legacy.png', width: 220, height: 64 })
+      expect(legacy).not.toHaveProperty('authorizationId')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('generates a Finder node id before admission and durably revokes that node on Delete', async () => {
+    const admissions: Array<{ file: File; identity: Record<string, string> }> = []
+    const revocations: Array<Record<string, string>> = []
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-finder-drop',
+      dshDesktop: {
+        getPathForFile: () => '/workspace/diagram.svg',
+        researchPreview: {
+          async admitFinderFile(file, identity) {
+            admissions.push({ file, identity })
+            return {
+              authorizationId: 'authorization-finder', capabilityToken: 'capability-finder',
+              url: 'sherlock-preview://capability-finder/', contentType: 'image/svg+xml',
+              name: 'diagram.svg'
+            }
+          },
+          async release() { return { ok: true } },
+          async restore() { return null },
+          async revokeNode(value) { revocations.push(value); return { ok: true } }
+        }
+      }
+    })
+    try {
+      const file = { name: 'diagram.svg', type: 'image/svg+xml' } as File
+      await act(async () => {
+        dispatchDrag(mounted.browserWindow, mounted.canvas, 'drop', {
+          types: ['Files'], files: [file], dropEffect: 'none', getData: () => ''
+        })
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      const node = mounted.workspace.getSnapshot().files[0]
+      expect(node?.id).toBeTypeOf('string')
+      if (typeof node?.id !== 'string') return
+      expect(admissions).toEqual([{ file, identity: {
+        sessionId: 'session-finder-drop', nodeId: node.id
+      } }])
+      expect(node).toMatchObject({
+        name: 'diagram.svg', authorizationId: 'authorization-finder',
+        contentType: 'image/svg+xml', width: 320
+      })
+      expect(node).toMatchObject({ path: '/workspace/diagram.svg' })
+      mounted.workspace.setSelection({ selectedNodeIds: [node.id], orderedFileIds: [node.id] })
+      expect(mounted.workspace.selectedFiles()).toMatchObject([{
+        id: node?.id, name: 'diagram.svg', path: '/workspace/diagram.svg'
+      }])
+      const prompt = (mounted.client.serializeResearchPrompt as (
+        files: Array<Record<string, unknown>>, text: string
+      ) => string)(mounted.workspace.selectedFiles(), 'inspect')
+      expect((mounted.client.parseResearchPrompt as (value: string) => {
+        files: Array<Record<string, unknown>>
+      })(prompt).files).toMatchObject([{
+        id: node?.id, name: 'diagram.svg', path: '/workspace/diagram.svg'
+      }])
+
+      await act(async () => {
+        dispatchDrag(mounted.browserWindow, mounted.canvas, 'drop', {
+          types: ['Files'], files: [file], dropEffect: 'none', getData: () => ''
+        }, { x: 640, y: 260 })
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      const redropped = mounted.workspace.getSnapshot().files[0]
+      expect(redropped?.id).toBeTypeOf('string')
+      if (typeof redropped?.id !== 'string') return
+      expect(admissions).toHaveLength(1)
+      expect(mounted.workspace.getSnapshot().files).toHaveLength(1)
+      expect(redropped).toMatchObject({
+        id: node?.id, authorizationId: 'authorization-finder',
+        x: 640, y: 260
+      })
+
+      mounted.workspace.setSelection({ selectedNodeIds: [redropped.id], orderedFileIds: [redropped.id] })
+      ;(mounted.canvas as unknown as { focus(): void }).focus()
+      await act(async () => {
+        mounted.browserWindow.dispatchEvent(new mounted.browserWindow.KeyboardEvent('keydown', {
+          key: 'Delete', code: 'Delete', bubbles: true, cancelable: true
+        }))
+      })
+      expect(revocations).toEqual([{
+        sessionId: 'session-finder-drop', nodeId: redropped?.id
+      }])
+      expect(mounted.workspace.getSnapshot().files).toEqual([])
+    } finally {
+      await mounted.cleanup()
+    }
   })
 
   it('selects the focused Research file card with Enter', async () => {

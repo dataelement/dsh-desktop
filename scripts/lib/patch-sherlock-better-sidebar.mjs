@@ -4,7 +4,8 @@ import path from 'node:path'
 const PATCH_MARKER = '/* sherlock:pinned-sidebar-tabs:v1 */'
 const RECONCILE_PATCH_MARKER = '/* sherlock:pinned-sidebar-reconcile:v1 */'
 const EDGE_PATCH_MARKER = '/* sherlock:pinned-sidebar-edge:v1 */'
-const FILE_DRAG_PATCH_MARKER = '/* sherlock:files-to-research-canvas:v1 */'
+const FILE_DRAG_PATCH_MARKER = '/* sherlock:files-to-research-canvas:v2 */'
+const LEGACY_FILE_DRAG_PATCH_MARKER = '/* sherlock:files-to-research-canvas:v1 */'
 
 function replaceExact(source, before, after, label, expectedCount = 1) {
   const count = source.split(before).length - 1
@@ -48,23 +49,49 @@ export function patchBetterSidebarClient(source) {
     'pinned edge boundary'
   )
 
+  if (next.includes(FILE_DRAG_PATCH_MARKER) && !next.includes('const previewEligible = relativePath !== null')) {
+    next = replaceExact(
+      next,
+      '\t\t\tconst relativePath = safeSherlockSidebarRelativePath(filePath, cwd, relativePathHint);\n\t\t\tevent.dataTransfer.effectAllowed = "copy";\n\t\t\tevent.dataTransfer.setData("application/x-sherlock-file", JSON.stringify(relativePath === null ? { path: filePath, name } : { path: filePath, name, sessionId, relativePath }));',
+      '\t\t\tconst relativePath = safeSherlockSidebarRelativePath(filePath, cwd, relativePathHint);\n\t\t\tconst previewEligible = relativePath !== null && relativePath.length <= 512 && typeof sessionId === "string" && sessionId.length > 0 && sessionId.length <= 512;\n\t\t\tevent.dataTransfer.effectAllowed = "copy";\n\t\t\tevent.dataTransfer.setData("application/x-sherlock-file", JSON.stringify(previewEligible ? { path: filePath, name, sessionId, relativePath } : { path: filePath, name }));',
+      'bounded Research file preview identity'
+    )
+  }
+
+  if (!next.includes(FILE_DRAG_PATCH_MARKER) && next.includes(LEGACY_FILE_DRAG_PATCH_MARKER)) {
+    next = replaceExact(
+      next,
+      `${LEGACY_FILE_DRAG_PATCH_MARKER}\n\t\tfunction writeSherlockSidebarFileDrag(event, filePath, name) {\n\t\t\tif (event.dataTransfer === null) return;\n\t\t\tevent.dataTransfer.effectAllowed = "copy";\n\t\t\tevent.dataTransfer.setData("application/x-sherlock-file", JSON.stringify({ path: filePath, name }));\n\t\t}`,
+      `${FILE_DRAG_PATCH_MARKER}\n\t\tfunction safeSherlockSidebarRelativePath(filePath, cwd, relativePathHint) {\n\t\t\tconst raw = typeof relativePathHint === "string" ? relativePathHint : typeof cwd === "string" && (filePath.startsWith(\`\${cwd}/\`) || filePath.startsWith(\`\${cwd}\\\\\`)) ? filePath.slice(cwd.length + 1) : "";\n\t\t\tconst relativePath = raw.replaceAll("\\\\", "/");\n\t\t\tif (relativePath === "" || /^(?:\\/|[A-Za-z]:\\/)/.test(relativePath) || relativePath.split("/").some((part) => part === "" || part === "." || part === "..")) return null;\n\t\t\treturn relativePath;\n\t\t}\n\t\tfunction writeSherlockSidebarFileDrag(event, filePath, name, sessionId, cwd, relativePathHint) {\n\t\t\tif (event.dataTransfer === null) return;\n\t\t\tconst relativePath = safeSherlockSidebarRelativePath(filePath, cwd, relativePathHint);\n\t\t\tconst previewEligible = relativePath !== null && relativePath.length <= 512 && typeof sessionId === "string" && sessionId.length > 0 && sessionId.length <= 512;\n\t\t\tevent.dataTransfer.effectAllowed = "copy";\n\t\t\tevent.dataTransfer.setData("application/x-sherlock-file", JSON.stringify(previewEligible ? { path: filePath, name, sessionId, relativePath } : { path: filePath, name }));\n\t\t}`,
+      'Research file drag payload upgrade'
+    )
+    next = replaceExact(next,
+      'writeSherlockSidebarFileDrag(event, entry.path, entry.name);',
+      'writeSherlockSidebarFileDrag(event, entry.path, entry.name, sessionId, cwd);',
+      'file tree preview identity')
+    next = replaceExact(next,
+      'writeSherlockSidebarFileDrag(event, absolutePath, baseName$1(absolutePath));',
+      'writeSherlockSidebarFileDrag(event, absolutePath, baseName$1(absolutePath), sessionId, cwd, rel);',
+      'search result preview identity')
+  }
+
   if (!next.includes(FILE_DRAG_PATCH_MARKER)) {
     next = replaceExact(
       next,
       `\t\tfunction baseName$1(path) {\n\t\t\tconst trimmed = path.replace(/[\\\\/]+$/, "");\n\t\t\tconst at = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\\\"));\n\t\t\treturn at === -1 ? trimmed : trimmed.slice(at + 1);\n\t\t}\n\t\t/** How long the row's "copied" label stays after a successful write. */`,
-      `\t\tfunction baseName$1(path) {\n\t\t\tconst trimmed = path.replace(/[\\\\/]+$/, "");\n\t\t\tconst at = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\\\"));\n\t\t\treturn at === -1 ? trimmed : trimmed.slice(at + 1);\n\t\t}\n\t\t${FILE_DRAG_PATCH_MARKER}\n\t\tfunction writeSherlockSidebarFileDrag(event, filePath, name) {\n\t\t\tif (event.dataTransfer === null) return;\n\t\t\tevent.dataTransfer.effectAllowed = "copy";\n\t\t\tevent.dataTransfer.setData("application/x-sherlock-file", JSON.stringify({ path: filePath, name }));\n\t\t}\n\t\t/** How long the row's "copied" label stays after a successful write. */`,
+      `\t\tfunction baseName$1(path) {\n\t\t\tconst trimmed = path.replace(/[\\\\/]+$/, "");\n\t\t\tconst at = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\\\"));\n\t\t\treturn at === -1 ? trimmed : trimmed.slice(at + 1);\n\t\t}\n\t\t${FILE_DRAG_PATCH_MARKER}\n\t\tfunction safeSherlockSidebarRelativePath(filePath, cwd, relativePathHint) {\n\t\t\tconst raw = typeof relativePathHint === "string" ? relativePathHint : typeof cwd === "string" && (filePath.startsWith(\`\${cwd}/\`) || filePath.startsWith(\`\${cwd}\\\\\`)) ? filePath.slice(cwd.length + 1) : "";\n\t\t\tconst relativePath = raw.replaceAll("\\\\", "/");\n\t\t\tif (relativePath === "" || /^(?:\\/|[A-Za-z]:\\/)/.test(relativePath) || relativePath.split("/").some((part) => part === "" || part === "." || part === "..")) return null;\n\t\t\treturn relativePath;\n\t\t}\n\t\tfunction writeSherlockSidebarFileDrag(event, filePath, name, sessionId, cwd, relativePathHint) {\n\t\t\tif (event.dataTransfer === null) return;\n\t\t\tconst relativePath = safeSherlockSidebarRelativePath(filePath, cwd, relativePathHint);\n\t\t\tconst previewEligible = relativePath !== null && relativePath.length <= 512 && typeof sessionId === "string" && sessionId.length > 0 && sessionId.length <= 512;\n\t\t\tevent.dataTransfer.effectAllowed = "copy";\n\t\t\tevent.dataTransfer.setData("application/x-sherlock-file", JSON.stringify(previewEligible ? { path: filePath, name, sessionId, relativePath } : { path: filePath, name }));\n\t\t}\n\t\t/** How long the row's "copied" label stays after a successful write. */`,
       'Research file drag payload'
     )
     next = replaceExact(
       next,
       `\t\t\t\t\t\tstyle: { paddingLeft: depth * 22 + 6 },\n\t\t\t\t\t\ttitle: entry.broken ? \`\${entry.path} — \${t("brokenSymlink")}\` : entry.path,\n\t\t\t\t\t\tonClick: () => {`,
-      `\t\t\t\t\t\tstyle: { paddingLeft: depth * 22 + 6 },\n\t\t\t\t\t\ttitle: entry.broken ? \`\${entry.path} — \${t("brokenSymlink")}\` : entry.path,\n\t\t\t\t\t\tdraggable: true,\n\t\t\t\t\t\t"data-sherlock-file-drag-source": entry.path,\n\t\t\t\t\t\tonDragStart: (event) => {\n\t\t\t\t\t\t\twriteSherlockSidebarFileDrag(event, entry.path, entry.name);\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonClick: () => {`,
+      `\t\t\t\t\t\tstyle: { paddingLeft: depth * 22 + 6 },\n\t\t\t\t\t\ttitle: entry.broken ? \`\${entry.path} — \${t("brokenSymlink")}\` : entry.path,\n\t\t\t\t\t\tdraggable: true,\n\t\t\t\t\t\t"data-sherlock-file-drag-source": entry.path,\n\t\t\t\t\t\tonDragStart: (event) => {\n\t\t\t\t\t\t\twriteSherlockSidebarFileDrag(event, entry.path, entry.name, sessionId, cwd);\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonClick: () => {`,
       'file tree drag source'
     )
     next = replaceExact(
       next,
       `\t\t\t\t\t\terror === null && results !== null && results.matches.map((rel) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {\n\t\t\t\t\t\t\ttype: "button",\n\t\t\t\t\t\t\tclassName: sidebar_module_css_default.editorSearchResult,\n\t\t\t\t\t\t\ttitle: rel,\n\t\t\t\t\t\t\tonClick: () => {\n\t\t\t\t\t\t\t\tonOpenFile(resolveSidebarPath(cwd, rel));\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\tchildren: rel\n\t\t\t\t\t\t}, rel)),`,
-      `\t\t\t\t\t\terror === null && results !== null && results.matches.map((rel) => {\n\t\t\t\t\t\t\tconst absolutePath = resolveSidebarPath(cwd, rel);\n\t\t\t\t\t\t\treturn /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {\n\t\t\t\t\t\t\t\ttype: "button",\n\t\t\t\t\t\t\t\tclassName: sidebar_module_css_default.editorSearchResult,\n\t\t\t\t\t\t\t\ttitle: rel,\n\t\t\t\t\t\t\t\tdraggable: true,\n\t\t\t\t\t\t\t\t"data-sherlock-file-drag-source": absolutePath,\n\t\t\t\t\t\t\t\tonDragStart: (event) => {\n\t\t\t\t\t\t\t\t\twriteSherlockSidebarFileDrag(event, absolutePath, baseName$1(absolutePath));\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tonClick: () => {\n\t\t\t\t\t\t\t\t\tonOpenFile(absolutePath);\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tchildren: rel\n\t\t\t\t\t\t\t}, rel);\n\t\t\t\t\t\t}),`,
+      `\t\t\t\t\t\terror === null && results !== null && results.matches.map((rel) => {\n\t\t\t\t\t\t\tconst absolutePath = resolveSidebarPath(cwd, rel);\n\t\t\t\t\t\t\treturn /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {\n\t\t\t\t\t\t\t\ttype: "button",\n\t\t\t\t\t\t\t\tclassName: sidebar_module_css_default.editorSearchResult,\n\t\t\t\t\t\t\t\ttitle: rel,\n\t\t\t\t\t\t\t\tdraggable: true,\n\t\t\t\t\t\t\t\t"data-sherlock-file-drag-source": absolutePath,\n\t\t\t\t\t\t\t\tonDragStart: (event) => {\n\t\t\t\t\t\t\t\t\twriteSherlockSidebarFileDrag(event, absolutePath, baseName$1(absolutePath), sessionId, cwd, rel);\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tonClick: () => {\n\t\t\t\t\t\t\t\t\tonOpenFile(absolutePath);\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\tchildren: rel\n\t\t\t\t\t\t\t}, rel);\n\t\t\t\t\t\t}),`,
       'search result drag source'
     )
   }

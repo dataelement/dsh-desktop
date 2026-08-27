@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..eebe6ee 100644
+index 1dd0e89..3c4c441 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -2126,7 +2126,7 @@ index 1dd0e89..eebe6ee 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6751,40 +8036,1500 @@ window.__ModuleLoader__.load({
+@@ -6751,40 +8036,1672 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -2465,8 +2465,17 @@ index 1dd0e89..eebe6ee 100644
 +				if (typeof value !== "object" || value === null) return null;
 +				const name = boundedString(value.name);
 +				const path = boundedString(value.path, true);
-+				if (name === null || path === null) return null;
-+				return { ...(path === void 0 ? {} : { path }), name, source: "sherlock" };
++				const sessionId = boundedString(value.sessionId, true);
++				const relativePath = boundedString(value.relativePath, true);
++				const hasPreviewIdentity = sessionId !== void 0 || relativePath !== void 0;
++				const safeRelativePath = typeof relativePath === "string" && !/^(?:[\\/]|[A-Za-z]:[\\/])/.test(relativePath) && relativePath.split(/[\\/]/).every((segment) => segment !== "" && segment !== "." && segment !== "..");
++				if (name === null || path === null || sessionId === null || relativePath === null || hasPreviewIdentity && (sessionId === void 0 || relativePath === void 0 || !safeRelativePath)) return null;
++				return {
++					...(path === void 0 ? {} : { path }),
++					name,
++					...(hasPreviewIdentity ? { sessionId, relativePath: relativePath.replaceAll("\\", "/") } : {}),
++					source: "sherlock"
++				};
 +			} catch {
 +				return null;
 +			}
@@ -2510,6 +2519,45 @@ index 1dd0e89..eebe6ee 100644
 +			}
 +			return files;
 +		}
++		async function admitResearchCanvasDrop(transfer, sessionId, existing, preview, createId, getPathForFile) {
++			const internal = parseSherlockFileDrag(transfer.getData?.(SHERLOCK_FILE_DRAG_TYPE) ?? "");
++			if (internal !== null) {
++				if (internal.sessionId !== sessionId || typeof internal.relativePath !== "string" || typeof preview?.admitSidebarFile !== "function") return [{ ...internal, previewEligible: false }];
++				const previous = existing.find((node) => node.path === internal.path);
++				if (previous !== void 0 && typeof previous.authorizationId === "string" && typeof previous.contentType === "string") return [previous];
++				const nodeId = previous?.id ?? createId();
++				const descriptor = await preview.admitSidebarFile({ sessionId, nodeId, relativePath: internal.relativePath }).catch(() => null);
++				if (descriptor === null) return [{ ...internal, previewEligible: false }];
++				await preview.release?.({ sessionId, nodeId, authorizationId: descriptor.authorizationId, capabilityToken: descriptor.capabilityToken }).catch(() => void 0);
++				return [{ id: nodeId, ...internal, authorizationId: descriptor.authorizationId, contentType: descriptor.contentType }];
++			}
++			const fileList = transfer.files;
++			const count = typeof fileList?.length === "number" && Number.isFinite(fileList.length) ? Math.min(Math.max(0, Math.floor(fileList.length)), RESEARCH_CANVAS_MAX_FILES_PER_DROP) : 0;
++			const admitted = [];
++			for (let index = 0; index < count; index += 1) {
++				const file = typeof fileList.item === "function" ? fileList.item(index) : fileList[index];
++				const name = boundedString(file?.name);
++				if (file === null || file === void 0 || name === null) continue;
++				const mediaType = boundedString(file.type, true);
++				let resolvedPath = "";
++				try {
++					resolvedPath = typeof getPathForFile === "function" ? getPathForFile(file) : "";
++				} catch {}
++				const legacyPath = resolvedPath === "" ? void 0 : boundedString(resolvedPath, true);
++				const previous = typeof legacyPath === "string" ? existing.find((node) => node.path === legacyPath) : void 0;
++				if (previous !== void 0 && typeof previous.authorizationId === "string" && typeof previous.contentType === "string") {
++					admitted.push(previous);
++					continue;
++				}
++				const nodeId = previous?.id ?? createId();
++				const descriptor = typeof preview?.admitFinderFile === "function" ? await preview.admitFinderFile(file, { sessionId, nodeId }).catch(() => null) : null;
++				if (descriptor !== null) {
++					await preview.release?.({ sessionId, nodeId, authorizationId: descriptor.authorizationId, capabilityToken: descriptor.capabilityToken }).catch(() => void 0);
++					admitted.push({ id: nodeId, ...(typeof legacyPath === "string" ? { path: legacyPath } : {}), name: descriptor.name, source: "computer", authorizationId: descriptor.authorizationId, contentType: descriptor.contentType });
++				} else admitted.push({ id: nodeId, ...(typeof legacyPath === "string" ? { path: legacyPath } : {}), name, ...(mediaType === void 0 || mediaType === null ? {} : { mediaType }), source: "computer", previewEligible: false });
++			}
++			return admitted;
++		}
 +		function placeResearchCanvasFiles(nodes, files, point, createId) {
 +			const next = nodes.slice(0, RESEARCH_CANVAS_MAX_FILES_PER_SESSION);
 +			const pathIndexes = /* @__PURE__ */ new Map();
@@ -2522,7 +2570,7 @@ index 1dd0e89..eebe6ee 100644
 +				const found = typeof file.path === "string" && file.path.length > 0 ? pathIndexes.get(file.path) : void 0;
 +				if (found !== void 0) next[found] = { ...next[found], ...file, ...position };
 +				else if (next.length < RESEARCH_CANVAS_MAX_FILES_PER_SESSION) {
-+					next.push({ id: createId(), ...file, ...position });
++					next.push({ id: boundedString(file.id) ?? createId(), ...file, ...position });
 +					if (typeof file.path === "string" && file.path.length > 0) pathIndexes.set(file.path, next.length - 1);
 +				}
 +			}
@@ -2533,7 +2581,8 @@ index 1dd0e89..eebe6ee 100644
 +		}
 +		function researchCanvasNodeKind(node) {
 +			if (typeof node?.kind === "string" && RESEARCH_ARTIFACT_KINDS.has(node.kind)) return "assistant";
-+			const mediaType = typeof node?.mediaType === "string" ? node.mediaType.toLowerCase() : "";
++			if (node?.previewEligible === false) return "generic";
++			const mediaType = typeof node?.contentType === "string" ? node.contentType.toLowerCase() : typeof node?.mediaType === "string" ? node.mediaType.toLowerCase() : "";
 +			const name = typeof node?.name === "string" ? node.name.toLowerCase() : "";
 +			if (mediaType.startsWith("image/") || /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/.test(name)) return "image";
 +			if (mediaType === "application/pdf" || /\.pdf$/.test(name)) return "pdf";
@@ -2577,6 +2626,12 @@ index 1dd0e89..eebe6ee 100644
 +				...(geometry.aspectRatio === void 0 ? {} : { aspectRatio: geometry.aspectRatio })
 +			};
 +		}
++		function researchImageGeometryForNaturalSize(node, naturalWidth, naturalHeight) {
++			if (!Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight) || naturalWidth <= 0 || naturalHeight <= 0 || researchCanvasNodeKind(node) !== "image") return null;
++			const aspectRatio = naturalWidth / naturalHeight;
++			const current = normalizeResearchCanvasNodeGeometry(node);
++			return researchCanvasPersistedGeometry({ ...node, width: current.width, aspectRatio });
++		}
 +		function resizeResearchCanvasNode(node, corner, delta, scale) {
 +			const geometry = normalizeResearchCanvasNodeGeometry(node);
 +			if (!geometry.resizable || !["nw", "ne", "sw", "se"].includes(corner)) return { ...node, ...researchCanvasPersistedGeometry(node) };
@@ -2616,12 +2671,17 @@ index 1dd0e89..eebe6ee 100644
 +			const source = value.source === "computer" || value.source === "sherlock";
 +			const path = boundedString(value.path, true);
 +			const mediaType = boundedString(value.mediaType, true);
-+			if (id === null || name === null || !source || path === null || mediaType === null || !Number.isFinite(value.x) || !Number.isFinite(value.y)) return null;
++			const authorizationId = boundedString(value.authorizationId, true);
++			const contentType = boundedString(value.contentType, true);
++			const previewEligible = value.previewEligible === false ? false : void 0;
++			if (id === null || name === null || !source || path === null || mediaType === null || authorizationId === null || contentType === null || (authorizationId === void 0) !== (contentType === void 0) || !Number.isFinite(value.x) || !Number.isFinite(value.y)) return null;
 +			return {
 +				id,
 +				...(path === void 0 ? {} : { path }),
 +				name,
 +				...(mediaType === void 0 ? {} : { mediaType }),
++				...(authorizationId === void 0 ? {} : { authorizationId, contentType }),
++				...(previewEligible === void 0 ? {} : { previewEligible }),
 +				source: value.source,
 +				x: value.x,
 +				y: value.y,
@@ -2664,6 +2724,9 @@ index 1dd0e89..eebe6ee 100644
 +			if (normalized === "") return null;
 +			return normalized.slice(0, limit);
 +		}
++		function preserveResearchArtifactText(value, limit = RESEARCH_ARTIFACT_MAX_EXCERPT) {
++			return typeof value === "string" && value.length <= limit && value.trim().length > 0 ? value : null;
++		}
 +		function researchArtifactIdentity(value) {
 +			if (value.kind === "assistant-excerpt") {
 +				const excerpt = normalizeResearchArtifactText(value.excerpt);
@@ -2677,7 +2740,7 @@ index 1dd0e89..eebe6ee 100644
 +			const kind = boundedResearchArtifactString(value.kind, RESEARCH_CANVAS_TEXT_LIMIT);
 +			const messageId = boundedResearchArtifactString(value.messageId, RESEARCH_CANVAS_TEXT_LIMIT);
 +			const title = boundedResearchArtifactString(value.title, RESEARCH_ARTIFACT_MAX_TITLE);
-+			const rawExcerpt = boundedResearchArtifactString(value.excerpt, RESEARCH_ARTIFACT_MAX_EXCERPT);
++			const rawExcerpt = kind === "assistant-result" ? preserveResearchArtifactText(value.excerpt) : boundedResearchArtifactString(value.excerpt, RESEARCH_ARTIFACT_MAX_EXCERPT);
 +			const excerpt = kind === "assistant-excerpt" ? normalizeResearchArtifactText(rawExcerpt) : rawExcerpt;
 +			if (id === null || kind === null || !RESEARCH_ARTIFACT_KINDS.has(kind) || messageId === null || title === null || excerpt === null || !Number.isFinite(value.x) || !Number.isFinite(value.y)) return null;
 +			return { id, kind, messageId, title, excerpt, x: value.x, y: value.y, ...researchCanvasPersistedGeometry(value) };
@@ -2721,7 +2784,7 @@ index 1dd0e89..eebe6ee 100644
 +				const messageId = boundedResearchArtifactString(value.messageId, RESEARCH_CANVAS_TEXT_LIMIT);
 +				const kind = boundedResearchArtifactString(value.kind, RESEARCH_CANVAS_TEXT_LIMIT);
 +				const title = boundedResearchArtifactString(value.title, RESEARCH_ARTIFACT_MAX_TITLE);
-+				const excerpt = boundedResearchArtifactString(value.excerpt, RESEARCH_ARTIFACT_MAX_EXCERPT);
++				const excerpt = kind === "assistant-result" ? preserveResearchArtifactText(value.excerpt) : boundedResearchArtifactString(value.excerpt, RESEARCH_ARTIFACT_MAX_EXCERPT);
 +				return sessionId === null || messageId === null || kind === null || !RESEARCH_ARTIFACT_KINDS.has(kind) || title === null || excerpt === null ? null : { sessionId, messageId, kind, title, excerpt };
 +			} catch {
 +				return null;
@@ -2769,6 +2832,13 @@ index 1dd0e89..eebe6ee 100644
 +			const centerX = node.x * scale + viewport.x;
 +			const centerY = node.y * scale + viewport.y;
 +			return { left: centerX - width / 2, top: centerY - height / 2, right: centerX + width / 2, bottom: centerY + height / 2, width, height };
++		}
++		function researchNodeNearViewport(node, viewport, canvasSize, margin = 240) {
++			const rect = researchNodeViewportRect(node, viewport);
++			const safeMargin = Number.isFinite(margin) && margin >= 0 ? margin : 240;
++			const width = Number.isFinite(canvasSize?.width) && canvasSize.width >= 0 ? canvasSize.width : 0;
++			const height = Number.isFinite(canvasSize?.height) && canvasSize.height >= 0 ? canvasSize.height : 0;
++			return rect.right >= -safeMargin && rect.left <= width + safeMargin && rect.bottom >= -safeMargin && rect.top <= height + safeMargin;
 +		}
 +		function researchNodesInMarquee(nodes, viewport, rect) {
 +			return nodes.filter((node) => {
@@ -2885,7 +2955,7 @@ index 1dd0e89..eebe6ee 100644
 +			});
 +			const addAssistantArtifact = (kind, messageId, text, title, at) => {
 +				const normalizedMessageId = boundedResearchArtifactString(messageId, RESEARCH_CANVAS_TEXT_LIMIT);
-+				const excerpt = normalizeResearchArtifactText(text);
++				const excerpt = kind === "assistant-result" ? preserveResearchArtifactText(text) : normalizeResearchArtifactText(text);
 +				if (normalizedMessageId === null || excerpt === null) return;
 +				const point = Number.isFinite(at?.x) && Number.isFinite(at?.y) ? at : visibleCenter();
 +				update({
@@ -2933,10 +3003,11 @@ index 1dd0e89..eebe6ee 100644
 +					this.setSelection({ ...snapshot.selection, orderedFileIds: order });
 +				},
 +				removeSelectedFile(id) { this.updateSelection([id], "toggle"); },
-+				removeNodes(nodeIds) {
-+					const removed = /* @__PURE__ */ new Set(researchSelectionIds(nodeIds));
-+					if (removed.size === 0) return;
-+					const next = removeResearchCanvasNodes(snapshot.files, snapshot.artifacts, [...removed]);
++					removeNodes(nodeIds) {
++						const removed = /* @__PURE__ */ new Set(researchSelectionIds(nodeIds));
++						if (removed.size === 0) return;
++						const previewNodes = snapshot.files.filter((node) => removed.has(node.id) && typeof node.authorizationId === "string");
++						const next = removeResearchCanvasNodes(snapshot.files, snapshot.artifacts, [...removed]);
 +					if (next.files.length === snapshot.files.length && next.artifacts.length === snapshot.artifacts.length) return;
 +					update({
 +						...next,
@@ -2944,7 +3015,8 @@ index 1dd0e89..eebe6ee 100644
 +							selectedNodeIds: snapshot.selection.selectedNodeIds.filter((id) => !removed.has(id)),
 +							orderedFileIds: snapshot.selection.orderedFileIds.filter((id) => !removed.has(id))
 +						}
-+					}, true);
++						}, true);
++						for (const node of previewNodes) window.dshDesktop?.researchPreview?.revokeNode?.({ sessionId, nodeId: node.id });
 +				},
 +				commitSelection(selection) {
 +					const admitted = /* @__PURE__ */ new Set(selection.selectedNodeIds);
@@ -2960,7 +3032,7 @@ index 1dd0e89..eebe6ee 100644
 +					});
 +				},
 +				moveNodes(selectedIds, delta, scale, persist = true) { const moved = moveResearchCanvasNodes(snapshot.files, snapshot.artifacts, selectedIds, delta, scale); update(moved, persist); },
-+				resizeNode(nodeId, corner, delta, scale, persist = true) {
++					resizeNode(nodeId, corner, delta, scale, persist = true) {
 +					let changed = false;
 +					const resize = (node) => {
 +						if (node.id !== nodeId) return node;
@@ -2970,9 +3042,22 @@ index 1dd0e89..eebe6ee 100644
 +					};
 +					const files2 = snapshot.files.map(resize);
 +					const artifacts2 = snapshot.artifacts.map(resize);
-+					if (changed) update({ files: files2, artifacts: artifacts2 }, persist);
-+				},
-+				persist() { persistSnapshot(); },
++						if (changed) update({ files: files2, artifacts: artifacts2 }, persist);
++					},
++					updateNodeGeometry(nodeId, geometry, persist = true) {
++						let changed = false;
++						const apply = (node) => {
++							if (node.id !== nodeId) return node;
++							const next = { ...node, ...geometry };
++							const canonical = { ...next, ...researchCanvasPersistedGeometry(next) };
++							changed = canonical.width !== node.width || canonical.height !== node.height || canonical.sizeMode !== node.sizeMode || canonical.aspectRatio !== node.aspectRatio;
++							return canonical;
++						};
++						const files2 = snapshot.files.map(apply);
++						const artifacts2 = snapshot.artifacts.map(apply);
++						if (changed) update({ files: files2, artifacts: artifacts2 }, persist);
++					},
++					persist() { persistSnapshot(); },
 +				setViewport(viewport) { update({ viewport: { ...snapshot.viewport, ...viewport } }, false); },
 +				setCanvasSize(canvasSize) { update({ canvasSize: { ...snapshot.canvasSize, ...canvasSize } }, false); },
 +				visibleCenter,
@@ -3106,6 +3191,7 @@ index 1dd0e89..eebe6ee 100644
 +					children: title
 +				}), (0, react_jsx_runtime.jsxs)("div", {
 +					className: "rScV5Q_previewBody",
++					style: { overflowY: node.sizeMode === "manual" ? "auto" : void 0 },
 +					"data-research-preview-body": "",
 +					"data-research-preview-interactive": "",
 +					children: [children, (0, react_jsx_runtime.jsx)("div", {
@@ -3116,7 +3202,60 @@ index 1dd0e89..eebe6ee 100644
 +				}), selected ? (0, react_jsx_runtime.jsx)(ResearchCanvasResizeHandles, { nodeId: node.id }) : null]
 +			});
 +		}
-+		function ResearchCanvasFileCard({ node, selected = false, dragging = false, resizing = false, onSelect }) {
++		function ResearchCanvasImagePreview({ node, sessionId, visible, onNaturalSize }) {
++			const [preview, setPreview] = (0, react.useState)({ status: visible ? "loading" : "offscreen", descriptor: null });
++			(0, react.useEffect)(() => {
++				if (!visible) {
++					setPreview({ status: "offscreen", descriptor: null });
++					return;
++				}
++				if (typeof node.authorizationId !== "string" || typeof window.dshDesktop?.researchPreview?.restore !== "function") {
++					setPreview({ status: "unavailable", descriptor: null });
++					return;
++				}
++				let active = true;
++				let descriptor = null;
++				setPreview({ status: "loading", descriptor: null });
++				window.dshDesktop.researchPreview.restore({ sessionId, nodeId: node.id, authorizationId: node.authorizationId }).then((value) => {
++					if (!active) {
++						if (value !== null) window.dshDesktop?.researchPreview?.release?.({ sessionId, nodeId: node.id, authorizationId: value.authorizationId, capabilityToken: value.capabilityToken });
++						return;
++					}
++					descriptor = value;
++					setPreview(value === null ? { status: "unavailable", descriptor: null } : { status: "ready", descriptor: value });
++				}).catch(() => {
++					if (active) setPreview({ status: "unavailable", descriptor: null });
++				});
++				return () => {
++					active = false;
++					if (descriptor !== null) window.dshDesktop?.researchPreview?.release?.({ sessionId, nodeId: node.id, authorizationId: descriptor.authorizationId, capabilityToken: descriptor.capabilityToken });
++				};
++			}, [sessionId, node.id, node.authorizationId, visible]);
++			if (preview.status === "offscreen") return (0, react_jsx_runtime.jsx)("div", {
++				className: "rScV5Q_previewPlaceholder",
++				"data-research-offscreen-placeholder": "",
++				children: "预览已暂停"
++			});
++			if (preview.status === "loading") return (0, react_jsx_runtime.jsx)("div", {
++				className: "rScV5Q_previewPlaceholder",
++				"data-research-preview-loading": "",
++				children: "正在载入预览…"
++			});
++			if (preview.status !== "ready" || preview.descriptor === null) return (0, react_jsx_runtime.jsx)("div", {
++				className: "rScV5Q_previewPlaceholder",
++				"data-research-preview-unavailable": "",
++				children: "预览不可用"
++			});
++			return (0, react_jsx_runtime.jsx)("img", {
++				"data-research-image-preview": "",
++				src: preview.descriptor.url,
++				alt: node.name,
++				draggable: false,
++				onLoad: (event) => onNaturalSize?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight),
++				onError: () => setPreview({ status: "unavailable", descriptor: null })
++			});
++		}
++		function ResearchCanvasFileCard({ node, sessionId, visible = true, selected = false, dragging = false, resizing = false, onSelect, onNaturalSize }) {
 +			const geometry = normalizeResearchCanvasNodeGeometry(node);
 +			if (geometry.resizable) return (0, react_jsx_runtime.jsx)(ResearchCanvasRichNodeFrame, {
 +				node,
@@ -3125,7 +3264,7 @@ index 1dd0e89..eebe6ee 100644
 +				resizing,
 +				className: "rScV5Q_fileRichNode",
 +				"data-research-file-card": node.id,
-+				"data-path-unavailable": node.path === void 0 ? true : void 0,
++				"data-path-unavailable": node.authorizationId === void 0 ? true : void 0,
 +				titleText: node.path ?? node.name,
 +				title: node.name,
 +				onKeyDown: (event) => {
@@ -3134,9 +3273,14 @@ index 1dd0e89..eebe6ee 100644
 +					event.stopPropagation();
 +					onSelect?.(node);
 +				},
-+				children: (0, react_jsx_runtime.jsxs)("div", {
++				children: researchCanvasNodeKind(node) === "image" ? (0, react_jsx_runtime.jsx)(ResearchCanvasImagePreview, {
++					node,
++					sessionId,
++					visible,
++					onNaturalSize
++				}) : (0, react_jsx_runtime.jsxs)("div", {
 +					className: "rScV5Q_previewPlaceholder",
-+					children: [(0, react_jsx_runtime.jsx)("span", { children: researchCanvasFileCaption(node) }), (0, react_jsx_runtime.jsx)("span", { children: node.path === void 0 ? "预览不可用" : "本地预览" })]
++					children: [(0, react_jsx_runtime.jsx)("span", { children: researchCanvasFileCaption(node) }), (0, react_jsx_runtime.jsx)("span", { children: node.authorizationId === void 0 ? "预览不可用" : "本地预览" })]
 +				})
 +			});
 +			return (0, react_jsx_runtime.jsxs)("div", {
@@ -3186,8 +3330,21 @@ index 1dd0e89..eebe6ee 100644
 +				})]
 +			});
 +		}
-+		function ResearchCanvasArtifactCard({ node, selected = false, dragging = false, resizing = false, sourceUnavailable = false, onActivate }) {
++		function ResearchCanvasArtifactCard({ node, selected = false, dragging = false, resizing = false, sourceUnavailable = false, onActivate, onAutoHeight }) {
 +			const activate = () => onActivate?.(node);
++			const contentRef = (0, react.useRef)(null);
++			(0, react.useLayoutEffect)(() => {
++				if (node.sizeMode === "manual" || contentRef.current === null || typeof ResizeObserver === "undefined") return;
++				const measure = () => {
++					if (!(contentRef.current.scrollHeight > 0)) return;
++					const height = Math.min(RESEARCH_CANVAS_MAX_NODE_SIZE, Math.max(RESEARCH_CANVAS_NODE_POLICIES.assistant.minHeight, Math.round(contentRef.current.scrollHeight + RESEARCH_CANVAS_TITLE_HEIGHT)));
++					if (Math.round(node.height ?? RESEARCH_CANVAS_NODE_POLICIES.assistant.height) !== height) onAutoHeight?.(node, height);
++				};
++				const observer = new ResizeObserver(measure);
++				observer.observe(contentRef.current);
++				measure();
++				return () => observer.disconnect();
++			}, [node.id, node.sizeMode, node.height, onAutoHeight]);
 +			return (0, react_jsx_runtime.jsx)(ResearchCanvasRichNodeFrame, {
 +				node,
 +				selected,
@@ -3205,11 +3362,16 @@ index 1dd0e89..eebe6ee 100644
 +					activate();
 +				},
 +				children: (0, react_jsx_runtime.jsxs)("div", {
++					ref: contentRef,
 +					className: "rScV5Q_artifactBody",
-+					children: [(0, react_jsx_runtime.jsx)("span", {
-+					className: "rScV5Q_artifactExcerpt",
-+					children: node.excerpt
-+				}), (0, react_jsx_runtime.jsxs)("span", {
++					"data-research-artifact-content": "",
++					children: [node.kind === "assistant-result" ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MarkdownText, {
++						text: node.excerpt,
++						streaming: false
++					}) : (0, react_jsx_runtime.jsx)("span", {
++						className: "rScV5Q_artifactExcerpt",
++						children: node.excerpt
++					}), (0, react_jsx_runtime.jsxs)("span", {
 +					className: "rScV5Q_artifactMeta",
 +					children: [node.kind === "assistant-excerpt" ? "助手摘录" : "助手回复", sourceUnavailable ? " · 来源消息不可用" : " · 来源消息"]
 +				})]
@@ -3251,7 +3413,7 @@ index 1dd0e89..eebe6ee 100644
 +			const tag = document.createElement("style");
 +			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
 +			tag.dataset.pluginCss = tagIdResearchCanvas;
-+			tag.textContent = cssResearchCanvas + ".rScV5Q_contextMenu{z-index:30;min-width:136px;padding:4px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:9px;box-shadow:var(--dsw-shadow-lv2);position:absolute}.rScV5Q_contextMenu button{box-sizing:border-box;width:100%;height:30px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left;font:inherit;font-size:12px;cursor:pointer}.rScV5Q_contextMenu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.rScV5Q_richNode{box-sizing:border-box;pointer-events:auto;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;position:absolute;display:flex;flex-direction:column;overflow:visible;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_richNode[data-selected=true]{border:2px solid var(--dsw-alias-state-business-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent),var(--dsw-shadow-lv1)}.rScV5Q_richNode[data-node-dragging=true],.rScV5Q_richNode[data-node-resizing=true]{opacity:.88}.rScV5Q_richNode:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.rScV5Q_nodeTitle{box-sizing:border-box;height:32px;min-height:32px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;align-items:center;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13);cursor:grab}.rScV5Q_previewBody{min-width:0;min-height:0;position:relative;flex:1;overflow:auto;overscroll-behavior:contain;user-select:text}.rScV5Q_previewPlaceholder{box-sizing:border-box;width:100%;height:100%;padding:16px;color:var(--dsw-alias-label-tertiary);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:var(--dsw-font-xxs-12)}.rScV5Q_artifactCard{padding:0;gap:0;justify-content:stretch}.rScV5Q_artifactBody{box-sizing:border-box;min-height:100%;padding:12px;display:flex;flex-direction:column;gap:6px}.rScV5Q_artifactExcerpt{white-space:pre-wrap;overflow-wrap:anywhere}.rScV5Q_previewShield{z-index:4;pointer-events:none;position:absolute;inset:0}.rScV5Q_root[data-dragging=true] .rScV5Q_previewShield,.rScV5Q_root[data-space-pressed=true] .rScV5Q_previewShield{pointer-events:auto}.rScV5Q_resizeHandle{box-sizing:border-box;z-index:6;pointer-events:auto;width:14px;height:14px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;background:var(--dsw-alias-state-business-primary);position:absolute}.rScV5Q_resizeHandle[data-research-resize-handle=nw]{left:-7px;top:-7px;cursor:nwse-resize}.rScV5Q_resizeHandle[data-research-resize-handle=ne]{right:-7px;top:-7px;cursor:nesw-resize}.rScV5Q_resizeHandle[data-research-resize-handle=sw]{left:-7px;bottom:-7px;cursor:nesw-resize}.rScV5Q_resizeHandle[data-research-resize-handle=se]{right:-7px;bottom:-7px;cursor:nwse-resize}.rScV5Q_fileRichNode[data-path-unavailable=true]{border-style:dashed;opacity:.72}body[data-ds-dark-theme] .rScV5Q_richNode{background:var(--dsw-alias-bg-layer-2)}";
++			tag.textContent = cssResearchCanvas + ".rScV5Q_contextMenu{z-index:30;min-width:136px;padding:4px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:9px;box-shadow:var(--dsw-shadow-lv2);position:absolute}.rScV5Q_contextMenu button{box-sizing:border-box;width:100%;height:30px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left;font:inherit;font-size:12px;cursor:pointer}.rScV5Q_contextMenu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.rScV5Q_richNode{box-sizing:border-box;pointer-events:auto;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;position:absolute;display:flex;flex-direction:column;overflow:visible;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_richNode[data-selected=true]{border:2px solid var(--dsw-alias-state-business-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent),var(--dsw-shadow-lv1)}.rScV5Q_richNode[data-node-dragging=true],.rScV5Q_richNode[data-node-resizing=true]{opacity:.88}.rScV5Q_richNode:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.rScV5Q_nodeTitle{box-sizing:border-box;height:32px;min-height:32px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;align-items:center;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13);cursor:grab}.rScV5Q_previewBody{min-width:0;min-height:0;position:relative;flex:1;overflow:auto;overscroll-behavior:contain;user-select:text}.rScV5Q_previewPlaceholder{box-sizing:border-box;width:100%;height:100%;padding:16px;color:var(--dsw-alias-label-tertiary);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:var(--dsw-font-xxs-12)}.rScV5Q_artifactCard{padding:0;gap:0;justify-content:stretch}.rScV5Q_artifactBody{box-sizing:border-box;min-height:100%;padding:12px;display:flex;flex-direction:column;gap:6px}.rScV5Q_artifactExcerpt{white-space:pre-wrap;overflow-wrap:anywhere}.rScV5Q_previewBody img[data-research-image-preview]{display:block;width:100%;height:100%;object-fit:contain}.rScV5Q_previewShield{z-index:4;pointer-events:none;position:absolute;inset:0}.rScV5Q_root[data-dragging=true] .rScV5Q_previewShield,.rScV5Q_root[data-space-pressed=true] .rScV5Q_previewShield{pointer-events:auto}.rScV5Q_resizeHandle{box-sizing:border-box;z-index:6;pointer-events:auto;width:14px;height:14px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;background:var(--dsw-alias-state-business-primary);position:absolute}.rScV5Q_resizeHandle[data-research-resize-handle=nw]{left:-7px;top:-7px;cursor:nwse-resize}.rScV5Q_resizeHandle[data-research-resize-handle=ne]{right:-7px;top:-7px;cursor:nesw-resize}.rScV5Q_resizeHandle[data-research-resize-handle=sw]{left:-7px;bottom:-7px;cursor:nesw-resize}.rScV5Q_resizeHandle[data-research-resize-handle=se]{right:-7px;bottom:-7px;cursor:nwse-resize}.rScV5Q_fileRichNode[data-path-unavailable=true]{border-style:dashed;opacity:.72}body[data-ds-dark-theme] .rScV5Q_richNode{background:var(--dsw-alias-bg-layer-2)}";
 +			document.head.appendChild(tag);
 +		}
 +		const ResearchCanvas_module_css_default = { root: "rScV5Q_root" };
@@ -3319,7 +3481,7 @@ index 1dd0e89..eebe6ee 100644
 +					fileDragDepth = Math.max(0, fileDragDepth - 1);
 +					if (fileDragDepth === 0) resetFileDrag();
 +				};
-+				const onDrop = (event) => {
++				const onDrop = async (event) => {
 +					resetFileDrag();
 +					if (!ownsResearchDrop(event) || event.dataTransfer === null) return;
 +					const bounds = root.getBoundingClientRect();
@@ -3329,25 +3491,28 @@ index 1dd0e89..eebe6ee 100644
 +						y: event.clientY - bounds.top
 +					});
 +					const types = Array.from(event.dataTransfer.types ?? []);
-+					const proprietaryDrop = types.includes(RESEARCH_ARTIFACT_DRAG_TYPE) || types.includes(SHERLOCK_FILE_DRAG_TYPE);
-+					if (proprietaryDrop) {
++				const proprietaryDrop = types.includes(RESEARCH_ARTIFACT_DRAG_TYPE) || types.includes(SHERLOCK_FILE_DRAG_TYPE);
++				const finderCandidates = proprietaryDrop ? [] : researchCanvasDropFiles(event.dataTransfer, () => "");
++				if (!proprietaryDrop && finderCandidates.length === 0) return;
++				if (proprietaryDrop) {
 +						event.preventDefault();
 +						event.stopPropagation();
 +					}
 +					if (types.includes(RESEARCH_ARTIFACT_DRAG_TYPE)) {
 +						const artifact = parseResearchArtifactDrag(event.dataTransfer.getData?.(RESEARCH_ARTIFACT_DRAG_TYPE) ?? "");
 +						if (artifact === null || artifact.sessionId !== sessionId) return;
-+						workspace.setArtifacts(placeResearchCanvasArtifact(current.artifacts, artifact, point, createResearchCanvasArtifactId));
-+						return;
-+					}
-+					if (types.includes(SHERLOCK_FILE_DRAG_TYPE) && parseSherlockFileDrag(event.dataTransfer.getData?.(SHERLOCK_FILE_DRAG_TYPE) ?? "") === null) return;
-+					const dropped = researchCanvasDropFiles(event.dataTransfer, (file) => window.dshDesktop?.getPathForFile?.(file) ?? "");
++					workspace.setArtifacts(placeResearchCanvasArtifact(current.artifacts, artifact, point, createResearchCanvasArtifactId));
++					return;
++				}
++				if (types.includes(SHERLOCK_FILE_DRAG_TYPE) && parseSherlockFileDrag(event.dataTransfer.getData?.(SHERLOCK_FILE_DRAG_TYPE) ?? "") === null) return;
++				if (!proprietaryDrop) {
++					event.preventDefault();
++					event.stopPropagation();
++				}
++				const transfer = event.dataTransfer;
++					const dropped = await admitResearchCanvasDrop(transfer, sessionId, current.files, window.dshDesktop?.researchPreview, createResearchCanvasFileId, (file) => window.dshDesktop?.getPathForFile?.(file) ?? "");
 +					if (dropped.length === 0) return;
-+					if (!proprietaryDrop) {
-+						event.preventDefault();
-+						event.stopPropagation();
-+					}
-+					workspace.setFiles(placeResearchCanvasFiles(current.files, dropped, point, createResearchCanvasFileId));
++				workspace.setFiles(placeResearchCanvasFiles(workspace.getSnapshot().files, dropped, point, createResearchCanvasFileId));
 +				};
 +				const onWheel = (event) => {
 +					if (event.target?.closest?.("[data-research-preview-interactive]") !== null && event.target?.closest?.("[data-research-preview-interactive]") !== void 0) return;
@@ -3582,16 +3747,23 @@ index 1dd0e89..eebe6ee 100644
 +					style: { transform: researchCanvasContentTransform(viewport) },
 +					children: [files.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasFileCard, {
 +						node,
++						sessionId,
++						visible: researchNodeNearViewport(node, viewport, snapshot.canvasSize),
 +						selected: selectedIds.has(node.id),
 +						dragging: draggingIds.has(node.id),
 +						resizing: resizingNodeId === node.id,
-+						onSelect: (file) => workspace.updateSelection([file.id], "replace")
++						onSelect: (file) => workspace.updateSelection([file.id], "replace"),
++						onNaturalSize: (naturalWidth, naturalHeight) => {
++							const geometry = researchImageGeometryForNaturalSize(node, naturalWidth, naturalHeight);
++							if (geometry !== null) workspace.updateNodeGeometry(node.id, geometry);
++						}
 +					}, node.id)), artifacts.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasArtifactCard, {
 +						node,
 +						selected: selectedIds.has(node.id),
 +						dragging: draggingIds.has(node.id),
 +						resizing: resizingNodeId === node.id,
 +						sourceUnavailable: snapshot.unavailableSourceMessageIds.includes(node.messageId),
++						onAutoHeight: (_artifact, height) => workspace.updateNodeGeometry(node.id, { height, sizeMode: "auto" }),
 +						onActivate: activateArtifact
 +					}, node.id))]
 +				}), marquee === null ? null : (0, react_jsx_runtime.jsx)("div", {
@@ -3659,7 +3831,7 @@ index 1dd0e89..eebe6ee 100644
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
-@@ -6793,7 +9538,17 @@ window.__ModuleLoader__.load({
+@@ -6793,7 +9710,17 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$6;
@@ -3678,7 +3850,7 @@ index 1dd0e89..eebe6ee 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -6822,7 +9577,354 @@ window.__ModuleLoader__.load({
+@@ -6822,7 +9749,354 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationRoot.js
@@ -4034,7 +4206,7 @@ index 1dd0e89..eebe6ee 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,10 +9934,64 @@ window.__ModuleLoader__.load({
+@@ -6832,10 +10106,64 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -4099,7 +4271,7 @@ index 1dd0e89..eebe6ee 100644
  			const seatResizeRef = (0, react.useCallback)((seat) => {
  				seatObserver.current?.disconnect();
  				seatObserver.current = null;
-@@ -6848,6 +10004,54 @@ window.__ModuleLoader__.load({
+@@ -6848,6 +10176,54 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -4154,7 +4326,7 @@ index 1dd0e89..eebe6ee 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +10101,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +10273,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -4162,7 +4334,7 @@ index 1dd0e89..eebe6ee 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +10118,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +10290,68 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -4255,7 +4427,7 @@ index 1dd0e89..eebe6ee 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +10215,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +10387,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -4276,7 +4448,7 @@ index 1dd0e89..eebe6ee 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +10283,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +10455,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -4294,7 +4466,7 @@ index 1dd0e89..eebe6ee 100644
  				})] })
  			});
  		}
-@@ -7053,14 +10293,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +10465,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -4339,7 +4511,7 @@ index 1dd0e89..eebe6ee 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +10339,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +10511,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -4349,7 +4521,7 @@ index 1dd0e89..eebe6ee 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +10361,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +10533,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -4358,7 +4530,7 @@ index 1dd0e89..eebe6ee 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +10414,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +10586,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -4376,7 +4548,7 @@ index 1dd0e89..eebe6ee 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +10450,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +10622,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -4384,7 +4556,7 @@ index 1dd0e89..eebe6ee 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +11342,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +11514,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -4415,7 +4587,7 @@ index 1dd0e89..eebe6ee 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +11387,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +11559,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -4440,7 +4612,7 @@ index 1dd0e89..eebe6ee 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +12341,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +12513,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -4449,7 +4621,7 @@ index 1dd0e89..eebe6ee 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +12431,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +12603,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -4491,7 +4663,7 @@ index 1dd0e89..eebe6ee 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +12640,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +12812,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -4508,7 +4680,7 @@ index 1dd0e89..eebe6ee 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +12810,8 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +12982,8 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -4517,7 +4689,7 @@ index 1dd0e89..eebe6ee 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +12851,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +13023,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -4530,7 +4702,7 @@ index 1dd0e89..eebe6ee 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +12867,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +13039,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -4543,7 +4715,7 @@ index 1dd0e89..eebe6ee 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +12916,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +13088,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -4557,7 +4729,7 @@ index 1dd0e89..eebe6ee 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +12954,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +13126,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -4567,7 +4739,7 @@ index 1dd0e89..eebe6ee 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +13086,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +13258,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -4582,7 +4754,7 @@ index 1dd0e89..eebe6ee 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +13102,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +13274,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -4591,7 +4763,7 @@ index 1dd0e89..eebe6ee 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +13126,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +13298,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -4600,7 +4772,7 @@ index 1dd0e89..eebe6ee 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +13152,101 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +13324,103 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
@@ -4659,6 +4831,7 @@ index 1dd0e89..eebe6ee 100644
 +		exports.loadResearchCanvasSelection = loadResearchCanvasSelection;
 +		exports.moveResearchCanvasNodes = moveResearchCanvasNodes;
 +		exports.normalizeResearchCanvasNodeGeometry = normalizeResearchCanvasNodeGeometry;
++		exports.researchImageGeometryForNaturalSize = researchImageGeometryForNaturalSize;
 +		exports.removeResearchCanvasNodes = removeResearchCanvasNodes;
 +		exports.resizeResearchCanvasNode = resizeResearchCanvasNode;
 +		exports.nextResearchCanvasPan = nextResearchCanvasPan;
@@ -4682,6 +4855,7 @@ index 1dd0e89..eebe6ee 100644
 +		exports.researchCanvasStorageKey = researchCanvasStorageKey;
 +		exports.researchCanvasWorldPoint = researchCanvasWorldPoint;
 +		exports.researchNodeViewportRect = researchNodeViewportRect;
++		exports.researchNodeNearViewport = researchNodeNearViewport;
 +		exports.researchNodesInMarquee = researchNodesInMarquee;
 +		exports.registerResearchCanvasView = registerResearchCanvasView;
 +		exports.registerResearchAssistantActions = registerResearchAssistantActions;

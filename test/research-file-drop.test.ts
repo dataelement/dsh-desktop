@@ -120,6 +120,126 @@ function createSnapshotStore<T>(initial: T) {
 }
 
 describe('Research canvas file drops', () => {
+  it('preserves bounded assistant-result Markdown while excerpts keep normalized semantics', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const storage = memoryStorage({})
+    const markdown = '\n# Finding\n\n- first\n- second\n\n```ts\nconst value = 1\n```\n'
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for('markdown-session')
+
+    workspace.addAssistantResult({ messageId: 'message-1', text: markdown, at: { x: 10, y: 20 } })
+    workspace.addExcerpt('message-2', '  margin\n\n   expanded  ', { x: 30, y: 40 })
+
+    expect(workspace.getSnapshot().artifacts).toMatchObject([
+      {
+        kind: 'assistant-result', messageId: 'message-1', excerpt: markdown,
+        width: 360, sizeMode: 'auto'
+      },
+      {
+        kind: 'assistant-excerpt', messageId: 'message-2', excerpt: 'margin expanded'
+      }
+    ])
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('markdown-session').getSnapshot().artifacts[0]?.excerpt).toBe(markdown)
+
+    const bounded = 'x'.repeat(16_384)
+    workspace.addAssistantResult({ messageId: 'message-max', text: bounded, at: { x: 0, y: 0 } })
+    workspace.addAssistantResult({ messageId: 'message-too-long', text: `${bounded}x`, at: { x: 0, y: 0 } })
+    workspace.addAssistantResult({ messageId: 'message-whitespace', text: ' \n\t ', at: { x: 0, y: 0 } })
+    expect(workspace.getSnapshot().artifacts.some(
+      (node: { messageId: string }) => node.messageId === 'message-max'
+    )).toBe(true)
+    expect(workspace.getSnapshot().artifacts.some(
+      (node: { messageId: string }) => node.messageId === 'message-too-long'
+    )).toBe(false)
+    expect(workspace.getSnapshot().artifacts.some(
+      (node: { messageId: string }) => node.messageId === 'message-whitespace'
+    )).toBe(false)
+  })
+
+  it('publishes and persists canonical auto geometry through the workspace action', async () => {
+    const client = await loadConversationClient()
+    const storage = memoryStorage({
+      'sherlock.research.canvas.files.v1:geometry-session': JSON.stringify([{
+        id: 'image-1', name: 'chart.png', source: 'computer',
+        authorizationId: 'authorization-1', contentType: 'image/png',
+        x: 100, y: 100, width: 320, height: 272, sizeMode: 'auto', aspectRatio: 4 / 3
+      }])
+    })
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for('geometry-session')
+    expect(workspace.updateNodeGeometry).toBeTypeOf('function')
+
+    workspace.updateNodeGeometry('image-1', {
+      width: 320, height: 212, sizeMode: 'auto', aspectRatio: 16 / 9
+    })
+
+    expect(workspace.getSnapshot().files[0]).toMatchObject({
+      width: 320, height: 212, sizeMode: 'auto', aspectRatio: 16 / 9
+    })
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('geometry-session').getSnapshot().files[0]).toMatchObject({
+        width: 320, height: 212, sizeMode: 'auto', aspectRatio: 16 / 9
+      })
+  })
+
+  it('strictly validates optional sidebar preview identity without trusting its absolute path', async () => {
+    const client = await loadConversationClient()
+    expect(client.parseSherlockFileDrag).toBeTypeOf('function')
+    if (typeof client.parseSherlockFileDrag !== 'function') return
+    const payload = {
+      path: '/workspace/charts/revenue.png', name: 'revenue.png',
+      sessionId: 'session-1', relativePath: 'charts/revenue.png'
+    }
+
+    expect(client.parseSherlockFileDrag(JSON.stringify(payload))).toEqual({
+      ...payload, source: 'sherlock'
+    })
+    expect(client.parseSherlockFileDrag(JSON.stringify({
+      ...payload, relativePath: '../secret.png'
+    }))).toBeNull()
+    expect(client.parseSherlockFileDrag(JSON.stringify({
+      ...payload, relativePath: '/absolute.png'
+    }))).toBeNull()
+    expect(client.parseSherlockFileDrag(JSON.stringify({
+      ...payload, sessionId: 'x'.repeat(513)
+    }))).toBeNull()
+    expect(client.parseSherlockFileDrag(JSON.stringify({
+      path: payload.path, name: payload.name
+    }))).toEqual({ path: payload.path, name: payload.name, source: 'sherlock' })
+  })
+
+  it('computes rich-node viewport proximity at 0.5x, 1x, and 2x without changing node geometry', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchNodeNearViewport).toBeTypeOf('function')
+    if (typeof client.researchNodeNearViewport !== 'function') return
+    const node = {
+      id: 'image-1', name: 'chart.png', contentType: 'image/png',
+      authorizationId: 'authorization-1', source: 'computer',
+      x: 1_100, y: 300, width: 320, height: 272, aspectRatio: 4 / 3
+    }
+    const canvas = { width: 800, height: 600 }
+
+    expect(client.researchNodeNearViewport(node, { scale: 0.5, x: 0, y: 0 }, canvas, 80)).toBe(true)
+    expect(client.researchNodeNearViewport(node, { scale: 1, x: 0, y: 0 }, canvas, 80)).toBe(false)
+    expect(client.researchNodeNearViewport(node, { scale: 2, x: -1_800, y: 0 }, canvas, 80)).toBe(true)
+    expect(node).toMatchObject({ x: 1_100, y: 300, width: 320, height: 272 })
+  })
+
+  it('normalizes natural image ratio against the existing 32px titled-frame geometry', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchImageGeometryForNaturalSize).toBeTypeOf('function')
+    if (typeof client.researchImageGeometryForNaturalSize !== 'function') return
+
+    expect(client.researchImageGeometryForNaturalSize({
+      id: 'image-1', name: 'chart.png', contentType: 'image/png',
+      authorizationId: 'authorization-1', source: 'computer', x: 0, y: 0,
+      width: 320, height: 272, sizeMode: 'auto'
+    }, 1600, 900)).toMatchObject({
+      width: 320, height: 212, sizeMode: 'auto', aspectRatio: 16 / 9
+    })
+    expect(client.researchImageGeometryForNaturalSize({}, 0, 900)).toBeNull()
+  })
   it('serializes only the exact bounded Research-owned prompt prefix at offset zero', async () => {
     const client = await loadConversationClient()
     expect(client.serializeResearchPrompt).toBeTypeOf('function')
@@ -362,6 +482,19 @@ describe('Research canvas file drops', () => {
         nodeId: 'node-1'
       }
     }])
+    await bridge.release({
+      sessionId: 'session-1', nodeId: 'node-1',
+      authorizationId: 'authorization_0000000000000001',
+      capabilityToken: 'capability_0000000000000001'
+    })
+    expect(calls.at(-1)).toEqual({
+      channel: 'research:preview:release',
+      value: {
+        sessionId: 'session-1', nodeId: 'node-1',
+        authorizationId: 'authorization_0000000000000001',
+        capabilityToken: 'capability_0000000000000001'
+      }
+    })
     expect('read' in bridge).toBe(false)
     expect('admitFinderPath' in bridge).toBe(false)
   })

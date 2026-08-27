@@ -113,6 +113,12 @@
 - Task 4: review found 2 important issues — aspect-locked geometry ignores the
   declared minimum height for extreme ratios, and re-adding a deduplicated
   assistant artifact discards its manually persisted size. Fix round 1 required.
-- Task 4: fix round 1/5 (2 addressed, 0 open — aspect-locked normalization and
-  resize now enforce both type minimum dimensions, and deduplicated assistant
-  repositioning retains canonical manual geometry).
+- Task 4: fix round 1/5 (2 addressed, 0 open — aspect-locked nodes now honor
+  both declared minimum dimensions, and deduplicated artifacts retain manual
+  geometry; commit 5be76dbe).
+- Task 4: complete (commits 1a3e2d01..5be76dbe, review clean; one non-blocking
+  CSS constant-duplication minor remains intentionally unchanged).
+- Task 5: implementation complete, review pending — full assistant Markdown,
+  auto/manual height, capability image lifecycle, Finder/sidebar secure
+  admission, exact ephemeral release, and durable deletion revoke are focused
+  green (4 files, 174 tests); typecheck and patch durability gates pass.

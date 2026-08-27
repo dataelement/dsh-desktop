@@ -160,6 +160,38 @@ function countingRealFileSystem() {
 }
 
 describe('Research file preview authorization registry', () => {
+  it('releases only the exact ephemeral capability and keeps durable authorization restorable', async () => {
+    const { registry, root } = await fixture()
+    const filePath = path.join(root, 'ephemeral.png')
+    await writeFile(filePath, pngBytes)
+    const admitted = await registry.admitFinder({
+      path: filePath, sessionId: 'session-1', nodeId: 'node-ephemeral'
+    })
+    expectDescriptor(admitted)
+    expect(admitted.capabilityToken).toBe('capability_0000000000000001')
+
+    expect(registry.releaseCapability({
+      sessionId: 'session-1', nodeId: 'node-ephemeral',
+      authorizationId: admitted.authorizationId,
+      capabilityToken: admitted.capabilityToken
+    })).toBe(true)
+    expect((await registry.handle(new Request(admitted.url))).status).toBe(403)
+
+    const restored = await registry.restore({
+      sessionId: 'session-1', nodeId: 'node-ephemeral',
+      authorizationId: admitted.authorizationId
+    })
+    expect(restored).not.toBeNull()
+    if (restored === null) return
+    expect(restored.capabilityToken).not.toBe(admitted.capabilityToken)
+    expect((await registry.handle(new Request(restored.url))).status).toBe(200)
+    expect(registry.releaseCapability({
+      sessionId: 'wrong-session', nodeId: 'node-ephemeral',
+      authorizationId: restored.authorizationId,
+      capabilityToken: restored.capabilityToken
+    })).toBe(false)
+    expect((await registry.handle(new Request(restored.url))).status).toBe(200)
+  })
   it('admits a real Finder file and exposes only opaque authorization data', async () => {
     const { registry, root } = await fixture()
     const filePath = path.join(root, 'private', 'portrait.png')
@@ -175,6 +207,7 @@ describe('Research file preview authorization registry', () => {
     expectDescriptor(descriptor)
     expect(descriptor).toEqual({
       authorizationId: 'authorization_0000000000000001',
+      capabilityToken: 'capability_0000000000000001',
       url: 'sherlock-preview://capability_0000000000000001/',
       contentType: 'image/png',
       name: 'portrait.png'
@@ -352,6 +385,39 @@ describe('Research file preview authorization registry', () => {
 
     registry.revokeSession('session-2')
     expect((await registry.handle(new Request(third.url))).status).toBe(403)
+  })
+
+  it('atomically replaces stale durable authorization when the same node is re-admitted', async () => {
+    const root = await temporaryDirectory()
+    const firstPath = path.join(root, 'first.png')
+    const secondPath = path.join(root, 'second.png')
+    await Promise.all([writeFile(firstPath, pngBytes), writeFile(secondPath, pngBytes)])
+    const storage = new ControllableAuthorizationStorage()
+    const registry = new ResearchFilePreviewRegistry({
+      storage,
+      randomId: deterministicIds(
+        'authorization_0000000000000001', 'capability_0000000000000001',
+        'authorization_0000000000000002', 'capability_0000000000000002',
+        'capability_0000000000000003'
+      )
+    })
+    const first = await registry.admitFinder({
+      path: firstPath, sessionId: 'session-1', nodeId: 'node-1'
+    })
+    const second = await registry.admitFinder({
+      path: secondPath, sessionId: 'session-1', nodeId: 'node-1'
+    })
+    expectDescriptor(first)
+    expectDescriptor(second)
+    expect(storage.records).toHaveLength(1)
+    expect(storage.records[0]?.authorizationId).toBe(second.authorizationId)
+    expect((await registry.handle(new Request(first.url))).status).toBe(403)
+    await expect(registry.restore({
+      sessionId: 'session-1', nodeId: 'node-1', authorizationId: first.authorizationId
+    })).resolves.toBeNull()
+    await expect(registry.restore({
+      sessionId: 'session-1', nodeId: 'node-1', authorizationId: second.authorizationId
+    })).resolves.not.toBeNull()
   })
 
   it.each([
@@ -788,13 +854,30 @@ describe('Research preview privileged IPC registration', () => {
       sessionId: 'session-1',
       nodeId: 'node-1'
     }))).rejects.toThrow('main Sherlock window')
-    expect(await finder?.(trusted, {
+    const descriptor = await finder?.(trusted, {
       path: filePath,
       sessionId: 'session-1',
       nodeId: 'node-1'
-    })).toMatchObject({
+    }) as ResearchFilePreviewDescriptor
+    expect(descriptor).toMatchObject({
       authorizationId: 'authorization_0000000000000001',
       contentType: 'image/png'
     })
+    const release = handlers.get('research:preview:release')
+    expect(release).toBeTypeOf('function')
+    await expect(Promise.resolve().then(() => release?.(child, {
+      sessionId: 'session-1', nodeId: 'node-1',
+      authorizationId: descriptor.authorizationId,
+      capabilityToken: descriptor.capabilityToken
+    }))).rejects.toThrow('main Sherlock window')
+    expect(await release?.(trusted, {
+      sessionId: 'session-1', nodeId: 'node-1',
+      authorizationId: descriptor.authorizationId,
+      capabilityToken: descriptor.capabilityToken
+    })).toEqual({ ok: true })
+    expect(await registry.restore({
+      sessionId: 'session-1', nodeId: 'node-1',
+      authorizationId: descriptor.authorizationId
+    })).not.toBeNull()
   })
 })

@@ -117,7 +117,7 @@ describe('bundled Sherlock plugin profile', () => {
     const searchResultStart = patched.indexOf('results.matches.map((rel) =>')
     const searchResultEnd = patched.indexOf('children: rel', searchResultStart)
 
-    expect(patched).toContain('/* sherlock:files-to-research-canvas:v1 */')
+    expect(patched).toContain('/* sherlock:files-to-research-canvas:v2 */')
     expect(fileRowStart).toBeGreaterThanOrEqual(0)
     expect(fileRowEnd).toBeGreaterThan(fileRowStart)
     expect(patched.slice(fileRowStart, fileRowEnd)).toContain('draggable: true')
@@ -125,7 +125,7 @@ describe('bundled Sherlock plugin profile', () => {
       '"data-sherlock-file-drag-source": entry.path'
     )
     expect(patched.slice(fileRowStart, fileRowEnd)).toContain(
-      'writeSherlockSidebarFileDrag(event, entry.path, entry.name)'
+      'writeSherlockSidebarFileDrag(event, entry.path, entry.name, sessionId, cwd)'
     )
     expect(folderRowStart).toBeGreaterThanOrEqual(0)
     expect(folderRowEnd).toBeGreaterThan(folderRowStart)
@@ -134,7 +134,14 @@ describe('bundled Sherlock plugin profile', () => {
     expect(searchResultEnd).toBeGreaterThan(searchResultStart)
     expect(patched.slice(searchResultStart, searchResultEnd)).toContain('draggable: true')
     expect(patched.slice(searchResultStart, searchResultEnd)).toContain(
-      'writeSherlockSidebarFileDrag(event, absolutePath, baseName$1(absolutePath))'
+      'writeSherlockSidebarFileDrag(event, absolutePath, baseName$1(absolutePath), sessionId, cwd, rel)'
+    )
+    expect(patched).toContain(
+      '? { path: filePath, name, sessionId, relativePath } : { path: filePath, name })'
+    )
+    expect(patched).toContain('safeSherlockSidebarRelativePath(filePath, cwd, relativePathHint)')
+    expect(patched).toContain(
+      'const previewEligible = relativePath !== null && relativePath.length <= 512 && typeof sessionId === "string" && sessionId.length > 0 && sessionId.length <= 512;'
     )
     expect(patchBetterSidebarClient(patched)).toBe(patched)
   })

@@ -49,6 +49,7 @@ export type ResearchPreviewSource = 'finder' | 'sidebar'
 
 export interface ResearchFilePreviewDescriptor {
   authorizationId: string
+  capabilityToken: string
   url: string
   contentType: string
   name: string
@@ -113,6 +114,10 @@ type RestoreRequest = {
   authorizationId: string
   sessionId: string
   nodeId: string
+}
+
+type ReleaseCapabilityRequest = RestoreRequest & {
+  capabilityToken: string
 }
 
 type Capability = {
@@ -464,6 +469,19 @@ export class ResearchFilePreviewRegistry {
     return verified ? this.issue(record) : null
   }
 
+  releaseCapability(value: unknown): boolean {
+    if (!this.validReleaseRequest(value)) return false
+    const capability = this.capabilities.get(value.capabilityToken)
+    const authorization = this.authorizations.get(value.authorizationId)
+    if (!capability || !authorization ||
+        capability.authorizationId !== value.authorizationId ||
+        authorization.sessionId !== value.sessionId || authorization.nodeId !== value.nodeId) {
+      return false
+    }
+    this.capabilities.delete(value.capabilityToken)
+    return true
+  }
+
   revokeAuthorization(authorizationId: unknown): boolean {
     if (!opaqueId(authorizationId) || !this.authorizations.has(authorizationId)) return false
     return this.commitRevocations(new Set([authorizationId]))
@@ -587,7 +605,13 @@ export class ResearchFilePreviewRegistry {
     sessionId: string
     nodeId: string
   }): Promise<ResearchFilePreviewDescriptor | null> {
-    if (this.authorizations.size >= MAX_AUTHORIZATIONS) return null
+    const replaced = new Set<string>()
+    for (const [authorizationId, record] of this.authorizations) {
+      if (record.sessionId === input.sessionId && record.nodeId === input.nodeId) {
+        replaced.add(authorizationId)
+      }
+    }
+    if (this.authorizations.size - replaced.size >= MAX_AUTHORIZATIONS) return null
     try {
       const root = await this.fileSystem.realpath(input.authorizedRoot)
       const target = await this.fileSystem.realpath(input.targetPath)
@@ -615,11 +639,13 @@ export class ResearchFilePreviewRegistry {
         allowSubresources: kind.contentType === 'text/html; charset=utf-8',
         createdAt: this.now()
       }
+      const retained = [...this.authorizations.values()].filter(
+        (value) => !replaced.has(value.authorizationId)
+      )
+      if (!this.options.storage.save([...retained, record])) return null
+      for (const previous of replaced) this.authorizations.delete(previous)
       this.authorizations.set(authorizationId, record)
-      if (!this.persist()) {
-        this.authorizations.delete(authorizationId)
-        return null
-      }
+      this.revokeCapabilities((capability) => replaced.has(capability.authorizationId))
       return this.issue(record)
     } catch {
       return null
@@ -654,6 +680,7 @@ export class ResearchFilePreviewRegistry {
     })
     return {
       authorizationId: record.authorizationId,
+      capabilityToken: token,
       url: `${RESEARCH_PREVIEW_SCHEME}://${token}/`,
       contentType: record.contentType,
       name: record.name
@@ -704,6 +731,13 @@ export class ResearchFilePreviewRegistry {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
     const input = value as Partial<FinderAdmission>
     return boundedAbsolutePath(input.path) && boundedId(input.sessionId) && boundedId(input.nodeId)
+  }
+
+  private validReleaseRequest(value: unknown): value is ReleaseCapabilityRequest {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+    const input = value as Partial<ReleaseCapabilityRequest>
+    return opaqueId(input.authorizationId) && opaqueId(input.capabilityToken) &&
+      boundedId(input.sessionId) && boundedId(input.nodeId)
   }
 
   private validSidebarAdmission(value: unknown): value is SidebarAdmission {
@@ -770,6 +804,7 @@ export function registerResearchFilePreviewHandlers(options: {
     ['research:preview:admit-finder', (value) => options.registry.admitFinder(value)],
     ['research:preview:admit-sidebar', (value) => options.registry.admitSidebar(value)],
     ['research:preview:restore', (value) => options.registry.restore(value)],
+    ['research:preview:release', (value) => ({ ok: options.registry.releaseCapability(value) })],
     ['research:preview:revoke-node', (value) => {
       const input = value as { sessionId?: unknown; nodeId?: unknown } | null
       return { ok: options.registry.revokeNode(input?.sessionId, input?.nodeId) }
