@@ -621,6 +621,44 @@ describe('LAN mobile bridge user questions', () => {
     })
   })
 
+  it('opens the mux downlink only while a phone is attached', async () => {
+    let upgrades = 0
+    const harness = createServer((_request, response) => {
+      response.statusCode = 404
+      response.end()
+    })
+    const muxServer = new WebSocketServer({ noServer: true })
+    webSocketServers.push(muxServer)
+    harness.on('upgrade', (request, socket, head) => {
+      if (request.url !== '/api/events.mux') return socket.destroy()
+      upgrades += 1
+      muxServer.handleUpgrade(request, socket, head, () => undefined)
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const connectionEvents: boolean[] = []
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`,
+      onConnectedChange: (connected) => connectionEvents.push(connected)
+    })
+    bridges.push(bridge)
+
+    // A desktop that never pairs a phone has no consumer for the downlink, so
+    // it must not sit there reconnecting to it for the life of the process.
+    await bridge.start()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(upgrades).toBe(0)
+    expect(connectionEvents).toEqual([])
+
+    await pairBridge(bridge)
+    await waitFor(async () => upgrades > 0)
+    expect(connectionEvents).toEqual([true])
+
+    await bridge.stop()
+    expect(connectionEvents).toEqual([true, false])
+  })
+
   it('rejects answers that were not offered by the pending question', async () => {
     const responses: unknown[] = []
     const harness = createServer(async (request, response) => {
@@ -771,3 +809,130 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs = 2_000): Promis
   }
   throw new Error('Timed out waiting for condition.')
 }
+describe('snapshot keeps tunnel state after the pairing token is consumed', () => {
+  it('reports an active tunnel through status and toggle endpoints once the token is consumed', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+
+    // Simulate the post-approval state: the single-use pairing token is gone,
+    // no phone session is active, but a tunnel keeps running.
+    Object.assign(bridge as unknown as Record<string, unknown>, {
+      pairingToken: undefined,
+      pairingExpiresAt: undefined,
+      tunnelActive: true,
+      tunnelInstance: {
+        url: 'https://post-pair.trycloudflare.com',
+        process: {},
+        stop: async () => undefined
+      }
+    })
+
+    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    const statusJson = await status.json()
+    expect(statusJson.active).toBe(true)
+    expect(statusJson.url).toBe('https://post-pair.trycloudflare.com')
+
+    const toggle = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/toggle`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${snapshot.port}` },
+      body: JSON.stringify({ enable: true })
+    })
+    expect(toggle.status).toBe(200)
+    const toggleJson = await toggle.json()
+    expect(toggleJson.ok).toBe(true)
+    expect(toggleJson.active).toBe(true)
+    expect(toggleJson.url).toBe('https://post-pair.trycloudflare.com')
+  })
+
+  it('serves the desktop page with a fresh pairing token after approval or expiry', async () => {
+    let now = Date.now()
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      now: () => now
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    const before = await fetch(snapshot.desktopUrl!)
+    expect(before.status).toBe(200)
+
+    // Consume the token by approving a phone pairing.
+    const reconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`)
+    const pairingId = /let id="([^"]+)"/.exec(await reconnect.text())?.[1]
+    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/decide`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: pairingId, approved: true })
+    })
+    await fetch(`http://127.0.0.1:${snapshot.port}/pair/status?id=${pairingId}`)
+
+    const afterApproval = await fetch(snapshot.desktopUrl!)
+    expect(afterApproval.status).toBe(200)
+    const html = await afterApproval.text()
+    expect(html).toContain('/pair?token=')
+
+    // Let the (rotated) token expire: the desktop page must rotate again
+    // instead of rendering a dead QR code.
+    now += 5 * 60 * 1000 + 1
+    const afterExpiry = await fetch(snapshot.desktopUrl!)
+    expect(afterExpiry.status).toBe(200)
+    const fresh = await bridge.snapshot()
+    expect(fresh.pairingUrl).toBeTruthy()
+    expect(fresh.expiresAt!).toBeGreaterThan(now)
+  })
+})
+
+describe('pairing token boundary and desktop origin hardening', () => {
+  it('treats now === expiresAt as still valid and does not rotate', async () => {
+    let now = Date.now()
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      now: () => now
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    const tokenBefore = snapshot.pairingUrl
+
+    now = snapshot.expiresAt!
+    const atBoundary = bridge.snapshot()
+    expect(atBoundary.pairingUrl).toBeTruthy()
+    expect(atBoundary.expiresAt).toBe(now)
+    // /desktop must not rotate at exactly the expiry instant.
+    const page = await fetch(snapshot.desktopUrl!)
+    expect(page.status).toBe(200)
+    const rotated = bridge.snapshot()
+    expect(rotated.pairingUrl).toBe(tokenBefore)
+  })
+
+  it('rejects cross-site browser requests to desktop endpoints', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    const base = `http://127.0.0.1:${snapshot.port}`
+    const origin = `http://127.0.0.1:${snapshot.port}`
+
+    const crossSiteGet = await fetch(`${base}/desktop`, {
+      headers: { 'sec-fetch-site': 'cross-site' }
+    })
+    expect(crossSiteGet.status).toBe(500)
+    expect(await crossSiteGet.text()).toContain('Cross-site request rejected')
+
+    const crossOriginPost = await fetch(`${base}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { origin: 'https://evil.example.com' }
+    })
+    expect(crossOriginPost.status).toBe(500)
+
+    // Same-origin and no-header requests keep working (local tooling, tests).
+    const sameOrigin = await fetch(`${base}/desktop`, {
+      headers: { 'sec-fetch-site': 'same-origin', origin }
+    })
+    expect(sameOrigin.status).toBe(200)
+    const noHeaders = await fetch(`${base}/desktop`)
+    expect(noHeaders.status).toBe(200)
+  })
+})

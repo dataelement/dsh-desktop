@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
-import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import {
   app,
@@ -10,6 +10,7 @@ import {
   Menu,
   nativeTheme,
   shell,
+  Tray,
   utilityProcess,
   WebContentsView,
   type IpcMainInvokeEvent,
@@ -35,6 +36,17 @@ import {
   PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS
 } from './plugin-recovery-detection'
 import { isDaemonLaunch, isUserInitiatedInstance } from './launchd-guard'
+import {
+  type GpuFallbackState,
+  defaultGpuFallbackState,
+  gpuFallbackStateEquals,
+  gpuFallbackSwitches,
+  isGpuLossFatal,
+  parseGpuFallbackState,
+  planGpuFallbackResponse,
+  planStableLaunch,
+  serializeGpuFallbackState
+} from './gpu-fallback'
 import { secureWindow } from './security'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
@@ -74,6 +86,11 @@ import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
 import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { windowsMenuViewBounds } from './windows-menu-view'
+import { shouldKeepRunningInBackground } from './close-to-tray'
+import {
+  MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
+  shouldReloadAfterMainWindowRendererLoss
+} from './main-window-recovery'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
@@ -95,6 +112,7 @@ let windowsMenuView: WebContentsView | undefined
 let windowsMenuOpen = false
 let windowsMenuDark = false
 let mobileWindow: BrowserWindow | undefined
+let tray: Tray | undefined
 let runtime: HarnessRuntime
 let mobileBridge: LanMobileBridge
 let launchDirectory: string
@@ -112,7 +130,24 @@ let safeModeVisible = false
 let safeModeManagerVisible = false
 let safeModeManagerWindow: BrowserWindow | undefined
 let safeModeActionResolver: ((action: SafeModeAction) => void) | undefined
+// A renderer that crashes (render-process-gone) and reloads that fails the
+// same way produces a permanent black window the user has to close by hand.
+// The cooldown keeps reloads from stacking up when the underlying crash
+// (almost always the GPU process) keeps recurring, and the counter gives us
+// a way to give up after enough attempts and surface the harness failure
+// page instead of hammering the GPU.
+let mainWindowRecoveryReloadAt = 0
+let mainWindowRecoveryReloadCount = 0
 const startInSafeMode = shouldStartInSafeMode(process.argv)
+// The GPU process can die before the harness is ever on screen, which is the
+// whole reason the fallback exists; tracking the first harness render is what
+// separates "this launch is unusable" from "the user is mid-task". Splash and
+// the recovery page do not count: both are local pages that render on a
+// machine whose harness never will.
+let harnessRendered = false
+let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
+let gpuFallbackRelaunching = false
+let gpuStableLaunchTimer: NodeJS.Timeout | undefined
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -203,6 +238,95 @@ function isDevelopmentBuild(): boolean {
 }
 
 const developmentBuild = isDevelopmentBuild()
+
+/**
+ * Record a renderer/GPU process loss in the harness log so the cause survives
+ * a restart. Without this, a black window after running for a while leaves
+ * nothing to diagnose — the desktop keeps the BrowserWindow alive and the
+ * user has to close it by hand with no breadcrumb in the log.
+ */
+function recordMainWindowRendererLoss(
+  source: 'render-process-gone' | 'did-fail-load' | 'unresponsive',
+  details: string
+): void {
+  if (!runtime) return
+  runtime.note(`[desktop] main window ${source}: ${details}`)
+}
+
+function reloadMainWindowAfterRendererLoss(window: BrowserWindow): void {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return
+  const now = Date.now()
+  if (!shouldReloadAfterMainWindowRendererLoss({
+    now,
+    lastReloadAt: mainWindowRecoveryReloadAt,
+    reloadCount: mainWindowRecoveryReloadCount
+  })) {
+    recordMainWindowRendererLoss(
+      'render-process-gone',
+      'reload throttled; surfacing harness failure instead'
+    )
+    const snapshot = runtime?.snapshot()
+    if (snapshot && runtime?.snapshot().phase === 'ready') {
+      // Reloading is failing on its own. Step the runtime back to 'failed' so
+      // the plugin-recovery page is shown and the user can recover without a
+      // hard restart.
+      void showPluginRecovery({
+        message: 'Harness web view stopped responding. Reload it to continue.',
+        logs: snapshot.logs
+      }).catch(showUnexpectedError)
+    }
+    return
+  }
+  mainWindowRecoveryReloadAt = now
+  mainWindowRecoveryReloadCount += 1
+  // Schedule a counter reset long after the cooldown so a single, isolated
+  // crash recovers cleanly while a sustained failure still trips the cap.
+  setTimeout(() => {
+    mainWindowRecoveryReloadCount = 0
+  }, MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS * 4).unref?.()
+  try {
+    void window.webContents.reload()
+  } catch (error) {
+    recordMainWindowRendererLoss(
+      'render-process-gone',
+      `reload threw: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
+function installMainWindowRendererRecovery(window: BrowserWindow): void {
+  const webContents = window.webContents
+  webContents.on('render-process-gone', (event, details) => {
+    // Take control: by default the window stays drawn but blank, which is
+    // exactly the black screen this recovery is meant to prevent.
+    event.preventDefault()
+    const reason = details?.reason ?? 'unknown'
+    const exitCode = details?.exitCode ?? -1
+    recordMainWindowRendererLoss('render-process-gone', `reason=${reason} exitCode=${exitCode}`)
+    reloadMainWindowAfterRendererLoss(window)
+  })
+  webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    // The harness web server is local; a failure to reach it is almost
+    // always the renderer dropping, not a real network error. Surface the
+    // failure and let the recovery path try to reload the page.
+    recordMainWindowRendererLoss(
+      'did-fail-load',
+      `errorCode=${errorCode} description=${errorDescription} url=${validatedURL}`
+    )
+    reloadMainWindowAfterRendererLoss(window)
+  })
+  webContents.on('unresponsive', () => {
+    // unresponsive fires before the renderer actually dies, so logging here
+    // gives a useful "the GPU froze here" breadcrumb for the next time
+    // the user has to recover the window.
+    recordMainWindowRendererLoss('unresponsive', 'main window webContents became unresponsive')
+  })
+  webContents.on('responsive', () => {
+    if (!runtime) return
+    runtime.note('[desktop] main window webContents became responsive again')
+  })
+}
 
 function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOptions {
   return {
@@ -421,6 +545,112 @@ function harnessLocale(): 'en' | 'zh' {
   }
 }
 
+function gpuFallbackStatePath(): string {
+  return join(app.getPath('userData'), 'gpu-fallback.json')
+}
+
+function readGpuFallbackState(): GpuFallbackState {
+  try {
+    return parseGpuFallbackState(readFileSync(gpuFallbackStatePath(), 'utf8'))
+  } catch {
+    return defaultGpuFallbackState
+  }
+}
+
+function writeGpuFallbackState(state: GpuFallbackState): void {
+  try {
+    writeFileSync(gpuFallbackStatePath(), serializeGpuFallbackState(state))
+  } catch {
+    // A fallback we cannot persist still applies to this launch; the next
+    // launch simply rediscovers it the same way this one did.
+  }
+}
+
+/**
+ * Apply the switches a previous launch discovered this machine needs. This
+ * has to run before Chromium boots, so it lives beside the other pre-ready
+ * command line configuration rather than in `bootstrap`.
+ */
+function configureGpuFallback(): void {
+  gpuFallbackState = readGpuFallbackState()
+  for (const name of gpuFallbackSwitches(gpuFallbackState.level)) {
+    app.commandLine.appendSwitch(name)
+  }
+  // Electron wants hardware acceleration turned off through its own call
+  // rather than the switch alone; the switches stay because they also cover
+  // compositing and the sandbox, which this API does not.
+  if (gpuFallbackState.level === 'gpu-disabled') app.disableHardwareAcceleration()
+}
+
+/**
+ * How long a launch has to hold on to its GPU process before it counts as
+ * stable. Long enough that the crash loop this fallback exists for has already
+ * happened, short enough that a normal session always reaches it.
+ */
+const GPU_STABLE_LAUNCH_DELAY_MS = 60_000
+
+/**
+ * Note that this launch rendered the harness and, if it then keeps its GPU
+ * process for a while, that it ran cleanly — which is what eventually lets a
+ * degraded machine climb back towards a sandboxed, hardware-accelerated
+ * Chromium.
+ */
+function markHarnessRendered(): void {
+  if (harnessRendered) return
+  harnessRendered = true
+  if (gpuFallbackState.level === 'default' && gpuFallbackState.stableLaunches === 0) return
+  gpuStableLaunchTimer = setTimeout(() => {
+    gpuStableLaunchTimer = undefined
+    const next = planStableLaunch(gpuFallbackState)
+    if (gpuFallbackStateEquals(next, gpuFallbackState)) return
+    if (next.level !== gpuFallbackState.level) {
+      runtime?.note(
+        `[desktop] GPU fallback lowered to ${next.level} after ` +
+          `${gpuFallbackState.stableLaunches + 1} stable launches`
+      )
+    }
+    gpuFallbackState = next
+    writeGpuFallbackState(next)
+  }, GPU_STABLE_LAUNCH_DELAY_MS)
+  gpuStableLaunchTimer.unref?.()
+}
+
+/**
+ * Watch for the GPU process going away and step the fallback forward. A
+ * launch whose harness never rendered is relaunched right away, because no
+ * window the user could act on exists; a launch that did render keeps going
+ * and only degrades once losses pile up, so a single crash during a driver
+ * update cannot cost this machine its GPU sandbox.
+ */
+function installGpuFallbackWatch(): void {
+  app.on('child-process-gone', (_event, details) => {
+    if (details.type !== 'GPU') return
+    if (gpuFallbackRelaunching || quitting) return
+    // Chromium tears the GPU process down on shutdown and Electron reports it
+    // here like any other loss; degrading on that would degrade everyone.
+    if (!isGpuLossFatal(details.reason)) return
+    if (gpuStableLaunchTimer) {
+      clearTimeout(gpuStableLaunchTimer)
+      gpuStableLaunchTimer = undefined
+    }
+    runtime?.note(
+      `[desktop] GPU process gone: reason=${details.reason} exitCode=${details.exitCode} ` +
+        `fallback=${gpuFallbackState.level} failures=${gpuFallbackState.failures}`
+    )
+    const plan = planGpuFallbackResponse({ state: gpuFallbackState, harnessRendered })
+    const escalated = plan.state.level !== gpuFallbackState.level
+    if (!gpuFallbackStateEquals(plan.state, gpuFallbackState)) {
+      gpuFallbackState = plan.state
+      writeGpuFallbackState(plan.state)
+    }
+    if (escalated) runtime?.note(`[desktop] GPU fallback raised to ${plan.state.level}`)
+    if (!plan.relaunch) return
+    gpuFallbackRelaunching = true
+    app.relaunch()
+    app.exit(0)
+  })
+}
+
 function configureApplicationLocale(): void {
   app.commandLine.appendSwitch('lang', harnessLocale() === 'zh' ? 'zh-CN' : 'en-US')
 }
@@ -475,6 +705,39 @@ function installPluginRecoveryNavigation(window: BrowserWindow): void {
   })
 }
 
+function restoreMainWindow(): void {
+  const window = mainWindow
+  if (window && !window.isDestroyed()) {
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+    return
+  }
+
+  const snapshot = runtime?.snapshot()
+  if (snapshot?.phase === 'ready' && snapshot.url) {
+    void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
+  } else if (snapshot?.phase === 'idle') {
+    void launchHarness().catch(showUnexpectedError)
+  }
+}
+
+function ensureTray(): void {
+  if (process.platform !== 'win32' || tray) return
+
+  const locale = harnessLocale()
+  tray = new Tray(desktopIconPath())
+  tray.setToolTip('DSH Desktop')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: locale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: restoreMainWindow },
+      { type: 'separator' },
+      { label: locale === 'zh' ? '退出' : 'Exit', click: () => app.quit() }
+    ])
+  )
+  tray.on('click', restoreMainWindow)
+}
+
 function createWindow(): BrowserWindow {
   const isWindows = process.platform === 'win32'
   const window = new BrowserWindow({
@@ -508,6 +771,11 @@ function createWindow(): BrowserWindow {
   } else if (isWindows) {
     window.setMenuBarVisibility(false)
   }
+  window.on('close', (event) => {
+    if (!shouldKeepRunningInBackground(process.platform, quitting)) return
+    event.preventDefault()
+    window.hide()
+  })
   window.on('page-title-updated', (event) => {
     event.preventDefault()
     window.setTitle('')
@@ -521,6 +789,7 @@ function createWindow(): BrowserWindow {
   installPluginRecoveryNavigation(window)
   secureWindow(window)
   installContextMenu(window, harnessLocale)
+  installMainWindowRendererRecovery(window)
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
     if (windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
@@ -557,6 +826,7 @@ async function openHarness(
     }
     if (navigationVersion !== mainWindowNavigationVersion) return
   }
+  markHarnessRendered()
   if (runtime.snapshot().url !== url || window.isDestroyed()) return
   await syncNativeTheme(window)
   raiseWindowWithoutStealingFocus(
@@ -1403,6 +1673,17 @@ function installMenu(): void {
   }
 }
 
+/**
+ * Pushed on change rather than polled: the preload used to ask every second,
+ * in every window, for a flag that only moves when a phone pairs or drops.
+ */
+function broadcastMobileStatus(connected: boolean): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue
+    window.webContents.send('mobile:status-changed', { connected })
+  }
+}
+
 async function showMobilePairing(): Promise<void> {
   if (runtime.snapshot().phase !== 'ready') {
     const options: MessageBoxOptions = {
@@ -1465,6 +1746,7 @@ async function bootstrap(): Promise<void> {
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
   nativeTheme.themeSource = harnessThemePreference()
+  ensureTray()
   createWindow()
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),
@@ -1502,7 +1784,8 @@ async function bootstrap(): Promise<void> {
     port: developmentBuild ? 43128 : 43127,
     onReconnectRequested: () => {
       void showMobilePairing().catch(showUnexpectedError)
-    }
+    },
+    onConnectedChange: (connected) => broadcastMobileStatus(connected)
   })
   if (!startInSafeMode) void mobileBridge.start().catch(showUnexpectedError)
   ipcMain.handle('directory-picker:open', async (event) => {
@@ -1626,6 +1909,8 @@ if (isDaemonLaunch(process.env, process.platform)) {
 } else {
   configureAppIdentity()
   configureApplicationLocale()
+  configureGpuFallback()
+  installGpuFallbackWatch()
   const singleInstance = app.requestSingleInstanceLock()
   if (!singleInstance) {
     app.quit()

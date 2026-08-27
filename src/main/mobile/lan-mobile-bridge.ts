@@ -25,6 +25,8 @@ import {
 const MAX_BODY_BYTES = 64 * 1024
 const PAIRING_TTL_MS = 5 * 60 * 1000
 const MUX_RECONNECT_MS = 500
+const MUX_RECONNECT_CAP_MS = 30_000
+const MUX_STABLE_MS = 5_000
 
 const RPC_ALLOWLIST = new Set([
   'workspace.list',
@@ -52,6 +54,7 @@ export interface LanMobileBridgeOptions {
   tunnelLog?: (message: string) => void
   now?: () => number
   onReconnectRequested?: () => void
+  onConnectedChange?: (connected: boolean) => void
 }
 
 export interface LanMobileBridgeSnapshot {
@@ -119,6 +122,7 @@ export class LanMobileBridge {
   private tunnelActive = false
   private tunnelLoading = false
   private tunnelError?: string
+  private tunnelLaunch?: Promise<void>
   private readonly sessions = new Map<string, MobileSession>()
   private readonly suspendedSessions = new Map<string, MobileSession>()
   private readonly pendingPairings = new Map<string, PendingPairing>()
@@ -126,6 +130,7 @@ export class LanMobileBridge {
   private readonly now: () => number
   private muxAbort?: AbortController
   private muxTask?: Promise<void>
+  private lastConnected = false
 
   constructor(private readonly options: LanMobileBridgeOptions) {
     this.now = options.now ?? Date.now
@@ -133,25 +138,30 @@ export class LanMobileBridge {
 
   async start(): Promise<LanMobileBridgeSnapshot> {
     if (this.server) {
-      if (!this.pairingToken || !this.pairingExpiresAt || this.pairingExpiresAt < this.now()) {
+      if (!this.pairingTokenValid()) {
         this.rotatePairingToken()
       }
-      this.startMuxMonitor()
+      this.syncConnected()
       return this.snapshot()
     }
     this.rotatePairingToken()
     this.server = createServer((request, response) => {
-      void this.handle(request, response).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error)
-        this.json(response, 500, { ok: false, error: message })
-      })
+      void this.handle(request, response)
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error)
+          this.json(response, 500, { ok: false, error: message })
+        })
+        // Every session change is the result of a request: pairing approval,
+        // reconnect, or disconnect. Reconciling here keeps the mux monitor and
+        // the renderers in step without polling either of them.
+        .finally(() => this.syncConnected())
     })
     await new Promise<void>((resolve, reject) => {
       this.server?.once('error', reject)
       this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
     })
     this.port = (this.server.address() as AddressInfo).port
-    this.startMuxMonitor()
+    this.syncConnected()
     return this.snapshot()
   }
 
@@ -161,6 +171,12 @@ export class LanMobileBridge {
     this.port = undefined
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
+    // Wait for an in-flight launch so the tunnel it spawns is stopped below
+    // instead of outliving the bridge (and the app).
+    if (this.tunnelLaunch) {
+      await this.tunnelLaunch.catch(() => undefined)
+      this.tunnelLaunch = undefined
+    }
     if (this.tunnelInstance) {
       await this.tunnelInstance.stop().catch(() => undefined)
       this.tunnelInstance = undefined
@@ -172,18 +188,30 @@ export class LanMobileBridge {
     this.suspendedSessions.clear()
     this.pendingPairings.clear()
     this.pendingQuestions.clear()
+    this.syncConnected()
     this.muxAbort?.abort()
     const muxTask = this.muxTask
     this.muxAbort = undefined
     this.muxTask = undefined
     if (muxTask) await muxTask.catch(() => undefined)
     if (!server) return
+    // An in-flight mobile RPC can hold its socket for up to the 30s abort
+    // timeout; close() alone waits for active connections to drain, which
+    // would stall app shutdown. Drop every live socket explicitly.
+    server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 
   async toggleTunnel(enable?: boolean): Promise<LanMobileBridgeSnapshot> {
     const targetState = enable !== undefined ? enable : !this.tunnelActive
     if (!targetState) {
+      // Wait for an in-flight launch, then stop the tunnel it spawned:
+      // otherwise the just-launched process is orphaned (or silently revives
+      // the tunnel the user asked to disable).
+      if (this.tunnelLaunch) {
+        await this.tunnelLaunch.catch(() => undefined)
+        this.tunnelLaunch = undefined
+      }
       if (this.tunnelInstance) {
         await this.tunnelInstance.stop().catch(() => undefined)
         this.tunnelInstance = undefined
@@ -198,60 +226,81 @@ export class LanMobileBridge {
       return this.snapshot()
     }
 
+    // A launch is already in flight (the cloudflared download alone can take
+    // seconds): report the loading state instead of racing a second tunnel,
+    // which would orphan the first cloudflared process.
+    if (this.tunnelLaunch) {
+      return this.snapshot()
+    }
+
     this.tunnelLoading = true
     this.tunnelError = undefined
+    const launch = this.launchTunnel()
+    this.tunnelLaunch = launch
     try {
-      const cacheDir = this.options.cloudflaredCacheDir ?? join(tmpdir(), 'dsh-cloudflared')
-      this.tunnelInstance = await startTunnelWithFallback({
-        forceCloudflareFailure: this.options.forceCloudflareFailure,
-        startCloudflare: async () => {
-          const binaryPath = await ensureCloudflaredBinary({
-            cacheDir,
-            customPath: this.options.cloudflaredPath
-          })
-          return startCloudflareQuickTunnel({
-            port: this.port!,
-            binaryPath,
-            log: this.options.tunnelLog
-          })
-        },
-        startPinggy: () =>
-          startPinggyTunnel({
-            port: this.port!,
-            sshPath: this.options.pinggySshPath,
-            knownHostsPath: join(cacheDir, 'pinggy-known-hosts'),
-            log: this.options.tunnelLog
-          }),
-        log: this.options.tunnelLog
-      })
+      await launch
       this.tunnelActive = true
-      this.tunnelLoading = false
     } catch (error) {
       this.tunnelActive = false
-      this.tunnelLoading = false
       this.tunnelError = error instanceof Error ? error.message : String(error)
+    } finally {
+      this.tunnelLoading = false
+      if (this.tunnelLaunch === launch) this.tunnelLaunch = undefined
     }
     return this.snapshot()
   }
 
+  private async launchTunnel(): Promise<void> {
+    const port = this.port
+    if (!port) throw new Error('Bridge is not running.')
+    const cacheDir = this.options.cloudflaredCacheDir ?? join(tmpdir(), 'dsh-cloudflared')
+    this.tunnelInstance = await startTunnelWithFallback({
+      forceCloudflareFailure: this.options.forceCloudflareFailure,
+      startCloudflare: async () => {
+        const binaryPath = await ensureCloudflaredBinary({
+          cacheDir,
+          customPath: this.options.cloudflaredPath
+        })
+        return startCloudflareQuickTunnel({
+          port,
+          binaryPath,
+          log: this.options.tunnelLog
+        })
+      },
+      startPinggy: () =>
+        startPinggyTunnel({
+          port,
+          sshPath: this.options.pinggySshPath,
+          knownHostsPath: join(cacheDir, 'pinggy-known-hosts'),
+          log: this.options.tunnelLog
+        }),
+      log: this.options.tunnelLog
+    })
+  }
+
   snapshot(): LanMobileBridgeSnapshot {
-    const address = preferredLanAddress()
-    if (!this.server || !this.port || !this.pairingToken || !this.pairingExpiresAt) {
-      return { running: Boolean(this.server), connected: this.sessions.size > 0 }
+    if (!this.server || !this.port) {
+      return { running: false, connected: this.sessions.size > 0 }
     }
+    // The pairing token is single-use (consumed on approval) and short-lived.
+    // Tunnel and listener state must stay visible regardless, otherwise the
+    // desktop window loses the connection-mode UI right after a phone pairs.
+    const tokenValid = this.pairingTokenValid()
+    const address = preferredLanAddress()
     const pairingUrl =
-      this.tunnelActive && this.tunnelInstance?.url
-        ? `${this.tunnelInstance.url}/pair?token=${this.pairingToken}`
-        : address
-          ? `http://${address}:${this.port}/pair?token=${this.pairingToken}`
-          : undefined
+      !tokenValid
+        ? undefined
+        : this.tunnelActive && this.tunnelInstance?.url
+          ? `${this.tunnelInstance.url}/pair?token=${this.pairingToken}`
+          : address
+            ? `http://${address}:${this.port}/pair?token=${this.pairingToken}`
+            : undefined
     return {
       running: true,
       connected: this.sessions.size > 0,
       port: this.port,
-      pairingUrl,
+      ...(tokenValid && pairingUrl ? { pairingUrl, expiresAt: this.pairingExpiresAt } : {}),
       desktopUrl: `http://127.0.0.1:${this.port}/desktop`,
-      expiresAt: this.pairingExpiresAt,
       tunnelActive: this.tunnelActive,
       tunnelLoading: this.tunnelLoading,
       tunnelUrl: this.tunnelInstance?.url,
@@ -263,6 +312,10 @@ export class LanMobileBridge {
   private rotatePairingToken(): void {
     this.pairingToken = randomBytes(32).toString('base64url')
     this.pairingExpiresAt = this.now() + PAIRING_TTL_MS
+  }
+
+  private pairingTokenValid(): boolean {
+    return Boolean(this.pairingToken && this.pairingExpiresAt && this.pairingExpiresAt >= this.now())
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -320,6 +373,14 @@ export class LanMobileBridge {
 
     if (request.method === 'GET' && url.pathname === '/desktop') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifyTrustedOrigin(request)
+      if (!this.server || !this.port) return this.text(response, 503, 'Bridge unavailable.')
+      // The token is consumed once a phone pairs, and expires after five
+      // minutes. The desktop window stays open across both: rotate so it
+      // keeps showing a scannable code instead of a dead one (or a 503).
+      if (!this.pairingTokenValid()) {
+        this.rotatePairingToken()
+      }
       const snapshot = this.snapshot()
       if (!snapshot.pairingUrl || !snapshot.expiresAt) return this.text(response, 503, 'Bridge unavailable.')
       const qrSvg = await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
@@ -376,6 +437,7 @@ export class LanMobileBridge {
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/toggle') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
           ok: false,
@@ -390,6 +452,14 @@ export class LanMobileBridge {
           if (typeof parsed.enable === 'boolean') enable = parsed.enable
         }
       } catch {}
+      // Report an in-progress switch honestly instead of answering with the
+      // current (stale) snapshot the desktop UI cannot render.
+      if (enable === true && this.tunnelLoading && !this.tunnelActive) {
+        return this.json(response, 409, {
+          ok: false,
+          error: 'A tunnel switch is already in progress.'
+        })
+      }
       const snapshot = await this.toggleTunnel(enable)
       const qrSvg = snapshot.pairingUrl
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
@@ -409,6 +479,7 @@ export class LanMobileBridge {
 
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifySameOrigin(request)
       for (const [token, session] of this.sessions) this.suspendedSessions.set(token, session)
       this.sessions.clear()
       this.pendingPairings.clear()
@@ -418,6 +489,7 @@ export class LanMobileBridge {
 
     if (request.method === 'POST' && url.pathname === '/desktop/decide') {
       if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      this.verifySameOrigin(request)
       const input = JSON.parse(await readBody(request)) as { id?: unknown; approved?: unknown }
       const pending = typeof input.id === 'string' ? this.pendingPairings.get(input.id) : undefined
       if (!pending || typeof input.approved !== 'boolean') return this.text(response, 404, 'Pairing request not found.')
@@ -622,6 +694,20 @@ export class LanMobileBridge {
   }
 
   private verifySameOrigin(request: IncomingMessage): void {
+    this.verifyTrustedOrigin(request)
+  }
+
+  /**
+   * Rejects browser-driven cross-site requests (CSRF / drive-by) against the
+   * loopback-only desktop surface. The pairing window's own navigations and
+   * same-origin fetches pass; requests without Fetch Metadata and Origin
+   * headers (local tooling, tests) pass as well.
+   */
+  private verifyTrustedOrigin(request: IncomingMessage): void {
+    const site = firstHeaderValue(request.headers['sec-fetch-site'])
+    if (site && site !== 'same-origin' && site !== 'none') {
+      throw new Error('Cross-site request rejected.')
+    }
     const origin = request.headers.origin
     const host = request.headers.host
     if (origin && host && new URL(origin).host !== host) throw new Error('Cross-origin request rejected.')
@@ -668,6 +754,27 @@ export class LanMobileBridge {
     return { ok: true, value: envelope.result.value }
   }
 
+  /**
+   * Reconciles everything that depends on a phone being attached. The mux
+   * downlink exists purely to track questions raised for a mobile client, so
+   * running it with no client meant reconnecting twice a second, forever, on
+   * every desktop that never used the feature.
+   */
+  private syncConnected(): void {
+    const connected = this.sessions.size > 0
+    if (connected) this.startMuxMonitor()
+    else this.muxAbort?.abort()
+    if (connected === this.lastConnected) return
+    this.lastConnected = connected
+    // Reconciliation runs off the request path, so a throwing observer must not
+    // turn into an unhandled rejection that fails the request behind it.
+    try {
+      this.options.onConnectedChange?.(connected)
+    } catch {
+      // A renderer that went away mid-broadcast is not the bridge's problem.
+    }
+  }
+
   private startMuxMonitor(): void {
     if (this.muxTask) return
     const abort = new AbortController()
@@ -682,28 +789,51 @@ export class LanMobileBridge {
 
   private async monitorMux(signal: AbortSignal): Promise<void> {
     let lastBase: string | undefined
+    // A Harness that never accepts the downlink used to be retried at a flat
+    // 500ms for as long as the app ran. Backing off turns a permanent failure
+    // into two attempts a minute instead of a hundred.
+    let backoffMs = MUX_RECONNECT_MS
+    const backOff = async (): Promise<void> => {
+      await waitFor(backoffMs, signal)
+      backoffMs = Math.min(backoffMs * 2, MUX_RECONNECT_CAP_MS)
+    }
+
     while (!signal.aborted) {
       const base = this.options.harnessUrl()
       if (!base) {
         this.pendingQuestions.clear()
-        await waitFor(MUX_RECONNECT_MS, signal)
+        await backOff()
         continue
       }
       if (base !== lastBase) {
         this.pendingQuestions.clear()
         lastBase = base
+        backoffMs = MUX_RECONNECT_MS
       }
+      let openedAt: number | undefined
       try {
-        await this.consumeMux(base, signal)
+        await this.consumeMux(base, signal, () => {
+          openedAt = this.now()
+        })
+        backoffMs = MUX_RECONNECT_MS
       } catch {
         if (signal.aborted) return
         this.pendingQuestions.clear()
-        await waitFor(MUX_RECONNECT_MS, signal)
+        // A connection that held for a while and then dropped is a transient
+        // fault, not a Harness that refuses the downlink: retry promptly.
+        if (openedAt !== undefined && this.now() - openedAt >= MUX_STABLE_MS) {
+          backoffMs = MUX_RECONNECT_MS
+        }
+        await backOff()
       }
     }
   }
 
-  private async consumeMux(base: string, signal: AbortSignal): Promise<void> {
+  private async consumeMux(
+    base: string,
+    signal: AbortSignal,
+    onOpen?: () => void
+  ): Promise<void> {
     // The network Harness exposes mux events only as a downlink WebSocket;
     // ordinary GET requests intentionally return 426 with no SSE fallback.
     const url = new URL('/api/events.mux', base)
@@ -729,7 +859,10 @@ export class LanMobileBridge {
         else resolve()
       }
       const handleAbort = (): void => finish()
-      const handleOpen = (): void => this.pendingQuestions.clear()
+      const handleOpen = (): void => {
+        onOpen?.()
+        this.pendingQuestions.clear()
+      }
       const handleMessage = (event: MessageEvent): void => {
         if (typeof event.data === 'string') this.consumeMuxEnvelope(event.data)
       }
@@ -799,6 +932,7 @@ export class LanMobileBridge {
   }
 
   private html(response: ServerResponse, body: string): void {
+    if (response.destroyed) return
     response.statusCode = 200
     response.setHeader('content-type', 'text/html; charset=utf-8')
     response.end(body)
@@ -811,12 +945,14 @@ export class LanMobileBridge {
   }
 
   private text(response: ServerResponse, status: number, body: string): void {
+    if (response.destroyed) return
     response.statusCode = status
     response.setHeader('content-type', 'text/plain; charset=utf-8')
     response.end(body)
   }
 
   private json(response: ServerResponse, status: number, body: unknown): void {
+    if (response.destroyed) return
     if (response.headersSent) {
       response.end()
       return

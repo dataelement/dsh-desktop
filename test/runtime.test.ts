@@ -97,6 +97,10 @@ describe('Harness launch contract', () => {
       cwd: 'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\launch-root',
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      // Detaching the Harness on Windows gives it its own console and process
+      // group, so a buggy child calling `os.kill(pid, 0)` cannot broadcast a
+      // Ctrl+C back to the desktop main process (issue #208).
+      detached: true,
       env: {
         DSH_HOME: 'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
         NO_COLOR: '1',
@@ -104,6 +108,18 @@ describe('Harness launch contract', () => {
       }
     })
     expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+  })
+
+  it('does not detach the Harness on macOS or Linux', () => {
+    // `detached: true` is a Windows-only escape hatch. The macOS path uses
+    // Electron's UtilityProcess fork, and Linux spawns are unaffected by
+    // the Windows console-broadcast problem the flag works around.
+    for (const platform of ['darwin', 'linux'] as const) {
+      const options = buildHarnessSpawnOptions('/launch-root', '/harness', platform, {
+        PATH: '/usr/bin'
+      })
+      expect(options.detached).toBeFalsy()
+    }
   })
 
   it('passes the internal-loader flag directly to bundled Node.js', () => {
@@ -162,12 +178,7 @@ describe('Harness launch contract', () => {
           PATH: '/usr/bin',
           DSH_HOME: '/Users/tester/Library/Application Support/dsh-desktop/harness',
           NO_COLOR: '1',
-          PNPM_MAX_WORKERS: '1',
-          npm_config_child_concurrency: '1',
-          npm_config_package_import_method: 'clone-or-copy',
           npm_config_side_effects_cache: 'false',
-          PNPM_CONFIG_CHILD_CONCURRENCY: '1',
-          PNPM_CONFIG_PACKAGE_IMPORT_METHOD: 'clone-or-copy',
           PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false'
         },
         execArgv: ['--expose-internals'],
