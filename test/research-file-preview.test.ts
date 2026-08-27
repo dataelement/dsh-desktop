@@ -3,21 +3,30 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
+  realpath,
   rm,
+  stat,
   symlink,
   writeFile
 } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { Readable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   FileResearchPreviewAuthorizationStorage,
   HarnessWorkspaceFileResolver,
   RESEARCH_PREVIEW_CSP,
   ResearchFilePreviewRegistry,
+  handleResearchFilePreviewProtocolRequest,
   registerResearchFilePreviewHandlers,
   researchPreviewAuthorizationStoragePath,
+  type ResearchPreviewAuthorizationStorage,
+  type ResearchPreviewFileSystem,
+  type ResearchPreviewAuthorizationRecord,
   type ResearchFilePreviewDescriptor
 } from '../src/main/state/research-file-preview'
 
@@ -96,6 +105,58 @@ function expectDescriptor(value: ResearchFilePreviewDescriptor | null): asserts 
   expect(value).not.toBeNull()
   expect(value?.authorizationId).toMatch(/^authorization_/)
   expect(value?.url).toMatch(/^sherlock-preview:\/\/capability_[a-z0-9_]+\/$/)
+}
+
+class ControllableAuthorizationStorage implements ResearchPreviewAuthorizationStorage {
+  records: ResearchPreviewAuthorizationRecord[] = []
+  failWrites = false
+
+  load(): ResearchPreviewAuthorizationRecord[] {
+    return this.records.map((record) => ({ ...record }))
+  }
+
+  save(records: readonly ResearchPreviewAuthorizationRecord[]): boolean {
+    if (this.failWrites) return false
+    this.records = records.map((record) => ({ ...record }))
+    return true
+  }
+}
+
+function countingRealFileSystem() {
+  let reads = 0
+  const fileSystem: ResearchPreviewFileSystem = {
+    async realpath(targetPath) {
+      reads += 1
+      return realpath(targetPath)
+    },
+    async stat(targetPath) {
+      reads += 1
+      return stat(targetPath)
+    },
+    async readSlice(targetPath, start, endInclusive) {
+      reads += 1
+      const handle = await open(targetPath, 'r')
+      try {
+        const result = Buffer.allocUnsafe(Math.max(0, endInclusive - start + 1))
+        const { bytesRead } = await handle.read(result, 0, result.length, start)
+        return result.subarray(0, bytesRead)
+      } finally {
+        await handle.close()
+      }
+    },
+    stream(targetPath, start, endInclusive) {
+      reads += 1
+      return Readable.toWeb(createReadStream(targetPath, {
+        start,
+        end: endInclusive
+      })) as ReadableStream<Uint8Array>
+    }
+  }
+  return {
+    fileSystem,
+    reads: () => reads,
+    reset: () => { reads = 0 }
+  }
 }
 
 describe('Research file preview authorization registry', () => {
@@ -292,6 +353,76 @@ describe('Research file preview authorization registry', () => {
     registry.revokeSession('session-2')
     expect((await registry.handle(new Request(third.url))).status).toBe(403)
   })
+
+  it.each([
+    {
+      label: 'authorization',
+      revoke: (registry: ResearchFilePreviewRegistry, descriptor: ResearchFilePreviewDescriptor) =>
+        registry.revokeAuthorization(descriptor.authorizationId)
+    },
+    {
+      label: 'node',
+      revoke: (registry: ResearchFilePreviewRegistry) =>
+        registry.revokeNode('session-1', 'node-1')
+    },
+    {
+      label: 'session',
+      revoke: (registry: ResearchFilePreviewRegistry) =>
+        registry.revokeSession('session-1')
+    }
+  ])('keeps $label revocation transactional across storage failure and restart', async ({ revoke }) => {
+    const root = await temporaryDirectory()
+    const filePath = path.join(root, 'portrait.png')
+    await writeFile(filePath, pngBytes)
+    const storage = new ControllableAuthorizationStorage()
+    const registry = new ResearchFilePreviewRegistry({
+      storage,
+      randomId: deterministicIds(
+        'authorization_0000000000000001',
+        'capability_0000000000000001'
+      )
+    })
+    const descriptor = await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'node-1'
+    })
+    expectDescriptor(descriptor)
+    expect(storage.records).toHaveLength(1)
+
+    storage.failWrites = true
+    expect(revoke(registry, descriptor)).toBe(false)
+    expect(storage.records).toHaveLength(1)
+    expect((await registry.handle(new Request(descriptor.url))).status).toBe(200)
+
+    const restartAfterFailure = new ResearchFilePreviewRegistry({
+      storage,
+      randomId: deterministicIds('capability_0000000000000002')
+    })
+    await expect(restartAfterFailure.restore({
+      authorizationId: descriptor.authorizationId,
+      sessionId: 'session-1',
+      nodeId: 'node-1'
+    })).resolves.toMatchObject({
+      authorizationId: descriptor.authorizationId,
+      url: 'sherlock-preview://capability_0000000000000002/'
+    })
+
+    storage.failWrites = false
+    expect(revoke(registry, descriptor)).toBe(true)
+    expect(storage.records).toHaveLength(0)
+    expect((await registry.handle(new Request(descriptor.url))).status).toBe(403)
+
+    const restartAfterSuccess = new ResearchFilePreviewRegistry({
+      storage,
+      randomId: deterministicIds('unused_capability_0000000000000003')
+    })
+    await expect(restartAfterSuccess.restore({
+      authorizationId: descriptor.authorizationId,
+      sessionId: 'session-1',
+      nodeId: 'node-1'
+    })).resolves.toBeNull()
+  })
 })
 
 describe('sherlock-preview protocol responses', () => {
@@ -433,6 +564,121 @@ describe('sherlock-preview protocol responses', () => {
       } as Request)
       expect(malformed.status, suffix).toBe(403)
     }
+  })
+
+  it('allows only the current trusted main-window origin and rejects other origins before file access', async () => {
+    const root = await temporaryDirectory()
+    const filePath = path.join(root, 'portrait.png')
+    await writeFile(filePath, pngBytes)
+    const access = countingRealFileSystem()
+    const registry = new ResearchFilePreviewRegistry({
+      storage: new ControllableAuthorizationStorage(),
+      fileSystem: access.fileSystem,
+      randomId: deterministicIds(
+        'authorization_0000000000000001',
+        'capability_0000000000000001'
+      )
+    })
+    const descriptor = await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'node-1'
+    })
+    expectDescriptor(descriptor)
+
+    let mainWindowUrl = 'http://127.0.0.1:45821/research'
+    const getMainWindow = () => ({
+      isDestroyed: () => false,
+      webContents: { getURL: () => mainWindowUrl }
+    })
+    const request = (origin?: string) => handleResearchFilePreviewProtocolRequest(
+      registry,
+      getMainWindow,
+      new Request(descriptor.url, origin ? { headers: { Origin: origin } } : undefined)
+    )
+
+    access.reset()
+    const allowed = await request('http://127.0.0.1:45821')
+    expect(allowed.status).toBe(200)
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:45821')
+    expect(allowed.headers.get('vary')).toBe('Origin')
+    expect(allowed.headers.get('access-control-expose-headers')).toBe(
+      'Accept-Ranges, Content-Length, Content-Range, Content-Type'
+    )
+    expect(await body(allowed)).toEqual(pngBytes)
+
+    for (const deniedOrigin of [
+      'http://127.0.0.1:45822',
+      'https://attacker.example'
+    ]) {
+      access.reset()
+      const denied = await request(deniedOrigin)
+      expect(denied.status, deniedOrigin).toBe(403)
+      expect(denied.headers.get('access-control-allow-origin'), deniedOrigin).toBeNull()
+      expect(access.reads(), deniedOrigin).toBe(0)
+    }
+
+    access.reset()
+    const navigation = await request()
+    expect(navigation.status).toBe(200)
+    expect(navigation.headers.get('access-control-allow-origin')).toBeNull()
+    expect(await body(navigation)).toEqual(pngBytes)
+
+    mainWindowUrl = 'https://attacker.example/research'
+    access.reset()
+    expect((await request('https://attacker.example')).status).toBe(403)
+    expect(access.reads()).toBe(0)
+  })
+
+  it('answers a narrow Range preflight and exposes range metadata to the allowed origin', async () => {
+    const { registry, root } = await fixture()
+    const filePath = path.join(root, 'report.pdf')
+    const bytes = Buffer.from('%PDF-1234567890')
+    await writeFile(filePath, bytes)
+    const descriptor = await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'pdf-1'
+    })
+    expectDescriptor(descriptor)
+    const getMainWindow = () => ({
+      isDestroyed: () => false,
+      webContents: { getURL: () => 'http://localhost:46317/research' }
+    })
+
+    const preflight = await handleResearchFilePreviewProtocolRequest(
+      registry,
+      getMainWindow,
+      new Request(descriptor.url, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: 'http://localhost:46317',
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': 'Range'
+        }
+      })
+    )
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.get('access-control-allow-origin')).toBe('http://localhost:46317')
+    expect(preflight.headers.get('access-control-allow-methods')).toBe('GET, HEAD, OPTIONS')
+    expect(preflight.headers.get('access-control-allow-headers')).toBe('Range')
+    expect(preflight.headers.get('vary')).toBe('Origin')
+
+    const range = await handleResearchFilePreviewProtocolRequest(
+      registry,
+      getMainWindow,
+      new Request(descriptor.url, {
+        headers: {
+          Origin: 'http://localhost:46317',
+          Range: 'bytes=0-3'
+        }
+      })
+    )
+    expect(range.status).toBe(206)
+    expect(range.headers.get('content-range')).toBe(`bytes 0-3/${bytes.length}`)
+    expect(range.headers.get('access-control-allow-origin')).toBe('http://localhost:46317')
+    expect(range.headers.get('access-control-expose-headers')).toContain('Content-Range')
+    expect(await body(range)).toEqual(bytes.subarray(0, 4))
   })
 })
 

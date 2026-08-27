@@ -16,6 +16,7 @@ import {
   registerTrustedMainWindowHandler,
   type TrustedWindow
 } from '../ipc-trust'
+import { isTrustedAppUrl } from '../security-policy'
 
 export const RESEARCH_PREVIEW_SCHEME = 'sherlock-preview'
 export const RESEARCH_PREVIEW_CSP = [
@@ -42,6 +43,7 @@ const DEFAULT_CAPABILITY_TTL_MS = 15 * 60 * 1000
 const MAX_PATH_LENGTH = 8 * 1024
 const MAX_ID_LENGTH = 512
 const MAGIC_PREFIX_BYTES = 512
+const CORS_EXPOSE_HEADERS = 'Accept-Ranges, Content-Length, Content-Range, Content-Type'
 
 export type ResearchPreviewSource = 'finder' | 'sidebar'
 
@@ -342,7 +344,7 @@ function isRootPreviewKind(kind: PreviewKind | undefined): kind is PreviewKind {
   return kind?.rootPreview === true
 }
 
-function securityHeaders(contentType?: string): Headers {
+function securityHeaders(contentType?: string, corsOrigin?: string): Headers {
   const headers = new Headers({
     'Cache-Control': 'no-store',
     'Content-Security-Policy': RESEARCH_PREVIEW_CSP,
@@ -350,11 +352,21 @@ function securityHeaders(contentType?: string): Headers {
     'X-Content-Type-Options': 'nosniff'
   })
   if (contentType) headers.set('Content-Type', contentType)
+  if (corsOrigin) {
+    headers.set('Access-Control-Allow-Origin', corsOrigin)
+    headers.set('Access-Control-Expose-Headers', CORS_EXPOSE_HEADERS)
+    headers.set('Vary', 'Origin')
+  }
   return headers
 }
 
-function errorResponse(status: number, message: string, extra?: Record<string, string>): Response {
-  const headers = securityHeaders('text/plain; charset=utf-8')
+function errorResponse(
+  status: number,
+  message: string,
+  extra?: Record<string, string>,
+  corsOrigin?: string
+): Response {
+  const headers = securityHeaders('text/plain; charset=utf-8', corsOrigin)
   for (const [key, value] of Object.entries(extra ?? {})) headers.set(key, value)
   return new Response(message, { status, headers })
 }
@@ -453,10 +465,8 @@ export class ResearchFilePreviewRegistry {
   }
 
   revokeAuthorization(authorizationId: unknown): boolean {
-    if (!opaqueId(authorizationId) || !this.authorizations.delete(authorizationId)) return false
-    this.revokeCapabilities((capability) => capability.authorizationId === authorizationId)
-    this.persist()
-    return true
+    if (!opaqueId(authorizationId) || !this.authorizations.has(authorizationId)) return false
+    return this.commitRevocations(new Set([authorizationId]))
   }
 
   revokeNode(sessionId: unknown, nodeId: unknown): boolean {
@@ -469,54 +479,83 @@ export class ResearchFilePreviewRegistry {
     return this.revokeWhere((record) => record.sessionId === sessionId)
   }
 
-  async handle(request: Request): Promise<Response> {
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      return errorResponse(405, 'Method not allowed.', { Allow: 'GET, HEAD' })
+  async handle(request: Request, allowedOrigin: string | null = null): Promise<Response> {
+    const requestOrigin = request.headers.get('Origin')
+    if (requestOrigin !== null && requestOrigin !== allowedOrigin) {
+      return errorResponse(403, 'Preview origin denied.')
+    }
+    const corsOrigin = requestOrigin ?? undefined
+    const fail = (status: number, message: string, extra?: Record<string, string>) =>
+      errorResponse(status, message, extra, corsOrigin)
+
+    if (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'OPTIONS') {
+      return fail(405, 'Method not allowed.', { Allow: 'GET, HEAD, OPTIONS' })
     }
     const resource = requestResource(request.url)
-    if (!resource) return errorResponse(403, 'Preview capability denied.')
+    if (!resource) return fail(403, 'Preview capability denied.')
     const capability = this.capabilities.get(resource.token)
     if (!capability || capability.expiresAt <= this.now()) {
       this.capabilities.delete(resource.token)
-      return errorResponse(403, 'Preview capability denied.')
+      return fail(403, 'Preview capability denied.')
     }
     const authorization = this.authorizations.get(capability.authorizationId)
     if (!authorization) {
       this.capabilities.delete(resource.token)
-      return errorResponse(403, 'Preview capability denied.')
+      return fail(403, 'Preview capability denied.')
+    }
+
+    if (request.method === 'OPTIONS') {
+      if (!corsOrigin || request.headers.get('Access-Control-Request-Method') === null) {
+        return fail(403, 'Preview preflight denied.')
+      }
+      const requestedMethod = request.headers.get('Access-Control-Request-Method')?.toUpperCase()
+      if (requestedMethod !== 'GET' && requestedMethod !== 'HEAD') {
+        return fail(403, 'Preview preflight denied.')
+      }
+      const requestedHeaders = (request.headers.get('Access-Control-Request-Headers') ?? '')
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean)
+      if (requestedHeaders.some((header) => header !== 'range')) {
+        return fail(403, 'Preview preflight denied.')
+      }
+      const headers = securityHeaders(undefined, corsOrigin)
+      headers.set('Access-Control-Allow-Headers', 'Range')
+      headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
+      return new Response(null, { status: 204, headers })
     }
 
     try {
       const root = await this.fileSystem.realpath(authorization.root)
       const authorizedTarget = await this.fileSystem.realpath(authorization.path)
-      if (!isContained(root, authorizedTarget)) return errorResponse(403, 'Preview path denied.')
+      if (!isContained(root, authorizedTarget)) return fail(403, 'Preview path denied.')
       const resourceRoot = authorization.allowSubresources
         ? await this.fileSystem.realpath(path.dirname(authorization.path))
         : path.dirname(authorizedTarget)
-      if (!isContained(root, resourceRoot)) return errorResponse(403, 'Preview path denied.')
+      if (!isContained(root, resourceRoot)) return fail(403, 'Preview path denied.')
 
       let candidate = authorizedTarget
       if (resource.relativePath !== '') {
-        if (!authorization.allowSubresources) return errorResponse(403, 'Preview path denied.')
+        if (!authorization.allowSubresources) return fail(403, 'Preview path denied.')
         candidate = await this.fileSystem.realpath(path.resolve(resourceRoot, resource.relativePath))
         if (!isContained(root, candidate) || !isContained(resourceRoot, candidate)) {
-          return errorResponse(403, 'Preview path denied.')
+          return fail(403, 'Preview path denied.')
         }
       }
       const file = await this.fileSystem.stat(candidate)
-      if (!file.isFile()) return errorResponse(404, 'Preview file not found.')
+      if (!file.isFile()) return fail(404, 'Preview file not found.')
       const kind = kindForPath(candidate)
       if (!kind || (!authorization.allowSubresources && kind.contentType !== authorization.contentType)) {
-        return errorResponse(415, 'Unsupported preview type.')
+        return fail(415, 'Unsupported preview type.')
       }
       const prefix = await this.fileSystem.readSlice(
         candidate,
         0,
         Math.min(Math.max(0, file.size - 1), MAGIC_PREFIX_BYTES - 1)
       )
-      if (!kind.validateMagic(prefix)) return errorResponse(415, 'Preview type mismatch.')
+      if (!kind.validateMagic(prefix)) return fail(415, 'Preview type mismatch.')
 
-      const headers = securityHeaders(kind.contentType)
+      const headers = securityHeaders(kind.contentType, corsOrigin)
       headers.set('Accept-Ranges', 'bytes')
       const rangeHeader = request.headers.get('range')
       const range = rangeHeader === null ? null : parseRange(rangeHeader, file.size)
@@ -536,8 +575,8 @@ export class ResearchFilePreviewRegistry {
       return new Response(responseBody, { status: range ? 206 : 200, headers })
     } catch (error) {
       return isMissingFileError(error)
-        ? errorResponse(404, 'Preview file not found.')
-        : errorResponse(403, 'Preview path denied.')
+        ? fail(404, 'Preview file not found.')
+        : fail(403, 'Preview path denied.')
     }
   }
 
@@ -640,11 +679,18 @@ export class ResearchFilePreviewRegistry {
     for (const [authorizationId, record] of this.authorizations) {
       if (!predicate(record)) continue
       removed.add(authorizationId)
-      this.authorizations.delete(authorizationId)
     }
     if (removed.size === 0) return false
+    return this.commitRevocations(removed)
+  }
+
+  private commitRevocations(removed: ReadonlySet<string>): boolean {
+    const retained = [...this.authorizations.values()].filter(
+      (record) => !removed.has(record.authorizationId)
+    )
+    if (!this.options.storage.save(retained)) return false
+    for (const authorizationId of removed) this.authorizations.delete(authorizationId)
     this.revokeCapabilities((capability) => removed.has(capability.authorizationId))
-    this.persist()
     return true
   }
 
@@ -671,6 +717,36 @@ export class ResearchFilePreviewRegistry {
     const input = value as Partial<RestoreRequest>
     return opaqueId(input.authorizationId) && boundedId(input.sessionId) && boundedId(input.nodeId)
   }
+}
+
+type ResearchPreviewProtocolWindow = {
+  isDestroyed(): boolean
+  webContents: {
+    getURL(): string
+  }
+}
+
+export function researchPreviewOriginForWindow(
+  window: ResearchPreviewProtocolWindow | undefined
+): string | null {
+  if (!window || window.isDestroyed()) return null
+  try {
+    const currentUrl = window.webContents.getURL()
+    const parsed = new URL(currentUrl)
+    if (parsed.protocol !== 'http:' || parsed.username || parsed.password ||
+        !isTrustedAppUrl(currentUrl)) return null
+    return parsed.origin
+  } catch {
+    return null
+  }
+}
+
+export function handleResearchFilePreviewProtocolRequest(
+  registry: ResearchFilePreviewRegistry,
+  getMainWindow: () => ResearchPreviewProtocolWindow | undefined,
+  request: Request
+): Promise<Response> {
+  return registry.handle(request, researchPreviewOriginForWindow(getMainWindow()))
 }
 
 type ResearchPreviewIpcMain = {

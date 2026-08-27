@@ -73,3 +73,41 @@ exit 0
 - Task 3 只生产安全 preview descriptor 与协议。Task 5/6 才会让 rich canvas node 消费 descriptor、在节点删除/session 切换时调用 revoke，并完成图片/PDF/HTML 的真实组件接线。
 - 当前 HTML 脚本由 CSP 禁用；Task 6 必须同时用 sandbox iframe（无 `allow-same-origin`、表单、popup、下载、top navigation）及既有 Task 2 frame/IPC 测试来证明可安全开放本 capability 下的脚本。
 - 最终 packaged app 与真实画布交互验证属于 Task 7；本任务按计划只执行聚焦测试、类型检查与 diff 检查。
+
+## Review fix round 1/5
+
+### 撤销事务性
+
+评审指出 `revokeAuthorization`、`revokeNode`、`revokeSession` 原先会先删除内存授权和 capability，再忽略 `storage.save(false)` 并返回成功。这会让旧磁盘授权在重启后复活，同时误导调用方撤销已经持久化。
+
+先增加三组表驱动行为测试，在可控存储拒绝写入时得到 RED：三种入口都返回了 `true`，而测试要求 `false`。实现改为先构造保留授权候选集合，只有 `storage.save` 成功后才提交内存删除与 token 撤销。失败时内存、旧 token 和磁盘记录全部保持一致；写入恢复后再次撤销成功，重启也无法 restore。
+
+### 动态主窗口 Origin 与 Chromium CORS
+
+评审确认 `corsEnabled/supportFetchAPI` 本身不足以让 Task 6 的 PDF.js 从动态 Harness origin 跨源 fetch。先增加真实 registry + production protocol wrapper 行为测试，得到 RED：`handleResearchFilePreviewProtocolRequest` 尚不存在。
+
+实现后的 protocol wrapper 每次请求都从当前 `mainWindow.webContents.getURL()` 解析 origin，并复用可信应用 URL 策略，仅接受实际 `http://127.0.0.1:<port>` 或 `http://localhost:<port>` origin。renderer 无法传入 allowed origin。带 Origin 的合法请求精确回显：
+
+- `Access-Control-Allow-Origin: <当前精确 origin>`；
+- `Vary: Origin`；
+- `Access-Control-Expose-Headers: Accept-Ranges, Content-Length, Content-Range, Content-Type`。
+
+错误端口、外部 origin 或当前窗口不是可信 Harness HTTP URL 时，在任何 `realpath/stat/read/stream` 前返回 403，且不返回 ACAO。无 Origin 的 image/iframe navigation 保持原 capability 语义。另窄支持 OPTIONS，只接受 GET/HEAD 与 `Range` 请求头，并返回相同精确 origin、`Access-Control-Allow-Headers: Range` 和允许方法。
+
+本轮 GREEN：
+
+```text
+npm test -- --run test/research-file-preview.test.ts test/research-file-drop.test.ts
+Test Files  2 passed (2)
+Tests       68 passed (68)
+
+npm test -- --run test/preload-main-frame.test.ts test/security.test.ts test/ipc-trust.test.ts
+Test Files  3 passed (3)
+Tests       11 passed (11)
+
+npm run typecheck
+> tsc --noEmit -p tsconfig.node.json
+exit 0
+```
+
+当前仓库没有小型 Electron/Chromium CORS 集成 harness，因此本轮用真实 service、真实文件访问和生产 origin wrapper 验证边界；Task 7 仍需在本地构建的真实 Sherlock 中用 PDF.js 验证动态端口的 Range fetch。

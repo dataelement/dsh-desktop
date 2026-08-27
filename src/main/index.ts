@@ -74,6 +74,7 @@ import {
   HarnessWorkspaceFileResolver,
   RESEARCH_PREVIEW_SCHEME,
   ResearchFilePreviewRegistry,
+  handleResearchFilePreviewProtocolRequest,
   registerResearchFilePreviewHandlers
 } from './state/research-file-preview'
 
@@ -1001,7 +1002,11 @@ async function bootstrap(): Promise<void> {
   })
   protocol.handle(
     RESEARCH_PREVIEW_SCHEME,
-    (request) => researchFilePreviewRegistry!.handle(request)
+    (request) => handleResearchFilePreviewProtocolRequest(
+      researchFilePreviewRegistry!,
+      () => mainWindow,
+      request
+    )
   )
   createWindow()
   localSearchRuntime = await startLocalSearchRuntime({
