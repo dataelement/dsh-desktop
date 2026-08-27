@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..f20bda2 100644
+index 1dd0e89..49e8449 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -3290,12 +3290,12 @@ index 1dd0e89..f20bda2 100644
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
  		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
-@@ -6793,7 +9256,16 @@ window.__ModuleLoader__.load({
+@@ -6793,7 +9256,17 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$6;
 -			tag.textContent = css$6;
-+			tag.textContent = css$6 + ".sRp_root{--dsh-chat-content-width:100%;--dsh-composer-card-max-width:100%;--dsh-composer-side-clearance:8px;--dsh-composer-dock-inset:4px;position:absolute;inset:0;z-index:2;min-width:0;height:100%;background:transparent;display:flex;flex-direction:column;pointer-events:none;overflow:hidden}.sRp_root[data-research-active=false]{opacity:0;pointer-events:none}.sRp_root[data-research-active=false] *{pointer-events:none!important}.sRp_tabs{pointer-events:auto;flex:none;min-width:0;height:44px;padding:7px 8px 6px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);display:flex;align-items:center;gap:4px;overflow:hidden}.sRp_tab{min-width:0;height:30px;padding:0 9px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:20px;white-space:nowrap;cursor:pointer;position:relative;display:inline-flex;align-items:center;gap:5px}.sRp_tab[aria-selected=true]{background:var(--dsw-alias-interactive-bg-hover-solid);color:var(--dsw-alias-label-primary)}.sRp_tab[data-unread=true]:after{content:\"\";width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-business-primary);flex:none}.sRp_tab[data-running=true]:before{content:\"\";width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-business-primary);animation:sRp_running 1s ease-in-out infinite alternate;flex:none}@keyframes sRp_running{from{opacity:.3}to{opacity:1}}.sRp_close,.sRp_add{width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-caption);cursor:pointer;display:grid;place-items:center;flex:none}.sRp_close:hover,.sRp_add:hover{background:var(--dsw-alias-interactive-bg-hover)}.sRp_close{margin-left:-6px}.sRp_add{margin-left:auto;font-size:18px}.sRp_body{pointer-events:auto;min-width:0;min-height:0;flex:1;background:var(--dsw-alias-bg-base);overflow:hidden}.sRp_body[hidden]{display:none}.sRp_conversation{min-height:0;height:100%;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}.sRp_messages{min-height:0;flex:1}.sRp_composer{position:sticky;bottom:0;flex:none;min-width:0;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 0%,transparent),var(--dsw-alias-bg-base) 24px);overflow:hidden}.sRp_composer .uV2eYG_tools{gap:8px}.sRp_composer .uV2eYG_modes,.sRp_composer .uV2eYG_trailing{gap:6px}.sRp_files{height:100%;padding:8px;overflow:auto}.sRp_file{width:100%;min-width:0;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px}.sRp_file[draggable=true]{cursor:grab}.sRp_file:hover{background:var(--dsw-alias-interactive-bg-hover)}.sRp_fileName{min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font-size:13px}.sRp_fileMeta{grid-column:1/-1;color:var(--dsw-alias-label-caption);font-size:11px}.sRp_fileUnavailable{color:var(--dsw-alias-state-warn-label)}.sRp_selectionAction{z-index:20;position:fixed;pointer-events:auto;border:0;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff;padding:5px 9px;font-size:12px;box-shadow:var(--dsw-shadow-lv2);cursor:pointer}.sRp_sourceStatus{z-index:19;position:absolute;right:10px;bottom:72px;pointer-events:none;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-warn-label);padding:7px 10px;font-size:12px;box-shadow:var(--dsw-shadow-lv1)}@media (prefers-reduced-motion:reduce){.sRp_tab[data-running=true]:before{animation:none}}";
++			tag.textContent = css$6 + ".wSkVaW_root{position:relative}.wSkVaW_root[data-phase=hero]>[data-center-composer-host]{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}.sRp_root{--dsh-chat-content-width:100%;--dsh-composer-card-max-width:100%;--dsh-composer-side-clearance:8px;--dsh-composer-dock-inset:4px;position:absolute;inset:0;z-index:2;min-width:0;height:100%;background:transparent;display:flex;flex-direction:column;pointer-events:none;overflow:hidden}.sRp_root[data-research-active=false]{opacity:0;pointer-events:none}.sRp_root[data-research-active=false] *{pointer-events:none!important}.sRp_tabs{pointer-events:auto;flex:none;min-width:0;height:44px;padding:7px 8px 6px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);display:flex;align-items:center;gap:4px;overflow:hidden}.sRp_tab{min-width:0;height:30px;padding:0 9px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:20px;white-space:nowrap;cursor:pointer;position:relative;display:inline-flex;align-items:center;gap:5px}.sRp_tab[aria-selected=true]{background:var(--dsw-alias-interactive-bg-hover-solid);color:var(--dsw-alias-label-primary)}.sRp_tab[data-unread=true]:after{content:\"\";width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-business-primary);flex:none}.sRp_tab[data-running=true]:before{content:\"\";width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-business-primary);animation:sRp_running 1s ease-in-out infinite alternate;flex:none}@keyframes sRp_running{from{opacity:.3}to{opacity:1}}.sRp_close,.sRp_add{width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-caption);cursor:pointer;display:grid;place-items:center;flex:none}.sRp_close:hover,.sRp_add:hover{background:var(--dsw-alias-interactive-bg-hover)}.sRp_close{margin-left:-6px}.sRp_add{margin-left:auto;font-size:18px}.sRp_body{pointer-events:auto;min-width:0;min-height:0;flex:1;background:var(--dsw-alias-bg-base);overflow:hidden}.sRp_body[hidden]{display:none}.sRp_conversation{min-height:0;height:100%;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}.sRp_messages{min-height:0;flex:1}.sRp_composer{position:sticky;bottom:0;flex:none;min-width:0;background:linear-gradient(180deg,color-mix(in srgb,var(--dsw-alias-bg-base) 0%,transparent),var(--dsw-alias-bg-base) 24px);overflow:hidden}.sRp_composer .uV2eYG_tools{gap:8px}.sRp_composer .uV2eYG_modes,.sRp_composer .uV2eYG_trailing{gap:6px}.sRp_files{height:100%;padding:8px;overflow:auto}.sRp_file{width:100%;min-width:0;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px}.sRp_file[draggable=true]{cursor:grab}.sRp_file:hover{background:var(--dsw-alias-interactive-bg-hover)}.sRp_fileName{min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font-size:13px}.sRp_fileMeta{grid-column:1/-1;color:var(--dsw-alias-label-caption);font-size:11px}.sRp_fileUnavailable{color:var(--dsw-alias-state-warn-label)}.sRp_selectionAction{z-index:20;position:fixed;pointer-events:auto;border:0;border-radius:8px;background:var(--dsw-alias-state-business-primary);color:#fff;padding:5px 9px;font-size:12px;box-shadow:var(--dsw-shadow-lv2);cursor:pointer}.sRp_sourceStatus{z-index:19;position:absolute;right:10px;bottom:72px;pointer-events:none;border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-warn-label);padding:7px 10px;font-size:12px;box-shadow:var(--dsw-shadow-lv1)}@media (prefers-reduced-motion:reduce){.sRp_tab[data-running=true]:before{animation:none}}";
 +			tag.textContent += ".sRp_root{position:relative;inset:auto;z-index:auto;box-sizing:border-box;width:100%;height:100%;container-type:inline-size;background:var(--dsw-alias-bg-base);pointer-events:auto}.sRp_tabs,.sRp_files{display:none!important}.sRp_body{width:100%;height:100%}.sRp_conversation{min-width:0;max-width:100%;overflow-x:hidden}.sRp_messages{min-width:0;max-width:100%;overflow-x:hidden}.sRp_root .Md3f7G_scroll{box-sizing:border-box;max-width:100%;padding-inline:16px}.sRp_root .Md3f7G_column,.sRp_root .Md3f7G_flowItem{min-width:0;max-width:100%}.sRp_root .p-xYUq_actions{min-width:0;max-width:100%;height:auto;flex-wrap:wrap}.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}.sRp_root .FJxK0a_root{max-width:100%;padding-inline:12px}.sRp_root pre{box-sizing:border-box;max-width:100%;overflow-x:auto}.sRp_root code{max-width:100%;overflow-wrap:anywhere}.sRp_composer{box-sizing:border-box;width:100%;max-width:100%;overflow:hidden}.sRp_composer .uV2eYG_root,.sRp_composer .uV2eYG_card,.sRp_composer .uV2eYG_row{box-sizing:border-box;min-width:0;max-width:100%}.sRp_composer .uV2eYG_row{gap:6px}.sRp_composer .uV2eYG_tools,.sRp_composer .uV2eYG_modes{min-width:0}.sRp_composer .uV2eYG_select{min-width:0;max-width:min(180px,40cqw)}@container (max-width:360px){.sRp_root{--dsh-composer-side-clearance:6px}.sRp_root .Md3f7G_scroll{padding-inline:12px}.sRp_root .p-xYUq_actions{gap:4px}.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{flex:1 1 100%;padding-inline:0}.sRp_composer .uV2eYG_row{align-items:center;gap:4px;flex-wrap:wrap}.sRp_composer .uV2eYG_tools{flex:1 1 100%;gap:4px;overflow:hidden}.sRp_composer .uV2eYG_modes{gap:3px}.sRp_composer .uV2eYG_trailing{gap:4px;margin-left:auto}.sRp_composer .uV2eYG_select{max-width:min(150px,48cqw)}.sRp_root .FJxK0a_root{padding-inline:8px}}";
 +			document.head.appendChild(tag);
 +		}
@@ -3304,11 +3304,12 @@ index 1dd0e89..f20bda2 100644
 +			const tag = document.createElement("style");
 +			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
 +			tag.dataset.pluginCss = researchConversationChromeTagId;
-+			tag.textContent = ".sRp_root .p-xYUq_actions{min-width:0;max-width:100%;height:auto;flex-wrap:nowrap;gap:4px}.sRp_root .p-xYUq_timeEnd{flex:1 1 auto;padding-left:2px;min-width:0;overflow:hidden;text-overflow:ellipsis}.sRp_root .p-xYUq_timeStart{min-width:0;overflow:hidden;text-overflow:ellipsis}@container (max-width:360px){.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{flex:1 1 auto;padding-inline:0}}";
++			tag.textContent = ".wSkVaW_root{position:relative}.wSkVaW_root[data-phase=hero]>[data-center-composer-host]{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}.wSkVaW_root[data-phase=hero]>[data-center-composer-host]>[data-composer-seat]{width:100%}.sRp_root .p-xYUq_actions{min-width:0;max-width:100%;height:auto;flex-wrap:nowrap;gap:4px}.sRp_root .p-xYUq_timeEnd{flex:1 1 auto;padding-left:2px;min-width:0;overflow:hidden;text-overflow:ellipsis}.sRp_root .p-xYUq_timeStart{min-width:0;overflow:hidden;text-overflow:ellipsis}@container (max-width:360px){.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{flex:1 1 auto;padding-inline:0}}.sRp_composer{overflow:visible}.sRp_composer .dsh-paperclip-wrap{position:static}.sRp_composer .dsh-paperclip-wrap .dsh-paperclip-tip{bottom:calc(100% + 8px);left:12px;transform:none}";
++			tag.textContent += ".wSkVaW_root[data-phase=hero]>[data-center-composer-host]>[data-composer-portal-host]{width:100%}.wSkVaW_root[data-phase=hero] .wSkVaW_composerHero{box-sizing:border-box;width:100%;max-width:812px}";
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -6822,7 +9294,354 @@ window.__ModuleLoader__.load({
+@@ -6822,7 +9295,354 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationRoot.js
@@ -3664,7 +3665,7 @@ index 1dd0e89..f20bda2 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,10 +9651,64 @@ window.__ModuleLoader__.load({
+@@ -6832,10 +9652,64 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -3729,7 +3730,7 @@ index 1dd0e89..f20bda2 100644
  			const seatResizeRef = (0, react.useCallback)((seat) => {
  				seatObserver.current?.disconnect();
  				seatObserver.current = null;
-@@ -6848,6 +9721,54 @@ window.__ModuleLoader__.load({
+@@ -6848,6 +9722,54 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -3784,7 +3785,7 @@ index 1dd0e89..f20bda2 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +9818,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +9819,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -3792,7 +3793,7 @@ index 1dd0e89..f20bda2 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +9835,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +9836,68 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -3877,15 +3878,15 @@ index 1dd0e89..f20bda2 100644
 -					children: [renderSlot("conversation.session", {}), composerSeat]
 -				})]
 +					"data-research-center": research || void 0,
-+					children: [renderSlot("conversation.session", { onResearchPresentation: publishResearchPresentation }), (0, react_jsx_runtime.jsx)("div", {
-+						ref: centerComposerHostRef,
-+						"data-center-composer-host": ""
-+					})]
++					children: [renderSlot("conversation.session", { onResearchPresentation: publishResearchPresentation })]
++				}), (0, react_jsx_runtime.jsx)("div", {
++					ref: centerComposerHostRef,
++					"data-center-composer-host": ""
 +				}), composerPortal, researchConversationPortal]
  			});
  		}
  		//#endregion
-@@ -6980,6 +9932,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +9933,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -3906,7 +3907,7 @@ index 1dd0e89..f20bda2 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +10000,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +10001,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -3924,7 +3925,7 @@ index 1dd0e89..f20bda2 100644
  				})] })
  			});
  		}
-@@ -7053,14 +10010,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +10011,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -3969,7 +3970,7 @@ index 1dd0e89..f20bda2 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +10056,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +10057,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -3979,7 +3980,7 @@ index 1dd0e89..f20bda2 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +10078,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +10079,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -3988,7 +3989,7 @@ index 1dd0e89..f20bda2 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +10131,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +10132,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -4006,7 +4007,7 @@ index 1dd0e89..f20bda2 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +10167,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +10168,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -4014,7 +4015,7 @@ index 1dd0e89..f20bda2 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +11059,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +11060,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -4045,7 +4046,7 @@ index 1dd0e89..f20bda2 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +11104,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +11105,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -4070,7 +4071,7 @@ index 1dd0e89..f20bda2 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +12058,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +12059,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -4079,7 +4080,7 @@ index 1dd0e89..f20bda2 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +12148,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +12149,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -4121,7 +4122,7 @@ index 1dd0e89..f20bda2 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +12357,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +12358,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -4138,7 +4139,7 @@ index 1dd0e89..f20bda2 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +12527,8 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +12528,8 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -4147,7 +4148,7 @@ index 1dd0e89..f20bda2 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +12568,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +12569,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -4160,7 +4161,7 @@ index 1dd0e89..f20bda2 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +12584,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +12585,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -4173,7 +4174,7 @@ index 1dd0e89..f20bda2 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +12633,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +12634,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -4187,7 +4188,7 @@ index 1dd0e89..f20bda2 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +12671,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +12672,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -4197,7 +4198,7 @@ index 1dd0e89..f20bda2 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +12803,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +12804,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -4212,7 +4213,7 @@ index 1dd0e89..f20bda2 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +12819,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +12820,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -4221,7 +4222,7 @@ index 1dd0e89..f20bda2 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +12843,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +12844,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -4230,7 +4231,7 @@ index 1dd0e89..f20bda2 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +12869,97 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +12870,97 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);

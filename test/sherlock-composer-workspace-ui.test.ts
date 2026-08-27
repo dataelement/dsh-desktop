@@ -2517,8 +2517,10 @@ describe('Sherlock workspace and composer controls', () => {
   it('keeps the global Research conversation tab fluid at narrow sidebar widths', async () => {
     const styles: InjectedStyle[] = []
     await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
-    const panelCss = styles.find(({ textContent }) => textContent.includes('.sRp_root'))
-      ?.textContent
+    const panelCss = styles
+      .filter(({ textContent }) => textContent.includes('.sRp_root') || textContent.includes('.sRp_composer'))
+      .map(({ textContent }) => textContent)
+      .join('\n')
 
     expect(panelCss).toContain('.sRp_root{')
     expect(panelCss).toContain('container-type:inline-size')
@@ -2528,6 +2530,35 @@ describe('Sherlock workspace and composer controls', () => {
     expect(panelCss).toContain('max-width:100%')
     expect(panelCss).toContain('overflow-wrap:anywhere')
     expect(panelCss).toContain('@container (max-width:360px)')
+
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const style = browserWindow.document.createElement('style')
+    style.textContent = panelCss ?? ''
+    browserWindow.document.head.append(style)
+    browserWindow.document.body.innerHTML = [
+      '<section class="sRp_root">',
+      '<div class="sRp_body sRp_conversation">',
+      '<div class="sRp_composer">',
+      '<div class="uV2eYG_card">',
+      '<div class="dsh-paperclip-wrap"><div class="dsh-paperclip-tip"></div></div>',
+      '</div>',
+      '</div>',
+      '</div>',
+      '</section>'
+    ].join('')
+
+    const composer = browserWindow.document.querySelector('.sRp_composer')
+    const attachmentWrap = browserWindow.document.querySelector('.dsh-paperclip-wrap')
+    const attachmentTip = browserWindow.document.querySelector('.dsh-paperclip-tip')
+    expect(composer).not.toBeNull()
+    expect(attachmentWrap).not.toBeNull()
+    expect(attachmentTip).not.toBeNull()
+    if (composer === null || attachmentWrap === null || attachmentTip === null) return
+
+    expect(browserWindow.getComputedStyle(composer).overflow).toBe('visible')
+    expect(browserWindow.getComputedStyle(attachmentWrap).position).toBe('static')
+    expect(browserWindow.getComputedStyle(attachmentTip).left).toBe('12px')
+    expect(browserWindow.getComputedStyle(attachmentTip).transform).toBe('none')
   })
 
   it('keeps an inactive global Research conversation tab inert', async () => {
@@ -2972,6 +3003,48 @@ describe('Sherlock workspace and composer controls', () => {
     } finally {
       await mounted.cleanup()
     }
+  })
+
+  it('keeps the main Chat composer outside the scrolling message region', async () => {
+    const mounted = await mountConversationRoot('chat')
+    try {
+      const { host } = mounted
+      const scroll = host.querySelector('[data-conversation-scroll]')
+      const centerComposerHost = host.querySelector('[data-center-composer-host]')
+      const composerSeat = host.querySelector('[data-composer-seat]')
+
+      expect(scroll).not.toBeNull()
+      expect(centerComposerHost).not.toBeNull()
+      expect(composerSeat).not.toBeNull()
+      if (scroll === null || centerComposerHost === null || composerSeat === null) return
+      expect(scroll.contains(centerComposerHost)).toBe(false)
+      expect(centerComposerHost.parentElement).toBe(scroll.parentElement)
+      expect(centerComposerHost.contains(composerSeat)).toBe(true)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps the blank new-conversation composer centered after docking active chats', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const layoutCss = styles
+      .map(({ textContent }) => textContent)
+      .filter((textContent) =>
+        textContent.includes('.wSkVaW_composerHero') ||
+        textContent.includes('[data-center-composer-host]')
+      )
+      .join('\n')
+
+    expect(layoutCss).toContain(
+      '.wSkVaW_root[data-phase=hero]>[data-center-composer-host]{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}'
+    )
+    expect(layoutCss).toContain(
+      '.wSkVaW_root[data-phase=hero]>[data-center-composer-host]>[data-composer-portal-host]{width:100%}'
+    )
+    expect(layoutCss).toContain(
+      '.wSkVaW_root[data-phase=hero] .wSkVaW_composerHero{box-sizing:border-box;width:100%;max-width:812px}'
+    )
   })
 
   it('restores each session own Details selection when switching Research sessions before leaving', async () => {

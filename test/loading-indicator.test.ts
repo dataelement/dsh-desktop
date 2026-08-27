@@ -13,7 +13,8 @@ const requireModule = createRequire(import.meta.url)
 const { createElement } = requireModule('react') as {
   createElement: (type: unknown, props?: unknown) => unknown
 }
-const { jsx, jsxs } = requireModule('react/jsx-runtime') as {
+const { Fragment, jsx, jsxs } = requireModule('react/jsx-runtime') as {
+  Fragment: unknown
   jsx: (type: unknown, props: unknown, key?: string) => unknown
   jsxs: (type: unknown, props: unknown, key?: string) => unknown
 }
@@ -55,6 +56,7 @@ async function loadStateDot(): Promise<StateDotComponent> {
     {
       ...context,
       globalThis: context,
+      Fragment,
       jsx,
       jsxs,
       clsx,
@@ -89,7 +91,7 @@ describe('Sherlock loading indicator', () => {
   })
 
   it('patches the prebuilt web frontend that the packaged Harness actually serves', async () => {
-    const [frontendJs, frontendCss, frontendPatcher] = await Promise.all([
+    const [frontendJs, frontendCss, frontendPatcher, packageJson] = await Promise.all([
       readFile(
         'node_modules/@deepseek-ai/dsh-web-frontend/dist/assets/index-C-1AiF3k.js',
         'utf8'
@@ -98,7 +100,8 @@ describe('Sherlock loading indicator', () => {
         'node_modules/@deepseek-ai/dsh-web-frontend/dist/assets/index-CSGf6Qzd.css',
         'utf8'
       ),
-      readFile('scripts/patch-web-frontend-loading.mjs', 'utf8')
+      readFile('scripts/patch-web-frontend-loading.mjs', 'utf8'),
+      readFile('package.json', 'utf8')
     ])
 
     for (const source of [frontendJs, frontendPatcher]) {
@@ -113,5 +116,10 @@ describe('Sherlock loading indicator', () => {
       )
       expect(source).toContain('@media(prefers-reduced-motion:reduce){._matrix_10orb_4{animation:none}}')
     }
+
+    expect(frontendPatcher).toContain('dsh-client-ui-primitives')
+    expect(JSON.parse(packageJson).scripts.build).toContain(
+      'node scripts/patch-web-frontend-loading.mjs'
+    )
   })
 })
