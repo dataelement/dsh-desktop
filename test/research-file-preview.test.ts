@@ -498,6 +498,76 @@ describe('Research file preview authorization registry', () => {
 
   it.each([
     {
+      label: 'node',
+      revoke: (registry: ResearchFilePreviewRegistry) =>
+        registry.revokeNode('session-race', 'node-race')
+    },
+    {
+      label: 'session',
+      revoke: (registry: ResearchFilePreviewRegistry) =>
+        registry.revokeSession('session-race')
+    }
+  ])('does not resurrect an authorization when $label revocation races deferred admission', async ({ revoke }) => {
+    const root = await temporaryDirectory()
+    const filePath = path.join(root, 'racing.png')
+    await writeFile(filePath, pngBytes)
+    const targetReached = deferred<void>()
+    const releaseTarget = deferred<void>()
+    const realFiles = countingRealFileSystem().fileSystem
+    const fileSystem: ResearchPreviewFileSystem = {
+      ...realFiles,
+      async realpath(targetPath) {
+        if (targetPath === filePath) {
+          targetReached.resolve()
+          await releaseTarget.promise
+        }
+        return realFiles.realpath(targetPath)
+      }
+    }
+    const storage = new ControllableAuthorizationStorage()
+    const registry = new ResearchFilePreviewRegistry({
+      storage,
+      fileSystem,
+      randomId: deterministicIds(
+        'authorization_0000000000000001',
+        'capability_0000000000000001'
+      )
+    })
+
+    const admission = registry.admitFinder({
+      path: filePath, sessionId: 'session-race', nodeId: 'node-race'
+    })
+    await targetReached.promise
+    expect(revoke(registry)).toBe(true)
+    releaseTarget.resolve()
+
+    await expect(admission).resolves.toBeNull()
+    expect(storage.records).toEqual([])
+    const restarted = new ResearchFilePreviewRegistry({
+      storage,
+      fileSystem,
+      randomId: deterministicIds('capability_0000000000000002')
+    })
+    await expect(restarted.restore({
+      authorizationId: 'authorization_0000000000000001',
+      sessionId: 'session-race',
+      nodeId: 'node-race'
+    })).resolves.toBeNull()
+  })
+
+  it('treats a valid already-absent node revocation as idempotent success', () => {
+    const registry = new ResearchFilePreviewRegistry({
+      storage: new ControllableAuthorizationStorage()
+    })
+
+    expect(registry.revokeNode('session-idempotent', 'node-idempotent')).toBe(true)
+    expect(registry.revokeSession('session-idempotent')).toBe(true)
+    expect(registry.revokeNode('', 'node-idempotent')).toBe(false)
+    expect(registry.revokeNode('session-idempotent', '')).toBe(false)
+  })
+
+  it.each([
+    {
       label: 'authorization',
       revoke: (registry: ResearchFilePreviewRegistry, descriptor: ResearchFilePreviewDescriptor) =>
         registry.revokeAuthorization(descriptor.authorizationId)
@@ -955,5 +1025,20 @@ describe('Research preview privileged IPC registration', () => {
       sessionId: 'session-1', nodeId: 'node-1',
       authorizationId: descriptor.authorizationId
     })).not.toBeNull()
+    const revokeNode = handlers.get('research:preview:revoke-node')
+    expect(revokeNode).toBeTypeOf('function')
+    expect(await revokeNode?.(trusted, {
+      sessionId: 'session-1', nodeId: 'node-1'
+    })).toEqual({ ok: true })
+    expect(await revokeNode?.(trusted, {
+      sessionId: 'session-1', nodeId: 'node-1'
+    })).toEqual({ ok: true })
+    expect(await revokeNode?.(trusted, {
+      sessionId: '', nodeId: 'node-1'
+    })).toEqual({ ok: false })
+    expect(await registry.restore({
+      sessionId: 'session-1', nodeId: 'node-1',
+      authorizationId: descriptor.authorizationId
+    })).toBeNull()
   })
 })

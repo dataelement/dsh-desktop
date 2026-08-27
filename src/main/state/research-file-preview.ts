@@ -426,6 +426,8 @@ export class ResearchFilePreviewRegistry {
   private readonly now: () => number
   private readonly capabilityTtlMs: number
   private admissionQueue: Promise<void> = Promise.resolve()
+  private readonly nodeRevocationGenerations = new Map<string, number>()
+  private readonly sessionRevocationGenerations = new Map<string, number>()
 
   constructor(private readonly options: ResearchFilePreviewRegistryOptions) {
     this.fileSystem = options.fileSystem ?? defaultFileSystem
@@ -445,11 +447,12 @@ export class ResearchFilePreviewRegistry {
       authorizedRoot: path.dirname(value.path),
       sessionId: value.sessionId,
       nodeId: value.nodeId
-    })
+    }, this.captureRevocationGeneration(value.sessionId, value.nodeId))
   }
 
   async admitSidebar(value: unknown): Promise<ResearchFilePreviewDescriptor | null> {
     if (!this.validSidebarAdmission(value) || !this.options.workspaceResolver) return null
+    const revocationGeneration = this.captureRevocationGeneration(value.sessionId, value.nodeId)
     const workspacePath = await this.options.workspaceResolver.resolveRoot(value.sessionId)
     if (!boundedAbsolutePath(workspacePath)) return null
     const nativeRelativePath = value.relativePath.replace(/[\\/]/g, path.sep)
@@ -459,7 +462,7 @@ export class ResearchFilePreviewRegistry {
       authorizedRoot: workspacePath,
       sessionId: value.sessionId,
       nodeId: value.nodeId
-    })
+    }, revocationGeneration)
   }
 
   async restore(value: unknown): Promise<ResearchFilePreviewDescriptor | null> {
@@ -490,11 +493,17 @@ export class ResearchFilePreviewRegistry {
 
   revokeNode(sessionId: unknown, nodeId: unknown): boolean {
     if (!boundedId(sessionId) || !boundedId(nodeId)) return false
+    const key = this.nodeRevocationKey(sessionId, nodeId)
+    this.nodeRevocationGenerations.set(key, (this.nodeRevocationGenerations.get(key) ?? 0) + 1)
     return this.revokeWhere((record) => record.sessionId === sessionId && record.nodeId === nodeId)
   }
 
   revokeSession(sessionId: unknown): boolean {
     if (!boundedId(sessionId)) return false
+    this.sessionRevocationGenerations.set(
+      sessionId,
+      (this.sessionRevocationGenerations.get(sessionId) ?? 0) + 1
+    )
     return this.revokeWhere((record) => record.sessionId === sessionId)
   }
 
@@ -605,8 +614,8 @@ export class ResearchFilePreviewRegistry {
     authorizedRoot: string
     sessionId: string
     nodeId: string
-  }): Promise<ResearchFilePreviewDescriptor | null> {
-    const result = this.admissionQueue.then(() => this.performAdmission(input))
+  }, revocationGeneration: { node: number; session: number }): Promise<ResearchFilePreviewDescriptor | null> {
+    const result = this.admissionQueue.then(() => this.performAdmission(input, revocationGeneration))
     this.admissionQueue = result.then(() => undefined, () => undefined)
     return result
   }
@@ -617,7 +626,7 @@ export class ResearchFilePreviewRegistry {
     authorizedRoot: string
     sessionId: string
     nodeId: string
-  }): Promise<ResearchFilePreviewDescriptor | null> {
+  }, revocationGeneration: { node: number; session: number }): Promise<ResearchFilePreviewDescriptor | null> {
     try {
       const root = await this.fileSystem.realpath(input.authorizedRoot)
       const target = await this.fileSystem.realpath(input.targetPath)
@@ -655,6 +664,9 @@ export class ResearchFilePreviewRegistry {
       const retained = [...this.authorizations.values()].filter(
         (value) => !replaced.has(value.authorizationId)
       )
+      if (!this.revocationGenerationMatches(input.sessionId, input.nodeId, revocationGeneration)) {
+        return null
+      }
       if (!this.options.storage.save([...retained, record])) return null
       for (const previous of replaced) this.authorizations.delete(previous)
       this.authorizations.set(authorizationId, record)
@@ -720,8 +732,31 @@ export class ResearchFilePreviewRegistry {
       if (!predicate(record)) continue
       removed.add(authorizationId)
     }
-    if (removed.size === 0) return false
+    if (removed.size === 0) return true
     return this.commitRevocations(removed)
+  }
+
+  private nodeRevocationKey(sessionId: string, nodeId: string): string {
+    return `${sessionId}\u0000${nodeId}`
+  }
+
+  private captureRevocationGeneration(sessionId: string, nodeId: string): {
+    node: number
+    session: number
+  } {
+    return {
+      node: this.nodeRevocationGenerations.get(this.nodeRevocationKey(sessionId, nodeId)) ?? 0,
+      session: this.sessionRevocationGenerations.get(sessionId) ?? 0
+    }
+  }
+
+  private revocationGenerationMatches(
+    sessionId: string,
+    nodeId: string,
+    generation: { node: number; session: number }
+  ): boolean {
+    const current = this.captureRevocationGeneration(sessionId, nodeId)
+    return current.node === generation.node && current.session === generation.session
   }
 
   private commitRevocations(removed: ReadonlySet<string>): boolean {

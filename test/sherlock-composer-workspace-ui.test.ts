@@ -1341,6 +1341,92 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('deduplicates and bounds the per-session orphan revocation outbox', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): {
+        queueOrphanRevocations(nodeIds: string[]): void
+        pendingOrphanRevocations(): string[]
+      }
+    }
+    const storage = new MemoryStorage()
+    const workspace = new Registry(storage).for('session-bounded-outbox')
+    const nodeIds = Array.from({ length: 300 }, (_, index) => `orphan-${index}`)
+
+    workspace.queueOrphanRevocations([...nodeIds, 'orphan-0', '', 'orphan-1'])
+
+    expect(workspace.pendingOrphanRevocations()).toEqual(nodeIds.slice(0, 256))
+    expect(JSON.parse(storage.getItem(
+      'sherlock.research.canvas.preview-revocations.v1:session-bounded-outbox'
+    ) ?? '[]')).toEqual(nodeIds.slice(0, 256))
+
+    const maximumIds = Array.from({ length: 256 }, (_, index) =>
+      `maximum-orphan-${index}`.padEnd(512, 'x')
+    )
+    new Registry(storage).for('session-maximum-outbox')
+      .queueOrphanRevocations(maximumIds)
+    expect(new Registry(storage).for('session-maximum-outbox').pendingOrphanRevocations())
+      .toEqual(maximumIds)
+  })
+
+  it('does not create another durable preview admission while orphan revocation is pending', async () => {
+    const storage = new MemoryStorage()
+    const sessionId = 'session-pending-orphan'
+    storage.setItem(
+      `sherlock.research.canvas.preview-revocations.v1:${sessionId}`,
+      JSON.stringify(['pending-orphan'])
+    )
+    const admissions: Array<Record<string, string>> = []
+    const mounted = await mountResearchCanvas({
+      sessionId,
+      storage,
+      dshDesktop: {
+        getPathForFile: () => '/workspace/new.png',
+        researchPreview: {
+          admitFinderFile(_file, identity) {
+            admissions.push(identity)
+            return Promise.resolve({
+              authorizationId: 'unexpected-authorization',
+              capabilityToken: 'unexpected-capability',
+              url: 'sherlock-preview://unexpected-capability/',
+              contentType: 'image/png',
+              name: 'new.png'
+            })
+          },
+          async release() { return { ok: true } },
+          async restore() { return null },
+          async revokeNode() { return { ok: false } }
+        }
+      }
+    })
+    try {
+      await act(async () => {
+        dispatchDrag(mounted.browserWindow, mounted.canvas, 'drop', {
+          types: ['Files'],
+          files: [{ name: 'new.png', type: 'image/png' } as File],
+          dropEffect: 'none',
+          getData: () => ''
+        })
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(admissions).toEqual([])
+      expect(mounted.workspace.getSnapshot().files).toHaveLength(1)
+      expect(mounted.workspace.getSnapshot().files[0]).toMatchObject({
+        path: '/workspace/new.png',
+        name: 'new.png',
+        previewEligible: false
+      })
+      expect(JSON.parse(storage.getItem(
+        `sherlock.research.canvas.preview-revocations.v1:${sessionId}`
+      ) ?? '[]')).toEqual(['pending-orphan'])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('publishes the session-scoped Research presentation to the optional root owner', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
@@ -2259,6 +2345,110 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('persists failed orphan cleanup and retries it on the next canvas mount without resurrecting a node', async () => {
+    const storage = new MemoryStorage()
+    const admission = deferred<Record<string, string> | null>()
+    const cleanupAttempt = deferred<{ ok: boolean }>()
+    const admissions: Array<Record<string, string>> = []
+    const revocations: Array<Record<string, string>> = []
+    const initialFiles = Array.from({ length: 255 }, (_, index) => ({
+      id: `outbox-existing-${index}`, path: `/workspace/outbox-existing-${index}.txt`,
+      name: `outbox-existing-${index}.txt`, source: 'computer', x: index, y: index
+    }))
+    const sessionId = 'session-orphan-outbox'
+    const outboxKey = `sherlock.research.canvas.preview-revocations.v1:${sessionId}`
+    const firstMount = await mountResearchCanvas({
+      sessionId,
+      files: initialFiles,
+      storage,
+      dshDesktop: {
+        getPathForFile: () => '/workspace/orphan.png',
+        researchPreview: {
+          admitFinderFile(_file, identity) { admissions.push(identity); return admission.promise },
+          async release() { return { ok: true } },
+          async restore() { return null },
+          revokeNode(value) { revocations.push(value); return cleanupAttempt.promise }
+        }
+      }
+    })
+    let firstCleaned = false
+    try {
+      const file = { name: 'orphan.png', type: 'image/png' } as File
+      await act(async () => {
+        dispatchDrag(firstMount.browserWindow, firstMount.canvas, 'drop', {
+          types: ['Files'], files: [file], dropEffect: 'none', getData: () => ''
+        })
+        await Promise.resolve()
+      })
+      expect(admissions).toHaveLength(1)
+      await act(async () => {
+        ;(firstMount.workspace as unknown as { setFiles(files: Array<Record<string, unknown>>): void })
+          .setFiles([...firstMount.workspace.getSnapshot().files, {
+            id: 'outbox-fills-final-slot', path: '/workspace/outbox-fill.txt',
+            name: 'outbox-fill.txt', source: 'computer', x: 0, y: 0
+          }])
+      })
+      admission.resolve({
+        authorizationId: 'authorization-outbox', capabilityToken: 'capability-outbox',
+        url: 'sherlock-preview://capability-outbox/', contentType: 'image/png', name: 'orphan.png'
+      })
+      await act(async () => {
+        await admission.promise
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      const orphanNodeId = revocations[0]?.nodeId
+      expect(orphanNodeId).toBeTypeOf('string')
+      expect(JSON.parse(storage.getItem(outboxKey) ?? '[]')).toEqual([orphanNodeId])
+      expect(firstMount.workspace.getSnapshot().files.some(
+        (node: Record<string, unknown>) => node.authorizationId === 'authorization-outbox'
+      )).toBe(false)
+
+      cleanupAttempt.resolve({ ok: false })
+      await act(async () => { await cleanupAttempt.promise; await Promise.resolve() })
+      expect(JSON.parse(storage.getItem(outboxKey) ?? '[]')).toEqual([orphanNodeId])
+      await firstMount.cleanup()
+      firstCleaned = true
+
+      const persistedFiles = JSON.parse(
+        storage.getItem(`sherlock.research.canvas.files.v1:${sessionId}`) ?? '[]'
+      ) as Array<Record<string, unknown>>
+      const retryCalls: Array<Record<string, string>> = []
+      const secondMount = await mountResearchCanvas({
+        sessionId,
+        files: persistedFiles,
+        storage,
+        dshDesktop: { researchPreview: {
+          async restore() { return null },
+          async release() { return { ok: true } },
+          async revokeNode(value) { retryCalls.push(value); return { ok: true } }
+        } }
+      })
+      try {
+        await act(async () => {
+          await Promise.resolve()
+          await Promise.resolve()
+          await Promise.resolve()
+        })
+        expect(retryCalls).toEqual([{ sessionId, nodeId: orphanNodeId }])
+        expect(JSON.parse(storage.getItem(outboxKey) ?? '[]')).toEqual([])
+        expect(secondMount.workspace.getSnapshot().files).toHaveLength(256)
+        expect(secondMount.workspace.getSnapshot().files.some(
+          (node: Record<string, unknown>) => node.id === orphanNodeId ||
+            node.authorizationId === 'authorization-outbox'
+        )).toBe(false)
+      } finally {
+        await secondMount.cleanup()
+      }
+    } finally {
+      if (!firstCleaned) {
+        cleanupAttempt.resolve({ ok: false })
+        await firstMount.cleanup()
+      }
+    }
+  })
+
   it('keeps an authorized node visible until durable revocation succeeds and allows retry after remount', async () => {
     const storage = new MemoryStorage()
     const previewFile = {
@@ -2334,6 +2524,79 @@ describe('Sherlock workspace and composer controls', () => {
       expect(secondMount.workspace.getSnapshot().files).toHaveLength(1)
       await deleteSelected()
       expect(retryCalls).toHaveLength(2)
+      expect(secondMount.workspace.getSnapshot().files).toEqual([])
+    } finally {
+      await secondMount.cleanup()
+    }
+  })
+
+  it('removes a persisted node after retrying a revoke whose first successful main mutation lost its IPC response', async () => {
+    const storage = new MemoryStorage()
+    const previewFile = {
+      id: 'lost-response-file', path: '/workspace/lost-response.png', name: 'lost-response.png',
+      source: 'computer', authorizationId: 'authorization-lost-response', contentType: 'image/png',
+      x: 100, y: 100, width: 320, height: 272
+    }
+    let durableAuthorizationPresent = true
+    const firstMount = await mountResearchCanvas({
+      sessionId: 'session-lost-revoke-response', files: [previewFile], storage,
+      dshDesktop: { researchPreview: {
+        async restore() { return null },
+        async release() { return { ok: true } },
+        async revokeNode() {
+          durableAuthorizationPresent = false
+          throw new Error('response lost after durable revoke')
+        }
+      } }
+    })
+    try {
+      firstMount.workspace.setSelection({
+        selectedNodeIds: ['lost-response-file'], orderedFileIds: ['lost-response-file']
+      })
+      ;(firstMount.canvas as unknown as { focus(): void }).focus()
+      await act(async () => {
+        firstMount.browserWindow.dispatchEvent(new firstMount.browserWindow.KeyboardEvent('keydown', {
+          key: 'Delete', code: 'Delete', bubbles: true, cancelable: true
+        }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(durableAuthorizationPresent).toBe(false)
+      expect(firstMount.workspace.getSnapshot().files).toHaveLength(1)
+    } finally {
+      await firstMount.cleanup()
+    }
+
+    const persistedFiles = JSON.parse(
+      storage.getItem('sherlock.research.canvas.files.v1:session-lost-revoke-response') ?? '[]'
+    ) as Array<Record<string, unknown>>
+    const retryCalls: Array<Record<string, string>> = []
+    const secondMount = await mountResearchCanvas({
+      sessionId: 'session-lost-revoke-response', files: persistedFiles, storage,
+      dshDesktop: { researchPreview: {
+        async restore() { return null },
+        async release() { return { ok: true } },
+        async revokeNode(value) {
+          retryCalls.push(value)
+          return { ok: !durableAuthorizationPresent }
+        }
+      } }
+    })
+    try {
+      secondMount.workspace.setSelection({
+        selectedNodeIds: ['lost-response-file'], orderedFileIds: ['lost-response-file']
+      })
+      ;(secondMount.canvas as unknown as { focus(): void }).focus()
+      await act(async () => {
+        secondMount.browserWindow.dispatchEvent(new secondMount.browserWindow.KeyboardEvent('keydown', {
+          key: 'Delete', code: 'Delete', bubbles: true, cancelable: true
+        }))
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(retryCalls).toEqual([{
+        sessionId: 'session-lost-revoke-response', nodeId: 'lost-response-file'
+      }])
       expect(secondMount.workspace.getSnapshot().files).toEqual([])
     } finally {
       await secondMount.cleanup()

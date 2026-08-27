@@ -133,3 +133,12 @@
   failure-safe durable deletion retry, idempotent image-error release, and
   active-session clipboard authority are behavior-tested; commit
   `修复研究预览授权与拖入生命周期`).
+- Task 5: fix-round re-review found 3 important issues — revocation can race an
+  in-flight admission and be undone, a lost successful revoke response is not
+  idempotently recoverable, and orphan cleanup failures have no durable retry
+  state. Fix round 2 required.
+- Task 5: fix round 2/5 (3 addressed, 0 open — node/session revocation
+  generations prevent in-flight admission resurrection, already-absent durable
+  revocation is idempotent, and a bounded persistent orphan outbox retries on
+  canvas remount without resurrecting visible nodes; commit
+  `修复研究预览撤销竞态与重试`).
