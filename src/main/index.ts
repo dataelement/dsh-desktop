@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
-import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import {
   app,
@@ -35,6 +35,13 @@ import {
   PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS
 } from './plugin-recovery-detection'
 import { isDaemonLaunch, isUserInitiatedInstance } from './launchd-guard'
+import {
+  type GpuFallbackLevel,
+  gpuFallbackSwitches,
+  parseGpuFallbackLevel,
+  planGpuFallbackResponse,
+  serializeGpuFallbackLevel
+} from './gpu-fallback'
 import { secureWindow } from './security'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
@@ -113,6 +120,12 @@ let safeModeManagerVisible = false
 let safeModeManagerWindow: BrowserWindow | undefined
 let safeModeActionResolver: ((action: SafeModeAction) => void) | undefined
 const startInSafeMode = shouldStartInSafeMode(process.argv)
+// The GPU process can die before any window has painted, which is the whole
+// reason the fallback exists; tracking the first successful load is what
+// separates "this launch is unusable" from "the user is mid-task".
+let mainWindowPainted = false
+let gpuFallbackLevel: GpuFallbackLevel = 'default'
+let gpuFallbackRelaunching = false
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -421,6 +434,68 @@ function harnessLocale(): 'en' | 'zh' {
   }
 }
 
+function gpuFallbackStatePath(): string {
+  return join(app.getPath('userData'), 'gpu-fallback.json')
+}
+
+function readGpuFallbackLevel(): GpuFallbackLevel {
+  try {
+    return parseGpuFallbackLevel(readFileSync(gpuFallbackStatePath(), 'utf8'))
+  } catch {
+    return 'default'
+  }
+}
+
+function writeGpuFallbackLevel(level: GpuFallbackLevel): void {
+  try {
+    writeFileSync(gpuFallbackStatePath(), serializeGpuFallbackLevel(level))
+  } catch {
+    // A fallback we cannot persist still applies to this launch; the next
+    // launch simply rediscovers it the same way this one did.
+  }
+}
+
+/**
+ * Apply the switches a previous launch discovered this machine needs. This
+ * has to run before Chromium boots, so it lives beside the other pre-ready
+ * command line configuration rather than in `bootstrap`.
+ */
+function configureGpuFallback(): void {
+  gpuFallbackLevel = readGpuFallbackLevel()
+  for (const name of gpuFallbackSwitches(gpuFallbackLevel)) {
+    app.commandLine.appendSwitch(name)
+  }
+}
+
+/**
+ * Watch for the GPU process going away and step the fallback forward. A
+ * launch that never painted is relaunched right away, because no window the
+ * user could act on exists; once the app has painted, the fallback is only
+ * recorded so the next launch starts in a working configuration.
+ */
+function installGpuFallbackWatch(): void {
+  app.on('child-process-gone', (_event, details) => {
+    if (details.type !== 'GPU') return
+    if (gpuFallbackRelaunching) return
+    runtime?.note(
+      `[desktop] GPU process gone: reason=${details.reason} exitCode=${details.exitCode} ` +
+        `fallback=${gpuFallbackLevel}`
+    )
+    const plan = planGpuFallbackResponse({
+      level: gpuFallbackLevel,
+      firstPaintDone: mainWindowPainted
+    })
+    if (plan.level === gpuFallbackLevel) return
+    gpuFallbackLevel = plan.level
+    writeGpuFallbackLevel(plan.level)
+    runtime?.note(`[desktop] GPU fallback raised to ${plan.level}`)
+    if (!plan.relaunch) return
+    gpuFallbackRelaunching = true
+    app.relaunch()
+    app.exit(0)
+  })
+}
+
 function configureApplicationLocale(): void {
   app.commandLine.appendSwitch('lang', harnessLocale() === 'zh' ? 'zh-CN' : 'en-US')
 }
@@ -517,6 +592,9 @@ function createWindow(): BrowserWindow {
     const sourceUrl = details.sourceId || window.webContents.getURL()
     if (!sourceUrl.startsWith('http://127.0.0.1:')) return
     appendRendererPluginFailureLog(details.message)
+  })
+  window.webContents.once('did-finish-load', () => {
+    mainWindowPainted = true
   })
   installPluginRecoveryNavigation(window)
   secureWindow(window)
@@ -1624,6 +1702,8 @@ if (isDaemonLaunch(process.env, process.platform)) {
 } else {
   configureAppIdentity()
   configureApplicationLocale()
+  configureGpuFallback()
+  installGpuFallbackWatch()
   const singleInstance = app.requestSingleInstanceLock()
   if (!singleInstance) {
     app.quit()
