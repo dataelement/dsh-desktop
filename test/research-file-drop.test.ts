@@ -1047,6 +1047,130 @@ describe('Research canvas file drops', () => {
       .toMatchObject({ x: -20, y: 10, width: 400, height: 260, sizeMode: 'manual' })
   })
 
+  it('accumulates PDF wheel deltas with threshold and throttle before changing one page', async () => {
+    const client = await loadConversationClient()
+    expect(client.createResearchPdfWheelState).toBeTypeOf('function')
+    expect(client.nextResearchPdfWheel).toBeTypeOf('function')
+    if (typeof client.createResearchPdfWheelState !== 'function' ||
+        typeof client.nextResearchPdfWheel !== 'function') return
+
+    let state = client.createResearchPdfWheelState(1)
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: 30, deltaMode: 0, time: 0, pageCount: 4
+    })
+    expect(state).toMatchObject({ page: 1, accumulatedDelta: 30 })
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: 49, deltaMode: 0, time: 10, pageCount: 4
+    })
+    expect(state).toMatchObject({ page: 1, accumulatedDelta: 79 })
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: 1, deltaMode: 0, time: 20, pageCount: 4
+    })
+    expect(state).toMatchObject({ page: 2, accumulatedDelta: 0, lastPageAt: 20 })
+
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: 160, deltaMode: 0, time: 100, pageCount: 4
+    })
+    expect(state).toMatchObject({ page: 2, accumulatedDelta: 80, lastPageAt: 20 })
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: 1, deltaMode: 0, time: 200, pageCount: 4
+    })
+    expect(state).toMatchObject({ page: 3, accumulatedDelta: 0, lastPageAt: 200 })
+  })
+
+  it('resets PDF wheel accumulation on reversal and clamps line/page deltas at bounds', async () => {
+    const client = await loadConversationClient()
+    expect(client.createResearchPdfWheelState).toBeTypeOf('function')
+    expect(client.nextResearchPdfWheel).toBeTypeOf('function')
+    if (typeof client.createResearchPdfWheelState !== 'function' ||
+        typeof client.nextResearchPdfWheel !== 'function') return
+
+    let state = client.createResearchPdfWheelState(2)
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: 60, deltaMode: 0, time: 0, pageCount: 3
+    })
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: -2, deltaMode: 1, time: 10, pageCount: 3
+    })
+    expect(state).toMatchObject({ page: 2, accumulatedDelta: -32, direction: -1 })
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: -3, deltaMode: 1, time: 20, pageCount: 3
+    })
+    expect(state).toMatchObject({ page: 1, accumulatedDelta: 0 })
+
+    state = client.nextResearchPdfWheel(state, {
+      deltaY: -1, deltaMode: 2, viewportHeight: 600, time: 300, pageCount: 3
+    })
+    expect(state).toMatchObject({ page: 1, accumulatedDelta: 0 })
+    state = client.nextResearchPdfWheel(
+      client.createResearchPdfWheelState(3),
+      { deltaY: 1, deltaMode: 2, viewportHeight: 600, time: 300, pageCount: 3 }
+    )
+    expect(state).toMatchObject({ page: 3, accumulatedDelta: 0 })
+  })
+
+  it('caps PDF canvas backing pixels while preserving the page aspect ratio', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchPdfBackingStore).toBeTypeOf('function')
+    if (typeof client.researchPdfBackingStore !== 'function') return
+
+    const backing = client.researchPdfBackingStore({
+      pageWidth: 612,
+      pageHeight: 792,
+      cssWidth: 2_000,
+      devicePixelRatio: 3,
+      maxPixels: 4_000_000
+    })
+    expect(backing.cssWidth).toBe(2_000)
+    expect(backing.cssHeight).toBeCloseTo(2_588.235294, 5)
+    expect(backing.outputScale).toBeLessThan(1)
+    expect(backing.backingWidth * backing.backingHeight).toBeLessThanOrEqual(4_000_000)
+    expect(backing.backingWidth / backing.backingHeight).toBeCloseTo(612 / 792, 2)
+
+    const tinyBudget = client.researchPdfBackingStore({
+      pageWidth: 1_000,
+      pageHeight: 1_000,
+      cssWidth: 1_000,
+      devicePixelRatio: 4,
+      maxPixels: 100
+    })
+    expect(tinyBudget.outputScale).toBeCloseTo(0.01, 8)
+    expect(tinyBudget.backingWidth * tinyBudget.backingHeight).toBeLessThanOrEqual(100)
+
+    const invalid = client.researchPdfBackingStore({
+      pageWidth: Number.POSITIVE_INFINITY,
+      pageHeight: Number.NaN,
+      cssWidth: Number.POSITIVE_INFINITY,
+      devicePixelRatio: Number.NaN,
+      maxPixels: 1
+    })
+    expect(invalid).toEqual({
+      cssWidth: 1, cssHeight: 1, outputScale: 1, backingWidth: 1, backingHeight: 1
+    })
+  })
+
+  it('persists the first PDF page ratio only for an auto node that still has the default ratio', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchPdfGeometryForPage).toBeTypeOf('function')
+    if (typeof client.researchPdfGeometryForPage !== 'function') return
+
+    const initial = {
+      id: 'pdf', name: 'filing.pdf', contentType: 'application/pdf', source: 'computer',
+      x: 0, y: 0, width: 320, height: 320 / (17 / 22) + 32,
+      sizeMode: 'auto', aspectRatio: 17 / 22
+    }
+    expect(client.researchPdfGeometryForPage(initial, 600, 800)).toEqual({
+      width: 320, height: 320 / 0.75 + 32, sizeMode: 'auto', aspectRatio: 0.75
+    })
+    expect(client.researchPdfGeometryForPage({
+      ...initial, height: 320 / 0.75 + 32, aspectRatio: 0.75
+    }, 612, 792)).toBeNull()
+    expect(client.researchPdfGeometryForPage({
+      ...initial, width: 540, height: 540 / 1.4 + 32,
+      sizeMode: 'manual', aspectRatio: 1.4
+    }, 600, 800)).toBeNull()
+  })
+
   it('clamps free and aspect-locked resize with title height outside the content ratio', async () => {
     const client = await loadConversationClient()
     expect(client.resizeResearchCanvasNode).toBeTypeOf('function')

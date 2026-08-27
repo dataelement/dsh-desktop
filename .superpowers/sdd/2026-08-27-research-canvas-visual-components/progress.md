@@ -72,6 +72,21 @@
   the legacy message-attachment flow and is never used as preview authority.
   Tool-result chips without that identity remain generic. Cost if wrong: using
   the renderer absolute path would reopen arbitrary-path and symlink escape.
+- Ruling: Task 6 keeps the HTML iframe opaque (`sandbox="allow-scripts"`
+  without `allow-same-origin`) and continues rejecting `Origin: null`. Relative
+  webfont requests therefore cannot be authorized safely in v1; HTML falls back
+  to system fonts, while self-contained `data:` fonts remain CSP-eligible.
+  Capability-scoped CSS, images, and classic external scripts are supported;
+  media extensions are not admitted in v1. Cost if wrong: loosening CORS or
+  sandboxing would trade a cosmetic/content limitation for a broken local-file
+  authority boundary.
+- Ruling: PDF.js is an exact development dependency whose browser library,
+  worker, CMaps, standard fonts, and license are copied into the app-served
+  `sherlock-pdfjs` directory with stable `.js` names. Raw `pdfjs-dist` and its
+  canvas-only optional native dependency are excluded from Electron packaging.
+  Cost if wrong: `.mjs` is served with an unusable MIME/fallback by the current
+  static host, while packaging the source dependency adds tens of megabytes not
+  used by the renderer.
 - Task 1: fix round 1 ruling: the review correctly found that the pre-task
   durable patch was stale relative to already approved installed-tree Research
   work. Split that catch-up into an explicit prerequisite commit, then keep the
@@ -171,3 +186,10 @@
 - Task 5: complete (commits 251fbbca..97509297, dual final review clean; full
   assistant Markdown, proportional image preview, pre-admission journaling,
   exact capability lifecycle, and durable retry semantics are focused green).
+- Task 6: implementation complete, review pending — single-page PDF.js render,
+  bounded wheel/page state, cancellation and resource cleanup, pinned/staged
+  PDF.js assets, capability-only opaque HTML iframe, exact-token CSP, relative
+  root fencing, and shared interaction shield are focused green (4 files, 204
+  tests); directly affected main/preload/security tests (4 files, 41 tests),
+  typecheck, staging idempotence, dependency/package contract, diff check, and
+  full conversation patch reverse check pass.

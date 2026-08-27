@@ -703,6 +703,69 @@ function deferred<T>() {
   return { promise, reject, resolve }
 }
 
+function createPdfJsHarness(options: {
+  pageCount?: number
+  deferRenders?: boolean
+  resolveCancelledLate?: boolean
+} = {}) {
+  const pageCount = options.pageCount ?? 3
+  const loadingTasks: Array<{ destroyed: number }> = []
+  const documents: Array<{ destroyed: number }> = []
+  const renders: Array<{
+    page: number
+    cancelled: number
+    viewport: { width: number; height: number }
+    resolve(): void
+  }> = []
+  const getDocumentInputs: Array<Record<string, unknown>> = []
+  const pages: Array<{ page: number; cleanups: number }> = []
+  const pdfjs = {
+    getDocument(input: Record<string, unknown>) {
+      getDocumentInputs.push(input)
+      const loading = { destroyed: 0, destroy() { loading.destroyed += 1 } }
+      loadingTasks.push(loading)
+      const document = {
+        numPages: pageCount,
+        destroyed: 0,
+        destroy() { document.destroyed += 1 },
+        async getPage(page: number) {
+          const pageRecord = { page, cleanups: 0 }
+          pages.push(pageRecord)
+          return {
+            cleanup() { pageRecord.cleanups += 1 },
+            getViewport({ scale }: { scale: number }) {
+              return { width: 600 * scale, height: 800 * scale }
+            },
+            render({ viewport }: { viewport: { width: number; height: number } }) {
+              const pending = deferred<void>()
+              const record = {
+                page,
+                cancelled: 0,
+                viewport,
+                resolve() { pending.resolve() }
+              }
+              renders.push(record)
+              if (!options.deferRenders) pending.resolve()
+              return {
+                promise: pending.promise,
+                cancel() {
+                  record.cancelled += 1
+                  if (!options.resolveCancelledLate) {
+                    pending.reject(Object.assign(new Error('cancelled'), { name: 'RenderingCancelledException' }))
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      documents.push(document)
+      return { ...loading, promise: Promise.resolve(document) }
+    }
+  }
+  return { documents, getDocumentInputs, loadingTasks, pages, pdfjs, renders }
+}
+
 async function mountResearchCanvas(options: {
   sessionId: string
   files?: Array<Record<string, unknown>>
@@ -725,6 +788,7 @@ async function mountResearchCanvas(options: {
     }
   }
   modules?: Record<string, unknown>
+  pdfjs?: Record<string, unknown>
   strictMode?: boolean
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
@@ -743,6 +807,14 @@ async function mountResearchCanvas(options: {
     JSON.stringify(options.selection ?? { selectedNodeIds: [], orderedFileIds: [] })
   )
   const restoreGlobals = installBrowserGlobals(browserWindow)
+  Object.defineProperty(browserWindow, '__sherlockPdfjs', {
+    configurable: true,
+    value: options.pdfjs
+  })
+  Object.defineProperty(browserWindow.HTMLCanvasElement.prototype, 'getContext', {
+    configurable: true,
+    value: () => ({})
+  })
   const client = await loadClientBundle('dsh-client-ui-conversation', options.dshDesktop, {
     document: browserWindow.document,
     window: browserWindow,
@@ -2116,6 +2188,340 @@ describe('Sherlock workspace and composer controls', () => {
     } finally {
       if (!cleaned) await mounted.cleanup()
     }
+  })
+
+  it('renders one PDF page, owns wheel navigation, cancels stale work, and destroys offscreen resources', async () => {
+    const harness = createPdfJsHarness({ deferRenders: true, resolveCancelledLate: true })
+    const releases: Array<Record<string, string>> = []
+    let restoreSequence = 0
+    let cleaned = false
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-lifecycle',
+      files: [{
+        id: 'pdf-1', name: 'filing.pdf', source: 'computer',
+        authorizationId: 'authorization-pdf', contentType: 'application/pdf',
+        x: 200, y: 200, width: 320, height: 446, sizeMode: 'auto', aspectRatio: 17 / 22
+      }],
+      pdfjs: harness.pdfjs,
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          restoreSequence += 1
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: `capability-pdf-${restoreSequence}`,
+            url: `sherlock-preview://capability-pdf-${restoreSequence}/`,
+            contentType: 'application/pdf', name: 'filing.pdf'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+
+      const pdfBody = mounted.host.querySelector('[data-research-pdf-scroll]') as HappyDOMElement | null
+      const pdfCanvas = mounted.host.querySelector('[data-research-pdf-preview]') as HTMLCanvasElement | null
+      expect(pdfBody).not.toBeNull()
+      expect(pdfCanvas).not.toBeNull()
+      await act(async () => {
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('filing.pdf')
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('1 / 3')
+      expect(mounted.workspace.getSnapshot().files[0]).toMatchObject({
+        width: 320, height: 320 / 0.75 + 32, aspectRatio: 0.75, sizeMode: 'auto'
+      })
+      expect(harness.getDocumentInputs[0]).toEqual({
+        url: 'sherlock-preview://capability-pdf-1/',
+        cMapUrl: '/sherlock-pdfjs/cmaps/',
+        cMapPacked: true,
+        standardFontDataUrl: '/sherlock-pdfjs/standard_fonts/',
+        isEvalSupported: false,
+        useWasm: false
+      })
+      expect(harness.renders.map(({ page }) => page)).toEqual([1])
+      expect((pdfCanvas?.width ?? 0) * (pdfCanvas?.height ?? 0)).toBeLessThanOrEqual(8_000_000)
+      if (pdfBody === null) return
+      const viewportBeforeWheel = mounted.workspace.getSnapshot().viewport
+      let bubbledWheels = 0
+      mounted.browserWindow.document.addEventListener('wheel', () => { bubbledWheels += 1 })
+      const wheel = new mounted.browserWindow.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, deltaY: 80, deltaMode: 0
+      })
+      Object.defineProperty(wheel, 'metaKey', { value: true })
+      await act(async () => {
+        pdfBody.dispatchEvent(wheel)
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(wheel.defaultPrevented).toBe(true)
+      expect(bubbledWheels).toBe(0)
+      expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('2 / 3')
+      expect(harness.renders.map(({ page }) => page)).toEqual([1, 2])
+      expect(harness.renders[0]!.cancelled).toBe(1)
+      await act(async () => {
+        harness.renders[0]!.resolve()
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(pdfCanvas?.getAttribute('data-research-pdf-rendered-page')).not.toBe('1')
+
+      await act(async () => {
+        ;(mounted.workspace as unknown as {
+          updateNodeGeometry(id: string, geometry: Record<string, unknown>): void
+        }).updateNodeGeometry('pdf-1', { width: 400, height: 400 / 0.75 + 32 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(harness.renders[1]!.cancelled).toBe(1)
+      expect(harness.renders.at(-1)?.viewport.width).toBeCloseTo(400, 5)
+
+      await act(async () => { mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
+      expect(mounted.host.querySelector('[data-research-pdf-preview]')).toBeNull()
+      expect(mounted.host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
+      expect(harness.loadingTasks[0]!.destroyed).toBe(1)
+      expect(harness.documents[0]!.destroyed).toBe(1)
+      expect(harness.pages.every(({ cleanups }) => cleanups >= 1)).toBe(true)
+      expect(pdfCanvas?.width).toBe(0)
+      expect(pdfCanvas?.height).toBe(0)
+      expect(releases).toEqual([{
+        sessionId: 'session-pdf-lifecycle', nodeId: 'pdf-1',
+        authorizationId: 'authorization-pdf', capabilityToken: 'capability-pdf-1'
+      }])
+
+      await act(async () => {
+        mounted.workspace.setViewport({ scale: 1, x: 0, y: 0 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(restoreSequence).toBe(2)
+      expect(mounted.host.querySelector('[data-research-pdf-preview]')).not.toBeNull()
+      expect(mounted.workspace.getSnapshot().files[0]).toMatchObject({
+        width: 400, height: 400 / 0.75 + 32, aspectRatio: 0.75, sizeMode: 'auto'
+      })
+      await mounted.cleanup()
+      cleaned = true
+      expect(harness.loadingTasks[1]!.destroyed).toBe(1)
+      expect(harness.documents[1]!.destroyed).toBe(1)
+      expect(releases.at(-1)).toEqual({
+        sessionId: 'session-pdf-lifecycle', nodeId: 'pdf-1',
+        authorizationId: 'authorization-pdf', capabilityToken: 'capability-pdf-2'
+      })
+    } finally {
+      if (!cleaned) await mounted.cleanup()
+    }
+  })
+
+  it('keeps a malformed PDF as a titled unavailable node without changing manual geometry', async () => {
+    const releases: Array<Record<string, string>> = []
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-error',
+      files: [{
+        id: 'pdf-error', name: 'encrypted.pdf', source: 'computer',
+        authorizationId: 'authorization-error', contentType: 'application/pdf',
+        x: 200, y: 200, width: 540, height: 420, sizeMode: 'manual', aspectRatio: 1.4
+      }],
+      pdfjs: {
+        getDocument() {
+          return {
+            destroy() {},
+            promise: Promise.reject(new Error('PasswordException'))
+          }
+        }
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId, capabilityToken: 'capability-error',
+            url: 'sherlock-preview://capability-error/', contentType: 'application/pdf',
+            name: 'encrypted.pdf'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('encrypted.pdf')
+      expect(mounted.host.querySelector('[data-research-pdf-error]')).not.toBeNull()
+      expect(mounted.workspace.getSnapshot().files[0]).toMatchObject({
+        width: 540, height: 540 / 1.4 + 32, sizeMode: 'manual', aspectRatio: 1.4
+      })
+      expect(releases).toHaveLength(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('removes a failed PDF.js loader so a later visible retry can install a fresh module script', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-loader-retry',
+      files: [{
+        id: 'pdf-loader', name: 'loader.pdf', source: 'computer',
+        authorizationId: 'authorization-loader', contentType: 'application/pdf',
+        x: 200, y: 200, width: 320, height: 446, sizeMode: 'auto', aspectRatio: 17 / 22
+      }],
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId, capabilityToken: 'capability-loader',
+            url: 'sherlock-preview://capability-loader/', contentType: 'application/pdf',
+            name: 'loader.pdf'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      const failedLoader = mounted.browserWindow.document.querySelector(
+        'script[data-sherlock-pdfjs-loader]'
+      ) as HappyDOMElement | null
+      expect(failedLoader).not.toBeNull()
+      await act(async () => {
+        failedLoader?.dispatchEvent(new mounted.browserWindow.Event('error'))
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelector('[data-research-pdf-error]')).not.toBeNull()
+      expect(mounted.browserWindow.document.querySelector(
+        'script[data-sherlock-pdfjs-loader]'
+      )).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('mounts HTML only from a capability URL with the exact sandbox and releases it offscreen', async () => {
+    const releases: Array<Record<string, string>> = []
+    let restoreSequence = 0
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-html-lifecycle',
+      files: [{
+        id: 'html-1', name: 'model.html', source: 'computer',
+        authorizationId: 'authorization-html', contentType: 'text/html; charset=utf-8',
+        x: 200, y: 200, width: 480, height: 360, sizeMode: 'auto'
+      }],
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          restoreSequence += 1
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: `capability-html-${restoreSequence}`,
+            url: `sherlock-preview://capability-html-${restoreSequence}/`,
+            contentType: 'text/html; charset=utf-8', name: 'model.html'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      const frame = mounted.host.querySelector('[data-research-html-preview]') as HappyDOMElement | null
+      expect(frame).not.toBeNull()
+      expect(frame?.getAttribute('src')).toBe('sherlock-preview://capability-html-1/')
+      expect(frame?.getAttribute('srcdoc')).toBeNull()
+      expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(frame?.getAttribute('referrerpolicy')).toBe('no-referrer')
+      expect(frame?.getAttribute('loading')).toBe('lazy')
+      expect(frame?.getAttribute('allow')).toBe(
+        "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; fullscreen 'none'; autoplay 'none'; payment 'none'; usb 'none'; serial 'none'; hid 'none'"
+      )
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('model.html')
+      const card = mounted.host.querySelector('[data-research-file-card="html-1"]') as HappyDOMHTMLElement
+      expect(card.style.width).toBe('480px')
+      expect(card.style.height).toBe('360px')
+      expect(card.querySelector('[data-research-preview-shield]')).not.toBeNull()
+      const viewportBeforeWheel = mounted.workspace.getSnapshot().viewport
+      const htmlWheel = new mounted.browserWindow.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, deltaY: 120
+      })
+      frame?.dispatchEvent(htmlWheel)
+      expect(htmlWheel.defaultPrevented).toBe(false)
+      expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+      await act(async () => {
+        mounted.workspace.setSelection({ selectedNodeIds: ['html-1'], orderedFileIds: ['html-1'] })
+      })
+      expect(mounted.host.querySelector('[data-research-html-preview]')).toBe(frame)
+
+      ;(mounted.canvas as unknown as { focus(): void }).focus()
+      const shield = card.querySelector('[data-research-preview-shield]') as HappyDOMElement
+      await act(async () => {
+        mounted.browserWindow.dispatchEvent(new mounted.browserWindow.KeyboardEvent('keydown', {
+          code: 'Space', key: ' ', bubbles: true, cancelable: true
+        }))
+      })
+      expect(mounted.browserWindow.getComputedStyle(shield).pointerEvents).toBe('auto')
+      await act(async () => {
+        mounted.browserWindow.dispatchEvent(new mounted.browserWindow.KeyboardEvent('keyup', {
+          code: 'Space', key: ' ', bubbles: true
+        }))
+      })
+      expect(mounted.canvas.hasAttribute('data-space-pressed')).toBe(false)
+
+      await act(async () => { mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
+      expect(mounted.host.querySelector('[data-research-html-preview]')).toBeNull()
+      expect(mounted.host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
+      expect(releases).toEqual([{
+        sessionId: 'session-html-lifecycle', nodeId: 'html-1',
+        authorizationId: 'authorization-html', capabilityToken: 'capability-html-1'
+      }])
+
+      await act(async () => {
+        mounted.workspace.setViewport({ scale: 1, x: 0, y: 0 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(restoreSequence).toBe(2)
+      expect(mounted.host.querySelector('[data-research-html-preview]')?.getAttribute('src'))
+        .toBe('sherlock-preview://capability-html-2/')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('releases an exact HTML capability whose restore resolves after unmount', async () => {
+    const pending = deferred<Record<string, string> | null>()
+    const releases: Array<Record<string, string>> = []
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-html-late-restore',
+      files: [{
+        id: 'html-late', name: 'late.html', source: 'computer',
+        authorizationId: 'authorization-html-late', contentType: 'text/html; charset=utf-8',
+        x: 200, y: 200
+      }],
+      dshDesktop: { researchPreview: {
+        async restore() { return pending.promise },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    await act(async () => {
+      mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+      await Promise.resolve()
+    })
+    await mounted.cleanup()
+    pending.resolve({
+      authorizationId: 'authorization-html-late', capabilityToken: 'capability-html-late',
+      url: 'sherlock-preview://capability-html-late/', contentType: 'text/html; charset=utf-8',
+      name: 'late.html'
+    })
+    await Promise.resolve(); await Promise.resolve()
+    expect(releases).toEqual([{
+      sessionId: 'session-html-late-restore', nodeId: 'html-late',
+      authorizationId: 'authorization-html-late', capabilityToken: 'capability-html-late'
+    }])
   })
 
   it('admits only matching Better Sidebar preview identities and leaves mismatches generic', async () => {

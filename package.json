@@ -25,9 +25,9 @@
     "agent"
   ],
   "scripts": {
-    "postinstall": "patch-package && node scripts/patch-web-frontend-loading.mjs && node scripts/install-brand-assets.mjs && install-electron --no",
+    "postinstall": "patch-package && node scripts/patch-web-frontend-loading.mjs && node scripts/install-brand-assets.mjs && node scripts/install-pdfjs-assets.mjs && install-electron --no",
     "dev": "electron-vite dev",
-    "build": "node scripts/patch-web-frontend-loading.mjs && node scripts/install-brand-assets.mjs && electron-vite build",
+    "build": "node scripts/patch-web-frontend-loading.mjs && node scripts/install-brand-assets.mjs && node scripts/install-pdfjs-assets.mjs && electron-vite build",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
@@ -88,6 +88,7 @@
     "electron-vite": "5.0.0",
     "happy-dom": "^20.11.6",
     "patch-package": "^8.0.1",
+    "pdfjs-dist": "4.10.38",
     "typescript": "5.9.3",
     "vitest": "^4.1.10",
     "wrangler": "4.125.0",
@@ -116,6 +117,9 @@
     "files": [
       "out/**/*",
       "node_modules/**/*",
+      "!node_modules/pdfjs-dist/**",
+      "!node_modules/@napi-rs/canvas/**",
+      "!node_modules/@napi-rs/canvas-*/**",
       "package.json",
       "!**/*.map",
       "!**/node_modules/@mistralai/mistralai/src/**"

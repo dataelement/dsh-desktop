@@ -30,8 +30,11 @@ export const RESEARCH_PREVIEW_CSP = [
   "object-src 'none'",
   "frame-src 'none'",
   "child-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'none'",
   "base-uri 'none'",
-  "form-action 'none'"
+  "form-action 'none'",
+  "frame-ancestors 'none'"
 ].join('; ')
 
 const AUTHORIZATION_DIRECTORY = 'research-file-preview'
@@ -349,10 +352,37 @@ function isRootPreviewKind(kind: PreviewKind | undefined): kind is PreviewKind {
   return kind?.rootPreview === true
 }
 
-function securityHeaders(contentType?: string, corsOrigin?: string): Headers {
+export function researchPreviewHtmlCsp(capabilityToken: string, frameAncestor: string): string {
+  const source = `${RESEARCH_PREVIEW_SCHEME}://${capabilityToken}`
+  return [
+    "default-src 'none'",
+    `img-src ${source} data:`,
+    `style-src ${source} 'unsafe-inline'`,
+    `script-src ${source}`,
+    'font-src data:',
+    `media-src ${source}`,
+    "connect-src 'none'",
+    "object-src 'none'",
+    "frame-src 'none'",
+    "child-src 'none'",
+    "worker-src 'none'",
+    "manifest-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    `frame-ancestors ${frameAncestor}`
+  ].join('; ')
+}
+
+function securityHeaders(
+  contentType?: string,
+  corsOrigin?: string,
+  htmlCapability?: { token: string; frameAncestor: string }
+): Headers {
   const headers = new Headers({
     'Cache-Control': 'no-store',
-    'Content-Security-Policy': RESEARCH_PREVIEW_CSP,
+    'Content-Security-Policy': htmlCapability
+      ? researchPreviewHtmlCsp(htmlCapability.token, htmlCapability.frameAncestor)
+      : RESEARCH_PREVIEW_CSP,
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff'
   })
@@ -597,7 +627,10 @@ export class ResearchFilePreviewRegistry {
       )
       if (!kind.validateMagic(prefix)) return fail(415, 'Preview type mismatch.')
 
-      const headers = securityHeaders(kind.contentType, corsOrigin)
+      const htmlCapability = authorization.allowSubresources && allowedOrigin
+        ? { token: resource.token, frameAncestor: allowedOrigin }
+        : undefined
+      const headers = securityHeaders(kind.contentType, corsOrigin, htmlCapability)
       headers.set('Accept-Ranges', 'bytes')
       const rangeHeader = request.headers.get('range')
       const range = rangeHeader === null ? null : parseRange(rangeHeader, file.size)

@@ -794,27 +794,41 @@ describe('sherlock-preview protocol responses', () => {
     })
     expectDescriptor(descriptor)
 
-    const html = await registry.handle(new Request(descriptor.url))
+    const harnessOrigin = 'http://127.0.0.1:43123'
+    const html = await registry.handle(new Request(descriptor.url), harnessOrigin)
     expect(html.status).toBe(200)
     expect(html.headers.get('content-type')).toBe('text/html; charset=utf-8')
     const csp = html.headers.get('content-security-policy') ?? ''
-    expect(csp).toContain("script-src 'none'")
+    const capabilitySource = 'sherlock-preview://capability_0000000000000001'
+    expect(csp).toContain(`script-src ${capabilitySource}`)
+    expect(csp).toContain(`style-src ${capabilitySource} 'unsafe-inline'`)
+    expect(csp).toContain(`img-src ${capabilitySource} data:`)
+    expect(csp).toContain('font-src data:')
+    expect(csp).not.toContain(`font-src ${capabilitySource}`)
+    expect(csp).toContain(`media-src ${capabilitySource}`)
+    expect(csp).toContain(`frame-ancestors ${harnessOrigin}`)
+    expect(csp).not.toContain("'unsafe-eval'")
+    expect(csp).not.toContain("script-src 'unsafe-inline'")
+    expect(csp).toContain("connect-src 'none'")
     expect(csp).toContain("frame-src 'none'")
-    expect(csp).not.toContain("frame-ancestors 'none'")
+    expect(csp).toContain("worker-src 'none'")
+    expect(csp).toContain("manifest-src 'none'")
+    expect(csp).toContain("form-action 'none'")
+    expect(csp).toContain("base-uri 'none'")
     expect((await body(html)).toString()).toContain('<!doctype html>')
 
-    const css = await registry.handle(new Request(new URL('assets/site.css', descriptor.url)))
+    const css = await registry.handle(new Request(new URL('assets/site.css', descriptor.url)), harnessOrigin)
     expect(css.status).toBe(200)
     expect(css.headers.get('content-type')).toBe('text/css; charset=utf-8')
-    const image = await registry.handle(new Request(new URL('assets/logo.png', descriptor.url)))
+    const image = await registry.handle(new Request(new URL('assets/logo.png', descriptor.url)), harnessOrigin)
     expect(image.status).toBe(200)
     expect(image.headers.get('content-type')).toBe('image/png')
-    const script = await registry.handle(new Request(new URL('assets/site.js', descriptor.url)))
+    const script = await registry.handle(new Request(new URL('assets/site.js', descriptor.url)), harnessOrigin)
     expect(script.status).toBe(200)
     expect(script.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
-    const escaped = await registry.handle(new Request(new URL('assets/escape.js', descriptor.url)))
+    const escaped = await registry.handle(new Request(new URL('assets/escape.js', descriptor.url)), harnessOrigin)
     expect(escaped.status).toBe(403)
-    const unsupported = await registry.handle(new Request(new URL('assets/notes.txt', descriptor.url)))
+    const unsupported = await registry.handle(new Request(new URL('assets/notes.txt', descriptor.url)), harnessOrigin)
     expect(unsupported.status).toBe(404)
 
     for (const suffix of [
@@ -827,9 +841,22 @@ describe('sherlock-preview protocol responses', () => {
         url: `${descriptor.url}${suffix}`,
         method: 'GET',
         headers: new Headers()
-      } as Request)
+      } as Request, harnessOrigin)
       expect(malformed.status, suffix).toBe(403)
     }
+
+    const other = await registry.admitFinder({
+      path: path.join(site, 'index.html'),
+      sessionId: 'session-1',
+      nodeId: 'html-2'
+    })
+    expectDescriptor(other)
+    expect(csp).not.toContain('sherlock-preview://capability_0000000000000002')
+    const opaqueModuleRequest = await registry.handle(new Request(
+      new URL('assets/site.js', descriptor.url),
+      { headers: { Origin: 'null' } }
+    ), harnessOrigin)
+    expect(opaqueModuleRequest.status).toBe(403)
   })
 
   it('allows only the current trusted main-window origin and rejects other origins before file access', async () => {
