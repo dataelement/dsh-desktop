@@ -15,7 +15,19 @@ export function secureWindow(window: BrowserWindow): void {
   })
 
   window.webContents.on('will-frame-navigate', (event) => {
-    if (event.isMainFrame || isPreviewUrl(event.url)) return
+    if (event.isMainFrame) {
+      const initiator = event.initiator
+      const mainFrame = window.webContents.mainFrame
+      if (
+        initiator &&
+        (initiator.processId !== mainFrame.processId ||
+          initiator.routingId !== mainFrame.routingId)
+      ) {
+        event.preventDefault()
+      }
+      return
+    }
+    if (isPreviewUrl(event.url)) return
     event.preventDefault()
   })
 

@@ -1,8 +1,9 @@
-import { readFile } from 'node:fs/promises'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   assertTrustedMainWindowEvent,
-  isTrustedMainWindowEvent
+  isTrustedMainWindowEvent,
+  registerTrustedMainWindowHandler,
+  registerTrustedMainWindowListener
 } from '../src/main/ipc-trust'
 
 function trustedFixture() {
@@ -60,30 +61,94 @@ describe('main-window IPC trust', () => {
     )
   })
 
-  it('applies the centralized frame assertion to privileged main-process handlers', async () => {
-    const main = await readFile('src/main/index.ts', 'utf8')
+  it('rejects privileged invoke handlers before their dependencies run', async () => {
+    const { webContents, window } = trustedFixture()
+    const childEvent = {
+      sender: webContents,
+      senderFrame: { processId: 7, routingId: 42 }
+    }
+    const handlers = new Map<string, (event: typeof childEvent) => unknown>()
+    const ipcMain = {
+      handle: (
+        channel: string,
+        handler: (event: typeof childEvent) => unknown
+      ) => handlers.set(channel, handler)
+    }
     const guardedChannels = [
-      'harness:restart',
       'harness:show-log',
       'directory-picker:open',
       'filesystem:show-item-in-folder',
-      'research:files-available',
-      'research:canvas-storage:get',
-      'research:canvas-storage:set'
+      'research:files-available'
     ]
+    const privilegedDependencies = new Map<string, ReturnType<typeof vi.fn>>()
 
     for (const channel of guardedChannels) {
-      const registrationMethod = channel.startsWith('research:canvas-storage:')
-        ? 'ipcMain.on'
-        : 'ipcMain.handle'
-      const registration = main.indexOf(`${registrationMethod}('${channel}'`)
-      expect(registration, channel).toBeGreaterThanOrEqual(0)
-      const nextRegistration = main.indexOf('\n  ipcMain.', registration + channel.length)
-      const handlerSource = main.slice(
-        registration,
-        nextRegistration < 0 ? main.length : nextRegistration
+      const dependency = vi.fn()
+      privilegedDependencies.set(channel, dependency)
+      registerTrustedMainWindowHandler(
+        ipcMain,
+        channel,
+        () => window,
+        dependency
       )
-      expect(handlerSource, channel).toContain('assertTrustedMainWindowEvent(event, mainWindow)')
     }
+
+    for (const channel of guardedChannels) {
+      const handler = handlers.get(channel)
+      expect(handler, channel).toBeTypeOf('function')
+      await expect(Promise.resolve().then(() => handler?.(childEvent))).rejects.toThrow(
+        'main Sherlock window'
+      )
+      expect(privilegedDependencies.get(channel), channel).not.toHaveBeenCalled()
+    }
+  })
+
+  it('rejects privileged synchronous Research handlers before storage runs', () => {
+    const { webContents, window } = trustedFixture()
+    const handlers = new Map<
+      string,
+      (event: { sender: unknown; senderFrame: { processId: number; routingId: number }; returnValue: unknown }) => void
+    >()
+    const ipcMain = {
+      on: (
+        channel: string,
+        handler: (event: { sender: unknown; senderFrame: { processId: number; routingId: number }; returnValue: unknown }) => void
+      ) => handlers.set(channel, handler)
+    }
+    const dependencies = {
+      get: vi.fn(() => 'stored'),
+      set: vi.fn(() => true)
+    }
+    registerTrustedMainWindowListener(
+      ipcMain,
+      'research:canvas-storage:get',
+      () => window,
+      dependencies.get,
+      null
+    )
+    registerTrustedMainWindowListener(
+      ipcMain,
+      'research:canvas-storage:set',
+      () => window,
+      dependencies.set,
+      false
+    )
+
+    for (const [channel, rejectedValue] of [
+      ['research:canvas-storage:get', null],
+      ['research:canvas-storage:set', false]
+    ] as const) {
+      const event = {
+        sender: webContents,
+        senderFrame: { processId: 7, routingId: 42 },
+        returnValue: undefined as unknown
+      }
+      const handler = handlers.get(channel)
+      expect(handler, channel).toBeTypeOf('function')
+      handler?.(event)
+      expect(event.returnValue, channel).toBe(rejectedValue)
+    }
+    expect(dependencies.get).not.toHaveBeenCalled()
+    expect(dependencies.set).not.toHaveBeenCalled()
   })
 })

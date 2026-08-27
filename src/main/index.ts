@@ -64,7 +64,11 @@ import {
   type LocalSearchRuntime
 } from './search/local-search-runtime'
 import { ResearchCanvasStorage } from './state/research-canvas-storage'
-import { assertTrustedMainWindowEvent } from './ipc-trust'
+import {
+  assertTrustedMainWindowEvent,
+  registerTrustedMainWindowHandler,
+  registerTrustedMainWindowListener
+} from './ipc-trust'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -606,59 +610,63 @@ function registerHarnessHandlers(): void {
   })
 
   ipcMain.removeHandler('filesystem:show-item-in-folder')
-  ipcMain.handle('filesystem:show-item-in-folder', (event, path: unknown) => {
-    assertTrustedMainWindowEvent(event, mainWindow)
-    if (typeof path !== 'string' || !isAbsolute(path) || !existsSync(path)) {
-      throw new Error('Finder reveal requires an existing absolute filesystem path.')
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'filesystem:show-item-in-folder',
+    () => mainWindow,
+    (_event, path: unknown) => {
+      if (typeof path !== 'string' || !isAbsolute(path) || !existsSync(path)) {
+        throw new Error('Finder reveal requires an existing absolute filesystem path.')
+      }
+      shell.showItemInFolder(path)
+      return { ok: true }
     }
-    shell.showItemInFolder(path)
-    return { ok: true }
-  })
+  )
 
   ipcMain.removeHandler('research:files-available')
-  ipcMain.handle('research:files-available', async (event, paths: unknown) => {
-    assertTrustedMainWindowEvent(event, mainWindow)
-    const rejected = Array.isArray(paths)
-      ? Array.from({ length: Math.min(paths.length, 64) }, () => false)
-      : []
-    const values = Array.isArray(paths) ? Array.from(paths) : []
-    if (
-      !Array.isArray(paths) ||
-      values.length > 64 ||
-      values.some((path) =>
-        typeof path !== 'string' || path.length === 0 || path.length > 512
-      )
-    ) {
-      return rejected
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'research:files-available',
+    () => mainWindow,
+    async (_event, paths: unknown) => {
+      const rejected = Array.isArray(paths)
+        ? Array.from({ length: Math.min(paths.length, 64) }, () => false)
+        : []
+      const values = Array.isArray(paths) ? Array.from(paths) : []
+      if (
+        !Array.isArray(paths) ||
+        values.length > 64 ||
+        values.some((path) =>
+          typeof path !== 'string' || path.length === 0 || path.length > 512
+        )
+      ) {
+        return rejected
+      }
+      return Promise.all(values.map((path) =>
+        stat(path).then((value) => value.isFile()).catch(() => false)
+      ))
     }
-    return Promise.all(values.map((path) =>
-      stat(path).then((value) => value.isFile()).catch(() => false)
-    ))
-  })
+  )
 
   ipcMain.removeAllListeners('research:canvas-storage:get')
-  ipcMain.on('research:canvas-storage:get', (event, key: unknown) => {
-    let result: string | null = null
-    try {
-      assertTrustedMainWindowEvent(event, mainWindow)
-      result = researchCanvasStorage.getItem(key)
-    } catch (error) {
-      console.warn('[research-canvas] rejected storage read', error)
-    }
-    event.returnValue = result
-  })
+  registerTrustedMainWindowListener(
+    ipcMain,
+    'research:canvas-storage:get',
+    () => mainWindow,
+    (_event, key: unknown) => researchCanvasStorage.getItem(key),
+    null,
+    (error) => console.warn('[research-canvas] rejected storage read', error)
+  )
 
   ipcMain.removeAllListeners('research:canvas-storage:set')
-  ipcMain.on('research:canvas-storage:set', (event, key: unknown, value: unknown) => {
-    let result = false
-    try {
-      assertTrustedMainWindowEvent(event, mainWindow)
-      result = researchCanvasStorage.setItem(key, value)
-    } catch (error) {
-      console.warn('[research-canvas] rejected storage write', error)
-    }
-    event.returnValue = result
-  })
+  registerTrustedMainWindowListener(
+    ipcMain,
+    'research:canvas-storage:set',
+    () => mainWindow,
+    (_event, key: unknown, value: unknown) => researchCanvasStorage.setItem(key, value),
+    false,
+    (error) => console.warn('[research-canvas] rejected storage write', error)
+  )
 }
 
 async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<void> {
@@ -1003,19 +1011,28 @@ async function bootstrap(): Promise<void> {
     setDeveloperModeEnabled(app.getPath('userData'), enabled)
     return { ok: true }
   })
-  ipcMain.handle('directory-picker:open', async (event) => {
-    assertTrustedMainWindowEvent(event, mainWindow)
-
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
-      properties: ['openDirectory', 'createDirectory']
-    })
-    return result.canceled ? null : result.filePaths[0] ?? null
-  })
-  ipcMain.handle('harness:show-log', (event) => {
-    assertTrustedMainWindowEvent(event, mainWindow)
-    shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
-  })
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'directory-picker:open',
+    () => mainWindow,
+    async () => {
+      const window = mainWindow
+      if (!window) throw new Error('The main Sherlock window is unavailable.')
+      const result = await dialog.showOpenDialog(window, {
+        title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
+        properties: ['openDirectory', 'createDirectory']
+      })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    }
+  )
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'harness:show-log',
+    () => mainWindow,
+    () => {
+      shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
+    }
+  )
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
     assertTrustedMainWindowEvent(event, mainWindow)
