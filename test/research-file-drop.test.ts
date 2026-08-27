@@ -307,7 +307,7 @@ describe('Research canvas file drops', () => {
       "ipcRenderer.invoke('research:files-available', paths)"
     )
     expect(main).toContain("ipcMain.handle('research:files-available', async (event, paths: unknown) =>")
-    expect(main).toContain('assertTrustedMainWindowEvent(event)')
+    expect(main).toContain('assertTrustedMainWindowEvent(event, mainWindow)')
     expect(main).toContain('const values = Array.isArray(paths) ? Array.from(paths) : []')
     expect(main).toContain('values.length > 64')
     expect(main).toContain('path.length > 512')
@@ -328,7 +328,7 @@ describe('Research canvas file drops', () => {
     expect(preload).toContain("ipcRenderer.sendSync('research:canvas-storage:set', key, value)")
     expect(main).toContain("ipcMain.on('research:canvas-storage:get'")
     expect(main).toContain("ipcMain.on('research:canvas-storage:set'")
-    expect(main).toContain('assertTrustedMainWindowEvent(event)')
+    expect(main).toContain('assertTrustedMainWindowEvent(event, mainWindow)')
     expect(main).toContain("new ResearchCanvasStorage(app.getPath('userData'))")
 
     const getHandler = main.slice(
@@ -337,7 +337,7 @@ describe('Research canvas file drops', () => {
     )
     const setHandler = main.slice(
       main.indexOf("ipcMain.on('research:canvas-storage:set'"),
-      main.indexOf('\n}\n\nfunction assertTrustedMainWindowEvent')
+      main.indexOf('\n}\n\nasync function executeDesktopMenuCommand')
     )
     expect(getHandler.match(/event\.returnValue\s*=/g)).toHaveLength(1)
     expect(setHandler.match(/event\.returnValue\s*=/g)).toHaveLength(1)

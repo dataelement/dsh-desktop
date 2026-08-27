@@ -14,9 +14,7 @@ import {
   nativeTheme,
   session,
   shell,
-  type BrowserWindowConstructorOptions,
-  type IpcMainEvent,
-  type IpcMainInvokeEvent
+  type BrowserWindowConstructorOptions
 } from 'electron'
 import {
   extractDuplicateLoaderEntryId,
@@ -66,7 +64,7 @@ import {
   type LocalSearchRuntime
 } from './search/local-search-runtime'
 import { ResearchCanvasStorage } from './state/research-canvas-storage'
-import { isTrustedMainWindowEvent } from './ipc-trust'
+import { assertTrustedMainWindowEvent } from './ipc-trust'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -573,9 +571,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
-    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-      throw new Error('Harness restart is only available from the Sherlock window.')
-    }
+    assertTrustedMainWindowEvent(event, mainWindow)
     if (runtime.snapshot().phase !== 'ready') {
       throw new Error('Harness is not ready to restart.')
     }
@@ -586,7 +582,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('desktop-menu:execute')
   ipcMain.handle('desktop-menu:execute', async (event, command: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     if (!isDesktopMenuCommand(command)) {
       throw new Error('Unknown Sherlock menu command.')
     }
@@ -596,7 +592,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('desktop-titlebar:set-theme')
   ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     if (typeof isDark !== 'boolean') {
       throw new Error('The Sherlock titlebar theme must be a boolean.')
     }
@@ -611,7 +607,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('filesystem:show-item-in-folder')
   ipcMain.handle('filesystem:show-item-in-folder', (event, path: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     if (typeof path !== 'string' || !isAbsolute(path) || !existsSync(path)) {
       throw new Error('Finder reveal requires an existing absolute filesystem path.')
     }
@@ -621,7 +617,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('research:files-available')
   ipcMain.handle('research:files-available', async (event, paths: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     const rejected = Array.isArray(paths)
       ? Array.from({ length: Math.min(paths.length, 64) }, () => false)
       : []
@@ -644,7 +640,7 @@ function registerHarnessHandlers(): void {
   ipcMain.on('research:canvas-storage:get', (event, key: unknown) => {
     let result: string | null = null
     try {
-      assertTrustedMainWindowEvent(event)
+      assertTrustedMainWindowEvent(event, mainWindow)
       result = researchCanvasStorage.getItem(key)
     } catch (error) {
       console.warn('[research-canvas] rejected storage read', error)
@@ -656,19 +652,13 @@ function registerHarnessHandlers(): void {
   ipcMain.on('research:canvas-storage:set', (event, key: unknown, value: unknown) => {
     let result = false
     try {
-      assertTrustedMainWindowEvent(event)
+      assertTrustedMainWindowEvent(event, mainWindow)
       result = researchCanvasStorage.setItem(key, value)
     } catch (error) {
       console.warn('[research-canvas] rejected storage write', error)
     }
     event.returnValue = result
   })
-}
-
-function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent | IpcMainEvent): void {
-  if (!mainWindow || !isTrustedMainWindowEvent(event, mainWindow)) {
-    throw new Error('This action is only available from the main Sherlock window.')
-  }
 }
 
 async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<void> {
@@ -977,7 +967,7 @@ function installMenu(): void {
 async function bootstrap(): Promise<void> {
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
-  registerUpdateHandlers()
+  registerUpdateHandlers(() => mainWindow)
   if (process.platform === 'darwin') startHarnessThemePreferenceSync()
   createWindow()
   localSearchRuntime = await startLocalSearchRuntime({
@@ -1006,7 +996,7 @@ async function bootstrap(): Promise<void> {
   })
   registerHarnessHandlers()
   ipcMain.handle('developer-mode:set-enabled', (event, enabled: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     if (typeof enabled !== 'boolean') {
       throw new Error('Developer mode state must be a boolean.')
     }
@@ -1014,9 +1004,7 @@ async function bootstrap(): Promise<void> {
     return { ok: true }
   })
   ipcMain.handle('directory-picker:open', async (event) => {
-    if (!mainWindow || !isTrustedMainWindowEvent(event, mainWindow)) {
-      throw new Error('Directory picker requests are only allowed from the main Harness window')
-    }
+    assertTrustedMainWindowEvent(event, mainWindow)
 
     const result = await dialog.showOpenDialog(mainWindow, {
       title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
@@ -1024,12 +1012,13 @@ async function bootstrap(): Promise<void> {
     })
     return result.canceled ? null : result.filePaths[0] ?? null
   })
-  ipcMain.handle('harness:show-log', () => {
+  ipcMain.handle('harness:show-log', (event) => {
+    assertTrustedMainWindowEvent(event, mainWindow)
     shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
   })
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     const message = typeof frontendErrorMessage === 'string' ? frontendErrorMessage : undefined
     const logs = [
       ...rendererPluginFailureLogs,
@@ -1041,7 +1030,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('recovery:action')
   ipcMain.handle('recovery:action', (event, action: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     if (typeof action === 'string' && PLUGIN_RECOVERY_ACTIONS.has(action as PluginRecoveryAction)) {
       resolvePluginRecoveryAction(action as PluginRecoveryAction)
       return { ok: true }
@@ -1050,7 +1039,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('harness:reset-plugins')
   ipcMain.handle('harness:reset-plugins', async (event, pluginName?: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedMainWindowEvent(event, mainWindow)
     if (pluginName !== undefined && typeof pluginName !== 'string') {
       throw new Error('The failing plugin name must be a string.')
     }

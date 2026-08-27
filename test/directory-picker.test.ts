@@ -9,7 +9,7 @@ describe('desktop Electron directory picker', () => {
     expect(preload).toContain("contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker'")
     expect(preload).toContain("ipcRenderer.invoke('directory-picker:open')")
     expect(main).toContain("ipcMain.handle('directory-picker:open'")
-    expect(main).toContain('isTrustedMainWindowEvent(event, mainWindow)')
+    expect(main).toContain('assertTrustedMainWindowEvent(event, mainWindow)')
     expect(main).toContain('dialog.showOpenDialog(mainWindow')
     expect(main).toContain("properties: ['openDirectory', 'createDirectory']")
     expect(main).toContain("app.commandLine.appendSwitch('lang', harnessLocale() === 'zh' ? 'zh-CN' : 'en-US')")

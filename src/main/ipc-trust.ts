@@ -8,7 +8,7 @@ type TrustedWindowEvent = {
   senderFrame: RoutedFrame | null
 }
 
-type TrustedWindow = {
+export type TrustedWindow = {
   isDestroyed(): boolean
   webContents: {
     mainFrame: RoutedFrame
@@ -26,4 +26,13 @@ export function isTrustedMainWindowEvent(
     senderFrame !== null &&
     senderFrame.processId === mainFrame.processId &&
     senderFrame.routingId === mainFrame.routingId
+}
+
+export function assertTrustedMainWindowEvent(
+  event: TrustedWindowEvent,
+  window: TrustedWindow | undefined
+): asserts window is TrustedWindow {
+  if (!window || !isTrustedMainWindowEvent(event, window)) {
+    throw new Error('This action is only available from the main Sherlock window.')
+  }
 }

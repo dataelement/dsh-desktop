@@ -14,6 +14,11 @@ export function secureWindow(window: BrowserWindow): void {
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
   })
 
+  window.webContents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame || isPreviewUrl(event.url)) return
+    event.preventDefault()
+  })
+
   window.webContents.on('will-attach-webview', (event) => event.preventDefault())
   window.webContents.session.setPermissionCheckHandler(
     (_webContents, permission, requestingOrigin, details) =>
@@ -30,4 +35,12 @@ export function secureWindow(window: BrowserWindow): void {
       )
     }
   )
+}
+
+function isPreviewUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).protocol === 'sherlock-preview:'
+  } catch {
+    return false
+  }
 }

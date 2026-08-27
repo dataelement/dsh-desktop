@@ -13,6 +13,10 @@ import {
   reduceUpdateStatus,
   type UpdateStateEvent
 } from './update-state'
+import {
+  assertTrustedMainWindowEvent,
+  type TrustedWindow
+} from '../ipc-trust'
 
 const { autoUpdater } = electronUpdater
 const TRANSIENT_STATUS_MS = 8_000
@@ -32,13 +36,25 @@ export function getUpdateStatus(): UpdateStatus {
   return { ...status }
 }
 
-export function registerUpdateHandlers(): void {
+export function registerUpdateHandlers(getMainWindow: () => TrustedWindow | undefined): void {
   if (handlersRegistered) return
   handlersRegistered = true
-  ipcMain.handle('updates:status', () => getUpdateStatus())
-  ipcMain.handle('updates:check', () => checkForUpdates(true))
-  ipcMain.handle('updates:download', () => downloadAvailableUpdate())
-  ipcMain.handle('updates:install', () => installDownloadedUpdate())
+  ipcMain.handle('updates:status', (event) => {
+    assertTrustedMainWindowEvent(event, getMainWindow())
+    return getUpdateStatus()
+  })
+  ipcMain.handle('updates:check', (event) => {
+    assertTrustedMainWindowEvent(event, getMainWindow())
+    return checkForUpdates(true)
+  })
+  ipcMain.handle('updates:download', (event) => {
+    assertTrustedMainWindowEvent(event, getMainWindow())
+    return downloadAvailableUpdate()
+  })
+  ipcMain.handle('updates:install', (event) => {
+    assertTrustedMainWindowEvent(event, getMainWindow())
+    return installDownloadedUpdate()
+  })
 }
 
 export function startUpdateManager(options: { prepareToInstall: () => Promise<void> }): void {

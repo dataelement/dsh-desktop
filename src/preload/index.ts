@@ -17,6 +17,7 @@ import { SidebarUpdateControl } from './sidebar-update-control'
 import { mountNativeThemeSync, mountWindowsTitlebar } from './windows-titlebar'
 import { safePathForFile } from './research-file-path'
 
+if (process.isMainFrame) {
 const DEVELOPER_MODE_STYLE_ID = 'sherlock-developer-mode-style'
 const DEVELOPER_MODE_NOTICE_ID = 'sherlock-developer-mode-notice'
 const locale = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
@@ -286,4 +287,5 @@ if (document.readyState === 'loading') {
   window.addEventListener('DOMContentLoaded', initializeUi, { once: true })
 } else {
   initializeUi()
+}
 }

@@ -33,6 +33,7 @@ const fakes = vi.hoisted(() => {
   return {
     autoUpdater: new FakeAutoUpdater(),
     ipcHandle: vi.fn(),
+    ipcHandlers: new Map<string, (event: unknown) => unknown>(),
     powerOn: vi.fn(),
     powerRemove: vi.fn()
   }
@@ -45,7 +46,12 @@ vi.mock('electron', () => ({
     isReady: () => false
   },
   BrowserWindow: { getAllWindows: () => [] },
-  ipcMain: { handle: fakes.ipcHandle },
+  ipcMain: {
+    handle: (channel: string, handler: (event: unknown) => unknown) => {
+      fakes.ipcHandle(channel, handler)
+      fakes.ipcHandlers.set(channel, handler)
+    }
+  },
   powerMonitor: { on: fakes.powerOn, removeListener: fakes.powerRemove }
 }))
 
@@ -65,9 +71,33 @@ import {
 afterEach(() => stopUpdateManager())
 
 describe('desktop update manager', () => {
-  it('exposes a dedicated manual update check to the trusted preload', () => {
-    registerUpdateHandlers()
+  it('rejects every update action from a child frame', async () => {
+    const webContents = { mainFrame: { processId: 7, routingId: 41 } }
+    const mainWindow = {
+      isDestroyed: () => false,
+      webContents
+    }
+    registerUpdateHandlers(() => mainWindow)
+    const childEvent = {
+      sender: webContents,
+      senderFrame: { processId: 7, routingId: 42 }
+    }
 
+    for (const channel of [
+      'updates:status',
+      'updates:check',
+      'updates:download',
+      'updates:install'
+    ]) {
+      const handler = fakes.ipcHandlers.get(channel)
+      expect(handler, channel).toBeTypeOf('function')
+      await expect(Promise.resolve().then(() => handler?.(childEvent))).rejects.toThrow(
+        'main Sherlock window'
+      )
+    }
+  })
+
+  it('exposes a dedicated manual update check to the trusted preload', () => {
     expect(fakes.ipcHandle.mock.calls.map(([channel]) => channel)).toContain('updates:check')
   })
 
