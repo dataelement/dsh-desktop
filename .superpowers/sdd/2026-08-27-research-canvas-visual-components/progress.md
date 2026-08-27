@@ -168,3 +168,6 @@
   before clearing their journal, while restart recognizes a durable rich node
   and only retries journal completion; commit
   `修复研究预览持久提交判定`).
+- Task 5: complete (commits 251fbbca..97509297, dual final review clean; full
+  assistant Markdown, proportional image preview, pre-admission journaling,
+  exact capability lifecycle, and durable retry semantics are focused green).
