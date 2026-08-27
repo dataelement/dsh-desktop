@@ -48,3 +48,16 @@
 - 同画面对照未发现残留 P0/P1/P2：无裁切正文、无错误页、无重复输入、无可关闭的固定对话页签、无窄屏横向溢出。
 
 final result: passed
+
+## Light theme contrast QA (2026-08-27)
+
+- User references: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-e623a2b5-b094-4f54-bb16-035b445c73ef.png` and `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-3e22d756-bb3a-4522-9688-d99b2c0addfb.png`.
+- Real packaged Research screenshot: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/com.openai.sky.CUAService/Sherlock Screenshot 2026-08-27 at 11.56.59 AM.jpeg`.
+- Light-theme inline file tags now use the neutral module surface with dark text and a visible outline; filenames and icons remain readable.
+- After the latest visual direction, light-theme user messages use the same neutral module surface as the reference with dark text in both Chat and the Research conversation pane.
+- The focused style contract expects tag and message backgrounds at `rgb(245, 246, 247)` with text at `rgb(15, 17, 21)`; packaged visual verification is repeated after each rebuild.
+- The light-theme selectors are scoped so the existing dark-theme appearance remains unchanged.
+- Clean packaged screenshot after a normal theme restore: `/tmp/sherlock-light-neutral-native.png`.
+- The transient gray sidebar was reproduced only after a direct DOM theme-attribute toggle during QA; a clean app restart using the persisted `ui-theme.preference: light` restored the normal sidebar without any sidebar code change.
+
+final result: passed

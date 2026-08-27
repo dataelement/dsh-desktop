@@ -805,6 +805,75 @@ describe('Sherlock workspace and composer controls', () => {
     )
   })
 
+  it('renders Research file tags with readable light-theme colors', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    browserWindow.document.body.style.setProperty(
+      '--dsw-alias-bg-module-platform',
+      'rgb(245, 246, 247)'
+    )
+    browserWindow.document.body.style.setProperty(
+      '--dsw-alias-label-primary',
+      'rgb(15, 17, 21)'
+    )
+    browserWindow.document.body.innerHTML = [
+      '<span class="uV2eYG_chip" data-reference-source="research-file">',
+      '<span class="uV2eYG_chipLabel">',
+      '<span class="uV2eYG_chipLabelText">report.pdf</span>',
+      '</span>',
+      '</span>'
+    ].join('')
+
+    const chip = browserWindow.document.querySelector('[data-reference-source="research-file"]')
+    const label = browserWindow.document.querySelector('.uV2eYG_chipLabel')
+    expect(chip).not.toBeNull()
+    expect(label).not.toBeNull()
+    if (chip === null || label === null) return
+
+    expect(browserWindow.getComputedStyle(chip).backgroundColor).toBe(
+      'rgb(245, 246, 247)'
+    )
+    expect(browserWindow.getComputedStyle(label).color).toBe('rgb(15, 17, 21)')
+  })
+
+  it('renders light-theme user messages with a neutral surface and dark text', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    browserWindow.document.body.style.setProperty(
+      '--dsw-alias-bg-module-platform',
+      'rgb(245, 246, 247)'
+    )
+    browserWindow.document.body.style.setProperty(
+      '--dsw-alias-label-primary',
+      'rgb(15, 17, 21)'
+    )
+    browserWindow.document.body.innerHTML = [
+      '<div class="gdEzaW_bubble">',
+      '<div class="_text_1pfhk_1">Research <code>/efund-ppt-maker</code> request</div>',
+      '</div>'
+    ].join('')
+
+    const bubble = browserWindow.document.querySelector('.gdEzaW_bubble')
+    const text = browserWindow.document.querySelector('._text_1pfhk_1')
+    const inlineCode = browserWindow.document.querySelector('code')
+    expect(bubble).not.toBeNull()
+    expect(text).not.toBeNull()
+    expect(inlineCode).not.toBeNull()
+    if (bubble === null || text === null || inlineCode === null) return
+
+    expect(browserWindow.getComputedStyle(bubble).backgroundColor).toBe(
+      'rgb(245, 246, 247)'
+    )
+    expect(browserWindow.getComputedStyle(text).color).toBe('rgb(15, 17, 21)')
+    expect(browserWindow.getComputedStyle(inlineCode).color).toBe('rgb(15, 17, 21)')
+  })
+
   it('uses a gray outline icon for the expanded current workspace', async () => {
     const primitives = new Proxy(
       {
