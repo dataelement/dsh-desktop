@@ -2263,6 +2263,8 @@ describe('Sherlock workspace and composer controls', () => {
       deferRenders: true, resolveCancelledLate: true, rejectDestroy: true
     })
     const releases: Array<Record<string, string>> = []
+    const bodySize = { width: 318, height: 425 }
+    const resizeObserverCallbacks: Array<() => void> = []
     let restoreSequence = 0
     let cleaned = false
     const mounted = await mountResearchCanvas({
@@ -2273,6 +2275,8 @@ describe('Sherlock workspace and composer controls', () => {
         x: 200, y: 200, width: 320, height: 446, sizeMode: 'auto', aspectRatio: 17 / 22
       }],
       pdfjs: harness.pdfjs,
+      pdfBodySize: bodySize,
+      resizeObserverCallbacks,
       dshDesktop: { researchPreview: {
         async restore(value) {
           restoreSequence += 1
@@ -2343,13 +2347,16 @@ describe('Sherlock workspace and composer controls', () => {
       expect(pdfCanvas?.getAttribute('data-research-pdf-rendered-page')).not.toBe('1')
 
       await act(async () => {
+        bodySize.width = 398
+        bodySize.height = 531
         ;(mounted.workspace as unknown as {
           updateNodeGeometry(id: string, geometry: Record<string, unknown>): void
         }).updateNodeGeometry('pdf-1', { width: 400, height: 400 / 0.75 + 32 })
+        resizeObserverCallbacks.at(-1)?.()
         await Promise.resolve(); await Promise.resolve()
       })
       expect(harness.renders[1]!.cancelled).toBe(1)
-      expect(harness.renders.at(-1)?.viewport.width).toBeCloseTo(400, 5)
+      expect(harness.renders.at(-1)?.viewport.width).toBeCloseTo(398, 5)
 
       await act(async () => { mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
       expect(mounted.host.querySelector('[data-research-pdf-preview]')).toBeNull()
@@ -2500,6 +2507,91 @@ describe('Sherlock workspace and composer controls', () => {
       expect(canvas.style.width).toBe('396px')
       expect(body.scrollWidth).toBe(body.clientWidth)
       expect(body.scrollHeight).toBe(body.clientHeight)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('waits for measured body bounds and fits landscape PDF pages in both dimensions', async () => {
+    const bodySize = { width: 0, height: 0 }
+    const resizeObserverCallbacks: Array<() => void> = []
+    const harness = createPdfJsHarness({ pageCount: 1, pageWidth: 1_000, pageHeight: 500 })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-landscape-body-size',
+      files: [{
+        id: 'pdf-landscape', name: 'landscape.pdf', source: 'computer',
+        authorizationId: 'authorization-landscape', contentType: 'application/pdf',
+        x: 200, y: 200, width: 320, height: 192,
+        sizeMode: 'auto', aspectRatio: 2
+      }],
+      pdfjs: harness.pdfjs,
+      pdfBodySize: bodySize,
+      resizeObserverCallbacks,
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-landscape',
+            url: 'sherlock-preview://capability-landscape/',
+            contentType: 'application/pdf', name: 'landscape.pdf'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(harness.pages).toEqual([])
+      expect(harness.renders).toEqual([])
+
+      const body = mounted.host.querySelector('[data-research-pdf-scroll]') as HappyDOMHTMLElement
+      const canvas = mounted.host.querySelector(
+        '[data-research-pdf-preview]'
+      ) as unknown as HTMLCanvasElement
+      bodySize.width = 318
+      bodySize.height = 158
+      await act(async () => {
+        resizeObserverCallbacks.at(-1)?.()
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(canvas.style.width).toBe('316px')
+      expect(canvas.style.height).toBe('158px')
+      expect(body.scrollWidth).toBe(body.clientWidth)
+      expect(body.scrollHeight).toBe(body.clientHeight)
+
+      bodySize.width = 316
+      bodySize.height = 156
+      await act(async () => {
+        mounted.workspace.setSelection({
+          selectedNodeIds: ['pdf-landscape'], orderedFileIds: ['pdf-landscape']
+        })
+        resizeObserverCallbacks.at(-1)?.()
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(canvas.style.width).toBe('312px')
+      expect(canvas.style.height).toBe('156px')
+      expect(body.scrollWidth).toBe(body.clientWidth)
+      expect(body.scrollHeight).toBe(body.clientHeight)
+
+      bodySize.width = 396
+      bodySize.height = 196
+      await act(async () => {
+        ;(mounted.workspace as unknown as {
+          updateNodeGeometry(id: string, geometry: Record<string, unknown>): void
+        }).updateNodeGeometry('pdf-landscape', {
+          width: 400, height: 232, sizeMode: 'manual'
+        })
+        resizeObserverCallbacks.at(-1)?.()
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(canvas.style.width).toBe('392px')
+      expect(canvas.style.height).toBe('196px')
+      expect(body.scrollWidth).toBe(body.clientWidth)
+      expect(body.scrollHeight).toBe(body.clientHeight)
+      expect(harness.renders.map(({ viewport }) => viewport.width)).toEqual([316, 312, 392])
     } finally {
       await mounted.cleanup()
     }

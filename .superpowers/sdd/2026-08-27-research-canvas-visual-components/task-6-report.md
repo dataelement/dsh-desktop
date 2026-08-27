@@ -13,7 +13,7 @@
 - PDF.js `getDocument` 使用同源 staged worker/CMaps/fonts，明确 `useWasm: false`、`isEvalSupported: false` 与独立的 `maxImageSize: 8_000_000`，避免单张超大图片在进入 canvas backing-store 限制前造成无界解码；未加入版本兼容性未验证的 `canvasMaxAreaInBytes`。每次页码或尺寸变化先 cancel 旧 render task，再用 generation 防止取消后晚到的 promise 发布旧页。
 - backing-store helper 以 O(1) 比例缩放限制 DPR 和 8,000,000 canvas pixels，覆盖极端、无效与畸形尺寸，不使用逐像素循环或会突破上限的硬下限。
 - 首个 PDF page viewport 仅在 `sizeMode: auto` 且节点仍为 Task 4 默认 PDF 比例时写回内容比例；32 px 标题栏不计入比例。手动几何、已知比例、重入、翻页和 resize 不会再次覆盖。
-- PDF canvas 通过 mounted preview body 的实际 `clientWidth` 计算 CSS/backing 尺寸，并由 `ResizeObserver` 响应普通/选中边框和手动 resize；不再把 border-box 外框宽度写入内容区。DOM 回归覆盖 auto、selected、manual 三态下 `scrollWidth == clientWidth` 与 `scrollHeight == clientHeight`。
+- PDF canvas 同时测量 mounted preview body 的实际 `clientWidth` 与 `clientHeight`，每页以 `min(clientWidth, clientHeight * pageRatio)` 计算 CSS/backing 宽度，并由 `ResizeObserver` 响应普通/选中边框和手动 resize；不再把 border-box 外框宽度写入内容区。任一维尚未测得时不调用 `getPage` 或 `render`，避免旧外框宽度抢跑。DOM 回归以独立 literal 覆盖 portrait/landscape 及 auto、selected、manual 三态，所有 production render viewport 均为 measured body-fit width，且 `scrollWidth == clientWidth`、`scrollHeight == clientHeight`。
 - 离屏、unmount 或换页/缩放会 cancel render、`page.cleanup()`、清零 canvas backing，并通过 loading task 这一单一 owner 销毁 PDF document/worker。teardown 的同步异常与异步 rejection 都被局部消费，避免 `PDFDocumentProxy.destroy()` 委托同一 loading task 后重复 destroy；随后只释放 exact ephemeral token。回到视口从 durable authorization 恢复。加载、文档、取页或渲染错误均保留文件名标题和本地错误态。
 - loader 使用真实 `/sherlock-pdfjs/loader.js` module script；失败会移除残留 script 并清除共享 promise，后续可重新加载，不会挂在永不触发的旧标签上。
 
@@ -75,6 +75,11 @@ Tests       1 failed | 101 skipped (102)
 single PDF teardown owner:
 Test Files  1 failed (1)
 Tests       1 failed | 101 skipped (102)
+
+二维 body-fit re-review:
+Test Files  1 failed (1)
+Tests       1 failed | 102 skipped (103)
+Failure     body 0x0 时已提前 getPage(1)
 ```
 
 ### GREEN
@@ -82,7 +87,7 @@ Tests       1 failed | 101 skipped (102)
 ```text
 npm test -- --run test/research-file-drop.test.ts test/sherlock-composer-workspace-ui.test.ts test/research-file-preview.test.ts test/pdfjs-assets.test.ts
 Test Files  4 passed (4)
-Tests       206 passed (206)
+Tests       207 passed (207)
 
 npm test -- --run test/preload-main-frame.test.ts test/ipc-trust.test.ts test/security.test.ts test/research-file-preview.test.ts
 Test Files  4 passed (4)
@@ -99,7 +104,7 @@ PASS
 - full conversation patch `git apply --reverse --check`: PASS
 - PDF.js actual staging two-run SHA-256 comparison: PASS（189 files）
 - `npm ls pdfjs-dist @napi-rs/canvas --all`: `pdfjs-dist@4.10.38 -> @napi-rs/canvas@0.1.100`
-- package contract：exact devDependency、LICENSE、真实 HTTP JavaScript MIME/bytes、raw dependency exclusions、staging lifecycle 全部包含在 206/206 聚焦结果中。
+- package contract：exact devDependency、LICENSE、真实 HTTP JavaScript MIME/bytes、raw dependency exclusions、staging lifecycle，以及 portrait/landscape 二维 body-fit 全部包含在 207/207 聚焦结果中。
 
 ## Files
 

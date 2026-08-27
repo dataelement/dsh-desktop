@@ -204,3 +204,14 @@
   and one loading-task owner contains async teardown rejection; 4 focused files,
   206 tests, typecheck, diff check, and full patch reverse check pass; commit
   `修复PDF预览资源与布局边界`).
+- Task 6: fix-round 1 re-review found 1 important issue — width-only PDF
+  fitting can vertically overflow a landscape preview body, and the outer-width
+  fallback starts `getPage` before body bounds are measured. Fix round 2
+  required.
+- Task 6: fix round 2/5 (1 addressed, 0 open — renderer measures both body
+  dimensions, starts no page work before both are positive, and fits each page
+  with `min(clientWidth, clientHeight * pageRatio)`; mounted portrait/landscape
+  auto/selected/manual regressions prove every render viewport uses measured
+  bounds with no horizontal or vertical overflow; 4 focused files, 207 tests,
+  security tests, typecheck, diff check, and full patch reverse check pass;
+  commit `修复PDF预览二维内容适配`).
