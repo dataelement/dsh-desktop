@@ -27,6 +27,10 @@ async function loadClientBundle(
   modules: Record<string, unknown> = {},
   dshDesktop?: {
     researchFilesAvailable?(paths: string[]): Promise<boolean[]>
+    researchCanvasStorage?: {
+      getItem(key: string): string | null
+      setItem(key: string, value: string): void
+    }
   }
 ): Promise<ClientBundle> {
   const source = await readFile(
@@ -311,6 +315,32 @@ describe('Research canvas file drops', () => {
     expect(main).toContain('value.isFile()')
     expect(main).not.toContain('readdir(')
     expect(main).not.toContain('readFile(path')
+  })
+
+  it('wires stable Research canvas storage through the trusted desktop bridge', async () => {
+    const [preload, main] = await Promise.all([
+      readFile('src/preload/index.ts', 'utf8'),
+      readFile('src/main/index.ts', 'utf8')
+    ])
+
+    expect(preload).toContain('researchCanvasStorage: Object.freeze({')
+    expect(preload).toContain("ipcRenderer.sendSync('research:canvas-storage:get', key)")
+    expect(preload).toContain("ipcRenderer.sendSync('research:canvas-storage:set', key, value)")
+    expect(main).toContain("ipcMain.on('research:canvas-storage:get'")
+    expect(main).toContain("ipcMain.on('research:canvas-storage:set'")
+    expect(main).toContain('assertTrustedMainWindowEvent(event)')
+    expect(main).toContain("new ResearchCanvasStorage(app.getPath('userData'))")
+
+    const getHandler = main.slice(
+      main.indexOf("ipcMain.on('research:canvas-storage:get'"),
+      main.indexOf("ipcMain.removeAllListeners('research:canvas-storage:set'")
+    )
+    const setHandler = main.slice(
+      main.indexOf("ipcMain.on('research:canvas-storage:set'"),
+      main.indexOf('\n}\n\nfunction assertTrustedMainWindowEvent')
+    )
+    expect(getHandler.match(/event\.returnValue\s*=/g)).toHaveLength(1)
+    expect(setHandler.match(/event\.returnValue\s*=/g)).toHaveLength(1)
   })
 
   it('exposes Electron webUtils.getPathForFile through the existing desktop bridge', async () => {
@@ -604,6 +634,36 @@ describe('Research canvas file drops', () => {
     expect(restored.at(-1)).toMatchObject({ id: 'node-255', path: '/w/node-255.txt' })
   })
 
+  it('persists the full supported file set even when escaped paths exceed the legacy raw limit', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const values = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (value.length <= 8 * 1024 * 1024) values.set(key, value)
+      }
+    }
+    const component = '"'.repeat(240)
+    const nodes = Array.from({ length: 256 }, (_, index) => ({
+      id: `file-${index}`,
+      path: `/research/${component}-${index}/${component}-${index}.png`,
+      name: `${component}-${index}.png`,
+      source: 'sherlock',
+      x: index,
+      y: index
+    }))
+    expect(JSON.stringify(nodes).length).toBeGreaterThan(262_144)
+
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for('escaped-files')
+    workspace.setFiles(nodes)
+
+    expect(workspace.getSnapshot().files).toHaveLength(256)
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('escaped-files').getSnapshot().files).toHaveLength(256)
+  })
+
   it('round-trips nodes and keeps them usable when Research storage is unavailable', async () => {
     const client = await loadConversationClient()
     expect(client.loadResearchCanvasFiles).toBeTypeOf('function')
@@ -633,6 +693,36 @@ describe('Research canvas file drops', () => {
     ])).not.toThrow()
   })
 
+  it('uses desktop-scoped storage for the default registry across renderer origins', async () => {
+    const sessionId = 'session-stable-storage'
+    const key = `sherlock.research.canvas.files.v1:${sessionId}`
+    const values = new Map<string, string>([[key, JSON.stringify([{
+      id: 'stable-file', path: '/w/stable.pdf', name: 'stable.pdf',
+      source: 'sherlock', x: 12, y: 34
+    }])]])
+    const client = await loadClientBundle('dsh-client-ui-conversation', {}, {
+      researchCanvasStorage: {
+        getItem: (storageKey) => values.get(storageKey) ?? null,
+        setItem: (storageKey, value) => { values.set(storageKey, value) }
+      }
+    })
+
+    const workspace = new client.ResearchWorkspaceRegistry().for(sessionId)
+    expect(workspace.getSnapshot().files).toEqual([{
+      id: 'stable-file', path: '/w/stable.pdf', name: 'stable.pdf',
+      source: 'sherlock', x: 12, y: 34
+    }])
+
+    workspace.setFiles([{
+      id: 'next-file', path: '/w/next.pdf', name: 'next.pdf',
+      source: 'sherlock', x: 56, y: 78
+    }])
+    expect(JSON.parse(values.get(key) ?? '[]')).toEqual([{
+      id: 'next-file', path: '/w/next.pdf', name: 'next.pdf',
+      source: 'sherlock', x: 56, y: 78
+    }])
+  })
+
   it('rejects an oversized raw persisted file payload before parsing', async () => {
     const client = await loadConversationClient()
     expect(client.parseResearchCanvasFileNodes).toBeTypeOf('function')
@@ -640,7 +730,7 @@ describe('Research canvas file drops', () => {
 
     expect(client.parseResearchCanvasFileNodes(JSON.stringify([{
       id: '1', name: 'a.pdf', source: 'computer', x: 12, y: 24,
-      ignored: 'x'.repeat(300_000)
+      ignored: 'x'.repeat(8 * 1024 * 1024)
     }]))).toEqual([])
   })
 
@@ -978,6 +1068,96 @@ describe('Research canvas file drops', () => {
       'sherlock.research.canvas.artifacts.v1:s1'
     ) ?? '[]')).toHaveLength(3)
   })
+
+  it('persists the full supported set of ordinary maximum-length artifacts', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const values = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (value.length <= 8 * 1024 * 1024) values.set(key, value)
+      }
+    }
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for('capacity')
+
+    workspace.setArtifacts(Array.from({ length: 256 }, (_, index) => ({
+      id: `artifact-${index}`,
+      kind: 'assistant-excerpt',
+      messageId: `message-${index}`,
+      title: '助手摘录',
+      excerpt: `${index}:${'x'.repeat(16_374)}`,
+      x: index,
+      y: index
+    })))
+
+    expect(workspace.getSnapshot().artifacts).toHaveLength(256)
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('capacity').getSnapshot().artifacts).toHaveLength(256)
+  })
+
+  it('keeps existing artifacts when escaped content reaches the aggregate cap', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    expect(client.placeResearchCanvasArtifact).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function' ||
+        typeof client.placeResearchCanvasArtifact !== 'function') return
+    const values = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (value.length <= 8 * 1024 * 1024) values.set(key, value)
+      }
+    }
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for('escaped')
+
+    workspace.setArtifacts([
+      {
+        id: 'result-id', kind: 'assistant-result', messageId: 'result',
+        title: '助手回复', excerpt: 'short', x: -1, y: -1
+      },
+      ...Array.from({ length: 255 }, (_, index) => ({
+        id: `artifact-${index}`,
+        kind: 'assistant-excerpt',
+        messageId: `message-${index}`,
+        title: '助手摘录',
+        excerpt: `${index}:${'\u0001'.repeat(16_374)}`,
+        x: index,
+        y: index
+      }))
+    ])
+    const before = workspace.getSnapshot().artifacts
+    expect(before.length).toBeGreaterThan(0)
+    expect(before.length).toBeLessThan(256)
+
+    const next = client.placeResearchCanvasArtifact(
+      before,
+      {
+        sessionId: 'escaped', messageId: 'dragged', kind: 'assistant-excerpt',
+        title: '助手摘录', excerpt: 'short'
+      },
+      { x: 0, y: 0 },
+      () => 'dragged'
+    )
+    workspace.setArtifacts(next)
+
+    expect(workspace.getSnapshot().artifacts.length).toBeGreaterThanOrEqual(before.length)
+    expect(workspace.getSnapshot().artifacts[0]).toEqual(before[0])
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('escaped').getSnapshot().artifacts[0]).toEqual(before[0])
+
+    const beforeUpdate = workspace.getSnapshot().artifacts
+    const beforeIds = new Set(beforeUpdate.map((artifact: { id: string }) => artifact.id))
+    workspace.addAssistantResult({
+      messageId: 'result', text: '\u0001'.repeat(16_384), at: { x: 1, y: 1 }
+    })
+    const afterUpdate = workspace.getSnapshot().artifacts
+    expect(afterUpdate).toHaveLength(beforeUpdate.length)
+    expect(afterUpdate.every((artifact: { id: string }) => beforeIds.has(artifact.id))).toBe(true)
+    expect(afterUpdate.find((artifact: { messageId: string }) => artifact.messageId === 'result'))
+      .toMatchObject({ excerpt: 'short', x: -1, y: -1 })
+  }, 15_000)
 
   it('publishes deeply immutable file and artifact nodes from a workspace snapshot', async () => {
     const client = await loadConversationClient()

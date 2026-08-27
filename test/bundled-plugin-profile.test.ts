@@ -94,6 +94,51 @@ describe('bundled Sherlock plugin profile', () => {
     expect(patched).toContain('setPanelState')
   })
 
+  it('publishes file drags from Files rows and search results without making folders draggable', async () => {
+    const source = await readFile(
+      path.resolve(
+        import.meta.dirname,
+        '..',
+        'build',
+        'sherlock-plugin-profile',
+        'vendor',
+        'dsh-better-sidebar',
+        'lib',
+        'client.js'
+      ),
+      'utf8'
+    )
+
+    const patched = patchBetterSidebarClient(source)
+    const fileRowStart = patched.indexOf('title: entry.broken ?')
+    const fileRowEnd = patched.indexOf('children: [', fileRowStart)
+    const folderRowStart = patched.indexOf('className: clsx(sidebar_module_css_default.explorerRow, sidebar_module_css_default.explorerDir')
+    const folderRowEnd = patched.indexOf('children: [', folderRowStart)
+    const searchResultStart = patched.indexOf('results.matches.map((rel) =>')
+    const searchResultEnd = patched.indexOf('children: rel', searchResultStart)
+
+    expect(patched).toContain('/* sherlock:files-to-research-canvas:v1 */')
+    expect(fileRowStart).toBeGreaterThanOrEqual(0)
+    expect(fileRowEnd).toBeGreaterThan(fileRowStart)
+    expect(patched.slice(fileRowStart, fileRowEnd)).toContain('draggable: true')
+    expect(patched.slice(fileRowStart, fileRowEnd)).toContain(
+      '"data-sherlock-file-drag-source": entry.path'
+    )
+    expect(patched.slice(fileRowStart, fileRowEnd)).toContain(
+      'writeSherlockSidebarFileDrag(event, entry.path, entry.name)'
+    )
+    expect(folderRowStart).toBeGreaterThanOrEqual(0)
+    expect(folderRowEnd).toBeGreaterThan(folderRowStart)
+    expect(patched.slice(folderRowStart, folderRowEnd)).not.toContain('draggable: true')
+    expect(searchResultStart).toBeGreaterThanOrEqual(0)
+    expect(searchResultEnd).toBeGreaterThan(searchResultStart)
+    expect(patched.slice(searchResultStart, searchResultEnd)).toContain('draggable: true')
+    expect(patched.slice(searchResultStart, searchResultEnd)).toContain(
+      'writeSherlockSidebarFileDrag(event, absolutePath, baseName$1(absolutePath))'
+    )
+    expect(patchBetterSidebarClient(patched)).toBe(patched)
+  })
+
   it('uses the formal profile without either retired memory plugin', async () => {
     const appManifest = JSON.parse(
       await readFile(path.resolve(import.meta.dirname, '..', 'package.json'), 'utf8')

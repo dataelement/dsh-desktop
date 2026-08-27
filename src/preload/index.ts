@@ -157,6 +157,14 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke('filesystem:show-item-in-folder', path),
     researchFilesAvailable: (paths: string[]): Promise<boolean[]> =>
       ipcRenderer.invoke('research:files-available', paths),
+    researchCanvasStorage: Object.freeze({
+      getItem: (key: string): string | null => {
+        const value = ipcRenderer.sendSync('research:canvas-storage:get', key) as unknown
+        return typeof value === 'string' ? value : null
+      },
+      setItem: (key: string, value: string): boolean =>
+        ipcRenderer.sendSync('research:canvas-storage:set', key, value) === true
+    }),
     getPathForFile: (file: File): string => safePathForFile(file, webUtils.getPathForFile)
   })
 )

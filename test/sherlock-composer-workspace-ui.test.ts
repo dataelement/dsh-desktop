@@ -56,6 +56,10 @@ async function loadClientBundle(
   dshDesktop?: {
     showItemInFolder?(path: string): Promise<{ ok: boolean }>
     getPathForFile?(file: File): string
+    researchCanvasStorage?: {
+      getItem(key: string): string | null
+      setItem(key: string, value: string): void
+    }
   },
   options?: {
     document?: unknown
@@ -1800,6 +1804,54 @@ describe('Sherlock workspace and composer controls', () => {
     expect(shell.snapshot.occurrences).toEqual(before.occurrences)
   })
 
+  it('selects and deletes exactly one inline Research tag with the keyboard', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
+    })
+    expect(client.selectedResearchReferenceOccurrenceId).toBeTypeOf('function')
+    expect(client.deleteResearchReferenceOccurrence).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function' ||
+        typeof client.researchFileReference !== 'function' ||
+        typeof client.selectedResearchReferenceOccurrenceId !== 'function' ||
+        typeof client.deleteResearchReferenceOccurrence !== 'function') return
+
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    shell.setDraft('AB')
+    shell.insertReference(
+      client.researchFileReference({ id: 'f1', path: '/w/one.pdf', name: '/w/one.pdf' }),
+      { start: 1, end: 1, draftRev: shell.snapshot.draftRev }
+    )
+    const before = shell.snapshot
+    const occurrenceId = before.occurrences[0].occurrenceId
+
+    expect(client.selectedResearchReferenceOccurrenceId(before.occurrences, {
+      start: 1, end: 2
+    })).toBe(occurrenceId)
+    expect(client.selectedResearchReferenceOccurrenceId(before.occurrences, {
+      start: 1, end: 1
+    })).toBeNull()
+    expect(client.deleteResearchReferenceOccurrence(shell, occurrenceId)).toBe(1)
+    expect(shell.snapshot.draft).toBe('A B')
+    expect(shell.snapshot.occurrences).toEqual([])
+
+    shell.undo()
+    expect(shell.snapshot.draft).toBe(before.draft)
+    expect(shell.snapshot.occurrences).toEqual(before.occurrences)
+  })
+
+  it('draws the selected inline Research tag with the business-primary outline', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const inputBarCss = styles.find(({ pluginCss }) =>
+      pluginCss?.endsWith('/InputBar.module.css')
+    )?.textContent ?? ''
+
+    expect(inputBarCss).toContain(
+      '.uV2eYG_chip[data-reference-source=research-file][data-selected=true]{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-1px}'
+    )
+  })
+
   it('deletes selected canvas cards with Delete and the right-click menu', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-delete-canvas-cards',
@@ -1958,7 +2010,7 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('does not claim malformed or cross-session proprietary drags', async () => {
+  it('claims and isolates proprietary drag types but validates their payloads on drop', async () => {
     const mounted = await mountResearchCanvas({ sessionId: 'session-drag-ownership' })
     try {
       const { browserWindow, canvas, workspace } = mounted
@@ -1994,12 +2046,29 @@ describe('Sherlock workspace and composer controls', () => {
       ]
 
       for (const dataTransfer of invalid) {
-        for (const type of ['dragenter', 'dragover', 'drop'] as const) {
+        for (const type of ['dragenter', 'dragover'] as const) {
           const before = bubbled[type]
           const event = dispatchDrag(browserWindow, canvas, type, dataTransfer)
-          expect(event.defaultPrevented).toBe(false)
-          expect(bubbled[type]).toBe(before + 1)
+          expect(event.defaultPrevented).toBe(true)
+          expect(bubbled[type]).toBe(before)
         }
+        const beforeDrop = bubbled.drop
+        const drop = dispatchDrag(browserWindow, canvas, 'drop', dataTransfer)
+        expect(drop.defaultPrevented).toBe(true)
+        expect(bubbled.drop).toBe(beforeDrop)
+      }
+
+      const protectedFileDrag = {
+        types: ['application/x-sherlock-file'],
+        files: [],
+        getData: () => '',
+        dropEffect: 'none'
+      }
+      for (const type of ['dragenter', 'dragover'] as const) {
+        const before = bubbled[type]
+        const event = dispatchDrag(browserWindow, canvas, type, protectedFileDrag)
+        expect(event.defaultPrevented).toBe(true)
+        expect(bubbled[type]).toBe(before)
       }
 
       const valid = [

@@ -15,6 +15,7 @@ import {
   session,
   shell,
   type BrowserWindowConstructorOptions,
+  type IpcMainEvent,
   type IpcMainInvokeEvent
 } from 'electron'
 import {
@@ -64,6 +65,8 @@ import {
   startLocalSearchRuntime,
   type LocalSearchRuntime
 } from './search/local-search-runtime'
+import { ResearchCanvasStorage } from './state/research-canvas-storage'
+import { isTrustedMainWindowEvent } from './ipc-trust'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -566,6 +569,8 @@ function restartHarness(): Promise<void> {
 }
 
 function registerHarnessHandlers(): void {
+  const researchCanvasStorage = new ResearchCanvasStorage(app.getPath('userData'))
+
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
@@ -634,15 +639,34 @@ function registerHarnessHandlers(): void {
       stat(path).then((value) => value.isFile()).catch(() => false)
     ))
   })
+
+  ipcMain.removeAllListeners('research:canvas-storage:get')
+  ipcMain.on('research:canvas-storage:get', (event, key: unknown) => {
+    let result: string | null = null
+    try {
+      assertTrustedMainWindowEvent(event)
+      result = researchCanvasStorage.getItem(key)
+    } catch (error) {
+      console.warn('[research-canvas] rejected storage read', error)
+    }
+    event.returnValue = result
+  })
+
+  ipcMain.removeAllListeners('research:canvas-storage:set')
+  ipcMain.on('research:canvas-storage:set', (event, key: unknown, value: unknown) => {
+    let result = false
+    try {
+      assertTrustedMainWindowEvent(event)
+      result = researchCanvasStorage.setItem(key, value)
+    } catch (error) {
+      console.warn('[research-canvas] rejected storage write', error)
+    }
+    event.returnValue = result
+  })
 }
 
-function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
-  if (
-    !mainWindow ||
-    mainWindow.isDestroyed() ||
-    event.sender !== mainWindow.webContents ||
-    event.senderFrame !== mainWindow.webContents.mainFrame
-  ) {
+function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  if (!mainWindow || !isTrustedMainWindowEvent(event, mainWindow)) {
     throw new Error('This action is only available from the main Sherlock window.')
   }
 }
@@ -990,12 +1014,7 @@ async function bootstrap(): Promise<void> {
     return { ok: true }
   })
   ipcMain.handle('directory-picker:open', async (event) => {
-    if (
-      !mainWindow ||
-      mainWindow.isDestroyed() ||
-      event.sender !== mainWindow.webContents ||
-      event.senderFrame !== mainWindow.webContents.mainFrame
-    ) {
+    if (!mainWindow || !isTrustedMainWindowEvent(event, mainWindow)) {
       throw new Error('Directory picker requests are only allowed from the main Harness window')
     }
 

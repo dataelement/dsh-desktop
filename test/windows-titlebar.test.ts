@@ -51,7 +51,7 @@ describe('Windows titlebar menu', () => {
     expect(isDesktopMenuCommand('run-shell-command')).toBe(false)
     expect(isDesktopMenuCommand({ command: 'quit' })).toBe(false)
     expect(main).toContain("ipcMain.handle('desktop-menu:execute'")
-    expect(main).toContain('event.senderFrame !== mainWindow.webContents.mainFrame')
+    expect(main).toContain('isTrustedMainWindowEvent(event, mainWindow)')
     expect(main).toContain('if (!isDesktopMenuCommand(command))')
   })
 
