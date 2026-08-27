@@ -231,19 +231,19 @@ export async function ensurePnpmShim(home = dshHome()) {
     await chmod(nodePath, 0o755)
   }
 
-  // Also write .npmrc in profiles/web to prevent Windows file lock conflicts and racing worker threads
+  // Also write .npmrc in profiles/web. package-import-method/child-concurrency
+  // are intentionally left at pnpm's defaults (hardlink, auto concurrency):
+  // forcing clone-or-copy made every install do a full physical file copy
+  // across the profile's 150+ packages, turning installs that should take
+  // seconds into multi-minute (up to 30-minute) waits on Windows. The
+  // Windows locked-rename problem this was meant to route around is handled
+  // by the dedicated lock-recovery runner instead (see pnpm-runner.mjs).
   const profileDir = profileDirectory(home)
   await mkdir(profileDir, { recursive: true })
   const npmrcPath = join(profileDir, '.npmrc')
-  const npmrcContent = [
-    'package-import-method=clone-or-copy',
-    'child-concurrency=1',
-    'side-effects-cache=false'
-  ].join('\n') + '\n'
+  const npmrcContent = ['side-effects-cache=false'].join('\n') + '\n'
   try {
-    if (!existsSync(npmrcPath)) {
-      await writeFile(npmrcPath, npmrcContent, 'utf8')
-    }
+    await writeFile(npmrcPath, npmrcContent, 'utf8')
   } catch {
     // ignore
   }
@@ -301,12 +301,7 @@ export function buildPnpmEnvironment(
   if (process.platform === 'win32') result.Path = value
   result.CI = 'true'
   result.NO_COLOR = '1'
-  result.PNPM_MAX_WORKERS = '1'
-  result.npm_config_child_concurrency = '1'
-  result.npm_config_package_import_method = 'clone-or-copy'
   result.npm_config_side_effects_cache = 'false'
-  result.PNPM_CONFIG_CHILD_CONCURRENCY = '1'
-  result.PNPM_CONFIG_PACKAGE_IMPORT_METHOD = 'clone-or-copy'
   result.PNPM_CONFIG_SIDE_EFFECTS_CACHE = 'false'
   return result
 }

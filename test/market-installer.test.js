@@ -85,8 +85,9 @@ describe('desktop plugin market installer', () => {
     }
 
     const npmrc = await readFile(join(home, 'profiles', 'web', '.npmrc'), 'utf8')
-    expect(npmrc).toContain('package-import-method=clone-or-copy')
-    expect(npmrc).toContain('child-concurrency=1')
+    expect(npmrc).toContain('side-effects-cache=false')
+    expect(npmrc).not.toContain('package-import-method')
+    expect(npmrc).not.toContain('child-concurrency')
   })
 
   it('cleans up staging and sidelined directories left by interrupted installations', async () => {
@@ -215,10 +216,9 @@ describe('desktop plugin market installer', () => {
     // entry declares it for its children, so the environment must pass it
     // through rather than stripping it.
     expect(pnpmEnv.ELECTRON_RUN_AS_NODE).toBe('1')
-    expect(pnpmEnv.PNPM_MAX_WORKERS).toBe('1')
-    expect(pnpmEnv.npm_config_child_concurrency).toBe('1')
-    expect(pnpmEnv.npm_config_package_import_method).toBe('clone-or-copy')
     expect(pnpmEnv.npm_config_side_effects_cache).toBe('false')
+    expect(pnpmEnv.npm_config_child_concurrency).toBeUndefined()
+    expect(pnpmEnv.npm_config_package_import_method).toBeUndefined()
 
     const next = service.runPlugin(['install'], root)
     await expect(next.done).resolves.toEqual({ exitCode: 0, signal: null })

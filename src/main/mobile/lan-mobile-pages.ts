@@ -230,7 +230,7 @@ export function renderDesktopPairingPage(options: {
     allow: zh ? '允许' : 'Allow',
     refresh: zh ? '二维码将在 ' : 'QR refreshes in ',
     seconds: zh ? ' 秒后刷新' : 's',
-    expired: zh ? '二维码已过期，请重新打开此窗口刷新。' : 'QR expired. Reopen this window to refresh.',
+    expired: zh ? '二维码已过期，正在自动刷新…' : 'QR expired. Refreshing automatically…',
     tunnelError: zh ? '隧道建立失败：' : 'Tunnel failed: '
   }
   return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${text.title}</title><style>
@@ -265,7 +265,7 @@ export function renderDesktopPairingPage(options: {
   async function poll(){const [pending,status]=await Promise.all([fetch('/desktop/pending'),fetch('/desktop/status')]);if(pending.ok){const j=await pending.json();pendingId=j.id||null;document.getElementById('requestMode').textContent=pendingId?(j.mode==='tunnel'?T.requestTunnel:T.requestLan):'';document.getElementById('address').textContent=j.remoteAddress?T.deviceAddress+j.remoteAddress:'';document.getElementById('request').classList.toggle('show',!!pendingId);document.body.classList.toggle('has-request',!!pendingId)}if(status.ok){const j=await status.json();const connected=!!j.connected;document.getElementById('connection').classList.toggle('show',connected);document.body.classList.toggle('phone-connected',connected);syncModeControls(connected)}}
   async function disconnectPhone(){await fetch('/desktop/disconnect',{method:'POST'});location.reload()}
   async function decide(approved){if(!pendingId)return;await fetch('/desktop/decide',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:pendingId,approved})});pendingId=null;poll()}
-  setInterval(()=>{const n=Math.max(0,Math.ceil((end-Date.now())/1000));document.getElementById('expires').textContent=n?T.refresh+n+T.seconds:T.expired},1000);
+  setInterval(()=>{const n=Math.max(0,Math.ceil((end-Date.now())/1000));document.getElementById('expires').textContent=n?T.refresh+n+T.seconds:T.expired;if(!n&&!phoneConnected&&!pendingId&&!modeSwitching)location.reload()},1000);
   setInterval(poll,800);poll()</script></body></html>`
 }
 

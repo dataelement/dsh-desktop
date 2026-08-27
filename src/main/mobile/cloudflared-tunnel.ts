@@ -1,8 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
-import { createWriteStream } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync } from 'node:fs'
+import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { get as httpsGet } from 'node:https'
 import { dirname, join } from 'node:path'
 import { arch, platform } from 'node:os'
@@ -23,27 +22,27 @@ export const CLOUDFLARED_ASSETS: Record<string, CloudflareAssetSpec> = {
   'darwin-arm64': {
     asset: 'cloudflared-darwin-arm64.tgz',
     isTarGz: true,
-    sha256: '9f24e9cb54b9d031bf3dc2c2c9d2f0eb345d3151eb0c877ef945d8b74684a0d9'
+    sha256: '9042c2c5d8b2de78e60f313d5fb31b6c5c1cebde787a3caf1f2c9588084ac442'
   },
   'darwin-x64': {
     asset: 'cloudflared-darwin-amd64.tgz',
     isTarGz: true,
-    sha256: '4fc703cf97e42d76535d9ef264a974b971a8bc59e0a0d6aa0d59265f212fb9a7'
+    sha256: 'f1727723c586500e2092368ae21871b3df7ddfd2cb097f22d81bee4a9c458bb4'
   },
   'win32-x64': {
     asset: 'cloudflared-windows-amd64.exe',
     isTarGz: false,
-    sha256: '64d4b1a457497d510e1a1e0dc42e128ef35b2e564bfd4847bf501309d949cf97'
+    sha256: 'c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5'
   },
   'linux-x64': {
     asset: 'cloudflared-linux-amd64',
     isTarGz: false,
-    sha256: 'df36987f2ff841a4a4dcf9c4c7c88b9fc964177d6118d2bf4cfb0069ecad1ae5'
+    sha256: 'fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2'
   },
   'linux-arm64': {
     asset: 'cloudflared-linux-arm64',
     isTarGz: false,
-    sha256: '25c898c61ce55a90d9a6c9cf1b72e0a2948eb927a4d5e86976f7f6c6d05f3d45'
+    sha256: '7747d94570fb390cf47dcb4f9555c193c6355cda9793f0d878d9049e5d6a7790'
   }
 }
 
@@ -73,17 +72,31 @@ export function resolveCurrentAssetSpec(
   return spec ? { key, spec } : null
 }
 
+export async function sha256OfFile(path: string): Promise<string> {
+  const hash = createHash('sha256')
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(path)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('error', reject)
+    stream.on('end', () => resolve())
+  })
+  return hash.digest('hex')
+}
+
 export async function ensureCloudflaredBinary(options: {
   cacheDir: string
   customPath?: string
   osPlatform?: NodeJS.Platform | string
   osArch?: NodeJS.Architecture | string
+  download?: (url: string, destination: string) => Promise<void>
+  findOnPath?: () => Promise<string | null>
 }): Promise<string> {
   if (options.customPath && existsSync(options.customPath)) {
     return options.customPath
   }
 
-  const onPath = await findCloudflaredOnPath()
+  const find = options.findOnPath ?? findCloudflaredOnPath
+  const onPath = await find()
   if (onPath) return onPath
 
   const target = resolveCurrentAssetSpec(options.osPlatform, options.osArch)
@@ -98,11 +111,27 @@ export async function ensureCloudflaredBinary(options: {
   }
 
   await mkdir(options.cacheDir, { recursive: true })
+  // Sweep leftovers of downloads interrupted before verification could run;
+  // they are never reused and would otherwise accumulate on every crash.
+  for (const entry of await readdir(options.cacheDir)) {
+    if (entry.startsWith('.download-')) {
+      await rm(join(options.cacheDir, entry), { force: true }).catch(() => undefined)
+    }
+  }
   const downloadUrl = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/${target.spec.asset}`
   const tempDownloadPath = join(options.cacheDir, `.download-${Date.now()}-${target.spec.asset}`)
 
   try {
-    await downloadFileWithRedirects(downloadUrl, tempDownloadPath)
+    const download = options.download ?? downloadFileWithRedirects
+    await download(downloadUrl, tempDownloadPath)
+
+    const actualSha256 = await sha256OfFile(tempDownloadPath)
+    if (actualSha256 !== target.spec.sha256) {
+      await rm(tempDownloadPath, { force: true }).catch(() => undefined)
+      throw new Error(
+        `cloudflared checksum mismatch: expected ${target.spec.sha256}, got ${actualSha256}`
+      )
+    }
 
     if (target.spec.isTarGz) {
       await execFileAsync('tar', ['-xzf', tempDownloadPath, '-C', options.cacheDir])
