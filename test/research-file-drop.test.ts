@@ -630,7 +630,10 @@ describe('Research canvas file drops', () => {
     expect(client.researchCanvasStorageKey('session-7')).toBe(
       'sherlock.research.canvas.files.v1:session-7'
     )
-    expect(client.parseResearchCanvasFileNodes(JSON.stringify(valid))).toEqual(valid)
+    expect(client.parseResearchCanvasFileNodes(JSON.stringify(valid))).toEqual([{
+      ...valid[0], width: 320, height: 320 / (17 / 22) + 32,
+      sizeMode: 'auto', aspectRatio: 17 / 22
+    }])
     expect(client.parseResearchCanvasFileNodes('[{"id":"1","name":"a","source":"computer","x":null,"y":2}]')).toEqual([])
     expect(client.parseResearchCanvasFileNodes('bad-json')).toEqual([])
   })
@@ -652,9 +655,12 @@ describe('Research canvas file drops', () => {
     ]))).toEqual([
       {
         id: 'first', path: '/w/first.txt', name: 'first.txt', mediaType: 'text/plain',
-        source: 'computer', x: 1, y: 2
+        source: 'computer', x: 1, y: 2, width: 220, height: 64, sizeMode: 'auto'
       },
-      { id: 'name-only', name: 'name-only.txt', source: 'sherlock', x: 9, y: 10 }
+      {
+        id: 'name-only', name: 'name-only.txt', source: 'sherlock', x: 9, y: 10,
+        width: 220, height: 64, sizeMode: 'auto'
+      }
     ])
   })
 
@@ -722,7 +728,10 @@ describe('Research canvas file drops', () => {
     }]
 
     client.saveResearchCanvasFiles(memoryStorage, 's1', nodes)
-    expect(client.loadResearchCanvasFiles(memoryStorage, 's1')).toEqual(nodes)
+    expect(client.loadResearchCanvasFiles(memoryStorage, 's1')).toEqual([{
+      ...nodes[0], width: 320, height: 320 / (17 / 22) + 32,
+      sizeMode: 'auto', aspectRatio: 17 / 22
+    }])
 
     const storage = {
       getItem: () => { throw new Error('denied') },
@@ -752,7 +761,8 @@ describe('Research canvas file drops', () => {
     const workspace = new client.ResearchWorkspaceRegistry().for(sessionId)
     expect(workspace.getSnapshot().files).toEqual([{
       id: 'stable-file', path: '/w/stable.pdf', name: 'stable.pdf',
-      source: 'sherlock', x: 12, y: 34
+      source: 'sherlock', x: 12, y: 34, width: 320,
+      height: 320 / (17 / 22) + 32, sizeMode: 'auto', aspectRatio: 17 / 22
     }])
 
     workspace.setFiles([{
@@ -761,7 +771,8 @@ describe('Research canvas file drops', () => {
     }])
     expect(JSON.parse(values.get(key) ?? '[]')).toEqual([{
       id: 'next-file', path: '/w/next.pdf', name: 'next.pdf',
-      source: 'sherlock', x: 56, y: 78
+      source: 'sherlock', x: 56, y: 78, width: 320,
+      height: 320 / (17 / 22) + 32, sizeMode: 'auto', aspectRatio: 17 / 22
     }])
   })
 
@@ -786,8 +797,8 @@ describe('Research canvas file drops', () => {
     expect(client.normalizeResearchRect({ x: 180, y: 160 }, { x: 80, y: 60 }))
       .toEqual({ left: 80, top: 60, right: 180, bottom: 160, width: 100, height: 100 })
     const nodes = [
-      { id: 'a', name: 'a.pdf', source: 'computer', x: 50, y: 50 },
-      { id: 'b', name: 'b.pdf', source: 'computer', x: 220, y: 220 }
+      { id: 'a', name: 'a.txt', source: 'computer', x: 50, y: 50 },
+      { id: 'b', name: 'b.txt', source: 'computer', x: 220, y: 220 }
     ]
     expect(client.researchNodesInMarquee(
       nodes,
@@ -802,9 +813,130 @@ describe('Research canvas file drops', () => {
     if (typeof client.researchNodeViewportRect !== 'function') return
 
     expect(client.researchNodeViewportRect(
-      { id: 'a', name: 'a.pdf', source: 'computer', x: 50, y: 50 },
+      { id: 'a', name: 'a.txt', source: 'computer', x: 50, y: 50 },
       { scale: 2, x: 10, y: 20 }
     )).toEqual({ left: -110, top: 56, right: 330, bottom: 184, width: 440, height: 128 })
+  })
+
+  it('normalizes legacy rich and generic node geometry from one type policy', async () => {
+    const client = await loadConversationClient()
+    expect(client.normalizeResearchCanvasNodeGeometry).toBeTypeOf('function')
+    if (typeof client.normalizeResearchCanvasNodeGeometry !== 'function') return
+
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'generic', name: 'notes.txt', mediaType: 'text/plain', source: 'computer', x: 0, y: 0
+    })).toEqual({ width: 220, height: 64, sizeMode: 'auto', resizable: false })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'assistant', kind: 'assistant-result', messageId: 'm1', title: 'Answer',
+      excerpt: 'Evidence', x: 0, y: 0
+    })).toEqual({ width: 360, height: 240, sizeMode: 'auto', resizable: true })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'image', name: 'chart.png', mediaType: 'image/png', source: 'computer', x: 0, y: 0
+    })).toEqual({ width: 320, height: 272, sizeMode: 'auto', aspectRatio: 4 / 3, resizable: true })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'pdf', name: 'filing.pdf', mediaType: 'application/pdf', source: 'computer', x: 0, y: 0
+    })).toEqual({ width: 320, height: 320 / (17 / 22) + 32, sizeMode: 'auto', aspectRatio: 17 / 22, resizable: true })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'html', name: 'model.html', mediaType: 'text/html', source: 'computer', x: 0, y: 0
+    })).toEqual({ width: 480, height: 360, sizeMode: 'auto', resizable: true })
+  })
+
+  it('repairs invalid geometry and clamps finite manual sizes to the shared ceiling', async () => {
+    const client = await loadConversationClient()
+    expect(client.normalizeResearchCanvasNodeGeometry).toBeTypeOf('function')
+    if (typeof client.normalizeResearchCanvasNodeGeometry !== 'function') return
+
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'assistant', kind: 'assistant-result', width: -1, height: Number.NaN,
+      sizeMode: 'broken', x: 0, y: 0
+    })).toEqual({ width: 360, height: 240, sizeMode: 'auto', resizable: true })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'assistant', kind: 'assistant-result', width: 9000, height: 8000,
+      sizeMode: 'manual', x: 0, y: 0
+    })).toEqual({ width: 2400, height: 2400, sizeMode: 'manual', resizable: true })
+  })
+
+  it('uses normalized node dimensions for viewport rectangles at 0.5x and 2x', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchNodeViewportRect).toBeTypeOf('function')
+    if (typeof client.researchNodeViewportRect !== 'function') return
+    const node = {
+      id: 'html', name: 'model.html', mediaType: 'text/html', source: 'computer',
+      x: 100, y: 80, width: 480, height: 360, sizeMode: 'manual'
+    }
+
+    expect(client.researchNodeViewportRect(node, { scale: 0.5, x: 10, y: 20 }))
+      .toEqual({ left: -60, top: -30, right: 180, bottom: 150, width: 240, height: 180 })
+    expect(client.researchNodeViewportRect(node, { scale: 2, x: 10, y: 20 }))
+      .toEqual({ left: -270, top: -180, right: 690, bottom: 540, width: 960, height: 720 })
+  })
+
+  it('resizes freely from all corners in world units while fixing the opposite corner', async () => {
+    const client = await loadConversationClient()
+    expect(client.resizeResearchCanvasNode).toBeTypeOf('function')
+    if (typeof client.resizeResearchCanvasNode !== 'function') return
+    const node = {
+      id: 'assistant', kind: 'assistant-result', x: 0, y: 0,
+      width: 360, height: 240, sizeMode: 'auto'
+    }
+
+    expect(client.resizeResearchCanvasNode(node, 'se', { x: 80, y: 40 }, 2))
+      .toMatchObject({ x: 20, y: 10, width: 400, height: 260, sizeMode: 'manual' })
+    expect(client.resizeResearchCanvasNode({ ...node, x: 100, y: 100 }, 'nw', { x: 40, y: 20 }, 2))
+      .toMatchObject({ x: 110, y: 105, width: 340, height: 230, sizeMode: 'manual' })
+    expect(client.resizeResearchCanvasNode(node, 'ne', { x: 80, y: -40 }, 2))
+      .toMatchObject({ x: 20, y: -10, width: 400, height: 260, sizeMode: 'manual' })
+    expect(client.resizeResearchCanvasNode(node, 'sw', { x: -80, y: 40 }, 2))
+      .toMatchObject({ x: -20, y: 10, width: 400, height: 260, sizeMode: 'manual' })
+  })
+
+  it('clamps free and aspect-locked resize with title height outside the content ratio', async () => {
+    const client = await loadConversationClient()
+    expect(client.resizeResearchCanvasNode).toBeTypeOf('function')
+    if (typeof client.resizeResearchCanvasNode !== 'function') return
+
+    expect(client.resizeResearchCanvasNode({
+      id: 'html', name: 'model.html', mediaType: 'text/html', source: 'computer',
+      x: 0, y: 0, width: 480, height: 360, sizeMode: 'auto'
+    }, 'nw', { x: 4000, y: 4000 }, 1)).toMatchObject({
+      x: 80, y: 60, width: 320, height: 240, sizeMode: 'manual'
+    })
+    expect(client.resizeResearchCanvasNode({
+      id: 'assistant', kind: 'assistant-result', x: 0, y: 0,
+      width: 360, height: 240, sizeMode: 'manual'
+    }, 'se', { x: 9000, y: 9000 }, 1)).toMatchObject({
+      x: 1020, y: 1080, width: 2400, height: 2400
+    })
+    expect(client.resizeResearchCanvasNode({
+      id: 'image', name: 'chart.png', mediaType: 'image/png', source: 'computer',
+      x: 0, y: 0, width: 320, height: 272, sizeMode: 'auto', aspectRatio: 4 / 3
+    }, 'se', { x: 80, y: 40 }, 2)).toMatchObject({
+      x: 20, y: 15, width: 360, height: 302, sizeMode: 'manual', aspectRatio: 4 / 3
+    })
+  })
+
+  it('persists normalized manual geometry and reloads repaired legacy JSON', async () => {
+    const client = await loadConversationClient()
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const sessionId = 'geometry-round-trip'
+    const storage = memoryStorage({
+      [`sherlock.research.canvas.files.v1:${sessionId}`]: JSON.stringify([{
+        id: 'html', name: 'model.html', mediaType: 'text/html', source: 'computer',
+        x: 20, y: 30, width: -4, height: null, sizeMode: 'broken'
+      }])
+    })
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for(sessionId)
+    expect(workspace.getSnapshot().files[0]).toMatchObject({
+      width: 480, height: 360, sizeMode: 'auto'
+    })
+
+    workspace.resizeNode('html', 'se', { x: 40, y: 20 }, 1)
+    workspace.persist()
+    expect(new client.ResearchWorkspaceRegistry(storage).for(sessionId)
+      .getSnapshot().files[0]).toMatchObject({
+        x: 40, y: 40, width: 520, height: 380, sizeMode: 'manual'
+      })
   })
 
   it('keeps stable selection order and derives ordered files only', async () => {
@@ -891,7 +1023,10 @@ describe('Research canvas file drops', () => {
       { id: 'a2', kind: 'assistant-result', messageId: 'm1', title: 'Duplicate source', excerpt: 'Text', x: 5, y: 6 }
     ]))
     expect(artifacts).toEqual([
-      { id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Text', x: 1, y: 2 }
+      {
+        id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer',
+        excerpt: 'Text', x: 1, y: 2, width: 360, height: 240, sizeMode: 'auto'
+      }
     ])
     expect(client.parseResearchCanvasArtifactNodes('bad-json')).toEqual([])
     expect(client.parseResearchCanvasArtifactNodes(JSON.stringify(Array.from({ length: 257 }, (_, index) => ({
@@ -965,13 +1100,15 @@ describe('Research canvas file drops', () => {
     )
     expect(placed).toEqual([{
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
-      title: 'Answer', excerpt: 'Evidence', x: 120, y: 80
+      title: 'Answer', excerpt: 'Evidence', x: 120, y: 80,
+      width: 360, height: 240, sizeMode: 'auto'
     }])
     expect(client.placeResearchCanvasArtifact(
       placed, { ...payload, title: 'Revised' }, { x: 240, y: 160 }, () => 'unused'
     )).toEqual([{
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
-      title: 'Revised', excerpt: 'Evidence', x: 240, y: 160
+      title: 'Revised', excerpt: 'Evidence', x: 240, y: 160,
+      width: 360, height: 240, sizeMode: 'auto'
     }])
   })
 

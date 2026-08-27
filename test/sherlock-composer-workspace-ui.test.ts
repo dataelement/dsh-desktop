@@ -5,7 +5,8 @@ import {
   Window,
   type CSSStyleRule as HappyDOMCSSStyleRule,
   type Element as HappyDOMElement,
-  type Event as HappyDOMEvent
+  type Event as HappyDOMEvent,
+  type HTMLElement as HappyDOMHTMLElement
 } from 'happy-dom'
 import { describe, expect, it } from 'vitest'
 
@@ -2453,6 +2454,229 @@ describe('Sherlock workspace and composer controls', () => {
       expect(canvas.querySelector('[data-node-dragging="true"]')).toBeNull()
     } finally {
       await mounted.cleanup()
+    }
+  })
+
+  it('renders four corner handles only for selected rich nodes at their normalized size', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-rich-resize-handles',
+      files: [
+        { id: 'generic', path: '/w/notes.txt', name: 'notes.txt', mediaType: 'text/plain', source: 'computer', x: 100, y: 100 }
+      ],
+      artifacts: [
+        { id: 'assistant', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Evidence', x: 400, y: 200 }
+      ],
+      selection: {
+        selectedNodeIds: ['generic', 'assistant'], orderedFileIds: ['generic']
+      }
+    })
+    try {
+      const { host } = mounted
+      const generic = host.querySelector('[data-research-file-card="generic"]')
+      const assistant = host.querySelector('[data-research-artifact-card="assistant"]')
+      expect(generic).not.toBeNull()
+      expect(assistant).not.toBeNull()
+      expect(generic?.querySelector('[data-research-resize-handle]')).toBeNull()
+      expect(assistant?.querySelectorAll('[data-research-resize-handle]')).toHaveLength(4)
+      expect(Array.from(assistant?.querySelectorAll('[data-research-resize-handle]') ?? [])
+        .map((handle) => handle.getAttribute('data-research-resize-handle')).sort())
+        .toEqual(['ne', 'nw', 'se', 'sw'])
+      expect((generic as HappyDOMHTMLElement | null)?.style.width).toBe('220px')
+      expect((generic as HappyDOMHTMLElement | null)?.style.height).toBe('64px')
+      expect((assistant as HappyDOMHTMLElement | null)?.style.width).toBe('360px')
+      expect((assistant as HappyDOMHTMLElement | null)?.style.height).toBe('240px')
+      expect(assistant?.querySelector('[data-research-node-title]')?.textContent).toBe('Answer')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('gives resize priority over group move and updates only its node live through zoom', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-live-rich-resize',
+      artifacts: [
+        { id: 'assistant-a', kind: 'assistant-result', messageId: 'm1', title: 'Answer A', excerpt: 'Evidence A', x: 200, y: 200 },
+        { id: 'assistant-b', kind: 'assistant-result', messageId: 'm2', title: 'Answer B', excerpt: 'Evidence B', x: 600, y: 200 }
+      ],
+      selection: { selectedNodeIds: ['assistant-a', 'assistant-b'], orderedFileIds: [] },
+      viewport: { scale: 2, x: 0, y: 0 }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      const card = host.querySelector('[data-research-artifact-card="assistant-a"]')
+      expect(card).not.toBeNull()
+      if (card === null) return
+      const handle = card.querySelector('[data-research-resize-handle="se"]')
+      const shield = card.querySelector('[data-research-preview-shield]')
+      expect(handle).not.toBeNull()
+      expect(shield).not.toBeNull()
+      if (handle === null || shield === null) return
+
+      await act(async () => {
+        handle.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 31, x: 760, y: 640
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+          pointerId: 31, x: 840, y: 680
+        }))
+      })
+
+      expect(canvas.getAttribute('data-dragging')).toBe('true')
+      expect(canvas.getAttribute('data-research-operation')).toBe('resize')
+      expect(browserWindow.getComputedStyle(shield).pointerEvents).toBe('auto')
+      expect(canvas.querySelector('[data-node-dragging="true"]')).toBeNull()
+      expect(workspace.getSnapshot().artifacts).toMatchObject([
+        { id: 'assistant-a', x: 220, y: 210, width: 400, height: 260, sizeMode: 'manual' },
+        { id: 'assistant-b', x: 600, y: 200, width: 360, height: 240, sizeMode: 'auto' }
+      ])
+      expect((card as HappyDOMHTMLElement).style.width).toBe('400px')
+      expect((card as HappyDOMHTMLElement).style.height).toBe('260px')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('lets interactive rich preview bodies own pointer events until Space-pan is active', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-rich-preview-ownership',
+      files: [
+        { id: 'html', path: '/w/model.html', name: 'model.html', mediaType: 'text/html', source: 'computer', x: 300, y: 220 }
+      ],
+      selection: { selectedNodeIds: ['html'], orderedFileIds: ['html'] }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      const body = host.querySelector('[data-research-preview-body]')
+      const handle = host.querySelector('[data-research-resize-handle="se"]')
+      expect(body).not.toBeNull()
+      expect(handle).not.toBeNull()
+      if (body === null || handle === null) return
+
+      let previewWheel: HappyDOMEvent | undefined
+      await act(async () => {
+        previewWheel = new browserWindow.WheelEvent('wheel', {
+          bubbles: true, cancelable: true, deltaY: 30
+        })
+        body.dispatchEvent(previewWheel)
+      })
+      expect(previewWheel?.defaultPrevented).toBe(false)
+      expect(workspace.getSnapshot().viewport).toEqual({ scale: 1, x: 0, y: 0 })
+
+      await act(async () => {
+        body.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 41, x: 300, y: 220
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+          pointerId: 41, x: 340, y: 240
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 41, x: 340, y: 240
+        }))
+      })
+      expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual(['html'])
+      expect(workspace.getSnapshot().files[0]).toMatchObject({ x: 300, y: 220 })
+      expect(canvas.querySelector('[data-research-marquee]')).toBeNull()
+
+      ;(canvas as unknown as { focus(): void }).focus()
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          code: 'Space', key: ' ', bubbles: true, cancelable: true
+        }))
+        handle.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 42, x: 300, y: 220
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+          pointerId: 42, x: 330, y: 230
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 42, x: 330, y: 230
+        }))
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keyup', {
+          code: 'Space', key: ' ', bubbles: true
+        }))
+      })
+      expect(workspace.getSnapshot().viewport).toEqual({ scale: 1, x: 30, y: 10 })
+      expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual(['html'])
+      expect(workspace.getSnapshot().files[0]).toMatchObject({
+        x: 300, y: 220, width: 480, height: 360, sizeMode: 'auto'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('persists one live resize at every pointer finish boundary', async () => {
+    const finishModes = ['pointerup', 'pointercancel', 'blur', 'cleanup'] as const
+    for (const finishMode of finishModes) {
+      const values = new Map<string, string>()
+      const writes: Array<{ key: string; value: string }> = []
+      const storage = {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem(key: string, value: string) {
+          values.set(key, value)
+          writes.push({ key, value })
+        }
+      }
+      const sessionId = `session-deferred-resize-${finishMode}`
+      const mounted = await mountResearchCanvas({
+        sessionId,
+        storage,
+        artifacts: [
+          { id: 'assistant', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Evidence', x: 200, y: 200 }
+        ],
+        selection: { selectedNodeIds: ['assistant'], orderedFileIds: [] }
+      })
+      let cleaned = false
+      try {
+        const { browserWindow, canvas, host, workspace } = mounted
+        const handle = host.querySelector('[data-research-resize-handle="se"]')
+        expect(handle).not.toBeNull()
+        if (handle === null) return
+        writes.length = 0
+
+        await act(async () => {
+          handle.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+            pointerId: 51, x: 380, y: 320
+          }))
+          canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+            pointerId: 51, x: 400, y: 330
+          }))
+          canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
+            pointerId: 51, x: 420, y: 340
+          }))
+        })
+        expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
+          x: 220, y: 210, width: 400, height: 260, sizeMode: 'manual'
+        })
+        expect(JSON.parse(values.get(`sherlock.research.canvas.artifacts.v1:${sessionId}`) ?? '[]')[0])
+          .not.toMatchObject({ width: 400, height: 260 })
+        expect(writes).toEqual([])
+
+        if (finishMode === 'cleanup') {
+          await mounted.cleanup()
+          cleaned = true
+        } else {
+          await act(async () => {
+            if (finishMode === 'blur') {
+              browserWindow.dispatchEvent(new browserWindow.Event('blur'))
+            } else {
+              canvas.dispatchEvent(pointer(browserWindow, finishMode, {
+                pointerId: 51, x: 420, y: 340
+              }))
+            }
+          })
+        }
+
+        expect(writes.map(({ key }) => key)).toEqual([
+          `sherlock.research.canvas.files.v1:${sessionId}`,
+          `sherlock.research.canvas.artifacts.v1:${sessionId}`,
+          `sherlock.research.canvas.selection.v1:${sessionId}`
+        ])
+        expect(JSON.parse(values.get(`sherlock.research.canvas.artifacts.v1:${sessionId}`) ?? '[]')[0])
+          .toMatchObject({ x: 220, y: 210, width: 400, height: 260, sizeMode: 'manual' })
+      } finally {
+        if (!cleaned) await mounted.cleanup()
+      }
     }
   })
 
