@@ -66,12 +66,19 @@ async function loadClientBundle(
     window?: Window
     modules?: Record<string, unknown>
     styles?: InjectedStyle[]
+    exposeInputBar?: boolean
   }
 ): Promise<ClientBundle> {
-  const source = await readFile(
+  const bundleSource = await readFile(
     `node_modules/@deepseek-ai/${packageName}/lib/client.js`,
     'utf8'
   )
+  const source = options?.exposeInputBar
+    ? bundleSource.replace(
+        '		exports.apply = apply;',
+        '		exports.apply = apply;\n		exports.__testInputBar = InputBar;'
+      )
+    : bundleSource
   const react = requireModule('react')
   const jsxRuntime = requireModule('react/jsx-runtime')
   let descriptor: BundleDescriptor | undefined
@@ -115,6 +122,7 @@ async function loadClientBundle(
     navigator: options?.window?.navigator,
     HTMLElement: options?.window?.HTMLElement,
     HTMLTextAreaElement: options?.window?.HTMLTextAreaElement,
+    Text: options?.window?.Text,
     ResizeObserver: options?.window?.ResizeObserver,
     requestAnimationFrame: options?.window?.requestAnimationFrame?.bind(options.window),
     cancelAnimationFrame: options?.window?.cancelAnimationFrame?.bind(options.window),
@@ -3197,6 +3205,111 @@ describe('Sherlock workspace and composer controls', () => {
       ).paddingBottom).toBe('8px')
     } finally {
       await mounted.cleanup()
+    }
+  })
+
+  it('renders the dependency InputBar layers with synchronized shared spacing', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const primitives = {
+      Tooltip: ({ children }: { children: unknown }) => children
+    }
+    const attachments = {
+      DropOverlay: () => null,
+      AttachmentRail: () => null
+    }
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow,
+      exposeInputBar: true,
+      modules: {
+        '@deepseek-ai/dsh-client-ui-primitives': primitives,
+        '@deepseek-ai/dsh-client-ui-attachment': attachments
+      }
+    })
+    const InputBar = client.__testInputBar as ComponentType<Record<string, unknown>>
+    expect(InputBar).toBeTypeOf('function')
+    if (typeof InputBar !== 'function') {
+      restoreGlobals()
+      return
+    }
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const inputState = {
+      draft: '第一行\\n第二行',
+      imageIds: [],
+      occurrences: [],
+      phase: 'idle',
+      queue: []
+    }
+    const baseProps: Record<string, unknown> = {
+      useSession: (select: (state: Record<string, unknown>) => unknown) => select({
+        running: false,
+        promptError: null,
+        subagent: null,
+        removed: false
+      }),
+      useInput: (select: (state: typeof inputState) => unknown) => select(inputState),
+      inputActions: {},
+      keyboard: { snapshot: inputState },
+      renderSlot: () => null,
+      useNotices: (select: (state: null) => unknown) => select(null),
+      useLexicon: (select: (state: Record<string, unknown>) => unknown) => select({}),
+      useMenuLauncher: (select: (state: string | null) => unknown) => select(null),
+      useProjection: (
+        _name: string,
+        select?: (value: undefined) => unknown
+      ) => select === undefined ? undefined : select(undefined),
+      sessionId: 'session-inputbar-integration',
+      t: (key: string) => key,
+      variant: 'composer'
+    }
+    try {
+      await act(async () => {
+        root.render(createElement(InputBar, baseProps))
+      })
+      const rootLayer = host.querySelector('.uV2eYG_root')
+      const cardLayer = host.querySelector('.uV2eYG_card')
+      const backdropLayer = host.querySelector('[data-input-backdrop]')
+      const mirrorLayer = host.querySelector('[data-input-mirror]')
+      const textarea = host.querySelector('textarea')
+      const rowLayer = host.querySelector('.uV2eYG_row')
+      expect(rootLayer).not.toBeNull()
+      expect(cardLayer).not.toBeNull()
+      expect(backdropLayer).not.toBeNull()
+      expect(mirrorLayer).not.toBeNull()
+      expect(textarea).not.toBeNull()
+      expect(rowLayer).not.toBeNull()
+      if (rootLayer === null || cardLayer === null || backdropLayer === null ||
+          mirrorLayer === null || textarea === null || rowLayer === null) return
+      expect(rootLayer.contains(cardLayer)).toBe(true)
+      expect(cardLayer.contains(backdropLayer)).toBe(true)
+      expect(cardLayer.contains(textarea)).toBe(true)
+      expect(cardLayer.contains(mirrorLayer)).toBe(true)
+      expect(cardLayer.contains(rowLayer)).toBe(true)
+      const textareaStyle = browserWindow.getComputedStyle(textarea)
+      const sharedStyle = browserWindow.getComputedStyle(backdropLayer)
+      const mirrorStyle = browserWindow.getComputedStyle(mirrorLayer)
+      expect(textareaStyle.paddingBottom).toBe('8px')
+      expect(sharedStyle.paddingBottom).toBe('8px')
+      expect(mirrorStyle.paddingBottom).toBe('8px')
+      expect(sharedStyle.paddingLeft).toBe(textareaStyle.paddingLeft)
+      expect(sharedStyle.paddingRight).toBe(textareaStyle.paddingRight)
+
+      await act(async () => {
+        root.render(createElement(InputBar, { ...baseProps, variant: 'hero' }))
+      })
+      const heroMirror = host.querySelector('.uV2eYG_hero [data-input-mirror]')
+      expect(heroMirror).not.toBeNull()
+      const heroRule = Array.from(browserWindow.document.styleSheets)
+        .flatMap((sheet) => Array.from(sheet.cssRules))
+        .find((rule) => rule.cssText.includes('.uV2eYG_hero .uV2eYG_mirror'))
+      expect(heroRule?.style.getPropertyValue('min-height'))
+        .toBe('60px')
+    } finally {
+      await act(async () => { root.unmount() })
+      restoreGlobals()
     }
   })
 
