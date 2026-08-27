@@ -1,7 +1,12 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
-import { Window, type Element as HappyDOMElement, type Event as HappyDOMEvent } from 'happy-dom'
+import {
+  Window,
+  type CSSStyleRule as HappyDOMCSSStyleRule,
+  type Element as HappyDOMElement,
+  type Event as HappyDOMEvent
+} from 'happy-dom'
 import { describe, expect, it } from 'vitest'
 
 type ClientBundle = Record<string, unknown>
@@ -3174,7 +3179,7 @@ describe('Sherlock workspace and composer controls', () => {
       expect(researchRoot).not.toBeNull()
       expect(researchCard).not.toBeNull()
       expect(researchRow).not.toBeNull()
-      if (researchSeat === null || researchRoot === null ||
+      if (researchPortalHost === null || researchSeat === null || researchRoot === null ||
           researchCard === null || researchRow === null) return
       expect(detailsPortalHost.contains(researchPortalHost)).toBe(true)
       expect(researchPortalHost.contains(researchSeat)).toBe(true)
@@ -3185,6 +3190,8 @@ describe('Sherlock workspace and composer controls', () => {
       expect(detailsPortalHost.querySelector('[data-input-backdrop]')).not.toBeNull()
       expect(detailsPortalHost.querySelector('[data-input-mirror]')).not.toBeNull()
       const researchBackdrop = detailsPortalHost.querySelector('[data-input-backdrop]')
+      const researchMirror = detailsPortalHost.querySelector('[data-input-mirror]')
+      if (researchBackdrop === null || researchMirror === null) return
       expect(researchBackdrop?.querySelectorAll('[data-research-file-tag]')).toHaveLength(2)
       expect(researchBackdrop?.textContent).toContain('第二行')
       expect(researchBackdrop?.textContent).toContain('evidence.pdf')
@@ -3197,12 +3204,8 @@ describe('Sherlock workspace and composer controls', () => {
         paddingRight: researchStyle.paddingRight
       }).toEqual(horizontalGeometry)
       expect(researchStyle.paddingBottom).toBe('8px')
-      expect(browserWindow.getComputedStyle(
-        detailsPortalHost.querySelector('[data-input-backdrop]') as Element
-      ).paddingBottom).toBe('8px')
-      expect(browserWindow.getComputedStyle(
-        detailsPortalHost.querySelector('[data-input-mirror]') as Element
-      ).paddingBottom).toBe('8px')
+      expect(browserWindow.getComputedStyle(researchBackdrop).paddingBottom).toBe('8px')
+      expect(browserWindow.getComputedStyle(researchMirror).paddingBottom).toBe('8px')
     } finally {
       await mounted.cleanup()
     }
@@ -3304,7 +3307,10 @@ describe('Sherlock workspace and composer controls', () => {
       expect(heroMirror).not.toBeNull()
       const heroRule = Array.from(browserWindow.document.styleSheets)
         .flatMap((sheet) => Array.from(sheet.cssRules))
-        .find((rule) => rule.cssText.includes('.uV2eYG_hero .uV2eYG_mirror'))
+        .find((rule): rule is HappyDOMCSSStyleRule =>
+          rule instanceof browserWindow.CSSStyleRule &&
+          rule.cssText.includes('.uV2eYG_hero .uV2eYG_mirror')
+        )
       expect(heroRule?.style.getPropertyValue('min-height'))
         .toBe('60px')
     } finally {
