@@ -49,6 +49,21 @@
 
 final result: passed
 
+## Research canvas visual components QA (2026-08-28)
+
+- Exact packaged app: `/Users/heyafeng/Documents/ChatGPT/dsh/.worktrees/research-canvas-file-drop/dist-notarized/mac-arm64/Sherlock.app` (`0.7.3`). The app was built and launched with `./script/build_and_run.sh --verify`; Apple notarization, uploads, the public update feed, version changes, tags, and pushes were intentionally skipped.
+- Real packaged new-conversation proof: `/tmp/sherlock-new-conversation-qa.jpeg`. The centered composer keeps the established 780 px card width, the Sherlock logo and loading treatment remain present, and the composer stays anchored instead of joining page scroll.
+- Real packaged Research proof: `/tmp/sherlock-research-conversation-qa.jpeg`. Research uses the global right sidebar, keeps `对话` pinned first, shows the selected canvas attachment as an inline composer tag, and renders one 102 px composer card without a second attachment area.
+- Real packaged Files proof: `/tmp/sherlock-research-files-qa.jpeg`. The global `Files` tab lists the active workspace files and each file row exposes the packaged draggable source contract; the center remains a pure canvas.
+- Live production-frontend rich-message proof: `/tmp/sherlock-research-rich-assistant-qa.jpeg`, served by the packaged app at `127.0.0.1:52220`. `添加到画布` created a 360 × 672 assistant component whose body retained the complete Markdown paragraphs, emphasis, path, table, and source affordance instead of truncating to a summary.
+- Exact live geometry at a 1280 × 720 viewport: Chat composer card `780 × 102`; Research sidebar composer card `432 × 102`. Both share the same 36 px editable region and the requested 8 px vertical increase, while Chat preserves the established width and Research narrows only with the global sidebar.
+- The live production frontend emitted zero warning/error console entries during the Research, Files, composer, and assistant-component pass.
+- Electron Computer Use and browser CUA can move the pointer but do not preserve Chromium's custom HTML5 `DataTransfer` payload or the component pointer-capture sequence. The QA therefore does not claim that a visible cursor movement itself proved Files/Finder drop or corner resize. Those exact paths are instead covered by mounted DOM behavior tests for `application/x-sherlock-file`, secure admission, proportional image geometry, free assistant/HTML geometry, aspect-locked image/PDF geometry, PDF wheel ownership, canvas non-movement, selection/group movement, keyboard/context deletion, session switching, restart restoration, and capability cleanup.
+- PDF packaging was separately verified from an isolated dependency install: the library and worker are byte-identical to `pdfjs-dist`, 169 CMaps and 16 standard fonts are staged, no staging remnants remain, and the app excludes the raw dependency/native canvas package. HTML preview remains an opaque `sandbox="allow-scripts"` iframe with exact-token CSP and capability-scoped local subresources.
+- Focused feature gate: 4 files, 239/239 tests passed. Sidebar/loading/security regression gate: 5 files, 20/20 tests passed. Main/preload trust gate: 3 files, 9/9 tests passed. Typecheck, `git diff --check`, 24/24 dependency patch replay, package verification, and Developer ID signature verification all passed.
+
+final result: passed
+
 ## Retired memory plugins and new-turn execution QA (2026-08-27)
 
 - User references: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-1898d630-d3fd-40c5-97c4-aa09f56979d5.png` and `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-e30df5a3-2c9f-4877-9b3c-80aebd6f0bef.png`.

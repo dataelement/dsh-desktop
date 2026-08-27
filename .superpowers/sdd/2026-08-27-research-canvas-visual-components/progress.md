@@ -229,3 +229,14 @@
   PDF decode/backing limits, portrait/landscape two-dimensional fitting,
   offscreen re-entry, single-owner teardown, staged assets, and opaque HTML
   capability boundaries are focused green).
+- Task 7: complete — the exact 0.7.3 packaged app was rebuilt, signed, launched,
+  and verified in the real Sherlock window; the packaged server's live
+  production frontend recorded exact Chat/Research composer geometry, a full
+  Markdown assistant canvas component, and zero console warnings/errors.
+  Computer Use limitations around Chromium custom `DataTransfer` and pointer
+  capture are explicitly separated from the mounted behavior-test evidence in
+  `design-qa.md`; no cursor-only interaction was mislabeled as a pass.
+- Whole-plan gate: 239/239 focused feature tests, 20/20 directly affected
+  sidebar/loading regressions, 9/9 main/preload trust regressions, typecheck,
+  diff check, 24/24 clean dependency patch replay, PDF.js staging parity,
+  package verification, and Developer ID signature verification passed.
