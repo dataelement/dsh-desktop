@@ -1403,6 +1403,17 @@ function installMenu(): void {
   }
 }
 
+/**
+ * Pushed on change rather than polled: the preload used to ask every second,
+ * in every window, for a flag that only moves when a phone pairs or drops.
+ */
+function broadcastMobileStatus(connected: boolean): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue
+    window.webContents.send('mobile:status-changed', { connected })
+  }
+}
+
 async function showMobilePairing(): Promise<void> {
   if (runtime.snapshot().phase !== 'ready') {
     const options: MessageBoxOptions = {
@@ -1500,7 +1511,8 @@ async function bootstrap(): Promise<void> {
     port: developmentBuild ? 43128 : 43127,
     onReconnectRequested: () => {
       void showMobilePairing().catch(showUnexpectedError)
-    }
+    },
+    onConnectedChange: (connected) => broadcastMobileStatus(connected)
   })
   if (!startInSafeMode) void mobileBridge.start().catch(showUnexpectedError)
   ipcMain.handle('directory-picker:open', async (event) => {

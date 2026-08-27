@@ -24,7 +24,11 @@ let installing = false
 let accepting = false
 let receivedStatusEvent = false
 let phoneConnected = false
-let mobileStatusTimer: number | undefined
+let sidebarSettingsArea: HTMLElement | undefined
+let sidebarRoot: HTMLElement | undefined
+let mobileButton: HTMLButtonElement | undefined
+let domSyncScheduled = false
+let bootScanSettled = false
 let bootFailureTriggered = false
 let bootFailureTimer: number | undefined
 const pendingBootFailureMessages: string[] = []
@@ -74,53 +78,97 @@ function checkBootFailureInDom(): void {
   queueBootFailure(errorText)
 }
 
-const domObserver = new MutationObserver(() => {
+/**
+ * Harness streams assistant output token by token, so the document-wide
+ * observer fires tens of times a second on a conversation that can hold tens of
+ * thousands of nodes. Coalescing every batch into one animation frame bounds
+ * the work at 60Hz instead of per-mutation, and stops it entirely while the
+ * window is hidden, since the browser withholds frames from background pages.
+ */
+const domObserver = new MutationObserver(scheduleDomSync)
+
+function scheduleDomSync(): void {
+  if (domSyncScheduled) return
+  domSyncScheduled = true
+  window.requestAnimationFrame(runDomSync)
+}
+
+function runDomSync(): void {
+  domSyncScheduled = false
   mountMobileButton()
-  checkBootFailureInDom()
-})
+  if (bootScanSettled) return
+  // The boot screen only exists until Harness renders its own UI, and the
+  // sidebar appearing is that moment. Past it the selector can never match
+  // again, so scanning on would walk the conversation tree every frame for a
+  // guaranteed miss. The window error handlers stay as the real backstop.
+  if (sidebarRoot?.isConnected) bootScanSettled = true
+  else checkBootFailureInDom()
+}
 
 contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker', {
   pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
 })
 
+/**
+ * `[data-dsh-*]` lookups are attribute selectors with no index behind them, so
+ * a miss costs a full tree walk. Caching the nodes turns the steady state into
+ * an `isConnected` flag read, and a re-render that detaches them re-queries.
+ */
+function liveElement<T extends Element>(cached: T | undefined, selector: string): T | undefined {
+  if (cached?.isConnected) return cached
+  return document.querySelector<T>(selector) ?? undefined
+}
+
 function mountMobileButton(): void {
-  let style = document.getElementById(`${MOBILE_BUTTON_ID}-style`)
-  if (!style) {
-    style = document.createElement('style')
+  if (!document.getElementById(`${MOBILE_BUTTON_ID}-style`)) {
+    const style = document.createElement('style')
     style.id = `${MOBILE_BUTTON_ID}-style`
     style.textContent = mobileButtonStyles
     document.head.appendChild(style)
   }
-  const settingsArea = document.querySelector<HTMLElement>('[data-dsh-sidebar-settings]')
+  sidebarSettingsArea = liveElement(sidebarSettingsArea, '[data-dsh-sidebar-settings]')
+  const settingsArea = sidebarSettingsArea
   if (!settingsArea) return
-  let button = document.getElementById(MOBILE_BUTTON_ID) as HTMLButtonElement | null
-  if (!button) {
-    button = document.createElement('button')
-    button.id = MOBILE_BUTTON_ID
-    button.type = 'button'
-    button.innerHTML = `${phoneIcon}<span aria-hidden="true"></span>`
-    button.addEventListener('click', () => {
+  if (!mobileButton?.isConnected) {
+    mobileButton =
+      (document.getElementById(MOBILE_BUTTON_ID) as HTMLButtonElement | null) ?? undefined
+  }
+  if (!mobileButton) {
+    const created = document.createElement('button')
+    created.id = MOBILE_BUTTON_ID
+    created.type = 'button'
+    created.innerHTML = `${phoneIcon}<span aria-hidden="true"></span>`
+    created.addEventListener('click', () => {
       void ipcRenderer.invoke('mobile:open-pairing').catch((error: unknown) => {
         console.error('[mobile] unable to open pairing window', error)
       })
     })
+    mobileButton = created
   }
-  if (button.parentElement !== settingsArea) settingsArea.appendChild(button)
+  if (mobileButton.parentElement !== settingsArea) settingsArea.appendChild(mobileButton)
   renderMobileButton()
 }
 
 function renderMobileButton(): void {
-  const button = document.getElementById(MOBILE_BUTTON_ID) as HTMLButtonElement | null
-  const root = document.querySelector<HTMLElement>('[data-dsh-sidebar-root]')
+  const button = mobileButton
+  sidebarRoot = liveElement(sidebarRoot, '[data-dsh-sidebar-root]')
+  const root = sidebarRoot
   if (!button || !root) return
   const wide = root.dataset.dshSidebarWide === 'true'
-  button.hidden = !wide && !phoneConnected
-  button.classList.toggle('is-connected', phoneConnected)
+  const hidden = !wide && !phoneConnected
   const label = phoneConnected
     ? locale === 'zh' ? '管理手机连接' : 'Manage phone connection'
     : locale === 'zh' ? '连接手机' : 'Connect phone'
-  button.setAttribute('aria-label', label)
-  button.title = label
+  // Writing an attribute invalidates style even when the value is unchanged, so
+  // every skipped write here is a skipped style recalculation each frame.
+  if (button.hidden !== hidden) button.hidden = hidden
+  if (button.classList.contains('is-connected') !== phoneConnected) {
+    button.classList.toggle('is-connected', phoneConnected)
+  }
+  if (button.title !== label) {
+    button.setAttribute('aria-label', label)
+    button.title = label
+  }
 }
 
 async function mountSafeModeBanner(): Promise<void> {
@@ -201,15 +249,30 @@ async function mountSafeModeBanner(): Promise<void> {
   }
 }
 
+function applyMobileStatus(connected: boolean): void {
+  if (phoneConnected === connected) return
+  phoneConnected = connected
+  mountMobileButton()
+}
+
+/**
+ * Read once at startup. Afterwards the main process pushes every change, so
+ * there is no timer here: `connected` only moves when a phone pairs or drops,
+ * and polling it woke both renderers once a second for a value that is almost
+ * always the same.
+ */
 async function refreshMobileStatus(): Promise<void> {
   try {
     const status = (await ipcRenderer.invoke('mobile:status')) as { connected?: boolean }
-    phoneConnected = status.connected === true
-    mountMobileButton()
+    applyMobileStatus(status.connected === true)
   } catch (error) {
     console.warn('[mobile] unable to read connection status', error)
   }
 }
+
+ipcRenderer.on('mobile:status-changed', (_event, status: { connected?: boolean }) => {
+  applyMobileStatus(status?.connected === true)
+})
 
 function initializeUi(): void {
   if (process.platform === 'win32') {
@@ -224,7 +287,6 @@ function initializeUi(): void {
   })
   void refreshMobileStatus()
   void mountSafeModeBanner()
-  mobileStatusTimer ??= window.setInterval(() => void refreshMobileStatus(), 1000)
 }
 
 window.addEventListener('error', (event) => {

@@ -20,6 +20,8 @@ import {
 const MAX_BODY_BYTES = 64 * 1024
 const PAIRING_TTL_MS = 5 * 60 * 1000
 const MUX_RECONNECT_MS = 500
+const MUX_RECONNECT_CAP_MS = 30_000
+const MUX_STABLE_MS = 5_000
 
 const RPC_ALLOWLIST = new Set([
   'workspace.list',
@@ -44,6 +46,7 @@ export interface LanMobileBridgeOptions {
   cloudflaredPath?: string
   now?: () => number
   onReconnectRequested?: () => void
+  onConnectedChange?: (connected: boolean) => void
 }
 
 export interface LanMobileBridgeSnapshot {
@@ -117,6 +120,7 @@ export class LanMobileBridge {
   private readonly now: () => number
   private muxAbort?: AbortController
   private muxTask?: Promise<void>
+  private lastConnected = false
 
   constructor(private readonly options: LanMobileBridgeOptions) {
     this.now = options.now ?? Date.now
@@ -127,22 +131,27 @@ export class LanMobileBridge {
       if (!this.pairingToken || !this.pairingExpiresAt || this.pairingExpiresAt < this.now()) {
         this.rotatePairingToken()
       }
-      this.startMuxMonitor()
+      this.syncConnected()
       return this.snapshot()
     }
     this.rotatePairingToken()
     this.server = createServer((request, response) => {
-      void this.handle(request, response).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error)
-        this.json(response, 500, { ok: false, error: message })
-      })
+      void this.handle(request, response)
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error)
+          this.json(response, 500, { ok: false, error: message })
+        })
+        // Every session change is the result of a request: pairing approval,
+        // reconnect, or disconnect. Reconciling here keeps the mux monitor and
+        // the renderers in step without polling either of them.
+        .finally(() => this.syncConnected())
     })
     await new Promise<void>((resolve, reject) => {
       this.server?.once('error', reject)
       this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
     })
     this.port = (this.server.address() as AddressInfo).port
-    this.startMuxMonitor()
+    this.syncConnected()
     return this.snapshot()
   }
 
@@ -163,6 +172,7 @@ export class LanMobileBridge {
     this.suspendedSessions.clear()
     this.pendingPairings.clear()
     this.pendingQuestions.clear()
+    this.syncConnected()
     this.muxAbort?.abort()
     const muxTask = this.muxTask
     this.muxAbort = undefined
@@ -639,6 +649,27 @@ export class LanMobileBridge {
     return { ok: true, value: envelope.result.value }
   }
 
+  /**
+   * Reconciles everything that depends on a phone being attached. The mux
+   * downlink exists purely to track questions raised for a mobile client, so
+   * running it with no client meant reconnecting twice a second, forever, on
+   * every desktop that never used the feature.
+   */
+  private syncConnected(): void {
+    const connected = this.sessions.size > 0
+    if (connected) this.startMuxMonitor()
+    else this.muxAbort?.abort()
+    if (connected === this.lastConnected) return
+    this.lastConnected = connected
+    // Reconciliation runs off the request path, so a throwing observer must not
+    // turn into an unhandled rejection that fails the request behind it.
+    try {
+      this.options.onConnectedChange?.(connected)
+    } catch {
+      // A renderer that went away mid-broadcast is not the bridge's problem.
+    }
+  }
+
   private startMuxMonitor(): void {
     if (this.muxTask) return
     const abort = new AbortController()
@@ -653,28 +684,51 @@ export class LanMobileBridge {
 
   private async monitorMux(signal: AbortSignal): Promise<void> {
     let lastBase: string | undefined
+    // A Harness that never accepts the downlink used to be retried at a flat
+    // 500ms for as long as the app ran. Backing off turns a permanent failure
+    // into two attempts a minute instead of a hundred.
+    let backoffMs = MUX_RECONNECT_MS
+    const backOff = async (): Promise<void> => {
+      await waitFor(backoffMs, signal)
+      backoffMs = Math.min(backoffMs * 2, MUX_RECONNECT_CAP_MS)
+    }
+
     while (!signal.aborted) {
       const base = this.options.harnessUrl()
       if (!base) {
         this.pendingQuestions.clear()
-        await waitFor(MUX_RECONNECT_MS, signal)
+        await backOff()
         continue
       }
       if (base !== lastBase) {
         this.pendingQuestions.clear()
         lastBase = base
+        backoffMs = MUX_RECONNECT_MS
       }
+      let openedAt: number | undefined
       try {
-        await this.consumeMux(base, signal)
+        await this.consumeMux(base, signal, () => {
+          openedAt = this.now()
+        })
+        backoffMs = MUX_RECONNECT_MS
       } catch {
         if (signal.aborted) return
         this.pendingQuestions.clear()
-        await waitFor(MUX_RECONNECT_MS, signal)
+        // A connection that held for a while and then dropped is a transient
+        // fault, not a Harness that refuses the downlink: retry promptly.
+        if (openedAt !== undefined && this.now() - openedAt >= MUX_STABLE_MS) {
+          backoffMs = MUX_RECONNECT_MS
+        }
+        await backOff()
       }
     }
   }
 
-  private async consumeMux(base: string, signal: AbortSignal): Promise<void> {
+  private async consumeMux(
+    base: string,
+    signal: AbortSignal,
+    onOpen?: () => void
+  ): Promise<void> {
     // The network Harness exposes mux events only as a downlink WebSocket;
     // ordinary GET requests intentionally return 426 with no SSE fallback.
     const url = new URL('/api/events.mux', base)
@@ -700,7 +754,10 @@ export class LanMobileBridge {
         else resolve()
       }
       const handleAbort = (): void => finish()
-      const handleOpen = (): void => this.pendingQuestions.clear()
+      const handleOpen = (): void => {
+        onOpen?.()
+        this.pendingQuestions.clear()
+      }
       const handleMessage = (event: MessageEvent): void => {
         if (typeof event.data === 'string') this.consumeMuxEnvelope(event.data)
       }

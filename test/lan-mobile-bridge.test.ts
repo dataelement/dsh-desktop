@@ -582,6 +582,44 @@ describe('LAN mobile bridge user questions', () => {
     })
   })
 
+  it('opens the mux downlink only while a phone is attached', async () => {
+    let upgrades = 0
+    const harness = createServer((_request, response) => {
+      response.statusCode = 404
+      response.end()
+    })
+    const muxServer = new WebSocketServer({ noServer: true })
+    webSocketServers.push(muxServer)
+    harness.on('upgrade', (request, socket, head) => {
+      if (request.url !== '/api/events.mux') return socket.destroy()
+      upgrades += 1
+      muxServer.handleUpgrade(request, socket, head, () => undefined)
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const connectionEvents: boolean[] = []
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`,
+      onConnectedChange: (connected) => connectionEvents.push(connected)
+    })
+    bridges.push(bridge)
+
+    // A desktop that never pairs a phone has no consumer for the downlink, so
+    // it must not sit there reconnecting to it for the life of the process.
+    await bridge.start()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(upgrades).toBe(0)
+    expect(connectionEvents).toEqual([])
+
+    await pairBridge(bridge)
+    await waitFor(async () => upgrades > 0)
+    expect(connectionEvents).toEqual([true])
+
+    await bridge.stop()
+    expect(connectionEvents).toEqual([true, false])
+  })
+
   it('rejects answers that were not offered by the pending question', async () => {
     const responses: unknown[] = []
     const harness = createServer(async (request, response) => {

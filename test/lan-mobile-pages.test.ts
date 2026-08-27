@@ -85,7 +85,15 @@ describe('LAN mobile page', () => {
     expect(html).toContain('targetCount:nextOptimisticTarget(text)')
     expect(html).toContain("optimisticPrompts=optimisticPrompts.filter(item=>(counts.get(item.text)||0)<item.targetCount)")
     expect(html).toContain('class=\"skeleton\"')
-    expect(html).toContain('agentRunning||pendingQuestion?250:750')
+    expect(html).toContain(
+      'const delay=agentRunning||pendingQuestion?HISTORY_POLL_ACTIVE_MS:idlePollMs'
+    )
+    expect(html).toContain('HISTORY_POLL_ACTIVE_MS=250,HISTORY_POLL_IDLE_MS=750')
+    // An idle chat left open must not keep refetching the whole history forever.
+    expect(html).toContain('if(!activeSession||document.hidden)return')
+    expect(html).toContain(
+      'idlePollMs=Math.min(Math.round(idlePollMs*1.5),HISTORY_POLL_IDLE_CAP_MS)'
+    )
     expect(html).toContain("t==='user/message'")
     expect(html).toContain("message.source?.kind==='user'")
     expect(html).toContain("t==='assistant/message'")
