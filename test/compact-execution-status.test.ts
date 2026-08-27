@@ -253,6 +253,254 @@ describe('compact execution status', () => {
     ])
   })
 
+  it('keeps a substantial answer visible when a later closing message only summarizes it', async () => {
+    const client = await loadConversationBundle()
+    expect(client.compactConversationFlow).toBeTypeOf('function')
+    if (typeof client.compactConversationFlow !== 'function') return
+
+    const substantialAnswer = [
+      '这张图片的描述如下：',
+      '',
+      '**图片内容**：这是一张黑白铜版雕刻风格的三人肖像合成图，横幅构图，纯白背景。',
+      '',
+      '1. **左侧：海明威**——花白短发和络腮白胡子，穿高领针织毛衣。',
+      '2. **中间：莎士比亚**——高额秃顶、两侧长发，佩戴宽大的白色拉夫领。',
+      '3. **右侧：巴尔扎克**——深色蓬松卷发，穿黑色外套配白色衬衫领巾。'
+    ].join('\n')
+    const nodes = new Map([
+      ['user', { key: 'user', kind: 'user', location: turnLocation(12), data: {} }],
+      ['context', { key: 'context', kind: 'context', location: turnLocation(12), data: {} }],
+      [
+        'progress',
+        {
+          key: 'progress',
+          kind: 'assistant-step',
+          location: turnLocation(12),
+          data: { finalNode: { seq: 10 }, blocks: [{ kind: 'text', text: '我先读取这张图片。' }] }
+        }
+      ],
+      [
+        'read-tool',
+        {
+          key: 'read-tool',
+          kind: 'tool-call',
+          location: turnLocation(12),
+          data: { root: { name: 'read_image', argsRaw: '{}' } }
+        }
+      ],
+      [
+        'substantial-answer',
+        {
+          key: 'substantial-answer',
+          kind: 'assistant-step',
+          location: turnLocation(12),
+          data: { finalNode: { seq: 20 }, blocks: [{ kind: 'text', text: substantialAnswer }] }
+        }
+      ],
+      [
+        'followup-tool',
+        {
+          key: 'followup-tool',
+          kind: 'tool-call',
+          location: turnLocation(12),
+          data: { root: { name: 'memory', argsRaw: '{}' } }
+        }
+      ],
+      [
+        'closing',
+        {
+          key: 'closing',
+          kind: 'assistant-step',
+          location: turnLocation(12),
+          data: {
+            finalNode: { seq: 30 },
+            blocks: [{ kind: 'text', text: '图片描述已完成（见上方详细回复）。' }]
+          }
+        }
+      ],
+      [
+        'tail',
+        {
+          key: 'tail',
+          kind: 'turn-tail',
+          location: turnLocation(12),
+          data: {
+            turn: 12,
+            closing: {
+              finalNode: { seq: 30 },
+              blocks: [{ kind: 'text', text: '图片描述已完成（见上方详细回复）。' }]
+            }
+          }
+        }
+      ]
+    ])
+
+    expect(
+      client.compactConversationFlow(
+        ['user', 'context', 'progress', 'read-tool', 'substantial-answer', 'followup-tool', 'closing', 'tail'],
+        nodes,
+        null
+      )
+    ).toEqual([
+      { kind: 'node', key: 'user' },
+      {
+        kind: 'execution',
+        key: 'execution:12',
+        turn: 12,
+        nodeKeys: ['context', 'progress', 'read-tool'],
+        running: false
+      },
+      { kind: 'node', key: 'substantial-answer' },
+      {
+        kind: 'execution',
+        key: 'execution:12:1',
+        turn: 12,
+        nodeKeys: ['followup-tool'],
+        running: false
+      },
+      { kind: 'node', key: 'closing' },
+      { kind: 'node', key: 'tail' }
+    ])
+  })
+
+  it('finds the latest sent user message even when internal nodes append in the same render', async () => {
+    const client = await loadConversationBundle()
+    expect(client.latestDirectUserKey).toBeTypeOf('function')
+    if (typeof client.latestDirectUserKey !== 'function') return
+
+    const nodes = new Map([
+      ['old-user', { key: 'old-user', kind: 'user' }],
+      ['new-user', { key: 'new-user', kind: 'user' }],
+      ['context', { key: 'context', kind: 'context' }],
+      ['assistant', { key: 'assistant', kind: 'assistant-step' }]
+    ])
+
+    expect(
+      client.latestDirectUserKey(
+        ['old-user', 'new-user', 'context', 'assistant'],
+        nodes
+      )
+    ).toBe('new-user')
+  })
+
+  it('settles the conversation at the new bottom after portal layout grows', async () => {
+    const client = await loadConversationBundle()
+    expect(client.settleConversationScrollBottom).toBeTypeOf('function')
+    if (typeof client.settleConversationScrollBottom !== 'function') return
+
+    const scrollport = { scrollTop: 0, scrollHeight: 120 }
+    const scheduled: Array<() => void> = []
+    const observed: number[] = []
+
+    client.settleConversationScrollBottom(
+      scrollport,
+      (callback: () => void) => {
+        scheduled.push(callback)
+      },
+      () => observed.push(scrollport.scrollTop)
+    )
+
+    expect(scrollport.scrollTop).toBe(120)
+    scrollport.scrollHeight = 280
+    expect(scheduled).toHaveLength(1)
+    scheduled[0]?.()
+
+    expect(scrollport.scrollTop).toBe(280)
+    expect(observed).toEqual([120, 280])
+  })
+
+  it('follows a newly started turn even when the reader was scrolled upward', async () => {
+    const client = await loadConversationBundle()
+    expect(client.shouldFollowConversationBottom).toBeTypeOf('function')
+    if (typeof client.shouldFollowConversationBottom !== 'function') return
+
+    expect(
+      client.shouldFollowConversationBottom({
+        appendedUser: false,
+        appendedSteering: false,
+        runningStarted: true,
+        tipMoved: true,
+        atBottom: false
+      })
+    ).toBe(true)
+    expect(
+      client.shouldFollowConversationBottom({
+        appendedUser: false,
+        appendedSteering: false,
+        runningStarted: false,
+        tipMoved: true,
+        atBottom: false
+      })
+    ).toBe(false)
+  })
+
+  it('recognizes keyboard and button composer submissions for direct scroll follow', async () => {
+    const client = await loadConversationBundle()
+    expect(client.isComposerSubmitKey).toBeTypeOf('function')
+    expect(client.isComposerSendButton).toBeTypeOf('function')
+    expect(client.composerScrollTargets).toBeTypeOf('function')
+    expect(client.scheduleComposerBottomSettles).toBeTypeOf('function')
+    if (
+      typeof client.isComposerSubmitKey !== 'function' ||
+      typeof client.isComposerSendButton !== 'function' ||
+      typeof client.composerScrollTargets !== 'function' ||
+      typeof client.scheduleComposerBottomSettles !== 'function'
+    ) return
+
+    expect(client.isComposerSubmitKey({ key: 'Enter', shiftKey: false, isComposing: false })).toBe(true)
+    expect(client.isComposerSubmitKey({ key: 'Enter', shiftKey: true, isComposing: false })).toBe(false)
+    expect(client.isComposerSubmitKey({ key: 'Enter', shiftKey: false, isComposing: true })).toBe(false)
+
+    const sendButton = {
+      type: 'button',
+      getAttribute: (name: string) => (name === 'aria-label' ? '发送消息' : null)
+    }
+    expect(client.isComposerSendButton({ closest: () => sendButton })).toBe(true)
+    expect(client.isComposerSendButton({ closest: () => null })).toBe(false)
+
+    const innerScrollport = { id: 'inner' }
+    const hostScrollport = {
+      id: 'host',
+      querySelector: () => ({ parentElement: innerScrollport })
+    }
+    expect(client.composerScrollTargets({ closest: () => hostScrollport })).toEqual([
+      hostScrollport,
+      innerScrollport
+    ])
+
+    const frames: Array<() => void> = []
+    const delays: number[] = []
+    let settleCount = 0
+    client.scheduleComposerBottomSettles(
+      () => {
+        settleCount += 1
+      },
+      (callback: () => void) => frames.push(callback),
+      (_callback: () => void, delay: number) => delays.push(delay)
+    )
+    expect(settleCount).toBe(1)
+    expect(frames).toHaveLength(1)
+    expect(delays).toEqual([120, 360, 720, 1200])
+  })
+
+  it('keeps assistant actions and timing metadata on one responsive row', async () => {
+    const styles: string[] = []
+    await loadConversationBundle(styles)
+    const researchPanelStyles = styles.join('\n')
+    const wrappingRule =
+      '.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{flex:1 1 100%'
+    const oneRowRule =
+      '.sRp_root .p-xYUq_timeEnd{flex:1 1 auto;padding-left:2px;'
+
+    expect(researchPanelStyles).toContain(
+      '.sRp_root .p-xYUq_actions{min-width:0;max-width:100%;height:auto;flex-wrap:nowrap;gap:4px}'
+    )
+    expect(researchPanelStyles).toContain(oneRowRule)
+    expect(researchPanelStyles.lastIndexOf(oneRowRule)).toBeGreaterThan(
+      researchPanelStyles.lastIndexOf(wrappingRule)
+    )
+  })
+
   it('keeps a running turn represented by one status entry even before internal nodes arrive', async () => {
     const client = await loadConversationBundle()
     expect(client.compactConversationFlow).toBeTypeOf('function')

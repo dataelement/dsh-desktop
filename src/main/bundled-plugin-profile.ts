@@ -35,7 +35,7 @@ interface ProfileManifest {
   dependencies?: Record<string, string>
   dsh?: {
     profile?: { bundles?: string[] }
-    sherlock?: { plugins?: string[] }
+    sherlock?: { plugins?: string[]; retiredPlugins?: string[] }
   }
 }
 
@@ -121,6 +121,33 @@ function currentReceipt(receiptPath: string): InstallReceipt | undefined {
   }
 }
 
+function retiredPluginPath(customPluginsPath: string, packageName: string): string {
+  if (!/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/iu.test(packageName)) {
+    throw new Error(`Invalid retired Sherlock plugin name: ${packageName}`)
+  }
+  const candidate = path.resolve(customPluginsPath, ...packageName.split('/'))
+  const relative = path.relative(customPluginsPath, candidate)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Retired Sherlock plugin escapes the custom plugin directory: ${packageName}`)
+  }
+  return candidate
+}
+
+function removeRetiredCustomPlugins(harnessPath: string, retiredPlugins: string[]): void {
+  const customPluginsPath = path.join(harnessPath, 'custom-plugins')
+  for (const packageName of retiredPlugins) {
+    const pluginPath = retiredPluginPath(customPluginsPath, packageName)
+    rmSync(pluginPath, { recursive: true, force: true })
+
+    if (packageName.startsWith('@')) {
+      const scopePath = path.dirname(pluginPath)
+      if (existsSync(scopePath) && readdirSync(scopePath).length === 0) {
+        rmSync(scopePath, { recursive: true, force: true })
+      }
+    }
+  }
+}
+
 /**
  * Install the product-owned plugin profile before Harness starts.
  *
@@ -137,12 +164,17 @@ export function installBundledPluginProfile(
 
   const manifest = readJson<ProfileManifest>(bundledManifestPath)
   const plugins = manifest.dsh?.sherlock?.plugins ?? Object.keys(manifest.dependencies ?? {})
+  const retiredPlugins = manifest.dsh?.sherlock?.retiredPlugins ?? []
   const bundles = manifest.dsh?.profile?.bundles
   if (!Array.isArray(bundles) || !bundles.includes('dsh-file-drop')) {
     throw new Error('The packaged Sherlock plugin profile is missing its attachment bundle.')
   }
+  if (plugins.some((packageName) => retiredPlugins.includes(packageName))) {
+    throw new Error('The packaged Sherlock plugin profile includes a retired plugin.')
+  }
 
   const harnessPath = path.join(options.userDataPath, 'harness')
+  removeRetiredCustomPlugins(harnessPath, retiredPlugins)
   const profilesPath = path.join(harnessPath, 'profiles')
   const targetProfilePath = path.join(profilesPath, 'web')
   const receiptPath = path.join(harnessPath, RECEIPT_FILENAME)

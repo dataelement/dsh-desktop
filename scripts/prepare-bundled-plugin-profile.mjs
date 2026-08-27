@@ -56,6 +56,26 @@ function vendorRelativePath(packageName) {
   return path.posix.join('vendor', ...packageName.split('/'))
 }
 
+function stripExcludedProfileEntries(source, excludedEntryIds) {
+  const retiredIds = new Set(excludedEntryIds)
+  const lines = source.split(/\r?\n/u)
+  const kept = []
+
+  for (let index = 0; index < lines.length; ) {
+    const match = /^-\s+id:\s*["']?([^\s"'#]+)["']?\s*(?:#.*)?$/u.exec(lines[index])
+    if (!match || !retiredIds.has(match[1])) {
+      kept.push(lines[index])
+      index += 1
+      continue
+    }
+
+    index += 1
+    while (index < lines.length && !/^-\s+id:/u.test(lines[index])) index += 1
+  }
+
+  return `${kept.join('\n').replace(/\n+$/u, '')}\n`
+}
+
 async function copyInstalledPlugin(source, target) {
   await cp(source, target, {
     recursive: true,
@@ -114,6 +134,7 @@ async function main() {
     sourceManifest.dsh?.sherlock?.plugins ?? Object.keys(sourceManifest.dependencies ?? {})
   const sourceBundles = sourceManifest.dsh?.profile?.bundles ?? []
   const excludedPlugins = policy.excludedPlugins ?? []
+  const excludedEntryIds = policy.excludedEntryIds ?? []
   const unexpectedSourcePlugins = sourcePlugins.filter(
     (packageName) => !policy.plugins.includes(packageName) && !excludedPlugins.includes(packageName)
   )
@@ -186,9 +207,13 @@ async function main() {
       dependencies,
       dsh: {
         profile: { bundles: [...policy.bundles] },
-        sherlock: { plugins: [...policy.plugins] }
+        sherlock: {
+          plugins: [...policy.plugins],
+          retiredPlugins: [...excludedPlugins]
+        }
       }
     }
+    const sourceProfilePatch = await readFile(path.join(sourceProfile, 'cordis.patch.yml'), 'utf8')
     await Promise.all([
       writeFile(
         path.join(stagedProfile, 'package.json'),
@@ -200,7 +225,11 @@ async function main() {
         'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n',
         'utf8'
       ),
-      cp(path.join(sourceProfile, 'cordis.patch.yml'), path.join(stagedProfile, 'cordis.patch.yml'))
+      writeFile(
+        path.join(stagedProfile, 'cordis.patch.yml'),
+        stripExcludedProfileEntries(sourceProfilePatch, excludedEntryIds),
+        'utf8'
+      )
     ])
 
     const pnpmPath = path.join(projectRoot, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')

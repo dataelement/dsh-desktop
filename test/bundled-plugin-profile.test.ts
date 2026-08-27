@@ -28,6 +28,12 @@ async function makeBundledProfile(root: string): Promise<string> {
         dsh: {
           profile: {
             bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-file-drop']
+          },
+          sherlock: {
+            retiredPlugins: [
+              '@vectorize-io/hindsight-coding-agents',
+              'dsh-memory-evolve'
+            ]
           }
         }
       },
@@ -88,7 +94,7 @@ describe('bundled Sherlock plugin profile', () => {
     expect(patched).toContain('setPanelState')
   })
 
-  it('uses the formal profile as the exact five-plugin release baseline without Memory Evolve', async () => {
+  it('uses the formal profile without either retired memory plugin', async () => {
     const appManifest = JSON.parse(
       await readFile(path.resolve(import.meta.dirname, '..', 'package.json'), 'utf8')
     ) as { version: string }
@@ -101,6 +107,7 @@ describe('bundled Sherlock plugin profile', () => {
       plugins: string[]
       runtimePackages: string[]
       excludedPlugins: string[]
+      excludedEntryIds: string[]
       bundles: string[]
     }
     const preparation = await readFile(
@@ -111,15 +118,20 @@ describe('bundled Sherlock plugin profile', () => {
     expect(appManifest.version).toBe('0.7.3')
     expect(policy.plugins).toEqual([
       '@huanlin/dsh-plugin-better-sidebar-plugin-office',
-      '@vectorize-io/hindsight-coding-agents',
       'dsh-better-sidebar',
       'dsh-file-drop',
       'dshmarket'
     ])
     expect(policy.plugins).not.toContain('dsh-update-checker')
     expect(policy.plugins).not.toContain('dsh-memory-evolve')
-    expect(policy.excludedPlugins).toEqual(['dsh-memory-evolve'])
+    expect(policy.plugins).not.toContain('@vectorize-io/hindsight-coding-agents')
+    expect(policy.excludedPlugins).toEqual([
+      '@vectorize-io/hindsight-coding-agents',
+      'dsh-memory-evolve'
+    ])
+    expect(policy.excludedEntryIds).toEqual(['hindsight', 'dsh-memory-evolve'])
     expect(policy.bundles).not.toContain('dsh-memory-evolve')
+    expect(policy.bundles).not.toContain('@vectorize-io/hindsight-coding-agents')
     expect(policy.runtimePackages).toEqual([
       'dsh-desktop-market-installer',
       'dsh-web-search-session-model'
@@ -129,12 +141,26 @@ describe('bundled Sherlock plugin profile', () => {
     expect(preparation).toContain("path.join(projectRoot, 'packages', packageName)")
     expect(preparation).toContain('runtimePackages')
     expect(preparation).toContain('excludedPlugins')
+    expect(preparation).toContain('retiredPlugins')
+    expect(preparation).toContain('stripExcludedProfileEntries')
     expect(preparation).toContain('sourceManifest.dsh?.sherlock?.plugins')
     expect(preparation).toContain("'.credentials.yaml'")
     expect(preparation).toContain("'settings.yaml'")
     expect(preparation).toContain("part.startsWith('.env.')")
     expect(preparation).toContain('patchBetterSidebarPackage(vendorPath)')
     expect(preparation).not.toContain('patchMemoryEvolvePackage')
+    expect(
+      await readFile(
+        path.resolve(
+          import.meta.dirname,
+          '..',
+          'build',
+          'sherlock-plugin-profile',
+          'cordis.patch.yml'
+        ),
+        'utf8'
+      )
+    ).not.toMatch(/^- id: (?:hindsight|dsh-memory-evolve)$/mu)
   })
 
   it('installs the packaged profile for a fresh user without touching model credentials', async () => {
@@ -168,21 +194,57 @@ describe('bundled Sherlock plugin profile', () => {
     expect(existsSync(path.join(installedProfile, '.credentials.yaml'))).toBe(false)
   })
 
-  it('upgrades an older profile by uninstalling Memory Evolve while preserving user data and a backup', async () => {
+  it('upgrades an older profile by uninstalling both memory plugins and preserving user data', async () => {
     const root = await temporaryDirectory('sherlock-bundled-profile-upgrade')
     const bundledProfilePath = await makeBundledProfile(root)
     const userDataPath = path.join(root, 'user-data')
     const harness = path.join(userDataPath, 'harness')
     const oldProfile = path.join(harness, 'profiles', 'web')
     await mkdir(path.join(oldProfile, 'node_modules', 'dsh-memory-evolve'), { recursive: true })
+    await mkdir(
+      path.join(oldProfile, 'node_modules', '@vectorize-io', 'hindsight-coding-agents'),
+      { recursive: true }
+    )
+    await mkdir(path.join(harness, 'custom-plugins', 'dsh-memory-evolve'), { recursive: true })
+    await mkdir(
+      path.join(harness, 'custom-plugins', '@vectorize-io', 'hindsight-coding-agents'),
+      { recursive: true }
+    )
     await writeFile(
       path.join(oldProfile, 'package.json'),
-      '{"dependencies":{"old-plugin":"1.0.0","dsh-update-checker":"1.4.16","dsh-memory-evolve":"0.1.0"}}\n',
+      '{"dependencies":{"old-plugin":"1.0.0","dsh-update-checker":"1.4.16","dsh-memory-evolve":"0.1.0","@vectorize-io/hindsight-coding-agents":"0.4.2"}}\n',
       'utf8'
     )
     await writeFile(
       path.join(oldProfile, 'node_modules', 'dsh-memory-evolve', 'package.json'),
       '{"name":"dsh-memory-evolve","version":"0.1.0"}\n',
+      'utf8'
+    )
+    await writeFile(
+      path.join(
+        oldProfile,
+        'node_modules',
+        '@vectorize-io',
+        'hindsight-coding-agents',
+        'package.json'
+      ),
+      '{"name":"@vectorize-io/hindsight-coding-agents","version":"0.4.2"}\n',
+      'utf8'
+    )
+    await writeFile(
+      path.join(harness, 'custom-plugins', 'dsh-memory-evolve', 'package.json'),
+      '{"name":"dsh-memory-evolve","version":"0.1.0"}\n',
+      'utf8'
+    )
+    await writeFile(
+      path.join(
+        harness,
+        'custom-plugins',
+        '@vectorize-io',
+        'hindsight-coding-agents',
+        'package.json'
+      ),
+      '{"name":"@vectorize-io/hindsight-coding-agents","version":"0.4.2"}\n',
       'utf8'
     )
     await writeFile(path.join(oldProfile, 'cordis.patch.yml'), '- id: old-profile\n', 'utf8')
@@ -205,10 +267,31 @@ describe('bundled Sherlock plugin profile', () => {
     )
     expect(existsSync(path.join(oldProfile, 'node_modules', 'dsh-memory-evolve'))).toBe(false)
     expect(
+      existsSync(
+        path.join(oldProfile, 'node_modules', '@vectorize-io', 'hindsight-coding-agents')
+      )
+    ).toBe(false)
+    expect(existsSync(path.join(harness, 'custom-plugins', 'dsh-memory-evolve'))).toBe(false)
+    expect(
+      existsSync(
+        path.join(harness, 'custom-plugins', '@vectorize-io', 'hindsight-coding-agents')
+      )
+    ).toBe(false)
+    expect(
       readFileSync(path.join(result.backupDirectory!, 'package.json'), 'utf8')
     ).toContain('dsh-memory-evolve')
     expect(
       existsSync(path.join(result.backupDirectory!, 'node_modules', 'dsh-memory-evolve'))
+    ).toBe(true)
+    expect(
+      existsSync(
+        path.join(
+          result.backupDirectory!,
+          'node_modules',
+          '@vectorize-io',
+          'hindsight-coding-agents'
+        )
+      )
     ).toBe(true)
     expect(await readFile(path.join(harness, 'settings.yaml'), 'utf8')).toBe(
       'models: user-owned\n'
@@ -241,6 +324,30 @@ describe('bundled Sherlock plugin profile', () => {
         'utf8'
       )
     ).toBe('keep me\n')
+  })
+
+  it('removes a retired custom memory plugin even when the bundled profile is current', async () => {
+    const root = await temporaryDirectory('sherlock-bundled-profile-retired-idempotent')
+    const bundledProfilePath = await makeBundledProfile(root)
+    const userDataPath = path.join(root, 'user-data')
+    const options = { userDataPath, bundledProfilePath, appVersion: '0.7.3' }
+
+    expect(installBundledPluginProfile(options).installed).toBe(true)
+    const retiredPath = path.join(
+      userDataPath,
+      'harness',
+      'custom-plugins',
+      'dsh-memory-evolve'
+    )
+    await mkdir(retiredPath, { recursive: true })
+    await writeFile(
+      path.join(retiredPath, 'package.json'),
+      '{"name":"dsh-memory-evolve","version":"0.1.0"}\n',
+      'utf8'
+    )
+
+    expect(installBundledPluginProfile(options).installed).toBe(false)
+    expect(existsSync(retiredPath)).toBe(false)
   })
 
   it('does nothing in unpackaged development when no bundled profile exists', async () => {

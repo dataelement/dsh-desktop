@@ -21,8 +21,8 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
       version: '0.7.3',
       date: '2026-08-27',
       items: [
-        '移除 Memory Evolve 插件及其自动注入的记忆与待办提示',
-        '升级时自动替换内置插件配置并卸载旧插件，同时保留用户数据与回滚备份'
+        '彻底移除 Memory Evolve 与 Hindsight 记忆插件，不再注入或调用 memory 工具',
+        '升级时自动卸载现有记忆插件并替换内置配置，同时保留用户数据与回滚备份'
       ]
     },
     {
@@ -59,8 +59,8 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
       version: '0.7.3',
       date: '2026-08-27',
       items: [
-        'Removed Memory Evolve and its automatically injected memory and todo prompts',
-        'Upgrades now replace the bundled plugin profile and uninstall retired plugins while preserving user data and a rollback backup'
+        'Removed Memory Evolve and Hindsight so Sherlock no longer injects or calls the memory tool',
+        'Upgrades now uninstall existing memory plugins and replace the bundled profile while preserving user data and a rollback backup'
       ]
     },
     {

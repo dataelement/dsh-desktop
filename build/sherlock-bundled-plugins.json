@@ -2,7 +2,6 @@
   "version": 1,
   "plugins": [
     "@huanlin/dsh-plugin-better-sidebar-plugin-office",
-    "@vectorize-io/hindsight-coding-agents",
     "dsh-better-sidebar",
     "dsh-file-drop",
     "dshmarket"
@@ -12,6 +11,11 @@
     "dsh-web-search-session-model"
   ],
   "excludedPlugins": [
+    "@vectorize-io/hindsight-coding-agents",
+    "dsh-memory-evolve"
+  ],
+  "excludedEntryIds": [
+    "hindsight",
     "dsh-memory-evolve"
   ],
   "bundles": [
@@ -20,7 +24,6 @@
     "dshmarket",
     "dsh-file-drop",
     "dsh-better-sidebar",
-    "@huanlin/dsh-plugin-better-sidebar-plugin-office",
-    "@vectorize-io/hindsight-coding-agents"
+    "@huanlin/dsh-plugin-better-sidebar-plugin-office"
   ]
 }

@@ -49,6 +49,18 @@
 
 final result: passed
 
+## Retired memory plugins and new-turn execution QA (2026-08-27)
+
+- User references: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-1898d630-d3fd-40c5-97c4-aa09f56979d5.png` and `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-e30df5a3-2c9f-4877-9b3c-80aebd6f0bef.png`.
+- Sherlock 0.7.3 now retires both `dsh-memory-evolve` and `@vectorize-io/hindsight-coding-agents`; neither appears in the active plugin manifest, copied profile modules, copied vendor packages, or profile loader rows.
+- The bundled upgrade manifest carries both identifiers as retired plugins. Startup removes their exact directories from `harness/custom-plugins`, including when the current profile fingerprint was already installed, so an existing user upgrade does not keep a stale plugin card.
+- Real packaged Settings verification returned zero plugin-list matches for both `hindsight` and `memory evolve`. Visual proof: `/tmp/sherlock-0.7.3-memory-plugins-removed.jpg`.
+- The latest real Research turn (`0.7.3 最终功能复验，请仅回复“通过”。`) exposed no `memory` tool, performed no tool call, and ended with the standalone reply `通过`. It also stayed at the conversation tail with the fixed composer visible. Visual proof: `/tmp/sherlock-0.7.3-final-research.jpg`.
+- Historical `unknown tool "memory"` rows remain only inside old persisted conversation records; the migration intentionally does not rewrite prior message history or erase user-owned memory data.
+- Focused tests, typecheck, package verification, Developer ID signature verification, runtime profile assertions, and real-window checks passed. Notarization, upload, public update-source changes, and source/tag push were intentionally skipped for this local test build.
+
+final result: passed
+
 ## Memory Evolve removal QA (2026-08-27)
 
 - User references: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-a415a313-9878-4faf-a31c-461bdb03d745.png` and `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-c1d1bb37-5c52-41b5-859e-d1ba20c8d4aa.png`.
