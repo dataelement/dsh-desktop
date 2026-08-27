@@ -159,3 +159,12 @@
   lost, rejected, unmounted, or displaced admissions retry idempotent revoke;
   same-path batches and StrictMode replay are behavior-tested; commit
   `修复研究预览跨挂载授权日志`).
+- Task 5: fix-round 4 re-review found 1 important issue — drop settlement did
+  not distinguish a rejected `files.v1` write from a durable rich-node commit,
+  while restart cleanup could revoke a legitimate rich node whose outbox clear
+  had failed. Fix round 5 required.
+- Task 5: fix round 5/5 (1 addressed, 0 open — workspace file persistence now
+  returns the actual `files.v1` durability result; failed file commits revoke
+  before clearing their journal, while restart recognizes a durable rich node
+  and only retries journal completion; commit
+  `修复研究预览持久提交判定`).
