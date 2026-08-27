@@ -132,6 +132,12 @@ class ControllableAuthorizationStorage implements ResearchPreviewAuthorizationSt
   }
 }
 
+function revocationBookkeepingSize(registry: ResearchFilePreviewRegistry): number {
+  return Object.entries(registry as unknown as Record<string, unknown>)
+    .filter(([key, value]) => /revocation/i.test(key) && (value instanceof Map || value instanceof Set))
+    .reduce((size, [, value]) => size + (value as Map<unknown, unknown> | Set<unknown>).size, 0)
+}
+
 function countingRealFileSystem() {
   let reads = 0
   const fileSystem: ResearchPreviewFileSystem = {
@@ -564,6 +570,54 @@ describe('Research file preview authorization registry', () => {
     expect(registry.revokeSession('session-idempotent')).toBe(true)
     expect(registry.revokeNode('', 'node-idempotent')).toBe(false)
     expect(registry.revokeNode('session-idempotent', '')).toBe(false)
+  })
+
+  it('does not retain revocation bookkeeping for absent nodes or sessions', () => {
+    const registry = new ResearchFilePreviewRegistry({
+      storage: new ControllableAuthorizationStorage()
+    })
+
+    for (let index = 0; index < 5_000; index += 1) {
+      expect(registry.revokeNode(`session-${index}`, `node-${index}`)).toBe(true)
+      expect(registry.revokeSession(`absent-session-${index}`)).toBe(true)
+    }
+
+    expect(revocationBookkeepingSize(registry)).toBe(0)
+  })
+
+  it('captures sidebar revocation before the asynchronous workspace lookup', async () => {
+    const root = await temporaryDirectory()
+    const filePath = path.join(root, 'sidebar-racing.png')
+    await writeFile(filePath, pngBytes)
+    const resolverReached = deferred<void>()
+    const releaseResolver = deferred<void>()
+    const storage = new ControllableAuthorizationStorage()
+    const registry = new ResearchFilePreviewRegistry({
+      storage,
+      workspaceResolver: {
+        async resolveRoot() {
+          resolverReached.resolve()
+          await releaseResolver.promise
+          return root
+        }
+      },
+      randomId: deterministicIds(
+        'authorization_0000000000000001',
+        'capability_0000000000000001'
+      )
+    })
+
+    const admission = registry.admitSidebar({
+      sessionId: 'session-sidebar-race',
+      nodeId: 'node-sidebar-race',
+      relativePath: path.basename(filePath)
+    })
+    await resolverReached.promise
+    expect(registry.revokeNode('session-sidebar-race', 'node-sidebar-race')).toBe(true)
+    releaseResolver.resolve()
+
+    await expect(admission).resolves.toBeNull()
+    expect(storage.records).toEqual([])
   })
 
   it.each([

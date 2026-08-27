@@ -74,7 +74,7 @@ async function loadClientBundle(
     getPathForFile?(file: File): string
     researchCanvasStorage?: {
       getItem(key: string): string | null
-      setItem(key: string, value: string): void
+      setItem(key: string, value: string): boolean
     }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
@@ -91,6 +91,7 @@ async function loadClientBundle(
     modules?: Record<string, unknown>
     styles?: InjectedStyle[]
     exposeInputBar?: boolean
+    json?: JSON
   }
 ): Promise<ClientBundle> {
   const bundleSource = await readFile(
@@ -151,7 +152,8 @@ async function loadClientBundle(
     requestAnimationFrame: options?.window?.requestAnimationFrame?.bind(options.window),
     cancelAnimationFrame: options?.window?.cancelAnimationFrame?.bind(options.window),
     setTimeout,
-    clearTimeout
+    clearTimeout,
+    JSON: options?.json ?? globalThis.JSON
   })
   if (descriptor === undefined) throw new Error(`${packageName} did not register its client bundle`)
 
@@ -1369,6 +1371,78 @@ describe('Sherlock workspace and composer controls', () => {
       .toEqual(maximumIds)
   })
 
+  it('rejects malformed and oversized orphan outbox payloads and filters bounded ids', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): { pendingOrphanRevocations(): string[] }
+    }
+    const raw = new Map<string, string>([
+      ['malformed', '{'],
+      ['object', '{"0":"node"}'],
+      ['oversized', JSON.stringify(['x'.repeat(800_000)])],
+      ['mixed', JSON.stringify(['node-a', 'node-a', '', 7, 'x'.repeat(513), 'node-b'])]
+    ])
+    const storage = {
+      getItem(key: string) {
+        const sessionId = key.split(':').at(-1) ?? ''
+        return raw.get(sessionId) ?? null
+      },
+      setItem() {}
+    } as unknown as Storage
+    const registry = new Registry(storage)
+
+    expect(registry.for('malformed').pendingOrphanRevocations()).toEqual([])
+    expect(registry.for('object').pendingOrphanRevocations()).toEqual([])
+    expect(registry.for('oversized').pendingOrphanRevocations()).toEqual([])
+    expect(registry.for('mixed').pendingOrphanRevocations()).toEqual(['node-a', 'node-b'])
+  })
+
+  it('stops parsing a large in-limit orphan outbox after 256 ids without indexOf scans', async () => {
+    let indexOfReads = 0
+    let itemReads = 0
+    const observedJson: JSON = {
+      [Symbol.toStringTag]: 'JSON',
+      parse(text, reviver) {
+        const parsed = globalThis.JSON.parse(text, reviver)
+        if (!Array.isArray(parsed)) return parsed
+        const firstIndexes = new Map<unknown, number>()
+        parsed.forEach((value, index) => {
+          if (!firstIndexes.has(value)) firstIndexes.set(value, index)
+        })
+        return new Proxy(parsed, {
+          get(target, property, receiver) {
+            if (property === 'indexOf') {
+              indexOfReads += 1
+              return (value: unknown) => firstIndexes.get(value) ?? -1
+            }
+            if (typeof property === 'string' && /^\d+$/.test(property)) itemReads += 1
+            return Reflect.get(target, property, receiver)
+          }
+        })
+      },
+      stringify: globalThis.JSON.stringify
+    }
+    const nodeIds = Array.from({ length: 5_000 }, (_, index) => `large-orphan-${index}`)
+    const key = 'sherlock.research.canvas.preview-revocations.v1:session-large-outbox'
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      json: observedJson
+    })
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): { pendingOrphanRevocations(): string[] }
+    }
+    const workspace = new Registry({
+      getItem(storageKey: string) { return storageKey === key ? JSON.stringify(nodeIds) : null },
+      setItem() {}
+    } as unknown as Storage).for('session-large-outbox')
+
+    const pending = workspace.pendingOrphanRevocations()
+    expect(pending).toHaveLength(256)
+    expect(pending[0]).toBe('large-orphan-0')
+    expect(pending[255]).toBe('large-orphan-255')
+    expect(indexOfReads).toBe(0)
+    expect(itemReads).toBeLessThanOrEqual(256)
+  })
+
   it('does not create another durable preview admission while orphan revocation is pending', async () => {
     const storage = new MemoryStorage()
     const sessionId = 'session-pending-orphan'
@@ -1425,6 +1499,33 @@ describe('Sherlock workspace and composer controls', () => {
     } finally {
       await mounted.cleanup()
     }
+  })
+
+  it('keeps a rejected legacy outbox migration volatile until desktop persistence succeeds', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const sessionId = 'session-rejected-outbox-migration'
+    const key = `sherlock.research.canvas.preview-revocations.v1:${sessionId}`
+    browserWindow.localStorage.setItem(key, '["legacy-orphan"]')
+    let writeAttempts = 0
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      researchCanvasStorage: {
+        getItem: () => null,
+        setItem: () => { writeAttempts += 1; return false }
+      }
+    }, {
+      window: browserWindow
+    })
+    const Registry = client.ResearchWorkspaceRegistry as new () => {
+      for(id: string): {
+        pendingOrphanRevocations(): string[]
+        queueOrphanRevocations(nodeIds: string[]): boolean
+      }
+    }
+    const workspace = new Registry().for(sessionId)
+
+    expect(workspace.pendingOrphanRevocations()).toEqual(['legacy-orphan'])
+    expect(workspace.queueOrphanRevocations(['legacy-orphan'])).toBe(false)
+    expect(writeAttempts).toBeGreaterThanOrEqual(2)
   })
 
   it('publishes the session-scoped Research presentation to the optional root owner', async () => {

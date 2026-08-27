@@ -13,7 +13,8 @@ const RESEARCH_CANVAS_STORAGE_DIRECTORY = 'research-canvas'
 const RESEARCH_CANVAS_STORAGE_PREFIXES = [
   'sherlock.research.canvas.files.v1:',
   'sherlock.research.canvas.artifacts.v1:',
-  'sherlock.research.canvas.selection.v1:'
+  'sherlock.research.canvas.selection.v1:',
+  'sherlock.research.canvas.preview-revocations.v1:'
 ] as const
 const RESEARCH_CANVAS_STORAGE_MAX_KEY_LENGTH = 1_024
 const RESEARCH_CANVAS_STORAGE_MAX_FILE_BYTES = 48 * 1024 * 1024

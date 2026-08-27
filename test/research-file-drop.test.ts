@@ -33,7 +33,7 @@ async function loadClientBundle(
     researchFilesAvailable?(paths: string[]): Promise<boolean[]>
     researchCanvasStorage?: {
       getItem(key: string): string | null
-      setItem(key: string, value: string): void
+      setItem(key: string, value: string): boolean
     }
   }
 ): Promise<ClientBundle> {
@@ -887,7 +887,7 @@ describe('Research canvas file drops', () => {
     const client = await loadClientBundle('dsh-client-ui-conversation', {}, {
       researchCanvasStorage: {
         getItem: (storageKey) => values.get(storageKey) ?? null,
-        setItem: (storageKey, value) => { values.set(storageKey, value) }
+        setItem: (storageKey, value) => { values.set(storageKey, value); return true }
       }
     })
 
@@ -906,6 +906,30 @@ describe('Research canvas file drops', () => {
       id: 'next-file', path: '/w/next.pdf', name: 'next.pdf',
       source: 'sherlock', x: 56, y: 78, width: 320,
       height: 320 / (17 / 22) + 32, sizeMode: 'auto', aspectRatio: 17 / 22
+    }])
+  })
+
+  it('does not report a desktop-rejected orphan outbox write as durable', async () => {
+    const writes: Array<{ key: string; value: string }> = []
+    let acceptsWrites = false
+    const client = await loadClientBundle('dsh-client-ui-conversation', {}, {
+      researchCanvasStorage: {
+        getItem: () => null,
+        setItem: (key, value) => { writes.push({ key, value }); return acceptsWrites }
+      }
+    })
+    const workspace = new client.ResearchWorkspaceRegistry().for('session-rejected-outbox')
+
+    expect(workspace.queueOrphanRevocations(['orphan-node'])).toBe(false)
+    expect(workspace.pendingOrphanRevocations()).toEqual(['orphan-node'])
+    acceptsWrites = true
+    expect(workspace.queueOrphanRevocations(['orphan-node'])).toBe(true)
+    expect(writes).toEqual([{
+      key: 'sherlock.research.canvas.preview-revocations.v1:session-rejected-outbox',
+      value: '["orphan-node"]'
+    }, {
+      key: 'sherlock.research.canvas.preview-revocations.v1:session-rejected-outbox',
+      value: '["orphan-node"]'
     }])
   })
 

@@ -7,6 +7,7 @@ import {
   ResearchCanvasStorage,
   researchCanvasStoragePath
 } from '../src/main/state/research-canvas-storage'
+import { registerPrivilegedMainWindowHandlers } from '../src/main/ipc-trust'
 
 const temporaryDirectories: string[] = []
 
@@ -31,6 +32,49 @@ describe('desktop Research canvas storage', () => {
     expect(new ResearchCanvasStorage(userData).getItem(key)).toBeNull()
     expect(new ResearchCanvasStorage(userData).setItem(key, value)).toBe(true)
     expect(new ResearchCanvasStorage(userData).getItem(key)).toBe(value)
+  })
+
+  it('persists the preview revocation outbox through production IPC and a storage restart', () => {
+    const userData = temporaryUserData()
+    const key = 'sherlock.research.canvas.preview-revocations.v1:session-restart'
+    const value = '["orphan-node"]'
+    const webContents = { mainFrame: { processId: 7, routingId: 41 } }
+    const window = { isDestroyed: () => false, webContents }
+    const event = () => ({
+      sender: webContents,
+      senderFrame: { processId: 7, routingId: 41 },
+      returnValue: undefined as unknown
+    })
+    const register = (storage: ResearchCanvasStorage) => {
+      const handlers = new Map<string, (value: ReturnType<typeof event>, ...args: unknown[]) => void>()
+      registerPrivilegedMainWindowHandlers({
+        ipcMain: {
+          removeHandler() {},
+          removeAllListeners() {},
+          handle() {},
+          on(channel, handler) { handlers.set(channel, handler) }
+        },
+        getMainWindow: () => window,
+        showHarnessLog() {},
+        async openDirectory() { return null },
+        showItemInFolder() { return { ok: false } },
+        async researchFilesAvailable() { return [] },
+        researchCanvasStorageGet: (storageKey) => storage.getItem(storageKey),
+        researchCanvasStorageSet: (storageKey, storageValue) =>
+          storage.setItem(storageKey, storageValue)
+      })
+      return handlers
+    }
+
+    const firstHandlers = register(new ResearchCanvasStorage(userData))
+    const setEvent = event()
+    firstHandlers.get('research:canvas-storage:set')?.(setEvent, key, value)
+    expect(setEvent.returnValue).toBe(true)
+
+    const restartedHandlers = register(new ResearchCanvasStorage(userData))
+    const getEvent = event()
+    restartedHandlers.get('research:canvas-storage:get')?.(getEvent, key)
+    expect(getEvent.returnValue).toBe(value)
   })
 
   it('keeps only bounded Research-owned keys and values', () => {

@@ -142,3 +142,11 @@
   revocation is idempotent, and a bounded persistent orphan outbox retries on
   canvas remount without resurrecting visible nodes; commit
   `修复研究预览撤销竞态与重试`).
+- Task 5: fix-round 2 re-review found 3 important issues — the orphan outbox
+  prefix is rejected by production durable storage, its parser is quadratic and
+  does not stop at capacity, and revocation generation maps grow for absent
+  identities. Fix round 3 required.
+- Task 5: fix round 3/5 (3 addressed, 0 open — production IPC storage restores
+  the outbox after restart and propagates rejected writes, parsing is linear and
+  stops at 256, and only in-flight admissions retain bounded revocation markers;
+  commit `修复研究预览持久存储与资源上限`).
