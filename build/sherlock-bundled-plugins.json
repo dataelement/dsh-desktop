@@ -5,12 +5,14 @@
     "@vectorize-io/hindsight-coding-agents",
     "dsh-better-sidebar",
     "dsh-file-drop",
-    "dsh-memory-evolve",
     "dshmarket"
   ],
   "runtimePackages": [
     "dsh-desktop-market-installer",
     "dsh-web-search-session-model"
+  ],
+  "excludedPlugins": [
+    "dsh-memory-evolve"
   ],
   "bundles": [
     "@deepseek-ai/dsh-base",
@@ -19,7 +21,6 @@
     "dsh-file-drop",
     "dsh-better-sidebar",
     "@huanlin/dsh-plugin-better-sidebar-plugin-office",
-    "@vectorize-io/hindsight-coding-agents",
-    "dsh-memory-evolve"
+    "@vectorize-io/hindsight-coding-agents"
   ]
 }

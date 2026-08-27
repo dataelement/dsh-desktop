@@ -60,8 +60,7 @@ type ConversationViewTab = {
 const developerConversationTabLabels = [
   /^(?:🔴\s*)?(?:记忆|Memory)(?:\s*\(\d+\))?$/u,
   /^(?:🔴\s*)?(?:技能|Skills)(?:\s*\(\d+\))?$/u,
-  /^(?:🔴\s*)?(?:待办|Todos)(?:\s*\(\d+\))?$/u,
-  /^(?:🔴\s*)?Memory Evolve (?:设置|Settings)$/u
+  /^(?:🔴\s*)?(?:待办|Todos)(?:\s*\(\d+\))?$/u
 ]
 
 function normalizedTabLabel(tab: ConversationViewTab): string {

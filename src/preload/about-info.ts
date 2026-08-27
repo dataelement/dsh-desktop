@@ -18,6 +18,14 @@ type ManualUpdateChecker = () => Promise<UpdateStatus>
 const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
   zh: [
     {
+      version: '0.7.3',
+      date: '2026-08-27',
+      items: [
+        '移除 Memory Evolve 插件及其自动注入的记忆与待办提示',
+        '升级时自动替换内置插件配置并卸载旧插件，同时保留用户数据与回滚备份'
+      ]
+    },
+    {
       version: '0.7.2',
       date: '2026-08-26',
       items: [
@@ -42,11 +50,19 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
         '新增研究画布，与对话和轨迹并列切换',
         '新增关于页面，可查看当前版本和更新日志',
         '正式安装包内置 Memory、附件上传与工作区插件',
-        '记忆、技能、待办与 Memory Evolve 设置仅在开发者模式显示'
+        '内部记忆、技能与待办页面仅在开发者模式显示'
       ]
     }
   ],
   en: [
+    {
+      version: '0.7.3',
+      date: '2026-08-27',
+      items: [
+        'Removed Memory Evolve and its automatically injected memory and todo prompts',
+        'Upgrades now replace the bundled plugin profile and uninstall retired plugins while preserving user data and a rollback backup'
+      ]
+    },
     {
       version: '0.7.2',
       date: '2026-08-26',
@@ -72,7 +88,7 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
         'Added a Research canvas alongside Chat and Trajectory',
         'Added an About page for the current version and release notes',
         'Bundled Memory, file upload, and workspace plugins in the formal installer',
-        'Limited Memory, Skills, Todos, and Memory Evolve Settings to developer mode'
+        'Limited internal Memory, Skills, and Todos pages to developer mode'
       ]
     }
   ]

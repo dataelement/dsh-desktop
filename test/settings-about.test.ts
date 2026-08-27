@@ -151,18 +151,17 @@ describe('Sherlock About settings', () => {
     expect(zh.productName).toBe('Sherlock')
     expect(zh.version).toBe('9.8.7')
     expect(zh.releaseNotes[0]).toEqual({
-      version: '0.7.2',
-      date: '2026-08-26',
+      version: '0.7.3',
+      date: '2026-08-27',
       items: [
-        '新增关于页手动检查更新，并在下载完成后自动退出终端、安装和重启',
-        '优化侧栏更新按钮的悬停提示与圆环下载进度',
-        '汉化权限菜单，并支持为模型标记视觉输入能力'
+        '移除 Memory Evolve 插件及其自动注入的记忆与待办提示',
+        '升级时自动替换内置插件配置并卸载旧插件，同时保留用户数据与回滚备份'
       ]
     })
-    expect(zh.releaseNotes[1]?.version).toBe('0.7.1')
+    expect(zh.releaseNotes[1]?.version).toBe('0.7.2')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[0]).toBe(
-      'Added manual update checks in About, with automatic terminal shutdown, installation, and restart after download'
+      'Removed Memory Evolve and its automatically injected memory and todo prompts'
     )
 
     const manualCheck = vi.fn(async () => ({

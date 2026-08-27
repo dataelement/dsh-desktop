@@ -52,10 +52,6 @@ function sameList(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
-function sameSet(left, right) {
-  return left.length === right.length && left.every((value) => right.includes(value))
-}
-
 function vendorRelativePath(packageName) {
   return path.posix.join('vendor', ...packageName.split('/'))
 }
@@ -117,13 +113,30 @@ async function main() {
   const sourcePlugins =
     sourceManifest.dsh?.sherlock?.plugins ?? Object.keys(sourceManifest.dependencies ?? {})
   const sourceBundles = sourceManifest.dsh?.profile?.bundles ?? []
+  const excludedPlugins = policy.excludedPlugins ?? []
+  const unexpectedSourcePlugins = sourcePlugins.filter(
+    (packageName) => !policy.plugins.includes(packageName) && !excludedPlugins.includes(packageName)
+  )
+  const missingPolicyPlugins = policy.plugins.filter(
+    (packageName) => !sourcePlugins.includes(packageName)
+  )
+  const includedRetiredPlugins = policy.plugins.filter((packageName) =>
+    excludedPlugins.includes(packageName)
+  )
 
-  if (!sameSet(sourcePlugins, policy.plugins)) {
+  if (
+    unexpectedSourcePlugins.length > 0 ||
+    missingPolicyPlugins.length > 0 ||
+    includedRetiredPlugins.length > 0
+  ) {
     throw new Error(
-      `Sherlock formal plugin set differs from the release policy.\nFormal: ${sourcePlugins.join(', ')}\nPolicy: ${policy.plugins.join(', ')}`
+      `Sherlock formal plugin set differs from the release policy.\nFormal: ${sourcePlugins.join(', ')}\nPolicy: ${policy.plugins.join(', ')}\nRetired: ${excludedPlugins.join(', ')}`
     )
   }
-  if (!sameList(sourceBundles, policy.bundles)) {
+  const activeSourceBundles = sourceBundles.filter(
+    (packageName) => !excludedPlugins.includes(packageName)
+  )
+  if (!sameList(activeSourceBundles, policy.bundles)) {
     throw new Error('Sherlock formal bundle order differs from the release policy.')
   }
   if (!sourcePlugins.includes('dsh-file-drop')) {

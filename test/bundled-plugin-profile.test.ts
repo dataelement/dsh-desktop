@@ -88,27 +88,38 @@ describe('bundled Sherlock plugin profile', () => {
     expect(patched).toContain('setPanelState')
   })
 
-  it('uses the formal profile as the exact six-plugin release baseline', async () => {
+  it('uses the formal profile as the exact five-plugin release baseline without Memory Evolve', async () => {
+    const appManifest = JSON.parse(
+      await readFile(path.resolve(import.meta.dirname, '..', 'package.json'), 'utf8')
+    ) as { version: string }
     const policy = JSON.parse(
       await readFile(
         path.resolve(import.meta.dirname, '..', 'build', 'sherlock-bundled-plugins.json'),
         'utf8'
       )
-    ) as { plugins: string[]; runtimePackages: string[] }
+    ) as {
+      plugins: string[]
+      runtimePackages: string[]
+      excludedPlugins: string[]
+      bundles: string[]
+    }
     const preparation = await readFile(
       path.resolve(import.meta.dirname, '..', 'scripts', 'prepare-bundled-plugin-profile.mjs'),
       'utf8'
     )
 
+    expect(appManifest.version).toBe('0.7.3')
     expect(policy.plugins).toEqual([
       '@huanlin/dsh-plugin-better-sidebar-plugin-office',
       '@vectorize-io/hindsight-coding-agents',
       'dsh-better-sidebar',
       'dsh-file-drop',
-      'dsh-memory-evolve',
       'dshmarket'
     ])
     expect(policy.plugins).not.toContain('dsh-update-checker')
+    expect(policy.plugins).not.toContain('dsh-memory-evolve')
+    expect(policy.excludedPlugins).toEqual(['dsh-memory-evolve'])
+    expect(policy.bundles).not.toContain('dsh-memory-evolve')
     expect(policy.runtimePackages).toEqual([
       'dsh-desktop-market-installer',
       'dsh-web-search-session-model'
@@ -117,11 +128,13 @@ describe('bundled Sherlock plugin profile', () => {
     expect(preparation).not.toContain("'dsh-desktop-dev'")
     expect(preparation).toContain("path.join(projectRoot, 'packages', packageName)")
     expect(preparation).toContain('runtimePackages')
+    expect(preparation).toContain('excludedPlugins')
     expect(preparation).toContain('sourceManifest.dsh?.sherlock?.plugins')
     expect(preparation).toContain("'.credentials.yaml'")
     expect(preparation).toContain("'settings.yaml'")
     expect(preparation).toContain("part.startsWith('.env.')")
     expect(preparation).toContain('patchBetterSidebarPackage(vendorPath)')
+    expect(preparation).not.toContain('patchMemoryEvolvePackage')
   })
 
   it('installs the packaged profile for a fresh user without touching model credentials', async () => {
@@ -155,16 +168,21 @@ describe('bundled Sherlock plugin profile', () => {
     expect(existsSync(path.join(installedProfile, '.credentials.yaml'))).toBe(false)
   })
 
-  it('backs up and replaces an older plugin profile while preserving all non-profile user data', async () => {
+  it('upgrades an older profile by uninstalling Memory Evolve while preserving user data and a backup', async () => {
     const root = await temporaryDirectory('sherlock-bundled-profile-upgrade')
     const bundledProfilePath = await makeBundledProfile(root)
     const userDataPath = path.join(root, 'user-data')
     const harness = path.join(userDataPath, 'harness')
     const oldProfile = path.join(harness, 'profiles', 'web')
-    await mkdir(oldProfile, { recursive: true })
+    await mkdir(path.join(oldProfile, 'node_modules', 'dsh-memory-evolve'), { recursive: true })
     await writeFile(
       path.join(oldProfile, 'package.json'),
-      '{"dependencies":{"old-plugin":"1.0.0","dsh-update-checker":"1.4.16"}}\n',
+      '{"dependencies":{"old-plugin":"1.0.0","dsh-update-checker":"1.4.16","dsh-memory-evolve":"0.1.0"}}\n',
+      'utf8'
+    )
+    await writeFile(
+      path.join(oldProfile, 'node_modules', 'dsh-memory-evolve', 'package.json'),
+      '{"name":"dsh-memory-evolve","version":"0.1.0"}\n',
       'utf8'
     )
     await writeFile(path.join(oldProfile, 'cordis.patch.yml'), '- id: old-profile\n', 'utf8')
@@ -173,7 +191,7 @@ describe('bundled Sherlock plugin profile', () => {
     const result = installBundledPluginProfile({
       userDataPath,
       bundledProfilePath,
-      appVersion: '0.6.7',
+      appVersion: '0.7.3',
       now: new Date('2026-08-25T09:01:02.000Z')
     })
 
@@ -185,9 +203,13 @@ describe('bundled Sherlock plugin profile', () => {
     expect(readFileSync(path.join(oldProfile, 'cordis.patch.yml'), 'utf8')).toBe(
       '- id: product-policy\n'
     )
+    expect(existsSync(path.join(oldProfile, 'node_modules', 'dsh-memory-evolve'))).toBe(false)
     expect(
       readFileSync(path.join(result.backupDirectory!, 'package.json'), 'utf8')
-    ).toContain('dsh-update-checker')
+    ).toContain('dsh-memory-evolve')
+    expect(
+      existsSync(path.join(result.backupDirectory!, 'node_modules', 'dsh-memory-evolve'))
+    ).toBe(true)
     expect(await readFile(path.join(harness, 'settings.yaml'), 'utf8')).toBe(
       'models: user-owned\n'
     )

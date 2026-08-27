@@ -59,7 +59,7 @@ Run `npx patch-package @deepseek-ai/dsh-client-ui-settings-general`, then verify
 
 **Interfaces:**
 - Consumes: `initialDeveloperMode` from the renderer argument.
-- Produces: hidden internal settings and Memory Evolve tabs whenever mode is false.
+- Produces: hidden internal settings and internal conversation tabs whenever mode is false.
 
 - [ ] **Step 1: Add a regression test for initialization order and label fallback**
 
@@ -71,7 +71,7 @@ Run: `npx vitest run test/developer-mode.test.ts test/brand-migration.test.ts`
 
 - [ ] **Step 3: Mount developer visibility first and retain id plus label fallback**
 
-Call `mountDeveloperModeUi()` before theme/shell helpers and hide stable ids; when an extension lacks an id, recognize the existing zh/en Memory Evolve labels.
+Call `mountDeveloperModeUi()` before theme/shell helpers and hide stable ids; when an internal extension lacks an id, recognize its existing localized labels.
 
 - [ ] **Step 4: Re-run focused tests**
 
@@ -133,7 +133,7 @@ Run the formal prepare/build command with notarization explicitly disabled for l
 
 - [ ] **Step 2: Inspect the artifact contents**
 
-Verify the embedded manifest lists the policy plugins, includes `dsh-file-drop` and `dsh-memory-evolve`, excludes `dsh-update-checker`, contains no absolute publisher path, and contains no credential/model API file.
+Verify the embedded manifest lists the policy plugins, includes `dsh-file-drop`, excludes `dsh-memory-evolve` and `dsh-update-checker`, contains no absolute publisher path, and contains no credential/model API file.
 
 - [ ] **Step 3: Launch with an isolated user-data directory**
 

@@ -121,21 +121,19 @@ describe('Sherlock developer mode', () => {
     expect(rows.some((row) => row.hidden)).toBe(false)
   })
 
-  it('falls back to localized Memory Evolve labels and returns to Chat', () => {
+  it('falls back to localized developer labels and returns to Chat', () => {
     const chat = localizedConversationTab('对话')
     const memory = localizedConversationTab('🔴 记忆 (2)')
     const skills = localizedConversationTab('技能')
-    const todos = localizedConversationTab('待办')
-    const settings = localizedConversationTab('Memory Evolve 设置', true)
+    const todos = localizedConversationTab('待办', true)
 
-    setDeveloperConversationTabsVisibility([chat, memory, skills, todos, settings], false)
+    setDeveloperConversationTabsVisibility([chat, memory, skills, todos], false)
 
     expect(chat.clicks).toBe(1)
-    expect([memory, skills, todos, settings].every((tab) => tab.hidden)).toBe(true)
-    expect(settings.dataset.sherlockDeveloperTab).toBe('true')
+    expect([memory, skills, todos].every((tab) => tab.hidden)).toBe(true)
   })
 
-  it('hides Memory Evolve conversation tabs outside developer mode', () => {
+  it('hides developer conversation tabs outside developer mode', () => {
     const tabs = [
       conversationTab('chat'),
       conversationTab('research'),

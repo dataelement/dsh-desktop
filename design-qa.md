@@ -49,6 +49,18 @@
 
 final result: passed
 
+## Memory Evolve removal QA (2026-08-27)
+
+- User references: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-a415a313-9878-4faf-a31c-461bdb03d745.png` and `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-c1d1bb37-5c52-41b5-859e-d1ba20c8d4aa.png`.
+- Root-cause evidence from the affected persisted session showed Memory Evolve forced a complete reply before its maintenance tool calls and then forced a `dtodo list` check. That ordering caused the useful answer to be grouped into `执行过程`, while an empty todo result induced a second low-value closing reply.
+- Memory Evolve is now excluded from both the packaged plugin dependencies and bundles. The 0.7.3 upgrade profile therefore removes its code and injected memory/todo instructions instead of attempting another compatibility patch.
+- Existing user-owned memory data remains on disk for recoverability, but the plugin package, tools, UI, and prompt injection are no longer loaded by Sherlock.
+- Focused profile tests assert that `dsh-memory-evolve` is absent from both plugin lists and exercise an upgrade from an older profile that contains the plugin. The real 0.7.3 package and installed runtime contain no Memory Evolve directory, while the retired profile remains available in the timestamped rollback backup.
+- A real packaged 0.7.3 conversation returned only `0.7.3验证通过` after the collapsed `执行过程`; DOM inspection confirmed the reply is outside the execution `section`, and the rendered message contains no empty-todo status. Live proof: `/tmp/sherlock-0.7.3-live-reply-validation.png`; About/version proof: `/tmp/sherlock-0.7.3-memory-evolve-removed.png`.
+- Apple notarization, upload, public update-source changes, and source/tag push were intentionally skipped for this local 0.7.3 test build.
+
+final result: passed
+
 ## Light theme contrast QA (2026-08-27)
 
 - User references: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-e623a2b5-b094-4f54-bb16-035b445c73ef.png` and `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-3e22d756-bb3a-4522-9688-d99b2c0addfb.png`.
