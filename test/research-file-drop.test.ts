@@ -2,7 +2,11 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
-import { safePathForFile } from '../src/preload/research-file-path'
+import {
+  createResearchPreviewBridge,
+  researchFinderAdmissionRequest,
+  safePathForFile
+} from '../src/preload/research-file-path'
 
 type ClientBundle = Record<string, any>
 type BundleDescriptor = {
@@ -327,12 +331,39 @@ describe('Research canvas file drops', () => {
     expect(main).toContain("new ResearchCanvasStorage(app.getPath('userData'))")
   })
 
-  it('exposes Electron webUtils.getPathForFile through the existing desktop bridge', async () => {
-    const preload = await readFile('src/preload/index.ts', 'utf8')
+  it('derives Finder preview admission inside preload without exposing a path reader', async () => {
+    const calls: Array<{ channel: string; value: unknown }> = []
+    const bridge = createResearchPreviewBridge(
+      () => '/electron/derived.pdf',
+      async (channel, value) => {
+        calls.push({ channel, value })
+        return {
+          authorizationId: 'authorization_0000000000000001',
+          url: 'sherlock-preview://capability_0000000000000001/',
+          contentType: 'application/pdf',
+          name: 'report.pdf'
+        }
+      }
+    )
 
-    expect(preload).toContain("import { contextBridge, ipcRenderer, webUtils } from 'electron'")
-    expect(preload).toContain('getPathForFile: (file: File): string =>')
-    expect(preload).toContain('safePathForFile(file, webUtils.getPathForFile)')
+    const result = await bridge.admitFinderFile(
+      { name: 'report.pdf', path: '/renderer/forged.pdf' } as unknown as File,
+      { sessionId: 'session-1', nodeId: 'node-1' }
+    )
+    expect(result).toMatchObject({
+      authorizationId: 'authorization_0000000000000001',
+      contentType: 'application/pdf'
+    })
+    expect(calls).toEqual([{
+      channel: 'research:preview:admit-finder',
+      value: {
+        path: '/electron/derived.pdf',
+        sessionId: 'session-1',
+        nodeId: 'node-1'
+      }
+    }])
+    expect('read' in bridge).toBe(false)
+    expect('admitFinderPath' in bridge).toBe(false)
   })
 
   it('returns a resolved Electron file path and safely absorbs resolver failures', () => {
@@ -341,6 +372,33 @@ describe('Research canvas file drops', () => {
     expect(safePathForFile(file, () => '/tmp/report.pdf')).toBe('/tmp/report.pdf')
     expect(safePathForFile(file, () => undefined)).toBe('')
     expect(safePathForFile(file, () => { throw new Error('unavailable') })).toBe('')
+  })
+
+  it('ignores synthetic File path properties and rejects empty Electron resolution', () => {
+    const synthetic = { name: 'report.pdf', path: '/renderer/forged.pdf' } as unknown as File
+    const identity = { sessionId: 'session-1', nodeId: 'node-1' }
+
+    expect(researchFinderAdmissionRequest(synthetic, identity, () => '')).toBeNull()
+    expect(researchFinderAdmissionRequest(
+      synthetic,
+      identity,
+      () => '/electron/derived.pdf'
+    )).toEqual({
+      path: '/electron/derived.pdf',
+      sessionId: 'session-1',
+      nodeId: 'node-1'
+    })
+  })
+
+  it('does not invoke IPC when Electron cannot resolve a real Finder File', async () => {
+    const invoke = vi.fn()
+    const bridge = createResearchPreviewBridge(() => '', invoke)
+
+    await expect(bridge.admitFinderFile(
+      { name: 'synthetic.pdf', path: '/renderer/forged.pdf' } as unknown as File,
+      { sessionId: 'session-1', nodeId: 'node-1' }
+    )).resolves.toBeNull()
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it('parses only bounded Sherlock file drag payloads', async () => {

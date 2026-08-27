@@ -12,6 +12,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  protocol,
   session,
   shell,
   type BrowserWindowConstructorOptions
@@ -68,6 +69,24 @@ import {
   assertTrustedMainWindowEvent,
   registerPrivilegedMainWindowHandlers
 } from './ipc-trust'
+import {
+  FileResearchPreviewAuthorizationStorage,
+  HarnessWorkspaceFileResolver,
+  RESEARCH_PREVIEW_SCHEME,
+  ResearchFilePreviewRegistry,
+  registerResearchFilePreviewHandlers
+} from './state/research-file-preview'
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: RESEARCH_PREVIEW_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true
+  }
+}])
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
 
@@ -90,6 +109,7 @@ let rendererPluginFailureLogs: string[] = []
 let pluginRecoveryRemovedPlugins: string[] = []
 let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
 let harnessThemePreferenceSyncTimer: ReturnType<typeof setInterval> | undefined
+let researchFilePreviewRegistry: ResearchFilePreviewRegistry | undefined
 
 function cancelPluginRecoverySessionReset(): void {
   if (pluginRecoveryResetTimer) clearTimeout(pluginRecoveryResetTimer)
@@ -656,6 +676,14 @@ function registerHarnessHandlers(): void {
     onStorageWriteRejected: (error) =>
       console.warn('[research-canvas] rejected storage write', error)
   })
+  if (!researchFilePreviewRegistry) {
+    throw new Error('Research preview registry is unavailable.')
+  }
+  registerResearchFilePreviewHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    registry: researchFilePreviewRegistry
+  })
 }
 
 async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<void> {
@@ -966,6 +994,15 @@ async function bootstrap(): Promise<void> {
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers(() => mainWindow)
   if (process.platform === 'darwin') startHarnessThemePreferenceSync()
+  const dshHome = join(app.getPath('userData'), 'harness')
+  researchFilePreviewRegistry = new ResearchFilePreviewRegistry({
+    storage: new FileResearchPreviewAuthorizationStorage(app.getPath('userData')),
+    workspaceResolver: new HarnessWorkspaceFileResolver(dshHome)
+  })
+  protocol.handle(
+    RESEARCH_PREVIEW_SCHEME,
+    (request) => researchFilePreviewRegistry!.handle(request)
+  )
   createWindow()
   localSearchRuntime = await startLocalSearchRuntime({
     createWindow: createLocalSearchWindow
@@ -980,7 +1017,7 @@ async function bootstrap(): Promise<void> {
     bundledMarketInstallerEntry: bundledMarketInstallerEntry(),
     localSearchUrl: localSearchRuntime.endpoint.url,
     localSearchToken: localSearchRuntime.endpoint.token,
-    dshHome: join(app.getPath('userData'), 'harness'),
+    dshHome,
     logPath: join(app.getPath('logs'), 'harness.log'),
     launchProcess: (executablePath, args, options) => spawn(executablePath, args, options),
     onChanged: (snapshot) => {

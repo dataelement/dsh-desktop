@@ -15,7 +15,10 @@ import { isPluginLoadError } from './plugin-error-view'
 import { mountDesktopShellStyles } from './shell-style'
 import { SidebarUpdateControl } from './sidebar-update-control'
 import { mountNativeThemeSync, mountWindowsTitlebar } from './windows-titlebar'
-import { safePathForFile } from './research-file-path'
+import {
+  createResearchPreviewBridge,
+  safePathForFile
+} from './research-file-path'
 
 if (process.isMainFrame) {
 const DEVELOPER_MODE_STYLE_ID = 'sherlock-developer-mode-style'
@@ -166,6 +169,13 @@ contextBridge.exposeInMainWorld(
       setItem: (key: string, value: string): boolean =>
         ipcRenderer.sendSync('research:canvas-storage:set', key, value) === true
     }),
+    researchPreview: createResearchPreviewBridge(
+      webUtils.getPathForFile,
+      (channel, value) => ipcRenderer.invoke(channel, value)
+    ),
+    // Compatibility for the existing attachment submission path. Preview
+    // callers must use researchPreview so raw filesystem paths never become
+    // preview credentials or protocol URLs.
     getPathForFile: (file: File): string => safePathForFile(file, webUtils.getPathForFile)
   })
 )
