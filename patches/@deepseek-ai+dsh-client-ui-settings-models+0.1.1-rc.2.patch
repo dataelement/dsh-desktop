@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index fff5f43..23d0bcf 100644
+index fff5f43..8c1212f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-@@ -64,6 +64,30 @@ window.__ModuleLoader__.load({
+@@ -64,6 +64,38 @@ window.__ModuleLoader__.load({
  			tag.textContent = css$3;
  			document.head.appendChild(tag);
  		}
@@ -30,10 +30,18 @@ index fff5f43..23d0bcf 100644
 +			tag.textContent = ".dshModelCatalogSearch{box-sizing:border-box;position:relative;align-items:center;display:flex}.dshModelCatalogSearchIcon{position:absolute;left:10px;color:var(--dsw-alias-label-tertiary);pointer-events:none}.dshModelCatalogSearch input{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);width:100%;height:34px;font:inherit;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 11px 0 34px;font-size:13px;line-height:20px}.dshModelCatalogSearch input:focus{border-color:var(--dsw-alias-brand-primary);outline:none}.dshModelCatalogSearch input::placeholder{color:var(--dsw-alias-label-dimmed)}.dshProviderEditorExpanded .zGbnIq_customizedBody{padding-bottom:72px}.dshProviderEditorStickyFooter{z-index:4;position:sticky;bottom:-24px;background:var(--dsw-alias-bg-module-platform);border-top:1px solid var(--dsw-alias-border-l2);box-shadow:0 -10px 18px -18px #0009;align-items:center;justify-content:space-between;gap:12px;margin:0 -16px -14px;padding:12px 16px 14px;display:flex}.dshProviderEditorStickyFooter .zGbnIq_editorActions{margin-left:auto}@media (width<=620px){.dshProviderEditorStickyFooter{align-items:stretch;flex-wrap:wrap}.dshProviderEditorStickyFooter .zGbnIq_editorActions{margin-left:auto}}";
 +			document.head.appendChild(tag);
 +		}
++		const modelReasoningTagId = "@deepseek-ai/dsh-client-ui-settings-models/ModelReasoningEffortsField";
++		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(modelReasoningTagId) + "]") === null) {
++			const tag = document.createElement("style");
++			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-models";
++			tag.dataset.pluginCss = modelReasoningTagId;
++			tag.textContent = ".dshModelReasoningField{grid-column:1/-1;flex-direction:column;gap:6px;display:flex}.dshModelReasoningHint{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}";
++			document.head.appendChild(tag);
++		}
  		var ModelsSection_module_css_default = {
  			"addActions": "zGbnIq_addActions",
  			"addBlock": "zGbnIq_addBlock",
-@@ -155,6 +179,68 @@ window.__ModuleLoader__.load({
+@@ -155,6 +187,186 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -99,10 +107,128 @@ index fff5f43..23d0bcf 100644
 +			});
 +		}
 +		//#endregion
++		//#region lib/types/client/ModelReasoningEffortsField.js
++		/**
++		* Reasoning effort support lives on `model.reasoning` (a per-model capability,
++		* not a provider-level one). The composer reads the same shape, so the
++		* declaration here lands directly in the dropdown the user sees in chat.
++		*/
++		/** Whether the model has any reasoning effort level declared. */
++		function reasoningEnabled(model) {
++			return Array.isArray(model.reasoning?.efforts);
++		}
++		/** The declared effort levels; missing or malformed becomes an empty list. */
++		function reasoningEfforts(model) {
++			return Array.isArray(model.reasoning?.efforts) ? model.reasoning.efforts : [];
++		}
++		/** The default effort id, if the user picked one. */
++		function reasoningDefault(model) {
++			return typeof model.reasoning?.defaultEffort === "string" && model.reasoning.defaultEffort.length > 0 ? model.reasoning.defaultEffort : void 0;
++		}
++		/** Parse a comma-separated list of effort ids into a clean string array. */
++		function parseEffortList(text) {
++			return text.split(",").map((value) => value.trim()).filter((value) => value.length > 0);
++		}
++		/**
++		* Reuse the user's earlier name when an id reappears after an edit, so
++		* typing `low, high` after `low, medium, high` keeps the "Medium" row
++		* rather than re-falling back to the id.
++		* @param ids - cleaned ids in display order.
++		* @param previous - last-known levels, in their previous order.
++		* @returns the levels the new payload should carry.
++		*/
++		function rehydrateLevels(ids, previous) {
++			const lookup = /* @__PURE__ */ new Map();
++			for (const level of previous) {
++				if (level !== null && typeof level === "object" && typeof level.id === "string" && level.id.length > 0) lookup.set(level.id, level);
++			}
++			return ids.map((id) => {
++				const known = lookup.get(id);
++				return known ?? { id, name: id };
++			});
++		}
++		/**
++		* Compose the next `model.reasoning` value. The list of ids drives
++		* everything: clearing the list removes the capability outright, and
++		* the default follows the first id when its previous value was lost.
++		* @param model - the current model row.
++		* @param ids - cleaned ids from the comma-separated field.
++		* @returns the next reasoning payload, or undefined to drop it.
++		*/
++		function nextReasoning(model, ids) {
++			if (ids.length === 0) return void 0;
++			const previous = reasoningEfforts(model);
++			const previousDefault = reasoningDefault(model);
++			const nextLevels = rehydrateLevels(ids, previous);
++			const defaultStillPresent = previousDefault !== void 0 && nextLevels.some((level) => level.id === previousDefault);
++			return {
++				defaultEffort: defaultStillPresent ? previousDefault : nextLevels[0].id,
++				efforts: nextLevels
++			};
++		}
++		/**
++		* Render the per-model reasoning effort declaration control. One
++		* comma-separated text field carries the effort ids, and a picker
++		* selects the default; clearing the text drops the capability.
++		* @param props - model row, row index, copy callback, disabled flag, and writer.
++		* @returns the reasoning control.
++		*/
++		function ModelReasoningEffortsField(props) {
++			const levels = reasoningEfforts(props.model);
++			const defaultEffort = reasoningDefault(props.model);
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: "dshModelReasoningField",
++				children: [
++					(0, react_jsx_runtime.jsxs)("label", {
++						className: ModelsSection_module_css_default["modelField"],
++						children: [(0, react_jsx_runtime.jsx)("span", {
++							className: ModelsSection_module_css_default["modelFieldLabel"],
++							children: props.t("modelReasoningLevels")
++						}), (0, react_jsx_runtime.jsx)("input", {
++							className: ModelsSection_module_css_default["input"],
++							type: "text",
++							value: levels.map((level) => level.id).join(", "),
++							placeholder: props.t("modelReasoningLevelsPlaceholder"),
++							"aria-label": `${props.t("modelReasoningLevels")} ${String(props.index + 1)}`,
++							disabled: props.disabled,
++							onChange: (event) => {
++								props.onChange(nextReasoning(props.model, parseEffortList(event.target.value)));
++							}
++						}), (0, react_jsx_runtime.jsx)("span", {
++							className: "dshModelReasoningHint",
++							children: props.t("modelReasoningLevelsHint")
++						})]
++					}),
++					levels.length === 0 ? null : (0, react_jsx_runtime.jsxs)("label", {
++						className: ModelsSection_module_css_default["modelField"],
++						children: [(0, react_jsx_runtime.jsx)("span", {
++							className: ModelsSection_module_css_default["modelFieldLabel"],
++							children: props.t("modelReasoningDefault")
++						}), (0, react_jsx_runtime.jsx)("select", {
++							className: `${ModelsSection_module_css_default["input"]} ${ModelsSection_module_css_default["selectInput"]}`,
++							value: defaultEffort ?? levels[0].id,
++							"aria-label": `${props.t("modelReasoningDefault")} ${String(props.index + 1)}`,
++							disabled: props.disabled,
++							onChange: (event) => {
++								props.onChange({
++									defaultEffort: event.target.value,
++									efforts: levels
++								});
++							},
++							children: levels.map((level) => (0, react_jsx_runtime.jsx)("option", {
++								value: level.id,
++								children: level.name
++							}, level.id))
++						})]
++					})
++				]
++			});
++		}
++		//#endregion
  		//#region lib/types/client/DeepSeekModelsEditor.js
  		/**
  		* Curated editor for the direct DeepSeek adapter's advisory model catalog.
-@@ -256,6 +342,7 @@ window.__ModuleLoader__.load({
+@@ -256,6 +468,7 @@ window.__ModuleLoader__.load({
  		function DeepSeekModelsEditor(props) {
  			const [editing, setEditing] = (0, react.useState)(() => /* @__PURE__ */ new Map());
  			const [expanded, setExpanded] = (0, react.useState)(() => /* @__PURE__ */ new Set());
@@ -110,7 +236,7 @@ index fff5f43..23d0bcf 100644
  			const update = (index, key, value) => {
  				const next = props.models.map((model, at) => {
  					const copy = { ...model };
-@@ -364,12 +451,20 @@ window.__ModuleLoader__.load({
+@@ -364,12 +577,20 @@ window.__ModuleLoader__.load({
  							children: props.t("resetModels")
  						}) : null]
  					}),
@@ -132,7 +258,7 @@ index fff5f43..23d0bcf 100644
  							className: ModelsSection_module_css_default["modelEntry"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["modelRow"],
-@@ -395,12 +490,23 @@ window.__ModuleLoader__.load({
+@@ -395,12 +616,23 @@ window.__ModuleLoader__.load({
  										value: typeof model["name"] === "string" ? model["name"] : "",
  										placeholder: props.t("modelName"),
  										"aria-label": `${props.t("modelName")} ${String(index + 1)}`,
@@ -162,7 +288,7 @@ index fff5f43..23d0bcf 100644
  										type: "button",
  										className: ModelsSection_module_css_default["iconButton"],
  										"aria-label": `${props.t("modelAdvanced")} ${String(index + 1)}`,
-@@ -425,18 +531,9 @@ window.__ModuleLoader__.load({
+@@ -425,18 +657,9 @@ window.__ModuleLoader__.load({
  								]
  							}), expanded.has(index) ? (0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["modelAdvanced"],
@@ -182,7 +308,7 @@ index fff5f43..23d0bcf 100644
  					})
  				]
  			});
-@@ -759,6 +856,7 @@ window.__ModuleLoader__.load({
+@@ -759,6 +982,7 @@ window.__ModuleLoader__.load({
  			const [picked, setPicked] = (0, react.useState)(/* @__PURE__ */ new Set());
  			const [expanded, setExpanded] = (0, react.useState)(/* @__PURE__ */ new Set());
  			const [editing, setEditing] = (0, react.useState)(/* @__PURE__ */ new Map());
@@ -190,7 +316,7 @@ index fff5f43..23d0bcf 100644
  			/** Buffer key for one capacity field; the row half moves when rows do. */
  			const bufferKey = (index, field) => `${String(index)}:${field}`;
  			const editCapacity = (index, field, text) => {
-@@ -889,11 +987,19 @@ window.__ModuleLoader__.load({
+@@ -889,11 +1113,19 @@ window.__ModuleLoader__.load({
  							})
  						]
  					}),
@@ -211,7 +337,7 @@ index fff5f43..23d0bcf 100644
  						className: ModelsSection_module_css_default["modelEntry"],
  						children: [(0, react_jsx_runtime.jsxs)("div", {
  							className: ModelsSection_module_css_default["modelRow"],
-@@ -915,12 +1021,23 @@ window.__ModuleLoader__.load({
+@@ -915,12 +1147,23 @@ window.__ModuleLoader__.load({
  									value: textOf(model, "name"),
  									placeholder: t("modelName"),
  									"aria-label": `${t("modelName")} ${index + 1}`,
@@ -241,7 +367,18 @@ index fff5f43..23d0bcf 100644
  									type: "button",
  									className: ModelsSection_module_css_default["iconButton"],
  									"aria-label": `${t("modelAdvanced")} ${index + 1}`,
-@@ -989,15 +1106,6 @@ window.__ModuleLoader__.load({
+@@ -986,18 +1229,17 @@ window.__ModuleLoader__.load({
+ 										editCapacity(index, "maxTokens", event.target.value);
+ 									}
+ 								})]
++							}), (0, react_jsx_runtime.jsx)(ModelReasoningEffortsField, {
++								model,
++								index,
++								t,
++								disabled,
++								onChange: (next) => {
++									patch(index, { reasoning: next });
++								}
  							})]
  						}) : null]
  					}, index)),
@@ -257,7 +394,7 @@ index fff5f43..23d0bcf 100644
  					failure !== void 0 ? (0, react_jsx_runtime.jsx)("p", {
  						className: ModelsSection_module_css_default["error"],
  						children: failure
-@@ -1098,6 +1206,7 @@ window.__ModuleLoader__.load({
+@@ -1098,6 +1340,7 @@ window.__ModuleLoader__.load({
  			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
  			const [keyDraft, setKeyDraft] = (0, react.useState)("");
  			const [models, setModels] = (0, react.useState)([]);
@@ -265,7 +402,7 @@ index fff5f43..23d0bcf 100644
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
  			/**
-@@ -1164,6 +1273,11 @@ window.__ModuleLoader__.load({
+@@ -1164,6 +1407,11 @@ window.__ModuleLoader__.load({
  					setBusy(false);
  				}
  			};
@@ -277,7 +414,7 @@ index fff5f43..23d0bcf 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["editor"],
  				children: [
-@@ -1279,6 +1393,8 @@ window.__ModuleLoader__.load({
+@@ -1279,6 +1527,8 @@ window.__ModuleLoader__.load({
  					(0, react_jsx_runtime.jsx)(ModelListEditor, {
  						models,
  						onChange: setModels,
@@ -286,7 +423,7 @@ index fff5f43..23d0bcf 100644
  						probe: {
  							settingsNs: NS$1,
  							baseURL,
-@@ -1298,18 +1414,27 @@ window.__ModuleLoader__.load({
+@@ -1298,18 +1548,27 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: hint
  					}),
@@ -326,7 +463,7 @@ index fff5f43..23d0bcf 100644
  					})
  				]
  			});
-@@ -1397,6 +1522,8 @@ window.__ModuleLoader__.load({
+@@ -1397,6 +1656,8 @@ window.__ModuleLoader__.load({
  			const [keyState, setKeyState] = (0, react.useState)(void 0);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -335,7 +472,7 @@ index fff5f43..23d0bcf 100644
  			const [committedOriginal, setCommittedOriginal] = (0, react.useState)(() => schema.getPath(namespace.user, settingsPath));
  			const [expectedRevision, setExpectedRevision] = (0, react.useState)(() => namespace.revision);
  			const root = (0, react.useMemo)(() => schema.rehydrate(namespace.schema), [namespace.schema, schema]);
-@@ -1522,6 +1649,15 @@ window.__ModuleLoader__.load({
+@@ -1522,6 +1783,15 @@ window.__ModuleLoader__.load({
  			const inheritedModels = () => {
  				return schema.getPath(namespace.base, [...settingsPath, "models"]) ?? schema.nodeAtPath(root, [...settingsPath, "models"])?.meta.default;
  			};
@@ -351,7 +488,7 @@ index fff5f43..23d0bcf 100644
  			/**
  			* The curated fields of one known adapter family. The family arrives
  			* narrowed so the per-family branches below are total: an unknown namespace
-@@ -1539,6 +1675,8 @@ window.__ModuleLoader__.load({
+@@ -1539,6 +1809,8 @@ window.__ModuleLoader__.load({
  				const catalogProps = {
  					models,
  					overridden: modelsOverridden,
@@ -360,7 +497,7 @@ index fff5f43..23d0bcf 100644
  					t,
  					disabled,
  					onChange: (next) => {
-@@ -1577,6 +1715,10 @@ window.__ModuleLoader__.load({
+@@ -1577,6 +1849,10 @@ window.__ModuleLoader__.load({
  					]
  				}), props.credentialOnly === true ? null : (0, react_jsx_runtime.jsxs)("details", {
  					className: ModelsSection_module_css_default["customized"],
@@ -371,7 +508,7 @@ index fff5f43..23d0bcf 100644
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -1653,8 +1795,22 @@ window.__ModuleLoader__.load({
+@@ -1653,8 +1929,22 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -395,7 +532,7 @@ index fff5f43..23d0bcf 100644
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -1678,19 +1834,15 @@ window.__ModuleLoader__.load({
+@@ -1678,19 +1968,15 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
  					}),
@@ -424,7 +561,7 @@ index fff5f43..23d0bcf 100644
  					})
  				]
  			});
-@@ -1784,6 +1936,26 @@ window.__ModuleLoader__.load({
+@@ -1784,6 +2070,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -451,7 +588,7 @@ index fff5f43..23d0bcf 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1810,6 +1982,8 @@ window.__ModuleLoader__.load({
+@@ -1810,6 +2116,8 @@ window.__ModuleLoader__.load({
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
  			const [declaring, setDeclaring] = (0, react.useState)(false);
@@ -460,7 +597,7 @@ index fff5f43..23d0bcf 100644
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -1879,10 +2053,16 @@ window.__ModuleLoader__.load({
+@@ -1879,10 +2187,16 @@ window.__ModuleLoader__.load({
  			};
  			const anyUsable = state.rows.some(providerUsable);
  			const configured = state.rows.filter((row) => row.configured);
@@ -478,7 +615,7 @@ index fff5f43..23d0bcf 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["section"],
  				children: [
-@@ -2001,24 +2181,66 @@ window.__ModuleLoader__.load({
+@@ -2001,24 +2315,66 @@ window.__ModuleLoader__.load({
  							className: ModelsSection_module_css_default["addCard"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["field"],
@@ -560,7 +697,7 @@ index fff5f43..23d0bcf 100644
  							}), (0, react_jsx_runtime.jsx)(ProviderEditor, {
  								provider: addTarget.provider,
  								displayName: addTarget.displayName,
-@@ -2062,6 +2284,8 @@ window.__ModuleLoader__.load({
+@@ -2062,6 +2418,8 @@ window.__ModuleLoader__.load({
  									setDeclaring(false);
  									setAdding(true);
  									setEditing(targetOf(first));
@@ -569,7 +706,7 @@ index fff5f43..23d0bcf 100644
  								},
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
  							}), (0, react_jsx_runtime.jsxs)("button", {
-@@ -2170,7 +2394,7 @@ window.__ModuleLoader__.load({
+@@ -2170,7 +2528,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.module.css.mjs
@@ -578,7 +715,7 @@ index fff5f43..23d0bcf 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2181,6 +2405,12 @@ window.__ModuleLoader__.load({
+@@ -2181,6 +2539,12 @@ window.__ModuleLoader__.load({
  		}
  		var DeepSeekOnboardingDialog_module_css_default = {
  			"description": "GL8Viq_description",
@@ -591,7 +728,7 @@ index fff5f43..23d0bcf 100644
  			"editor": "GL8Viq_editor"
  		};
  		//#endregion
-@@ -2196,35 +2426,50 @@ window.__ModuleLoader__.load({
+@@ -2196,35 +2560,50 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -660,7 +797,7 @@ index fff5f43..23d0bcf 100644
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2237,26 +2482,48 @@ window.__ModuleLoader__.load({
+@@ -2237,26 +2616,48 @@ window.__ModuleLoader__.load({
  				children: [(0, react_jsx_runtime.jsx)("p", {
  					className: DeepSeekOnboardingDialog_module_css_default.description,
  					children: t("onboardingDescription")
@@ -712,7 +849,7 @@ index fff5f43..23d0bcf 100644
  				})]
  			});
  		}
-@@ -2520,6 +2787,8 @@ window.__ModuleLoader__.load({
+@@ -2520,6 +2921,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -721,7 +858,7 @@ index fff5f43..23d0bcf 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2551,7 +2820,12 @@ window.__ModuleLoader__.load({
+@@ -2551,7 +2954,16 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "Uses the provider default",
  			maxTokens: "Max output tokens",
  			maxTokensPlaceholder: "Uses the provider default",
@@ -732,10 +869,14 @@ index fff5f43..23d0bcf 100644
 +			modelImageInputHint: "Declare that this model accepts images; the endpoint must support them.",
 +			modelSearch: "Search models",
 +			modelSearchEmpty: "No matching models.",
++			modelReasoningLevels: "Reasoning effort levels",
++			modelReasoningLevelsPlaceholder: "e.g. low, medium, high",
++			modelReasoningLevelsHint: "Comma-separated. Leave blank to disable effort selection in chat.",
++			modelReasoningDefault: "Default effort",
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2595,10 +2869,14 @@ window.__ModuleLoader__.load({
+@@ -2595,10 +3007,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.en.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.en.continueLabel,
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -753,7 +894,7 @@ index fff5f43..23d0bcf 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2618,6 +2896,8 @@ window.__ModuleLoader__.load({
+@@ -2618,6 +3034,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -762,7 +903,7 @@ index fff5f43..23d0bcf 100644
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2649,7 +2929,12 @@ window.__ModuleLoader__.load({
+@@ -2649,7 +3067,16 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "使用提供方默认值",
  			maxTokens: "最大输出 token 数",
  			maxTokensPlaceholder: "使用提供方默认值",
@@ -773,10 +914,14 @@ index fff5f43..23d0bcf 100644
 +			modelImageInputHint: "声明该模型可接收图片；请确认接口实际支持。",
 +			modelSearch: "搜索模型",
 +			modelSearchEmpty: "没有找到匹配的模型。",
++			modelReasoningLevels: "推理等级",
++			modelReasoningLevelsPlaceholder: "例如：low, medium, high",
++			modelReasoningLevelsHint: "使用英文逗号分隔；留空则关闭会话中的推理等级选择。",
++			modelReasoningDefault: "默认等级",
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2693,10 +2978,14 @@ window.__ModuleLoader__.load({
+@@ -2693,10 +3120,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: WELCOME_NOTICE_COPY.zh.body,
  			welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
  			welcomeError: "暂时无法保存确认状态，请重试。",
