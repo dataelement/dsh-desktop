@@ -630,6 +630,82 @@ describe('sherlock-preview protocol responses', () => {
     expect(access.reads()).toBe(0)
   })
 
+  it.each([
+    {
+      label: 'missing main window',
+      method: 'GET',
+      window: undefined
+    },
+    {
+      label: 'destroyed main window',
+      method: 'HEAD',
+      window: {
+        isDestroyed: () => true,
+        webContents: { getURL: () => 'http://127.0.0.1:45821/research' }
+      }
+    },
+    {
+      label: 'external HTTP page',
+      method: 'GET',
+      window: {
+        isDestroyed: () => false,
+        webContents: { getURL: () => 'http://example.com/research' }
+      }
+    },
+    {
+      label: 'local file page',
+      method: 'GET',
+      window: {
+        isDestroyed: () => false,
+        webContents: { getURL: () => 'file:///Applications/Sherlock/splash.html' }
+      }
+    },
+    {
+      label: 'recovery page',
+      method: 'HEAD',
+      window: {
+        isDestroyed: () => false,
+        webContents: { getURL: () => 'dsh-recovery://plugin-error/' }
+      }
+    },
+    {
+      label: 'non-Harness HTTPS page',
+      method: 'HEAD',
+      window: {
+        isDestroyed: () => false,
+        webContents: { getURL: () => 'https://127.0.0.1:45821/research' }
+      }
+    }
+  ])('rejects a no-Origin $method before file access for $label', async ({ method, window }) => {
+    const root = await temporaryDirectory()
+    const filePath = path.join(root, 'portrait.png')
+    await writeFile(filePath, pngBytes)
+    const access = countingRealFileSystem()
+    const registry = new ResearchFilePreviewRegistry({
+      storage: new ControllableAuthorizationStorage(),
+      fileSystem: access.fileSystem,
+      randomId: deterministicIds(
+        'authorization_0000000000000001',
+        'capability_0000000000000001'
+      )
+    })
+    const descriptor = await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'node-1'
+    })
+    expectDescriptor(descriptor)
+
+    access.reset()
+    const response = await handleResearchFilePreviewProtocolRequest(
+      registry,
+      () => window,
+      new Request(descriptor.url, { method })
+    )
+    expect(response.status).toBe(403)
+    expect(access.reads()).toBe(0)
+  })
+
   it('answers a narrow Range preflight and exposes range metadata to the allowed origin', async () => {
     const { registry, root } = await fixture()
     const filePath = path.join(root, 'report.pdf')

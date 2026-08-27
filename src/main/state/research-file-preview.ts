@@ -746,7 +746,11 @@ export function handleResearchFilePreviewProtocolRequest(
   getMainWindow: () => ResearchPreviewProtocolWindow | undefined,
   request: Request
 ): Promise<Response> {
-  return registry.handle(request, researchPreviewOriginForWindow(getMainWindow()))
+  const allowedOrigin = researchPreviewOriginForWindow(getMainWindow())
+  if (!allowedOrigin) {
+    return Promise.resolve(errorResponse(403, 'Preview window denied.'))
+  }
+  return registry.handle(request, allowedOrigin)
 }
 
 type ResearchPreviewIpcMain = {

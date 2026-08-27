@@ -111,3 +111,20 @@ exit 0
 ```
 
 当前仓库没有小型 Electron/Chromium CORS 集成 harness，因此本轮用真实 service、真实文件访问和生产 origin wrapper 验证边界；Task 7 仍需在本地构建的真实 Sherlock 中用 PDF.js 验证动态端口的 Range fetch。
+
+## Review fix round 2/5
+
+评审继续验证发现：round 1 的 `researchPreviewOriginForWindow()` 会对缺失、已销毁或非可信 URL 的窗口返回 `null`，但 production wrapper 仍把 `null` 交给 registry；无 Origin 导航因此绕过 CORS 分支并读取文件。
+
+先新增六组零读取回归，覆盖：
+
+- main window 缺失；
+- main window 已销毁；
+- 外部 HTTP URL；
+- `file:` URL；
+- `dsh-recovery:` URL；
+- loopback HTTPS 等其他非 Harness HTTP URL。
+
+GET 与 HEAD 均有覆盖。RED 时六组都实际返回 200；修复后 production wrapper 在无法取得可信 Harness HTTP origin 时直接返回 403，完全不会进入 registry，因此 capability/path 与注入 filesystem 的 `realpath/stat/readSlice/stream` 调用数均为 0。可信窗口下无 Origin 的 image/iframe navigation 仍由已有测试保持为 200。
+
+本轮提交信息：`拒绝无可信窗口的研究预览`。
