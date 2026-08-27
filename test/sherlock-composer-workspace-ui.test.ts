@@ -436,30 +436,62 @@ async function mountConversationRoot(
         accessory?: unknown
         researchFileReferences?: Array<{ id: string; name: string; path?: string }>
         footer?: unknown
+        variant?: 'hero' | 'composer'
       } | undefined
+      const references = composerOwner?.researchFileReferences ?? []
+      const draft = input.get().draft
+      const rootClass = composerOwner?.variant === 'hero'
+        ? 'uV2eYG_root uV2eYG_hero'
+        : 'uV2eYG_root'
       return createElement('div', {
         'data-test-composer-bar': '',
         'data-test-composer-has-accessory': composerOwner?.accessory === undefined
           ? 'false'
-          : 'true'
+          : 'true',
+        className: rootClass
       },
         composerOwner?.accessory,
-        createElement('span', { 'data-test-inline-reference-layer': '' },
-          ...(composerOwner?.researchFileReferences ?? []).map((file) => createElement('span', {
-            key: file.id,
-            'data-research-file-tag': file.id,
-            'data-reference-source': 'research-file',
-            'aria-invalid': file.path === undefined ? 'true' : undefined
-          }, file.name.split(/[\\/]/).at(-1)))
+        createElement('div', { className: 'uV2eYG_card' },
+          createElement('div', { className: 'uV2eYG_scroll' },
+            createElement('div', { className: 'uV2eYG_grow' },
+              createElement('div', {
+                className: 'uV2eYG_backdrop',
+                'data-input-backdrop': '',
+                'data-test-inline-reference-layer': ''
+              },
+                ...draft.split('\n').flatMap((line, index) => [
+                  index > 0 ? '\n' : '',
+                  line,
+                  ...(index === draft.split('\n').length - 1 ? [
+                    ...references.map((file) => createElement('span', {
+                      key: `${file.id}-${index}`,
+                      'data-research-file-tag': file.id,
+                      'data-reference-source': 'research-file',
+                      'aria-invalid': file.path === undefined ? 'true' : undefined
+                    }, file.name.split(/[\\/]/).at(-1)))
+                  ] : [])
+                ])
+              ),
+              createElement('textarea', {
+                className: 'uV2eYG_input',
+                defaultValue: draft,
+                'data-input-machine-snapshot': draft
+              }),
+              createElement('div', {
+                className: 'uV2eYG_mirror',
+                'data-input-mirror': ''
+              }, `${draft}\n`)
+            )
+          ),
+          createElement('div', { className: 'uV2eYG_row' },
+            createElement('span', null,
+              ...input.get().images.map((image) => createElement('span', {
+                key: image.id,
+                'data-composer-image-id': image.id
+              }))
+            )
+          )
         ),
-        ...input.get().images.map((image) => createElement('span', {
-          key: image.id,
-          'data-composer-image-id': image.id
-        })),
-        createElement('textarea', {
-          defaultValue: input.get().draft,
-          'data-input-machine-snapshot': input.get().draft
-        }),
         composerOwner?.footer
       )
     }
@@ -3072,6 +3104,112 @@ describe('Sherlock workspace and composer controls', () => {
     } finally {
       await mounted.cleanup()
     }
+  })
+
+  it('keeps shared composer height and horizontal geometry across Chat and Research portals', async () => {
+    const mounted = await mountConversationRoot('chat')
+    try {
+      const { actions, browserWindow, host, input, detailsPortalHost } = mounted
+      const textarea = host.querySelector('textarea')
+      const backdrop = host.querySelector('[data-input-backdrop]')
+      const mirror = host.querySelector('[data-input-mirror]')
+      expect(textarea).not.toBeNull()
+      expect(backdrop).not.toBeNull()
+      expect(mirror).not.toBeNull()
+      if (!(textarea instanceof browserWindow.HTMLTextAreaElement) ||
+          backdrop === null || mirror === null) return
+      const centerComposerHost = host.querySelector('[data-center-composer-host]')
+      const composerPortalHost = host.querySelector('[data-composer-portal-host]')
+      const composerSeat = host.querySelector('[data-composer-seat]')
+      const composerRoot = host.querySelector('.uV2eYG_root')
+      const composerCard = host.querySelector('.uV2eYG_card')
+      const composerRow = host.querySelector('.uV2eYG_row')
+      expect(centerComposerHost).not.toBeNull()
+      expect(composerPortalHost).not.toBeNull()
+      expect(composerSeat).not.toBeNull()
+      expect(composerRoot).not.toBeNull()
+      expect(composerCard).not.toBeNull()
+      expect(composerRow).not.toBeNull()
+      if (centerComposerHost === null || composerPortalHost === null ||
+          composerSeat === null || composerRoot === null ||
+          composerCard === null || composerRow === null) return
+      expect(centerComposerHost.contains(composerPortalHost)).toBe(true)
+      expect(composerPortalHost.contains(composerSeat)).toBe(true)
+      expect(composerSeat.contains(composerRoot)).toBe(true)
+      expect(composerRoot.contains(composerCard)).toBe(true)
+      expect(composerCard.contains(composerRow)).toBe(true)
+      expect(composerCard.contains(textarea)).toBe(true)
+
+      await act(async () => { input.update({ draft: '第一行\n第二行' }) })
+
+      const initialStyle = browserWindow.getComputedStyle(textarea)
+      const horizontalGeometry = {
+        width: initialStyle.width,
+        maxWidth: initialStyle.maxWidth,
+        paddingLeft: initialStyle.paddingLeft,
+        paddingRight: initialStyle.paddingRight
+      }
+      expect(initialStyle.paddingBottom).toBe('8px')
+      expect(browserWindow.getComputedStyle(backdrop).paddingBottom).toBe('8px')
+      expect(browserWindow.getComputedStyle(mirror).paddingBottom).toBe('8px')
+
+      await act(async () => { actions.setView('research') })
+      const researchTextarea = browserWindow.document.querySelector('textarea')
+      expect(researchTextarea).toBe(textarea)
+      const researchPortalHost = detailsPortalHost.querySelector('[data-composer-portal-host]')
+      const researchSeat = detailsPortalHost.querySelector('[data-composer-seat]')
+      const researchRoot = detailsPortalHost.querySelector('.uV2eYG_root')
+      const researchCard = detailsPortalHost.querySelector('.uV2eYG_card')
+      const researchRow = detailsPortalHost.querySelector('.uV2eYG_row')
+      expect(researchPortalHost).toBe(composerPortalHost)
+      expect(researchSeat).not.toBeNull()
+      expect(researchRoot).not.toBeNull()
+      expect(researchCard).not.toBeNull()
+      expect(researchRow).not.toBeNull()
+      if (researchSeat === null || researchRoot === null ||
+          researchCard === null || researchRow === null) return
+      expect(detailsPortalHost.contains(researchPortalHost)).toBe(true)
+      expect(researchPortalHost.contains(researchSeat)).toBe(true)
+      expect(researchSeat.contains(researchRoot)).toBe(true)
+      expect(researchRoot.contains(researchCard)).toBe(true)
+      expect(researchCard.contains(researchRow)).toBe(true)
+      expect(researchCard.contains(textarea)).toBe(true)
+      expect(detailsPortalHost.querySelector('[data-input-backdrop]')).not.toBeNull()
+      expect(detailsPortalHost.querySelector('[data-input-mirror]')).not.toBeNull()
+      const researchBackdrop = detailsPortalHost.querySelector('[data-input-backdrop]')
+      expect(researchBackdrop?.querySelectorAll('[data-research-file-tag]')).toHaveLength(2)
+      expect(researchBackdrop?.textContent).toContain('第二行')
+      expect(researchBackdrop?.textContent).toContain('evidence.pdf')
+      expect(researchBackdrop?.textContent).toContain('unresolved.txt')
+      const researchStyle = browserWindow.getComputedStyle(textarea)
+      expect({
+        width: researchStyle.width,
+        maxWidth: researchStyle.maxWidth,
+        paddingLeft: researchStyle.paddingLeft,
+        paddingRight: researchStyle.paddingRight
+      }).toEqual(horizontalGeometry)
+      expect(researchStyle.paddingBottom).toBe('8px')
+      expect(browserWindow.getComputedStyle(
+        detailsPortalHost.querySelector('[data-input-backdrop]') as Element
+      ).paddingBottom).toBe('8px')
+      expect(browserWindow.getComputedStyle(
+        detailsPortalHost.querySelector('[data-input-mirror]') as Element
+      ).paddingBottom).toBe('8px')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps the Hero mirror tall enough for the shared multiline decoration', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const inputBarCss = styles.find(({ pluginCss }) =>
+      pluginCss?.endsWith('/InputBar.module.css')
+    )?.textContent ?? ''
+    expect(inputBarCss).toContain(
+      '.uV2eYG_input,.uV2eYG_mirror,.uV2eYG_backdrop{box-sizing:border-box;font-family:\"DshChipCell\", var(--dsw-font-family);font-size:inherit;line-height:inherit;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;padding:4px 12px 8px 16px}'
+    )
+    expect(inputBarCss).toContain('.uV2eYG_hero .uV2eYG_mirror{min-height:60px}')
   })
 
   it('keeps the main Chat composer outside the scrolling message region', async () => {
