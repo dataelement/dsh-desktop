@@ -38,6 +38,7 @@ async function loadClientBundle(
   let descriptor: BundleDescriptor | undefined
 
   runInNewContext(source, {
+    AbortController: globalThis.AbortController,
     window: {
       dshDesktop,
       __ModuleLoader__: {
@@ -79,6 +80,19 @@ function deferred<T>() {
     reject = rejectPromise
   })
   return { promise, reject, resolve }
+}
+
+async function serializedResearchReferences(
+  client: ClientBundle,
+  files: Array<{ id: string; name: string; path?: string }>,
+  text = ''
+) {
+  const signal = new AbortController().signal
+  const markers = await Promise.all(files.map((file) => {
+    const reference = client.researchFileReference(file)
+    return client.researchFileReferenceCodec.serialize(reference.ref, signal)
+  }))
+  return `${markers.join('')}${text}`
 }
 
 function createSnapshotStore<T>(initial: T) {
@@ -159,6 +173,120 @@ describe('Research canvas file drops', () => {
     expect(client.parseResearchPrompt(prompt)).toEqual({
       text: 'inspect this',
       files
+    })
+  })
+
+  it('round-trips inline Research file positions without exposing internal markers', async () => {
+    const client = await loadConversationClient()
+    expect(client.serializeResearchPrompt).toBeTypeOf('function')
+    expect(client.parseResearchPrompt).toBeTypeOf('function')
+    if (typeof client.serializeResearchPrompt !== 'function' ||
+        typeof client.parseResearchPrompt !== 'function') return
+
+    const files = [
+      { id: 'f1', name: 'logo.svg', path: '/w/logo.svg' },
+      { id: 'f2', name: 'brief.pdf', path: '/w/brief.pdf' }
+    ]
+    const occurrences = [
+      { fileId: 'f1', offset: 2 },
+      { fileId: 'f2', offset: 5 }
+    ]
+    const prompt = client.serializeResearchPrompt(files, '请参考和设计', occurrences) as string
+
+    expect(client.parseResearchPrompt(prompt)).toEqual({
+      text: '请参考和设计',
+      files,
+      occurrences
+    })
+    expect(prompt).not.toContain('SHERLOCK_RESEARCH_FILE_REFERENCE_V1')
+  })
+
+  it('inserts selected Research files into the native text flow and keeps deletion user-owned', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    expect(client.syncResearchFileReferences).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function' ||
+        typeof client.syncResearchFileReferences !== 'function') return
+
+    const shell = new client.SessionInputShell({
+      actx: {},
+      defaultSink: () => undefined
+    })
+    shell.setDraft('我有一个需求')
+    const seen = new Set<string>()
+    const files = [
+      { id: 'f1', name: '/w/logo.svg', path: '/w/logo.svg', source: 'computer' },
+      { id: 'f2', name: 'brief.pdf', path: '/w/brief.pdf', source: 'computer' }
+    ]
+
+    const first = client.syncResearchFileReferences(
+      shell, files, seen, { start: 2, end: 2 }, true
+    )
+    expect(first.inserted).toEqual(['f1', 'f2'])
+    expect(shell.snapshot.occurrences.map((item: { source: string; ref: string }) => ({
+      source: item.source,
+      file: JSON.parse(item.ref).id
+    }))).toEqual([
+      { source: 'research-file', file: 'f1' },
+      { source: 'research-file', file: 'f2' }
+    ])
+    expect(shell.snapshot.draft.startsWith('我有')).toBe(true)
+    expect(shell.snapshot.draft).toContain('\uFFFC')
+    expect(shell.snapshot.draft.endsWith('一个需求')).toBe(true)
+
+    const removed = shell.snapshot.occurrences[0]
+    shell.setDraft(
+      shell.snapshot.draft.slice(0, removed.offset) + shell.snapshot.draft.slice(removed.offset + 1),
+      { start: removed.offset, end: removed.offset + 1, insertedLength: 0 }
+    )
+    client.syncResearchFileReferences(
+      shell, files, seen,
+      { start: shell.snapshot.draft.length, end: shell.snapshot.draft.length }, true
+    )
+    expect(shell.snapshot.occurrences.map((item: { ref: string }) => JSON.parse(item.ref).id))
+      .toEqual(['f2'])
+
+    client.syncResearchFileReferences(
+      shell, [], seen,
+      { start: shell.snapshot.draft.length, end: shell.snapshot.draft.length }, false
+    )
+    expect(shell.snapshot.occurrences).toEqual([])
+    expect(shell.snapshot.draft).not.toContain('\uFFFC')
+
+    const second = client.syncResearchFileReferences(
+      shell, [files[0]], seen,
+      { start: shell.snapshot.draft.length, end: shell.snapshot.draft.length }, true
+    )
+    expect(second.inserted).toEqual(['f1'])
+  })
+
+  it('serializes and extracts bounded inline Research reference markers in occurrence order', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchFileReference).toBeTypeOf('function')
+    expect(client.researchFileReferenceCodec?.serialize).toBeTypeOf('function')
+    expect(client.extractResearchFileReferences).toBeTypeOf('function')
+    if (typeof client.researchFileReference !== 'function' ||
+        typeof client.researchFileReferenceCodec?.serialize !== 'function' ||
+        typeof client.extractResearchFileReferences !== 'function') return
+
+    const file = { id: 'f1', name: '/w/report.pdf', path: '/w/report.pdf', source: 'computer' }
+    const reference = client.researchFileReference(file)
+    expect(reference).toMatchObject({
+      source: 'research-file',
+      label: 'report.pdf',
+      clipboardText: 'report.pdf'
+    })
+    const marker = await client.researchFileReferenceCodec.serialize(
+      reference.ref, new AbortController().signal
+    )
+    const extracted = client.extractResearchFileReferences(`前文${marker}后文`)
+
+    expect(extracted).toEqual({
+      text: '前文后文',
+      files: [{ id: 'f1', name: 'report.pdf', path: '/w/report.pdf' }],
+      occurrences: [{ fileId: 'f1', offset: 2 }]
     })
   })
 
@@ -950,27 +1078,49 @@ describe('Research canvas file drops', () => {
     expect(hub.setResearchActive).toBeTypeOf('function')
     hub.setResearchActive('s1', true)
 
-    let draft = 'compare these'
+    const referencedFiles = [
+      { id: 'f2', name: 'two.pdf', path: '/w/two.pdf' },
+      { id: 'f1', name: 'one.pdf', path: '/w/one.pdf' }
+    ]
+    const serializedDraft = await serializedResearchReferences(
+      client, referencedFiles, 'compare these'
+    )
+    let draft = '\uFFFC\uFFFCcompare these'
+    let draftRev = 1
+    let occurrences = referencedFiles.map((file, index) => ({
+      occurrenceId: index + 1,
+      source: 'research-file',
+      ref: JSON.stringify(file),
+      offset: index,
+      label: file.name,
+      clipboardText: file.name
+    }))
     let imageIds = ['i1']
     const notices: string[] = []
     const shell = {
-      get snapshot() { return { draft, imageIds: [...imageIds] } },
+      get snapshot() { return { draft, draftRev, occurrences, imageIds: [...imageIds] } },
       commitSend(admitted: string[]) {
         const sent = new Set(admitted)
         imageIds = imageIds.filter((id) => !sent.has(id))
         draft = ''
+        occurrences = []
+        draftRev += 1
       },
       restoreImages(admitted: string[]) {
         const sent = new Set(admitted)
         imageIds = [...admitted, ...imageIds.filter((id) => !sent.has(id))]
       },
-      setDraft(text: string) { draft = text },
+      restoreDraftState(state: { draft: string; occurrences: typeof occurrences }) {
+        draft = state.draft
+        occurrences = state.occurrences
+        draftRev += 1
+      },
       notify(_level: string, text: string) { notices.push(text) }
     }
     hub.shells.set('s1', shell)
     const session = { sessionId: 's1' }
 
-    const operation = hub.sink(session, draft, [...imageIds], 'queue')
+    const operation = hub.sink(session, serializedDraft, [...imageIds], 'queue')
     await vi.waitFor(() => { expect(sendSession).toHaveBeenCalledTimes(1) })
 
     expect(available).toHaveBeenCalledWith(['/w/two.pdf', '/w/one.pdf'])
@@ -993,7 +1143,8 @@ describe('Research canvas file drops', () => {
     sendGate.reject(new Error('send failed'))
     await operation
 
-    expect(draft).toBe('compare these')
+    expect(draft).toBe('\uFFFC\uFFFCcompare these')
+    expect(occurrences).toHaveLength(2)
     expect(imageIds).toEqual(['i1', 'i2'])
     expect(registry.for('s1').selectionSnapshot()).toEqual({
       selectedNodeIds: ['f1', 'f2'], orderedFileIds: ['f2', 'f1']
@@ -1040,24 +1191,43 @@ describe('Research canvas file drops', () => {
           : undefined
       }, (key: string) => key, registry)
       hub.setResearchActive(sessionId, true)
-      let draft: string = fixture.draft
+      const file = {
+        id: 'f1', name: 'report.pdf',
+        ...(fixture.path === undefined ? {} : { path: fixture.path })
+      }
+      const serializedDraft = await serializedResearchReferences(client, [file], fixture.draft)
+      const admittedDraft = `\uFFFC${fixture.draft}`
+      let draft: string = admittedDraft
+      let draftRev = 1
+      let occurrences = [{
+        occurrenceId: 1,
+        source: 'research-file',
+        ref: JSON.stringify(file),
+        offset: 0,
+        label: file.name,
+        clipboardText: file.name
+      }]
       let imageIds: string[] = [...fixture.images]
       const notices: string[] = []
       const shell = {
-        get snapshot() { return { draft, imageIds } },
-        commitSend() { draft = ''; imageIds = [] },
+        get snapshot() { return { draft, draftRev, occurrences, imageIds } },
+        commitSend() { draft = ''; occurrences = []; imageIds = []; draftRev += 1 },
         restoreImages() {},
-        setDraft(text: string) { draft = text },
+        restoreDraftState(state: { draft: string; occurrences: typeof occurrences }) {
+          draft = state.draft
+          occurrences = state.occurrences
+          draftRev += 1
+        },
         notify(_level: string, text: string) { notices.push(text) }
       }
       hub.shells.set(sessionId, shell)
 
-      await hub.sink({ sessionId }, draft, [...imageIds], 'queue')
+      await hub.sink({ sessionId }, serializedDraft, [...imageIds], 'queue')
 
       expect(sendSession).toHaveBeenCalledTimes(fixture.sends)
       expect(registry.for(sessionId).selectionSnapshot().orderedFileIds)
         .toEqual(fixture.cleared ? [] : ['f1'])
-      expect(draft).toBe(fixture.cleared ? '' : fixture.draft)
+      expect(draft).toBe(fixture.cleared ? '' : admittedDraft)
       expect(imageIds).toEqual(fixture.cleared ? [] : fixture.images)
       expect(notices.length > 0).toBe(!fixture.cleared)
     }
@@ -1074,11 +1244,12 @@ describe('Research canvas file drops', () => {
     }, (key: string) => key, registry)
     const session = { sessionId: 's-edited' }
     let draft = 'first draft'
+    let draftRev = 1
     const shell = {
-      get snapshot() { return { draft, imageIds: [] } },
-      commitSend() { draft = '' },
+      get snapshot() { return { draft, draftRev, occurrences: [], imageIds: [] } },
+      commitSend() { draft = ''; draftRev += 1 },
       restoreImages() {},
-      setDraft(text: string) { draft = text },
+      restoreDraftState(state: { draft: string }) { draft = state.draft; draftRev += 1 },
       notify() {}
     }
     hub.shells.set(session.sessionId, shell)
@@ -1105,10 +1276,11 @@ describe('Research canvas file drops', () => {
     let draft = 'first draft'
     let draftRev = 1
     const shell = {
-      get snapshot() { return { draft, draftRev, imageIds: [] } },
+      get snapshot() { return { draft, draftRev, occurrences: [], imageIds: [] } },
       commitSend() { draft = ''; draftRev += 1 },
       restoreImages() {},
       setDraft(text: string) { draft = text; draftRev += 1 },
+      restoreDraftState(state: { draft: string }) { draft = state.draft; draftRev += 1 },
       notify() {}
     }
     hub.shells.set(session.sessionId, shell)
@@ -1123,7 +1295,7 @@ describe('Research canvas file drops', () => {
     expect(draft).toBe('')
   })
 
-  it('lets the input shell submit selected Research files without text or images', async () => {
+  it('lets the input shell submit a file-only native Research reference', async () => {
     const client = await loadClientBundle('dsh-client-ui-conversation', {
       '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore }
     })
@@ -1132,16 +1304,33 @@ describe('Research canvas file drops', () => {
     const sends: Array<{ text: string, images: string[], mode: string }> = []
     const shell = new client.SessionInputShell({
       actx: {},
-      hasExternalAttachments: () => true,
+      inputTriggers: () => ({
+        adjudicate: async () => undefined,
+        serializeReference: (_source: string, ref: string, signal: AbortSignal) =>
+          client.researchFileReferenceCodec.serialize(ref, signal),
+        dismiss: () => undefined,
+        track: () => undefined
+      }),
       defaultSink: (text: string, images: string[], mode: string) => {
         sends.push({ text, images, mode })
       }
     })
 
+    shell.insertReference(
+      client.researchFileReference({ id: 'f1', name: 'report.pdf', path: '/w/report.pdf' }),
+      { start: 0, end: 0, draftRev: shell.snapshot.draftRev }
+    )
+
     shell.submit('queue')
 
-    expect(sends).toEqual([{ text: '', images: [], mode: 'queue' }])
-    expect(shell.snapshot.draft).toBe('')
+    await vi.waitFor(() => { expect(sends).toHaveLength(1) })
+    expect(client.extractResearchFileReferences(sends[0]?.text)).toEqual({
+      text: '',
+      files: [{ id: 'f1', name: 'report.pdf', path: '/w/report.pdf' }],
+      occurrences: [{ fileId: 'f1', offset: 0 }]
+    })
+    expect(sends[0]).toMatchObject({ images: [], mode: 'queue' })
+    expect(shell.snapshot.draft).toContain('\uFFFC')
     expect(shell.snapshot.imageIds).toEqual([])
   })
 

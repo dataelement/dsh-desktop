@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..246e785 100644
+index 1dd0e89..32a5c54 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -56,7 +56,35 @@ index 1dd0e89..246e785 100644
  		/** The machine never writes the queue; the wiring layer overlays the queue store's projection. */
  		const EMPTY_QUEUE$1 = [];
  		/** Undo ring depth (bounded self-managed transaction log). */
-@@ -969,8 +993,9 @@ window.__ModuleLoader__.load({
+@@ -455,6 +479,7 @@ window.__ModuleLoader__.load({
+ 					case "invalidate-paste":
+ 						this.paste = void 0;
+ 						return [];
++					case "restore-draft": return this.onRestoreDraft(ev.draft, ev.occurrences);
+ 					case "enter": return this.onEnter(ev.mode);
+ 					case "adjudicated": return this.onAdjudicated(ev.attempt, ev.outcome);
+ 					case "adjudication-failed": return this.onAdjudicationFailed(ev.attempt, ev.message);
+@@ -670,6 +695,19 @@ window.__ModuleLoader__.load({
+ 				this.paste = void 0;
+ 				return [];
+ 			}
++			/** Restore one failed optimistic send, including native reference occurrences. */
++			onRestoreDraft(draft, occurrences) {
++				this.phase = "plain";
++				this.claim = void 0;
++				this.occurrences = occurrences.map((occurrence) => ({ ...occurrence }));
++				this.occurrenceSeq = Math.max(this.occurrenceSeq, ...this.occurrences.map((occurrence) => occurrence.occurrenceId), 0);
++				this.adopt(draft);
++				this.log = [];
++				this.redoStack = [];
++				this.typingRun = void 0;
++				this.paste = void 0;
++				return [];
++			}
+ 			/**
+ 			* Paste as one transaction: the text (U+FFFC-sanitized) replaces the
+ 			* selection; hot-snapshot sync matches componentize inside the SAME
+@@ -969,20 +1007,30 @@ window.__ModuleLoader__.load({
  			* @param ids - failed attempt image ids.
  			*/
  			restoreImages(ids) {
@@ -67,8 +95,17 @@ index 1dd0e89..246e785 100644
 +				this.imageIds = [...admitted, ...this.imageIds.filter((id, index, current) => !admittedSet.has(id) && current.indexOf(id) === index)];
  				this.publish();
  			}
++			/** Restore the exact native draft state after an optimistic send fails. */
++			restoreDraftState(snapshot) {
++				this.run(this.core.dispatch({
++					type: "restore-draft",
++					draft: snapshot.draft,
++					occurrences: snapshot.occurrences
++				}));
++			}
  			/**
-@@ -979,10 +1004,11 @@ window.__ModuleLoader__.load({
+ 			* Clear the draft as a successful-send commit: no undo unit is recorded and
+ 			* the undo history is cut, so Ctrl/Cmd-Z cannot resurrect sent content
  			* (the command path gets the same discipline from submit-settled success).
  			* @param imageIds - admitted image ids to remove from this draft.
  			*/
@@ -82,16 +119,7 @@ index 1dd0e89..246e785 100644
  			}
  			/** Undo the latest transaction (InputBar intercepts the platform chord). */
  			undo() {
-@@ -1020,7 +1046,7 @@ window.__ModuleLoader__.load({
- 			* dismisses and the menu tracks frozen.
- 			*/
- 			submit(mode = "queue") {
--				if (this.snapshot.draft.trim() === "" && this.imageIds.length > 0) {
-+				if (this.snapshot.draft.trim() === "" && (this.imageIds.length > 0 || this.deps.hasExternalAttachments?.() === true)) {
- 					if (this.snapshot.phase === "plain") this.deps.defaultSink("", [...this.imageIds], mode);
- 					return;
- 				}
-@@ -1334,14 +1360,21 @@ window.__ModuleLoader__.load({
+@@ -1334,14 +1382,21 @@ window.__ModuleLoader__.load({
  		var InputHub = class {
  			rootCtx;
  			t;
@@ -114,15 +142,7 @@ index 1dd0e89..246e785 100644
  			}
  			/**
  			* Resolve the facade for one session-scope ctx (SessionInputResolver face).
-@@ -1373,6 +1406,7 @@ window.__ModuleLoader__.load({
- 					defaultSink: (text, imageIds, mode) => {
- 						this.sink(session, text, imageIds, mode);
- 					},
-+					hasExternalAttachments: () => this.researchActiveSessions.has(id) && this.researchWorkspaces.for(id).selectedFiles().length > 0,
- 					steerQueue: () => {
- 						this.steerQueue(session, shell);
- 					}
-@@ -1390,6 +1424,7 @@ window.__ModuleLoader__.load({
+@@ -1390,6 +1445,7 @@ window.__ModuleLoader__.load({
  						const drafts = shell.snapshot.imageIds;
  						shell.dispose();
  						this.shells.delete(id);
@@ -130,7 +150,7 @@ index 1dd0e89..246e785 100644
  						const conversation = this.rootCtx.get("conversation");
  						for (const imageId of drafts) conversation?.releaseDraftImage(imageId);
  					};
-@@ -1435,19 +1470,56 @@ window.__ModuleLoader__.load({
+@@ -1435,19 +1491,68 @@ window.__ModuleLoader__.load({
  			* exactly one path; a failed first prompt is an ordinary prompt failure
  			* (error strip via promptError, draft restored only while untouched).
  			*/
@@ -142,12 +162,24 @@ index 1dd0e89..246e785 100644
 -				this.conversation().sendSession(session, text, imageIds, mode).catch(() => {
 +				const workspace = this.researchWorkspaces.for(session.sessionId);
 +				const researchActive = this.researchActiveSessions.has(session.sessionId);
-+				const selection = researchActive ? workspace.selectionSnapshot() : { selectedNodeIds: [], orderedFileIds: [] };
++				const inline = extractResearchFileReferences(text);
++				const files = researchActive ? inline.files : [];
++				const referencedIds = /* @__PURE__ */ new Set(files.map((file) => file.id));
++				const currentSelection = researchActive ? workspace.selectionSnapshot() : { selectedNodeIds: [], orderedFileIds: [] };
++				const selection = {
++					selectedNodeIds: currentSelection.selectedNodeIds.filter((id) => referencedIds.has(id)),
++					orderedFileIds: currentSelection.orderedFileIds.filter((id) => referencedIds.has(id))
++				};
++				const shellSnapshot = shell?.snapshot;
 +				const attempt = {
-+					text,
-+					draft: shell?.snapshot.draft ?? text,
++					text: inline.text,
++					draftState: {
++						draft: shellSnapshot?.draft ?? inline.text,
++						occurrences: shellSnapshot?.occurrences?.map((occurrence) => ({ ...occurrence })) ?? []
++					},
 +					imageIds: [...imageIds],
-+					files: researchActive ? workspace.selectedFiles().map((file) => ({ ...file })) : [],
++					files,
++					occurrences: researchActive ? inline.occurrences : [],
 +					selection,
 +					session,
 +					mode
@@ -172,19 +204,19 @@ index 1dd0e89..246e785 100644
 +					id: file.id,
 +					name: researchPromptBasename(file.name),
 +					path: file.path
-+				})), attempt.text);
-+				shell?.commitSend(attempt.imageIds, attempt.draft);
++				})), attempt.text, attempt.occurrences);
++				shell?.commitSend(attempt.imageIds, attempt.draftState.draft);
 +				const committedDraftRev = shell?.snapshot.draftRev;
-+				if (researchActive) workspace.commitSelection(attempt.selection);
++				if (researchActive && attempt.selection.selectedNodeIds.length > 0) workspace.commitSelection(attempt.selection);
 +				try {
 +					await this.conversation().sendSession(attempt.session, prompt, attempt.imageIds, attempt.mode);
 +				} catch {
-+					if (researchActive) workspace.restoreSelection(attempt.selection);
++					if (researchActive && attempt.selection.selectedNodeIds.length > 0) workspace.restoreSelection(attempt.selection);
  					if (this.shells.get(session.sessionId) === shell) {
 -						shell?.restoreImages(imageIds);
 -						if (shell?.snapshot.draft === "") shell.setDraft(text);
 +						shell?.restoreImages(attempt.imageIds);
-+						if (shell?.snapshot.draft === "" && shell.snapshot.draftRev === committedDraftRev) shell.setDraft(attempt.draft);
++						if (shell?.snapshot.draft === "" && shell.snapshot.draftRev === committedDraftRev) shell.restoreDraftState(attempt.draftState);
  						return;
  					}
  					const conversation = this.rootCtx.get("conversation");
@@ -195,7 +227,7 @@ index 1dd0e89..246e785 100644
  			}
  			/**
  			* Steer every still-pending queued message into the running turn, in FIFO
-@@ -1462,7 +1534,7 @@ window.__ModuleLoader__.load({
+@@ -1462,7 +1567,7 @@ window.__ModuleLoader__.load({
  			* @param shell - the resident shell (notice outlet).
  			*/
  			async steerQueue(session, shell) {
@@ -204,7 +236,123 @@ index 1dd0e89..246e785 100644
  				if (queued.length === 0) return;
  				for (const item of queued) {
  					const result = await session.updateQueue(item.id, { kind: "steer" });
-@@ -3304,7 +3376,7 @@ window.__ModuleLoader__.load({
+@@ -2422,6 +2527,8 @@ window.__ModuleLoader__.load({
+ 			const chips = occurrences.map((o) => ({
+ 				occurrenceId: o.occurrenceId,
+ 				offset: o.offset,
++				source: o.source,
++				ref: o.ref,
+ 				label: o.label,
+ 				invalid: o.invalid === true
+ 			}));
+@@ -2433,6 +2540,65 @@ window.__ModuleLoader__.load({
+ 				hint
+ 			};
+ 		}
++		const INPUT_REFERENCE_CLIPBOARD_TYPE = "application/x-sherlock-input-references";
++		const INPUT_REFERENCE_CLIPBOARD_LIMIT = 262144;
++		function serializeInputReferenceClipboard(draft, occurrences, selection) {
++			const start = Math.max(0, Math.min(selection.start, draft.length));
++			const end = Math.max(start, Math.min(selection.end, draft.length));
++			const touched = occurrences.filter((occurrence) => occurrence.offset >= start && occurrence.offset < end).sort((a, b) => a.offset - b.offset);
++			let text = "";
++			let cursor = start;
++			const components = [];
++			for (const occurrence of touched) {
++				text += draft.slice(cursor, occurrence.offset);
++				const componentStart = text.length;
++				text += occurrence.clipboardText;
++				components.push({
++					start: componentStart,
++					end: text.length,
++					reference: {
++						source: occurrence.source,
++						ref: occurrence.ref,
++						label: occurrence.label,
++						clipboardText: occurrence.clipboardText
++					}
++				});
++				cursor = occurrence.offset + 1;
++			}
++			text += draft.slice(cursor, end);
++			return {
++				text,
++				payload: components.length === 0 ? null : JSON.stringify({ text, components })
++			};
++		}
++		function parseInputReferenceClipboard(raw, text) {
++			if (typeof raw !== "string" || raw.length === 0 || raw.length > INPUT_REFERENCE_CLIPBOARD_LIMIT) return void 0;
++			try {
++				const value = JSON.parse(raw);
++				if (typeof value !== "object" || value === null || value.text !== text || !Array.isArray(value.components) || value.components.length === 0 || value.components.length > 256) return void 0;
++				let previousEnd = 0;
++				const components = [];
++				for (const item of value.components) {
++					if (typeof item !== "object" || item === null || !Number.isInteger(item.start) || !Number.isInteger(item.end) || item.start < previousEnd || item.end <= item.start || item.end > text.length) return void 0;
++					const reference = item.reference;
++					if (typeof reference !== "object" || reference === null || typeof reference.source !== "string" || reference.source.length === 0 || reference.source.length > 128 || typeof reference.ref !== "string" || reference.ref.length > 4096 || typeof reference.label !== "string" || reference.label.length > 512 || typeof reference.clipboardText !== "string" || reference.clipboardText.length > 512 || text.slice(item.start, item.end) !== reference.clipboardText) return void 0;
++					components.push({
++						start: item.start,
++						end: item.end,
++						reference: {
++							source: reference.source,
++							ref: reference.ref,
++							label: reference.label,
++							clipboardText: reference.clipboardText
++						}
++					});
++					previousEnd = item.end;
++				}
++				return components;
++			} catch {
++				return void 0;
++			}
++		}
+ 		//#endregion
+ 		//#region lib/types/client/image-labels.js
+ 		/** Bridges the `conversation` locale namespace to the zero-cordis attachment
+@@ -3164,8 +3330,11 @@ window.__ModuleLoader__.load({
+ 			if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) return name;
+ 			return name.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+ 		}
+-		function optionLabel(option) {
+-			return option.value === FULL_ACCESS ? "Full access" : displayName(option.name);
++		function permissionOptionLabel(option, t) {
++			if (option.value === "read-only") return t("access.mode.readOnly");
++			if (option.value === "workspace-write") return t("access.mode.workspaceWrite");
++			if (option.value === FULL_ACCESS) return t("access.mode.fullAccess");
++			return displayName(option.name);
+ 		}
+ 		function PermissionSelect({ value, locked, command, t }) {
+ 			const [pick, setPick] = (0, react.useState)(null);
+@@ -3186,7 +3355,7 @@ window.__ModuleLoader__.load({
+ 				const icon = permissionGlyph(option.value);
+ 				return {
+ 					id: option.value,
+-					label: optionLabel(option),
++					label: permissionOptionLabel(option, t),
+ 					...icon === void 0 ? {} : { icon }
+ 				};
+ 			});
+@@ -3228,7 +3397,7 @@ window.__ModuleLoader__.load({
+ 				anchor: (0, react_jsx_runtime.jsxs)("button", {
+ 					type: "button",
+ 					className: PermissionSelect_module_css_default.trigger,
+-					"aria-label": t("input.accessMode", { name: current === void 0 ? displayName(currentValue) : optionLabel(current) }),
++					"aria-label": t("input.accessMode", { name: current === void 0 ? displayName(currentValue) : permissionOptionLabel(current, t) }),
+ 					title: current?.description,
+ 					disabled: locked || busy,
+ 					onClick: () => {
+@@ -3242,7 +3411,7 @@ window.__ModuleLoader__.load({
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: PermissionSelect_module_css_default.triggerLabel,
+-							children: current === void 0 ? displayName(currentValue) : optionLabel(current)
++							children: current === void 0 ? displayName(currentValue) : permissionOptionLabel(current, t)
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+ 							className: clsx(PermissionSelect_module_css_default.chevron, open && PermissionSelect_module_css_default.chevronOpen),
+@@ -3304,7 +3473,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$17;
@@ -213,7 +361,7 @@ index 1dd0e89..246e785 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -3356,7 +3428,37 @@ window.__ModuleLoader__.load({
+@@ -3356,7 +3525,37 @@ window.__ModuleLoader__.load({
  			textRefs: [],
  			hint: null
  		};
@@ -248,20 +396,20 @@ index 1dd0e89..246e785 100644
 +				permissions
 +			] });
 +		}
-+		function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, hasExternalAttachments = false, overlay, leftItems, rightItems, footer }) {
++		function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, researchFileReferences, overlay, leftItems, rightItems, footer }) {
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const lexicon = useLexicon((s) => s);
-@@ -3370,7 +3472,7 @@ window.__ModuleLoader__.load({
- 			const live = input !== void 0 && keyboard !== void 0 && inputActions !== void 0;
- 			const draft = input?.draft ?? "";
- 			const attachments = (0, react.useMemo)(() => input === void 0 || draftImages === void 0 ? [] : draftImages(input.imageIds), [draftImages, input?.imageIds]);
--			const empty = draft.trim() === "" && attachments.length === 0;
-+			const empty = draft.trim() === "" && attachments.length === 0 && !hasExternalAttachments;
- 			const [preview, setPreview] = (0, react.useState)(null);
- 			const [dragActive, setDragActive] = (0, react.useState)(false);
- 			const [toast, setToast] = (0, react.useState)(null);
-@@ -3420,7 +3522,7 @@ window.__ModuleLoader__.load({
+@@ -3400,6 +3599,8 @@ window.__ModuleLoader__.load({
+ 			const dragDepthRef = (0, react.useRef)(0);
+ 			const scrollRef = (0, react.useRef)(null);
+ 			const mirrorRef = (0, react.useRef)(null);
++			const researchFileReferenceSeenRef = (0, react.useRef)(/* @__PURE__ */ new Set());
++			const researchFileReferenceSessionRef = (0, react.useRef)(sessionId);
+ 			const safari = (0, react.useMemo)(() => isSafariBrowser(navigator), []);
+ 			const safariNativeShrinkRef = (0, react.useRef)(false);
+ 			const composingRef = (0, react.useRef)(false);
+@@ -3420,7 +3621,7 @@ window.__ModuleLoader__.load({
  			const machineBusy = input?.phase === "adjudicating" || input?.phase === "submitting";
  			const workspaceTrigger = inert && !removed && onRequestWorkspace !== void 0;
  			const textareaDisabled = removed || locked && !workspaceTrigger;
@@ -270,7 +418,80 @@ index 1dd0e89..246e785 100644
  			(0, react.useEffect)(() => {
  				if (input === void 0 || inputActions === void 0) return;
  				if (attachments.length !== input.imageIds.length) inputActions.pruneImages(attachments.map((attachment) => attachment.id));
-@@ -3866,29 +3968,25 @@ window.__ModuleLoader__.load({
+@@ -3552,23 +3753,33 @@ window.__ModuleLoader__.load({
+ 				start: el.selectionStart ?? 0,
+ 				end: el.selectionEnd ?? el.selectionStart ?? 0
+ 			});
++			(0, react.useLayoutEffect)(() => {
++				if (researchFileReferenceSessionRef.current !== sessionId) {
++					researchFileReferenceSessionRef.current = sessionId;
++					researchFileReferenceSeenRef.current.clear();
++				}
++				if (keyboard === void 0) return;
++				const el = inputRef.current;
++				const selection = el === null ? {
++					start: keyboard.snapshot.draft.length,
++					end: keyboard.snapshot.draft.length
++				} : selectionOf(el);
++				const beforeDraft = keyboard.snapshot.draft;
++				const result = syncResearchFileReferences(keyboard, researchFileReferences ?? [], researchFileReferenceSeenRef.current, selection, researchFileReferences !== void 0);
++				if (el === null || keyboard.snapshot.draft === beforeDraft) return;
++				restoreCaret(el, result.caret);
++				keyboard.track(keyboard.snapshot.draft, result.caret);
++			}, [keyboard, researchFileReferences, sessionId]);
+ 			const onCopyOrCut = (e, cut) => {
+ 				if (input === void 0 || keyboard === void 0) return;
+ 				const el = e.currentTarget;
+ 				const { start, end } = selectionOf(el);
+ 				if (start === end) return;
+-				draft.slice(start, end);
+-				const touched = input.occurrences.filter((o) => o.offset >= start && o.offset < end);
+-				if (touched.length === 0 && !cut) return;
++				const copied = serializeInputReferenceClipboard(draft, input.occurrences, { start, end });
++				if (copied.payload === null) return;
+ 				e.preventDefault();
+-				let text = "";
+-				let cursor = start;
+-				for (const o of touched) {
+-					text += draft.slice(cursor, o.offset) + o.clipboardText;
+-					cursor = o.offset + 1;
+-				}
+-				text += draft.slice(cursor, end);
+-				e.clipboardData.setData("text/plain", text);
++				e.clipboardData.setData("text/plain", copied.text);
++				e.clipboardData.setData(INPUT_REFERENCE_CLIPBOARD_TYPE, copied.payload);
+ 				if (cut && !machineBusy && !locked) {
+ 					keyboard.setDraft(draft.slice(0, start) + draft.slice(end), {
+ 						start,
+@@ -3591,7 +3802,8 @@ window.__ModuleLoader__.load({
+ 				e.preventDefault();
+ 				const el = e.currentTarget;
+ 				const sel = selectionOf(el);
+-				keyboard.pasteBegin(text, sel);
++				const components = parseInputReferenceClipboard(e.clipboardData.getData(INPUT_REFERENCE_CLIPBOARD_TYPE), text);
++				keyboard.pasteBegin(text, sel, components);
+ 				const caret = sel.start + text.length;
+ 				restoreCaret(el, caret);
+ 				keyboard.track(keyboard.snapshot.draft, caret);
+@@ -3729,11 +3941,15 @@ window.__ModuleLoader__.load({
+ 					pushPlain(b.at);
+ 					if (b.kind === "chip") {
+ 						const chip = b.chip;
++						const researchFile = chip.source === RESEARCH_FILE_REFERENCE_SOURCE ? parseResearchFileReference(chip.ref) : null;
++						const invalid = chip.invalid || researchFile !== null && researchFile.path === void 0;
+ 						backdrop.push((0, react_jsx_runtime.jsx)("span", {
+-							className: clsx(InputBar_module_css_default.chip, chip.invalid && InputBar_module_css_default.chipInvalid),
++							className: clsx(InputBar_module_css_default.chip, invalid && InputBar_module_css_default.chipInvalid),
+ 							"data-decoration": "chip",
+ 							"data-occurrence": chip.occurrenceId,
+-							"data-invalid": chip.invalid || void 0,
++							"data-reference-source": chip.source,
++							"data-research-file-tag": researchFile?.id,
++							"data-invalid": invalid || void 0,
+ 							title: chip.label,
+ 							children: (0, react_jsx_runtime.jsx)("span", {
+ 								className: InputBar_module_css_default.chipLabel,
+@@ -3866,29 +4082,25 @@ window.__ModuleLoader__.load({
  								className: InputBar_module_css_default.row,
  								children: [(0, react_jsx_runtime.jsxs)("div", {
  									className: InputBar_module_css_default.tools,
@@ -310,7 +531,7 @@ index 1dd0e89..246e785 100644
  								}), (0, react_jsx_runtime.jsxs)("div", {
  									className: InputBar_module_css_default.trailing,
  									children: [
-@@ -4103,7 +4201,8 @@ window.__ModuleLoader__.load({
+@@ -4103,7 +4315,8 @@ window.__ModuleLoader__.load({
  		*/
  		const CompactionItem = (0, react.memo)(function CompactionItem({ node, title, fallbackSummary, t }) {
  			const [expanded, setExpanded] = (0, react.useState)(false);
@@ -320,7 +541,7 @@ index 1dd0e89..246e785 100644
  			const open = expandable && expanded;
  			const summary = node.shadowedItemCount !== null && node.shadowedTokenCount !== null ? t("message.compaction.completed", {
  				items: node.shadowedItemCount,
-@@ -4135,13 +4234,13 @@ window.__ModuleLoader__.load({
+@@ -4135,13 +4348,13 @@ window.__ModuleLoader__.load({
  						}),
  						(0, react_jsx_runtime.jsx)("span", {
  							className: MessageItem_module_css_default.compactionTitle,
@@ -337,7 +558,43 @@ index 1dd0e89..246e785 100644
  							className: MessageItem_module_css_default.compactionSummary,
  							children: summary
  						})
-@@ -5097,8 +5196,9 @@ window.__ModuleLoader__.load({
+@@ -5094,11 +5307,45 @@ window.__ModuleLoader__.load({
+ 			if (cursor < text.length) parts.push((0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MessageText, { text: text.slice(cursor) }, cursor));
+ 			return (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: parts });
+ 		}
++		function ResearchMessageFileChip({ file }) {
++			return (0, react_jsx_runtime.jsx)("span", {
++				className: MessageItem_module_css_default.refChip,
++				"data-ref-chip": "research-file",
++				"data-research-message-file": file.id,
++				title: file.name,
++				style: { display: "inline-flex", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "text-bottom" },
++				children: researchPromptBasename(file.name)
++			});
++		}
++		function projectResearchUserText(research) {
++			if (!Array.isArray(research.occurrences) || research.occurrences.length === 0) return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [research.files.length > 0 && (0, react_jsx_runtime.jsx)("div", {
++				"data-research-message-files": "",
++				style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: research.text === "" ? 0 : 8 },
++				children: research.files.map((file) => (0, react_jsx_runtime.jsx)(ResearchMessageFileChip, { file }, file.id))
++			}), research.text !== "" && projectUserText(research.text)] });
++			const byId = /* @__PURE__ */ new Map(research.files.map((file) => [file.id, file]));
++			const parts = [];
++			let cursor = 0;
++			for (let index = 0; index < research.occurrences.length; index += 1) {
++				const occurrence = research.occurrences[index];
++				const file = byId.get(occurrence.fileId);
++				if (file === void 0) continue;
++				if (occurrence.offset > cursor) parts.push((0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: projectUserText(research.text.slice(cursor, occurrence.offset)) }, `text-${cursor}`));
++				parts.push((0, react_jsx_runtime.jsx)(ResearchMessageFileChip, { file }, `file-${file.id}-${index}`));
++				cursor = occurrence.offset;
++			}
++			if (cursor < research.text.length) parts.push((0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: projectUserText(research.text.slice(cursor)) }, `text-${cursor}`));
++			return (0, react_jsx_runtime.jsx)("span", {
++				"data-research-message-files": "inline",
++				children: parts
++			});
++		}
  		/** Right-aligned bubble shared by user and steering rows. */
  		function UserStyleBubble({ content, imageLoader, actions, pending = false, t }) {
  			const { text, images, rest } = contentParts(content);
@@ -348,20 +605,12 @@ index 1dd0e89..246e785 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: MessageItem_module_css_default.userRow,
  				"data-pending-steering": pending || void 0,
-@@ -5112,13 +5212,21 @@ window.__ModuleLoader__.load({
+@@ -5112,13 +5359,13 @@ window.__ModuleLoader__.load({
  						labels: messageImageLabels(t)
  					}), showBubble && (0, react_jsx_runtime.jsxs)("div", {
  						className: MessageItem_module_css_default.bubble,
 -						children: [projectUserText(text), rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
-+						children: [research.files.length > 0 && (0, react_jsx_runtime.jsx)("div", {
-+							"data-research-message-files": "",
-+							style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: research.text === "" ? 0 : 8 },
-+							children: research.files.map((file) => (0, react_jsx_runtime.jsx)("span", {
-+								"data-research-message-file": file.id,
-+								style: { display: "inline-flex", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", border: "1px solid var(--dsw-alias-border-l2)", borderRadius: 7, padding: "2px 7px" },
-+								children: researchPromptBasename(file.name)
-+							}, file.id))
-+						}), research.text !== "" && projectUserText(research.text), rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
++						children: [projectResearchUserText(research), rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
  							label: t("message.extraBlock"),
  							payload: block,
  							truncatedLabel: truncated
@@ -372,7 +621,7 @@ index 1dd0e89..246e785 100644
  			});
  		}
  		/**
-@@ -5209,7 +5317,7 @@ window.__ModuleLoader__.load({
+@@ -5209,7 +5456,7 @@ window.__ModuleLoader__.load({
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/ChatView.module.css.mjs
@@ -381,7 +630,7 @@ index 1dd0e89..246e785 100644
  		const tagId$11 = "@deepseek-ai/dsh-client-ui-conversation/ChatView.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$11) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -5218,9 +5326,28 @@ window.__ModuleLoader__.load({
+@@ -5218,9 +5465,28 @@ window.__ModuleLoader__.load({
  			tag.textContent = css$11;
  			document.head.appendChild(tag);
  		}
@@ -412,7 +661,7 @@ index 1dd0e89..246e785 100644
  			"callRow": "Md3f7G_callRow",
  			"hint": "Md3f7G_hint",
  			"root": "Md3f7G_root",
-@@ -5228,11 +5355,19 @@ window.__ModuleLoader__.load({
+@@ -5228,11 +5494,19 @@ window.__ModuleLoader__.load({
  			"older": "Md3f7G_older",
  			"flowItem": "Md3f7G_flowItem",
  			"toBottomSlot": "Md3f7G_toBottomSlot",
@@ -433,7 +682,7 @@ index 1dd0e89..246e785 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatNodeSeat.js
  		/** Subscribe and dispatch one stable Context key without observing sibling Nodes. */
-@@ -5278,6 +5413,131 @@ window.__ModuleLoader__.load({
+@@ -5278,6 +5552,131 @@ window.__ModuleLoader__.load({
  				})
  			});
  		});
@@ -565,7 +814,7 @@ index 1dd0e89..246e785 100644
  		//#endregion
  		//#region lib/types/client/chat/ChatView.js
  		/** Active column host when present; otherwise the view-local scroller. */
-@@ -5289,6 +5549,21 @@ window.__ModuleLoader__.load({
+@@ -5289,6 +5688,21 @@ window.__ModuleLoader__.load({
  			for (const row of list.querySelectorAll("[data-chat-anchor-key]")) if (row.dataset.chatAnchorKey === key) return row;
  			return null;
  		}
@@ -587,7 +836,7 @@ index 1dd0e89..246e785 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5332,35 +5607,468 @@ window.__ModuleLoader__.load({
+@@ -5332,35 +5746,468 @@ window.__ModuleLoader__.load({
  				scrollTop: scrollport.scrollTop
  			};
  		}
@@ -1080,7 +1329,7 @@ index 1dd0e89..246e785 100644
  				})]
  			});
  		}
-@@ -5381,11 +6089,58 @@ window.__ModuleLoader__.load({
+@@ -5381,11 +6228,58 @@ window.__ModuleLoader__.load({
  			const loadingOlder = useSession((s) => s.loadingOlder);
  			const selectedCallId = useStore((s) => s.selection?.callId);
  			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
@@ -1140,7 +1389,7 @@ index 1dd0e89..246e785 100644
  			/** Last position delivered or written on the main thread. */
  			const observedTopRef = (0, react.useRef)(0);
  			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5405,6 +6160,12 @@ window.__ModuleLoader__.load({
+@@ -5405,6 +6299,12 @@ window.__ModuleLoader__.load({
  			const lastNode = lastKey === null ? void 0 : nodeStore.get(lastKey);
  			const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null;
  			const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ""}`;
@@ -1153,7 +1402,7 @@ index 1dd0e89..246e785 100644
  			const toBottom = (el) => {
  				anchorRef.current = null;
  				el.scrollTop = el.scrollHeight;
-@@ -5412,6 +6173,8 @@ window.__ModuleLoader__.load({
+@@ -5412,6 +6312,8 @@ window.__ModuleLoader__.load({
  				atBottomRef.current = true;
  				setAtBottom(true);
  				chatScroll.save(null);
@@ -1162,7 +1411,7 @@ index 1dd0e89..246e785 100644
  			};
  			(0, react.useLayoutEffect)(() => {
  				const local = listRef.current;
-@@ -5468,6 +6231,7 @@ window.__ModuleLoader__.load({
+@@ -5468,6 +6370,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -1170,7 +1419,7 @@ index 1dd0e89..246e785 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5487,6 +6251,10 @@ window.__ModuleLoader__.load({
+@@ -5487,6 +6390,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -1181,7 +1430,7 @@ index 1dd0e89..246e785 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5540,9 +6308,29 @@ window.__ModuleLoader__.load({
+@@ -5540,9 +6447,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
@@ -1212,7 +1461,7 @@ index 1dd0e89..246e785 100644
  					ref: listRef,
  					className: ChatView_module_css_default.scroll,
  					children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -5570,22 +6358,21 @@ window.__ModuleLoader__.load({
+@@ -5570,22 +6497,21 @@ window.__ModuleLoader__.load({
  									children: loadingOlder ? t("loading") : t("chat.loadOlder")
  								})
  							}),
@@ -1250,7 +1499,7 @@ index 1dd0e89..246e785 100644
  							}),
  							pendingSteering.map((item) => (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
  								content: item.content,
-@@ -5607,7 +6394,7 @@ window.__ModuleLoader__.load({
+@@ -5607,7 +6533,7 @@ window.__ModuleLoader__.load({
  							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {})
  						})
  					})]
@@ -1259,7 +1508,7 @@ index 1dd0e89..246e785 100644
  			});
  		}
  		//#endregion
-@@ -5816,6 +6603,17 @@ window.__ModuleLoader__.load({
+@@ -5816,6 +6742,17 @@ window.__ModuleLoader__.load({
  		/** Simplified Chinese dictionary (the key-set source of truth). */
  		const zh = {
  			"view.chat": "对话",
@@ -1277,16 +1526,27 @@ index 1dd0e89..246e785 100644
  			"hint.plan": PLAN_NEXT_ACTION_ZH,
  			"hint.goal": "输入目标，智能体将持续执行",
  			"hint.goal.active": "当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除",
-@@ -5875,7 +6673,7 @@ window.__ModuleLoader__.load({
+@@ -5870,12 +6807,15 @@ window.__ModuleLoader__.load({
+ 			"settings.enter.description": "仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为",
+ 			"settings.enter.queue": "排队发送",
+ 			"settings.enter.steer": "插话发送",
+-			"access.confirm.title": "确认启用 Full access？",
+-			"access.confirm.description": "启用 Full access 后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
++			"access.mode.readOnly": "只读",
++			"access.mode.workspaceWrite": "工作区写入",
++			"access.mode.fullAccess": "完全访问",
++			"access.confirm.title": "确认启用完全访问？",
++			"access.confirm.description": "启用完全访问后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。",
  			"access.confirm.acknowledge": "我已了解风险，并愿意继续",
  			"access.confirm.cancel": "取消",
- 			"access.confirm.enable": "启用 Full access",
+-			"access.confirm.enable": "启用 Full access",
 -			"hero.headline": "探索未至之境",
++			"access.confirm.enable": "启用完全访问",
 +			"hero.headline": "迷雾之中，洞见真相",
  			"hero.preview": "预览版",
  			"hero.chooseWorkspace": "选择工作区",
  			"session.hierarchy": "会话层级",
-@@ -5896,6 +6694,46 @@ window.__ModuleLoader__.load({
+@@ -5896,6 +6836,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "历史加载失败：{message}（{code}）",
  			"chat.loadOlder": "加载更早",
  			"chat.toBottom": "回到底部",
@@ -1333,7 +1593,7 @@ index 1dd0e89..246e785 100644
  			"message.extraBlock": "附加内容块",
  			"message.contextInjection": "上下文注入",
  			"message.contextRecall": "跨会话召回",
-@@ -5981,6 +6819,17 @@ window.__ModuleLoader__.load({
+@@ -5981,6 +6961,17 @@ window.__ModuleLoader__.load({
  		/** English dictionary, checked complete against the zh key set. */
  		const en = {
  			"view.chat": "Chat",
@@ -1351,7 +1611,15 @@ index 1dd0e89..246e785 100644
  			"hint.plan": PLAN_NEXT_ACTION_EN,
  			"hint.goal": "describe the objective for a long-running task",
  			"hint.goal.active": "goal active — edit / pause / resume / clear",
-@@ -6040,7 +6889,7 @@ window.__ModuleLoader__.load({
+@@ -6035,12 +7026,15 @@ window.__ModuleLoader__.load({
+ 			"settings.enter.description": "Busy only; Cmd/Ctrl+Enter uses the other behavior",
+ 			"settings.enter.queue": "Queue",
+ 			"settings.enter.steer": "Steer",
++			"access.mode.readOnly": "Read Only",
++			"access.mode.workspaceWrite": "Workspace Write",
++			"access.mode.fullAccess": "Full access",
+ 			"access.confirm.title": "Enable Full access?",
+ 			"access.confirm.description": "Full access reduces confirmation steps and lets the agent perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust the current task.",
  			"access.confirm.acknowledge": "I understand the risks and want to continue",
  			"access.confirm.cancel": "Cancel",
  			"access.confirm.enable": "Enable Full access",
@@ -1360,7 +1628,7 @@ index 1dd0e89..246e785 100644
  			"hero.preview": "Preview",
  			"hero.chooseWorkspace": "Choose workspace",
  			"session.hierarchy": "Session hierarchy",
-@@ -6061,6 +6910,46 @@ window.__ModuleLoader__.load({
+@@ -6061,6 +7055,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "Failed to load history: {message} ({code})",
  			"chat.loadOlder": "Load earlier",
  			"chat.toBottom": "Back to bottom",
@@ -1407,7 +1675,7 @@ index 1dd0e89..246e785 100644
  			"message.extraBlock": "Extra content block",
  			"message.contextInjection": "Context injection",
  			"message.contextRecall": "Session recall",
-@@ -6383,7 +7272,7 @@ window.__ModuleLoader__.load({
+@@ -6383,7 +7417,7 @@ window.__ModuleLoader__.load({
  		*/
  		function QueueDock({ useSession, updateQueue, notify, t }) {
  			const inbox = useSession((s) => s.queue);
@@ -1416,7 +1684,7 @@ index 1dd0e89..246e785 100644
  			const running = useSession((s) => s.running);
  			const queueMutable = useSession((s) => s.subagent === null);
  			const [editing, setEditing] = (0, react.useState)(null);
-@@ -6627,7 +7516,7 @@ window.__ModuleLoader__.load({
+@@ -6627,7 +7661,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$7;
@@ -1425,7 +1693,7 @@ index 1dd0e89..246e785 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6765,13 +7654,6 @@ window.__ModuleLoader__.load({
+@@ -6765,13 +7799,6 @@ window.__ModuleLoader__.load({
  					children: [(0, react_jsx_runtime.jsxs)("div", {
  						className: HeroShell_module_css_default.headline,
  						children: [
@@ -1439,7 +1707,7 @@ index 1dd0e89..246e785 100644
  							(0, react_jsx_runtime.jsx)("span", {
  								className: HeroShell_module_css_default.headlineText,
  								children: t("hero.headline")
-@@ -6786,60 +7668,1531 @@ window.__ModuleLoader__.load({
+@@ -6786,25 +7813,1260 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -1475,6 +1743,8 @@ index 1dd0e89..246e785 100644
 +		const RESEARCH_ARTIFACT_DRAG_RAW_LIMIT = JSON.stringify({ sessionId: "", messageId: "", kind: "", title: "", excerpt: "" }).length + 6 * (RESEARCH_CANVAS_TEXT_LIMIT * 2 + "assistant-excerpt".length + RESEARCH_ARTIFACT_MAX_TITLE + RESEARCH_ARTIFACT_MAX_EXCERPT);
 +		const RESEARCH_PROMPT_PREFIX = "␞SHERLOCK_RESEARCH_FILES_V1 ";
 +		const RESEARCH_PROMPT_SUFFIX = "␟";
++		const RESEARCH_FILE_REFERENCE_PREFIX = "␞SHERLOCK_RESEARCH_FILE_REFERENCE_V1 ";
++		const RESEARCH_FILE_REFERENCE_SOURCE = "research-file";
 +		const RESEARCH_PROMPT_MAX_FILES = 64;
 +		const RESEARCH_PROMPT_MAX_HEADER = 131072;
 +		const EMPTY_RESEARCH_SELECTION = Object.freeze({ selectedNodeIds: [], orderedFileIds: [] });
@@ -1503,6 +1773,26 @@ index 1dd0e89..246e785 100644
 +			const path = boundedString(value.path);
 +			return id === null || name === null || path === null ? null : { id, name, path };
 +		}
++		function canonicalResearchFileReference(value) {
++			if (typeof value !== "object" || value === null) return null;
++			const id = boundedString(value.id);
++			const name = boundedString(researchPromptBasename(value.name));
++			const path = boundedString(value.path, true);
++			return id === null || name === null || path === null ? null : {
++				id,
++				name,
++				...(path === void 0 ? {} : { path })
++			};
+ 		}
+-		var ConversationRoot_module_css_default = {
+-			"titleRow": "wSkVaW_titleRow",
+-			"viewArea": "wSkVaW_viewArea",
+-			"headerUtilities": "wSkVaW_headerUtilities",
+-			"composerHero": "wSkVaW_composerHero",
+-			"crumbs": "wSkVaW_crumbs",
+-			"composerSeat": "wSkVaW_composerSeat",
+-			"tabs": "wSkVaW_tabs",
+-			"heroGlow": "wSkVaW_heroGlow",
 +		function researchPromptFiles(value) {
 +			if (!Array.isArray(value) || value.length === 0 || value.length > RESEARCH_PROMPT_MAX_FILES) return null;
 +			const files = [];
@@ -1515,12 +1805,32 @@ index 1dd0e89..246e785 100644
 +			}
 +			return files;
 +		}
-+		function serializeResearchPrompt(files, text) {
++		function researchPromptOccurrences(value, files, text) {
++			if (value === void 0) return [];
++			if (!Array.isArray(value) || value.length > RESEARCH_PROMPT_MAX_FILES) return null;
++			if (value.length === 0) return [];
++			const fileIds = /* @__PURE__ */ new Set(files.map((file) => file.id));
++			let previousOffset = -1;
++			const occurrences = [];
++			for (const item of value) {
++				if (typeof item !== "object" || item === null) return null;
++				const fileId = boundedString(item.fileId);
++				const offset = item.offset;
++				if (fileId === null || !fileIds.has(fileId) || !Number.isInteger(offset) || offset < previousOffset || offset < 0 || offset > text.length) return null;
++				previousOffset = offset;
++				occurrences.push({ fileId, offset });
++			}
++			return occurrences;
++		}
++		function serializeResearchPrompt(files, text, occurrences = []) {
 +			if (!Array.isArray(files) || files.length === 0) return String(text ?? "");
 +			const descriptors = researchPromptFiles(files);
 +			if (descriptors === null) throw new TypeError("Invalid Sherlock Research file descriptors");
-+			const payload = JSON.stringify({ files: descriptors }).replaceAll(RESEARCH_PROMPT_SUFFIX, "\\u241f");
-+			return `${RESEARCH_PROMPT_PREFIX}${payload}${RESEARCH_PROMPT_SUFFIX}${String(text ?? "")}`;
++			const body = String(text ?? "");
++			const positions = researchPromptOccurrences(occurrences, descriptors, body);
++			if (positions === null) throw new TypeError("Invalid Sherlock Research file occurrences");
++			const payload = JSON.stringify({ files: descriptors, ...(positions.length === 0 ? {} : { occurrences: positions }) }).replaceAll(RESEARCH_PROMPT_SUFFIX, "\\u241f");
++			return `${RESEARCH_PROMPT_PREFIX}${payload}${RESEARCH_PROMPT_SUFFIX}${body}`;
 +		}
 +		function parseResearchPrompt(text) {
 +			const source = String(text ?? "");
@@ -1531,55 +1841,152 @@ index 1dd0e89..246e785 100644
 +				const value = JSON.parse(source.slice(RESEARCH_PROMPT_PREFIX.length, suffix));
 +				if (typeof value !== "object" || value === null) return { text: source, files: [] };
 +				const files = researchPromptFiles(value.files);
-+				return files === null ? { text: source, files: [] } : { text: source.slice(suffix + 1), files };
++				if (files === null) return { text: source, files: [] };
++				const body = source.slice(suffix + 1);
++				const occurrences = researchPromptOccurrences(value.occurrences, files, body);
++				return occurrences === null ? { text: source, files: [] } : {
++					text: body,
++					files,
++					...(occurrences.length === 0 ? {} : { occurrences })
++				};
 +			} catch {
 +				return { text: source, files: [] };
 +			}
- 		}
--		var ConversationRoot_module_css_default = {
--			"titleRow": "wSkVaW_titleRow",
--			"viewArea": "wSkVaW_viewArea",
--			"headerUtilities": "wSkVaW_headerUtilities",
--			"composerHero": "wSkVaW_composerHero",
--			"crumbs": "wSkVaW_crumbs",
--			"composerSeat": "wSkVaW_composerSeat",
--			"tabs": "wSkVaW_tabs",
--			"heroGlow": "wSkVaW_heroGlow",
--			"tabActive": "wSkVaW_tabActive",
--			"crumbSep": "wSkVaW_crumbSep",
--			"crumbCurrent": "wSkVaW_crumbCurrent",
--			"headerActions": "wSkVaW_headerActions",
--			"composerStack": "wSkVaW_composerStack",
--			"scrollBody": "wSkVaW_scrollBody",
--			"tab": "wSkVaW_tab",
--			"crumbSeg": "wSkVaW_crumbSeg",
--			"root": "wSkVaW_root",
--			"headerHidden": "wSkVaW_headerHidden",
--			"titleCluster": "wSkVaW_titleCluster",
--			"header": "wSkVaW_header",
--			"crumb": "wSkVaW_crumb",
--			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow"
--		};
--		//#endregion
--		//#region lib/types/client/skeleton/ConversationRoot.js
--		function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain, selectWorkspace, t }) {
--			const openState = useSession((s) => s.openState);
--			const composerPhase = useSession((s) => s.composerPhase);
--			const pending = useSession((s) => s.pending) ?? [];
--			const session = useSession((s) => s);
--			const inputState = useInput((s) => s);
--			const cwd = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.cwd);
--			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
--			const workspaces = useWorkspaces((s) => s);
--			const composerBlock = useComposerBlock((block) => block);
--			const [pickerOpen, setPickerOpen] = (0, react.useState)(false);
--			const [pendingWorkspaceId, setPendingWorkspaceId] = (0, react.useState)();
--			const pickerAnchor = (0, react.useRef)(null);
--			const seatObserver = (0, react.useRef)(null);
--			const seatResizeRef = (0, react.useCallback)((seat) => {
--				seatObserver.current?.disconnect();
--				seatObserver.current = null;
--				const scroller = seat?.parentElement ?? null;
++		}
++		function researchFileReference(file) {
++			const descriptor = canonicalResearchFileReference(file);
++			if (descriptor === null) throw new TypeError("Invalid Sherlock Research file reference");
++			return {
++				source: RESEARCH_FILE_REFERENCE_SOURCE,
++				ref: JSON.stringify(descriptor),
++				label: descriptor.name,
++				clipboardText: descriptor.name
++			};
++		}
++		function parseResearchFileReference(ref) {
++			if (typeof ref !== "string" || ref.length > SHERLOCK_FILE_DRAG_RAW_LIMIT) return null;
++			try {
++				return canonicalResearchFileReference(JSON.parse(ref));
++			} catch {
++				return null;
++			}
++		}
++		const researchFileReferenceCodec = {
++			clipboardText(ref) {
++				return parseResearchFileReference(ref)?.name ?? "";
++			},
++			async serialize(ref, signal) {
++				if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("Research file serialization aborted");
++				const file = parseResearchFileReference(ref);
++				if (file === null) throw new Error("Invalid Sherlock Research file reference");
++				const payload = JSON.stringify(file).replaceAll(RESEARCH_PROMPT_SUFFIX, "\\u241f");
++				return `${RESEARCH_FILE_REFERENCE_PREFIX}${payload}${RESEARCH_PROMPT_SUFFIX}`;
++			}
++		};
++		const researchFileInputSource = {
++			trigger: "@",
++			name: RESEARCH_FILE_REFERENCE_SOURCE,
++			order: 1e4,
++			async candidates() { return []; },
++			onPick() { return void 0; },
++			codec: researchFileReferenceCodec
++		};
++		function extractResearchFileReferences(text) {
++			const source = String(text ?? "");
++			const files = [];
++			const byId = /* @__PURE__ */ new Map();
++			const occurrences = [];
++			let output = "";
++			let cursor = 0;
++			while (cursor < source.length) {
++				const start = source.indexOf(RESEARCH_FILE_REFERENCE_PREFIX, cursor);
++				if (start === -1) break;
++				output += source.slice(cursor, start);
++				const payloadStart = start + RESEARCH_FILE_REFERENCE_PREFIX.length;
++				const suffix = source.slice(payloadStart, payloadStart + SHERLOCK_FILE_DRAG_RAW_LIMIT).indexOf(RESEARCH_PROMPT_SUFFIX);
++				if (suffix === -1) {
++					output += source.slice(start, payloadStart);
++					cursor = payloadStart;
++					continue;
++				}
++				const end = payloadStart + suffix;
++				const file = parseResearchFileReference(source.slice(payloadStart, end));
++				if (file === null) {
++					output += source.slice(start, end + RESEARCH_PROMPT_SUFFIX.length);
++					cursor = end + RESEARCH_PROMPT_SUFFIX.length;
++					continue;
++				}
++				const existing = byId.get(file.id);
++				if (existing === void 0) {
++					byId.set(file.id, file);
++					files.push(file);
++				} else if (JSON.stringify(existing) !== JSON.stringify(file)) {
++					output += source.slice(start, end + RESEARCH_PROMPT_SUFFIX.length);
++					cursor = end + RESEARCH_PROMPT_SUFFIX.length;
++					continue;
++				}
++				occurrences.push({ fileId: file.id, offset: output.length });
++				cursor = end + RESEARCH_PROMPT_SUFFIX.length;
++			}
++			output += source.slice(cursor);
++			return { text: output, files, occurrences };
++		}
++		function syncResearchFileReferences(shell, files, seenIds, selection, active) {
++			const inserted = [];
++			if (!active) {
++				let changed = false;
++				const researchOccurrences = shell.snapshot.occurrences.filter((occurrence) => occurrence.source === RESEARCH_FILE_REFERENCE_SOURCE).sort((a, b) => b.offset - a.offset);
++				for (const occurrence of researchOccurrences) {
++					const draft = shell.snapshot.draft;
++					shell.setDraft(draft.slice(0, occurrence.offset) + draft.slice(occurrence.offset + 1), {
++						start: occurrence.offset,
++						end: occurrence.offset + 1,
++						insertedLength: 0
++					});
++					changed = true;
++				}
++				seenIds.clear();
++				return {
++					caret: Math.min(selection.start, shell.snapshot.draft.length),
++					inserted,
++					changed
++				};
++			}
++			const selectedIds = /* @__PURE__ */ new Set(files.map((file) => file.id));
++			for (const id of [...seenIds]) if (!selectedIds.has(id)) seenIds.delete(id);
++			const currentIds = /* @__PURE__ */ new Set(shell.snapshot.occurrences.filter((occurrence) => occurrence.source === RESEARCH_FILE_REFERENCE_SOURCE).flatMap((occurrence) => {
++				const file = parseResearchFileReference(occurrence.ref);
++				return file === null ? [] : [file.id];
++			}));
++			let start = Math.max(0, Math.min(selection.start, shell.snapshot.draft.length));
++			let end = Math.max(start, Math.min(selection.end, shell.snapshot.draft.length));
++			for (const file of files) {
++				if (seenIds.has(file.id)) continue;
++				if (currentIds.has(file.id)) {
++					seenIds.add(file.id);
++					continue;
++				}
++				let reference;
++				try {
++					reference = researchFileReference(file);
++				} catch {
++					continue;
++				}
++				seenIds.add(file.id);
++				const before = shell.snapshot;
++				const accepted = shell.insertReference(reference, { start, end, draftRev: before.draftRev });
++				if (!accepted) {
++					seenIds.delete(file.id);
++					continue;
++				}
++				const insertedLength = shell.snapshot.draft.length - before.draft.length + (end - start);
++				start += insertedLength;
++				end = start;
++				currentIds.add(file.id);
++				inserted.push(file.id);
++			}
++			return { caret: start, inserted, changed: inserted.length > 0 };
++		}
 +		function parseSherlockFileDrag(raw) {
 +			if (typeof raw !== "string" || raw.length > SHERLOCK_FILE_DRAG_RAW_LIMIT) return null;
 +			try {
@@ -2139,59 +2546,6 @@ index 1dd0e89..246e785 100644
 +				})]
 +			});
 +		}
-+		const RESEARCH_FILE_TAG_DRAG_TYPE = "application/x-sherlock-research-file-tag";
-+		function ResearchFileTags({ sessionId, researchWorkspaces = defaultResearchWorkspaces }) {
-+			const workspace = (0, react.useMemo)(() => researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
-+			const snapshot = (0, react.useSyncExternalStore)(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
-+			const byId = (0, react.useMemo)(() => new Map(snapshot.files.map((file) => [file.id, file])), [snapshot.files]);
-+			const files = snapshot.selection.orderedFileIds.flatMap((id) => byId.has(id) ? [byId.get(id)] : []);
-+			if (files.length === 0) return null;
-+			return (0, react_jsx_runtime.jsxs)("div", {
-+				"data-research-file-tag-list": "",
-+				role: "group",
-+				"aria-label": "参考文件",
-+				style: { display: "flex", alignItems: "center", minWidth: 0, gap: 6, overflowX: "auto", scrollbarWidth: "none" },
-+				children: [(0, react_jsx_runtime.jsx)("span", {
-+					"data-research-reference-label": "",
-+					style: { color: "var(--dsw-alias-label-secondary)", flex: "none", fontSize: 13, lineHeight: "20px" },
-+					children: "参考"
-+				}), ...files.map((file) => (0, react_jsx_runtime.jsxs)("div", {
-+					"data-research-file-tag": file.id,
-+					draggable: true,
-+					tabIndex: 0,
-+					"aria-invalid": file.path === void 0 ? true : void 0,
-+					style: { display: "inline-flex", alignItems: "center", gap: 3, flex: "none", maxWidth: 190, border: "1px solid var(--dsw-alias-border-l2)", borderRadius: 6, padding: "2px 3px 2px 7px", background: "var(--dsw-alias-interactive-bg-hover)", fontSize: 12, lineHeight: "18px" },
-+					onDragStart: (event) => {
-+						event.dataTransfer.effectAllowed = "move";
-+						event.dataTransfer.setData(RESEARCH_FILE_TAG_DRAG_TYPE, file.id);
-+					},
-+					onDragOver: (event) => {
-+						if ((event.dataTransfer.types ?? []).includes?.(RESEARCH_FILE_TAG_DRAG_TYPE)) event.preventDefault();
-+					},
-+					onDrop: (event) => {
-+						const id = event.dataTransfer.getData(RESEARCH_FILE_TAG_DRAG_TYPE);
-+						if (!snapshot.selection.orderedFileIds.includes(id)) return;
-+						event.preventDefault();
-+						workspace.placeSelectedFile(id, file.id);
-+					},
-+					onKeyDown: (event) => {
-+						if (event.key !== "Delete" && event.key !== "Backspace") return;
-+						event.preventDefault();
-+						workspace.removeSelectedFile(file.id);
-+					},
-+					children: [(0, react_jsx_runtime.jsx)("span", {
-+						style: { maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-+						children: researchPromptBasename(file.name)
-+					}), (0, react_jsx_runtime.jsx)("button", {
-+						type: "button",
-+						"aria-label": `删除附件 ${researchPromptBasename(file.name)}`,
-+						onClick: () => workspace.removeSelectedFile(file.id),
-+						style: { width: 18, height: 18, padding: 0, border: 0, borderRadius: 4, background: "transparent", color: "var(--dsw-alias-label-caption)", cursor: "pointer", display: "grid", placeItems: "center", flex: "none" },
-+						children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconCloseOutline16, { size: 12 })
-+					})]
-+				}, file.id))]
-+			});
-+		}
 +		/** Resolve one Command-wheel gesture into a pointer-anchored infinite-canvas viewport. */
 +		function nextResearchCanvasViewport(viewport, gesture) {
 +			if (!gesture.metaKey) return viewport;
@@ -2620,14 +2974,6 @@ index 1dd0e89..246e785 100644
 +			tag.textContent += ".sRp_root{position:relative;inset:auto;z-index:auto;box-sizing:border-box;width:100%;height:100%;container-type:inline-size;background:var(--dsw-alias-bg-base);pointer-events:auto}.sRp_tabs,.sRp_files{display:none!important}.sRp_body{width:100%;height:100%}.sRp_conversation{min-width:0;max-width:100%;overflow-x:hidden}.sRp_messages{min-width:0;max-width:100%;overflow-x:hidden}.sRp_root .Md3f7G_scroll{box-sizing:border-box;max-width:100%;padding-inline:16px}.sRp_root .Md3f7G_column,.sRp_root .Md3f7G_flowItem{min-width:0;max-width:100%}.sRp_root .p-xYUq_actions{min-width:0;max-width:100%;height:auto;flex-wrap:wrap}.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}.sRp_root .FJxK0a_root{max-width:100%;padding-inline:12px}.sRp_root pre{box-sizing:border-box;max-width:100%;overflow-x:auto}.sRp_root code{max-width:100%;overflow-wrap:anywhere}.sRp_composer{box-sizing:border-box;width:100%;max-width:100%;overflow:hidden}.sRp_composer .uV2eYG_root,.sRp_composer .uV2eYG_card,.sRp_composer .uV2eYG_row{box-sizing:border-box;min-width:0;max-width:100%}.sRp_composer .uV2eYG_row{gap:6px}.sRp_composer .uV2eYG_tools,.sRp_composer .uV2eYG_modes{min-width:0}.sRp_composer .uV2eYG_select{min-width:0;max-width:min(180px,40cqw)}@container (max-width:360px){.sRp_root{--dsh-composer-side-clearance:6px}.sRp_root .Md3f7G_scroll{padding-inline:12px}.sRp_root .p-xYUq_actions{gap:4px}.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{flex:1 1 100%;padding-inline:0}.sRp_composer .uV2eYG_row{align-items:center;gap:4px;flex-wrap:wrap}.sRp_composer .uV2eYG_tools{flex:1 1 100%;gap:4px;overflow:hidden}.sRp_composer .uV2eYG_modes{gap:3px}.sRp_composer .uV2eYG_trailing{gap:4px;margin-left:auto}.sRp_composer .uV2eYG_select{max-width:min(150px,48cqw)}.sRp_root .FJxK0a_root{padding-inline:8px}}";
 +			document.head.appendChild(tag);
 +		}
-+		const researchComposerFileTagStyleId = "@deepseek-ai/dsh-client-ui-conversation/ResearchComposerFileTags";
-+		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(researchComposerFileTagStyleId) + "]") === null) {
-+			const tag = document.createElement("style");
-+			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
-+			tag.dataset.pluginCss = researchComposerFileTagStyleId;
-+			tag.textContent = ".sRp_composer .uV2eYG_card:has([data-research-file-tag-list]){display:grid;grid-template-columns:minmax(0,auto) minmax(88px,1fr);grid-auto-rows:auto;column-gap:0;row-gap:12px}.sRp_composer .uV2eYG_card:has([data-research-file-tag-list]) .uV2eYG_accessory{grid-column:1;grid-row:1;box-sizing:border-box;min-width:0;max-width:min(58cqw,300px);padding:4px 0 0 12px;overflow:hidden}.sRp_composer .uV2eYG_card:has([data-research-file-tag-list]) .uV2eYG_scroll{grid-column:2;grid-row:1;min-width:0}.sRp_composer .uV2eYG_card:has([data-research-file-tag-list]) .uV2eYG_attachments{grid-column:1/-1;grid-row:2}.sRp_composer .uV2eYG_card:has([data-research-file-tag-list]) .uV2eYG_row{grid-column:1/-1;grid-row:2}.sRp_composer .uV2eYG_card:has([data-research-file-tag-list]):has(.uV2eYG_attachments) .uV2eYG_row{grid-row:3}@container (max-width:360px){.sRp_composer .uV2eYG_card:has([data-research-file-tag-list]){grid-template-columns:minmax(0,52cqw) minmax(72px,1fr)}.sRp_composer .uV2eYG_card:has([data-research-file-tag-list]) .uV2eYG_accessory{max-width:52cqw}}";
-+			document.head.appendChild(tag);
-+		}
 +		var ConversationRoot_module_css_default = {
 +			"titleRow": "wSkVaW_titleRow",
 +			"viewArea": "wSkVaW_viewArea",
@@ -2637,23 +2983,14 @@ index 1dd0e89..246e785 100644
 +			"composerSeat": "wSkVaW_composerSeat",
 +			"tabs": "wSkVaW_tabs",
 +			"heroGlow": "wSkVaW_heroGlow",
-+			"tabActive": "wSkVaW_tabActive",
-+			"crumbSep": "wSkVaW_crumbSep",
-+			"crumbCurrent": "wSkVaW_crumbCurrent",
-+			"headerActions": "wSkVaW_headerActions",
-+			"composerStack": "wSkVaW_composerStack",
-+			"scrollBody": "wSkVaW_scrollBody",
-+			"tab": "wSkVaW_tab",
-+			"crumbSeg": "wSkVaW_crumbSeg",
-+			"root": "wSkVaW_root",
-+			"headerHidden": "wSkVaW_headerHidden",
-+			"titleCluster": "wSkVaW_titleCluster",
-+			"header": "wSkVaW_header",
-+			"crumb": "wSkVaW_crumb",
-+			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow"
-+		};
-+		//#endregion
-+		//#region lib/types/client/skeleton/ConversationRoot.js
+ 			"tabActive": "wSkVaW_tabActive",
+ 			"crumbSep": "wSkVaW_crumbSep",
+ 			"crumbCurrent": "wSkVaW_crumbCurrent",
+@@ -6822,7 +9084,310 @@ window.__ModuleLoader__.load({
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/skeleton/ConversationRoot.js
+-		function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain, selectWorkspace, t }) {
 +		function ComposerSurface({ zone, hero, inputBar, pending, session, heroWorkspaceRow, renderSlot, renderSlotChain, seatResizeRef, t }) {
 +			const composerBar = (0, react_jsx_runtime.jsxs)("div", {
 +				className: clsx(ConversationRoot_module_css_default.composerStack, hero && ConversationRoot_module_css_default.composerHero),
@@ -2958,15 +3295,13 @@ index 1dd0e89..246e785 100644
 +			setResearchConversationUnread: () => {}
 +		});
 +		function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, useStore, actions, renderSlot, renderSlotChain, selectWorkspace, setResearchActive = () => {}, researchWorkspaces, researchSidebar = defaultResearchSidebar, t }) {
-+			const openState = useSession((s) => s.openState);
-+			const composerPhase = useSession((s) => s.composerPhase);
-+			const pending = useSession((s) => s.pending) ?? [];
-+			const session = useSession((s) => s);
-+			const inputState = useInput((s) => s);
-+			const cwd = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.cwd);
-+			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
-+			const workspaces = useWorkspaces((s) => s);
-+			const composerBlock = useComposerBlock((block) => block);
+ 			const openState = useSession((s) => s.openState);
+ 			const composerPhase = useSession((s) => s.composerPhase);
+ 			const pending = useSession((s) => s.pending) ?? [];
+@@ -6832,10 +9397,64 @@ window.__ModuleLoader__.load({
+ 			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
+ 			const workspaces = useWorkspaces((s) => s);
+ 			const composerBlock = useComposerBlock((block) => block);
 +			const [sessionPresentationState, setSessionPresentationState] = (0, react.useState)({ sessionId, presentation: ABSENT_RESEARCH_PRESENTATION });
 +			const sessionPresentation = sessionPresentationState.sessionId === sessionId ? sessionPresentationState.presentation : ABSENT_RESEARCH_PRESENTATION;
 +			const directActiveView = useStore?.((s) => s.view ?? "chat");
@@ -2998,10 +3333,18 @@ index 1dd0e89..246e785 100644
 +			const research = activeView === "research";
 +			const researchWorkspace = (0, react.useMemo)(() => sessionId === void 0 ? ABSENT_RESEARCH_WORKSPACE : researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
 +			const researchWorkspaceSnapshot2 = (0, react.useSyncExternalStore)(researchWorkspace.subscribe, researchWorkspace.getSnapshot, researchWorkspace.getSnapshot);
-+			const [pickerOpen, setPickerOpen] = (0, react.useState)(false);
-+			const [pendingWorkspaceId, setPendingWorkspaceId] = (0, react.useState)();
-+			const pickerAnchor = (0, react.useRef)(null);
-+			const seatObserver = (0, react.useRef)(null);
++			const researchFileReferences = (0, react.useMemo)(() => {
++				if (!research || sessionId === void 0) return void 0;
++				const byId = /* @__PURE__ */ new Map(researchWorkspaceSnapshot2.files.map((file) => [file.id, file]));
++				return researchWorkspaceSnapshot2.selection.orderedFileIds.flatMap((id) => {
++					const file = byId.get(id);
++					return file === void 0 ? [] : [file];
++				});
++			}, [research, researchWorkspaceSnapshot2.files, researchWorkspaceSnapshot2.selection.orderedFileIds, sessionId]);
+ 			const [pickerOpen, setPickerOpen] = (0, react.useState)(false);
+ 			const [pendingWorkspaceId, setPendingWorkspaceId] = (0, react.useState)();
+ 			const pickerAnchor = (0, react.useRef)(null);
+ 			const seatObserver = (0, react.useRef)(null);
 +			const composerPortalHostRef = (0, react.useRef)(null);
 +			if (composerPortalHostRef.current === null) {
 +				composerPortalHostRef.current = document.createElement("div");
@@ -3017,14 +3360,10 @@ index 1dd0e89..246e785 100644
 +			const publishResearchPresentation = (0, react.useCallback)((presentation) => {
 +				setSessionPresentationState({ sessionId, presentation: presentation ?? ABSENT_RESEARCH_PRESENTATION });
 +			}, [sessionId]);
-+			const seatResizeRef = (0, react.useCallback)((seat) => {
-+				seatObserver.current?.disconnect();
-+				seatObserver.current = null;
-+				const scroller = seat?.parentElement ?? null;
- 				if (seat === null || scroller === null) return;
- 				seatObserver.current = new ResizeObserver(() => {
- 					scroller.style.setProperty("--dsh-composer-height", `${seat.offsetHeight}px`);
-@@ -6848,6 +9201,54 @@ window.__ModuleLoader__.load({
+ 			const seatResizeRef = (0, react.useCallback)((seat) => {
+ 				seatObserver.current?.disconnect();
+ 				seatObserver.current = null;
+@@ -6848,6 +9467,54 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -3079,19 +3418,15 @@ index 1dd0e89..246e785 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6895,8 +9296,11 @@ window.__ModuleLoader__.load({
- 				]
- 			});
+@@ -6897,6 +9564,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
-+			const hasResearchFileReferences = research && sessionId !== void 0 && researchWorkspaceSnapshot2.selection.orderedFileIds.length > 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
-+				accessory: hasResearchFileReferences ? (0, react_jsx_runtime.jsx)(ResearchFileTags, { sessionId, researchWorkspaces }) : void 0,
-+				hasExternalAttachments: hasResearchFileReferences,
++				researchFileReferences,
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +9317,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +9581,68 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -3184,7 +3519,7 @@ index 1dd0e89..246e785 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +9414,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +9678,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -3205,7 +3540,7 @@ index 1dd0e89..246e785 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +9482,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +9746,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -3223,7 +3558,7 @@ index 1dd0e89..246e785 100644
  				})] })
  			});
  		}
-@@ -7053,14 +9492,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +9756,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -3268,7 +3603,7 @@ index 1dd0e89..246e785 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +9538,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +9802,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -3278,7 +3613,7 @@ index 1dd0e89..246e785 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +9560,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +9824,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -3287,7 +3622,7 @@ index 1dd0e89..246e785 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +9613,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +9877,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -3305,7 +3640,7 @@ index 1dd0e89..246e785 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +9649,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +9913,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -3313,7 +3648,7 @@ index 1dd0e89..246e785 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +10541,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +10805,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -3344,7 +3679,7 @@ index 1dd0e89..246e785 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +10586,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +10850,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -3369,7 +3704,7 @@ index 1dd0e89..246e785 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +11540,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +11804,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -3378,7 +3713,7 @@ index 1dd0e89..246e785 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +11630,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +11894,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -3420,7 +3755,7 @@ index 1dd0e89..246e785 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +11839,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +12103,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -3437,7 +3772,7 @@ index 1dd0e89..246e785 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +12009,8 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +12273,8 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -3446,16 +3781,20 @@ index 1dd0e89..246e785 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,7 +12050,7 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +12314,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
 -			const inputHub = new InputHub(ctx, t);
 +			const inputHub = new InputHub(ctx, t, researchWorkspaces);
  			const composerBlocks = new ComposerBlockRegistry();
++			ctx.inject(["inputTriggers"], (inputScope) => {
++				inputScope.effect(() => inputScope.inputTriggers.registerSource(researchFileInputSource), "ui-conversation: Research inline file references");
++			});
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
-@@ -9551,9 +12063,9 @@ window.__ModuleLoader__.load({
+ 				props: ["inputActions"],
+@@ -9551,9 +12330,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -3468,7 +3807,7 @@ index 1dd0e89..246e785 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +12112,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +12379,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -3482,7 +3821,7 @@ index 1dd0e89..246e785 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +12150,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +12417,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -3492,7 +3831,7 @@ index 1dd0e89..246e785 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +12282,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +12549,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -3507,7 +3846,7 @@ index 1dd0e89..246e785 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +12298,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +12565,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -3516,7 +3855,7 @@ index 1dd0e89..246e785 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +12322,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +12589,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -3525,7 +3864,7 @@ index 1dd0e89..246e785 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +12348,83 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +12615,90 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
@@ -3552,7 +3891,6 @@ index 1dd0e89..246e785 100644
 +		exports.ResearchCanvasArtifactCard = ResearchCanvasArtifactCard;
 +		exports.ResearchCanvasFileCard = ResearchCanvasFileCard;
 +		exports.TurnTailNodeView = TurnTailNodeView;
-+		exports.ResearchFileTags = ResearchFileTags;
 +		exports.UserStyleBubble = UserStyleBubble;
 +		exports.compactionDefinition = compactionDefinition;
 +		exports.compactConversationFlow = compactConversationFlow;
@@ -3562,6 +3900,7 @@ index 1dd0e89..246e785 100644
 +		exports.executionProgressUpdates = executionProgressUpdates;
 +		exports.executionSummaryStatus = executionSummaryStatus;
 +		exports.executionStatusForNodes = executionStatusForNodes;
++		exports.permissionOptionLabel = permissionOptionLabel;
 +		exports.finalAnswerBlocks = finalAnswerBlocks;
 +		exports.RESEARCH_CANVAS_MAX_FILES_PER_DROP = RESEARCH_CANVAS_MAX_FILES_PER_DROP;
 +		exports.RESEARCH_CANVAS_MAX_FILES_PER_SESSION = RESEARCH_CANVAS_MAX_FILES_PER_SESSION;
@@ -3586,6 +3925,7 @@ index 1dd0e89..246e785 100644
 +		exports.parseResearchCanvasFileNodes = parseResearchCanvasFileNodes;
 +		exports.parseResearchCanvasSelection = parseResearchCanvasSelection;
 +		exports.parseResearchPrompt = parseResearchPrompt;
++		exports.parseResearchFileReference = parseResearchFileReference;
 +		exports.parseSherlockFileDrag = parseSherlockFileDrag;
 +		exports.placeResearchCanvasArtifact = placeResearchCanvasArtifact;
 +		exports.placeResearchCanvasFiles = placeResearchCanvasFiles;
@@ -3603,14 +3943,20 @@ index 1dd0e89..246e785 100644
 +		exports.saveResearchCanvasArtifacts = saveResearchCanvasArtifacts;
 +		exports.saveResearchCanvasFiles = saveResearchCanvasFiles;
 +		exports.saveResearchCanvasSelection = saveResearchCanvasSelection;
++		exports.extractResearchFileReferences = extractResearchFileReferences;
++		exports.researchFileReference = researchFileReference;
++		exports.researchFileReferenceCodec = researchFileReferenceCodec;
++		exports.serializeInputReferenceClipboard = serializeInputReferenceClipboard;
++		exports.parseInputReferenceClipboard = parseInputReferenceClipboard;
 +		exports.serializeResearchPrompt = serializeResearchPrompt;
++		exports.syncResearchFileReferences = syncResearchFileReferences;
 +		exports.updateResearchSelection = updateResearchSelection;
 +		exports.userQueuedMessages = userQueuedMessages;
  		exports.apply = apply;
  		exports.inject = inject;
  		return module.exports;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts
-index 7b2ae76..c9a55be 100644
+index 7b2ae76..58a5495 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts
 @@ -1,4 +1,4 @@
@@ -3619,8 +3965,20 @@ index 7b2ae76..c9a55be 100644
 +/** Streaming, settled, and interrupted Assistant states share one keyed renderer instance and expose settled message identity for Research selection. */
  export declare const AssistantNodeView: import("react").MemoExoticComponent<({ node, useTurnData, openFile, loadImage, fileMentions, t, }: ChatNodeViewProps<"assistant-step">) => import("react").JSX.Element>;
  //# sourceMappingURL=AssistantNodeView.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts.orig b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts.orig
+new file mode 100644
+index 0000000..7b2ae76
+--- /dev/null
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/AssistantNodeView.d.ts.orig
+@@ -0,0 +1,4 @@
++import type { ChatNodeViewProps } from '../contract/slots.ts';
++/** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
++export declare const AssistantNodeView: import("react").MemoExoticComponent<({ node, useTurnData, openFile, loadImage, fileMentions, t, }: ChatNodeViewProps<"assistant-step">) => import("react").JSX.Element>;
++//# sourceMappingURL=AssistantNodeView.d.ts.map
+\ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts
-index b485863..581e6e3 100644
+index b485863..f890829 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts
 @@ -1,7 +1,7 @@
@@ -3632,8 +3990,23 @@ index b485863..581e6e3 100644
  export declare const TurnTailNodeView: import("react").MemoExoticComponent<({ node, openFile, forkAt, renderSlot, renderSlotChain, t, useSession, }: TurnTailNodeViewProps) => import("react").JSX.Element | null>;
  export {};
  //# sourceMappingURL=TurnTailNodeView.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts.orig b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts.orig
+new file mode 100644
+index 0000000..b485863
+--- /dev/null
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/chat/TurnTailNodeView.d.ts.orig
+@@ -0,0 +1,7 @@
++import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots';
++import type { ChatNodeViewProps } from '../contract/slots.ts';
++type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'> & PropsRenderSlots<'conversation.chat.turnTail' | 'conversation.chat.assistant-actions'>;
++/** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
++export declare const TurnTailNodeView: import("react").MemoExoticComponent<({ node, openFile, forkAt, renderSlot, renderSlotChain, t, useSession, }: TurnTailNodeViewProps) => import("react").JSX.Element | null>;
++export {};
++//# sourceMappingURL=TurnTailNodeView.d.ts.map
+\ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 50939b2..cb13d76 100644
+index 50939b2..56a2d94 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -1,7 +1,7 @@
@@ -3697,17 +4070,21 @@ index 50939b2..cb13d76 100644
      /** Bind the input machine's draft persistence mirror to the session store. */
      bindDraftMirror: (write: (text: string) => void) => () => void;
  }
-@@ -516,6 +538,8 @@ export interface ComposerBarOwnerProps {
+@@ -516,6 +538,12 @@ export interface ComposerBarOwnerProps {
      placeholder?: string;
      /** Optional content rendered above the textarea. */
      accessory?: ReactNode;
-+    /** Selected Research files make an otherwise empty composer submittable. */
-+    hasExternalAttachments?: boolean;
++    /** Research canvas files inserted into the native composer text flow. Undefined outside Research. */
++    researchFileReferences?: readonly {
++        readonly id: string;
++        readonly name: string;
++        readonly path?: string;
++    }[];
      /** Floating overlay anchor content (menu / popup shell entries), rendered inside the card. */
      overlay?: ReactNode;
      /** input.left slot entries (tool row, beside the resident chrome). */
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts
-index cbce2bd..b3e8de7 100644
+index cbce2bd..5d34eec 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts
 @@ -16,6 +16,8 @@ export interface ViewTab {
@@ -3731,20 +4108,97 @@ index cbce2bd..b3e8de7 100644
 +    researchConversationUnread: boolean;
  }
  //# sourceMappingURL=views.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts.orig b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts.orig
+new file mode 100644
+index 0000000..cbce2bd
+--- /dev/null
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/views.d.ts.orig
+@@ -0,0 +1,39 @@
++/** Shared conversation view, selection, and store-state contracts. */
++/** Tool call identity as carried on the wire (branded upstream in connection). */
++export type CallId = string;
++/** Selection target for the details linkage channel (toolcall is the step special case). */
++export interface SelectionTarget {
++    turnSeq: number;
++    stepSeq?: number;
++    callId?: CallId;
++    toolName?: string;
++}
++/**
++ * One conversation view tab, projected from a 'conversation.view' slot
++ * entry's registration options (label falls back to the entry id).
++ */
++export interface ViewTab {
++    id: string;
++    label: string;
++}
++/**
++ * Per-session state shared by conversation, chat-view, and details slots.
++ * Unknown persisted view ids fall back to the stable Chat view.
++ */
++export interface ChatStoreState {
++    /** Details-linkage channel (conversation writes, details reads). */
++    selection: SelectionTarget | null;
++    /** Composer draft (persisted; survives session switches and reloads). */
++    draft: string;
++    /** Active conversation view id ('conversation.view' entry id); null falls back to Chat. */
++    view: string | null;
++    /**
++     * One-shot inspect handoff: chat writes the call to reveal, the trajectory
++     * view consumes it and acknowledges by clearing. Read with `?? null` —
++     * persisted snapshots from before this field rehydrate without it.
++     */
++    inspect: {
++        callId: CallId;
++    } | null;
++}
++//# sourceMappingURL=views.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
+index b8ebfaf..fdbb0fb 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
+@@ -256,6 +256,11 @@ export type InputEvent =
+     readonly type: 'undo';
+ } | {
+     readonly type: 'redo';
++} | {
++    /** Restore an optimistically cleared draft after a failed send. */
++    readonly type: 'restore-draft';
++    readonly draft: string;
++    readonly occurrences: readonly Occurrence[];
+ }
+ /**
+  * Paste text replacing the selection, one transaction. Hot-snapshot sync
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/decorations.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/decorations.d.ts
+index 34909b7..e1c0000 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/decorations.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/decorations.d.ts
+@@ -16,6 +16,10 @@ export interface ChipRender {
+     readonly occurrenceId: number;
+     /** Placeholder offset in the draft (the chip occupies [offset, offset+1)). */
+     readonly offset: number;
++    /** Reference owner used for source-specific DOM metadata. */
++    readonly source: string;
++    /** Owner-scoped reference id. */
++    readonly ref: string;
+     readonly label: string;
+     /** Owner-resolution failure styling bit. */
+     readonly invalid: boolean;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
-index 339e1ba..1cb063b 100644
+index 339e1ba..db5d226 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
-@@ -34,6 +34,8 @@ export interface SessionInputDeps {
-      * order (the empty-draft accelerated-Enter gesture); absent = unsupported.
+@@ -78,13 +78,15 @@ export declare class SessionInputShell implements SessionInput {
+      * @param ids - failed attempt image ids.
       */
-     steerQueue?: (() => void) | undefined;
-+    /** Whether the active surface owns selected non-image attachments. */
-+    hasExternalAttachments?: (() => boolean) | undefined;
-     /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
-     defaultSink(text: string, imageIds: readonly DraftAttachmentId[], mode: InputSubmitMode): void;
- }
-@@ -84,7 +86,7 @@ export declare class SessionInputShell implements SessionInput {
+     restoreImages(ids: readonly DraftAttachmentId[]): void;
++    /** Restore the exact native draft and reference table after a failed optimistic send. */
++    restoreDraftState(snapshot: Pick<InputState, 'draft' | 'occurrences'>): void;
+     /**
+      * Clear the draft as a successful-send commit: no undo unit is recorded and
+      * the undo history is cut, so Ctrl/Cmd-Z cannot resurrect sent content
       * (the command path gets the same discipline from submit-settled success).
       * @param imageIds - admitted image ids to remove from this draft.
       */
@@ -3754,7 +4208,7 @@ index 339e1ba..1cb063b 100644
      undo(): void;
      /** Redo the latest undone transaction. */
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
-index 00f283c..bda5df4 100644
+index 00f283c..4369ad8 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
 @@ -13,6 +13,27 @@ import type { InputTriggerController } from '@deepseek-ai/dsh-client-ui-input-tr
@@ -3797,7 +4251,7 @@ index 00f283c..bda5df4 100644
       * Resolve the facade for one session-scope ctx (SessionInputResolver face).
       * @param actx - session-scope context.
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
-index 627a46d..d6f7ce0 100644
+index 627a46d..a46eaf2 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
 @@ -1,5 +1,38 @@
@@ -3841,8 +4295,21 @@ index 627a46d..d6f7ce0 100644
 +};
 +export declare function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, useStore, actions, renderSlot, renderSlotChain, selectWorkspace, setResearchActive, researchWorkspaces, researchSidebar, t, }: ConversationRootProps): import("react").JSX.Element;
  //# sourceMappingURL=ConversationRoot.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts.orig b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts.orig
+new file mode 100644
+index 0000000..627a46d
+--- /dev/null
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts.orig
+@@ -0,0 +1,5 @@
++import type { ConversationSlotProps } from '../contract/slots.ts';
++/** Full props composed from the slot contract. */
++export type ConversationRootProps = ConversationSlotProps;
++export declare function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain, selectWorkspace, t, }: ConversationRootProps): import("react").JSX.Element;
++//# sourceMappingURL=ConversationRoot.d.ts.map
+\ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts
-index b5dcdb9..2f26dcd 100644
+index b5dcdb9..ef78b42 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts
 @@ -16,5 +16,5 @@ export declare function ConversationSessionHeader({ sessionId, useSession, useSe
@@ -3852,8 +4319,36 @@ index b5dcdb9..2f26dcd 100644
 -export declare function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, }: ConversationSessionProps): import("react").JSX.Element | null;
 +export declare function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, releaseResearchWorkspace, }: ConversationSessionProps): import("react").JSX.Element | null;
  //# sourceMappingURL=ConversationSession.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts.orig b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts.orig
+new file mode 100644
+index 0000000..b5dcdb9
+--- /dev/null
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationSession.d.ts.orig
+@@ -0,0 +1,20 @@
++/** Strict per-session header/body content inserted into the resident conversation layout. */
++import type { ConversationSessionHeaderSlotProps, ConversationSessionSlotProps } from '../contract/slots.ts';
++/** Full props composed from the strict session body contract. */
++export type ConversationSessionProps = ConversationSessionSlotProps;
++/** Full props composed from the strict session header contract. */
++export type ConversationSessionHeaderProps = ConversationSessionHeaderSlotProps;
++/**
++ * Renders Session header chrome above the resident conversation scrollport.
++ * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
++ * @returns the hidden blank-session header or visible title and tabs.
++ */
++export declare function ConversationSessionHeader({ sessionId, useSession, useSessions, useStore, actions, renderSlot, views, open, t, }: ConversationSessionHeaderProps): import("react").JSX.Element;
++/**
++ * Renders the active Session view inside the resident scrollport and keeps
++ * the input draft mirrored while blank Hero chrome is visible.
++ * @param props - Strict Session input/store, view ledger, and render shares.
++ * @returns the active view area, or null while the Session remains blank.
++ */
++export declare function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, }: ConversationSessionProps): import("react").JSX.Element | null;
++//# sourceMappingURL=ConversationSession.d.ts.map
+\ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts
-index e988aa0..7440222 100644
+index e988aa0..7784704 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts
 @@ -1,5 +1,5 @@
@@ -3863,8 +4358,33 @@ index e988aa0..7440222 100644
  export type DetailsPanelProps = DetailsSlotProps;
  export declare function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }: DetailsPanelProps): import("react").JSX.Element;
  //# sourceMappingURL=DetailsPanel.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts.orig b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts.orig
+new file mode 100644
+index 0000000..e988aa0
+--- /dev/null
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/DetailsPanel.d.ts.orig
+@@ -0,0 +1,5 @@
++import type { DetailsSlotProps } from '../contract/slots.ts';
++/** Full props composed by reference from the contract (automatic shares & injected share). */
++export type DetailsPanelProps = DetailsSlotProps;
++export declare function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }: DetailsPanelProps): import("react").JSX.Element;
++//# sourceMappingURL=DetailsPanel.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts
+index 395a266..1005545 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/InputBar.d.ts
+@@ -7,5 +7,5 @@
+  * (running/removed/promptError) are self-selected via useSession. */
+ import type { ComposerBarProps } from '../contract/slots.ts';
+ export type InputBarProps = ComposerBarProps;
+-export declare function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert, blocked, workspacePickerOpen, onRequestWorkspace, placeholder, accessory, overlay, leftItems, rightItems, footer, }: InputBarProps): import("react").JSX.Element;
++export declare function InputBar({ useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages, resolveSubmitMode, toggleCommandMenu, stop, command, t, renderSlot, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert, blocked, workspacePickerOpen, onRequestWorkspace, placeholder, accessory, researchFileReferences, overlay, leftItems, rightItems, footer, }: InputBarProps): import("react").JSX.Element;
+ //# sourceMappingURL=InputBar.d.ts.map
+\ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts
-index fc54eca..2e0c16a 100644
+index fc54eca..cf016ad 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/stores.d.ts
 @@ -3,7 +3,7 @@

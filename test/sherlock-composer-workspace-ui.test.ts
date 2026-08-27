@@ -104,6 +104,7 @@ async function loadClientBundle(
   })
 
   runInNewContext(source, {
+    AbortController: globalThis.AbortController,
     window: bundleWindow,
     document: styleDocument,
     localStorage: options?.window?.localStorage,
@@ -145,6 +146,22 @@ function createSelectorStore<State extends object>(initial: State) {
     update(patch: Partial<State>) {
       state = { ...state, ...patch }
       listeners.forEach((listener) => listener())
+    }
+  }
+}
+
+function createSnapshotStore<T>(initial: T) {
+  let value = initial
+  const listeners = new Set<() => void>()
+  return {
+    getSnapshot: () => value,
+    set(next: T) {
+      value = next
+      listeners.forEach((listener) => listener())
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     }
   }
 }
@@ -413,6 +430,7 @@ async function mountConversationRoot(
     if (name === 'conversation.composer.bar') {
       const composerOwner = owner as {
         accessory?: unknown
+        researchFileReferences?: Array<{ id: string; name: string; path?: string }>
         footer?: unknown
       } | undefined
       return createElement('div', {
@@ -422,6 +440,14 @@ async function mountConversationRoot(
           : 'true'
       },
         composerOwner?.accessory,
+        createElement('span', { 'data-test-inline-reference-layer': '' },
+          ...(composerOwner?.researchFileReferences ?? []).map((file) => createElement('span', {
+            key: file.id,
+            'data-research-file-tag': file.id,
+            'data-reference-source': 'research-file',
+            'aria-invalid': file.path === undefined ? 'true' : undefined
+          }, file.name.split(/[\\/]/).at(-1)))
+        ),
         ...input.get().images.map((image) => createElement('span', {
           key: image.id,
           'data-composer-image-id': image.id
@@ -1582,7 +1608,7 @@ describe('Sherlock workspace and composer controls', () => {
     const rawPath = '/w/private␟report.pdf'
     const prompt = client.serializeResearchPrompt([
       { id: 'f1', name: rawPath, path: rawPath }
-    ], 'compare these') as string
+    ], 'compare these', [{ fileId: 'f1', offset: 8 }]) as string
 
     const html = renderToStaticMarkup(createElement(client.UserStyleBubble, {
       content: [{ type: 'text', text: prompt }],
@@ -1591,148 +1617,51 @@ describe('Sherlock workspace and composer controls', () => {
     }))
 
     expect(html).toContain('data-research-message-file="f1"')
+    expect(html).toContain('data-research-message-files="inline"')
     expect(html).toContain('private␟report.pdf')
-    expect(html).toContain('compare these')
+    expect(html).toContain('compare ')
+    expect(html).toContain('these')
+    expect(html.indexOf('compare ')).toBeLessThan(html.lastIndexOf('private␟report.pdf'))
+    expect(html.lastIndexOf('private␟report.pdf')).toBeLessThan(html.lastIndexOf('these'))
     expect(html).not.toContain(rawPath)
     expect(html).not.toContain('SHERLOCK_RESEARCH_FILES_V1')
   })
 
-  it('renders ordered Research files as a compact reference context and mutates that selection', async () => {
-    const browserWindow = new Window({ url: 'https://sherlock.local/' })
-    const sessionId = 'session-file-tags'
-    browserWindow.localStorage.setItem(
-      `sherlock.research.canvas.files.v1:${sessionId}`,
-      JSON.stringify([
-        { id: 'f1', path: '/w/one.pdf', name: '/w/one.pdf', source: 'computer', x: 10, y: 20 },
-        { id: 'f2', name: 'two.pdf', source: 'sherlock', x: 30, y: 40 }
-      ])
-    )
-    browserWindow.localStorage.setItem(
-      `sherlock.research.canvas.selection.v1:${sessionId}`,
-      JSON.stringify({
-        selectedNodeIds: ['f1', 'f2'], orderedFileIds: ['f2', 'f1']
-      })
-    )
-    const restoreGlobals = installBrowserGlobals(browserWindow)
-    const primitives = new Proxy({
-      IconCloseOutline16: () => createElement('span', { 'data-test-close-icon': '' })
-    }, {
-      get(target, property) {
-        return Reflect.get(target, property) ?? (() => null)
-      }
-    })
+  it('moves inline Research tags through the composer clipboard without arrow controls', async () => {
     const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
-      document: browserWindow.document,
-      window: browserWindow,
-      modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
+      modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
     })
-    expect(client.ResearchFileTags).toBeTypeOf('function')
-    if (typeof client.ResearchFileTags !== 'function') {
-      restoreGlobals()
-      return
-    }
-    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
-      for(id: string): {
-        getSnapshot(): {
-          files: Array<Record<string, unknown>>
-          selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
-        }
-        selectionSnapshot(): { selectedNodeIds: string[]; orderedFileIds: string[] }
-      }
-    }
-    const registry = new Registry(browserWindow.localStorage as Storage)
-    const workspace = registry.for(sessionId)
-    const host = browserWindow.document.createElement('div')
-    browserWindow.document.body.appendChild(host)
-    const root = createRoot(host)
-    const tagOrder = () => Array.from(host.querySelectorAll('[data-research-file-tag]'))
-      .map((tag) => tag.getAttribute('data-research-file-tag'))
+    expect(client.ResearchFileTags).toBeUndefined()
+    expect(client.serializeInputReferenceClipboard).toBeTypeOf('function')
+    expect(client.parseInputReferenceClipboard).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function' ||
+        typeof client.researchFileReference !== 'function' ||
+        typeof client.serializeInputReferenceClipboard !== 'function' ||
+        typeof client.parseInputReferenceClipboard !== 'function') return
 
-    try {
-      await act(async () => {
-        root.render(createElement(client.ResearchFileTags, {
-          sessionId,
-          researchWorkspaces: registry
-        }))
-      })
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    shell.setDraft('前后')
+    shell.insertReference(
+      client.researchFileReference({ id: 'f1', path: '/w/one.pdf', name: '/w/one.pdf' }),
+      { start: 1, end: 1, draftRev: shell.snapshot.draftRev }
+    )
+    const copied = client.serializeInputReferenceClipboard(
+      shell.snapshot.draft,
+      shell.snapshot.occurrences,
+      { start: 1, end: 2 }
+    )
+    expect(copied.text).toBe('one.pdf')
+    expect(copied.payload).toBeTypeOf('string')
 
-      const referenceContext = host.querySelector('[data-research-file-tag-list]')
-      expect(referenceContext?.getAttribute('role')).toBe('group')
-      expect(referenceContext?.getAttribute('aria-label')).toBe('参考文件')
-      expect(host.querySelector('[data-research-reference-label]')?.textContent).toBe('参考')
-      expect(tagOrder()).toEqual(['f2', 'f1'])
-      expect(host.querySelector('[data-research-file-tag="f2"]')?.getAttribute('aria-invalid'))
-        .toBe('true')
-      expect(host.textContent).toContain('one.pdf')
-      expect(host.innerHTML).not.toContain('/w/one.pdf')
-      expect(workspace.getSnapshot().files).toMatchObject([
-        { id: 'f1', x: 10, y: 20 },
-        { id: 'f2', x: 30, y: 40 }
-      ])
-      expect(host.querySelector('button[aria-label="左移"]')).toBeNull()
-      expect(host.querySelector('button[aria-label="右移"]')).toBeNull()
-      expect(host.querySelectorAll('[data-research-file-tag] button')).toHaveLength(2)
+    shell.setDraft('前后', { start: 1, end: 2, insertedLength: 0 })
+    const components = client.parseInputReferenceClipboard(copied.payload, copied.text)
+    shell.pasteBegin(copied.text, { start: 2, end: 2 }, components)
 
-      const payloads = new Map<string, string>()
-      const source = host.querySelector('[data-research-file-tag="f1"]')
-      const target = host.querySelector('[data-research-file-tag="f2"]')
-      await act(async () => {
-        const dragStart = new browserWindow.Event('dragstart', { bubbles: true })
-        Object.defineProperty(dragStart, 'dataTransfer', {
-          value: {
-            effectAllowed: 'none',
-            setData: (type: string, value: string) => { payloads.set(type, value) }
-          }
-        })
-        source?.dispatchEvent(dragStart)
-        const dragOver = new browserWindow.Event('dragover', {
-          bubbles: true, cancelable: true
-        })
-        Object.defineProperty(dragOver, 'dataTransfer', {
-          value: { types: ['application/x-sherlock-research-file-tag'] }
-        })
-        target?.dispatchEvent(dragOver)
-        expect(dragOver.defaultPrevented).toBe(true)
-        const drop = new browserWindow.Event('drop', { bubbles: true, cancelable: true })
-        Object.defineProperty(drop, 'dataTransfer', {
-          value: { getData: (type: string) => payloads.get(type) ?? '' }
-        })
-        target?.dispatchEvent(drop)
-      })
-      expect(tagOrder()).toEqual(['f1', 'f2'])
-      expect(workspace.selectionSnapshot().selectedNodeIds).toEqual(['f1', 'f2'])
-      expect(workspace.getSnapshot().files).toMatchObject([
-        { id: 'f1', x: 10, y: 20 },
-        { id: 'f2', x: 30, y: 40 }
-      ])
-
-      await act(async () => {
-        host.querySelector('[data-research-file-tag="f1"]')?.dispatchEvent(
-          new browserWindow.KeyboardEvent('keydown', {
-            key: 'Delete', code: 'Delete', bubbles: true, cancelable: true
-          })
-        )
-      })
-      expect(tagOrder()).toEqual(['f2'])
-      expect(workspace.selectionSnapshot()).toEqual({
-        selectedNodeIds: ['f2'], orderedFileIds: ['f2']
-      })
-
-      await act(async () => {
-        host.querySelector('[data-research-file-tag="f2"]')?.dispatchEvent(
-          new browserWindow.KeyboardEvent('keydown', {
-            key: 'Backspace', code: 'Backspace', bubbles: true, cancelable: true
-          })
-        )
-      })
-      expect(tagOrder()).toEqual([])
-      expect(workspace.selectionSnapshot()).toEqual({
-        selectedNodeIds: [], orderedFileIds: []
-      })
-    } finally {
-      await act(async () => { root.unmount() })
-      restoreGlobals()
-    }
+    expect(shell.snapshot.draft).toBe('前后\uFFFC')
+    expect(shell.snapshot.occurrences).toMatchObject([
+      { source: 'research-file', offset: 2, label: 'one.pdf' }
+    ])
   })
 
   it('deletes selected canvas cards with Delete and the right-click menu', async () => {
@@ -2835,13 +2764,13 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('does not reserve an accessory row when Research has no selected files', async () => {
+  it('never reserves a separate accessory row for inline Research file tags', async () => {
     const mounted = await mountConversationRoot('research')
     try {
       const { browserWindow, workspace } = mounted
       const composer = () => browserWindow.document.querySelector('[data-test-composer-bar]')
 
-      expect(composer()?.getAttribute('data-test-composer-has-accessory')).toBe('true')
+      expect(composer()?.getAttribute('data-test-composer-has-accessory')).toBe('false')
       await act(async () => {
         workspace.removeSelectedFile('file-b')
         workspace.removeSelectedFile('file-a')
