@@ -225,3 +225,7 @@
   grow before remeasurement and exactly one 436 px body-fit render follows;
   4 focused files, 207 tests, 41 security tests, typecheck, diff check, and full
   patch reverse check pass; commit `修复PDF预览重入测量状态`).
+- Task 6: complete (commits 2c64c9a5..250d9f23, dual final review clean;
+  PDF decode/backing limits, portrait/landscape two-dimensional fitting,
+  offscreen re-entry, single-owner teardown, staged assets, and opaque HTML
+  capability boundaries are focused green).
