@@ -216,6 +216,7 @@ async function mountConversationRoot(
         pendingMessageJump: string | null
       }
       assistantActionsActive(): boolean
+      removeSelectedFile(fileId: string): void
       setArtifacts(artifacts: Array<Record<string, unknown>>): void
       setViewport(viewport: { scale: number; x: number; y: number }): void
       setCanvasSize(size: { width: number; height: number }): void
@@ -414,7 +415,12 @@ async function mountConversationRoot(
         accessory?: unknown
         footer?: unknown
       } | undefined
-      return createElement('div', { 'data-test-composer-bar': '' },
+      return createElement('div', {
+        'data-test-composer-bar': '',
+        'data-test-composer-has-accessory': composerOwner?.accessory === undefined
+          ? 'false'
+          : 'true'
+      },
         composerOwner?.accessory,
         ...input.get().images.map((image) => createElement('span', {
           key: image.id,
@@ -1591,7 +1597,7 @@ describe('Sherlock workspace and composer controls', () => {
     expect(html).not.toContain('SHERLOCK_RESEARCH_FILES_V1')
   })
 
-  it('renders ordered Research file tags from one workspace selection and mutates that selection', async () => {
+  it('renders ordered Research files as a compact reference context and mutates that selection', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const sessionId = 'session-file-tags'
     browserWindow.localStorage.setItem(
@@ -1608,9 +1614,17 @@ describe('Sherlock workspace and composer controls', () => {
       })
     )
     const restoreGlobals = installBrowserGlobals(browserWindow)
+    const primitives = new Proxy({
+      IconCloseOutline16: () => createElement('span', { 'data-test-close-icon': '' })
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
     const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
       document: browserWindow.document,
-      window: browserWindow
+      window: browserWindow,
+      modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
     })
     expect(client.ResearchFileTags).toBeTypeOf('function')
     if (typeof client.ResearchFileTags !== 'function') {
@@ -1642,6 +1656,10 @@ describe('Sherlock workspace and composer controls', () => {
         }))
       })
 
+      const referenceContext = host.querySelector('[data-research-file-tag-list]')
+      expect(referenceContext?.getAttribute('role')).toBe('group')
+      expect(referenceContext?.getAttribute('aria-label')).toBe('参考文件')
+      expect(host.querySelector('[data-research-reference-label]')?.textContent).toBe('参考')
       expect(tagOrder()).toEqual(['f2', 'f1'])
       expect(host.querySelector('[data-research-file-tag="f2"]')?.getAttribute('aria-invalid'))
         .toBe('true')
@@ -2812,6 +2830,25 @@ describe('Sherlock workspace and composer controls', () => {
       await act(async () => { actions.setView('research') })
       expect(Array.from(tags()).map((tag) => tag.getAttribute('data-research-file-tag')))
         .toEqual(['file-b', 'file-a'])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('does not reserve an accessory row when Research has no selected files', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      const { browserWindow, workspace } = mounted
+      const composer = () => browserWindow.document.querySelector('[data-test-composer-bar]')
+
+      expect(composer()?.getAttribute('data-test-composer-has-accessory')).toBe('true')
+      await act(async () => {
+        workspace.removeSelectedFile('file-b')
+        workspace.removeSelectedFile('file-a')
+      })
+
+      expect(browserWindow.document.querySelectorAll('[data-research-file-tag]')).toHaveLength(0)
+      expect(composer()?.getAttribute('data-test-composer-has-accessory')).toBe('false')
     } finally {
       await mounted.cleanup()
     }
