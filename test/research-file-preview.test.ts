@@ -58,6 +58,16 @@ function deterministicIds(...ids: string[]): () => string {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, reject, resolve }
+}
+
 async function fixture(options?: { now?: () => number; ttlMs?: number }) {
   const root = await temporaryDirectory()
   const userData = path.join(root, 'user-data')
@@ -418,6 +428,72 @@ describe('Research file preview authorization registry', () => {
     await expect(registry.restore({
       sessionId: 'session-1', nodeId: 'node-1', authorizationId: second.authorizationId
     })).resolves.not.toBeNull()
+  })
+
+  it('serializes concurrent admission replacement for the same durable node identity', async () => {
+    const root = await temporaryDirectory()
+    const firstPath = path.join(root, 'first.png')
+    const secondPath = path.join(root, 'second.png')
+    await Promise.all([writeFile(firstPath, pngBytes), writeFile(secondPath, pngBytes)])
+    const firstTargetReached = deferred<void>()
+    const releaseFirstTarget = deferred<void>()
+    const realFiles = countingRealFileSystem().fileSystem
+    const fileSystem: ResearchPreviewFileSystem = {
+      ...realFiles,
+      async realpath(targetPath) {
+        if (targetPath === firstPath) {
+          firstTargetReached.resolve()
+          await releaseFirstTarget.promise
+        }
+        return realFiles.realpath(targetPath)
+      }
+    }
+    const storage = new ControllableAuthorizationStorage()
+    const registry = new ResearchFilePreviewRegistry({
+      storage,
+      fileSystem,
+      randomId: deterministicIds(
+        'authorization_0000000000000001', 'capability_0000000000000001',
+        'authorization_0000000000000002', 'capability_0000000000000002',
+        'capability_0000000000000003'
+      )
+    })
+
+    const firstAdmission = registry.admitFinder({
+      path: firstPath, sessionId: 'session-1', nodeId: 'node-1'
+    })
+    await firstTargetReached.promise
+    const secondAdmission = registry.admitFinder({
+      path: secondPath, sessionId: 'session-1', nodeId: 'node-1'
+    })
+    releaseFirstTarget.resolve()
+
+    const [first, second] = await Promise.all([firstAdmission, secondAdmission])
+    expectDescriptor(first)
+    expectDescriptor(second)
+    expect(storage.records).toHaveLength(1)
+    expect(storage.records[0]).toMatchObject({
+      authorizationId: second.authorizationId,
+      path: await realpath(secondPath),
+      sessionId: 'session-1',
+      nodeId: 'node-1'
+    })
+    expect((await registry.handle(new Request(first.url))).status).toBe(403)
+
+    const restarted = new ResearchFilePreviewRegistry({
+      storage,
+      fileSystem,
+      randomId: deterministicIds('capability_0000000000000003')
+    })
+    await expect(restarted.restore({
+      sessionId: 'session-1', nodeId: 'node-1', authorizationId: first.authorizationId
+    })).resolves.toBeNull()
+    await expect(restarted.restore({
+      sessionId: 'session-1', nodeId: 'node-1', authorizationId: second.authorizationId
+    })).resolves.toMatchObject({
+      authorizationId: second.authorizationId,
+      url: 'sherlock-preview://capability_0000000000000003/'
+    })
   })
 
   it.each([

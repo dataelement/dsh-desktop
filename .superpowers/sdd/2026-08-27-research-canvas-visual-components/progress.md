@@ -122,3 +122,14 @@
   auto/manual height, capability image lifecycle, Finder/sidebar secure
   admission, exact ephemeral release, and durable deletion revoke are focused
   green (4 files, 174 tests); typecheck and patch durability gates pass.
+- Task 5: dual review found 6 confirmed important issues — registry/drop concurrency and
+  capacity can orphan durable authorizations, same-path legacy drops can
+  downgrade rich nodes, failed deletion revocation lacks recovery, image errors
+  retain a live token, and research-file clipboard tags are not session-bound.
+  The reported global Markdown CSS change was disproved by commit history and
+  an existing 0.6.0 regression test. Fix round 1 required.
+- Task 5: fix round 1/5 (6 addressed, 0 open — concurrent admission/drop
+  serialization, capacity orphan revocation, authorized same-path preservation,
+  failure-safe durable deletion retry, idempotent image-error release, and
+  active-session clipboard authority are behavior-tested; commit
+  `修复研究预览授权与拖入生命周期`).

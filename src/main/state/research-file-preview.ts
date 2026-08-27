@@ -425,6 +425,7 @@ export class ResearchFilePreviewRegistry {
   private readonly randomId: () => string
   private readonly now: () => number
   private readonly capabilityTtlMs: number
+  private admissionQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: ResearchFilePreviewRegistryOptions) {
     this.fileSystem = options.fileSystem ?? defaultFileSystem
@@ -605,13 +606,18 @@ export class ResearchFilePreviewRegistry {
     sessionId: string
     nodeId: string
   }): Promise<ResearchFilePreviewDescriptor | null> {
-    const replaced = new Set<string>()
-    for (const [authorizationId, record] of this.authorizations) {
-      if (record.sessionId === input.sessionId && record.nodeId === input.nodeId) {
-        replaced.add(authorizationId)
-      }
-    }
-    if (this.authorizations.size - replaced.size >= MAX_AUTHORIZATIONS) return null
+    const result = this.admissionQueue.then(() => this.performAdmission(input))
+    this.admissionQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async performAdmission(input: {
+    source: ResearchPreviewSource
+    targetPath: string
+    authorizedRoot: string
+    sessionId: string
+    nodeId: string
+  }): Promise<ResearchFilePreviewDescriptor | null> {
     try {
       const root = await this.fileSystem.realpath(input.authorizedRoot)
       const target = await this.fileSystem.realpath(input.targetPath)
@@ -626,6 +632,13 @@ export class ResearchFilePreviewRegistry {
         Math.min(Math.max(0, file.size - 1), MAGIC_PREFIX_BYTES - 1)
       )
       if (!kind.validateMagic(prefix)) return null
+      const replaced = new Set<string>()
+      for (const [authorizationId, existing] of this.authorizations) {
+        if (existing.sessionId === input.sessionId && existing.nodeId === input.nodeId) {
+          replaced.add(authorizationId)
+        }
+      }
+      if (this.authorizations.size - replaced.size >= MAX_AUTHORIZATIONS) return null
       const authorizationId = this.nextOpaqueId()
       const record: ResearchPreviewAuthorizationRecord = {
         authorizationId,
