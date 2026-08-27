@@ -150,3 +150,12 @@
   the outbox after restart and propagates rejected writes, parsing is linear and
   stops at 256, and only in-flight admissions retain bounded revocation markers;
   commit `修复研究预览持久存储与资源上限`).
+- Task 5: fix-round 3 re-review found 1 important issue — admission happens
+  before the durable orphan outbox reservation, so IPC loss or unmount can
+  create more authorizations than the bounded retry journal can retain. Fix
+  round 4 required.
+- Task 5: fix round 4/5 (1 addressed, 0 open — Finder/sidebar admission now
+  requires a durable pre-admission journal; persisted rich nodes clear it while
+  lost, rejected, unmounted, or displaced admissions retry idempotent revoke;
+  same-path batches and StrictMode replay are behavior-tested; commit
+  `修复研究预览跨挂载授权日志`).

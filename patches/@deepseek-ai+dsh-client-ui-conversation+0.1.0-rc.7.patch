@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..610d216 100644
+index 1dd0e89..2029bee 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -2136,7 +2136,7 @@ index 1dd0e89..610d216 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6751,40 +8049,1813 @@ window.__ModuleLoader__.load({
+@@ -6751,40 +8049,1836 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -2532,7 +2532,7 @@ index 1dd0e89..610d216 100644
 +			}
 +			return files;
 +		}
-+		async function admitResearchCanvasDrop(transfer, sessionId, existing, preview, createId, getPathForFile, maxNewNodes = RESEARCH_CANVAS_MAX_FILES_PER_SESSION) {
++		async function admitResearchCanvasDrop(transfer, sessionId, existing, preview, createId, getPathForFile, maxNewNodes = RESEARCH_CANVAS_MAX_FILES_PER_SESSION, journalAdmission = () => true) {
 +			const internal = parseSherlockFileDrag(transfer.getData?.(SHERLOCK_FILE_DRAG_TYPE) ?? "");
 +			if (internal !== null) {
 +				const previous = existing.find((node) => node.path === internal.path);
@@ -2540,8 +2540,9 @@ index 1dd0e89..610d216 100644
 +				if (internal.sessionId !== sessionId || typeof internal.relativePath !== "string" || typeof preview?.admitSidebarFile !== "function") return [{ ...internal, previewEligible: false }];
 +				if (previous === void 0 && maxNewNodes <= 0) return [];
 +				const nodeId = previous?.id ?? createId();
++				if (journalAdmission(nodeId) !== true) return [{ id: nodeId, ...internal, previewEligible: false }];
 +				const descriptor = await preview.admitSidebarFile({ sessionId, nodeId, relativePath: internal.relativePath }).catch(() => null);
-+				if (descriptor === null) return [{ ...internal, previewEligible: false }];
++				if (descriptor === null) return [{ id: nodeId, ...internal, previewEligible: false }];
 +				await preview.release?.({ sessionId, nodeId, authorizationId: descriptor.authorizationId, capabilityToken: descriptor.capabilityToken }).catch(() => void 0);
 +				return [{ id: nodeId, ...internal, authorizationId: descriptor.authorizationId, contentType: descriptor.contentType }];
 +			}
@@ -2567,7 +2568,8 @@ index 1dd0e89..610d216 100644
 +				}
 +				if (previous === void 0 && newNodes >= maxNewNodes) continue;
 +				const nodeId = previous?.id ?? createId();
-+				const descriptor = typeof preview?.admitFinderFile === "function" ? await preview.admitFinderFile(file, { sessionId, nodeId }).catch(() => null) : null;
++				const canAdmit = typeof preview?.admitFinderFile === "function" && journalAdmission(nodeId) === true;
++				const descriptor = canAdmit ? await preview.admitFinderFile(file, { sessionId, nodeId }).catch(() => null) : null;
 +				if (descriptor !== null) {
 +					await preview.release?.({ sessionId, nodeId, authorizationId: descriptor.authorizationId, capabilityToken: descriptor.capabilityToken }).catch(() => void 0);
 +					admitted.push({ id: nodeId, ...(typeof legacyPath === "string" ? { path: legacyPath } : {}), name: descriptor.name, source: "computer", authorizationId: descriptor.authorizationId, contentType: descriptor.contentType });
@@ -3537,6 +3539,7 @@ index 1dd0e89..610d216 100644
 +			const dropQueueRef = (0, react.useRef)(Promise.resolve());
 +			const orphanRevocationsInFlightRef = (0, react.useRef)(/* @__PURE__ */ new Set());
 +			const workspace = (0, react.useMemo)(() => researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
++			const dropLifecycle = (0, react.useMemo)(() => ({ active: true }), [workspace]);
 +			const snapshot = (0, react.useSyncExternalStore)(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
 +			const [marquee, setMarquee] = (0, react.useState)(null);
 +			const [draggingNodeIds, setDraggingNodeIds] = (0, react.useState)([]);
@@ -3555,6 +3558,12 @@ index 1dd0e89..610d216 100644
 +					orphanRevocationsInFlightRef.current.delete(nodeId);
 +				}
 +			}, [sessionId, workspace]);
++			(0, react.useEffect)(() => {
++				dropLifecycle.active = true;
++				return () => {
++					dropLifecycle.active = false;
++				};
++			}, [dropLifecycle]);
 +			(0, react.useEffect)(() => {
 +				for (const nodeId of workspace.pendingOrphanRevocations()) revokeOrphanNode(nodeId);
 +			}, [workspace, revokeOrphanNode]);
@@ -3655,13 +3664,27 @@ index 1dd0e89..610d216 100644
 +						const point = researchCanvasWorldPoint(current.viewport, localPoint);
 +						const remaining = Math.max(0, RESEARCH_CANVAS_MAX_FILES_PER_SESSION - current.files.length);
 +						const preview = workspace.pendingOrphanRevocations().length === 0 ? window.dshDesktop?.researchPreview : void 0;
-+						const dropped = await admitResearchCanvasDrop(transfer, sessionId, current.files, preview, createResearchCanvasFileId, (file) => window.dshDesktop?.getPathForFile?.(file) ?? "", remaining);
++						const journalAdmission = (nodeId) => {
++							const durable = workspace.queueOrphanRevocations([nodeId]);
++							if (!durable) workspace.completeOrphanRevocation(nodeId);
++							return durable;
++						};
++						const dropped = await admitResearchCanvasDrop(transfer, sessionId, current.files, preview, createResearchCanvasFileId, (file) => window.dshDesktop?.getPathForFile?.(file) ?? "", remaining, journalAdmission);
 +						if (dropped.length === 0) return;
++						const pending = new Set(workspace.pendingOrphanRevocations());
++						const journaledIds = [...new Set(dropped.filter((node) => pending.has(node.id)).map((node) => node.id))];
++						if (!dropLifecycle.active) {
++							await Promise.all(journaledIds.map((nodeId) => revokeOrphanNode(nodeId)));
++							return;
++						}
 +						workspace.setFiles(placeResearchCanvasFiles(workspace.getSnapshot().files, dropped, point, createResearchCanvasFileId));
 +						const persisted = workspace.getSnapshot().files;
-+						const orphaned = dropped.filter((node, index, nodes) => typeof node.authorizationId === "string" && nodes.findIndex((candidate) => candidate.id === node.id) === index && !persisted.some((candidate) => candidate.id === node.id && candidate.authorizationId === node.authorizationId));
-+						workspace.queueOrphanRevocations(orphaned.map((node) => node.id));
-+						await Promise.all(orphaned.map((node) => revokeOrphanNode(node.id)));
++						await Promise.all(journaledIds.map(async (nodeId) => {
++							const persistedNode = persisted.find((candidate) => candidate.id === nodeId);
++							const committed = typeof persistedNode?.authorizationId === "string" && dropped.some((candidate) => candidate.id === nodeId && candidate.authorizationId === persistedNode.authorizationId);
++							if (committed) workspace.completeOrphanRevocation(nodeId);
++							else await revokeOrphanNode(nodeId);
++						}));
 +					};
 +					dropQueueRef.current = dropQueueRef.current.catch(() => void 0).then(runDrop);
 +				};
@@ -3874,7 +3897,7 @@ index 1dd0e89..610d216 100644
 +					finishOperation(void 0, false, false);
 +					resetFileDrag();
 +				};
-+			}, [sessionId, workspace, revokeOrphanNode]);
++			}, [sessionId, workspace, revokeOrphanNode, dropLifecycle]);
 +			const { files, artifacts, selection, viewport } = snapshot;
 +			const selectedIds = new Set(selection.selectedNodeIds);
 +			const draggingIds = new Set(draggingNodeIds);
@@ -3982,7 +4005,7 @@ index 1dd0e89..610d216 100644
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
-@@ -6793,7 +9864,17 @@ window.__ModuleLoader__.load({
+@@ -6793,7 +9887,17 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$6;
@@ -4001,7 +4024,7 @@ index 1dd0e89..610d216 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -6822,7 +9903,354 @@ window.__ModuleLoader__.load({
+@@ -6822,7 +9926,354 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationRoot.js
@@ -4357,7 +4380,7 @@ index 1dd0e89..610d216 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,10 +10260,64 @@ window.__ModuleLoader__.load({
+@@ -6832,10 +10283,64 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -4422,7 +4445,7 @@ index 1dd0e89..610d216 100644
  			const seatResizeRef = (0, react.useCallback)((seat) => {
  				seatObserver.current?.disconnect();
  				seatObserver.current = null;
-@@ -6848,6 +10330,54 @@ window.__ModuleLoader__.load({
+@@ -6848,6 +10353,54 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -4477,7 +4500,7 @@ index 1dd0e89..610d216 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +10427,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +10450,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -4485,7 +4508,7 @@ index 1dd0e89..610d216 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +10444,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +10467,68 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -4578,7 +4601,7 @@ index 1dd0e89..610d216 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +10541,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +10564,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -4599,7 +4622,7 @@ index 1dd0e89..610d216 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +10609,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +10632,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -4617,7 +4640,7 @@ index 1dd0e89..610d216 100644
  				})] })
  			});
  		}
-@@ -7053,14 +10619,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +10642,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -4662,7 +4685,7 @@ index 1dd0e89..610d216 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +10665,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +10688,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -4672,7 +4695,7 @@ index 1dd0e89..610d216 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +10687,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +10710,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -4681,7 +4704,7 @@ index 1dd0e89..610d216 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +10740,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +10763,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -4699,7 +4722,7 @@ index 1dd0e89..610d216 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +10776,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +10799,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -4707,7 +4730,7 @@ index 1dd0e89..610d216 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +11668,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +11691,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -4738,7 +4761,7 @@ index 1dd0e89..610d216 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +11713,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +11736,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -4763,7 +4786,7 @@ index 1dd0e89..610d216 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +12667,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +12690,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -4772,7 +4795,7 @@ index 1dd0e89..610d216 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +12757,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +12780,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -4814,7 +4837,7 @@ index 1dd0e89..610d216 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +12966,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +12989,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -4831,7 +4854,7 @@ index 1dd0e89..610d216 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +13136,8 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +13159,8 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -4840,7 +4863,7 @@ index 1dd0e89..610d216 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +13177,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +13200,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -4853,7 +4876,7 @@ index 1dd0e89..610d216 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +13193,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +13216,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -4866,7 +4889,7 @@ index 1dd0e89..610d216 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +13242,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +13265,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -4880,7 +4903,7 @@ index 1dd0e89..610d216 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +13280,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +13303,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -4890,7 +4913,7 @@ index 1dd0e89..610d216 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +13412,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +13435,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -4905,7 +4928,7 @@ index 1dd0e89..610d216 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +13428,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +13451,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -4914,7 +4937,7 @@ index 1dd0e89..610d216 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +13452,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +13475,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -4923,7 +4946,7 @@ index 1dd0e89..610d216 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +13478,103 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +13501,103 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
