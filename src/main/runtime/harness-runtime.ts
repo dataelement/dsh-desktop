@@ -186,6 +186,14 @@ export function buildHarnessSpawnOptions(
   // utility process is launched with Chromium switches (--type=utility, …)
   // that Node rejects as bad options. The Harness entry re-declares Node mode
   // from the inside, for its children only.
+  //
+  // On Windows, `detached: true` puts the Harness in its own process group
+  // and console. Without it, a child process that calls `os.kill(pid, 0)`
+  // (POSIX "liveness probe") ends up broadcasting a Ctrl+C to every process
+  // sharing the desktop's console — including the desktop main process, which
+  // exits silently. This is the same isolation that the Harness's own
+  // subprocess layer is expected to apply; we apply it here so the desktop
+  // shell never becomes collateral damage for a buggy child (issue #208).
   return {
     cwd: launchDirectory,
     env: {
@@ -202,7 +210,8 @@ export function buildHarnessSpawnOptions(
       [pathKey]: environment[pathKey] ?? environment.PATH ?? ''
     },
     stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true
+    windowsHide: true,
+    detached: platform === 'win32'
   }
 }
 
