@@ -71,4 +71,17 @@ describe('permission menu localization', () => {
     expect(options.map((option) => permissionOptionLabel(option, (key: string) => en[key] ?? key)))
       .toEqual(['Read Only', 'Workspace Write', 'Full access'])
   })
+
+  it('renders the permission menu outside clipped composer containers', async () => {
+    const source = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js',
+      'utf8'
+    )
+    const start = source.indexOf('function PermissionSelect(')
+    const end = source.indexOf('\n\t\t//#endregion', start)
+
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    expect(source.slice(start, end)).toContain('portal: true')
+  })
 })
