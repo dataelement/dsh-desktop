@@ -915,6 +915,33 @@ describe('Research canvas file drops', () => {
     })
   })
 
+  it('enforces both type minimum dimensions for non-default locked aspect ratios', async () => {
+    const client = await loadConversationClient()
+    expect(client.normalizeResearchCanvasNodeGeometry).toBeTypeOf('function')
+    expect(client.resizeResearchCanvasNode).toBeTypeOf('function')
+    if (typeof client.normalizeResearchCanvasNodeGeometry !== 'function' ||
+        typeof client.resizeResearchCanvasNode !== 'function') return
+    const wideImage = {
+      id: 'wide-image', name: 'wide.png', mediaType: 'image/png', source: 'computer',
+      x: 0, y: 0, width: 160, height: 52, sizeMode: 'manual', aspectRatio: 8
+    }
+
+    expect(client.normalizeResearchCanvasNodeGeometry(wideImage)).toEqual({
+      width: 960, height: 152, sizeMode: 'manual', aspectRatio: 8, resizable: true
+    })
+    expect(client.resizeResearchCanvasNode(
+      wideImage, 'se', { x: -5000, y: -5000 }, 1
+    )).toMatchObject({
+      x: 0, y: 0, width: 960, height: 152,
+      sizeMode: 'manual', aspectRatio: 8
+    })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      ...wideImage, id: 'tall-image', width: 120, aspectRatio: 0.25
+    })).toEqual({
+      width: 160, height: 672, sizeMode: 'manual', aspectRatio: 0.25, resizable: true
+    })
+  })
+
   it('persists normalized manual geometry and reloads repaired legacy JSON', async () => {
     const client = await loadConversationClient()
     expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
@@ -1109,6 +1136,31 @@ describe('Research canvas file drops', () => {
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
       title: 'Revised', excerpt: 'Evidence', x: 240, y: 160,
       width: 360, height: 240, sizeMode: 'auto'
+    }])
+  })
+
+  it('keeps manual artifact geometry when dedupe repositions the same assistant result', async () => {
+    const client = await loadConversationClient()
+    expect(client.placeResearchCanvasArtifact).toBeTypeOf('function')
+    if (typeof client.placeResearchCanvasArtifact !== 'function') return
+    const manual = [{
+      id: 'artifact-manual', messageId: 'm-manual', kind: 'assistant-result',
+      title: 'Original', excerpt: 'Original evidence', x: 20, y: 30,
+      width: 720, height: 480, sizeMode: 'manual'
+    }]
+
+    expect(client.placeResearchCanvasArtifact(
+      manual,
+      {
+        sessionId: 's1', messageId: 'm-manual', kind: 'assistant-result',
+        title: 'Updated', excerpt: 'Updated evidence'
+      },
+      { x: 240, y: 160 },
+      () => 'unused'
+    )).toEqual([{
+      id: 'artifact-manual', messageId: 'm-manual', kind: 'assistant-result',
+      title: 'Updated', excerpt: 'Updated evidence', x: 240, y: 160,
+      width: 720, height: 480, sizeMode: 'manual'
     }])
   })
 

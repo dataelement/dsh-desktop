@@ -41,10 +41,11 @@ All values are world units. `x` and `y` remain node centers.
 
 The shared title bar is 32 px. The shared maximum is 2400 x 2400. Image and
 PDF `aspectRatio` applies only to content height, never to the title bar.
-Persisted natural ratios are admitted only when finite and between 0.25 and 8.
-Invalid, non-finite, and negative sizes fall back to the kind default; finite
-sizes are clamped. Legacy nodes normalize on load and are repaired on the next
-workspace persistence write.
+Persisted natural ratios are admitted only when finite and between 0.25 and 8,
+then narrowed to the type's feasible range under both its minimum dimensions
+and the 2400 x 2400 ceiling. Invalid, non-finite, and negative sizes fall back
+to the kind default; finite sizes are clamped. Legacy nodes normalize on load
+and are repaired on the next workspace persistence write.
 
 Rich-kind detection is centralized: supported `image/*` and known image/SVG
 extensions map to image, PDF MIME/extension maps to PDF, HTML/XHTML
@@ -93,14 +94,38 @@ No `.d.ts` file was changed: the package's public declaration index does not
 declare the existing Research runtime/testing exports, and Task 4 did not
 change a consumed TypeScript contract.
 
+## Review fix round 1
+
+Review identified two important boundary defects and both received a separate
+RED/GREEN cycle:
+
+1. An admitted wide image ratio of 8 previously normalized 160 x 52, violating
+   the image policy's 160 x 152 minimum. A new pure regression failed with that
+   exact result. Normalization and resize now share constraints whose minimum
+   width is `max(type minWidth, (type minHeight - titleHeight) * ratio)` and
+   whose maximum width accounts for both global width and content-height
+   ceilings. The regression now yields 960 x 152; a 0.25 ratio also remains at
+   least 160 x 672. Ratios are narrowed further only when the type minima and
+   global maxima otherwise have no feasible intersection.
+2. Repositioning a deduplicated assistant artifact rebuilt it without geometry,
+   resetting 720 x 480 manual state to 360 x 240 auto. A new pure regression
+   failed with that reset. The found-node branch now retains its canonical
+   persisted width, height, size mode, and applicable aspect ratio while still
+   updating title, content, and center position.
+
+The review-fix RED was `2 failed | 58 passed` in
+`test/research-file-drop.test.ts`; its immediate GREEN was `60 passed`.
+
 ## GREEN and verification
 
 Final evidence is recorded from fresh runs immediately before commit:
 
 - `npm test -- --run test/research-file-drop.test.ts test/sherlock-composer-workspace-ui.test.ts`
-- `npm run typecheck`
-- `git diff --check`
+  — 2 files, 132 tests passed.
+- `npm run typecheck` — exit 0.
+- `git diff --check` — exit 0.
 - `git apply --check --reverse patches/@deepseek-ai+dsh-client-ui-conversation+0.1.0-rc.7.patch`
+  — exit 0.
 
 ## Self-review and risks
 
