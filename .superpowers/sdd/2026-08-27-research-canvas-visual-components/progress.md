@@ -215,3 +215,13 @@
   bounds with no horizontal or vertical overflow; 4 focused files, 207 tests,
   security tests, typecheck, diff check, and full patch reverse check pass;
   commit `修复PDF预览二维内容适配`).
+- Task 6: fix-round 2 re-review found 1 important issue — a positive body size
+  survives offscreen unmount, so selection/geometry changes made while
+  offscreen can start one stale `getPage` on re-entry before the new body is
+  measured. Fix round 3 required.
+- Task 6: fix round 3/5 (1 addressed, 0 open — leaving visible/ready now
+  synchronously invalidates both measured dimensions in layout; mounted
+  visible→offscreen→mutation→visible coverage proves page/render counts do not
+  grow before remeasurement and exactly one 436 px body-fit render follows;
+  4 focused files, 207 tests, 41 security tests, typecheck, diff check, and full
+  patch reverse check pass; commit `修复PDF预览重入测量状态`).

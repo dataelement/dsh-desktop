@@ -2592,6 +2592,42 @@ describe('Sherlock workspace and composer controls', () => {
       expect(body.scrollWidth).toBe(body.clientWidth)
       expect(body.scrollHeight).toBe(body.clientHeight)
       expect(harness.renders.map(({ viewport }) => viewport.width)).toEqual([316, 312, 392])
+
+      await act(async () => {
+        mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelector('[data-research-pdf-scroll]')).toBeNull()
+      const pagesBeforeReentry = harness.pages.length
+      const rendersBeforeReentry = harness.renders.length
+      bodySize.width = 0
+      bodySize.height = 0
+      await act(async () => {
+        mounted.workspace.setSelection({ selectedNodeIds: [], orderedFileIds: [] })
+        ;(mounted.workspace as unknown as {
+          updateNodeGeometry(id: string, geometry: Record<string, unknown>): void
+        }).updateNodeGeometry('pdf-landscape', {
+          width: 440, height: 252, sizeMode: 'manual'
+        })
+        mounted.workspace.setViewport({ scale: 1, x: 0, y: 0 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelector('[data-research-pdf-scroll]')).not.toBeNull()
+      expect(harness.pages).toHaveLength(pagesBeforeReentry)
+      expect(harness.renders).toHaveLength(rendersBeforeReentry)
+
+      bodySize.width = 438
+      bodySize.height = 218
+      await act(async () => {
+        resizeObserverCallbacks.at(-1)?.()
+        await Promise.resolve(); await Promise.resolve()
+      })
+      const restoredBody = mounted.host.querySelector(
+        '[data-research-pdf-scroll]'
+      ) as HappyDOMHTMLElement
+      expect(harness.renders.map(({ viewport }) => viewport.width)).toEqual([316, 312, 392, 436])
+      expect(restoredBody.scrollWidth).toBe(restoredBody.clientWidth)
+      expect(restoredBody.scrollHeight).toBe(restoredBody.clientHeight)
     } finally {
       await mounted.cleanup()
     }
