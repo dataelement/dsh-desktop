@@ -769,6 +769,42 @@ describe('Sherlock workspace and composer controls', () => {
     )
   })
 
+  it('reserves a large inline cell for readable Research file tags', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const inputBarCss = styles.find(({ pluginCss }) =>
+      pluginCss?.endsWith('/InputBar.module.css')
+    )?.textContent ?? ''
+    const encodedFont = inputBarCss.match(
+      /font-family:DshChipCellLarge;src:url\(data:font\/ttf;base64,([^)]*)\)/
+    )?.[1]
+    expect(encodedFont).toBeTypeOf('string')
+    if (encodedFont === undefined) return
+
+    const font = Buffer.from(encodedFont, 'base64')
+    const tableCount = font.readUInt16BE(4)
+    let horizontalMetricsOffset = -1
+    for (let index = 0; index < tableCount; index += 1) {
+      const directoryOffset = 12 + index * 16
+      if (font.toString('ascii', directoryOffset, directoryOffset + 4) === 'hmtx') {
+        horizontalMetricsOffset = font.readUInt32BE(directoryOffset + 8)
+        break
+      }
+    }
+    expect(horizontalMetricsOffset).toBeGreaterThanOrEqual(0)
+    expect(font.readUInt16BE(horizontalMetricsOffset + 4)).toBeGreaterThanOrEqual(8000)
+    expect(inputBarCss).toContain(
+      '.uV2eYG_chip{display:inline-block;height:24px;line-height:24px;vertical-align:middle}'
+    )
+    expect(inputBarCss).toContain(
+      '.uV2eYG_chipLabel{width:calc(100% - 12px);height:22px;gap:6px'
+    )
+    expect(inputBarCss).toContain('font-size:14px;line-height:22px')
+    expect(inputBarCss).toContain(
+      '.uV2eYG_chipLabelText{min-width:0;text-overflow:ellipsis;overflow:hidden}'
+    )
+  })
+
   it('uses a gray outline icon for the expanded current workspace', async () => {
     const primitives = new Proxy(
       {
@@ -1664,6 +1700,37 @@ describe('Sherlock workspace and composer controls', () => {
     ])
   })
 
+  it('moves an inline Research tag as one undoable drag transaction', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    expect(client.researchFileReference).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function' ||
+        typeof client.researchFileReference !== 'function') return
+
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    shell.setDraft('AB')
+    shell.insertReference(
+      client.researchFileReference({ id: 'f1', path: '/w/one.pdf', name: '/w/one.pdf' }),
+      { start: 1, end: 1, draftRev: shell.snapshot.draftRev }
+    )
+    const before = shell.snapshot
+    const occurrenceId = before.occurrences[0].occurrenceId
+
+    expect(shell.moveReferenceOccurrence).toBeTypeOf('function')
+    expect(shell.moveReferenceOccurrence(occurrenceId, before.draft.length)).toBe(true)
+    expect(shell.snapshot.draft).toBe('A B\uFFFC')
+    expect(shell.snapshot.occurrences).toMatchObject([
+      { occurrenceId, source: 'research-file', offset: 3, label: 'one.pdf' }
+    ])
+
+    shell.undo()
+    expect(shell.snapshot.draft).toBe(before.draft)
+    expect(shell.snapshot.occurrences).toEqual(before.occurrences)
+  })
+
   it('deletes selected canvas cards with Delete and the right-click menu', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-delete-canvas-cards',
@@ -1704,6 +1771,12 @@ describe('Sherlock workspace and composer controls', () => {
       })
       const remove = host.querySelector('[data-research-context-remove]')
       expect(remove?.textContent).toBe('从画布删除')
+      await act(async () => {
+        remove?.dispatchEvent(new browserWindow.PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, button: 0, pointerId: 17
+        }))
+      })
+      expect(remove?.isConnected).toBe(true)
       await act(async () => {
         click(browserWindow, remove as HappyDOMElement | null)
       })

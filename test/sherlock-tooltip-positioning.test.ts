@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -55,6 +55,24 @@ afterEach(() => {
 })
 
 describe('Sherlock tooltip positioning', () => {
+  it('ships the fixed body portal in the bundled web shell used by the packaged app', async () => {
+    const assetsDirectory = 'node_modules/@deepseek-ai/dsh-web-frontend/dist/assets'
+    const entry = (await readdir(assetsDirectory)).find((name) =>
+      /^index-.*\.js$/.test(name)
+    )
+    expect(entry).toBeTypeOf('string')
+    if (entry === undefined) return
+
+    const bundledShell = await readFile(`${assetsDirectory}/${entry}`, 'utf8')
+    expect(bundledShell).toContain(
+      'ln.createPortal(f.jsx("span",{ref:_,className:xf.bubble'
+    )
+    expect(bundledShell).toContain(
+      'style:{position:"fixed",left:C.x,top:E'
+    )
+    expect(bundledShell).toContain('}),document.body)')
+  })
+
   it('portals the tooltip to document.body so transformed sidebars cannot offset it', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
       .IS_REACT_ACT_ENVIRONMENT = true
@@ -78,6 +96,20 @@ describe('Sherlock tooltip positioning', () => {
         }, createElement('button', { type: 'button' }, 'copy')))
       })
       const button = transformedSidebar.querySelector('button')
+      Object.defineProperty(button, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          x: 100,
+          y: 100,
+          left: 100,
+          top: 100,
+          right: 180,
+          bottom: 128,
+          width: 80,
+          height: 28,
+          toJSON: () => ({})
+        })
+      })
       await act(async () => {
         ;(button as HTMLElement | null)?.focus()
       })
@@ -85,6 +117,9 @@ describe('Sherlock tooltip positioning', () => {
       const tooltip = browserWindow.document.querySelector('[role="tooltip"]')
       expect(tooltip).not.toBeNull()
       expect(tooltip?.parentElement).toBe(browserWindow.document.body)
+      expect((tooltip as HTMLElement | null)?.style.position).toBe('fixed')
+      expect((tooltip as HTMLElement | null)?.style.left).toBe('152px')
+      expect((tooltip as HTMLElement | null)?.style.top).toBe('136px')
     } finally {
       await act(async () => { root.unmount() })
     }

@@ -25,6 +25,7 @@ describe('Sherlock client brand migration', () => {
     expect(packageJson.build.productName).toBe('Sherlock')
     expect(packageJson.build.artifactName).toBe('sherlock-${os}-${arch}.${ext}')
     expect(packageJson.build.nsis.artifactName).toBe('sherlock-windows-${arch}-setup.${ext}')
+    expect(packageJson.scripts.build).toContain('node scripts/install-brand-assets.mjs')
     expect(packageJson.scripts['package:mac:arm64']).toContain('dist/mac-arm64/Sherlock.app')
     expect(packageJson.scripts['package:mac:x64']).toContain('dist/mac/Sherlock.app')
     expect(developmentConfig).toContain("productName: 'Sherlock Dev'")

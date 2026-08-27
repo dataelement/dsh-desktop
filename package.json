@@ -27,7 +27,7 @@
   "scripts": {
     "postinstall": "patch-package && node scripts/patch-web-frontend-loading.mjs && node scripts/install-brand-assets.mjs && install-electron --no",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "node scripts/install-brand-assets.mjs && electron-vite build",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",

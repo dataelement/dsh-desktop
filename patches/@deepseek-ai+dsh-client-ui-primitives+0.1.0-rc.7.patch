@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-index 0d58268..bd683c7 100644
+index 0d58268..6ca50e3 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-@@ -2442,7 +2442,7 @@ function Tooltip({ label, side = "right", delayMs = 0, disabled = false, maxWidt
+@@ -2442,18 +2442,19 @@ function Tooltip({ label, side = "right", delayMs = 0, disabled = false, maxWidt
  			triggers.current.focus = false;
  			hide();
  		}
@@ -11,7 +11,11 @@ index 0d58268..bd683c7 100644
  		ref: bubble,
  		className: Tooltip_module_css_default.bubble,
  		"data-side": placement,
-@@ -2453,7 +2453,7 @@ function Tooltip({ label, side = "right", delayMs = 0, disabled = false, maxWidt
+ 		style: {
++			position: "fixed",
+ 			left: pos.x,
+ 			top: y,
+ 			...maxWidth === void 0 ? {} : { maxWidth }
  		},
  		role: "tooltip",
  		children: resolvedLabel
