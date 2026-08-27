@@ -193,3 +193,14 @@
   tests); directly affected main/preload/security tests (4 files, 41 tests),
   typecheck, staging idempotence, dependency/package contract, diff check, and
   full conversation patch reverse check pass.
+- Task 6: final security/UI review found 2 important and 2 minor issues — PDF
+  image decoding lacked a finite limit, abandoned staging directories were not
+  reclaimed, the canvas used border-box width instead of preview-body width,
+  and document/loading teardown double-destroyed one PDF.js owner. Fix round 1
+  required.
+- Task 6: fix round 1/5 (4 addressed, 0 open — `maxImageSize` is capped at
+  8,000,000 pixels; owned stale/current staging is safely reclaimed; a body
+  `ResizeObserver` keeps auto/selected/manual canvases within client dimensions;
+  and one loading-task owner contains async teardown rejection; 4 focused files,
+  206 tests, typecheck, diff check, and full patch reverse check pass; commit
+  `修复PDF预览资源与布局边界`).

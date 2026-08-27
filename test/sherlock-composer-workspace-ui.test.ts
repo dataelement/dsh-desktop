@@ -705,12 +705,17 @@ function deferred<T>() {
 
 function createPdfJsHarness(options: {
   pageCount?: number
+  pageWidth?: number
+  pageHeight?: number
   deferRenders?: boolean
   resolveCancelledLate?: boolean
+  rejectDestroy?: boolean
 } = {}) {
   const pageCount = options.pageCount ?? 3
-  const loadingTasks: Array<{ destroyed: number }> = []
-  const documents: Array<{ destroyed: number }> = []
+  const pageWidth = options.pageWidth ?? 600
+  const pageHeight = options.pageHeight ?? 800
+  const loadingTasks: Array<{ destroyed: number; teardownThenCalls: number }> = []
+  const documents: Array<{ destroyed: number; teardownThenCalls: number }> = []
   const renders: Array<{
     page: number
     cancelled: number
@@ -722,19 +727,35 @@ function createPdfJsHarness(options: {
   const pdfjs = {
     getDocument(input: Record<string, unknown>) {
       getDocumentInputs.push(input)
-      const loading = { destroyed: 0, destroy() { loading.destroyed += 1 } }
+      const teardown = { destroyed: 0, thenCalls: 0 }
+      const destroy = () => {
+        teardown.destroyed += 1
+        if (!options.rejectDestroy) return undefined
+        return {
+          then(_resolve: (value: unknown) => void, reject: (reason: unknown) => void) {
+            teardown.thenCalls += 1
+            reject(new Error('teardown rejected'))
+          }
+        }
+      }
+      const loading = {
+        get destroyed() { return teardown.destroyed },
+        get teardownThenCalls() { return teardown.thenCalls },
+        destroy
+      }
       loadingTasks.push(loading)
       const document = {
         numPages: pageCount,
-        destroyed: 0,
-        destroy() { document.destroyed += 1 },
+        get destroyed() { return teardown.destroyed },
+        get teardownThenCalls() { return teardown.thenCalls },
+        destroy,
         async getPage(page: number) {
           const pageRecord = { page, cleanups: 0 }
           pages.push(pageRecord)
           return {
             cleanup() { pageRecord.cleanups += 1 },
             getViewport({ scale }: { scale: number }) {
-              return { width: 600 * scale, height: 800 * scale }
+              return { width: pageWidth * scale, height: pageHeight * scale }
             },
             render({ viewport }: { viewport: { width: number; height: number } }) {
               const pending = deferred<void>()
@@ -760,7 +781,12 @@ function createPdfJsHarness(options: {
         }
       }
       documents.push(document)
-      return { ...loading, promise: Promise.resolve(document) }
+      return {
+        get destroyed() { return teardown.destroyed },
+        get teardownThenCalls() { return teardown.thenCalls },
+        destroy,
+        promise: Promise.resolve(document)
+      }
     }
   }
   return { documents, getDocumentInputs, loadingTasks, pages, pdfjs, renders }
@@ -789,6 +815,8 @@ async function mountResearchCanvas(options: {
   }
   modules?: Record<string, unknown>
   pdfjs?: Record<string, unknown>
+  pdfBodySize?: { width: number; height: number }
+  resizeObserverCallbacks?: Array<() => void>
   strictMode?: boolean
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
@@ -815,6 +843,46 @@ async function mountResearchCanvas(options: {
     configurable: true,
     value: () => ({})
   })
+  if (options.pdfBodySize !== undefined) {
+    const pdfBodySize = options.pdfBodySize
+    Object.defineProperties(browserWindow.HTMLElement.prototype, {
+      clientWidth: {
+        configurable: true,
+        get() { return this.hasAttribute?.('data-research-pdf-scroll') ? pdfBodySize.width : 0 }
+      },
+      clientHeight: {
+        configurable: true,
+        get() { return this.hasAttribute?.('data-research-pdf-scroll') ? pdfBodySize.height : 0 }
+      },
+      scrollWidth: {
+        configurable: true,
+        get() {
+          if (!this.hasAttribute?.('data-research-pdf-scroll')) return 0
+          const canvas = this.querySelector?.('canvas') as HTMLCanvasElement | null
+          return Math.max(pdfBodySize.width, Math.ceil(Number.parseFloat(canvas?.style.width ?? '0') || 0))
+        }
+      },
+      scrollHeight: {
+        configurable: true,
+        get() {
+          if (!this.hasAttribute?.('data-research-pdf-scroll')) return 0
+          const canvas = this.querySelector?.('canvas') as HTMLCanvasElement | null
+          return Math.max(pdfBodySize.height, Math.ceil(Number.parseFloat(canvas?.style.height ?? '0') || 0))
+        }
+      }
+    })
+  }
+  if (options.resizeObserverCallbacks !== undefined) {
+    const callbacks = options.resizeObserverCallbacks
+    Object.defineProperty(browserWindow, 'ResizeObserver', {
+      configurable: true,
+      value: class TestResizeObserver {
+        constructor(callback: () => void) { callbacks.push(callback) }
+        observe() {}
+        disconnect() {}
+      }
+    })
+  }
   const client = await loadClientBundle('dsh-client-ui-conversation', options.dshDesktop, {
     document: browserWindow.document,
     window: browserWindow,
@@ -2191,7 +2259,9 @@ describe('Sherlock workspace and composer controls', () => {
   })
 
   it('renders one PDF page, owns wheel navigation, cancels stale work, and destroys offscreen resources', async () => {
-    const harness = createPdfJsHarness({ deferRenders: true, resolveCancelledLate: true })
+    const harness = createPdfJsHarness({
+      deferRenders: true, resolveCancelledLate: true, rejectDestroy: true
+    })
     const releases: Array<Record<string, string>> = []
     let restoreSequence = 0
     let cleaned = false
@@ -2242,7 +2312,8 @@ describe('Sherlock workspace and composer controls', () => {
         cMapPacked: true,
         standardFontDataUrl: '/sherlock-pdfjs/standard_fonts/',
         isEvalSupported: false,
-        useWasm: false
+        useWasm: false,
+        maxImageSize: 8_000_000
       })
       expect(harness.renders.map(({ page }) => page)).toEqual([1])
       expect((pdfCanvas?.width ?? 0) * (pdfCanvas?.height ?? 0)).toBeLessThanOrEqual(8_000_000)
@@ -2285,6 +2356,7 @@ describe('Sherlock workspace and composer controls', () => {
       expect(mounted.host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
       expect(harness.loadingTasks[0]!.destroyed).toBe(1)
       expect(harness.documents[0]!.destroyed).toBe(1)
+      expect(harness.loadingTasks[0]!.teardownThenCalls).toBe(1)
       expect(harness.pages.every(({ cleanups }) => cleanups >= 1)).toBe(true)
       expect(pdfCanvas?.width).toBe(0)
       expect(pdfCanvas?.height).toBe(0)
@@ -2306,6 +2378,7 @@ describe('Sherlock workspace and composer controls', () => {
       cleaned = true
       expect(harness.loadingTasks[1]!.destroyed).toBe(1)
       expect(harness.documents[1]!.destroyed).toBe(1)
+      expect(harness.loadingTasks[1]!.teardownThenCalls).toBe(1)
       expect(releases.at(-1)).toEqual({
         sessionId: 'session-pdf-lifecycle', nodeId: 'pdf-1',
         authorizationId: 'authorization-pdf', capabilityToken: 'capability-pdf-2'
@@ -2355,6 +2428,78 @@ describe('Sherlock workspace and composer controls', () => {
         width: 540, height: 540 / 1.4 + 32, sizeMode: 'manual', aspectRatio: 1.4
       })
       expect(releases).toHaveLength(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('sizes PDF backing from the bordered preview body across selection and manual resize', async () => {
+    const bodySize = { width: 318, height: 425 }
+    const resizeObserverCallbacks: Array<() => void> = []
+    const harness = createPdfJsHarness({ pageCount: 1, pageWidth: 600, pageHeight: 800 })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-body-size',
+      files: [{
+        id: 'pdf-body-size', name: 'body-size.pdf', source: 'computer',
+        authorizationId: 'authorization-body-size', contentType: 'application/pdf',
+        x: 200, y: 200, width: 320, height: 320 / 0.75 + 32,
+        sizeMode: 'auto', aspectRatio: 0.75
+      }],
+      pdfjs: harness.pdfjs,
+      pdfBodySize: bodySize,
+      resizeObserverCallbacks,
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-body-size',
+            url: 'sherlock-preview://capability-body-size/',
+            contentType: 'application/pdf', name: 'body-size.pdf'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      const body = mounted.host.querySelector('[data-research-pdf-scroll]') as HappyDOMHTMLElement
+      const canvas = mounted.host.querySelector(
+        '[data-research-pdf-preview]'
+      ) as unknown as HTMLCanvasElement
+      expect(canvas.style.width).toBe('318px')
+      expect(body.scrollWidth).toBe(body.clientWidth)
+      expect(body.scrollHeight).toBe(body.clientHeight)
+
+      bodySize.width = 316
+      bodySize.height = 423
+      await act(async () => {
+        mounted.workspace.setSelection({
+          selectedNodeIds: ['pdf-body-size'], orderedFileIds: ['pdf-body-size']
+        })
+        resizeObserverCallbacks.at(-1)?.()
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(canvas.style.width).toBe('316px')
+      expect(body.scrollWidth).toBe(body.clientWidth)
+      expect(body.scrollHeight).toBe(body.clientHeight)
+
+      bodySize.width = 396
+      bodySize.height = 529
+      await act(async () => {
+        ;(mounted.workspace as unknown as {
+          updateNodeGeometry(id: string, geometry: Record<string, unknown>): void
+        }).updateNodeGeometry('pdf-body-size', {
+          width: 400, height: 400 / 0.75 + 32, sizeMode: 'manual'
+        })
+        resizeObserverCallbacks.at(-1)?.()
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(canvas.style.width).toBe('396px')
+      expect(body.scrollWidth).toBe(body.clientWidth)
+      expect(body.scrollHeight).toBe(body.clientHeight)
     } finally {
       await mounted.cleanup()
     }

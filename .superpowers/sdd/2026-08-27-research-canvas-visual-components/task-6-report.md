@@ -10,16 +10,17 @@
 ## PDF behavior
 
 - production wheel helper 统一处理 pixel/line/page `deltaMode`，80 px 等效阈值、180 ms 节流、方向反转清零和 `1...pageCount` 边界；每次最多翻一页。PDF body 始终消费 wheel，包括 Command/metaKey wheel，避免同一事件继续平移或缩放画布。
-- PDF.js `getDocument` 使用同源 staged worker/CMaps/fonts，明确 `useWasm: false` 与 `isEvalSupported: false`。每次页码或尺寸变化先 cancel 旧 render task，再用 generation 防止取消后晚到的 promise 发布旧页。
+- PDF.js `getDocument` 使用同源 staged worker/CMaps/fonts，明确 `useWasm: false`、`isEvalSupported: false` 与独立的 `maxImageSize: 8_000_000`，避免单张超大图片在进入 canvas backing-store 限制前造成无界解码；未加入版本兼容性未验证的 `canvasMaxAreaInBytes`。每次页码或尺寸变化先 cancel 旧 render task，再用 generation 防止取消后晚到的 promise 发布旧页。
 - backing-store helper 以 O(1) 比例缩放限制 DPR 和 8,000,000 canvas pixels，覆盖极端、无效与畸形尺寸，不使用逐像素循环或会突破上限的硬下限。
 - 首个 PDF page viewport 仅在 `sizeMode: auto` 且节点仍为 Task 4 默认 PDF 比例时写回内容比例；32 px 标题栏不计入比例。手动几何、已知比例、重入、翻页和 resize 不会再次覆盖。
-- 离屏、unmount 或换页/缩放会 cancel render、`page.cleanup()`、清零 canvas backing、destroy loading task/document，并只释放 exact ephemeral token；回到视口从 durable authorization 恢复。加载、文档、取页或渲染错误均保留文件名标题和本地错误态。
+- PDF canvas 通过 mounted preview body 的实际 `clientWidth` 计算 CSS/backing 尺寸，并由 `ResizeObserver` 响应普通/选中边框和手动 resize；不再把 border-box 外框宽度写入内容区。DOM 回归覆盖 auto、selected、manual 三态下 `scrollWidth == clientWidth` 与 `scrollHeight == clientHeight`。
+- 离屏、unmount 或换页/缩放会 cancel render、`page.cleanup()`、清零 canvas backing，并通过 loading task 这一单一 owner 销毁 PDF document/worker。teardown 的同步异常与异步 rejection 都被局部消费，避免 `PDFDocumentProxy.destroy()` 委托同一 loading task 后重复 destroy；随后只释放 exact ephemeral token。回到视口从 durable authorization 恢复。加载、文档、取页或渲染错误均保留文件名标题和本地错误态。
 - loader 使用真实 `/sherlock-pdfjs/loader.js` module script；失败会移除残留 script 并清除共享 promise，后续可重新加载，不会挂在永不触发的旧标签上。
 
 ## PDF.js packaging
 
 - `pdfjs-dist@4.10.38` 位于 exact `devDependencies`。staging 脚本校验真实安装版本，将 ESM 源字节复制为静态服务器能够以 JavaScript MIME 提供的 `pdf.min.js` 与 `pdf.worker.min.js`，同时复制 CMaps、standard fonts、LICENSE 和稳定 loader。
-- 脚本接入 `postinstall` 与 `build`，先写进程级 staging 目录再替换目标；测试在临时输入执行两次并比较稳定文件 hash，真实目录连续执行两次的 189 文件 SHA-256 清单也完全相同。
+- 脚本接入 `postinstall` 与 `build`，先写进程级 staging 目录再替换目标。启动时只清理由脚本 exact `<destination>.staging-<pid>` 前缀产生且进程已不存在的 sibling，保留相似名称与仍存活进程；当前 staging 始终在 `finally` 清理。测试覆盖旧目录回收、相似目录保留、copy 失败无残留、两次稳定文件 hash；真实目录连续执行两次的 189 文件 SHA-256 清单也完全相同。
 - production-like HTTP 测试调用真实 static server，确认 loader/library/worker 返回 `text/javascript` 和真实 PDF.js 字节，而不是 `.mjs` 的错误 MIME 或 SPA index fallback。
 - electron-builder `files` 明确排除 `node_modules/pdfjs-dist/**`、`node_modules/@napi-rs/canvas/**` 和 `node_modules/@napi-rs/canvas-*/**`；`npm ls --all` 确认本仓库的 `@napi-rs/canvas` 仅由 PDF.js 引入。浏览器实际只消费约定的 staged assets。
 
@@ -60,12 +61,28 @@ opaque iframe font-src ruling:       1 failed
 LICENSE/devDependency/package 排除:  2 failed
 ```
 
+最终安全/UI 复核新增 RED：
+
+```text
+maxImageSize + stale/current staging cleanup:
+Test Files  2 failed (2)
+Tests       3 failed | 102 skipped (105)
+
+border-box body sizing:
+Test Files  1 failed (1)
+Tests       1 failed | 101 skipped (102)
+
+single PDF teardown owner:
+Test Files  1 failed (1)
+Tests       1 failed | 101 skipped (102)
+```
+
 ### GREEN
 
 ```text
 npm test -- --run test/research-file-drop.test.ts test/sherlock-composer-workspace-ui.test.ts test/research-file-preview.test.ts test/pdfjs-assets.test.ts
 Test Files  4 passed (4)
-Tests       204 passed (204)
+Tests       206 passed (206)
 
 npm test -- --run test/preload-main-frame.test.ts test/ipc-trust.test.ts test/security.test.ts test/research-file-preview.test.ts
 Test Files  4 passed (4)
@@ -82,7 +99,7 @@ PASS
 - full conversation patch `git apply --reverse --check`: PASS
 - PDF.js actual staging two-run SHA-256 comparison: PASS（189 files）
 - `npm ls pdfjs-dist @napi-rs/canvas --all`: `pdfjs-dist@4.10.38 -> @napi-rs/canvas@0.1.100`
-- package contract：exact devDependency、LICENSE、真实 HTTP JavaScript MIME/bytes、raw dependency exclusions 全部包含在 204/204 聚焦结果中。
+- package contract：exact devDependency、LICENSE、真实 HTTP JavaScript MIME/bytes、raw dependency exclusions、staging lifecycle 全部包含在 206/206 聚焦结果中。
 
 ## Files
 

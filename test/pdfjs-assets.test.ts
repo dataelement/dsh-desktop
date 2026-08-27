@@ -33,6 +33,15 @@ async function treeHash(root: string): Promise<string> {
   return digest.digest('hex')
 }
 
+async function ownedStagingDirectories(destination: string): Promise<string[]> {
+  const prefix = `${path.basename(destination)}.staging-`
+  return (await readdir(path.dirname(destination), { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix) &&
+      /^\d+$/.test(entry.name.slice(prefix.length)))
+    .map((entry) => entry.name)
+    .sort()
+}
+
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) =>
     rm(directory, { recursive: true, force: true })
@@ -52,6 +61,10 @@ describe('PDF.js packaged assets', () => {
     await writeFile(path.join(source, 'cmaps', 'Adobe-GB1.bcmap'), 'cmap')
     await writeFile(path.join(source, 'standard_fonts', 'FoxitSans.pfb'), 'font')
     await writeFile(path.join(source, 'LICENSE'), 'Apache License 2.0')
+    const staleOwned = `${destination}.staging-123456`
+    const similarlyNamed = `${destination}.staging-user-data`
+    await mkdir(staleOwned, { recursive: true })
+    await mkdir(similarlyNamed, { recursive: true })
 
     const command = [
       path.join(projectRoot, 'scripts', 'install-pdfjs-assets.mjs'),
@@ -59,6 +72,8 @@ describe('PDF.js packaged assets', () => {
       '--destination', destination
     ]
     await execFile(process.execPath, command, { cwd: projectRoot })
+    await expect(stat(staleOwned)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await stat(similarlyNamed)).isDirectory()).toBe(true)
     const firstHash = await treeHash(destination)
     await writeFile(path.join(destination, 'stale.js'), 'stale')
     await execFile(process.execPath, command, { cwd: projectRoot })
@@ -77,6 +92,27 @@ describe('PDF.js packaged assets', () => {
     const loader = await readFile(path.join(destination, 'loader.js'), 'utf8')
     expect(loader).toContain("from './pdf.min.js'")
     expect(loader).toContain("workerSrc = '/sherlock-pdfjs/pdf.worker.min.js'")
+  })
+
+  it('removes its current staging directory when asset copying fails', async () => {
+    const root = await temporaryDirectory()
+    const source = path.join(root, 'incomplete-pdfjs-dist')
+    const destination = path.join(root, 'web', 'sherlock-pdfjs')
+    await mkdir(path.join(source, 'build'), { recursive: true })
+    await mkdir(path.join(source, 'cmaps'), { recursive: true })
+    await mkdir(path.join(source, 'standard_fonts'), { recursive: true })
+    await writeFile(path.join(source, 'build', 'pdf.min.mjs'), 'export const getDocument = () => {}')
+    await writeFile(path.join(source, 'cmaps', 'Adobe-GB1.bcmap'), 'cmap')
+    await writeFile(path.join(source, 'standard_fonts', 'FoxitSans.pfb'), 'font')
+    await writeFile(path.join(source, 'LICENSE'), 'Apache License 2.0')
+
+    await expect(execFile(process.execPath, [
+      path.join(projectRoot, 'scripts', 'install-pdfjs-assets.mjs'),
+      '--source', source,
+      '--destination', destination
+    ], { cwd: projectRoot })).rejects.toBeDefined()
+
+    expect(await ownedStagingDirectories(destination)).toEqual([])
   })
 
   it('pins and stages the real PDF.js package into the packaged web input', async () => {
