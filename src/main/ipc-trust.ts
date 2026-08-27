@@ -85,3 +85,88 @@ export function registerTrustedMainWindowListener<
     }
   })
 }
+
+type PrivilegedMainWindowIpc = {
+  removeHandler(channel: string): void
+  removeAllListeners(channel: string): unknown
+  handle(
+    channel: string,
+    handler: (event: any, ...args: any[]) => unknown
+  ): unknown
+  on(
+    channel: string,
+    listener: (event: any, ...args: any[]) => void
+  ): unknown
+}
+
+type PrivilegedMainWindowHandlerOptions = {
+  ipcMain: PrivilegedMainWindowIpc
+  getMainWindow(): TrustedWindow | undefined
+  showHarnessLog(): void
+  openDirectory(): Promise<string | null>
+  showItemInFolder(path: unknown): { ok: boolean }
+  researchFilesAvailable(paths: unknown): Promise<boolean[]>
+  researchCanvasStorageGet(key: unknown): string | null
+  researchCanvasStorageSet(key: unknown, value: unknown): boolean
+  onStorageReadRejected?(error: unknown): void
+  onStorageWriteRejected?(error: unknown): void
+}
+
+export function registerPrivilegedMainWindowHandlers(
+  options: PrivilegedMainWindowHandlerOptions
+): void {
+  const { ipcMain, getMainWindow } = options
+
+  ipcMain.removeHandler('harness:show-log')
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'harness:show-log',
+    getMainWindow,
+    () => options.showHarnessLog()
+  )
+
+  ipcMain.removeHandler('directory-picker:open')
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'directory-picker:open',
+    getMainWindow,
+    () => options.openDirectory()
+  )
+
+  ipcMain.removeHandler('filesystem:show-item-in-folder')
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'filesystem:show-item-in-folder',
+    getMainWindow,
+    (_event, path: unknown) => options.showItemInFolder(path)
+  )
+
+  ipcMain.removeHandler('research:files-available')
+  registerTrustedMainWindowHandler(
+    ipcMain,
+    'research:files-available',
+    getMainWindow,
+    (_event, paths: unknown) => options.researchFilesAvailable(paths)
+  )
+
+  ipcMain.removeAllListeners('research:canvas-storage:get')
+  registerTrustedMainWindowListener(
+    ipcMain,
+    'research:canvas-storage:get',
+    getMainWindow,
+    (_event, key: unknown) => options.researchCanvasStorageGet(key),
+    null,
+    options.onStorageReadRejected
+  )
+
+  ipcMain.removeAllListeners('research:canvas-storage:set')
+  registerTrustedMainWindowListener(
+    ipcMain,
+    'research:canvas-storage:set',
+    getMainWindow,
+    (_event, key: unknown, value: unknown) =>
+      options.researchCanvasStorageSet(key, value),
+    false,
+    options.onStorageWriteRejected
+  )
+}

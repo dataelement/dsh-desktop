@@ -97,6 +97,24 @@ describe('main-window navigation security', () => {
     expect(preventDefault).not.toHaveBeenCalled()
   })
 
+  it.each([
+    { label: 'null', initiator: null },
+    { label: 'undefined', initiator: undefined }
+  ])('fails closed for a $label initiator targeting the main frame', ({ initiator }) => {
+    const { listeners } = secureWindowFixture()
+    const willFrameNavigate = listeners.get('will-frame-navigate')
+    const preventDefault = vi.fn()
+
+    willFrameNavigate?.({
+      url: 'http://127.0.0.1:4310/research',
+      isMainFrame: true,
+      initiator,
+      preventDefault
+    })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+  })
+
   it('leaves trusted main-frame navigation on the existing policy', () => {
     const { listeners } = secureWindowFixture()
     const willNavigate = listeners.get('will-navigate')

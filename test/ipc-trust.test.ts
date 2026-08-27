@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   assertTrustedMainWindowEvent,
   isTrustedMainWindowEvent,
-  registerTrustedMainWindowHandler,
-  registerTrustedMainWindowListener
+  registerPrivilegedMainWindowHandlers
 } from '../src/main/ipc-trust'
 
 function trustedFixture() {
@@ -61,78 +60,61 @@ describe('main-window IPC trust', () => {
     )
   })
 
-  it('rejects privileged invoke handlers before their dependencies run', async () => {
+  it('rejects child frames through the production privileged handler registration', async () => {
     const { webContents, window } = trustedFixture()
     const childEvent = {
       sender: webContents,
       senderFrame: { processId: 7, routingId: 42 }
     }
-    const handlers = new Map<string, (event: typeof childEvent) => unknown>()
-    const ipcMain = {
-      handle: (
-        channel: string,
-        handler: (event: typeof childEvent) => unknown
-      ) => handlers.set(channel, handler)
-    }
-    const guardedChannels = [
-      'harness:show-log',
-      'directory-picker:open',
-      'filesystem:show-item-in-folder',
-      'research:files-available'
-    ]
-    const privilegedDependencies = new Map<string, ReturnType<typeof vi.fn>>()
-
-    for (const channel of guardedChannels) {
-      const dependency = vi.fn()
-      privilegedDependencies.set(channel, dependency)
-      registerTrustedMainWindowHandler(
-        ipcMain,
-        channel,
-        () => window,
-        dependency
-      )
-    }
-
-    for (const channel of guardedChannels) {
-      const handler = handlers.get(channel)
-      expect(handler, channel).toBeTypeOf('function')
-      await expect(Promise.resolve().then(() => handler?.(childEvent))).rejects.toThrow(
-        'main Sherlock window'
-      )
-      expect(privilegedDependencies.get(channel), channel).not.toHaveBeenCalled()
-    }
-  })
-
-  it('rejects privileged synchronous Research handlers before storage runs', () => {
-    const { webContents, window } = trustedFixture()
-    const handlers = new Map<
+    const invokeHandlers = new Map<
       string,
-      (event: { sender: unknown; senderFrame: { processId: number; routingId: number }; returnValue: unknown }) => void
+      (event: typeof childEvent, ...args: unknown[]) => unknown
+    >()
+    type SyncEvent = typeof childEvent & { returnValue: unknown }
+    const syncHandlers = new Map<
+      string,
+      (event: SyncEvent, ...args: unknown[]) => void
     >()
     const ipcMain = {
+      removeHandler: vi.fn(),
+      removeAllListeners: vi.fn(),
+      handle: (
+        channel: string,
+        handler: (event: typeof childEvent, ...args: unknown[]) => unknown
+      ) => invokeHandlers.set(channel, handler),
       on: (
         channel: string,
-        handler: (event: { sender: unknown; senderFrame: { processId: number; routingId: number }; returnValue: unknown }) => void
-      ) => handlers.set(channel, handler)
+        handler: (event: SyncEvent, ...args: unknown[]) => void
+      ) => syncHandlers.set(channel, handler)
     }
     const dependencies = {
-      get: vi.fn(() => 'stored'),
-      set: vi.fn(() => true)
+      showHarnessLog: vi.fn(),
+      openDirectory: vi.fn(async () => '/workspace'),
+      showItemInFolder: vi.fn(() => ({ ok: true })),
+      researchFilesAvailable: vi.fn(async () => [true]),
+      researchCanvasStorageGet: vi.fn(() => 'stored'),
+      researchCanvasStorageSet: vi.fn(() => true),
+      onStorageReadRejected: vi.fn(),
+      onStorageWriteRejected: vi.fn()
     }
-    registerTrustedMainWindowListener(
+    registerPrivilegedMainWindowHandlers({
       ipcMain,
-      'research:canvas-storage:get',
-      () => window,
-      dependencies.get,
-      null
-    )
-    registerTrustedMainWindowListener(
-      ipcMain,
-      'research:canvas-storage:set',
-      () => window,
-      dependencies.set,
-      false
-    )
+      getMainWindow: () => window,
+      ...dependencies
+    })
+
+    for (const [channel, args] of [
+      ['harness:show-log', []],
+      ['directory-picker:open', []],
+      ['filesystem:show-item-in-folder', ['/workspace/report.pdf']],
+      ['research:files-available', [['/workspace/report.pdf']]]
+    ] as const) {
+      const handler = invokeHandlers.get(channel)
+      expect(handler, channel).toBeTypeOf('function')
+      await expect(Promise.resolve().then(() => handler?.(childEvent, ...args))).rejects.toThrow(
+        'main Sherlock window'
+      )
+    }
 
     for (const [channel, rejectedValue] of [
       ['research:canvas-storage:get', null],
@@ -143,12 +125,17 @@ describe('main-window IPC trust', () => {
         senderFrame: { processId: 7, routingId: 42 },
         returnValue: undefined as unknown
       }
-      const handler = handlers.get(channel)
+      const handler = syncHandlers.get(channel)
       expect(handler, channel).toBeTypeOf('function')
       handler?.(event)
       expect(event.returnValue, channel).toBe(rejectedValue)
     }
-    expect(dependencies.get).not.toHaveBeenCalled()
-    expect(dependencies.set).not.toHaveBeenCalled()
+
+    expect(dependencies.showHarnessLog).not.toHaveBeenCalled()
+    expect(dependencies.openDirectory).not.toHaveBeenCalled()
+    expect(dependencies.showItemInFolder).not.toHaveBeenCalled()
+    expect(dependencies.researchFilesAvailable).not.toHaveBeenCalled()
+    expect(dependencies.researchCanvasStorageGet).not.toHaveBeenCalled()
+    expect(dependencies.researchCanvasStorageSet).not.toHaveBeenCalled()
   })
 })

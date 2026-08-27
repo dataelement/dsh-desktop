@@ -1026,11 +1026,8 @@ describe('Sherlock workspace and composer controls', () => {
     expect(usedFallback).toBe(false)
   })
 
-  it('wires the Finder reveal bridge through a trusted Electron IPC handler', async () => {
-    const [preload, main] = await Promise.all([
-      readFile('src/preload/index.ts', 'utf8'),
-      readFile('src/main/index.ts', 'utf8')
-    ])
+  it('exposes the behavior-verified Finder reveal channel through the desktop bridge', async () => {
+    const preload = await readFile('src/preload/index.ts', 'utf8')
 
     expect(preload).toContain(
       "showItemInFolder: (path: string): Promise<{ ok: boolean }> =>"
@@ -1038,10 +1035,6 @@ describe('Sherlock workspace and composer controls', () => {
     expect(preload).toContain(
       "ipcRenderer.invoke('filesystem:show-item-in-folder', path)"
     )
-    expect(main).toContain(
-      "ipcMain.handle('filesystem:show-item-in-folder', (event, path: unknown) =>"
-    )
-    expect(main).toContain('shell.showItemInFolder(path)')
   })
 
   it('renders the command launcher as an equal-sided rounded rectangle containing a slash', async () => {

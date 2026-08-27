@@ -66,8 +66,7 @@ import {
 import { ResearchCanvasStorage } from './state/research-canvas-storage'
 import {
   assertTrustedMainWindowEvent,
-  registerTrustedMainWindowHandler,
-  registerTrustedMainWindowListener
+  registerPrivilegedMainWindowHandlers
 } from './ipc-trust'
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart'
@@ -609,26 +608,29 @@ function registerHarnessHandlers(): void {
     return { ok: true }
   })
 
-  ipcMain.removeHandler('filesystem:show-item-in-folder')
-  registerTrustedMainWindowHandler(
+  registerPrivilegedMainWindowHandlers({
     ipcMain,
-    'filesystem:show-item-in-folder',
-    () => mainWindow,
-    (_event, path: unknown) => {
+    getMainWindow: () => mainWindow,
+    showHarnessLog: () => {
+      shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
+    },
+    openDirectory: async () => {
+      const window = mainWindow
+      if (!window) throw new Error('The main Sherlock window is unavailable.')
+      const result = await dialog.showOpenDialog(window, {
+        title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
+        properties: ['openDirectory', 'createDirectory']
+      })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    showItemInFolder: (path: unknown) => {
       if (typeof path !== 'string' || !isAbsolute(path) || !existsSync(path)) {
         throw new Error('Finder reveal requires an existing absolute filesystem path.')
       }
       shell.showItemInFolder(path)
       return { ok: true }
-    }
-  )
-
-  ipcMain.removeHandler('research:files-available')
-  registerTrustedMainWindowHandler(
-    ipcMain,
-    'research:files-available',
-    () => mainWindow,
-    async (_event, paths: unknown) => {
+    },
+    researchFilesAvailable: async (paths: unknown) => {
       const rejected = Array.isArray(paths)
         ? Array.from({ length: Math.min(paths.length, 64) }, () => false)
         : []
@@ -645,28 +647,15 @@ function registerHarnessHandlers(): void {
       return Promise.all(values.map((path) =>
         stat(path).then((value) => value.isFile()).catch(() => false)
       ))
-    }
-  )
-
-  ipcMain.removeAllListeners('research:canvas-storage:get')
-  registerTrustedMainWindowListener(
-    ipcMain,
-    'research:canvas-storage:get',
-    () => mainWindow,
-    (_event, key: unknown) => researchCanvasStorage.getItem(key),
-    null,
-    (error) => console.warn('[research-canvas] rejected storage read', error)
-  )
-
-  ipcMain.removeAllListeners('research:canvas-storage:set')
-  registerTrustedMainWindowListener(
-    ipcMain,
-    'research:canvas-storage:set',
-    () => mainWindow,
-    (_event, key: unknown, value: unknown) => researchCanvasStorage.setItem(key, value),
-    false,
-    (error) => console.warn('[research-canvas] rejected storage write', error)
-  )
+    },
+    researchCanvasStorageGet: (key: unknown) => researchCanvasStorage.getItem(key),
+    researchCanvasStorageSet: (key: unknown, value: unknown) =>
+      researchCanvasStorage.setItem(key, value),
+    onStorageReadRejected: (error) =>
+      console.warn('[research-canvas] rejected storage read', error),
+    onStorageWriteRejected: (error) =>
+      console.warn('[research-canvas] rejected storage write', error)
+  })
 }
 
 async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<void> {
@@ -1011,28 +1000,6 @@ async function bootstrap(): Promise<void> {
     setDeveloperModeEnabled(app.getPath('userData'), enabled)
     return { ok: true }
   })
-  registerTrustedMainWindowHandler(
-    ipcMain,
-    'directory-picker:open',
-    () => mainWindow,
-    async () => {
-      const window = mainWindow
-      if (!window) throw new Error('The main Sherlock window is unavailable.')
-      const result = await dialog.showOpenDialog(window, {
-        title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
-        properties: ['openDirectory', 'createDirectory']
-      })
-      return result.canceled ? null : result.filePaths[0] ?? null
-    }
-  )
-  registerTrustedMainWindowHandler(
-    ipcMain,
-    'harness:show-log',
-    () => mainWindow,
-    () => {
-      shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
-    }
-  )
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
     assertTrustedMainWindowEvent(event, mainWindow)

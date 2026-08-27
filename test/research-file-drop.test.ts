@@ -306,8 +306,6 @@ describe('Research canvas file drops', () => {
     expect(preload).toContain(
       "ipcRenderer.invoke('research:files-available', paths)"
     )
-    expect(main).toContain('registerTrustedMainWindowHandler(')
-    expect(main).toContain("'research:files-available',")
     expect(main).toContain('const values = Array.isArray(paths) ? Array.from(paths) : []')
     expect(main).toContain('values.length > 64')
     expect(main).toContain('path.length > 512')
@@ -326,9 +324,6 @@ describe('Research canvas file drops', () => {
     expect(preload).toContain('researchCanvasStorage: Object.freeze({')
     expect(preload).toContain("ipcRenderer.sendSync('research:canvas-storage:get', key)")
     expect(preload).toContain("ipcRenderer.sendSync('research:canvas-storage:set', key, value)")
-    expect(main).toContain('registerTrustedMainWindowListener(')
-    expect(main).toContain("'research:canvas-storage:get',")
-    expect(main).toContain("'research:canvas-storage:set',")
     expect(main).toContain("new ResearchCanvasStorage(app.getPath('userData'))")
   })
 

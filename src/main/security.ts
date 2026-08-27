@@ -19,9 +19,9 @@ export function secureWindow(window: BrowserWindow): void {
       const initiator = event.initiator
       const mainFrame = window.webContents.mainFrame
       if (
-        initiator &&
-        (initiator.processId !== mainFrame.processId ||
-          initiator.routingId !== mainFrame.routingId)
+        !initiator ||
+        initiator.processId !== mainFrame.processId ||
+        initiator.routingId !== mainFrame.routingId
       ) {
         event.preventDefault()
       }
