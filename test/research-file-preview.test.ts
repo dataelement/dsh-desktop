@@ -121,6 +121,23 @@ function withFirstEntryFlag(
   })
 }
 
+function withFirstEntryDeclaredMetadata(
+  value: Buffer,
+  metadata: { crc32?: number; uncompressedSize?: number }
+): Buffer {
+  return mutateZip(value, (copy, _eocd, central) => {
+    const local = copy.readUInt32LE(central + 42)
+    if (metadata.crc32 !== undefined) {
+      copy.writeUInt32LE(metadata.crc32 >>> 0, local + 14)
+      copy.writeUInt32LE(metadata.crc32 >>> 0, central + 16)
+    }
+    if (metadata.uncompressedSize !== undefined) {
+      copy.writeUInt32LE(metadata.uncompressedSize >>> 0, local + 22)
+      copy.writeUInt32LE(metadata.uncompressedSize >>> 0, central + 24)
+    }
+  })
+}
+
 function withZipComment(value: Buffer, comment: string): Buffer {
   const eocd = findZipSignature(value, 0x06054b50)
   if (eocd < 0) throw new Error('Expected ZIP EOCD.')
@@ -197,8 +214,10 @@ function withUnsignedSignatureCrcDataDescriptor(value: Buffer): Buffer {
   const local = result.readUInt32LE(lastCentral + 42)
   const dataStart = local + 30 + result.readUInt16LE(local + 26) + result.readUInt16LE(local + 28)
   const descriptor = dataStart + result.readUInt32LE(lastCentral + 20)
-  result.writeUInt32LE(0x08074b50, lastCentral + 16)
-  result.writeUInt32LE(0x08074b50, descriptor)
+  if (result.readUInt32LE(lastCentral + 16) !== 0x08074b50 ||
+      result.readUInt32LE(descriptor) !== 0x08074b50) {
+    throw new Error('Expected fixture data whose real CRC matches the descriptor signature.')
+  }
   return result
 }
 
@@ -416,7 +435,9 @@ describe('Research file preview authorization registry', () => {
     ['signed data descriptor', withLastDataDescriptor(minimalOfficeZip('docx'), true)],
     ['unsigned data descriptor', withLastDataDescriptor(minimalOfficeZip('docx'), false)],
     ['unsigned descriptor with signature-shaped CRC', withUnsignedSignatureCrcDataDescriptor(
-      minimalOfficeZip('docx')
+      minimalOfficeZip('docx', {
+        'word/document.xml': Uint8Array.from([0xac, 0x0a, 0x7a, 0xd5])
+      })
     )],
     ['deflate option bits 1 and 2', withFirstEntryFlag(Buffer.from(zipSync({
       '[Content_Types].xml': strToU8('<Types/>'.repeat(30)),
@@ -502,6 +523,39 @@ describe('Research file preview authorization registry', () => {
       path: filePath,
       sessionId: 'session-1',
       nodeId: 'unsafe-office'
+    })).toBeNull()
+  })
+
+  it.each([
+    [
+      'deflate data whose actual expansion exceeds its declared size',
+      withFirstEntryDeclaredMetadata(Buffer.from(zipSync({
+        '[Content_Types].xml': new Uint8Array(256 * 1024).fill(0x41),
+        '_rels/.rels': strToU8('<Relationships/>'),
+        'word/document.xml': strToU8('<root/>')
+      }, { level: 9 })), { uncompressedSize: 1 })
+    ],
+    [
+      'stored data whose bytes do not match the declared CRC',
+      withFirstEntryDeclaredMetadata(minimalOfficeZip('docx'), { crc32: 0 })
+    ],
+    [
+      'deflate data whose bytes do not match the declared CRC',
+      withFirstEntryDeclaredMetadata(Buffer.from(zipSync({
+        '[Content_Types].xml': strToU8('<Types/>'.repeat(30)),
+        '_rels/.rels': strToU8('<Relationships/>'.repeat(30)),
+        'word/document.xml': strToU8('<root/>'.repeat(30))
+      }, { level: 6 })), { crc32: 0 })
+    ]
+  ])('rejects OOXML ZIP content that contradicts trusted metadata: %s', async (_label, bytes) => {
+    const { registry, root } = await fixture()
+    const filePath = path.join(root, 'contradictory.docx')
+    await writeFile(filePath, bytes)
+
+    expect(await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'contradictory-office'
     })).toBeNull()
   })
 

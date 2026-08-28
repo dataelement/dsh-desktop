@@ -12,6 +12,7 @@ import {
 import { open, readFile, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
+import { crc32, inflateRawSync } from 'node:zlib'
 import {
   registerTrustedMainWindowHandler,
   type TrustedWindow
@@ -527,9 +528,11 @@ function rootKindForPath(targetPath: string): PreviewKind | undefined {
 
 type OfficeZipEntry = {
   crc32: number
+  dataStart: number
   dataEnd: number
   flags: number
   localOffset: number
+  method: number
   compressedSize: number
   uncompressedSize: number
 }
@@ -676,7 +679,16 @@ function validOfficePackage(value: Uint8Array, family: OfficeFamily): boolean {
         (localUncompressedSize !== 0 && localUncompressedSize !== uncompressedSize)) {
       return false
     }
-    entries.push({ crc32, dataEnd, flags, localOffset, compressedSize, uncompressedSize })
+    entries.push({
+      crc32,
+      dataStart,
+      dataEnd,
+      flags,
+      localOffset,
+      method,
+      compressedSize,
+      uncompressedSize
+    })
     centralCursor = centralEnd
   }
   if (centralCursor !== eocd) {
@@ -684,6 +696,7 @@ function validOfficePackage(value: Uint8Array, family: OfficeFamily): boolean {
         centralCursor + 6 + archive.readUInt16LE(centralCursor + 4) !== eocd) return false
   }
   const ordered = entries.slice().sort((left, right) => left.localOffset - right.localOffset)
+  let actualExpandedBytes = 0
   for (let index = 0; index < ordered.length; index += 1) {
     const entry = ordered[index]!
     const previous = ordered[index - 1]
@@ -703,6 +716,29 @@ function validOfficePackage(value: Uint8Array, family: OfficeFamily): boolean {
         matchesDescriptorAt(entry.dataEnd + 4)
       if (!unsignedDescriptorMatches && !signedDescriptorMatches) return false
     }
+    const compressed = archive.subarray(entry.dataStart, entry.dataEnd)
+    const remainingBytes = MAX_OFFICE_EXPANDED_BYTES - actualExpandedBytes
+    const ratioBytes = entry.compressedSize * MAX_OFFICE_EXPANSION_RATIO
+    const maxOutputLength = Math.min(
+      entry.uncompressedSize,
+      MAX_OFFICE_ENTRY_BYTES,
+      remainingBytes,
+      ratioBytes
+    )
+    let expanded: Buffer
+    try {
+      expanded = entry.method === 0
+        ? compressed
+        : inflateRawSync(compressed, { maxOutputLength: Math.max(1, maxOutputLength) })
+    } catch {
+      return false
+    }
+    if (expanded.byteLength !== entry.uncompressedSize ||
+        expanded.byteLength > maxOutputLength ||
+        crc32(expanded) !== entry.crc32) {
+      return false
+    }
+    actualExpandedBytes += expanded.byteLength
   }
   if (!names.has('[Content_Types].xml') || !names.has('_rels/.rels')) return false
   const presentFamilies = (Object.entries(officeFamilyMarker) as Array<[OfficeFamily, string]>)
