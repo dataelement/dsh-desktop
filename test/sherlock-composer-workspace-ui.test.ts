@@ -707,6 +707,7 @@ function createPdfJsHarness(options: {
   pageCount?: number
   pageWidth?: number
   pageHeight?: number
+  pageSizes?: Array<{ width: number; height: number }>
   deferRenders?: boolean
   resolveCancelledLate?: boolean
   rejectDestroy?: boolean
@@ -750,12 +751,13 @@ function createPdfJsHarness(options: {
         get teardownThenCalls() { return teardown.thenCalls },
         destroy,
         async getPage(page: number) {
+          const pageSize = options.pageSizes?.[page - 1] ?? { width: pageWidth, height: pageHeight }
           const pageRecord = { page, cleanups: 0 }
           pages.push(pageRecord)
           return {
             cleanup() { pageRecord.cleanups += 1 },
             getViewport({ scale }: { scale: number }) {
-              return { width: pageWidth * scale, height: pageHeight * scale }
+              return { width: pageSize.width * scale, height: pageSize.height * scale }
             },
             render({ viewport }: { viewport: { width: number; height: number } }) {
               const pending = deferred<void>()
@@ -817,6 +819,7 @@ async function mountResearchCanvas(options: {
   pdfjs?: Record<string, unknown>
   pdfBodySize?: { width: number; height: number }
   resizeObserverCallbacks?: Array<() => void>
+  intersectionObserverCallbacks?: Array<(entries: Array<{ target: HappyDOMElement; isIntersecting: boolean }>) => void>
   strictMode?: boolean
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
@@ -879,6 +882,20 @@ async function mountResearchCanvas(options: {
       value: class TestResizeObserver {
         constructor(callback: () => void) { callbacks.push(callback) }
         observe() {}
+        disconnect() {}
+      }
+    })
+  }
+  if (options.intersectionObserverCallbacks !== undefined) {
+    const callbacks = options.intersectionObserverCallbacks
+    Object.defineProperty(browserWindow, 'IntersectionObserver', {
+      configurable: true,
+      value: class TestIntersectionObserver {
+        constructor(callback: (entries: Array<{ target: HappyDOMElement; isIntersecting: boolean }>) => void) {
+          callbacks.push(callback)
+        }
+        observe() {}
+        unobserve() {}
         disconnect() {}
       }
     })
@@ -2339,7 +2356,7 @@ describe('Sherlock workspace and composer controls', () => {
       expect(wheel.defaultPrevented).toBe(false)
       expect(bubbledWheels).toBe(0)
       expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
-      pdfBody.scrollTop = 848
+      pdfBody.scrollTop = 872
       await act(async () => {
         pdfBody.dispatchEvent(new mounted.browserWindow.Event('scroll', { bubbles: true }))
         await Promise.resolve(); await Promise.resolve()
@@ -2399,6 +2416,75 @@ describe('Sherlock workspace and composer controls', () => {
       })
     } finally {
       if (!cleaned) await mounted.cleanup()
+    }
+  })
+
+  it('uses cached mixed-page dimensions and IntersectionObserver without changing placeholder offsets', async () => {
+    const harness = createPdfJsHarness({
+      deferRenders: true,
+      pageSizes: [
+        { width: 600, height: 800 },
+        { width: 1_000, height: 500 },
+        { width: 600, height: 1_200 }
+      ]
+    })
+    const intersectionObserverCallbacks: Array<(
+      entries: Array<{ target: HappyDOMElement; isIntersecting: boolean }>
+    ) => void> = []
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-mixed-pages',
+      files: [{
+        id: 'pdf-mixed', name: 'mixed.pdf', source: 'computer',
+        authorizationId: 'authorization-mixed', contentType: 'application/pdf',
+        x: 200, y: 200, width: 320, height: 446, sizeMode: 'auto', aspectRatio: 17 / 22
+      }],
+      pdfjs: harness.pdfjs,
+      pdfBodySize: { width: 318, height: 200 },
+      intersectionObserverCallbacks,
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId, capabilityToken: 'capability-mixed',
+            url: 'sherlock-preview://capability-mixed/', contentType: 'application/pdf', name: 'mixed.pdf'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      const body = mounted.host.querySelector('[data-research-pdf-scroll]') as HappyDOMElement | null
+      const pages = Array.from(mounted.host.querySelectorAll(
+        '[data-research-pdf-page]'
+      )) as unknown as HappyDOMHTMLElement[]
+      expect(body).not.toBeNull()
+      expect(pages.map((page) => page.style.minHeight)).toEqual(['424px', '159px', '636px'])
+      expect(pages.map((page) => page.style.marginBottom)).toEqual(['12px', '12px', '0px'])
+      expect(intersectionObserverCallbacks).toHaveLength(1)
+      const stableHeights = pages.map((page) => page.style.minHeight)
+      await act(async () => {
+        intersectionObserverCallbacks[0]?.([
+          { target: pages[0]!, isIntersecting: false },
+          { target: pages[1]!, isIntersecting: false },
+          { target: pages[2]!, isIntersecting: true }
+        ])
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelectorAll('[data-research-pdf-preview]')).toHaveLength(1)
+      expect(mounted.host.querySelector('[data-research-pdf-preview]')?.getAttribute('aria-label')).toContain('第 3 页')
+      if (body === null) return
+      body.scrollTop = 610
+      await act(async () => {
+        body.dispatchEvent(new mounted.browserWindow.Event('scroll', { bubbles: true }))
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent).toContain('3 / 3')
+      expect(pages.map((page) => page.style.minHeight)).toEqual(stableHeights)
+    } finally {
+      await mounted.cleanup()
     }
   })
 
@@ -2551,7 +2637,7 @@ describe('Sherlock workspace and composer controls', () => {
         mounted.workspace.setCanvasSize({ width: 800, height: 600 })
         await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
       })
-      expect(harness.pages).toEqual([])
+      expect(harness.pages).toEqual([{ page: 1, cleanups: 1 }])
       expect(harness.renders).toEqual([])
 
       const body = mounted.host.querySelector('[data-research-pdf-scroll]') as HappyDOMHTMLElement
@@ -2620,7 +2706,8 @@ describe('Sherlock workspace and composer controls', () => {
         await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
       })
       expect(mounted.host.querySelector('[data-research-pdf-scroll]')).not.toBeNull()
-      expect(harness.pages).toHaveLength(pagesBeforeReentry)
+      expect(harness.pages).toHaveLength(pagesBeforeReentry + 1)
+      expect(harness.pages.at(-1)).toMatchObject({ page: 1, cleanups: 1 })
       expect(harness.renders).toHaveLength(rendersBeforeReentry)
 
       bodySize.width = 438

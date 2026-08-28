@@ -1049,18 +1049,33 @@ describe('Research canvas file drops', () => {
 
   it('selects a bounded continuous PDF render window around the visible page stream', async () => {
     const client = await loadConversationClient()
+    expect(client.researchPdfPageLayout).toBeTypeOf('function')
     expect(client.researchPdfRenderWindow).toBeTypeOf('function')
-    if (typeof client.researchPdfRenderWindow !== 'function') return
+    if (typeof client.researchPdfPageLayout !== 'function' ||
+        typeof client.researchPdfRenderWindow !== 'function') return
 
+    const layout = client.researchPdfPageLayout({
+      cssWidth: 318,
+      gap: 12,
+      pages: [
+        { width: 600, height: 800 },
+        { width: 1_000, height: 500 },
+        { width: 600, height: 1_200 }
+      ]
+    })
+    expect(layout).toEqual([
+      { page: 1, top: 0, height: 424, bottom: 424 },
+      { page: 2, top: 436, height: 159, bottom: 595 },
+      { page: 3, top: 607, height: 636, bottom: 1243 }
+    ])
     expect(client.researchPdfRenderWindow({
-      pageCount: 12, pageHeight: 400, scrollTop: 0, viewportHeight: 400, overscan: 200
-    })).toEqual([1, 2])
+      layout, scrollTop: 610, viewportHeight: 200, overscan: 0
+    })).toEqual([3])
     expect(client.researchPdfRenderWindow({
-      pageCount: 12, pageHeight: 400, scrollTop: 1_250, viewportHeight: 400, overscan: 200
-    })).toEqual([3, 4, 5])
+      layout, scrollTop: 180, viewportHeight: 200, overscan: 240
+    })).toEqual([1, 2, 3])
     expect(client.researchPdfRenderWindow({
-      pageCount: 12, pageHeight: 400, scrollTop: Number.POSITIVE_INFINITY,
-      viewportHeight: 0, overscan: -1
+      layout, scrollTop: Number.POSITIVE_INFINITY, viewportHeight: 0, overscan: -1
     })).toEqual([1])
   })
 
