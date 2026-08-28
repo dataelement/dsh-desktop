@@ -99,6 +99,10 @@ describe('DSH Desktop sidebar branding', () => {
     expect(installer).toContain("'build', 'logo-dark.png'")
     expect(installer).toContain("'dsh-desktop-logo-dark.png'")
     expect(installer).toContain('<link rel="icon" type="image/png" href="/dsh-desktop-logo.png" />')
-    expect(installer).toContain('"src": "/dsh-desktop-logo.png"')
+    // The manifest is edited as JSON now rather than as a pinned multi-line
+    // string: 0.1.2-alpha.1 added "purpose": "any" to the icon entry, which no
+    // fixed text could survive, and key order is not a contract.
+    expect(installer).toContain("target.src = '/dsh-desktop-logo.png'")
+    expect(installer).toContain("target.sizes = '1254x1254'")
   })
 })
