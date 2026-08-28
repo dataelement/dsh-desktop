@@ -5,11 +5,23 @@
 
 ## 状态
 
-升级已完成并验证：`npm ci` 后全部补丁干净应用，451 个测试通过，typecheck 无错，
-认证链路对着真实 `dsh web` 端到端验证通过。
+升级已完成并验证：
+
+```
+npm ci（含 postinstall）  → 0
+npm run build             → ok
+实际启动 Electron          → 正常运行，profile 三个插件全部挂载
+npm test                  → 60 files / 453 tests 全通过
+tsc --noEmit              → 0 错误
+verify-harness-auth.mjs   → 401 → 303 → 200 全通过
+```
 
 **唯一未完成的一步**：上游尚未发布到 npm，依赖暂时指向仓库内本地打包的 tarball。
 包发布后需要把 `package.json` 换回语义化版本并重新生成 lockfile。
+
+> 验证时务必用完整的 `npm ci`。带 `--ignore-scripts` 会跳过 `postinstall`，
+> 而 `postinstall` 既装 Electron 二进制也改前端品牌资源——跳过它，测试和 typecheck
+> 依然全绿，应用却根本起不来。本次升级正是这样漏掉了两个启动期问题。
 
 ## 本地打包（上游未发布的临时桥接）
 
@@ -140,6 +152,31 @@ POST /api/session/list                       ← <namespace>/<method>，不是�
 
 迁移中顺带修掉一个 API 变化：`scanRoot` 新增第二个参数（组合行包名解析的 base URL），
 不传会在报告损坏预设之前先抛异常，导致导入的目录未经校验就装上。
+
+## 启动期问题（升级中踩到的）
+
+两处都不是上游 API 变化，而是「上游变了、我们的桌面侧假设没跟上」：
+
+**`postinstall` 中断。** `scripts/install-brand-assets.mjs` 用固定字符串匹配上游前端资源，
+0.1.2 把 favicon 的 `href` 从 `/favicon.svg` 改成 `./favicon.svg`，manifest 的图标项
+新增 `"purpose": "any"`，两处匹配都落空。脚本按设计抛错，整条 `postinstall` 链断掉——
+连带 Electron 二进制都没装。现在图标链接按标签匹配而非固定 `href`，manifest 改为按 JSON 编辑
+（键序不是契约），但两者在目标缺失时仍然响亮失败。
+
+**新桌面插件进不了 profile。** 加插件时只往 `build/dsh-desktop.patch.yml` 写了行，
+启动即报：
+
+```
+Cannot find package 'dsh-desktop-preset-transfer' imported from .../profiles/web/
+```
+
+Harness 把 `@deepseek-ai/dsh` 的**依赖闭包**镜像进 `$DSH_HOME/profiles/node_modules`，
+锚点是那个包的 manifest 而不是我们的，且 profile 不会走到应用自身的 node_modules。
+所以桌面插件想被 profile 解析到，必须注入进那份 manifest——这正是
+`patches/@deepseek-ai+dsh+*.patch` 的作用。少了这一步会让**整棵插件树**失败，而不只是那一行。
+
+`test/desktop-plugin-closure.test.ts` 锁住了这个不变量：profile patch 里每个
+`dsh-desktop-*` 行，都必须同时出现在 dsh 依赖补丁和 `package.json` 的 dependencies 里。
 
 ## 其他需要注意的
 
