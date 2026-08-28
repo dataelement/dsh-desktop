@@ -87,6 +87,32 @@ describe('bundled Sherlock plugin profile', () => {
       '\t\texports.officePreviewService = officePreviewService;',
       ''
     ))).toThrow(/Office preview .*integrity/u)
+    for (const [label, incomplete] of [
+      ['duplicate marker', `${patched}\n/* sherlock:office-preview-service:v1 */`],
+      ['missing component definition', patched.replace(
+        '\t\tfunction OfficePreviewComponent(props) {',
+        '\t\tfunction BrokenOfficePreviewComponent(props) {'
+      )],
+      ['missing service definition', patched.replace(
+        '\t\tconst officePreviewService = Object.freeze({',
+        '\t\tconst brokenOfficePreviewService = Object.freeze({'
+      )],
+      ['damaged sidebar registration', patched.replace(
+        'betterSidebar.registerFileViewer(viewer)',
+        'betterSidebar.registerFileViewer()'
+      )],
+      ['reverted lifecycle cancellation', patched.replace(
+        'if (lifecycle.signal.aborted) return;',
+        'if (cancelled) return;'
+      )],
+      ['missing apply export', patched.replace('\t\texports.apply = apply;', '')],
+      ['missing viewer export', patched.replace('\t\texports.officeViewers = officeViewers;', '')]
+    ] as const) {
+      expect(
+        () => patchSherlockOfficePreviewClient(incomplete),
+        `marker branch must reject ${label}`
+      ).toThrow(/Office preview .*integrity/u)
+    }
     expect(() => patchSherlockOfficePreviewClient(source.replace(
       'const inject = ["betterSidebar"];',
       'const inject = ["unexpected-office-api"];'

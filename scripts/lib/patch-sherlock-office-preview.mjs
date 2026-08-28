@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const PATCH_MARKER = '/* sherlock:office-preview-service:v1 */'
+const PATCHED_CLIENT_SHA256 = 'efd1ff027f5595e9818b5b522750310879d754c541002bb29d8d9035aeae1e24'
 
 const PATCH_INTEGRITY_ANCHORS = Object.freeze([
   [PATCH_MARKER, 1],
@@ -18,13 +20,19 @@ const PATCH_INTEGRITY_ANCHORS = Object.freeze([
   ['if (!lifecycle.attach({ dispose: () => mount.remove() })) return;', 1],
   ['if (!lifecycle.attach(univer)) return;', 1],
   ['const viewer = await PptxViewer.open(bytes, mount, {', 1],
-  ['...continuousPptxViewerOptions(lifecycle.signal, mount),', 1],
+  ['...continuousPptxViewerOptions(lifecycle.signal, host),', 1],
   ['if (!lifecycle.attach({ destroy: () => { viewer.destroy(); mount.remove(); } })) return;', 1],
   ['const inject = [];', 1],
+  ['function OfficePreviewComponent(props) {', 1],
+  ['const officePreviewService = Object.freeze({', 1],
   ['ctx.provide("officePreview", officePreviewService);', 1],
   ['ctx.inject(["betterSidebar"]', 1],
+  ['for (const viewer of officeViewers()) sidebarCtx.effect(() => betterSidebar.registerFileViewer(viewer), `dsh-better-sidebar-plugin-office: viewer ${viewer.id}`);', 1],
+  ['exports.apply = apply;', 1],
   ['exports.createOfficePreviewLifecycle = createOfficePreviewLifecycle;', 1],
-  ['exports.officePreviewService = officePreviewService;', 1]
+  ['exports.inject = inject;', 1],
+  ['exports.officePreviewService = officePreviewService;', 1],
+  ['exports.officeViewers = officeViewers;', 1]
 ])
 
 const LEGACY_INTEGRITY_ANCHORS = Object.freeze([
@@ -35,7 +43,6 @@ const LEGACY_INTEGRITY_ANCHORS = Object.freeze([
   '\t\t\t\tconst controller = new AbortController();\n\t\t\t\tconst host = hostRef.current;',
   'await renderAsync(buf, wrap, void 0, {',
   'PptxViewer.open(bytes, host, {',
-  'continuousPptxViewerOptions(lifecycle.signal, host)',
   'univerRef.current?.dispose();',
   'viewerRef.current?.destroy();',
   'if (wrap !== null) wrap.innerHTML = "";',
@@ -59,6 +66,12 @@ function assertOfficePreviewPatchIntegrity(source) {
     if (actual !== 0) {
       throw new Error(`Office preview patch integrity failed for legacy anchor: expected 0, found ${actual}`)
     }
+  }
+  const fingerprint = createHash('sha256').update(source, 'utf8').digest('hex')
+  if (fingerprint !== PATCHED_CLIENT_SHA256) {
+    throw new Error(
+      `Office preview patch integrity failed for fixed client fingerprint: expected ${PATCHED_CLIENT_SHA256}, found ${fingerprint}`
+    )
   }
 }
 
@@ -311,7 +324,7 @@ export function patchSherlockOfficePreviewClient(source) {
     `\t\t\t\t\t\tconst viewer = await PptxViewer.open(bytes, host, {
 \t\t\t\t\t\t\t...continuousPptxViewerOptions(lifecycle.signal, host),`,
     `\t\t\t\t\t\tconst viewer = await PptxViewer.open(bytes, mount, {
-\t\t\t\t\t\t\t...continuousPptxViewerOptions(lifecycle.signal, mount),`,
+\t\t\t\t\t\t\t...continuousPptxViewerOptions(lifecycle.signal, host),`,
     'PPTX isolated engine mount')
   next = replaceExact(next,
     `\t\t\t\t\t\tif (lifecycle.signal.aborted) {

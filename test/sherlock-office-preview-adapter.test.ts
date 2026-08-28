@@ -212,6 +212,52 @@ describe('Sherlock bundled Office preview adapter', () => {
     expect(destroy).toHaveBeenCalledTimes(1)
   })
 
+  it('renders PPTX into an isolated mount while keeping the outer host as its scroll container', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const calls: Array<{
+      mount: HappyDOMHTMLElement
+      options: { scrollContainer?: HappyDOMHTMLElement }
+    }> = []
+    const client = await loadPatchedOfficeClient({
+      document: browserWindow.document,
+      window: browserWindow,
+      fetch: async () => new Response(new Uint8Array([1, 2, 3])),
+      sourceTransform: (source) => instrumentDelayedOfficeEngine(source, 'pptx'),
+      testEngine: {
+        async openPptx(
+          _bytes: ArrayBuffer,
+          mount: HappyDOMHTMLElement,
+          options: { scrollContainer?: HappyDOMHTMLElement }
+        ) {
+          calls.push({ mount, options })
+          return { destroy() {} }
+        }
+      }
+    })
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    try {
+      await act(async () => {
+        root.render(client.officePreviewService.Component({
+          sourceUrl: 'sherlock-preview://capability-scroll/',
+          kind: 'pptx',
+          title: 'scroll.pptx'
+        }))
+        await Promise.resolve()
+      })
+      await waitForCalls(calls, 1)
+
+      expect(calls[0]!.mount.parentElement).not.toBeNull()
+      expect(calls[0]!.options.scrollContainer).toBe(calls[0]!.mount.parentElement)
+      expect(calls[0]!.options.scrollContainer).not.toBe(calls[0]!.mount)
+    } finally {
+      await act(async () => { root.unmount() })
+      restoreGlobals()
+    }
+  })
+
   it.each(['docx', 'pptx'] as const)(
     'keeps a completed %s B render intact when the superseded A engine resolves late',
     async (kind) => {
