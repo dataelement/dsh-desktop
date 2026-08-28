@@ -30,32 +30,27 @@ export function profileDirectory(home = dshHome()) {
   return join(home, 'profiles', MARKET_PROFILE)
 }
 
-const OBSOLETE_PROFILE_NPMRC_KEYS = new Set(['package-import-method', 'child-concurrency'])
+const LEGACY_PACKAGE_IMPORT_METHOD = /^package-import-method=clone-or-copy(?:\r?\n|$)/mu
+const LEGACY_CHILD_CONCURRENCY = /^child-concurrency=1(?:\r?\n|$)/mu
 
 /**
- * Update the settings Desktop owns without discarding profile-specific pnpm
- * configuration. In particular, `store-dir` records where the existing
- * node_modules tree was linked from; losing it makes pnpm reject every later
- * plugin operation with ERR_PNPM_UNEXPECTED_STORE.
+ * Remove only the exact pair of slow Windows settings written by older
+ * Desktop releases. Treat every other byte as profile-owned: this file can
+ * carry the store pin, registries, proxies, certificates, and credentials.
  */
 export function updateProfileNpmrc(npmrc) {
-  const lines = npmrc.replaceAll('\r\n', '\n').split('\n')
-  if (lines.at(-1) === '') lines.pop()
+  const newline = npmrc.includes('\r\n') ? '\r\n' : '\n'
+  if (npmrc === '') return `side-effects-cache=false${newline}`
 
-  const updated = []
-  let wroteSideEffectsCache = false
-  for (const line of lines) {
-    const key = /^\s*([^#;\s=]+)\s*=/u.exec(line)?.[1]?.toLowerCase()
-    if (key === 'side-effects-cache') {
-      if (!wroteSideEffectsCache) updated.push('side-effects-cache=false')
-      wroteSideEffectsCache = true
-      continue
-    }
-    if (key !== undefined && OBSOLETE_PROFILE_NPMRC_KEYS.has(key)) continue
-    updated.push(line)
+  // Requiring the pair distinguishes Desktop's historical block from a user
+  // who deliberately chose just one of these otherwise valid pnpm settings.
+  if (!LEGACY_PACKAGE_IMPORT_METHOD.test(npmrc) || !LEGACY_CHILD_CONCURRENCY.test(npmrc)) {
+    return npmrc
   }
-  if (!wroteSideEffectsCache) updated.push('side-effects-cache=false')
-  return `${updated.join('\n')}\n`
+  const updated = npmrc
+    .replace(LEGACY_PACKAGE_IMPORT_METHOD, '')
+    .replace(LEGACY_CHILD_CONCURRENCY, '')
+  return updated === '' ? `side-effects-cache=false${newline}` : updated
 }
 
 /** Leftovers of an interrupted pnpm run, or of a Windows locked-rename recovery. */
@@ -259,8 +254,9 @@ export async function ensurePnpmShim(home = dshHome()) {
     await chmod(nodePath, 0o755)
   }
 
-  // Also update .npmrc in profiles/web. package-import-method/child-concurrency
-  // are intentionally removed so pnpm uses its defaults (hardlink, auto concurrency):
+  // Migrate only the exact package-import-method/child-concurrency pair that
+  // older Desktop releases wrote. pnpm then uses its defaults (hardlink, auto
+  // concurrency), while user configuration and the profile store pin survive:
   // forcing clone-or-copy made every install do a full physical file copy
   // across the profile's 150+ packages, turning installs that should take
   // seconds into multi-minute (up to 30-minute) waits on Windows. The
@@ -278,7 +274,7 @@ export async function ensurePnpmShim(home = dshHome()) {
   try {
     if (npmrcContent !== undefined) {
       const updatedNpmrc = updateProfileNpmrc(npmrcContent)
-      if (updatedNpmrc !== npmrcContent) await writeFile(npmrcPath, updatedNpmrc, 'utf8')
+      if (updatedNpmrc !== npmrcContent) await atomicWrite(npmrcPath, updatedNpmrc)
     }
   } catch {
     // ignore
@@ -464,8 +460,12 @@ export function buildUninstallArguments(dshEntry = resolveDshEntry()) {
 
 async function atomicWrite(path, contents) {
   const temporary = `${path}.dsh-desktop-${process.pid}-${Date.now()}.tmp`
-  await writeFile(temporary, contents, 'utf8')
-  await rename(temporary, path)
+  try {
+    await writeFile(temporary, contents, 'utf8')
+    await rename(temporary, path)
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined)
+  }
 }
 
 function killProcessTree(child) {

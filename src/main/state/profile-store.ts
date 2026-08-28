@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { profilePackageJsonPath } from './plugin-recovery'
 
@@ -48,11 +48,24 @@ export function configuredStoreDir(npmrc: string): string | undefined {
 export function pinStoreDir(npmrc: string, storeDir: string): string | undefined {
   const configured = configuredStoreDir(npmrc)
   if (configured === storeDir) return undefined
+  const newline = npmrc.includes('\r\n') ? '\r\n' : '\n'
   // pnpm strips the trailing store version segment from what it records, so
   // the pinned value is the directory that contains it.
-  const body = configured === undefined ? npmrc : npmrc.replace(/^\s*store-dir\s*=.*$\n?/mu, '')
-  const separator = body.length === 0 || body.endsWith('\n') ? '' : '\n'
-  return `${body}${separator}store-dir=${storeDir}\n`
+  const body = configured === undefined
+    ? npmrc
+    : npmrc.replace(/^\s*store-dir\s*=.*(?:\r?\n|$)/mu, '')
+  const separator = body.length === 0 || body.endsWith('\n') ? '' : newline
+  return `${body}${separator}store-dir=${storeDir}${newline}`
+}
+
+async function writeFileAtomically(path: string, contents: string): Promise<void> {
+  const temporary = `${path}.dsh-desktop-${process.pid}-${Date.now()}.tmp`
+  try {
+    await writeFile(temporary, contents, 'utf8')
+    await rename(temporary, path)
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined)
+  }
 }
 
 /**
@@ -91,7 +104,7 @@ export async function ensureStoreDirPinned(dshHome: string): Promise<string | un
   if (pinned === undefined) return undefined
 
   try {
-    await writeFile(npmrcPath, pinned, 'utf8')
+    await writeFileAtomically(npmrcPath, pinned)
     return expected
   } catch {
     return undefined

@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/state/profile-store'
 import {
   INSTALL_PATH,
   MARKET_PACKAGE,
@@ -51,41 +52,64 @@ describe('desktop plugin market installer', () => {
     expect(resolvePnpmEntry()).toMatch(/node_modules[/\\]pnpm[/\\]bin[/\\]pnpm\.(c|m)js$/u)
   })
 
-  it('updates Desktop pnpm settings without discarding the pinned profile store', () => {
+  it('removes only Desktop’s exact legacy pnpm settings and preserves sensitive config bytes', () => {
     const npmrc = [
       '# user configuration',
       'registry=https://registry.example.test/',
+      '//registry.example.test/:_authToken=${NPM_TOKEN}',
+      'cafile=/profile/private-ca.pem',
       'store-dir=/profile/.pnpm-store',
       'package-import-method=clone-or-copy',
       'child-concurrency=1',
       'side-effects-cache=true',
       ''
-    ].join('\n')
+    ].join('\r\n')
 
-    expect(updateProfileNpmrc(npmrc)).toBe([
+    const expected = [
       '# user configuration',
       'registry=https://registry.example.test/',
+      '//registry.example.test/:_authToken=${NPM_TOKEN}',
+      'cafile=/profile/private-ca.pem',
       'store-dir=/profile/.pnpm-store',
-      'side-effects-cache=false',
+      'side-effects-cache=true',
       ''
-    ].join('\n'))
+    ].join('\r\n')
+
+    expect(updateProfileNpmrc(npmrc)).toBe(expected)
+    expect(updateProfileNpmrc(expected)).toBe(expected)
   })
 
-  it('keeps the profile store pin when regenerating packaged pnpm shims', async () => {
+  it('leaves user-selected or partial pnpm tuning untouched', () => {
+    const custom = 'package-import-method=copy\nchild-concurrency=8\nstore-dir=/keep\n'
+    const partialLegacy = 'package-import-method=clone-or-copy\nstore-dir=/keep\n'
+    expect(updateProfileNpmrc(custom)).toBe(custom)
+    expect(updateProfileNpmrc(partialLegacy)).toBe(partialLegacy)
+  })
+
+  it('keeps the store consistent through pinning and packaged shim regeneration', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-market-store-pin-'))
     const profile = join(home, 'profiles', 'web')
-    await mkdir(profile, { recursive: true })
+    const store = join(profile, '.pnpm-store')
+    await mkdir(join(profile, 'node_modules'), { recursive: true })
+    await writeFile(join(profile, 'package.json'), '{}', 'utf8')
+    await writeFile(
+      join(profile, 'node_modules', '.modules.yaml'),
+      `  "storeDir": "${store}/v10",\n`,
+      'utf8'
+    )
     await writeFile(
       join(profile, '.npmrc'),
-      'store-dir=/profile/.pnpm-store\npackage-import-method=clone-or-copy\n',
+      'package-import-method=clone-or-copy\nchild-concurrency=1\nside-effects-cache=false\n',
       'utf8'
     )
 
+    await expect(ensureStoreDirPinned(home)).resolves.toBe(store)
     await ensurePnpmShim(home)
 
     expect(await readFile(join(profile, '.npmrc'), 'utf8')).toBe(
-      'store-dir=/profile/.pnpm-store\nside-effects-cache=false\n'
+      `side-effects-cache=false\nstore-dir=${store}\n`
     )
+    await expect(inspectStoreConsistency(home)).resolves.toBeUndefined()
   })
 
   it('generates packaged node and pnpm shims in desktop-bin', async () => {
