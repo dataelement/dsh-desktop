@@ -109,6 +109,18 @@ function mutateZip(value: Buffer, mutate: (copy: Buffer, eocd: number, central: 
   return copy
 }
 
+function withFirstEntryFlag(
+  value: Buffer,
+  flag: number,
+  target: 'both' | 'local' | 'central' = 'both'
+): Buffer {
+  return mutateZip(value, (copy, _eocd, central) => {
+    const local = copy.readUInt32LE(central + 42)
+    if (target !== 'central') copy.writeUInt16LE(copy.readUInt16LE(local + 6) | flag, local + 6)
+    if (target !== 'local') copy.writeUInt16LE(copy.readUInt16LE(central + 8) | flag, central + 8)
+  })
+}
+
 function withZipComment(value: Buffer, comment: string): Buffer {
   const eocd = findZipSignature(value, 0x06054b50)
   if (eocd < 0) throw new Error('Expected ZIP EOCD.')
@@ -406,6 +418,11 @@ describe('Research file preview authorization registry', () => {
     ['unsigned descriptor with signature-shaped CRC', withUnsignedSignatureCrcDataDescriptor(
       minimalOfficeZip('docx')
     )],
+    ['deflate option bits 1 and 2', withFirstEntryFlag(Buffer.from(zipSync({
+      '[Content_Types].xml': strToU8('<Types/>'.repeat(30)),
+      '_rels/.rels': strToU8('<Relationships/>'.repeat(30)),
+      'word/document.xml': strToU8('<document>compressible</document>'.repeat(30))
+    }, { level: 6 })), 0x0006)],
     ['deflate and UTF-8 entry', Buffer.from(zipSync({
       '[Content_Types].xml': strToU8('<Types/>'),
       '_rels/.rels': strToU8('<Relationships/>'),
@@ -441,6 +458,10 @@ describe('Research file preview authorization registry', () => {
     ['encrypted entry', mutateZip(minimalOfficeZip('docx'), (copy, _eocd, central) => {
       copy.writeUInt16LE(copy.readUInt16LE(central + 8) | 0x0001, central + 8)
     })],
+    ['stored entry with deflate-only flag', withFirstEntryFlag(minimalOfficeZip('docx'), 0x0002)],
+    ['reserved flag in LOCAL and CEN', withFirstEntryFlag(minimalOfficeZip('docx'), 0x0010)],
+    ['reserved flag in LOCAL only', withFirstEntryFlag(minimalOfficeZip('docx'), 0x0010, 'local')],
+    ['reserved flag in CEN only', withFirstEntryFlag(minimalOfficeZip('docx'), 0x0010, 'central')],
     ['multi-disk archive', mutateZip(minimalOfficeZip('docx'), (copy, eocd) => {
       copy.writeUInt16LE(1, eocd + 4)
     })],

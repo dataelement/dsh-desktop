@@ -547,6 +547,15 @@ function zipExtraContainsZip64(value: Buffer): boolean {
   return false
 }
 
+function validOfficeZipFlags(method: number, flags: number): boolean {
+  const allowed = method === 8
+    ? 0x080e // deflate: compression option bits 1/2, descriptor bit 3, UTF-8 bit 11
+    : method === 0
+      ? 0x0808 // stored: descriptor bit 3, UTF-8 bit 11
+      : -1
+  return allowed >= 0 && (flags & ~allowed) === 0
+}
+
 function safeOfficeZipName(raw: Buffer): string | null {
   let name: string
   try {
@@ -613,7 +622,7 @@ function validOfficePackage(value: Uint8Array, family: OfficeFamily): boolean {
     const startDisk = archive.readUInt16LE(centralCursor + 34)
     const localOffset = archive.readUInt32LE(centralCursor + 42)
     const centralEnd = centralCursor + 46 + nameLength + extraLength + commentLength
-    if (centralEnd > eocd || (flags & 0x2061) !== 0 || (method !== 0 && method !== 8) ||
+    if (centralEnd > eocd || !validOfficeZipFlags(method, flags) ||
         startDisk !== 0 || compressedSize === 0xffffffff || uncompressedSize === 0xffffffff ||
         localOffset === 0xffffffff || uncompressedSize > MAX_OFFICE_ENTRY_BYTES) return false
     const centralName = archive.subarray(centralCursor + 46, centralCursor + 46 + nameLength)
@@ -651,7 +660,8 @@ function validOfficePackage(value: Uint8Array, family: OfficeFamily): boolean {
     const localExtraLength = archive.readUInt16LE(localOffset + 28)
     const dataStart = localOffset + 30 + localNameLength + localExtraLength
     const dataEnd = dataStart + compressedSize
-    if (dataEnd > centralOffset || localFlags !== flags || localMethod !== method ||
+    if (dataEnd > centralOffset || !validOfficeZipFlags(localMethod, localFlags) ||
+        localFlags !== flags || localMethod !== method ||
         localNameLength !== nameLength ||
         !archive.subarray(localOffset + 30, localOffset + 30 + localNameLength).equals(centralName) ||
         zipExtraContainsZip64(archive.subarray(

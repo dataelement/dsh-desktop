@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
+import { Window, type HTMLElement as HappyDOMHTMLElement } from 'happy-dom'
 import { describe, expect, it, vi } from 'vitest'
 
 import { patchSherlockOfficePreviewClient } from '../scripts/lib/patch-sherlock-office-preview.mjs'
@@ -11,6 +12,13 @@ type BundleDescriptor = {
 }
 
 const requireModule = createRequire(import.meta.url)
+const { act, createElement } = requireModule('react') as {
+  act(callback: () => void | Promise<void>): Promise<void>
+  createElement(type: unknown, props?: unknown): unknown
+}
+const { createRoot } = requireModule('react-dom/client') as {
+  createRoot(container: unknown): { render(node: unknown): void; unmount(): void }
+}
 const officeClientPath = new URL(
   '../build/sherlock-plugin-profile/vendor/@huanlin/dsh-plugin-better-sidebar-plugin-office/lib/client.js',
   import.meta.url
@@ -20,9 +28,22 @@ async function officeClientSource(): Promise<string> {
   return readFile(officeClientPath, 'utf8')
 }
 
-async function loadPatchedOfficeClient(): Promise<ClientBundle> {
-  const source = patchSherlockOfficePreviewClient(await officeClientSource())
+async function loadPatchedOfficeClient(options: {
+  document?: unknown
+  window?: Window | Record<string, unknown>
+  fetch?: typeof fetch
+  sourceTransform?(source: string): string
+  testEngine?: Record<string, unknown>
+} = {}): Promise<ClientBundle> {
+  const patched = patchSherlockOfficePreviewClient(await officeClientSource())
+  const source = options.sourceTransform?.(patched) ?? patched
   let descriptor: BundleDescriptor | undefined
+  const bundleWindow = options.window ?? {}
+  Object.assign(bundleWindow, {
+    __ModuleLoader__: {
+      load(value: BundleDescriptor) { descriptor = value }
+    }
+  })
   runInNewContext(source, {
     AbortController: globalThis.AbortController,
     Array,
@@ -34,21 +55,61 @@ async function loadPatchedOfficeClient(): Promise<ClientBundle> {
     URL: globalThis.URL,
     URLSearchParams: globalThis.URLSearchParams,
     clearTimeout,
-    document: undefined,
+    document: options.document,
+    fetch: options.fetch,
     global: { Array, String },
-    navigator: { language: 'zh-CN' },
+    navigator: options.window instanceof Window ? options.window.navigator : { language: 'zh-CN' },
     setTimeout,
-    window: {
-      __ModuleLoader__: {
-        load(value: BundleDescriptor) { descriptor = value }
-      }
-    }
+    __sherlockOfficeTest: options.testEngine,
+    window: bundleWindow
   })
   if (descriptor === undefined) throw new Error('Office bundle did not register')
   return descriptor.factory((id) => {
     if (id === 'util') return requireModule('util')
     return requireModule(id)
   })
+}
+
+function installBrowserGlobals(browserWindow: Window): () => void {
+  const keys = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'] as const
+  const descriptors = new Map(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: browserWindow },
+    document: { configurable: true, value: browserWindow.document },
+    navigator: { configurable: true, value: browserWindow.navigator },
+    IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true }
+  })
+  return () => {
+    for (const key of keys) {
+      const descriptor = descriptors.get(key)
+      if (descriptor === undefined) delete (globalThis as Record<string, unknown>)[key]
+      else Object.defineProperty(globalThis, key, descriptor)
+    }
+  }
+}
+
+function instrumentDelayedOfficeEngine(source: string, kind: 'docx' | 'pptx'): string {
+  if (kind === 'docx') {
+    const match = /await renderAsync\(buf, (wrap|mount), void 0, \{/u.exec(source)
+    if (match === null) throw new Error('DOCX render anchor missing')
+    return source.replace(
+      match[0],
+      `await __sherlockOfficeTest.renderDocx(buf, ${match[1]}, void 0, {`
+    )
+  }
+  const engineImport = 'const { PptxViewer, RECOMMENDED_ZIP_LIMITS } = await Promise.resolve().then(() => (init_aiden0z_pptx_renderer_es(), aiden0z_pptx_renderer_es_exports));'
+  if (source.split(engineImport).length - 1 !== 1) throw new Error('PPTX engine import anchor missing')
+  return source.replace(
+    engineImport,
+    'const PptxViewer = { open: __sherlockOfficeTest.openPptx }; const RECOMMENDED_ZIP_LIMITS = {};'
+  )
+}
+
+async function waitForCalls(calls: unknown[], count: number): Promise<void> {
+  for (let attempt = 0; attempt < 30 && calls.length < count; attempt += 1) {
+    await act(async () => { await Promise.resolve() })
+  }
+  expect(calls).toHaveLength(count)
 }
 
 describe('Sherlock bundled Office preview adapter', () => {
@@ -150,4 +211,88 @@ describe('Sherlock bundled Office preview adapter', () => {
     late.dispose()
     expect(destroy).toHaveBeenCalledTimes(1)
   })
+
+  it.each(['docx', 'pptx'] as const)(
+    'keeps a completed %s B render intact when the superseded A engine resolves late',
+    async (kind) => {
+      const browserWindow = new Window({ url: 'https://sherlock.local/' })
+      const restoreGlobals = installBrowserGlobals(browserWindow)
+      const calls: Array<{
+        mount: HappyDOMHTMLElement
+        finish(label: string): void
+      }> = []
+      const testEngine = kind === 'docx'
+        ? {
+            renderDocx(_bytes: ArrayBuffer, mount: HappyDOMHTMLElement) {
+              return new Promise<void>((resolve) => {
+                calls.push({
+                  mount,
+                  finish(label) {
+                    mount.textContent = label
+                    resolve()
+                  }
+                })
+              })
+            }
+          }
+        : {
+            openPptx(_bytes: ArrayBuffer, mount: HappyDOMHTMLElement) {
+              return new Promise<unknown>((resolve) => {
+                calls.push({
+                  mount,
+                  finish(label) {
+                    const content = browserWindow.document.createElement('div')
+                    content.textContent = label
+                    mount.appendChild(content)
+                    resolve({ destroy() { mount.replaceChildren() } })
+                  }
+                })
+              })
+            }
+          }
+      const client = await loadPatchedOfficeClient({
+        document: browserWindow.document,
+        window: browserWindow,
+        fetch: async () => new Response(new Uint8Array([1, 2, 3])),
+        sourceTransform: (source) => instrumentDelayedOfficeEngine(source, kind),
+        testEngine
+      })
+      const service = client.officePreviewService
+      const host = browserWindow.document.createElement('div')
+      browserWindow.document.body.appendChild(host)
+      const root = createRoot(host)
+      const render = async (label: 'a' | 'b') => {
+        await act(async () => {
+          root.render(service.Component({
+            sourceUrl: `sherlock-preview://capability-${label}/`,
+            kind,
+            title: `${label}.${kind}`
+          }))
+          await Promise.resolve()
+        })
+      }
+      try {
+        await render('a')
+        await waitForCalls(calls, 1)
+        await render('b')
+        await waitForCalls(calls, 2)
+
+        await act(async () => {
+          calls[1]!.finish('B complete')
+          await Promise.resolve()
+        })
+        expect(host.textContent).toContain('B complete')
+
+        await act(async () => {
+          calls[0]!.finish('A late')
+          await Promise.resolve()
+        })
+        expect(host.textContent).toContain('B complete')
+        expect(host.textContent).not.toContain('A late')
+      } finally {
+        await act(async () => { root.unmount() })
+        restoreGlobals()
+      }
+    }
+  )
 })

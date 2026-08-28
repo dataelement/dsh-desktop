@@ -3,8 +3,67 @@ import path from 'node:path'
 
 const PATCH_MARKER = '/* sherlock:office-preview-service:v1 */'
 
+const PATCH_INTEGRITY_ANCHORS = Object.freeze([
+  [PATCH_MARKER, 1],
+  ['function validOfficeCapabilityUrl(value) {', 1],
+  ['return validOfficeCapabilityUrl(path) ? path : fileUrl(scope, path, false);', 1],
+  ['return validOfficeCapabilityUrl(path) ? path : fileUrl(scope, path, true);', 1],
+  ['function createOfficePreviewLifecycle() {', 1],
+  ['function createOfficePreviewMount(host) {', 1],
+  ['const lifecycle = createOfficePreviewLifecycle();', 3],
+  ['fetch(mediaUrl(scope, path), { signal: lifecycle.signal });', 3],
+  ['const mount = createOfficePreviewMount(wrap);', 1],
+  ['const mount = createOfficePreviewMount(host);', 1],
+  ['await renderAsync(buf, mount, void 0, {', 1],
+  ['if (!lifecycle.attach({ dispose: () => mount.remove() })) return;', 1],
+  ['if (!lifecycle.attach(univer)) return;', 1],
+  ['const viewer = await PptxViewer.open(bytes, mount, {', 1],
+  ['...continuousPptxViewerOptions(lifecycle.signal, mount),', 1],
+  ['if (!lifecycle.attach({ destroy: () => { viewer.destroy(); mount.remove(); } })) return;', 1],
+  ['const inject = [];', 1],
+  ['ctx.provide("officePreview", officePreviewService);', 1],
+  ['ctx.inject(["betterSidebar"]', 1],
+  ['exports.createOfficePreviewLifecycle = createOfficePreviewLifecycle;', 1],
+  ['exports.officePreviewService = officePreviewService;', 1]
+])
+
+const LEGACY_INTEGRITY_ANCHORS = Object.freeze([
+  '\t\t\treturn fileUrl(scope, path, false);',
+  '\t\t\treturn fileUrl(scope, path, true);',
+  '\t\t\t\tlet cancelled = false;\n\t\t\t\tconst container = viewportRef.current;',
+  '\t\t\t\tlet cancelled = false;\n\t\t\t\tconst host = hostRef.current;',
+  '\t\t\t\tconst controller = new AbortController();\n\t\t\t\tconst host = hostRef.current;',
+  'await renderAsync(buf, wrap, void 0, {',
+  'PptxViewer.open(bytes, host, {',
+  'continuousPptxViewerOptions(lifecycle.signal, host)',
+  'univerRef.current?.dispose();',
+  'viewerRef.current?.destroy();',
+  'if (wrap !== null) wrap.innerHTML = "";',
+  'const inject = ["betterSidebar"];',
+  'const betterSidebar = ctx.betterSidebar;'
+])
+
+function occurrenceCount(source, value) {
+  return source.split(value).length - 1
+}
+
+function assertOfficePreviewPatchIntegrity(source) {
+  for (const [anchor, expected] of PATCH_INTEGRITY_ANCHORS) {
+    const actual = occurrenceCount(source, anchor)
+    if (actual !== expected) {
+      throw new Error(`Office preview patch integrity failed for new anchor: expected ${expected}, found ${actual}`)
+    }
+  }
+  for (const anchor of LEGACY_INTEGRITY_ANCHORS) {
+    const actual = occurrenceCount(source, anchor)
+    if (actual !== 0) {
+      throw new Error(`Office preview patch integrity failed for legacy anchor: expected 0, found ${actual}`)
+    }
+  }
+}
+
 function replaceExact(source, before, after, label, expectedCount = 1) {
-  const count = source.split(before).length - 1
+  const count = occurrenceCount(source, before)
   if (count !== expectedCount) {
     throw new Error(`Unable to patch Office preview ${label}: expected ${expectedCount}, found ${count}`)
   }
@@ -37,7 +96,10 @@ function transformExactSection(source, startMarker, endMarker, label, transform)
  * changes the lifecycle or registration points.
  */
 export function patchSherlockOfficePreviewClient(source) {
-  if (source.includes(PATCH_MARKER)) return source
+  if (source.includes(PATCH_MARKER)) {
+    assertOfficePreviewPatchIntegrity(source)
+    return source
+  }
   let next = source
 
   next = replaceExact(
@@ -103,6 +165,12 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\t}
 \t\t\t};
 \t\t}
+\t\tfunction createOfficePreviewMount(host) {
+\t\t\tconst mount = document.createElement("div");
+\t\t\tObject.assign(mount.style, { width: "100%", height: "100%", minWidth: "0", minHeight: "0" });
+\t\t\thost.appendChild(mount);
+\t\t\treturn mount;
+\t\t}
 \t\tfunction DocxView(props) {`,
     'shared engine lifecycle'
   )
@@ -110,6 +178,10 @@ export function patchSherlockOfficePreviewClient(source) {
   next = replaceExact(next, '\t\t\t\tlet cancelled = false;\n\t\t\t\tconst container = viewportRef.current;',
     '\t\t\t\tconst lifecycle = createOfficePreviewLifecycle();\n\t\t\t\tconst container = viewportRef.current;',
     'DOCX lifecycle')
+  next = replaceExact(next,
+    '\t\t\t\tif (container === null || wrap === null) return;\n\t\t\t\tsetZoom(100);',
+    '\t\t\t\tif (container === null || wrap === null) return;\n\t\t\t\tconst mount = createOfficePreviewMount(wrap);\n\t\t\t\tsetZoom(100);',
+    'DOCX isolated mount')
   next = replaceExact(next, 'const response = await fetch(mediaUrl(scope, path));',
     'const response = await fetch(mediaUrl(scope, path), { signal: lifecycle.signal });',
     'DOCX/XLSX fetch signals', 2)
@@ -125,7 +197,7 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\t\t\t\texperimental: false
 \t\t\t\t\t\t});
 \t\t\t\t\t\tif (!cancelled) setLoad({ status: "ready" });`,
-    `\t\t\t\t\t\tawait renderAsync(buf, wrap, void 0, {
+    `\t\t\t\t\t\tawait renderAsync(buf, mount, void 0, {
 \t\t\t\t\t\t\tclassName: "docx",
 \t\t\t\t\t\t\tinWrapper: true,
 \t\t\t\t\t\t\tignoreWidth: false,
@@ -133,7 +205,7 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\t\t\t\tbreakPages: true,
 \t\t\t\t\t\t\texperimental: false
 \t\t\t\t\t\t});
-\t\t\t\t\t\tif (!lifecycle.attach({ dispose: () => { wrap.innerHTML = ""; } })) return;
+\t\t\t\t\t\tif (!lifecycle.attach({ dispose: () => mount.remove() })) return;
 \t\t\t\t\t\tsetLoad({ status: "ready" });`,
     'DOCX late render cleanup')
   next = replaceExact(next,
@@ -145,7 +217,7 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\t\t}`,
     `\t\t\t\t\t} catch (error) {
 \t\t\t\t\t\tif (!lifecycle.signal.aborted) {
-\t\t\t\t\t\t\twrap.innerHTML = "";
+\t\t\t\t\t\t\tmount.remove();
 \t\t\t\t\t\t\tsetLoad({
 \t\t\t\t\t\t\t\tstatus: "error",
 \t\t\t\t\t\t\t\tmessage: error instanceof Error ? error.message : String(error)
@@ -161,7 +233,7 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\t};`,
     `\t\t\t\treturn () => {
 \t\t\t\t\tlifecycle.dispose();
-\t\t\t\t\tif (wrap !== null) wrap.innerHTML = "";
+\t\t\t\t\tmount.remove();
 \t\t\t\t};`,
     'DOCX teardown')
 
@@ -218,6 +290,10 @@ export function patchSherlockOfficePreviewClient(source) {
   next = replaceExact(next, '\t\t\t\tconst controller = new AbortController();\n\t\t\t\tconst host = hostRef.current;',
     '\t\t\t\tconst lifecycle = createOfficePreviewLifecycle();\n\t\t\t\tconst host = hostRef.current;',
     'PPTX lifecycle')
+  next = replaceExact(next,
+    '\t\t\t\tif (host === null) return;\n\t\t\t\tsetLoad({ status: "loading" });',
+    '\t\t\t\tif (host === null) return;\n\t\t\t\tconst mount = createOfficePreviewMount(host);\n\t\t\t\tsetLoad({ status: "loading" });',
+    'PPTX isolated mount')
   next = transformExactSection(
     next,
     '\t\tfunction PptxView(props) {',
@@ -232,12 +308,18 @@ export function patchSherlockOfficePreviewClient(source) {
     )
   )
   next = replaceExact(next,
+    `\t\t\t\t\t\tconst viewer = await PptxViewer.open(bytes, host, {
+\t\t\t\t\t\t\t...continuousPptxViewerOptions(lifecycle.signal, host),`,
+    `\t\t\t\t\t\tconst viewer = await PptxViewer.open(bytes, mount, {
+\t\t\t\t\t\t\t...continuousPptxViewerOptions(lifecycle.signal, mount),`,
+    'PPTX isolated engine mount')
+  next = replaceExact(next,
     `\t\t\t\t\t\tif (lifecycle.signal.aborted) {
 \t\t\t\t\t\t\tviewer.destroy();
 \t\t\t\t\t\t\treturn;
 \t\t\t\t\t\t}
 \t\t\t\t\t\tviewerRef.current = viewer;`,
-    `\t\t\t\t\t\tif (!lifecycle.attach({ destroy: () => viewer.destroy() })) return;
+    `\t\t\t\t\t\tif (!lifecycle.attach({ destroy: () => { viewer.destroy(); mount.remove(); } })) return;
 \t\t\t\t\t\tviewerRef.current = viewer;`,
     'PPTX engine ownership')
   next = replaceExact(next,
@@ -246,11 +328,13 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\t\t\ttry {
 \t\t\t\t\t\t\tviewerRef.current?.destroy();
 \t\t\t\t\t\t} catch {}
-\t\t\t\t\t\tviewerRef.current = null;`,
+\t\t\t\t\t\tviewerRef.current = null;
+\t\t\t\t\t\thost.innerHTML = "";`,
     `\t\t\t\t\t} catch (error) {
 \t\t\t\t\t\tif (lifecycle.signal.aborted) return;
 \t\t\t\t\t\tlifecycle.dispose();
-\t\t\t\t\t\tviewerRef.current = null;`,
+\t\t\t\t\t\tviewerRef.current = null;
+\t\t\t\t\t\tmount.remove();`,
     'PPTX failure ownership')
   next = replaceExact(next,
     `\t\t\t\treturn () => {
@@ -264,7 +348,7 @@ export function patchSherlockOfficePreviewClient(source) {
     `\t\t\t\treturn () => {
 \t\t\t\t\tlifecycle.dispose();
 \t\t\t\t\tviewerRef.current = null;
-\t\t\t\t\thost.innerHTML = "";
+\t\t\t\t\tmount.remove();
 \t\t\t\t};`,
     'PPTX teardown')
 
@@ -331,6 +415,7 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\texports.officeViewers = officeViewers;`,
     'Cordis service publication'
   )
+  assertOfficePreviewPatchIntegrity(next)
   return next
 }
 

@@ -81,6 +81,12 @@ describe('bundled Sherlock plugin profile', () => {
     const patched = patchSherlockOfficePreviewClient(source)
 
     expect(patchSherlockOfficePreviewClient(patched)).toBe(patched)
+    expect(() => patchSherlockOfficePreviewClient(`${source}\n/* sherlock:office-preview-service:v1 */`))
+      .toThrow(/Office preview .*integrity/u)
+    expect(() => patchSherlockOfficePreviewClient(patched.replace(
+      '\t\texports.officePreviewService = officePreviewService;',
+      ''
+    ))).toThrow(/Office preview .*integrity/u)
     expect(() => patchSherlockOfficePreviewClient(source.replace(
       'const inject = ["betterSidebar"];',
       'const inject = ["unexpected-office-api"];'
