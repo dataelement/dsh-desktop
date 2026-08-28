@@ -16,6 +16,7 @@ import { createReadStream } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
+import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { strToU8, zipSync } from 'fflate'
 import {
@@ -1234,7 +1235,97 @@ describe('sherlock-preview protocol responses', () => {
     expect(csp).toContain("manifest-src 'none'")
     expect(csp).toContain('form-action http: https:')
     expect(csp).toContain("base-uri 'none'")
-    expect((await body(html)).toString()).toContain('<!doctype html>')
+    const htmlBody = (await body(html)).toString()
+    expect(htmlBody).toContain('<!doctype html>')
+    expect(htmlBody).toContain(
+      '<script src="/__sherlock/research-wheel-bridge-v1.js"></script>'
+    )
+    expect(html.headers.get('content-length')).toBe(String(Buffer.byteLength(htmlBody)))
+
+    const bridgeUrl = new URL('__sherlock/research-wheel-bridge-v1.js', descriptor.url)
+    const bridge = await registry.handle(new Request(bridgeUrl), harnessOrigin)
+    expect(bridge.status).toBe(200)
+    expect(bridge.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(bridge.headers.get('cache-control')).toBe('no-store')
+    expect(bridge.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(bridge.headers.get('content-security-policy')).toBe(RESEARCH_PREVIEW_CSP)
+    const bridgeSource = (await body(bridge)).toString()
+    expect(bridge.headers.get('content-length')).toBe(String(Buffer.byteLength(bridgeSource)))
+    expect(bridgeSource).not.toContain('unsafe-inline')
+
+    let wheelListener: ((event: Record<string, unknown>) => void) | undefined
+    const messages: unknown[] = []
+    runInNewContext(bridgeSource, {
+      addEventListener(type: string, listener: (event: Record<string, unknown>) => void, options: unknown) {
+        expect(type).toBe('wheel')
+        expect(options).toEqual({ capture: true, passive: false })
+        wheelListener = listener
+      },
+      parent: { postMessage(message: unknown, targetOrigin: string) {
+        expect(targetOrigin).toBe('*')
+        messages.push(message)
+      } }
+    })
+    expect(wheelListener).toBeTypeOf('function')
+    const plainPrevent = vi.fn()
+    wheelListener?.({
+      metaKey: false, deltaX: 2, deltaY: 12, deltaMode: 0,
+      clientX: 30, clientY: 40, preventDefault: plainPrevent
+    })
+    expect(plainPrevent).not.toHaveBeenCalled()
+    expect(messages).toEqual([])
+    const metaPrevent = vi.fn()
+    wheelListener?.({
+      metaKey: true, deltaX: -3, deltaY: -120, deltaMode: 0,
+      clientX: 31, clientY: 42, preventDefault: metaPrevent
+    })
+    expect(metaPrevent).toHaveBeenCalledOnce()
+    expect(messages).toEqual([{
+      type: 'sherlock:research-html-wheel', version: 1,
+      deltaX: -3, deltaY: -120, deltaMode: 0, clientX: 31, clientY: 42
+    }])
+
+    const injectedTag = '<script src="/__sherlock/research-wheel-bridge-v1.js"></script>'
+    const injectionStart = Buffer.byteLength(htmlBody.slice(0, htmlBody.indexOf(injectedTag)))
+    const injectedRange = await registry.handle(new Request(descriptor.url, {
+      headers: { Range: `bytes=${injectionStart}-${injectionStart + Buffer.byteLength(injectedTag) - 1}` }
+    }), harnessOrigin)
+    expect(injectedRange.status).toBe(206)
+    expect(injectedRange.headers.get('content-range')).toBe(
+      `bytes ${injectionStart}-${injectionStart + Buffer.byteLength(injectedTag) - 1}/${Buffer.byteLength(htmlBody)}`
+    )
+    expect((await body(injectedRange)).toString()).toBe(injectedTag)
+    const htmlBytes = Buffer.from(htmlBody)
+    for (const [start, end] of ([
+      [0, Math.min(7, injectionStart - 1)],
+      [Math.max(0, injectionStart - 3), injectionStart + 3],
+      [injectionStart + Buffer.byteLength(injectedTag) - 3,
+        Math.min(htmlBytes.length - 1, injectionStart + Buffer.byteLength(injectedTag) + 3)],
+      [Math.min(htmlBytes.length - 4, injectionStart + Buffer.byteLength(injectedTag) + 4),
+        htmlBytes.length - 1]
+    ] as const)) {
+      if (end < start) continue
+      const response = await registry.handle(new Request(descriptor.url, {
+        headers: { Range: `bytes=${start}-${end}` }
+      }), harnessOrigin)
+      expect(response.status, `${start}-${end}`).toBe(206)
+      expect(await body(response), `${start}-${end}`).toEqual(htmlBytes.subarray(start, end + 1))
+    }
+
+    const bridgeHead = await registry.handle(new Request(bridgeUrl, { method: 'HEAD' }), harnessOrigin)
+    expect(bridgeHead.status).toBe(200)
+    expect(bridgeHead.headers.get('content-length')).toBe(String(Buffer.byteLength(bridgeSource)))
+    expect(await body(bridgeHead)).toHaveLength(0)
+
+    const nonHtml = await registry.admitFinder({
+      path: path.join(site, 'assets', 'logo.png'),
+      sessionId: 'session-1',
+      nodeId: 'image-no-bridge'
+    })
+    expectDescriptor(nonHtml)
+    expect((await registry.handle(new Request(
+      new URL('__sherlock/research-wheel-bridge-v1.js', nonHtml.url)
+    ), harnessOrigin)).status).toBe(403)
 
     const css = await registry.handle(new Request(new URL('assets/site.css', descriptor.url)), harnessOrigin)
     expect(css.status).toBe(200)
@@ -1370,6 +1461,40 @@ describe('sherlock-preview protocol responses', () => {
     mainWindowUrl = 'https://attacker.example/research'
     access.reset()
     expect((await request('https://attacker.example')).status).toBe(403)
+    expect(access.reads()).toBe(0)
+  })
+
+  it('serves the reserved HTML wheel bridge without resolving or reading a sibling file', async () => {
+    const root = await temporaryDirectory()
+    const filePath = path.join(root, 'index.html')
+    await writeFile(filePath, '<!doctype html><html><body>Preview</body></html>')
+    const access = countingRealFileSystem()
+    const registry = new ResearchFilePreviewRegistry({
+      storage: new ControllableAuthorizationStorage(),
+      fileSystem: access.fileSystem,
+      randomId: deterministicIds(
+        'authorization_0000000000000001',
+        'capability_0000000000000001'
+      )
+    })
+    const descriptor = await registry.admitFinder({
+      path: filePath, sessionId: 'session-1', nodeId: 'html-bridge'
+    })
+    expectDescriptor(descriptor)
+
+    access.reset()
+    const bridge = await registry.handle(new Request(
+      new URL('__sherlock/research-wheel-bridge-v1.js', descriptor.url)
+    ), 'http://127.0.0.1:45821')
+    expect(bridge.status).toBe(200)
+    expect(access.reads()).toBe(0)
+
+    access.reset()
+    const denied = await registry.handle(new Request(
+      new URL('__sherlock/research-wheel-bridge-v1.js', descriptor.url),
+      { headers: { Origin: 'https://attacker.example' } }
+    ), 'http://127.0.0.1:45821')
+    expect(denied.status).toBe(403)
     expect(access.reads()).toBe(0)
   })
 

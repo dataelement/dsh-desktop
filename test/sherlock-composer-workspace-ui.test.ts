@@ -828,8 +828,27 @@ async function mountResearchCanvas(options: {
     supports(kind: string): boolean
   }
   fetch?: (input: string, init?: { signal?: AbortSignal }) => Promise<Response>
+  windowMessageListeners?: { added: number; removed: number }
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
+  if (options.windowMessageListeners !== undefined) {
+    const counts = options.windowMessageListeners
+    type EventMethod = (...args: unknown[]) => unknown
+    const eventWindow = browserWindow as unknown as {
+      addEventListener: EventMethod
+      removeEventListener: EventMethod
+    }
+    const addEventListener = eventWindow.addEventListener.bind(browserWindow)
+    const removeEventListener = eventWindow.removeEventListener.bind(browserWindow)
+    eventWindow.addEventListener = (type: unknown, ...args: unknown[]) => {
+      if (type === 'message') counts.added += 1
+      return addEventListener(type, ...args)
+    }
+    eventWindow.removeEventListener = (type: unknown, ...args: unknown[]) => {
+      if (type === 'message') counts.removed += 1
+      return removeEventListener(type, ...args)
+    }
+  }
   const { sessionId } = options
   const storage = options.storage ?? browserWindow.localStorage
   storage.setItem(
@@ -2362,6 +2381,35 @@ describe('Sherlock workspace and composer controls', () => {
       expect(rendered.every((value) => value.sourceUrl.startsWith('sherlock-preview://'))).toBe(true)
       expect(mounted.host.querySelectorAll('[data-research-office-preview]')).toHaveLength(3)
       expect(mounted.host.textContent).not.toContain('/Users/')
+
+      const office = mounted.host.querySelector(
+        '[data-research-office-preview="docx"]'
+      ) as HappyDOMElement | null
+      expect(office).not.toBeNull()
+      if (office !== null) {
+        const initialViewport = mounted.workspace.getSnapshot().viewport
+        const plainWheel = new mounted.browserWindow.WheelEvent('wheel', {
+          bubbles: true, cancelable: true, deltaY: 48
+        })
+        office.dispatchEvent(plainWheel)
+        expect(plainWheel.defaultPrevented).toBe(false)
+        expect(mounted.workspace.getSnapshot().viewport).toEqual(initialViewport)
+
+        const metaWheel = new mounted.browserWindow.WheelEvent('wheel', {
+          bubbles: true, cancelable: true, deltaY: -100
+        })
+        Object.defineProperties(metaWheel, {
+          metaKey: { value: true },
+          clientX: { value: 280 },
+          clientY: { value: 190 }
+        })
+        office.dispatchEvent(metaWheel)
+        const zoomed = mounted.workspace.getSnapshot().viewport
+        expect(metaWheel.defaultPrevented).toBe(true)
+        expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
+        expect((280 - zoomed.x) / zoomed.scale).toBeCloseTo(280, 7)
+        expect((190 - zoomed.y) / zoomed.scale).toBeCloseTo(190, 7)
+      }
     } finally {
       await mounted.cleanup()
     }
@@ -3004,17 +3052,35 @@ describe('Sherlock workspace and composer controls', () => {
       const viewportBeforeWheel = mounted.workspace.getSnapshot().viewport
       let bubbledWheels = 0
       mounted.browserWindow.document.addEventListener('wheel', () => { bubbledWheels += 1 })
-      const wheel = new mounted.browserWindow.WheelEvent('wheel', {
+      const plainWheel = new mounted.browserWindow.WheelEvent('wheel', {
         bubbles: true, cancelable: true, deltaY: 80, deltaMode: 0
       })
-      Object.defineProperty(wheel, 'metaKey', { value: true })
       await act(async () => {
-        pdfBody.dispatchEvent(wheel)
+        pdfBody.dispatchEvent(plainWheel)
         await Promise.resolve(); await Promise.resolve()
       })
-      expect(wheel.defaultPrevented).toBe(false)
+      expect(plainWheel.defaultPrevented).toBe(false)
       expect(bubbledWheels).toBe(0)
       expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+
+      const metaWheel = new mounted.browserWindow.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, deltaY: -100, deltaMode: 0
+      })
+      Object.defineProperties(metaWheel, {
+        metaKey: { value: true },
+        clientX: { value: 320 },
+        clientY: { value: 240 }
+      })
+      await act(async () => {
+        pdfBody.dispatchEvent(metaWheel)
+        await Promise.resolve(); await Promise.resolve()
+      })
+      const zoomed = mounted.workspace.getSnapshot().viewport
+      expect(metaWheel.defaultPrevented).toBe(true)
+      expect(bubbledWheels).toBe(1)
+      expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
+      expect((320 - zoomed.x) / zoomed.scale).toBeCloseTo(320, 7)
+      expect((240 - zoomed.y) / zoomed.scale).toBeCloseTo(240, 7)
       pdfBody.scrollTop = 872
       await act(async () => {
         pdfBody.dispatchEvent(new mounted.browserWindow.Event('scroll', { bubbles: true }))
@@ -3429,7 +3495,9 @@ describe('Sherlock workspace and composer controls', () => {
 
   it('mounts interactive HTML only from a capability URL with the exact browser sandbox and releases it offscreen', async () => {
     const releases: Array<Record<string, string>> = []
+    const messageListeners = { added: 0, removed: 0 }
     let restoreSequence = 0
+    let cleaned = false
     const mounted = await mountResearchCanvas({
       sessionId: 'session-html-lifecycle',
       files: [{
@@ -3437,6 +3505,7 @@ describe('Sherlock workspace and composer controls', () => {
         authorizationId: 'authorization-html', contentType: 'text/html; charset=utf-8',
         x: 200, y: 200, width: 480, height: 360, sizeMode: 'auto'
       }],
+      windowMessageListeners: messageListeners,
       dshDesktop: { researchPreview: {
         async restore(value) {
           restoreSequence += 1
@@ -3455,7 +3524,8 @@ describe('Sherlock workspace and composer controls', () => {
         mounted.workspace.setCanvasSize({ width: 800, height: 600 })
         await Promise.resolve(); await Promise.resolve()
       })
-      const frame = mounted.host.querySelector('[data-research-html-preview]') as HappyDOMElement | null
+      const frame = mounted.host.querySelector('[data-research-html-preview]') as
+        (HappyDOMElement & { contentWindow: unknown }) | null
       expect(frame).not.toBeNull()
       expect(frame?.getAttribute('src')).toBe('sherlock-preview://capability-html-1/')
       expect(frame?.getAttribute('srcdoc')).toBeNull()
@@ -3478,6 +3548,82 @@ describe('Sherlock workspace and composer controls', () => {
       frame?.dispatchEvent(htmlWheel)
       expect(htmlWheel.defaultPrevented).toBe(false)
       expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+
+      if (frame !== null) {
+        // HappyDOM currently drops WheelEventInit.metaKey/clientX/clientY. Keep the
+        // production path browser-accurate by repairing the test realm instead of
+        // teaching runtime code about this test-environment gap.
+        const NativeWheelEvent = mounted.browserWindow.WheelEvent
+        type BrowserAccurateWheelInit =
+          NonNullable<ConstructorParameters<typeof NativeWheelEvent>[1]> & {
+            metaKey?: boolean
+            clientX?: number
+            clientY?: number
+          }
+        class BrowserAccurateWheelEvent extends NativeWheelEvent {
+          constructor(type: string, init: BrowserAccurateWheelInit = {}) {
+            super(type, init)
+            Object.defineProperties(this, {
+              metaKey: { configurable: true, value: init.metaKey ?? false },
+              clientX: { configurable: true, value: init.clientX ?? 0 },
+              clientY: { configurable: true, value: init.clientY ?? 0 }
+            })
+          }
+        }
+        Object.defineProperty(mounted.browserWindow, 'WheelEvent', {
+          configurable: true,
+          value: BrowserAccurateWheelEvent
+        })
+        const frameSource = {}
+        Object.defineProperties(frame, {
+          contentWindow: { configurable: true, value: frameSource },
+          clientWidth: { configurable: true, value: 240 },
+          clientHeight: { configurable: true, value: 164 },
+          getBoundingClientRect: {
+            configurable: true,
+            value: () => ({ left: 100, top: 50, right: 580, bottom: 378, width: 480, height: 328 })
+          }
+        })
+        const removedBeforeLoad = messageListeners.removed
+        await act(async () => {
+          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
+          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
+        })
+        expect(messageListeners.removed).toBeGreaterThan(removedBeforeLoad)
+        expect(messageListeners.added - messageListeners.removed).toBe(1)
+        const dispatchBridgeMessage = (source: unknown, data: unknown) => {
+          const event = new mounted.browserWindow.Event('message')
+          Object.defineProperties(event, {
+            source: { value: source },
+            data: { value: data }
+          })
+          mounted.browserWindow.dispatchEvent(event)
+        }
+        const validBridgeMessage = {
+          type: 'sherlock:research-html-wheel', version: 1,
+          deltaX: 0, deltaY: -100, deltaMode: 0,
+          clientX: 100, clientY: 50
+        }
+        for (const [source, data] of [
+          [{}, validBridgeMessage],
+          [frameSource, { ...validBridgeMessage, version: 2 }],
+          [frameSource, { ...validBridgeMessage, unexpected: true }],
+          [frameSource, { ...validBridgeMessage, deltaY: Number.NaN }],
+          [frameSource, { ...validBridgeMessage, deltaY: 100_000 }],
+          [frameSource, { ...validBridgeMessage, clientY: Number.POSITIVE_INFINITY }],
+          [frameSource, { ...validBridgeMessage, clientX: 241 }],
+          [frameSource, { ...validBridgeMessage, deltaMode: 3 }]
+        ] as Array<[unknown, unknown]>) {
+          dispatchBridgeMessage(source, data)
+          expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+        }
+        dispatchBridgeMessage(frameSource, validBridgeMessage)
+        const zoomed = mounted.workspace.getSnapshot().viewport
+        expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
+        // iframe-local (100, 50) maps through the 2x rendered rect to canvas (300, 150).
+        expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(300, 7)
+        expect((150 - zoomed.y) / zoomed.scale).toBeCloseTo(150, 7)
+      }
       await act(async () => {
         mounted.workspace.setSelection({ selectedNodeIds: ['html-1'], orderedFileIds: ['html-1'] })
       })
@@ -3513,8 +3659,12 @@ describe('Sherlock workspace and composer controls', () => {
       expect(restoreSequence).toBe(2)
       expect(mounted.host.querySelector('[data-research-html-preview]')?.getAttribute('src'))
         .toBe('sherlock-preview://capability-html-2/')
-    } finally {
+      expect(messageListeners.added - messageListeners.removed).toBe(1)
       await mounted.cleanup()
+      cleaned = true
+      expect(messageListeners.added).toBe(messageListeners.removed)
+    } finally {
+      if (!cleaned) await mounted.cleanup()
     }
   })
 
@@ -5685,6 +5835,63 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('shows the canvas frame only while Space is held and clears it on keyup or blur', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-space-frame' })
+    try {
+      const { browserWindow, canvas } = mounted
+      ;(canvas as unknown as { focus(): void }).focus()
+      expect(canvas.matches(':focus')).toBe(true)
+      expect(canvas.hasAttribute('data-space-pressed')).toBe(false)
+
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          code: 'Space', key: ' ', bubbles: true, cancelable: true
+        }))
+      })
+      expect(canvas.getAttribute('data-space-pressed')).toBe('true')
+
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keyup', {
+          code: 'Space', key: ' ', bubbles: true
+        }))
+      })
+      expect(canvas.hasAttribute('data-space-pressed')).toBe(false)
+
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          code: 'Space', key: ' ', bubbles: true, cancelable: true
+        }))
+        browserWindow.dispatchEvent(new browserWindow.Event('blur'))
+      })
+      expect(canvas.hasAttribute('data-space-pressed')).toBe(false)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps Command-wheel pointer anchoring on a blank canvas target', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-blank-wheel' })
+    try {
+      const { browserWindow, canvas, workspace } = mounted
+      const wheel = new browserWindow.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, deltaY: -100
+      })
+      Object.defineProperties(wheel, {
+        metaKey: { value: true },
+        clientX: { value: 360 },
+        clientY: { value: 260 }
+      })
+      await act(async () => { canvas.dispatchEvent(wheel) })
+      const zoomed = workspace.getSnapshot().viewport
+      expect(wheel.defaultPrevented).toBe(true)
+      expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
+      expect((360 - zoomed.x) / zoomed.scale).toBeCloseTo(360, 7)
+      expect((260 - zoomed.y) / zoomed.scale).toBeCloseTo(260, 7)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('replaces selection before dragging an unselected node', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-unselected-drag',
@@ -6138,8 +6345,15 @@ describe('Sherlock workspace and composer controls', () => {
     expect(researchCss).toContain(
       '.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}'
     )
-    expect(researchCss).toContain('.rScV5Q_root:focus{outline:none}')
-    expect(researchCss).toContain('[data-file-drop-active=true]')
+    expect(researchCss).toMatch(
+      /\.rScV5Q_root\{[^}]*overflow:clip[^}]*contain:paint[^}]*isolation:isolate[^}]*\}/
+    )
+    expect(researchCss).toMatch(
+      /\.rScV5Q_root\[data-space-pressed=true\]:after\{[^}]*z-index:100[^}]*pointer-events:none[^}]*\}/
+    )
+    expect(researchCss).toMatch(/\.rScV5Q_contentLayer\{[^}]*z-index:0[^}]*\}/)
+    expect(researchCss).not.toContain('.rScV5Q_root:focus-visible')
+    expect(researchCss).not.toMatch(/\.rScV5Q_root\[data-file-drop-active=true\]\{[^}]*box-shadow/)
     expect(researchCss).toContain('.rScV5Q_fileCard')
     expect(researchCss).toContain('body[data-ds-dark-theme] .rScV5Q_fileCard')
     expect(researchCss).toContain('[data-selected=true]')

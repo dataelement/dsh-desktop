@@ -55,6 +55,28 @@ const MAX_OFFICE_ENTRY_BYTES = 64 * 1024 * 1024
 const MAX_OFFICE_EXPANDED_BYTES = 256 * 1024 * 1024
 const MAX_OFFICE_EXPANSION_RATIO = 200
 const CORS_EXPOSE_HEADERS = 'Accept-Ranges, Content-Length, Content-Range, Content-Type'
+const RESEARCH_HTML_WHEEL_BRIDGE_PATH = '__sherlock/research-wheel-bridge-v1.js'
+const RESEARCH_HTML_WHEEL_BRIDGE_TAG = Buffer.from(
+  `<script src="/${RESEARCH_HTML_WHEEL_BRIDGE_PATH}"></script>`,
+  'utf8'
+)
+const RESEARCH_HTML_WHEEL_BRIDGE_SOURCE = Buffer.from(`'use strict';
+(() => {
+  addEventListener('wheel', (event) => {
+    if (event.metaKey !== true) return;
+    event.preventDefault();
+    parent.postMessage({
+      type: 'sherlock:research-html-wheel',
+      version: 1,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      deltaMode: event.deltaMode,
+      clientX: event.clientX,
+      clientY: event.clientY
+    }, '*');
+  }, { capture: true, passive: false });
+})();
+`, 'utf8')
 
 export type ResearchPreviewSource = 'finder' | 'sidebar'
 
@@ -822,6 +844,94 @@ function parseRange(value: string, size: number): { start: number; end: number }
   return { start, end: Math.min(requestedEnd, size - 1) }
 }
 
+function htmlWheelBridgeInjectionOffset(prefix: Uint8Array): number | null {
+  const text = Buffer.from(prefix).toString('utf8')
+  for (const pattern of [/<head(?:\s[^>]*)?>/i, /<html(?:\s[^>]*)?>/i, /<!doctype\s+html[^>]*>/i]) {
+    const match = pattern.exec(text)
+    if (match?.index !== undefined) {
+      return Buffer.byteLength(text.slice(0, match.index + match[0].length), 'utf8')
+    }
+  }
+  return null
+}
+
+type ResearchPreviewBodyPart =
+  | { kind: 'bytes'; value: Uint8Array }
+  | { kind: 'file'; start: number; end: number }
+
+function htmlBodyWithWheelBridge(
+  fileSystem: ResearchPreviewFileSystem,
+  targetPath: string,
+  injectionOffset: number,
+  start: number,
+  end: number
+): ReadableStream<Uint8Array> {
+  const insertionEnd = injectionOffset + RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength - 1
+  const parts: ResearchPreviewBodyPart[] = []
+  if (start < injectionOffset) {
+    parts.push({ kind: 'file', start, end: Math.min(end, injectionOffset - 1) })
+  }
+  if (end >= injectionOffset && start <= insertionEnd) {
+    const sliceStart = Math.max(start, injectionOffset) - injectionOffset
+    const sliceEnd = Math.min(end, insertionEnd) - injectionOffset + 1
+    parts.push({
+      kind: 'bytes',
+      value: RESEARCH_HTML_WHEEL_BRIDGE_TAG.subarray(sliceStart, sliceEnd)
+    })
+  }
+  if (end > insertionEnd) {
+    parts.push({
+      kind: 'file',
+      start: Math.max(injectionOffset, start - RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength),
+      end: end - RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength
+    })
+  }
+
+  let partIndex = 0
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        while (partIndex < parts.length) {
+          const part = parts[partIndex]!
+          if (part.kind === 'bytes') {
+            partIndex += 1
+            if (part.value.byteLength > 0) {
+              controller.enqueue(part.value)
+              return
+            }
+            continue
+          }
+          reader ??= fileSystem.stream(targetPath, part.start, part.end).getReader()
+          const result = await reader.read()
+          if (!result.done) {
+            controller.enqueue(result.value)
+            return
+          }
+          reader.releaseLock()
+          reader = null
+          partIndex += 1
+        }
+        controller.close()
+      } catch (error) {
+        reader?.releaseLock()
+        reader = null
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      if (reader !== null) {
+        try {
+          await reader.cancel(reason)
+        } finally {
+          reader.releaseLock()
+          reader = null
+        }
+      }
+    }
+  })
+}
+
 function encodedPathAttack(rawUrl: string): boolean {
   const authorityEnd = rawUrl.indexOf('/', `${RESEARCH_PREVIEW_SCHEME}://`.length)
   const rawPath = authorityEnd === -1 ? '' : rawUrl.slice(authorityEnd)
@@ -1002,6 +1112,16 @@ export class ResearchFilePreviewRegistry {
       return new Response(null, { status: 204, headers })
     }
 
+    if (resource.relativePath === RESEARCH_HTML_WHEEL_BRIDGE_PATH) {
+      if (!authorization.allowSubresources) return fail(403, 'Preview path denied.')
+      const headers = securityHeaders('text/javascript; charset=utf-8', corsOrigin)
+      headers.set('Content-Length', String(RESEARCH_HTML_WHEEL_BRIDGE_SOURCE.byteLength))
+      return new Response(
+        request.method === 'HEAD' ? null : RESEARCH_HTML_WHEEL_BRIDGE_SOURCE,
+        { status: 200, headers }
+      )
+    }
+
     try {
       const root = await this.fileSystem.realpath(authorization.root)
       const authorizedTarget = await this.fileSystem.realpath(authorization.path)
@@ -1039,21 +1159,38 @@ export class ResearchFilePreviewRegistry {
         : undefined
       const headers = securityHeaders(kind.contentType, corsOrigin, htmlCapability)
       headers.set('Accept-Ranges', 'bytes')
+      const htmlRoot = authorization.allowSubresources && resource.relativePath === '' &&
+        kind.contentType === 'text/html; charset=utf-8'
+      const htmlInjectionOffset = htmlRoot
+        ? htmlWheelBridgeInjectionOffset(await this.fileSystem.readSlice(
+            candidate,
+            0,
+            Math.min(Math.max(0, file.size - 1), MAGIC_PREFIX_BYTES - 1)
+          ))
+        : null
+      if (htmlRoot && htmlInjectionOffset === null) {
+        return fail(415, 'Preview type mismatch.')
+      }
+      const responseSize = htmlInjectionOffset === null
+        ? file.size
+        : file.size + RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength
       const rangeHeader = request.headers.get('range')
-      const range = rangeHeader === null ? null : parseRange(rangeHeader, file.size)
+      const range = rangeHeader === null ? null : parseRange(rangeHeader, responseSize)
       if (rangeHeader !== null && range === null) {
-        headers.set('Content-Range', `bytes */${file.size}`)
+        headers.set('Content-Range', `bytes */${responseSize}`)
         headers.set('Content-Length', '0')
         return new Response(null, { status: 416, headers })
       }
       const start = range?.start ?? 0
-      const end = range?.end ?? Math.max(0, file.size - 1)
-      const length = file.size === 0 ? 0 : end - start + 1
+      const end = range?.end ?? Math.max(0, responseSize - 1)
+      const length = responseSize === 0 ? 0 : end - start + 1
       headers.set('Content-Length', String(length))
-      if (range) headers.set('Content-Range', `bytes ${start}-${end}/${file.size}`)
+      if (range) headers.set('Content-Range', `bytes ${start}-${end}/${responseSize}`)
       const responseBody = request.method === 'HEAD' || length === 0
         ? null
-        : officeBytes === undefined
+        : htmlInjectionOffset !== null
+          ? htmlBodyWithWheelBridge(this.fileSystem, candidate, htmlInjectionOffset, start, end)
+          : officeBytes === undefined
           ? this.fileSystem.stream(candidate, start, end) as BodyInit
           : Buffer.from(officeBytes.subarray(start, end + 1))
       return new Response(responseBody, { status: range ? 206 : 200, headers })

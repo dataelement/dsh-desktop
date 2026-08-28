@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..cf41e2e 100644
+index 1dd0e89..a10a653 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -2180,7 +2180,7 @@ index 1dd0e89..cf41e2e 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6751,40 +8104,2657 @@ window.__ModuleLoader__.load({
+@@ -6751,40 +8104,2722 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -2287,6 +2287,10 @@ index 1dd0e89..cf41e2e 100644
 +		const RESEARCH_PDF_LOADER_URL = "/sherlock-pdfjs/loader.js";
 +		const RESEARCH_PDF_CMAP_URL = "/sherlock-pdfjs/cmaps/";
 +		const RESEARCH_PDF_STANDARD_FONT_URL = "/sherlock-pdfjs/standard_fonts/";
++		const RESEARCH_HTML_WHEEL_MESSAGE_TYPE = "sherlock:research-html-wheel";
++		const RESEARCH_HTML_WHEEL_MESSAGE_VERSION = 1;
++		const RESEARCH_HTML_WHEEL_MAX_DELTA = 4096;
++		const RESEARCH_HTML_WHEEL_MAX_FRAME_SIZE = 32768;
 +		let researchPdfLibraryPromise = null;
 +		const RESEARCH_ARTIFACT_MAX_TITLE = 256;
 +		const RESEARCH_ARTIFACT_MAX_EXCERPT = 16384;
@@ -3700,7 +3704,9 @@ index 1dd0e89..cf41e2e 100644
 +				className: "rScV5Q_markdownScroll",
 +				"data-research-markdown-scroll": "",
 +				"data-research-preview-interactive": "",
-+				onWheel: (event) => event.stopPropagation(),
++				onWheel: (event) => {
++					if (!event.metaKey) event.stopPropagation();
++				},
 +				children: (0, react_jsx_runtime.jsx)("div", {
 +					"data-research-markdown-preview": "",
 +					children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MarkdownText, { text: preview.text })
@@ -3711,7 +3717,9 @@ index 1dd0e89..cf41e2e 100644
 +				className: "rScV5Q_textScroll",
 +				"data-research-text-preview": "",
 +				"data-research-preview-interactive": "",
-+				onWheel: (event) => event.stopPropagation(),
++				onWheel: (event) => {
++					if (!event.metaKey) event.stopPropagation();
++				},
 +				children: (0, react_jsx_runtime.jsx)("code", {
 +					className: language === "" ? void 0 : `language-${language}`,
 +					children: preview.text
@@ -3975,7 +3983,9 @@ index 1dd0e89..cf41e2e 100644
 +				className: "rScV5Q_pdfScroll",
 +				"data-research-pdf-scroll": "",
 +				"data-research-preview-interactive": "",
-+				onWheel: (event) => event.stopPropagation(),
++				onWheel: (event) => {
++					if (!event.metaKey) event.stopPropagation();
++				},
 +				onScroll: (event) => setScrollTop(Math.max(0, event.currentTarget.scrollTop || 0)),
 +				children: Array.from({ length: preview.pageCount }, (_, index) => {
 +					const pageNumber = index + 1;
@@ -4006,7 +4016,9 @@ index 1dd0e89..cf41e2e 100644
 +		}
 +		function ResearchCanvasHtmlPreview({ node, sessionId, visible }) {
 +			const [preview, setPreview] = (0, react.useState)({ status: visible ? "loading" : "offscreen", descriptor: null });
++			const [loadVersion, setLoadVersion] = (0, react.useState)(0);
 +			const descriptorRef = (0, react.useRef)(null);
++			const frameRef = (0, react.useRef)(null);
 +			const releaseCurrentDescriptor = (0, react.useCallback)(() => {
 +				const descriptor = descriptorRef.current;
 +				if (descriptor === null) return;
@@ -4039,6 +4051,54 @@ index 1dd0e89..cf41e2e 100644
 +					releaseCurrentDescriptor();
 +				};
 +			}, [sessionId, node.id, node.authorizationId, visible, releaseCurrentDescriptor]);
++			(0, react.useEffect)(() => {
++				if (preview.status !== "ready" || preview.descriptor === null) return;
++				const frame = frameRef.current;
++				if (frame === null) return;
++				const onMessage = (event) => {
++					if (event.source !== frame.contentWindow) return;
++					let value;
++					try {
++						value = event.data;
++						if (typeof value !== "object" || value === null || Array.isArray(value)) return;
++						const expectedKeys = ["clientX", "clientY", "deltaMode", "deltaX", "deltaY", "type", "version"];
++						const keys = Object.keys(value).sort();
++						if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) return;
++						if (value.type !== RESEARCH_HTML_WHEEL_MESSAGE_TYPE || value.version !== RESEARCH_HTML_WHEEL_MESSAGE_VERSION) return;
++					} catch {
++						return;
++					}
++					const { deltaX, deltaY, deltaMode, clientX, clientY } = value;
++					if (![deltaX, deltaY, clientX, clientY].every(Number.isFinite) ||
++						Math.abs(deltaX) > RESEARCH_HTML_WHEEL_MAX_DELTA ||
++						Math.abs(deltaY) > RESEARCH_HTML_WHEEL_MAX_DELTA ||
++						!Number.isInteger(deltaMode) || deltaMode < 0 || deltaMode > 2) return;
++					const frameWidth = frame.clientWidth;
++					const frameHeight = frame.clientHeight;
++					const bounds = frame.getBoundingClientRect();
++					if (![frameWidth, frameHeight, bounds.left, bounds.top, bounds.width, bounds.height].every(Number.isFinite) ||
++						frameWidth <= 0 || frameHeight <= 0 ||
++						frameWidth > RESEARCH_HTML_WHEEL_MAX_FRAME_SIZE || frameHeight > RESEARCH_HTML_WHEEL_MAX_FRAME_SIZE ||
++						bounds.width <= 0 || bounds.height <= 0 ||
++						bounds.width > RESEARCH_HTML_WHEEL_MAX_FRAME_SIZE || bounds.height > RESEARCH_HTML_WHEEL_MAX_FRAME_SIZE ||
++						clientX < 0 || clientY < 0 || clientX > frameWidth || clientY > frameHeight) return;
++					const translatedX = bounds.left + clientX * bounds.width / frameWidth;
++					const translatedY = bounds.top + clientY * bounds.height / frameHeight;
++					if (!Number.isFinite(translatedX) || !Number.isFinite(translatedY)) return;
++					frame.dispatchEvent(new window.WheelEvent("wheel", {
++						bubbles: true,
++						cancelable: true,
++						metaKey: true,
++						deltaX,
++						deltaY,
++						deltaMode,
++						clientX: translatedX,
++						clientY: translatedY
++					}));
++				};
++				window.addEventListener("message", onMessage);
++				return () => window.removeEventListener("message", onMessage);
++			}, [preview.status, preview.descriptor?.url, loadVersion]);
 +			if (preview.status === "offscreen") return (0, react_jsx_runtime.jsx)("div", {
 +				className: "rScV5Q_previewPlaceholder",
 +				"data-research-offscreen-placeholder": "",
@@ -4055,6 +4115,7 @@ index 1dd0e89..cf41e2e 100644
 +				children: "HTML 预览不可用"
 +			});
 +			return (0, react_jsx_runtime.jsx)("iframe", {
++				ref: frameRef,
 +				className: "rScV5Q_htmlPreview",
 +				"data-research-html-preview": "",
 +				"data-research-preview-interactive": "",
@@ -4064,6 +4125,7 @@ index 1dd0e89..cf41e2e 100644
 +				referrerPolicy: "no-referrer",
 +				loading: "lazy",
 +				allow: "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; fullscreen 'none'; autoplay 'none'; payment 'none'; usb 'none'; serial 'none'; hid 'none'",
++				onLoad: () => setLoadVersion((version) => version + 1),
 +				onError: () => {
 +					releaseCurrentDescriptor();
 +					setPreview({ status: "unavailable", descriptor: null });
@@ -4149,7 +4211,9 @@ index 1dd0e89..cf41e2e 100644
 +				className: "rScV5Q_officePreview",
 +				"data-research-office-preview": kind,
 +				"data-research-preview-interactive": "",
-+				onWheel: (event) => event.stopPropagation(),
++				onWheel: (event) => {
++					if (!event.metaKey) event.stopPropagation();
++				},
 +				children: (0, react_jsx_runtime.jsx)(ResearchOfficePreviewErrorBoundary, {
 +					children: (0, react_jsx_runtime.jsx)(Component, {
 +						sourceUrl: preview.descriptor.url,
@@ -4354,7 +4418,7 @@ index 1dd0e89..cf41e2e 100644
 +				deltaY: -gesture.deltaY
 +			});
 +		}
-+		const cssResearchCanvas = ".rScV5Q_root{--sherlock-research-dot:rgba(82,88,98,.22);background-color:rgb(247,248,250);background-image:radial-gradient(circle,var(--sherlock-research-dot) 1px,transparent 1.2px);background-repeat:repeat;overscroll-behavior:none;touch-action:none;user-select:none;cursor:default;flex:1;min-width:0;min-height:0;height:100%;position:relative;overflow:hidden}.rScV5Q_root:focus{outline:none}.rScV5Q_root:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}.rScV5Q_root[data-space-pressed=true]{cursor:grab}.rScV5Q_root[data-dragging=true]{cursor:grabbing}body[data-ds-dark-theme] .rScV5Q_root{--sherlock-research-dot:rgba(151,157,168,.18);background-color:rgb(23,25,29)}.rScV5Q_contentLayer{pointer-events:none;transform-origin:0 0;position:absolute;inset:0}.rScV5Q_fileCard,.rScV5Q_artifactCard{box-sizing:border-box;pointer-events:auto;width:220px;min-height:64px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;position:absolute;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_fileCard{align-items:center;gap:10px;padding:11px 12px;display:flex}.rScV5Q_fileCard[data-selected=true],.rScV5Q_artifactCard[data-selected=true]{border:2px solid var(--dsw-alias-state-business-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent),var(--dsw-shadow-lv1)}.rScV5Q_fileCard[data-path-unavailable=true]{border-style:dashed;opacity:.72}.rScV5Q_fileCard[data-node-dragging=true],.rScV5Q_artifactCard[data-node-dragging=true]{cursor:grabbing;opacity:.88}.rScV5Q_fileCard:focus-visible,.rScV5Q_artifactCard:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.rScV5Q_fileIcon{color:var(--dsw-alias-state-business-primary);flex:none;width:20px;height:20px}.rScV5Q_fileText{min-width:0;display:flex;flex-direction:column;gap:2px}.rScV5Q_fileName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_fileCaption{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}.rScV5Q_artifactCard{display:flex;flex-direction:column;justify-content:center;gap:3px;padding:10px 12px}.rScV5Q_artifactTitle{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_artifactExcerpt{color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xxs-12)}.rScV5Q_artifactMeta{color:var(--dsw-alias-label-caption);font:var(--dsw-font-xxs-12)}.rScV5Q_marquee{pointer-events:none;box-sizing:border-box;border:1.5px dashed var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent);position:absolute}.rScV5Q_root[data-file-drop-active=true]{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 55%,transparent)}body[data-ds-dark-theme] .rScV5Q_fileCard,body[data-ds-dark-theme] .rScV5Q_artifactCard{background:var(--dsw-alias-bg-layer-2)}body[data-ds-dark-theme] .rScV5Q_marquee{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 18%,transparent)}.wSkVaW_root[data-phase=active] .wSkVaW_scrollBody:has(.rScV5Q_root)>.wSkVaW_composerSeat{background:none}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_header:after{bottom:0}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}";
++		const cssResearchCanvas = ".rScV5Q_root{--sherlock-research-dot:rgba(82,88,98,.22);background-color:rgb(247,248,250);background-image:radial-gradient(circle,var(--sherlock-research-dot) 1px,transparent 1.2px);background-repeat:repeat;overscroll-behavior:none;touch-action:none;user-select:none;cursor:default;flex:1;min-width:0;min-height:0;height:100%;position:relative;overflow:clip;contain:paint;isolation:isolate}.rScV5Q_root:focus{outline:none}.rScV5Q_root[data-space-pressed=true]{cursor:grab}.rScV5Q_root[data-space-pressed=true]:after{content:\"\";box-sizing:border-box;z-index:100;pointer-events:none;border:2px solid var(--dsw-alias-state-business-primary);position:absolute;inset:0}.rScV5Q_root[data-dragging=true]{cursor:grabbing}body[data-ds-dark-theme] .rScV5Q_root{--sherlock-research-dot:rgba(151,157,168,.18);background-color:rgb(23,25,29)}.rScV5Q_contentLayer{z-index:0;pointer-events:none;transform-origin:0 0;position:absolute;inset:0}.rScV5Q_fileCard,.rScV5Q_artifactCard{box-sizing:border-box;pointer-events:auto;width:220px;min-height:64px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;position:absolute;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_fileCard{align-items:center;gap:10px;padding:11px 12px;display:flex}.rScV5Q_fileCard[data-selected=true],.rScV5Q_artifactCard[data-selected=true]{border:2px solid var(--dsw-alias-state-business-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent),var(--dsw-shadow-lv1)}.rScV5Q_fileCard[data-path-unavailable=true]{border-style:dashed;opacity:.72}.rScV5Q_fileCard[data-node-dragging=true],.rScV5Q_artifactCard[data-node-dragging=true]{cursor:grabbing;opacity:.88}.rScV5Q_fileCard:focus-visible,.rScV5Q_artifactCard:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.rScV5Q_fileIcon{color:var(--dsw-alias-state-business-primary);flex:none;width:20px;height:20px}.rScV5Q_fileText{min-width:0;display:flex;flex-direction:column;gap:2px}.rScV5Q_fileName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_fileCaption{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xxs-12)}.rScV5Q_artifactCard{display:flex;flex-direction:column;justify-content:center;gap:3px;padding:10px 12px}.rScV5Q_artifactTitle{text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13)}.rScV5Q_artifactExcerpt{color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xxs-12)}.rScV5Q_artifactMeta{color:var(--dsw-alias-label-caption);font:var(--dsw-font-xxs-12)}.rScV5Q_marquee{pointer-events:none;box-sizing:border-box;border:1.5px dashed var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent);position:absolute}body[data-ds-dark-theme] .rScV5Q_fileCard,body[data-ds-dark-theme] .rScV5Q_artifactCard{background:var(--dsw-alias-bg-layer-2)}body[data-ds-dark-theme] .rScV5Q_marquee{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 18%,transparent)}.wSkVaW_root[data-phase=active] .wSkVaW_scrollBody:has(.rScV5Q_root)>.wSkVaW_composerSeat{background:none}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_header:after{bottom:0}.wSkVaW_root:has(.rScV5Q_root) .wSkVaW_tab:after{bottom:0}";
 +		const tagIdResearchCanvas = "@deepseek-ai/dsh-client-ui-conversation/ResearchCanvas.module.css";
 +		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagIdResearchCanvas) + "]") === null) {
 +			const tag = document.createElement("style");
@@ -4531,7 +4595,8 @@ index 1dd0e89..cf41e2e 100644
 +					dropQueueRef.current = dropQueueRef.current.catch(() => void 0).then(runDrop);
 +				};
 +				const onWheel = (event) => {
-+					if (event.target?.closest?.("[data-research-preview-interactive]") !== null && event.target?.closest?.("[data-research-preview-interactive]") !== void 0) return;
++					const interactivePreview = event.target?.closest?.("[data-research-preview-interactive]");
++					if (!event.metaKey && interactivePreview !== null && interactivePreview !== void 0) return;
 +					event.preventDefault();
 +					const bounds = root.getBoundingClientRect();
 +					workspace.setViewport(nextResearchCanvasWheel(workspace.getSnapshot().viewport, {
@@ -4870,7 +4935,7 @@ index 1dd0e89..cf41e2e 100644
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
-@@ -6793,7 +10763,17 @@ window.__ModuleLoader__.load({
+@@ -6793,7 +10828,17 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$6;
@@ -4889,7 +4954,7 @@ index 1dd0e89..cf41e2e 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -6822,7 +10802,354 @@ window.__ModuleLoader__.load({
+@@ -6822,7 +10867,354 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationRoot.js
@@ -5245,7 +5310,7 @@ index 1dd0e89..cf41e2e 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,10 +11159,64 @@ window.__ModuleLoader__.load({
+@@ -6832,10 +11224,64 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -5310,7 +5375,7 @@ index 1dd0e89..cf41e2e 100644
  			const seatResizeRef = (0, react.useCallback)((seat) => {
  				seatObserver.current?.disconnect();
  				seatObserver.current = null;
-@@ -6848,6 +11229,54 @@ window.__ModuleLoader__.load({
+@@ -6848,6 +11294,54 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -5365,7 +5430,7 @@ index 1dd0e89..cf41e2e 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +11326,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +11391,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -5373,7 +5438,7 @@ index 1dd0e89..cf41e2e 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +11343,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +11408,68 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -5466,7 +5531,7 @@ index 1dd0e89..cf41e2e 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +11440,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +11505,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -5487,7 +5552,7 @@ index 1dd0e89..cf41e2e 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +11508,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +11573,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -5505,7 +5570,7 @@ index 1dd0e89..cf41e2e 100644
  				})] })
  			});
  		}
-@@ -7053,14 +11518,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +11583,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -5550,7 +5615,7 @@ index 1dd0e89..cf41e2e 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +11564,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +11629,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -5560,7 +5625,7 @@ index 1dd0e89..cf41e2e 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +11586,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +11651,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -5569,7 +5634,7 @@ index 1dd0e89..cf41e2e 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +11639,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +11704,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -5587,7 +5652,7 @@ index 1dd0e89..cf41e2e 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +11675,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +11740,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -5595,7 +5660,7 @@ index 1dd0e89..cf41e2e 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +12567,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +12632,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -5626,7 +5691,7 @@ index 1dd0e89..cf41e2e 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +12612,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +12677,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -5651,7 +5716,7 @@ index 1dd0e89..cf41e2e 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +13566,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +13631,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -5660,7 +5725,7 @@ index 1dd0e89..cf41e2e 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +13656,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +13721,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -5702,7 +5767,7 @@ index 1dd0e89..cf41e2e 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +13865,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +13930,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -5719,7 +5784,7 @@ index 1dd0e89..cf41e2e 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +14035,9 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +14100,9 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -5729,7 +5794,7 @@ index 1dd0e89..cf41e2e 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +14077,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +14142,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -5742,7 +5807,7 @@ index 1dd0e89..cf41e2e 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +14093,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +14158,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -5755,7 +5820,7 @@ index 1dd0e89..cf41e2e 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +14142,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +14207,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -5769,7 +5834,7 @@ index 1dd0e89..cf41e2e 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +14180,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +14245,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -5779,7 +5844,7 @@ index 1dd0e89..cf41e2e 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +14312,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +14377,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -5794,7 +5859,7 @@ index 1dd0e89..cf41e2e 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +14328,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +14393,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -5803,7 +5868,7 @@ index 1dd0e89..cf41e2e 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +14352,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +14417,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -5812,7 +5877,7 @@ index 1dd0e89..cf41e2e 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +14378,111 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +14443,111 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
