@@ -35,17 +35,20 @@
       .notice.error { color: var(--danger); background: rgba(195,59,56,.08); }
       .notice.success { color: var(--success); background: rgba(38,122,74,.09); }
       .notice.visible { display: block; }
-      .list-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
+      .list-card { overflow: hidden; margin-top:18px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
       .list-heading { display: flex; justify-content: space-between; align-items: center; min-height: 43px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650; }
       .select-all { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+      .card-help { margin:0; padding:10px 16px; border-bottom:1px solid var(--line); color:var(--muted); background:var(--surface); font-size:11px; line-height:1.5; }
+      .card-footer { display:flex; justify-content:flex-end; align-items:center; min-height:54px; padding:8px 12px; border-top:1px solid var(--line); background:var(--surface); }
       .plugins { max-height: 310px; margin: 0; padding: 0; overflow: auto; list-style: none; }
       .plugins li { border-top: 1px solid var(--line); background: var(--surface); }
       .plugins li:first-child { border-top: 0; }
       .plugin { display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 10px 16px; cursor: pointer; }
       .plugin input { width: 16px; height: 16px; margin: 0; accent-color: var(--button); }
       .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
-      .compatibility { margin-bottom: 18px; }
-      .issue { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 13px 16px; background: var(--surface); }
+      .issue-group { border-top:1px solid var(--line); background:var(--surface); }
+      .issue-group:first-child { border-top:0; }
+      .issue { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 13px 16px 10px; cursor:pointer; }
       .issue input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--button); }
       .issue-main { min-width: 0; }
       .issue-title { display:flex; flex-wrap:wrap; align-items:center; gap:7px; }
@@ -53,19 +56,30 @@
       .issue-badge { padding:1px 6px; border-radius:999px; color:var(--danger); background:rgba(195,59,56,.09); font-size:10px; font-weight:700; }
       .issue-meta, .issue-detail, .issue-source, .issue-action { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
       .issue-action { color:var(--ink); font-weight:620; }
+      .issue-details { margin:0 16px 12px 42px; color:var(--muted); font-size:10px; }
+      .issue-details summary { width:max-content; cursor:pointer; font-weight:650; }
+      .findings { margin:7px 0 0; padding:8px 10px; border-radius:9px; background:var(--soft); list-style:none; }
+      .finding { padding:5px 0; border-top:1px solid var(--line); }
+      .finding:first-child { border-top:0; }
+      .finding-name { overflow-wrap:anywhere; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11px; font-weight:650; }
+      .finding-detail { margin-top:2px; color:var(--muted); font-size:10px; line-height:1.4; overflow-wrap:anywhere; }
       .empty { display: none; margin: 0; padding: 24px 18px; color: var(--muted); background: var(--surface); text-align: center; font-size: 13px; }
       .empty.visible { display: block; }
       .safety { margin: 15px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-      .actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
       .button { min-height: 39px; padding: 9px 15px; border: 1px solid var(--strong); border-radius: 10px; color: var(--ink); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 620; }
       .button:hover { background: var(--soft); }
       .button.primary { border-color: var(--button); color: var(--button-ink); background: var(--button); }
+      .button.danger { color:var(--danger); border-color:rgba(195,59,56,.35); }
       .button[disabled] { opacity: .55; cursor: default; }
+      .exit-panel { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:20px; padding:14px 16px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+      .exit-copy { min-width:0; }
+      .exit-heading { display:block; font-size:12px; font-weight:700; }
+      .exit-hint { display:block; margin-top:3px; color:var(--muted); font-size:11px; line-height:1.45; }
       .footer { display: flex; justify-content: flex-end; padding: 0 32px 18px; }
       .quit { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
       :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; }
       @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; } }
-      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } }
+      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .exit-panel { align-items:stretch; flex-direction:column; } .button { width:100%; } }
     </style>
   </head>
   <body>
@@ -80,18 +94,20 @@
         <p class="summary" id="summary"></p>
         <section class="list-card compatibility" aria-labelledby="issue-heading">
           <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
+          <p class="card-help" id="issue-selection-hint"></p>
           <ul class="plugins" id="issues"></ul>
           <p class="empty" id="issue-empty"></p>
+          <div class="card-footer"><button class="button primary" id="repair" type="button" disabled></button></div>
         </section>
         <section class="list-card" aria-labelledby="selection-hint">
           <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
           <ul class="plugins" id="plugins"></ul>
           <p class="empty" id="empty"></p>
+          <div class="card-footer"><button class="button danger" id="uninstall" type="button" disabled></button></div>
         </section>
         <p class="safety" id="safety-note"></p>
-        <div class="actions">
-          <button class="button" id="repair" type="button" disabled></button>
-          <button class="button" id="uninstall" type="button" disabled></button>
+        <div class="exit-panel">
+          <span class="exit-copy"><strong class="exit-heading" id="exit-heading"></strong><span class="exit-hint" id="exit-hint"></span></span>
           <button class="button primary" id="restart" type="button"></button>
         </div>
       </section>
@@ -113,10 +129,13 @@
       setText('selection-hint', model.selectionHint)
       setText('issue-heading', model.issueHeading)
       setText('issue-empty', model.issueEmptyMessage)
+      setText('issue-selection-hint', model.issueSelectionHint)
       setText('safety-note', model.safetyNote)
       setText('uninstall', model.uninstallLabel)
       setText('repair', model.repairLabel)
       setText('restart', model.restartLabel)
+      setText('exit-heading', model.exitHeading)
+      setText('exit-hint', model.exitHint)
       setText('quit', model.quitLabel)
       setText('select-all', model.selectAllLabel)
       document.getElementById('agent').setAttribute('aria-label', model.agentLabel || 'Close')
@@ -135,20 +154,28 @@
       const restart = document.getElementById('restart')
       const checkboxes = []
       const issueCheckboxes = []
-      for (const issue of Array.isArray(model.issues) ? model.issues : []) {
-        const item = document.createElement('li')
+      for (const group of Array.isArray(model.issueGroups) ? model.issueGroups : []) {
+        const item = document.createElement('li'); item.className = 'issue-group'
         const label = document.createElement('label'); label.className = 'issue'
-        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(issue.id)
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(group.id); checkbox.dataset.issueIds = JSON.stringify(group.issueIds || [])
         const main = document.createElement('span'); main.className = 'issue-main'
         const title = document.createElement('span'); title.className = 'issue-title'
-        const name = document.createElement('span'); name.className = 'issue-name'; name.textContent = String(issue.packageName)
-        const badge = document.createElement('span'); badge.className = 'issue-badge'; badge.textContent = String(issue.severityLabel)
+        const name = document.createElement('span'); name.className = 'issue-name'; name.textContent = String(group.name)
+        const badge = document.createElement('span'); badge.className = 'issue-badge'; badge.textContent = String(group.severityLabel)
         title.append(name, badge); main.appendChild(title)
-        const meta = document.createElement('div'); meta.className = 'issue-meta'; meta.textContent = [issue.kindLabel, issue.versionLabel].filter(Boolean).join(' · '); main.appendChild(meta)
-        const detail = document.createElement('div'); detail.className = 'issue-detail'; detail.textContent = String(issue.detail || ''); main.appendChild(detail)
-        const source = document.createElement('div'); source.className = 'issue-source'; source.textContent = String(issue.source || ''); main.appendChild(source)
-        const action = document.createElement('div'); action.className = 'issue-action'; action.textContent = String(issue.actionLabel || ''); main.appendChild(action)
+        const meta = document.createElement('div'); meta.className = 'issue-meta'; meta.textContent = [group.kindLabel, group.countLabel].filter(Boolean).join(' · '); main.appendChild(meta)
+        const action = document.createElement('div'); action.className = 'issue-action'; action.textContent = String(group.actionLabel || ''); main.appendChild(action)
         label.append(checkbox, main); item.appendChild(label); issueList.appendChild(item); issueCheckboxes.push(checkbox)
+        const details = document.createElement('details'); details.className = 'issue-details'
+        const detailsSummary = document.createElement('summary'); detailsSummary.textContent = String(group.detailLabel || group.countLabel || '')
+        const findings = document.createElement('ul'); findings.className = 'findings'
+        for (const issue of Array.isArray(group.issues) ? group.issues : []) {
+          const finding = document.createElement('li'); finding.className = 'finding'
+          const findingName = document.createElement('div'); findingName.className = 'finding-name'; findingName.textContent = String(issue.packageName)
+          const findingDetail = document.createElement('div'); findingDetail.className = 'finding-detail'; findingDetail.textContent = [issue.kindLabel, issue.versionLabel, issue.detail].filter(Boolean).join(' · ')
+          finding.append(findingName, findingDetail); findings.appendChild(finding)
+        }
+        details.append(detailsSummary, findings); item.appendChild(details)
       }
       if (issueCheckboxes.length === 0) issueEmpty.classList.add('visible')
       for (const plugin of Array.isArray(model.plugins) ? model.plugins : []) {
@@ -173,13 +200,18 @@
         void window.dshSafeMode.action('uninstall', plugins)
       })
       repair.addEventListener('click', () => {
-        const issues = issueCheckboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
+        const issues = issueCheckboxes.filter((checkbox) => checkbox.checked).flatMap((checkbox) => {
+          try { return JSON.parse(checkbox.dataset.issueIds || '[]') } catch { return [] }
+        })
         if (issues.length === 0) return
         repair.disabled = true; repair.textContent = model.repairBusyLabel; uninstall.disabled = true; agent.disabled = true; restart.disabled = true
         void window.dshSafeMode.action('repair', issues)
       })
       agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; uninstall.disabled = true; repair.disabled = true; restart.disabled = true; void window.dshSafeMode.action('agent', []) })
-      restart.addEventListener('click', () => { restart.disabled = true; restart.textContent = model.restartBusyLabel; uninstall.disabled = true; repair.disabled = true; agent.disabled = true; void window.dshSafeMode.action('restart', []) })
+      restart.addEventListener('click', () => {
+        if (model.restartConfirm && !window.confirm(String(model.restartConfirm))) return
+        restart.disabled = true; restart.textContent = model.restartBusyLabel; uninstall.disabled = true; repair.disabled = true; agent.disabled = true; void window.dshSafeMode.action('restart', [])
+      })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', []))
     </script>
   </body>

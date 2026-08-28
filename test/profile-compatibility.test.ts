@@ -71,6 +71,8 @@ describe('profile compatibility recovery', () => {
 
   it('names core shadowing, missing client modules, and inactive workspace pollution', async () => {
     const result = await inspectProfileCompatibility(dshHome, bundled)
+    const coreIssue = result.issues.find((issue) => issue.kind === 'core-version-mismatch')
+    const workspaceIssue = result.issues.find((issue) => issue.kind === 'workspace-version-mismatch')
 
     expect(result.activePlugins).toEqual(['dsh-dream-skin'])
     expect(result.issues).toEqual(expect.arrayContaining([
@@ -92,6 +94,11 @@ describe('profile compatibility recovery', () => {
         resolution: 'quarantine-workspace'
       })
     ]))
+    expect(coreIssue).toMatchObject({
+      groupKind: 'workspace',
+      groupName: 'dsh-doudizhu'
+    })
+    expect(coreIssue?.groupId).toBe(workspaceIssue?.groupId)
   })
 
   it('disables an incompatible plugin without deleting its dependency or files', async () => {

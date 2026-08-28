@@ -1634,12 +1634,11 @@ async function showSafeModeManager(): Promise<void> {
         return
       }
       if (action.type === 'restart') {
-        if (compatibility.issues.some((issue) => issue.severity === 'blocking')) {
-          notice = isChinese
-            ? '仍有阻断级兼容性问题。请先修复或暂停相关插件。'
-            : 'Blocking compatibility issues remain. Repair them or disable the affected plugins first.'
-          noticeTone = 'error'
-          continue
+        const unresolved = compatibility.issues.filter((issue) => issue.severity === 'blocking')
+        if (unresolved.length > 0) {
+          runtime.note(
+            `[safe-mode] user exited with ${unresolved.length} unresolved compatibility issue${unresolved.length === 1 ? '' : 's'}`
+          )
         }
         await launchHarness()
         void mobileBridge.start().catch(showUnexpectedError)

@@ -23,6 +23,9 @@ export interface ProfileCompatibilityIssue {
   detail: string
   resolution: ProfileCompatibilityResolution
   target: string
+  groupId?: string
+  groupName?: string
+  groupKind?: 'plugin' | 'workspace' | 'profile'
 }
 
 interface PackageManifest {
@@ -158,12 +161,51 @@ export async function inspectProfileCompatibility(
   const profilePackages = await installedPackageNames(profileNodeModules)
   const bundledPackages = new Set(await installedPackageNames(bundledNodeModulesPath))
   const issues: ProfileCompatibilityIssue[] = []
+  const incompatibleWorkspaces: Array<{
+    directory: string
+    packageName: string
+    manifest: PackageManifest
+    mismatches: string[]
+    mismatchPackages: string[]
+  }> = []
+
+  for (const workspace of await workspaceManifests(profileDirectory)) {
+    const declared = {
+      ...(workspace.manifest.peerDependencies ?? {}),
+      ...(workspace.manifest.devDependencies ?? {})
+    }
+    const mismatches: string[] = []
+    const mismatchPackages: string[] = []
+    for (const [dependency, range] of Object.entries(declared)) {
+      if (!dependency.startsWith('@deepseek-ai/')) continue
+      const expectedVersion = await packageVersion(bundledNodeModulesPath, dependency)
+      const compatible = expectedVersion !== undefined && (
+        range === expectedVersion || range === `^${expectedVersion}` || range === `~${expectedVersion}`
+      )
+      if (!compatible) {
+        mismatchPackages.push(dependency)
+        mismatches.push(`${dependency}@${range}${expectedVersion ? ` (bundled ${expectedVersion})` : ' (removed)'}`)
+      }
+    }
+    if (mismatches.length === 0) continue
+    incompatibleWorkspaces.push({
+      directory: workspace.directory,
+      packageName: workspace.manifest.name ?? basename(workspace.directory),
+      manifest: workspace.manifest,
+      mismatches,
+      mismatchPackages
+    })
+  }
 
   for (const packageName of profilePackages) {
     if (!packageName.startsWith('@deepseek-ai/')) continue
     const installedVersion = await packageVersion(profileNodeModules, packageName)
     const expectedVersion = await packageVersion(bundledNodeModulesPath, packageName)
     if (!installedVersion || !expectedVersion || installedVersion === expectedVersion) continue
+    const workspaceOwners = incompatibleWorkspaces.filter(
+      (workspace) => workspace.mismatchPackages.includes(packageName)
+    )
+    const soleWorkspaceOwner = workspaceOwners.length === 1 ? workspaceOwners[0] : undefined
     issues.push({
       id: issueId('core-version-mismatch', packageName),
       kind: 'core-version-mismatch',
@@ -174,7 +216,12 @@ export async function inspectProfileCompatibility(
       source: 'Profile node_modules',
       detail: `${packageName} ${installedVersion} shadows the bundled ${expectedVersion} package.`,
       resolution: 'rebuild-profile',
-      target: packageName
+      target: packageName,
+      groupId: soleWorkspaceOwner
+        ? `workspace:${soleWorkspaceOwner.directory}`
+        : 'profile:core-dependencies',
+      groupName: soleWorkspaceOwner?.packageName ?? 'Profile core dependencies',
+      groupKind: soleWorkspaceOwner ? 'workspace' : 'profile'
     })
   }
 
@@ -193,7 +240,10 @@ export async function inspectProfileCompatibility(
           source: `${pluginName}/lib/client.js`,
           detail: `The client bundle requires ${request}, which this Harness no longer provides.`,
           resolution: 'disable-plugin',
-          target: pluginName
+          target: pluginName,
+          groupId: `plugin:${pluginName}`,
+          groupName: pluginName,
+          groupKind: 'plugin'
         })
       }
     } catch {
@@ -201,40 +251,29 @@ export async function inspectProfileCompatibility(
     }
   }
 
-  for (const workspace of await workspaceManifests(profileDirectory)) {
-    const declared = {
-      ...(workspace.manifest.peerDependencies ?? {}),
-      ...(workspace.manifest.devDependencies ?? {})
-    }
-    const mismatches: string[] = []
-    for (const [dependency, range] of Object.entries(declared)) {
-      if (!dependency.startsWith('@deepseek-ai/')) continue
-      const expectedVersion = await packageVersion(bundledNodeModulesPath, dependency)
-      const compatible = expectedVersion !== undefined && (
-        range === expectedVersion || range === `^${expectedVersion}` || range === `~${expectedVersion}`
-      )
-      if (!compatible) {
-        mismatches.push(`${dependency}@${range}${expectedVersion ? ` (bundled ${expectedVersion})` : ' (removed)'}`)
-      }
-    }
-    if (mismatches.length === 0) continue
-    const packageName = workspace.manifest.name ?? basename(workspace.directory)
+  for (const workspace of incompatibleWorkspaces) {
     issues.push({
-      id: issueId('workspace-version-mismatch', packageName),
+      id: issueId('workspace-version-mismatch', workspace.packageName),
       kind: 'workspace-version-mismatch',
       severity: 'blocking',
-      packageName,
+      packageName: workspace.packageName,
       installedVersion: workspace.manifest.version,
       source: workspace.directory,
-      detail: `Workspace dependencies target another Harness generation: ${mismatches.join(', ')}.`,
+      detail: `Workspace dependencies target another Harness generation: ${workspace.mismatches.join(', ')}.`,
       resolution: 'quarantine-workspace',
-      target: workspace.directory
+      target: workspace.directory,
+      groupId: `workspace:${workspace.directory}`,
+      groupName: workspace.packageName,
+      groupKind: 'workspace'
     })
   }
 
   const unique = new Map(issues.map((issue) => [issue.id, issue]))
   return {
-    issues: [...unique.values()].sort((left, right) => left.packageName.localeCompare(right.packageName)),
+    issues: [...unique.values()].sort((left, right) =>
+      (left.groupName ?? left.packageName).localeCompare(right.groupName ?? right.packageName) ||
+      left.packageName.localeCompare(right.packageName)
+    ),
     activePlugins
   }
 }

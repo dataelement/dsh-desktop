@@ -35,12 +35,12 @@ describe('Safe Mode', () => {
     expect(model).toMatchObject({
       badge: 'Safe Mode',
       heading: '',
-      selectionHint: 'Select plugins to remove',
-      issueHeading: 'Compatibility check',
-      repairLabel: 'Apply selected repairs',
+      selectionHint: 'Plugin removal (separate from compatibility repair)',
+      issueHeading: 'Compatibility repairs',
+      repairLabel: 'Repair selected issues',
       uninstallLabel: 'Remove selected plugins',
       agentLabel: 'Close',
-      restartLabel: 'Exit Safe Mode and restart',
+      restartLabel: 'Finish and exit Safe Mode',
       quitLabel: 'Quit DSH Desktop'
     })
   })
@@ -58,7 +58,10 @@ describe('Safe Mode', () => {
         source: 'dsh-dream-skin/lib/client.js',
         detail: '缺少客户端模块。',
         resolution: 'disable-plugin',
-        target: 'dsh-dream-skin'
+        target: 'dsh-dream-skin',
+        groupId: 'plugin:dsh-dream-skin',
+        groupName: 'dsh-dream-skin',
+        groupKind: 'plugin'
       }]
     })
     expect(model.issues[0]).toMatchObject({
@@ -68,6 +71,14 @@ describe('Safe Mode', () => {
       actionLabel: '暂停插件（保留数据）',
       versionLabel: '当前 0.4.14'
     })
+    expect(model.issueGroups[0]).toMatchObject({
+      name: 'dsh-dream-skin',
+      kindLabel: '根插件',
+      detailLabel: '查看 1 项详情',
+      issueIds: ['missing-client-module:dsh-dream-skin:runtime']
+    })
+    expect(model.restartLabel).toBe('暂不处理并退出安全模式')
+    expect(model.restartConfirm).toContain('仍有 1 组阻断问题')
   })
 
   it('marks successful removal notices for green presentation', () => {
@@ -88,9 +99,15 @@ describe('Safe Mode', () => {
     expect(html).toContain('type = \'checkbox\'')
     expect(html).toContain("window.dshSafeMode.action('uninstall', plugins)")
     expect(html).toContain("window.dshSafeMode.action('repair', issues)")
+    expect(html).toContain('model.issueGroups')
+    expect(html).toContain('checkbox.dataset.issueIds')
+    expect(html).toContain("document.createElement('details')")
     expect(html).toContain("window.dshSafeMode.action('agent', [])")
     expect(html).toContain('class="close" id="agent"')
     expect(html).toContain('class="button primary" id="restart"')
+    expect(html.indexOf('id="repair"')).toBeLessThan(html.indexOf('id="uninstall"'))
+    expect(html).toContain('id="exit-heading"')
+    expect(html).toContain('window.confirm(String(model.restartConfirm))')
     expect(html).toContain('background: rgba(18,18,20,.28)')
     expect(html).toContain("model.noticeTone === 'success'")
     expect(html).toContain("default-src 'none'")
@@ -110,6 +127,7 @@ describe('Safe Mode', () => {
     expect(main).toContain("ipcMain.handle('safe-mode:action'")
     expect(main).toContain('inspectProfileCompatibility(')
     expect(main).toContain('repairSafeModeCompatibilityIssues(')
+    expect(main).toContain('[safe-mode] user exited with')
     expect(main).toContain("ipcMain.handle('safe-mode:manage'")
     expect(main).toContain("ipcMain.handle('safe-mode:exit', async")
     expect(main).toContain("return { ok: false, blocked: true }")
