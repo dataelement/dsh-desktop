@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index 2f0be4e..a9c7fc7 100644
+index e420872..6ab06f9 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-@@ -29,7 +29,8 @@ window.__ModuleLoader__.load({
+@@ -179,7 +179,8 @@ window.__ModuleLoader__.load({
  					orderBy: "updated",
  					groupExpansion: {},
  					sessionOrderByAccount: {},
@@ -12,7 +12,7 @@ index 2f0be4e..a9c7fc7 100644
  				}),
  				persist: "dsh.workspace.view.v5",
  				actions: {
-@@ -54,6 +55,13 @@ window.__ModuleLoader__.load({
+@@ -204,6 +205,13 @@ window.__ModuleLoader__.load({
  					},
  					setSessionOrder: (d, accountKey, order) => {
  						d.sessionOrderByAccount[accountKey] = order;
@@ -26,26 +26,26 @@ index 2f0be4e..a9c7fc7 100644
  					}
  				}
  			});
-@@ -331,7 +339,7 @@ window.__ModuleLoader__.load({
+@@ -522,7 +530,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
- 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-workspace/src/client/rows/Rows.module.css.mjs
--		const css$2 = ".YDXeBa_projectRow,.YDXeBa_sessionRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.YDXeBa_projectRow:hover,.YDXeBa_sessionRow:hover,.YDXeBa_sessionRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.YDXeBa_searchResultRow:hover,.YDXeBa_searchResultRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultHeading{align-items:center;min-width:0;display:flex}.YDXeBa_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.YDXeBa_searchResultWorkspace,.YDXeBa_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.YDXeBa_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.YDXeBa_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.YDXeBa_projectRow{box-sizing:border-box;align-items:center;height:34px}.YDXeBa_projectRow .YDXeBa_rowActions{height:20px}.YDXeBa_sessionRow{height:32px;animation:YDXeBa_row-in .15s var(--ds-ease-in-out);gap:0}.YDXeBa_sessionRow .YDXeBa_title{margin:0 6px 0 4px}.YDXeBa_flatSessionRowWithoutStatus .YDXeBa_title{margin-left:0}@keyframes YDXeBa_row-in{0%{opacity:0}}.YDXeBa_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.YDXeBa_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.YDXeBa_folderActive{color:var(--dsw-alias-state-business-primary)}.YDXeBa_projectRow .YDXeBa_chevron{display:none}.YDXeBa_projectRow:hover .YDXeBa_chevron{display:inline-flex}.YDXeBa_projectRow:hover .YDXeBa_folder{display:none}.YDXeBa_arrow{transition:transform .15s var(--ds-ease-in-out)}.YDXeBa_arrowOpen{transform:rotate(90deg)}.YDXeBa_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.YDXeBa_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_renameInput{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.YDXeBa_sessionRow .YDXeBa_title{flex:1}.YDXeBa_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.YDXeBa_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.YDXeBa_dot{flex:none}.YDXeBa_rowActions{flex:none;align-items:center;gap:12px;display:none}.YDXeBa_projectRow:hover .YDXeBa_rowActions,.YDXeBa_sessionRow:hover .YDXeBa_rowActions,.YDXeBa_projectRow.YDXeBa_menuOpen .YDXeBa_rowActions,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_rowActions{display:inline-flex}.YDXeBa_sessionRow:hover .YDXeBa_time,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_time{display:none}.YDXeBa_projectRow.YDXeBa_menuOpen,.YDXeBa_sessionRow.YDXeBa_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_sessionRow.YDXeBa_dropBefore,.YDXeBa_sessionRow.YDXeBa_dropAfter{position:relative}.YDXeBa_sessionRow.YDXeBa_dropBefore:before,.YDXeBa_sessionRow.YDXeBa_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.YDXeBa_sessionRow.YDXeBa_dropBefore:before{top:-7px}.YDXeBa_sessionRow.YDXeBa_dropAfter:after{bottom:-7px}.YDXeBa_hoverContent{flex-direction:column;gap:8px;display:flex}.YDXeBa_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.YDXeBa_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.YDXeBa_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.YDXeBa_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.YDXeBa_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.YDXeBa_iconButton:hover{color:var(--dsw-alias-label-primary)}.YDXeBa_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.YDXeBa_sessionRow,.YDXeBa_arrow{transition:none;animation:none}}";
-+		const css$2 = ".YDXeBa_projectRow,.YDXeBa_sessionRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.YDXeBa_projectRow:hover,.YDXeBa_sessionRow:hover,.YDXeBa_sessionRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.YDXeBa_searchResultRow:hover,.YDXeBa_searchResultRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultHeading{align-items:center;min-width:0;display:flex}.YDXeBa_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.YDXeBa_searchResultWorkspace,.YDXeBa_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.YDXeBa_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.YDXeBa_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.YDXeBa_projectRow{box-sizing:border-box;align-items:center;height:34px}.YDXeBa_projectRow .YDXeBa_rowActions{height:20px}.YDXeBa_sessionRow{height:32px;animation:YDXeBa_row-in .15s var(--ds-ease-in-out);gap:0}.YDXeBa_sessionRow .YDXeBa_title{margin:0 6px 0 4px}.YDXeBa_flatSessionRowWithoutStatus .YDXeBa_title{margin-left:0}@keyframes YDXeBa_row-in{0%{opacity:0}}.YDXeBa_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.YDXeBa_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.YDXeBa_folderActive{color:var(--dsw-alias-state-business-primary)}.YDXeBa_projectRow .YDXeBa_chevron{display:none}.YDXeBa_projectRow:hover .YDXeBa_chevron{display:inline-flex}.YDXeBa_projectRow:hover .YDXeBa_folder{display:none}.YDXeBa_arrow{transition:transform .15s var(--ds-ease-in-out)}.YDXeBa_arrowOpen{transform:rotate(90deg)}.YDXeBa_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.YDXeBa_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_renameInput{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.YDXeBa_sessionRow .YDXeBa_title{flex:1}.YDXeBa_unreadTitle{font-weight:600}.YDXeBa_unreadDot,.YDXeBa_unreadMenuIcon{box-sizing:border-box;display:inline-block;border-radius:50%;background:var(--dsw-alias-state-business-primary)}.YDXeBa_unreadDot{width:7px;height:7px}.YDXeBa_unreadMenuIcon{width:9px;height:9px;border:2px solid var(--dsw-specific-menu);box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary)}.YDXeBa_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.YDXeBa_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.YDXeBa_dot{flex:none}.YDXeBa_rowActions{flex:none;align-items:center;gap:12px;display:none}.YDXeBa_projectRow:hover .YDXeBa_rowActions,.YDXeBa_sessionRow:hover .YDXeBa_rowActions,.YDXeBa_projectRow.YDXeBa_menuOpen .YDXeBa_rowActions,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_rowActions{display:inline-flex}.YDXeBa_sessionRow:hover .YDXeBa_time,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_time{display:none}.YDXeBa_projectRow.YDXeBa_menuOpen,.YDXeBa_sessionRow.YDXeBa_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_sessionRow.YDXeBa_dropBefore,.YDXeBa_sessionRow.YDXeBa_dropAfter{position:relative}.YDXeBa_sessionRow.YDXeBa_dropBefore:before,.YDXeBa_sessionRow.YDXeBa_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.YDXeBa_sessionRow.YDXeBa_dropBefore:before{top:-7px}.YDXeBa_sessionRow.YDXeBa_dropAfter:after{bottom:-7px}.YDXeBa_hoverContent{flex-direction:column;gap:8px;display:flex}.YDXeBa_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.YDXeBa_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.YDXeBa_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.YDXeBa_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.YDXeBa_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.YDXeBa_iconButton:hover{color:var(--dsw-alias-label-primary)}.YDXeBa_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.YDXeBa_sessionRow,.YDXeBa_arrow{transition:none;animation:none}}";
+ 		//#region \0dsh-css:/private/tmp/claude-501/-Users-alex-Documents-Code-dataelem-dsh-desktop/8cafdb41-dc87-41ba-bba5-9afd99a08420/scratchpad/harness/packages/client/ui-workspace/src/client/rows/Rows.module.css.mjs
+-		const css$2 = ".koIWyW_projectRow,.koIWyW_sessionRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.koIWyW_projectRow:hover,.koIWyW_sessionRow:hover,.koIWyW_sessionRow.koIWyW_selected{background:var(--dsw-alias-interactive-bg-hover)}.koIWyW_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.koIWyW_searchResultRow:hover,.koIWyW_searchResultRow.koIWyW_selected{background:var(--dsw-alias-interactive-bg-hover)}.koIWyW_searchResultHeading{align-items:center;min-width:0;display:flex}.koIWyW_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.koIWyW_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.koIWyW_searchResultWorkspace,.koIWyW_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.koIWyW_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.koIWyW_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.koIWyW_projectRow{box-sizing:border-box;align-items:center;height:34px}.koIWyW_projectRow .koIWyW_rowActions{height:20px}.koIWyW_sessionRow{height:32px;animation:koIWyW_row-in .15s var(--ds-ease-in-out);gap:0}.koIWyW_sessionRow .koIWyW_title{margin:0 6px 0 4px}.koIWyW_flatSessionRowWithoutStatus .koIWyW_title{margin-left:0}@keyframes koIWyW_row-in{0%{opacity:0}}.koIWyW_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.koIWyW_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.koIWyW_folderActive{color:var(--dsw-alias-state-business-primary)}.koIWyW_projectRow .koIWyW_chevron{display:none}.koIWyW_projectRow:hover .koIWyW_chevron{display:inline-flex}.koIWyW_projectRow:hover .koIWyW_folder{display:none}.koIWyW_arrow{transition:transform .15s var(--ds-ease-in-out)}.koIWyW_arrowOpen{transform:rotate(90deg)}.koIWyW_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.koIWyW_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.koIWyW_renameInput{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.koIWyW_sessionRow .koIWyW_title{flex:1}.koIWyW_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.koIWyW_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.koIWyW_dot{flex:none}.koIWyW_rowActions{flex:none;align-items:center;gap:12px;display:none}.koIWyW_projectRow:hover .koIWyW_rowActions,.koIWyW_sessionRow:hover .koIWyW_rowActions,.koIWyW_projectRow.koIWyW_menuOpen .koIWyW_rowActions,.koIWyW_sessionRow.koIWyW_menuOpen .koIWyW_rowActions{display:inline-flex}.koIWyW_sessionRow:hover .koIWyW_time,.koIWyW_sessionRow.koIWyW_menuOpen .koIWyW_time{display:none}.koIWyW_projectRow.koIWyW_menuOpen,.koIWyW_sessionRow.koIWyW_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.koIWyW_sessionRow.koIWyW_dropBefore,.koIWyW_sessionRow.koIWyW_dropAfter{position:relative}.koIWyW_sessionRow.koIWyW_dropBefore:before,.koIWyW_sessionRow.koIWyW_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.koIWyW_sessionRow.koIWyW_dropBefore:before{top:-7px}.koIWyW_sessionRow.koIWyW_dropAfter:after{bottom:-7px}.koIWyW_hoverContent{flex-direction:column;gap:8px;display:flex}.koIWyW_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.koIWyW_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.koIWyW_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.koIWyW_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.koIWyW_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.koIWyW_iconButton:hover{color:var(--dsw-alias-label-primary)}.koIWyW_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.koIWyW_sessionRow,.koIWyW_arrow{transition:none;animation:none}}";
++		const css$2 = ".koIWyW_projectRow,.koIWyW_sessionRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.koIWyW_projectRow:hover,.koIWyW_sessionRow:hover,.koIWyW_sessionRow.koIWyW_selected{background:var(--dsw-alias-interactive-bg-hover)}.koIWyW_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.koIWyW_searchResultRow:hover,.koIWyW_searchResultRow.koIWyW_selected{background:var(--dsw-alias-interactive-bg-hover)}.koIWyW_searchResultHeading{align-items:center;min-width:0;display:flex}.koIWyW_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.koIWyW_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.koIWyW_searchResultWorkspace,.koIWyW_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.koIWyW_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.koIWyW_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.koIWyW_projectRow{box-sizing:border-box;align-items:center;height:34px}.koIWyW_projectRow .koIWyW_rowActions{height:20px}.koIWyW_sessionRow{height:32px;animation:koIWyW_row-in .15s var(--ds-ease-in-out);gap:0}.koIWyW_sessionRow .koIWyW_title{margin:0 6px 0 4px}.koIWyW_flatSessionRowWithoutStatus .koIWyW_title{margin-left:0}@keyframes koIWyW_row-in{0%{opacity:0}}.koIWyW_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.koIWyW_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.koIWyW_folderActive{color:var(--dsw-alias-state-business-primary)}.koIWyW_projectRow .koIWyW_chevron{display:none}.koIWyW_projectRow:hover .koIWyW_chevron{display:inline-flex}.koIWyW_projectRow:hover .koIWyW_folder{display:none}.koIWyW_arrow{transition:transform .15s var(--ds-ease-in-out)}.koIWyW_arrowOpen{transform:rotate(90deg)}.koIWyW_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.koIWyW_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.koIWyW_renameInput{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.koIWyW_sessionRow .koIWyW_title{margin:0 6px 0 4px}.koIWyW_unreadTitle{font-weight:600}.koIWyW_unreadDot,.koIWyW_unreadMenuIcon{box-sizing:border-box;display:inline-block;border-radius:50%;background:var(--dsw-alias-state-business-primary)}.koIWyW_unreadDot{width:7px;height:7px}.koIWyW_unreadMenuIcon{width:9px;height:9px;border:2px solid var(--dsw-specific-menu);box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary)}.koIWyW_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.koIWyW_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.koIWyW_dot{flex:none}.koIWyW_rowActions{flex:none;align-items:center;gap:12px;display:none}.koIWyW_projectRow:hover .koIWyW_rowActions,.koIWyW_sessionRow:hover .koIWyW_rowActions,.koIWyW_projectRow.koIWyW_menuOpen .koIWyW_rowActions,.koIWyW_sessionRow.koIWyW_menuOpen .koIWyW_rowActions{display:inline-flex}.koIWyW_sessionRow:hover .koIWyW_time,.koIWyW_sessionRow.koIWyW_menuOpen .koIWyW_time{display:none}.koIWyW_projectRow.koIWyW_menuOpen,.koIWyW_sessionRow.koIWyW_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.koIWyW_sessionRow.koIWyW_dropBefore,.koIWyW_sessionRow.koIWyW_dropAfter{position:relative}.koIWyW_sessionRow.koIWyW_dropBefore:before,.koIWyW_sessionRow.koIWyW_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.koIWyW_sessionRow.koIWyW_dropBefore:before{top:-7px}.koIWyW_sessionRow.koIWyW_dropAfter:after{bottom:-7px}.koIWyW_hoverContent{flex-direction:column;gap:8px;display:flex}.koIWyW_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.koIWyW_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.koIWyW_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.koIWyW_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.koIWyW_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.koIWyW_iconButton:hover{color:var(--dsw-alias-label-primary)}.koIWyW_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.koIWyW_sessionRow,.koIWyW_arrow{transition:none;animation:none}}";
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-workspace/Rows.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -374,6 +382,9 @@ window.__ModuleLoader__.load({
- 			"slot": "YDXeBa_slot",
- 			"time": "YDXeBa_time",
- 			"title": "YDXeBa_title",
-+			"unreadDot": "YDXeBa_unreadDot",
-+			"unreadMenuIcon": "YDXeBa_unreadMenuIcon",
-+			"unreadTitle": "YDXeBa_unreadTitle",
- 			"visuallyHidden": "YDXeBa_visuallyHidden"
- 		};
- 		//#endregion
-@@ -685,12 +696,14 @@ window.__ModuleLoader__.load({
+@@ -552,6 +560,9 @@ window.__ModuleLoader__.load({
+ 			"projectRow": "koIWyW_projectRow",
+ 			"projectText": "koIWyW_projectText",
+ 			"renameInput": "koIWyW_renameInput",
++			"unreadDot": "koIWyW_unreadDot",
++			"unreadMenuIcon": "koIWyW_unreadMenuIcon",
++			"unreadTitle": "koIWyW_unreadTitle",
+ 			"row-in": "koIWyW_row-in",
+ 			"rowActions": "koIWyW_rowActions",
+ 			"searchResultHeading": "koIWyW_searchResultHeading",
+@@ -876,12 +887,14 @@ window.__ModuleLoader__.load({
  		* @param props.onRename - open the session rename dialog (id + current title).
  		* @param props.onFork - fork a session at its last completed turn.
  		* @param props.onArchive - archive a session by id.
@@ -61,7 +61,7 @@ index 2f0be4e..a9c7fc7 100644
  			const row = node;
  			const title = displayTitle(node, t);
  			const selected = node.id === currentId;
-@@ -708,6 +721,18 @@ window.__ModuleLoader__.load({
+@@ -899,6 +912,18 @@ window.__ModuleLoader__.load({
  					label: t("menu.fork"),
  					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
  				},
@@ -80,7 +80,7 @@ index 2f0be4e..a9c7fc7 100644
  				{
  					id: "archive",
  					label: t("menu.archiveSession"),
-@@ -716,12 +741,17 @@ window.__ModuleLoader__.load({
+@@ -907,12 +932,17 @@ window.__ModuleLoader__.load({
  			];
  			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.HoverCard, {
  				anchor: (0, react_jsx_runtime.jsxs)("div", {
@@ -99,7 +99,7 @@ index 2f0be4e..a9c7fc7 100644
  					draggable: drag !== void 0,
  					onDragStart: drag === void 0 ? void 0 : (e) => {
  						e.dataTransfer.effectAllowed = "move";
-@@ -741,12 +771,15 @@ window.__ModuleLoader__.load({
+@@ -932,12 +962,15 @@ window.__ModuleLoader__.load({
  						drag.drop(rowHalf(e));
  					},
  					children: [
@@ -118,7 +118,7 @@ index 2f0be4e..a9c7fc7 100644
  							children: title
  						}),
  						!row.blank && (0, react_jsx_runtime.jsx)("span", {
-@@ -765,6 +798,8 @@ window.__ModuleLoader__.load({
+@@ -956,6 +989,8 @@ window.__ModuleLoader__.load({
  									setMenuOpen(false);
  									if (id === "rename") onRename(node.id, row.title);
  									if (id === "fork") onFork(node.id);
@@ -127,16 +127,16 @@ index 2f0be4e..a9c7fc7 100644
  									if (id === "archive") onArchive(node.id);
  								},
  								portal: true,
-@@ -1197,7 +1232,7 @@ window.__ModuleLoader__.load({
+@@ -1402,7 +1437,7 @@ window.__ModuleLoader__.load({
  			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
  		}
  		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
--		function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t }) {
-+		function SessionTree({ useSessions, startSession, open, forkSession, workspaces, archivedSessionIds, unreadSessionIds, onUnreadChange, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t }) {
+-		function SessionTree({ useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t }) {
++		function SessionTree({ useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds, unreadSessionIds, onUnreadChange, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t }) {
  			const list = useSessions((s) => s);
+ 			const pendingInteractions = useSessionPendingInteraction((s) => s);
  			const current = list.current;
- 			const [expandedSessionGroups, setExpandedSessionGroups] = (0, react.useState)([]);
-@@ -1411,6 +1446,8 @@ window.__ModuleLoader__.load({
+@@ -1642,6 +1677,8 @@ window.__ModuleLoader__.load({
  											onRename: onSessionRename,
  											onFork: forkSession,
  											onArchive: onSessionArchive,
@@ -145,16 +145,16 @@ index 2f0be4e..a9c7fc7 100644
  											drag: {
  												start: () => {
  													sessionDropCommitted.current = false;
-@@ -1467,7 +1504,7 @@ window.__ModuleLoader__.load({
+@@ -1698,7 +1735,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
--		function FlatList({ useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
-+		function FlatList({ useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds, unreadSessionIds, onUnreadChange, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
+-		function FlatList({ useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
++		function FlatList({ useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds, unreadSessionIds, onUnreadChange, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
  			const list = useSessions((s) => s);
- 			const baseRows = (0, react.useMemo)(() => deriveFlat(list, archivedSessionIds), [list, archivedSessionIds]);
- 			const sessionIds = (0, react.useMemo)(() => baseRows.map((row) => row.id), [baseRows]);
-@@ -1545,6 +1582,8 @@ window.__ModuleLoader__.load({
+ 			const pendingInteractions = useSessionPendingInteraction((s) => s);
+ 			const baseRows = (0, react.useMemo)(() => deriveFlat(list, archivedSessionIds, pendingInteractions), [
+@@ -1781,6 +1818,8 @@ window.__ModuleLoader__.load({
  							onRename: onSessionRename,
  							onFork: forkSession,
  							onArchive: onSessionArchive,
@@ -163,7 +163,7 @@ index 2f0be4e..a9c7fc7 100644
  							flat: true,
  							drag: {
  								start: () => {
-@@ -1657,6 +1696,15 @@ window.__ModuleLoader__.load({
+@@ -1895,6 +1934,15 @@ window.__ModuleLoader__.load({
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
  			const sessionUpdatedAtByAccount = useStore((s) => s.sessionUpdatedAtByAccount);
@@ -179,7 +179,7 @@ index 2f0be4e..a9c7fc7 100644
  			const currentBlankSessionId = useSessions((state) => {
  				const current = state.current;
  				return current !== void 0 && state.byId[current]?.blank === true ? current : void 0;
-@@ -1844,6 +1892,7 @@ window.__ModuleLoader__.load({
+@@ -2083,6 +2131,7 @@ window.__ModuleLoader__.load({
  				setSessionRenameError(null);
  			};
  			const onSessionArchive = (sessionId) => {
@@ -187,19 +187,19 @@ index 2f0be4e..a9c7fc7 100644
  				archiveSession(sessionId).catch((reason) => {
  					console.warn("session archive rejected:", reason);
  				});
-@@ -2014,7 +2063,7 @@ window.__ModuleLoader__.load({
- 						className: WorkspaceBrowser_module_css_default.listArea,
+@@ -2254,7 +2303,7 @@ window.__ModuleLoader__.load({
  						children: wide && (normalizedQuery !== "" ? (0, react_jsx_runtime.jsx)(SearchResults, {
  							useSessions,
+ 							useSessionPendingInteraction,
 -							open,
 +							open: openSession,
  							workspaces,
  							archivedSessionIds,
  							query: normalizedQuery,
-@@ -2023,11 +2072,13 @@ window.__ModuleLoader__.load({
- 							t
+@@ -2264,11 +2313,13 @@ window.__ModuleLoader__.load({
  						}) : groupBy === "flat" ? (0, react_jsx_runtime.jsx)(FlatList, {
  							useSessions,
+ 							useSessionPendingInteraction,
 -							open,
 +							open: openSession,
  							forkSession,
@@ -211,7 +211,7 @@ index 2f0be4e..a9c7fc7 100644
  							orderBy,
  							sessionOrderByAccount,
  							sessionUpdatedAtByAccount,
-@@ -2047,8 +2098,10 @@ window.__ModuleLoader__.load({
+@@ -2289,8 +2340,10 @@ window.__ModuleLoader__.load({
  							syncSessionOrderAccount: actions.syncSessionOrderAccount,
  							setSessionOrder: actions.setSessionOrder,
  							archivedSessionIds,
@@ -223,7 +223,7 @@ index 2f0be4e..a9c7fc7 100644
  							insertWorkspaceBefore,
  							insertSessionBefore,
  							orderBy,
-@@ -2251,6 +2304,8 @@ window.__ModuleLoader__.load({
+@@ -2493,6 +2546,8 @@ window.__ModuleLoader__.load({
  			"delete.desc": "将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。",
  			"delete.pending": "正在删除工作区…",
  			"menu.fork": "分叉会话",
@@ -232,7 +232,7 @@ index 2f0be4e..a9c7fc7 100644
  			"menu.archiveSession": "归档会话",
  			"sessions.count.one": "{n} 个会话",
  			"sessions.count.other": "{n} 个会话",
-@@ -2265,6 +2320,7 @@ window.__ModuleLoader__.load({
+@@ -2507,6 +2562,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "计划待审",
  			"status.waitingAnswer": "等待回答",
  			"status.completed": "已完成",
@@ -240,7 +240,7 @@ index 2f0be4e..a9c7fc7 100644
  			"hover.created": "创建于 {time}",
  			"hover.copied": "已复制",
  			"date.ymd": "{y}年{m}月{d}日",
-@@ -2316,6 +2372,8 @@ window.__ModuleLoader__.load({
+@@ -2558,6 +2614,8 @@ window.__ModuleLoader__.load({
  			"delete.desc": "This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.",
  			"delete.pending": "Deleting workspace…",
  			"menu.fork": "Fork session",
@@ -249,7 +249,7 @@ index 2f0be4e..a9c7fc7 100644
  			"menu.archiveSession": "Archive session",
  			"sessions.count.one": "{n} session",
  			"sessions.count.other": "{n} sessions",
-@@ -2330,6 +2388,7 @@ window.__ModuleLoader__.load({
+@@ -2572,6 +2630,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "Plan awaiting review",
  			"status.waitingAnswer": "Waiting for answer",
  			"status.completed": "Completed",
