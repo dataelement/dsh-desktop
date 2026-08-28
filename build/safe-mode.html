@@ -40,7 +40,6 @@
       .list-heading { display: flex; justify-content: space-between; align-items: center; min-height: 43px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650; }
       .select-all { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
       .card-help { margin:0; padding:10px 16px; border-bottom:1px solid var(--line); color:var(--muted); background:var(--surface); font-size:11px; line-height:1.5; }
-      .card-footer { display:flex; justify-content:flex-end; align-items:center; min-height:54px; padding:8px 12px; border-top:1px solid var(--line); background:var(--surface); }
       .plugins { max-height: 310px; margin: 0; padding: 0; overflow: auto; list-style: none; }
       .plugins li { border-top: 1px solid var(--line); background: var(--surface); }
       .plugins li:first-child { border-top: 0; }
@@ -70,20 +69,17 @@
       .empty { display: none; margin: 0; padding: 24px 18px; color: var(--muted); background: var(--surface); text-align: center; font-size: 13px; }
       .empty.visible { display: block; }
       .safety { margin: 15px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .actions { display:flex; justify-content:flex-end; gap:9px; margin-top:22px; }
       .button { min-height: 39px; padding: 9px 15px; border: 1px solid var(--strong); border-radius: 10px; color: var(--ink); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 620; }
       .button:hover { background: var(--soft); }
       .button.primary { border-color: var(--button); color: var(--button-ink); background: var(--button); }
       .button.danger { color:var(--danger); border-color:rgba(195,59,56,.35); }
       .button[disabled] { opacity: .55; cursor: default; }
-      .exit-panel { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:20px; padding:14px 16px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
-      .exit-copy { min-width:0; }
-      .exit-heading { display:block; font-size:12px; font-weight:700; }
-      .exit-hint { display:block; margin-top:3px; color:var(--muted); font-size:11px; line-height:1.45; }
       .footer { display: flex; justify-content: flex-end; padding: 0 32px 18px; }
       .quit { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
       :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; }
       @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; } }
-      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .exit-panel { align-items:stretch; flex-direction:column; } .button { width:100%; } }
+      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } }
     </style>
   </head>
   <body>
@@ -101,17 +97,16 @@
           <p class="card-help" id="plugin-selection-hint"></p>
           <ul class="plugins" id="plugins"></ul>
           <p class="empty" id="empty"></p>
-          <div class="card-footer"><button class="button danger" id="uninstall" type="button" disabled></button></div>
           <div class="compatibility-section" id="compatibility-section">
             <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
             <p class="card-help" id="issue-selection-hint"></p>
             <ul class="plugins" id="issues"></ul>
-            <div class="card-footer"><button class="button primary" id="repair" type="button" disabled></button></div>
           </div>
         </section>
         <p class="safety" id="safety-note"></p>
-        <div class="exit-panel">
-          <span class="exit-copy"><strong class="exit-heading" id="exit-heading"></strong><span class="exit-hint" id="exit-hint"></span></span>
+        <div class="actions">
+          <button class="button" id="repair" type="button" disabled></button>
+          <button class="button danger" id="uninstall" type="button" disabled></button>
           <button class="button primary" id="restart" type="button"></button>
         </div>
       </section>
@@ -138,8 +133,6 @@
       setText('uninstall', model.uninstallLabel)
       setText('repair', model.repairLabel)
       setText('restart', model.restartLabel)
-      setText('exit-heading', model.exitHeading)
-      setText('exit-hint', model.exitHint)
       setText('quit', model.quitLabel)
       setText('select-all', model.selectAllLabel)
       document.getElementById('agent').setAttribute('aria-label', model.agentLabel || 'Close')
@@ -181,7 +174,10 @@
         }
         details.append(detailsSummary, findings); item.appendChild(details)
       }
-      if (issueCheckboxes.length === 0) compatibilitySection.hidden = true
+      if (issueCheckboxes.length === 0) {
+        compatibilitySection.hidden = true
+        repair.hidden = true
+      }
       const pluginItems = Array.isArray(model.pluginItems)
         ? model.pluginItems
         : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))

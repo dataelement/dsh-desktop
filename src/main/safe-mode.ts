@@ -52,8 +52,6 @@ export interface SafeModeViewModel {
   restartLabel: string
   restartBusyLabel: string
   restartConfirm?: string
-  exitHeading: string
-  exitHint: string
   quitLabel: string
   notice?: string
   noticeTone?: 'success' | 'error'
@@ -194,10 +192,6 @@ export function buildSafeModeViewModel(options: {
       restartConfirm: blockingGroups > 0
         ? `仍有 ${blockingGroups} 组阻断问题。退出后会重新启用第三方插件，可能再次启动失败。仍然退出安全模式吗？`
         : undefined,
-      exitHeading: '离开安全模式',
-      exitHint: blockingGroups > 0
-        ? '可以暂不处理并退出；重新启用第三方插件后，原问题可能再次出现。'
-        : '兼容性检查已通过，可以重新启用第三方插件。',
       quitLabel: '退出 DSH Desktop',
       notice: options.notice,
       noticeTone: options.noticeTone
@@ -231,10 +225,6 @@ export function buildSafeModeViewModel(options: {
     restartConfirm: blockingGroups > 0
       ? `${blockingGroups} blocking group${blockingGroups === 1 ? '' : 's'} remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?`
       : undefined,
-    exitHeading: 'Leave Safe Mode',
-    exitHint: blockingGroups > 0
-      ? 'You can leave without repairing. The same problem may return after third-party plugins are enabled.'
-      : 'Compatibility checks passed. Third-party plugins can be enabled again.',
     quitLabel: 'Quit DSH Desktop',
     notice: options.notice,
     noticeTone: options.noticeTone
