@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
-index 881bb2a..e355fb5 100644
+index bfb8e32..ddfadd2 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -20,6 +20,8 @@
-   ],
+@@ -28,6 +28,8 @@
+   },
    "license": "MIT",
    "dependencies": {
 +    "dsh-desktop-hmr-fallback": "0.1.0",

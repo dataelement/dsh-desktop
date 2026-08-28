@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-index b819f84..8e94490 100644
+index 5c89b80..193f5b7 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -1263,8 +1263,9 @@ function mapUsage(usage) {
+@@ -1278,8 +1278,9 @@ function mapUsage(usage) {
  	};
  }
  function classifyPiAiError(message) {

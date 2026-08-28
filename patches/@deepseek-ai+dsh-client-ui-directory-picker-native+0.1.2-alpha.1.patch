@@ -1,12 +1,12 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native/lib/client.js
-index ec4b6fa..380e876 100644
+index 556b9a0..2986e29 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native/lib/client.js
 @@ -60,7 +60,11 @@ window.__ModuleLoader__.load({
  		* @param ctx - client root context.
  		*/
  		function apply(ctx) {
--			const injected = () => ({ pick: () => ctx.workspaces.pickDirectory() });
+-			const injected = () => ({ pick: () => ctx.uiWorkspace.pickDirectory() });
 +			const injected = () => ({ pick: () => {
 +				const bridge = window.dshDesktopDirectoryPicker;
 +				if (!bridge || typeof bridge.pick !== "function") return Promise.reject(new Error("DSH Desktop directory picker bridge is unavailable"));

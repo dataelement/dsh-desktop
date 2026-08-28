@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-index 83590ee..fa47077 100644
+index c90afda..aa2c530 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-@@ -139,7 +139,7 @@ window.__ModuleLoader__.load({
+@@ -204,7 +204,7 @@ window.__ModuleLoader__.load({
  		*/
  		function producedFileMentions(paths, openFile, label) {
  			return { resolve(value) {
@@ -11,7 +11,7 @@ index 83590ee..fa47077 100644
  				if (path === void 0) return void 0;
  				return {
  					open: () => {
-@@ -150,6 +150,21 @@ window.__ModuleLoader__.load({
+@@ -215,6 +215,21 @@ window.__ModuleLoader__.load({
  				};
  			} };
  		}
@@ -33,7 +33,7 @@ index 83590ee..fa47077 100644
  		/** The single produced path whose basename is exactly `value`, else undefined. */
  		function onlyPathWithBasename(paths, value) {
  			const matches = paths.filter((path) => basename(path) === value);
-@@ -357,8 +372,7 @@ window.__ModuleLoader__.load({
+@@ -454,8 +469,7 @@ window.__ModuleLoader__.load({
  			const t = ctx.locale.bind(NS);
  			ctx.provide("chatFileMentions", { forClosing(owner) {
  				const paths = selectProducedFiles(owner);
