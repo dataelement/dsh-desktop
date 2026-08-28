@@ -2301,7 +2301,9 @@ describe('Sherlock workspace and composer controls', () => {
       const restoredImage = host.querySelector('[data-research-image-preview]') as HappyDOMElement | null
       expect(restoredImage).not.toBeNull()
       await act(async () => {
-        restoredImage?.dispatchEvent(new mounted.browserWindow.Event('error', { bubbles: false }))
+        expect(() => restoredImage?.dispatchEvent(
+          new mounted.browserWindow.Event('error', { bubbles: false })
+        )).not.toThrow()
         await Promise.resolve()
       })
       expect(host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
@@ -3549,19 +3551,51 @@ describe('Sherlock workspace and composer controls', () => {
       expect(htmlWheel.defaultPrevented).toBe(false)
       expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
 
-      const handshakes: Array<{ message: Record<string, unknown>; targetOrigin: string }> = []
-      const entropyByteLengths: number[] = []
-      const nativeGetRandomValues = mounted.browserWindow.crypto.getRandomValues
-        .bind(mounted.browserWindow.crypto)
-      Object.defineProperty(mounted.browserWindow.crypto, 'getRandomValues', {
-        configurable: true,
-        value(array: Uint8Array) {
-          entropyByteLengths.push(array.byteLength)
-          return nativeGetRandomValues(array)
+      class TestPort {
+        peer: TestPort | null = null
+        closed = false
+        readonly listeners = new Set<(event: { data: unknown }) => void>()
+        postMessage(data: unknown) {
+          if (this.closed || this.peer?.closed !== false) return
+          for (const listener of this.peer.listeners) listener({ data })
         }
+        addEventListener(type: string, listener: (event: { data: unknown }) => void) {
+          expect(type).toBe('message')
+          this.listeners.add(listener)
+        }
+        removeEventListener(type: string, listener: (event: { data: unknown }) => void) {
+          expect(type).toBe('message')
+          this.listeners.delete(listener)
+        }
+        start() {}
+        close() { this.closed = true }
+      }
+      const channels: Array<{ port1: TestPort; port2: TestPort }> = []
+      class TestMessageChannel {
+        readonly port1 = new TestPort()
+        readonly port2 = new TestPort()
+        constructor() {
+          this.port1.peer = this.port2
+          this.port2.peer = this.port1
+          channels.push(this)
+        }
+      }
+      Object.defineProperty(mounted.browserWindow, 'MessageChannel', {
+        configurable: true,
+        value: TestMessageChannel
       })
-      const frameSource = { postMessage(message: Record<string, unknown>, targetOrigin: string) {
-        handshakes.push({ message, targetOrigin })
+      const handshakes: Array<{
+        message: unknown
+        targetOrigin: string
+        transfer: TestPort[]
+      }> = []
+      const frameSource = { currentOrigin: 'sherlock-preview://capability-html-1', postMessage(
+        message: unknown,
+        targetOrigin: string,
+        transfer: TestPort[] = []
+      ) {
+        if (targetOrigin !== this.currentOrigin) return
+        handshakes.push({ message, targetOrigin, transfer })
       } }
       const dispatchBridgeMessage = (source: unknown, origin: string, data: unknown) => {
         const event = new mounted.browserWindow.Event('message')
@@ -3572,7 +3606,7 @@ describe('Sherlock workspace and composer controls', () => {
         })
         mounted.browserWindow.dispatchEvent(event)
       }
-      let lastValidBridgeMessage: Record<string, unknown> | null = null
+      let lastBridgePort: TestPort | null = null
       if (frame !== null) {
         // HappyDOM currently drops WheelEventInit.metaKey/clientX/clientY. Keep the
         // production path browser-accurate by repairing the test realm instead of
@@ -3614,32 +3648,31 @@ describe('Sherlock workspace and composer controls', () => {
         })
         expect(handshakes).toHaveLength(1)
         expect(handshakes[0]?.targetOrigin).toBe('sherlock-preview://capability-html-1')
-        expect(handshakes[0]?.message).toMatchObject({
-          type: 'sherlock:research-html-wheel-handshake', version: 1
-        })
-        expect(handshakes[0]?.message.token).toMatch(/^[a-f0-9]{64}$/)
-        const firstToken = handshakes[0]?.message.token
+        expect(handshakes[0]?.message).toBe('sherlock:research-html-wheel-port-v1')
+        expect(handshakes[0]?.transfer).toEqual([channels[0]?.port2])
+        expect(channels).toHaveLength(1)
+        const stalePort = handshakes[0]?.transfer[0]
         await act(async () => {
           frame.dispatchEvent(new mounted.browserWindow.Event('load'))
           await Promise.resolve()
         })
         expect(handshakes).toHaveLength(2)
         expect(handshakes[1]?.targetOrigin).toBe('sherlock-preview://capability-html-1')
-        expect(handshakes[1]?.message.token).toMatch(/^[a-f0-9]{64}$/)
-        expect(handshakes[1]?.message.token).not.toBe(firstToken)
-        const currentToken = handshakes[1]?.message.token
-        expect(entropyByteLengths).toEqual([32, 32])
-        expect(messageListeners.removed).toBeGreaterThan(removedBeforeLoad)
-        expect(messageListeners.added - messageListeners.removed).toBe(1)
+        expect(handshakes[1]?.message).toBe('sherlock:research-html-wheel-port-v1')
+        expect(handshakes[1]?.transfer).toEqual([channels[1]?.port2])
+        expect(channels).toHaveLength(2)
+        expect(channels[0]?.port1.closed).toBe(true)
+        const currentPort = handshakes[1]?.transfer[0]
+        expect(currentPort).not.toBe(stalePort)
+        expect(messageListeners.added).toBe(messageListeners.removed)
         const validBridgeMessage = {
-          type: 'sherlock:research-html-wheel', version: 1, token: currentToken,
+          type: 'sherlock:research-html-wheel', version: 1,
           deltaX: 0, deltaY: -100, deltaMode: 0,
           clientX: 100, clientY: 50
         }
         for (const [source, origin, data] of [
           [{}, 'sherlock-preview://capability-html-1', validBridgeMessage],
           [frameSource, 'https://attacker.example', validBridgeMessage],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, token: firstToken }],
           [frameSource, 'sherlock-preview://capability-html-1', {
             type: 'sherlock:research-html-wheel', version: 1,
             deltaX: 0, deltaY: -100, deltaMode: 0, clientX: 100, clientY: 50
@@ -3655,20 +3688,49 @@ describe('Sherlock workspace and composer controls', () => {
           dispatchBridgeMessage(source, origin, data)
           expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
         }
-        expect(frame.getAttribute('src')).not.toContain(String(currentToken))
-        expect(frame.getAttribute('title')).not.toContain(String(currentToken))
-        dispatchBridgeMessage(
-          frameSource,
-          'sherlock-preview://capability-html-1',
-          validBridgeMessage
-        )
+        stalePort?.postMessage(validBridgeMessage)
+        expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+        for (const invalidPortMessage of [
+          { ...validBridgeMessage, version: 2 },
+          { ...validBridgeMessage, unexpected: true },
+          { ...validBridgeMessage, deltaY: Number.NaN },
+          { ...validBridgeMessage, deltaY: 100_000 },
+          { ...validBridgeMessage, clientY: Number.POSITIVE_INFINITY },
+          { ...validBridgeMessage, clientX: 241 },
+          { ...validBridgeMessage, deltaMode: 3 }
+        ]) {
+          currentPort?.postMessage(invalidPortMessage)
+          expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+        }
+        currentPort?.postMessage(validBridgeMessage)
         const zoomed = mounted.workspace.getSnapshot().viewport
         expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
         // iframe-local (100, 50) maps through the 2x rendered rect to canvas (300, 150).
         expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(300, 7)
         expect((150 - zoomed.y) / zoomed.scale).toBeCloseTo(150, 7)
-        lastValidBridgeMessage = validBridgeMessage
-        expect(mounted.host.innerHTML).not.toContain(String(currentToken))
+        frameSource.currentOrigin = 'https://attacker.example'
+        await act(async () => {
+          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
+          await Promise.resolve()
+        })
+        expect(handshakes).toHaveLength(2)
+        expect(channels).toHaveLength(3)
+        expect(channels[1]?.port1.closed).toBe(true)
+        dispatchBridgeMessage(frameSource, 'https://attacker.example', validBridgeMessage)
+        expect(mounted.workspace.getSnapshot().viewport).toEqual(zoomed)
+
+        frameSource.currentOrigin = 'sherlock-preview://capability-html-1'
+        await act(async () => {
+          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
+          await Promise.resolve()
+        })
+        expect(handshakes).toHaveLength(3)
+        expect(handshakes[2]?.transfer).toEqual([channels[3]?.port2])
+        expect(channels).toHaveLength(4)
+        expect(channels[2]?.port1.closed).toBe(true)
+        lastBridgePort = handshakes[2]?.transfer[0] ?? null
+        expect(mounted.host.innerHTML).not.toContain('research-html-wheel-token')
+        expect(messageListeners.removed).toBeGreaterThanOrEqual(removedBeforeLoad)
       }
       await act(async () => {
         mounted.workspace.setSelection({ selectedNodeIds: ['html-1'], orderedFileIds: ['html-1'] })
@@ -3698,14 +3760,12 @@ describe('Sherlock workspace and composer controls', () => {
         authorizationId: 'authorization-html', capabilityToken: 'capability-html-1'
       }])
       const offscreenViewport = mounted.workspace.getSnapshot().viewport
-      if (lastValidBridgeMessage !== null) {
-        dispatchBridgeMessage(
-          frameSource,
-          'sherlock-preview://capability-html-1',
-          lastValidBridgeMessage
-        )
-      }
+      lastBridgePort?.postMessage({
+        type: 'sherlock:research-html-wheel', version: 1,
+        deltaX: 0, deltaY: -100, deltaMode: 0, clientX: 100, clientY: 50
+      })
       expect(mounted.workspace.getSnapshot().viewport).toEqual(offscreenViewport)
+      expect(channels[3]?.port1.closed).toBe(true)
 
       await act(async () => {
         mounted.workspace.setViewport({ scale: 1, x: 0, y: 0 })
@@ -3719,9 +3779,10 @@ describe('Sherlock workspace and composer controls', () => {
       expect(messageListeners.added).toBe(messageListeners.removed)
       if (restoredFrame !== null) {
         const restoredSource = { postMessage(
-          message: Record<string, unknown>,
-          targetOrigin: string
-        ) { handshakes.push({ message, targetOrigin }) } }
+          message: unknown,
+          targetOrigin: string,
+          transfer: TestPort[] = []
+        ) { handshakes.push({ message, targetOrigin, transfer }) } }
         Object.defineProperties(restoredFrame, {
           contentWindow: { configurable: true, value: restoredSource },
           clientWidth: { configurable: true, value: 240 },
@@ -3735,18 +3796,20 @@ describe('Sherlock workspace and composer controls', () => {
           restoredFrame.dispatchEvent(new mounted.browserWindow.Event('load'))
           await Promise.resolve()
         })
-        expect(handshakes).toHaveLength(3)
-        expect(handshakes[2]?.targetOrigin).toBe('sherlock-preview://capability-html-2')
-        expect(handshakes[2]?.message.token).toMatch(/^[a-f0-9]{64}$/)
-        expect(handshakes[2]?.message.token).not.toBe(handshakes[0]?.message.token)
-        expect(handshakes[2]?.message.token).not.toBe(handshakes[1]?.message.token)
-        expect(entropyByteLengths).toEqual([32, 32, 32])
-        expect(mounted.host.innerHTML).not.toContain(String(handshakes[2]?.message.token))
-        expect(messageListeners.added - messageListeners.removed).toBe(1)
+        expect(handshakes).toHaveLength(4)
+        expect(handshakes[3]?.targetOrigin).toBe('sherlock-preview://capability-html-2')
+        expect(handshakes[3]?.message).toBe('sherlock:research-html-wheel-port-v1')
+        expect(handshakes[3]?.transfer).toEqual([channels[4]?.port2])
+        expect(channels).toHaveLength(5)
+        expect(handshakes[3]?.transfer[0]).not.toBe(handshakes[0]?.transfer[0])
+        expect(handshakes[3]?.transfer[0]).not.toBe(handshakes[1]?.transfer[0])
+        expect(handshakes[3]?.transfer[0]).not.toBe(handshakes[2]?.transfer[0])
+        expect(messageListeners.added).toBe(messageListeners.removed)
       }
       await mounted.cleanup()
       cleaned = true
       expect(messageListeners.added).toBe(messageListeners.removed)
+      expect(channels.every((channel) => channel.port1.closed)).toBe(true)
     } finally {
       if (!cleaned) await mounted.cleanup()
     }

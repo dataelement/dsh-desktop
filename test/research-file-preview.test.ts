@@ -1196,6 +1196,8 @@ describe('sherlock-preview protocol responses', () => {
     await writeFile(path.join(site, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="assets/site.css"><script src="assets/site.js"></script></head><body><img src="assets/logo.png"></body></html>')
     await writeFile(path.join(site, 'assets', 'site.css'), 'body { color: black; }')
     await writeFile(path.join(site, 'assets', 'site.js'), 'document.body.dataset.ready = "yes"')
+    await writeFile(path.join(site, 'assets', 'nested.html'),
+      '<!doctype html><html><body><script>window.nested = true</script></body></html>')
     await writeFile(path.join(site, 'assets', 'logo.png'), pngBytes)
     await writeFile(path.join(site, 'modules', 'bootstrap.mjs'), 'export const ready = true')
     await writeFile(path.join(site, 'data', 'config.json'), largeJson)
@@ -1242,6 +1244,18 @@ describe('sherlock-preview protocol responses', () => {
     )
     expect(html.headers.get('content-length')).toBe(String(Buffer.byteLength(htmlBody)))
 
+    const nestedHtml = await registry.handle(new Request(
+      new URL('assets/nested.html', descriptor.url)
+    ), harnessOrigin)
+    expect(nestedHtml.status).toBe(200)
+    expect(nestedHtml.headers.get('content-security-policy')).toContain(
+      `script-src ${capabilitySource} http: https:`
+    )
+    expect((await body(nestedHtml)).toString()).toBe(
+      '<!doctype html><script src="/__sherlock/research-wheel-bridge-v1.js"></script>' +
+      '<html><body><script>window.nested = true</script></body></html>'
+    )
+
     const bridgeUrl = new URL('__sherlock/research-wheel-bridge-v1.js', descriptor.url)
     const bridge = await registry.handle(new Request(bridgeUrl), harnessOrigin)
     expect(bridge.status).toBe(200)
@@ -1252,21 +1266,27 @@ describe('sherlock-preview protocol responses', () => {
     const bridgeSource = (await body(bridge)).toString()
     expect(bridge.headers.get('content-length')).toBe(String(Buffer.byteLength(bridgeSource)))
     expect(bridgeSource).not.toContain('unsafe-inline')
+    expect(bridgeSource).not.toContain('Object.keys')
+    expect(bridgeSource).not.toContain('parent.postMessage')
+    expect(bridgeSource).not.toContain('token')
 
     let messageListener: ((event: Record<string, unknown>) => void) | undefined
     let wheelListener: ((event: Record<string, unknown>) => void) | undefined
-    const messages: Array<{ message: unknown; targetOrigin: string }> = []
-    class TestEvent {
-      defaultPrevented = false
-      propagationStopped = false
-      preventDefault() { this.defaultPrevented = true }
-      stopImmediatePropagation() { this.propagationStopped = true }
-    }
-    const parentWindow = { postMessage(message: unknown, targetOrigin: string) {
-      messages.push({ message, targetOrigin })
-    } }
-    runInNewContext(bridgeSource, {
-      addEventListener(type: string, listener: (event: Record<string, unknown>) => void, options: unknown) {
+    type TestEventState = Record<string, unknown> & { isTrusted: boolean }
+    const eventStates = new WeakMap<object, TestEventState>()
+    class TestEventTarget {
+      addEventListener(
+        type: string,
+        listener: (event: Record<string, unknown>) => void,
+        options?: unknown
+      ) {
+        const portListeners = (this as unknown as { listeners?: Array<(event: unknown) => void> })
+          .listeners
+        if (Array.isArray(portListeners)) {
+          expect(type).toBe('message')
+          portListeners.push(listener as (event: unknown) => void)
+          return
+        }
         if (type === 'message') {
           expect(options).toEqual({ capture: true })
           messageListener = listener
@@ -1276,76 +1296,196 @@ describe('sherlock-preview protocol responses', () => {
         } else {
           throw new Error(`Unexpected bridge listener: ${type}`)
         }
-      },
+      }
+      removeEventListener(type: string, listener: (event: Record<string, unknown>) => void) {
+        const portListeners = (this as unknown as { listeners?: Array<(event: unknown) => void> })
+          .listeners
+        if (!Array.isArray(portListeners)) return
+        expect(type).toBe('message')
+        const index = portListeners.indexOf(listener as (event: unknown) => void)
+        if (index >= 0) portListeners.splice(index, 1)
+      }
+    }
+    class TestEvent {
+      defaultPrevented = false
+      propagationStopped = false
+      constructor(state: TestEventState) { eventStates.set(this, state) }
+      get isTrusted() { return eventStates.get(this)?.isTrusted ?? false }
+      preventDefault() { this.defaultPrevented = true }
+      stopImmediatePropagation() { this.propagationStopped = true }
+    }
+    class TestMessageEvent extends TestEvent {
+      get data() { return eventStates.get(this)?.data }
+      get source() { return eventStates.get(this)?.source }
+      get origin() { return eventStates.get(this)?.origin }
+      get ports() { return eventStates.get(this)?.ports ?? [] }
+    }
+    class TestMouseEvent extends TestEvent {
+      get metaKey() { return eventStates.get(this)?.metaKey }
+      get clientX() { return eventStates.get(this)?.clientX }
+      get clientY() { return eventStates.get(this)?.clientY }
+    }
+    class TestWheelEvent extends TestMouseEvent {
+      get deltaX() { return eventStates.get(this)?.deltaX }
+      get deltaY() { return eventStates.get(this)?.deltaY }
+      get deltaMode() { return eventStates.get(this)?.deltaMode }
+    }
+    class TestMessagePort extends TestEventTarget {
+      readonly posted: unknown[] = []
+      readonly listeners: Array<(event: TestMessageEvent) => void> = []
+      starts = 0
+      closes = 0
+      postMessage(message: unknown) { this.posted.push(message) }
+      start() { this.starts += 1 }
+      close() { this.closes += 1 }
+      dispatch(message: unknown) {
+        const event = new TestMessageEvent({ isTrusted: true, data: message })
+        for (const listener of this.listeners) listener(event)
+      }
+    }
+    const parentWindow = {}
+    const objectIntrinsic = {
+      getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
+      getPrototypeOf: Object.getPrototypeOf,
+      keys: Object.keys
+    }
+    const context = {
+      addEventListener() { throw new Error('Hostile global addEventListener') },
+      Object: objectIntrinsic,
+      EventTarget: TestEventTarget,
       Event: TestEvent,
+      MessageEvent: TestMessageEvent,
+      MouseEvent: TestMouseEvent,
+      WheelEvent: TestWheelEvent,
+      MessagePort: TestMessagePort,
       parent: parentWindow
-    })
+    }
+    runInNewContext(bridgeSource, context)
     expect(messageListener).toBeTypeOf('function')
     expect(wheelListener).toBeTypeOf('function')
-    const token = 'a'.repeat(64)
-    const beforeHandshake = Object.assign(new TestEvent(), {
+    const stolenValues: unknown[] = []
+    Object.defineProperties(objectIntrinsic, {
+      getOwnPropertyDescriptor: {
+        configurable: true,
+        value() { throw new Error('Hostile Object.getOwnPropertyDescriptor') }
+      },
+      getPrototypeOf: {
+        configurable: true,
+        value() { throw new Error('Hostile Object.getPrototypeOf') }
+      }
+    })
+    objectIntrinsic.keys = (value: object) => {
+      stolenValues.push(value)
+      return Object.keys(value)
+    }
+    for (const [prototype, property] of [
+      [TestEvent.prototype, 'isTrusted'],
+      [TestMessageEvent.prototype, 'data'],
+      [TestMessageEvent.prototype, 'source'],
+      [TestMessageEvent.prototype, 'ports'],
+      [TestMouseEvent.prototype, 'metaKey'],
+      [TestMouseEvent.prototype, 'clientX'],
+      [TestMouseEvent.prototype, 'clientY'],
+      [TestWheelEvent.prototype, 'deltaX'],
+      [TestWheelEvent.prototype, 'deltaY'],
+      [TestWheelEvent.prototype, 'deltaMode']
+    ] as Array<[object, string]>) {
+      Object.defineProperty(prototype, property, {
+        configurable: true,
+        get() { throw new Error(`Hostile getter: ${property}`) }
+      })
+    }
+    for (const method of [
+      'postMessage', 'addEventListener', 'removeEventListener', 'start', 'close'
+    ] as const) {
+      Object.defineProperty(TestMessagePort.prototype, method, {
+        configurable: true,
+        value() { throw new Error(`Hostile MessagePort.${method}`) }
+      })
+    }
+    for (const method of ['addEventListener', 'removeEventListener'] as const) {
+      Object.defineProperty(TestEventTarget.prototype, method, {
+        configurable: true,
+        value() { throw new Error(`Hostile EventTarget.${method}`) }
+      })
+    }
+    context.parent = {}
+
+    const beforeHandshake = new TestWheelEvent({
       isTrusted: true, metaKey: true, deltaX: 2, deltaY: 12, deltaMode: 0,
       clientX: 30, clientY: 40
     })
     wheelListener?.(beforeHandshake as unknown as Record<string, unknown>)
     expect(beforeHandshake.defaultPrevented).toBe(false)
-    expect(messages).toEqual([])
-
-    const untrustedHandshake = Object.assign(new TestEvent(), {
-      isTrusted: false, source: parentWindow, origin: harnessOrigin,
-      data: { type: 'sherlock:research-html-wheel-handshake', version: 1, token }
+    const attackerPort = new TestMessagePort()
+    const untrustedHandshake = new TestMessageEvent({
+      isTrusted: false, source: parentWindow,
+      data: 'sherlock:research-html-wheel-port-v1', ports: [attackerPort]
     })
     messageListener?.(untrustedHandshake as unknown as Record<string, unknown>)
     expect(untrustedHandshake.propagationStopped).toBe(false)
-
-    for (const [source, data] of [
-      [{}, { type: 'sherlock:research-html-wheel-handshake', version: 1, token }],
-      [parentWindow, { type: 'wrong', version: 1, token }],
-      [parentWindow, { type: 'sherlock:research-html-wheel-handshake', version: 2, token }],
-      [parentWindow, { type: 'sherlock:research-html-wheel-handshake', version: 1, token: 'short' }],
-      [parentWindow, {
-        type: 'sherlock:research-html-wheel-handshake', version: 1, token, extra: true
-      }]
-    ] as Array<[unknown, unknown]>) {
-      const invalidHandshake = Object.assign(new TestEvent(), {
-        isTrusted: true, source, origin: harnessOrigin, data
+    expect(attackerPort.starts).toBe(0)
+    for (const [source, ports] of [
+      [{}, [new TestMessagePort()]],
+      [parentWindow, []],
+      [parentWindow, [new TestMessagePort(), new TestMessagePort()]]
+    ] as Array<[unknown, TestMessagePort[]]>) {
+      const invalidHandshake = new TestMessageEvent({
+        isTrusted: true, source,
+        data: 'sherlock:research-html-wheel-port-v1', ports
       })
       messageListener?.(invalidHandshake as unknown as Record<string, unknown>)
-      expect(invalidHandshake.propagationStopped).toBe(false)
+      expect(ports.every((port) => port.starts === 0)).toBe(true)
+      expect(invalidHandshake.propagationStopped).toBe(source === parentWindow)
     }
 
-    const trustedHandshake = Object.assign(new TestEvent(), {
-      isTrusted: true, source: parentWindow, origin: harnessOrigin,
-      data: { type: 'sherlock:research-html-wheel-handshake', version: 1, token }
+    const privatePort = new TestMessagePort()
+    const trustedHandshake = new TestMessageEvent({
+      isTrusted: true, source: parentWindow,
+      data: 'sherlock:research-html-wheel-port-v1', ports: [privatePort]
     })
     messageListener?.(trustedHandshake as unknown as Record<string, unknown>)
     expect(trustedHandshake.propagationStopped).toBe(true)
+    expect(privatePort.starts).toBe(1)
+    expect(stolenValues).toEqual([])
 
-    const plainWheel = Object.assign(new TestEvent(), {
+    const plainWheel = new TestWheelEvent({
       isTrusted: true, metaKey: false, deltaX: 2, deltaY: 12, deltaMode: 0,
       clientX: 30, clientY: 40
     })
     wheelListener?.(plainWheel as unknown as Record<string, unknown>)
     expect(plainWheel.defaultPrevented).toBe(false)
-    const untrustedWheel = Object.assign(new TestEvent(), {
+    const untrustedWheel = new TestWheelEvent({
       isTrusted: false, metaKey: true, deltaX: -3, deltaY: -120, deltaMode: 0,
       clientX: 31, clientY: 42
     })
     wheelListener?.(untrustedWheel as unknown as Record<string, unknown>)
     expect(untrustedWheel.defaultPrevented).toBe(false)
-    const metaWheel = Object.assign(new TestEvent(), {
+    const metaWheel = new TestWheelEvent({
       isTrusted: true, metaKey: true, deltaX: -3, deltaY: -120, deltaMode: 0,
       clientX: 31, clientY: 42
     })
     wheelListener?.(metaWheel as unknown as Record<string, unknown>)
     expect(metaWheel.defaultPrevented).toBe(true)
-    expect(messages).toEqual([{
-      targetOrigin: harnessOrigin,
-      message: {
-        type: 'sherlock:research-html-wheel', version: 1, token,
-        deltaX: -3, deltaY: -120, deltaMode: 0, clientX: 31, clientY: 42
-      }
+    expect(privatePort.posted).toEqual([{
+      type: 'sherlock:research-html-wheel', version: 1,
+      deltaX: -3, deltaY: -120, deltaMode: 0, clientX: 31, clientY: 42
     }])
+    const queuedOldListener = privatePort.listeners[0]
+    const replacementPort = new TestMessagePort()
+    const replacementHandshake = new TestMessageEvent({
+      isTrusted: true, source: parentWindow,
+      data: 'sherlock:research-html-wheel-port-v1', ports: [replacementPort]
+    })
+    messageListener?.(replacementHandshake as unknown as Record<string, unknown>)
+    expect(privatePort.closes).toBe(1)
+    expect(replacementPort.starts).toBe(1)
+    queuedOldListener?.(new TestMessageEvent({
+      isTrusted: true, data: 'sherlock:research-html-wheel-dispose-v1'
+    }))
+    expect(replacementPort.closes).toBe(0)
+    replacementPort.dispatch('sherlock:research-html-wheel-dispose-v1')
+    expect(replacementPort.closes).toBe(1)
 
     const injectedTag = '<script src="/__sherlock/research-wheel-bridge-v1.js"></script>'
     const injectionStart = Buffer.byteLength(htmlBody.slice(0, htmlBody.indexOf(injectedTag)))
@@ -1464,6 +1604,7 @@ describe('sherlock-preview protocol responses', () => {
 
   it('injects the HTML wheel bridge outside comments and templates and maps transformed ranges', async () => {
     const injectedTag = '<script src="/__sherlock/research-wheel-bridge-v1.js"></script>'
+    const longDoctype = `<!doctype html PUBLIC "${'long-public-id>'.repeat(48)}">`
     const cases = [
       {
         name: 'comment-before-doctype.html',
@@ -1504,6 +1645,11 @@ describe('sherlock-preview protocol responses', () => {
         name: 'bom-comment-public-doctype.html',
         source: '\uFEFF<!-- 中文 <head>伪标签</head> --><!DOCTYPE html PUBLIC "quoted > marker"><html><body>ok</body></html>',
         before: '\uFEFF<!-- 中文 <head>伪标签</head> --><!DOCTYPE html PUBLIC "quoted > marker">'
+      },
+      {
+        name: 'long-public-doctype.html',
+        source: `${longDoctype}<html><body><script>boot()</script></body></html>`,
+        before: longDoctype
       }
     ] as const
 
@@ -1524,6 +1670,8 @@ describe('sherlock-preview protocol responses', () => {
       const expected = fixtureCase.before + injectedTag +
         fixtureCase.source.slice(fixtureCase.before.length)
       expect(transformed, fixtureCase.name).toBe(expected)
+      expect(response.headers.get('content-length'), fixtureCase.name)
+        .toBe(String(Buffer.byteLength(expected)))
 
       const bytes = Buffer.from(transformed)
       const insertionStart = bytes.indexOf(Buffer.from(injectedTag))
