@@ -2674,7 +2674,7 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('mounts HTML only from a capability URL with the exact sandbox and releases it offscreen', async () => {
+  it('mounts interactive HTML only from a capability URL with the exact browser sandbox and releases it offscreen', async () => {
     const releases: Array<Record<string, string>> = []
     let restoreSequence = 0
     const mounted = await mountResearchCanvas({
@@ -2706,7 +2706,7 @@ describe('Sherlock workspace and composer controls', () => {
       expect(frame).not.toBeNull()
       expect(frame?.getAttribute('src')).toBe('sherlock-preview://capability-html-1/')
       expect(frame?.getAttribute('srcdoc')).toBeNull()
-      expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(frame?.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin allow-forms')
       expect(frame?.getAttribute('referrerpolicy')).toBe('no-referrer')
       expect(frame?.getAttribute('loading')).toBe('lazy')
       expect(frame?.getAttribute('allow')).toBe(

@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..13c548c 100644
+index 1dd0e89..9ac3b40 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -3758,7 +3758,7 @@ index 1dd0e89..13c548c 100644
 +				"data-research-preview-interactive": "",
 +				src: preview.descriptor.url,
 +				title: node.name,
-+				sandbox: "allow-scripts",
++				sandbox: "allow-scripts allow-same-origin allow-forms",
 +				referrerPolicy: "no-referrer",
 +				loading: "lazy",
 +				allow: "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; fullscreen 'none'; autoplay 'none'; payment 'none'; usb 'none'; serial 'none'; hid 'none'",

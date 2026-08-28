@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const shellOpenExternal = vi.hoisted(() => vi.fn())
 
@@ -7,6 +8,8 @@ vi.mock('electron', () => ({
 }))
 
 import { secureWindow } from '../src/main/security'
+
+beforeEach(() => shellOpenExternal.mockClear())
 
 type NavigationEvent = {
   preventDefault(): void
@@ -36,6 +39,30 @@ function secureWindowFixture() {
 }
 
 describe('main-window navigation security', () => {
+  it('keeps the application preload and Node integration out of HTML child frames', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+
+    expect(main).toContain('nodeIntegration: false')
+    expect(main).toContain('nodeIntegrationInSubFrames: false')
+    expect(main).toContain('contextIsolation: true')
+    expect(main).toContain('sandbox: true')
+  })
+
+  it('routes child-frame HTTP navigation to the existing safe external path without replacing Sherlock', () => {
+    const { listeners } = secureWindowFixture()
+    const willFrameNavigate = listeners.get('will-frame-navigate')
+    const preventDefault = vi.fn()
+
+    willFrameNavigate?.({
+      url: 'https://example.com/report',
+      isMainFrame: false,
+      preventDefault
+    })
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(shellOpenExternal).toHaveBeenCalledWith('https://example.com/report')
+  })
+
   it('cancels child-frame navigation outside the preview protocol', () => {
     const { listeners } = secureWindowFixture()
     const willFrameNavigate = listeners.get('will-frame-navigate')

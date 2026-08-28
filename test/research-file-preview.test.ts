@@ -775,15 +775,25 @@ describe('sherlock-preview protocol responses', () => {
     expect((await registry.handle(new Request(descriptor.url))).status).toBe(404)
   })
 
-  it('serves HTML relative CSS, image, and script resources inside one realpath-fenced root', async () => {
+  it('serves HTML capability-origin modules and practical local resources inside one realpath-fenced root', async () => {
     const { registry, root } = await fixture()
     const site = path.join(root, 'site')
     const outside = path.join(root, 'outside.js')
     await mkdir(path.join(site, 'assets'), { recursive: true })
+    await mkdir(path.join(site, 'modules'), { recursive: true })
+    await mkdir(path.join(site, 'data'), { recursive: true })
+    await mkdir(path.join(site, 'fonts'), { recursive: true })
+    await mkdir(path.join(site, 'media'), { recursive: true })
     await writeFile(path.join(site, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="assets/site.css"><script src="assets/site.js"></script></head><body><img src="assets/logo.png"></body></html>')
     await writeFile(path.join(site, 'assets', 'site.css'), 'body { color: black; }')
     await writeFile(path.join(site, 'assets', 'site.js'), 'document.body.dataset.ready = "yes"')
     await writeFile(path.join(site, 'assets', 'logo.png'), pngBytes)
+    await writeFile(path.join(site, 'modules', 'bootstrap.mjs'), 'export const ready = true')
+    await writeFile(path.join(site, 'data', 'config.json'), '{"theme":"dark"}')
+    await writeFile(path.join(site, 'data', 'config.json.map'), '{"version":3,"sources":[]}')
+    await writeFile(path.join(site, 'fonts', 'display.woff2'), Buffer.from('wOF2\u0000\u0001'))
+    await writeFile(path.join(site, 'media', 'demo.mp4'), Buffer.from('\u0000\u0000\u0000\u0018ftypisom'))
+    await writeFile(path.join(site, 'modules', 'codec.wasm'), Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]))
     await writeFile(outside, 'window.secret = true')
     await symlink(outside, path.join(site, 'assets', 'escape.js'))
 
@@ -800,20 +810,19 @@ describe('sherlock-preview protocol responses', () => {
     expect(html.headers.get('content-type')).toBe('text/html; charset=utf-8')
     const csp = html.headers.get('content-security-policy') ?? ''
     const capabilitySource = 'sherlock-preview://capability_0000000000000001'
-    expect(csp).toContain(`script-src ${capabilitySource}`)
-    expect(csp).toContain(`style-src ${capabilitySource} 'unsafe-inline'`)
-    expect(csp).toContain(`img-src ${capabilitySource} data:`)
-    expect(csp).toContain('font-src data:')
-    expect(csp).not.toContain(`font-src ${capabilitySource}`)
-    expect(csp).toContain(`media-src ${capabilitySource}`)
+    expect(csp).toContain(`script-src ${capabilitySource} http: https:`)
+    expect(csp).toContain(`style-src ${capabilitySource} 'unsafe-inline' http: https:`)
+    expect(csp).toContain(`img-src ${capabilitySource} data: blob: http: https:`)
+    expect(csp).toContain(`font-src ${capabilitySource} data: http: https:`)
+    expect(csp).toContain(`media-src ${capabilitySource} blob: http: https:`)
     expect(csp).toContain(`frame-ancestors ${harnessOrigin}`)
     expect(csp).not.toContain("'unsafe-eval'")
     expect(csp).not.toContain("script-src 'unsafe-inline'")
-    expect(csp).toContain("connect-src 'none'")
+    expect(csp).toContain(`connect-src ${capabilitySource} http: https: ws: wss:`)
     expect(csp).toContain("frame-src 'none'")
     expect(csp).toContain("worker-src 'none'")
     expect(csp).toContain("manifest-src 'none'")
-    expect(csp).toContain("form-action 'none'")
+    expect(csp).toContain('form-action http: https:')
     expect(csp).toContain("base-uri 'none'")
     expect((await body(html)).toString()).toContain('<!doctype html>')
 
@@ -826,6 +835,24 @@ describe('sherlock-preview protocol responses', () => {
     const script = await registry.handle(new Request(new URL('assets/site.js', descriptor.url)), harnessOrigin)
     expect(script.status).toBe(200)
     expect(script.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    const module = await registry.handle(new Request(new URL('modules/bootstrap.mjs', descriptor.url)), harnessOrigin)
+    expect(module.status).toBe(200)
+    expect(module.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    const json = await registry.handle(new Request(new URL('data/config.json', descriptor.url)), harnessOrigin)
+    expect(json.status).toBe(200)
+    expect(json.headers.get('content-type')).toBe('application/json; charset=utf-8')
+    const sourceMap = await registry.handle(new Request(new URL('data/config.json.map', descriptor.url)), harnessOrigin)
+    expect(sourceMap.status).toBe(200)
+    expect(sourceMap.headers.get('content-type')).toBe('application/json; charset=utf-8')
+    const font = await registry.handle(new Request(new URL('fonts/display.woff2', descriptor.url)), harnessOrigin)
+    expect(font.status).toBe(200)
+    expect(font.headers.get('content-type')).toBe('font/woff2')
+    const media = await registry.handle(new Request(new URL('media/demo.mp4', descriptor.url)), harnessOrigin)
+    expect(media.status).toBe(200)
+    expect(media.headers.get('content-type')).toBe('video/mp4')
+    const wasm = await registry.handle(new Request(new URL('modules/codec.wasm', descriptor.url)), harnessOrigin)
+    expect(wasm.status).toBe(200)
+    expect(wasm.headers.get('content-type')).toBe('application/wasm')
     const escaped = await registry.handle(new Request(new URL('assets/escape.js', descriptor.url)), harnessOrigin)
     expect(escaped.status).toBe(403)
     const unsupported = await registry.handle(new Request(new URL('assets/notes.txt', descriptor.url)), harnessOrigin)
@@ -852,11 +879,17 @@ describe('sherlock-preview protocol responses', () => {
     })
     expectDescriptor(other)
     expect(csp).not.toContain('sherlock-preview://capability_0000000000000002')
-    const opaqueModuleRequest = await registry.handle(new Request(
+    const capabilityModuleRequest = await registry.handle(new Request(
       new URL('assets/site.js', descriptor.url),
-      { headers: { Origin: 'null' } }
+      { headers: { Origin: capabilitySource } }
     ), harnessOrigin)
-    expect(opaqueModuleRequest.status).toBe(403)
+    expect(capabilityModuleRequest.status).toBe(200)
+    expect(capabilityModuleRequest.headers.get('access-control-allow-origin')).toBe(capabilitySource)
+    const otherCapabilityModuleRequest = await registry.handle(new Request(
+      new URL('assets/site.js', descriptor.url),
+      { headers: { Origin: 'sherlock-preview://capability_0000000000000002' } }
+    ), harnessOrigin)
+    expect(otherCapabilityModuleRequest.status).toBe(403)
   })
 
   it('allows only the current trusted main-window origin and rejects other origins before file access', async () => {

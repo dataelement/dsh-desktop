@@ -150,7 +150,25 @@ const previewKinds = new Map<string, PreviewKind>([
   ['.htm', { contentType: 'text/html; charset=utf-8', rootPreview: true, validateMagic: htmlMagic }],
   ['.css', { contentType: 'text/css; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
   ['.js', { contentType: 'text/javascript; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
-  ['.mjs', { contentType: 'text/javascript; charset=utf-8', rootPreview: false, validateMagic: textMagic }]
+  ['.mjs', { contentType: 'text/javascript; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
+  ['.json', { contentType: 'application/json; charset=utf-8', rootPreview: false, validateMagic: jsonMagic }],
+  ['.map', { contentType: 'application/json; charset=utf-8', rootPreview: false, validateMagic: jsonMagic }],
+  ['.woff', { contentType: 'font/woff', rootPreview: false, validateMagic: (value) =>
+    startsWith(value, [0x77, 0x4f, 0x46, 0x46]) }],
+  ['.woff2', { contentType: 'font/woff2', rootPreview: false, validateMagic: (value) =>
+    startsWith(value, [0x77, 0x4f, 0x46, 0x32]) }],
+  ['.ttf', { contentType: 'font/ttf', rootPreview: false, validateMagic: trueTypeMagic }],
+  ['.otf', { contentType: 'font/otf', rootPreview: false, validateMagic: (value) =>
+    Buffer.from(value.subarray(0, 4)).toString('ascii') === 'OTTO' }],
+  ['.wasm', { contentType: 'application/wasm', rootPreview: false, validateMagic: (value) =>
+    startsWith(value, [0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]) }],
+  ['.mp3', { contentType: 'audio/mpeg', rootPreview: false, validateMagic: mp3Magic }],
+  ['.wav', { contentType: 'audio/wav', rootPreview: false, validateMagic: waveMagic }],
+  ['.ogg', { contentType: 'audio/ogg', rootPreview: false, validateMagic: (value) =>
+    Buffer.from(value.subarray(0, 4)).toString('ascii') === 'OggS' }],
+  ['.mp4', { contentType: 'video/mp4', rootPreview: false, validateMagic: mp4Magic }],
+  ['.webm', { contentType: 'video/webm', rootPreview: false, validateMagic: (value) =>
+    startsWith(value, [0x1a, 0x45, 0xdf, 0xa3]) }]
 ])
 
 function startsWith(value: Uint8Array, prefix: readonly number[]): boolean {
@@ -188,6 +206,37 @@ function htmlMagic(value: Uint8Array): boolean {
 
 function textMagic(value: Uint8Array): boolean {
   return textPrefix(value) !== null
+}
+
+function jsonMagic(value: Uint8Array): boolean {
+  const text = textPrefix(value)
+  if (text === null) return false
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function trueTypeMagic(value: Uint8Array): boolean {
+  return startsWith(value, [0, 1, 0, 0]) ||
+    Buffer.from(value.subarray(0, 4)).toString('ascii') === 'true'
+}
+
+function mp3Magic(value: Uint8Array): boolean {
+  const secondByte = value.at(1)
+  return Buffer.from(value.subarray(0, 3)).toString('ascii') === 'ID3' ||
+    (value[0] === 0xff && secondByte !== undefined && (secondByte & 0xe0) === 0xe0)
+}
+
+function waveMagic(value: Uint8Array): boolean {
+  return Buffer.from(value.subarray(0, 4)).toString('ascii') === 'RIFF' &&
+    Buffer.from(value.subarray(8, 12)).toString('ascii') === 'WAVE'
+}
+
+function mp4Magic(value: Uint8Array): boolean {
+  return Buffer.from(value.subarray(4, 8)).toString('ascii') === 'ftyp'
 }
 
 function defaultRandomId(): string {
@@ -356,19 +405,19 @@ export function researchPreviewHtmlCsp(capabilityToken: string, frameAncestor: s
   const source = `${RESEARCH_PREVIEW_SCHEME}://${capabilityToken}`
   return [
     "default-src 'none'",
-    `img-src ${source} data:`,
-    `style-src ${source} 'unsafe-inline'`,
-    `script-src ${source}`,
-    'font-src data:',
-    `media-src ${source}`,
-    "connect-src 'none'",
+    `img-src ${source} data: blob: http: https:`,
+    `style-src ${source} 'unsafe-inline' http: https:`,
+    `script-src ${source} http: https:`,
+    `font-src ${source} data: http: https:`,
+    `media-src ${source} blob: http: https:`,
+    `connect-src ${source} http: https: ws: wss:`,
     "object-src 'none'",
     "frame-src 'none'",
     "child-src 'none'",
     "worker-src 'none'",
     "manifest-src 'none'",
     "base-uri 'none'",
-    "form-action 'none'",
+    'form-action http: https:',
     `frame-ancestors ${frameAncestor}`
   ].join('; ')
 }
@@ -553,28 +602,32 @@ export class ResearchFilePreviewRegistry {
 
   async handle(request: Request, allowedOrigin: string | null = null): Promise<Response> {
     const requestOrigin = request.headers.get('Origin')
-    if (requestOrigin !== null && requestOrigin !== allowedOrigin) {
+
+    if (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'OPTIONS') {
+      return errorResponse(405, 'Method not allowed.', { Allow: 'GET, HEAD, OPTIONS' })
+    }
+    const resource = requestResource(request.url)
+    if (!resource) return errorResponse(403, 'Preview capability denied.')
+    const capability = this.capabilities.get(resource.token)
+    if (!capability || capability.expiresAt <= this.now()) {
+      this.capabilities.delete(resource.token)
+      return errorResponse(403, 'Preview capability denied.')
+    }
+    const authorization = this.authorizations.get(capability.authorizationId)
+    if (!authorization) {
+      this.capabilities.delete(resource.token)
+      return errorResponse(403, 'Preview capability denied.')
+    }
+    const capabilityOrigin = `${RESEARCH_PREVIEW_SCHEME}://${resource.token}`
+    if (
+      requestOrigin !== null && requestOrigin !== allowedOrigin &&
+      (!authorization.allowSubresources || requestOrigin !== capabilityOrigin)
+    ) {
       return errorResponse(403, 'Preview origin denied.')
     }
     const corsOrigin = requestOrigin ?? undefined
     const fail = (status: number, message: string, extra?: Record<string, string>) =>
       errorResponse(status, message, extra, corsOrigin)
-
-    if (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'OPTIONS') {
-      return fail(405, 'Method not allowed.', { Allow: 'GET, HEAD, OPTIONS' })
-    }
-    const resource = requestResource(request.url)
-    if (!resource) return fail(403, 'Preview capability denied.')
-    const capability = this.capabilities.get(resource.token)
-    if (!capability || capability.expiresAt <= this.now()) {
-      this.capabilities.delete(resource.token)
-      return fail(403, 'Preview capability denied.')
-    }
-    const authorization = this.authorizations.get(capability.authorizationId)
-    if (!authorization) {
-      this.capabilities.delete(resource.token)
-      return fail(403, 'Preview capability denied.')
-    }
 
     if (request.method === 'OPTIONS') {
       if (!corsOrigin || request.headers.get('Access-Control-Request-Method') === null) {

@@ -4,14 +4,14 @@ import { canGrantWindowPermission, isTrustedAppUrl } from './security-policy'
 export function secureWindow(window: BrowserWindow): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isTrustedAppUrl(url)) return { action: 'allow' }
-    if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
+    if (isExternalUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
   window.webContents.on('will-navigate', (event, url) => {
     if (isTrustedAppUrl(url)) return
     event.preventDefault()
-    if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
+    if (isExternalUrl(url)) void shell.openExternal(url)
   })
 
   window.webContents.on('will-frame-navigate', (event) => {
@@ -29,6 +29,7 @@ export function secureWindow(window: BrowserWindow): void {
     }
     if (isPreviewUrl(event.url)) return
     event.preventDefault()
+    if (isExternalUrl(event.url)) void shell.openExternal(event.url)
   })
 
   window.webContents.on('will-attach-webview', (event) => event.preventDefault())
@@ -52,6 +53,15 @@ export function secureWindow(window: BrowserWindow): void {
 function isPreviewUrl(rawUrl: string): boolean {
   try {
     return new URL(rawUrl).protocol === 'sherlock-preview:'
+  } catch {
+    return false
+  }
+}
+
+function isExternalUrl(rawUrl: string): boolean {
+  try {
+    const protocol = new URL(rawUrl).protocol
+    return protocol === 'http:' || protocol === 'https:'
   } catch {
     return false
   }

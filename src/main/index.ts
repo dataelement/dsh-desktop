@@ -470,6 +470,7 @@ function createWindow(): BrowserWindow {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       additionalArguments: [
         developerModeArgument(isDeveloperModeEnabled(app.getPath('userData'))),
