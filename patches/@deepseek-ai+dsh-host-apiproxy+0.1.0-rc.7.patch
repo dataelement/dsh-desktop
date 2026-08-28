@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
-index 11ee6c4..e9e95ee 100644
+index 11ee6c4..2e267d8 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 @@ -1,8 +1,8 @@
@@ -24,7 +24,7 @@ index 11ee6c4..e9e95ee 100644
  import { GoalError } from "@deepseek-ai/dsh-goal";
  import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
  import { credentialRef } from "@deepseek-ai/dsh-credentials";
-@@ -23,6 +23,166 @@ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
+@@ -23,6 +23,175 @@ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
  import { API_REMOTE_FORWARDED_EVENTS, ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, createApiRemoteAgentResolver, hasApiRemoteSubagentOwner, inspectApiRemoteSession } from "@deepseek-ai/dsh-api-remotes";
  import { release } from "node:os";
  import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
@@ -55,6 +55,7 @@ index 11ee6c4..e9e95ee 100644
 +/** A serialized durable selection table with one bounded, lossless write chain. */
 +function createBoundedSessionModelSelectionStore(options) {
 +	const limit = options.limit ?? SESSION_MODEL_SELECTION_LIMIT;
++	if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error("session model selection limit must be a positive finite integer");
 +	let writes = Promise.resolve();
 +	return {
 +		get(sessionId) {
@@ -77,10 +78,18 @@ index 11ee6c4..e9e95ee 100644
 +}
 +/** Resolve one conversation strictly; an unavailable remembered provider stays visible as blocked. */
 +function resolveSessionModelSelection(options) {
-+	const current = options.live ?? options.durable ?? options.request ?? options.defaultSelection;
-+	return {
++	const current = options.live ?? options.durable ?? options.request;
++	if (current !== void 0) return {
 +		current: copyModelSelection(current),
 +		routable: options.routeServed(current.provider)
++	};
++	if (!options.routeServed(options.defaultSelection.provider)) return {
++		current: void 0,
++		routable: false
++	};
++	return {
++		current: copyModelSelection(options.defaultSelection),
++		routable: true
 +	};
 +}
 +//#endregion
@@ -191,7 +200,16 @@ index 11ee6c4..e9e95ee 100644
  //#region lib/types/session-export.js
  /**
  * Host-side session-log download: streams one ZIP archive whose files are the
-@@ -1675,6 +1835,21 @@ function changedWorkspaceView(workspaceId, value) {
+@@ -576,7 +745,7 @@ const sessionHistoryValueSchema = z$1.object({
+ const sessionModelsRequestSchema = z$1.object({ sessionId: sessionIdSchema });
+ /** session.models response value. */
+ const sessionModelsValueSchema = z$1.object({
+-	current: modelSelectionSchema,
++	current: modelSelectionSchema.nullable(),
+ 	routable: z$1.boolean(),
+ 	groups: z$1.array(modelProviderGroupSchema),
+ 	failures: z$1.array(modelCatalogFailureSchema)
+@@ -1675,6 +1844,21 @@ function changedWorkspaceView(workspaceId, value) {
  function createApiProxy(ctx, defaults) {
  	const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel ?? 6;
  	const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes ?? 1024;
@@ -213,7 +231,7 @@ index 11ee6c4..e9e95ee 100644
  	/** The seed model each create/resume declares; re-read so it never goes stale. */
  	const agentOptions = () => {
  		const { provider, model } = defaults.defaultModelSelection();
-@@ -1710,8 +1885,9 @@ function createApiProxy(ctx, defaults) {
+@@ -1710,8 +1894,9 @@ function createApiProxy(ctx, defaults) {
  	* Install or return the session-local model selection that prompt assembly snapshots.
  	*
  	* Precedence, resolved on EVERY read rather than seeded once: a selection
@@ -225,7 +243,7 @@ index 11ee6c4..e9e95ee 100644
  	* directions: a session with a recorded request derives its selection from
  	* its log, while a blank session (New Session reuses one rather than minting
  	* another) reads any default saved after it was created. There is no create-time
-@@ -1724,14 +1900,18 @@ function createApiProxy(ctx, defaults) {
+@@ -1724,14 +1909,18 @@ function createApiProxy(ctx, defaults) {
  		let picked;
  		const selection = {
  			get current() {
@@ -251,7 +269,31 @@ index 11ee6c4..e9e95ee 100644
  			},
  			set current(next) {
  				picked = next;
-@@ -2643,6 +2823,7 @@ function createApiProxy(ctx, defaults) {
+@@ -2295,6 +2484,11 @@ function createApiProxy(ctx, defaults) {
+ 		if ("error" in found) return { refused: err(request, found.error) };
+ 		const agent = found.agent;
+ 		const selection = selectionFor(agent).current;
++		if (selection === void 0) return { refused: err(request, {
++			code: "model-unavailable",
++			message: "no configured routable default or saved session model; select a model for this session",
++			details: {}
++		}) };
+ 		if (!routeServed(selection.provider)) return { refused: err(request, {
+ 			code: "model-unavailable",
+ 			message: `no adapter serves provider "${selection.provider}"; select a model for this session`,
+@@ -2608,9 +2802,9 @@ function createApiProxy(ctx, defaults) {
+ 				if ("error" in found) return err(request, found.error);
+ 				const current = selectionFor(found.agent).current;
+ 				const { groups, failures } = await buildModelCatalog(ctx);
+-				const routable = routeServed(current.provider);
++				const routable = current !== void 0 && routeServed(current.provider);
+ 				return ok(request, {
+-					current: { ...current },
++					current: current === void 0 ? null : { ...current },
+ 					routable,
+ 					groups,
+ 					failures
+@@ -2643,6 +2837,7 @@ function createApiProxy(ctx, defaults) {
  							model: resolved.model,
  							...resolved.reasoningEffort === void 0 ? {} : { reasoningEffort: resolved.reasoningEffort }
  						};
@@ -259,7 +301,7 @@ index 11ee6c4..e9e95ee 100644
  						selectionFor(found.agent).current = selected;
  						try {
  							await defaults.saveDefaultModelSelection?.(selected);
-@@ -3150,7 +3331,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3150,7 +3345,13 @@ function createApiProxy(ctx, defaults) {
  				}));
  			},
  			async pickDirectory(request, signal) {
@@ -274,7 +316,7 @@ index 11ee6c4..e9e95ee 100644
  				if (capability.kind !== "native") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
-@@ -3172,7 +3359,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3172,7 +3373,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async listDirectory(request, signal) {
@@ -289,7 +331,7 @@ index 11ee6c4..e9e95ee 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3190,7 +3383,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3190,7 +3397,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async createDirectory(request) {
@@ -304,7 +346,7 @@ index 11ee6c4..e9e95ee 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3244,6 +3443,127 @@ function createApiProxy(ctx, defaults) {
+@@ -3244,6 +3457,127 @@ function createApiProxy(ctx, defaults) {
  			}
  		},
  		agentPresets: {
@@ -432,7 +474,7 @@ index 11ee6c4..e9e95ee 100644
  			async list(request) {
  				const presets = ctx.get("agentPresets");
  				if (presets === void 0) return ok(request, {
-@@ -4932,6 +5252,34 @@ function toFetchHandler(api) {
+@@ -4932,6 +5266,34 @@ function toFetchHandler(api) {
  			rpcId: RpcId(randomUUID()),
  			payload: {}
  		}, req.signal));
@@ -467,7 +509,7 @@ index 11ee6c4..e9e95ee 100644
  		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
  			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
  			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
-@@ -5531,7 +5879,6 @@ var ApiProxyService = class extends Service {
+@@ -5531,7 +5893,6 @@ var ApiProxyService = class extends Service {
  		"agentDefaultModel",
  		"agents",
  		"attachments",
@@ -475,14 +517,40 @@ index 11ee6c4..e9e95ee 100644
  		"llm",
  		"sessions",
  		"subagents",
-@@ -5584,4 +5931,4 @@ var ApiProxyService = class extends Service {
+@@ -5584,4 +5945,4 @@ var ApiProxyService = class extends Service {
  	}
  };
  //#endregion
 -export { AbstractApiClient, ApiProxyService, ApiProxyService as default, InProcessApiClient, RpcId, createApiProxy, toFetchHandler };
 +export { AbstractApiClient, ApiProxyService, ApiProxyService as default, InProcessApiClient, RpcId, createApiProxy, createBoundedSessionModelSelectionStore, resolveSessionModelSelection, toFetchHandler };
+diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts
+index 48132be..8498622 100644
+--- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts
++++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts
+@@ -145,7 +145,7 @@ export interface ModelCatalogFailure {
+ /** Detached model-directory snapshot for one session. */
+ export interface SessionModels {
+     /** Model selection for the session's next assembled step. */
+-    current: ModelSelection;
++    current: ModelSelection | null;
+     /**
+      * Whether an adapter currently serves `current.provider`, and therefore
+      * whether this session can start a turn at all. Deliberately NOT derivable
+diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js
+index 026ffb3..320db3f 100644
+--- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js
++++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js
+@@ -191,7 +191,7 @@ export const sessionModelsRequestSchema = z.object({
+ });
+ /** session.models response value. */
+ export const sessionModelsValueSchema = z.object({
+-    current: modelSelectionSchema,
++    current: modelSelectionSchema.nullable(),
+     routable: z.boolean(),
+     groups: z.array(modelProviderGroupSchema),
+     failures: z.array(modelCatalogFailureSchema),
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
-index 6737e91..3a82b14 100644
+index 6737e91..3df5bad 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
 @@ -13,6 +13,7 @@
@@ -516,7 +584,7 @@ index 6737e91..3a82b14 100644
 +    request?: ModelSelection;
 +    defaultSelection: ModelSelection;
 +    routeServed(provider: string): boolean;
-+}): { current: ModelSelection; routable: boolean };
++}): { current: ModelSelection | undefined; routable: boolean };
  declare module '@deepseek-ai/cordis' {
      interface Context {
          /** The host-side ApiProxy implementation (the transport-agnostic gateway face). */
