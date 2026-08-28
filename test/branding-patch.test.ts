@@ -49,8 +49,9 @@ describe('DSH Desktop sidebar branding', () => {
     expect(client).toContain('/dsh-desktop-logo-light.png')
     expect(client).toContain('/dsh-desktop-logo-dark.png')
     expect(client).not.toContain('translateX')
-    expect(composition).toMatch(/- id: ui-brand-official\n  disabled: true/u)
-    expect(composition).toMatch(
+    const normalizedComposition = composition.replaceAll('\r\n', '\n')
+    expect(normalizedComposition).toMatch(/- id: ui-brand-official\n  disabled: true/u)
+    expect(normalizedComposition).toMatch(
       /- id: dsh-desktop-client-ui\n      name: dsh-desktop-client-ui/u
     )
 
