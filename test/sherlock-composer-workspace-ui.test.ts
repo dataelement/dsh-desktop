@@ -3549,6 +3549,30 @@ describe('Sherlock workspace and composer controls', () => {
       expect(htmlWheel.defaultPrevented).toBe(false)
       expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
 
+      const handshakes: Array<{ message: Record<string, unknown>; targetOrigin: string }> = []
+      const entropyByteLengths: number[] = []
+      const nativeGetRandomValues = mounted.browserWindow.crypto.getRandomValues
+        .bind(mounted.browserWindow.crypto)
+      Object.defineProperty(mounted.browserWindow.crypto, 'getRandomValues', {
+        configurable: true,
+        value(array: Uint8Array) {
+          entropyByteLengths.push(array.byteLength)
+          return nativeGetRandomValues(array)
+        }
+      })
+      const frameSource = { postMessage(message: Record<string, unknown>, targetOrigin: string) {
+        handshakes.push({ message, targetOrigin })
+      } }
+      const dispatchBridgeMessage = (source: unknown, origin: string, data: unknown) => {
+        const event = new mounted.browserWindow.Event('message')
+        Object.defineProperties(event, {
+          source: { value: source },
+          origin: { value: origin },
+          data: { value: data }
+        })
+        mounted.browserWindow.dispatchEvent(event)
+      }
+      let lastValidBridgeMessage: Record<string, unknown> | null = null
       if (frame !== null) {
         // HappyDOM currently drops WheelEventInit.metaKey/clientX/clientY. Keep the
         // production path browser-accurate by repairing the test realm instead of
@@ -3574,7 +3598,6 @@ describe('Sherlock workspace and composer controls', () => {
           configurable: true,
           value: BrowserAccurateWheelEvent
         })
-        const frameSource = {}
         Object.defineProperties(frame, {
           contentWindow: { configurable: true, value: frameSource },
           clientWidth: { configurable: true, value: 240 },
@@ -3587,42 +3610,65 @@ describe('Sherlock workspace and composer controls', () => {
         const removedBeforeLoad = messageListeners.removed
         await act(async () => {
           frame.dispatchEvent(new mounted.browserWindow.Event('load'))
-          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
+          await Promise.resolve()
         })
+        expect(handshakes).toHaveLength(1)
+        expect(handshakes[0]?.targetOrigin).toBe('sherlock-preview://capability-html-1')
+        expect(handshakes[0]?.message).toMatchObject({
+          type: 'sherlock:research-html-wheel-handshake', version: 1
+        })
+        expect(handshakes[0]?.message.token).toMatch(/^[a-f0-9]{64}$/)
+        const firstToken = handshakes[0]?.message.token
+        await act(async () => {
+          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
+          await Promise.resolve()
+        })
+        expect(handshakes).toHaveLength(2)
+        expect(handshakes[1]?.targetOrigin).toBe('sherlock-preview://capability-html-1')
+        expect(handshakes[1]?.message.token).toMatch(/^[a-f0-9]{64}$/)
+        expect(handshakes[1]?.message.token).not.toBe(firstToken)
+        const currentToken = handshakes[1]?.message.token
+        expect(entropyByteLengths).toEqual([32, 32])
         expect(messageListeners.removed).toBeGreaterThan(removedBeforeLoad)
         expect(messageListeners.added - messageListeners.removed).toBe(1)
-        const dispatchBridgeMessage = (source: unknown, data: unknown) => {
-          const event = new mounted.browserWindow.Event('message')
-          Object.defineProperties(event, {
-            source: { value: source },
-            data: { value: data }
-          })
-          mounted.browserWindow.dispatchEvent(event)
-        }
         const validBridgeMessage = {
-          type: 'sherlock:research-html-wheel', version: 1,
+          type: 'sherlock:research-html-wheel', version: 1, token: currentToken,
           deltaX: 0, deltaY: -100, deltaMode: 0,
           clientX: 100, clientY: 50
         }
-        for (const [source, data] of [
-          [{}, validBridgeMessage],
-          [frameSource, { ...validBridgeMessage, version: 2 }],
-          [frameSource, { ...validBridgeMessage, unexpected: true }],
-          [frameSource, { ...validBridgeMessage, deltaY: Number.NaN }],
-          [frameSource, { ...validBridgeMessage, deltaY: 100_000 }],
-          [frameSource, { ...validBridgeMessage, clientY: Number.POSITIVE_INFINITY }],
-          [frameSource, { ...validBridgeMessage, clientX: 241 }],
-          [frameSource, { ...validBridgeMessage, deltaMode: 3 }]
-        ] as Array<[unknown, unknown]>) {
-          dispatchBridgeMessage(source, data)
+        for (const [source, origin, data] of [
+          [{}, 'sherlock-preview://capability-html-1', validBridgeMessage],
+          [frameSource, 'https://attacker.example', validBridgeMessage],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, token: firstToken }],
+          [frameSource, 'sherlock-preview://capability-html-1', {
+            type: 'sherlock:research-html-wheel', version: 1,
+            deltaX: 0, deltaY: -100, deltaMode: 0, clientX: 100, clientY: 50
+          }],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, version: 2 }],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, unexpected: true }],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, deltaY: Number.NaN }],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, deltaY: 100_000 }],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, clientY: Number.POSITIVE_INFINITY }],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, clientX: 241 }],
+          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, deltaMode: 3 }]
+        ] as Array<[unknown, string, unknown]>) {
+          dispatchBridgeMessage(source, origin, data)
           expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
         }
-        dispatchBridgeMessage(frameSource, validBridgeMessage)
+        expect(frame.getAttribute('src')).not.toContain(String(currentToken))
+        expect(frame.getAttribute('title')).not.toContain(String(currentToken))
+        dispatchBridgeMessage(
+          frameSource,
+          'sherlock-preview://capability-html-1',
+          validBridgeMessage
+        )
         const zoomed = mounted.workspace.getSnapshot().viewport
         expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
         // iframe-local (100, 50) maps through the 2x rendered rect to canvas (300, 150).
         expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(300, 7)
         expect((150 - zoomed.y) / zoomed.scale).toBeCloseTo(150, 7)
+        lastValidBridgeMessage = validBridgeMessage
+        expect(mounted.host.innerHTML).not.toContain(String(currentToken))
       }
       await act(async () => {
         mounted.workspace.setSelection({ selectedNodeIds: ['html-1'], orderedFileIds: ['html-1'] })
@@ -3651,15 +3697,53 @@ describe('Sherlock workspace and composer controls', () => {
         sessionId: 'session-html-lifecycle', nodeId: 'html-1',
         authorizationId: 'authorization-html', capabilityToken: 'capability-html-1'
       }])
+      const offscreenViewport = mounted.workspace.getSnapshot().viewport
+      if (lastValidBridgeMessage !== null) {
+        dispatchBridgeMessage(
+          frameSource,
+          'sherlock-preview://capability-html-1',
+          lastValidBridgeMessage
+        )
+      }
+      expect(mounted.workspace.getSnapshot().viewport).toEqual(offscreenViewport)
 
       await act(async () => {
         mounted.workspace.setViewport({ scale: 1, x: 0, y: 0 })
         await Promise.resolve(); await Promise.resolve()
       })
       expect(restoreSequence).toBe(2)
-      expect(mounted.host.querySelector('[data-research-html-preview]')?.getAttribute('src'))
+      const restoredFrame = mounted.host.querySelector('[data-research-html-preview]') as
+        (HappyDOMElement & { contentWindow: unknown }) | null
+      expect(restoredFrame?.getAttribute('src'))
         .toBe('sherlock-preview://capability-html-2/')
-      expect(messageListeners.added - messageListeners.removed).toBe(1)
+      expect(messageListeners.added).toBe(messageListeners.removed)
+      if (restoredFrame !== null) {
+        const restoredSource = { postMessage(
+          message: Record<string, unknown>,
+          targetOrigin: string
+        ) { handshakes.push({ message, targetOrigin }) } }
+        Object.defineProperties(restoredFrame, {
+          contentWindow: { configurable: true, value: restoredSource },
+          clientWidth: { configurable: true, value: 240 },
+          clientHeight: { configurable: true, value: 164 },
+          getBoundingClientRect: {
+            configurable: true,
+            value: () => ({ left: 100, top: 50, right: 580, bottom: 378, width: 480, height: 328 })
+          }
+        })
+        await act(async () => {
+          restoredFrame.dispatchEvent(new mounted.browserWindow.Event('load'))
+          await Promise.resolve()
+        })
+        expect(handshakes).toHaveLength(3)
+        expect(handshakes[2]?.targetOrigin).toBe('sherlock-preview://capability-html-2')
+        expect(handshakes[2]?.message.token).toMatch(/^[a-f0-9]{64}$/)
+        expect(handshakes[2]?.message.token).not.toBe(handshakes[0]?.message.token)
+        expect(handshakes[2]?.message.token).not.toBe(handshakes[1]?.message.token)
+        expect(entropyByteLengths).toEqual([32, 32, 32])
+        expect(mounted.host.innerHTML).not.toContain(String(handshakes[2]?.message.token))
+        expect(messageListeners.added - messageListeners.removed).toBe(1)
+      }
       await mounted.cleanup()
       cleaned = true
       expect(messageListeners.added).toBe(messageListeners.removed)
@@ -5808,6 +5892,21 @@ describe('Sherlock workspace and composer controls', () => {
       const cardA = host.querySelector('[data-research-file-card="file-a"]')
       expect(cardA).not.toBeNull()
       if (cardA === null) return
+      const capturedPointers = new Set<number>()
+      Object.defineProperties(canvas, {
+        setPointerCapture: {
+          configurable: true,
+          value: (pointerId: number) => capturedPointers.add(pointerId)
+        },
+        hasPointerCapture: {
+          configurable: true,
+          value: (pointerId: number) => capturedPointers.has(pointerId)
+        },
+        releasePointerCapture: {
+          configurable: true,
+          value: (pointerId: number) => capturedPointers.delete(pointerId)
+        }
+      })
       ;(canvas as unknown as { focus(): void }).focus()
       await act(async () => {
         browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
@@ -5816,9 +5915,33 @@ describe('Sherlock workspace and composer controls', () => {
         cardA.dispatchEvent(pointer(browserWindow, 'pointerdown', {
           pointerId: 1, x: 100, y: 100
         }))
+      })
+      expect(canvas.getAttribute('data-space-pressed')).toBe('true')
+      expect(canvas.getAttribute('data-research-operation')).toBe('pan')
+      expect(canvas.getAttribute('data-dragging')).toBe('true')
+      expect(capturedPointers.has(1)).toBe(true)
+
+      await act(async () => {
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerleave', {
+          pointerId: 1, x: 90, y: 90
+        }))
+      })
+      expect(canvas.hasAttribute('data-space-pressed')).toBe(false)
+      expect(canvas.getAttribute('data-research-operation')).toBe('pan')
+      expect(canvas.getAttribute('data-dragging')).toBe('true')
+      expect(capturedPointers.has(1)).toBe(true)
+
+      await act(async () => {
         canvas.dispatchEvent(pointer(browserWindow, 'pointermove', {
           pointerId: 1, x: 120, y: 110
         }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerenter', {
+          pointerId: 1, x: 120, y: 110
+        }))
+      })
+      expect(canvas.getAttribute('data-space-pressed')).toBe('true')
+
+      await act(async () => {
         canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
           pointerId: 1, x: 120, y: 110
         }))
@@ -5830,6 +5953,7 @@ describe('Sherlock workspace and composer controls', () => {
       expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([])
       expect(workspace.getSnapshot().files[0]).toMatchObject({ x: 100, y: 100 })
       expect(workspace.getSnapshot().viewport).toEqual({ scale: 1, x: 20, y: 10 })
+      expect(capturedPointers.has(1)).toBe(false)
     } finally {
       await mounted.cleanup()
     }

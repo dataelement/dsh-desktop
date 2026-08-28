@@ -1253,36 +1253,98 @@ describe('sherlock-preview protocol responses', () => {
     expect(bridge.headers.get('content-length')).toBe(String(Buffer.byteLength(bridgeSource)))
     expect(bridgeSource).not.toContain('unsafe-inline')
 
+    let messageListener: ((event: Record<string, unknown>) => void) | undefined
     let wheelListener: ((event: Record<string, unknown>) => void) | undefined
-    const messages: unknown[] = []
+    const messages: Array<{ message: unknown; targetOrigin: string }> = []
+    class TestEvent {
+      defaultPrevented = false
+      propagationStopped = false
+      preventDefault() { this.defaultPrevented = true }
+      stopImmediatePropagation() { this.propagationStopped = true }
+    }
+    const parentWindow = { postMessage(message: unknown, targetOrigin: string) {
+      messages.push({ message, targetOrigin })
+    } }
     runInNewContext(bridgeSource, {
       addEventListener(type: string, listener: (event: Record<string, unknown>) => void, options: unknown) {
-        expect(type).toBe('wheel')
-        expect(options).toEqual({ capture: true, passive: false })
-        wheelListener = listener
+        if (type === 'message') {
+          expect(options).toEqual({ capture: true })
+          messageListener = listener
+        } else if (type === 'wheel') {
+          expect(options).toEqual({ capture: true, passive: false })
+          wheelListener = listener
+        } else {
+          throw new Error(`Unexpected bridge listener: ${type}`)
+        }
       },
-      parent: { postMessage(message: unknown, targetOrigin: string) {
-        expect(targetOrigin).toBe('*')
-        messages.push(message)
-      } }
+      Event: TestEvent,
+      parent: parentWindow
     })
+    expect(messageListener).toBeTypeOf('function')
     expect(wheelListener).toBeTypeOf('function')
-    const plainPrevent = vi.fn()
-    wheelListener?.({
-      metaKey: false, deltaX: 2, deltaY: 12, deltaMode: 0,
-      clientX: 30, clientY: 40, preventDefault: plainPrevent
+    const token = 'a'.repeat(64)
+    const beforeHandshake = Object.assign(new TestEvent(), {
+      isTrusted: true, metaKey: true, deltaX: 2, deltaY: 12, deltaMode: 0,
+      clientX: 30, clientY: 40
     })
-    expect(plainPrevent).not.toHaveBeenCalled()
+    wheelListener?.(beforeHandshake as unknown as Record<string, unknown>)
+    expect(beforeHandshake.defaultPrevented).toBe(false)
     expect(messages).toEqual([])
-    const metaPrevent = vi.fn()
-    wheelListener?.({
-      metaKey: true, deltaX: -3, deltaY: -120, deltaMode: 0,
-      clientX: 31, clientY: 42, preventDefault: metaPrevent
+
+    const untrustedHandshake = Object.assign(new TestEvent(), {
+      isTrusted: false, source: parentWindow, origin: harnessOrigin,
+      data: { type: 'sherlock:research-html-wheel-handshake', version: 1, token }
     })
-    expect(metaPrevent).toHaveBeenCalledOnce()
+    messageListener?.(untrustedHandshake as unknown as Record<string, unknown>)
+    expect(untrustedHandshake.propagationStopped).toBe(false)
+
+    for (const [source, data] of [
+      [{}, { type: 'sherlock:research-html-wheel-handshake', version: 1, token }],
+      [parentWindow, { type: 'wrong', version: 1, token }],
+      [parentWindow, { type: 'sherlock:research-html-wheel-handshake', version: 2, token }],
+      [parentWindow, { type: 'sherlock:research-html-wheel-handshake', version: 1, token: 'short' }],
+      [parentWindow, {
+        type: 'sherlock:research-html-wheel-handshake', version: 1, token, extra: true
+      }]
+    ] as Array<[unknown, unknown]>) {
+      const invalidHandshake = Object.assign(new TestEvent(), {
+        isTrusted: true, source, origin: harnessOrigin, data
+      })
+      messageListener?.(invalidHandshake as unknown as Record<string, unknown>)
+      expect(invalidHandshake.propagationStopped).toBe(false)
+    }
+
+    const trustedHandshake = Object.assign(new TestEvent(), {
+      isTrusted: true, source: parentWindow, origin: harnessOrigin,
+      data: { type: 'sherlock:research-html-wheel-handshake', version: 1, token }
+    })
+    messageListener?.(trustedHandshake as unknown as Record<string, unknown>)
+    expect(trustedHandshake.propagationStopped).toBe(true)
+
+    const plainWheel = Object.assign(new TestEvent(), {
+      isTrusted: true, metaKey: false, deltaX: 2, deltaY: 12, deltaMode: 0,
+      clientX: 30, clientY: 40
+    })
+    wheelListener?.(plainWheel as unknown as Record<string, unknown>)
+    expect(plainWheel.defaultPrevented).toBe(false)
+    const untrustedWheel = Object.assign(new TestEvent(), {
+      isTrusted: false, metaKey: true, deltaX: -3, deltaY: -120, deltaMode: 0,
+      clientX: 31, clientY: 42
+    })
+    wheelListener?.(untrustedWheel as unknown as Record<string, unknown>)
+    expect(untrustedWheel.defaultPrevented).toBe(false)
+    const metaWheel = Object.assign(new TestEvent(), {
+      isTrusted: true, metaKey: true, deltaX: -3, deltaY: -120, deltaMode: 0,
+      clientX: 31, clientY: 42
+    })
+    wheelListener?.(metaWheel as unknown as Record<string, unknown>)
+    expect(metaWheel.defaultPrevented).toBe(true)
     expect(messages).toEqual([{
-      type: 'sherlock:research-html-wheel', version: 1,
-      deltaX: -3, deltaY: -120, deltaMode: 0, clientX: 31, clientY: 42
+      targetOrigin: harnessOrigin,
+      message: {
+        type: 'sherlock:research-html-wheel', version: 1, token,
+        deltaX: -3, deltaY: -120, deltaMode: 0, clientX: 31, clientY: 42
+      }
     }])
 
     const injectedTag = '<script src="/__sherlock/research-wheel-bridge-v1.js"></script>'
@@ -1398,6 +1460,94 @@ describe('sherlock-preview protocol responses', () => {
       { headers: { Origin: 'sherlock-preview://capability_0000000000000002' } }
     ), harnessOrigin)
     expect(otherCapabilityModuleRequest.status).toBe(403)
+  })
+
+  it('injects the HTML wheel bridge outside comments and templates and maps transformed ranges', async () => {
+    const injectedTag = '<script src="/__sherlock/research-wheel-bridge-v1.js"></script>'
+    const cases = [
+      {
+        name: 'comment-before-doctype.html',
+        source: '<!-- fake <head><script>comment()</script></head> --><!doctype html><html><body>ok</body></html>',
+        before: '<!-- fake <head><script>comment()</script></head> --><!doctype html>'
+      },
+      {
+        name: 'template-fragment.html',
+        source: '<template><head><script>templateOnly()</script></head></template><main>ok</main>',
+        before: ''
+      },
+      {
+        name: 'no-head.html',
+        source: '<!doctype html><html><body><script>boot()</script></body></html>',
+        before: '<!doctype html>'
+      },
+      {
+        name: 'ordinary-fragment.html',
+        source: '<main><script>boot()</script><p>ok</p></main>',
+        before: ''
+      },
+      {
+        name: 'html-without-doctype.html',
+        source: '<html><script>boot()</script><body>ok</body></html>',
+        before: ''
+      },
+      {
+        name: 'head-fragment.html',
+        source: '<head><script>boot()</script></head><body>ok</body>',
+        before: ''
+      },
+      {
+        name: 'body-fragment.html',
+        source: '<body><script>boot()</script><p>ok</p></body>',
+        before: ''
+      },
+      {
+        name: 'bom-comment-public-doctype.html',
+        source: '\uFEFF<!-- 中文 <head>伪标签</head> --><!DOCTYPE html PUBLIC "quoted > marker"><html><body>ok</body></html>',
+        before: '\uFEFF<!-- 中文 <head>伪标签</head> --><!DOCTYPE html PUBLIC "quoted > marker">'
+      }
+    ] as const
+
+    for (const fixtureCase of cases) {
+      const { registry, root } = await fixture()
+      const filePath = path.join(root, fixtureCase.name)
+      await writeFile(filePath, fixtureCase.source)
+      const descriptor = await registry.admitFinder({
+        path: filePath,
+        sessionId: 'session-1',
+        nodeId: fixtureCase.name
+      })
+      expectDescriptor(descriptor)
+
+      const response = await registry.handle(new Request(descriptor.url))
+      expect(response.status, fixtureCase.name).toBe(200)
+      const transformed = (await body(response)).toString()
+      const expected = fixtureCase.before + injectedTag +
+        fixtureCase.source.slice(fixtureCase.before.length)
+      expect(transformed, fixtureCase.name).toBe(expected)
+
+      const bytes = Buffer.from(transformed)
+      const insertionStart = bytes.indexOf(Buffer.from(injectedTag))
+      expect(insertionStart, fixtureCase.name).toBe(Buffer.byteLength(fixtureCase.before))
+      const insertionEnd = insertionStart + Buffer.byteLength(injectedTag) - 1
+      const ranges: Array<[number, number]> = [
+        [0, Math.min(bytes.length - 1, Math.max(0, insertionStart - 1))],
+        [Math.max(0, insertionStart - 2), Math.min(bytes.length - 1, insertionStart + 2)],
+        [Math.max(0, insertionEnd - 2), Math.min(bytes.length - 1, insertionEnd + 2)],
+        [Math.min(bytes.length - 1, insertionEnd + 1), bytes.length - 1]
+      ]
+      for (const [start, end] of ranges) {
+        const partial = await registry.handle(new Request(descriptor.url, {
+          headers: { Range: `bytes=${start}-${end}` }
+        }))
+        expect(partial.status, `${fixtureCase.name}:${start}-${end}`).toBe(206)
+        expect(partial.headers.get('content-range'), `${fixtureCase.name}:${start}-${end}`)
+          .toBe(`bytes ${start}-${end}/${bytes.length}`)
+        expect(partial.headers.get('content-length'), `${fixtureCase.name}:${start}-${end}`)
+          .toBe(String(end - start + 1))
+        expect(await body(partial), `${fixtureCase.name}:${start}-${end}`)
+          .toEqual(bytes.subarray(start, end + 1))
+      }
+    }
   })
 
   it('allows only the current trusted main-window origin and rejects other origins before file access', async () => {

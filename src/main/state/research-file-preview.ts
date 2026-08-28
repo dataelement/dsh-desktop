@@ -62,18 +62,44 @@ const RESEARCH_HTML_WHEEL_BRIDGE_TAG = Buffer.from(
 )
 const RESEARCH_HTML_WHEEL_BRIDGE_SOURCE = Buffer.from(`'use strict';
 (() => {
-  addEventListener('wheel', (event) => {
-    if (event.metaKey !== true) return;
-    event.preventDefault();
-    parent.postMessage({
+  const listen = globalThis.addEventListener.bind(globalThis);
+  const stopImmediatePropagation = Function.prototype.call.bind(Event.prototype.stopImmediatePropagation);
+  const preventDefault = Function.prototype.call.bind(Event.prototype.preventDefault);
+  const postMessageToParent = parent.postMessage.bind(parent);
+  let token = null;
+  let parentOrigin = null;
+  listen('message', (event) => {
+    if (event.isTrusted !== true || event.source !== parent) return;
+    let value;
+    try {
+      value = event.data;
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
+      const keys = Object.keys(value).sort();
+      const expectedKeys = ['token', 'type', 'version'];
+      if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) return;
+      if (value.type !== 'sherlock:research-html-wheel-handshake' || value.version !== 1 ||
+          typeof value.token !== 'string' || !/^[a-f0-9]{64}$/.test(value.token) ||
+          typeof event.origin !== 'string' || event.origin.length === 0 || event.origin === 'null') return;
+    } catch {
+      return;
+    }
+    stopImmediatePropagation(event);
+    token = value.token;
+    parentOrigin = event.origin;
+  }, { capture: true });
+  listen('wheel', (event) => {
+    if (event.isTrusted !== true || event.metaKey !== true || token === null || parentOrigin === null) return;
+    preventDefault(event);
+    postMessageToParent({
       type: 'sherlock:research-html-wheel',
       version: 1,
+      token,
       deltaX: event.deltaX,
       deltaY: event.deltaY,
       deltaMode: event.deltaMode,
       clientX: event.clientX,
       clientY: event.clientY
-    }, '*');
+    }, parentOrigin);
   }, { capture: true, passive: false });
 })();
 `, 'utf8')
@@ -333,7 +359,7 @@ function svgMagic(value: Uint8Array): boolean {
 
 function htmlMagic(value: Uint8Array): boolean {
   const text = textPrefix(value)
-  return text !== null && /<!doctype\s+html(?:\s|>)|<html(?:\s|>)/i.test(text)
+  return text !== null && /^\s*(?:<!--[^]*?-->\s*)*(?:<!doctype\s+html(?:\s|>)|<[a-z][a-z0-9:-]*(?:\s|\/?>))/i.test(text)
 }
 
 function textMagic(value: Uint8Array): boolean {
@@ -844,15 +870,53 @@ function parseRange(value: string, size: number): { start: number; end: number }
   return { start, end: Math.min(requestedEnd, size - 1) }
 }
 
-function htmlWheelBridgeInjectionOffset(prefix: Uint8Array): number | null {
-  const text = Buffer.from(prefix).toString('utf8')
-  for (const pattern of [/<head(?:\s[^>]*)?>/i, /<html(?:\s[^>]*)?>/i, /<!doctype\s+html[^>]*>/i]) {
-    const match = pattern.exec(text)
-    if (match?.index !== undefined) {
-      return Buffer.byteLength(text.slice(0, match.index + match[0].length), 'utf8')
-    }
+function htmlAsciiWhitespace(value: number): boolean {
+  return value === 0x09 || value === 0x0a || value === 0x0c || value === 0x0d || value === 0x20
+}
+
+function htmlBytesStartWith(value: Buffer, offset: number, expected: string): boolean {
+  if (offset < 0 || offset + expected.length > value.length) return false
+  for (let index = 0; index < expected.length; index += 1) {
+    const byte = value[offset + index]!
+    const lowered = byte >= 0x41 && byte <= 0x5a ? byte + 0x20 : byte
+    if (lowered !== expected.charCodeAt(index)) return false
   }
-  return null
+  return true
+}
+
+function htmlWheelBridgeInjectionOffset(prefix: Uint8Array): number {
+  const bytes = Buffer.from(prefix)
+  const documentStart = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+    ? 3
+    : 0
+  let cursor = documentStart
+  const skipWhitespace = () => {
+    while (cursor < bytes.length && htmlAsciiWhitespace(bytes[cursor]!)) cursor += 1
+  }
+  skipWhitespace()
+  while (htmlBytesStartWith(bytes, cursor, '<!--')) {
+    const end = bytes.indexOf('-->', cursor + 4, 'ascii')
+    if (end < 0) return documentStart
+    cursor = end + 3
+    skipWhitespace()
+  }
+  if (!htmlBytesStartWith(bytes, cursor, '<!doctype')) return documentStart
+  const boundary = bytes[cursor + '<!doctype'.length]
+  if (boundary === undefined || !htmlAsciiWhitespace(boundary)) return documentStart
+  let quote = 0
+  for (let index = cursor + '<!doctype'.length + 1; index < bytes.length; index += 1) {
+    const byte = bytes[index]!
+    if (quote !== 0) {
+      if (byte === quote) quote = 0
+      continue
+    }
+    if (byte === 0x22 || byte === 0x27) {
+      quote = byte
+      continue
+    }
+    if (byte === 0x3e) return index + 1
+  }
+  return documentStart
 }
 
 type ResearchPreviewBodyPart =
