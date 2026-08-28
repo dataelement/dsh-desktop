@@ -1047,66 +1047,21 @@ describe('Research canvas file drops', () => {
       .toMatchObject({ x: -20, y: 10, width: 400, height: 260, sizeMode: 'manual' })
   })
 
-  it('accumulates PDF wheel deltas with threshold and throttle before changing one page', async () => {
+  it('selects a bounded continuous PDF render window around the visible page stream', async () => {
     const client = await loadConversationClient()
-    expect(client.createResearchPdfWheelState).toBeTypeOf('function')
-    expect(client.nextResearchPdfWheel).toBeTypeOf('function')
-    if (typeof client.createResearchPdfWheelState !== 'function' ||
-        typeof client.nextResearchPdfWheel !== 'function') return
+    expect(client.researchPdfRenderWindow).toBeTypeOf('function')
+    if (typeof client.researchPdfRenderWindow !== 'function') return
 
-    let state = client.createResearchPdfWheelState(1)
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: 30, deltaMode: 0, time: 0, pageCount: 4
-    })
-    expect(state).toMatchObject({ page: 1, accumulatedDelta: 30 })
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: 49, deltaMode: 0, time: 10, pageCount: 4
-    })
-    expect(state).toMatchObject({ page: 1, accumulatedDelta: 79 })
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: 1, deltaMode: 0, time: 20, pageCount: 4
-    })
-    expect(state).toMatchObject({ page: 2, accumulatedDelta: 0, lastPageAt: 20 })
-
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: 160, deltaMode: 0, time: 100, pageCount: 4
-    })
-    expect(state).toMatchObject({ page: 2, accumulatedDelta: 80, lastPageAt: 20 })
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: 1, deltaMode: 0, time: 200, pageCount: 4
-    })
-    expect(state).toMatchObject({ page: 3, accumulatedDelta: 0, lastPageAt: 200 })
-  })
-
-  it('resets PDF wheel accumulation on reversal and clamps line/page deltas at bounds', async () => {
-    const client = await loadConversationClient()
-    expect(client.createResearchPdfWheelState).toBeTypeOf('function')
-    expect(client.nextResearchPdfWheel).toBeTypeOf('function')
-    if (typeof client.createResearchPdfWheelState !== 'function' ||
-        typeof client.nextResearchPdfWheel !== 'function') return
-
-    let state = client.createResearchPdfWheelState(2)
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: 60, deltaMode: 0, time: 0, pageCount: 3
-    })
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: -2, deltaMode: 1, time: 10, pageCount: 3
-    })
-    expect(state).toMatchObject({ page: 2, accumulatedDelta: -32, direction: -1 })
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: -3, deltaMode: 1, time: 20, pageCount: 3
-    })
-    expect(state).toMatchObject({ page: 1, accumulatedDelta: 0 })
-
-    state = client.nextResearchPdfWheel(state, {
-      deltaY: -1, deltaMode: 2, viewportHeight: 600, time: 300, pageCount: 3
-    })
-    expect(state).toMatchObject({ page: 1, accumulatedDelta: 0 })
-    state = client.nextResearchPdfWheel(
-      client.createResearchPdfWheelState(3),
-      { deltaY: 1, deltaMode: 2, viewportHeight: 600, time: 300, pageCount: 3 }
-    )
-    expect(state).toMatchObject({ page: 3, accumulatedDelta: 0 })
+    expect(client.researchPdfRenderWindow({
+      pageCount: 12, pageHeight: 400, scrollTop: 0, viewportHeight: 400, overscan: 200
+    })).toEqual([1, 2])
+    expect(client.researchPdfRenderWindow({
+      pageCount: 12, pageHeight: 400, scrollTop: 1_250, viewportHeight: 400, overscan: 200
+    })).toEqual([3, 4, 5])
+    expect(client.researchPdfRenderWindow({
+      pageCount: 12, pageHeight: 400, scrollTop: Number.POSITIVE_INFINITY,
+      viewportHeight: 0, overscan: -1
+    })).toEqual([1])
   })
 
   it('caps PDF canvas backing pixels while preserving the page aspect ratio', async () => {

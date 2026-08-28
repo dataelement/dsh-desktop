@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..9ac3b40 100644
+index 1dd0e89..ff3a76e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -2136,7 +2136,7 @@ index 1dd0e89..9ac3b40 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6751,40 +8049,2255 @@ window.__ModuleLoader__.load({
+@@ -6751,40 +8049,2213 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -2229,10 +2229,7 @@ index 1dd0e89..9ac3b40 100644
 +			pdf: Object.freeze({ width: 320, height: 320 / (17 / 22) + RESEARCH_CANVAS_TITLE_HEIGHT, minWidth: 240, minHeight: 240 / (17 / 22) + RESEARCH_CANVAS_TITLE_HEIGHT, aspectRatio: 17 / 22, resizable: true }),
 +			html: Object.freeze({ width: 480, height: 360, minWidth: 320, minHeight: 240, resizable: true })
 +		});
-+		const RESEARCH_PDF_WHEEL_THRESHOLD = 80;
-+		const RESEARCH_PDF_WHEEL_THROTTLE_MS = 180;
-+		const RESEARCH_PDF_LINE_DELTA_PX = 16;
-+		const RESEARCH_PDF_DEFAULT_PAGE_DELTA_PX = 800;
++		const RESEARCH_PDF_RENDER_OVERSCAN_PX = 240;
 +		const RESEARCH_PDF_MAX_DPR = 2;
 +		const RESEARCH_PDF_MAX_BACKING_PIXELS = 8e6;
 +		const RESEARCH_PDF_MAX_IMAGE_PIXELS = 8e6;
@@ -2626,46 +2623,16 @@ index 1dd0e89..9ac3b40 100644
 +			if (mediaType === "text/html" || mediaType === "application/xhtml+xml" || /\.x?html?$/.test(name)) return "html";
 +			return "generic";
 +		}
-+		function createResearchPdfWheelState(page = 1) {
-+			return {
-+				page: Number.isSafeInteger(page) && page > 0 ? page : 1,
-+				accumulatedDelta: 0,
-+				direction: 0,
-+				lastPageAt: Number.NEGATIVE_INFINITY
-+			};
-+		}
-+		function researchPdfWheelPixels(input) {
-+			if (!Number.isFinite(input?.deltaY)) return 0;
-+			if (input.deltaMode === 1) return input.deltaY * RESEARCH_PDF_LINE_DELTA_PX;
-+			if (input.deltaMode === 2) {
-+				const height = Number.isFinite(input.viewportHeight) && input.viewportHeight > 0 ? input.viewportHeight : RESEARCH_PDF_DEFAULT_PAGE_DELTA_PX;
-+				return input.deltaY * height;
-+			}
-+			return input.deltaY;
-+		}
-+		function nextResearchPdfWheel(state, input) {
++		function researchPdfRenderWindow(input) {
 +			const pageCount = Number.isSafeInteger(input?.pageCount) && input.pageCount > 0 ? input.pageCount : 1;
-+			const page = Math.max(1, Math.min(pageCount, Number.isSafeInteger(state?.page) ? state.page : 1));
-+			const delta = researchPdfWheelPixels(input);
-+			if (delta === 0) return { ...state, page };
-+			const direction = delta > 0 ? 1 : -1;
-+			const priorDirection = state?.direction === 1 || state?.direction === -1 ? state.direction : 0;
-+			const priorAccumulated = Number.isFinite(state?.accumulatedDelta) ? state.accumulatedDelta : 0;
-+			let accumulatedDelta = priorDirection !== 0 && priorDirection !== direction ? delta : priorAccumulated + delta;
-+			if (Math.abs(accumulatedDelta) < RESEARCH_PDF_WHEEL_THRESHOLD) {
-+				return { ...state, page, accumulatedDelta, direction };
-+			}
-+			const time = Number.isFinite(input?.time) ? input.time : 0;
-+			const lastPageAt = Number.isFinite(state?.lastPageAt) ? state.lastPageAt : Number.NEGATIVE_INFINITY;
-+			if (time - lastPageAt < RESEARCH_PDF_WHEEL_THROTTLE_MS) {
-+				accumulatedDelta = direction * RESEARCH_PDF_WHEEL_THRESHOLD;
-+				return { ...state, page, accumulatedDelta, direction, lastPageAt };
-+			}
-+			const nextPage = Math.max(1, Math.min(pageCount, page + direction));
-+			if (nextPage === page) {
-+				return { ...state, page, accumulatedDelta: 0, direction, lastPageAt };
-+			}
-+			return { ...state, page: nextPage, accumulatedDelta: 0, direction, lastPageAt: time };
++			const pageHeight = Number.isFinite(input?.pageHeight) && input.pageHeight > 0 ? input.pageHeight : 0;
++			const scrollTop = Number.isFinite(input?.scrollTop) && input.scrollTop >= 0 ? input.scrollTop : 0;
++			const viewportHeight = Number.isFinite(input?.viewportHeight) && input.viewportHeight > 0 ? input.viewportHeight : 0;
++			const overscan = Number.isFinite(input?.overscan) && input.overscan >= 0 ? input.overscan : 0;
++			if (pageHeight === 0 || viewportHeight === 0) return [1];
++			const first = Math.max(1, Math.floor(Math.max(0, scrollTop - overscan) / pageHeight) + 1);
++			const last = Math.min(pageCount, Math.max(first, Math.ceil((scrollTop + viewportHeight + overscan) / pageHeight)));
++			return Array.from({ length: last - first + 1 }, (_, index) => first + index);
 +		}
 +		function researchPdfBackingStore(input) {
 +			const pageWidth = Number.isFinite(input?.pageWidth) && input.pageWidth > 0 ? input.pageWidth : 1;
@@ -3484,18 +3451,18 @@ index 1dd0e89..9ac3b40 100644
 +		}
 +		function ResearchCanvasPdfPreview({ node, sessionId, visible, onNaturalSize, onPageStatus }) {
 +			const [preview, setPreview] = (0, react.useState)({ status: visible ? "loading" : "offscreen", pageCount: 0 });
-+			const [currentPage, setCurrentPage] = (0, react.useState)(1);
-+			const [renderedPage, setRenderedPage] = (0, react.useState)(0);
-+			const canvasRef = (0, react.useRef)(null);
-+			const bodyRef = (0, react.useRef)(null);
 +			const [bodySize, setBodySize] = (0, react.useState)({ width: 0, height: 0 });
++			const [scrollTop, setScrollTop] = (0, react.useState)(0);
++			const [renderedPages, setRenderedPages] = (0, react.useState)(/* @__PURE__ */ new Set());
++			const bodyRef = (0, react.useRef)(null);
++			const canvasRefs = (0, react.useRef)(/* @__PURE__ */ new Map());
 +			const descriptorRef = (0, react.useRef)(null);
 +			const loadingTaskRef = (0, react.useRef)(null);
 +			const documentRef = (0, react.useRef)(null);
-+			const renderTaskRef = (0, react.useRef)(null);
-+			const renderedPdfPageRef = (0, react.useRef)(null);
-+			const renderGenerationRef = (0, react.useRef)(0);
-+			const wheelStateRef = (0, react.useRef)(createResearchPdfWheelState(1));
++			const renderTasksRef = (0, react.useRef)(/* @__PURE__ */ new Map());
++			const pdfPagesRef = (0, react.useRef)(/* @__PURE__ */ new Map());
++			const pageGenerationsRef = (0, react.useRef)(/* @__PURE__ */ new Map());
++			const renderedWidthsRef = (0, react.useRef)(/* @__PURE__ */ new Map());
 +			const metadataCallbackRef = (0, react.useRef)(onNaturalSize);
 +			metadataCallbackRef.current = onNaturalSize;
 +			const releaseCurrentDescriptor = (0, react.useCallback)(() => {
@@ -3504,23 +3471,32 @@ index 1dd0e89..9ac3b40 100644
 +				descriptorRef.current = null;
 +				window.dshDesktop?.researchPreview?.release?.({ sessionId, nodeId: node.id, authorizationId: descriptor.authorizationId, capabilityToken: descriptor.capabilityToken });
 +			}, [sessionId, node.id]);
-+			const clearRender = (0, react.useCallback)((clearCanvas = true) => {
-+				renderGenerationRef.current += 1;
++			const clearPage = (0, react.useCallback)((pageNumber, clearCanvas = true) => {
++				pageGenerationsRef.current.set(pageNumber, (pageGenerationsRef.current.get(pageNumber) ?? 0) + 1);
 +				try {
-+					renderTaskRef.current?.cancel?.();
++					renderTasksRef.current.get(pageNumber)?.cancel?.();
 +				} catch {}
-+				renderTaskRef.current = null;
++				renderTasksRef.current.delete(pageNumber);
 +				try {
-+					renderedPdfPageRef.current?.cleanup?.();
++					pdfPagesRef.current.get(pageNumber)?.cleanup?.();
 +				} catch {}
-+				renderedPdfPageRef.current = null;
-+				if (clearCanvas && canvasRef.current !== null) {
-+					canvasRef.current.width = 0;
-+					canvasRef.current.height = 0;
++				pdfPagesRef.current.delete(pageNumber);
++				renderedWidthsRef.current.delete(pageNumber);
++				if (clearCanvas) {
++					const canvas = canvasRefs.current.get(pageNumber);
++					if (canvas !== void 0) {
++						canvas.width = 0;
++						canvas.height = 0;
++					}
 +				}
++				setRenderedPages((previous) => previous.has(pageNumber) ? new Set([...previous].filter((page) => page !== pageNumber)) : previous);
 +			}, []);
++			const clearPages = (0, react.useCallback)((clearCanvas = true) => {
++				const pages = /* @__PURE__ */ new Set([...canvasRefs.current.keys(), ...renderTasksRef.current.keys(), ...pdfPagesRef.current.keys(), ...renderedWidthsRef.current.keys()]);
++				for (const pageNumber of pages) clearPage(pageNumber, clearCanvas);
++			}, [clearPage]);
 +			const destroyDocument = (0, react.useCallback)(() => {
-+				clearRender(true);
++				clearPages(true);
 +				const document2 = documentRef.current;
 +				documentRef.current = null;
 +				const loadingTask = loadingTaskRef.current;
@@ -3529,10 +3505,15 @@ index 1dd0e89..9ac3b40 100644
 +					const teardown = typeof loadingTask?.destroy === "function" ? loadingTask.destroy() : document2?.destroy?.();
 +					Promise.resolve(teardown).catch(() => void 0);
 +				} catch {}
-+			}, [clearRender]);
++			}, [clearPages]);
++			const pageRatio = Number.isFinite(node.aspectRatio) && node.aspectRatio > 0 ? node.aspectRatio : 17 / 22;
++			const renderWidth = bodySize.width > 0 ? preview.pageCount === 1 ? Math.min(bodySize.width, bodySize.height * pageRatio) : bodySize.width : 0;
++			const streamPageHeight = renderWidth > 0 ? renderWidth / pageRatio : 0;
++			const visiblePage = streamPageHeight > 0 ? Math.min(preview.pageCount, Math.max(1, Math.floor(scrollTop / streamPageHeight) + 1)) : 1;
++			const renderWindow = preview.status === "ready" ? researchPdfRenderWindow({ pageCount: preview.pageCount, pageHeight: streamPageHeight, scrollTop, viewportHeight: bodySize.height, overscan: RESEARCH_PDF_RENDER_OVERSCAN_PX }) : [];
 +			(0, react.useEffect)(() => {
-+				onPageStatus?.({ page: currentPage, total: preview.pageCount });
-+			}, [currentPage, preview.pageCount, onPageStatus]);
++				onPageStatus?.({ page: visiblePage, total: preview.pageCount });
++			}, [visiblePage, preview.pageCount, onPageStatus]);
 +			(0, react.useLayoutEffect)(() => {
 +				if (!visible || preview.status !== "ready" || bodyRef.current === null) {
 +					setBodySize((previous) => previous.width === 0 && previous.height === 0 ? previous : { width: 0, height: 0 });
@@ -3562,9 +3543,8 @@ index 1dd0e89..9ac3b40 100644
 +				}
 +				let active = true;
 +				setPreview({ status: "loading", pageCount: 0 });
-+				setCurrentPage(1);
-+				setRenderedPage(0);
-+				wheelStateRef.current = createResearchPdfWheelState(1);
++				setScrollTop(0);
++				setRenderedPages(/* @__PURE__ */ new Set());
 +				(async () => {
 +					try {
 +						const descriptor = await window.dshDesktop.researchPreview.restore({ sessionId, nodeId: node.id, authorizationId: node.authorizationId });
@@ -3576,15 +3556,7 @@ index 1dd0e89..9ac3b40 100644
 +						descriptorRef.current = descriptor;
 +						const pdfjs = await loadResearchPdfLibrary();
 +						if (!active) return;
-+						const loadingTask = pdfjs.getDocument({
-+							url: descriptor.url,
-+							cMapUrl: RESEARCH_PDF_CMAP_URL,
-+							cMapPacked: true,
-+							standardFontDataUrl: RESEARCH_PDF_STANDARD_FONT_URL,
-+							isEvalSupported: false,
-+							useWasm: false,
-+							maxImageSize: RESEARCH_PDF_MAX_IMAGE_PIXELS
-+						});
++						const loadingTask = pdfjs.getDocument({ url: descriptor.url, cMapUrl: RESEARCH_PDF_CMAP_URL, cMapPacked: true, standardFontDataUrl: RESEARCH_PDF_STANDARD_FONT_URL, isEvalSupported: false, useWasm: false, maxImageSize: RESEARCH_PDF_MAX_IMAGE_PIXELS });
 +						loadingTaskRef.current = loadingTask;
 +						const document2 = await loadingTask.promise;
 +						if (!active) return;
@@ -3605,100 +3577,86 @@ index 1dd0e89..9ac3b40 100644
 +				};
 +			}, [sessionId, node.id, node.authorizationId, visible, destroyDocument, releaseCurrentDescriptor]);
 +			(0, react.useEffect)(() => {
-+				if (preview.status !== "ready" || documentRef.current === null || canvasRef.current === null || bodySize.width <= 0 || bodySize.height <= 0) return;
-+				clearRender(true);
-+				const generation = renderGenerationRef.current;
-+				let active = true;
-+				(async () => {
-+					try {
-+						const page = await documentRef.current.getPage(currentPage);
-+						if (!active || generation !== renderGenerationRef.current) {
++				if (preview.status !== "ready" || documentRef.current === null || renderWidth <= 0 || bodySize.height <= 0) return;
++				const desired = new Set(renderWindow);
++				for (const pageNumber of new Set([...renderTasksRef.current.keys(), ...renderedWidthsRef.current.keys()])) if (!desired.has(pageNumber) || renderedWidthsRef.current.has(pageNumber) && renderedWidthsRef.current.get(pageNumber) !== renderWidth) clearPage(pageNumber, true);
++				for (const pageNumber of renderWindow) {
++					if (renderTasksRef.current.has(pageNumber) || renderedWidthsRef.current.get(pageNumber) === renderWidth) continue;
++					const generation = (pageGenerationsRef.current.get(pageNumber) ?? 0) + 1;
++					pageGenerationsRef.current.set(pageNumber, generation);
++					renderedWidthsRef.current.set(pageNumber, renderWidth);
++					(async () => {
++						let page = null;
++						try {
++							page = await documentRef.current.getPage(pageNumber);
++							if (pageGenerationsRef.current.get(pageNumber) !== generation) {
++								page.cleanup?.();
++								return;
++							}
++							const natural = page.getViewport({ scale: 1 });
++							if (pageNumber === 1) metadataCallbackRef.current?.(natural.width, natural.height);
++							pdfPagesRef.current.set(pageNumber, page);
++							const canvas = canvasRefs.current.get(pageNumber);
++							if (canvas === void 0) {
++								page.cleanup?.();
++								pdfPagesRef.current.delete(pageNumber);
++								return;
++							}
++							const backing = researchPdfBackingStore({ pageWidth: natural.width, pageHeight: natural.height, cssWidth: renderWidth, devicePixelRatio: window.devicePixelRatio, maxPixels: RESEARCH_PDF_MAX_BACKING_PIXELS });
++							canvas.width = backing.backingWidth;
++							canvas.height = backing.backingHeight;
++							canvas.style.width = `${backing.cssWidth}px`;
++							canvas.style.height = `${backing.cssHeight}px`;
++							const context = canvas.getContext("2d");
++							if (context === null) throw new Error("PDF canvas is unavailable.");
++							const renderTask = page.render({ canvasContext: context, viewport: page.getViewport({ scale: backing.cssWidth / natural.width }), transform: backing.outputScale === 1 ? void 0 : [backing.outputScale, 0, 0, backing.outputScale, 0, 0] });
++							renderTasksRef.current.set(pageNumber, renderTask);
++							await renderTask.promise;
++							if (pageGenerationsRef.current.get(pageNumber) !== generation) return;
++							renderTasksRef.current.delete(pageNumber);
++							renderedWidthsRef.current.set(pageNumber, renderWidth);
 +							page.cleanup?.();
-+							return;
++							pdfPagesRef.current.delete(pageNumber);
++							setRenderedPages((previous) => new Set([...previous, pageNumber]));
++						} catch (error) {
++							if (pageGenerationsRef.current.get(pageNumber) !== generation || error?.name === "RenderingCancelledException") return;
++							destroyDocument();
++							releaseCurrentDescriptor();
++							setPreview({ status: "error", pageCount: 0 });
 +						}
-+						renderedPdfPageRef.current = page;
-+						const natural = page.getViewport({ scale: 1 });
-+						if (currentPage === 1) metadataCallbackRef.current?.(natural.width, natural.height);
-+						const pageRatio = Number.isFinite(natural.width) && Number.isFinite(natural.height) && natural.width > 0 && natural.height > 0 ? natural.width / natural.height : 1;
-+						const renderWidth = Math.min(bodySize.width, bodySize.height * pageRatio);
-+						const backing = researchPdfBackingStore({
-+							pageWidth: natural.width,
-+							pageHeight: natural.height,
-+							cssWidth: renderWidth,
-+							devicePixelRatio: window.devicePixelRatio,
-+							maxPixels: RESEARCH_PDF_MAX_BACKING_PIXELS
-+						});
-+						const canvas = canvasRef.current;
-+						if (canvas === null) return;
-+						canvas.width = backing.backingWidth;
-+						canvas.height = backing.backingHeight;
-+						canvas.style.width = `${backing.cssWidth}px`;
-+						canvas.style.height = `${backing.cssHeight}px`;
-+						const context = canvas.getContext("2d");
-+						if (context === null) throw new Error("PDF canvas is unavailable.");
-+						const viewport2 = page.getViewport({ scale: backing.cssWidth / natural.width });
-+						const renderTask = page.render({
-+							canvasContext: context,
-+							viewport: viewport2,
-+							transform: backing.outputScale === 1 ? void 0 : [backing.outputScale, 0, 0, backing.outputScale, 0, 0]
-+						});
-+						renderTaskRef.current = renderTask;
-+						await renderTask.promise;
-+						if (!active || generation !== renderGenerationRef.current) return;
-+						renderTaskRef.current = null;
-+						renderedPdfPageRef.current?.cleanup?.();
-+						renderedPdfPageRef.current = null;
-+						setRenderedPage(currentPage);
-+					} catch (error) {
-+						if (!active || generation !== renderGenerationRef.current || error?.name === "RenderingCancelledException") return;
-+						destroyDocument();
-+						releaseCurrentDescriptor();
-+						setPreview({ status: "error", pageCount: 0 });
-+					}
-+				})();
-+				return () => {
-+					active = false;
-+					clearRender(true);
-+				};
-+			}, [preview.status, currentPage, bodySize.width, bodySize.height, clearRender, destroyDocument, releaseCurrentDescriptor]);
-+			if (preview.status === "offscreen") return (0, react_jsx_runtime.jsx)("div", {
-+				className: "rScV5Q_previewPlaceholder",
-+				"data-research-offscreen-placeholder": "",
-+				children: "预览已暂停"
-+			});
-+			if (preview.status === "loading") return (0, react_jsx_runtime.jsx)("div", {
-+				className: "rScV5Q_previewPlaceholder",
-+				"data-research-preview-loading": "",
-+				children: "正在载入 PDF…"
-+			});
-+			if (preview.status !== "ready") return (0, react_jsx_runtime.jsx)("div", {
-+				className: "rScV5Q_previewPlaceholder",
-+				"data-research-pdf-error": "",
-+				children: "PDF 预览不可用"
-+			});
++					})();
++				}
++				return void 0;
++			}, [preview.status, preview.pageCount, renderWindow.join(","), renderWidth, bodySize.height, clearPage, destroyDocument, releaseCurrentDescriptor]);
++			if (preview.status === "offscreen") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-offscreen-placeholder": "", children: "预览已暂停" });
++			if (preview.status === "loading") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-preview-loading": "", children: "正在载入 PDF…" });
++			if (preview.status !== "ready") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-pdf-error": "", children: "PDF 预览不可用" });
 +			return (0, react_jsx_runtime.jsx)("div", {
 +				ref: bodyRef,
 +				className: "rScV5Q_pdfScroll",
 +				"data-research-pdf-scroll": "",
 +				"data-research-preview-interactive": "",
-+				onWheel: (event) => {
-+					event.preventDefault();
-+					event.stopPropagation();
-+					const next = nextResearchPdfWheel(wheelStateRef.current, {
-+						deltaY: event.deltaY,
-+						deltaMode: event.deltaMode,
-+						viewportHeight: event.currentTarget.clientHeight,
-+						time: event.timeStamp,
-+						pageCount: preview.pageCount
-+					});
-+					wheelStateRef.current = next;
-+					if (next.page !== currentPage) setCurrentPage(next.page);
-+				},
-+				children: (0, react_jsx_runtime.jsx)("canvas", {
-+					ref: canvasRef,
-+					"data-research-pdf-preview": "",
-+					"data-research-pdf-rendered-page": renderedPage || void 0,
-+					"aria-label": `${node.name} 第 ${currentPage} 页`
++				onWheel: (event) => event.stopPropagation(),
++				onScroll: (event) => setScrollTop(Math.max(0, event.currentTarget.scrollTop || 0)),
++				children: Array.from({ length: preview.pageCount }, (_, index) => {
++					const pageNumber = index + 1;
++					const shouldRender = renderWindow.includes(pageNumber);
++					return (0, react_jsx_runtime.jsx)("div", {
++						className: "rScV5Q_pdfPage",
++						"data-research-pdf-page": pageNumber,
++						style: { minHeight: streamPageHeight > 0 ? `${streamPageHeight}px` : void 0 },
++						children: shouldRender ? (0, react_jsx_runtime.jsx)("canvas", { ref: (canvas) => {
++							if (canvas === null) {
++								const previous = canvasRefs.current.get(pageNumber);
++								if (previous !== void 0) {
++									previous.width = 0;
++									previous.height = 0;
++								}
++								canvasRefs.current.delete(pageNumber);
++							}
++							else canvasRefs.current.set(pageNumber, canvas);
++						}, "data-research-pdf-preview": "", "data-research-pdf-rendered-page": renderedPages.has(pageNumber) ? pageNumber : void 0, "aria-label": `${node.name} 第 ${pageNumber} 页` }) : (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_pdfPagePlaceholder", "data-research-pdf-page-placeholder": "", children: `第 ${pageNumber} 页` })
++					}, pageNumber);
 +				})
 +			});
 +		}
@@ -4424,7 +4382,7 @@ index 1dd0e89..9ac3b40 100644
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
-@@ -6793,7 +10306,17 @@ window.__ModuleLoader__.load({
+@@ -6793,7 +10264,17 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$6;
@@ -4443,7 +4401,7 @@ index 1dd0e89..9ac3b40 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -6822,7 +10345,354 @@ window.__ModuleLoader__.load({
+@@ -6822,7 +10303,354 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationRoot.js
@@ -4799,7 +4757,7 @@ index 1dd0e89..9ac3b40 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,10 +10702,64 @@ window.__ModuleLoader__.load({
+@@ -6832,10 +10660,64 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -4864,7 +4822,7 @@ index 1dd0e89..9ac3b40 100644
  			const seatResizeRef = (0, react.useCallback)((seat) => {
  				seatObserver.current?.disconnect();
  				seatObserver.current = null;
-@@ -6848,6 +10772,54 @@ window.__ModuleLoader__.load({
+@@ -6848,6 +10730,54 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -4919,7 +4877,7 @@ index 1dd0e89..9ac3b40 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +10869,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +10827,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -4927,7 +4885,7 @@ index 1dd0e89..9ac3b40 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +10886,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +10844,68 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -5020,7 +4978,7 @@ index 1dd0e89..9ac3b40 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +10983,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +10941,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -5041,7 +4999,7 @@ index 1dd0e89..9ac3b40 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +11051,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +11009,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -5059,7 +5017,7 @@ index 1dd0e89..9ac3b40 100644
  				})] })
  			});
  		}
-@@ -7053,14 +11061,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +11019,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -5104,7 +5062,7 @@ index 1dd0e89..9ac3b40 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +11107,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +11065,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -5114,7 +5072,7 @@ index 1dd0e89..9ac3b40 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +11129,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +11087,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -5123,7 +5081,7 @@ index 1dd0e89..9ac3b40 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +11182,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +11140,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -5141,7 +5099,7 @@ index 1dd0e89..9ac3b40 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +11218,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +11176,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -5149,7 +5107,7 @@ index 1dd0e89..9ac3b40 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +12110,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +12068,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -5180,7 +5138,7 @@ index 1dd0e89..9ac3b40 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +12155,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +12113,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -5205,7 +5163,7 @@ index 1dd0e89..9ac3b40 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +13109,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +13067,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -5214,7 +5172,7 @@ index 1dd0e89..9ac3b40 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +13199,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +13157,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -5256,7 +5214,7 @@ index 1dd0e89..9ac3b40 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +13408,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +13366,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -5273,7 +5231,7 @@ index 1dd0e89..9ac3b40 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +13578,8 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +13536,8 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -5282,7 +5240,7 @@ index 1dd0e89..9ac3b40 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +13619,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +13577,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -5295,7 +5253,7 @@ index 1dd0e89..9ac3b40 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +13635,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +13593,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -5308,7 +5266,7 @@ index 1dd0e89..9ac3b40 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +13684,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +13642,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -5322,7 +5280,7 @@ index 1dd0e89..9ac3b40 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +13722,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +13680,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -5332,7 +5290,7 @@ index 1dd0e89..9ac3b40 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +13854,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +13812,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -5347,7 +5305,7 @@ index 1dd0e89..9ac3b40 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +13870,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +13828,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -5356,7 +5314,7 @@ index 1dd0e89..9ac3b40 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +13894,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +13852,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -5365,7 +5323,7 @@ index 1dd0e89..9ac3b40 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +13920,107 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +13878,106 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
@@ -5426,8 +5384,7 @@ index 1dd0e89..9ac3b40 100644
 +		exports.normalizeResearchCanvasNodeGeometry = normalizeResearchCanvasNodeGeometry;
 +		exports.researchImageGeometryForNaturalSize = researchImageGeometryForNaturalSize;
 +		exports.researchPdfGeometryForPage = researchPdfGeometryForPage;
-+		exports.createResearchPdfWheelState = createResearchPdfWheelState;
-+		exports.nextResearchPdfWheel = nextResearchPdfWheel;
++		exports.researchPdfRenderWindow = researchPdfRenderWindow;
 +		exports.researchPdfBackingStore = researchPdfBackingStore;
 +		exports.removeResearchCanvasNodes = removeResearchCanvasNodes;
 +		exports.resizeResearchCanvasNode = resizeResearchCanvasNode;

@@ -2258,7 +2258,7 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('renders one PDF page, owns wheel navigation, cancels stale work, and destroys offscreen resources', async () => {
+  it('renders a continuous PDF stream, keeps wheel scrolling native, and cleans up pages outside the viewport', async () => {
     const harness = createPdfJsHarness({
       deferRenders: true, resolveCancelledLate: true, rejectDestroy: true
     })
@@ -2297,9 +2297,12 @@ describe('Sherlock workspace and composer controls', () => {
       })
 
       const pdfBody = mounted.host.querySelector('[data-research-pdf-scroll]') as HappyDOMElement | null
-      const pdfCanvas = mounted.host.querySelector('[data-research-pdf-preview]') as HTMLCanvasElement | null
+      const pdfCanvases = Array.from(mounted.host.querySelectorAll(
+        '[data-research-pdf-preview]'
+      )) as unknown as HTMLCanvasElement[]
       expect(pdfBody).not.toBeNull()
-      expect(pdfCanvas).not.toBeNull()
+      expect(mounted.host.querySelectorAll('[data-research-pdf-page]')).toHaveLength(3)
+      expect(pdfCanvases).toHaveLength(2)
       await act(async () => {
         await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
       })
@@ -2319,8 +2322,8 @@ describe('Sherlock workspace and composer controls', () => {
         useWasm: false,
         maxImageSize: 8_000_000
       })
-      expect(harness.renders.map(({ page }) => page)).toEqual([1])
-      expect((pdfCanvas?.width ?? 0) * (pdfCanvas?.height ?? 0)).toBeLessThanOrEqual(8_000_000)
+      expect(harness.renders.map(({ page }) => page)).toEqual([1, 2])
+      expect(pdfCanvases.every((canvas) => canvas.width * canvas.height <= 8_000_000)).toBe(true)
       if (pdfBody === null) return
       const viewportBeforeWheel = mounted.workspace.getSnapshot().viewport
       let bubbledWheels = 0
@@ -2333,18 +2336,23 @@ describe('Sherlock workspace and composer controls', () => {
         pdfBody.dispatchEvent(wheel)
         await Promise.resolve(); await Promise.resolve()
       })
-      expect(wheel.defaultPrevented).toBe(true)
+      expect(wheel.defaultPrevented).toBe(false)
       expect(bubbledWheels).toBe(0)
       expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+      pdfBody.scrollTop = 848
+      await act(async () => {
+        pdfBody.dispatchEvent(new mounted.browserWindow.Event('scroll', { bubbles: true }))
+        await Promise.resolve(); await Promise.resolve()
+      })
       expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
-        .toContain('2 / 3')
-      expect(harness.renders.map(({ page }) => page)).toEqual([1, 2])
+        .toContain('3 / 3')
+      expect(harness.renders.map(({ page }) => page)).toEqual([1, 2, 3])
       expect(harness.renders[0]!.cancelled).toBe(1)
       await act(async () => {
         harness.renders[0]!.resolve()
         await Promise.resolve(); await Promise.resolve()
       })
-      expect(pdfCanvas?.getAttribute('data-research-pdf-rendered-page')).not.toBe('1')
+      expect(mounted.host.querySelector('[data-research-pdf-preview][data-research-pdf-rendered-page="1"]')).toBeNull()
 
       await act(async () => {
         bodySize.width = 398
@@ -2355,7 +2363,7 @@ describe('Sherlock workspace and composer controls', () => {
         resizeObserverCallbacks.at(-1)?.()
         await Promise.resolve(); await Promise.resolve()
       })
-      expect(harness.renders[1]!.cancelled).toBe(1)
+      expect(harness.renders.filter(({ page }) => page === 2 || page === 3).some(({ cancelled }) => cancelled >= 1)).toBe(true)
       expect(harness.renders.at(-1)?.viewport.width).toBeCloseTo(398, 5)
 
       await act(async () => { mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
@@ -2365,8 +2373,7 @@ describe('Sherlock workspace and composer controls', () => {
       expect(harness.documents[0]!.destroyed).toBe(1)
       expect(harness.loadingTasks[0]!.teardownThenCalls).toBe(1)
       expect(harness.pages.every(({ cleanups }) => cleanups >= 1)).toBe(true)
-      expect(pdfCanvas?.width).toBe(0)
-      expect(pdfCanvas?.height).toBe(0)
+      expect(pdfCanvases.every((canvas) => canvas.width === 0 && canvas.height === 0)).toBe(true)
       expect(releases).toEqual([{
         sessionId: 'session-pdf-lifecycle', nodeId: 'pdf-1',
         authorizationId: 'authorization-pdf', capabilityToken: 'capability-pdf-1'
@@ -2377,7 +2384,7 @@ describe('Sherlock workspace and composer controls', () => {
         await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
       })
       expect(restoreSequence).toBe(2)
-      expect(mounted.host.querySelector('[data-research-pdf-preview]')).not.toBeNull()
+      expect(mounted.host.querySelectorAll('[data-research-pdf-page]')).toHaveLength(3)
       expect(mounted.workspace.getSnapshot().files[0]).toMatchObject({
         width: 400, height: 400 / 0.75 + 32, aspectRatio: 0.75, sizeMode: 'auto'
       })
