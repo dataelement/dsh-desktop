@@ -40,6 +40,7 @@ describe('launch agent audit', () => {
         await writeFile(path, JSON.stringify(record))
       }),
       bootoutLaunchAgent: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })),
+      inspectLaunchAgent: vi.fn(async () => ({ code: 0, stdout: 'service = { }', stderr: '' })),
       bootstrapLaunchAgent: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })),
       disableLaunchAgent: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })),
       now: () => new Date('2026-08-25T10:00:00.000Z'),
@@ -180,9 +181,14 @@ describe('launch agent audit', () => {
     expect(settings.bootoutLaunchAgent).toHaveBeenCalledWith('gui/501/com.example.bundle-worker')
   })
 
-  it('quarantines an app-bundle job when launchd reports it is already stopped', async () => {
+  it('quarantines an app-bundle job when its service is absent from a live domain', async () => {
     const bundleWorkerPlist = join(launchAgents, 'com.example.bundle-worker.plist')
     await writeAgentFile(bundleWorkerPlist)
+    const inspect = vi.fn(async (target: string) => ({
+      code: target === 'gui/501' ? 0 : 113,
+      stdout: '',
+      stderr: 'arbitrary localized diagnostic'
+    }))
     const settings = options({
       readLaunchAgent: async () => ({
         ...structuredClone(brokenAgent),
@@ -192,14 +198,19 @@ describe('launch agent audit', () => {
       bootoutLaunchAgent: vi.fn(async () => ({
         code: 3,
         stdout: '',
-        stderr: 'Boot-out failed: 3: No such process'
-      }))
+        stderr: 'arbitrary localized diagnostic'
+      })),
+      inspectLaunchAgent: inspect
     })
 
     const result = await quarantineAppBundleLaunchAgents(settings)
 
     expect(result.failures).toEqual([])
     expect(result.findings[0]?.action).toBe('quarantined')
+    expect(inspect.mock.calls).toEqual([
+      ['gui/501/com.example.bundle-worker'],
+      ['gui/501']
+    ])
     expect(existsSync(bundleWorkerPlist)).toBe(false)
   })
 
@@ -218,6 +229,30 @@ describe('launch agent audit', () => {
 
     expect(result.findings).toEqual([])
     expect(result.failures[0]).toContain('not permitted')
+    expect(existsSync(bundleWorkerPlist)).toBe(true)
+  })
+
+  it('fails closed when neither the service nor its launchd domain can be inspected', async () => {
+    const bundleWorkerPlist = join(launchAgents, 'com.example.bundle-worker.plist')
+    await writeAgentFile(bundleWorkerPlist)
+    const inspect = vi.fn(async () => ({ code: 113, stdout: '', stderr: 'unavailable' }))
+    const settings = options({
+      readLaunchAgent: async () => ({
+        ...structuredClone(brokenAgent),
+        Label: 'com.example.bundle-worker'
+      }),
+      bootoutLaunchAgent: vi.fn(async () => ({ code: 5, stdout: '', stderr: 'ambiguous' })),
+      inspectLaunchAgent: inspect
+    })
+
+    const result = await quarantineAppBundleLaunchAgents(settings)
+
+    expect(result.findings).toEqual([])
+    expect(result.failures[0]).toContain('ambiguous')
+    expect(inspect.mock.calls).toEqual([
+      ['gui/501/com.example.bundle-worker'],
+      ['gui/501']
+    ])
     expect(existsSync(bundleWorkerPlist)).toBe(true)
   })
 

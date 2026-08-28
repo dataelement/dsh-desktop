@@ -2,6 +2,10 @@ import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { mkdir, readdir, readFile, realpath, rename } from 'node:fs/promises'
+import {
+  launchServiceIsStoppedAfterBootout,
+  type LaunchctlCommandResult
+} from './launchctl-service-state'
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i
 const LAUNCH_AGENT_LABEL_PATTERN = /^[a-z0-9._-]+$/i
@@ -25,12 +29,6 @@ export interface LaunchAgentDescription {
   ProgramArguments?: unknown
 }
 
-interface CommandResult {
-  code: number | null
-  stdout: string
-  stderr: string
-}
-
 export interface PluginComponentCleanupOptions {
   dshHome: string
   pluginName: string
@@ -39,7 +37,8 @@ export interface PluginComponentCleanupOptions {
   uid?: number | null
   now?: () => Date
   readLaunchAgent?: (plistPath: string) => Promise<LaunchAgentDescription>
-  bootoutLaunchAgent?: (target: string) => Promise<CommandResult>
+  bootoutLaunchAgent?: (target: string) => Promise<LaunchctlCommandResult>
+  inspectLaunchAgent?: (target: string) => Promise<LaunchctlCommandResult>
   log?: (message: string) => void
 }
 
@@ -164,7 +163,7 @@ async function launchAgentReferencesDirectories(
   return false
 }
 
-function runCommand(command: string, args: readonly string[]): Promise<CommandResult> {
+function runCommand(command: string, args: readonly string[]): Promise<LaunchctlCommandResult> {
   return new Promise((resolveResult) => {
     const child = spawn(command, [...args], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -192,15 +191,12 @@ async function defaultReadLaunchAgent(plistPath: string): Promise<LaunchAgentDes
   return JSON.parse(result.stdout) as LaunchAgentDescription
 }
 
-function defaultBootoutLaunchAgent(target: string): Promise<CommandResult> {
+function defaultBootoutLaunchAgent(target: string): Promise<LaunchctlCommandResult> {
   return runCommand('/bin/launchctl', ['bootout', target])
 }
 
-function bootoutSucceeded(result: CommandResult): boolean {
-  return (
-    result.code === 0 ||
-    /could not find (?:specified )?service|no such process/i.test(result.stderr)
-  )
+function defaultInspectLaunchAgent(target: string): Promise<LaunchctlCommandResult> {
+  return runCommand('/bin/launchctl', ['print', target])
 }
 
 function quarantineTimestamp(date: Date): string {
@@ -225,6 +221,7 @@ export async function cleanupPluginOwnedComponents(
   const launchAgentsDirectory = join(homeDirectory, 'Library', 'LaunchAgents')
   const readLaunchAgent = options.readLaunchAgent ?? defaultReadLaunchAgent
   const bootoutLaunchAgent = options.bootoutLaunchAgent ?? defaultBootoutLaunchAgent
+  const inspectLaunchAgent = options.inspectLaunchAgent ?? defaultInspectLaunchAgent
   const uid = options.uid === undefined ? process.getuid?.() ?? null : options.uid
   const quarantined: string[] = []
   const failures: string[] = []
@@ -262,8 +259,9 @@ export async function cleanupPluginOwnedComponents(
       continue
     }
 
-    const target = `gui/${uid}/${label}`
-    let bootout: CommandResult
+    const domain = `gui/${uid}`
+    const target = `${domain}/${label}`
+    let bootout: LaunchctlCommandResult
     try {
       bootout = await bootoutLaunchAgent(target)
     } catch (error) {
@@ -271,7 +269,12 @@ export async function cleanupPluginOwnedComponents(
       failures.push(`${plistPath}: launchctl bootout failed (${detail})`)
       continue
     }
-    if (!bootoutSucceeded(bootout)) {
+    if (!await launchServiceIsStoppedAfterBootout(
+      bootout,
+      target,
+      domain,
+      inspectLaunchAgent
+    )) {
       const detail = bootout.stderr.trim() || String(bootout.code)
       failures.push(`${plistPath}: launchctl bootout failed (${detail})`)
       continue

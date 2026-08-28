@@ -7,6 +7,10 @@ import {
   recordComponentRepair,
   shouldEscalateRepairs
 } from './component-ledger'
+import {
+  launchServiceIsStoppedAfterBootout,
+  type LaunchctlCommandResult
+} from './launchctl-service-state'
 
 const LAUNCH_AGENT_LABEL_PATTERN = /^[a-z0-9._-]+$/i
 const COMMAND_TIMEOUT_MS = 10_000
@@ -21,11 +25,7 @@ export interface LaunchAgentRecord {
   [key: string]: unknown
 }
 
-export interface CommandResult {
-  code: number | null
-  stdout: string
-  stderr: string
-}
+export interface CommandResult extends LaunchctlCommandResult {}
 
 export type AuditAction = 'repaired' | 'quarantined' | 'disabled'
 
@@ -47,6 +47,7 @@ export interface LaunchAgentAuditOptions {
   readLaunchAgent?: (plistPath: string) => Promise<LaunchAgentRecord>
   writeLaunchAgent?: (plistPath: string, record: LaunchAgentRecord) => Promise<void>
   bootoutLaunchAgent?: (target: string) => Promise<CommandResult>
+  inspectLaunchAgent?: (target: string) => Promise<CommandResult>
   bootstrapLaunchAgent?: (domain: string, plistPath: string) => Promise<CommandResult>
   disableLaunchAgent?: (target: string) => Promise<CommandResult>
   now?: () => Date
@@ -211,19 +212,16 @@ function defaultBootoutLaunchAgent(target: string): Promise<CommandResult> {
   return runCommand('/bin/launchctl', ['bootout', target])
 }
 
+function defaultInspectLaunchAgent(target: string): Promise<CommandResult> {
+  return runCommand('/bin/launchctl', ['print', target])
+}
+
 function defaultBootstrapLaunchAgent(domain: string, plistPath: string): Promise<CommandResult> {
   return runCommand('/bin/launchctl', ['bootstrap', domain, plistPath])
 }
 
 function defaultDisableLaunchAgent(target: string): Promise<CommandResult> {
   return runCommand('/bin/launchctl', ['disable', target])
-}
-
-function bootoutSucceeded(result: CommandResult): boolean {
-  return (
-    result.code === 0 ||
-    /could not find (?:specified )?service|no such process/i.test(result.stderr)
-  )
 }
 
 function timestamp(date: Date): string {
@@ -236,11 +234,18 @@ async function quarantineLaunchAgent(options: {
   label: string
   uid: number
   bootoutLaunchAgent: (target: string) => Promise<CommandResult>
+  inspectLaunchAgent: (target: string) => Promise<CommandResult>
   now: () => Date
 }): Promise<string> {
-  const target = `gui/${String(options.uid)}/${options.label}`
+  const domain = `gui/${String(options.uid)}`
+  const target = `${domain}/${options.label}`
   const bootout = await options.bootoutLaunchAgent(target)
-  if (!bootoutSucceeded(bootout)) {
+  if (!await launchServiceIsStoppedAfterBootout(
+    bootout,
+    target,
+    domain,
+    options.inspectLaunchAgent
+  )) {
     throw new Error(bootout.stderr.trim() || `launchctl bootout exited ${String(bootout.code)}`)
   }
 
@@ -273,6 +278,7 @@ export async function quarantineAppBundleLaunchAgents(
   const launchAgentsDirectory = join(homeDirectory, 'Library', 'LaunchAgents')
   const readLaunchAgent = options.readLaunchAgent ?? defaultReadLaunchAgent
   const bootoutLaunchAgent = options.bootoutLaunchAgent ?? defaultBootoutLaunchAgent
+  const inspectLaunchAgent = options.inspectLaunchAgent ?? defaultInspectLaunchAgent
   const now = options.now ?? (() => new Date())
   const uid = options.uid === undefined ? process.getuid?.() ?? null : options.uid
 
@@ -311,6 +317,7 @@ export async function quarantineAppBundleLaunchAgents(
         label,
         uid,
         bootoutLaunchAgent,
+        inspectLaunchAgent,
         now
       })
       const owner = pluginOwnerFromArguments(record)
@@ -343,6 +350,7 @@ export async function auditLaunchAgents(
   const readLaunchAgent = options.readLaunchAgent ?? defaultReadLaunchAgent
   const writeLaunchAgent = options.writeLaunchAgent ?? defaultWriteLaunchAgent
   const bootoutLaunchAgent = options.bootoutLaunchAgent ?? defaultBootoutLaunchAgent
+  const inspectLaunchAgent = options.inspectLaunchAgent ?? defaultInspectLaunchAgent
   const bootstrapLaunchAgent = options.bootstrapLaunchAgent ?? defaultBootstrapLaunchAgent
   const disableLaunchAgent = options.disableLaunchAgent ?? defaultDisableLaunchAgent
   const now = options.now ?? (() => new Date())
@@ -397,6 +405,7 @@ export async function auditLaunchAgents(
           label,
           uid,
           bootoutLaunchAgent,
+          inspectLaunchAgent,
           now
         })
         findings.push({
@@ -443,6 +452,7 @@ export async function auditLaunchAgents(
         label,
         uid,
         bootoutLaunchAgent,
+        inspectLaunchAgent,
         now
       })
       findings.push({ label, plistPath, action: 'quarantined', owner, backupPath: quarantinePath })
