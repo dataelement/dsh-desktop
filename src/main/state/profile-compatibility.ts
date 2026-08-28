@@ -126,7 +126,7 @@ function moduleSourcePaths(
     if (!nested || nested.startsWith('..') || isAbsolute(nested)) continue
     result.push({
       path,
-      source: nested,
+      source: nested.replaceAll('\\', '/'),
       client: nested === join('lib', 'client.js')
     })
   }
