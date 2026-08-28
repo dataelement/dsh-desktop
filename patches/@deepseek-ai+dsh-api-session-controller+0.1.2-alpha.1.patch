@@ -1,0 +1,16 @@
+diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
+index 5576f38..d594c59 100644
+--- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
+@@ -2674,7 +2674,10 @@ let SessionController = (() => {
+ 			ctx.plugin(SessionFileReferences);
+ 			ctx.plugin(SessionSkillCatalog);
+ 			ctx.on("session/created", (session) => {
+-				ctx.emit("api-session/added", this.listState.summaryFor(session));
++				// Projection providers may expose non-plain runtime values. The control stream
++				// carries their encoded form; keep this immediate event strictly JSON-safe.
++				const { projections: _projections, ...remoteSummary } = this.listState.summaryFor(session);
++				ctx.emit("api-session/added", remoteSummary);
+ 			});
+ 			ctx.on("session/disposed", (session) => {
+ 				ctx.emit("api-session/removed", session.id);
