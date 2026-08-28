@@ -180,6 +180,29 @@ describe('launch agent audit', () => {
     expect(settings.bootoutLaunchAgent).toHaveBeenCalledWith('gui/501/com.example.bundle-worker')
   })
 
+  it('quarantines an app-bundle job when launchd reports it is already stopped', async () => {
+    const bundleWorkerPlist = join(launchAgents, 'com.example.bundle-worker.plist')
+    await writeAgentFile(bundleWorkerPlist)
+    const settings = options({
+      readLaunchAgent: async () => ({
+        ...structuredClone(brokenAgent),
+        Label: 'com.example.bundle-worker',
+        EnvironmentVariables: { ELECTRON_RUN_AS_NODE: '1' }
+      }),
+      bootoutLaunchAgent: vi.fn(async () => ({
+        code: 3,
+        stdout: '',
+        stderr: 'Boot-out failed: 3: No such process'
+      }))
+    })
+
+    const result = await quarantineAppBundleLaunchAgents(settings)
+
+    expect(result.failures).toEqual([])
+    expect(result.findings[0]?.action).toBe('quarantined')
+    expect(existsSync(bundleWorkerPlist)).toBe(false)
+  })
+
   it('fails closed when an app-bundle job cannot be stopped before update', async () => {
     const bundleWorkerPlist = join(launchAgents, 'com.example.bundle-worker.plist')
     await writeAgentFile(bundleWorkerPlist)

@@ -31,7 +31,10 @@ export interface ProfileCompatibilityIssue {
 interface PackageManifest {
   name?: string
   version?: string
+  main?: string
+  module?: string
   dependencies?: Record<string, string>
+  optionalDependencies?: Record<string, string>
   devDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   dsh?: { profile?: { bundles?: string[] } }
@@ -61,14 +64,73 @@ function packageNameFromRequest(request: string): string | undefined {
   return parts[0]
 }
 
-function literalClientRequires(source: string): string[] {
+function literalModuleRequests(source: string): string[] {
   const requests = new Set<string>()
-  const expression = /\brequire\((['"])([^'"]+)\1\)/g
-  for (const match of source.matchAll(expression)) {
-    const request = match[2]
-    if (request) requests.add(request)
+  const expressions = [
+    /\brequire\(\s*(['"])([^'"]+)\1\s*\)/g,
+    /\bimport\(\s*(['"])([^'"]+)\1\s*\)/g,
+    /\bfrom\s*(['"])([^'"]+)\1/g,
+    /\bimport\s*(['"])([^'"]+)\1/g
+  ]
+  for (const expression of expressions) {
+    for (const match of source.matchAll(expression)) {
+      const request = match[2]
+      if (request) requests.add(request)
+    }
   }
   return [...requests]
+}
+
+async function pluginDependencyClosure(
+  nodeModulesPath: string,
+  rootPackage: string
+): Promise<Array<{ packageName: string; required: boolean }>> {
+  const requiredPackages = new Map<string, boolean>()
+  const pending = [{ packageName: rootPackage, required: true }]
+  while (pending.length > 0) {
+    const next = pending.pop()
+    if (next === undefined) continue
+    const previous = requiredPackages.get(next.packageName)
+    if (previous === true || previous === next.required) continue
+    requiredPackages.set(next.packageName, next.required)
+    const packageName = next.packageName
+    const manifest = await readManifest(join(nodeModulesPath, packageName, 'package.json'))
+    if (manifest === undefined) continue
+    for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+      pending.push({ packageName: dependency, required: true })
+    }
+    for (const dependency of Object.keys(manifest.optionalDependencies ?? {})) {
+      pending.push({ packageName: dependency, required: false })
+    }
+  }
+  return [...requiredPackages].map(([packageName, required]) => ({ packageName, required }))
+}
+
+function moduleSourcePaths(
+  nodeModulesPath: string,
+  packageName: string,
+  manifest: PackageManifest
+): Array<{ path: string; source: string; client: boolean }> {
+  const packageDirectory = join(nodeModulesPath, packageName)
+  const candidates = new Set([
+    'lib/client.js',
+    'lib/index.js',
+    ...(typeof manifest.main === 'string' ? [manifest.main] : []),
+    ...(typeof manifest.module === 'string' ? [manifest.module] : [])
+  ])
+  const result: Array<{ path: string; source: string; client: boolean }> = []
+  for (const candidate of candidates) {
+    if (isAbsolute(candidate)) continue
+    const path = join(packageDirectory, candidate)
+    const nested = relative(packageDirectory, path)
+    if (!nested || nested.startsWith('..') || isAbsolute(nested)) continue
+    result.push({
+      path,
+      source: nested,
+      client: nested === join('lib', 'client.js')
+    })
+  }
+  return result
 }
 
 async function installedPackageNames(nodeModulesPath: string): Promise<string[]> {
@@ -159,6 +221,7 @@ export async function inspectProfileCompatibility(
   )
   const profileNodeModules = join(profileDirectory, 'node_modules')
   const profilePackages = await installedPackageNames(profileNodeModules)
+  const profilePackageSet = new Set(profilePackages)
   const bundledPackages = new Set(await installedPackageNames(bundledNodeModulesPath))
   const issues: ProfileCompatibilityIssue[] = []
   const incompatibleWorkspaces: Array<{
@@ -226,28 +289,70 @@ export async function inspectProfileCompatibility(
   }
 
   for (const pluginName of activePlugins) {
-    try {
-      const client = await readFile(join(profileNodeModules, pluginName, 'lib', 'client.js'), 'utf8')
-      for (const request of literalClientRequires(client)) {
-        const requiredPackage = packageNameFromRequest(request)
-        if (!requiredPackage?.startsWith('@deepseek-ai/') || bundledPackages.has(requiredPackage)) continue
+    for (const component of await pluginDependencyClosure(profileNodeModules, pluginName)) {
+      const componentName = component.packageName
+      const componentManifest = await readManifest(
+        join(profileNodeModules, componentName, 'package.json')
+      )
+      if (componentManifest === undefined) {
+        if (!component.required || bundledPackages.has(componentName)) continue
         issues.push({
-          id: issueId('missing-client-module', `${pluginName}:${request}`),
+          id: issueId('missing-client-module', `${pluginName}:missing:${componentName}`),
           kind: 'missing-client-module',
           severity: 'blocking',
-          packageName: pluginName,
-          installedVersion: await packageVersion(profileNodeModules, pluginName),
-          source: `${pluginName}/lib/client.js`,
-          detail: `The client bundle requires ${request}, which this Harness no longer provides.`,
+          packageName: componentName,
+          source: `${pluginName} dependency tree`,
+          detail: `The plugin requires ${componentName}, which is not installed in this profile.`,
           resolution: 'disable-plugin',
           target: pluginName,
           groupId: `plugin:${pluginName}`,
           groupName: pluginName,
           groupKind: 'plugin'
         })
+        continue
       }
-    } catch {
-      // Host-only plugins and packages without a client entry have nothing to scan.
+
+      for (const moduleSource of moduleSourcePaths(
+        profileNodeModules,
+        componentName,
+        componentManifest
+      )) {
+        let source: string
+        try {
+          source = await readFile(moduleSource.path, 'utf8')
+        } catch {
+          continue
+        }
+        for (const request of literalModuleRequests(source)) {
+          const requiredPackage = packageNameFromRequest(request)
+          if (
+            !requiredPackage?.startsWith('@deepseek-ai/') ||
+            bundledPackages.has(requiredPackage) ||
+            (!moduleSource.client && profilePackageSet.has(requiredPackage))
+          ) {
+            continue
+          }
+          const target = componentName === pluginName
+            ? `${pluginName}:${request}`
+            : `${pluginName}:${componentName}:${request}`
+          issues.push({
+            id: issueId('missing-client-module', target),
+            kind: 'missing-client-module',
+            severity: 'blocking',
+            packageName: componentName,
+            installedVersion: componentManifest.version,
+            source: `${componentName}/${moduleSource.source}`,
+            detail: moduleSource.client
+              ? `The client bundle requires ${request}, which this Harness no longer provides.`
+              : `The plugin component requires ${request}, which neither this Harness nor the profile provides.`,
+            resolution: 'disable-plugin',
+            target: pluginName,
+            groupId: `plugin:${pluginName}`,
+            groupName: pluginName,
+            groupKind: 'plugin'
+          })
+        }
+      }
     }
   }
 

@@ -316,6 +316,17 @@ async function runProfileCommand(
         detached: process.platform !== 'win32'
       }
     )
+    // Observe completion before the first await below. A successful no-op
+    // package command can exit while the initial filesystem signature is
+    // being sampled; attaching the listener afterwards loses the one-shot
+    // event and leaves Safe Mode waiting forever even though pnpm is gone.
+    const completion = new Promise<
+      | { exit: { code: number | null; signal: NodeJS.Signals | null } }
+      | { error: Error }
+    >((resolve) => {
+      child.once('error', (error) => resolve({ error }))
+      child.once('exit', (code, signal) => resolve({ exit: { code, signal } }))
+    })
 
     let output = ''
     const append = (chunk: Buffer | string): void => {
@@ -351,12 +362,9 @@ async function runProfileCommand(
     }, PROGRESS_POLL_MS)
 
     try {
-      const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
-        (resolve, reject) => {
-          child.once('error', reject)
-          child.once('exit', (code, signal) => resolve({ code, signal }))
-        }
-      )
+      const outcome = await completion
+      if ('error' in outcome) throw outcome.error
+      const { exit } = outcome
       if (expiry !== undefined) {
         return {
           ok: false,

@@ -197,7 +197,10 @@ function defaultBootoutLaunchAgent(target: string): Promise<CommandResult> {
 }
 
 function bootoutSucceeded(result: CommandResult): boolean {
-  return result.code === 0 || /could not find specified service/i.test(result.stderr)
+  return (
+    result.code === 0 ||
+    /could not find (?:specified )?service|no such process/i.test(result.stderr)
+  )
 }
 
 function quarantineTimestamp(date: Date): string {

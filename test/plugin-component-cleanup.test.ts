@@ -97,6 +97,34 @@ describe('plugin component cleanup', () => {
     expect(logs[0]).toContain('quarantined')
   })
 
+  it('quarantines an owned LaunchAgent when launchd says it is already stopped', async () => {
+    const doctorDirectory = await installPluginGraph()
+    const plistPath = join(launchAgents, 'com.example.doctor.plist')
+    await writeFile(plistPath, 'fixture')
+
+    const result = await cleanupPluginOwnedComponents({
+      dshHome,
+      pluginName: plugin,
+      platform: 'darwin',
+      homeDirectory: home,
+      uid: 501,
+      readLaunchAgent: async () => ({
+        Label: 'com.example.doctor',
+        ProgramArguments: ['/usr/bin/node', join(doctorDirectory, 'lib', 'cli.mjs')]
+      }),
+      bootoutLaunchAgent: async () => ({
+        code: 3,
+        stdout: '',
+        stderr: 'Boot-out failed: 3: No such process'
+      })
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.failures).toEqual([])
+    expect(existsSync(plistPath)).toBe(false)
+    expect(result.quarantined).toHaveLength(1)
+  })
+
   it('leaves an unrelated LaunchAgent and plugin data untouched', async () => {
     await installPluginGraph()
     const plistPath = join(launchAgents, 'com.example.unrelated.plist')

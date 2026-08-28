@@ -101,6 +101,78 @@ describe('profile compatibility recovery', () => {
     expect(coreIssue?.groupId).toBe(workspaceIssue?.groupId)
   })
 
+  it('groups transitive component failures under their root plugin', async () => {
+    await manifest(profile, {
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: {
+        'dsh-dream-skin': '^0.4.14',
+        '@example/dsh-web-ui-all': '0.3.6'
+      },
+      dsh: {
+        profile: {
+          bundles: [
+            '@deepseek-ai/dsh-base',
+            '@deepseek-ai/dsh-web-app',
+            'dsh-dream-skin',
+            '@example/dsh-web-ui-all'
+          ]
+        }
+      }
+    })
+    await manifest(join(profile, 'node_modules', '@example', 'dsh-web-ui-all'), {
+      name: '@example/dsh-web-ui-all',
+      version: '0.3.6',
+      dependencies: {
+        '@example/dsh-remote-web-ui': '0.3.6'
+      },
+      optionalDependencies: {
+        '@example/platform-other': '0.3.6'
+      }
+    })
+
+    const missingResult = await inspectProfileCompatibility(dshHome, bundled)
+    expect(missingResult.issues).toContainEqual(expect.objectContaining({
+      packageName: '@example/dsh-remote-web-ui',
+      target: '@example/dsh-web-ui-all',
+      groupId: 'plugin:@example/dsh-web-ui-all',
+      detail: expect.stringContaining('not installed in this profile')
+    }))
+    expect(missingResult.issues.some(
+      (issue) => issue.packageName === '@example/platform-other'
+    )).toBe(false)
+
+    await manifest(join(profile, 'node_modules', '@example', 'dsh-remote-web-ui'), {
+      name: '@example/dsh-remote-web-ui',
+      version: '0.3.6'
+    })
+    await mkdir(
+      join(profile, 'node_modules', '@example', 'dsh-remote-web-ui', 'lib'),
+      { recursive: true }
+    )
+    await writeFile(
+      join(profile, 'node_modules', '@example', 'dsh-remote-web-ui', 'lib', 'index.js'),
+      'import { RpcId } from "@deepseek-ai/dsh-host-apiproxy/api/rpc"\nexport { RpcId }\n'
+    )
+
+    const result = await inspectProfileCompatibility(dshHome, bundled)
+    const issue = result.issues.find(
+      (candidate) => candidate.packageName === '@example/dsh-remote-web-ui'
+    )
+
+    expect(issue).toMatchObject({
+      kind: 'missing-client-module',
+      installedVersion: '0.3.6',
+      source: '@example/dsh-remote-web-ui/lib/index.js',
+      target: '@example/dsh-web-ui-all',
+      groupId: 'plugin:@example/dsh-web-ui-all',
+      groupName: '@example/dsh-web-ui-all',
+      groupKind: 'plugin',
+      resolution: 'disable-plugin'
+    })
+    expect(issue?.detail).toContain('@deepseek-ai/dsh-host-apiproxy/api/rpc')
+  })
+
   it('disables an incompatible plugin without deleting its dependency or files', async () => {
     const disabled = await disableProfilePlugins(dshHome, ['dsh-dream-skin'], fixedNow)
 

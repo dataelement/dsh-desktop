@@ -67,6 +67,29 @@ describe('profile-plugin-command', () => {
       pnpmStatus: 0
     })
   })
+
+  it('observes a fast command exit before sampling a large profile tree', async () => {
+    const profileDirectory = join(testDir, 'profiles', 'web')
+    const dshEntryPath = join(testDir, 'fast-dsh.mjs')
+    await mkdir(join(profileDirectory, 'node_modules'), { recursive: true })
+    await Promise.all(
+      Array.from({ length: 1024 }, (_, index) =>
+        mkdir(join(profileDirectory, 'node_modules', `package-${String(index)}`))
+      )
+    )
+    await writeFile(dshEntryPath, 'process.exit(0)\n', 'utf8')
+
+    await expect(removeProfilePluginWithDsh(
+      {
+        dshHome: testDir,
+        dshEntryPath,
+        nodeExecutablePath: process.execPath,
+        pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
+        environment: process.env
+      },
+      '@example/plugin'
+    )).resolves.toEqual({ ok: true })
+  }, 10_000)
 })
 
 describe('profile pnpm shim and failure reporting', () => {
