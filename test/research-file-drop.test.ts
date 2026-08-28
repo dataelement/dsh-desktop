@@ -390,6 +390,111 @@ describe('Research canvas file drops', () => {
     expect(second.inserted).toEqual(['f1'])
   })
 
+  it('reconciles renamed Research references in place without changing draft history identity', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    expect(client.syncResearchFileReferences).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function' ||
+        typeof client.syncResearchFileReferences !== 'function' ||
+        typeof client.researchFileReference !== 'function') return
+
+    const shell = new client.SessionInputShell({
+      actx: {},
+      defaultSink: () => undefined
+    })
+    const sourceFile = {
+      id: 'f1', name: 'report.pdf', path: '/w/report.pdf', source: 'computer'
+    }
+    shell.setDraft('前后')
+    shell.insertReference(client.researchFileReference(sourceFile), {
+      start: 1, end: 1, draftRev: shell.snapshot.draftRev
+    })
+    shell.insertReference(client.researchFileReference(sourceFile), {
+      start: shell.snapshot.draft.length,
+      end: shell.snapshot.draft.length,
+      draftRev: shell.snapshot.draftRev
+    })
+    const before = shell.snapshot
+    const identity = before.occurrences.map((occurrence: {
+      occurrenceId: number; source: string; offset: number
+    }) => ({
+      occurrenceId: occurrence.occurrenceId,
+      source: occurrence.source,
+      offset: occurrence.offset
+    }))
+    const seen = new Set(['f1'])
+
+    const result = client.syncResearchFileReferences(shell, [{
+      ...sourceFile,
+      displayName: '季度结论.pdf'
+    }], seen, { start: 1, end: 2 }, true)
+
+    expect(result.inserted).toEqual([])
+    expect(shell.snapshot.draft).toBe(before.draft)
+    expect(shell.snapshot.draftRev).toBe(before.draftRev)
+    expect(shell.snapshot.occurrences.map((occurrence: {
+      occurrenceId: number; source: string; offset: number
+    }) => ({
+      occurrenceId: occurrence.occurrenceId,
+      source: occurrence.source,
+      offset: occurrence.offset
+    }))).toEqual(identity)
+    expect(shell.snapshot.occurrences).toHaveLength(2)
+    expect(shell.snapshot.occurrences.every((occurrence: {
+      label: string; clipboardText: string; ref: string
+    }) => occurrence.label === '季度结论.pdf' &&
+      occurrence.clipboardText === '季度结论.pdf' &&
+      JSON.parse(occurrence.ref).name === '季度结论.pdf' &&
+      JSON.parse(occurrence.ref).path === '/w/report.pdf')).toBe(true)
+
+    shell.undo()
+    expect(shell.snapshot.occurrences).toHaveLength(1)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({
+      occurrenceId: identity[0]?.occurrenceId,
+      label: '季度结论.pdf',
+      clipboardText: '季度结论.pdf'
+    })
+    shell.redo()
+    expect(shell.snapshot.occurrences).toHaveLength(2)
+    expect(shell.snapshot.occurrences.map((occurrence: { label: string }) => occurrence.label))
+      .toEqual(['季度结论.pdf', '季度结论.pdf'])
+
+    const removed = shell.snapshot.occurrences[0]
+    shell.setDraft(
+      shell.snapshot.draft.slice(0, removed.offset) + shell.snapshot.draft.slice(removed.offset + 1),
+      { start: removed.offset, end: removed.offset + 1, insertedLength: 0 }
+    )
+    client.syncResearchFileReferences(shell, [{
+      ...sourceFile,
+      displayName: '再次改名.pdf'
+    }], seen, { start: 0, end: 0 }, true)
+    expect(shell.snapshot.occurrences).toHaveLength(1)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({ label: '再次改名.pdf' })
+
+    shell.restoreDraftState({
+      draft: shell.snapshot.draft,
+      occurrences: shell.snapshot.occurrences.map((occurrence: Record<string, unknown>) => ({
+        ...occurrence,
+        invalid: true
+      }))
+    })
+    const invalidBefore = shell.snapshot
+    client.syncResearchFileReferences(shell, [{
+      ...sourceFile,
+      displayName: '保留无效状态.pdf'
+    }], seen, { start: 0, end: 0 }, true)
+    expect(shell.snapshot.draft).toBe(invalidBefore.draft)
+    expect(shell.snapshot.draftRev).toBe(invalidBefore.draftRev)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({
+      occurrenceId: invalidBefore.occurrences[0]?.occurrenceId,
+      offset: invalidBefore.occurrences[0]?.offset,
+      invalid: true,
+      label: '保留无效状态.pdf'
+    })
+  })
+
   it('serializes and extracts bounded inline Research reference markers in occurrence order', async () => {
     const client = await loadConversationClient()
     expect(client.researchFileReference).toBeTypeOf('function')
@@ -795,6 +900,86 @@ describe('Research canvas file drops', () => {
         width: 220, height: 64, sizeMode: 'auto'
       }
     ])
+  })
+
+  it('normalizes persisted display names and renames nodes without mutating file identity', async () => {
+    const client = await loadConversationClient()
+    expect(client.parseResearchCanvasFileNodes).toBeTypeOf('function')
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.parseResearchCanvasFileNodes !== 'function' ||
+        typeof client.ResearchWorkspaceRegistry !== 'function') return
+
+    const base = {
+      id: 'file-1', path: '/w/original.pdf', name: 'original.pdf',
+      mediaType: 'application/pdf', source: 'computer',
+      authorizationId: 'authorization-1', contentType: 'application/pdf',
+      x: 12, y: 24
+    }
+    expect(client.parseResearchCanvasFileNodes(JSON.stringify([
+      { ...base, displayName: '  季度报告  ' },
+      { ...base, id: 'same', path: '/w/same.pdf', name: 'same.pdf', displayName: 'same.pdf' },
+      { ...base, id: 'control', path: '/w/control.pdf', displayName: 'bad\u0085title' },
+      { ...base, id: 'max', path: '/w/max.pdf', displayName: 'x'.repeat(256) },
+      { ...base, id: 'long', path: '/w/long.pdf', displayName: 'x'.repeat(257) }
+    ]))).toMatchObject([
+      { id: 'file-1', name: 'original.pdf', displayName: '季度报告' },
+      { id: 'same', name: 'same.pdf' },
+      { id: 'control', name: 'original.pdf' },
+      { id: 'max', name: 'original.pdf', displayName: 'x'.repeat(256) },
+      { id: 'long', name: 'original.pdf' }
+    ])
+
+    const storage = memoryStorage({})
+    const workspace = new client.ResearchWorkspaceRegistry(storage).for('rename-session')
+    workspace.setFiles([base])
+    const sourceIdentity = {
+      name: base.name,
+      path: base.path,
+      mediaType: base.mediaType,
+      authorizationId: base.authorizationId,
+      contentType: base.contentType
+    }
+    workspace.renameNode('file-1', '  审阅版本  ')
+    expect(workspace.getSnapshot().files[0]).toMatchObject({
+      ...sourceIdentity,
+      displayName: '审阅版本'
+    })
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('rename-session').getSnapshot().files[0]).toMatchObject({
+        ...sourceIdentity,
+        displayName: '审阅版本'
+      })
+
+    workspace.renameNode('file-1', 'bad\u0007title')
+    expect(workspace.getSnapshot().files[0]?.displayName).toBe('审阅版本')
+    workspace.renameNode('file-1', '章节/最终结论.pdf')
+    const renamedReference = client.researchFileReference(
+      workspace.getSnapshot().files[0]
+    )
+    expect(renamedReference).toMatchObject({
+      label: '章节/最终结论.pdf',
+      clipboardText: '章节/最终结论.pdf'
+    })
+    expect(JSON.parse(renamedReference.ref)).toEqual({
+      id: 'file-1', name: '章节/最终结论.pdf', path: '/w/original.pdf'
+    })
+    workspace.renameNode('file-1', base.name)
+    expect(workspace.getSnapshot().files[0]).not.toHaveProperty('displayName')
+
+    workspace.setArtifacts([{
+      id: 'artifact-1', kind: 'assistant-result', messageId: 'message-1',
+      title: '助手回复', excerpt: '第一版内容', x: 50, y: 60
+    }])
+    workspace.renameNode('artifact-1', '  结论摘要  ')
+    workspace.renameNode('artifact-1', 'bad\u009ftitle')
+    workspace.renameNode('artifact-1', '   ')
+    expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
+      id: 'artifact-1', title: '结论摘要'
+    })
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('rename-session').getSnapshot().artifacts[0]).toMatchObject({
+        id: 'artifact-1', title: '结论摘要'
+      })
   })
 
   it('restores no more than the bounded session node count', async () => {
@@ -1397,7 +1582,7 @@ describe('Research canvas file drops', () => {
       placed, { ...payload, title: 'Revised' }, { x: 240, y: 160 }, () => 'unused'
     )).toEqual([{
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
-      title: 'Revised', excerpt: 'Evidence', x: 240, y: 160,
+      title: 'Answer', excerpt: 'Evidence', x: 240, y: 160,
       width: 360, height: 240, sizeMode: 'auto'
     }])
   })
@@ -1422,7 +1607,7 @@ describe('Research canvas file drops', () => {
       () => 'unused'
     )).toEqual([{
       id: 'artifact-manual', messageId: 'm-manual', kind: 'assistant-result',
-      title: 'Updated', excerpt: 'Updated evidence', x: 240, y: 160,
+      title: 'Original', excerpt: 'Updated evidence', x: 240, y: 160,
       width: 720, height: 480, sizeMode: 'manual'
     }])
   })

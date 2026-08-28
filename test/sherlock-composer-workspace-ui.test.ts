@@ -4830,7 +4830,10 @@ describe('Sherlock workspace and composer controls', () => {
       restoreGlobals()
       return
     }
-    const activeFile = { id: 'file-active', path: '/workspace/report.pdf', name: 'report.pdf' }
+    const activeFile = {
+      id: 'file-active', path: '/workspace/report.pdf', name: 'report.pdf',
+      displayName: '章节/报告.pdf'
+    }
 
     const paste = async (candidate: { id: string; path: string; name: string }) => {
       const host = browserWindow.document.createElement('div')
@@ -4898,23 +4901,26 @@ describe('Sherlock workspace and composer controls', () => {
     }
 
     try {
-      const sameSession = await paste(activeFile)
-      expect(sameSession.occurrences).toHaveLength(2)
-      expect(sameSession.occurrences.at(-1)).toMatchObject({
-        source: 'research-file', label: 'report.pdf'
+      const sameSession = await paste({
+        id: activeFile.id, path: activeFile.path, name: activeFile.displayName
       })
+      expect(sameSession.occurrences).toHaveLength(2)
+      expect(sameSession.occurrences).toMatchObject([
+        { source: 'research-file', label: '章节/报告.pdf' },
+        { source: 'research-file', label: '章节/报告.pdf' }
+      ])
 
       const forged = await paste({
-        id: 'forged-id', path: '/workspace/report.pdf', name: 'report.pdf'
+        id: 'forged-id', path: '/workspace/report.pdf', name: activeFile.displayName
       })
       expect(forged.occurrences).toHaveLength(1)
-      expect(forged.draft).toContain('report.pdf')
+      expect(forged.draft).toContain(activeFile.displayName)
 
       const crossSession = await paste({
-        id: 'file-active', path: '/other-session/report.pdf', name: 'report.pdf'
+        id: 'file-active', path: '/other-session/report.pdf', name: activeFile.displayName
       })
       expect(crossSession.occurrences).toHaveLength(1)
-      expect(crossSession.draft).toContain('report.pdf')
+      expect(crossSession.draft).toContain(activeFile.displayName)
     } finally {
       restoreGlobals()
     }
@@ -4999,6 +5005,109 @@ describe('Sherlock workspace and composer controls', () => {
     )
   })
 
+  it('rerenders a renamed selected Research tag in place without moving the caret', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow,
+      exposeInputBar: true,
+      modules: {
+        '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore },
+        '@deepseek-ai/dsh-client-ui-primitives': {
+          Tooltip: ({ children }: { children: unknown }) => children,
+          IconPaperclipOutline16: () => createElement('span', { 'data-paperclip-icon': '' })
+        },
+        '@deepseek-ai/dsh-client-ui-attachment': {
+          DropOverlay: () => null,
+          AttachmentRail: () => null
+        }
+      }
+    })
+    const InputBar = client.__testInputBar as ComponentType<Record<string, unknown>>
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    expect(InputBar).toBeTypeOf('function')
+    expect(SessionInputShell).toBeTypeOf('function')
+    if (typeof InputBar !== 'function' || typeof SessionInputShell !== 'function' ||
+        typeof client.researchFileReference !== 'function') {
+      restoreGlobals()
+      return
+    }
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    const sourceFile = {
+      id: 'file-rename', path: '/workspace/source.pdf', name: 'source.pdf', source: 'computer'
+    }
+    shell.setDraft('前后')
+    shell.insertReference(client.researchFileReference(sourceFile), {
+      start: 1, end: 1, draftRev: shell.snapshot.draftRev
+    })
+    const occurrenceId = shell.snapshot.occurrences[0].occurrenceId
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const render = async (file: Record<string, unknown>) => {
+      const props: Record<string, unknown> = {
+        useSession: (select: (state: Record<string, unknown>) => unknown) => select({
+          running: false, promptError: null, subagent: null, removed: false
+        }),
+        useInput: (select: (state: Record<string, unknown>) => unknown) =>
+          useSyncExternalStore(
+            shell.state.subscribe,
+            () => select(shell.snapshot),
+            () => select(shell.snapshot)
+          ),
+        inputActions: { pruneImages: () => undefined, submit: () => undefined },
+        keyboard: shell,
+        renderSlot: () => null,
+        useNotices: (select: (state: null) => unknown) => select(null),
+        useLexicon: (select: (state: Map<string, string[]>) => unknown) => select(new Map()),
+        useMenuLauncher: (select: (state: null) => unknown) => select(null),
+        useProjection: (_name: string, select?: (value: undefined) => unknown) =>
+          select === undefined ? undefined : select(undefined),
+        researchFileReferences: [file],
+        sessionId: 'rename-session',
+        t: (key: string) => key,
+        variant: 'composer'
+      }
+      await act(async () => { root.render(createElement(InputBar, props)) })
+    }
+
+    try {
+      await render(sourceFile)
+      const initialChip = host.querySelector(
+        `[data-occurrence="${occurrenceId}"]`
+      ) as HappyDOMElement | null
+      const textarea = host.querySelector('textarea') as HappyDOMHTMLElement | null
+      expect(initialChip).not.toBeNull()
+      expect(textarea).not.toBeNull()
+      if (initialChip === null || textarea === null) return
+      await act(async () => { click(browserWindow, initialChip) })
+      expect(initialChip.getAttribute('data-selected')).toBe('true')
+      const selection = {
+        start: (textarea as unknown as HTMLTextAreaElement).selectionStart,
+        end: (textarea as unknown as HTMLTextAreaElement).selectionEnd
+      }
+      const draft = shell.snapshot.draft
+      const draftRev = shell.snapshot.draftRev
+
+      await render({ ...sourceFile, displayName: '审阅版.pdf' })
+
+      const renamedChip = host.querySelector(
+        `[data-occurrence="${occurrenceId}"]`
+      ) as HappyDOMElement | null
+      expect(renamedChip?.getAttribute('data-selected')).toBe('true')
+      expect(renamedChip?.querySelector('.uV2eYG_chipLabelText')?.textContent).toBe('审阅版.pdf')
+      expect(shell.snapshot.draft).toBe(draft)
+      expect(shell.snapshot.draftRev).toBe(draftRev)
+      expect((textarea as unknown as HTMLTextAreaElement).selectionStart).toBe(selection.start)
+      expect((textarea as unknown as HTMLTextAreaElement).selectionEnd).toBe(selection.end)
+    } finally {
+      await act(async () => { root.unmount() })
+      host.remove()
+      restoreGlobals()
+    }
+  })
+
   it('deletes selected canvas cards with Delete and the right-click menu', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-delete-canvas-cards',
@@ -5052,6 +5161,95 @@ describe('Sherlock workspace and composer controls', () => {
       expect(workspace.getSnapshot().selection).toEqual({
         selectedNodeIds: [], orderedFileIds: []
       })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renames generic files and artifacts inline with Enter, Escape, and blur', async () => {
+    const storage = new MemoryStorage()
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-rename-canvas-cards',
+      storage,
+      files: [{
+        id: 'file-a', path: '/w/source.txt', name: 'source.txt',
+        source: 'computer', x: 120, y: 100
+      }],
+      artifacts: [{
+        id: 'artifact-a', kind: 'assistant-result', messageId: 'm1',
+        title: '助手回复', excerpt: 'Evidence', x: 500, y: 180
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const rename = async (target: HappyDOMElement | null) => {
+        expect(target).not.toBeNull()
+        if (target === null) return null
+        await act(async () => {
+          target.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 200, clientY: 120
+          }))
+        })
+        const action = host.querySelector('[data-research-context-rename]')
+        expect(action?.textContent).toBe('修改名称')
+        await act(async () => { click(browserWindow, action) })
+        return host.querySelector('[data-research-title-input]') as HappyDOMHTMLElement | null
+      }
+
+      const fileInput = await rename(host.querySelector('.rScV5Q_fileName'))
+      expect(fileInput?.getAttribute('data-research-title-input')).toBe('file-a')
+      expect(browserWindow.document.activeElement).toBe(fileInput)
+      expect((fileInput as unknown as HTMLInputElement | null)?.selectionStart).toBe(0)
+      expect((fileInput as unknown as HTMLInputElement | null)?.selectionEnd).toBe('source.txt'.length)
+      if (fileInput === null) return
+      await act(async () => {
+        fileInput.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 220, clientY: 130
+        }))
+      })
+      expect(host.querySelector('[data-research-context-rename]')).toBeNull()
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLInputElement.prototype, 'value'
+      )?.set?.call(fileInput, '  研究资料  ')
+      await act(async () => {
+        fileInput.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        fileInput.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+      expect(workspace.getSnapshot().files[0]).toMatchObject({
+        name: 'source.txt', path: '/w/source.txt', displayName: '研究资料'
+      })
+      expect(host.querySelector('.rScV5Q_fileName')?.textContent).toBe('研究资料')
+
+      const cancelled = await rename(host.querySelector('[data-research-node-title]'))
+      expect(cancelled?.getAttribute('data-research-title-input')).toBe('artifact-a')
+      if (cancelled === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLInputElement.prototype, 'value'
+      )?.set?.call(cancelled, '不应保存')
+      await act(async () => {
+        cancelled.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        cancelled.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+        }))
+        cancelled.blur()
+      })
+      expect(workspace.getSnapshot().artifacts[0]).toMatchObject({ title: '助手回复' })
+
+      const blurred = await rename(host.querySelector('[data-research-node-title]'))
+      if (blurred === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLInputElement.prototype, 'value'
+      )?.set?.call(blurred, '最终结论')
+      await act(async () => {
+        blurred.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        blurred.blur()
+      })
+      expect(workspace.getSnapshot().artifacts[0]).toMatchObject({ title: '最终结论' })
+      expect(JSON.parse(storage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-rename-canvas-cards'
+      ) ?? '[]')[0]).toMatchObject({ title: '最终结论' })
     } finally {
       await mounted.cleanup()
     }
