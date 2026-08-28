@@ -227,7 +227,12 @@ async function mountConversationRoot(
   lifecycle?: {
     enterResearch(): void
     leaveResearch(): void
-  }
+  },
+  composerOptions: {
+    overlay?: ReactNode
+    model?: ReactNode
+    sidebarWidth?: number
+  } = {}
 ) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const sessionId = 'session-research-right-panel'
@@ -346,6 +351,7 @@ async function mountConversationRoot(
   })
   const detailsPortalHost = browserWindow.document.createElement('div')
   detailsPortalHost.setAttribute('data-details-portal-host', '')
+  detailsPortalHost.style.width = `${composerOptions.sidebarWidth ?? 438}px`
   browserWindow.document.body.appendChild(detailsPortalHost)
   const host = browserWindow.document.createElement('div')
   browserWindow.document.body.appendChild(host)
@@ -376,7 +382,7 @@ async function mountConversationRoot(
     if (value === undefined) {
       value = {
         panelOpen: false,
-        width: 438,
+        width: composerOptions.sidebarWidth ?? 438,
         activePane: 'pane-1',
         splits: {
           kind: 'leaf', id: 'pane-1', active: 'files-tab',
@@ -485,6 +491,7 @@ async function mountConversationRoot(
     if (name === 'conversation.composer.bar') {
       const composerOwner = owner as {
         accessory?: unknown
+        overlay?: unknown
         researchFileReferences?: Array<{ id: string; name: string; path?: string }>
         footer?: unknown
         variant?: 'hero' | 'composer'
@@ -503,6 +510,9 @@ async function mountConversationRoot(
       },
         composerOwner?.accessory,
         createElement('div', { className: 'uV2eYG_card' },
+          composerOwner?.overlay === undefined
+            ? null
+            : createElement('div', { className: 'uV2eYG_overlayAnchor' }, composerOwner.overlay),
           createElement('div', { className: 'uV2eYG_scroll' },
             createElement('div', { className: 'uV2eYG_grow' },
               createElement('div', {
@@ -540,7 +550,8 @@ async function mountConversationRoot(
                 key: image.id,
                 'data-composer-image-id': image.id
               }))
-            )
+            ),
+            composerOptions.model
           )
         ),
         composerOwner?.footer
@@ -554,6 +565,9 @@ async function mountConversationRoot(
     }
     if (name === 'conversation.composer.dock') {
       return createElement('div', { 'data-stats-footer': '' })
+    }
+    if (name === 'conversation.input.overlay') {
+      return composerOptions.overlay
     }
     if (name === 'conversation.view' && options?.only === 'chat') {
       return renderChatView(activeSessionId)
@@ -6428,37 +6442,113 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('keeps the dotted research canvas visible behind the floating composer', async () => {
-    const browserWindow = new Window({ url: 'https://sherlock.local/' })
-    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
-      document: browserWindow.document
+  it.each([
+    { theme: 'light', width: 480, menu: 'slash' },
+    { theme: 'dark', width: 352, menu: 'model' }
+  ] as const)(
+    'keeps the $menu menu above mounted Research messages at $width px in $theme mode',
+    async ({ menu, theme, width }) => {
+      const menuAction = vi.fn()
+      const menuNode = createElement('div', {
+        className: menu === 'slash' ? '_3e4SsG_menu' : '_7KE1Ra_menu',
+        'data-test-composer-menu': menu
+      }, createElement('button', {
+        type: 'button',
+        onClick: menuAction
+      }, menu === 'slash' ? '命令' : '选择模型'))
+      const mounted = await mountConversationRoot(
+        'chat',
+        { messageId: `m-${menu}`, text: '一条会与菜单重叠的消息。' },
+        undefined,
+        {
+          sidebarWidth: width,
+          ...(menu === 'slash'
+            ? { overlay: menuNode }
+            : { model: createElement('div', { 'data-test-model-selector': '' }, menuNode) })
+        }
+      )
+      try {
+        const { actions, browserWindow, detailsPortalHost, host } = mounted
+        if (theme === 'dark') {
+          browserWindow.document.body.setAttribute('data-ds-dark-theme', '')
+        }
+
+        const chatSeat = host.querySelector('[data-composer-seat]')
+        const chatCard = host.querySelector('.uV2eYG_card')
+        expect(chatSeat).not.toBeNull()
+        expect(chatCard).not.toBeNull()
+        if (chatSeat === null || chatCard === null) return
+        const chatStyle = browserWindow.getComputedStyle(chatSeat)
+        expect(chatStyle.position).toBe('sticky')
+        expect(chatStyle.bottom).toBe('0px')
+        expect(chatStyle.zIndex).toBe('7')
+        expect(chatStyle.backgroundImage).toBe('none')
+        expect(browserWindow.getComputedStyle(chatCard).background).not.toBe('none')
+
+        await act(async () => { actions.setView('research') })
+        const conversation = detailsPortalHost.querySelector('.sRp_conversation')
+        const messages = detailsPortalHost.querySelector('.sRp_messages')
+        const composer = detailsPortalHost.querySelector('.sRp_composer')
+        const researchSeat = detailsPortalHost.querySelector('[data-composer-seat]')
+        const researchCard = detailsPortalHost.querySelector('.uV2eYG_card')
+        const mountedMenu = detailsPortalHost.querySelector('[data-test-composer-menu]')
+        expect(conversation).not.toBeNull()
+        expect(messages).not.toBeNull()
+        expect(composer).not.toBeNull()
+        expect(researchSeat).not.toBeNull()
+        expect(researchCard).not.toBeNull()
+        expect(mountedMenu).not.toBeNull()
+        if (conversation === null || messages === null || composer === null ||
+            researchSeat === null || researchCard === null || mountedMenu === null) return
+
+        const composerStyle = browserWindow.getComputedStyle(composer)
+        expect(composerStyle.position).toBe('sticky')
+        expect(composerStyle.bottom).toBe('0px')
+        expect(composerStyle.width).toBe('100%')
+        expect(composerStyle.maxWidth).toBe('100%')
+        expect(composerStyle.overflow).toBe('visible')
+        expect(composerStyle.zIndex).toBe('21')
+        expect(composerStyle.backgroundImage).toBe('none')
+        expect(browserWindow.getComputedStyle(researchCard).background).not.toBe('none')
+        expect(composer.closest('[data-conversation-scroll]')).toBe(conversation)
+        expect(messages.contains(composer)).toBe(false)
+        expect(composer.contains(researchSeat)).toBe(true)
+        expect(detailsPortalHost.style.width).toBe(`${width}px`)
+
+        if (menu === 'slash') {
+          const overlay = detailsPortalHost.querySelector('.uV2eYG_overlayAnchor')
+          expect(overlay).not.toBeNull()
+          if (overlay !== null) {
+            expect(browserWindow.getComputedStyle(overlay).zIndex).toBe('2')
+          }
+        }
+        const menuButton = mountedMenu.querySelector('button')
+        expect(menuButton).not.toBeNull()
+        await act(async () => { click(browserWindow, menuButton) })
+        expect(menuAction).toHaveBeenCalledOnce()
+      } finally {
+        await mounted.cleanup()
+      }
+    }
+  )
+
+  it('keeps Research message actions clickable when no composer menu is mounted', async () => {
+    const mounted = await mountConversationRoot('research', {
+      messageId: 'm-without-menu', text: '可以加入画布的有效回复。'
     })
-    expect(client.ResearchCanvas).toBeTypeOf('function')
-    if (typeof client.ResearchCanvas !== 'function') return
-
-    const ResearchCanvas = client.ResearchCanvas as ComponentType<{
-      t: (key: string) => string
-    }>
-    const canvasHtml = renderToStaticMarkup(
-      createElement(ResearchCanvas, { t: () => '研究画布' })
-    )
-    browserWindow.document.body.innerHTML = [
-      '<div class="wSkVaW_root" data-phase="active">',
-      '<div class="wSkVaW_scrollBody">',
-      canvasHtml,
-      '<div class="wSkVaW_composerSeat" data-composer-seat></div>',
-      '</div>',
-      '</div>'
-    ].join('')
-    const composerSeat = browserWindow.document.querySelector(
-      '[data-composer-seat]'
-    )
-    expect(composerSeat).not.toBeNull()
-    if (composerSeat === null) return
-
-    expect(browserWindow.getComputedStyle(composerSeat).backgroundImage).toBe(
-      'none'
-    )
+    try {
+      const { browserWindow, detailsPortalHost, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 800, height: 600 }) })
+      expect(detailsPortalHost.querySelector('.uV2eYG_overlayAnchor')).toBeNull()
+      const add = detailsPortalHost.querySelector('button[aria-label="添加到画布"]')
+      expect(add).not.toBeNull()
+      await act(async () => { click(browserWindow, add) })
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        messageId: 'm-without-menu', kind: 'assistant-result', x: 400, y: 300
+      }])
+    } finally {
+      await mounted.cleanup()
+    }
   })
 
   it('places the Research divider chrome directly on the canvas edge', async () => {
