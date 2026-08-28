@@ -495,6 +495,90 @@ describe('Research canvas file drops', () => {
     })
   })
 
+  it.each([
+    { label: 'the only occurrence', copies: 1 },
+    { label: 'one of two occurrences', copies: 2 }
+  ])('keeps $label deleted while rename follows its stable Research identity through undo history', async ({ copies }) => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', {
+      '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    expect(client.syncResearchFileReferences).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function' ||
+        typeof client.syncResearchFileReferences !== 'function' ||
+        typeof client.researchFileReference !== 'function') return
+
+    const shell = new client.SessionInputShell({
+      actx: {},
+      defaultSink: () => undefined
+    })
+    const sourceFile = {
+      id: 'history-file', name: 'history.pdf', path: '/w/history.pdf', source: 'computer'
+    }
+    shell.setDraft('正文')
+    for (let index = 0; index < copies; index += 1) {
+      shell.insertReference(client.researchFileReference(sourceFile), {
+        start: shell.snapshot.draft.length,
+        end: shell.snapshot.draft.length,
+        draftRev: shell.snapshot.draftRev
+      })
+    }
+    const beforeDelete = shell.snapshot
+    const deleted = beforeDelete.occurrences[0]
+    const preservedIdentity = beforeDelete.occurrences.map((occurrence: {
+      occurrenceId: number; source: string; offset: number; invalid?: boolean
+    }) => ({
+      occurrenceId: occurrence.occurrenceId,
+      source: occurrence.source,
+      offset: occurrence.offset,
+      invalid: occurrence.invalid
+    }))
+
+    shell.setDraft(
+      beforeDelete.draft.slice(0, deleted.offset) + beforeDelete.draft.slice(deleted.offset + 1),
+      { start: deleted.offset, end: deleted.offset + 1, insertedLength: 0 }
+    )
+    const deletedSnapshot = shell.snapshot
+    const seen = new Set(['history-file'])
+    client.syncResearchFileReferences(shell, [{
+      ...sourceFile,
+      displayName: '历史同步新名字.pdf'
+    }], seen, { start: deletedSnapshot.draft.length, end: deletedSnapshot.draft.length }, true)
+
+    expect(shell.snapshot.draft).toBe(deletedSnapshot.draft)
+    expect(shell.snapshot.draftRev).toBe(deletedSnapshot.draftRev)
+    expect(shell.snapshot.occurrences).toHaveLength(copies - 1)
+    expect(shell.snapshot.occurrences.some((occurrence: { occurrenceId: number }) =>
+      occurrence.occurrenceId === deleted.occurrenceId)).toBe(false)
+    expect(shell.snapshot.occurrences.every((occurrence: { label: string }) =>
+      occurrence.label === '历史同步新名字.pdf')).toBe(true)
+
+    shell.undo()
+    expect(shell.snapshot.occurrences).toHaveLength(copies)
+    expect(shell.snapshot.occurrences.map((occurrence: {
+      occurrenceId: number; source: string; offset: number; invalid?: boolean
+    }) => ({
+      occurrenceId: occurrence.occurrenceId,
+      source: occurrence.source,
+      offset: occurrence.offset,
+      invalid: occurrence.invalid
+    }))).toEqual(preservedIdentity)
+    expect(shell.snapshot.occurrences.every((occurrence: {
+      ref: string; label: string; clipboardText: string
+    }) => occurrence.label === '历史同步新名字.pdf' &&
+      occurrence.clipboardText === '历史同步新名字.pdf' &&
+      JSON.parse(occurrence.ref).id === 'history-file' &&
+      JSON.parse(occurrence.ref).name === '历史同步新名字.pdf')).toBe(true)
+
+    shell.redo()
+    expect(shell.snapshot.draft).toBe(deletedSnapshot.draft)
+    expect(shell.snapshot.occurrences).toHaveLength(copies - 1)
+    expect(shell.snapshot.occurrences.some((occurrence: { occurrenceId: number }) =>
+      occurrence.occurrenceId === deleted.occurrenceId)).toBe(false)
+    expect(shell.snapshot.occurrences.every((occurrence: { label: string }) =>
+      occurrence.label === '历史同步新名字.pdf')).toBe(true)
+  })
+
   it('serializes and extracts bounded inline Research reference markers in occurrence order', async () => {
     const client = await loadConversationClient()
     expect(client.researchFileReference).toBeTypeOf('function')
