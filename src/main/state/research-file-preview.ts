@@ -46,6 +46,7 @@ const DEFAULT_CAPABILITY_TTL_MS = 15 * 60 * 1000
 const MAX_PATH_LENGTH = 8 * 1024
 const MAX_ID_LENGTH = 512
 const MAGIC_PREFIX_BYTES = 512
+const MAX_JSON_VALIDATION_BYTES = 4 * 1024 * 1024
 const CORS_EXPOSE_HEADERS = 'Accept-Ranges, Content-Length, Content-Range, Content-Type'
 
 export type ResearchPreviewSource = 'finder' | 'sidebar'
@@ -132,6 +133,7 @@ type PreviewKind = {
   contentType: string
   rootPreview: boolean
   validateMagic(prefix: Uint8Array): boolean
+  validateComplete?(value: Uint8Array): boolean
 }
 
 const previewKinds = new Map<string, PreviewKind>([
@@ -151,8 +153,14 @@ const previewKinds = new Map<string, PreviewKind>([
   ['.css', { contentType: 'text/css; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
   ['.js', { contentType: 'text/javascript; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
   ['.mjs', { contentType: 'text/javascript; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
-  ['.json', { contentType: 'application/json; charset=utf-8', rootPreview: false, validateMagic: jsonMagic }],
-  ['.map', { contentType: 'application/json; charset=utf-8', rootPreview: false, validateMagic: jsonMagic }],
+  ['.json', {
+    contentType: 'application/json; charset=utf-8', rootPreview: false,
+    validateMagic: textMagic, validateComplete: jsonMagic
+  }],
+  ['.map', {
+    contentType: 'application/json; charset=utf-8', rootPreview: false,
+    validateMagic: textMagic, validateComplete: jsonMagic
+  }],
   ['.woff', { contentType: 'font/woff', rootPreview: false, validateMagic: (value) =>
     startsWith(value, [0x77, 0x4f, 0x46, 0x46]) }],
   ['.woff2', { contentType: 'font/woff2', rootPreview: false, validateMagic: (value) =>
@@ -209,9 +217,11 @@ function textMagic(value: Uint8Array): boolean {
 }
 
 function jsonMagic(value: Uint8Array): boolean {
-  const text = textPrefix(value)
-  if (text === null) return false
   try {
+    if (value.includes(0)) return false
+    const text = new TextDecoder('utf-8', { fatal: true })
+      .decode(value)
+      .replace(/^\uFEFF/, '')
     JSON.parse(text)
     return true
   } catch {
@@ -679,6 +689,13 @@ export class ResearchFilePreviewRegistry {
         Math.min(Math.max(0, file.size - 1), MAGIC_PREFIX_BYTES - 1)
       )
       if (!kind.validateMagic(prefix)) return fail(415, 'Preview type mismatch.')
+      if (kind.validateComplete) {
+        if (file.size > MAX_JSON_VALIDATION_BYTES) {
+          return fail(415, 'Unsupported preview type.')
+        }
+        const complete = await this.fileSystem.readSlice(candidate, 0, Math.max(0, file.size - 1))
+        if (!kind.validateComplete(complete)) return fail(415, 'Preview type mismatch.')
+      }
 
       const htmlCapability = authorization.allowSubresources && allowedOrigin
         ? { token: resource.token, frameAncestor: allowedOrigin }
