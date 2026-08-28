@@ -6126,10 +6126,10 @@ index 0000000..cbce2bd
 +//# sourceMappingURL=views.d.ts.map
 \ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
-index b8ebfaf..7c85473 100644
+index b8ebfaf..2334b5b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
-@@ -92,6 +92,10 @@ export interface ComposerKeyboard {
+@@ -92,6 +92,12 @@ export interface ComposerKeyboard {
      readonly snapshot: InputState;
      /** Draft write with the DOM-observed edit shape (narrows occurrence math). */
      setDraft(text: string, editRange?: EditRange): void;
@@ -6137,10 +6137,12 @@ index b8ebfaf..7c85473 100644
 +    moveReferenceOccurrence(occurrenceId: number, targetOffset: number): boolean;
 +    /** Reconcile one occurrence's owner metadata without creating an undo transaction. */
 +    updateReferenceOccurrence(occurrenceId: number, reference: ReferenceInsert): boolean;
++    /** Reconcile existing Research file occurrences and history by stable file/node id. */
++    updateResearchReferenceOccurrences(fileId: string, reference: ReferenceInsert): boolean;
      /** Submit with an explicit delivery mode resolved by the keyboard policy. */
      submit(mode: InputSubmitMode): void;
      /**
-@@ -232,6 +236,14 @@ export type InputEvent =
+@@ -232,6 +238,18 @@ export type InputEvent =
      readonly type: 'draft-changed';
      readonly draft: string;
      readonly editRange?: EditRange;
@@ -6152,10 +6154,14 @@ index b8ebfaf..7c85473 100644
 +    readonly type: 'update-ref';
 +    readonly occurrenceId: number;
 +    readonly reference: ReferenceInsert;
++} | {
++    readonly type: 'update-research-ref';
++    readonly fileId: string;
++    readonly reference: ReferenceInsert;
  } | {
      readonly type: 'begin-command';
      readonly claim: CommandClaim;
-@@ -256,6 +268,11 @@ export type InputEvent =
+@@ -256,6 +274,11 @@ export type InputEvent =
      readonly type: 'undo';
  } | {
      readonly type: 'redo';
@@ -6183,10 +6189,10 @@ index 34909b7..e1c0000 100644
      /** Owner-resolution failure styling bit. */
      readonly invalid: boolean;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
-index 339e1ba..39ce1d5 100644
+index 339e1ba..a152976 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
-@@ -64,6 +64,10 @@ export declare class SessionInputShell implements SessionInput {
+@@ -64,6 +64,12 @@ export declare class SessionInputShell implements SessionInput {
       * (narrows the machine's occurrence math; absent → diff scan).
       */
      setDraft(text: string, editRange?: EditRange): void;
@@ -6194,10 +6200,12 @@ index 339e1ba..39ce1d5 100644
 +    moveReferenceOccurrence(occurrenceId: number, targetOffset: number): boolean;
 +    /** Reconcile one occurrence's owner metadata without creating an undo transaction. */
 +    updateReferenceOccurrence(occurrenceId: number, reference: ReferenceInsert): boolean;
++    /** Reconcile existing Research file occurrences and history by stable file/node id. */
++    updateResearchReferenceOccurrences(fileId: string, reference: ReferenceInsert): boolean;
      /** Append ordered image ids unless an admission transaction is locked. */
      addImages(ids: readonly DraftAttachmentId[]): boolean;
      /** Remove one image id from this draft. */
-@@ -78,13 +82,15 @@ export declare class SessionInputShell implements SessionInput {
+@@ -78,13 +84,15 @@ export declare class SessionInputShell implements SessionInput {
       * @param ids - failed attempt image ids.
       */
      restoreImages(ids: readonly DraftAttachmentId[]): void;
