@@ -17,6 +17,7 @@
         --button: #18181b; --button-ink: #fff; --danger: #c33b38; --success: #267a4a;
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; background: transparent; }
       body { min-height: 100vh; display: grid; place-items: center; padding: 40px 24px; color: var(--ink); background: rgba(18,18,20,.28); }
       button { font: inherit; }
@@ -45,7 +46,9 @@
       .plugins li:first-child { border-top: 0; }
       .plugin { display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 10px 16px; cursor: pointer; }
       .plugin input { width: 16px; height: 16px; margin: 0; accent-color: var(--button); }
+      .plugin-copy { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px; min-width:0; }
       .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
+      .plugin-status { color:var(--danger); font-size:11px; font-weight:650; }
       .issue-group { border-top:1px solid var(--line); background:var(--surface); }
       .issue-group:first-child { border-top:0; }
       .issue { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 13px 16px 10px; cursor:pointer; }
@@ -92,18 +95,18 @@
         <p class="notice" id="notice" role="alert"></p>
         <h1 id="heading"></h1>
         <p class="summary" id="summary"></p>
-        <section class="list-card compatibility" aria-labelledby="issue-heading">
-          <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
-          <p class="card-help" id="issue-selection-hint"></p>
-          <ul class="plugins" id="issues"></ul>
-          <p class="empty" id="issue-empty"></p>
-          <div class="card-footer"><button class="button primary" id="repair" type="button" disabled></button></div>
-        </section>
         <section class="list-card" aria-labelledby="selection-hint">
           <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
+          <p class="card-help" id="plugin-selection-hint"></p>
           <ul class="plugins" id="plugins"></ul>
           <p class="empty" id="empty"></p>
           <div class="card-footer"><button class="button danger" id="uninstall" type="button" disabled></button></div>
+        </section>
+        <section class="list-card compatibility" id="compatibility-card" aria-labelledby="issue-heading">
+          <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
+          <p class="card-help" id="issue-selection-hint"></p>
+          <ul class="plugins" id="issues"></ul>
+          <div class="card-footer"><button class="button primary" id="repair" type="button" disabled></button></div>
         </section>
         <p class="safety" id="safety-note"></p>
         <div class="exit-panel">
@@ -127,8 +130,8 @@
       setText('summary', model.summary)
       setText('empty', model.emptyMessage)
       setText('selection-hint', model.selectionHint)
+      setText('plugin-selection-hint', model.pluginSelectionHint)
       setText('issue-heading', model.issueHeading)
-      setText('issue-empty', model.issueEmptyMessage)
       setText('issue-selection-hint', model.issueSelectionHint)
       setText('safety-note', model.safetyNote)
       setText('uninstall', model.uninstallLabel)
@@ -146,8 +149,8 @@
       }
       const list = document.getElementById('plugins')
       const empty = document.getElementById('empty')
+      const compatibilityCard = document.getElementById('compatibility-card')
       const issueList = document.getElementById('issues')
-      const issueEmpty = document.getElementById('issue-empty')
       const uninstall = document.getElementById('uninstall')
       const repair = document.getElementById('repair')
       const agent = document.getElementById('agent')
@@ -177,13 +180,22 @@
         }
         details.append(detailsSummary, findings); item.appendChild(details)
       }
-      if (issueCheckboxes.length === 0) issueEmpty.classList.add('visible')
-      for (const plugin of Array.isArray(model.plugins) ? model.plugins : []) {
+      if (issueCheckboxes.length === 0) compatibilityCard.hidden = true
+      const pluginItems = Array.isArray(model.pluginItems)
+        ? model.pluginItems
+        : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))
+      for (const plugin of pluginItems) {
         const item = document.createElement('li')
         const label = document.createElement('label'); label.className = 'plugin'
-        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin)
-        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin)
-        label.append(checkbox, name); item.appendChild(label); list.appendChild(item); checkboxes.push(checkbox)
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin.name)
+        const copy = document.createElement('span'); copy.className = 'plugin-copy'
+        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.name)
+        copy.appendChild(name)
+        if (plugin.statusLabel) {
+          const status = document.createElement('span'); status.className = 'plugin-status'; status.textContent = String(plugin.statusLabel)
+          copy.appendChild(status)
+        }
+        label.append(checkbox, copy); item.appendChild(label); list.appendChild(item); checkboxes.push(checkbox)
       }
       if (checkboxes.length === 0) empty.classList.add('visible')
       const updateSelection = () => { uninstall.disabled = !checkboxes.some((checkbox) => checkbox.checked) }

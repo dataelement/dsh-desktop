@@ -21,6 +21,12 @@ export interface SafeModeIssueGroupViewModel {
   issues: SafeModeIssueViewModel[]
 }
 
+export interface SafeModePluginViewModel {
+  name: string
+  statusLabel?: string
+  incompatible: boolean
+}
+
 export interface SafeModeViewModel {
   locale: SafeModeLocale
   brand: string
@@ -28,15 +34,15 @@ export interface SafeModeViewModel {
   heading: string
   summary: string
   plugins: string[]
-  issues: SafeModeIssueViewModel[]
+  pluginItems: SafeModePluginViewModel[]
   issueGroups: SafeModeIssueGroupViewModel[]
   issueHeading: string
-  issueEmptyMessage: string
   issueSelectionHint: string
   repairLabel: string
   repairBusyLabel: string
   emptyMessage: string
   selectionHint: string
+  pluginSelectionHint: string
   safetyNote: string
   uninstallLabel: string
   uninstallBusyLabel: string
@@ -64,7 +70,6 @@ export function buildSafeModeViewModel(options: {
   notice?: string
   noticeTone?: 'success' | 'error'
 }): SafeModeViewModel {
-  const plugins = [...new Set(options.plugins)]
   const issues = (options.issues ?? []).map((issue): SafeModeIssueViewModel => {
     const zh = options.locale === 'zh'
     const kindLabel = zh
@@ -102,8 +107,24 @@ export function buildSafeModeViewModel(options: {
       versionLabel
     }
   })
+  const pluginIssues = issues.filter((issue) => issue.resolution === 'disable-plugin')
+  const incompatiblePlugins = new Set(pluginIssues.map((issue) => issue.target))
+  const plugins = [...new Set([
+    ...options.plugins,
+    ...incompatiblePlugins
+  ])]
+  const pluginItems = plugins.map((name): SafeModePluginViewModel => {
+    const incompatible = incompatiblePlugins.has(name)
+    return {
+      name,
+      statusLabel: incompatible
+        ? options.locale === 'zh' ? '（版本不兼容）' : '(version incompatible)'
+        : undefined,
+      incompatible
+    }
+  })
   const groups = new Map<string, SafeModeIssueViewModel[]>()
-  for (const issue of issues) {
+  for (const issue of issues.filter((issue) => issue.resolution !== 'disable-plugin')) {
     const id = issue.groupId ?? `${issue.resolution}:${issue.target}`
     const grouped = groups.get(id) ?? []
     grouped.push(issue)
@@ -139,9 +160,11 @@ export function buildSafeModeViewModel(options: {
       issues: grouped
     }
   })
-  const blockingGroups = issueGroups.filter((group) =>
-    group.issues.some((issue) => issue.severity === 'blocking')
-  ).length
+  const blockingGroups = new Set(
+    issues
+      .filter((issue) => issue.severity === 'blocking')
+      .map((issue) => issue.groupId ?? `${issue.resolution}:${issue.target}`)
+  ).size
 
   if (options.locale === 'zh') {
     return {
@@ -149,18 +172,18 @@ export function buildSafeModeViewModel(options: {
       brand: 'DSH Desktop',
       badge: '安全模式',
       heading: '',
-      summary: '安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。同时检查核心版本、客户端模块和 Workspace 依赖；兼容性修复会先备份。',
+      summary: '安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。同时检查核心版本、客户端模块和 Workspace 依赖；版本不兼容的插件会在卸载列表中标记，其他兼容性修复会先备份。',
       plugins,
-      issues,
+      pluginItems,
       issueGroups,
-      issueHeading: '兼容性修复',
-      issueEmptyMessage: '未发现核心版本、客户端模块或 Workspace 依赖冲突。',
+      issueHeading: '其他兼容性修复',
       issueSelectionHint: '勾选只会加入修复计划；点击本区域的“修复所选问题”后才会执行。',
       repairLabel: '修复所选问题',
       repairBusyLabel: '正在修复…',
       emptyMessage: '当前 Profile 中没有可卸载的第三方插件。',
-      selectionHint: '插件卸载（与兼容性修复无关）',
-      safetyNote: '修复会先备份；卸载只作用于下方明确勾选的根插件，未选中的插件不会被删除。工作区、会话和模型配置不会被删除。',
+      selectionHint: '插件卸载',
+      pluginSelectionHint: '标记“版本不兼容”的插件可能导致普通模式启动失败。勾选插件后，点击本区域的“卸载所选插件”。',
+      safetyNote: '修复会先备份；卸载只作用于上方明确勾选的根插件，未选中的插件不会被删除。工作区、会话和模型配置不会被删除。',
       uninstallLabel: '卸载所选插件',
       uninstallBusyLabel: '正在卸载…',
       selectAllLabel: '全选',
@@ -186,17 +209,17 @@ export function buildSafeModeViewModel(options: {
     brand: 'DSH Desktop',
     badge: 'Safe Mode',
     heading: '',
-    summary: 'Safe Mode temporarily disables all third-party plugins so core features remain available, but does not delete them. It also checks core versions, client modules, and workspace dependencies; compatibility repairs are backed up first.',
+    summary: 'Safe Mode temporarily disables all third-party plugins so core features remain available, but does not delete them. It also checks core versions, client modules, and workspace dependencies; incompatible plugins are marked in the removal list, and other compatibility repairs are backed up first.',
     plugins,
-    issues,
+    pluginItems,
     issueGroups,
-    issueHeading: 'Compatibility repairs',
-    issueEmptyMessage: 'No core version, client module, or workspace dependency conflicts were found.',
+    issueHeading: 'Other compatibility repairs',
     issueSelectionHint: 'Selecting only adds a group to the repair plan. Click “Repair selected issues” in this section to apply changes.',
     repairLabel: 'Repair selected issues',
     repairBusyLabel: 'Repairing…',
     emptyMessage: 'There are no removable third-party plugins in this profile.',
-    selectionHint: 'Plugin removal (separate from compatibility repair)',
+    selectionHint: 'Plugin removal',
+    pluginSelectionHint: 'Plugins marked “version incompatible” may prevent normal startup. Select a plugin, then click “Remove selected plugins” in this section.',
     safetyNote: 'Repairs are backed up first. Removal affects only explicitly selected root plugins; workspaces, sessions, and model settings are preserved.',
     uninstallLabel: 'Remove selected plugins',
     uninstallBusyLabel: 'Removing…',
