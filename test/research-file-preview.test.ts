@@ -6,6 +6,7 @@ import {
   open,
   readFile,
   realpath,
+  rename,
   rm,
   stat,
   symlink,
@@ -47,6 +48,20 @@ afterEach(async () => {
 const pngBytes = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
   0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52
+])
+
+const icoBytes = Buffer.from([
+  0x00, 0x00, 0x01, 0x00,
+  0x01, 0x00, 0x10, 0x10
+])
+
+const avifBytes = Buffer.from([
+  0x00, 0x00, 0x00, 0x18,
+  0x66, 0x74, 0x79, 0x70,
+  0x61, 0x76, 0x69, 0x66,
+  0x00, 0x00, 0x00, 0x00,
+  0x6d, 0x69, 0x66, 0x31,
+  0x61, 0x76, 0x69, 0x66
 ])
 
 function deterministicIds(...ids: string[]): () => string {
@@ -232,20 +247,129 @@ describe('Research file preview authorization registry', () => {
     expect(JSON.stringify(descriptor)).not.toContain('portrait.png/')
   })
 
-  it('rejects empty, relative, directory, unsupported, and magic-mismatched Finder paths', async () => {
+  it('rejects empty, relative, directory, and magic-mismatched Finder paths', async () => {
     const { registry, root } = await fixture()
     const directory = path.join(root, 'folder')
-    const unsupported = path.join(root, 'notes.txt')
     const disguised = path.join(root, 'fake.png')
     await mkdir(directory)
-    await writeFile(unsupported, 'notes')
     await writeFile(disguised, 'not a png')
 
-    for (const candidate of ['', 'relative.png', directory, unsupported, disguised]) {
+    for (const candidate of ['', 'relative.png', directory, disguised]) {
       await expect(registry.admitFinder({
         path: candidate,
         sessionId: 'session-1',
         nodeId: 'node-1'
+      })).resolves.toBeNull()
+    }
+  })
+
+  it('admits ICO and AVIF only when their binary signatures match', async () => {
+    for (const fixtureFile of [
+      { name: 'favicon.ico', bytes: icoBytes, contentType: 'image/x-icon' },
+      { name: 'cover.avif', bytes: avifBytes, contentType: 'image/avif' }
+    ]) {
+      const { registry, root } = await fixture()
+      const filePath = path.join(root, fixtureFile.name)
+      await writeFile(filePath, fixtureFile.bytes)
+      const descriptor = await registry.admitFinder({
+        path: filePath,
+        sessionId: 'session-1',
+        nodeId: `node-${fixtureFile.name}`
+      })
+      expectDescriptor(descriptor)
+      expect(descriptor.contentType).toBe(fixtureFile.contentType)
+      const response = await registry.handle(new Request(descriptor.url))
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toBe(fixtureFile.contentType)
+      expect(await body(response)).toEqual(fixtureFile.bytes)
+    }
+
+    for (const fixtureFile of [
+      { name: 'forged.ico', bytes: Buffer.from('not-an-icon') },
+      { name: 'empty.ico', bytes: Buffer.from([0x00, 0x00, 0x01, 0x00, 0x00, 0x00]) },
+      { name: 'forged.avif', bytes: Buffer.from('\0\0\0\x18ftypfake\0\0\0\0mif1') },
+      { name: 'truncated.avif', bytes: Buffer.from('\0\0\x01\0ftypavif\0\0\0\0') }
+    ]) {
+      const { registry, root } = await fixture()
+      const filePath = path.join(root, fixtureFile.name)
+      await writeFile(filePath, fixtureFile.bytes)
+      await expect(registry.admitFinder({
+        path: filePath,
+        sessionId: 'session-1',
+        nodeId: `node-${fixtureFile.name}`
+      })).resolves.toBeNull()
+    }
+  })
+
+  it('admits bounded Markdown, code, and unknown-extension UTF-8 roots with explicit MIME types', async () => {
+    const cases = [
+      { name: 'thesis.markdown', text: '# 结论\n\n[来源](https://example.com)', contentType: 'text/markdown; charset=utf-8' },
+      { name: 'analysis.ts', text: 'export const answer: number = 42\n', contentType: 'text/plain; charset=utf-8' },
+      { name: 'research.custom', text: '第一行\nsecond line <not-markup>\n', contentType: 'text/plain; charset=utf-8' }
+    ]
+
+    for (const fixtureFile of cases) {
+      const { registry, root } = await fixture()
+      const filePath = path.join(root, fixtureFile.name)
+      const bytes = Buffer.from(fixtureFile.text, 'utf8')
+      await writeFile(filePath, bytes)
+      const descriptor = await registry.admitFinder({
+        path: filePath,
+        sessionId: 'session-1',
+        nodeId: `node-${fixtureFile.name}`
+      })
+      expectDescriptor(descriptor)
+      expect(descriptor.contentType).toBe(fixtureFile.contentType)
+      const response = await registry.handle(new Request(descriptor.url))
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toBe(fixtureFile.contentType)
+      expect(await body(response)).toEqual(bytes)
+    }
+  })
+
+  it('rejects native text roots containing NUL, invalid UTF-8, or more than two MiB', async () => {
+    for (const fixtureFile of [
+      { name: 'nul.txt', bytes: Buffer.from([0x61, 0x00, 0x62]) },
+      { name: 'invalid.code', bytes: Buffer.from([0x61, 0xc3, 0x28]) },
+      { name: 'oversized.md', bytes: Buffer.alloc(2 * 1024 * 1024 + 1, 0x61) },
+      {
+        name: 'oversized.json',
+        bytes: Buffer.from(JSON.stringify({ payload: 'j'.repeat(2 * 1024 * 1024) }))
+      }
+    ]) {
+      const { registry, root } = await fixture()
+      const filePath = path.join(root, fixtureFile.name)
+      await writeFile(filePath, fixtureFile.bytes)
+      await expect(registry.admitFinder({
+        path: filePath,
+        sessionId: 'session-1',
+        nodeId: `node-${fixtureFile.name}`
+      })).resolves.toBeNull()
+    }
+  })
+
+  it('invalidates a text capability after its source is moved, deleted, or becomes binary', async () => {
+    for (const mutation of ['move', 'delete', 'binary'] as const) {
+      const { registry, root } = await fixture()
+      const filePath = path.join(root, `${mutation}.txt`)
+      await writeFile(filePath, 'trusted text')
+      const descriptor = await registry.admitFinder({
+        path: filePath,
+        sessionId: 'session-1',
+        nodeId: `node-${mutation}`
+      })
+      expectDescriptor(descriptor)
+
+      if (mutation === 'move') await rename(filePath, `${filePath}.moved`)
+      if (mutation === 'delete') await rm(filePath)
+      if (mutation === 'binary') await writeFile(filePath, Buffer.from([0x61, 0x00, 0x62]))
+
+      expect((await registry.handle(new Request(descriptor.url))).status)
+        .toBe(mutation === 'binary' ? 415 : 404)
+      await expect(registry.restore({
+        authorizationId: descriptor.authorizationId,
+        sessionId: 'session-1',
+        nodeId: `node-${mutation}`
       })).resolves.toBeNull()
     }
   })
@@ -779,7 +903,7 @@ describe('sherlock-preview protocol responses', () => {
     const { registry, root } = await fixture()
     const site = path.join(root, 'site')
     const outside = path.join(root, 'outside.js')
-    const largeJson = JSON.stringify({ payload: 'json-resource-'.repeat(64) })
+    const largeJson = JSON.stringify({ payload: 'j'.repeat(2 * 1024 * 1024) })
     const largeSourceMap = JSON.stringify({ version: 3, sources: ['source.ts'], mappings: 'AAAA;'.repeat(128) })
     await mkdir(path.join(site, 'assets'), { recursive: true })
     await mkdir(path.join(site, 'modules'), { recursive: true })
@@ -843,7 +967,8 @@ describe('sherlock-preview protocol responses', () => {
     expect(module.status).toBe(200)
     expect(module.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     const json = await registry.handle(new Request(new URL('data/config.json', descriptor.url)), harnessOrigin)
-    expect(Buffer.byteLength(largeJson)).toBeGreaterThan(512)
+    expect(Buffer.byteLength(largeJson)).toBeGreaterThan(2 * 1024 * 1024)
+    expect(Buffer.byteLength(largeJson)).toBeLessThan(4 * 1024 * 1024)
     expect(json.status).toBe(200)
     expect(json.headers.get('content-type')).toBe('application/json; charset=utf-8')
     const sourceMap = await registry.handle(new Request(new URL('data/config.json.map', descriptor.url)), harnessOrigin)

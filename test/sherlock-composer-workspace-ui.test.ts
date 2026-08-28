@@ -142,6 +142,7 @@ async function loadClientBundle(
 
   runInNewContext(source, {
     AbortController: globalThis.AbortController,
+    TextDecoder: globalThis.TextDecoder,
     window: bundleWindow,
     document: styleDocument,
     localStorage: options?.window?.localStorage,
@@ -821,6 +822,7 @@ async function mountResearchCanvas(options: {
   resizeObserverCallbacks?: Array<() => void>
   intersectionObserverCallbacks?: Array<(entries: Array<{ target: HappyDOMElement; isIntersecting: boolean }>) => void>
   strictMode?: boolean
+  fetch?: (input: string, init?: { signal?: AbortSignal }) => Promise<Response>
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const { sessionId } = options
@@ -838,6 +840,12 @@ async function mountResearchCanvas(options: {
     JSON.stringify(options.selection ?? { selectedNodeIds: [], orderedFileIds: [] })
   )
   const restoreGlobals = installBrowserGlobals(browserWindow)
+  if (options.fetch !== undefined) {
+    Object.defineProperty(browserWindow, 'fetch', {
+      configurable: true,
+      value: options.fetch
+    })
+  }
   Object.defineProperty(browserWindow, '__sherlockPdfjs', {
     configurable: true,
     value: options.pdfjs
@@ -2272,6 +2280,209 @@ describe('Sherlock workspace and composer controls', () => {
       expect(revocations).toEqual([])
     } finally {
       if (!cleaned) await mounted.cleanup()
+    }
+  })
+
+  it('fetches bounded Markdown only near the viewport, renders through MarkdownText, and aborts offscreen', async () => {
+    const markdown = '# 结论\n\n- 第一项\n- [来源](https://example.com)\n'
+    const renderedMarkdown: string[] = []
+    const fetches: Array<{ url: string; signal?: AbortSignal }> = []
+    const releases: Array<Record<string, string>> = []
+    const primitives = new Proxy({
+      MarkdownText: ({ text }: { text: string }) => {
+        renderedMarkdown.push(text)
+        return createElement('div', { 'data-production-markdown': '' }, text)
+      }
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-markdown-lifecycle',
+      files: [{
+        id: 'markdown-1', name: 'finding.md', source: 'computer',
+        authorizationId: 'authorization-markdown', contentType: 'text/markdown; charset=utf-8',
+        x: 200, y: 200, width: 420, height: 320, sizeMode: 'auto'
+      }],
+      modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives },
+      async fetch(url, init) {
+        fetches.push({ url, signal: init?.signal })
+        return new Response(markdown, {
+          headers: {
+            'Content-Type': 'text/markdown; charset=utf-8',
+            'Content-Length': String(Buffer.byteLength(markdown))
+          }
+        })
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-markdown',
+            url: 'sherlock-preview://capability-markdown/',
+            contentType: 'text/markdown; charset=utf-8', name: 'finding.md'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(fetches.map((entry) => entry.url)).toEqual([
+        'sherlock-preview://capability-markdown/'
+      ])
+      expect(renderedMarkdown).toContain(markdown)
+      expect(mounted.host.querySelector('[data-research-markdown-preview]')?.textContent)
+        .toBe(markdown)
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('finding.md')
+      expect(mounted.browserWindow.getComputedStyle(
+        mounted.host.querySelector('[data-research-markdown-scroll]') as HappyDOMElement
+      ).overflowY).toBe('auto')
+
+      await act(async () => { mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
+      expect(fetches[0]?.signal?.aborted).toBe(true)
+      expect(mounted.host.querySelector('[data-research-markdown-preview]')).toBeNull()
+      expect(mounted.host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
+      expect(releases).toEqual([{
+        sessionId: 'session-markdown-lifecycle', nodeId: 'markdown-1',
+        authorizationId: 'authorization-markdown', capabilityToken: 'capability-markdown'
+      }])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renders escaped text/code with a language hint and keeps wheel scrolling inside the component', async () => {
+    const source = '<script>alert("unsafe")</script>\nconst answer: number = 42 & 1\n'
+    const fetches: Array<{ signal?: AbortSignal }> = []
+    const releases: Array<Record<string, string>> = []
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-text-lifecycle',
+      files: [{
+        id: 'text-1', name: 'analysis.ts', source: 'computer',
+        authorizationId: 'authorization-text', contentType: 'text/plain; charset=utf-8',
+        x: 200, y: 200, width: 420, height: 320, sizeMode: 'manual'
+      }],
+      async fetch(_url, init) {
+        fetches.push({ signal: init?.signal })
+        return new Response(source, {
+          headers: { 'Content-Length': String(Buffer.byteLength(source)) }
+        })
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-text',
+            url: 'sherlock-preview://capability-text/',
+            contentType: 'text/plain; charset=utf-8', name: 'analysis.ts'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      const preview = mounted.host.querySelector('[data-research-text-preview]') as HappyDOMElement | null
+      expect(preview).not.toBeNull()
+      expect(preview?.textContent).toBe(source)
+      expect(preview?.querySelector('script')).toBeNull()
+      expect(preview?.querySelector('code')?.getAttribute('class')).toBe('language-ts')
+      expect(mounted.host.querySelector('[data-research-file-card="text-1"]')?.getAttribute('style'))
+        .toContain('width: 420px')
+      const viewportBeforeWheel = mounted.workspace.getSnapshot().viewport
+      preview?.dispatchEvent(new mounted.browserWindow.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, deltaY: 120
+      }))
+      expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
+
+      await act(async () => { mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
+      expect(fetches[0]?.signal?.aborted).toBe(true)
+      expect(releases).toHaveLength(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('fails closed before reading oversized native text and keeps the titled component available', async () => {
+    let bodyReads = 0
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-text-oversized',
+      files: [{
+        id: 'text-large', name: 'large.custom', source: 'computer',
+        authorizationId: 'authorization-large', contentType: 'text/plain; charset=utf-8',
+        x: 200, y: 200
+      }],
+      async fetch() {
+        return {
+          ok: true,
+          headers: new Headers({ 'Content-Length': String(2 * 1024 * 1024 + 1) }),
+          body: { getReader() { bodyReads += 1; throw new Error('body must not be read') } }
+        } as unknown as Response
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-large',
+            url: 'sherlock-preview://capability-large/',
+            contentType: 'text/plain; charset=utf-8', name: 'large.custom'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(bodyReads).toBe(0)
+      expect(mounted.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('large.custom')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps a missing native text source as a titled unavailable component', async () => {
+    let fetches = 0
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-text-missing',
+      files: [{
+        id: 'text-missing', name: 'moved.py', source: 'computer',
+        authorizationId: 'authorization-missing', contentType: 'text/plain; charset=utf-8',
+        x: 200, y: 200
+      }],
+      async fetch() {
+        fetches += 1
+        return new Response('must not be fetched')
+      },
+      dshDesktop: { researchPreview: {
+        async restore() { return null },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(fetches).toBe(0)
+      expect(mounted.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
+      expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('moved.py')
+    } finally {
+      await mounted.cleanup()
     }
   })
 
@@ -4910,7 +5121,7 @@ describe('Sherlock workspace and composer controls', () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-rich-resize-handles',
       files: [
-        { id: 'generic', path: '/w/notes.txt', name: 'notes.txt', mediaType: 'text/plain', source: 'computer', x: 100, y: 100 }
+        { id: 'generic', path: '/w/archive.doc', name: 'archive.doc', previewEligible: false, source: 'computer', x: 100, y: 100 }
       ],
       artifacts: [
         { id: 'assistant', kind: 'assistant-result', messageId: 'm1', title: 'Answer', excerpt: 'Evidence', x: 400, y: 200 }

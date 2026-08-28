@@ -47,6 +47,7 @@ const MAX_PATH_LENGTH = 8 * 1024
 const MAX_ID_LENGTH = 512
 const MAGIC_PREFIX_BYTES = 512
 const MAX_JSON_VALIDATION_BYTES = 4 * 1024 * 1024
+const MAX_NATIVE_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
 const CORS_EXPOSE_HEADERS = 'Accept-Ranges, Content-Length, Content-Range, Content-Type'
 
 export type ResearchPreviewSource = 'finder' | 'sidebar'
@@ -134,7 +135,21 @@ type PreviewKind = {
   rootPreview: boolean
   validateMagic(prefix: Uint8Array): boolean
   validateComplete?(value: Uint8Array): boolean
+  rootMaxBytes?: number
+  validateRootComplete?(value: Uint8Array): boolean
 }
+
+function nativeTextKind(contentType = 'text/plain; charset=utf-8'): PreviewKind {
+  return {
+    contentType,
+    rootPreview: true,
+    validateMagic: textMagic,
+    rootMaxBytes: MAX_NATIVE_TEXT_PREVIEW_BYTES,
+    validateRootComplete: utf8TextMagic
+  }
+}
+
+const unknownTextRootKind = nativeTextKind()
 
 const previewKinds = new Map<string, PreviewKind>([
   ['.png', { contentType: 'image/png', rootPreview: true, validateMagic: (value) =>
@@ -145,21 +160,52 @@ const previewKinds = new Map<string, PreviewKind>([
   ['.webp', { contentType: 'image/webp', rootPreview: true, validateMagic: webpMagic }],
   ['.bmp', { contentType: 'image/bmp', rootPreview: true, validateMagic: (value) =>
     startsWith(value, [0x42, 0x4d]) }],
+  ['.ico', { contentType: 'image/x-icon', rootPreview: true, validateMagic: icoMagic }],
+  ['.avif', { contentType: 'image/avif', rootPreview: true, validateMagic: avifMagic }],
   ['.svg', { contentType: 'image/svg+xml', rootPreview: true, validateMagic: svgMagic }],
   ['.pdf', { contentType: 'application/pdf', rootPreview: true, validateMagic: (value) =>
     startsWith(value, [0x25, 0x50, 0x44, 0x46, 0x2d]) }],
   ['.html', { contentType: 'text/html; charset=utf-8', rootPreview: true, validateMagic: htmlMagic }],
   ['.htm', { contentType: 'text/html; charset=utf-8', rootPreview: true, validateMagic: htmlMagic }],
-  ['.css', { contentType: 'text/css; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
-  ['.js', { contentType: 'text/javascript; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
-  ['.mjs', { contentType: 'text/javascript; charset=utf-8', rootPreview: false, validateMagic: textMagic }],
+  ['.md', nativeTextKind('text/markdown; charset=utf-8')],
+  ['.markdown', nativeTextKind('text/markdown; charset=utf-8')],
+  ['.txt', nativeTextKind()],
+  ['.log', nativeTextKind()],
+  ['.ts', nativeTextKind()],
+  ['.tsx', nativeTextKind()],
+  ['.jsx', nativeTextKind()],
+  ['.py', nativeTextKind()],
+  ['.rb', nativeTextKind()],
+  ['.go', nativeTextKind()],
+  ['.rs', nativeTextKind()],
+  ['.java', nativeTextKind()],
+  ['.c', nativeTextKind()],
+  ['.h', nativeTextKind()],
+  ['.cpp', nativeTextKind()],
+  ['.hpp', nativeTextKind()],
+  ['.swift', nativeTextKind()],
+  ['.kt', nativeTextKind()],
+  ['.kts', nativeTextKind()],
+  ['.sh', nativeTextKind()],
+  ['.bash', nativeTextKind()],
+  ['.zsh', nativeTextKind()],
+  ['.fish', nativeTextKind()],
+  ['.sql', nativeTextKind()],
+  ['.yaml', nativeTextKind()],
+  ['.yml', nativeTextKind()],
+  ['.toml', nativeTextKind()],
+  ['.ini', nativeTextKind()],
+  ['.conf', nativeTextKind()],
+  ['.xml', nativeTextKind()],
+  ['.csv', nativeTextKind()],
+  ['.css', nativeTextKind('text/css; charset=utf-8')],
+  ['.js', nativeTextKind('text/javascript; charset=utf-8')],
+  ['.mjs', nativeTextKind('text/javascript; charset=utf-8')],
   ['.json', {
-    contentType: 'application/json; charset=utf-8', rootPreview: false,
-    validateMagic: textMagic, validateComplete: jsonMagic
+    ...nativeTextKind('application/json; charset=utf-8'), validateComplete: jsonMagic
   }],
   ['.map', {
-    contentType: 'application/json; charset=utf-8', rootPreview: false,
-    validateMagic: textMagic, validateComplete: jsonMagic
+    ...nativeTextKind('application/json; charset=utf-8'), validateComplete: jsonMagic
   }],
   ['.woff', { contentType: 'font/woff', rootPreview: false, validateMagic: (value) =>
     startsWith(value, [0x77, 0x4f, 0x46, 0x46]) }],
@@ -197,6 +243,25 @@ function webpMagic(value: Uint8Array): boolean {
     Buffer.from(value.subarray(8, 12)).toString('ascii') === 'WEBP'
 }
 
+function avifMagic(value: Uint8Array): boolean {
+  if (value.length < 16 || Buffer.from(value.subarray(4, 8)).toString('ascii') !== 'ftyp') {
+    return false
+  }
+  const declaredSize = Buffer.from(value.subarray(0, 4)).readUInt32BE(0)
+  if (declaredSize < 16 || declaredSize > value.length) return false
+  const availableEnd = declaredSize
+  for (let offset = 8; offset + 4 <= availableEnd; offset += 4) {
+    const brand = Buffer.from(value.subarray(offset, offset + 4)).toString('ascii')
+    if (brand === 'avif' || brand === 'avis') return true
+  }
+  return false
+}
+
+function icoMagic(value: Uint8Array): boolean {
+  return value.length >= 6 && startsWith(value, [0x00, 0x00, 0x01, 0x00]) &&
+    (value[4] !== 0 || value[5] !== 0)
+}
+
 function textPrefix(value: Uint8Array): string | null {
   if (value.includes(0)) return null
   return Buffer.from(value).toString('utf8').replace(/^\uFEFF/, '')
@@ -214,6 +279,16 @@ function htmlMagic(value: Uint8Array): boolean {
 
 function textMagic(value: Uint8Array): boolean {
   return textPrefix(value) !== null
+}
+
+function utf8TextMagic(value: Uint8Array): boolean {
+  if (value.includes(0)) return false
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(value)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function jsonMagic(value: Uint8Array): boolean {
@@ -405,6 +480,33 @@ const defaultFileSystem: ResearchPreviewFileSystem = {
 
 function kindForPath(targetPath: string): PreviewKind | undefined {
   return previewKinds.get(path.extname(targetPath).toLowerCase())
+}
+
+function rootKindForPath(targetPath: string): PreviewKind | undefined {
+  const known = kindForPath(targetPath)
+  if (known !== undefined) return isRootPreviewKind(known) ? known : undefined
+  return unknownTextRootKind
+}
+
+async function validatesPreviewKind(
+  fileSystem: ResearchPreviewFileSystem,
+  targetPath: string,
+  fileSize: number,
+  kind: PreviewKind,
+  rootPreview: boolean
+): Promise<boolean> {
+  if (rootPreview && kind.rootMaxBytes !== undefined && fileSize > kind.rootMaxBytes) return false
+  if (kind.validateComplete !== undefined && fileSize > MAX_JSON_VALIDATION_BYTES) return false
+  const prefix = await fileSystem.readSlice(
+    targetPath,
+    0,
+    Math.min(Math.max(0, fileSize - 1), MAGIC_PREFIX_BYTES - 1)
+  )
+  if (!kind.validateMagic(prefix)) return false
+  const validateRoot = rootPreview ? kind.validateRootComplete : undefined
+  if (validateRoot === undefined && kind.validateComplete === undefined) return true
+  const complete = await fileSystem.readSlice(targetPath, 0, Math.max(0, fileSize - 1))
+  return (validateRoot?.(complete) ?? true) && (kind.validateComplete?.(complete) ?? true)
 }
 
 function isRootPreviewKind(kind: PreviewKind | undefined): kind is PreviewKind {
@@ -679,22 +781,13 @@ export class ResearchFilePreviewRegistry {
       }
       const file = await this.fileSystem.stat(candidate)
       if (!file.isFile()) return fail(404, 'Preview file not found.')
-      const kind = kindForPath(candidate)
+      const rootPreview = resource.relativePath === '' && !authorization.allowSubresources
+      const kind = rootPreview ? rootKindForPath(candidate) : kindForPath(candidate)
       if (!kind || (!authorization.allowSubresources && kind.contentType !== authorization.contentType)) {
         return fail(415, 'Unsupported preview type.')
       }
-      const prefix = await this.fileSystem.readSlice(
-        candidate,
-        0,
-        Math.min(Math.max(0, file.size - 1), MAGIC_PREFIX_BYTES - 1)
-      )
-      if (!kind.validateMagic(prefix)) return fail(415, 'Preview type mismatch.')
-      if (kind.validateComplete) {
-        if (file.size > MAX_JSON_VALIDATION_BYTES) {
-          return fail(415, 'Unsupported preview type.')
-        }
-        const complete = await this.fileSystem.readSlice(candidate, 0, Math.max(0, file.size - 1))
-        if (!kind.validateComplete(complete)) return fail(415, 'Preview type mismatch.')
+      if (!await validatesPreviewKind(this.fileSystem, candidate, file.size, kind, rootPreview)) {
+        return fail(415, 'Preview type mismatch.')
       }
 
       const htmlCapability = authorization.allowSubresources && allowedOrigin
@@ -750,14 +843,9 @@ export class ResearchFilePreviewRegistry {
       if (!isContained(root, target)) return null
       const file = await this.fileSystem.stat(target)
       if (!file.isFile()) return null
-      const kind = kindForPath(target)
+      const kind = rootKindForPath(target)
       if (!isRootPreviewKind(kind)) return null
-      const prefix = await this.fileSystem.readSlice(
-        target,
-        0,
-        Math.min(Math.max(0, file.size - 1), MAGIC_PREFIX_BYTES - 1)
-      )
-      if (!kind.validateMagic(prefix)) return null
+      if (!await validatesPreviewKind(this.fileSystem, target, file.size, kind, true)) return null
       const replaced = new Set<string>()
       for (const [authorizationId, existing] of this.authorizations) {
         if (existing.sessionId === input.sessionId && existing.nodeId === input.nodeId) {
@@ -799,14 +887,9 @@ export class ResearchFilePreviewRegistry {
       if (!isContained(root, target)) return false
       const file = await this.fileSystem.stat(target)
       if (!file.isFile()) return false
-      const kind = kindForPath(target)
+      const kind = rootKindForPath(target)
       if (!isRootPreviewKind(kind) || kind.contentType !== record.contentType) return false
-      const prefix = await this.fileSystem.readSlice(
-        target,
-        0,
-        Math.min(Math.max(0, file.size - 1), MAGIC_PREFIX_BYTES - 1)
-      )
-      return kind.validateMagic(prefix)
+      return validatesPreviewKind(this.fileSystem, target, file.size, kind, true)
     } catch {
       return false
     }

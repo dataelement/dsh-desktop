@@ -788,7 +788,7 @@ describe('Research canvas file drops', () => {
     ]))).toEqual([
       {
         id: 'first', path: '/w/first.txt', name: 'first.txt', mediaType: 'text/plain',
-        source: 'computer', x: 1, y: 2, width: 220, height: 64, sizeMode: 'auto'
+        source: 'computer', x: 1, y: 2, width: 420, height: 320, sizeMode: 'auto'
       },
       {
         id: 'name-only', name: 'name-only.txt', source: 'sherlock', x: 9, y: 10,
@@ -981,8 +981,20 @@ describe('Research canvas file drops', () => {
     if (typeof client.normalizeResearchCanvasNodeGeometry !== 'function') return
 
     expect(client.normalizeResearchCanvasNodeGeometry({
-      id: 'generic', name: 'notes.txt', mediaType: 'text/plain', source: 'computer', x: 0, y: 0
+      id: 'generic', name: 'archive.doc', previewEligible: false, source: 'computer', x: 0, y: 0
     })).toEqual({ width: 220, height: 64, sizeMode: 'auto', resizable: false })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'text', name: 'notes.txt', contentType: 'text/plain; charset=utf-8',
+      source: 'computer', x: 0, y: 0
+    })).toEqual({ width: 420, height: 320, sizeMode: 'auto', resizable: true })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'markdown', name: 'notes.md', contentType: 'text/markdown; charset=utf-8',
+      source: 'computer', x: 0, y: 0
+    })).toEqual({ width: 420, height: 320, sizeMode: 'auto', resizable: true })
+    expect(client.normalizeResearchCanvasNodeGeometry({
+      id: 'icon', name: 'favicon.ico', contentType: 'image/x-icon',
+      source: 'computer', x: 0, y: 0
+    })).toEqual({ width: 320, height: 272, sizeMode: 'auto', aspectRatio: 4 / 3, resizable: true })
     expect(client.normalizeResearchCanvasNodeGeometry({
       id: 'assistant', kind: 'assistant-result', messageId: 'm1', title: 'Answer',
       excerpt: 'Evidence', x: 0, y: 0
