@@ -148,7 +148,8 @@ Sidebar 品牌原先直接改写构建后的组件和 CSS Module 映射。0.1.2 
 `sidebar.brand.mark`、`sidebar.brand.name` 与 `conversation.hero.brand.mark`，现在由
 [`packages/dsh-desktop-client-ui/`](../packages/dsh-desktop-client-ui/) 接管这些 single slot：
 Desktop 图标与 `includeMark: false` 的原生字标分别注册，conversation hero 继续使用上游
-FishLogo。手机入口也迁到 `sidebar.footer.action`，preload 只保留受控 IPC bridge。
+FishLogo。`sidebar.footer.action` 是设置入口上方的独立行，无法保持手机入口与设置平齐；
+因此手机入口继续由 preload 放进设置行，并固定在最右侧。
 macOS 无边框窗口、traffic lights、拖动区和折叠栏 80px 仍属于宿主/布局几何，不交给品牌 slot。
 
 预设导入导出（`/api/agent-preset.export` / `.import`）原本寄生在 apiproxy 补丁里。
@@ -198,7 +199,7 @@ Harness 把 `@deepseek-ai/dsh` 的**依赖闭包**镜像进 `$DSH_HOME/profiles/
 
 上游发布到 npm 后：
 
-1. `package.json` 的 250 个 `file:` 依赖换回 `0.1.2-alpha.1` 语义化版本
+1. 将 `package.json` 中保留的运行时闭包 `file:` 依赖换回 `0.1.2-alpha.1` 语义化版本；不要重新加入未启用的 provider 和测试包
 2. 删除 `packages/harness-0.1.2-alpha.1/`
 3. 重新生成 `package-lock.json`（必须来自真实 registry）
 4. 重跑 `npm ci` + `npm test` + `scripts/verify-harness-auth.mjs`
