@@ -2357,6 +2357,120 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('cancels a pending native text body read and releases its exact capability when offscreen', async () => {
+    const pendingRead = deferred<{ done: boolean; value?: Uint8Array }>()
+    const releases: Array<Record<string, string>> = []
+    let readCalls = 0
+    let cancelCalls = 0
+    let fetchSignal: AbortSignal | undefined
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-text-pending-read',
+      files: [{
+        id: 'text-pending', name: 'pending.txt', source: 'computer',
+        authorizationId: 'authorization-pending', contentType: 'text/plain; charset=utf-8',
+        x: 200, y: 200
+      }],
+      async fetch(_url, init) {
+        fetchSignal = init?.signal
+        return {
+          ok: true,
+          headers: new Headers(),
+          body: { getReader() { return {
+            read() { readCalls += 1; return pendingRead.promise },
+            async cancel() { cancelCalls += 1 }
+          } } }
+        } as unknown as Response
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-pending',
+            url: 'sherlock-preview://capability-pending/',
+            contentType: 'text/plain; charset=utf-8', name: 'pending.txt'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(readCalls).toBe(1)
+
+      await act(async () => {
+        mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 })
+        await Promise.resolve()
+      })
+      const cancelCallsWhileReadWasPending = cancelCalls
+      expect(fetchSignal?.aborted).toBe(true)
+      expect(releases).toEqual([{
+        sessionId: 'session-text-pending-read', nodeId: 'text-pending',
+        authorizationId: 'authorization-pending', capabilityToken: 'capability-pending'
+      }])
+
+      pendingRead.resolve({ done: true })
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(cancelCallsWhileReadWasPending).toBe(1)
+      expect(cancelCalls).toBe(1)
+      expect(mounted.host.querySelector('[data-research-text-preview]')).toBeNull()
+      expect(mounted.host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
+    } finally {
+      pendingRead.resolve({ done: true })
+      await mounted.cleanup()
+    }
+  })
+
+  it('releases a native text restore that resolves after offscreen without fetching or reviving it', async () => {
+    const pendingRestore = deferred<Record<string, string> | null>()
+    const releases: Array<Record<string, string>> = []
+    let fetches = 0
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-text-late-restore',
+      files: [{
+        id: 'text-late', name: 'late.log', source: 'computer',
+        authorizationId: 'authorization-late', contentType: 'text/plain; charset=utf-8',
+        x: 200, y: 200
+      }],
+      async fetch() {
+        fetches += 1
+        return new Response('must not be fetched')
+      },
+      dshDesktop: { researchPreview: {
+        async restore() { return pendingRestore.promise },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve()
+      })
+      await act(async () => {
+        mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 })
+        await Promise.resolve()
+      })
+      pendingRestore.resolve({
+        authorizationId: 'authorization-late', capabilityToken: 'capability-late',
+        url: 'sherlock-preview://capability-late/', contentType: 'text/plain; charset=utf-8',
+        name: 'late.log'
+      })
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(fetches).toBe(0)
+      expect(releases).toEqual([{
+        sessionId: 'session-text-late-restore', nodeId: 'text-late',
+        authorizationId: 'authorization-late', capabilityToken: 'capability-late'
+      }])
+      expect(mounted.host.querySelector('[data-research-text-preview]')).toBeNull()
+      expect(mounted.host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
+    } finally {
+      pendingRestore.resolve(null)
+      await mounted.cleanup()
+    }
+  })
+
   it('renders escaped text/code with a language hint and keeps wheel scrolling inside the component', async () => {
     const source = '<script>alert("unsafe")</script>\nconst answer: number = 42 & 1\n'
     const fetches: Array<{ signal?: AbortSignal }> = []
@@ -2449,6 +2563,61 @@ describe('Sherlock workspace and composer controls', () => {
       expect(mounted.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
       expect(mounted.host.querySelector('[data-research-node-title]')?.textContent)
         .toContain('large.custom')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('cancels a native text stream that exceeds two MiB without a Content-Length header', async () => {
+    const chunks = [new Uint8Array(1024 * 1024), new Uint8Array(1024 * 1024 + 1)]
+    const releases: Array<Record<string, string>> = []
+    let reads = 0
+    let cancelCalls = 0
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-text-stream-oversized',
+      files: [{
+        id: 'text-stream-large', name: 'large.txt', source: 'computer',
+        authorizationId: 'authorization-stream-large', contentType: 'text/plain; charset=utf-8',
+        x: 200, y: 200
+      }],
+      async fetch() {
+        return {
+          ok: true,
+          headers: new Headers(),
+          body: { getReader() { return {
+            async read() {
+              const value = chunks[reads]
+              reads += 1
+              return value === undefined ? { done: true } : { done: false, value }
+            },
+            async cancel() { cancelCalls += 1 }
+          } } }
+        } as unknown as Response
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-stream-large',
+            url: 'sherlock-preview://capability-stream-large/',
+            contentType: 'text/plain; charset=utf-8', name: 'large.txt'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(reads).toBe(2)
+      expect(cancelCalls).toBe(1)
+      expect(releases).toEqual([{
+        sessionId: 'session-text-stream-oversized', nodeId: 'text-stream-large',
+        authorizationId: 'authorization-stream-large', capabilityToken: 'capability-stream-large'
+      }])
+      expect(mounted.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
     } finally {
       await mounted.cleanup()
     }

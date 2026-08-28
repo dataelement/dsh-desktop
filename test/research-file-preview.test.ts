@@ -50,9 +50,14 @@ const pngBytes = Buffer.from([
   0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52
 ])
 
-const icoBytes = Buffer.from([
-  0x00, 0x00, 0x01, 0x00,
-  0x01, 0x00, 0x10, 0x10
+const icoBytes = Buffer.concat([
+  Buffer.from([
+    0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x10, 0x10, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00,
+    pngBytes.length, 0x00, 0x00, 0x00,
+    0x16, 0x00, 0x00, 0x00
+  ]),
+  pngBytes
 ])
 
 const avifBytes = Buffer.from([
@@ -287,7 +292,10 @@ describe('Research file preview authorization registry', () => {
     for (const fixtureFile of [
       { name: 'forged.ico', bytes: Buffer.from('not-an-icon') },
       { name: 'empty.ico', bytes: Buffer.from([0x00, 0x00, 0x01, 0x00, 0x00, 0x00]) },
+      { name: 'truncated-directory.ico', bytes: Buffer.from([0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10]) },
       { name: 'forged.avif', bytes: Buffer.from('\0\0\0\x18ftypfake\0\0\0\0mif1') },
+      { name: 'minor-version-brand.avif', bytes: Buffer.from('\0\0\0\x10ftypmif1avif') },
+      { name: 'unaligned-ftyp.avif', bytes: Buffer.from('\0\0\0\x12ftypavif\0\0\0\0\0\0') },
       { name: 'truncated.avif', bytes: Buffer.from('\0\0\x01\0ftypavif\0\0\0\0') }
     ]) {
       const { registry, root } = await fixture()

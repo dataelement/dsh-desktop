@@ -248,9 +248,12 @@ function avifMagic(value: Uint8Array): boolean {
     return false
   }
   const declaredSize = Buffer.from(value.subarray(0, 4)).readUInt32BE(0)
-  if (declaredSize < 16 || declaredSize > value.length) return false
-  const availableEnd = declaredSize
-  for (let offset = 8; offset + 4 <= availableEnd; offset += 4) {
+  if (declaredSize < 16 || declaredSize > value.length || (declaredSize - 16) % 4 !== 0) {
+    return false
+  }
+  const majorBrand = Buffer.from(value.subarray(8, 12)).toString('ascii')
+  if (majorBrand === 'avif' || majorBrand === 'avis') return true
+  for (let offset = 16; offset + 4 <= declaredSize; offset += 4) {
     const brand = Buffer.from(value.subarray(offset, offset + 4)).toString('ascii')
     if (brand === 'avif' || brand === 'avis') return true
   }
@@ -258,8 +261,11 @@ function avifMagic(value: Uint8Array): boolean {
 }
 
 function icoMagic(value: Uint8Array): boolean {
-  return value.length >= 6 && startsWith(value, [0x00, 0x00, 0x01, 0x00]) &&
-    (value[4] !== 0 || value[5] !== 0)
+  if (value.length < 6 || !startsWith(value, [0x00, 0x00, 0x01, 0x00])) return false
+  const count = Buffer.from(value.subarray(4, 6)).readUInt16LE(0)
+  if (count === 0) return false
+  const directoryLength = 6 + count * 16
+  return directoryLength <= MAGIC_PREFIX_BYTES && value.length >= directoryLength
 }
 
 function textPrefix(value: Uint8Array): string | null {
