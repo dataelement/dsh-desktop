@@ -44,6 +44,15 @@
       .plugin { display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 10px 16px; cursor: pointer; }
       .plugin input { width: 16px; height: 16px; margin: 0; accent-color: var(--button); }
       .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
+      .compatibility { margin-bottom: 18px; }
+      .issue { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 13px 16px; background: var(--surface); }
+      .issue input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--button); }
+      .issue-main { min-width: 0; }
+      .issue-title { display:flex; flex-wrap:wrap; align-items:center; gap:7px; }
+      .issue-name { overflow-wrap:anywhere; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; font-weight:650; }
+      .issue-badge { padding:1px 6px; border-radius:999px; color:var(--danger); background:rgba(195,59,56,.09); font-size:10px; font-weight:700; }
+      .issue-meta, .issue-detail, .issue-source, .issue-action { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
+      .issue-action { color:var(--ink); font-weight:620; }
       .empty { display: none; margin: 0; padding: 24px 18px; color: var(--muted); background: var(--surface); text-align: center; font-size: 13px; }
       .empty.visible { display: block; }
       .safety { margin: 15px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -69,6 +78,11 @@
         <p class="notice" id="notice" role="alert"></p>
         <h1 id="heading"></h1>
         <p class="summary" id="summary"></p>
+        <section class="list-card compatibility" aria-labelledby="issue-heading">
+          <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
+          <ul class="plugins" id="issues"></ul>
+          <p class="empty" id="issue-empty"></p>
+        </section>
         <section class="list-card" aria-labelledby="selection-hint">
           <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
           <ul class="plugins" id="plugins"></ul>
@@ -76,6 +90,7 @@
         </section>
         <p class="safety" id="safety-note"></p>
         <div class="actions">
+          <button class="button" id="repair" type="button" disabled></button>
           <button class="button" id="uninstall" type="button" disabled></button>
           <button class="button primary" id="restart" type="button"></button>
         </div>
@@ -96,8 +111,11 @@
       setText('summary', model.summary)
       setText('empty', model.emptyMessage)
       setText('selection-hint', model.selectionHint)
+      setText('issue-heading', model.issueHeading)
+      setText('issue-empty', model.issueEmptyMessage)
       setText('safety-note', model.safetyNote)
       setText('uninstall', model.uninstallLabel)
+      setText('repair', model.repairLabel)
       setText('restart', model.restartLabel)
       setText('quit', model.quitLabel)
       setText('select-all', model.selectAllLabel)
@@ -109,10 +127,30 @@
       }
       const list = document.getElementById('plugins')
       const empty = document.getElementById('empty')
+      const issueList = document.getElementById('issues')
+      const issueEmpty = document.getElementById('issue-empty')
       const uninstall = document.getElementById('uninstall')
+      const repair = document.getElementById('repair')
       const agent = document.getElementById('agent')
       const restart = document.getElementById('restart')
       const checkboxes = []
+      const issueCheckboxes = []
+      for (const issue of Array.isArray(model.issues) ? model.issues : []) {
+        const item = document.createElement('li')
+        const label = document.createElement('label'); label.className = 'issue'
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(issue.id)
+        const main = document.createElement('span'); main.className = 'issue-main'
+        const title = document.createElement('span'); title.className = 'issue-title'
+        const name = document.createElement('span'); name.className = 'issue-name'; name.textContent = String(issue.packageName)
+        const badge = document.createElement('span'); badge.className = 'issue-badge'; badge.textContent = String(issue.severityLabel)
+        title.append(name, badge); main.appendChild(title)
+        const meta = document.createElement('div'); meta.className = 'issue-meta'; meta.textContent = [issue.kindLabel, issue.versionLabel].filter(Boolean).join(' · '); main.appendChild(meta)
+        const detail = document.createElement('div'); detail.className = 'issue-detail'; detail.textContent = String(issue.detail || ''); main.appendChild(detail)
+        const source = document.createElement('div'); source.className = 'issue-source'; source.textContent = String(issue.source || ''); main.appendChild(source)
+        const action = document.createElement('div'); action.className = 'issue-action'; action.textContent = String(issue.actionLabel || ''); main.appendChild(action)
+        label.append(checkbox, main); item.appendChild(label); issueList.appendChild(item); issueCheckboxes.push(checkbox)
+      }
+      if (issueCheckboxes.length === 0) issueEmpty.classList.add('visible')
       for (const plugin of Array.isArray(model.plugins) ? model.plugins : []) {
         const item = document.createElement('li')
         const label = document.createElement('label'); label.className = 'plugin'
@@ -122,16 +160,26 @@
       }
       if (checkboxes.length === 0) empty.classList.add('visible')
       const updateSelection = () => { uninstall.disabled = !checkboxes.some((checkbox) => checkbox.checked) }
+      const updateIssueSelection = () => { repair.disabled = !issueCheckboxes.some((checkbox) => checkbox.checked) }
       for (const checkbox of checkboxes) checkbox.addEventListener('change', updateSelection)
+      for (const checkbox of issueCheckboxes) checkbox.addEventListener('change', updateIssueSelection)
       document.getElementById('select-all').addEventListener('click', () => { const selected = checkboxes.every((checkbox) => checkbox.checked); for (const checkbox of checkboxes) checkbox.checked = !selected; updateSelection() })
+      document.getElementById('select-all-issues').textContent = model.selectAllLabel || ''
+      document.getElementById('select-all-issues').addEventListener('click', () => { const selected = issueCheckboxes.every((checkbox) => checkbox.checked); for (const checkbox of issueCheckboxes) checkbox.checked = !selected; updateIssueSelection() })
       uninstall.addEventListener('click', () => {
         const plugins = checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
         if (plugins.length === 0) return
-        uninstall.disabled = true; uninstall.textContent = model.uninstallBusyLabel; agent.disabled = true
+        uninstall.disabled = true; uninstall.textContent = model.uninstallBusyLabel; repair.disabled = true; agent.disabled = true; restart.disabled = true
         void window.dshSafeMode.action('uninstall', plugins)
       })
-      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; uninstall.disabled = true; void window.dshSafeMode.action('agent', []) })
-      restart.addEventListener('click', () => { restart.disabled = true; restart.textContent = model.restartBusyLabel; void window.dshSafeMode.action('restart', []) })
+      repair.addEventListener('click', () => {
+        const issues = issueCheckboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
+        if (issues.length === 0) return
+        repair.disabled = true; repair.textContent = model.repairBusyLabel; uninstall.disabled = true; agent.disabled = true; restart.disabled = true
+        void window.dshSafeMode.action('repair', issues)
+      })
+      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; uninstall.disabled = true; repair.disabled = true; restart.disabled = true; void window.dshSafeMode.action('agent', []) })
+      restart.addEventListener('click', () => { restart.disabled = true; restart.textContent = model.restartBusyLabel; uninstall.disabled = true; repair.disabled = true; agent.disabled = true; void window.dshSafeMode.action('restart', []) })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', []))
     </script>
   </body>

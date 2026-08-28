@@ -29,6 +29,13 @@ import {
   markProfileInstallComplete
 } from './state/profile-install-marker'
 import { inspectProfileConsistency } from './state/profile-consistency'
+import {
+  disableProfilePlugins,
+  inspectProfileCompatibility,
+  quarantineProfileCorePackages,
+  quarantineProfileWorkspaces,
+  type ProfileCompatibilityIssue
+} from './state/profile-compatibility'
 import { ensureStoreDirPinned, inspectStoreConsistency } from './state/profile-store'
 import { LanMobileBridge } from './mobile/lan-mobile-bridge'
 import {
@@ -95,6 +102,7 @@ import {
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
   | { type: 'uninstall'; plugins: string[] }
+  | { type: 'repair'; issues: string[] }
   | { type: 'agent' }
   | { type: 'restart' }
   | { type: 'quit' }
@@ -1372,6 +1380,7 @@ async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
 
 async function waitForSafeModeAction(options: {
   plugins: readonly string[]
+  issues: readonly ProfileCompatibilityIssue[]
   notice?: string
   noticeTone?: 'success' | 'error'
 }): Promise<SafeModeAction> {
@@ -1417,6 +1426,7 @@ async function waitForSafeModeAction(options: {
   const model = buildSafeModeViewModel({
     locale: harnessLocale(),
     plugins: options.plugins,
+    issues: options.issues,
     notice: options.notice,
     noticeTone: options.noticeTone
   })
@@ -1450,6 +1460,61 @@ async function removeSafeModePlugin(dshHome: string, pluginName: string): Promis
     process.env,
     'safe-mode'
   )
+}
+
+async function repairSafeModeCompatibilityIssues(
+  dshHome: string,
+  issues: readonly ProfileCompatibilityIssue[]
+): Promise<{ repaired: string[]; failed: string[]; installFailed?: string }> {
+  const repaired: string[] = []
+  const failed: string[] = []
+  const pluginIssues = issues.filter((issue) => issue.resolution === 'disable-plugin')
+  const workspaceIssues = issues.filter((issue) => issue.resolution === 'quarantine-workspace')
+  const coreIssues = issues.filter((issue) => issue.resolution === 'rebuild-profile')
+
+  if (pluginIssues.length > 0) {
+    const targets = [...new Set(pluginIssues.map((issue) => issue.target))]
+    const disabled = await disableProfilePlugins(dshHome, targets)
+    repaired.push(...pluginIssues.filter((issue) => disabled.includes(issue.target)).map((issue) => issue.id))
+    failed.push(...pluginIssues.filter((issue) => !disabled.includes(issue.target)).map((issue) => issue.id))
+  }
+
+  if (workspaceIssues.length > 0) {
+    const targets = [...new Set(workspaceIssues.map((issue) => issue.target))]
+    const quarantined = await quarantineProfileWorkspaces(dshHome, targets)
+    repaired.push(
+      ...workspaceIssues
+        .filter((issue) => quarantined.includes(issue.packageName))
+        .map((issue) => issue.id)
+    )
+    failed.push(
+      ...workspaceIssues
+        .filter((issue) => !quarantined.includes(issue.packageName))
+        .map((issue) => issue.id)
+    )
+  }
+
+  if (coreIssues.length > 0) {
+    const targets = [...new Set(coreIssues.map((issue) => issue.target))]
+    const quarantined = await quarantineProfileCorePackages(dshHome, targets)
+    repaired.push(...coreIssues.filter((issue) => quarantined.includes(issue.target)).map((issue) => issue.id))
+    failed.push(...coreIssues.filter((issue) => !quarantined.includes(issue.target)).map((issue) => issue.id))
+  }
+
+  if (workspaceIssues.length > 0 || coreIssues.length > 0) {
+    await clearProfileInstallMarker(dshHome)
+    const result = await installProfileDependenciesWithDsh({
+      dshHome,
+      dshEntryPath: dshEntryPath(),
+      nodeExecutablePath: bundledNodePath(),
+      pnpmEntryPath: bundledPnpmEntryPath(),
+      pnpmRunnerPath: bundledPnpmRunnerPath()
+    })
+    if (!result.ok) return { repaired, failed, installFailed: result.detail ?? 'unknown error' }
+    await markProfileInstallComplete(dshHome)
+  }
+
+  return { repaired, failed }
 }
 
 async function removeProfilePluginCompletely(
@@ -1520,7 +1585,16 @@ async function showSafeModeManager(): Promise<void> {
   try {
     while (!quitting) {
       const installed = await listInstalledProfilePlugins(dshHome)
-      const action = await waitForSafeModeAction({ plugins: installed, notice, noticeTone })
+      const compatibility = await inspectProfileCompatibility(
+        dshHome,
+        join(app.getAppPath(), 'node_modules')
+      )
+      const action = await waitForSafeModeAction({
+        plugins: installed,
+        issues: compatibility.issues,
+        notice,
+        noticeTone
+      })
       notice = undefined
       noticeTone = undefined
 
@@ -1534,9 +1608,45 @@ async function showSafeModeManager(): Promise<void> {
         return
       }
       if (action.type === 'restart') {
+        if (compatibility.issues.some((issue) => issue.severity === 'blocking')) {
+          notice = isChinese
+            ? '仍有阻断级兼容性问题。请先修复或暂停相关插件。'
+            : 'Blocking compatibility issues remain. Repair them or disable the affected plugins first.'
+          noticeTone = 'error'
+          continue
+        }
         await launchHarness()
         void mobileBridge.start().catch(showUnexpectedError)
         return
+      }
+
+      if (action.type === 'repair') {
+        const issueById = new Map(compatibility.issues.map((issue) => [issue.id, issue]))
+        const selectedIssues = [...new Set(action.issues)]
+          .map((id) => issueById.get(id))
+          .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined)
+        if (selectedIssues.length === 0) {
+          notice = isChinese ? '请选择要处理的兼容性问题。' : 'Select at least one compatibility issue.'
+          noticeTone = 'error'
+          continue
+        }
+        const result = await repairSafeModeCompatibilityIssues(dshHome, selectedIssues)
+        if (result.installFailed) {
+          notice = isChinese
+            ? `已备份并应用部分修复，但依赖重建失败：${result.installFailed}`
+            : `Some recoverable repairs were applied, but dependency rebuild failed: ${result.installFailed}`
+          noticeTone = 'error'
+          continue
+        }
+        notice = result.failed.length === 0
+          ? isChinese
+            ? `已应用 ${result.repaired.length} 项可恢复修复。`
+            : `Applied ${result.repaired.length} recoverable repair${result.repaired.length === 1 ? '' : 's'}.`
+          : isChinese
+            ? `已应用 ${result.repaired.length} 项修复，${result.failed.length} 项未能处理。`
+            : `Applied ${result.repaired.length} repairs; ${result.failed.length} could not be completed.`
+        noticeTone = result.failed.length === 0 ? 'success' : 'error'
+        continue
       }
 
       const installedSet = new Set(installed)
@@ -1839,7 +1949,7 @@ async function bootstrap(): Promise<void> {
     if (
       !safeModeVisible ||
       !safeModeManagerVisible ||
-      (action !== 'uninstall' && action !== 'agent' && action !== 'restart' && action !== 'quit')
+      (action !== 'uninstall' && action !== 'repair' && action !== 'agent' && action !== 'restart' && action !== 'quit')
     ) {
       return { ok: false }
     }
@@ -1848,6 +1958,11 @@ async function bootstrap(): Promise<void> {
         return { ok: false }
       }
       resolveSafeModeAction({ type: 'uninstall', plugins })
+    } else if (action === 'repair') {
+      if (!Array.isArray(plugins) || !plugins.every((issue) => typeof issue === 'string')) {
+        return { ok: false }
+      }
+      resolveSafeModeAction({ type: 'repair', issues: plugins })
     } else {
       resolveSafeModeAction({ type: action })
     }
@@ -1866,11 +1981,21 @@ async function bootstrap(): Promise<void> {
     return { ok: true }
   })
   ipcMain.removeHandler('safe-mode:exit')
-  ipcMain.handle('safe-mode:exit', (event) => {
+  ipcMain.handle('safe-mode:exit', async (event) => {
     assertTrustedMainWindowEvent(event)
     if (!safeModeVisible) return { ok: false }
+    const dshHome = join(app.getPath('userData'), 'harness')
+    const compatibility = await inspectProfileCompatibility(
+      dshHome,
+      join(app.getAppPath(), 'node_modules')
+    )
+    if (compatibility.issues.some((issue) => issue.severity === 'blocking')) {
+      void showSafeModeManager().catch(showUnexpectedError)
+      return { ok: false, blocked: true }
+    }
     resolveSafeModeAction({ type: 'agent' })
-    void launchHarness().then(() => mobileBridge.start()).catch(showUnexpectedError)
+    await launchHarness()
+    void mobileBridge.start().catch(showUnexpectedError)
     return { ok: true }
   })
   ipcMain.removeHandler('harness:reset-plugins')

@@ -219,15 +219,15 @@ async function mountSafeModeBanner(): Promise<void> {
     const description = document.createElement('span')
     description.className = 'description'
     description.textContent = safeModeLocale === 'zh'
-      ? '已暂时停用所有第三方插件，可卸载有问题的插件后重启。'
-      : 'All third-party plugins are temporarily disabled. Remove a problematic plugin, then restart.'
+      ? '已暂时停用所有第三方插件，可检查版本冲突并进行可恢复修复。'
+      : 'All third-party plugins are temporarily disabled. Check compatibility and apply recoverable repairs.'
     copy.append(label, description)
     const actions = document.createElement('span')
     actions.className = 'actions'
     const manage = document.createElement('button')
     manage.type = 'button'
-    manage.textContent = safeModeLocale === 'zh' ? '卸载插件' : 'Remove plugins'
-    manage.setAttribute('aria-label', safeModeLocale === 'zh' ? '卸载第三方插件' : 'Remove third-party plugins')
+    manage.textContent = safeModeLocale === 'zh' ? '检查兼容性' : 'Check compatibility'
+    manage.setAttribute('aria-label', safeModeLocale === 'zh' ? '检查并修复档案兼容性' : 'Check and repair profile compatibility')
     manage.addEventListener('click', () => {
       void ipcRenderer.invoke('safe-mode:manage')
     })
@@ -238,7 +238,15 @@ async function mountSafeModeBanner(): Promise<void> {
     exit.addEventListener('click', () => {
       manage.disabled = true
       exit.disabled = true
-      void ipcRenderer.invoke('safe-mode:exit')
+      void ipcRenderer.invoke('safe-mode:exit').then((result) => {
+        if (result?.blocked) {
+          manage.disabled = false
+          exit.disabled = false
+        }
+      }).catch(() => {
+        manage.disabled = false
+        exit.disabled = false
+      })
     })
     actions.append(manage, exit)
     bar.append(dot, copy, actions)

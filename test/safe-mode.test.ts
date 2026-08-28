@@ -14,7 +14,7 @@ describe('Safe Mode', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
   })
 
-  it('explains that plugins are blocked before offering removal', () => {
+  it('explains isolation and recoverable compatibility repair', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh',
       plugins: ['plugin-a', '@example/plugin-b', 'plugin-a']
@@ -24,7 +24,8 @@ describe('Safe Mode', () => {
     expect(model.summary).toContain('暂时停用所有第三方插件')
     expect(model.summary).toContain('确保基础功能正常使用')
     expect(model.summary).toContain('但不会删除插件')
-    expect(model.summary).toContain('如需恢复正常模式')
+    expect(model.summary).toContain('检查核心版本、客户端模块和 Workspace 依赖')
+    expect(model.summary).toContain('兼容性修复会先备份')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.safetyNote).toContain('未选中的插件不会被删除')
   })
@@ -35,10 +36,37 @@ describe('Safe Mode', () => {
       badge: 'Safe Mode',
       heading: '',
       selectionHint: 'Select plugins to remove',
+      issueHeading: 'Compatibility check',
+      repairLabel: 'Apply selected repairs',
       uninstallLabel: 'Remove selected plugins',
       agentLabel: 'Close',
       restartLabel: 'Exit Safe Mode and restart',
       quitLabel: 'Quit DSH Desktop'
+    })
+  })
+
+  it('explains compatibility issues and their recoverable actions', () => {
+    const model = buildSafeModeViewModel({
+      locale: 'zh',
+      plugins: [],
+      issues: [{
+        id: 'missing-client-module:dsh-dream-skin:runtime',
+        kind: 'missing-client-module',
+        severity: 'blocking',
+        packageName: 'dsh-dream-skin',
+        installedVersion: '0.4.14',
+        source: 'dsh-dream-skin/lib/client.js',
+        detail: '缺少客户端模块。',
+        resolution: 'disable-plugin',
+        target: 'dsh-dream-skin'
+      }]
+    })
+    expect(model.issues[0]).toMatchObject({
+      packageName: 'dsh-dream-skin',
+      kindLabel: '插件版本不兼容',
+      severityLabel: '阻断',
+      actionLabel: '暂停插件（保留数据）',
+      versionLabel: '当前 0.4.14'
     })
   })
 
@@ -56,8 +84,10 @@ describe('Safe Mode', () => {
   it('ships a selectable management page with no remote content', async () => {
     const html = await readFile('build/safe-mode.html', 'utf8')
     expect(html).toContain('id="plugins"')
+    expect(html).toContain('id="issues"')
     expect(html).toContain('type = \'checkbox\'')
     expect(html).toContain("window.dshSafeMode.action('uninstall', plugins)")
+    expect(html).toContain("window.dshSafeMode.action('repair', issues)")
     expect(html).toContain("window.dshSafeMode.action('agent', [])")
     expect(html).toContain('class="close" id="agent"')
     expect(html).toContain('class="button primary" id="restart"')
@@ -78,7 +108,11 @@ describe('Safe Mode', () => {
     expect(main).toContain('ensureSafeModeProfile(dshHome)')
     expect(main).toContain('runtime.start(launchDirectory, SAFE_MODE_PROFILE)')
     expect(main).toContain("ipcMain.handle('safe-mode:action'")
+    expect(main).toContain('inspectProfileCompatibility(')
+    expect(main).toContain('repairSafeModeCompatibilityIssues(')
     expect(main).toContain("ipcMain.handle('safe-mode:manage'")
+    expect(main).toContain("ipcMain.handle('safe-mode:exit', async")
+    expect(main).toContain("return { ok: false, blocked: true }")
     expect(main).toContain('safeModeManagerWindow')
     expect(main).toContain('modal: true')
     expect(main).toContain('assertTrustedSafeModeManagerEvent(event)')
@@ -86,7 +120,7 @@ describe('Safe Mode', () => {
     expect(main).toContain("label: isChinese ? '以安全模式重启…' : 'Restart as Safe Mode…'")
     expect(main).toContain("return { active: safeModeVisible, locale: harnessLocale() }")
     expect(preload).toContain("safeModeLocale === 'zh' ? '安全模式' : 'Safe Mode'")
-    expect(preload).toContain("safeModeLocale === 'zh' ? '卸载插件' : 'Remove plugins'")
+    expect(preload).toContain("safeModeLocale === 'zh' ? '检查兼容性' : 'Check compatibility'")
     expect(preload).toContain("safeModeLocale === 'zh' ? '退出安全模式' : 'Exit Safe Mode'")
     expect(preload).toContain("safeModeLocale === 'zh'")
     expect(preload).toContain("ipcRenderer.invoke('safe-mode:action', action, plugins)")
