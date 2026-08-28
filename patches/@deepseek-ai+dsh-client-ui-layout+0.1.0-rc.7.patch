@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
-index 74e58cb..abc6ea7 100644
+index 74e58cb..039b304 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
 @@ -11,6 +11,7 @@ window.__ModuleLoader__.load({
@@ -28,7 +28,23 @@ index 74e58cb..abc6ea7 100644
  			document.head.appendChild(tag);
  		}
  		var AppFrame_module_css_default = {
-@@ -287,7 +288,7 @@ window.__ModuleLoader__.load({
+@@ -88,6 +89,7 @@ window.__ModuleLoader__.load({
+ 		function CenterColumn(props) {
+ 			return (0, react_jsx_runtime.jsx)("div", {
+ 				className: AppFrame_module_css_default.centerCol,
++				"data-pane": "conversation",
+ 				children: props.children
+ 			});
+ 		}
+@@ -218,6 +220,7 @@ window.__ModuleLoader__.load({
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				ref: frameRef,
+ 				className: AppFrame_module_css_default.frame,
++				"data-dsh-frame": true,
+ 				style: { gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` },
+ 				"data-sidebar-collapsed": sidebarCollapsed || void 0,
+ 				"data-details-collapsed": cols.details === 0 || void 0,
+@@ -287,7 +290,7 @@ window.__ModuleLoader__.load({
  						d.sidebar = clampWidth(px, 264, 420);
  					},
  					setDetails: (d, px) => {
@@ -37,7 +53,7 @@ index 74e58cb..abc6ea7 100644
  					},
  					toggleSidebar: (d) => {
  						if (d.narrow) d.narrowExpanded = !d.narrowExpanded;
-@@ -447,6 +448,8 @@ window.__ModuleLoader__.load({
+@@ -447,6 +450,8 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		exports.LayoutController = LayoutController;

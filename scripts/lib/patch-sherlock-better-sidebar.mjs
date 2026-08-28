@@ -6,6 +6,8 @@ const RECONCILE_PATCH_MARKER = '/* sherlock:pinned-sidebar-reconcile:v1 */'
 const EDGE_PATCH_MARKER = '/* sherlock:pinned-sidebar-edge:v1 */'
 const FILE_DRAG_PATCH_MARKER = '/* sherlock:files-to-research-canvas:v2 */'
 const LEGACY_FILE_DRAG_PATCH_MARKER = '/* sherlock:files-to-research-canvas:v1 */'
+const PANEL_SURFACE_SYNC_PATCH_MARKER = '/* sherlock:panel-surface-sync:v1 */'
+const PANEL_DRAG_DIMENSION_PATCH_MARKER = '/* sherlock:panel-drag-dimensions:v1 */'
 
 function replaceExact(source, before, after, label, expectedCount = 1) {
   const count = source.split(before).length - 1
@@ -95,6 +97,53 @@ export function patchBetterSidebarClient(source) {
       'search result drag source'
     )
   }
+
+  if (!next.includes(PANEL_DRAG_DIMENSION_PATCH_MARKER)) next = replaceExact(
+    next,
+    `\t\t\tconst applyDrag = (width, height) => {
+\t\t\t\tpanelRef.current?.style.setProperty("width", \`\${width}px\`);
+\t\t\t\tbottomRef.current?.style.setProperty("height", \`\${height}px\`);
+\t\t\t\tbottomRef.current?.style.setProperty("right", \`\${window.innerWidth - centerRect.right + (width - (state?.width ?? 0))}px\`);
+\t\t\t\twriteGeometry(width, height);
+\t\t\t};`,
+    `\t\t\tconst applyDrag = (width, height) => {
+\t\t\t\t${PANEL_DRAG_DIMENSION_PATCH_MARKER}
+\t\t\t\tif (width > 0) panelRef.current?.style.setProperty("width", \`\${width}px\`);
+\t\t\t\tif (height > 0) bottomRef.current?.style.setProperty("height", \`\${height}px\`);
+\t\t\t\tbottomRef.current?.style.setProperty("right", \`\${window.innerWidth - centerRect.right + (width - (state?.width ?? 0))}px\`);
+\t\t\t\twriteGeometry(width, height);
+\t\t\t};`,
+    'dragged panel physical dimensions'
+  )
+
+  if (!next.includes(PANEL_SURFACE_SYNC_PATCH_MARKER)) next = replaceExact(
+    next,
+    `\t\t\t(0, react.useEffect)(() => {
+\t\t\t\tif (anyDragging) document.body.setAttribute("data-dsh-sidebar-dragging", "");
+\t\t\t\telse document.body.removeAttribute("data-dsh-sidebar-dragging");
+\t\t\t}, [anyDragging]);`,
+    `\t\t\t(0, react.useLayoutEffect)(() => {
+\t\t\t\t${PANEL_SURFACE_SYNC_PATCH_MARKER}
+\t\t\t\tconst committed = snapshot.state;
+\t\t\t\tif (anyDragging || narrow || committed === void 0) return;
+\t\t\t\tpanelRef.current?.style.setProperty("width", \`\${Math.min(committed.width, window.innerWidth)}px\`);
+\t\t\t\tbottomRef.current?.style.setProperty("height", \`\${Math.min(committed.bottomHeight, window.innerHeight)}px\`);
+\t\t\t\tif (centerRect.right > 0) bottomRef.current?.style.setProperty("right", \`\${window.innerWidth - centerRect.right}px\`);
+\t\t\t}, [
+\t\t\t\tanyDragging,
+\t\t\t\tnarrow,
+\t\t\t\tsnapshot.state?.panelOpen,
+\t\t\t\tsnapshot.state?.width,
+\t\t\t\tsnapshot.state?.bottomOpen,
+\t\t\t\tsnapshot.state?.bottomHeight,
+\t\t\t\tcenterRect.right
+\t\t\t]);
+\t\t\t(0, react.useEffect)(() => {
+\t\t\t\tif (anyDragging) document.body.setAttribute("data-dsh-sidebar-dragging", "");
+\t\t\t\telse document.body.removeAttribute("data-dsh-sidebar-dragging");
+\t\t\t}, [anyDragging]);`,
+    'committed panel surface dimensions'
+  )
 
   if (source.includes(PATCH_MARKER)) return next
 

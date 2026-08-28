@@ -135,6 +135,10 @@ describe('Sherlock desktop shell controls', () => {
       const portal = host.querySelector('[data-details-portal-host]')
       expect(portal).toBeNull()
       expect(host.querySelector('[data-slot-name="details"]')).not.toBeNull()
+      expect(host.querySelector('[data-dsh-frame]')).not.toBeNull()
+      expect(
+        host.querySelector('[data-dsh-frame] > [data-pane="conversation"]')
+      ).not.toBeNull()
     } finally {
       await act(async () => { root.unmount() })
       for (const [key, descriptor] of Object.entries(previousEnvironment)) {

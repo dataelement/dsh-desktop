@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
-index 11ee6c4..2e267d8 100644
+index 11ee6c4..636de98 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 @@ -1,8 +1,8 @@
@@ -24,7 +24,7 @@ index 11ee6c4..2e267d8 100644
  import { GoalError } from "@deepseek-ai/dsh-goal";
  import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
  import { credentialRef } from "@deepseek-ai/dsh-credentials";
-@@ -23,6 +23,175 @@ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
+@@ -23,6 +23,182 @@ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
  import { API_REMOTE_FORWARDED_EVENTS, ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, createApiRemoteAgentResolver, hasApiRemoteSubagentOwner, inspectApiRemoteSession } from "@deepseek-ai/dsh-api-remotes";
  import { release } from "node:os";
  import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
@@ -76,20 +76,27 @@ index 11ee6c4..2e267d8 100644
 +		}
 +	};
 +}
-+/** Resolve one conversation strictly; an unavailable remembered provider stays visible as blocked. */
++/** Resolve one conversation while migrating legacy request-only model state. */
 +function resolveSessionModelSelection(options) {
-+	const current = options.live ?? options.durable ?? options.request;
-+	if (current !== void 0) return {
-+		current: copyModelSelection(current),
-+		routable: options.routeServed(current.provider)
++	const explicit = options.live ?? options.durable;
++	if (explicit !== void 0) return {
++		current: copyModelSelection(explicit),
++		routable: options.routeServed(explicit.provider)
 +	};
-+	if (!options.routeServed(options.defaultSelection.provider)) return {
-+		current: void 0,
-+		routable: false
++	if (options.request !== void 0 && options.routeServed(options.request.provider)) return {
++		current: copyModelSelection(options.request),
++		routable: true
 +	};
-+	return {
++	if (options.routeServed(options.defaultSelection.provider)) return {
 +		current: copyModelSelection(options.defaultSelection),
 +		routable: true
++	};
++	return options.request === void 0 ? {
++		current: void 0,
++		routable: false
++	} : {
++		current: copyModelSelection(options.request),
++		routable: false
 +	};
 +}
 +//#endregion
@@ -200,7 +207,7 @@ index 11ee6c4..2e267d8 100644
  //#region lib/types/session-export.js
  /**
  * Host-side session-log download: streams one ZIP archive whose files are the
-@@ -576,7 +745,7 @@ const sessionHistoryValueSchema = z$1.object({
+@@ -576,7 +752,7 @@ const sessionHistoryValueSchema = z$1.object({
  const sessionModelsRequestSchema = z$1.object({ sessionId: sessionIdSchema });
  /** session.models response value. */
  const sessionModelsValueSchema = z$1.object({
@@ -209,7 +216,7 @@ index 11ee6c4..2e267d8 100644
  	routable: z$1.boolean(),
  	groups: z$1.array(modelProviderGroupSchema),
  	failures: z$1.array(modelCatalogFailureSchema)
-@@ -1675,6 +1844,21 @@ function changedWorkspaceView(workspaceId, value) {
+@@ -1675,6 +1851,21 @@ function changedWorkspaceView(workspaceId, value) {
  function createApiProxy(ctx, defaults) {
  	const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel ?? 6;
  	const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes ?? 1024;
@@ -231,19 +238,27 @@ index 11ee6c4..2e267d8 100644
  	/** The seed model each create/resume declares; re-read so it never goes stale. */
  	const agentOptions = () => {
  		const { provider, model } = defaults.defaultModelSelection();
-@@ -1710,8 +1894,9 @@ function createApiProxy(ctx, defaults) {
+@@ -1709,12 +1900,13 @@ function createApiProxy(ctx, defaults) {
+ 	/**
  	* Install or return the session-local model selection that prompt assembly snapshots.
  	*
- 	* Precedence, resolved on EVERY read rather than seeded once: a selection
+-	* Precedence, resolved on EVERY read rather than seeded once: a selection
 -	* made in this process, else the session's own latest logged request/header,
 -	* else the live Agent default. Re-reading keeps the two tiers exact in both
-+	* made in this process, else the durable session selection, else the session's
-+	* own latest logged request/header, else the live Agent default. Re-reading
-+	* keeps the tiers exact in both
- 	* directions: a session with a recorded request derives its selection from
- 	* its log, while a blank session (New Session reuses one rather than minting
- 	* another) reads any default saved after it was created. There is no create-time
-@@ -1724,14 +1909,18 @@ function createApiProxy(ctx, defaults) {
+-	* directions: a session with a recorded request derives its selection from
+-	* its log, while a blank session (New Session reuses one rather than minting
+-	* another) reads any default saved after it was created. There is no create-time
++	* Precedence, resolved on EVERY read rather than seeded once: an explicit
++	* selection made in this process, else the durable session selection, else a
++	* still-routable latest request/header, else the live Agent default. An
++	* unavailable explicit selection stays blocked; only legacy request-only state
++	* falls forward when its provider has been retired. Re-reading keeps a blank
++	* session (New Session reuses one rather than minting another) synchronized
++	* with any default saved after it was created. There is no create-time
+ 	* per-session override tier on this wire — if one returns (a create-options
+ 	* contribution), it must fold in between the selection and the log.
+ 	*/
+@@ -1724,14 +1916,18 @@ function createApiProxy(ctx, defaults) {
  		let picked;
  		const selection = {
  			get current() {
@@ -269,7 +284,7 @@ index 11ee6c4..2e267d8 100644
  			},
  			set current(next) {
  				picked = next;
-@@ -2295,6 +2484,11 @@ function createApiProxy(ctx, defaults) {
+@@ -2295,6 +2491,11 @@ function createApiProxy(ctx, defaults) {
  		if ("error" in found) return { refused: err(request, found.error) };
  		const agent = found.agent;
  		const selection = selectionFor(agent).current;
@@ -281,7 +296,7 @@ index 11ee6c4..2e267d8 100644
  		if (!routeServed(selection.provider)) return { refused: err(request, {
  			code: "model-unavailable",
  			message: `no adapter serves provider "${selection.provider}"; select a model for this session`,
-@@ -2608,9 +2802,9 @@ function createApiProxy(ctx, defaults) {
+@@ -2608,9 +2809,9 @@ function createApiProxy(ctx, defaults) {
  				if ("error" in found) return err(request, found.error);
  				const current = selectionFor(found.agent).current;
  				const { groups, failures } = await buildModelCatalog(ctx);
@@ -293,7 +308,7 @@ index 11ee6c4..2e267d8 100644
  					routable,
  					groups,
  					failures
-@@ -2643,6 +2837,7 @@ function createApiProxy(ctx, defaults) {
+@@ -2643,6 +2844,7 @@ function createApiProxy(ctx, defaults) {
  							model: resolved.model,
  							...resolved.reasoningEffort === void 0 ? {} : { reasoningEffort: resolved.reasoningEffort }
  						};
@@ -301,7 +316,7 @@ index 11ee6c4..2e267d8 100644
  						selectionFor(found.agent).current = selected;
  						try {
  							await defaults.saveDefaultModelSelection?.(selected);
-@@ -3150,7 +3345,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3150,7 +3352,13 @@ function createApiProxy(ctx, defaults) {
  				}));
  			},
  			async pickDirectory(request, signal) {
@@ -316,7 +331,7 @@ index 11ee6c4..2e267d8 100644
  				if (capability.kind !== "native") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
-@@ -3172,7 +3373,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3172,7 +3380,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async listDirectory(request, signal) {
@@ -331,7 +346,7 @@ index 11ee6c4..2e267d8 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3190,7 +3397,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3190,7 +3404,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async createDirectory(request) {
@@ -346,7 +361,7 @@ index 11ee6c4..2e267d8 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3244,6 +3457,127 @@ function createApiProxy(ctx, defaults) {
+@@ -3244,6 +3464,127 @@ function createApiProxy(ctx, defaults) {
  			}
  		},
  		agentPresets: {
@@ -474,7 +489,7 @@ index 11ee6c4..2e267d8 100644
  			async list(request) {
  				const presets = ctx.get("agentPresets");
  				if (presets === void 0) return ok(request, {
-@@ -4932,6 +5266,34 @@ function toFetchHandler(api) {
+@@ -4932,6 +5273,34 @@ function toFetchHandler(api) {
  			rpcId: RpcId(randomUUID()),
  			payload: {}
  		}, req.signal));
@@ -509,7 +524,7 @@ index 11ee6c4..2e267d8 100644
  		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
  			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
  			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
-@@ -5531,7 +5893,6 @@ var ApiProxyService = class extends Service {
+@@ -5531,7 +5900,6 @@ var ApiProxyService = class extends Service {
  		"agentDefaultModel",
  		"agents",
  		"attachments",
@@ -517,7 +532,7 @@ index 11ee6c4..2e267d8 100644
  		"llm",
  		"sessions",
  		"subagents",
-@@ -5584,4 +5945,4 @@ var ApiProxyService = class extends Service {
+@@ -5584,4 +5952,4 @@ var ApiProxyService = class extends Service {
  	}
  };
  //#endregion

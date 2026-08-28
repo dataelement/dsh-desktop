@@ -113,10 +113,17 @@ describe('bundled Sherlock plugin profile', () => {
         `marker branch must reject ${label}`
       ).toThrow(/Office preview .*integrity/u)
     }
-    expect(() => patchSherlockOfficePreviewClient(source.replace(
-      'const inject = ["betterSidebar"];',
-      'const inject = ["unexpected-office-api"];'
-    ))).toThrow(/Office preview .*expected 1, found 0/u)
+    if (source.includes('/* sherlock:office-preview-service:v1 */')) {
+      expect(() => patchSherlockOfficePreviewClient(source.replace(
+        'ctx.inject(["betterSidebar"]',
+        'ctx.inject(["unexpected-office-api"]'
+      ))).toThrow(/Office preview patch integrity/u)
+    } else {
+      expect(() => patchSherlockOfficePreviewClient(source.replace(
+        'const inject = ["betterSidebar"];',
+        'const inject = ["unexpected-office-api"];'
+      ))).toThrow(/Office preview .*expected 1, found 0/u)
+    }
   })
 
   it('keeps Sherlock pinned sidebar tabs first, fixed, and session-targetable', async () => {
@@ -149,6 +156,38 @@ describe('bundled Sherlock plugin profile', () => {
     expect(patched).toContain('const setPanelState = (patch, scope) =>')
     expect(patched).toContain('targetsInactiveSession ? store.reduceFor(scope.sessionId, reducer) : store.reduce(reducer)')
     expect(patched).toContain('setPanelState')
+  })
+
+  it('restores committed sidebar surface sizes after imperative drag cleanup', async () => {
+    const source = await readFile(
+      path.resolve(
+        import.meta.dirname,
+        '..',
+        'build',
+        'sherlock-plugin-profile',
+        'vendor',
+        'dsh-better-sidebar',
+        'lib',
+        'client.js'
+      ),
+      'utf8'
+    )
+
+    const patched = patchBetterSidebarClient(source)
+
+    expect(patched).toContain('/* sherlock:panel-surface-sync:v1 */')
+    expect(patched).toContain(
+      'if (width > 0) panelRef.current?.style.setProperty("width", `${width}px`);'
+    )
+    expect(patched).toContain(
+      'if (height > 0) bottomRef.current?.style.setProperty("height", `${height}px`);'
+    )
+    expect(patched).toContain('(0, react.useLayoutEffect)(() => {')
+    expect(patched).toContain(
+      'bottomRef.current?.style.setProperty("height", `${Math.min(committed.bottomHeight, window.innerHeight)}px`);'
+    )
+    expect(patched).toContain('snapshot.state?.bottomOpen,')
+    expect(patchBetterSidebarClient(patched)).toBe(patched)
   })
 
   it('publishes file drags from Files rows and search results without making folders draggable', async () => {

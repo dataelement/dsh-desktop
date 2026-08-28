@@ -56,12 +56,18 @@ function createSettingsFixture() {
 function createApiProxyFixture(
   settingsFixture: ReturnType<typeof createSettingsFixture>,
   defaultSelection: Selection,
-  sessionId = 'proxy-session'
+  sessionId = 'proxy-session',
+  options: {
+    providers?: Array<{ id: string, name: string }>
+    requestSelection?: Selection
+  } = {}
 ) {
   const session = {
     id: sessionId,
     header: {},
-    requestHeader: () => undefined,
+    requestHeader: () => options.requestSelection === undefined
+      ? undefined
+      : { config: options.requestSelection },
     deriveMessages: () => []
   }
   const agent = {
@@ -70,7 +76,7 @@ function createApiProxyFixture(
     ctx: { on: () => () => undefined },
     inbox: { nextTurn: [], nextStep: [] }
   }
-  const providers = [
+  const providers = options.providers ?? [
     { id: 'openai', name: 'OpenAI' },
     { id: 'anthropic', name: 'Anthropic' }
   ]
@@ -218,5 +224,23 @@ describe('durable per-session model selection', () => {
     ])
     expect(modelResult(await restarted.api.sessions.models(rpc({ sessionId: 'proxy-session' }, 'after-restart'))))
       .toEqual(expect.objectContaining({ current: selection('anthropic', 'anthropic-model'), routable: true }))
+  })
+
+  it('adopts the routable current default when a legacy session only records an unavailable request model', async () => {
+    const legacy = createApiProxyFixture(
+      createSettingsFixture(),
+      selection('anthropic', 'anthropic-model', 'high'),
+      'legacy-session',
+      {
+        providers: [{ id: 'anthropic', name: 'Anthropic' }],
+        requestSelection: selection('openai', 'retired-openai-model')
+      }
+    )
+
+    expect(modelResult(await legacy.api.sessions.models(rpc({ sessionId: 'legacy-session' }))))
+      .toEqual(expect.objectContaining({
+        current: selection('anthropic', 'anthropic-model', 'high'),
+        routable: true
+      }))
   })
 })

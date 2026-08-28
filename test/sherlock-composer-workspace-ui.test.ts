@@ -6676,6 +6676,46 @@ describe('Sherlock workspace and composer controls', () => {
     }
   )
 
+  it('overlays the active Chat composer without reserving an opaque full-width footer row', async () => {
+    const mounted = await mountConversationRoot('chat', {
+      messageId: 'm-composer-overlay', text: '输入框后方仍应显示对话内容。'
+    })
+    try {
+      const { browserWindow, host } = mounted
+      const root = host.querySelector('.wSkVaW_root')
+      const scroll = host.querySelector('.wSkVaW_scrollBody')
+      const centerHost = host.querySelector('[data-center-composer-host]')
+      const portalHost = host.querySelector('[data-composer-portal-host]')
+      const seat = host.querySelector('[data-composer-seat]')
+      const card = host.querySelector('.uV2eYG_card')
+      expect(root).not.toBeNull()
+      expect(scroll).not.toBeNull()
+      expect(centerHost).not.toBeNull()
+      expect(portalHost).not.toBeNull()
+      expect(seat).not.toBeNull()
+      if (root === null || scroll === null || centerHost === null ||
+          portalHost === null || seat === null) return
+
+      const centerStyle = browserWindow.getComputedStyle(centerHost)
+      expect(centerHost.parentElement).toBe(root)
+      expect(scroll.parentElement).toBe(root)
+      expect(centerStyle.position).toBe('absolute')
+      expect(centerStyle.left).toBe('0px')
+      expect(centerStyle.right).toBe('0px')
+      expect(centerStyle.bottom).toBe('0px')
+      expect(centerStyle.backgroundImage).toBe('none')
+      expect(centerStyle.pointerEvents).toBe('none')
+      expect(browserWindow.getComputedStyle(portalHost).pointerEvents).toBe('none')
+      expect(card).not.toBeNull()
+      if (card !== null) {
+        expect(browserWindow.getComputedStyle(card).pointerEvents).toBe('auto')
+      }
+      expect(browserWindow.getComputedStyle(seat).backgroundImage).toBe('none')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('keeps Research message actions clickable when no composer menu is mounted', async () => {
     const mounted = await mountConversationRoot('research', {
       messageId: 'm-without-menu', text: '可以加入画布的有效回复。'
