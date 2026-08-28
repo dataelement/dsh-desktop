@@ -6783,6 +6783,16 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('observes the conversation scrollport so a pinned tail follows bottom-panel resizing', async () => {
+    const source = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js',
+      'utf8'
+    )
+    expect(source).toMatch(
+      /const el = scrollerOf\(local\);[\s\S]*?observer\.observe\(column\);\s*observer\.observe\(el\);/
+    )
+  })
+
   it('keeps Research message actions clickable when no composer menu is mounted', async () => {
     const mounted = await mountConversationRoot('research', {
       messageId: 'm-without-menu', text: '可以加入画布的有效回复。'
