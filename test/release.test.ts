@@ -231,6 +231,8 @@ describe('GitHub release contract', () => {
       expect(workflow).toContain(asset)
     }
     expect(workflow).toContain('merge-mac-update-metadata.mjs')
+    expect(workflow).toContain('Verify release assets before publication')
+    expect(workflow).toContain('verify-release-assets.mjs release-assets')
   })
 
   it('keeps builder jobs from attempting implicit tag publishing', async () => {

@@ -484,10 +484,13 @@ jobs:
           path: ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release
       - name: Download and verify Jsign
         run: |
+          set -euo pipefail
           jsign_jar="$WINDOWS_SIGNING_WORK_DIR/jsign-${JSIGN_VERSION}.jar"
-          curl --fail --location --retry 3 \
+          curl --fail-with-body --location --retry 3 --retry-all-errors \
+            --connect-timeout 15 --max-time 180 \
             --output "$jsign_jar" \
             "https://github.com/ebourg/jsign/releases/download/${JSIGN_VERSION}/jsign-${JSIGN_VERSION}.jar"
+          test -s "$jsign_jar"
           printf '%s  %s\n' "$JSIGN_SHA256" "$jsign_jar" | shasum -a 256 --check
           java -jar "$jsign_jar" --version
           echo "JSIGN_JAR=$jsign_jar" >> "$GITHUB_ENV"
@@ -578,6 +581,7 @@ jobs:
           path: release-assets
       - name: Merge macOS update metadata
         run: |
+          set -euo pipefail
           node scripts/merge-mac-update-metadata.mjs \
             release-assets/latest-mac-arm64.yml \
             release-assets/latest-mac-x64.yml \
@@ -585,6 +589,10 @@ jobs:
           find release-assets -maxdepth 1 \
             \( -name latest-mac-arm64.yml -o -name latest-mac-x64.yml \) \
             -delete
+      - name: Verify release assets before publication
+        run: |
+          set -euo pipefail
+          node scripts/verify-release-assets.mjs release-assets "${GITHUB_REF_NAME#v}"
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}

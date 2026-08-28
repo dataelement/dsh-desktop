@@ -59,6 +59,9 @@ describe('the profile’s pnpm store', () => {
     // Already correct: the file is not rewritten on every launch.
     expect(pinStoreDir(`${NPMRC}store-dir=/store\n`, '/store')).toBeUndefined()
     expect(pinStoreDir('', '/store')).toBe('store-dir=/store\n')
+    expect(pinStoreDir('registry=https://example.test/\r\n', '/store')).toBe(
+      'registry=https://example.test/\r\nstore-dir=/store\r\n'
+    )
   })
 
   it('states the recorded store in the profile’s config', async () => {
