@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
-index 11ee6c4..7f32e9e 100644
+index 11ee6c4..e9e95ee 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 @@ -1,8 +1,8 @@
@@ -24,10 +24,66 @@ index 11ee6c4..7f32e9e 100644
  import { GoalError } from "@deepseek-ai/dsh-goal";
  import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
  import { credentialRef } from "@deepseek-ai/dsh-credentials";
-@@ -23,6 +23,110 @@ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
+@@ -23,6 +23,166 @@ import { DirectoryPickerError } from "@deepseek-ai/dsh-host-directory-picker";
  import { API_REMOTE_FORWARDED_EVENTS, ApiRemoteSessionNotFound, ApiRemoteSubagentSessionOwnership, apiRemoteSubagentOwnershipError, createApiRemoteAgentResolver, hasApiRemoteSubagentOwner, inspectApiRemoteSession } from "@deepseek-ai/dsh-api-remotes";
  import { release } from "node:os";
  import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
++//#region lib/types/session-model-selection.js
++const SESSION_MODEL_SELECTION_LIMIT = 256;
++const SESSION_MODEL_SELECTION_SETTINGS_NAMESPACE = settingsNamespace("session-model-selection");
++const SESSION_MODEL_SELECTION_SETTINGS_SCHEMA = z.object({
++	selections: z.array(z.object({
++		sessionId: z.string().required(),
++		provider: z.string().required(),
++		model: z.string().required(),
++		reasoningEffort: z.string()
++	})).max(SESSION_MODEL_SELECTION_LIMIT).default([])
++});
++function copyModelSelection(selection) {
++	return {
++		provider: selection.provider,
++		model: selection.model,
++		...selection.reasoningEffort === void 0 ? {} : { reasoningEffort: selection.reasoningEffort }
++	};
++}
++function copySessionModelSelection(selection) {
++	return {
++		sessionId: selection.sessionId,
++		...copyModelSelection(selection)
++	};
++}
++/** A serialized durable selection table with one bounded, lossless write chain. */
++function createBoundedSessionModelSelectionStore(options) {
++	const limit = options.limit ?? SESSION_MODEL_SELECTION_LIMIT;
++	let writes = Promise.resolve();
++	return {
++		get(sessionId) {
++			const found = options.load().find((entry) => entry.sessionId === sessionId);
++			return found === void 0 ? void 0 : copyModelSelection(found);
++		},
++		save(sessionId, selection) {
++			const write = writes.then(async () => {
++				const existing = options.load().filter((entry) => entry.sessionId !== sessionId).map(copySessionModelSelection);
++				const next = [...existing, {
++					sessionId,
++					...copyModelSelection(selection)
++				}].slice(-limit);
++				await options.persist(next);
++			});
++			writes = write.catch(() => void 0);
++			return write;
++		}
++	};
++}
++/** Resolve one conversation strictly; an unavailable remembered provider stays visible as blocked. */
++function resolveSessionModelSelection(options) {
++	const current = options.live ?? options.durable ?? options.request ?? options.defaultSelection;
++	return {
++		current: copyModelSelection(current),
++		routable: options.routeServed(current.provider)
++	};
++}
++//#endregion
 +//#region lib/types/preset-archive.js
 +const PRESET_ARCHIVE_FORMAT = "dsh-preset";
 +const PRESET_ARCHIVE_VERSION = 1;
@@ -135,7 +191,75 @@ index 11ee6c4..7f32e9e 100644
  //#region lib/types/session-export.js
  /**
  * Host-side session-log download: streams one ZIP archive whose files are the
-@@ -3150,7 +3254,13 @@ function createApiProxy(ctx, defaults) {
+@@ -1675,6 +1835,21 @@ function changedWorkspaceView(workspaceId, value) {
+ function createApiProxy(ctx, defaults) {
+ 	const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel ?? 6;
+ 	const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes ?? 1024;
++	let sessionModelSelectionSettings;
++	const durableSessionSelections = createBoundedSessionModelSelectionStore({
++		load: () => sessionModelSelectionSettings?.get().selections ?? [],
++		persist: async (selections) => {
++			if (sessionModelSelectionSettings === void 0) throw new Error("durable session model selection storage is unavailable");
++			await sessionModelSelectionSettings.replace({ selections });
++		}
++	});
++	ctx.inject(["settings"], (settingsCtx) => {
++		const scope = settingsCtx.settings.register(SESSION_MODEL_SELECTION_SETTINGS_NAMESPACE, SESSION_MODEL_SELECTION_SETTINGS_SCHEMA);
++		sessionModelSelectionSettings = scope;
++		settingsCtx.effect(() => () => {
++			if (sessionModelSelectionSettings === scope) sessionModelSelectionSettings = void 0;
++		}, "api-proxy: session model selection settings");
++	});
+ 	/** The seed model each create/resume declares; re-read so it never goes stale. */
+ 	const agentOptions = () => {
+ 		const { provider, model } = defaults.defaultModelSelection();
+@@ -1710,8 +1885,9 @@ function createApiProxy(ctx, defaults) {
+ 	* Install or return the session-local model selection that prompt assembly snapshots.
+ 	*
+ 	* Precedence, resolved on EVERY read rather than seeded once: a selection
+-	* made in this process, else the session's own latest logged request/header,
+-	* else the live Agent default. Re-reading keeps the two tiers exact in both
++	* made in this process, else the durable session selection, else the session's
++	* own latest logged request/header, else the live Agent default. Re-reading
++	* keeps the tiers exact in both
+ 	* directions: a session with a recorded request derives its selection from
+ 	* its log, while a blank session (New Session reuses one rather than minting
+ 	* another) reads any default saved after it was created. There is no create-time
+@@ -1724,14 +1900,18 @@ function createApiProxy(ctx, defaults) {
+ 		let picked;
+ 		const selection = {
+ 			get current() {
+-				if (picked !== void 0) return picked;
+ 				const logged = agent.session.requestHeader()?.config;
+-				if (logged === void 0) return defaults.defaultModelSelection();
+-				return {
+-					provider: logged.provider,
+-					model: logged.model,
+-					...logged.reasoningEffort === void 0 ? {} : { reasoningEffort: logged.reasoningEffort }
+-				};
++				return resolveSessionModelSelection({
++					live: picked,
++					durable: durableSessionSelections.get(agent.session.id),
++					...logged === void 0 ? {} : { request: {
++						provider: logged.provider,
++						model: logged.model,
++						...logged.reasoningEffort === void 0 ? {} : { reasoningEffort: logged.reasoningEffort }
++					} },
++					defaultSelection: defaults.defaultModelSelection(),
++					routeServed
++				}).current;
+ 			},
+ 			set current(next) {
+ 				picked = next;
+@@ -2643,6 +2823,7 @@ function createApiProxy(ctx, defaults) {
+ 							model: resolved.model,
+ 							...resolved.reasoningEffort === void 0 ? {} : { reasoningEffort: resolved.reasoningEffort }
+ 						};
++						await durableSessionSelections.save(sessionId, selected);
+ 						selectionFor(found.agent).current = selected;
+ 						try {
+ 							await defaults.saveDefaultModelSelection?.(selected);
+@@ -3150,7 +3331,13 @@ function createApiProxy(ctx, defaults) {
  				}));
  			},
  			async pickDirectory(request, signal) {
@@ -150,7 +274,7 @@ index 11ee6c4..7f32e9e 100644
  				if (capability.kind !== "native") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
-@@ -3172,7 +3282,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3172,7 +3359,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async listDirectory(request, signal) {
@@ -165,7 +289,7 @@ index 11ee6c4..7f32e9e 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3190,7 +3306,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3190,7 +3383,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async createDirectory(request) {
@@ -180,7 +304,7 @@ index 11ee6c4..7f32e9e 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3244,6 +3366,127 @@ function createApiProxy(ctx, defaults) {
+@@ -3244,6 +3443,127 @@ function createApiProxy(ctx, defaults) {
  			}
  		},
  		agentPresets: {
@@ -308,7 +432,7 @@ index 11ee6c4..7f32e9e 100644
  			async list(request) {
  				const presets = ctx.get("agentPresets");
  				if (presets === void 0) return ok(request, {
-@@ -4932,6 +5175,34 @@ function toFetchHandler(api) {
+@@ -4932,6 +5252,34 @@ function toFetchHandler(api) {
  			rpcId: RpcId(randomUUID()),
  			payload: {}
  		}, req.signal));
@@ -343,7 +467,7 @@ index 11ee6c4..7f32e9e 100644
  		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
  			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
  			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
-@@ -5531,7 +5802,6 @@ var ApiProxyService = class extends Service {
+@@ -5531,7 +5879,6 @@ var ApiProxyService = class extends Service {
  		"agentDefaultModel",
  		"agents",
  		"attachments",
@@ -351,3 +475,48 @@ index 11ee6c4..7f32e9e 100644
  		"llm",
  		"sessions",
  		"subagents",
+@@ -5584,4 +5931,4 @@ var ApiProxyService = class extends Service {
+ 	}
+ };
+ //#endregion
+-export { AbstractApiClient, ApiProxyService, ApiProxyService as default, InProcessApiClient, RpcId, createApiProxy, toFetchHandler };
++export { AbstractApiClient, ApiProxyService, ApiProxyService as default, InProcessApiClient, RpcId, createApiProxy, createBoundedSessionModelSelectionStore, resolveSessionModelSelection, toFetchHandler };
+diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
+index 6737e91..3a82b14 100644
+--- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
+@@ -13,6 +13,7 @@
+  */
+ import { Context, Service } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
++import type { ModelSelection } from '@deepseek-ai/dsh-agent';
+ import type { ApiProxy } from './api/index.ts';
+ export type * from './api/index.ts';
+ export { RpcId } from './api/rpc.ts';
+@@ -21,6 +22,26 @@ export { AbstractApiClient, InProcessApiClient } from './fetch/client.ts';
+ export type { IApiClient } from './fetch/client.ts';
+ export { createApiProxy } from './api-proxy.ts';
+ export type { ApiProxyDefaults } from './api-proxy.ts';
++export interface DurableSessionModelSelection extends ModelSelection {
++    sessionId: string;
++}
++export interface BoundedSessionModelSelectionStoreOptions {
++    load(): readonly DurableSessionModelSelection[];
++    persist(next: readonly DurableSessionModelSelection[]): Promise<void>;
++    limit?: number;
++}
++export interface BoundedSessionModelSelectionStore {
++    get(sessionId: string): ModelSelection | undefined;
++    save(sessionId: string, selection: ModelSelection): Promise<void>;
++}
++export declare function createBoundedSessionModelSelectionStore(options: BoundedSessionModelSelectionStoreOptions): BoundedSessionModelSelectionStore;
++export declare function resolveSessionModelSelection(options: {
++    live?: ModelSelection;
++    durable?: ModelSelection;
++    request?: ModelSelection;
++    defaultSelection: ModelSelection;
++    routeServed(provider: string): boolean;
++}): { current: ModelSelection; routable: boolean };
+ declare module '@deepseek-ai/cordis' {
+     interface Context {
+         /** The host-side ApiProxy implementation (the transport-agnostic gateway face). */
