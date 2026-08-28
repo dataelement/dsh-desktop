@@ -49,6 +49,7 @@
       .plugin-copy { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px; min-width:0; }
       .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
       .plugin-status { color:var(--danger); font-size:11px; font-weight:650; }
+      .compatibility-section { border-top:1px solid var(--line); }
       .issue-group { border-top:1px solid var(--line); background:var(--surface); }
       .issue-group:first-child { border-top:0; }
       .issue { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 13px 16px 10px; cursor:pointer; }
@@ -101,12 +102,12 @@
           <ul class="plugins" id="plugins"></ul>
           <p class="empty" id="empty"></p>
           <div class="card-footer"><button class="button danger" id="uninstall" type="button" disabled></button></div>
-        </section>
-        <section class="list-card compatibility" id="compatibility-card" aria-labelledby="issue-heading">
-          <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
-          <p class="card-help" id="issue-selection-hint"></p>
-          <ul class="plugins" id="issues"></ul>
-          <div class="card-footer"><button class="button primary" id="repair" type="button" disabled></button></div>
+          <div class="compatibility-section" id="compatibility-section">
+            <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
+            <p class="card-help" id="issue-selection-hint"></p>
+            <ul class="plugins" id="issues"></ul>
+            <div class="card-footer"><button class="button primary" id="repair" type="button" disabled></button></div>
+          </div>
         </section>
         <p class="safety" id="safety-note"></p>
         <div class="exit-panel">
@@ -149,7 +150,7 @@
       }
       const list = document.getElementById('plugins')
       const empty = document.getElementById('empty')
-      const compatibilityCard = document.getElementById('compatibility-card')
+      const compatibilitySection = document.getElementById('compatibility-section')
       const issueList = document.getElementById('issues')
       const uninstall = document.getElementById('uninstall')
       const repair = document.getElementById('repair')
@@ -180,7 +181,7 @@
         }
         details.append(detailsSummary, findings); item.appendChild(details)
       }
-      if (issueCheckboxes.length === 0) compatibilityCard.hidden = true
+      if (issueCheckboxes.length === 0) compatibilitySection.hidden = true
       const pluginItems = Array.isArray(model.pluginItems)
         ? model.pluginItems
         : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))
