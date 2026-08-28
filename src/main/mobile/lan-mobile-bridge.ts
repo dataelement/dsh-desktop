@@ -43,6 +43,8 @@ const RPC_ALLOWLIST = new Set([
 
 export interface LanMobileBridgeOptions {
   harnessUrl(): string | undefined
+  /** Per-process Harness launch token, traded once for a session cookie. */
+  harnessAuthToken?(): string | undefined
   locale?: 'en' | 'zh' | (() => 'en' | 'zh')
   brandLogoPaths?: { light: string; dark: string }
   appIconPath?: string
@@ -731,16 +733,69 @@ export class LanMobileBridge {
     return new URL(`${url.pathname}${url.search}`, this.tunnelInstance.url).toString()
   }
 
+  /**
+   * The Host session cookie for one Harness base, obtained once and reused.
+   *
+   * Since 0.1.2-alpha.1 every Host API call is authenticated before dispatch:
+   * an unauthenticated caller gets 401, and the launch token is accepted only
+   * as `GET /?token=...` on the root — never on an API path and never in an
+   * Authorization header. The bridge is a server-side client, not a browser,
+   * so it performs that exchange itself.
+   *
+   * The cookie is signed against the request authority, so every later call
+   * has to reach the Host under the same `Host` value the exchange used. That
+   * is why the bridge talks to the loopback base rather than forwarding the
+   * phone's own authority.
+   */
+  private harnessCookie?: { base: string; cookie: string }
+
+  private async harnessSession(base: string): Promise<string | undefined> {
+    if (this.harnessCookie?.base === base) return this.harnessCookie.cookie
+    const token = this.options.harnessAuthToken?.()
+    if (token === undefined) return undefined
+    const url = new URL('/', base)
+    url.searchParams.set('token', token)
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10_000)
+    })
+    // The exchange answers 303 to a clean `/`; anything else means the token
+    // was stale or already spent, and the caller surfaces the resulting 401.
+    const cookie = cookiePair(response.headers.getSetCookie())
+    if (cookie === undefined) return undefined
+    this.harnessCookie = { base, cookie }
+    return cookie
+  }
+
+  /**
+   * Call the Host with the session cookie, exchanging the launch token first
+   * and once more if the stored cookie has stopped being accepted.
+   */
+  private async harnessFetch(url: URL, init: RequestInit, base: string): Promise<Response> {
+    const send = async (cookie: string | undefined): Promise<Response> => fetch(url, {
+      ...init,
+      headers: { ...init.headers, ...(cookie === undefined ? {} : { cookie }) }
+    })
+    let response = await send(await this.harnessSession(base))
+    if (response.status === 401) {
+      this.harnessCookie = undefined
+      const retry = await this.harnessSession(base)
+      if (retry !== undefined) response = await send(retry)
+    }
+    return response
+  }
+
   private async forwardRpc(method: string, payload: unknown): Promise<{ ok: boolean; value?: unknown; error?: string }> {
     const base = this.options.harnessUrl()
     if (!base) return { ok: false, error: 'Harness is not ready.' }
     const rpcId = randomUUID()
-    const response = await fetch(new URL(`/api/${method}`, base), {
+    const response = await this.harnessFetch(new URL(`/api/${method}`, base), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
       signal: AbortSignal.timeout(30_000)
-    })
+    }, base)
     if (!response.ok) return { ok: false, error: `Harness transport returned HTTP ${response.status}.` }
     const envelope = (await response.json()) as {
       rpcId?: unknown
@@ -961,6 +1016,21 @@ export class LanMobileBridge {
     response.setHeader('content-type', 'application/json; charset=utf-8')
     response.end(JSON.stringify(body))
   }
+}
+
+/**
+ * The `name=value` pair of the first Set-Cookie header, ready for a Cookie
+ * request header. The Host sets exactly one session cookie, host-only and
+ * `SameSite=Strict`; its attributes are for browsers and are dropped here.
+ * @param headers - raw Set-Cookie values from the exchange response.
+ * @returns the cookie pair, or undefined when no cookie was set.
+ */
+export function cookiePair(headers: readonly string[]): string | undefined {
+  for (const header of headers) {
+    const pair = header.split(';', 1)[0]?.trim()
+    if (pair !== undefined && pair.includes('=')) return pair
+  }
+  return undefined
 }
 
 export function preferredLanAddress(): string | undefined {

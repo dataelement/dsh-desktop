@@ -1,0 +1,34 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+index f2254df..2c78fee 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+@@ -1094,7 +1094,10 @@ window.__ModuleLoader__.load({
+ 			return Math.max(1, Math.ceil(milliseconds / 1e3));
+ 		}
+ 		function failureMessage(message, code, t) {
+-			return code === "AUTH" ? t("message.failure.auth") : message;
++			if (code === "AUTH") return t("message.failure.auth");
++			if (code === "QUOTA") return t("message.failure.quota");
++			if (code === "FORBIDDEN") return t("message.failure.forbidden");
++			return message;
+ 		}
+ 		function ModelRetryItem({ node, active, t }) {
+ 			const deadline = (0, react.useMemo)(() => Date.now() + node.delayMs, [node.delayMs, node.seq]);
+@@ -2404,6 +2407,8 @@ window.__ModuleLoader__.load({
+ 			"message.retry.delay": "重试延迟：",
+ 			"message.retry.failure": "失败原因：",
+ 			"message.failure.auth": "API 密钥无效",
++			"message.failure.quota": "账户额度或余额不足，请充值或检查服务商的用量限制。",
++			"message.failure.forbidden": "模型服务商拒绝了本次请求，请检查账号权限、地区限制或模型开通情况。",
+ 			"message.turnError": "本轮运行失败",
+ 			"message.maxTokens": "已达到输出 token 上限",
+ 			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
+@@ -2513,6 +2518,8 @@ window.__ModuleLoader__.load({
+ 			"message.retry.delay": "Retry delay: ",
+ 			"message.retry.failure": "Failure reason: ",
+ 			"message.failure.auth": "API key is invalid",
++			"message.failure.quota": "Your account has insufficient quota or balance. Add credits or check your provider's usage limits.",
++			"message.failure.forbidden": "The model provider denied this request. Check your account permissions, region, or model access.",
+ 			"message.turnError": "This turn failed",
+ 			"message.maxTokens": "Output token limit reached",
+ 			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",

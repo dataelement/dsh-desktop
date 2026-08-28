@@ -8,13 +8,27 @@ export function shouldLoadHarnessUrl(currentUrl: string, targetUrl: string): boo
   }
 }
 
-export function desktopHarnessUrl(url: string, platform: NodeJS.Platform): string {
-  if (platform !== 'win32') return url
+export function desktopHarnessUrl(
+  url: string,
+  platform: NodeJS.Platform,
+  authToken?: string
+): string {
+  // Since 0.1.2-alpha.1 the Host authenticates the whole API before dispatch.
+  // Only `GET /?token=...` trades the per-process launch token for the signed
+  // session cookie; API paths and Authorization headers refuse it. So the
+  // window's first navigation has to carry the token, and Chromium keeps the
+  // cookie for every later request on this authority. A reload after the
+  // exchange sends a stale token, which the Host redirects to a clean `/`
+  // whenever the cookie is still valid.
+  if (platform !== 'win32' && authToken === undefined) return url
 
   try {
     const parsed = new URL(url)
-    parsed.searchParams.set('dsh-desktop-mode', 'advanced')
-    parsed.searchParams.set('dsh-desktop-platform', platform)
+    if (authToken !== undefined) parsed.searchParams.set('token', authToken)
+    if (platform === 'win32') {
+      parsed.searchParams.set('dsh-desktop-mode', 'advanced')
+      parsed.searchParams.set('dsh-desktop-platform', platform)
+    }
     return parsed.toString()
   } catch {
     return url

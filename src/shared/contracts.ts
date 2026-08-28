@@ -11,6 +11,8 @@ export interface RuntimeSnapshot {
   launchDirectory?: string
   logs: string[]
   url?: string
+  /** Per-process launch token; only `GET /?token=` exchanges it for a session cookie. */
+  authToken?: string
 }
 
 export type UpdatePhase =

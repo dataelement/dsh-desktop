@@ -810,7 +810,7 @@ async function openHarness(
   focusIntent: WindowFocusIntent = 'automatic'
 ): Promise<void> {
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
-  const rendererUrl = desktopHarnessUrl(url, process.platform)
+  const rendererUrl = desktopHarnessUrl(url, process.platform, runtime.snapshot().authToken)
   if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
     const navigationVersion = ++mainWindowNavigationVersion
     rendererPluginFailureLogs = []
@@ -1772,6 +1772,7 @@ async function bootstrap(): Promise<void> {
   registerHarnessHandlers()
   mobileBridge = new LanMobileBridge({
     harnessUrl: () => runtime.snapshot().url,
+    harnessAuthToken: () => runtime.snapshot().authToken,
     locale: harnessLocale,
     brandLogoPaths: {
       light: dshBrandLogoPath('light'),
