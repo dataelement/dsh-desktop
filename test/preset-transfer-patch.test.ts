@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
-import { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+import { apply as applyPresetTransfer } from 'dsh-desktop-preset-transfer'
 import { patchPath, projectRoot } from './patch-path'
 
 const composition = [
@@ -14,54 +14,81 @@ const composition = [
   ''
 ].join('\n')
 
-type PatchedApiProxy = Omit<ReturnType<typeof createApiProxy>, 'agentPresets'> & {
-  agentPresets: ReturnType<typeof createApiProxy>['agentPresets'] & {
-    exportArchive(id: string, signal: AbortSignal): Promise<Response>
-    importArchive(
-      data: Uint8Array,
-      options: { agentPreset?: string; install?: boolean },
-      signal: AbortSignal
-    ): Promise<Response>
-  }
+interface RegisteredRoute {
+  path: string
+  methods: readonly string[]
+  fetch(request: Request): Promise<Response>
 }
 
+const EXPORT_PATH = '/api/agent-preset.export'
+const IMPORT_PATH = '/api/agent-preset.import'
+
+/**
+ * Apply the preset-transfer plugin against a minimal Host context and expose
+ * its routes through the shape the archive tests were written against.
+ *
+ * The capability used to be a patch on dsh-host-apiproxy, whose package
+ * 0.1.2-alpha.1 deleted. It is a desktop plugin now, registering on the same
+ * Connection fetch-route seam upstream uses for /api/session.export, so a fake
+ * registry is all the carrier this needs: what these tests cover is the
+ * archive behavior behind the routes.
+ */
 function presetTransferApi(root: string) {
+  const routes = new Map<string, RegisteredRoute>()
   const presets = {
     roots: [{ path: root, trust: 'user' }],
     async resolve(id: string) {
       const compositionPath = path.join(root, id, 'agent.cordis.yml')
       await readFile(compositionPath)
-      return {
-        id,
-        trust: 'user',
-        path: compositionPath,
-        name: id
+      return { id, trust: 'user', path: compositionPath, name: id }
+    }
+  }
+  applyPresetTransfer({
+    get(name: string) {
+      return name === 'agentPresets' ? presets : undefined
+    },
+    connection: {
+      fetch: {
+        register(route: RegisteredRoute) {
+          routes.set(route.path, route)
+          return async () => {}
+        }
+      }
+    }
+  } as never)
+
+  return {
+    routes,
+    agentPresets: {
+      async exportArchive(id: string, signal?: AbortSignal): Promise<Response> {
+        return routes.get(EXPORT_PATH)!.fetch(new Request(
+          `http://127.0.0.1${EXPORT_PATH}?agentPreset=${encodeURIComponent(id)}`,
+          signal === undefined ? {} : { signal }
+        ))
+      },
+      async importArchive(
+        data: Uint8Array,
+        options: { agentPreset?: string; install?: boolean },
+        signal?: AbortSignal
+      ): Promise<Response> {
+        const url = new URL(`http://127.0.0.1${IMPORT_PATH}`)
+        if (options.agentPreset !== undefined) url.searchParams.set('agentPreset', options.agentPreset)
+        if (options.install === true) url.searchParams.set('install', '1')
+        return routes.get(IMPORT_PATH)!.fetch(new Request(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/vnd.dsh.preset+zip' },
+          body: data as unknown as BodyInit,
+          ...(signal === undefined ? {} : { signal })
+        }))
       }
     }
   }
-  return createApiProxy(
-    {
-      get(name: string) {
-        return name === 'agentPresets' ? presets : undefined
-      },
-      inject() {},
-      on() {},
-      effect() {},
-      userQuestions: {
-        registerProvider: () => () => {}
-      }
-    } as never,
-    {
-      cwd: root,
-      defaultModelSelection: () => ({ provider: 'test', model: 'test' })
-    }
-  ) as unknown as PatchedApiProxy
 }
 
 function presetPackage(
   id: string,
   layout: 'nested' | 'flat',
-  sourceDshVersion = '0.1.1-rc.2'
+  sourceDshVersion = '0.1.2-alpha.1'
 ) {
   const versionMetadata = layout === 'nested'
     ? {
@@ -90,55 +117,64 @@ function presetPackage(
   })
 }
 
+/** The plugin source these assertions pin, in place of the deleted patch. */
+async function presetTransferSource(): Promise<string> {
+  return readFile(
+    path.join(projectRoot, 'packages', 'dsh-desktop-preset-transfer', 'index.js'),
+    'utf8'
+  )
+}
+
 describe('agent preset package transfer', () => {
   it('routes binary export and two-phase import requests outside the JSON RPC carrier', async () => {
-    const exportArchive = vi.fn(async () =>
-      new Response(new Uint8Array([80, 75, 3, 4]), {
-        headers: { 'content-type': 'application/vnd.dsh.preset+zip' }
-      })
-    )
-    const importArchive = vi.fn(async () => Response.json({ ok: true }))
-    const handler = toFetchHandler({
-      agentPresets: { exportArchive, importArchive }
-    } as never)
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-routes-'))
+    try {
+      const { routes } = presetTransferApi(root)
 
-    const exported = await handler.fetch(
-      new Request('http://127.0.0.1/api/agent-preset.export?agentPreset=my-agent')
-    )
-    expect(exported.status).toBe(200)
-    expect(exported.headers.get('content-type')).toBe('application/vnd.dsh.preset+zip')
-    expect(exportArchive).toHaveBeenCalledWith('my-agent', expect.any(AbortSignal))
+      expect([...routes.keys()].sort()).toEqual([
+        '/api/agent-preset.export',
+        '/api/agent-preset.import'
+      ])
+      expect(routes.get('/api/agent-preset.export')!.methods).toEqual(['GET', 'HEAD'])
+      expect(routes.get('/api/agent-preset.import')!.methods).toEqual(['POST'])
 
-    const payload = new Uint8Array([80, 75, 3, 4])
-    const previewed = await handler.fetch(
-      new Request('http://127.0.0.1/api/agent-preset.import', {
-        method: 'POST',
-        headers: { 'content-type': 'application/vnd.dsh.preset+zip' },
-        body: payload
-      })
-    )
-    expect(previewed.status).toBe(200)
-    expect(importArchive).toHaveBeenLastCalledWith(
-      expect.any(Uint8Array),
-      { agentPreset: undefined, install: false },
-      expect.any(AbortSignal)
-    )
-
-    await handler.fetch(
-      new Request(
-        'http://127.0.0.1/api/agent-preset.import?agentPreset=renamed-agent&install=1',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/zip' },
-          body: payload
-        }
+      // The export route validates its own query parameter before it reaches
+      // the preset roots, so a malformed id never becomes a filesystem lookup.
+      const badId = await routes.get('/api/agent-preset.export')!.fetch(
+        new Request('http://127.0.0.1/api/agent-preset.export?agentPreset=Not%20An%20Id')
       )
-    )
-    expect(importArchive).toHaveBeenLastCalledWith(
-      expect.any(Uint8Array),
-      { agentPreset: 'renamed-agent', install: true },
-      expect.any(AbortSignal)
-    )
+      expect(badId.status).toBe(400)
+
+      const missingId = await routes.get('/api/agent-preset.export')!.fetch(
+        new Request('http://127.0.0.1/api/agent-preset.export')
+      )
+      expect(missingId.status).toBe(400)
+
+      // The import route refuses anything that is not a package before it
+      // buffers a body, which is what keeps the 16 MB cap meaningful.
+      const wrongType = await routes.get('/api/agent-preset.import')!.fetch(
+        new Request('http://127.0.0.1/api/agent-preset.import', {
+          method: 'POST',
+          headers: { 'content-type': 'text/plain' },
+          body: 'nope'
+        })
+      )
+      expect(wrongType.status).toBe(415)
+
+      const tooLarge = await routes.get('/api/agent-preset.import')!.fetch(
+        new Request('http://127.0.0.1/api/agent-preset.import', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/vnd.dsh.preset+zip',
+            'content-length': String(17 * 1024 * 1024)
+          },
+          body: new Uint8Array([80, 75, 3, 4]) as unknown as BodyInit
+        })
+      )
+      expect(tooLarge.status).toBe(413)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('round-trips canonical gallery packages and accepts rc.1/rc.2 flat archives', async () => {
@@ -168,7 +204,7 @@ describe('agent preset package transfer', () => {
         format: 'dsh-preset',
         version: 1,
         id: sourceId,
-        sourceDshVersion: '0.1.1-rc.2'
+        sourceDshVersion: '0.1.2-alpha.1'
       })
       expect(exportedManifest.exportedAt).toEqual(expect.any(String))
       expect(exportedManifest.dshVersion).toBeUndefined()
@@ -190,7 +226,7 @@ describe('agent preset package transfer', () => {
           agentPreset: targetId,
           sourceAgentPreset: `${layout}-source`,
           name: 'Gallery preset',
-          sourceDshVersion: '0.1.1-rc.2',
+          sourceDshVersion: '0.1.2-alpha.1',
           fileCount: 1,
           conflict: false,
           installed: false
@@ -282,10 +318,7 @@ describe('agent preset package transfer', () => {
   })
 
   it('keeps the archive boundary strict and installs through an atomic validated directory move', async () => {
-    const patch = await readFile(
-      patchPath('@deepseek-ai/dsh-host-apiproxy'),
-      'utf8'
-    )
+    const patch = await presetTransferSource()
 
     expect(patch).toContain('const PRESET_ARCHIVE_FORMAT = "dsh-preset"')
     expect(patch).toContain('const PRESET_ARCHIVE_MAX_COMPRESSED = 16 * 1024 * 1024')
@@ -306,10 +339,7 @@ describe('agent preset package transfer', () => {
   })
 
   it('creates and resolves the writable preset root inside the structured import failure boundary', async () => {
-    const patch = await readFile(
-      patchPath('@deepseek-ai/dsh-host-apiproxy'),
-      'utf8'
-    )
+    const patch = await presetTransferSource()
 
     expect(patch).toContain('const root = writableRoot(presets.roots)')
     expect(patch).not.toContain('const root = writableRoot();')
@@ -375,15 +405,12 @@ describe('agent preset package transfer', () => {
       path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-web-app', 'lib', 'index.js'),
       'utf8'
     )
-    const hostPatch = await readFile(
-      patchPath('@deepseek-ai/dsh-host-apiproxy'),
-      'utf8'
-    )
+    const hostPatch = await presetTransferSource()
 
     expect(webApp).toContain('const DSH_WEB_URL = "DSH_WEB_URL"')
     expect(webApp).toContain('variables: { [DSH_WEB_URL]')
-    expect(hostPatch).toContain('path === "/api/agent-preset.export"')
-    expect(hostPatch).toContain('path === "/api/agent-preset.import"')
-    expect(hostPatch).toContain('url.searchParams.get("install") === "1"')
+    expect(hostPatch).toContain("const EXPORT_PATH = '/api/agent-preset.export'")
+    expect(hostPatch).toContain("const IMPORT_PATH = '/api/agent-preset.import'")
+    expect(hostPatch).toContain("url.searchParams.get('install') === '1'")
   })
 })

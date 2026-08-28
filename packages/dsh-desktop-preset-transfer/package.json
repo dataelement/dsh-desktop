@@ -1,0 +1,22 @@
+{
+  "name": "dsh-desktop-preset-transfer",
+  "version": "0.1.0",
+  "description": "Preset package export and import routes for DSH Desktop.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.2-alpha.1",
+    "fflate": "^0.8.2"
+  },
+  "types": "./index.d.ts"
+}

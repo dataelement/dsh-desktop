@@ -27,3 +27,11 @@
 - insert:
     - id: dsh-desktop-hmr-fallback
       name: dsh-desktop-hmr-fallback
+
+# Preset package export and import. These two routes lived in a patch on
+# dsh-host-apiproxy until 0.1.2-alpha.1 deleted that package; upstream ships no
+# preset transfer of its own, so the capability moved into a desktop plugin
+# that registers on the Connection fetch-route seam instead.
+- insert:
+    - id: dsh-desktop-preset-transfer
+      name: dsh-desktop-preset-transfer

@@ -44,14 +44,25 @@ describe('desktop Electron directory picker', () => {
     expect(dependencyPatch).toContain('DSH Desktop directory picker bridge is unavailable')
   })
 
-  it('keeps the Host API proxy active when the legacy picker service is absent', async () => {
-    const apiProxyPatch = await readFile(
-      patchPath('@deepseek-ai/dsh-host-apiproxy'),
+  it('leaves a missing picker service to Harness rather than patching around it', async () => {
+    // The desktop used to patch dsh-host-apiproxy so a missing directoryPicker
+    // degraded instead of taking the whole proxy down: ApiProxy reached
+    // ctx.directoryPicker directly, which throws when nothing composed it.
+    //
+    // 0.1.2-alpha.1 solved that structurally. The picker methods moved into
+    // their own service in dsh-api-workspace-controller, declared with
+    // `static inject = ["directoryPicker"]`, so Cordis simply leaves that
+    // controller unmounted when no backend is composed — the rest of the Host
+    // API is unaffected. Patching it would now be re-implementing upstream.
+    const controller = await readFile(
+      new URL(
+        '../node_modules/@deepseek-ai/dsh-api-workspace-controller/lib/index.js',
+        import.meta.url
+      ),
       'utf8'
     )
 
-    expect(apiProxyPatch).toContain('const directoryPicker = ctx.get("directoryPicker")')
-    expect(apiProxyPatch).toContain('-\t\t"directoryPicker",')
-    expect(apiProxyPatch).toContain('details: { capability: "none" }')
+    expect(controller).toContain('static inject = ["directoryPicker"]')
+    expect(controller).toContain('"directoryPickerController"')
   })
 })
