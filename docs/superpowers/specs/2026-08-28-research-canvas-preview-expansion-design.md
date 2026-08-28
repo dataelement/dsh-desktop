@@ -21,6 +21,8 @@ remain authoritative.
   selected composer references in sync with the display name.
 - Persist each conversation's selected model across app restarts and session
   switching.
+- Keep every right-panel composer menu above the conversation flow so message
+  cards cannot cover slash-command or model/permission popups.
 
 ## Non-goals and Regression Shields
 
@@ -148,6 +150,20 @@ The formal and development app identities continue using their separate data
 roots; this change guarantees persistence within one identity and does not
 merge those roots.
 
+## Right-panel Composer Overlay Stacking
+
+The shared composer continues moving as one resident DOM subtree between Chat
+and Research. In the Research right panel, its overlay anchor and sticky seat
+must form a stacking layer above the message viewport. Slash-command,
+model/reasoning, access-mode, and other composer menus therefore paint above
+message bubbles and message action tooltips.
+
+The fix belongs to the Research host stacking and clipping boundary, not to an
+individual menu's size or copy. The menu remains constrained to the right-panel
+width and scrollable at its existing maximum height. The change must not move
+the composer, change its width/height, cover the tab bar, or allow the message
+flow to paint over the input while no menu is open.
+
 ## Focused Verification
 
 Automated coverage must prove:
@@ -163,6 +179,8 @@ Automated coverage must prove:
 - per-session model selection across simulated Host restart, independent
   sessions, last-request fallback, unavailable-provider behavior, and invalid
   default rejection;
+- right-panel slash-command and model/access menus covering message cards at
+  narrow and normal widths without clipping or changing composer geometry;
 - unchanged composer width/position, shared DOM ownership, loading animation,
   global sidebar, and existing drag/select/delete behavior.
 

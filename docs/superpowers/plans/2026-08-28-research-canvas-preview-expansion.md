@@ -99,7 +99,21 @@ plugin and canvas routing tests; Research canvas adapter integration.
 - [ ] Verify keyboard/context deletion and drag/resize behavior remain intact.
 - [ ] Commit `支持画布组件改名并同步附件标签`.
 
-## Task 7: Integration and real-client acceptance
+## Task 7: Keep right-panel composer menus above messages
+
+**Files:** Research composer rendered tests; conversation runtime and patch;
+input-trigger/model menu tests only if their existing contract needs coverage.
+
+- [ ] Add a failing rendered regression proving the slash-command menu and at
+  least one selector popup occupy a stacking layer above message cards at
+  normal and narrow right-panel widths.
+- [ ] Correct the Research composer seat/overlay stacking and clipping boundary;
+  do not change menu dimensions, copy, composer geometry, or scroll ownership.
+- [ ] Verify open/close, keyboard selection, scrolling, Chat composer behavior,
+  and no-menu message interaction.
+- [ ] Commit `修复右侧栏输入菜单被消息遮挡`.
+
+## Task 8: Integration and real-client acceptance
 
 - [ ] Review the spec against the complete diff and run only affected tests,
   typecheck, `git diff --check`, patch replay, and package verification.
@@ -107,7 +121,9 @@ plugin and canvas routing tests; Research canvas adapter integration.
   publishing or notarizing.
 - [ ] In the real Sherlock window verify HTML resource/network interaction,
   continuous PDF scroll, every supported file family, rename/tag sync, and
-  model restoration after restart/session switching.
+  model restoration after restart/session switching. Open slash-command and
+  selector menus over a dense right-panel message flow and verify they remain
+  fully visible and interactive.
 - [ ] Explicitly recheck composer width/position, loading, sidebar, selection,
   deletion, resize and persistence regressions.
 - [ ] Record QA evidence outside the repository, leave Sherlock open, and
