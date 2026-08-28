@@ -99,7 +99,22 @@ plugin and canvas routing tests; Research canvas adapter integration.
 - [ ] Verify keyboard/context deletion and drag/resize behavior remain intact.
 - [ ] Commit `支持画布组件改名并同步附件标签`.
 
-## Task 7: Keep right-panel composer menus above messages
+## Task 7: Repair canvas zoom and transient viewport frame
+
+**Files:** Research canvas runtime, CSS and rendered interaction tests.
+
+- [ ] Add failing regressions proving Command-wheel over an interactive HTML,
+  PDF, or Office component still performs pointer-anchored canvas zoom while a
+  plain wheel remains owned by that component. Cover the HTML iframe's own
+  document rather than assuming its wheel event bubbles into the parent.
+- [ ] Show the canvas blue viewport frame only while Space is held for canvas
+  panning; ordinary focus/click must not paint it.
+- [ ] Render that transient frame above canvas nodes and clip node content at
+  the viewport boundary so an offscreen component cannot cover the frame.
+- [ ] Recheck Space-pan, node interaction, resize, marquee, and drop behavior.
+- [ ] Commit `修复画布组件上的缩放与边框层级`.
+
+## Task 8: Keep composer menus above messages without an outer backdrop
 
 **Files:** Research composer rendered tests; conversation runtime and patch;
 input-trigger/model menu tests only if their existing contract needs coverage.
@@ -109,11 +124,14 @@ input-trigger/model menu tests only if their existing contract needs coverage.
   normal and narrow right-panel widths.
 - [ ] Correct the Research composer seat/overlay stacking and clipping boundary;
   do not change menu dimensions, copy, composer geometry, or scroll ownership.
+- [ ] Remove the opaque/gradient background from the outer Chat and Research
+  composer seats so only the task panel, composer card, and popup surfaces are
+  painted; the message page must remain visible through the surrounding gaps.
 - [ ] Verify open/close, keyboard selection, scrolling, Chat composer behavior,
-  and no-menu message interaction.
-- [ ] Commit `修复右侧栏输入菜单被消息遮挡`.
+  transparent outer seats, and no-menu message interaction in both themes.
+- [ ] Commit `修复输入菜单层级并移除外围遮罩`.
 
-## Task 8: Integration and real-client acceptance
+## Task 9: Integration and real-client acceptance
 
 - [ ] Review the spec against the complete diff and run only affected tests,
   typecheck, `git diff --check`, patch replay, and package verification.
