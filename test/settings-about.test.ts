@@ -152,16 +152,20 @@ describe('Sherlock About settings', () => {
     expect(zh.version).toBe('9.8.7')
     expect(zh.releaseNotes[0]).toEqual({
       version: '0.7.3',
-      date: '2026-08-27',
+      date: '2026-08-28',
       items: [
-        '彻底移除 Memory Evolve 与 Hindsight 记忆插件，不再注入或调用 memory 工具',
-        '升级时自动卸载现有记忆插件并替换内置配置，同时保留用户数据与回滚备份'
+        '新增完整研究模式：中央画布与右侧固定对话协同工作，支持文件拖入、框选、多选、移动和删除',
+        '文件标签可与输入文字混合编辑，支持拖动排序、选中、键盘删除并随消息发送',
+        '升级画布可视化组件：支持图片、PDF 连续滚动、HTML 交互以及 Word、Excel、PPT、Markdown 和代码预览',
+        '支持调整画布组件尺寸与名称，并同步更新输入框中的附件标签',
+        '优化对话、研究与轨迹页的输入框、滚动、菜单层级、加载状态和响应式布局',
+        '修复旧对话模型选择丢失，并移除 Memory Evolve 与 Hindsight 记忆插件及其工具调用'
       ]
     })
     expect(zh.releaseNotes[1]?.version).toBe('0.7.2')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[0]).toBe(
-      'Removed Memory Evolve and Hindsight so Sherlock no longer injects or calls the memory tool'
+      'Added a complete Research mode with a central canvas, fixed right-side conversation, file drops, marquee selection, multi-select, movement, and deletion'
     )
 
     const manualCheck = vi.fn(async () => ({
