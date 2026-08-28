@@ -13,6 +13,7 @@ import {
   extractPluginFailureReferences,
   extractSlotConflictName,
   formatExitCode,
+  isHarnessStartupProbeHealthy,
   resolveShellEnvironment,
   updateReadyStability
 } from '../src/main/runtime/harness-runtime'
@@ -35,6 +36,15 @@ describe('Harness launch contract', () => {
     const restartedProbe = updateReadyStability(interruptedProbe.readySince, true, 2_000)
     expect(updateReadyStability(restartedProbe.readySince, true, 2_499).ready).toBe(false)
     expect(updateReadyStability(restartedProbe.readySince, true, 2_500).ready).toBe(true)
+  })
+
+  it('does not declare an authenticated Harness ready before its launch token arrives', () => {
+    // Harness 0.1.2 returns 401 to this deliberately unauthenticated probe.
+    // The response proves the port is live, but the renderer must not navigate
+    // until stdout has supplied the token it exchanges for a session cookie.
+    expect(isHarnessStartupProbeHealthy(401, undefined)).toBe(false)
+    expect(isHarnessStartupProbeHealthy(401, 'launch-token')).toBe(true)
+    expect(isHarnessStartupProbeHealthy(500, 'launch-token')).toBe(false)
   })
 
   it('binds the web server to a random loopback port', () => {

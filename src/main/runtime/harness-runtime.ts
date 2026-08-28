@@ -270,6 +270,22 @@ export function updateReadyStability(
   }
 }
 
+/**
+ * A loopback response proves only that the Host has opened its port. Since
+ * 0.1.2-alpha.1 the renderer also needs the per-process launch token printed
+ * on stdout; navigating before that line arrives produces the authentication
+ * error page instead of exchanging the token for a session cookie.
+ *
+ * The unauthenticated readiness probe is expected to receive 401, so any
+ * non-server-error response is acceptable once the token is available.
+ */
+export function isHarnessStartupProbeHealthy(
+  status: number,
+  launchToken: string | undefined
+): boolean {
+  return launchToken !== undefined && status >= 200 && status < 500
+}
+
 export class HarnessRuntime {
   private child?: HarnessChildProcess
   private logStream?: WriteStream
@@ -417,6 +433,7 @@ ${cause}`
     const ready = await waitUntilReady(
       url,
       () => this.child === child && child.exitCode === null,
+      () => this.launchToken,
       startupTimeoutMs
     ).finally(() => clearInterval(progressTimer))
 
@@ -717,6 +734,7 @@ async function reservePort(): Promise<number> {
 async function waitUntilReady(
   url: string,
   isAlive: () => boolean,
+  launchToken: () => string | undefined,
   timeoutMs: number
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
@@ -727,7 +745,7 @@ async function waitUntilReady(
       const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1_000) })
       const stability = updateReadyStability(
         readySince,
-        response.status >= 200 && response.status < 500,
+        isHarnessStartupProbeHealthy(response.status, launchToken()),
         Date.now(),
         stabilityWindowMs
       )
