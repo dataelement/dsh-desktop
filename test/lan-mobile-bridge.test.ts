@@ -339,13 +339,22 @@ describe('LAN mobile bridge pairing surface', () => {
     const forwarded = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ method: 'workspace.list', payload: {} })
+      body: JSON.stringify({ method: 'session.list', payload: {} })
     })
     expect(forwarded.status).toBe(200)
-    expect(await forwarded.json()).toEqual({
-      ok: true,
-      value: { items: [], archivedSessionIds: [] }
+    expect(await forwarded.json()).toMatchObject({ ok: true, value: { items: [] } })
+
+    // 0.1.2-alpha.1 left no unary workspace read: `workspace/follow` is a
+    // stream method, and the gateway refuses it over the unary carrier. The
+    // bridge therefore refuses the method outright rather than answering the
+    // phone with a workspace list it cannot obtain; restoring it belongs with
+    // the stream-carrier work that also replaces the event mux.
+    const workspaces = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ method: 'workspace.list', payload: {} })
     })
+    expect(workspaces.status).toBe(403)
 
     const presetList = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
       method: 'POST',
@@ -375,7 +384,7 @@ describe('LAN mobile bridge pairing surface', () => {
     const stillAuthorized = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ method: 'workspace.list', payload: {} })
+      body: JSON.stringify({ method: 'session.list', payload: {} })
     })
     expect(stillAuthorized.status).toBe(200)
 

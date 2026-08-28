@@ -28,18 +28,48 @@ const MUX_RECONNECT_MS = 500
 const MUX_RECONNECT_CAP_MS = 30_000
 const MUX_STABLE_MS = 5_000
 
-const RPC_ALLOWLIST = new Set([
-  'workspace.list',
-  'agentPreset.list',
-  'agentPreset.select',
-  'session.list',
-  'session.history',
-  'session.models',
-  'session.selectModel',
-  'session.create',
-  'session.prompt',
-  'session.cancel'
-])
+/**
+ * Mobile method name to the Host endpoint that serves it.
+ *
+ * 0.1.2-alpha.1 deleted `dsh-host-apiproxy`, whose string-keyed `/api/<name>`
+ * routes this bridge was written against, and moved the same operations onto
+ * Typert Remote. The transport is unchanged — same `/api` prefix, same
+ * client-request envelope — but an endpoint is now `<namespace>/<method>` and
+ * its payload carries named args rather than a bare object. Several shapes
+ * moved too, so each entry owns its own translation instead of a blanket
+ * rename.
+ *
+ * The mobile page's vocabulary is deliberately left alone: it is served from
+ * this file, but a phone may still be holding an older page.
+ */
+const HARNESS_ENDPOINTS: Record<
+  string,
+  { endpoint: string; args(payload: Record<string, unknown>): Record<string, unknown> }
+> = {
+  'agentPreset.list': { endpoint: 'agentPresets/list', args: () => ({}) },
+  // The preset selector is keyed by agent id, which for a top-level session is
+  // the session id the mobile page already sends.
+  'agentPreset.select': {
+    endpoint: 'agentPresets/select',
+    args: (payload) => ({ agentId: payload.sessionId, agentPreset: payload.agentPreset })
+  },
+  'session.list': { endpoint: 'session/list', args: () => ({ _request: {} }) },
+  // The catalog is no longer per-session: it describes what the Host can route
+  // to, so it takes no arguments and the page's sessionId is dropped.
+  'session.models': { endpoint: 'session/modelCatalog', args: () => ({}) },
+  'session.selectModel': {
+    endpoint: 'session/selectModel',
+    args: (payload) => ({ request: payload })
+  },
+  'session.create': { endpoint: 'session/create', args: (payload) => ({ request: payload }) },
+  'session.prompt': {
+    endpoint: 'session/prompt',
+    args: (payload) => ({ request: { requestId: randomUUID(), ...payload } })
+  },
+  'session.cancel': { endpoint: 'session/cancel', args: (payload) => ({ request: payload }) }
+}
+
+const RPC_ALLOWLIST = new Set([...Object.keys(HARNESS_ENDPOINTS), 'session.history'])
 
 export interface LanMobileBridgeOptions {
   harnessUrl(): string | undefined
@@ -786,14 +816,53 @@ export class LanMobileBridge {
     return response
   }
 
+  /**
+   * Translate one mobile method onto its Host endpoint and drive it.
+   *
+   * `session.history` is the one call the page cannot express directly: the
+   * Host replaced open-ended history reads with a cursor-bounded page, and
+   * refuses a `throughSeq` past the session's own cursor. The cursor lives on
+   * the session list row, so the read is two calls here rather than a
+   * protocol the page has to learn.
+   */
   private async forwardRpc(method: string, payload: unknown): Promise<{ ok: boolean; value?: unknown; error?: string }> {
+    const fields = typeof payload === 'object' && payload !== null
+      ? payload as Record<string, unknown>
+      : {}
+
+    if (method === 'session.history') {
+      const sessionId = fields.sessionId
+      const listed = await this.invokeHarness('session/list', { _request: {} })
+      if (!listed.ok) return listed
+      const items = (listed.value as { items?: { sessionId?: unknown; projections?: { asOfSeq?: unknown } }[] }).items ?? []
+      const row = items.find((item) => item.sessionId === sessionId)
+      const throughSeq = row?.projections?.asOfSeq
+      if (typeof throughSeq !== 'number') return { ok: false, error: 'Harness has no cursor for this session.' }
+      return this.invokeHarness('session/page', {
+        request: {
+          address: { kind: 'session', sessionId },
+          throughSeq,
+          ...(typeof fields.maxMessages === 'number' ? { maxMessages: fields.maxMessages } : {})
+        }
+      })
+    }
+
+    const route = HARNESS_ENDPOINTS[method]
+    if (route === undefined) return { ok: false, error: 'RPC method is not available on mobile.' }
+    return this.invokeHarness(route.endpoint, route.args(fields))
+  }
+
+  private async invokeHarness(
+    endpoint: string,
+    args: Record<string, unknown>
+  ): Promise<{ ok: boolean; value?: unknown; error?: string }> {
     const base = this.options.harnessUrl()
     if (!base) return { ok: false, error: 'Harness is not ready.' }
     const rpcId = randomUUID()
-    const response = await this.harnessFetch(new URL(`/api/${method}`, base), {
+    const response = await this.harnessFetch(new URL(`/api/${endpoint}`, base), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'client-request', rpcId, method, payload }),
+      body: JSON.stringify({ type: 'client-request', rpcId, method: endpoint, payload: { args } }),
       signal: AbortSignal.timeout(30_000)
     }, base)
     if (!response.ok) return { ok: false, error: `Harness transport returned HTTP ${response.status}.` }
