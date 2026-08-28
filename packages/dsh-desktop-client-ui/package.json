@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop-client-ui",
   "version": "0.1.0",
-  "description": "DSH Desktop brand and native-shell controls for Harness UI slots.",
+  "description": "DSH Desktop brand occupants for Harness UI slots.",
   "private": true,
   "type": "module",
   "main": "./index.js",

@@ -20,3 +20,10 @@ index 696591c..90c1520 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
+@@ -246,5 +248,6 @@ window.__ModuleLoader__.load({
+ 							children: renderSlot("sidebar.footer.action", { wide })
+ 						}), (0, react_jsx_runtime.jsx)("div", {
++							"data-dsh-sidebar-settings": "",
+ 							className: SidebarRoot_module_css_default.settingsArea,
+ 							children: renderSlot("sidebar.settings", { wide })
+ 						})]

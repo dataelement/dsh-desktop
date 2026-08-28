@@ -78,9 +78,6 @@ describe('DSH Desktop client slot occupants', () => {
         config: Registration['config'],
         component: Registration['component']
       ): (() => void) => {
-        if (config.name === 'sidebar.footer.action' && config.id === undefined) {
-          throw new Error('list slots require an id')
-        }
         registrations.push({ config, component })
         return () => undefined
       }
@@ -91,13 +88,8 @@ describe('DSH Desktop client slot occupants', () => {
     expect(registrations.map(({ config }) => config.name)).toEqual([
       'sidebar.brand.mark',
       'sidebar.brand.name',
-      'conversation.hero.brand.mark',
-      'sidebar.footer.action'
+      'conversation.hero.brand.mark'
     ])
-    expect(registrations.at(-1)?.config).toMatchObject({
-      id: 'dsh-desktop-mobile',
-      order: 20
-    })
     expect(appended).toHaveLength(1)
 
     const sidebarName = registrations.find(
@@ -117,16 +109,5 @@ describe('DSH Desktop client slot occupants', () => {
     )!.component({ size: 48 }) as { type: unknown; props: Record<string, unknown> }
     expect(heroMark.type).toBe(FishLogo)
     expect(heroMark.props.size).toBe(48)
-
-    const phone = registrations.find(
-      ({ config }) => config.name === 'sidebar.footer.action'
-    )!.component
-    expect(phone({ wide: false })).toBeNull()
-    const widePhone = phone({ wide: true }) as {
-      type: unknown
-      props: Record<string, unknown>
-    }
-    expect(widePhone.type).toBe('button')
-    expect(widePhone.props['aria-label']).toBe('Connect phone')
   })
 })

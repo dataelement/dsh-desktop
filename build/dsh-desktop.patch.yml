@@ -5,8 +5,9 @@
 
 # Disable the stock single-slot occupant before mounting Desktop's equivalent;
 # two occupants cannot share either brand seat. The Desktop plugin preserves
-# the stock conversation mark and owns the phone action through the public
-# sidebar footer slot. Window chrome geometry remains a native-shell concern.
+# the stock conversation mark. The phone remains in the settings row because
+# the public footer-action slot is a separate row. Window chrome geometry
+# remains a native-shell concern.
 - id: ui-brand-official
   disabled: true
 

@@ -78,7 +78,7 @@ describe('DSH Desktop sidebar branding', () => {
     expect(patch).toContain('sidebar === 0 ? COLLAPSED_SIDEBAR_WIDTH')
   })
 
-  it('provides the phone entry through the public footer slot and a narrow bridge', async () => {
+  it('keeps the phone entry aligned at the right edge of the settings row', async () => {
     const [patch, preload, main, client] = await Promise.all([
       readFile(patchPath('@deepseek-ai/dsh-client-ui-sidebar'), 'utf8'),
       readFile(path.join(projectRoot, 'src', 'preload', 'index.ts'), 'utf8'),
@@ -89,15 +89,14 @@ describe('DSH Desktop sidebar branding', () => {
     expect(patch).toContain('data-dsh-sidebar-root')
     expect(patch).toContain('data-dsh-sidebar-wide')
     expect(patch).not.toContain('data-dsh-sidebar-footer')
-    expect(patch).not.toContain('data-dsh-sidebar-settings')
-    expect(client).toContain("ctx.slots.inject('sidebar.footer.action'")
-    expect(client).toContain("id: 'dsh-desktop-mobile'")
-    expect(client).toContain('order: 20')
-    expect(client).toContain('if (!wide && !connected) return null')
-    expect(preload).toContain('openMobilePairing: (): Promise<void>')
-    expect(preload).toContain('getMobileStatus: (): Promise<{ connected: boolean }>')
-    expect(preload).toContain('onMobileStatusChanged: (listener: (connected: boolean) => void)')
-    expect(preload).not.toContain('settingsArea.appendChild')
+    expect(patch).toContain('data-dsh-sidebar-settings')
+    expect(client).not.toContain("ctx.slots.inject('sidebar.footer.action'")
+    expect(preload).toContain("liveElement(sidebarSettingsArea, '[data-dsh-sidebar-settings]')")
+    expect(preload).toContain('settingsArea.appendChild(mobileButton)')
+    expect(preload).toContain('[data-dsh-sidebar-settings] { position:relative')
+    expect(preload).toContain('padding-right:38px')
+    expect(preload).toContain('position:absolute; right:0; top:50%')
+    expect(preload).toContain('const hidden = !wide && !phoneConnected')
     expect(main).toContain("ipcMain.handle('mobile:open-pairing'")
     expect(main).toContain("ipcMain.handle('mobile:status'")
   })
