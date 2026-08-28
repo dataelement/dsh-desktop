@@ -222,7 +222,7 @@ function createSnapshotStore<T>(initial: T) {
 }
 
 async function mountConversationRoot(
-  initialView: 'chat' | 'research' = 'research',
+  initialView: 'chat' | 'research' | 'trajectory' = 'research',
   assistantMessage?: { messageId: string; text: string; settled?: boolean },
   lifecycle?: {
     enterResearch(): void
@@ -489,8 +489,15 @@ async function mountConversationRoot(
       return () => onResearchPresentation?.(null)
     }, [activeSessionId, onResearchPresentation, sessionActions, snapshot])
     return createElement('div', {
+      className: 'wSkVaW_viewArea',
       'data-center-session-view': snapshot.view ?? 'chat'
-    })
+    }, snapshot.view === 'trajectory'
+      ? createElement('div', {
+          className: 'qBU-ya_root',
+          'data-conversation-composer-overlay': '',
+          'data-test-trajectory-view': ''
+        })
+      : null)
   }
   const createRenderSlot = (
     activeSessionId: string,
@@ -6737,15 +6744,29 @@ describe('Sherlock workspace and composer controls', () => {
         .getPropertyValue('--dsh-composer-height')).toBe('168px')
       expect(browserWindow.getComputedStyle(scroll).scrollPaddingBottom).toBe('168px')
 
-      const chromeCss = Array.from(browserWindow.document.querySelectorAll('style'))
-        .find((style) => style.getAttribute('data-plugin-css')
-          ?.endsWith('/ResearchConversationChromeOverrides'))?.textContent ??
-        Array.from(browserWindow.document.querySelectorAll('style'))
-          .map((style) => style.textContent ?? '')
-          .find((textContent) => textContent.includes('[data-center-composer-host]')) ?? ''
-      expect(chromeCss).toContain(
-        '.wSkVaW_root[data-phase=active]>.wSkVaW_scrollBody:not([data-research-center])::after'
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('lets Trajectory continue behind the floating composer without the Chat tail spacer', async () => {
+    const mounted = await mountConversationRoot('trajectory', undefined, undefined, {
+      composerHeight: 168
+    })
+    try {
+      const { browserWindow, host } = mounted
+      const scroll = host.querySelector('.wSkVaW_scrollBody')
+      const trajectory = host.querySelector(
+        '[data-test-trajectory-view][data-conversation-composer-overlay]'
       )
+      const centerHost = host.querySelector('[data-center-composer-host]')
+      expect(scroll).not.toBeNull()
+      expect(trajectory).not.toBeNull()
+      expect(centerHost).not.toBeNull()
+      if (scroll === null || trajectory === null || centerHost === null) return
+
+      expect(browserWindow.getComputedStyle(centerHost).backgroundImage).toBe('none')
+      expect(browserWindow.getComputedStyle(scroll).scrollPaddingBottom).toBe('')
     } finally {
       await mounted.cleanup()
     }
