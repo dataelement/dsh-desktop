@@ -18,7 +18,8 @@ import {
   isTrustedRequest,
   readMarketInstallation,
   resolvePnpmEntry,
-  stagePnpmRunner
+  stagePnpmRunner,
+  updateProfileNpmrc
 } from '../packages/dsh-desktop-market-installer/index.js'
 
 describe('desktop plugin market installer', () => {
@@ -48,6 +49,43 @@ describe('desktop plugin market installer', () => {
 
   it('ships a resolvable pnpm binary instead of relying on the user PATH', () => {
     expect(resolvePnpmEntry()).toMatch(/node_modules[/\\]pnpm[/\\]bin[/\\]pnpm\.(c|m)js$/u)
+  })
+
+  it('updates Desktop pnpm settings without discarding the pinned profile store', () => {
+    const npmrc = [
+      '# user configuration',
+      'registry=https://registry.example.test/',
+      'store-dir=/profile/.pnpm-store',
+      'package-import-method=clone-or-copy',
+      'child-concurrency=1',
+      'side-effects-cache=true',
+      ''
+    ].join('\n')
+
+    expect(updateProfileNpmrc(npmrc)).toBe([
+      '# user configuration',
+      'registry=https://registry.example.test/',
+      'store-dir=/profile/.pnpm-store',
+      'side-effects-cache=false',
+      ''
+    ].join('\n'))
+  })
+
+  it('keeps the profile store pin when regenerating packaged pnpm shims', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-market-store-pin-'))
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(profile, { recursive: true })
+    await writeFile(
+      join(profile, '.npmrc'),
+      'store-dir=/profile/.pnpm-store\npackage-import-method=clone-or-copy\n',
+      'utf8'
+    )
+
+    await ensurePnpmShim(home)
+
+    expect(await readFile(join(profile, '.npmrc'), 'utf8')).toBe(
+      'store-dir=/profile/.pnpm-store\nside-effects-cache=false\n'
+    )
   })
 
   it('generates packaged node and pnpm shims in desktop-bin', async () => {

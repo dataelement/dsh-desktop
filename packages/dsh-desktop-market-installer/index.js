@@ -30,6 +30,34 @@ export function profileDirectory(home = dshHome()) {
   return join(home, 'profiles', MARKET_PROFILE)
 }
 
+const OBSOLETE_PROFILE_NPMRC_KEYS = new Set(['package-import-method', 'child-concurrency'])
+
+/**
+ * Update the settings Desktop owns without discarding profile-specific pnpm
+ * configuration. In particular, `store-dir` records where the existing
+ * node_modules tree was linked from; losing it makes pnpm reject every later
+ * plugin operation with ERR_PNPM_UNEXPECTED_STORE.
+ */
+export function updateProfileNpmrc(npmrc) {
+  const lines = npmrc.replaceAll('\r\n', '\n').split('\n')
+  if (lines.at(-1) === '') lines.pop()
+
+  const updated = []
+  let wroteSideEffectsCache = false
+  for (const line of lines) {
+    const key = /^\s*([^#;\s=]+)\s*=/u.exec(line)?.[1]?.toLowerCase()
+    if (key === 'side-effects-cache') {
+      if (!wroteSideEffectsCache) updated.push('side-effects-cache=false')
+      wroteSideEffectsCache = true
+      continue
+    }
+    if (key !== undefined && OBSOLETE_PROFILE_NPMRC_KEYS.has(key)) continue
+    updated.push(line)
+  }
+  if (!wroteSideEffectsCache) updated.push('side-effects-cache=false')
+  return `${updated.join('\n')}\n`
+}
+
 /** Leftovers of an interrupted pnpm run, or of a Windows locked-rename recovery. */
 export function isDisposableModuleDirectory(name) {
   return name.includes('_tmp_') || name.includes(SIDELINE_MARKER)
@@ -231,8 +259,8 @@ export async function ensurePnpmShim(home = dshHome()) {
     await chmod(nodePath, 0o755)
   }
 
-  // Also write .npmrc in profiles/web. package-import-method/child-concurrency
-  // are intentionally left at pnpm's defaults (hardlink, auto concurrency):
+  // Also update .npmrc in profiles/web. package-import-method/child-concurrency
+  // are intentionally removed so pnpm uses its defaults (hardlink, auto concurrency):
   // forcing clone-or-copy made every install do a full physical file copy
   // across the profile's 150+ packages, turning installs that should take
   // seconds into multi-minute (up to 30-minute) waits on Windows. The
@@ -241,9 +269,17 @@ export async function ensurePnpmShim(home = dshHome()) {
   const profileDir = profileDirectory(home)
   await mkdir(profileDir, { recursive: true })
   const npmrcPath = join(profileDir, '.npmrc')
-  const npmrcContent = ['side-effects-cache=false'].join('\n') + '\n'
+  let npmrcContent
   try {
-    await writeFile(npmrcPath, npmrcContent, 'utf8')
+    npmrcContent = await readFile(npmrcPath, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') npmrcContent = ''
+  }
+  try {
+    if (npmrcContent !== undefined) {
+      const updatedNpmrc = updateProfileNpmrc(npmrcContent)
+      if (updatedNpmrc !== npmrcContent) await writeFile(npmrcPath, updatedNpmrc, 'utf8')
+    }
   } catch {
     // ignore
   }
