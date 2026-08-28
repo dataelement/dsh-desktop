@@ -1,0 +1,20 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
+--- a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
+@@ -684,7 +684,15 @@ var ClientModuleRegistry = class extends Service {
+ 				attributes: {}
+ 			}).url : internal.resolveSync(loaderName, baseUrl, {}).url;
+ 		} catch {
+-			return;
++			if (expectedPackageName === void 0) return;
++			try {
++				return {
++					path: createRequire(baseUrl).resolve(`${expectedPackageName}/package.json`),
++					packageName: expectedPackageName
++				};
++			} catch {
++				return;
++			}
+ 		}
+ 		return this.nearestPackage(moduleUrl, expectedPackageName);
+ 	}
