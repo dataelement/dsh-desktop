@@ -30,28 +30,16 @@ corepack pnpm exec tsx scripts/release/pack.ts --family dsh    --out dist/npm-ds
 
 ## 使用方式
 
-沿用上游 `scripts/release/verify-packed-install.ts` 的做法：把每个 tarball 以 `file:`
-形式写进消费方 `dependencies`，npm 即可解析全部传递依赖。
+上游 `scripts/release/verify-packed-install.ts` 会把每个 tarball 都写进消费方
+`dependencies`，这是用于验证整套发布物的测试方式，不适合 Desktop 生产打包。
+它会把测试支持、未启用的 provider，以及 Claude Code/Codex 等自带大型原生 CLI
+的可选 Bundle 一并提升为应用依赖。
 
-```bash
-node -e '
-const fs=require("fs"),path=require("path"),cp=require("child_process");
-const root="vendor/harness-0.1.2-alpha.1";
-const deps={};
-for(const d of ["npm-dsh","npm-vendor"])
-  for(const f of fs.readdirSync(path.join(root,d)).filter(n=>n.endsWith(".tgz"))){
-    const t=path.resolve(root,d,f);
-    const name=JSON.parse(cp.execSync(`tar -xzOf "${t}" package/package.json`)).name;
-    deps[name]="file:"+t;
-  }
-const p=JSON.parse(fs.readFileSync("package.json","utf8"));
-Object.assign(p.dependencies,deps);
-fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n");
-'
-npm install --no-audit --no-fund --package-lock=false
-```
+Desktop 的 `package.json` 只引用 `@deepseek-ai/dsh` 实际运行闭包、运行时代码引用的
+前端公共包，以及四个 `dsh-desktop-*` 插件。新增 tarball 前必须确认它被默认 Profile、
+运行时 import 或必需 peer 引用；可选 Bundle 应由插件安装流程按需安装。
 
-## 不要提交由此生成的 lockfile
+## 不要提交本机绝对路径生成的 lockfile
 
 这样装出来的 `package-lock.json`，`resolved` 字段指向本机 `file:` 路径：
 

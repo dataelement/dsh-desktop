@@ -50,6 +50,52 @@ describe('GitHub release contract', () => {
     expect(peerOnlyRuntimePackages).toEqual([])
   })
 
+  it('does not promote optional Harness providers and test support into the desktop runtime', async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as { dependencies: Record<string, string> }
+    const packageLock = JSON.parse(
+      await readFile(path.join(projectRoot, 'package-lock.json'), 'utf8')
+    ) as { packages: Record<string, unknown> }
+
+    const excludedHarnessPackages = [
+      '@deepseek-ai/cordis-plugin-logger-console',
+      '@deepseek-ai/dsh-agent-loop-testkit',
+      '@deepseek-ai/dsh-client-test-runtime',
+      '@deepseek-ai/dsh-client-web',
+      '@deepseek-ai/dsh-code-runtime-python',
+      '@deepseek-ai/dsh-e2b',
+      '@deepseek-ai/dsh-fs-e2b',
+      '@deepseek-ai/dsh-llm-mock-server',
+      '@deepseek-ai/dsh-llm-replay',
+      '@deepseek-ai/dsh-loader-smoke',
+      '@deepseek-ai/dsh-lsp',
+      '@deepseek-ai/dsh-lsp-stdio',
+      '@deepseek-ai/dsh-sdk-client',
+      '@deepseek-ai/dsh-session-persistence-sqlite',
+      '@deepseek-ai/dsh-session-snapshot',
+      '@deepseek-ai/dsh-session-title-all-prompts-llm',
+      '@deepseek-ai/dsh-storage-sqlite',
+      '@deepseek-ai/dsh-subagent-acp',
+      '@deepseek-ai/dsh-subagent-claude-code',
+      '@deepseek-ai/dsh-subagent-codex',
+      '@deepseek-ai/dsh-subagent-dsh-sdk',
+      '@deepseek-ai/dsh-subprocess-e2b',
+      '@deepseek-ai/dsh-tool-lsp',
+      '@deepseek-ai/dsh-tool-session-query',
+      '@deepseek-ai/dsh-tool-terminal',
+      '@deepseek-ai/dsh-web-search-exa',
+      '@deepseek-ai/dsh-web-search-perplexity'
+    ]
+
+    for (const packageName of excludedHarnessPackages) {
+      expect(packageJson.dependencies[packageName]).toBeUndefined()
+      expect(packageLock.packages[`node_modules/${packageName}`]).toBeUndefined()
+    }
+    expect(packageLock.packages['node_modules/@anthropic-ai/claude-agent-sdk']).toBeUndefined()
+    expect(packageLock.packages['node_modules/@openai/codex']).toBeUndefined()
+  })
+
   it('uses stable platform-specific artifact names', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
