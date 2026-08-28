@@ -78,6 +78,10 @@ async function loadClientBundle(
       getItem(key: string): string | null
       setItem(key: string, value: string): boolean
     }
+    researchCanvasWheel?: {
+      setRegion(value: Record<string, unknown>): boolean
+      subscribe(listener: (value: Record<string, unknown>) => void): () => void
+    }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
       admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
@@ -808,6 +812,10 @@ async function mountResearchCanvas(options: {
   }
   dshDesktop?: {
     getPathForFile?(file: File): string
+    researchCanvasWheel?: {
+      setRegion(value: Record<string, unknown>): boolean
+      subscribe(listener: (value: Record<string, unknown>) => void): () => void
+    }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
       admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
@@ -822,33 +830,18 @@ async function mountResearchCanvas(options: {
   pdfBodySize?: { width: number; height: number }
   resizeObserverCallbacks?: Array<() => void>
   intersectionObserverCallbacks?: Array<(entries: Array<{ target: HappyDOMElement; isIntersecting: boolean }>) => void>
+  animationFrames?: {
+    callbacks: Map<number, FrameRequestCallback>
+    cancelled: number[]
+  }
   strictMode?: boolean
   officePreview?: {
     Component: ComponentType<{ sourceUrl: string; kind: string; title: string }>
     supports(kind: string): boolean
   }
   fetch?: (input: string, init?: { signal?: AbortSignal }) => Promise<Response>
-  windowMessageListeners?: { added: number; removed: number }
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
-  if (options.windowMessageListeners !== undefined) {
-    const counts = options.windowMessageListeners
-    type EventMethod = (...args: unknown[]) => unknown
-    const eventWindow = browserWindow as unknown as {
-      addEventListener: EventMethod
-      removeEventListener: EventMethod
-    }
-    const addEventListener = eventWindow.addEventListener.bind(browserWindow)
-    const removeEventListener = eventWindow.removeEventListener.bind(browserWindow)
-    eventWindow.addEventListener = (type: unknown, ...args: unknown[]) => {
-      if (type === 'message') counts.added += 1
-      return addEventListener(type, ...args)
-    }
-    eventWindow.removeEventListener = (type: unknown, ...args: unknown[]) => {
-      if (type === 'message') counts.removed += 1
-      return removeEventListener(type, ...args)
-    }
-  }
   const { sessionId } = options
   const storage = options.storage ?? browserWindow.localStorage
   storage.setItem(
@@ -929,6 +922,27 @@ async function mountResearchCanvas(options: {
         observe() {}
         unobserve() {}
         disconnect() {}
+      }
+    })
+  }
+  if (options.animationFrames !== undefined) {
+    const animationFrames = options.animationFrames
+    let nextFrameId = 0
+    Object.defineProperties(browserWindow, {
+      requestAnimationFrame: {
+        configurable: true,
+        value(callback: FrameRequestCallback) {
+          nextFrameId += 1
+          animationFrames.callbacks.set(nextFrameId, callback)
+          return nextFrameId
+        }
+      },
+      cancelAnimationFrame: {
+        configurable: true,
+        value(frameId: number) {
+          animationFrames.cancelled.push(frameId)
+          animationFrames.callbacks.delete(frameId)
+        }
       }
     })
   }
@@ -3497,9 +3511,7 @@ describe('Sherlock workspace and composer controls', () => {
 
   it('mounts interactive HTML only from a capability URL with the exact browser sandbox and releases it offscreen', async () => {
     const releases: Array<Record<string, string>> = []
-    const messageListeners = { added: 0, removed: 0 }
     let restoreSequence = 0
-    let cleaned = false
     const mounted = await mountResearchCanvas({
       sessionId: 'session-html-lifecycle',
       files: [{
@@ -3507,7 +3519,6 @@ describe('Sherlock workspace and composer controls', () => {
         authorizationId: 'authorization-html', contentType: 'text/html; charset=utf-8',
         x: 200, y: 200, width: 480, height: 360, sizeMode: 'auto'
       }],
-      windowMessageListeners: messageListeners,
       dshDesktop: { researchPreview: {
         async restore(value) {
           restoreSequence += 1
@@ -3526,8 +3537,7 @@ describe('Sherlock workspace and composer controls', () => {
         mounted.workspace.setCanvasSize({ width: 800, height: 600 })
         await Promise.resolve(); await Promise.resolve()
       })
-      const frame = mounted.host.querySelector('[data-research-html-preview]') as
-        (HappyDOMElement & { contentWindow: unknown }) | null
+      const frame = mounted.host.querySelector('[data-research-html-preview]') as HappyDOMElement | null
       expect(frame).not.toBeNull()
       expect(frame?.getAttribute('src')).toBe('sherlock-preview://capability-html-1/')
       expect(frame?.getAttribute('srcdoc')).toBeNull()
@@ -3551,187 +3561,6 @@ describe('Sherlock workspace and composer controls', () => {
       expect(htmlWheel.defaultPrevented).toBe(false)
       expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
 
-      class TestPort {
-        peer: TestPort | null = null
-        closed = false
-        readonly listeners = new Set<(event: { data: unknown }) => void>()
-        postMessage(data: unknown) {
-          if (this.closed || this.peer?.closed !== false) return
-          for (const listener of this.peer.listeners) listener({ data })
-        }
-        addEventListener(type: string, listener: (event: { data: unknown }) => void) {
-          expect(type).toBe('message')
-          this.listeners.add(listener)
-        }
-        removeEventListener(type: string, listener: (event: { data: unknown }) => void) {
-          expect(type).toBe('message')
-          this.listeners.delete(listener)
-        }
-        start() {}
-        close() { this.closed = true }
-      }
-      const channels: Array<{ port1: TestPort; port2: TestPort }> = []
-      class TestMessageChannel {
-        readonly port1 = new TestPort()
-        readonly port2 = new TestPort()
-        constructor() {
-          this.port1.peer = this.port2
-          this.port2.peer = this.port1
-          channels.push(this)
-        }
-      }
-      Object.defineProperty(mounted.browserWindow, 'MessageChannel', {
-        configurable: true,
-        value: TestMessageChannel
-      })
-      const handshakes: Array<{
-        message: unknown
-        targetOrigin: string
-        transfer: TestPort[]
-      }> = []
-      const frameSource = { currentOrigin: 'sherlock-preview://capability-html-1', postMessage(
-        message: unknown,
-        targetOrigin: string,
-        transfer: TestPort[] = []
-      ) {
-        if (targetOrigin !== this.currentOrigin) return
-        handshakes.push({ message, targetOrigin, transfer })
-      } }
-      const dispatchBridgeMessage = (source: unknown, origin: string, data: unknown) => {
-        const event = new mounted.browserWindow.Event('message')
-        Object.defineProperties(event, {
-          source: { value: source },
-          origin: { value: origin },
-          data: { value: data }
-        })
-        mounted.browserWindow.dispatchEvent(event)
-      }
-      let lastBridgePort: TestPort | null = null
-      if (frame !== null) {
-        // HappyDOM currently drops WheelEventInit.metaKey/clientX/clientY. Keep the
-        // production path browser-accurate by repairing the test realm instead of
-        // teaching runtime code about this test-environment gap.
-        const NativeWheelEvent = mounted.browserWindow.WheelEvent
-        type BrowserAccurateWheelInit =
-          NonNullable<ConstructorParameters<typeof NativeWheelEvent>[1]> & {
-            metaKey?: boolean
-            clientX?: number
-            clientY?: number
-          }
-        class BrowserAccurateWheelEvent extends NativeWheelEvent {
-          constructor(type: string, init: BrowserAccurateWheelInit = {}) {
-            super(type, init)
-            Object.defineProperties(this, {
-              metaKey: { configurable: true, value: init.metaKey ?? false },
-              clientX: { configurable: true, value: init.clientX ?? 0 },
-              clientY: { configurable: true, value: init.clientY ?? 0 }
-            })
-          }
-        }
-        Object.defineProperty(mounted.browserWindow, 'WheelEvent', {
-          configurable: true,
-          value: BrowserAccurateWheelEvent
-        })
-        Object.defineProperties(frame, {
-          contentWindow: { configurable: true, value: frameSource },
-          clientWidth: { configurable: true, value: 240 },
-          clientHeight: { configurable: true, value: 164 },
-          getBoundingClientRect: {
-            configurable: true,
-            value: () => ({ left: 100, top: 50, right: 580, bottom: 378, width: 480, height: 328 })
-          }
-        })
-        const removedBeforeLoad = messageListeners.removed
-        await act(async () => {
-          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
-          await Promise.resolve()
-        })
-        expect(handshakes).toHaveLength(1)
-        expect(handshakes[0]?.targetOrigin).toBe('sherlock-preview://capability-html-1')
-        expect(handshakes[0]?.message).toBe('sherlock:research-html-wheel-port-v1')
-        expect(handshakes[0]?.transfer).toEqual([channels[0]?.port2])
-        expect(channels).toHaveLength(1)
-        const stalePort = handshakes[0]?.transfer[0]
-        await act(async () => {
-          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
-          await Promise.resolve()
-        })
-        expect(handshakes).toHaveLength(2)
-        expect(handshakes[1]?.targetOrigin).toBe('sherlock-preview://capability-html-1')
-        expect(handshakes[1]?.message).toBe('sherlock:research-html-wheel-port-v1')
-        expect(handshakes[1]?.transfer).toEqual([channels[1]?.port2])
-        expect(channels).toHaveLength(2)
-        expect(channels[0]?.port1.closed).toBe(true)
-        const currentPort = handshakes[1]?.transfer[0]
-        expect(currentPort).not.toBe(stalePort)
-        expect(messageListeners.added).toBe(messageListeners.removed)
-        const validBridgeMessage = {
-          type: 'sherlock:research-html-wheel', version: 1,
-          deltaX: 0, deltaY: -100, deltaMode: 0,
-          clientX: 100, clientY: 50
-        }
-        for (const [source, origin, data] of [
-          [{}, 'sherlock-preview://capability-html-1', validBridgeMessage],
-          [frameSource, 'https://attacker.example', validBridgeMessage],
-          [frameSource, 'sherlock-preview://capability-html-1', {
-            type: 'sherlock:research-html-wheel', version: 1,
-            deltaX: 0, deltaY: -100, deltaMode: 0, clientX: 100, clientY: 50
-          }],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, version: 2 }],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, unexpected: true }],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, deltaY: Number.NaN }],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, deltaY: 100_000 }],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, clientY: Number.POSITIVE_INFINITY }],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, clientX: 241 }],
-          [frameSource, 'sherlock-preview://capability-html-1', { ...validBridgeMessage, deltaMode: 3 }]
-        ] as Array<[unknown, string, unknown]>) {
-          dispatchBridgeMessage(source, origin, data)
-          expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
-        }
-        stalePort?.postMessage(validBridgeMessage)
-        expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
-        for (const invalidPortMessage of [
-          { ...validBridgeMessage, version: 2 },
-          { ...validBridgeMessage, unexpected: true },
-          { ...validBridgeMessage, deltaY: Number.NaN },
-          { ...validBridgeMessage, deltaY: 100_000 },
-          { ...validBridgeMessage, clientY: Number.POSITIVE_INFINITY },
-          { ...validBridgeMessage, clientX: 241 },
-          { ...validBridgeMessage, deltaMode: 3 }
-        ]) {
-          currentPort?.postMessage(invalidPortMessage)
-          expect(mounted.workspace.getSnapshot().viewport).toEqual(viewportBeforeWheel)
-        }
-        currentPort?.postMessage(validBridgeMessage)
-        const zoomed = mounted.workspace.getSnapshot().viewport
-        expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
-        // iframe-local (100, 50) maps through the 2x rendered rect to canvas (300, 150).
-        expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(300, 7)
-        expect((150 - zoomed.y) / zoomed.scale).toBeCloseTo(150, 7)
-        frameSource.currentOrigin = 'https://attacker.example'
-        await act(async () => {
-          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
-          await Promise.resolve()
-        })
-        expect(handshakes).toHaveLength(2)
-        expect(channels).toHaveLength(3)
-        expect(channels[1]?.port1.closed).toBe(true)
-        dispatchBridgeMessage(frameSource, 'https://attacker.example', validBridgeMessage)
-        expect(mounted.workspace.getSnapshot().viewport).toEqual(zoomed)
-
-        frameSource.currentOrigin = 'sherlock-preview://capability-html-1'
-        await act(async () => {
-          frame.dispatchEvent(new mounted.browserWindow.Event('load'))
-          await Promise.resolve()
-        })
-        expect(handshakes).toHaveLength(3)
-        expect(handshakes[2]?.transfer).toEqual([channels[3]?.port2])
-        expect(channels).toHaveLength(4)
-        expect(channels[2]?.port1.closed).toBe(true)
-        lastBridgePort = handshakes[2]?.transfer[0] ?? null
-        expect(mounted.host.innerHTML).not.toContain('research-html-wheel-token')
-        expect(messageListeners.removed).toBeGreaterThanOrEqual(removedBeforeLoad)
-      }
       await act(async () => {
         mounted.workspace.setSelection({ selectedNodeIds: ['html-1'], orderedFileIds: ['html-1'] })
       })
@@ -3759,59 +3588,16 @@ describe('Sherlock workspace and composer controls', () => {
         sessionId: 'session-html-lifecycle', nodeId: 'html-1',
         authorizationId: 'authorization-html', capabilityToken: 'capability-html-1'
       }])
-      const offscreenViewport = mounted.workspace.getSnapshot().viewport
-      lastBridgePort?.postMessage({
-        type: 'sherlock:research-html-wheel', version: 1,
-        deltaX: 0, deltaY: -100, deltaMode: 0, clientX: 100, clientY: 50
-      })
-      expect(mounted.workspace.getSnapshot().viewport).toEqual(offscreenViewport)
-      expect(channels[3]?.port1.closed).toBe(true)
-
       await act(async () => {
         mounted.workspace.setViewport({ scale: 1, x: 0, y: 0 })
         await Promise.resolve(); await Promise.resolve()
       })
       expect(restoreSequence).toBe(2)
-      const restoredFrame = mounted.host.querySelector('[data-research-html-preview]') as
-        (HappyDOMElement & { contentWindow: unknown }) | null
+      const restoredFrame = mounted.host.querySelector('[data-research-html-preview]') as HappyDOMElement | null
       expect(restoredFrame?.getAttribute('src'))
         .toBe('sherlock-preview://capability-html-2/')
-      expect(messageListeners.added).toBe(messageListeners.removed)
-      if (restoredFrame !== null) {
-        const restoredSource = { postMessage(
-          message: unknown,
-          targetOrigin: string,
-          transfer: TestPort[] = []
-        ) { handshakes.push({ message, targetOrigin, transfer }) } }
-        Object.defineProperties(restoredFrame, {
-          contentWindow: { configurable: true, value: restoredSource },
-          clientWidth: { configurable: true, value: 240 },
-          clientHeight: { configurable: true, value: 164 },
-          getBoundingClientRect: {
-            configurable: true,
-            value: () => ({ left: 100, top: 50, right: 580, bottom: 378, width: 480, height: 328 })
-          }
-        })
-        await act(async () => {
-          restoredFrame.dispatchEvent(new mounted.browserWindow.Event('load'))
-          await Promise.resolve()
-        })
-        expect(handshakes).toHaveLength(4)
-        expect(handshakes[3]?.targetOrigin).toBe('sherlock-preview://capability-html-2')
-        expect(handshakes[3]?.message).toBe('sherlock:research-html-wheel-port-v1')
-        expect(handshakes[3]?.transfer).toEqual([channels[4]?.port2])
-        expect(channels).toHaveLength(5)
-        expect(handshakes[3]?.transfer[0]).not.toBe(handshakes[0]?.transfer[0])
-        expect(handshakes[3]?.transfer[0]).not.toBe(handshakes[1]?.transfer[0])
-        expect(handshakes[3]?.transfer[0]).not.toBe(handshakes[2]?.transfer[0])
-        expect(messageListeners.added).toBe(messageListeners.removed)
-      }
-      await mounted.cleanup()
-      cleaned = true
-      expect(messageListeners.added).toBe(messageListeners.removed)
-      expect(channels.every((channel) => channel.port1.closed)).toBe(true)
     } finally {
-      if (!cleaned) await mounted.cleanup()
+      await mounted.cleanup()
     }
   })
 
@@ -6076,6 +5862,162 @@ describe('Sherlock workspace and composer controls', () => {
       expect((260 - zoomed.y) / zoomed.scale).toBeCloseTo(260, 7)
     } finally {
       await mounted.cleanup()
+    }
+  })
+
+  it('registers a monotonic native wheel region and rejects stale, outside, or malformed native events', async () => {
+    const regionUpdates: Array<Record<string, unknown>> = []
+    const nativeListeners = new Set<(value: Record<string, unknown>) => void>()
+    const resizeCallbacks: Array<() => void> = []
+    const animationFrames = {
+      callbacks: new Map<number, FrameRequestCallback>(),
+      cancelled: [] as number[]
+    }
+    const releases: Array<Record<string, string>> = []
+    let unsubscribes = 0
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-native-wheel',
+      strictMode: true,
+      files: [{
+        id: 'native-html', name: 'native.html', source: 'computer',
+        authorizationId: 'authorization-native-html', contentType: 'text/html',
+        x: 100, y: 100, width: 480, height: 360, sizeMode: 'manual'
+      }],
+      resizeObserverCallbacks: resizeCallbacks,
+      animationFrames,
+      dshDesktop: {
+        researchCanvasWheel: {
+          setRegion(value) {
+            regionUpdates.push({ ...value })
+            return true
+          },
+          subscribe(listener) {
+            nativeListeners.add(listener)
+            return () => {
+              if (nativeListeners.delete(listener)) unsubscribes += 1
+            }
+          }
+        },
+        researchPreview: {
+          async restore(value) {
+            return {
+              authorizationId: value.authorizationId,
+              capabilityToken: 'capability-native-html',
+              url: 'sherlock-preview://capability-native-html/',
+              contentType: 'text/html',
+              name: 'native.html'
+            }
+          },
+          async release(value) {
+            releases.push(value)
+            return { ok: true }
+          }
+        }
+      }
+    })
+    try {
+      const { canvas, workspace } = mounted
+      const flushAnimationFrames = async () => {
+        const callbacks = [...animationFrames.callbacks.values()]
+        animationFrames.callbacks.clear()
+        await act(async () => { callbacks.forEach((callback) => callback(0)) })
+      }
+      await act(async () => { resizeCallbacks.forEach((callback) => callback()) })
+      expect(animationFrames.callbacks.size).toBe(1)
+      await flushAnimationFrames()
+      const initialUpdateCount = regionUpdates.length
+      await act(async () => {
+        resizeCallbacks.forEach((callback) => callback())
+        resizeCallbacks.forEach((callback) => callback())
+        mounted.browserWindow.dispatchEvent(new mounted.browserWindow.Event('resize'))
+      })
+      expect(animationFrames.callbacks.size).toBe(1)
+      expect(regionUpdates).toHaveLength(initialUpdateCount)
+      await flushAnimationFrames()
+      expect(regionUpdates).toHaveLength(initialUpdateCount)
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(mounted.host.querySelector('[data-research-html-preview]')).not.toBeNull()
+      const currentRegion = [...regionUpdates].reverse().find((value) => value.active === true)
+      expect(currentRegion).toMatchObject({
+        active: true, left: 0, top: 0, width: 800, height: 600
+      })
+      expect(currentRegion?.ownerId).toMatch(/^research-canvas-/)
+      expect(currentRegion?.generation).toEqual(expect.any(Number))
+      const generation = currentRegion?.generation as number
+      const ownerId = currentRegion?.ownerId as string
+      expect(regionUpdates.every((value, index, values) =>
+        index === 0 || Number(value.generation) > Number(values[index - 1]?.generation)
+      )).toBe(true)
+      expect(nativeListeners.size).toBe(1)
+
+      const initial = workspace.getSnapshot().viewport
+      const sendNative = async (value: Record<string, unknown>) => {
+        await act(async () => { nativeListeners.forEach((listener) => listener(value)) })
+      }
+      const valid = {
+        generation,
+        ownerId,
+        clientX: 300,
+        clientY: 150,
+        deltaX: 0,
+        deltaY: -100,
+        deltaMode: 0
+      }
+      for (const invalid of [
+        { ...valid, generation: generation - 1 },
+        { ...valid, ownerId: 'retired-canvas' },
+        { ...valid, clientX: 800 },
+        { ...valid, clientY: Number.NaN },
+        { ...valid, deltaY: 4_097 },
+        { ...valid, deltaMode: 1 },
+        { ...valid, unexpected: true }
+      ]) {
+        await sendNative(invalid)
+        expect(workspace.getSnapshot().viewport).toEqual(initial)
+      }
+
+      await sendNative(valid)
+      const zoomed = workspace.getSnapshot().viewport
+      expect(zoomed.scale).toBeCloseTo(1.105170918, 8)
+      expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(300, 7)
+      expect((150 - zoomed.y) / zoomed.scale).toBeCloseTo(150, 7)
+
+      Object.defineProperty(canvas, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({ left: 100, top: 50, right: 700, bottom: 550, width: 600, height: 500 })
+      })
+      await act(async () => {
+        resizeCallbacks.forEach((callback) => callback())
+        mounted.browserWindow.dispatchEvent(new mounted.browserWindow.Event('resize'))
+      })
+      expect(animationFrames.callbacks.size).toBe(1)
+      await flushAnimationFrames()
+      const resizedRegion = [...regionUpdates].reverse().find((value) => value.active === true)
+      expect(resizedRegion).toMatchObject({
+        active: true, ownerId, left: 100, top: 50, width: 600, height: 500
+      })
+      expect(Number(resizedRegion?.generation)).toBeGreaterThan(generation)
+      await sendNative(valid)
+      expect(workspace.getSnapshot().viewport).toEqual(zoomed)
+    } finally {
+      const lastActive = [...regionUpdates].reverse().find((value) => value.active === true)
+      await act(async () => { resizeCallbacks.forEach((callback) => callback()) })
+      expect(animationFrames.callbacks.size).toBe(1)
+      await mounted.cleanup()
+      expect(animationFrames.callbacks.size).toBe(0)
+      expect(animationFrames.cancelled.length).toBeGreaterThan(0)
+      expect(unsubscribes).toBeGreaterThan(0)
+      expect(nativeListeners.size).toBe(0)
+      expect(regionUpdates.at(-1)).toMatchObject({
+        active: false,
+        ownerId: lastActive?.ownerId
+      })
+      expect(Number(regionUpdates.at(-1)?.generation))
+        .toBeGreaterThan(Number(lastActive?.generation))
+      expect(releases).toContainEqual({
+        sessionId: 'session-native-wheel', nodeId: 'native-html',
+        authorizationId: 'authorization-native-html', capabilityToken: 'capability-native-html'
+      })
     }
   })
 

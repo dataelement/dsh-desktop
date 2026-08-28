@@ -9,6 +9,7 @@ const electronFakes = vi.hoisted(() => ({
     manual: false
   })),
   on: vi.fn(),
+  removeListener: vi.fn(),
   sendSync: vi.fn()
 }))
 
@@ -17,6 +18,7 @@ vi.mock('electron', () => ({
   ipcRenderer: {
     invoke: electronFakes.invoke,
     on: electronFakes.on,
+    removeListener: electronFakes.removeListener,
     sendSync: electronFakes.sendSync
   },
   webUtils: { getPathForFile: () => '/tmp/preview.html' }
@@ -62,5 +64,46 @@ describe('preload frame boundary', () => {
     expect(electronFakes.sendSync).not.toHaveBeenCalled()
     expect(browserWindow.document.querySelector('#sherlock-sidebar-update-button')).toBeNull()
     expect(browserWindow.document.querySelector('#sherlock-developer-mode-style')).toBeNull()
+  })
+
+  it('exposes the frozen research canvas wheel bridge only in the trusted main frame', async () => {
+    Object.defineProperty(process, 'isMainFrame', {
+      configurable: true,
+      value: true
+    })
+    electronFakes.sendSync.mockReturnValue(true)
+    await import('../src/preload/index')
+
+    const desktopExposure = electronFakes.exposeInMainWorld.mock.calls.find(
+      ([name]) => name === 'dshDesktop'
+    )
+    expect(desktopExposure).toBeDefined()
+    const desktop = desktopExposure?.[1] as {
+      researchCanvasWheel: {
+        setRegion(value: unknown): boolean
+        subscribe(listener: (value: unknown) => void): () => void
+      }
+    }
+    expect(Object.isFrozen(desktop)).toBe(true)
+    expect(Object.isFrozen(desktop.researchCanvasWheel)).toBe(true)
+    const update = {
+      active: true, generation: 1, ownerId: 'canvas-1',
+      left: 10, top: 20, width: 500, height: 400
+    }
+    expect(desktop.researchCanvasWheel.setRegion(update)).toBe(true)
+    expect(electronFakes.sendSync).toHaveBeenCalledWith(
+      'research:canvas-wheel:set-region',
+      update
+    )
+    const unsubscribe = desktop.researchCanvasWheel.subscribe(vi.fn())
+    expect(electronFakes.on).toHaveBeenCalledWith(
+      'research:canvas-wheel:native',
+      expect.any(Function)
+    )
+    unsubscribe()
+    expect(electronFakes.removeListener).toHaveBeenCalledWith(
+      'research:canvas-wheel:native',
+      expect.any(Function)
+    )
   })
 })

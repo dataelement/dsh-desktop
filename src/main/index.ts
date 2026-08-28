@@ -77,6 +77,11 @@ import {
   handleResearchFilePreviewProtocolRequest,
   registerResearchFilePreviewHandlers
 } from './state/research-file-preview'
+import {
+  installResearchCanvasWheelRouter,
+  registerResearchCanvasWheelIpc,
+  type ResearchCanvasWheelRouter
+} from './state/research-canvas-wheel'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: RESEARCH_PREVIEW_SCHEME,
@@ -111,6 +116,7 @@ let pluginRecoveryRemovedPlugins: string[] = []
 let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
 let harnessThemePreferenceSyncTimer: ReturnType<typeof setInterval> | undefined
 let researchFilePreviewRegistry: ResearchFilePreviewRegistry | undefined
+let researchCanvasWheelRouter: ResearchCanvasWheelRouter | undefined
 
 function cancelPluginRecoverySessionReset(): void {
   if (pluginRecoveryResetTimer) clearTimeout(pluginRecoveryResetTimer)
@@ -501,8 +507,12 @@ function createWindow(): BrowserWindow {
   })
   installPluginRecoveryNavigation(window)
   secureWindow(window)
+  const canvasWheelRouter = installResearchCanvasWheelRouter(window)
+  researchCanvasWheelRouter = canvasWheelRouter
   installContextMenu(window, harnessLocale)
   window.on('closed', () => {
+    canvasWheelRouter.dispose()
+    if (researchCanvasWheelRouter === canvasWheelRouter) researchCanvasWheelRouter = undefined
     if (mainWindow === window) mainWindow = undefined
     resolvePluginRecoveryAction('quit')
   })
@@ -685,6 +695,12 @@ function registerHarnessHandlers(): void {
     ipcMain,
     getMainWindow: () => mainWindow,
     registry: researchFilePreviewRegistry
+  })
+  registerResearchCanvasWheelIpc({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    getRouter: () => researchCanvasWheelRouter,
+    onRejected: (error) => console.warn('[research-canvas] rejected wheel region update', error)
   })
 }
 

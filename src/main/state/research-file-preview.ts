@@ -46,7 +46,6 @@ const DEFAULT_CAPABILITY_TTL_MS = 15 * 60 * 1000
 const MAX_PATH_LENGTH = 8 * 1024
 const MAX_ID_LENGTH = 512
 const MAGIC_PREFIX_BYTES = 512
-const MAX_HTML_WHEEL_BRIDGE_SCAN_BYTES = 64 * 1024
 const MAX_JSON_VALIDATION_BYTES = 4 * 1024 * 1024
 const MAX_NATIVE_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
 const MAX_OFFICE_PREVIEW_BYTES = 64 * 1024 * 1024
@@ -56,155 +55,6 @@ const MAX_OFFICE_ENTRY_BYTES = 64 * 1024 * 1024
 const MAX_OFFICE_EXPANDED_BYTES = 256 * 1024 * 1024
 const MAX_OFFICE_EXPANSION_RATIO = 200
 const CORS_EXPOSE_HEADERS = 'Accept-Ranges, Content-Length, Content-Range, Content-Type'
-const RESEARCH_HTML_WHEEL_BRIDGE_PATH = '__sherlock/research-wheel-bridge-v1.js'
-const RESEARCH_HTML_WHEEL_BRIDGE_TAG = Buffer.from(
-  `<script src="/${RESEARCH_HTML_WHEEL_BRIDGE_PATH}"></script>`,
-  'utf8'
-)
-const RESEARCH_HTML_WHEEL_BRIDGE_SOURCE = Buffer.from(`'use strict';
-(() => {
-  const apply = Reflect.apply.bind(Reflect);
-  const call = (method, receiver, ...args) => apply(method, receiver, args);
-  const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor.bind(Object);
-  const getPrototypeOf = Object.getPrototypeOf.bind(Object);
-  const getter = (prototype, property) => {
-    let current = prototype;
-    while (current !== null) {
-      const descriptor = getOwnPropertyDescriptor(current, property);
-      if (typeof descriptor?.get === 'function') {
-        const nativeGetter = descriptor.get;
-        return (receiver) => call(nativeGetter, receiver);
-      }
-      current = getPrototypeOf(current);
-    }
-    throw new Error('Required browser event getter is unavailable.');
-  };
-  let getTrusted;
-  try {
-    const trustedDescriptor = getOwnPropertyDescriptor(new Event('__sherlock_probe'), 'isTrusted');
-    getTrusted = typeof trustedDescriptor?.get === 'function'
-      ? (receiver) => call(trustedDescriptor.get, receiver)
-      : getter(Event.prototype, 'isTrusted');
-  } catch {
-    return;
-  }
-  const eventTargetAddEventListener = EventTarget.prototype.addEventListener;
-  const eventTargetRemoveEventListener = EventTarget.prototype.removeEventListener;
-  const listen = (target, type, listener, options) =>
-    call(eventTargetAddEventListener, target, type, listener, options);
-  const unlisten = (target, type, listener) =>
-    call(eventTargetRemoveEventListener, target, type, listener);
-  const stopImmediatePropagation = (event) =>
-    call(Event.prototype.stopImmediatePropagation, event);
-  const preventDefault = (event) => call(Event.prototype.preventDefault, event);
-  const getMessageData = getter(MessageEvent.prototype, 'data');
-  const getMessageSource = getter(MessageEvent.prototype, 'source');
-  const getMessagePorts = getter(MessageEvent.prototype, 'ports');
-  const getMetaKey = getter(MouseEvent.prototype, 'metaKey');
-  const getClientX = getter(MouseEvent.prototype, 'clientX');
-  const getClientY = getter(MouseEvent.prototype, 'clientY');
-  const getDeltaX = getter(WheelEvent.prototype, 'deltaX');
-  const getDeltaY = getter(WheelEvent.prototype, 'deltaY');
-  const getDeltaMode = getter(WheelEvent.prototype, 'deltaMode');
-  const nativePortPostMessage = MessagePort.prototype.postMessage;
-  const nativePortStart = MessagePort.prototype.start;
-  const nativePortClose = MessagePort.prototype.close;
-  const portPostMessage = (receiver, message) => call(nativePortPostMessage, receiver, message);
-  const portStart = (receiver) => call(nativePortStart, receiver);
-  const portClose = (receiver) => call(nativePortClose, receiver);
-  const parentWindow = globalThis.parent;
-  const handshake = 'sherlock:research-html-wheel-port-v1';
-  const dispose = 'sherlock:research-html-wheel-dispose-v1';
-  let port = null;
-  let portMessageListener = null;
-  const closePort = (expectedPort = null) => {
-    const closingPort = port;
-    const closingListener = portMessageListener;
-    if (closingPort === null || (expectedPort !== null && closingPort !== expectedPort)) return;
-    port = null;
-    portMessageListener = null;
-    try {
-      if (closingListener !== null) unlisten(closingPort, 'message', closingListener);
-    } catch {}
-    try {
-      portClose(closingPort);
-    } catch {}
-  };
-  listen(globalThis, 'message', (event) => {
-    let trusted;
-    let source;
-    let data;
-    try {
-      trusted = getTrusted(event);
-      source = getMessageSource(event);
-      data = getMessageData(event);
-    } catch {
-      return;
-    }
-    if (trusted !== true || source !== parentWindow || data !== handshake) return;
-    stopImmediatePropagation(event);
-    let ports;
-    try {
-      ports = getMessagePorts(event);
-    } catch {
-      return;
-    }
-    if (ports.length !== 1 || ports[0] == null) return;
-    const receivedPort = ports[0];
-    closePort();
-    const receivedPortListener = (portEvent) => {
-      let message;
-      try {
-        message = getMessageData(portEvent);
-      } catch {
-        return;
-      }
-      if (message === dispose) closePort(receivedPort);
-    };
-    port = receivedPort;
-    portMessageListener = receivedPortListener;
-    try {
-      listen(receivedPort, 'message', receivedPortListener);
-      portStart(receivedPort);
-    } catch {
-      closePort(receivedPort);
-    }
-  }, { capture: true });
-  listen(globalThis, 'wheel', (event) => {
-    const currentPort = port;
-    if (currentPort === null) return;
-    let trusted;
-    let metaKey;
-    try {
-      trusted = getTrusted(event);
-      metaKey = getMetaKey(event);
-    } catch {
-      return;
-    }
-    if (trusted !== true || metaKey !== true) return;
-    let message;
-    try {
-      message = {
-        type: 'sherlock:research-html-wheel',
-        version: 1,
-        deltaX: getDeltaX(event),
-        deltaY: getDeltaY(event),
-        deltaMode: getDeltaMode(event),
-        clientX: getClientX(event),
-        clientY: getClientY(event)
-      };
-    } catch {
-      return;
-    }
-    try {
-      portPostMessage(currentPort, message);
-      preventDefault(event);
-    } catch {
-      closePort(currentPort);
-    }
-  }, { capture: true, passive: false });
-})();
-`, 'utf8')
 
 export type ResearchPreviewSource = 'finder' | 'sidebar'
 
@@ -972,195 +822,6 @@ function parseRange(value: string, size: number): { start: number; end: number }
   return { start, end: Math.min(requestedEnd, size - 1) }
 }
 
-function htmlAsciiWhitespace(value: number): boolean {
-  return value === 0x09 || value === 0x0a || value === 0x0c || value === 0x0d || value === 0x20
-}
-
-function htmlBytesStartWith(value: Buffer, offset: number, expected: string): boolean {
-  if (offset < 0 || offset + expected.length > value.length) return false
-  for (let index = 0; index < expected.length; index += 1) {
-    const byte = value[offset + index]!
-    const lowered = byte >= 0x41 && byte <= 0x5a ? byte + 0x20 : byte
-    if (lowered !== expected.charCodeAt(index)) return false
-  }
-  return true
-}
-
-function htmlBytesCouldStartWith(value: Buffer, offset: number, expected: string): boolean {
-  if (offset < 0 || offset >= value.length || offset + expected.length <= value.length) return false
-  const available = value.length - offset
-  for (let index = 0; index < available; index += 1) {
-    const byte = value[offset + index]!
-    const lowered = byte >= 0x41 && byte <= 0x5a ? byte + 0x20 : byte
-    if (lowered !== expected.charCodeAt(index)) return false
-  }
-  return true
-}
-
-type HtmlWheelBridgeInjectionScan =
-  | { status: 'resolved'; offset: number }
-  | { status: 'need-more' }
-  | { status: 'invalid' }
-
-function htmlWheelBridgeInjectionOffset(
-  prefix: Uint8Array,
-  complete: boolean
-): HtmlWheelBridgeInjectionScan {
-  const bytes = Buffer.from(prefix)
-  const documentStart = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
-    ? 3
-    : 0
-  let cursor = documentStart
-  const skipWhitespace = () => {
-    while (cursor < bytes.length && htmlAsciiWhitespace(bytes[cursor]!)) cursor += 1
-  }
-  skipWhitespace()
-  while (true) {
-    if (htmlBytesCouldStartWith(bytes, cursor, '<!--')) {
-      return complete ? { status: 'resolved', offset: documentStart } : { status: 'need-more' }
-    }
-    if (!htmlBytesStartWith(bytes, cursor, '<!--')) break
-    const end = bytes.indexOf('-->', cursor + 4, 'ascii')
-    if (end < 0) {
-      return complete ? { status: 'resolved', offset: documentStart } : { status: 'need-more' }
-    }
-    cursor = end + 3
-    skipWhitespace()
-  }
-  if (cursor >= bytes.length) {
-    return complete ? { status: 'resolved', offset: documentStart } : { status: 'need-more' }
-  }
-  if (htmlBytesCouldStartWith(bytes, cursor, '<!doctype')) {
-    return complete ? { status: 'resolved', offset: documentStart } : { status: 'need-more' }
-  }
-  if (!htmlBytesStartWith(bytes, cursor, '<!doctype')) {
-    return { status: 'resolved', offset: documentStart }
-  }
-  const boundary = bytes[cursor + '<!doctype'.length]
-  if (boundary === undefined) {
-    return complete ? { status: 'invalid' } : { status: 'need-more' }
-  }
-  if (!htmlAsciiWhitespace(boundary)) return { status: 'resolved', offset: documentStart }
-  let quote = 0
-  for (let index = cursor + '<!doctype'.length + 1; index < bytes.length; index += 1) {
-    const byte = bytes[index]!
-    if (quote !== 0) {
-      if (byte === quote) quote = 0
-      continue
-    }
-    if (byte === 0x22 || byte === 0x27) {
-      quote = byte
-      continue
-    }
-    if (byte === 0x3e) return { status: 'resolved', offset: index + 1 }
-  }
-  return complete ? { status: 'invalid' } : { status: 'need-more' }
-}
-
-async function resolveHtmlWheelBridgeInjectionOffset(
-  fileSystem: ResearchPreviewFileSystem,
-  targetPath: string,
-  fileSize: number
-): Promise<number | null> {
-  if (!Number.isSafeInteger(fileSize) || fileSize <= 0) return null
-  let length = Math.min(fileSize, MAGIC_PREFIX_BYTES)
-  while (length > 0) {
-    const prefix = await fileSystem.readSlice(targetPath, 0, length - 1)
-    if (prefix.byteLength !== length) return null
-    const complete = length === fileSize
-    const result = htmlWheelBridgeInjectionOffset(prefix, complete)
-    if (result.status === 'resolved') return result.offset
-    if (result.status === 'invalid' || complete || length >= MAX_HTML_WHEEL_BRIDGE_SCAN_BYTES) {
-      return null
-    }
-    const nextLength = Math.min(
-      fileSize,
-      MAX_HTML_WHEEL_BRIDGE_SCAN_BYTES,
-      Math.max(length + 1, length * 2)
-    )
-    if (nextLength <= length) return null
-    length = nextLength
-  }
-  return null
-}
-
-type ResearchPreviewBodyPart =
-  | { kind: 'bytes'; value: Uint8Array }
-  | { kind: 'file'; start: number; end: number }
-
-function htmlBodyWithWheelBridge(
-  fileSystem: ResearchPreviewFileSystem,
-  targetPath: string,
-  injectionOffset: number,
-  start: number,
-  end: number
-): ReadableStream<Uint8Array> {
-  const insertionEnd = injectionOffset + RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength - 1
-  const parts: ResearchPreviewBodyPart[] = []
-  if (start < injectionOffset) {
-    parts.push({ kind: 'file', start, end: Math.min(end, injectionOffset - 1) })
-  }
-  if (end >= injectionOffset && start <= insertionEnd) {
-    const sliceStart = Math.max(start, injectionOffset) - injectionOffset
-    const sliceEnd = Math.min(end, insertionEnd) - injectionOffset + 1
-    parts.push({
-      kind: 'bytes',
-      value: RESEARCH_HTML_WHEEL_BRIDGE_TAG.subarray(sliceStart, sliceEnd)
-    })
-  }
-  if (end > insertionEnd) {
-    parts.push({
-      kind: 'file',
-      start: Math.max(injectionOffset, start - RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength),
-      end: end - RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength
-    })
-  }
-
-  let partIndex = 0
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        while (partIndex < parts.length) {
-          const part = parts[partIndex]!
-          if (part.kind === 'bytes') {
-            partIndex += 1
-            if (part.value.byteLength > 0) {
-              controller.enqueue(part.value)
-              return
-            }
-            continue
-          }
-          reader ??= fileSystem.stream(targetPath, part.start, part.end).getReader()
-          const result = await reader.read()
-          if (!result.done) {
-            controller.enqueue(result.value)
-            return
-          }
-          reader.releaseLock()
-          reader = null
-          partIndex += 1
-        }
-        controller.close()
-      } catch (error) {
-        reader?.releaseLock()
-        reader = null
-        controller.error(error)
-      }
-    },
-    async cancel(reason) {
-      if (reader !== null) {
-        try {
-          await reader.cancel(reason)
-        } finally {
-          reader.releaseLock()
-          reader = null
-        }
-      }
-    }
-  })
-}
-
 function encodedPathAttack(rawUrl: string): boolean {
   const authorityEnd = rawUrl.indexOf('/', `${RESEARCH_PREVIEW_SCHEME}://`.length)
   const rawPath = authorityEnd === -1 ? '' : rawUrl.slice(authorityEnd)
@@ -1341,16 +1002,6 @@ export class ResearchFilePreviewRegistry {
       return new Response(null, { status: 204, headers })
     }
 
-    if (resource.relativePath === RESEARCH_HTML_WHEEL_BRIDGE_PATH) {
-      if (!authorization.allowSubresources) return fail(403, 'Preview path denied.')
-      const headers = securityHeaders('text/javascript; charset=utf-8', corsOrigin)
-      headers.set('Content-Length', String(RESEARCH_HTML_WHEEL_BRIDGE_SOURCE.byteLength))
-      return new Response(
-        request.method === 'HEAD' ? null : RESEARCH_HTML_WHEEL_BRIDGE_SOURCE,
-        { status: 200, headers }
-      )
-    }
-
     try {
       const root = await this.fileSystem.realpath(authorization.root)
       const authorizedTarget = await this.fileSystem.realpath(authorization.path)
@@ -1383,39 +1034,27 @@ export class ResearchFilePreviewRegistry {
         return fail(415, 'Preview type mismatch.')
       }
 
-      const htmlDocument = authorization.allowSubresources &&
-        kind.contentType === 'text/html; charset=utf-8'
-      const htmlCapability = htmlDocument && allowedOrigin
+      const htmlCapability = authorization.allowSubresources &&
+        kind.contentType === 'text/html; charset=utf-8' && allowedOrigin
         ? { token: resource.token, frameAncestor: allowedOrigin }
         : undefined
       const headers = securityHeaders(kind.contentType, corsOrigin, htmlCapability)
       headers.set('Accept-Ranges', 'bytes')
-      const htmlInjectionOffset = htmlDocument
-        ? await resolveHtmlWheelBridgeInjectionOffset(this.fileSystem, candidate, file.size)
-        : null
-      if (htmlDocument && htmlInjectionOffset === null) {
-        return fail(415, 'Preview type mismatch.')
-      }
-      const responseSize = htmlInjectionOffset === null
-        ? file.size
-        : file.size + RESEARCH_HTML_WHEEL_BRIDGE_TAG.byteLength
       const rangeHeader = request.headers.get('range')
-      const range = rangeHeader === null ? null : parseRange(rangeHeader, responseSize)
+      const range = rangeHeader === null ? null : parseRange(rangeHeader, file.size)
       if (rangeHeader !== null && range === null) {
-        headers.set('Content-Range', `bytes */${responseSize}`)
+        headers.set('Content-Range', `bytes */${file.size}`)
         headers.set('Content-Length', '0')
         return new Response(null, { status: 416, headers })
       }
       const start = range?.start ?? 0
-      const end = range?.end ?? Math.max(0, responseSize - 1)
-      const length = responseSize === 0 ? 0 : end - start + 1
+      const end = range?.end ?? Math.max(0, file.size - 1)
+      const length = file.size === 0 ? 0 : end - start + 1
       headers.set('Content-Length', String(length))
-      if (range) headers.set('Content-Range', `bytes ${start}-${end}/${responseSize}`)
+      if (range) headers.set('Content-Range', `bytes ${start}-${end}/${file.size}`)
       const responseBody = request.method === 'HEAD' || length === 0
         ? null
-        : htmlInjectionOffset !== null
-          ? htmlBodyWithWheelBridge(this.fileSystem, candidate, htmlInjectionOffset, start, end)
-          : officeBytes === undefined
+        : officeBytes === undefined
           ? this.fileSystem.stream(candidate, start, end) as BodyInit
           : Buffer.from(officeBytes.subarray(start, end + 1))
       return new Response(responseBody, { status: range ? 206 : 200, headers })
