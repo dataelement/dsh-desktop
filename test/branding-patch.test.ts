@@ -24,30 +24,47 @@ describe('DSH Desktop sidebar branding', () => {
     expect(main).toContain("height: '24px'")
   })
 
-  it('pairs the DSH logo with the original Harness wordmark in the expanded sidebar', async () => {
-    const patch = await readFile(
-      patchPath('@deepseek-ai/dsh-client-ui-sidebar'),
-      'utf8'
+  it('fills the stock brand slots instead of replacing Sidebar structure', async () => {
+    const [patch, client, composition, installedSidebar] = await Promise.all([
+      readFile(patchPath('@deepseek-ai/dsh-client-ui-sidebar'), 'utf8'),
+      readFile(path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'), 'utf8'),
+      readFile(path.join(projectRoot, 'build', 'dsh-desktop.patch.yml'), 'utf8'),
+      readFile(
+        path.join(
+          projectRoot,
+          'node_modules',
+          '@deepseek-ai',
+          'dsh-client-ui-sidebar',
+          'lib',
+          'client.js'
+        ),
+        'utf8'
+      )
+    ])
+
+    expect(client).toContain("ctx.slots.inject('sidebar.brand.mark'")
+    expect(client).toContain("ctx.slots.inject('sidebar.brand.name'")
+    expect(client).toContain("ctx.slots.inject('conversation.hero.brand.mark'")
+    expect(client).toContain("React.createElement(BrandWordmark, { includeMark: false })")
+    expect(client).toContain('/dsh-desktop-logo-light.png')
+    expect(client).toContain('/dsh-desktop-logo-dark.png')
+    expect(client).not.toContain('translateX')
+    expect(composition).toMatch(/- id: ui-brand-official\n  disabled: true/u)
+    expect(composition).toMatch(
+      /- id: dsh-desktop-client-ui\n      name: dsh-desktop-client-ui/u
     )
 
-    expect(patch).toContain('DshDesktopLogo')
-    expect(patch).toContain('DshDesktopBrand')
-    expect(patch).toContain('BrandWordmark')
-    expect(patch).toContain('/dsh-desktop-logo-light.png')
-    expect(patch).toContain('/dsh-desktop-logo-dark.png')
-    expect(patch).toContain('brandWordmark')
-    expect(patch).toContain('gap:4px')
-    expect(patch).toContain('transform:translateX(-24px)')
-    expect(patch).not.toContain('children: "DSH Desktop"')
-    expect(patch).toContain('height = 18')
-    expect(patch).toContain('brandMark{width:27px;height:23.4px')
-    expect(patch).toMatch(/railFish,[\s\S]{0,80}height: 17/)
-    expect(patch).toContain('.iFWS7G_brand:hover')
+    expect(patch).not.toContain('DshDesktopLogo')
+    expect(patch).not.toContain('DshDesktopBrand')
+    expect(patch).not.toContain('brandWordmark')
+    expect(patch).toContain('[data-dsh-sidebar-root]')
     expect(patch).toContain('padding-top:32px')
     expect(patch).toContain('navigator.userAgent.includes("Macintosh")')
-    expect(patch).toContain('.iFWS7G_root.iFWS7G_collapsed{padding:46px 22px 6px}')
-    expect(patch).toContain('body[data-ds-dark-theme] .dshDesktopLogoLight')
-    expect(patch).toContain('body[data-ds-dark-theme] .dshDesktopLogoDark')
+    expect(patch).toContain('padding:46px 22px 6px')
+    expect(installedSidebar).toContain('renderSlot("sidebar.brand.mark"')
+    expect(installedSidebar).toContain('renderSlot("sidebar.brand.name"')
+    expect(installedSidebar).not.toContain('DshDesktopBrand')
+    expect(installedSidebar).not.toContain('brandWordmark')
   })
 
   it('uses an 80px macOS rail that clears the traffic lights', async () => {
@@ -60,24 +77,26 @@ describe('DSH Desktop sidebar branding', () => {
     expect(patch).toContain('sidebar === 0 ? COLLAPSED_SIDEBAR_WIDTH')
   })
 
-  it('provides a sidebar phone entry that follows expanded and connected state', async () => {
-    const patch = await readFile(
-      patchPath('@deepseek-ai/dsh-client-ui-sidebar'),
-      'utf8'
-    )
-    const preload = await readFile(path.join(projectRoot, 'src', 'preload', 'index.ts'), 'utf8')
-    const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
+  it('provides the phone entry through the public footer slot and a narrow bridge', async () => {
+    const [patch, preload, main, client] = await Promise.all([
+      readFile(patchPath('@deepseek-ai/dsh-client-ui-sidebar'), 'utf8'),
+      readFile(path.join(projectRoot, 'src', 'preload', 'index.ts'), 'utf8'),
+      readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8'),
+      readFile(path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'), 'utf8')
+    ])
 
     expect(patch).toContain('data-dsh-sidebar-root')
     expect(patch).toContain('data-dsh-sidebar-wide')
-    expect(patch).toContain('data-dsh-sidebar-footer')
-    expect(patch).toContain('data-dsh-sidebar-settings')
-    expect(preload).toContain("liveElement(sidebarSettingsArea, '[data-dsh-sidebar-settings]')")
-    expect(preload).toContain('settingsArea.appendChild(mobileButton)')
-    expect(preload).not.toContain('footer.appendChild(button)')
-    expect(preload).toContain('const hidden = !wide && !phoneConnected')
-    expect(preload).toContain("button.classList.toggle('is-connected', phoneConnected)")
-    expect(preload).toContain("ipcRenderer.invoke('mobile:open-pairing')")
+    expect(patch).not.toContain('data-dsh-sidebar-footer')
+    expect(patch).not.toContain('data-dsh-sidebar-settings')
+    expect(client).toContain("ctx.slots.inject('sidebar.footer.action'")
+    expect(client).toContain("id: 'dsh-desktop-mobile'")
+    expect(client).toContain('order: 20')
+    expect(client).toContain('if (!wide && !connected) return null')
+    expect(preload).toContain('openMobilePairing: (): Promise<void>')
+    expect(preload).toContain('getMobileStatus: (): Promise<{ connected: boolean }>')
+    expect(preload).toContain('onMobileStatusChanged: (listener: (connected: boolean) => void)')
+    expect(preload).not.toContain('settingsArea.appendChild')
     expect(main).toContain("ipcMain.handle('mobile:open-pairing'")
     expect(main).toContain("ipcMain.handle('mobile:status'")
   })

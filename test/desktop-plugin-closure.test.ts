@@ -21,10 +21,10 @@ describe('desktop plugin closure', () => {
   it('injects every profile-mounted desktop plugin into the dsh dependency closure', async () => {
     const profilePatch = parseYaml(
       await readFile(path.join(projectRoot, 'build', 'dsh-desktop.patch.yml'), 'utf8')
-    ) as { insert?: { name?: string }[] }[]
+    ) as { name?: string; insert?: { name?: string }[] }[]
 
     const mounted = profilePatch
-      .flatMap((row) => row.insert ?? [])
+      .flatMap((row) => [...(row.insert ?? []), row])
       .map((entry) => entry.name)
       .filter((name): name is string => typeof name === 'string' && name.startsWith('dsh-desktop-'))
 
@@ -39,13 +39,13 @@ describe('desktop plugin closure', () => {
   it('declares every profile-mounted desktop plugin as a production dependency', async () => {
     const profilePatch = parseYaml(
       await readFile(path.join(projectRoot, 'build', 'dsh-desktop.patch.yml'), 'utf8')
-    ) as { insert?: { name?: string }[] }[]
+    ) as { name?: string; insert?: { name?: string }[] }[]
 
     const manifest = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
     ) as { dependencies: Record<string, string> }
 
-    for (const row of profilePatch.flatMap((entry) => entry.insert ?? [])) {
+    for (const row of profilePatch.flatMap((entry) => [...(entry.insert ?? []), entry])) {
       if (typeof row.name !== 'string' || !row.name.startsWith('dsh-desktop-')) continue
       expect(manifest.dependencies[row.name]).toBe(`file:packages/${row.name}`)
     }

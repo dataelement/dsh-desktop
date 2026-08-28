@@ -10,8 +10,8 @@
 ```
 npm ci（含 postinstall）  → 0
 npm run build             → ok
-实际启动 Electron          → 正常运行，profile 三个插件全部挂载
-npm test                  → 60 files / 453 tests 全通过
+实际启动 Electron          → 正常运行，profile 四个插件全部挂载
+npm test                  → 61 files / 454 tests 通过；已有 WebSocket teardown 异常使进程退出 1
 tsc --noEmit              → 0 错误
 verify-harness-auth.mjs   → 401 → 303 → 200 全通过
 ```
@@ -122,7 +122,7 @@ POST /api/session/list                       ← <namespace>/<method>，不是�
 | `ui-directory-picker-native` | 上游把 `ctx.workspaces` 改名 `ctx.uiWorkspace` |
 | `ui-model-selection` | CSS hash `_7KE1Ra_` → `_2WBGbq_` |
 | `ui-settings-models` | hash `GL8Viq_`→`oGvYtW_`、`zGbnIq_`→`uVX9wq_`；`EditorFooter` 属性改名 `submitLabel*` → `submitLabelKey*`；服务商下拉改为可搜索卡片网格 |
-| `ui-sidebar` | hash `hHd-Xa_` → `iFWS7G_`；品牌锁定与红绿灯留白上游未采纳，保留 |
+| `ui-sidebar` | 不再改写品牌结构；仅保留红绿灯顶部留白和 Desktop 稳定状态标记 |
 | `ui-workspace` | hash `YDXeBa_` → `koIWyW_`；`SessionTree`/`FlatList` 上游新增 `useSessionPendingInteraction` 参数 |
 | `ui-agent-preset` | hash `cubgiG_` → `_4FiJda_`；菜单 `onSelect` 上游新增 toast，需绕开 |
 | **新增** `ui-chat`、`ui-trajectory` | 承接被删的 `client-runtime` 的 provider 错误提示，改为 i18n 并中文化 |
@@ -143,6 +143,13 @@ POST /api/session/list                       ← <namespace>/<method>，不是�
   Cordis 会直接不挂载该控制器。再打补丁等于重写上游。
 
 ### 从补丁改为插件
+
+Sidebar 品牌原先直接改写构建后的组件和 CSS Module 映射。0.1.2 已正式提供
+`sidebar.brand.mark`、`sidebar.brand.name` 与 `conversation.hero.brand.mark`，现在由
+[`packages/dsh-desktop-client-ui/`](../packages/dsh-desktop-client-ui/) 接管这些 single slot：
+Desktop 图标与 `includeMark: false` 的原生字标分别注册，conversation hero 继续使用上游
+FishLogo。手机入口也迁到 `sidebar.footer.action`，preload 只保留受控 IPC bridge。
+macOS 无边框窗口、traffic lights、拖动区和折叠栏 80px 仍属于宿主/布局几何，不交给品牌 slot。
 
 预设导入导出（`/api/agent-preset.export` / `.import`）原本寄生在 apiproxy 补丁里。
 上游没有等价能力（`agentPresets` 只有 copy/delete/list/read/select），所以功能仍归桌面端，
