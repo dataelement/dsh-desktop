@@ -995,6 +995,13 @@ export class LanMobileBridge {
       const socket = new WebSocket(url, {
         headers: cookie === undefined ? {} : { cookie }
       })
+      // `ws` raises 'error' asynchronously when close() aborts a still-CONNECTING
+      // socket ("WebSocket was closed before the connection was established") —
+      // exactly what finish() below does to unwind on abort. cleanup() has
+      // already removed the real handleError listener by the time that fires,
+      // so without a permanent sink here that self-inflicted error becomes an
+      // unhandled 'error' event and crashes the process.
+      socket.addEventListener('error', () => {})
       let settled = false
       const cleanup = (): void => {
         signal.removeEventListener('abort', handleAbort)

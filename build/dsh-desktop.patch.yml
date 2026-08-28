@@ -2,7 +2,18 @@
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
 # plugins reading the seam) work unmodified. The client surface keeps its
 # Electron-dialog bridge via the client-ui patch in patches/.
+
+# Disable the stock single-slot occupant before mounting Desktop's equivalent;
+# two occupants cannot share either brand seat. The Desktop plugin preserves
+# the stock conversation mark and owns the phone action through the public
+# sidebar footer slot. Window chrome geometry remains a native-shell concern.
+- id: ui-brand-official
+  disabled: true
+
 - insert:
+    - id: dsh-desktop-client-ui
+      name: dsh-desktop-client-ui
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.

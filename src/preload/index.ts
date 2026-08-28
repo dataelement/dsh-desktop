@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { UpdateStatus } from '../shared/contracts'
 import {
   isUpdateDismissed,
@@ -11,7 +11,6 @@ import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebarLayout } from './windows-titlebar'
 
 const ROOT_ID = 'dsh-desktop-update-root'
-const MOBILE_BUTTON_ID = 'dsh-desktop-mobile-button'
 const SAFE_MODE_BANNER_ID = 'dsh-desktop-safe-mode-banner'
 const locale: UpdateLocale = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 
@@ -23,10 +22,7 @@ let dismissedTransientPhase: UpdateStatus['phase'] | null = null
 let installing = false
 let accepting = false
 let receivedStatusEvent = false
-let phoneConnected = false
-let sidebarSettingsArea: HTMLElement | undefined
 let sidebarRoot: HTMLElement | undefined
-let mobileButton: HTMLButtonElement | undefined
 let domSyncScheduled = false
 let bootScanSettled = false
 let bootFailureTriggered = false
@@ -95,12 +91,12 @@ function scheduleDomSync(): void {
 
 function runDomSync(): void {
   domSyncScheduled = false
-  mountMobileButton()
   if (bootScanSettled) return
   // The boot screen only exists until Harness renders its own UI, and the
   // sidebar appearing is that moment. Past it the selector can never match
   // again, so scanning on would walk the conversation tree every frame for a
   // guaranteed miss. The window error handlers stay as the real backstop.
+  sidebarRoot = liveElement(sidebarRoot, '[data-dsh-sidebar-root]')
   if (sidebarRoot?.isConnected) bootScanSettled = true
   else checkBootFailureInDom()
 }
@@ -117,58 +113,6 @@ contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker', {
 function liveElement<T extends Element>(cached: T | undefined, selector: string): T | undefined {
   if (cached?.isConnected) return cached
   return document.querySelector<T>(selector) ?? undefined
-}
-
-function mountMobileButton(): void {
-  if (!document.getElementById(`${MOBILE_BUTTON_ID}-style`)) {
-    const style = document.createElement('style')
-    style.id = `${MOBILE_BUTTON_ID}-style`
-    style.textContent = mobileButtonStyles
-    document.head.appendChild(style)
-  }
-  sidebarSettingsArea = liveElement(sidebarSettingsArea, '[data-dsh-sidebar-settings]')
-  const settingsArea = sidebarSettingsArea
-  if (!settingsArea) return
-  if (!mobileButton?.isConnected) {
-    mobileButton =
-      (document.getElementById(MOBILE_BUTTON_ID) as HTMLButtonElement | null) ?? undefined
-  }
-  if (!mobileButton) {
-    const created = document.createElement('button')
-    created.id = MOBILE_BUTTON_ID
-    created.type = 'button'
-    created.innerHTML = `${phoneIcon}<span aria-hidden="true"></span>`
-    created.addEventListener('click', () => {
-      void ipcRenderer.invoke('mobile:open-pairing').catch((error: unknown) => {
-        console.error('[mobile] unable to open pairing window', error)
-      })
-    })
-    mobileButton = created
-  }
-  if (mobileButton.parentElement !== settingsArea) settingsArea.appendChild(mobileButton)
-  renderMobileButton()
-}
-
-function renderMobileButton(): void {
-  const button = mobileButton
-  sidebarRoot = liveElement(sidebarRoot, '[data-dsh-sidebar-root]')
-  const root = sidebarRoot
-  if (!button || !root) return
-  const wide = root.dataset.dshSidebarWide === 'true'
-  const hidden = !wide && !phoneConnected
-  const label = phoneConnected
-    ? locale === 'zh' ? '管理手机连接' : 'Manage phone connection'
-    : locale === 'zh' ? '连接手机' : 'Connect phone'
-  // Writing an attribute invalidates style even when the value is unchanged, so
-  // every skipped write here is a skipped style recalculation each frame.
-  if (button.hidden !== hidden) button.hidden = hidden
-  if (button.classList.contains('is-connected') !== phoneConnected) {
-    button.classList.toggle('is-connected', phoneConnected)
-  }
-  if (button.title !== label) {
-    button.setAttribute('aria-label', label)
-    button.title = label
-  }
 }
 
 async function mountSafeModeBanner(): Promise<void> {
@@ -257,43 +201,16 @@ async function mountSafeModeBanner(): Promise<void> {
   }
 }
 
-function applyMobileStatus(connected: boolean): void {
-  if (phoneConnected === connected) return
-  phoneConnected = connected
-  mountMobileButton()
-}
-
-/**
- * Read once at startup. Afterwards the main process pushes every change, so
- * there is no timer here: `connected` only moves when a phone pairs or drops,
- * and polling it woke both renderers once a second for a value that is almost
- * always the same.
- */
-async function refreshMobileStatus(): Promise<void> {
-  try {
-    const status = (await ipcRenderer.invoke('mobile:status')) as { connected?: boolean }
-    applyMobileStatus(status.connected === true)
-  } catch (error) {
-    console.warn('[mobile] unable to read connection status', error)
-  }
-}
-
-ipcRenderer.on('mobile:status-changed', (_event, status: { connected?: boolean }) => {
-  applyMobileStatus(status?.connected === true)
-})
-
 function initializeUi(): void {
   if (process.platform === 'win32') {
     mountWindowsTitlebarLayout({ document, ipcRenderer })
   }
   mount()
-  mountMobileButton()
   checkBootFailureInDom()
   domObserver.observe(document.documentElement, {
     childList: true,
     subtree: true
   })
-  void refreshMobileStatus()
   void mountSafeModeBanner()
 }
 
@@ -316,7 +233,16 @@ window.addEventListener('unhandledrejection', (event) => {
 contextBridge.exposeInMainWorld(
   'dshDesktop',
   Object.freeze({
-    restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart')
+    restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart'),
+    openMobilePairing: (): Promise<void> => ipcRenderer.invoke('mobile:open-pairing'),
+    getMobileStatus: (): Promise<{ connected: boolean }> => ipcRenderer.invoke('mobile:status'),
+    onMobileStatusChanged: (listener: (connected: boolean) => void): (() => void) => {
+      const handler = (_event: IpcRendererEvent, status: { connected?: boolean }): void => {
+        listener(status?.connected === true)
+      }
+      ipcRenderer.on('mobile:status-changed', handler)
+      return () => ipcRenderer.removeListener('mobile:status-changed', handler)
+    }
   })
 )
 
@@ -654,22 +580,6 @@ const styles = `
 `
 
 const updateIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M4.6 12a7.4 7.4 0 0 1 12.6-5.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M19.4 12a7.4 7.4 0 0 1-12.6 5.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M17.6 3.5v3.4h-3.4M6.4 20.5v-3.4h3.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-
-const phoneIcon = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><rect x="7" y="2.75" width="10" height="18.5" rx="2.25" stroke="currentColor" stroke-width="1.7"/><path d="M10.2 5.5h3.6M10.5 18.35h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`
-
-const mobileButtonStyles = `
-  [data-dsh-sidebar-settings] { position:relative; box-sizing:border-box; }
-  [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] [data-dsh-sidebar-settings] { padding-right:38px; }
-  #${MOBILE_BUTTON_ID} { appearance:none; position:relative; width:32px; height:32px; color:var(--dsw-alias-label-secondary,#73777f); background:transparent; border:0; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
-  [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] #${MOBILE_BUTTON_ID} { position:absolute; right:0; top:50%; transform:translateY(-50%); }
-  [data-dsh-sidebar-root][data-dsh-sidebar-wide="false"] [data-dsh-sidebar-settings] { flex-direction:column; align-items:center; }
-  [data-dsh-sidebar-root][data-dsh-sidebar-wide="false"] #${MOBILE_BUTTON_ID} { flex:none; margin-top:5px; }
-  #${MOBILE_BUTTON_ID}:hover { color:var(--dsw-alias-label-primary,#202124); background:var(--dsw-alias-interactive-bg-hover,rgba(32,33,36,.08)); }
-  #${MOBILE_BUTTON_ID}:focus-visible { outline:2px solid #4d6bfe; outline-offset:1px; }
-  #${MOBILE_BUTTON_ID}[hidden] { display:none; }
-  #${MOBILE_BUTTON_ID} > span { position:absolute; top:4px; right:4px; width:7px; height:7px; border:1.5px solid var(--dsw-specific-sidebar-fill,#fff); border-radius:50%; background:#4da66d; opacity:0; }
-  #${MOBILE_BUTTON_ID}.is-connected > span { opacity:1; }
-`
 
 ipcRenderer.on('updates:status-changed', (_event, status: UpdateStatus) => {
   receivedStatusEvent = true
