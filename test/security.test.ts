@@ -48,19 +48,20 @@ describe('main-window navigation security', () => {
     expect(main).toContain('sandbox: true')
   })
 
-  it('routes child-frame HTTP navigation to the existing safe external path without replacing Sherlock', () => {
+  it('blocks child-frame HTTP navigation without spawning the system browser', () => {
     const { listeners } = secureWindowFixture()
     const willFrameNavigate = listeners.get('will-frame-navigate')
-    const preventDefault = vi.fn()
+    for (const url of [
+      'https://example.com/report',
+      'https://example.com/second',
+      'http://example.com/third'
+    ]) {
+      const preventDefault = vi.fn()
+      willFrameNavigate?.({ url, isMainFrame: false, preventDefault })
+      expect(preventDefault, url).toHaveBeenCalledOnce()
+    }
 
-    willFrameNavigate?.({
-      url: 'https://example.com/report',
-      isMainFrame: false,
-      preventDefault
-    })
-
-    expect(preventDefault).toHaveBeenCalledOnce()
-    expect(shellOpenExternal).toHaveBeenCalledWith('https://example.com/report')
+    expect(shellOpenExternal).not.toHaveBeenCalled()
   })
 
   it('cancels child-frame navigation outside the preview protocol', () => {

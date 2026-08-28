@@ -29,7 +29,6 @@ export function secureWindow(window: BrowserWindow): void {
     }
     if (isPreviewUrl(event.url)) return
     event.preventDefault()
-    if (isExternalUrl(event.url)) void shell.openExternal(event.url)
   })
 
   window.webContents.on('will-attach-webview', (event) => event.preventDefault())
