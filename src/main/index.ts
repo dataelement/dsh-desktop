@@ -105,8 +105,7 @@ import {
 
 type PluginRecoveryAction = 'uninstall' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
-  | { type: 'uninstall'; plugins: string[] }
-  | { type: 'repair'; issues: string[] }
+  | { type: 'apply'; plugins: string[]; issues: string[] }
   | { type: 'agent' }
   | { type: 'restart' }
   | { type: 'quit' }
@@ -1645,16 +1644,21 @@ async function showSafeModeManager(): Promise<void> {
         return
       }
 
-      if (action.type === 'repair') {
-        const issueById = new Map(compatibility.issues.map((issue) => [issue.id, issue]))
-        const selectedIssues = [...new Set(action.issues)]
-          .map((id) => issueById.get(id))
-          .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined)
-        if (selectedIssues.length === 0) {
-          notice = isChinese ? '请选择要处理的兼容性问题。' : 'Select at least one compatibility issue.'
-          noticeTone = 'error'
-          continue
-        }
+      const issueById = new Map(compatibility.issues.map((issue) => [issue.id, issue]))
+      const selectedIssues = [...new Set(action.issues)]
+        .map((id) => issueById.get(id))
+        .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined)
+      const installedSet = new Set(installed)
+      const selectedPlugins = [...new Set(action.plugins)].filter((plugin) => installedSet.has(plugin))
+      if (selectedIssues.length === 0 && selectedPlugins.length === 0) {
+        notice = isChinese ? '请选择要处理的插件或遗留项。' : 'Select at least one plugin or leftover to process.'
+        noticeTone = 'error'
+        continue
+      }
+
+      let repaired = 0
+      let repairFailures = 0
+      if (selectedIssues.length > 0) {
         const result = await repairSafeModeCompatibilityIssues(dshHome, selectedIssues)
         if (result.installFailed) {
           notice = isChinese
@@ -1663,37 +1667,23 @@ async function showSafeModeManager(): Promise<void> {
           noticeTone = 'error'
           continue
         }
-        notice = result.failed.length === 0
-          ? isChinese
-            ? `已应用 ${result.repaired.length} 项可恢复修复。`
-            : `Applied ${result.repaired.length} recoverable repair${result.repaired.length === 1 ? '' : 's'}.`
-          : isChinese
-            ? `已应用 ${result.repaired.length} 项修复，${result.failed.length} 项未能处理。`
-            : `Applied ${result.repaired.length} repairs; ${result.failed.length} could not be completed.`
-        noticeTone = result.failed.length === 0 ? 'success' : 'error'
-        continue
+        repaired = result.repaired.length
+        repairFailures = result.failed.length
       }
 
-      const installedSet = new Set(installed)
-      const selected = [...new Set(action.plugins)].filter((plugin) => installedSet.has(plugin))
-      if (selected.length === 0) {
-        notice = isChinese ? '请选择要卸载的插件。' : 'Select at least one plugin to remove.'
-        noticeTone = 'error'
-        continue
+      const failedPlugins: string[] = []
+      for (const plugin of selectedPlugins) {
+        if (!(await removeSafeModePlugin(dshHome, plugin))) failedPlugins.push(plugin)
       }
-
-      const failed: string[] = []
-      for (const plugin of selected) {
-        if (!(await removeSafeModePlugin(dshHome, plugin))) failed.push(plugin)
-      }
-      notice = failed.length === 0
+      const failed = repairFailures + failedPlugins.length
+      notice = failed === 0
         ? isChinese
-          ? `成功卸载 ${selected.length} 个插件。`
-          : `Successfully removed ${selected.length} plugin${selected.length === 1 ? '' : 's'}.`
+          ? `处理完成：修复 ${repaired} 项，卸载 ${selectedPlugins.length} 个插件。`
+          : `Completed: ${repaired} repair${repaired === 1 ? '' : 's'} and ${selectedPlugins.length} plugin removal${selectedPlugins.length === 1 ? '' : 's'}.`
         : isChinese
-          ? `以下插件未能卸载：${failed.join('、')}`
-          : `These plugins could not be removed: ${failed.join(', ')}`
-      noticeTone = failed.length === 0 ? 'success' : 'error'
+          ? `已修复 ${repaired} 项、卸载 ${selectedPlugins.length - failedPlugins.length} 个插件；${failed} 项未能处理。`
+          : `Completed ${repaired} repairs and removed ${selectedPlugins.length - failedPlugins.length} plugins; ${failed} items could not be processed.`
+      noticeTone = failed === 0 ? 'success' : 'error'
     }
   } finally {
     safeModeActionResolver = undefined
@@ -1978,25 +1968,27 @@ async function bootstrap(): Promise<void> {
     return { ok: false }
   })
   ipcMain.removeHandler('safe-mode:action')
-  ipcMain.handle('safe-mode:action', (event, action: unknown, plugins: unknown) => {
+  ipcMain.handle('safe-mode:action', (event, action: unknown, selection: unknown) => {
     assertTrustedSafeModeManagerEvent(event)
     if (
       !safeModeVisible ||
       !safeModeManagerVisible ||
-      (action !== 'uninstall' && action !== 'repair' && action !== 'agent' && action !== 'restart' && action !== 'quit')
+      (action !== 'apply' && action !== 'agent' && action !== 'restart' && action !== 'quit')
     ) {
       return { ok: false }
     }
-    if (action === 'uninstall') {
-      if (!Array.isArray(plugins) || !plugins.every((plugin) => typeof plugin === 'string')) {
+    if (action === 'apply') {
+      if (typeof selection !== 'object' || selection === null) return { ok: false }
+      const { plugins, issues } = selection as { plugins?: unknown; issues?: unknown }
+      if (
+        !Array.isArray(plugins) ||
+        !plugins.every((plugin) => typeof plugin === 'string') ||
+        !Array.isArray(issues) ||
+        !issues.every((issue) => typeof issue === 'string')
+      ) {
         return { ok: false }
       }
-      resolveSafeModeAction({ type: 'uninstall', plugins })
-    } else if (action === 'repair') {
-      if (!Array.isArray(plugins) || !plugins.every((issue) => typeof issue === 'string')) {
-        return { ok: false }
-      }
-      resolveSafeModeAction({ type: 'repair', issues: plugins })
+      resolveSafeModeAction({ type: 'apply', plugins, issues })
     } else {
       resolveSafeModeAction({ type: action })
     }

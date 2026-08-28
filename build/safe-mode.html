@@ -45,10 +45,11 @@
       .plugins li:first-child { border-top: 0; }
       .plugin { display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 10px 16px; cursor: pointer; }
       .plugin input { width: 16px; height: 16px; margin: 0; accent-color: var(--button); }
-      .plugin-copy { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px; min-width:0; }
+      .plugin-copy { display:flex; flex-direction:column; min-width:0; }
+      .plugin-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px; }
       .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
       .plugin-status { color:var(--danger); font-size:11px; font-weight:650; }
-      .compatibility-section { border-top:1px solid var(--line); }
+      .plugin-action { margin-top:4px; font-size:11px; font-weight:620; }
       .issue-group { border-top:1px solid var(--line); background:var(--surface); }
       .issue-group:first-child { border-top:0; }
       .issue { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 13px 16px 10px; cursor:pointer; }
@@ -94,19 +95,13 @@
         <p class="summary" id="summary"></p>
         <section class="list-card" aria-labelledby="selection-hint">
           <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
-          <p class="card-help" id="plugin-selection-hint"></p>
-          <ul class="plugins" id="plugins"></ul>
+          <p class="card-help" id="selection-help"></p>
+          <ul class="plugins" id="items"></ul>
           <p class="empty" id="empty"></p>
-          <div class="compatibility-section" id="compatibility-section">
-            <div class="list-heading"><span id="issue-heading"></span><button class="select-all" id="select-all-issues" type="button"></button></div>
-            <p class="card-help" id="issue-selection-hint"></p>
-            <ul class="plugins" id="issues"></ul>
-          </div>
         </section>
         <p class="safety" id="safety-note"></p>
         <div class="actions">
-          <button class="button" id="repair" type="button" disabled></button>
-          <button class="button danger" id="uninstall" type="button" disabled></button>
+          <button class="button" id="apply" type="button" disabled></button>
           <button class="button primary" id="restart" type="button"></button>
         </div>
       </section>
@@ -126,12 +121,9 @@
       setText('summary', model.summary)
       setText('empty', model.emptyMessage)
       setText('selection-hint', model.selectionHint)
-      setText('plugin-selection-hint', model.pluginSelectionHint)
-      setText('issue-heading', model.issueHeading)
-      setText('issue-selection-hint', model.issueSelectionHint)
+      setText('selection-help', model.selectionHelp)
       setText('safety-note', model.safetyNote)
-      setText('uninstall', model.uninstallLabel)
-      setText('repair', model.repairLabel)
+      setText('apply', model.applyLabel)
       setText('restart', model.restartLabel)
       setText('quit', model.quitLabel)
       setText('select-all', model.selectAllLabel)
@@ -141,15 +133,12 @@
         notice.textContent = model.notice
         notice.classList.add('visible', model.noticeTone === 'success' ? 'success' : 'error')
       }
-      const list = document.getElementById('plugins')
+      const list = document.getElementById('items')
       const empty = document.getElementById('empty')
-      const compatibilitySection = document.getElementById('compatibility-section')
-      const issueList = document.getElementById('issues')
-      const uninstall = document.getElementById('uninstall')
-      const repair = document.getElementById('repair')
+      const apply = document.getElementById('apply')
       const agent = document.getElementById('agent')
       const restart = document.getElementById('restart')
-      const checkboxes = []
+      const pluginCheckboxes = []
       const issueCheckboxes = []
       for (const group of Array.isArray(model.issueGroups) ? model.issueGroups : []) {
         const item = document.createElement('li'); item.className = 'issue-group'
@@ -162,7 +151,7 @@
         title.append(name, badge); main.appendChild(title)
         const meta = document.createElement('div'); meta.className = 'issue-meta'; meta.textContent = [group.kindLabel, group.countLabel].filter(Boolean).join(' · '); main.appendChild(meta)
         const action = document.createElement('div'); action.className = 'issue-action'; action.textContent = String(group.actionLabel || ''); main.appendChild(action)
-        label.append(checkbox, main); item.appendChild(label); issueList.appendChild(item); issueCheckboxes.push(checkbox)
+        label.append(checkbox, main); item.appendChild(label); list.appendChild(item); issueCheckboxes.push(checkbox)
         const details = document.createElement('details'); details.className = 'issue-details'
         const detailsSummary = document.createElement('summary'); detailsSummary.textContent = String(group.detailLabel || group.countLabel || '')
         const findings = document.createElement('ul'); findings.className = 'findings'
@@ -174,10 +163,6 @@
         }
         details.append(detailsSummary, findings); item.appendChild(details)
       }
-      if (issueCheckboxes.length === 0) {
-        compatibilitySection.hidden = true
-        repair.hidden = true
-      }
       const pluginItems = Array.isArray(model.pluginItems)
         ? model.pluginItems
         : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))
@@ -186,42 +171,37 @@
         const label = document.createElement('label'); label.className = 'plugin'
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin.name)
         const copy = document.createElement('span'); copy.className = 'plugin-copy'
+        const title = document.createElement('span'); title.className = 'plugin-title'
         const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.name)
-        copy.appendChild(name)
+        title.appendChild(name)
         if (plugin.statusLabel) {
           const status = document.createElement('span'); status.className = 'plugin-status'; status.textContent = String(plugin.statusLabel)
-          copy.appendChild(status)
+          title.appendChild(status)
         }
-        label.append(checkbox, copy); item.appendChild(label); list.appendChild(item); checkboxes.push(checkbox)
+        const action = document.createElement('span'); action.className = 'plugin-action'; action.textContent = String(plugin.actionLabel || '')
+        copy.append(title, action)
+        label.append(checkbox, copy); item.appendChild(label); list.appendChild(item); pluginCheckboxes.push(checkbox)
       }
-      if (checkboxes.length === 0) empty.classList.add('visible')
-      const updateSelection = () => { uninstall.disabled = !checkboxes.some((checkbox) => checkbox.checked) }
-      const updateIssueSelection = () => { repair.disabled = !issueCheckboxes.some((checkbox) => checkbox.checked) }
-      for (const checkbox of checkboxes) checkbox.addEventListener('change', updateSelection)
-      for (const checkbox of issueCheckboxes) checkbox.addEventListener('change', updateIssueSelection)
-      document.getElementById('select-all').addEventListener('click', () => { const selected = checkboxes.every((checkbox) => checkbox.checked); for (const checkbox of checkboxes) checkbox.checked = !selected; updateSelection() })
-      document.getElementById('select-all-issues').textContent = model.selectAllLabel || ''
-      document.getElementById('select-all-issues').addEventListener('click', () => { const selected = issueCheckboxes.every((checkbox) => checkbox.checked); for (const checkbox of issueCheckboxes) checkbox.checked = !selected; updateIssueSelection() })
-      uninstall.addEventListener('click', () => {
-        const plugins = checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
-        if (plugins.length === 0) return
-        uninstall.disabled = true; uninstall.textContent = model.uninstallBusyLabel; repair.disabled = true; agent.disabled = true; restart.disabled = true
-        void window.dshSafeMode.action('uninstall', plugins)
-      })
-      repair.addEventListener('click', () => {
+      const allCheckboxes = [...issueCheckboxes, ...pluginCheckboxes]
+      if (allCheckboxes.length === 0) empty.classList.add('visible')
+      const updateSelection = () => { apply.disabled = !allCheckboxes.some((checkbox) => checkbox.checked) }
+      for (const checkbox of allCheckboxes) checkbox.addEventListener('change', updateSelection)
+      document.getElementById('select-all').addEventListener('click', () => { const selected = allCheckboxes.every((checkbox) => checkbox.checked); for (const checkbox of allCheckboxes) checkbox.checked = !selected; updateSelection() })
+      apply.addEventListener('click', () => {
+        const plugins = pluginCheckboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
         const issues = issueCheckboxes.filter((checkbox) => checkbox.checked).flatMap((checkbox) => {
           try { return JSON.parse(checkbox.dataset.issueIds || '[]') } catch { return [] }
         })
-        if (issues.length === 0) return
-        repair.disabled = true; repair.textContent = model.repairBusyLabel; uninstall.disabled = true; agent.disabled = true; restart.disabled = true
-        void window.dshSafeMode.action('repair', issues)
+        if (plugins.length === 0 && issues.length === 0) return
+        apply.disabled = true; apply.textContent = model.applyBusyLabel; agent.disabled = true; restart.disabled = true
+        void window.dshSafeMode.action('apply', { plugins, issues })
       })
-      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; uninstall.disabled = true; repair.disabled = true; restart.disabled = true; void window.dshSafeMode.action('agent', []) })
+      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; apply.disabled = true; restart.disabled = true; void window.dshSafeMode.action('agent', {}) })
       restart.addEventListener('click', () => {
         if (model.restartConfirm && !window.confirm(String(model.restartConfirm))) return
-        restart.disabled = true; restart.textContent = model.restartBusyLabel; uninstall.disabled = true; repair.disabled = true; agent.disabled = true; void window.dshSafeMode.action('restart', [])
+        restart.disabled = true; restart.textContent = model.restartBusyLabel; apply.disabled = true; agent.disabled = true; void window.dshSafeMode.action('restart', {})
       })
-      document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', []))
+      document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', {}))
     </script>
   </body>
 </html>

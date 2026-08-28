@@ -323,8 +323,10 @@ contextBridge.exposeInMainWorld(
 contextBridge.exposeInMainWorld(
   'dshSafeMode',
   Object.freeze({
-    action: (action: string, plugins: string[]): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('safe-mode:action', action, plugins)
+    action: (
+      action: string,
+      selection: { plugins?: string[]; issues?: string[] }
+    ): Promise<{ ok: boolean }> => ipcRenderer.invoke('safe-mode:action', action, selection)
   })
 )
 

@@ -24,6 +24,7 @@ export interface SafeModeIssueGroupViewModel {
 export interface SafeModePluginViewModel {
   name: string
   statusLabel?: string
+  actionLabel: string
   incompatible: boolean
 }
 
@@ -36,16 +37,12 @@ export interface SafeModeViewModel {
   plugins: string[]
   pluginItems: SafeModePluginViewModel[]
   issueGroups: SafeModeIssueGroupViewModel[]
-  issueHeading: string
-  issueSelectionHint: string
-  repairLabel: string
-  repairBusyLabel: string
   emptyMessage: string
   selectionHint: string
-  pluginSelectionHint: string
+  selectionHelp: string
   safetyNote: string
-  uninstallLabel: string
-  uninstallBusyLabel: string
+  applyLabel: string
+  applyBusyLabel: string
   selectAllLabel: string
   agentLabel: string
   agentBusyLabel: string
@@ -118,6 +115,7 @@ export function buildSafeModeViewModel(options: {
       statusLabel: incompatible
         ? options.locale === 'zh' ? '（版本不兼容）' : '(version incompatible)'
         : undefined,
+      actionLabel: options.locale === 'zh' ? '卸载插件' : 'Remove plugin',
       incompatible
     }
   })
@@ -170,20 +168,16 @@ export function buildSafeModeViewModel(options: {
       brand: 'DSH Desktop',
       badge: '安全模式',
       heading: '',
-      summary: '安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。同时检查核心版本、客户端模块和 Workspace 依赖；版本不兼容的插件会在卸载列表中标记，其他兼容性修复会先备份。',
+      summary: '安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。同时检查插件版本、客户端模块和 Workspace 遗留依赖；所有问题统一列在下方。',
       plugins,
       pluginItems,
       issueGroups,
-      issueHeading: '其他兼容性修复',
-      issueSelectionHint: '勾选只会加入修复计划；点击本区域的“修复所选问题”后才会执行。',
-      repairLabel: '修复所选问题',
-      repairBusyLabel: '正在修复…',
-      emptyMessage: '当前 Profile 中没有可卸载的第三方插件。',
-      selectionHint: '插件卸载',
-      pluginSelectionHint: '标记“版本不兼容”的插件可能导致普通模式启动失败。勾选插件后，点击本区域的“卸载所选插件”。',
-      safetyNote: '修复会先备份；卸载只作用于上方明确勾选的根插件，未选中的插件不会被删除。工作区、会话和模型配置不会被删除。',
-      uninstallLabel: '卸载所选插件',
-      uninstallBusyLabel: '正在卸载…',
+      emptyMessage: '当前 Profile 中没有可处理的插件或遗留项。',
+      selectionHint: '插件兼容与清理',
+      selectionHelp: '统一勾选需要处理的插件或遗留项。每一项会标明将执行卸载、暂停、隔离 Workspace 或重建依赖。',
+      safetyNote: '兼容性修复会先备份；卸载只作用于明确勾选的根插件。未选中的插件、工作区、会话和模型配置不会被删除。',
+      applyLabel: '处理所选问题',
+      applyBusyLabel: '正在处理…',
       selectAllLabel: '全选',
       agentLabel: '关闭',
       agentBusyLabel: '正在关闭…',
@@ -203,20 +197,16 @@ export function buildSafeModeViewModel(options: {
     brand: 'DSH Desktop',
     badge: 'Safe Mode',
     heading: '',
-    summary: 'Safe Mode temporarily disables all third-party plugins so core features remain available, but does not delete them. It also checks core versions, client modules, and workspace dependencies; incompatible plugins are marked in the removal list, and other compatibility repairs are backed up first.',
+    summary: 'Safe Mode temporarily disables all third-party plugins so core features remain available, but does not delete them. Plugin versions, client modules, and leftover workspace dependencies are checked and listed together below.',
     plugins,
     pluginItems,
     issueGroups,
-    issueHeading: 'Other compatibility repairs',
-    issueSelectionHint: 'Selecting only adds a group to the repair plan. Click “Repair selected issues” in this section to apply changes.',
-    repairLabel: 'Repair selected issues',
-    repairBusyLabel: 'Repairing…',
-    emptyMessage: 'There are no removable third-party plugins in this profile.',
-    selectionHint: 'Plugin removal',
-    pluginSelectionHint: 'Plugins marked “version incompatible” may prevent normal startup. Select a plugin, then click “Remove selected plugins” in this section.',
-    safetyNote: 'Repairs are backed up first. Removal affects only explicitly selected root plugins; workspaces, sessions, and model settings are preserved.',
-    uninstallLabel: 'Remove selected plugins',
-    uninstallBusyLabel: 'Removing…',
+    emptyMessage: 'There are no plugins or leftovers to process in this profile.',
+    selectionHint: 'Plugin compatibility and cleanup',
+    selectionHelp: 'Select plugins and leftovers in one list. Each row names whether it will remove, disable, quarantine a workspace, or rebuild dependencies.',
+    safetyNote: 'Compatibility repairs are backed up first. Removal affects only explicitly selected root plugins; unselected plugins, workspaces, sessions, and model settings are preserved.',
+    applyLabel: 'Process selected issues',
+    applyBusyLabel: 'Processing…',
     selectAllLabel: 'Select all',
     agentLabel: 'Close',
     agentBusyLabel: 'Closing…',

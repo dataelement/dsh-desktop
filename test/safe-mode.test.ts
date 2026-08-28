@@ -14,7 +14,7 @@ describe('Safe Mode', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
   })
 
-  it('explains isolation and separates plugin removal from other compatibility repair', () => {
+  it('explains isolation and presents plugin leftovers in one cleanup plan', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh',
       plugins: ['plugin-a', '@example/plugin-b', 'plugin-a']
@@ -24,15 +24,14 @@ describe('Safe Mode', () => {
     expect(model.summary).toContain('暂时停用所有第三方插件')
     expect(model.summary).toContain('确保基础功能正常使用')
     expect(model.summary).toContain('但不会删除插件')
-    expect(model.summary).toContain('检查核心版本、客户端模块和 Workspace 依赖')
-    expect(model.summary).toContain('版本不兼容的插件会在卸载列表中标记')
-    expect(model.summary).toContain('其他兼容性修复会先备份')
+    expect(model.summary).toContain('检查插件版本、客户端模块和 Workspace 遗留依赖')
+    expect(model.summary).toContain('所有问题统一列在下方')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.pluginItems).toEqual([
-      { name: 'plugin-a', incompatible: false },
-      { name: '@example/plugin-b', incompatible: false }
+      { name: 'plugin-a', actionLabel: '卸载插件', incompatible: false },
+      { name: '@example/plugin-b', actionLabel: '卸载插件', incompatible: false }
     ])
-    expect(model.safetyNote).toContain('未选中的插件不会被删除')
+    expect(model.safetyNote).toContain('未选中的插件、工作区、会话和模型配置不会被删除')
   })
 
   it('provides complete English labels for every Safe Mode action', () => {
@@ -40,10 +39,8 @@ describe('Safe Mode', () => {
     expect(model).toMatchObject({
       badge: 'Safe Mode',
       heading: '',
-      selectionHint: 'Plugin removal',
-      issueHeading: 'Other compatibility repairs',
-      repairLabel: 'Repair selected issues',
-      uninstallLabel: 'Remove selected plugins',
+      selectionHint: 'Plugin compatibility and cleanup',
+      applyLabel: 'Process selected issues',
       agentLabel: 'Close',
       restartLabel: 'Finish and exit Safe Mode',
       quitLabel: 'Quit DSH Desktop'
@@ -85,6 +82,7 @@ describe('Safe Mode', () => {
     expect(model.pluginItems[0]).toEqual({
       name: 'dsh-dream-skin',
       statusLabel: '（版本不兼容）',
+      actionLabel: '卸载插件',
       incompatible: true
     })
     expect(model.issueGroups).toEqual([])
@@ -112,7 +110,7 @@ describe('Safe Mode', () => {
       }]
     })
     expect(model.pluginItems).toEqual([
-      { name: 'plugin-a', incompatible: false }
+      { name: 'plugin-a', actionLabel: '卸载插件', incompatible: false }
     ])
     expect(model.issueGroups[0]).toMatchObject({
       name: 'Profile 核心依赖',
@@ -134,24 +132,22 @@ describe('Safe Mode', () => {
 
   it('ships a selectable management page with no remote content', async () => {
     const html = await readFile('build/safe-mode.html', 'utf8')
-    expect(html).toContain('id="plugins"')
-    expect(html).toContain('id="issues"')
+    expect(html).toContain('id="items"')
     expect(html).toContain('type = \'checkbox\'')
-    expect(html).toContain("window.dshSafeMode.action('uninstall', plugins)")
-    expect(html).toContain("window.dshSafeMode.action('repair', issues)")
+    expect(html).toContain("window.dshSafeMode.action('apply', { plugins, issues })")
     expect(html).toContain('model.issueGroups')
     expect(html).toContain('model.pluginItems')
     expect(html).toContain('plugin.statusLabel')
-    expect(html).toContain('compatibilitySection.hidden = true')
     expect(html.match(/<section class="list-card"/g)).toHaveLength(1)
     expect(html).toContain('checkbox.dataset.issueIds')
     expect(html).toContain("document.createElement('details')")
-    expect(html).toContain("window.dshSafeMode.action('agent', [])")
+    expect(html).toContain("window.dshSafeMode.action('agent', {})")
     expect(html).toContain('class="close" id="agent"')
     expect(html).toContain('class="button primary" id="restart"')
     expect(html).toContain('class="actions"')
-    expect(html).toContain('repair.hidden = true')
-    expect(html.indexOf('id="repair"')).toBeLessThan(html.indexOf('id="uninstall"'))
+    expect(html).toContain('id="apply"')
+    expect(html).not.toContain('id="repair"')
+    expect(html).not.toContain('id="uninstall"')
     expect(html).not.toContain('class="exit-panel"')
     expect(html).not.toContain('id="exit-heading"')
     expect(html).toContain('window.confirm(String(model.restartConfirm))')
@@ -181,14 +177,14 @@ describe('Safe Mode', () => {
     expect(main).toContain('safeModeManagerWindow')
     expect(main).toContain('modal: true')
     expect(main).toContain('assertTrustedSafeModeManagerEvent(event)')
-    expect(main).toContain('`成功卸载 ${selected.length} 个插件。`')
+    expect(main).toContain('`处理完成：修复 ${repaired} 项，卸载 ${selectedPlugins.length} 个插件。`')
     expect(main).toContain("label: isChinese ? '以安全模式重启…' : 'Restart as Safe Mode…'")
     expect(main).toContain("return { active: safeModeVisible, locale: harnessLocale() }")
     expect(preload).toContain("safeModeLocale === 'zh' ? '安全模式' : 'Safe Mode'")
     expect(preload).toContain("safeModeLocale === 'zh' ? '检查兼容性' : 'Check compatibility'")
     expect(preload).toContain("safeModeLocale === 'zh' ? '退出安全模式' : 'Exit Safe Mode'")
     expect(preload).toContain("safeModeLocale === 'zh'")
-    expect(preload).toContain("ipcRenderer.invoke('safe-mode:action', action, plugins)")
+    expect(preload).toContain("ipcRenderer.invoke('safe-mode:action', action, selection)")
     expect(JSON.parse(manifest).build.extraResources).toContainEqual({
       from: 'build/safe-mode.html',
       to: 'safe-mode.html'
