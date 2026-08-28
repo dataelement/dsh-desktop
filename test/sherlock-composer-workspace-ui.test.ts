@@ -728,6 +728,8 @@ function createPdfJsHarness(options: {
   pageWidth?: number
   pageHeight?: number
   pageSizes?: Array<{ width: number; height: number }>
+  deferPageRequests?: (page: number) => boolean
+  getPageError?: Error
   deferRenders?: boolean
   resolveCancelledLate?: boolean
   rejectDestroy?: boolean
@@ -745,6 +747,12 @@ function createPdfJsHarness(options: {
   }> = []
   const getDocumentInputs: Array<Record<string, unknown>> = []
   const pages: Array<{ page: number; cleanups: number }> = []
+  const getPageCalls: number[] = []
+  const deferredPageRequests: Array<{
+    page: number
+    resolved: boolean
+    resolve(): void
+  }> = []
   const pdfjs = {
     getDocument(input: Record<string, unknown>) {
       getDocumentInputs.push(input)
@@ -771,6 +779,22 @@ function createPdfJsHarness(options: {
         get teardownThenCalls() { return teardown.thenCalls },
         destroy,
         async getPage(page: number) {
+          getPageCalls.push(page)
+          if (options.getPageError !== undefined) throw options.getPageError
+          if (options.deferPageRequests?.(page) === true) {
+            const pending = deferred<void>()
+            const request = {
+              page,
+              resolved: false,
+              resolve() {
+                if (request.resolved) return
+                request.resolved = true
+                pending.resolve()
+              }
+            }
+            deferredPageRequests.push(request)
+            await pending.promise
+          }
           const pageSize = options.pageSizes?.[page - 1] ?? { width: pageWidth, height: pageHeight }
           const pageRecord = { page, cleanups: 0 }
           pages.push(pageRecord)
@@ -811,7 +835,16 @@ function createPdfJsHarness(options: {
       }
     }
   }
-  return { documents, getDocumentInputs, loadingTasks, pages, pdfjs, renders }
+  return {
+    deferredPageRequests,
+    documents,
+    getDocumentInputs,
+    getPageCalls,
+    loadingTasks,
+    pages,
+    pdfjs,
+    renders
+  }
 }
 
 async function mountResearchCanvas(options: {
@@ -3009,6 +3042,117 @@ describe('Sherlock workspace and composer controls', () => {
         .toContain('moved.py')
     } finally {
       await mounted.cleanup()
+    }
+  })
+
+  it('fails closed before requesting pages when a PDF exceeds the supported page limit', async () => {
+    const harness = createPdfJsHarness({
+      pageCount: 4_097,
+      getPageError: new Error('an oversized PDF must not request page proxies')
+    })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-page-limit',
+      files: [{
+        id: 'pdf-page-limit', name: 'oversized.pdf', source: 'computer',
+        authorizationId: 'authorization-page-limit', contentType: 'application/pdf',
+        x: 200, y: 200, width: 320, height: 446, sizeMode: 'auto', aspectRatio: 17 / 22
+      }],
+      pdfjs: harness.pdfjs,
+      pdfBodySize: { width: 318, height: 425 },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-page-limit',
+            url: 'sherlock-preview://capability-page-limit/',
+            contentType: 'application/pdf', name: 'oversized.pdf'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect(mounted.host.querySelector('[data-research-pdf-error]')).not.toBeNull()
+      expect(harness.getPageCalls).toEqual([])
+      expect(harness.pages).toEqual([])
+      expect(harness.documents[0]?.destroyed).toBe(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('shows a long PDF after page one and measures later placeholders with bounded concurrency', async () => {
+    const harness = createPdfJsHarness({
+      pageCount: 240,
+      pageSizes: [
+        { width: 600, height: 800 },
+        { width: 1_000, height: 500 }
+      ],
+      deferPageRequests: (page) => page > 1
+    })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-pdf-progressive-metrics',
+      files: [{
+        id: 'pdf-progressive-metrics', name: 'long-report.pdf', source: 'computer',
+        authorizationId: 'authorization-progressive-metrics', contentType: 'application/pdf',
+        x: 200, y: 200, width: 320, height: 446, sizeMode: 'auto', aspectRatio: 17 / 22
+      }],
+      pdfjs: harness.pdfjs,
+      pdfBodySize: { width: 318, height: 425 },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-progressive-metrics',
+            url: 'sherlock-preview://capability-progressive-metrics/',
+            contentType: 'application/pdf', name: 'long-report.pdf'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    let cleaned = false
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+
+      expect(mounted.host.querySelector('[data-research-preview-loading]')).toBeNull()
+      expect(mounted.host.querySelector('[data-research-pdf-scroll]')).not.toBeNull()
+      const pageElements = Array.from(mounted.host.querySelectorAll('[data-research-pdf-page]'))
+      expect(pageElements).toHaveLength(240)
+      expect((pageElements[1] as HappyDOMHTMLElement).style.height).toBe('424px')
+      expect((pageElements[239] as HappyDOMHTMLElement).style.height).toBe('424px')
+
+      const initiallyRequestedLaterPages = new Set(
+        harness.getPageCalls.filter((page) => page > 1)
+      )
+      expect([...initiallyRequestedLaterPages]).toEqual([2, 3, 4, 5])
+
+      harness.deferredPageRequests
+        .filter((request) => request.page === 2)
+        .forEach((request) => request.resolve())
+      await act(async () => {
+        await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      })
+      expect((mounted.host.querySelector('[data-research-pdf-page="2"]') as HappyDOMHTMLElement).style.height)
+        .toBe('159px')
+
+      const lateRequests = harness.deferredPageRequests.filter((request) => !request.resolved)
+      await mounted.cleanup()
+      cleaned = true
+      lateRequests.forEach((request) => request.resolve())
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+      const latePages = harness.pages.filter((page) => lateRequests.some((request) => request.page === page.page))
+      expect(latePages.length).toBeGreaterThan(0)
+      expect(latePages.every((page) => page.cleanups === 1)).toBe(true)
+    } finally {
+      if (!cleaned) await mounted.cleanup()
     }
   })
 
