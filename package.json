@@ -292,6 +292,7 @@
     "@deepseek-ai/dsh-workflow-worker-thread": "file:packages/harness-0.1.2-alpha.1/npm-dsh/deepseek-ai-dsh-workflow-worker-thread-0.1.2-alpha.1.tgz",
     "@deepseek-ai/dsh-workspace": "file:packages/harness-0.1.2-alpha.1/npm-dsh/deepseek-ai-dsh-workspace-0.1.2-alpha.1.tgz",
     "@deepseek-ai/schemastery": "file:packages/harness-0.1.2-alpha.1/npm-vendor/deepseek-ai-schemastery-3.18.1.tgz",
+    "dsh-desktop-client-ui": "file:packages/dsh-desktop-client-ui",
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",

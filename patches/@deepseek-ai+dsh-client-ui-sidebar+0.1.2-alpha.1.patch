@@ -1,76 +1,17 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 696591c..332e42c 100644
+index 696591c..90c1520 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-@@ -23,13 +23,13 @@ window.__ModuleLoader__.load({
- 		}
- 		//#endregion
- 		//#region \0dsh-css:/private/tmp/claude-501/-Users-alex-Documents-Code-dataelem-dsh-desktop/8cafdb41-dc87-41ba-bba5-9afd99a08420/scratchpad/harness/packages/client/ui-sidebar/src/client/SidebarRoot.module.css.mjs
--		const css = ".iFWS7G_root{--dsh-sidebar-inline-padding:12px;height:100%;padding:6px var(--dsh-sidebar-inline-padding);box-sizing:border-box;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);flex-direction:column;font-size:14px;display:flex}.iFWS7G_root.iFWS7G_collapsed{padding:18px 10px 6px}.iFWS7G_root.iFWS7G_quietBars{--dsh-scrollbar-thumb:transparent;--dsh-scrollbar-thumb-hover:transparent}.iFWS7G_fading>*{opacity:0;transition:opacity .15s var(--ds-ease-in-out)}.iFWS7G_wide{animation:iFWS7G_wide-in .2s var(--ds-ease-in-out)}@keyframes iFWS7G_wide-in{0%{opacity:0}}.iFWS7G_railIn .iFWS7G_iconButton,.iFWS7G_railIn .iFWS7G_newSession,.iFWS7G_railIn .iFWS7G_regionArea{animation:iFWS7G_rail-in .15s var(--ds-ease-in-out) backwards}.iFWS7G_railIn .iFWS7G_footArea{animation:iFWS7G_rail-fade-in .15s var(--ds-ease-in-out) backwards}@keyframes iFWS7G_rail-in{0%{opacity:0;transform:translate(49px)}}@keyframes iFWS7G_rail-fade-in{0%{opacity:0}}.iFWS7G_logoRow{box-sizing:border-box;flex:none;justify-content:flex-end;align-items:center;gap:8px;height:60px;margin-bottom:8px;padding:8px 0 8px 4px;display:flex;overflow:hidden}.iFWS7G_collapsed .iFWS7G_logoRow{justify-content:flex-start;height:36px;margin-bottom:12px;padding:0}.iFWS7G_brand{min-width:0;color:inherit;cursor:pointer;background:0 0;border:none;flex:1;align-items:center;padding:0;display:inline-flex;overflow:hidden}.iFWS7G_brandIdentity{align-items:center;gap:8px;min-width:0;height:24px;display:inline-flex}.iFWS7G_brandMark{flex:none;justify-content:center;align-items:center;display:inline-flex}.iFWS7G_brandName{letter-spacing:.04em;align-items:center;gap:6px;min-width:0;height:24px;font-size:18px;font-weight:600;line-height:24px;display:inline-flex}.iFWS7G_fallbackBrandName{letter-spacing:0;white-space:nowrap;font-size:17px}.iFWS7G_localBuildBrand{white-space:nowrap;flex-direction:column;flex:none;justify-content:center;align-items:flex-start;gap:1px;height:24px;display:inline-flex}.iFWS7G_localBuildTitle{letter-spacing:0;font-size:12px;line-height:13px}.iFWS7G_iconButton{cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.iFWS7G_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.iFWS7G_collapsed .iFWS7G_iconButton{width:36px;height:36px}.iFWS7G_collapsed .iFWS7G_toggle .iFWS7G_panelIcon{display:none}.iFWS7G_collapsed .iFWS7G_toggle:hover .iFWS7G_panelIcon{display:inline}.iFWS7G_collapsed .iFWS7G_toggle:hover .iFWS7G_railMark{display:none}.iFWS7G_railMark{justify-content:center;align-items:center;display:inline-flex}.iFWS7G_collapsed .iFWS7G_iconButton{color:var(--dsw-alias-label-primary)}.iFWS7G_buildVersion{height:10px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-label-primary);font-family:var(--ds-font-family-code);white-space:nowrap;border-radius:2px;flex:none;align-items:center;padding:0 3px;font-size:6px;font-weight:500;line-height:10px;display:inline-flex}.iFWS7G_newSession{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-button-elevated-fill);height:38px;color:var(--dsw-alias-label-primary);cursor:pointer;border-radius:12px;flex:none;justify-content:center;align-items:center;gap:6px;margin:0 2px 8px;padding:8px 16px;font-size:14px;font-weight:500;line-height:22px;display:flex;overflow:hidden}.iFWS7G_newSession:hover{background:var(--dsw-alias-button-floating-hover)}.iFWS7G_collapsed .iFWS7G_newSession{background:0 0;border-color:#0000;align-self:flex-start;gap:0;width:36px;height:36px;margin:0 0 12px;padding:0}.iFWS7G_collapsed .iFWS7G_newSession:hover{background:var(--dsw-alias-interactive-bg-hover)}.iFWS7G_newSessionLabel{white-space:nowrap;max-width:200px;overflow:hidden}.iFWS7G_collapsed .iFWS7G_newSessionLabel{max-width:0}.iFWS7G_regionArea{min-height:0;margin-left:-4px;margin-right:calc(-1 * var(--dsh-sidebar-inline-padding));flex-direction:column;flex:1;padding-left:4px;display:flex;overflow:hidden}.iFWS7G_collapsed .iFWS7G_regionArea{margin-left:0;margin-right:0;padding-left:0}.iFWS7G_footArea{flex-direction:column;flex:none;display:flex}.iFWS7G_settingsArea,.iFWS7G_footerActions{flex:none;width:100%;min-width:0}.iFWS7G_footerActions{display:flex}.iFWS7G_collapsed .iFWS7G_footArea{align-items:center}.iFWS7G_collapsed .iFWS7G_settingsArea,.iFWS7G_collapsed .iFWS7G_footerActions{justify-content:center;width:auto;display:flex}@media (prefers-reduced-motion:reduce){.iFWS7G_wide,.iFWS7G_fading>*,.iFWS7G_railIn .iFWS7G_iconButton,.iFWS7G_railIn .iFWS7G_newSession,.iFWS7G_railIn .iFWS7G_footArea,.iFWS7G_railIn .iFWS7G_regionArea{transition:none;animation:none}}";
-+		const css = ".iFWS7G_root{--dsh-sidebar-inline-padding:12px;height:100%;padding:6px var(--dsh-sidebar-inline-padding);box-sizing:border-box;background:var(--dsw-specific-sidebar-fill);color:var(--dsw-alias-label-primary);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);flex-direction:column;font-size:14px;display:flex}.iFWS7G_root.iFWS7G_collapsed{padding:18px 10px 6px}.iFWS7G_root.iFWS7G_quietBars{--dsh-scrollbar-thumb:transparent;--dsh-scrollbar-thumb-hover:transparent}.iFWS7G_fading>*{opacity:0;transition:opacity .15s var(--ds-ease-in-out)}.iFWS7G_wide{animation:iFWS7G_wide-in .2s var(--ds-ease-in-out)}@keyframes iFWS7G_wide-in{0%{opacity:0}}.iFWS7G_railIn .iFWS7G_iconButton,.iFWS7G_railIn .iFWS7G_newSession,.iFWS7G_railIn .iFWS7G_regionArea{animation:iFWS7G_rail-in .15s var(--ds-ease-in-out) backwards}.iFWS7G_railIn .iFWS7G_footArea{animation:iFWS7G_rail-fade-in .15s var(--ds-ease-in-out) backwards}@keyframes iFWS7G_rail-in{0%{opacity:0;transform:translate(49px)}}@keyframes iFWS7G_rail-fade-in{0%{opacity:0}}.iFWS7G_logoRow{box-sizing:border-box;flex:none;justify-content:flex-end;align-items:center;gap:8px;height:56px;margin-bottom:8px;padding:8px 2px;display:flex;overflow:hidden}.iFWS7G_collapsed .iFWS7G_logoRow{justify-content:flex-start;height:36px;margin-bottom:12px;padding:0}.iFWS7G_brand{min-width:0;height:40px;color:inherit;cursor:pointer;background:0 0;border:none;border-radius:10px;flex:1;align-items:center;padding:3px 6px;display:inline-flex;overflow:hidden}.iFWS7G_brand:hover{background:var(--dsw-alias-interactive-bg-hover)}.iFWS7G_brandLockup{min-width:0;align-items:center;gap:4px;display:inline-flex}.iFWS7G_brandIdentity{align-items:center;gap:8px;min-width:0;height:24px;display:inline-flex}.iFWS7G_brandMark{width:27px;height:23.4px;flex:none;justify-content:center;align-items:center;display:inline-flex}.iFWS7G_brandWordmark{width:158px;height:24px;color:var(--dsw-alias-label-primary);flex:none;display:inline-flex;overflow:hidden}.iFWS7G_brandWordmark>svg{max-width:none;flex:none;transform:translateX(-24px)}.iFWS7G_brandName{letter-spacing:.04em;align-items:center;gap:6px;min-width:0;height:24px;font-size:18px;font-weight:600;line-height:24px;display:inline-flex}.iFWS7G_fallbackBrandName{letter-spacing:0;white-space:nowrap;font-size:17px}.iFWS7G_localBuildBrand{white-space:nowrap;flex-direction:column;flex:none;justify-content:center;align-items:flex-start;gap:1px;height:24px;display:inline-flex}.iFWS7G_localBuildTitle{letter-spacing:0;font-size:12px;line-height:13px}.iFWS7G_iconButton{cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.iFWS7G_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.iFWS7G_collapsed .iFWS7G_iconButton{width:36px;height:36px}.iFWS7G_collapsed .iFWS7G_toggle .iFWS7G_panelIcon{display:none}.iFWS7G_collapsed .iFWS7G_toggle:hover .iFWS7G_panelIcon{display:inline}.iFWS7G_collapsed .iFWS7G_toggle:hover .iFWS7G_railFish{display:none}.iFWS7G_collapsed .iFWS7G_toggle:hover .iFWS7G_railMark{display:none}.iFWS7G_railMark{justify-content:center;align-items:center;display:inline-flex}.iFWS7G_collapsed .iFWS7G_iconButton{width:36px;height:36px}.iFWS7G_buildVersion{height:10px;color:var(--dsw-alias-label-primary-inverted);background:var(--dsw-alias-label-primary);font-family:var(--ds-font-family-code);white-space:nowrap;border-radius:2px;flex:none;align-items:center;padding:0 3px;font-size:6px;font-weight:500;line-height:10px;display:inline-flex}.iFWS7G_newSession{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-button-elevated-fill);height:38px;color:var(--dsw-alias-label-primary);cursor:pointer;border-radius:12px;flex:none;justify-content:center;align-items:center;gap:6px;margin:0 2px 8px;padding:8px 16px;font-size:14px;font-weight:500;line-height:22px;display:flex;overflow:hidden}.iFWS7G_newSession:hover{background:var(--dsw-alias-button-floating-hover)}.iFWS7G_collapsed .iFWS7G_newSession{background:0 0;border-color:#0000;align-self:flex-start;gap:0;width:36px;height:36px;margin:0 0 12px;padding:0}.iFWS7G_collapsed .iFWS7G_newSession:hover{background:var(--dsw-alias-interactive-bg-hover)}.iFWS7G_newSessionLabel{white-space:nowrap;max-width:200px;overflow:hidden}.iFWS7G_collapsed .iFWS7G_newSessionLabel{max-width:0}.iFWS7G_regionArea{min-height:0;margin-left:-4px;margin-right:calc(-1 * var(--dsh-sidebar-inline-padding));flex-direction:column;flex:1;padding-left:4px;display:flex;overflow:hidden}.iFWS7G_collapsed .iFWS7G_regionArea{margin-left:0;margin-right:0;padding-left:0}.iFWS7G_footArea{flex-direction:column;flex:none;display:flex}.iFWS7G_settingsArea,.iFWS7G_footerActions{flex:none;width:100%;min-width:0}.iFWS7G_footerActions{display:flex}.iFWS7G_collapsed .iFWS7G_footArea{align-items:center}.iFWS7G_collapsed .iFWS7G_settingsArea,.iFWS7G_collapsed .iFWS7G_footerActions{justify-content:center;width:auto;display:flex}@media (prefers-reduced-motion:reduce){.iFWS7G_wide,.iFWS7G_fading>*,.iFWS7G_railIn .iFWS7G_iconButton,.iFWS7G_railIn .iFWS7G_newSession,.iFWS7G_railIn .iFWS7G_footArea,.iFWS7G_railIn .iFWS7G_regionArea{transition:none;animation:none}}";
- 		const tagId = "@deepseek-ai/dsh-client-ui-sidebar/SidebarRoot.module.css";
- 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
+@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + ".iFWS7G_root:not(.iFWS7G_collapsed){padding-top:32px}" + (navigator.userAgent.includes("Macintosh") ? ".iFWS7G_root.iFWS7G_collapsed{padding:46px 22px 6px}" : "");
++			tag.textContent = css + "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:32px}" + (navigator.userAgent.includes("Macintosh") ? "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"]{padding:46px 22px 6px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
-@@ -63,6 +63,51 @@ window.__ModuleLoader__.load({
- 			"wide-in": "iFWS7G_wide-in"
- 		};
- 		//#endregion
-+		//#region lib/types/client/DshDesktopLogo.js
-+		const DSH_DESKTOP_LIGHT_LOGO_URL = "/dsh-desktop-logo-light.png";
-+		const DSH_DESKTOP_DARK_LOGO_URL = "/dsh-desktop-logo-dark.png";
-+		function DshDesktopLogo({ height = 18, className }) {
-+			return (0, react_jsx_runtime.jsxs)("svg", {
-+				width: height * 1030 / 590,
-+				height,
-+				className,
-+				viewBox: "150 330 1030 590",
-+				fill: "none",
-+				"aria-hidden": "true",
-+				children: [(0, react_jsx_runtime.jsx)("style", {
-+					children: ".dshDesktopLogoDark{display:none}body[data-ds-dark-theme] .dshDesktopLogoLight{display:none}body[data-ds-dark-theme] .dshDesktopLogoDark{display:block}"
-+				}), (0, react_jsx_runtime.jsx)("image", {
-+					className: "dshDesktopLogoLight",
-+					href: DSH_DESKTOP_LIGHT_LOGO_URL,
-+					x: 150,
-+					y: 330,
-+					width: 1030,
-+					height: 590,
-+					preserveAspectRatio: "xMidYMid meet"
-+				}), (0, react_jsx_runtime.jsx)("image", {
-+					className: "dshDesktopLogoDark",
-+					href: DSH_DESKTOP_DARK_LOGO_URL,
-+					x: 150,
-+					y: 330,
-+					width: 1030,
-+					height: 590,
-+					preserveAspectRatio: "xMidYMid meet"
-+				})]
-+			});
-+		}
-+		function DshDesktopBrand() {
-+			return (0, react_jsx_runtime.jsxs)("span", {
-+				className: SidebarRoot_module_css_default.brandLockup,
-+				children: [(0, react_jsx_runtime.jsx)("span", {
-+					className: SidebarRoot_module_css_default.brandMark,
-+					children: (0, react_jsx_runtime.jsx)(DshDesktopLogo, {})
-+				}), (0, react_jsx_runtime.jsx)("span", {
-+					className: SidebarRoot_module_css_default.brandWordmark,
-+					children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.BrandWordmark, {})
-+				})]
-+			});
-+		}
-+		//#endregion
- 		//#region lib/types/client/SidebarRoot.js
- 		/**
- 		* Sidebar shell: column geometry only. Collapse is a slide plus crossfade:
-@@ -150,6 +195,8 @@ window.__ModuleLoader__.load({
+@@ -150,6 +150,8 @@ window.__ModuleLoader__.load({
  			const buildVersion = localBuildVersion();
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -79,62 +20,3 @@ index 696591c..332e42c 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -169,29 +216,7 @@ window.__ModuleLoader__.load({
- 							onClick: () => {
- 								startSession();
- 							},
--							children: (0, react_jsx_runtime.jsxs)("span", {
--								className: SidebarRoot_module_css_default.brandIdentity,
--								"aria-hidden": "true",
--								children: [(0, react_jsx_runtime.jsx)("span", {
--									className: SidebarRoot_module_css_default.brandMark,
--									children: renderSlot("sidebar.brand.mark", { size: 24 }, { fallback: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FishLogo, { size: 24 }) })
--								}), (0, react_jsx_runtime.jsx)("span", {
--									className: SidebarRoot_module_css_default.brandName,
--									children: renderSlot("sidebar.brand.name", {}, { fallback: buildVersion === void 0 ? (0, react_jsx_runtime.jsx)("span", {
--										className: SidebarRoot_module_css_default.fallbackBrandName,
--										children: t("brand.localBuild")
--									}) : (0, react_jsx_runtime.jsxs)("span", {
--										className: SidebarRoot_module_css_default.localBuildBrand,
--										children: [(0, react_jsx_runtime.jsx)("span", {
--											className: SidebarRoot_module_css_default.localBuildTitle,
--											children: t("brand.localBuild")
--										}), (0, react_jsx_runtime.jsx)("span", {
--											className: SidebarRoot_module_css_default.buildVersion,
--											children: buildVersion
--										})]
--									}) })
--								})]
--							})
-+							children: (0, react_jsx_runtime.jsx)(DshDesktopBrand, {})
- 						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
- 							label: collapsed ? t("toggle.open") : t("toggle.collapse"),
- 							delayMs: 500,
-@@ -202,10 +227,9 @@ window.__ModuleLoader__.load({
- 								onClick: () => {
- 									toggleSidebar();
- 								},
--								children: [!wide && (0, react_jsx_runtime.jsx)("span", {
--									className: SidebarRoot_module_css_default.railMark,
--									"aria-hidden": "true",
--									children: renderSlot("sidebar.brand.mark", { size: 24 }, { fallback: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FishLogo, { size: 24 }) })
-+								children: [!wide && (0, react_jsx_runtime.jsx)(DshDesktopLogo, {
-+									className: SidebarRoot_module_css_default.railFish,
-+									height: 17
- 								}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPanelLeftOutline16, {
- 									className: SidebarRoot_module_css_default.panelIcon,
- 									size: wide ? 16 : 18
-@@ -240,11 +264,13 @@ window.__ModuleLoader__.load({
- 						})
- 					}),
- 					(0, react_jsx_runtime.jsxs)("div", {
-+						"data-dsh-sidebar-footer": "",
- 						className: SidebarRoot_module_css_default.footArea,
- 						children: [(0, react_jsx_runtime.jsx)("div", {
- 							className: SidebarRoot_module_css_default.footerActions,
- 							children: renderSlot("sidebar.footer.action", { wide })
- 						}), (0, react_jsx_runtime.jsx)("div", {
-+							"data-dsh-sidebar-settings": "",
- 							className: SidebarRoot_module_css_default.settingsArea,
- 							children: renderSlot("sidebar.settings", { wide })
- 						})]
