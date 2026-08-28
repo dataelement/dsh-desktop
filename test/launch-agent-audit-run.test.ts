@@ -2,7 +2,11 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { auditLaunchAgents, type LaunchAgentRecord } from '../src/main/state/launch-agent-audit'
+import {
+  auditLaunchAgents,
+  quarantineAppBundleLaunchAgents,
+  type LaunchAgentRecord
+} from '../src/main/state/launch-agent-audit'
 import { readComponentLedger, REPAIR_ESCALATION_THRESHOLD } from '../src/main/state/component-ledger'
 
 describe('launch agent audit', () => {
@@ -37,6 +41,7 @@ describe('launch agent audit', () => {
       }),
       bootoutLaunchAgent: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })),
       bootstrapLaunchAgent: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })),
+      disableLaunchAgent: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })),
       now: () => new Date('2026-08-25T10:00:00.000Z'),
       ...overrides
     }
@@ -119,7 +124,7 @@ describe('launch agent audit', () => {
     expect((await readComponentLedger(dshHome))['com.dsh.doctor']?.repairs).toBe(1)
   })
 
-  it('stops repairing a label the plugin keeps rewriting and asks the user instead', async () => {
+  it('disables and quarantines a label the plugin keeps recreating unsafely', async () => {
     await writeAgentFile(doctorPlist)
     for (let attempt = 0; attempt < REPAIR_ESCALATION_THRESHOLD; attempt += 1) {
       await writeAgentFile(doctorPlist)
@@ -130,8 +135,67 @@ describe('launch agent audit', () => {
 
     const result = await auditLaunchAgents(settings)
 
-    expect(result.findings[0]?.action).toBe('escalated')
+    expect(result.findings[0]?.action).toBe('disabled')
     expect(settings.writeLaunchAgent).not.toHaveBeenCalled()
+    expect(settings.disableLaunchAgent).toHaveBeenCalledWith('gui/501/com.dsh.doctor')
+    expect(settings.bootoutLaunchAgent).toHaveBeenCalledWith('gui/501/com.dsh.doctor')
+    expect(existsSync(doctorPlist)).toBe(false)
+  })
+
+  it('keeps a repeatedly recreated job in place when it cannot persist the ban', async () => {
+    await writeAgentFile(doctorPlist)
+    for (let attempt = 0; attempt < REPAIR_ESCALATION_THRESHOLD; attempt += 1) {
+      await writeAgentFile(doctorPlist)
+      await auditLaunchAgents(options())
+    }
+    await writeAgentFile(doctorPlist)
+    const settings = options({
+      disableLaunchAgent: vi.fn(async () => ({ code: 1, stdout: '', stderr: 'not permitted' }))
+    })
+
+    const result = await auditLaunchAgents(settings)
+
+    expect(result.findings).toEqual([])
+    expect(result.failures[0]).toContain('not permitted')
+    expect(settings.bootoutLaunchAgent).not.toHaveBeenCalled()
+    expect(existsSync(doctorPlist)).toBe(true)
+  })
+
+  it('quarantines Node-mode app-bundle jobs before an update', async () => {
+    const bundleWorkerPlist = join(launchAgents, 'com.example.bundle-worker.plist')
+    await writeAgentFile(bundleWorkerPlist)
+    const settings = options({
+      readLaunchAgent: async () => ({
+        ...structuredClone(brokenAgent),
+        Label: 'com.example.bundle-worker',
+        EnvironmentVariables: { ELECTRON_RUN_AS_NODE: '1' }
+      })
+    })
+
+    const result = await quarantineAppBundleLaunchAgents(settings)
+
+    expect(result.failures).toEqual([])
+    expect(result.findings[0]?.action).toBe('quarantined')
+    expect(existsSync(bundleWorkerPlist)).toBe(false)
+    expect(settings.bootoutLaunchAgent).toHaveBeenCalledWith('gui/501/com.example.bundle-worker')
+  })
+
+  it('fails closed when an app-bundle job cannot be stopped before update', async () => {
+    const bundleWorkerPlist = join(launchAgents, 'com.example.bundle-worker.plist')
+    await writeAgentFile(bundleWorkerPlist)
+    const settings = options({
+      readLaunchAgent: async () => ({
+        ...structuredClone(brokenAgent),
+        Label: 'com.example.bundle-worker'
+      }),
+      bootoutLaunchAgent: vi.fn(async () => ({ code: 5, stdout: '', stderr: 'not permitted' }))
+    })
+
+    const result = await quarantineAppBundleLaunchAgents(settings)
+
+    expect(result.findings).toEqual([])
+    expect(result.failures[0]).toContain('not permitted')
+    expect(existsSync(bundleWorkerPlist)).toBe(true)
   })
 
   it('quarantines the agent when the repair cannot be written', async () => {

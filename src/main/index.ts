@@ -64,7 +64,11 @@ import {
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
-import { appBundlePathFromExecutable, auditLaunchAgents } from './state/launch-agent-audit'
+import {
+  appBundlePathFromExecutable,
+  auditLaunchAgents,
+  quarantineAppBundleLaunchAgents
+} from './state/launch-agent-audit'
 import {
   desktopHarnessUrl,
   isAbortedNavigationError,
@@ -940,16 +944,38 @@ async function auditInstalledLaunchAgents(dshHome: string): Promise<void> {
     })
     for (const finding of result.findings) {
       const owner = finding.owner === undefined ? '' : ` installed by ${finding.owner}`
-      runtime.note(
-        finding.action === 'escalated'
-          ? `[desktop] ${finding.label}${owner} keeps recreating a background service that starts DSH Desktop; consider removing that plugin`
-          : `[desktop] ${finding.action} the background service ${finding.label}${owner}`
-      )
+      runtime.note(`[desktop] ${finding.action} the background service ${finding.label}${owner}`)
     }
     for (const failure of result.failures) runtime.note(`[desktop] launch agent audit: ${failure}`)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     runtime.note(`[desktop] launch agent audit failed: ${detail}`)
+  }
+}
+
+/**
+ * A LaunchAgent executing anything from inside this application bundle races
+ * an in-place update even when it is correctly configured as Node. Harness is
+ * already stopped by the caller, so quarantine is durable for the update
+ * window. Any failure aborts the install instead of risking a partial bundle.
+ */
+async function quarantineInstalledLaunchAgentsForUpdate(dshHome: string): Promise<void> {
+  const appBundlePath = appBundlePathFromExecutable(process.execPath)
+  if (appBundlePath === undefined) return
+  const result = await quarantineAppBundleLaunchAgents({
+    dshHome,
+    appBundlePath,
+    log: (message) => runtime.note(message)
+  })
+  for (const finding of result.findings) {
+    const owner = finding.owner === undefined ? '' : ` installed by ${finding.owner}`
+    runtime.note(
+      `[desktop] quarantined the background service ${finding.label}${owner} before update`
+    )
+  }
+  if (result.failures.length > 0) {
+    for (const failure of result.failures) runtime.note(`[desktop] pre-update launch agent: ${failure}`)
+    throw new Error('Unable to stop background services before replacing DSH Desktop.')
   }
 }
 
@@ -2019,6 +2045,8 @@ async function bootstrap(): Promise<void> {
     startUpdateManager({
       prepareToInstall: async () => {
         await runtime.stop()
+        const dshHome = join(app.getPath('userData'), 'harness')
+        await quarantineInstalledLaunchAgentsForUpdate(dshHome)
         quitting = true
         stopUpdateManager()
       }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   describesDaemonisedAppBinary,
+  referencesAppBundleExecutable,
   repairedLaunchAgent,
   appBundlePathFromExecutable,
   type LaunchAgentRecord
@@ -27,6 +28,7 @@ describe('daemonised app binary detection', () => {
     }
 
     expect(describesDaemonisedAppBinary(record, appBundle)).toBe(false)
+    expect(referencesAppBundleExecutable(record, appBundle)).toBe(true)
   })
 
   it('leaves agents belonging to other applications alone', () => {

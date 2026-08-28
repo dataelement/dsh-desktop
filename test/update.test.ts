@@ -37,6 +37,18 @@ describe('desktop update policy', () => {
     expect(shouldCheckAfterResume(now - UPDATE_CHECK_INTERVAL_MS, now)).toBe(true)
     expect(shouldCheckAfterResume(now - UPDATE_CHECK_INTERVAL_MS + 1, now)).toBe(false)
   })
+
+  it('quarantines app-bundle LaunchAgents before replacing the application', async () => {
+    const main = await readFile(path.join(projectRoot, 'src/main/index.ts'), 'utf8')
+    const prepare = main.slice(main.indexOf('prepareToInstall: async () => {'))
+
+    expect(prepare.indexOf('await runtime.stop()')).toBeLessThan(
+      prepare.indexOf('await quarantineInstalledLaunchAgentsForUpdate(dshHome)')
+    )
+    expect(prepare.indexOf('await quarantineInstalledLaunchAgentsForUpdate(dshHome)')).toBeLessThan(
+      prepare.indexOf('quitting = true')
+    )
+  })
 })
 
 describe('macOS update metadata', () => {
