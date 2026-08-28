@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { strToU8, zipSync } from 'fflate'
 import {
   FileResearchPreviewAuthorizationStorage,
   HarnessWorkspaceFileResolver,
@@ -68,6 +69,126 @@ const avifBytes = Buffer.from([
   0x6d, 0x69, 0x66, 0x31,
   0x61, 0x76, 0x69, 0x66
 ])
+
+type OfficeFamily = 'docx' | 'xlsx' | 'pptx'
+
+const officeFamilyMarker: Record<OfficeFamily, string> = {
+  docx: 'word/document.xml',
+  xlsx: 'xl/workbook.xml',
+  pptx: 'ppt/presentation.xml'
+}
+
+const officeContentType: Record<OfficeFamily, string> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+}
+
+function minimalOfficeZip(family: OfficeFamily, extra: Record<string, Uint8Array> = {}): Buffer {
+  return Buffer.from(zipSync({
+    '[Content_Types].xml': strToU8('<Types/>'),
+    '_rels/.rels': strToU8('<Relationships/>'),
+    [officeFamilyMarker[family]]: strToU8('<root/>'),
+    ...extra
+  }, { level: 0 }))
+}
+
+function findZipSignature(value: Buffer, signature: number, from = 0): number {
+  for (let offset = from; offset <= value.length - 4; offset += 1) {
+    if (value.readUInt32LE(offset) === signature) return offset
+  }
+  return -1
+}
+
+function mutateZip(value: Buffer, mutate: (copy: Buffer, eocd: number, central: number) => void): Buffer {
+  const copy = Buffer.from(value)
+  const eocd = findZipSignature(copy, 0x06054b50)
+  const central = findZipSignature(copy, 0x02014b50)
+  if (eocd < 0 || central < 0) throw new Error('Expected a conventional ZIP fixture.')
+  mutate(copy, eocd, central)
+  return copy
+}
+
+function withZipComment(value: Buffer, comment: string): Buffer {
+  const eocd = findZipSignature(value, 0x06054b50)
+  if (eocd < 0) throw new Error('Expected ZIP EOCD.')
+  const bytes = Buffer.from(comment, 'utf8')
+  const result = Buffer.concat([value, bytes])
+  result.writeUInt16LE(bytes.length, eocd + 20)
+  return result
+}
+
+function withCentralDirectorySignature(value: Buffer): Buffer {
+  const eocd = findZipSignature(value, 0x06054b50)
+  if (eocd < 0) throw new Error('Expected ZIP EOCD.')
+  const signature = Buffer.alloc(9)
+  signature.writeUInt32LE(0x05054b50, 0)
+  signature.writeUInt16LE(3, 4)
+  signature.set(Buffer.from('sig'), 6)
+  const result = Buffer.concat([value.subarray(0, eocd), signature, value.subarray(eocd)])
+  const nextEocd = eocd + signature.length
+  result.writeUInt32LE(value.readUInt32LE(eocd + 12) + signature.length, nextEocd + 12)
+  return result
+}
+
+function withLastDataDescriptor(value: Buffer, signed: boolean): Buffer {
+  const eocd = findZipSignature(value, 0x06054b50)
+  if (eocd < 0) throw new Error('Expected ZIP EOCD.')
+  const centralOffset = value.readUInt32LE(eocd + 16)
+  const totalEntries = value.readUInt16LE(eocd + 10)
+  let central = centralOffset
+  let lastCentral = -1
+  for (let index = 0; index < totalEntries; index += 1) {
+    lastCentral = central
+    central += 46 + value.readUInt16LE(central + 28) + value.readUInt16LE(central + 30) +
+      value.readUInt16LE(central + 32)
+  }
+  const local = value.readUInt32LE(lastCentral + 42)
+  const descriptor = Buffer.alloc(signed ? 16 : 12)
+  let cursor = 0
+  if (signed) {
+    descriptor.writeUInt32LE(0x08074b50, cursor)
+    cursor += 4
+  }
+  descriptor.writeUInt32LE(value.readUInt32LE(lastCentral + 16), cursor)
+  descriptor.writeUInt32LE(value.readUInt32LE(lastCentral + 20), cursor + 4)
+  descriptor.writeUInt32LE(value.readUInt32LE(lastCentral + 24), cursor + 8)
+  const result = Buffer.concat([
+    value.subarray(0, centralOffset),
+    descriptor,
+    value.subarray(centralOffset)
+  ])
+  const shiftedCentral = lastCentral + descriptor.length
+  const shiftedEocd = eocd + descriptor.length
+  result.writeUInt16LE(result.readUInt16LE(local + 6) | 0x0008, local + 6)
+  result.writeUInt32LE(0, local + 14)
+  result.writeUInt32LE(0, local + 18)
+  result.writeUInt32LE(0, local + 22)
+  result.writeUInt16LE(result.readUInt16LE(shiftedCentral + 8) | 0x0008, shiftedCentral + 8)
+  result.writeUInt32LE(centralOffset + descriptor.length, shiftedEocd + 16)
+  return result
+}
+
+function withUnsignedSignatureCrcDataDescriptor(value: Buffer): Buffer {
+  const result = withLastDataDescriptor(value, false)
+  const eocd = findZipSignature(result, 0x06054b50)
+  if (eocd < 0) throw new Error('Expected ZIP EOCD.')
+  const centralOffset = result.readUInt32LE(eocd + 16)
+  const totalEntries = result.readUInt16LE(eocd + 10)
+  let central = centralOffset
+  let lastCentral = -1
+  for (let index = 0; index < totalEntries; index += 1) {
+    lastCentral = central
+    central += 46 + result.readUInt16LE(central + 28) + result.readUInt16LE(central + 30) +
+      result.readUInt16LE(central + 32)
+  }
+  const local = result.readUInt32LE(lastCentral + 42)
+  const dataStart = local + 30 + result.readUInt16LE(local + 26) + result.readUInt16LE(local + 28)
+  const descriptor = dataStart + result.readUInt32LE(lastCentral + 20)
+  result.writeUInt32LE(0x08074b50, lastCentral + 16)
+  result.writeUInt32LE(0x08074b50, descriptor)
+  return result
+}
 
 function deterministicIds(...ids: string[]): () => string {
   const values = [...ids]
@@ -250,6 +371,138 @@ describe('Research file preview authorization registry', () => {
     })
     expect(JSON.stringify(descriptor)).not.toContain(root)
     expect(JSON.stringify(descriptor)).not.toContain('portrait.png/')
+  })
+
+  it.each<OfficeFamily>(['docx', 'xlsx', 'pptx'])(
+    'admits a minimal valid %s package and serves bounded ranges with the exact OOXML MIME',
+    async (family) => {
+      const { registry, root } = await fixture()
+      const bytes = minimalOfficeZip(family)
+      const filePath = path.join(root, `report.${family}`)
+      await writeFile(filePath, bytes)
+
+      const descriptor = await registry.admitFinder({
+        path: filePath,
+        sessionId: 'session-1',
+        nodeId: `office-${family}`
+      })
+
+      expectDescriptor(descriptor)
+      expect(descriptor.contentType).toBe(officeContentType[family])
+      const response = await registry.handle(new Request(descriptor.url, {
+        headers: { Range: 'bytes=0-7' }
+      }))
+      expect(response.status).toBe(206)
+      expect(response.headers.get('content-type')).toBe(officeContentType[family])
+      expect(await body(response)).toEqual(bytes.subarray(0, 8))
+    }
+  )
+
+  it.each([
+    ['EOCD comment', withZipComment(minimalOfficeZip('docx'), 'Sherlock')],
+    ['central directory signature', withCentralDirectorySignature(minimalOfficeZip('docx'))],
+    ['signed data descriptor', withLastDataDescriptor(minimalOfficeZip('docx'), true)],
+    ['unsigned data descriptor', withLastDataDescriptor(minimalOfficeZip('docx'), false)],
+    ['unsigned descriptor with signature-shaped CRC', withUnsignedSignatureCrcDataDescriptor(
+      minimalOfficeZip('docx')
+    )],
+    ['deflate and UTF-8 entry', Buffer.from(zipSync({
+      '[Content_Types].xml': strToU8('<Types/>'),
+      '_rels/.rels': strToU8('<Relationships/>'),
+      'word/document.xml': strToU8('<document>compressible compressible compressible</document>'),
+      'word/备注.xml': strToU8('<note/>')
+    }, { level: 6 }))]
+  ])('accepts conventional DOCX ZIP compatibility: %s', async (_label, bytes) => {
+    const { registry, root } = await fixture()
+    const filePath = path.join(root, 'compatible.docx')
+    await writeFile(filePath, bytes)
+    expectDescriptor(await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'compatible-office'
+    }))
+  })
+
+  it.each([
+    ['PK prefix without a central directory', Buffer.from('PK\u0003\u0004not-an-office-package')],
+    ['wrong OOXML family', minimalOfficeZip('xlsx')],
+    ['mixed OOXML families', minimalOfficeZip('docx', {
+      'xl/workbook.xml': strToU8('<workbook/>')
+    })],
+    ['traversal entry', minimalOfficeZip('docx', {
+      '../escape.bin': strToU8('escape')
+    })],
+    ['absolute entry', minimalOfficeZip('docx', {
+      '/escape.bin': strToU8('escape')
+    })],
+    ['backslash entry', minimalOfficeZip('docx', {
+      'word\\escape.bin': strToU8('escape')
+    })],
+    ['encrypted entry', mutateZip(minimalOfficeZip('docx'), (copy, _eocd, central) => {
+      copy.writeUInt16LE(copy.readUInt16LE(central + 8) | 0x0001, central + 8)
+    })],
+    ['multi-disk archive', mutateZip(minimalOfficeZip('docx'), (copy, eocd) => {
+      copy.writeUInt16LE(1, eocd + 4)
+    })],
+    ['ZIP64 sentinel', mutateZip(minimalOfficeZip('docx'), (copy, eocd) => {
+      copy.writeUInt16LE(0xffff, eocd + 10)
+    })],
+    ['too many entries', mutateZip(minimalOfficeZip('docx'), (copy, eocd) => {
+      copy.writeUInt16LE(4097, eocd + 8)
+      copy.writeUInt16LE(4097, eocd + 10)
+    })],
+    ['oversized central directory', mutateZip(minimalOfficeZip('docx'), (copy, eocd) => {
+      copy.writeUInt32LE(8 * 1024 * 1024 + 1, eocd + 12)
+    })],
+    ['oversized entry declaration', mutateZip(minimalOfficeZip('docx'), (copy, _eocd, central) => {
+      copy.writeUInt32LE(64 * 1024 * 1024 + 1, central + 24)
+    })],
+    ['excessive expansion ratio', mutateZip(minimalOfficeZip('docx'), (copy, _eocd, central) => {
+      copy.writeUInt32LE(1, central + 20)
+      copy.writeUInt32LE(201, central + 24)
+    })],
+    ['LOCAL/CEN CRC mismatch', mutateZip(minimalOfficeZip('docx'), (copy, _eocd, central) => {
+      const local = copy.readUInt32LE(central + 42)
+      copy.writeUInt32LE(copy.readUInt32LE(local + 14) ^ 1, local + 14)
+    })],
+    ['bad data descriptor', mutateZip(
+      withLastDataDescriptor(minimalOfficeZip('docx'), true),
+      (copy, eocd) => {
+        const centralOffset = copy.readUInt32LE(eocd + 16)
+        copy.writeUInt32LE(0, centralOffset - 12)
+      }
+    )]
+  ])('rejects unsafe DOCX structure: %s', async (_label, bytes) => {
+    const { registry, root } = await fixture()
+    const filePath = path.join(root, 'unsafe.docx')
+    await writeFile(filePath, bytes)
+
+    expect(await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'unsafe-office'
+    })).toBeNull()
+  })
+
+  it('revalidates the OOXML family on restore and serving after the authorized file changes', async () => {
+    const { registry, root } = await fixture()
+    const filePath = path.join(root, 'mutable.docx')
+    await writeFile(filePath, minimalOfficeZip('docx'))
+    const descriptor = await registry.admitFinder({
+      path: filePath,
+      sessionId: 'session-1',
+      nodeId: 'mutable-office'
+    })
+    expectDescriptor(descriptor)
+
+    await writeFile(filePath, minimalOfficeZip('xlsx'))
+
+    expect((await registry.handle(new Request(descriptor.url))).status).toBe(415)
+    expect(await registry.restore({
+      sessionId: 'session-1',
+      nodeId: 'mutable-office',
+      authorizationId: descriptor.authorizationId
+    })).toBeNull()
   })
 
   it('rejects empty, relative, directory, and magic-mismatched Finder paths', async () => {

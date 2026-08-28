@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..aaccb91 100644
+index 1dd0e89..ade0474 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -2136,7 +2136,7 @@ index 1dd0e89..aaccb91 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6751,40 +8049,2426 @@ window.__ModuleLoader__.load({
+@@ -6751,40 +8049,2530 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -2229,7 +2229,10 @@ index 1dd0e89..aaccb91 100644
 +			pdf: Object.freeze({ width: 320, height: 320 / (17 / 22) + RESEARCH_CANVAS_TITLE_HEIGHT, minWidth: 240, minHeight: 240 / (17 / 22) + RESEARCH_CANVAS_TITLE_HEIGHT, aspectRatio: 17 / 22, resizable: true }),
 +			html: Object.freeze({ width: 480, height: 360, minWidth: 320, minHeight: 240, resizable: true }),
 +			markdown: Object.freeze({ width: 420, height: 320, minWidth: 280, minHeight: 180, resizable: true }),
-+			text: Object.freeze({ width: 420, height: 320, minWidth: 280, minHeight: 180, resizable: true })
++			text: Object.freeze({ width: 420, height: 320, minWidth: 280, minHeight: 180, resizable: true }),
++			docx: Object.freeze({ width: 480, height: 360, minWidth: 320, minHeight: 240, resizable: true }),
++			xlsx: Object.freeze({ width: 480, height: 360, minWidth: 320, minHeight: 240, resizable: true }),
++			pptx: Object.freeze({ width: 480, height: 360, minWidth: 320, minHeight: 240, resizable: true })
 +		});
 +		const RESEARCH_NATIVE_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 +		const RESEARCH_PDF_RENDER_OVERSCAN_PX = 240;
@@ -2625,6 +2628,9 @@ index 1dd0e89..aaccb91 100644
 +			if (mediaType.startsWith("image/") || /\.(?:avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|webp)$/.test(name)) return "image";
 +			if (mediaType === "application/pdf" || /\.pdf$/.test(name)) return "pdf";
 +			if (mediaType === "text/html" || mediaType === "application/xhtml+xml" || /\.x?html?$/.test(name)) return "html";
++			if (mediaType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.docx$/.test(name)) return "docx";
++			if (mediaType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || /\.xlsx$/.test(name)) return "xlsx";
++			if (mediaType === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || /\.pptx$/.test(name)) return "pptx";
 +			if (mediaType.startsWith("text/markdown") || /\.(?:md|markdown)$/.test(name)) return "markdown";
 +			if (mediaType.startsWith("text/") || mediaType.startsWith("application/json") || mediaType.startsWith("application/javascript")) return "text";
 +			return "generic";
@@ -3934,7 +3940,96 @@ index 1dd0e89..aaccb91 100644
 +				}
 +			});
 +		}
-+		function ResearchCanvasFileCard({ node, sessionId, visible = true, selected = false, dragging = false, resizing = false, onSelect, onNaturalSize }) {
++		class ResearchOfficePreviewCoordinator {
++			service = null;
++			listeners = /* @__PURE__ */ new Set();
++			subscribe = (listener) => {
++				this.listeners.add(listener);
++				return () => this.listeners.delete(listener);
++			};
++			getSnapshot = () => this.service;
++			attach(service) {
++				const usable = typeof service?.Component === "function" && typeof service?.supports === "function" ? service : null;
++				this.service = usable;
++				this.listeners.forEach((listener) => listener());
++				return () => {
++					if (this.service !== usable) return;
++					this.service = null;
++					this.listeners.forEach((listener) => listener());
++				};
++			}
++		}
++		const defaultResearchOfficePreview = new ResearchOfficePreviewCoordinator();
++		function supportsResearchOfficePreview(service, kind) {
++			try {
++				return service !== null && service.supports(kind) === true;
++			} catch {
++				return false;
++			}
++		}
++		class ResearchOfficePreviewErrorBoundary extends react.Component {
++			state = { failed: false };
++			static getDerivedStateFromError() { return { failed: true }; }
++			render() {
++				if (this.state.failed) return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-preview-unavailable": "", children: "Office 预览不可用" });
++				return this.props.children;
++			}
++		}
++		function ResearchCanvasOfficePreview({ node, sessionId, kind, visible, service }) {
++			const supported = supportsResearchOfficePreview(service, kind);
++			const [preview, setPreview] = (0, react.useState)({ status: visible ? "loading" : "offscreen", descriptor: null });
++			const descriptorRef = (0, react.useRef)(null);
++			const releaseCurrentDescriptor = (0, react.useCallback)(() => {
++				const descriptor = descriptorRef.current;
++				if (descriptor === null) return;
++				descriptorRef.current = null;
++				window.dshDesktop?.researchPreview?.release?.({ sessionId, nodeId: node.id, authorizationId: descriptor.authorizationId, capabilityToken: descriptor.capabilityToken });
++			}, [sessionId, node.id]);
++			(0, react.useEffect)(() => {
++				if (!visible) {
++					setPreview({ status: "offscreen", descriptor: null });
++					return;
++				}
++				if (!supported || typeof node.authorizationId !== "string" || typeof window.dshDesktop?.researchPreview?.restore !== "function") {
++					setPreview({ status: "unavailable", descriptor: null });
++					return;
++				}
++				let active = true;
++				setPreview({ status: "loading", descriptor: null });
++				window.dshDesktop.researchPreview.restore({ sessionId, nodeId: node.id, authorizationId: node.authorizationId }).then((value) => {
++					if (!active) {
++						if (value !== null) window.dshDesktop?.researchPreview?.release?.({ sessionId, nodeId: node.id, authorizationId: value.authorizationId, capabilityToken: value.capabilityToken });
++						return;
++					}
++					descriptorRef.current = value;
++					setPreview(value === null ? { status: "unavailable", descriptor: null } : { status: "ready", descriptor: value });
++				}).catch(() => {
++					if (active) setPreview({ status: "unavailable", descriptor: null });
++				});
++				return () => {
++					active = false;
++					releaseCurrentDescriptor();
++				};
++			}, [sessionId, node.id, node.authorizationId, kind, visible, supported, service, releaseCurrentDescriptor]);
++			if (preview.status === "offscreen") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-offscreen-placeholder": "", children: "预览已暂停" });
++			if (preview.status === "loading") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-preview-loading": "", children: "正在载入 Office…" });
++			if (preview.status !== "ready" || preview.descriptor === null || !supported) return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-preview-unavailable": "", children: "Office 预览不可用" });
++			const Component = service.Component;
++			return (0, react_jsx_runtime.jsx)("div", {
++				className: "rScV5Q_officePreview",
++				"data-research-office-preview": kind,
++				"data-research-preview-interactive": "",
++				onWheel: (event) => event.stopPropagation(),
++				children: (0, react_jsx_runtime.jsx)(ResearchOfficePreviewErrorBoundary, {
++					children: (0, react_jsx_runtime.jsx)(Component, {
++						sourceUrl: preview.descriptor.url,
++						kind,
++						title: node.name
++					})
++				}, preview.descriptor.url)
++			});
++		}
++		function ResearchCanvasFileCard({ node, sessionId, officePreview = null, visible = true, selected = false, dragging = false, resizing = false, onSelect, onNaturalSize }) {
 +			const kind = researchCanvasNodeKind(node);
 +			const [pdfStatus, setPdfStatus] = (0, react.useState)({ page: 1, total: 0 });
 +			(0, react.useEffect)(() => setPdfStatus({ page: 1, total: 0 }), [node.id]);
@@ -3977,6 +4072,12 @@ index 1dd0e89..aaccb91 100644
 +					sessionId,
 +					visible,
 +					markdown: kind === "markdown"
++				}) : kind === "docx" || kind === "xlsx" || kind === "pptx" ? (0, react_jsx_runtime.jsx)(ResearchCanvasOfficePreview, {
++					node,
++					sessionId,
++					kind,
++					visible,
++					service: officePreview
 +				}) : (0, react_jsx_runtime.jsxs)("div", {
 +					className: "rScV5Q_previewPlaceholder",
 +					children: [(0, react_jsx_runtime.jsx)("span", { children: researchCanvasFileCaption(node) }), (0, react_jsx_runtime.jsx)("span", { children: node.authorizationId === void 0 ? "预览不可用" : "本地预览" })]
@@ -4113,12 +4214,13 @@ index 1dd0e89..aaccb91 100644
 +			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
 +			tag.dataset.pluginCss = tagIdResearchCanvas;
 +			tag.textContent = cssResearchCanvas + ".rScV5Q_contextMenu{z-index:30;min-width:136px;padding:4px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:9px;box-shadow:var(--dsw-shadow-lv2);position:absolute}.rScV5Q_contextMenu button{box-sizing:border-box;width:100%;height:30px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left;font:inherit;font-size:12px;cursor:pointer}.rScV5Q_contextMenu button:hover{background:var(--dsw-alias-interactive-bg-hover)}.rScV5Q_richNode{box-sizing:border-box;pointer-events:auto;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;position:absolute;display:flex;flex-direction:column;overflow:visible;box-shadow:var(--dsw-shadow-lv1)}.rScV5Q_richNode[data-selected=true]{border:2px solid var(--dsw-alias-state-business-primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent),var(--dsw-shadow-lv1)}.rScV5Q_richNode[data-node-dragging=true],.rScV5Q_richNode[data-node-resizing=true]{opacity:.88}.rScV5Q_richNode:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}.rScV5Q_nodeTitle{box-sizing:border-box;height:32px;min-height:32px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l2);display:flex;align-items:center;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font:var(--dsw-font-xs-strong-13);cursor:grab}.rScV5Q_titleName{min-width:0;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.rScV5Q_pageIndicator{flex:none;margin-left:auto;padding-left:10px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.rScV5Q_previewBody{min-width:0;min-height:0;position:relative;flex:1;overflow:auto;overscroll-behavior:contain;user-select:text}.rScV5Q_previewPlaceholder{box-sizing:border-box;width:100%;height:100%;padding:16px;color:var(--dsw-alias-label-tertiary);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:var(--dsw-font-xxs-12)}.rScV5Q_artifactCard{padding:0;gap:0;justify-content:stretch}.rScV5Q_artifactBody{box-sizing:border-box;min-height:100%;padding:12px;display:flex;flex-direction:column;gap:6px}.rScV5Q_artifactExcerpt{white-space:pre-wrap;overflow-wrap:anywhere}.rScV5Q_previewBody img[data-research-image-preview]{display:block;width:100%;height:100%;object-fit:contain}.rScV5Q_pdfScroll{width:100%;height:100%;overflow:auto;overscroll-behavior:contain}.rScV5Q_pdfScroll canvas{display:block;max-width:none;background:#fff}.rScV5Q_htmlPreview{box-sizing:border-box;display:block;width:100%;height:100%;border:0;background:#fff}.rScV5Q_markdownScroll,.rScV5Q_textScroll{box-sizing:border-box;width:100%;height:100%;margin:0;padding:14px;overflow:auto;overflow-y:auto;overscroll-behavior:contain}.rScV5Q_markdownScroll{color:var(--dsw-alias-label-primary)}.rScV5Q_textScroll{white-space:pre;tab-size:2;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block);font:400 12px/1.6 var(--ds-font-family-code)}.rScV5Q_previewShield{z-index:4;pointer-events:none;position:absolute;inset:0}.rScV5Q_root[data-dragging=true] .rScV5Q_previewShield,.rScV5Q_root[data-space-pressed=true] .rScV5Q_previewShield{pointer-events:auto}.rScV5Q_resizeHandle{box-sizing:border-box;z-index:6;pointer-events:auto;width:14px;height:14px;padding:0;border:2px solid var(--dsw-alias-bg-layer-1);border-radius:50%;background:var(--dsw-alias-state-business-primary);position:absolute}.rScV5Q_resizeHandle[data-research-resize-handle=nw]{left:-7px;top:-7px;cursor:nwse-resize}.rScV5Q_resizeHandle[data-research-resize-handle=ne]{right:-7px;top:-7px;cursor:nesw-resize}.rScV5Q_resizeHandle[data-research-resize-handle=sw]{left:-7px;bottom:-7px;cursor:nesw-resize}.rScV5Q_resizeHandle[data-research-resize-handle=se]{right:-7px;bottom:-7px;cursor:nwse-resize}.rScV5Q_fileRichNode[data-path-unavailable=true]{border-style:dashed;opacity:.72}body[data-ds-dark-theme] .rScV5Q_richNode{background:var(--dsw-alias-bg-layer-2)}";
++			tag.textContent += ".rScV5Q_officePreview{box-sizing:border-box;width:100%;height:100%;min-width:0;min-height:0;display:flex;overflow:hidden}.rScV5Q_officePreview>*{flex:1;min-width:0;min-height:0}";
 +			document.head.appendChild(tag);
 +		}
 +		const ResearchCanvas_module_css_default = { root: "rScV5Q_root" };
 +		const defaultResearchWorkspaces = new ResearchWorkspaceRegistry();
 +		/** Theme-aware infinite dotted canvas. The resident conversation shell continues to own the composer. */
-+		function ResearchCanvas({ sessionId, t, researchWorkspaces = defaultResearchWorkspaces, actions }) {
++		function ResearchCanvas({ sessionId, t, researchWorkspaces = defaultResearchWorkspaces, researchOfficePreview = defaultResearchOfficePreview, actions }) {
 +			const rootRef = (0, react.useRef)(null);
 +			const spacePressedRef = (0, react.useRef)(false);
 +			const operationRef = (0, react.useRef)(null);
@@ -4127,6 +4229,7 @@ index 1dd0e89..aaccb91 100644
 +			const workspace = (0, react.useMemo)(() => researchWorkspaces.for(sessionId), [researchWorkspaces, sessionId]);
 +			const dropLifecycle = (0, react.useMemo)(() => ({ active: true }), [workspace]);
 +			const snapshot = (0, react.useSyncExternalStore)(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
++			const officePreview = (0, react.useSyncExternalStore)(researchOfficePreview.subscribe, researchOfficePreview.getSnapshot, researchOfficePreview.getSnapshot);
 +			const [marquee, setMarquee] = (0, react.useState)(null);
 +			const [draggingNodeIds, setDraggingNodeIds] = (0, react.useState)([]);
 +			const [resizingNodeId, setResizingNodeId] = (0, react.useState)(null);
@@ -4512,6 +4615,7 @@ index 1dd0e89..aaccb91 100644
 +					children: [files.map((node) => (0, react_jsx_runtime.jsx)(ResearchCanvasFileCard, {
 +						node,
 +						sessionId,
++						officePreview,
 +						visible: researchNodeNearViewport(node, viewport, snapshot.canvasSize),
 +						selected: selectedIds.has(node.id),
 +						dragging: draggingIds.has(node.id),
@@ -4553,14 +4657,14 @@ index 1dd0e89..aaccb91 100644
 +			});
 +		}
 +		/** Register the Research tab between Chat (0) and Trajectory (10). */
-+		function registerResearchCanvasView(slots, t, researchWorkspaces) {
++		function registerResearchCanvasView(slots, t, researchWorkspaces, researchOfficePreview = defaultResearchOfficePreview) {
 +			return slots.register({
 +				name: "conversation.view",
 +				id: "research",
 +				order: 5,
 +				label: () => t("view.research"),
 +				locale: NS,
-+				inject: () => ({ researchWorkspaces })
++				inject: () => ({ researchWorkspaces, researchOfficePreview })
 +			}, ResearchCanvas);
 +		}
 +		function ResearchAssistantCanvasAction({ messageId, text, workspace }) {
@@ -4595,7 +4699,7 @@ index 1dd0e89..aaccb91 100644
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
-@@ -6793,7 +10477,17 @@ window.__ModuleLoader__.load({
+@@ -6793,7 +10581,17 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$6;
@@ -4614,7 +4718,7 @@ index 1dd0e89..aaccb91 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -6822,7 +10516,354 @@ window.__ModuleLoader__.load({
+@@ -6822,7 +10620,354 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationRoot.js
@@ -4970,7 +5074,7 @@ index 1dd0e89..aaccb91 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,10 +10873,64 @@ window.__ModuleLoader__.load({
+@@ -6832,10 +10977,64 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -5035,7 +5139,7 @@ index 1dd0e89..aaccb91 100644
  			const seatResizeRef = (0, react.useCallback)((seat) => {
  				seatObserver.current?.disconnect();
  				seatObserver.current = null;
-@@ -6848,6 +10943,54 @@ window.__ModuleLoader__.load({
+@@ -6848,6 +11047,54 @@ window.__ModuleLoader__.load({
  			}, []);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
@@ -5090,7 +5194,7 @@ index 1dd0e89..aaccb91 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +11040,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +11144,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -5098,7 +5202,7 @@ index 1dd0e89..aaccb91 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +11057,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +11161,68 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -5191,7 +5295,7 @@ index 1dd0e89..aaccb91 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +11154,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +11258,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -5212,7 +5316,7 @@ index 1dd0e89..aaccb91 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +11222,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +11326,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -5230,7 +5334,7 @@ index 1dd0e89..aaccb91 100644
  				})] })
  			});
  		}
-@@ -7053,14 +11232,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +11336,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -5275,7 +5379,7 @@ index 1dd0e89..aaccb91 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +11278,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +11382,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -5285,7 +5389,7 @@ index 1dd0e89..aaccb91 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +11300,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +11404,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -5294,7 +5398,7 @@ index 1dd0e89..aaccb91 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +11353,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +11457,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -5312,7 +5416,7 @@ index 1dd0e89..aaccb91 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +11389,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +11493,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -5320,7 +5424,7 @@ index 1dd0e89..aaccb91 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +12281,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +12385,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -5351,7 +5455,7 @@ index 1dd0e89..aaccb91 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +12326,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +12430,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -5376,7 +5480,7 @@ index 1dd0e89..aaccb91 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +13280,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +13384,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -5385,7 +5489,7 @@ index 1dd0e89..aaccb91 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +13370,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +13474,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -5427,7 +5531,7 @@ index 1dd0e89..aaccb91 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +13579,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +13683,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -5444,16 +5548,17 @@ index 1dd0e89..aaccb91 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +13749,8 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +13853,9 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
 +			const researchWorkspaces = new ResearchWorkspaceRegistry();
 +			const researchSidebar = new ResearchSidebarCoordinator();
++			const researchOfficePreview = new ResearchOfficePreviewCoordinator();
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +13790,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +13895,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -5466,7 +5571,7 @@ index 1dd0e89..aaccb91 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +13806,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +13911,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -5479,7 +5584,7 @@ index 1dd0e89..aaccb91 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +13855,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +13960,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -5493,7 +5598,7 @@ index 1dd0e89..aaccb91 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +13893,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +13998,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -5503,7 +5608,7 @@ index 1dd0e89..aaccb91 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +14025,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +14130,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -5518,7 +5623,7 @@ index 1dd0e89..aaccb91 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +14041,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +14146,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -5527,21 +5632,24 @@ index 1dd0e89..aaccb91 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +14065,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +14170,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
-+			registerResearchCanvasView(slots, t, researchWorkspaces);
++			registerResearchCanvasView(slots, t, researchWorkspaces, researchOfficePreview);
 +			registerResearchAssistantActions(slots, researchWorkspaces);
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +14091,107 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +14196,111 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
 +			ctx.inject(["betterSidebar"], (sidebarCtx) => {
 +				sidebarCtx.effect(() => researchSidebar.attach(sidebarCtx.betterSidebar, t), "ui-conversation: Research global sidebar tab");
++			});
++			ctx.inject(["officePreview"], (officeCtx) => {
++				officeCtx.effect(() => researchOfficePreview.attach(officeCtx.officePreview), "ui-conversation: Research Office preview adapter");
 +			});
  		}
  		//#endregion
@@ -5556,6 +5664,7 @@ index 1dd0e89..aaccb91 100644
 +		exports.ConversationSession = ConversationSession;
 +		exports.ResearchConversationPanel = ResearchConversationPanel;
 +		exports.ResearchSidebarCoordinator = ResearchSidebarCoordinator;
++		exports.ResearchOfficePreviewCoordinator = ResearchOfficePreviewCoordinator;
 +		exports.ResearchSidebarConversationTab = ResearchSidebarConversationTab;
 +		exports.ResearchAssistantCanvasAction = ResearchAssistantCanvasAction;
 +		exports.conversationViewTabProps = conversationViewTabProps;

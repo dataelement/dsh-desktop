@@ -48,6 +48,12 @@ const MAX_ID_LENGTH = 512
 const MAGIC_PREFIX_BYTES = 512
 const MAX_JSON_VALIDATION_BYTES = 4 * 1024 * 1024
 const MAX_NATIVE_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
+const MAX_OFFICE_PREVIEW_BYTES = 64 * 1024 * 1024
+const MAX_OFFICE_ZIP_ENTRIES = 4096
+const MAX_OFFICE_CENTRAL_DIRECTORY_BYTES = 8 * 1024 * 1024
+const MAX_OFFICE_ENTRY_BYTES = 64 * 1024 * 1024
+const MAX_OFFICE_EXPANDED_BYTES = 256 * 1024 * 1024
+const MAX_OFFICE_EXPANSION_RATIO = 200
 const CORS_EXPOSE_HEADERS = 'Accept-Ranges, Content-Length, Content-Range, Content-Type'
 
 export type ResearchPreviewSource = 'finder' | 'sidebar'
@@ -137,6 +143,25 @@ type PreviewKind = {
   validateComplete?(value: Uint8Array): boolean
   rootMaxBytes?: number
   validateRootComplete?(value: Uint8Array): boolean
+  officeFamily?: OfficeFamily
+}
+
+type OfficeFamily = 'docx' | 'xlsx' | 'pptx'
+
+const officeFamilyMarker: Record<OfficeFamily, string> = {
+  docx: 'word/document.xml',
+  xlsx: 'xl/workbook.xml',
+  pptx: 'ppt/presentation.xml'
+}
+
+function officeKind(family: OfficeFamily, contentType: string): PreviewKind {
+  return {
+    contentType,
+    rootPreview: true,
+    rootMaxBytes: MAX_OFFICE_PREVIEW_BYTES,
+    officeFamily: family,
+    validateMagic: (value) => startsWith(value, [0x50, 0x4b, 0x03, 0x04])
+  }
 }
 
 function nativeTextKind(contentType = 'text/plain; charset=utf-8'): PreviewKind {
@@ -165,6 +190,12 @@ const previewKinds = new Map<string, PreviewKind>([
   ['.svg', { contentType: 'image/svg+xml', rootPreview: true, validateMagic: svgMagic }],
   ['.pdf', { contentType: 'application/pdf', rootPreview: true, validateMagic: (value) =>
     startsWith(value, [0x25, 0x50, 0x44, 0x46, 0x2d]) }],
+  ['.docx', officeKind('docx',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document')],
+  ['.xlsx', officeKind('xlsx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')],
+  ['.pptx', officeKind('pptx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation')],
   ['.html', { contentType: 'text/html; charset=utf-8', rootPreview: true, validateMagic: htmlMagic }],
   ['.htm', { contentType: 'text/html; charset=utf-8', rootPreview: true, validateMagic: htmlMagic }],
   ['.md', nativeTextKind('text/markdown; charset=utf-8')],
@@ -494,6 +525,196 @@ function rootKindForPath(targetPath: string): PreviewKind | undefined {
   return unknownTextRootKind
 }
 
+type OfficeZipEntry = {
+  crc32: number
+  dataEnd: number
+  flags: number
+  localOffset: number
+  compressedSize: number
+  uncompressedSize: number
+}
+
+function zipExtraContainsZip64(value: Buffer): boolean {
+  let offset = 0
+  while (offset < value.length) {
+    if (offset + 4 > value.length) return true
+    const id = value.readUInt16LE(offset)
+    const length = value.readUInt16LE(offset + 2)
+    offset += 4
+    if (offset + length > value.length || id === 0x0001) return true
+    offset += length
+  }
+  return false
+}
+
+function safeOfficeZipName(raw: Buffer): string | null {
+  let name: string
+  try {
+    name = new TextDecoder('utf-8', { fatal: true }).decode(raw)
+  } catch {
+    return null
+  }
+  if (name.length === 0 || name.includes('\0') || name.includes('\\') ||
+      name.startsWith('/') || /^[A-Za-z]:/.test(name)) return null
+  const body = name.endsWith('/') ? name.slice(0, -1) : name
+  if (body.length === 0) return null
+  const segments = body.split('/')
+  if (segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')) {
+    return null
+  }
+  return name
+}
+
+function findOfficeZipEocd(value: Buffer): number {
+  const minimum = Math.max(0, value.length - (22 + 0xffff))
+  for (let offset = value.length - 22; offset >= minimum; offset -= 1) {
+    if (value.readUInt32LE(offset) !== 0x06054b50) continue
+    const commentLength = value.readUInt16LE(offset + 20)
+    if (offset + 22 + commentLength === value.length) return offset
+  }
+  return -1
+}
+
+function validOfficePackage(value: Uint8Array, family: OfficeFamily): boolean {
+  if (value.byteLength < 22 || value.byteLength > MAX_OFFICE_PREVIEW_BYTES) return false
+  const archive = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+  const eocd = findOfficeZipEocd(archive)
+  if (eocd < 0) return false
+  if (eocd >= 20 && archive.readUInt32LE(eocd - 20) === 0x07064b50) return false
+  const diskNumber = archive.readUInt16LE(eocd + 4)
+  const centralDisk = archive.readUInt16LE(eocd + 6)
+  const diskEntries = archive.readUInt16LE(eocd + 8)
+  const totalEntries = archive.readUInt16LE(eocd + 10)
+  const centralSize = archive.readUInt32LE(eocd + 12)
+  const centralOffset = archive.readUInt32LE(eocd + 16)
+  if (diskNumber !== 0 || centralDisk !== 0 || diskEntries !== totalEntries ||
+      totalEntries === 0 || totalEntries === 0xffff || totalEntries > MAX_OFFICE_ZIP_ENTRIES ||
+      centralSize === 0xffffffff || centralOffset === 0xffffffff ||
+      centralSize > MAX_OFFICE_CENTRAL_DIRECTORY_BYTES ||
+      centralOffset + centralSize !== eocd) return false
+
+  const names = new Set<string>()
+  const criticalNames = new Set<string>()
+  const entries: OfficeZipEntry[] = []
+  let expandedBytes = 0
+  let centralCursor = centralOffset
+  for (let index = 0; index < totalEntries; index += 1) {
+    if (centralCursor + 46 > eocd || archive.readUInt32LE(centralCursor) !== 0x02014b50) {
+      return false
+    }
+    const flags = archive.readUInt16LE(centralCursor + 8)
+    const method = archive.readUInt16LE(centralCursor + 10)
+    const crc32 = archive.readUInt32LE(centralCursor + 16)
+    const compressedSize = archive.readUInt32LE(centralCursor + 20)
+    const uncompressedSize = archive.readUInt32LE(centralCursor + 24)
+    const nameLength = archive.readUInt16LE(centralCursor + 28)
+    const extraLength = archive.readUInt16LE(centralCursor + 30)
+    const commentLength = archive.readUInt16LE(centralCursor + 32)
+    const startDisk = archive.readUInt16LE(centralCursor + 34)
+    const localOffset = archive.readUInt32LE(centralCursor + 42)
+    const centralEnd = centralCursor + 46 + nameLength + extraLength + commentLength
+    if (centralEnd > eocd || (flags & 0x2061) !== 0 || (method !== 0 && method !== 8) ||
+        startDisk !== 0 || compressedSize === 0xffffffff || uncompressedSize === 0xffffffff ||
+        localOffset === 0xffffffff || uncompressedSize > MAX_OFFICE_ENTRY_BYTES) return false
+    const centralName = archive.subarray(centralCursor + 46, centralCursor + 46 + nameLength)
+    const centralExtra = archive.subarray(
+      centralCursor + 46 + nameLength,
+      centralCursor + 46 + nameLength + extraLength
+    )
+    const name = safeOfficeZipName(centralName)
+    if (name === null || names.has(name) || zipExtraContainsZip64(centralExtra)) return false
+    if (method === 0 && compressedSize !== uncompressedSize) return false
+    if (uncompressedSize > 0 && (compressedSize === 0 ||
+        uncompressedSize > compressedSize * MAX_OFFICE_EXPANSION_RATIO)) return false
+    expandedBytes += uncompressedSize
+    if (!Number.isSafeInteger(expandedBytes) || expandedBytes > MAX_OFFICE_EXPANDED_BYTES) {
+      return false
+    }
+    names.add(name)
+    const lowerName = name.toLowerCase()
+    if (lowerName === '[content_types].xml' || lowerName === '_rels/.rels' ||
+        Object.values(officeFamilyMarker).includes(lowerName)) {
+      if (criticalNames.has(lowerName)) return false
+      criticalNames.add(lowerName)
+      if (name !== lowerName && name !== '[Content_Types].xml') return false
+    }
+
+    if (localOffset + 30 > centralOffset || archive.readUInt32LE(localOffset) !== 0x04034b50) {
+      return false
+    }
+    const localFlags = archive.readUInt16LE(localOffset + 6)
+    const localMethod = archive.readUInt16LE(localOffset + 8)
+    const localCrc32 = archive.readUInt32LE(localOffset + 14)
+    const localCompressedSize = archive.readUInt32LE(localOffset + 18)
+    const localUncompressedSize = archive.readUInt32LE(localOffset + 22)
+    const localNameLength = archive.readUInt16LE(localOffset + 26)
+    const localExtraLength = archive.readUInt16LE(localOffset + 28)
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength
+    const dataEnd = dataStart + compressedSize
+    if (dataEnd > centralOffset || localFlags !== flags || localMethod !== method ||
+        localNameLength !== nameLength ||
+        !archive.subarray(localOffset + 30, localOffset + 30 + localNameLength).equals(centralName) ||
+        zipExtraContainsZip64(archive.subarray(
+          localOffset + 30 + localNameLength,
+          localOffset + 30 + localNameLength + localExtraLength
+        ))) return false
+    if ((flags & 0x0008) === 0) {
+      if (localCrc32 !== crc32 || localCompressedSize !== compressedSize ||
+          localUncompressedSize !== uncompressedSize) return false
+    } else if ((localCrc32 !== 0 && localCrc32 !== crc32) ||
+        (localCompressedSize !== 0 && localCompressedSize !== compressedSize) ||
+        (localUncompressedSize !== 0 && localUncompressedSize !== uncompressedSize)) {
+      return false
+    }
+    entries.push({ crc32, dataEnd, flags, localOffset, compressedSize, uncompressedSize })
+    centralCursor = centralEnd
+  }
+  if (centralCursor !== eocd) {
+    if (centralCursor + 6 > eocd || archive.readUInt32LE(centralCursor) !== 0x05054b50 ||
+        centralCursor + 6 + archive.readUInt16LE(centralCursor + 4) !== eocd) return false
+  }
+  const ordered = entries.slice().sort((left, right) => left.localOffset - right.localOffset)
+  for (let index = 0; index < ordered.length; index += 1) {
+    const entry = ordered[index]!
+    const previous = ordered[index - 1]
+    const nextOffset = ordered[index + 1]?.localOffset ?? centralOffset
+    if (entry.dataEnd > nextOffset || (previous !== undefined &&
+        entry.localOffset === previous.localOffset)) {
+      return false
+    }
+    if ((entry.flags & 0x0008) !== 0) {
+      const matchesDescriptorAt = (cursor: number): boolean =>
+        cursor + 12 <= nextOffset && archive.readUInt32LE(cursor) === entry.crc32 &&
+        archive.readUInt32LE(cursor + 4) === entry.compressedSize &&
+        archive.readUInt32LE(cursor + 8) === entry.uncompressedSize
+      const unsignedDescriptorMatches = matchesDescriptorAt(entry.dataEnd)
+      const signedDescriptorMatches = entry.dataEnd + 16 <= nextOffset &&
+        archive.readUInt32LE(entry.dataEnd) === 0x08074b50 &&
+        matchesDescriptorAt(entry.dataEnd + 4)
+      if (!unsignedDescriptorMatches && !signedDescriptorMatches) return false
+    }
+  }
+  if (!names.has('[Content_Types].xml') || !names.has('_rels/.rels')) return false
+  const presentFamilies = (Object.entries(officeFamilyMarker) as Array<[OfficeFamily, string]>)
+    .filter(([, marker]) => names.has(marker))
+    .map(([entryFamily]) => entryFamily)
+  return presentFamilies.length === 1 && presentFamilies[0] === family &&
+    names.has(officeFamilyMarker[family])
+}
+
+async function readValidOfficePackage(
+  fileSystem: ResearchPreviewFileSystem,
+  targetPath: string,
+  fileSize: number,
+  family: OfficeFamily
+): Promise<Uint8Array | null> {
+  if (!Number.isSafeInteger(fileSize) || fileSize < 22 || fileSize > MAX_OFFICE_PREVIEW_BYTES) {
+    return null
+  }
+  const complete = await fileSystem.readSlice(targetPath, 0, fileSize - 1)
+  return complete.byteLength === fileSize && validOfficePackage(complete, family) ? complete : null
+}
+
 async function validatesPreviewKind(
   fileSystem: ResearchPreviewFileSystem,
   targetPath: string,
@@ -502,6 +723,9 @@ async function validatesPreviewKind(
   rootPreview: boolean
 ): Promise<boolean> {
   if (rootPreview && kind.rootMaxBytes !== undefined && fileSize > kind.rootMaxBytes) return false
+  if (rootPreview && kind.officeFamily !== undefined) {
+    return await readValidOfficePackage(fileSystem, targetPath, fileSize, kind.officeFamily) !== null
+  }
   if (kind.validateComplete !== undefined && fileSize > MAX_JSON_VALIDATION_BYTES) return false
   const prefix = await fileSystem.readSlice(
     targetPath,
@@ -792,7 +1016,11 @@ export class ResearchFilePreviewRegistry {
       if (!kind || (!authorization.allowSubresources && kind.contentType !== authorization.contentType)) {
         return fail(415, 'Unsupported preview type.')
       }
-      if (!await validatesPreviewKind(this.fileSystem, candidate, file.size, kind, rootPreview)) {
+      const officeBytes = rootPreview && kind.officeFamily !== undefined
+        ? await readValidOfficePackage(this.fileSystem, candidate, file.size, kind.officeFamily)
+        : undefined
+      if (officeBytes === null || (officeBytes === undefined &&
+          !await validatesPreviewKind(this.fileSystem, candidate, file.size, kind, rootPreview))) {
         return fail(415, 'Preview type mismatch.')
       }
 
@@ -815,7 +1043,9 @@ export class ResearchFilePreviewRegistry {
       if (range) headers.set('Content-Range', `bytes ${start}-${end}/${file.size}`)
       const responseBody = request.method === 'HEAD' || length === 0
         ? null
-        : this.fileSystem.stream(candidate, start, end) as BodyInit
+        : officeBytes === undefined
+          ? this.fileSystem.stream(candidate, start, end) as BodyInit
+          : Buffer.from(officeBytes.subarray(start, end + 1))
       return new Response(responseBody, { status: range ? 206 : 200, headers })
     } catch (error) {
       return isMissingFileError(error)

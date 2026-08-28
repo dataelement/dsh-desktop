@@ -8,17 +8,18 @@ import {
   type Event as HappyDOMEvent,
   type HTMLElement as HappyDOMHTMLElement
 } from 'happy-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 type ClientBundle = Record<string, unknown>
 type ComponentType<Props> = (props: Props) => unknown
 type ReactNode = unknown
 
 const requireModule = createRequire(import.meta.url)
-const { createElement, StrictMode, useLayoutEffect, useSyncExternalStore } = requireModule('react') as {
+const { createElement, StrictMode, useEffect, useLayoutEffect, useSyncExternalStore } = requireModule('react') as {
   createElement: (type: unknown, props?: unknown, ...children: unknown[]) => unknown
   StrictMode: unknown
   useLayoutEffect: (effect: () => void | (() => void), dependencies: unknown[]) => void
+  useEffect: (effect: () => void | (() => void), dependencies: unknown[]) => void
   useSyncExternalStore: <T>(
     subscribe: (listener: () => void) => () => void,
     getSnapshot: () => T,
@@ -822,6 +823,10 @@ async function mountResearchCanvas(options: {
   resizeObserverCallbacks?: Array<() => void>
   intersectionObserverCallbacks?: Array<(entries: Array<{ target: HappyDOMElement; isIntersecting: boolean }>) => void>
   strictMode?: boolean
+  officePreview?: {
+    Component: ComponentType<{ sourceUrl: string; kind: string; title: string }>
+    supports(kind: string): boolean
+  }
   fetch?: (input: string, init?: { signal?: AbortSignal }) => Promise<Response>
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
@@ -913,6 +918,13 @@ async function mountResearchCanvas(options: {
     window: browserWindow,
     modules: options.modules
   })
+  const OfficeCoordinator = client.ResearchOfficePreviewCoordinator as new () => {
+    attach(service: unknown): () => void
+  }
+  const researchOfficePreview = new OfficeCoordinator()
+  const detachOfficePreview = options.officePreview === undefined
+    ? () => {}
+    : researchOfficePreview.attach(options.officePreview)
   const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
     for(id: string): {
       getSnapshot(): {
@@ -935,6 +947,7 @@ async function mountResearchCanvas(options: {
     sessionId: string
     t: (key: string) => string
     researchWorkspaces: InstanceType<typeof Registry>
+    researchOfficePreview: InstanceType<typeof OfficeCoordinator>
   }>
   const host = browserWindow.document.createElement('div')
   browserWindow.document.body.appendChild(host)
@@ -943,6 +956,7 @@ async function mountResearchCanvas(options: {
     const canvasNode = createElement(ResearchCanvas, {
       sessionId,
       researchWorkspaces,
+      researchOfficePreview,
       t: () => '研究画布'
     })
     root.render(options.strictMode ? createElement(StrictMode, null, canvasNode) : canvasNode)
@@ -960,8 +974,11 @@ async function mountResearchCanvas(options: {
     client,
     host,
     workspace,
+    detachOfficePreview,
+    researchOfficePreview,
     async cleanup() {
       await act(async () => { root.unmount() })
+      detachOfficePreview()
       restoreGlobals()
     }
   }
@@ -2280,6 +2297,268 @@ describe('Sherlock workspace and composer controls', () => {
       expect(revocations).toEqual([])
     } finally {
       if (!cleaned) await mounted.cleanup()
+    }
+  })
+
+  it('routes DOCX, XLSX, and PPTX canvas nodes through the injected Office component only after restore', async () => {
+    const rendered: Array<{ sourceUrl: string; kind: string; title: string }> = []
+    const restores: Array<Record<string, string>> = []
+    const files = ([
+      ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      ['pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']
+    ] as const).map(([kind, contentType], index) => ({
+      id: `office-${kind}`,
+      name: `report.${kind}`,
+      source: 'computer',
+      authorizationId: `authorization-${kind}`,
+      contentType,
+      x: 160 + index * 190,
+      y: 200,
+      width: 480,
+      height: 360,
+      sizeMode: 'manual'
+    }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-office-routing',
+      files,
+      officePreview: {
+        supports: (kind) => ['docx', 'xlsx', 'pptx'].includes(kind),
+        Component(props) {
+          rendered.push(props)
+          return createElement('div', {
+            'data-test-office-kind': props.kind,
+            'data-test-office-url': props.sourceUrl
+          })
+        }
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          restores.push(value)
+          const file = files.find((candidate) => candidate.id === value.nodeId)
+          if (file === undefined) return null
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: `capability-${value.nodeId}`,
+            url: `sherlock-preview://capability-${value.nodeId}/`,
+            contentType: file.contentType,
+            name: file.name
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 900, height: 600 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(restores.map((value) => value.nodeId).sort()).toEqual(
+        ['office-docx', 'office-pptx', 'office-xlsx']
+      )
+      expect([...new Set(rendered.map((value) => value.kind))].sort()).toEqual(
+        ['docx', 'pptx', 'xlsx']
+      )
+      expect(rendered.every((value) => value.sourceUrl.startsWith('sherlock-preview://'))).toBe(true)
+      expect(mounted.host.querySelectorAll('[data-research-office-preview]')).toHaveLength(3)
+      expect(mounted.host.textContent).not.toContain('/Users/')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('unmounts the Office engine and releases its exact capability offscreen, then restores fresh on return and adapter detach', async () => {
+    const releases: Array<Record<string, string>> = []
+    const mountedKinds: string[] = []
+    const disposedKinds: string[] = []
+    let sequence = 0
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-office-lifecycle',
+      files: [{
+        id: 'office-docx', name: 'report.docx', source: 'computer',
+        authorizationId: 'authorization-docx',
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        x: 200, y: 200, width: 480, height: 360, sizeMode: 'manual'
+      }],
+      officePreview: {
+        supports: (kind) => kind === 'docx',
+        Component(props) {
+          useEffect(() => {
+            mountedKinds.push(props.kind)
+            return () => { disposedKinds.push(props.kind) }
+          }, [props.kind, props.sourceUrl])
+          return createElement('div', { 'data-test-office-kind': props.kind })
+        }
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          sequence += 1
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: `capability-office-${sequence}`,
+            url: `sherlock-preview://capability-office-${sequence}/`,
+            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            name: 'report.docx'
+          }
+        },
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(sequence).toBe(1)
+      expect(mountedKinds).toEqual(['docx'])
+
+      await act(async () => { mounted.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
+      expect(disposedKinds).toEqual(['docx'])
+      expect(releases.at(-1)).toMatchObject({ capabilityToken: 'capability-office-1' })
+      expect(mounted.host.querySelector('[data-research-offscreen-placeholder]')).not.toBeNull()
+
+      await act(async () => {
+        mounted.workspace.setViewport({ scale: 1, x: 0, y: 0 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(sequence).toBe(2)
+      expect(mountedKinds).toEqual(['docx', 'docx'])
+
+      await act(async () => { mounted.detachOfficePreview() })
+      expect(disposedKinds).toEqual(['docx', 'docx'])
+      expect(releases.at(-1)).toMatchObject({ capabilityToken: 'capability-office-2' })
+      expect(mounted.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('never restores without an Office adapter and releases a restore that resolves after the node leaves view', async () => {
+    let missingAdapterRestores = 0
+    const missing = await mountResearchCanvas({
+      sessionId: 'session-office-missing',
+      files: [{
+        id: 'office-missing', name: 'report.docx', source: 'computer',
+        authorizationId: 'authorization-missing',
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        x: 200, y: 200
+      }],
+      dshDesktop: { researchPreview: {
+        async restore() { missingAdapterRestores += 1; return null }
+      } }
+    })
+    try {
+      await act(async () => { missing.workspace.setCanvasSize({ width: 800, height: 600 }) })
+      expect(missingAdapterRestores).toBe(0)
+      expect(missing.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
+    } finally {
+      await missing.cleanup()
+    }
+
+    const pending = deferred<Record<string, string> | null>()
+    const releases: Array<Record<string, string>> = []
+    let renders = 0
+    const late = await mountResearchCanvas({
+      sessionId: 'session-office-late',
+      files: [{
+        id: 'office-late', name: 'late.xlsx', source: 'computer',
+        authorizationId: 'authorization-late',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        x: 200, y: 200, width: 480, height: 360
+      }],
+      officePreview: {
+        supports: (kind) => kind === 'xlsx',
+        Component() { renders += 1; return createElement('div') }
+      },
+      dshDesktop: { researchPreview: {
+        restore: async () => pending.promise,
+        async release(value) { releases.push(value); return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => { late.workspace.setCanvasSize({ width: 800, height: 600 }) })
+      await act(async () => { late.workspace.setViewport({ scale: 1, x: -2_000, y: 0 }) })
+      await act(async () => {
+        pending.resolve({
+          authorizationId: 'authorization-late',
+          capabilityToken: 'capability-late',
+          url: 'sherlock-preview://capability-late/',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          name: 'late.xlsx'
+        })
+        await pending.promise
+      })
+      expect(renders).toBe(0)
+      expect(releases).toEqual([{
+        sessionId: 'session-office-late', nodeId: 'office-late',
+        authorizationId: 'authorization-late', capabilityToken: 'capability-late'
+      }])
+    } finally {
+      await late.cleanup()
+    }
+  })
+
+  it('keeps the titled Office card alive when adapter supports or component rendering throws', async () => {
+    const makeFile = () => ({
+      id: 'office-error', name: 'error.pptx', source: 'computer',
+      authorizationId: 'authorization-error',
+      contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      x: 200, y: 200, width: 480, height: 360
+    })
+    let supportsRestore = 0
+    const supportsError = await mountResearchCanvas({
+      sessionId: 'session-office-supports-error',
+      files: [makeFile()],
+      officePreview: {
+        supports() { throw new Error('adapter unavailable') },
+        Component() { return createElement('div') }
+      },
+      dshDesktop: { researchPreview: {
+        async restore() { supportsRestore += 1; return null }
+      } }
+    })
+    try {
+      await act(async () => { supportsError.workspace.setCanvasSize({ width: 800, height: 600 }) })
+      expect(supportsRestore).toBe(0)
+      expect(supportsError.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('error.pptx')
+      expect(supportsError.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
+    } finally {
+      await supportsError.cleanup()
+    }
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const componentError = await mountResearchCanvas({
+      sessionId: 'session-office-component-error',
+      files: [makeFile()],
+      officePreview: {
+        supports: () => true,
+        Component() { throw new Error('engine render failed') }
+      },
+      dshDesktop: { researchPreview: {
+        async restore(value) {
+          return {
+            authorizationId: value.authorizationId,
+            capabilityToken: 'capability-error',
+            url: 'sherlock-preview://capability-error/',
+            contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            name: 'error.pptx'
+          }
+        },
+        async release() { return { ok: true } }
+      } }
+    })
+    try {
+      await act(async () => {
+        componentError.workspace.setCanvasSize({ width: 800, height: 600 })
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(componentError.host.querySelector('[data-research-node-title]')?.textContent)
+        .toContain('error.pptx')
+      expect(componentError.host.querySelector('[data-research-preview-unavailable]')).not.toBeNull()
+    } finally {
+      await componentError.cleanup()
+      consoleError.mockRestore()
     }
   })
 

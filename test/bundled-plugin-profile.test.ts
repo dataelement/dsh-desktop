@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { installBundledPluginProfile } from '../src/main/bundled-plugin-profile'
 import { patchBetterSidebarClient } from '../scripts/lib/patch-sherlock-better-sidebar.mjs'
+import { patchSherlockOfficePreviewClient } from '../scripts/lib/patch-sherlock-office-preview.mjs'
 
 const temporaryDirectories: string[] = []
 
@@ -62,6 +63,30 @@ afterEach(() => {
 })
 
 describe('bundled Sherlock plugin profile', () => {
+  it('prepares the bundled Office adapter reproducibly and fails closed on a drifted bundle', async () => {
+    const source = await readFile(
+      path.resolve(
+        import.meta.dirname,
+        '..',
+        'build',
+        'sherlock-plugin-profile',
+        'vendor',
+        '@huanlin',
+        'dsh-plugin-better-sidebar-plugin-office',
+        'lib',
+        'client.js'
+      ),
+      'utf8'
+    )
+    const patched = patchSherlockOfficePreviewClient(source)
+
+    expect(patchSherlockOfficePreviewClient(patched)).toBe(patched)
+    expect(() => patchSherlockOfficePreviewClient(source.replace(
+      'const inject = ["betterSidebar"];',
+      'const inject = ["unexpected-office-api"];'
+    ))).toThrow(/Office preview .*expected 1, found 0/u)
+  })
+
   it('keeps Sherlock pinned sidebar tabs first, fixed, and session-targetable', async () => {
     const source = await readFile(
       path.resolve(
@@ -200,6 +225,7 @@ describe('bundled Sherlock plugin profile', () => {
     expect(preparation).toContain("'settings.yaml'")
     expect(preparation).toContain("part.startsWith('.env.')")
     expect(preparation).toContain('patchBetterSidebarPackage(vendorPath)')
+    expect(preparation).toContain('patchSherlockOfficePreviewPackage(vendorPath)')
     expect(preparation).not.toContain('patchMemoryEvolvePackage')
     expect(
       await readFile(

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { patchBetterSidebarPackage } from './lib/patch-sherlock-better-sidebar.mjs'
+import { patchSherlockOfficePreviewPackage } from './lib/patch-sherlock-office-preview.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const policyPath = path.join(projectRoot, 'build', 'sherlock-bundled-plugins.json')
@@ -185,6 +186,9 @@ async function main() {
         throw new Error(`Installed plugin name mismatch for ${packageName}: ${copiedManifest.name}`)
       }
       if (packageName === 'dsh-better-sidebar') await patchBetterSidebarPackage(vendorPath)
+      if (packageName === '@huanlin/dsh-plugin-better-sidebar-plugin-office') {
+        await patchSherlockOfficePreviewPackage(vendorPath)
+      }
       dependencies[packageName] = `file:${relativeVendorPath}`
     }
 
