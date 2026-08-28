@@ -43,7 +43,9 @@ window.__ModuleLoader__.load({
       cancel: 'Cancel',
       removed: 'Plugin market uninstalled',
       removedHint: 'dsh-market has been removed. Restart Harness to finish.',
-      uninstallFailed: 'Plugin market could not be uninstalled.'
+      uninstallFailed: 'Plugin market could not be uninstalled.',
+      toolsNav: 'Plugin market tools',
+      toolsIntro: 'Recover the dsh-market installation if the market UI itself is broken. Use this to uninstall or repair dsh-market when its own settings page is unusable.'
     }
 
     const zh = {
@@ -77,43 +79,53 @@ window.__ModuleLoader__.load({
       cancel: '取消',
       removed: '插件市场已卸载',
       removedHint: 'dsh-market 已移除，请重启 Harness 完成卸载。',
-      uninstallFailed: '插件市场卸载失败。'
+      uninstallFailed: '插件市场卸载失败。',
+      toolsNav: '插件市场工具',
+      toolsIntro: '当插件市场自身的设置页无法使用时，可在此卸载或修复 dsh-market，恢复桌面设置。'
     }
 
+    // dsh-market normally publishes the `--dsw-alias-*` design tokens on the
+    // page. When the host's stylesheet is missing (e.g. a broken market reload
+    // wipes the page's styles) the variables resolve to nothing and the
+    // installer UI collapses into a default-browser bullet list. Provide
+    // minimum-viable fallbacks so the recovery entry stays readable in that
+    // state, instead of being as broken as the page it tries to repair.
     const css = `
-      .dshDesktopMarketSection{box-sizing:border-box;max-width:720px;color:var(--dsw-alias-label-primary);display:flex;flex-direction:column;gap:16px}
+      :root{--dsh-desktop-market-fallback-bg:#f6f6f4;--dsh-desktop-market-fallback-card:#ffffff;--dsh-desktop-market-fallback-border:#d8d8d4;--dsh-desktop-market-fallback-fg:#1a1a1a;--dsh-desktop-market-fallback-fg-soft:#555555;--dsh-desktop-market-fallback-fg-muted:#777777;--dsh-desktop-market-fallback-primary:#2563eb;--dsh-desktop-market-fallback-primary-fg:#ffffff;--dsh-desktop-market-fallback-error:#b91c1c}
+      @media (prefers-color-scheme:dark){:root{--dsh-desktop-market-fallback-bg:#141416;--dsh-desktop-market-fallback-card:#1f2024;--dsh-desktop-market-fallback-border:#2e2f33;--dsh-desktop-market-fallback-fg:#f1f1f1;--dsh-desktop-market-fallback-fg-soft:#b8b8b8;--dsh-desktop-market-fallback-fg-muted:#8a8a8a;--dsh-desktop-market-fallback-primary:#3b82f6;--dsh-desktop-market-fallback-primary-fg:#ffffff;--dsh-desktop-market-fallback-error:#ef4444}}
+      .dshDesktopMarketSection{box-sizing:border-box;max-width:720px;color:var(--dsw-alias-label-primary,var(--dsh-desktop-market-fallback-fg));display:flex;flex-direction:column;gap:16px}
       .dshDesktopMarketTitle{margin:0;font-size:20px;font-weight:600;line-height:30px}
-      .dshDesktopMarketIntro{margin:0;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:22px}
-      .dshDesktopMarketCard{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:18px}
-      .dshDesktopMarketMark{width:46px;height:46px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);display:grid;grid-template-columns:repeat(2,10px);grid-auto-rows:10px;place-content:center;gap:4px}
-      .dshDesktopMarketMark span{display:block;border-radius:3px;background:var(--dsw-alias-label-primary)}
+      .dshDesktopMarketIntro{margin:0;color:var(--dsw-alias-label-secondary,var(--dsh-desktop-market-fallback-fg-soft));font-size:14px;line-height:22px}
+      .dshDesktopMarketCard{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2,var(--dsh-desktop-market-fallback-border));background:var(--dsw-alias-bg-module-platform,var(--dsh-desktop-market-fallback-card));border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:18px}
+      .dshDesktopMarketMark{width:46px;height:46px;border:1px solid var(--dsw-alias-border-l2,var(--dsh-desktop-market-fallback-border));border-radius:12px;background:var(--dsw-alias-bg-layer-1,var(--dsh-desktop-market-fallback-bg));display:grid;grid-template-columns:repeat(2,10px);grid-auto-rows:10px;place-content:center;gap:4px}
+      .dshDesktopMarketMark span{display:block;border-radius:3px;background:var(--dsw-alias-label-primary,var(--dsh-desktop-market-fallback-fg))}
       .dshDesktopMarketMark span:nth-child(4){opacity:.28}
       .dshDesktopMarketHead{display:flex;align-items:flex-start;gap:14px}
       .dshDesktopMarketIdentity{min-width:0;display:flex;flex-direction:column;gap:3px}
       .dshDesktopMarketName{font-size:16px;font-weight:600;line-height:24px}
-      .dshDesktopMarketVersion{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
-      .dshDesktopMarketNotice{margin:0;padding-top:16px;border-top:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:19px}
+      .dshDesktopMarketVersion{color:var(--dsw-alias-label-tertiary,var(--dsh-desktop-market-fallback-fg-muted));font-size:12px;line-height:18px}
+      .dshDesktopMarketNotice{margin:0;padding-top:16px;border-top:1px solid var(--dsw-alias-border-l2,var(--dsh-desktop-market-fallback-border));color:var(--dsw-alias-label-tertiary,var(--dsh-desktop-market-fallback-fg-muted));font-size:12px;line-height:19px}
       .dshDesktopMarketStatus{display:flex;flex-direction:column;gap:5px}
       .dshDesktopMarketStatusTitle{font-size:14px;font-weight:600;line-height:22px}
-      .dshDesktopMarketStatusDetail{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+      .dshDesktopMarketStatusDetail{margin:0;color:var(--dsw-alias-label-secondary,var(--dsh-desktop-market-fallback-fg-soft));font-size:13px;line-height:20px;overflow-wrap:anywhere}
       .dshDesktopMarketActions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
       .dshDesktopMarketButton{box-sizing:border-box;height:36px;padding:0 16px;border:1px solid transparent;border-radius:18px;font:inherit;font-size:14px;font-weight:500;cursor:pointer}
-      .dshDesktopMarketPrimary{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill)}
-      .dshDesktopMarketPrimary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}
-      .dshDesktopMarketSecondary{color:var(--dsw-alias-label-primary);background:transparent;border-color:var(--dsw-alias-border-l3)}
-      .dshDesktopMarketSecondary:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
+      .dshDesktopMarketPrimary{color:var(--dsw-alias-label-primary-foreground,var(--dsh-desktop-market-fallback-primary-fg));background:var(--dsw-alias-button-primary-fill,var(--dsh-desktop-market-fallback-primary))}
+      .dshDesktopMarketPrimary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover,var(--dsh-desktop-market-fallback-primary));filter:brightness(1.05)}
+      .dshDesktopMarketSecondary{color:var(--dsw-alias-label-primary,var(--dsh-desktop-market-fallback-fg));background:transparent;border-color:var(--dsw-alias-border-l3,var(--dsh-desktop-market-fallback-border))}
+      .dshDesktopMarketSecondary:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2,var(--dsh-desktop-market-fallback-bg))}
       .dshDesktopMarketButton:disabled{cursor:default;opacity:.5}
-      .dshDesktopMarketButton:focus-visible,.dshDesktopMarketLink:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3)}
-      .dshDesktopMarketLink{color:var(--dsw-alias-label-secondary);border-radius:6px;padding:5px 4px;font-size:13px;line-height:20px;text-decoration:none}
-      .dshDesktopMarketLink:hover{color:var(--dsw-alias-label-primary);text-decoration:underline}
-      .dshDesktopMarketSpinner{box-sizing:border-box;width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-label-primary);border-radius:50%;animation:dshDesktopMarketSpin .75s linear infinite}
+      .dshDesktopMarketButton:focus-visible,.dshDesktopMarketLink:focus-visible{outline:none;box-shadow:0 0 0 2px var(--dsw-alias-border-l3,var(--dsh-desktop-market-fallback-border))}
+      .dshDesktopMarketLink{color:var(--dsw-alias-label-secondary,var(--dsh-desktop-market-fallback-fg-soft));border-radius:6px;padding:5px 4px;font-size:13px;line-height:20px;text-decoration:none}
+      .dshDesktopMarketLink:hover{color:var(--dsw-alias-label-primary,var(--dsh-desktop-market-fallback-fg));text-decoration:underline}
+      .dshDesktopMarketSpinner{box-sizing:border-box;width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2,var(--dsh-desktop-market-fallback-border));border-top-color:var(--dsw-alias-label-primary,var(--dsh-desktop-market-fallback-fg));border-radius:50%;animation:dshDesktopMarketSpin .75s linear infinite}
       .dshDesktopMarketBusy{display:flex;align-items:center;gap:9px}
-      .dshDesktopMarketError{color:var(--dsw-alias-state-error-primary)}
+      .dshDesktopMarketError{color:var(--dsw-alias-state-error-primary,var(--dsh-desktop-market-fallback-error))}
       .dshDesktopMarketModalBackdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.42)}
-      .dshDesktopMarketModal{box-sizing:border-box;width:min(440px,100%);padding:24px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 18px 48px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:12px}
+      .dshDesktopMarketModal{box-sizing:border-box;width:min(440px,100%);padding:24px;border:1px solid var(--dsw-alias-border-l2,var(--dsh-desktop-market-fallback-border));border-radius:16px;background:var(--dsw-alias-bg-layer-1,var(--dsh-desktop-market-fallback-card));box-shadow:0 18px 48px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:12px}
       .dshDesktopMarketModalTitle{margin:0;font-size:18px;font-weight:600;line-height:26px}
-      .dshDesktopMarketModalText{margin:0;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:22px}
-      .dshDesktopMarketModalNote{margin:0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:19px}
+      .dshDesktopMarketModalText{margin:0;color:var(--dsw-alias-label-secondary,var(--dsh-desktop-market-fallback-fg-soft));font-size:14px;line-height:22px}
+      .dshDesktopMarketModalNote{margin:0;color:var(--dsw-alias-label-tertiary,var(--dsh-desktop-market-fallback-fg-muted));font-size:12px;line-height:19px}
       .dshDesktopMarketModalActions{display:flex;justify-content:flex-end;gap:10px;padding-top:8px}
       @keyframes dshDesktopMarketSpin{to{transform:rotate(360deg)}}
       @media (prefers-reduced-motion:reduce){.dshDesktopMarketSpinner{animation:none}}
@@ -677,6 +689,11 @@ window.__ModuleLoader__.load({
       )
       const t = ctx.locale.bind(NS)
       if (marketAlreadyComposed()) {
+        // The market's own settings page can render broken (e.g. its CSS
+        // fails to inject after a plugin reinstall, leaving the whole desktop
+        // settings dialog unstyled). Expose the management UI as a top-level
+        // section so the user always has a way to uninstall dsh-market and
+        // recover, instead of being trapped inside a broken host page.
         ctx.slots.inject('settings.plugins.tab', () =>
           ctx.slots.register(
             {
@@ -684,6 +701,18 @@ window.__ModuleLoader__.load({
               id: 'desktop-market-management',
               order: 30,
               label: () => t('managementTab'),
+              inject: () => ({ t })
+            },
+            MarketManagementTab
+          )
+        )
+        ctx.slots.inject('settings.section', () =>
+          ctx.slots.register(
+            {
+              name: 'settings.section',
+              id: 'desktop-market-tools',
+              order: 41,
+              label: () => t('toolsNav'),
               inject: () => ({ t })
             },
             MarketManagementTab

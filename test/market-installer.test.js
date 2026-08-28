@@ -374,4 +374,49 @@ describe('desktop plugin market installer', () => {
     expect(desktopPatch).toContain('allowRestart: false')
     expect(preload).toContain("restartHarness: (): Promise<{ ok: boolean }>")
   })
+
+  it('exposes a top-level recovery entry alongside the management tab when dsh-market is composed', async () => {
+    // When dsh-market's own settings page renders unstyled (its CSS fails to
+    // inject after a plugin reinstall, see issue #222), the user must still
+    // be able to reach the dsh-desktop-managed uninstall UI from a top-level
+    // section, not only from the broken market shell.
+    const client = await readFile(
+      join(process.cwd(), 'packages', 'dsh-desktop-market-installer', 'client.js'),
+      'utf8'
+    )
+
+    expect(client).toContain("id: 'desktop-market-tools'")
+    expect(client).toContain("'settings.section'")
+    expect(client).toContain('order: 41')
+    // The recovery section label must exist in both dictionaries so the
+    // settings dialog can render it regardless of the user's locale.
+    expect(client).toContain("toolsNav: 'Plugin market tools'")
+    expect(client).toContain("toolsNav: '插件市场工具'")
+  })
+
+  it('keeps its UI legible when the host stylesheet is missing', async () => {
+    // The installer CSS used to resolve `--dsw-alias-*` variables published
+    // by dsh-market. When that stylesheet is absent the page collapsed into
+    // a default-browser bullet list, leaving no way to recover. Every alias
+    // now carries a fallback so the management card still renders.
+    const client = await readFile(
+      join(process.cwd(), 'packages', 'dsh-desktop-market-installer', 'client.js'),
+      'utf8'
+    )
+
+    const aliasVariables = [
+      '--dsw-alias-label-primary',
+      '--dsw-alias-label-secondary',
+      '--dsw-alias-label-tertiary',
+      '--dsw-alias-border-l2',
+      '--dsw-alias-bg-module-platform',
+      '--dsw-alias-bg-layer-1',
+      '--dsw-alias-bg-layer-2',
+      '--dsw-alias-button-primary-fill',
+      '--dsw-alias-state-error-primary'
+    ]
+    for (const variable of aliasVariables) {
+      expect(client).toContain(`var(${variable},`)
+    }
+  })
 })
