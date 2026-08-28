@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..ffd8f22 100644
+index 1dd0e89..7ae4a7e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -5043,7 +5043,7 @@ index 1dd0e89..ffd8f22 100644
 +			const tag = document.createElement("style");
 +			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
 +			tag.dataset.pluginCss = researchConversationChromeTagId;
-+			tag.textContent = ".wSkVaW_root{position:relative}.wSkVaW_root[data-phase=hero]>[data-center-composer-host]{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}.wSkVaW_root[data-phase=hero]>[data-center-composer-host]>[data-composer-seat]{width:100%}.wSkVaW_root[data-phase=active]>[data-center-composer-host]{position:absolute;left:0;right:0;bottom:0;z-index:7;background:none;pointer-events:none}.wSkVaW_root[data-phase=active]>[data-center-composer-host]>[data-composer-portal-host]{pointer-events:none}.wSkVaW_root[data-phase=active] .uV2eYG_card,.wSkVaW_root[data-phase=active] [data-slot=conversation\\.input\\.dock]>*,.wSkVaW_root[data-phase=active] .FJxK0a_root{pointer-events:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{background:none}.sRp_root .p-xYUq_actions{min-width:0;max-width:100%;height:auto;flex-wrap:nowrap;gap:4px}.sRp_root .p-xYUq_timeEnd{flex:1 1 auto;padding-left:2px;min-width:0;overflow:hidden;text-overflow:ellipsis}.sRp_root .p-xYUq_timeStart{min-width:0;overflow:hidden;text-overflow:ellipsis}@container (max-width:360px){.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{flex:1 1 auto;padding-inline:0}}.sRp_composer{z-index:21;background:none;overflow:visible}.sRp_composer .uV2eYG_overlayAnchor{z-index:2}.sRp_composer .dsh-paperclip-wrap{position:static}.sRp_composer .dsh-paperclip-wrap .dsh-paperclip-tip{bottom:calc(100% + 8px);left:12px;transform:none}";
++			tag.textContent = ".wSkVaW_root{position:relative}.wSkVaW_root[data-phase=hero]>[data-center-composer-host]{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}.wSkVaW_root[data-phase=hero]>[data-center-composer-host]>[data-composer-seat]{width:100%}.wSkVaW_root[data-phase=active]>[data-center-composer-host]{position:absolute;left:0;right:0;bottom:0;z-index:7;background:none;pointer-events:none}.wSkVaW_root[data-phase=active]>[data-center-composer-host]>[data-composer-portal-host]{pointer-events:none}.wSkVaW_root[data-phase=active] .uV2eYG_card,.wSkVaW_root[data-phase=active] [data-slot=conversation\\.input\\.dock]>*,.wSkVaW_root[data-phase=active] .FJxK0a_root,.wSkVaW_root[data-phase=active] .Mbwy4a_frame,.wSkVaW_root[data-phase=active] .LVzXQa_frame,.wSkVaW_root[data-phase=active] .bqrRRG_root{pointer-events:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{background:none}.wSkVaW_root[data-phase=active]>.wSkVaW_scrollBody:not([data-research-center]){scroll-padding-bottom:var(--dsh-composer-height,152px)}.wSkVaW_root[data-phase=active]>.wSkVaW_scrollBody:not([data-research-center])::after{content:\"\";display:block;flex:0 0 var(--dsh-composer-height,152px);width:min(var(--dsh-composer-card-max-width),100%);max-width:100%;margin:0 auto;pointer-events:none}.sRp_root .p-xYUq_actions{min-width:0;max-width:100%;height:auto;flex-wrap:nowrap;gap:4px}.sRp_root .p-xYUq_timeEnd{flex:1 1 auto;padding-left:2px;min-width:0;overflow:hidden;text-overflow:ellipsis}.sRp_root .p-xYUq_timeStart{min-width:0;overflow:hidden;text-overflow:ellipsis}@container (max-width:360px){.sRp_root .p-xYUq_timeEnd,.sRp_root .p-xYUq_timeStart{flex:1 1 auto;padding-inline:0}}.sRp_composer{z-index:21;background:none;overflow:visible}.sRp_composer .uV2eYG_overlayAnchor{z-index:2}.sRp_composer .dsh-paperclip-wrap{position:static}.sRp_composer .dsh-paperclip-wrap .dsh-paperclip-tip{bottom:calc(100% + 8px);left:12px;transform:none}";
 +			tag.textContent += ".wSkVaW_root[data-phase=hero]>[data-center-composer-host]>[data-composer-portal-host]{width:100%}.wSkVaW_root[data-phase=hero] .wSkVaW_composerHero{box-sizing:border-box;width:100%;max-width:812px}";
  			document.head.appendChild(tag);
  		}
@@ -5404,7 +5404,7 @@ index 1dd0e89..ffd8f22 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,10 +11318,64 @@ window.__ModuleLoader__.load({
+@@ -6832,22 +11318,136 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -5457,6 +5457,7 @@ index 1dd0e89..ffd8f22 100644
 +				composerPortalHostRef.current.setAttribute("data-composer-portal-host", "");
 +			}
 +			const centerComposerHostRef = (0, react.useRef)(null);
++			const composerHeightRef = (0, react.useRef)(0);
 +			const composerSelectionRef = (0, react.useRef)(null);
 +			const researchStateRef = (0, react.useRef)({ sessionId: void 0, active: false });
 +			const preResearchSelections = (0, react.useRef)(/* @__PURE__ */ new Map());
@@ -5466,11 +5467,31 @@ index 1dd0e89..ffd8f22 100644
 +			const publishResearchPresentation = (0, react.useCallback)((presentation) => {
 +				setSessionPresentationState({ sessionId, presentation: presentation ?? ABSENT_RESEARCH_PRESENTATION });
 +			}, [sessionId]);
++			const publishComposerHeight = (0, react.useCallback)((height) => {
++				if (!(height > 0)) return;
++				composerHeightRef.current = height;
++				const portalHost = composerPortalHostRef.current;
++				const centerScroll = centerComposerHostRef.current?.previousElementSibling;
++				const activeScroll = portalHost?.closest?.("[data-conversation-scroll]") ?? null;
++				for (const target of /* @__PURE__ */ new Set([
++					portalHost,
++					centerScroll?.hasAttribute?.("data-conversation-scroll") ? centerScroll : null,
++					activeScroll
++				])) target?.style?.setProperty("--dsh-composer-height", `${height}px`);
++			}, []);
  			const seatResizeRef = (0, react.useCallback)((seat) => {
  				seatObserver.current?.disconnect();
  				seatObserver.current = null;
-@@ -6848,6 +11388,54 @@ window.__ModuleLoader__.load({
- 			}, []);
+-				const scroller = seat?.parentElement ?? null;
+-				if (seat === null || scroller === null) return;
++				if (seat === null) return;
+ 				seatObserver.current = new ResizeObserver(() => {
+-					scroller.style.setProperty("--dsh-composer-height", `${seat.offsetHeight}px`);
++					publishComposerHeight(seat.offsetHeight);
+ 				});
+ 				seatObserver.current.observe(seat);
+-			}, []);
++			}, [publishComposerHeight]);
  			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
  			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
 +			(0, react.useLayoutEffect)(() => {
@@ -5524,7 +5545,7 @@ index 1dd0e89..ffd8f22 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +11485,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +11497,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -5532,7 +5553,7 @@ index 1dd0e89..ffd8f22 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +11502,68 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +11514,69 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -5588,6 +5609,7 @@ index 1dd0e89..ffd8f22 100644
 +					end: active.selectionEnd
 +				} : composerSelectionRef.current;
 +				destination.appendChild(composerPortalHost);
++				publishComposerHeight(composerHeightRef.current);
 +				const restoreSelection = () => {
 +					selection?.node.focus({ preventScroll: true });
 +					selection?.node.setSelectionRange(selection.start, selection.end);
@@ -5605,7 +5627,7 @@ index 1dd0e89..ffd8f22 100644
 +						end: focused.selectionEnd
 +					};
 +				};
-+			}, [composerPortalHost, research, researchSidebarSnapshot.composerHost]);
++			}, [composerPortalHost, publishComposerHeight, research, researchSidebarSnapshot.composerHost]);
 +			const composerPortal = (0, react_dom.createPortal)(composerSurface, composerPortalHost);
 +			const researchConversationPortal = research && researchSidebarSnapshot.conversationHost !== null ? (0, react_dom.createPortal)(sessionPresentation.conversationView, researchSidebarSnapshot.conversationHost) : null;
  			return (0, react_jsx_runtime.jsxs)("div", {
@@ -5625,7 +5647,7 @@ index 1dd0e89..ffd8f22 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +11599,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +11612,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -5646,7 +5668,7 @@ index 1dd0e89..ffd8f22 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +11667,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +11680,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -5664,7 +5686,7 @@ index 1dd0e89..ffd8f22 100644
  				})] })
  			});
  		}
-@@ -7053,14 +11677,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +11690,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -5709,7 +5731,7 @@ index 1dd0e89..ffd8f22 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +11723,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +11736,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -5719,7 +5741,7 @@ index 1dd0e89..ffd8f22 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +11745,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +11758,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -5728,7 +5750,7 @@ index 1dd0e89..ffd8f22 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +11798,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +11811,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -5746,7 +5768,7 @@ index 1dd0e89..ffd8f22 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +11834,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +11847,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -5754,7 +5776,7 @@ index 1dd0e89..ffd8f22 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +12726,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +12739,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -5785,7 +5807,7 @@ index 1dd0e89..ffd8f22 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +12771,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +12784,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -5810,7 +5832,7 @@ index 1dd0e89..ffd8f22 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +13725,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +13738,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -5819,7 +5841,7 @@ index 1dd0e89..ffd8f22 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +13815,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +13828,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -5861,7 +5883,7 @@ index 1dd0e89..ffd8f22 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +14024,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +14037,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -5878,7 +5900,7 @@ index 1dd0e89..ffd8f22 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +14194,9 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +14207,9 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -5888,7 +5910,7 @@ index 1dd0e89..ffd8f22 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +14236,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +14249,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -5901,7 +5923,7 @@ index 1dd0e89..ffd8f22 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +14252,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +14265,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -5914,7 +5936,7 @@ index 1dd0e89..ffd8f22 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +14301,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +14314,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -5928,7 +5950,7 @@ index 1dd0e89..ffd8f22 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +14339,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +14352,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -5938,7 +5960,7 @@ index 1dd0e89..ffd8f22 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +14471,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +14484,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -5953,7 +5975,7 @@ index 1dd0e89..ffd8f22 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +14487,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +14500,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -5962,7 +5984,7 @@ index 1dd0e89..ffd8f22 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +14511,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +14524,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -5971,7 +5993,7 @@ index 1dd0e89..ffd8f22 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +14537,111 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +14550,111 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);

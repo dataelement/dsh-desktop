@@ -231,10 +231,30 @@ async function mountConversationRoot(
   composerOptions: {
     overlay?: ReactNode
     model?: ReactNode
+    composer?: ReactNode
+    composerHeight?: number
     sidebarWidth?: number
   } = {}
 ) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
+  if (composerOptions.composerHeight !== undefined) {
+    const composerHeight = composerOptions.composerHeight
+    Object.defineProperty(browserWindow.HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get() {
+        return this.hasAttribute?.('data-composer-seat') ? composerHeight : 0
+      }
+    })
+    Object.defineProperty(browserWindow, 'ResizeObserver', {
+      configurable: true,
+      value: class TestResizeObserver {
+        private readonly callback: () => void
+        constructor(callback: () => void) { this.callback = callback }
+        observe() { this.callback() }
+        disconnect() {}
+      }
+    })
+  }
   const sessionId = 'session-research-right-panel'
   browserWindow.localStorage.setItem(
     `sherlock.research.canvas.files.v1:${sessionId}`,
@@ -599,7 +619,7 @@ async function mountConversationRoot(
       researchSidebar,
       renderSlot: createRenderSlot(activeSessionId, binding.chat, binding.actions),
       renderSlotChain: (_name: string, _owner: unknown, options: { fallback: unknown }) =>
-        options.fallback,
+        composerOptions.composer ?? options.fallback,
       selectWorkspace: async () => undefined,
       t: translate
     })
@@ -6679,6 +6699,8 @@ describe('Sherlock workspace and composer controls', () => {
   it('overlays the active Chat composer without reserving an opaque full-width footer row', async () => {
     const mounted = await mountConversationRoot('chat', {
       messageId: 'm-composer-overlay', text: '输入框后方仍应显示对话内容。'
+    }, undefined, {
+      composerHeight: 168
     })
     try {
       const { browserWindow, host } = mounted
@@ -6711,6 +6733,51 @@ describe('Sherlock workspace and composer controls', () => {
         expect(browserWindow.getComputedStyle(card).pointerEvents).toBe('auto')
       }
       expect(browserWindow.getComputedStyle(seat).backgroundImage).toBe('none')
+      expect((scroll as HappyDOMHTMLElement).style
+        .getPropertyValue('--dsh-composer-height')).toBe('168px')
+      expect(browserWindow.getComputedStyle(scroll).scrollPaddingBottom).toBe('168px')
+
+      const chromeCss = Array.from(browserWindow.document.querySelectorAll('style'))
+        .find((style) => style.getAttribute('data-plugin-css')
+          ?.endsWith('/ResearchConversationChromeOverrides'))?.textContent ??
+        Array.from(browserWindow.document.querySelectorAll('style'))
+          .map((style) => style.textContent ?? '')
+          .find((textContent) => textContent.includes('[data-center-composer-host]')) ?? ''
+      expect(chromeCss).toContain(
+        '.wSkVaW_root[data-phase=active]>.wSkVaW_scrollBody:not([data-research-center])::after'
+      )
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps bounded composer takeover surfaces interactive above the click-through host', async () => {
+    const action = vi.fn()
+    const mounted = await mountConversationRoot('chat', undefined, undefined, {
+      composer: createElement('div', null,
+        createElement('div', { className: 'Mbwy4a_frame' },
+          createElement('button', { onClick: action }, '回答问题')),
+        createElement('div', { className: 'LVzXQa_frame' },
+          createElement('button', { onClick: action }, '确认计划')),
+        createElement('div', { className: 'bqrRRG_root' },
+          createElement('button', { onClick: action }, '批准命令'))
+      )
+    })
+    try {
+      const { browserWindow, host } = mounted
+      const takeoverSurfaces = [
+        host.querySelector('.Mbwy4a_frame'),
+        host.querySelector('.LVzXQa_frame'),
+        host.querySelector('.bqrRRG_root')
+      ]
+      for (const surface of takeoverSurfaces) {
+        expect(surface).not.toBeNull()
+        if (surface !== null) {
+          expect(browserWindow.getComputedStyle(surface).pointerEvents).toBe('auto')
+          await act(async () => { click(browserWindow, surface.querySelector('button')) })
+        }
+      }
+      expect(action).toHaveBeenCalledTimes(3)
     } finally {
       await mounted.cleanup()
     }
