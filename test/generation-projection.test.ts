@@ -3,13 +3,13 @@ import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { projectGenerations } from '../src/main/state/generation-projection'
+import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection'
 import {
   ensureRegistryDirectories,
   registryLayout,
   writeDesired,
   writeGenerationMeta
-} from '../src/main/state/plugin-registry'
+} from '../packages/dsh-desktop-market-installer/generations/registry'
 
 describe('generation projection onto the app-boot contract', () => {
   const homes: string[] = []

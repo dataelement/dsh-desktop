@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /**
@@ -26,31 +26,9 @@ import { join } from 'node:path'
  * second rather than to a hash that only ever meant the first.
  */
 
-/** A promoted generation the app can point at. */
-export interface Generation {
-  /** Immutable directory name, e.g. `dsh-better-sidebar+0.17.1+a1b2c3d4`. */
-  id: string
-  /** The plugin's package name, e.g. `@scope/name` or `name`. */
-  pluginName: string
-  /** The resolved version at install time. */
-  version: string
-  /** Absolute path to the generation directory. */
-  directory: string
-}
-
-interface RegistryLayout {
-  root: string
-  generations: string
-  staging: string
-  trash: string
-  desiredPointer: string
-  lastKnownGoodPointer: string
-  lockFile: string
-}
-
 /**
  * Generations live under `$DSH_HOME/profiles/.generations/` so that a plugin
- * running from `…/.generations/<id>/node_modules/<plugin>` reaches
+ * running from `…/.generations/live/<id>/node_modules/<plugin>` reaches
  * `$DSH_HOME/profiles/node_modules` — the installation closure — through
  * Node's ordinary parent walk, which is how the app-boot contract expects
  * peers (react, cordis, the @deepseek-ai runtime) to resolve. A sibling
@@ -59,7 +37,7 @@ interface RegistryLayout {
  * The leading dot keeps the directory out of Harness's profile enumeration,
  * which only lists names that do not start with `.`.
  */
-export function registryLayout(dshHome: string): RegistryLayout {
+export function registryLayout(dshHome) {
   const root = join(dshHome, 'profiles', '.generations')
   return {
     root,
@@ -72,7 +50,7 @@ export function registryLayout(dshHome: string): RegistryLayout {
   }
 }
 
-export async function ensureRegistryDirectories(dshHome: string): Promise<RegistryLayout> {
+export async function ensureRegistryDirectories(dshHome) {
   const layout = registryLayout(dshHome)
   for (const dir of [layout.generations, layout.staging, layout.trash]) {
     await mkdir(dir, { recursive: true })
@@ -87,23 +65,23 @@ export async function ensureRegistryDirectories(dshHome: string): Promise<Regist
  * is over the resolved lockfile, so identical inputs collapse to one
  * generation and different inputs never collide.
  */
-export function generationId(pluginName: string, version: string, lockfileText: string): string {
+export function generationId(pluginName, version, lockfileText) {
   const safeName = pluginName.replace(/^@/u, '').replace(/[/\\]/gu, '+')
   const digest = createHash('sha256').update(lockfileText).digest('hex').slice(0, 12)
   return `${safeName}+${version}+${digest}`
 }
 
-async function readPointer(path: string): Promise<string[]> {
+async function readPointer(path) {
   try {
-    const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown
+    const parsed = JSON.parse(await readFile(path, 'utf8'))
     if (!Array.isArray(parsed)) return []
-    return parsed.filter((entry): entry is string => typeof entry === 'string')
+    return parsed.filter((entry) => typeof entry === 'string')
   } catch {
     return []
   }
 }
 
-async function writePointerAtomically(path: string, ids: string[]): Promise<void> {
+async function writePointerAtomically(path, ids) {
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
   const body = `${JSON.stringify([...ids].sort(), undefined, 2)}\n`
   try {
@@ -121,11 +99,8 @@ async function writePointerAtomically(path: string, ids: string[]): Promise<void
  * the file exists, which is the whole primitive — a stale lock from a crash is
  * broken after the deadline.
  */
-export async function withRegistryLock<T>(
-  dshHome: string,
-  run: () => Promise<T>,
-  { staleAfterMs = 20 * 60 * 1000, retryMs = 500, timeoutMs = 15 * 60 * 1000 } = {}
-): Promise<T> {
+export async function withRegistryLock(dshHome, run, options = {}) {
+  const { staleAfterMs = 20 * 60 * 1000, retryMs = 500, timeoutMs = 15 * 60 * 1000 } = options
   const { lockFile, root } = registryLayout(dshHome)
   await mkdir(root, { recursive: true })
   const deadline = Date.now() + timeoutMs
@@ -137,7 +112,7 @@ export async function withRegistryLock<T>(
       await handle.close()
       break
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (error?.code !== 'EEXIST') throw error
       const age = await lockAgeMs(lockFile)
       if (age !== undefined && age > staleAfterMs) {
         await rm(lockFile, { force: true }).catch(() => undefined)
@@ -157,17 +132,33 @@ export async function withRegistryLock<T>(
   }
 }
 
-async function lockAgeMs(lockFile: string): Promise<number | undefined> {
+async function lockAgeMs(lockFile) {
   try {
-    const { mtimeMs } = await import('node:fs/promises').then((fs) => fs.stat(lockFile))
+    const { mtimeMs } = await stat(lockFile)
     return Date.now() - mtimeMs
   } catch {
     return undefined
   }
 }
 
+const META_NAME = 'generation.json'
+
+async function readGenerationMeta(directory) {
+  try {
+    const parsed = JSON.parse(await readFile(join(directory, META_NAME), 'utf8'))
+    if (typeof parsed.pluginName !== 'string' || typeof parsed.version !== 'string') return undefined
+    return { pluginName: parsed.pluginName, version: parsed.version }
+  } catch {
+    return undefined
+  }
+}
+
+export async function writeGenerationMeta(directory, meta) {
+  await writeFile(join(directory, META_NAME), `${JSON.stringify(meta, undefined, 2)}\n`, 'utf8')
+}
+
 /** Every promoted generation currently on disk. */
-export async function listGenerations(dshHome: string): Promise<Generation[]> {
+export async function listGenerations(dshHome) {
   const { generations } = registryLayout(dshHome)
   let entries
   try {
@@ -175,7 +166,7 @@ export async function listGenerations(dshHome: string): Promise<Generation[]> {
   } catch {
     return []
   }
-  const found: Generation[] = []
+  const found = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const directory = join(generations, entry.name)
@@ -186,36 +177,15 @@ export async function listGenerations(dshHome: string): Promise<Generation[]> {
   return found
 }
 
-interface GenerationMeta {
-  pluginName: string
-  version: string
-}
-
-const META_NAME = 'generation.json'
-
-async function readGenerationMeta(directory: string): Promise<GenerationMeta | undefined> {
-  try {
-    const parsed = JSON.parse(await readFile(join(directory, META_NAME), 'utf8')) as Partial<GenerationMeta>
-    if (typeof parsed.pluginName !== 'string' || typeof parsed.version !== 'string') return undefined
-    return { pluginName: parsed.pluginName, version: parsed.version }
-  } catch {
-    return undefined
-  }
-}
-
-export async function writeGenerationMeta(directory: string, meta: GenerationMeta): Promise<void> {
-  await writeFile(join(directory, META_NAME), `${JSON.stringify(meta, undefined, 2)}\n`, 'utf8')
-}
-
-export async function readDesired(dshHome: string): Promise<string[]> {
+export async function readDesired(dshHome) {
   return readPointer(registryLayout(dshHome).desiredPointer)
 }
 
-export async function readLastKnownGood(dshHome: string): Promise<string[]> {
+export async function readLastKnownGood(dshHome) {
   return readPointer(registryLayout(dshHome).lastKnownGoodPointer)
 }
 
-export async function writeDesired(dshHome: string, generationIds: string[]): Promise<void> {
+export async function writeDesired(dshHome, generationIds) {
   await writePointerAtomically(registryLayout(dshHome).desiredPointer, generationIds)
 }
 
@@ -224,27 +194,27 @@ export async function writeDesired(dshHome: string, generationIds: string[]): Pr
  * has reported ready and the main window has rendered — never on a pnpm exit
  * code.
  */
-export async function commitLastKnownGood(dshHome: string): Promise<void> {
+export async function commitLastKnownGood(dshHome) {
   const desired = await readDesired(dshHome)
   await writePointerAtomically(registryLayout(dshHome).lastKnownGoodPointer, desired)
 }
 
 /** Roll `desired` back to the last set that actually booted. */
-export async function revertToLastKnownGood(dshHome: string): Promise<string[]> {
+export async function revertToLastKnownGood(dshHome) {
   const lkg = await readLastKnownGood(dshHome)
   await writeDesired(dshHome, lkg)
   return lkg
 }
 
 /**
- * The name → directory map the loader resolves against. Built from `desired`
+ * The name -> directory map the loader resolves against. Built from `desired`
  * so a generation that exists on disk but is not currently wanted is invisible
  * to resolution while still available for a fast rollback.
  */
-export async function resolveEnabledGenerations(dshHome: string): Promise<Map<string, Generation>> {
+export async function resolveEnabledGenerations(dshHome) {
   const [desired, all] = await Promise.all([readDesired(dshHome), listGenerations(dshHome)])
   const byId = new Map(all.map((generation) => [generation.id, generation]))
-  const enabled = new Map<string, Generation>()
+  const enabled = new Map()
   for (const id of desired) {
     const generation = byId.get(id)
     if (generation !== undefined && existsSync(generation.directory)) {
@@ -255,13 +225,11 @@ export async function resolveEnabledGenerations(dshHome: string): Promise<Map<st
 }
 
 /**
- * Move a promoted generation out of the way of resolution. The directory is
- * left in place and only relinked into `trash` once Harness is fully stopped,
- * so a plugin still lazy-importing from it during shutdown is never yanked.
- * Returns the ids that are safe to physically delete now (nothing points at
- * them and no live process could).
+ * The generation ids that are safe to physically delete now: nothing in either
+ * pointer references them, so no running process could be importing from them
+ * once Harness is stopped.
  */
-export async function collectUnreferencedGenerations(dshHome: string): Promise<string[]> {
+export async function collectUnreferencedGenerations(dshHome) {
   const [desired, lkg, all] = await Promise.all([
     readDesired(dshHome),
     readLastKnownGood(dshHome),
@@ -277,10 +245,10 @@ export async function collectUnreferencedGenerations(dshHome: string): Promise<s
  * has a handle, say) is left for the next cold start — an orphan generation
  * nothing resolves against is inert.
  */
-export async function sweepRegistry(dshHome: string): Promise<{ removed: string[]; failed: string[] }> {
+export async function sweepRegistry(dshHome) {
   const layout = registryLayout(dshHome)
-  const removed: string[] = []
-  const failed: string[] = []
+  const removed = []
+  const failed = []
 
   const unreferenced = await collectUnreferencedGenerations(dshHome)
   for (const id of unreferenced) {
@@ -294,7 +262,8 @@ export async function sweepRegistry(dshHome: string): Promise<{ removed: string[
   }
 
   for (const dir of [layout.staging, layout.trash]) {
-    let entries: string[] = []
+    const label = dir === layout.staging ? 'staging' : 'trash'
+    let entries = []
     try {
       entries = await readdir(dir)
     } catch {
@@ -303,9 +272,9 @@ export async function sweepRegistry(dshHome: string): Promise<{ removed: string[
     for (const name of entries) {
       try {
         await rm(join(dir, name), { recursive: true, force: true })
-        removed.push(`${dir === layout.staging ? 'staging' : 'trash'}/${name}`)
+        removed.push(`${label}/${name}`)
       } catch {
-        failed.push(`${dir === layout.staging ? 'staging' : 'trash'}/${name}`)
+        failed.push(`${label}/${name}`)
       }
     }
   }

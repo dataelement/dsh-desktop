@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { resolveEnabledGenerations, type Generation } from './plugin-registry'
+import { resolveEnabledGenerations } from './registry.mjs'
 
 /**
  * Make the enabled generations visible to Harness without teaching Harness
@@ -31,13 +31,10 @@ import { resolveEnabledGenerations, type Generation } from './plugin-registry'
 /** Packages the desktop shell owns as profile bundles; never projected or pruned. */
 const IN_BOX_BUNDLES = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
 
-export interface ProjectionResult {
-  linked: string[]
-  unlinked: string[]
-  bundles: string[]
-}
+/** Substring that marks a symlink target as one this projector wrote. */
+const GENERATION_LINK_MARKER = join('profiles', '.generations', 'live')
 
-function profileDir(dshHome: string, profile = 'web'): string {
+function profileDir(dshHome, profile = 'web') {
   return join(dshHome, 'profiles', profile)
 }
 
@@ -45,16 +42,12 @@ function profileDir(dshHome: string, profile = 'web'): string {
  * A directory link that works on Windows without Developer Mode. `junction`
  * targets must be absolute; they behave as symlinks for module resolution.
  */
-async function ensureDirLink(linkPath: string, target: string): Promise<void> {
+async function ensureDirLink(linkPath, target) {
   try {
     const stat = await lstat(linkPath)
     if (stat.isSymbolicLink()) {
-      const current = await readFile(linkPath).catch(() => undefined)
-      // readlink via import to avoid a second import at module top
-      const { readlink } = await import('node:fs/promises')
       const resolved = await readlink(linkPath).catch(() => '')
       if (resolved === target) return
-      void current
     }
     await rm(linkPath, { recursive: true, force: true })
   } catch {
@@ -69,16 +62,13 @@ async function ensureDirLink(linkPath: string, target: string): Promise<void> {
  * and drop links for plugins no longer enabled. Real pnpm-managed entries and
  * in-box bundles are left untouched.
  */
-export async function projectGenerations(
-  dshHome: string,
-  profile = 'web'
-): Promise<ProjectionResult> {
+export async function projectGenerations(dshHome, profile = 'web') {
   const enabled = await resolveEnabledGenerations(dshHome)
   const dir = profileDir(dshHome, profile)
   const modulesDir = join(dir, 'node_modules')
   await mkdir(modulesDir, { recursive: true })
 
-  const linked: string[] = []
+  const linked = []
   for (const [pluginName, generation] of enabled) {
     const target = join(generation.directory, 'node_modules', pluginName)
     if (!existsSync(target)) continue
@@ -97,15 +87,10 @@ export async function projectGenerations(
  * link is ours if it is a symlink whose target sits under the generations
  * tree; a real directory or a pnpm link elsewhere is never touched.
  */
-async function pruneStaleGenerationLinks(
-  modulesDir: string,
-  enabled: Map<string, Generation>
-): Promise<string[]> {
-  const generationsMarker = join('profiles', '.generations', 'live')
-  const removed: string[] = []
-  const { readlink } = await import('node:fs/promises')
+async function pruneStaleGenerationLinks(modulesDir, enabled) {
+  const removed = []
 
-  const scan = async (base: string, prefix: string): Promise<void> => {
+  const scan = async (base, prefix) => {
     let entries
     try {
       entries = await readdir(base, { withFileTypes: true })
@@ -121,7 +106,7 @@ async function pruneStaleGenerationLinks(
       }
       if (!entry.isSymbolicLink()) continue
       const target = await readlink(full).catch(() => '')
-      if (!target.includes(generationsMarker)) continue
+      if (!target.includes(GENERATION_LINK_MARKER)) continue
       if (!enabled.has(name)) {
         await rm(full, { recursive: true, force: true }).catch(() => undefined)
         removed.push(name)
@@ -138,38 +123,34 @@ async function pruneStaleGenerationLinks(
  * matches the projection. In-box bundles keep their place at the front;
  * everything else is the enabled plugin set.
  */
-async function syncProfileManifest(
-  dir: string,
-  enabled: Map<string, Generation>
-): Promise<string[]> {
+async function syncProfileManifest(dir, enabled) {
   const manifestPath = join(dir, 'package.json')
-  let manifest: Record<string, unknown> = {}
+  let manifest = {}
   try {
-    manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>
+    manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   } catch {
     manifest = { name: 'dsh-profile-web', private: true }
   }
 
-  const existingBundles = ((manifest.dsh as { profile?: { bundles?: string[] } })?.profile?.bundles ?? [])
-    .filter((name) => IN_BOX_BUNDLES.has(name))
+  const existingBundles = (manifest.dsh?.profile?.bundles ?? []).filter((name) => IN_BOX_BUNDLES.has(name))
   const pluginNames = [...enabled.keys()].sort()
   const bundles = [...existingBundles, ...pluginNames]
 
-  const dependencies: Record<string, string> = {}
+  const dependencies = {}
   for (const [pluginName, generation] of enabled) {
     dependencies[pluginName] = `^${generation.version}`
   }
   // The market package stays a real dependency even without a generation.
-  const currentDeps = (manifest.dependencies as Record<string, string>) ?? {}
+  const currentDeps = manifest.dependencies ?? {}
   if (typeof currentDeps.dshmarket === 'string') dependencies.dshmarket = currentDeps.dshmarket
 
   const next = {
     ...manifest,
     dependencies,
     dsh: {
-      ...(manifest.dsh as object),
+      ...manifest.dsh,
       profile: {
-        ...((manifest.dsh as { profile?: object })?.profile ?? {}),
+        ...(manifest.dsh?.profile ?? {}),
         bundles
       }
     }
@@ -178,7 +159,6 @@ async function syncProfileManifest(
   const body = `${JSON.stringify(next, undefined, 2)}\n`
   const temporary = `${manifestPath}.${process.pid}.${Date.now()}.tmp`
   await writeFile(temporary, body, 'utf8')
-  const { rename } = await import('node:fs/promises')
   await rename(temporary, manifestPath)
 
   return bundles

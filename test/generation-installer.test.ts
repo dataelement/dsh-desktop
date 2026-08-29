@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { installGeneration } from '../src/main/state/generation-installer'
-import { listGenerations, registryLayout } from '../src/main/state/plugin-registry'
+import { installGeneration } from '../packages/dsh-desktop-market-installer/generations/installer'
+import { listGenerations, registryLayout } from '../packages/dsh-desktop-market-installer/generations/registry'
 
 /**
  * These exercise the promotion and hoist logic with a stubbed install, so they

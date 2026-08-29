@@ -17,7 +17,7 @@ import {
   withRegistryLock,
   writeDesired,
   writeGenerationMeta
-} from '../src/main/state/plugin-registry'
+} from '../packages/dsh-desktop-market-installer/generations/registry'
 
 describe('the plugin generation registry', () => {
   const homes: string[] = []

@@ -6,6 +6,16 @@ import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { PassThrough } from 'node:stream'
+
+import { installGeneration } from './generations/installer.mjs'
+import { projectGenerations } from './generations/projection.mjs'
+import {
+  listGenerations,
+  readDesired,
+  withRegistryLock,
+  writeDesired
+} from './generations/registry.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
 
@@ -378,6 +388,95 @@ export function createDesktopPnpmService(options) {
   let active
   let closed = false
 
+  const pnpmEntryPath = resolvePnpmEntry()
+
+  /**
+   * A synthetic handle in the shape `runPlugin` returns, driven by an async
+   * function rather than a child process. dsh-market reads `stdout`/`stderr`
+   * as streams and awaits `done` for `{ exitCode, signal }`.
+   */
+  const asHandle = (task) => {
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    let cancelled = false
+    const cancel = () => {
+      cancelled = true
+    }
+    const done = (async () => {
+      try {
+        const { exitCode, message } = await task({
+          write: (line) => stdout.write(`${line}\n`),
+          isCancelled: () => cancelled
+        })
+        if (message) stderr.write(message)
+        return { exitCode, signal: null }
+      } catch (error) {
+        stderr.write(error instanceof Error ? error.message : String(error))
+        return { exitCode: 1, signal: null }
+      } finally {
+        stdout.end()
+        stderr.end()
+      }
+    })()
+    return { stdout, stderr, done, cancel }
+  }
+
+  /**
+   * The install boundary dsh-market 1.6+ feature-detects. It hands us
+   * `['add', 'name@exact.version', ...flags]` — a registry package pinned to an
+   * exact version — and expects the same handle `runPlugin` returns.
+   *
+   * The plugin is installed as its own immutable generation rather than into
+   * the shared hoisted tree: a fresh directory, promoted by one rename, never
+   * replaced. On Windows that is the whole fix — the shared tree's in-place
+   * package replacement is the operation pnpm cannot do there.
+   */
+  const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
+    validatePluginOperation(args, invokingDir)
+    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (active) throw new Error('Another desktop pnpm operation is already running.')
+    const spec = args.slice(1).find((argument) => !argument.startsWith('-'))
+    if (spec === undefined) throw new Error('The install boundary needs a package spec.')
+
+    const handle = asHandle(async ({ write }) =>
+      withRegistryLock(home, async () => {
+        write(`Installing ${spec} as an isolated generation…`)
+        const install = await installGeneration({
+          dshHome: home,
+          pluginSpec: spec,
+          nodeExecutablePath: executablePath,
+          pnpmEntryPath,
+          spawnProcess,
+          environment,
+          onTrace: write,
+          onOutput: (chunk) => write(chunk.replace(/\r?\n$/u, '')),
+          runInstall: options.runGenerationInstall
+        })
+        if (!install.ok) return { exitCode: 1, message: install.detail ?? 'generation install failed' }
+
+        // Replace any earlier generation of the same plugin, keep the rest.
+        const [desired, generations] = await Promise.all([readDesired(home), listGenerations(home)])
+        const byId = new Map(generations.map((generation) => [generation.id, generation]))
+        const kept = desired.filter((id) => {
+          const generation = byId.get(id)
+          return generation === undefined || generation.pluginName !== install.generation.pluginName
+        })
+        await writeDesired(home, [...kept, install.generation.id])
+        const projection = await projectGenerations(home)
+        write(`enabled: ${projection.linked.join(', ')}`)
+        write(`bundles: ${JSON.stringify(projection.bundles)}`)
+        return { exitCode: 0 }
+      })
+    )
+    active = handle
+    signal?.addEventListener('abort', handle.cancel, { once: true })
+    void handle.done.finally(() => {
+      signal?.removeEventListener('abort', handle.cancel)
+      if (active === handle) active = undefined
+    })
+    return handle
+  }
+
   const runPlugin = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
     if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
@@ -425,6 +524,7 @@ export function createDesktopPnpmService(options) {
 
   return Object.freeze({
     runPlugin,
+    runExternalMarketPluginInstall,
     async dispose() {
       closed = true
       const operation = active
