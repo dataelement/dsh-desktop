@@ -39,7 +39,6 @@ export interface SafeModeViewModel {
   issueGroups: SafeModeIssueGroupViewModel[]
   emptyMessage: string
   selectionHint: string
-  selectionHelp: string
   safetyNote: string
   applyLabel: string
   applyBusyLabel: string
@@ -168,20 +167,19 @@ export function buildSafeModeViewModel(options: {
       brand: 'DSH Desktop',
       badge: '安全模式',
       heading: '',
-      summary: '安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。同时检查插件版本、客户端模块和 Workspace 遗留依赖；所有问题统一列在下方。',
+      summary: '部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可尝试卸载近期安装的插件后重启。',
       plugins,
       pluginItems,
       issueGroups,
-      emptyMessage: '当前 Profile 中没有可处理的插件或遗留项。',
-      selectionHint: '插件兼容与清理',
-      selectionHelp: '统一勾选需要处理的插件或遗留项。每一项会标明将执行卸载、暂停、隔离 Workspace 或重建依赖。',
-      safetyNote: '兼容性修复会先备份；卸载只作用于明确勾选的根插件。未选中的插件、工作区、会话和模型配置不会被删除。',
-      applyLabel: '处理所选问题',
-      applyBusyLabel: '正在处理…',
+      emptyMessage: '当前 Profile 中没有可卸载的第三方插件。',
+      selectionHint: '选择要卸载的插件',
+      safetyNote: '工作区、会话、模型配置和未选中的插件不会被删除。',
+      applyLabel: '卸载所选插件',
+      applyBusyLabel: '正在卸载…',
       selectAllLabel: '全选',
       agentLabel: '关闭',
       agentBusyLabel: '正在关闭…',
-      restartLabel: '完成并退出安全模式',
+      restartLabel: '退出安全模式并重启',
       restartBusyLabel: '正在重启…',
       restartConfirm: blockingGroups > 0
         ? `仍有 ${blockingGroups} 组阻断问题。退出后会重新启用第三方插件，可能再次启动失败。仍然退出安全模式吗？`
@@ -197,20 +195,19 @@ export function buildSafeModeViewModel(options: {
     brand: 'DSH Desktop',
     badge: 'Safe Mode',
     heading: '',
-    summary: 'Safe Mode temporarily disables all third-party plugins so core features remain available, but does not delete them. Plugin versions, client modules, and leftover workspace dependencies are checked and listed together below.',
+    summary: 'Some third-party plugins may cause startup problems. Safe Mode temporarily disables all of them while the Agent remains available; the plugins are not deleted. Remove a recently installed plugin, then restart to try again.',
     plugins,
     pluginItems,
     issueGroups,
-    emptyMessage: 'There are no plugins or leftovers to process in this profile.',
-    selectionHint: 'Plugin compatibility and cleanup',
-    selectionHelp: 'Select plugins and leftovers in one list. Each row names whether it will remove, disable, quarantine a workspace, or rebuild dependencies.',
-    safetyNote: 'Compatibility repairs are backed up first. Removal affects only explicitly selected root plugins; unselected plugins, workspaces, sessions, and model settings are preserved.',
-    applyLabel: 'Process selected issues',
-    applyBusyLabel: 'Processing…',
+    emptyMessage: 'There are no removable third-party plugins in this profile.',
+    selectionHint: 'Select plugins to remove',
+    safetyNote: 'Workspaces, sessions, model settings, and unselected plugins will not be removed.',
+    applyLabel: 'Remove selected plugins',
+    applyBusyLabel: 'Removing…',
     selectAllLabel: 'Select all',
     agentLabel: 'Close',
     agentBusyLabel: 'Closing…',
-    restartLabel: 'Finish and exit Safe Mode',
+    restartLabel: 'Exit Safe Mode and restart',
     restartBusyLabel: 'Restarting…',
     restartConfirm: blockingGroups > 0
       ? `${blockingGroups} blocking group${blockingGroups === 1 ? '' : 's'} remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?`

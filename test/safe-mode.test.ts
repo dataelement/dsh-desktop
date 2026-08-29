@@ -21,17 +21,15 @@ describe('Safe Mode', () => {
     })
     expect(model.badge).toBe('安全模式')
     expect(model.heading).toBe('')
-    expect(model.summary).toContain('暂时停用所有第三方插件')
+    expect(model.summary).toBe('部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可尝试卸载近期安装的插件后重启。')
     expect(model.summary).toContain('确保基础功能正常使用')
     expect(model.summary).toContain('但不会删除插件')
-    expect(model.summary).toContain('检查插件版本、客户端模块和 Workspace 遗留依赖')
-    expect(model.summary).toContain('所有问题统一列在下方')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.pluginItems).toEqual([
       { name: 'plugin-a', actionLabel: '卸载插件', incompatible: false },
       { name: '@example/plugin-b', actionLabel: '卸载插件', incompatible: false }
     ])
-    expect(model.safetyNote).toContain('未选中的插件、工作区、会话和模型配置不会被删除')
+    expect(model.safetyNote).toBe('工作区、会话、模型配置和未选中的插件不会被删除。')
   })
 
   it('provides complete English labels for every Safe Mode action', () => {
@@ -39,10 +37,10 @@ describe('Safe Mode', () => {
     expect(model).toMatchObject({
       badge: 'Safe Mode',
       heading: '',
-      selectionHint: 'Plugin compatibility and cleanup',
-      applyLabel: 'Process selected issues',
+      selectionHint: 'Select plugins to remove',
+      applyLabel: 'Remove selected plugins',
       agentLabel: 'Close',
-      restartLabel: 'Finish and exit Safe Mode',
+      restartLabel: 'Exit Safe Mode and restart',
       quitLabel: 'Quit DSH Desktop'
     })
   })
@@ -86,7 +84,7 @@ describe('Safe Mode', () => {
       incompatible: true
     })
     expect(model.issueGroups).toEqual([])
-    expect(model.restartLabel).toBe('完成并退出安全模式')
+    expect(model.restartLabel).toBe('退出安全模式并重启')
     expect(model.restartConfirm).toContain('仍有 1 组阻断问题')
   })
 
@@ -181,7 +179,7 @@ describe('Safe Mode', () => {
     expect(main).toContain("label: isChinese ? '以安全模式重启…' : 'Restart as Safe Mode…'")
     expect(main).toContain("return { active: safeModeVisible, locale: harnessLocale() }")
     expect(preload).toContain("safeModeLocale === 'zh' ? '安全模式' : 'Safe Mode'")
-    expect(preload).toContain("safeModeLocale === 'zh' ? '检查兼容性' : 'Check compatibility'")
+    expect(preload).toContain("safeModeLocale === 'zh' ? '卸载插件' : 'Remove plugins'")
     expect(preload).toContain("safeModeLocale === 'zh' ? '退出安全模式' : 'Exit Safe Mode'")
     expect(preload).toContain("safeModeLocale === 'zh'")
     expect(preload).toContain("ipcRenderer.invoke('safe-mode:action', action, selection)")

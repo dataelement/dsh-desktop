@@ -39,7 +39,6 @@
       .list-card { overflow: hidden; margin-top:18px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
       .list-heading { display: flex; justify-content: space-between; align-items: center; min-height: 43px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650; }
       .select-all { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
-      .card-help { margin:0; padding:10px 16px; border-bottom:1px solid var(--line); color:var(--muted); background:var(--surface); font-size:11px; line-height:1.5; }
       .plugins { max-height: 310px; margin: 0; padding: 0; overflow: auto; list-style: none; }
       .plugins li { border-top: 1px solid var(--line); background: var(--surface); }
       .plugins li:first-child { border-top: 0; }
@@ -95,7 +94,6 @@
         <p class="summary" id="summary"></p>
         <section class="list-card" aria-labelledby="selection-hint">
           <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
-          <p class="card-help" id="selection-help"></p>
           <ul class="plugins" id="items"></ul>
           <p class="empty" id="empty"></p>
         </section>
@@ -121,7 +119,6 @@
       setText('summary', model.summary)
       setText('empty', model.emptyMessage)
       setText('selection-hint', model.selectionHint)
-      setText('selection-help', model.selectionHelp)
       setText('safety-note', model.safetyNote)
       setText('apply', model.applyLabel)
       setText('restart', model.restartLabel)
