@@ -20,9 +20,16 @@ import { resolveEnabledGenerations } from './registry.mjs'
  *     plugin's own code runs from a realpath whose parent walk reaches
  *     `$DSH_HOME/profiles/node_modules` for its peers.
  *
- *   - `dsh.profile.bundles` and `dependencies` list exactly the enabled
- *     plugins, so the consistency check, recovery, and inventory — all of
- *     which read this contract — agree with what is actually linked.
+ *   - `dsh.profile.bundles` lists exactly the enabled plugins, so the
+ *     consistency check, recovery, and inventory — all of which read this
+ *     contract — agree with what is actually linked.
+ *
+ * Generation plugins go in `bundles` but never in `dependencies`. `bundles`
+ * is what `resolveBundleDir` reads, and it resolves through the symlink this
+ * projector writes. `dependencies` is what `pnpm install` acts on — listing a
+ * generation there makes the shared-tree repair try to install it into
+ * `node_modules` over the symlink, which is the exact Windows rename-over-
+ * existing that the generation model exists to avoid.
  *
  * The projection is derived, never authored. Losing it costs a reprojection,
  * not a repair.
@@ -136,13 +143,15 @@ async function syncProfileManifest(dir, enabled) {
   const pluginNames = [...enabled.keys()].sort()
   const bundles = [...existingBundles, ...pluginNames]
 
-  const dependencies = {}
-  for (const [pluginName, generation] of enabled) {
-    dependencies[pluginName] = `^${generation.version}`
-  }
-  // The market package stays a real dependency even without a generation.
+  // Keep whatever real pnpm dependencies the profile already had (dshmarket,
+  // anything installed the old way) and drop any that are now generations —
+  // those resolve through the symlink and must not be in what `pnpm install`
+  // acts on.
   const currentDeps = manifest.dependencies ?? {}
-  if (typeof currentDeps.dshmarket === 'string') dependencies.dshmarket = currentDeps.dshmarket
+  const dependencies = {}
+  for (const [name, spec] of Object.entries(currentDeps)) {
+    if (!enabled.has(name)) dependencies[name] = spec
+  }
 
   const next = {
     ...manifest,

@@ -101,7 +101,7 @@ describe('the market install boundary', () => {
 
     const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
     expect(manifest.dsh.profile.bundles).toContain('demo-plugin')
-    expect(manifest.dependencies['demo-plugin']).toBe('^9.9.9')
+    expect(manifest.dependencies['demo-plugin']).toBeUndefined() // generations never go in dependencies
   })
 
   it('replaces an earlier generation of the same plugin', async () => {

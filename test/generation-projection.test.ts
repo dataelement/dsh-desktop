@@ -85,7 +85,7 @@ describe('generation projection onto the app-boot contract', () => {
       '@linxin666/dsh-pet',
       'dsh-better-sidebar'
     ])
-    expect(manifest.dependencies['dsh-better-sidebar']).toBe('^0.17.1')
+    expect(manifest.dependencies['dsh-better-sidebar']).toBeUndefined() // generations never go in dependencies
     expect(manifest.dependencies.dshmarket).toBe('^1.35.0')
   })
 
