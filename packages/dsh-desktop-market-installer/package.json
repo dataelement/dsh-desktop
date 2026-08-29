@@ -8,6 +8,18 @@
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./generations/registry": {
+      "types": "./generations/registry.d.ts",
+      "default": "./generations/registry.mjs"
+    },
+    "./generations/installer": {
+      "types": "./generations/installer.d.ts",
+      "default": "./generations/installer.mjs"
+    },
+    "./generations/projection": {
+      "types": "./generations/projection.d.ts",
+      "default": "./generations/projection.mjs"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {

@@ -63,6 +63,12 @@ import {
   uninstallPluginFromProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
+import {
+  desiredIsUntried,
+  markGenerationsBooted,
+  prepareGenerationsForLaunch,
+  rollBackToLastKnownGood
+} from './state/generation-launch'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
 import {
   appBundlePathFromExecutable,
@@ -609,6 +615,13 @@ const GPU_STABLE_LAUNCH_DELAY_MS = 60_000
 function markHarnessRendered(): void {
   if (harnessRendered) return
   harnessRendered = true
+  // The window rendered, so whatever plugin generations are enabled boot. This
+  // is the proof `.install-complete` never was — a pnpm exit code said nothing
+  // about whether the profile could start.
+  void markGenerationsBooted(
+    join(app.getPath('userData'), 'harness'),
+    (line) => runtime?.note(line)
+  )
   if (gpuFallbackState.level === 'default' && gpuFallbackState.stableLaunches === 0) return
   gpuStableLaunchTimer = setTimeout(() => {
     gpuStableLaunchTimer = undefined
@@ -993,11 +1006,27 @@ function launchHarness(): Promise<void> {
     // every package operation fail, repairs included.
     const pinned = await ensureStoreDirPinned(dshHome).catch(() => undefined)
     if (pinned) runtime.note(`[desktop] pinned the profile's pnpm store: ${pinned}`)
+    // Cold start, Harness stopped: sweep unreferenced plugin generations and
+    // reproject so the profile's links match `desired`. A no-op on a profile
+    // that has never used a generation.
+    await prepareGenerationsForLaunch(dshHome, (line) => runtime.note(line))
     await repairProfilePackages(dshHome)
     await pruneMissingProfileBundles(dshHome).catch(() => false)
     await reportProfileConsistency(dshHome)
     await auditInstalledLaunchAgents(dshHome)
     await runtime.start(launchDirectory)
+
+    // A new plugin set that did not reach 'ready' is rolled back to the last
+    // set that rendered a window, then Harness is started once more. Reaching
+    // 'ready' is necessary but not sufficient for "known good" — the
+    // window-rendered commit in markHarnessRendered is what confirms it.
+    if (
+      runtime.snapshot().phase !== 'ready' &&
+      (await desiredIsUntried(dshHome).catch(() => false))
+    ) {
+      await rollBackToLastKnownGood(dshHome, (line) => runtime.note(line))
+      await runtime.start(launchDirectory)
+    }
   })().finally(() => {
     harnessLaunchOperation = undefined
   })
