@@ -178,6 +178,7 @@ export class LanMobileBridge {
   private readonly now: () => number
   private muxAbort?: AbortController
   private muxTask?: Promise<void>
+  private readonly sessionStreamAborts = new Set<AbortController>()
   private lastConnected = false
 
   constructor(private readonly options: LanMobileBridgeOptions) {
@@ -236,6 +237,8 @@ export class LanMobileBridge {
     this.suspendedSessions.clear()
     this.pendingPairings.clear()
     this.pendingQuestions.clear()
+    for (const abort of this.sessionStreamAborts) abort.abort()
+    this.sessionStreamAborts.clear()
     this.syncConnected()
     this.muxAbort?.abort()
     const muxTask = this.muxTask
@@ -634,6 +637,12 @@ export class LanMobileBridge {
     if (request.method === 'GET' && url.pathname === '/') {
       return this.html(response, renderMobilePage({ locale: this.locale() }))
     }
+    if (request.method === 'GET' && url.pathname === '/api/session/stream') {
+      this.verifyTrustedOrigin(request)
+      const sessionId = url.searchParams.get('sessionId')
+      if (!sessionId) return this.text(response, 400, 'Session id is required.')
+      return this.streamSession(request, response, sessionId)
+    }
     if (request.method === 'POST' && url.pathname === '/api/rpc') {
       this.verifySameOrigin(request)
       const input = JSON.parse(await readBody(request)) as { method?: unknown; payload?: unknown }
@@ -860,17 +869,39 @@ export class LanMobileBridge {
       const sessionId = fields.sessionId
       const listed = await this.invokeHarness('session/list', { _request: {} })
       if (!listed.ok) return listed
-      const items = (listed.value as { items?: { sessionId?: unknown; projections?: { asOfSeq?: unknown } }[] }).items ?? []
+      const items = (listed.value as {
+        items?: {
+          sessionId?: unknown
+          projections?: { asOfSeq?: unknown; values?: unknown }
+        }[]
+      }).items ?? []
       const row = items.find((item) => item.sessionId === sessionId)
-      const throughSeq = row?.projections?.asOfSeq
+      const projections = row?.projections
+      const throughSeq = projections?.asOfSeq
       if (typeof throughSeq !== 'number') return { ok: false, error: 'Harness has no cursor for this session.' }
-      return this.invokeHarness('session/page', {
+      const page = await this.invokeHarness('session/page', {
         request: {
           address: { kind: 'session', sessionId },
           throughSeq,
           ...(typeof fields.maxMessages === 'number' ? { maxMessages: fields.maxMessages } : {})
         }
       })
+      if (!page.ok) return page
+      const value = page.value as { records?: unknown; hasMore?: unknown }
+      if (!Array.isArray(value?.records)) {
+        return { ok: false, error: 'Harness returned invalid session history.' }
+      }
+      // Harness 0.1.2 calls the durable entries `records` and serves
+      // projections on the list row. Keep the stable mobile-page contract so
+      // cached pages can still render messages, running state, and todos.
+      return {
+        ok: true,
+        value: {
+          events: value.records,
+          projections,
+          hasMore: value.hasMore === true
+        }
+      }
     }
 
     const route = HARNESS_ENDPOINTS[method]
@@ -1056,6 +1087,88 @@ export class LanMobileBridge {
       socket.addEventListener('error', handleError, { once: true })
       signal.addEventListener('abort', handleAbort, { once: true })
       if (signal.aborted) handleAbort()
+    })
+  }
+
+  /** Forward one native Harness session/follow stream to an authenticated phone as SSE. */
+  private async streamSession(
+    request: IncomingMessage,
+    response: ServerResponse,
+    sessionId: string
+  ): Promise<void> {
+    const base = this.options.harnessUrl()
+    if (!base) return this.text(response, 503, 'Harness is not ready.')
+    const cookie = await this.harnessSession(base)
+    const url = new URL(REMOTE_STREAM_MUX_PATH, base)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    const streamId = `mobile-session-${randomUUID()}`
+    const abort = new AbortController()
+    this.sessionStreamAborts.add(abort)
+
+    response.statusCode = 200
+    response.setHeader('content-type', 'text/event-stream; charset=utf-8')
+    response.setHeader('cache-control', 'no-store')
+    response.setHeader('connection', 'keep-alive')
+    response.flushHeaders()
+    response.write('retry: 500\n\n')
+
+    await new Promise<void>((resolve) => {
+      const socket = new WebSocket(url, { headers: cookie === undefined ? {} : { cookie } })
+      let settled = false
+      const cleanup = (): void => {
+        request.removeListener('close', finish)
+        abort.signal.removeEventListener('abort', finish)
+        socket.removeEventListener('open', handleOpen)
+        socket.removeEventListener('message', handleMessage)
+        socket.removeEventListener('close', handleClose)
+        socket.removeEventListener('error', handleError)
+        this.sessionStreamAborts.delete(abort)
+      }
+      const finish = (): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) socket.close()
+        if (!response.writableEnded) response.end()
+        resolve()
+      }
+      const handleOpen = (): void => {
+        socket.send(JSON.stringify({
+          type: 'open',
+          streamId,
+          endpoint: 'session/follow',
+          payload: {
+            args: {
+              request: { address: { kind: 'session', sessionId }, maxMessages: 100 }
+            }
+          }
+        }))
+      }
+      const handleMessage = (event: { data: unknown }): void => {
+        const text = typeof event.data === 'string'
+          ? event.data
+          : Buffer.isBuffer(event.data) ? event.data.toString('utf8') : undefined
+        if (!text) return
+        let frame: unknown
+        try { frame = JSON.parse(text) } catch { return }
+        if (!isRecord(frame) || frame.streamId !== streamId) return
+        if (frame.type === 'item') {
+          const value = frame.value
+          const eventName = isRecord(value) && value.type === 'snapshot' ? 'snapshot' : 'event'
+          response.write(`event: ${eventName}\ndata: ${JSON.stringify(value)}\n\n`)
+        } else if (frame.type === 'error' || frame.type === 'end') {
+          finish()
+        }
+      }
+      const handleClose = (): void => finish()
+      const handleError = (): void => finish()
+      request.once('close', finish)
+      abort.signal.addEventListener('abort', finish, { once: true })
+      socket.addEventListener('open', handleOpen)
+      socket.addEventListener('message', handleMessage)
+      socket.addEventListener('close', handleClose, { once: true })
+      socket.addEventListener('error', handleError, { once: true })
+      if (abort.signal.aborted) finish()
     })
   }
 
