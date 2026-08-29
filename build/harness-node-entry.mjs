@@ -1,5 +1,6 @@
 import childProcess from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 
 // On macOS Harness runs inside an Electron utility process (TCC responsibility
 // isolation), so `process.execPath` and `argv0` point at the Electron helper
@@ -41,20 +42,34 @@ process.stdout.write(`[harness-node] DSH_HOME=${process.env.DSH_HOME ?? ''}\n`)
 if (process.platform === 'win32') {
   const originalSpawn = childProcess.spawn
   const originalSpawnSync = childProcess.spawnSync
-  const originalExec = childProcess.exec
   const originalExecSync = childProcess.execSync
   const originalExecFile = childProcess.execFile
   const originalExecFileSync = childProcess.execFileSync
   const originalFork = childProcess.fork
 
   function applyWindowsHide(options) {
-    if (options && typeof options === 'object' && options.windowsHide !== undefined) {
-      return options
-    }
     if (options && typeof options === 'object') {
-      return { ...options, windowsHide: true }
+      return options.windowsHide === undefined ? { ...options, windowsHide: true } : options
     }
     return { windowsHide: true }
+  }
+
+  // `file[, args][, options][, callback]` — every part optional. Guessing the
+  // shape from one positional slot mixes options into the args slot, so read
+  // the tail positionally instead and hand the original a fixed arity.
+  function splitOptionalArguments(rest) {
+    let index = 0
+    const args = Array.isArray(rest[index]) ? rest[index++] : undefined
+    const options =
+      rest[index] !== null && typeof rest[index] === 'object' ? rest[index++] : undefined
+    const callback = typeof rest[index] === 'function' ? rest[index] : undefined
+    return { args, options, callback }
+  }
+
+  /** Keep `promisify(fn)` resolving to `{ stdout, stderr }` rather than stdout alone. */
+  function inheritPromisify(patched, original) {
+    if (promisify.custom in original) patched[promisify.custom] = original[promisify.custom]
+    return patched
   }
 
   childProcess.spawn = function patchedSpawn(command, args, options) {
@@ -71,32 +86,26 @@ if (process.platform === 'win32') {
     return originalSpawnSync.call(this, command, applyWindowsHide(args))
   }
 
-  childProcess.exec = function patchedExec(command, options, callback) {
-    if (typeof options === 'function') {
-      return originalExec.call(this, command, applyWindowsHide(undefined), options)
-    }
-    return originalExec.call(this, command, applyWindowsHide(options), callback)
-  }
+  // `exec` is deliberately left alone. Node implements it as a call to
+  // `module.exports.execFile`, so patching both made every `exec` re-enter the
+  // patched `execFile` with `exec`'s own `(file, options, callback)` shape —
+  // the options object landed in the args slot and the callback in the options
+  // slot, and Node rejected the call with ERR_INVALID_ARG_TYPE. Every `exec`
+  // in the Harness process threw. Patching only `execFile` still covers `exec`
+  // (verified: the hide reaches the spawn) and keeps `exec`'s own
+  // `promisify.custom` intact.
+  childProcess.execFile = inheritPromisify(function patchedExecFile(file, ...rest) {
+    const { args, options, callback } = splitOptionalArguments(rest)
+    return originalExecFile.call(this, file, args ?? [], applyWindowsHide(options), callback)
+  }, originalExecFile)
 
   childProcess.execSync = function patchedExecSync(command, options) {
     return originalExecSync.call(this, command, applyWindowsHide(options))
   }
 
-  childProcess.execFile = function patchedExecFile(file, args, options, callback) {
-    if (typeof args === 'function') {
-      return originalExecFile.call(this, file, applyWindowsHide(undefined), undefined, args)
-    }
-    if (typeof options === 'function') {
-      return originalExecFile.call(this, file, args, applyWindowsHide(undefined), options)
-    }
-    return originalExecFile.call(this, file, args, applyWindowsHide(options), callback)
-  }
-
-  childProcess.execFileSync = function patchedExecFileSync(file, args, options) {
-    if (args && !Array.isArray(args)) {
-      return originalExecFileSync.call(this, file, applyWindowsHide(args))
-    }
-    return originalExecFileSync.call(this, file, args, applyWindowsHide(options))
+  childProcess.execFileSync = function patchedExecFileSync(file, ...rest) {
+    const { args, options } = splitOptionalArguments(rest)
+    return originalExecFileSync.call(this, file, args ?? [], applyWindowsHide(options))
   }
 
   childProcess.fork = function patchedFork(modulePath, args, options) {
