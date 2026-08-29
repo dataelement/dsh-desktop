@@ -91,7 +91,7 @@ describe('generation projection onto the app-boot contract', () => {
       '@linxin666/dsh-pet',
       'dsh-better-sidebar'
     ])
-    expect(manifest.dependencies['dsh-better-sidebar']).toBeUndefined() // generations never go in dependencies
+    expect(manifest.dependencies['dsh-better-sidebar']).toMatch(/^link:/u) // generations are link: deps
     expect(manifest.dependencies.dshmarket).toBe('^1.35.0')
   })
 
@@ -115,7 +115,7 @@ describe('generation projection onto the app-boot contract', () => {
       await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
     )
     expect(manifest.dsh.profile.bundles).not.toContain('plugin-b')
-    expect(manifest.dependencies['plugin-b']).toBeUndefined()
+    expect(manifest.dependencies['plugin-b']).toBeUndefined() // unlinked plugin dropped from deps
   })
 
   it('never touches a real pnpm-managed directory in node_modules', async () => {

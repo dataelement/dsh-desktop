@@ -46,16 +46,6 @@ function profileDir(dshHome: string): string {
   return join(dshHome, 'profiles', 'web')
 }
 
-/** Whether an installed package declares its own `dsh.bundle` patch layer. */
-async function declaresBundle(packageDir: string): Promise<boolean> {
-  try {
-    const manifest = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
-    return typeof manifest?.dsh?.bundle?.patch === 'string'
-  } catch {
-    return false
-  }
-}
-
 export function isProfileMigrated(dshHome: string): boolean {
   return existsSync(join(profileDir(dshHome), MARKER))
 }
@@ -131,7 +121,7 @@ async function discardSnapshot(dshHome: string): Promise<void> {
  * names. The lockfile is dropped so the rebuild resolves the smaller tree
  * cleanly.
  */
-async function rewriteManifest(dshHome: string, pluginNames: string[]): Promise<void> {
+async function rewriteManifest(dshHome: string): Promise<void> {
   const dir = profileDir(dshHome)
   const snapshot = JSON.parse(await readFile(join(dir, `package.json${SNAPSHOT_SUFFIX}`), 'utf8'))
   const keptDeps: Record<string, string> = {}
@@ -140,18 +130,11 @@ async function rewriteManifest(dshHome: string, pluginNames: string[]): Promise<
   }
   if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.35.0'
 
+  // Bundles are left to projection, which runs next and knows the generations.
+  // Here we only trim to the shared-tree packages and keep in-box bundles.
   const keptBundles = (snapshot.dsh?.profile?.bundles ?? []).filter((name: string) =>
     KEEP_IN_SHARED_TREE.has(name)
   )
-  // A kept dependency that declares its own `dsh.bundle` (dshmarket) has to
-  // stay composed, or the consistency check reports it and the app prompts a
-  // restart every launch.
-  for (const name of Object.keys(keptDeps)) {
-    if (keptBundles.includes(name)) continue
-    if (await declaresBundle(join(profileDir(dshHome), `node_modules${SNAPSHOT_SUFFIX}`, name))) {
-      keptBundles.push(name)
-    }
-  }
   const next = {
     ...snapshot,
     dependencies: keptDeps,
@@ -159,7 +142,7 @@ async function rewriteManifest(dshHome: string, pluginNames: string[]): Promise<
       ...snapshot.dsh,
       profile: {
         ...(snapshot.dsh?.profile ?? {}),
-        bundles: [...keptBundles, ...pluginNames.sort()]
+        bundles: keptBundles
       }
     }
   }
@@ -214,13 +197,17 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
       note(`[desktop] migration: ${spec} -> ${result.generation.id}`)
     }
 
-    await rewriteManifest(dshHome, plugins)
-    const rebuild = await deps.reinstallSharedTree()
-    if (!rebuild.ok) throw new Error(`shared-tree rebuild failed: ${rebuild.detail ?? 'unknown'}`)
-
+    // Trim the manifest to the shared-tree packages and drop the lockfile, then
+    // let projection add the generations back as `link:` deps + bundles and
+    // write the symlinks — all before the rebuild, so `pnpm install` sees the
+    // final manifest and its `.install-complete` fingerprint matches.
+    await rewriteManifest(dshHome)
     const existingDesired = await readDesired(dshHome)
     await writeDesired(dshHome, [...new Set([...existingDesired, ...generationIds])])
     await projectGenerations(dshHome)
+
+    const rebuild = await deps.reinstallSharedTree()
+    if (!rebuild.ok) throw new Error(`shared-tree rebuild failed: ${rebuild.detail ?? 'unknown'}`)
 
     await writeFile(
       join(profileDir(dshHome), MARKER),

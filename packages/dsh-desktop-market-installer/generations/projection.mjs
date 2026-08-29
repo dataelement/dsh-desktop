@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { resolveEnabledGenerations } from './registry.mjs'
 
 /**
@@ -86,15 +86,21 @@ export async function projectGenerations(dshHome, profile = 'web') {
   await mkdir(modulesDir, { recursive: true })
 
   const linked = []
+  const linkSpecs = new Map()
   for (const [pluginName, generation] of enabled) {
     const target = join(generation.directory, 'node_modules', pluginName)
     if (!existsSync(target)) continue
     await ensureDirLink(join(modulesDir, pluginName), target)
     linked.push(pluginName)
+    // A `link:` spec is what makes the market's readInstalled() (which reads
+    // `dependencies`) see the plugin, while telling `pnpm install` the target
+    // is already a local directory to symlink — never something to fetch or
+    // rename over.
+    linkSpecs.set(pluginName, `link:${relative(dir, target).split('\\').join('/')}`)
   }
 
   const unlinked = await pruneStaleGenerationLinks(modulesDir, enabled)
-  const bundles = await syncProfileManifest(dir, enabled)
+  const bundles = await syncProfileManifest(dir, enabled, linkSpecs)
 
   return { linked, unlinked, bundles }
 }
@@ -136,11 +142,12 @@ async function pruneStaleGenerationLinks(modulesDir, enabled) {
 }
 
 /**
- * Rewrite `dsh.profile.bundles` and `dependencies` so the app-boot contract
- * matches the projection. In-box bundles keep their place at the front;
- * everything else is the enabled plugin set.
+ * Rewrite `dsh.profile.bundles` and `dependencies` so both the app-boot
+ * contract and the market's `readInstalled()` agree with the projection.
+ * In-box bundles keep their place at the front; the enabled generations
+ * follow, and each is also a `link:` dependency pointing at its generation.
  */
-async function syncProfileManifest(dir, enabled) {
+async function syncProfileManifest(dir, enabled, linkSpecs = new Map()) {
   const manifestPath = join(dir, 'package.json')
   let manifest = {}
   try {
@@ -149,14 +156,21 @@ async function syncProfileManifest(dir, enabled) {
     manifest = { name: 'dsh-profile-web', private: true }
   }
 
-  // Keep whatever real pnpm dependencies the profile already had (dshmarket,
-  // anything installed the old way) and drop any that are now generations —
-  // those resolve through the symlink and must not be in what `pnpm install`
-  // acts on.
+  // Real pnpm dependencies the profile already had (dshmarket, anything from
+  // the old shared-tree path) carry through unchanged. Each enabled generation
+  // becomes a `link:` dependency: the market sees it as installed, and
+  // `pnpm install` treats a `link:` target as an existing local directory to
+  // symlink rather than something to fetch or rename a directory over.
   const currentDeps = manifest.dependencies ?? {}
   const dependencies = {}
   for (const [name, spec] of Object.entries(currentDeps)) {
+    // Drop a generation `link:` dep whose plugin is no longer enabled; the
+    // enabled ones are re-added from linkSpecs below.
+    if (typeof spec === 'string' && spec.includes('.generations/live/')) continue
     if (!enabled.has(name)) dependencies[name] = spec
+  }
+  for (const [name, spec] of linkSpecs) {
+    dependencies[name] = spec
   }
 
   // Bundle entries that survive: in-box bundles, plus any kept dependency that
@@ -168,7 +182,7 @@ async function syncProfileManifest(dir, enabled) {
     IN_BOX_BUNDLES.has(name)
   )
   for (const name of Object.keys(dependencies)) {
-    if (declaredBundles.includes(name)) continue
+    if (declaredBundles.includes(name) || linkSpecs.has(name)) continue
     if (await declaresBundle(join(dir, 'node_modules', name))) declaredBundles.push(name)
   }
   const pluginNames = [...enabled.keys()].sort()

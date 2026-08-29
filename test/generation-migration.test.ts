@@ -100,7 +100,7 @@ describe('one-time profile migration to generations', () => {
       await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
     )
     // dependencies keep only the shared-tree package
-    expect(Object.keys(manifest.dependencies)).toEqual(['dshmarket'])
+    expect(manifest.dependencies.dshmarket).toBe('^1.35.0'); expect(manifest.dependencies['dsh-vision-router']).toMatch(/^link:/u)
     // bundles carry the in-box set plus the migrated plugin names
     expect(manifest.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
@@ -152,7 +152,7 @@ describe('one-time profile migration to generations', () => {
     const manifest = JSON.parse(
       await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
     )
-    expect(manifest.dependencies['dsh-vision-router']).toBe('^2.0.1')
+    expect(manifest.dependencies['dsh-vision-router']).toBe('^2.0.1') // snapshot restored the pre-upgrade version spec
 
     // migrate again, this time confirm it
     await migrateProfileToGenerations(deps(home))
