@@ -147,7 +147,11 @@ async function readGenerationMeta(directory) {
   try {
     const parsed = JSON.parse(await readFile(join(directory, META_NAME), 'utf8'))
     if (typeof parsed.pluginName !== 'string' || typeof parsed.version !== 'string') return undefined
-    return { pluginName: parsed.pluginName, version: parsed.version }
+    return {
+      pluginName: parsed.pluginName,
+      version: parsed.version,
+      ...(typeof parsed.sourceSpec === 'string' ? { sourceSpec: parsed.sourceSpec } : {})
+    }
   } catch {
     return undefined
   }

@@ -74,6 +74,7 @@ import {
   confirmMigration,
   isProfileMigrated,
   migrateProfileToGenerations,
+  recoverInterruptedMigration,
   rollBackMigration
 } from './state/generation-migration'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
@@ -1016,6 +1017,10 @@ function launchHarness(): Promise<void> {
     // every package operation fail, repairs included.
     const pinned = await ensureStoreDirPinned(dshHome).catch(() => undefined)
     if (pinned) runtime.note(`[desktop] pinned the profile's pnpm store: ${pinned}`)
+    // A prior process may have stopped midway through the one-time migration.
+    // Restore its snapshot before projection or package repair can observe the
+    // partially switched profile.
+    await recoverInterruptedMigration(dshHome, (line) => runtime.note(line))
     // Cold start, Harness stopped: sweep unreferenced plugin generations and
     // reproject so the profile's links match `desired`. A no-op on a profile
     // that has never used a generation.

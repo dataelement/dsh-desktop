@@ -4,6 +4,12 @@ import type { Generation } from './registry'
 export interface GenerationInstallOptions {
   dshHome: string
   pluginSpec: string
+  /** Package name expected after installing a non-registry or aliased spec. */
+  expectedPluginName?: string
+  /** Original dependency declaration retained as generation provenance. */
+  sourceSpec?: string
+  /** Exact installed tree copied into staging for non-registry sources. */
+  sourceDirectory?: string
   nodeExecutablePath: string
   pnpmEntryPath: string
   spawnProcess?: unknown
