@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { Zip, ZipDeflate, strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { COMPOSITION_FILE, SETTINGS_NAMESPACE, scanRoot, writableRoot } from '@deepseek-ai/dsh-agent-presets'
@@ -89,7 +89,7 @@ async function collectPresetArchiveFiles(dir) {
 	async function visit(current, relPrefix) {
 		const entries = await readdir(current, { withFileTypes: true });
 		for (const entry of entries) {
-			if (PRESET_ARCHIVE_IGNORED_FILES.has(entry.name)) continue;
+			if (PRESET_ARCHIVE_IGNORED_FILES.has(entry.name) || entry.name.startsWith("._") || entry.name === "__MACOSX") continue;
 			const full = join(current, entry.name);
 			const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
 			if (entry.isDirectory()) {
@@ -185,22 +185,26 @@ function createPresetArchive(ctx) {
 			if (!PRESET_ARCHIVE_ID.test(originalId)) return presetArchiveFailure(`Invalid preset id "${manifest.id}" in manifest.`);
 			const targetId = requestedId ?? originalId;
 			const files = {};
+			const seenLowerPaths = new Set();
 			let fileCount = 0;
 			let totalUncompressed = 0;
 			for (const [entryName, bytes] of Object.entries(unzipped)) {
 				if (entryName === "manifest.json") continue;
+				if (entryName.startsWith("__MACOSX/") || entryName.includes("/__MACOSX/")) continue;
 				const safe = safePresetArchivePath(entryName);
 				if (safe === null || entryName.includes("\\")) return presetArchiveFailure(`Package contains an unsafe path "${entryName}".`);
 				if (entryName.endsWith("/")) continue;
 				const relPath = safe.startsWith("preset/") ? safe.slice("preset/".length) : safe;
 				if (relPath === "") continue;
 				const baseName = relPath.split("/").pop() ?? "";
-				if (PRESET_ARCHIVE_IGNORED_FILES.has(baseName)) continue;
+				if (PRESET_ARCHIVE_IGNORED_FILES.has(baseName) || baseName.startsWith("._")) continue;
 				if (++fileCount > PRESET_ARCHIVE_MAX_FILES) return presetArchiveFailure(`Package contains more than ${PRESET_ARCHIVE_MAX_FILES} files.`);
 				if (bytes.length > PRESET_ARCHIVE_MAX_FILE) return presetArchiveFailure(`File "${relPath}" exceeds the 12 MB limit.`);
 				totalUncompressed += bytes.length;
 				if (totalUncompressed > PRESET_ARCHIVE_MAX_UNCOMPRESSED) return presetArchiveFailure("Uncompressed package exceeds the 32 MB limit.");
-				if (files[relPath] !== void 0) return presetArchiveFailure(`Package contains conflicting file "${relPath}".`);
+				const lowerRelPath = relPath.toLowerCase();
+				if (seenLowerPaths.has(lowerRelPath)) return presetArchiveFailure(`Package contains conflicting file "${relPath}".`);
+				seenLowerPaths.add(lowerRelPath);
 				files[relPath] = bytes;
 			}
 			if (!files[COMPOSITION_FILE]) return presetArchiveFailure(`Package is missing required composition file "${COMPOSITION_FILE}".`);
@@ -259,6 +263,12 @@ function createPresetArchive(ctx) {
 					if (!fullPath.startsWith(imported + sep)) throw new Error(`Path traversal detected: ${relPath}`);
 					await mkdir(dirname(fullPath), { recursive: true });
 					await writeFile(fullPath, bytes);
+					if (process.platform !== 'win32') {
+						const ext = extname(fullPath).toLowerCase();
+						if (ext === '.sh' || ext === '.bash') {
+							await chmod(fullPath, 0o755);
+						}
+					}
 				}
 				// scanRoot gained a second parameter in 0.1.2-alpha.1: the base URL a
 				// composition row's package name resolves against. Without it the

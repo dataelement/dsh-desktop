@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
@@ -312,6 +312,90 @@ describe('agent preset package transfer', () => {
         ok: false,
         error: 'Package contains an unsafe path "preset/../outside.yml".'
       })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects case-insensitive conflicting files in preset package', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
+    try {
+      const data = zipSync({
+        'manifest.json': strToU8(JSON.stringify({
+          format: 'dsh-preset',
+          version: 1,
+          id: 'case-conflict-preset'
+        })),
+        'preset/agent.cordis.yml': strToU8(composition),
+        'preset/script.sh': strToU8('echo hello'),
+        'preset/SCRIPT.SH': strToU8('echo collision')
+      })
+      const response = await presetTransferApi(root).agentPresets.importArchive(
+        data,
+        { install: false },
+        new AbortController().signal
+      )
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        error: 'Package contains conflicting file "SCRIPT.SH".'
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('ignores __MACOSX and ._* AppleDouble files during import', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
+    try {
+      const data = zipSync({
+        'manifest.json': strToU8(JSON.stringify({
+          format: 'dsh-preset',
+          version: 1,
+          id: 'macosx-meta-preset'
+        })),
+        'preset/agent.cordis.yml': strToU8(composition),
+        '__MACOSX/preset/._agent.cordis.yml': strToU8('apple-double-attr'),
+        'preset/._metadata': strToU8('resource-fork')
+      })
+      const response = await presetTransferApi(root).agentPresets.importArchive(
+        data,
+        { install: false },
+        new AbortController().signal
+      )
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.fileCount).toBe(1)
+      expect(body.warnings).toEqual([])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves executable permissions for shell scripts on POSIX platforms', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
+    try {
+      const targetId = 'script-perm-preset'
+      const data = zipSync({
+        'manifest.json': strToU8(JSON.stringify({
+          format: 'dsh-preset',
+          version: 1,
+          id: targetId
+        })),
+        'preset/agent.cordis.yml': strToU8(composition),
+        'preset/run.sh': strToU8('#!/bin/sh\necho ok\n')
+      })
+      const api = presetTransferApi(root)
+      const response = await api.agentPresets.importArchive(
+        data,
+        { agentPreset: targetId, install: true },
+        new AbortController().signal
+      )
+      expect(response.status).toBe(200)
+      if (process.platform !== 'win32') {
+        const fileStat = await stat(path.join(root, targetId, 'run.sh'))
+        expect(fileStat.mode & 0o111).not.toBe(0)
+      }
     } finally {
       await rm(root, { recursive: true, force: true })
     }
