@@ -19,10 +19,15 @@ describe('workspace Open in Finder integration', () => {
       '@deepseek-ai+dsh-client-ui-workspace+0.1.0-rc.8.patch'
     )
     expect(patch).toContain('id: "openInFinder"')
-    expect(patch).toContain('t("menu.openInFinder")')
     expect(patch).toContain('window.dshDesktop.openInFinder(row.cwd)')
-    expect(patch).toContain('"menu.openInFinder": "在 Finder 中打开"')
-    expect(patch).toContain('"menu.openInFinder": "Open in Finder"')
+    // Right-click on a workspace row opens the same menu the ⋯ button does.
+    expect(patch).toContain('onContextMenu: (event) => {')
+    // Reveal-folder label is chosen per platform.
+    expect(patch).toContain('navigator.userAgent.includes("Macintosh") ? "menu.revealInFinder" : "menu.showInExplorer"')
+    expect(patch).toContain('"menu.revealInFinder": "在访达中显示"')
+    expect(patch).toContain('"menu.showInExplorer": "在文件资源管理器中显示"')
+    expect(patch).toContain('"menu.revealInFinder": "Reveal in Finder"')
+    expect(patch).toContain('"menu.showInExplorer": "Show in File Explorer"')
   })
 
   it('exposes a validated main-process bridge for opening the directory', async () => {

@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index e420872..e6f639c 100644
+index e420872..99d6d7c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -179,7 +179,8 @@ window.__ModuleLoader__.load({
@@ -45,23 +45,24 @@ index e420872..e6f639c 100644
  			"row-in": "koIWyW_row-in",
  			"rowActions": "koIWyW_rowActions",
  			"searchResultHeading": "koIWyW_searchResultHeading",
-@@ -647,7 +658,14 @@ window.__ModuleLoader__.load({
+@@ -647,7 +658,15 @@ window.__ModuleLoader__.load({
  			const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
  			const active = group.expanded && group.containsCurrent;
  			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
 -			const workspaceMenuItems = [{
-+			const canOpenInFinder = typeof window !== "undefined" && typeof window.dshDesktop?.openInFinder === "function";
++			const canOpenInFinder = typeof window !== "undefined" && typeof window.dshDesktop?.openInFinder === "function" && row.cwd !== void 0;
++			const revealFolderLabelKey = typeof navigator !== "undefined" && navigator.userAgent.includes("Macintosh") ? "menu.revealInFinder" : "menu.showInExplorer";
 +			const workspaceMenuItems = [];
 +			if (canOpenInFinder) workspaceMenuItems.push({
 +				id: "openInFinder",
-+				label: t("menu.openInFinder"),
++				label: t(revealFolderLabelKey),
 +				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpen16, {})
 +			});
 +			workspaceMenuItems.push({
  				id: "rename",
  				label: t("rename"),
  				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
-@@ -656,7 +674,7 @@ window.__ModuleLoader__.load({
+@@ -656,12 +675,18 @@ window.__ModuleLoader__.load({
  				label: t("delete.workspace"),
  				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
  				danger: true
@@ -70,7 +71,18 @@ index e420872..e6f639c 100644
  			const ownRow = (0, react_jsx_runtime.jsxs)("div", {
  				className: clsx(Rows_module_css_default.projectRow, menuOpen && Rows_module_css_default.menuOpen),
  				role: "treeitem",
-@@ -695,7 +713,15 @@ window.__ModuleLoader__.load({
+ 				"aria-expanded": row.expanded,
+ 				onClick: onToggle,
++				onContextMenu: (event) => {
++					if (actions === void 0) return;
++					event.preventDefault();
++					event.stopPropagation();
++					setMenuOpen(true);
++				},
+ 				draggable: drag !== void 0,
+ 				onDragStart: drag === void 0 ? void 0 : (e) => {
+ 					e.dataTransfer.effectAllowed = "move";
+@@ -695,7 +720,15 @@ window.__ModuleLoader__.load({
  							items: workspaceMenuItems,
  							onSelect: (id) => {
  								setMenuOpen(false);
@@ -87,7 +99,7 @@ index e420872..e6f639c 100644
  								if (id !== "rename" && id !== "delete") return;
  								if (id === "rename") actions.rename();
  								else actions.delete();
-@@ -876,12 +902,14 @@ window.__ModuleLoader__.load({
+@@ -876,12 +909,14 @@ window.__ModuleLoader__.load({
  		* @param props.onRename - open the session rename dialog (id + current title).
  		* @param props.onFork - fork a session at its last completed turn.
  		* @param props.onArchive - archive a session by id.
@@ -103,7 +115,7 @@ index e420872..e6f639c 100644
  			const row = node;
  			const title = displayTitle(node, t);
  			const selected = node.id === currentId;
-@@ -899,6 +927,18 @@ window.__ModuleLoader__.load({
+@@ -899,6 +934,18 @@ window.__ModuleLoader__.load({
  					label: t("menu.fork"),
  					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
  				},
@@ -122,7 +134,7 @@ index e420872..e6f639c 100644
  				{
  					id: "archive",
  					label: t("menu.archiveSession"),
-@@ -907,12 +947,17 @@ window.__ModuleLoader__.load({
+@@ -907,12 +954,17 @@ window.__ModuleLoader__.load({
  			];
  			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.HoverCard, {
  				anchor: (0, react_jsx_runtime.jsxs)("div", {
@@ -141,7 +153,7 @@ index e420872..e6f639c 100644
  					draggable: drag !== void 0,
  					onDragStart: drag === void 0 ? void 0 : (e) => {
  						e.dataTransfer.effectAllowed = "move";
-@@ -932,12 +977,15 @@ window.__ModuleLoader__.load({
+@@ -932,12 +984,15 @@ window.__ModuleLoader__.load({
  						drag.drop(rowHalf(e));
  					},
  					children: [
@@ -160,7 +172,7 @@ index e420872..e6f639c 100644
  							children: title
  						}),
  						!row.blank && (0, react_jsx_runtime.jsx)("span", {
-@@ -956,6 +1004,8 @@ window.__ModuleLoader__.load({
+@@ -956,6 +1011,8 @@ window.__ModuleLoader__.load({
  									setMenuOpen(false);
  									if (id === "rename") onRename(node.id, row.title);
  									if (id === "fork") onFork(node.id);
@@ -169,7 +181,7 @@ index e420872..e6f639c 100644
  									if (id === "archive") onArchive(node.id);
  								},
  								portal: true,
-@@ -1402,7 +1452,7 @@ window.__ModuleLoader__.load({
+@@ -1402,7 +1459,7 @@ window.__ModuleLoader__.load({
  			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
  		}
  		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
@@ -178,7 +190,7 @@ index e420872..e6f639c 100644
  			const list = useSessions((s) => s);
  			const pendingInteractions = useSessionPendingInteraction((s) => s);
  			const current = list.current;
-@@ -1642,6 +1692,8 @@ window.__ModuleLoader__.load({
+@@ -1642,6 +1699,8 @@ window.__ModuleLoader__.load({
  											onRename: onSessionRename,
  											onFork: forkSession,
  											onArchive: onSessionArchive,
@@ -187,7 +199,7 @@ index e420872..e6f639c 100644
  											drag: {
  												start: () => {
  													sessionDropCommitted.current = false;
-@@ -1698,7 +1750,7 @@ window.__ModuleLoader__.load({
+@@ -1698,7 +1757,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
@@ -196,7 +208,7 @@ index e420872..e6f639c 100644
  			const list = useSessions((s) => s);
  			const pendingInteractions = useSessionPendingInteraction((s) => s);
  			const baseRows = (0, react.useMemo)(() => deriveFlat(list, archivedSessionIds, pendingInteractions), [
-@@ -1781,6 +1833,8 @@ window.__ModuleLoader__.load({
+@@ -1781,6 +1840,8 @@ window.__ModuleLoader__.load({
  							onRename: onSessionRename,
  							onFork: forkSession,
  							onArchive: onSessionArchive,
@@ -205,7 +217,7 @@ index e420872..e6f639c 100644
  							flat: true,
  							drag: {
  								start: () => {
-@@ -1895,6 +1949,15 @@ window.__ModuleLoader__.load({
+@@ -1895,6 +1956,15 @@ window.__ModuleLoader__.load({
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
  			const sessionUpdatedAtByAccount = useStore((s) => s.sessionUpdatedAtByAccount);
@@ -221,7 +233,7 @@ index e420872..e6f639c 100644
  			const currentBlankSessionId = useSessions((state) => {
  				const current = state.current;
  				return current !== void 0 && state.byId[current]?.blank === true ? current : void 0;
-@@ -2083,6 +2146,7 @@ window.__ModuleLoader__.load({
+@@ -2083,6 +2153,7 @@ window.__ModuleLoader__.load({
  				setSessionRenameError(null);
  			};
  			const onSessionArchive = (sessionId) => {
@@ -229,7 +241,7 @@ index e420872..e6f639c 100644
  				archiveSession(sessionId).catch((reason) => {
  					console.warn("session archive rejected:", reason);
  				});
-@@ -2254,7 +2318,7 @@ window.__ModuleLoader__.load({
+@@ -2254,7 +2325,7 @@ window.__ModuleLoader__.load({
  						children: wide && (normalizedQuery !== "" ? (0, react_jsx_runtime.jsx)(SearchResults, {
  							useSessions,
  							useSessionPendingInteraction,
@@ -238,7 +250,7 @@ index e420872..e6f639c 100644
  							workspaces,
  							archivedSessionIds,
  							query: normalizedQuery,
-@@ -2264,11 +2328,13 @@ window.__ModuleLoader__.load({
+@@ -2264,11 +2335,13 @@ window.__ModuleLoader__.load({
  						}) : groupBy === "flat" ? (0, react_jsx_runtime.jsx)(FlatList, {
  							useSessions,
  							useSessionPendingInteraction,
@@ -253,7 +265,7 @@ index e420872..e6f639c 100644
  							orderBy,
  							sessionOrderByAccount,
  							sessionUpdatedAtByAccount,
-@@ -2289,8 +2355,10 @@ window.__ModuleLoader__.load({
+@@ -2289,8 +2362,10 @@ window.__ModuleLoader__.load({
  							syncSessionOrderAccount: actions.syncSessionOrderAccount,
  							setSessionOrder: actions.setSessionOrder,
  							archivedSessionIds,
@@ -265,15 +277,16 @@ index e420872..e6f639c 100644
  							insertWorkspaceBefore,
  							insertSessionBefore,
  							orderBy,
-@@ -2480,6 +2548,7 @@ window.__ModuleLoader__.load({
+@@ -2480,6 +2555,8 @@ window.__ModuleLoader__.load({
  			"search.noMatches": "无匹配会话",
  			"search.hasMore": "仅显示前 {n} 条结果，请缩小搜索范围。",
  			"menu.addWorkspace": "添加工作区…",
-+			"menu.openInFinder": "在 Finder 中打开",
++			"menu.revealInFinder": "在访达中显示",
++			"menu.showInExplorer": "在文件资源管理器中显示",
  			"picker.loading": "正在加载工作区…",
  			"conflict.named": "已存在名为“{name}”的工作区。",
  			"folderError.title": "无法打开文件夹",
-@@ -2493,6 +2562,8 @@ window.__ModuleLoader__.load({
+@@ -2493,6 +2570,8 @@ window.__ModuleLoader__.load({
  			"delete.desc": "将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。",
  			"delete.pending": "正在删除工作区…",
  			"menu.fork": "分叉会话",
@@ -282,7 +295,7 @@ index e420872..e6f639c 100644
  			"menu.archiveSession": "归档会话",
  			"sessions.count.one": "{n} 个会话",
  			"sessions.count.other": "{n} 个会话",
-@@ -2507,6 +2578,7 @@ window.__ModuleLoader__.load({
+@@ -2507,6 +2586,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "计划待审",
  			"status.waitingAnswer": "等待回答",
  			"status.completed": "已完成",
@@ -290,15 +303,16 @@ index e420872..e6f639c 100644
  			"hover.created": "创建于 {time}",
  			"hover.copied": "已复制",
  			"date.ymd": "{y}年{m}月{d}日",
-@@ -2545,6 +2617,7 @@ window.__ModuleLoader__.load({
+@@ -2545,6 +2625,8 @@ window.__ModuleLoader__.load({
  			"search.noMatches": "No matching sessions",
  			"search.hasMore": "Showing the first {n} results. Narrow your search.",
  			"menu.addWorkspace": "Add workspace…",
-+			"menu.openInFinder": "Open in Finder",
++			"menu.revealInFinder": "Reveal in Finder",
++			"menu.showInExplorer": "Show in File Explorer",
  			"picker.loading": "Loading workspaces…",
  			"conflict.named": "A workspace named “{name}” already exists.",
  			"folderError.title": "Couldn’t open folder",
-@@ -2558,6 +2631,8 @@ window.__ModuleLoader__.load({
+@@ -2558,6 +2640,8 @@ window.__ModuleLoader__.load({
  			"delete.desc": "This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.",
  			"delete.pending": "Deleting workspace…",
  			"menu.fork": "Fork session",
@@ -307,7 +321,7 @@ index e420872..e6f639c 100644
  			"menu.archiveSession": "Archive session",
  			"sessions.count.one": "{n} session",
  			"sessions.count.other": "{n} sessions",
-@@ -2572,6 +2647,7 @@ window.__ModuleLoader__.load({
+@@ -2572,6 +2656,7 @@ window.__ModuleLoader__.load({
  			"status.planReview": "Plan awaiting review",
  			"status.waitingAnswer": "Waiting for answer",
  			"status.completed": "Completed",
