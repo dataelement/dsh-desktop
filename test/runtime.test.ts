@@ -20,6 +20,7 @@ import {
 import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
 import { buildDisclaimedUtilityProcessSpec } from '../src/main/runtime/disclaimed-utility-process'
 import {
+  clearStaleHarnessAuthCookies,
   desktopHarnessUrl,
   isAbortedNavigationError,
   shouldLoadHarnessUrl
@@ -516,6 +517,42 @@ describe('navigation trust boundary', () => {
 })
 
 describe('Harness window activation', () => {
+  it('removes accumulated authority cookies before exchanging a new launch token', async () => {
+    const removed: Array<[string, string]> = []
+    const cookies = {
+      get: async () => [
+        { name: 'dsh-auth-old-port' },
+        { name: 'unrelated-cookie' },
+        { name: 'dsh-auth-current-port' }
+      ],
+      remove: async (url: string, name: string) => {
+        removed.push([url, name])
+      }
+    }
+
+    expect(
+      await clearStaleHarnessAuthCookies(
+        cookies,
+        'http://127.0.0.1:43127/?token=next',
+        'next'
+      )
+    ).toBe(2)
+    expect(removed).toEqual([
+      ['http://127.0.0.1:43127/', 'dsh-auth-old-port'],
+      ['http://127.0.0.1:43127/', 'dsh-auth-current-port']
+    ])
+  })
+
+  it('does not clear cookies for a non-Harness destination or without a launch token', async () => {
+    const cookies = {
+      get: async () => [{ name: 'dsh-auth-old-port' }],
+      remove: async () => undefined
+    }
+
+    expect(await clearStaleHarnessAuthCookies(cookies, 'https://example.com', 'next')).toBe(0)
+    expect(await clearStaleHarnessAuthCookies(cookies, 'http://127.0.0.1:43127')).toBe(0)
+  })
+
   it('stamps Windows renderer URLs so plugins can avoid the native titlebar overlay', () => {
     expect(desktopHarnessUrl('http://127.0.0.1:43127', 'win32')).toBe(
       'http://127.0.0.1:43127/?dsh-desktop-mode=advanced&dsh-desktop-platform=win32'
