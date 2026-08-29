@@ -227,4 +227,53 @@ describe('profile compatibility recovery', () => {
       'package.json'
     ))).toBe(true)
   })
+
+  it('does not flag a plugin whose dependencies resolve from its own directory', async () => {
+    // A plugin whose deps live under its own node_modules (a generation
+    // layout, or any non-hoisted install) rather than flat in the profile.
+    const pluginDir = join(profile, 'node_modules', 'dsh-vision-router')
+    await manifest(pluginDir, {
+      name: 'dsh-vision-router',
+      version: '2.0.1',
+      main: 'lib/public-entry.js',
+      dependencies: { '@deepseek-ai/schemastery': '>=3.18.0', potrace: '^2.1.8' },
+      dsh: { bundle: { patch: './cordis.patch.yml' } }
+    })
+    await mkdir(join(pluginDir, 'lib'), { recursive: true })
+    await writeFile(
+      join(pluginDir, 'lib', 'public-entry.js'),
+      'import "@deepseek-ai/schemastery"\nimport "potrace"\n'
+    )
+    // deps present under the plugin's own node_modules, not the profile's
+    await manifest(join(pluginDir, 'node_modules', '@deepseek-ai', 'schemastery'), {
+      name: '@deepseek-ai/schemastery',
+      version: '3.18.1'
+    })
+    await manifest(join(pluginDir, 'node_modules', 'potrace'), { name: 'potrace', version: '2.1.8' })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { 'dsh-dream-skin': '^0.4.14', 'dsh-vision-router': 'link:./x' },
+      dsh: {
+        profile: {
+          bundles: [
+            '@deepseek-ai/dsh-base',
+            '@deepseek-ai/dsh-web-app',
+            'dsh-dream-skin',
+            'dsh-vision-router'
+          ]
+        }
+      }
+    }))
+    // bundled provides schemastery too — either resolution path is fine
+    await manifest(join(bundled, '@deepseek-ai', 'schemastery'), {
+      name: '@deepseek-ai/schemastery',
+      version: '3.18.1'
+    })
+
+    const { issues } = await inspectProfileCompatibility(dshHome, bundled)
+    expect(issues.map((issue) => issue.target)).not.toContain('dsh-vision-router')
+    expect(issues.filter((issue) => issue.detail.includes('potrace'))).toEqual([])
+    expect(issues.filter((issue) => issue.detail.includes('schemastery'))).toEqual([])
+  })
 })
