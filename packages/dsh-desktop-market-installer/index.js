@@ -4,6 +4,7 @@ import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
@@ -18,6 +19,54 @@ export const UNINSTALL_PATH = '/dsh-desktop/market-installer/uninstall'
 
 const OPERATION_TIMEOUT_MS = 15 * 60 * 1000
 const MAX_LOG_BYTES = 32 * 1024
+/** Per-stream ceiling on mirrored pnpm output, so one noisy install cannot fill the log. */
+const MAX_MIRRORED_BYTES = 64 * 1024
+
+/** One line into the harness log, which captures this process's stdout. */
+function noteToHarnessLog(line) {
+  process.stdout.write(`dsh-desktop: ${line}\n`)
+}
+
+/**
+ * Mirror a child stream into the harness log while handing the caller an
+ * equivalent one.
+ *
+ * The market reads these streams itself, so the child's output never reached
+ * disk: a failed plugin install left the market showing an error and the log
+ * showing nothing, which is not enough to tell a registry timeout from a
+ * locked rename. Piping into a PassThrough leaves the caller's read semantics
+ * untouched — it still gets a stream it can consume however it likes — while
+ * the observing listener copies each line out.
+ */
+function mirrorToHarnessLog(source, label) {
+  if (!source) return source
+  const mirror = new PassThrough()
+  source.pipe(mirror)
+  source.once('error', (error) => mirror.destroy(error))
+
+  let pending = ''
+  let written = 0
+  let truncated = false
+  const emit = (line) => {
+    if (truncated || line.trim() === '') return
+    const text = `dsh-desktop: [${label}] ${line}\n`
+    if (written + text.length > MAX_MIRRORED_BYTES) {
+      truncated = true
+      process.stdout.write(`dsh-desktop: [${label}] … further output truncated\n`)
+      return
+    }
+    written += text.length
+    process.stdout.write(text)
+  }
+  source.on('data', (chunk) => {
+    pending += chunk.toString()
+    const lines = pending.split(/\r?\n/u)
+    pending = lines.pop() ?? ''
+    for (const line of lines) emit(line)
+  })
+  source.once('end', () => emit(pending))
+  return mirror
+}
 
 export const name = 'dsh-desktop-market-installer'
 export const inject = []
@@ -386,12 +435,25 @@ export function createDesktopPnpmService(options) {
 
     void cleanStaleTemporaryDirectories(home).catch(() => undefined)
 
+    const childEnvironment = buildPnpmEnvironment(binDirectory, environment, executablePath)
+    const started = Date.now()
+    noteToHarnessLog(`plugin operation starting: ${args.join(' ')}`)
+    noteToHarnessLog(`plugin operation cwd: ${invokingDir}`)
+    // The registry decides whether this is a two-second install or a stalled
+    // download, and it is configured in the profile's .npmrc rather than here,
+    // so the effective value is worth recording alongside the run it explains.
+    noteToHarnessLog(
+      `plugin operation registry: ${
+        childEnvironment.npm_config_registry ?? childEnvironment.NPM_CONFIG_REGISTRY ?? '(from .npmrc or pnpm default)'
+      }`
+    )
+
     const child = spawnProcess(
       executablePath,
       [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...args],
       {
         cwd: invokingDir,
-        env: buildPnpmEnvironment(binDirectory, environment, executablePath),
+        env: childEnvironment,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
         detached: process.platform !== 'win32'
@@ -399,14 +461,22 @@ export function createDesktopPnpmService(options) {
     )
     const cancel = () => killProcessTree(child)
     const done = new Promise((resolveDone, rejectDone) => {
-      child.once('error', rejectDone)
+      child.once('error', (error) => {
+        noteToHarnessLog(
+          `plugin operation could not start after ${Date.now() - started}ms: ${error?.message ?? error}`
+        )
+        rejectDone(error)
+      })
       child.once('close', (exitCode, exitSignal) => {
+        noteToHarnessLog(
+          `plugin operation finished in ${Date.now() - started}ms: exitCode=${exitCode} signal=${exitSignal ?? 'none'}`
+        )
         resolveDone({ exitCode, signal: exitSignal })
       })
     })
     const handle = {
-      stdout: child.stdout,
-      stderr: child.stderr,
+      stdout: mirrorToHarnessLog(child.stdout, 'pnpm'),
+      stderr: mirrorToHarnessLog(child.stderr, 'pnpm!'),
       done,
       cancel
     }

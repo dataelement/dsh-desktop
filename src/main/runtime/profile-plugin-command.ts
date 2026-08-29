@@ -44,6 +44,8 @@ export interface ProfilePluginCommandOptions {
    */
   pnpmRunnerPath?: string
   environment?: NodeJS.ProcessEnv
+  /** Progress and outcome notes, for attributing a slow or killed run to a step. */
+  onTrace?: (line: string) => void
 }
 
 export interface ProfilePluginCommandResult {
@@ -339,6 +341,14 @@ async function runProfileCommand(
     let lastProgress = started
     let signature = await progressSignature(profileDirectory)
     let expiry: 'idle' | 'cap' | undefined
+    // A run that ends up killed reports only that it stalled, which does not
+    // say where. Sampling the shape it reached each time progress moves turns
+    // "no progress for 120s" into a point in the install to look at.
+    let samples = 0
+    const trace = (note: string): void => {
+      options.onTrace?.(`${label}: ${note} at +${Date.now() - started}ms`)
+    }
+    trace(`started, initial signature ${signature}`)
 
     const noteProgress = (): void => {
       lastProgress = Date.now()
@@ -352,11 +362,15 @@ async function runProfileCommand(
         if (current !== signature) {
           signature = current
           noteProgress()
+          // Every sample would be a line a minute; every tenth is enough to
+          // show whether a long run is moving or wedged.
+          if (samples++ % 10 === 0) trace(`progress ${current}`)
         }
         const now = Date.now()
         if (now - started >= timeoutMs) expiry = 'cap'
         else if (now - lastProgress >= idleTimeoutMs) expiry = 'idle'
         else return
+        trace(`giving up (${expiry}), last signature ${signature}`)
         killProcessTree(child)
       })()
     }, PROGRESS_POLL_MS)
@@ -375,6 +389,12 @@ async function runProfileCommand(
         }
       }
       if (exit.code !== 0) {
+        // The whole captured tail, not just the one diagnostic line the caller
+        // surfaces: a failing install is exactly when the lines leading up to
+        // the error are what identify it.
+        for (const line of output.trim().split(/\r?\n/u)) {
+          if (line.trim() !== '') trace(`output| ${line.trim()}`)
+        }
         const detail = diagnosticLine(output)
         return {
           ok: false,
@@ -383,6 +403,7 @@ async function runProfileCommand(
             `${label} exited with ${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`}.`
         }
       }
+      trace('completed successfully')
       return { ok: true }
     } finally {
       clearInterval(monitor)

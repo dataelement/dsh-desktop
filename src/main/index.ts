@@ -860,6 +860,23 @@ async function showSplash(): Promise<void> {
 }
 
 /**
+ * Wall-clock cost of one launch step, reported to the same log the steps
+ * themselves write to. The launch runs a full pnpm install whenever the
+ * profile looks unfinished, and until now the log timestamped only the launch
+ * itself — so "startup is slow" could not be attributed to a step without
+ * guessing. Every step reports, including the fast ones, because a step that
+ * is usually free is exactly the one worth seeing when it stops being free.
+ */
+async function timed<T>(label: string, run: () => Promise<T>): Promise<T> {
+  const started = Date.now()
+  try {
+    return await run()
+  } finally {
+    runtime.note(`[desktop] timing: ${label} took ${Date.now() - started}ms`)
+  }
+}
+
+/**
  * Clear what an earlier failed package operation left behind, then put the
  * packages back — both while Harness is stopped, the only moment either is
  * safe. A profile damaged by an older build heals on the first launch of this
@@ -870,13 +887,18 @@ async function showSplash(): Promise<void> {
 async function repairProfilePackages(dshHome: string): Promise<void> {
   try {
     if (!hasProfile(dshHome)) return
-    const removed = await clearDamagedPackageDirectories(dshHome)
+    const removed = await timed('repair/damage-scan', () =>
+      clearDamagedPackageDirectories(dshHome)
+    )
     // An install that never finished leaves nothing a damage scan can see: the
     // directories it did write are real packages, and the ones it never
     // reached are simply absent. Skipping the install on "nothing damaged" is
     // what let a half-built profile stay half-built across every later launch.
     const complete = await isProfileInstallComplete(dshHome)
     if (removed.length === 0 && complete) return
+    runtime.note(
+      `[desktop] timing: repair triggered by damaged=${removed.length} installComplete=${complete}`
+    )
 
     runtime.note(
       removed.length === 0
@@ -888,13 +910,16 @@ async function repairProfilePackages(dshHome: string): Promise<void> {
     // Withdrawn first: whatever happens to the run below, an interrupted
     // install must not leave a marker claiming the profile is whole.
     await clearProfileInstallMarker(dshHome)
-    const result = await installProfileDependenciesWithDsh({
-      dshHome,
-      dshEntryPath: dshEntryPath(),
-      nodeExecutablePath: bundledNodePath(),
-      pnpmEntryPath: bundledPnpmEntryPath(),
-      pnpmRunnerPath: bundledPnpmRunnerPath()
-    })
+    const result = await timed('repair/pnpm-install', () =>
+      installProfileDependenciesWithDsh({
+        dshHome,
+        dshEntryPath: dshEntryPath(),
+        nodeExecutablePath: bundledNodePath(),
+        pnpmEntryPath: bundledPnpmEntryPath(),
+        pnpmRunnerPath: bundledPnpmRunnerPath(),
+        onTrace: (line) => runtime.note(`[desktop] ${line}`)
+      })
+    )
     if (result.ok) await markProfileInstallComplete(dshHome)
     runtime.note(
       result.ok
@@ -988,16 +1013,22 @@ function launchHarness(): Promise<void> {
     // The repair only holds on a stopped Harness, and a restart still has the
     // previous one running: start() stops it, but that is after the repair.
     // Stopping here is what makes the window this launch path assumes.
-    await runtime.stop()
+    const launchStarted = Date.now()
+    await timed('launch/stop-previous', () => runtime.stop())
     // Before anything else runs pnpm: a store the profile does not pin makes
     // every package operation fail, repairs included.
-    const pinned = await ensureStoreDirPinned(dshHome).catch(() => undefined)
+    const pinned = await timed('launch/pin-store', () =>
+      ensureStoreDirPinned(dshHome).catch(() => undefined)
+    )
     if (pinned) runtime.note(`[desktop] pinned the profile's pnpm store: ${pinned}`)
-    await repairProfilePackages(dshHome)
-    await pruneMissingProfileBundles(dshHome).catch(() => false)
-    await reportProfileConsistency(dshHome)
-    await auditInstalledLaunchAgents(dshHome)
-    await runtime.start(launchDirectory)
+    await timed('launch/repair-profile', () => repairProfilePackages(dshHome))
+    await timed('launch/prune-bundles', () =>
+      pruneMissingProfileBundles(dshHome).catch(() => false)
+    )
+    await timed('launch/consistency-report', () => reportProfileConsistency(dshHome))
+    await timed('launch/launch-agent-audit', () => auditInstalledLaunchAgents(dshHome))
+    await timed('launch/harness-start', () => runtime.start(launchDirectory))
+    runtime.note(`[desktop] timing: launch total ${Date.now() - launchStarted}ms`)
   })().finally(() => {
     harnessLaunchOperation = undefined
   })
@@ -1533,7 +1564,8 @@ async function repairSafeModeCompatibilityIssues(
       dshEntryPath: dshEntryPath(),
       nodeExecutablePath: bundledNodePath(),
       pnpmEntryPath: bundledPnpmEntryPath(),
-      pnpmRunnerPath: bundledPnpmRunnerPath()
+      pnpmRunnerPath: bundledPnpmRunnerPath(),
+      onTrace: (line) => runtime.note(`[desktop] ${line}`)
     })
     if (!result.ok) return { repaired, failed, installFailed: result.detail ?? 'unknown error' }
     await markProfileInstallComplete(dshHome)
@@ -1568,7 +1600,8 @@ async function removeProfilePluginCompletely(
         nodeExecutablePath: bundledNodePath(),
         pnpmEntryPath: bundledPnpmEntryPath(),
         pnpmRunnerPath: bundledPnpmRunnerPath(),
-        environment
+        environment,
+        onTrace: (line) => runtime.note(`[${logPrefix}] ${line}`)
       },
       name
     )
