@@ -84,6 +84,7 @@ import {
   quarantineAppBundleLaunchAgents
 } from './state/launch-agent-audit'
 import {
+  clearStaleHarnessAuthCookies,
   desktopHarnessUrl,
   isAbortedNavigationError,
   shouldLoadHarnessUrl
@@ -850,6 +851,21 @@ async function openHarness(
     const navigationVersion = ++mainWindowNavigationVersion
     rendererPluginFailureLogs = []
     window.webContents.stop()
+    const clearedCookies = await clearStaleHarnessAuthCookies(
+      window.webContents.session.cookies,
+      rendererUrl,
+      runtime.snapshot().authToken
+    ).catch((error) => {
+      runtime.note(
+        `[desktop] stale Harness cookie cleanup failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+      return 0
+    })
+    if (clearedCookies > 0) {
+      runtime.note(`[desktop] cleared ${clearedCookies} stale Harness authentication cookie(s)`)
+    }
     try {
       await window.loadURL(rendererUrl)
     } catch (error) {
