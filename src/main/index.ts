@@ -1121,6 +1121,28 @@ function restartHarness(): Promise<void> {
   return launchHarness()
 }
 
+async function uninstallMarketAndRestart(): Promise<{ ok: boolean }> {
+  const dshHome = join(app.getPath('userData'), 'harness')
+  await showSplash()
+  await runtime.stop()
+  const result = await removeProfilePluginWithDsh(
+    {
+      dshHome,
+      dshEntryPath: dshEntryPath(),
+      nodeExecutablePath: bundledNodePath(),
+      pnpmEntryPath: bundledPnpmEntryPath(),
+      pnpmRunnerPath: bundledPnpmRunnerPath()
+    },
+    'dshmarket',
+    true
+  )
+  await launchHarness()
+  if (!result.ok) {
+    throw new Error(result.detail ?? 'Plugin market removal failed.')
+  }
+  return { ok: runtime.snapshot().phase === 'ready' }
+}
+
 function registerHarnessHandlers(): void {
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
@@ -1133,6 +1155,15 @@ function registerHarnessHandlers(): void {
 
     await restartHarness()
     return { ok: runtime.snapshot().phase === 'ready' }
+  })
+
+  ipcMain.removeHandler('market:uninstall')
+  ipcMain.handle('market:uninstall', async (event) => {
+    assertTrustedMainWindowEvent(event)
+    if (runtime.snapshot().phase !== 'ready') {
+      throw new Error('Harness is not ready to uninstall the plugin market.')
+    }
+    return uninstallMarketAndRestart()
   })
 
   ipcMain.removeHandler('desktop-menu:execute')

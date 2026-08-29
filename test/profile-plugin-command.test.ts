@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildPnpmShimCommand,
+  buildProfilePluginRemoveArguments,
   diagnosticLine,
   removeProfilePluginWithDsh
 } from '../src/main/runtime/profile-plugin-command'
@@ -20,6 +21,18 @@ describe('profile-plugin-command', () => {
 
   afterEach(async () => {
     await rm(testDir, { recursive: true, force: true })
+  })
+
+  it('can target a workspace-root package explicitly', () => {
+    expect(buildProfilePluginRemoveArguments('/app/dsh/bin.js', 'dshmarket', true)).toEqual([
+      '/app/dsh/bin.js',
+      'plugin',
+      '--profile',
+      'web',
+      'remove',
+      '--workspace-root',
+      'dshmarket'
+    ])
   })
 
   it('runs the DSH remove command with the bundled pnpm shim on PATH', async () => {

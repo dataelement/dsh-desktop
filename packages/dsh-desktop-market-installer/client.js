@@ -270,6 +270,11 @@ window.__ModuleLoader__.load({
         setError(undefined)
         setStatus((current) => ({ ...current, phase: 'uninstalling' }))
         try {
+          const bridge = globalThis.dshDesktop
+          if (bridge && typeof bridge.uninstallMarket === 'function') {
+            await bridge.uninstallMarket()
+            return
+          }
           const response = await fetch(UNINSTALL_PATH, {
             method: 'POST',
             credentials: 'same-origin',

@@ -57,9 +57,18 @@ function shellQuote(value: string): string {
 
 export function buildProfilePluginRemoveArguments(
   dshEntryPath: string,
-  pluginName: string
+  pluginName: string,
+  workspaceRoot = false
 ): string[] {
-  return [dshEntryPath, 'plugin', '--profile', PROFILE, 'remove', pluginName]
+  return [
+    dshEntryPath,
+    'plugin',
+    '--profile',
+    PROFILE,
+    'remove',
+    ...(workspaceRoot ? ['--workspace-root'] : []),
+    pluginName
+  ]
 }
 
 /**
@@ -253,9 +262,15 @@ function killProcessTree(child: ReturnType<typeof spawn>): void {
 
 export async function removeProfilePluginWithDsh(
   options: ProfilePluginCommandOptions,
-  pluginName: string
+  pluginName: string,
+  workspaceRoot = false
 ): Promise<ProfilePluginCommandResult> {
-  return runProfileCommand(options, buildProfilePluginRemoveArguments(options.dshEntryPath, pluginName), 'Plugin removal', OPERATION_TIMEOUT_MS)
+  return runProfileCommand(
+    options,
+    buildProfilePluginRemoveArguments(options.dshEntryPath, pluginName, workspaceRoot),
+    'Plugin removal',
+    OPERATION_TIMEOUT_MS
+  )
 }
 
 /**
