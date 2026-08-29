@@ -63,6 +63,19 @@ import {
   uninstallPluginFromProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
+import {
+  desiredIsUntried,
+  markGenerationsBooted,
+  prepareGenerationsForLaunch,
+  rollBackToLastKnownGood,
+  uninstallGenerationPlugin
+} from './state/generation-launch'
+import {
+  confirmMigration,
+  isProfileMigrated,
+  migrateProfileToGenerations,
+  rollBackMigration
+} from './state/generation-migration'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
 import {
   appBundlePathFromExecutable,
@@ -609,6 +622,16 @@ const GPU_STABLE_LAUNCH_DELAY_MS = 60_000
 function markHarnessRendered(): void {
   if (harnessRendered) return
   harnessRendered = true
+  // The window rendered, so whatever plugin generations are enabled boot. This
+  // is the proof `.install-complete` never was — a pnpm exit code said nothing
+  // about whether the profile could start.
+  const dshHome = join(app.getPath('userData'), 'harness')
+  void markGenerationsBooted(dshHome, (line) => runtime?.note(line))
+  // A migrated profile that rendered a window is confirmed; the pre-upgrade
+  // snapshot is no longer needed.
+  if (isProfileMigrated(dshHome)) {
+    void confirmMigration(dshHome, (line) => runtime?.note(line))
+  }
   if (gpuFallbackState.level === 'default' && gpuFallbackState.stableLaunches === 0) return
   gpuStableLaunchTimer = setTimeout(() => {
     gpuStableLaunchTimer = undefined
@@ -993,11 +1016,55 @@ function launchHarness(): Promise<void> {
     // every package operation fail, repairs included.
     const pinned = await ensureStoreDirPinned(dshHome).catch(() => undefined)
     if (pinned) runtime.note(`[desktop] pinned the profile's pnpm store: ${pinned}`)
-    await repairProfilePackages(dshHome)
+    // Cold start, Harness stopped: sweep unreferenced plugin generations and
+    // reproject so the profile's links match `desired`. A no-op on a profile
+    // that has never used a generation.
+    await prepareGenerationsForLaunch(dshHome, (line) => runtime.note(line))
+    // One-time move of a pre-upgrade profile (community plugins in the shared
+    // tree) onto the generation model. Runs before the shared-tree repair and,
+    // when it succeeds, replaces it — the migration has already rebuilt the
+    // tree down to what stays there.
+    const migrated = await migrateProfileToGenerations({
+      dshHome,
+      nodeExecutablePath: bundledNodePath(),
+      pnpmEntryPath: bundledPnpmEntryPath(),
+      dshEntryPath: dshEntryPath(),
+      note: (line) => runtime.note(line),
+      reinstallSharedTree: async () => {
+        await clearProfileInstallMarker(dshHome)
+        const result = await installProfileDependenciesWithDsh({
+          dshHome,
+          dshEntryPath: dshEntryPath(),
+          nodeExecutablePath: bundledNodePath(),
+          pnpmEntryPath: bundledPnpmEntryPath(),
+          pnpmRunnerPath: bundledPnpmRunnerPath()
+        })
+        if (result.ok) await markProfileInstallComplete(dshHome)
+        return result
+      }
+    })
+    if (!migrated) await repairProfilePackages(dshHome)
     await pruneMissingProfileBundles(dshHome).catch(() => false)
     await reportProfileConsistency(dshHome)
     await auditInstalledLaunchAgents(dshHome)
     await runtime.start(launchDirectory)
+
+    // A new plugin set that did not reach 'ready' is rolled back to the last
+    // set that rendered a window, then Harness is started once more. Reaching
+    // 'ready' is necessary but not sufficient for "known good" — the
+    // window-rendered commit in markHarnessRendered is what confirms it.
+    if (runtime.snapshot().phase !== 'ready') {
+      // A migration that did not boot rolls the whole profile back to the
+      // pre-upgrade snapshot — nothing was lost, and the old shared-tree path
+      // runs next launch.
+      if (migrated && (await rollBackMigration(dshHome, (line) => runtime.note(line)))) {
+        await repairProfilePackages(dshHome)
+        await runtime.start(launchDirectory)
+      } else if (await desiredIsUntried(dshHome).catch(() => false)) {
+        await rollBackToLastKnownGood(dshHome, (line) => runtime.note(line))
+        await runtime.start(launchDirectory)
+      }
+    }
   })().finally(() => {
     harnessLaunchOperation = undefined
   })
@@ -1548,6 +1615,22 @@ async function removeProfilePluginCompletely(
   environment: NodeJS.ProcessEnv,
   logPrefix: string
 ): Promise<boolean> {
+  // A generation plugin is uninstalled by dropping it from `desired` and
+  // reprojecting — a `pnpm remove` on its `link:` dep is undone by the next
+  // projection, which re-derives the profile from `desired`.
+  if (
+    await uninstallGenerationPlugin(dshHome, pluginName, (line) => runtime.note(line)).catch(
+      () => false
+    )
+  ) {
+    await cleanupPluginOwnedComponents({
+      dshHome,
+      pluginName,
+      log: (message) => runtime.note(`[${logPrefix}] ${message}`)
+    }).catch(() => undefined)
+    return !(await listInstalledProfilePlugins(dshHome)).includes(pluginName)
+  }
+
   const cleanup = await cleanupPluginOwnedComponents({
     dshHome,
     pluginName,
@@ -2105,6 +2188,10 @@ if (isDaemonLaunch(process.env, process.platform)) {
       event.preventDefault()
       quitting = true
       stopUpdateManager()
+      // Windows leaves the tray icon behind as a ghost until the user hovers
+      // over it unless it is destroyed explicitly before the process exits.
+      if (tray && !tray.isDestroyed()) tray.destroy()
+      tray = undefined
       void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
     })
   }

@@ -1,6 +1,36 @@
+import { createRequire } from 'node:module'
+import { existsSync, realpathSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import { isThirdPartyPackageName, profilePackageJsonPath } from './plugin-recovery'
+
+/**
+ * Whether `specifier` resolves when required from `fromDir`. A generation
+ * plugin's own dependencies live under its generation directory rather than
+ * flat in `profiles/web/node_modules`, and its peers resolve through the
+ * parent walk into `profiles/node_modules` — Node's resolver sees both, a
+ * flat `readdir` of the profile does not.
+ */
+function resolvesFrom(fromDir: string, specifier: string): boolean {
+  try {
+    createRequire(join(fromDir, 'noop.js')).resolve(specifier)
+    return true
+  } catch {
+    // `package.json` has no default export condition on some packages; a bare
+    // directory check covers those without evaluating anything.
+    return existsSync(join(fromDir, 'node_modules', ...specifier.split('/')))
+  }
+}
+
+/** The plugin's real directory, following the generation symlink if there is one. */
+function pluginRealDirectory(profileNodeModules: string, pluginName: string): string {
+  const linked = join(profileNodeModules, ...pluginName.split('/'))
+  try {
+    return realpathSync(linked)
+  } catch {
+    return linked
+  }
+}
 
 export type ProfileCompatibilityIssueKind =
   | 'core-version-mismatch'
@@ -82,25 +112,39 @@ function literalModuleRequests(source: string): string[] {
 }
 
 async function pluginDependencyClosure(
-  nodeModulesPath: string,
+  pluginDir: string,
   rootPackage: string
 ): Promise<Array<{ packageName: string; required: boolean }>> {
   const requiredPackages = new Map<string, boolean>()
-  const pending = [{ packageName: rootPackage, required: true }]
+  const require = createRequire(join(pluginDir, 'noop.js'))
+  const pending = [{ packageName: rootPackage, required: true, from: pluginDir }]
   while (pending.length > 0) {
     const next = pending.pop()
     if (next === undefined) continue
     const previous = requiredPackages.get(next.packageName)
     if (previous === true || previous === next.required) continue
     requiredPackages.set(next.packageName, next.required)
-    const packageName = next.packageName
-    const manifest = await readManifest(join(nodeModulesPath, packageName, 'package.json'))
+
+    // The root package is the plugin dir itself; every other package is
+    // resolved from where the plugin can see it — its own node_modules, then
+    // the parent walk into the installation closure.
+    let manifestPath: string | undefined
+    if (next.packageName === rootPackage) {
+      manifestPath = join(pluginDir, 'package.json')
+    } else {
+      try {
+        manifestPath = require.resolve(`${next.packageName}/package.json`)
+      } catch {
+        manifestPath = undefined
+      }
+    }
+    const manifest = manifestPath === undefined ? undefined : await readManifest(manifestPath)
     if (manifest === undefined) continue
     for (const dependency of Object.keys(manifest.dependencies ?? {})) {
-      pending.push({ packageName: dependency, required: true })
+      pending.push({ packageName: dependency, required: true, from: pluginDir })
     }
     for (const dependency of Object.keys(manifest.optionalDependencies ?? {})) {
-      pending.push({ packageName: dependency, required: false })
+      pending.push({ packageName: dependency, required: false, from: pluginDir })
     }
   }
   return [...requiredPackages].map(([packageName, required]) => ({ packageName, required }))
@@ -289,13 +333,23 @@ export async function inspectProfileCompatibility(
   }
 
   for (const pluginName of activePlugins) {
-    for (const component of await pluginDependencyClosure(profileNodeModules, pluginName)) {
+    // Walk and resolve the plugin's dependency tree from where it is actually
+    // installed. For a generation plugin that is its generation directory, not
+    // the flat profile node_modules.
+    const pluginDir = pluginRealDirectory(profileNodeModules, pluginName)
+    for (const component of await pluginDependencyClosure(pluginDir, pluginName)) {
       const componentName = component.packageName
-      const componentManifest = await readManifest(
-        join(profileNodeModules, componentName, 'package.json')
-      )
+      const componentManifest =
+        (await readManifest(join(pluginDir, 'node_modules', componentName, 'package.json'))) ??
+        (await readManifest(join(profileNodeModules, componentName, 'package.json')))
       if (componentManifest === undefined) {
-        if (!component.required || bundledPackages.has(componentName)) continue
+        if (
+          !component.required ||
+          bundledPackages.has(componentName) ||
+          resolvesFrom(pluginDir, componentName)
+        ) {
+          continue
+        }
         issues.push({
           id: issueId('missing-client-module', `${pluginName}:missing:${componentName}`),
           kind: 'missing-client-module',
@@ -312,11 +366,15 @@ export async function inspectProfileCompatibility(
         continue
       }
 
-      for (const moduleSource of moduleSourcePaths(
-        profileNodeModules,
-        componentName,
-        componentManifest
-      )) {
+      // The component's own directory: inside the generation for a generation
+      // plugin, flat in the profile for a shared-tree one.
+      const componentDir =
+        componentName === pluginName
+          ? pluginDir
+          : existsSync(join(pluginDir, 'node_modules', componentName))
+            ? join(pluginDir, 'node_modules', componentName)
+            : join(profileNodeModules, componentName)
+      for (const moduleSource of moduleSourcePaths(dirname(componentDir), basename(componentDir), componentManifest)) {
         let source: string
         try {
           source = await readFile(moduleSource.path, 'utf8')
@@ -328,6 +386,7 @@ export async function inspectProfileCompatibility(
           if (
             !requiredPackage?.startsWith('@deepseek-ai/') ||
             bundledPackages.has(requiredPackage) ||
+            resolvesFrom(componentDir, requiredPackage) ||
             (!moduleSource.client && profilePackageSet.has(requiredPackage))
           ) {
             continue
