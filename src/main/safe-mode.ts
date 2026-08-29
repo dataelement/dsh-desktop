@@ -181,7 +181,7 @@ export function buildSafeModeViewModel(options: {
       selectAllLabel: '全选',
       agentLabel: '关闭',
       agentBusyLabel: '正在关闭…',
-      restartLabel: blockingGroups > 0 ? '暂不处理并退出安全模式' : '完成并退出安全模式',
+      restartLabel: '完成并退出安全模式',
       restartBusyLabel: '正在重启…',
       restartConfirm: blockingGroups > 0
         ? `仍有 ${blockingGroups} 组阻断问题。退出后会重新启用第三方插件，可能再次启动失败。仍然退出安全模式吗？`
@@ -210,7 +210,7 @@ export function buildSafeModeViewModel(options: {
     selectAllLabel: 'Select all',
     agentLabel: 'Close',
     agentBusyLabel: 'Closing…',
-    restartLabel: blockingGroups > 0 ? 'Exit Safe Mode without repairing' : 'Finish and exit Safe Mode',
+    restartLabel: 'Finish and exit Safe Mode',
     restartBusyLabel: 'Restarting…',
     restartConfirm: blockingGroups > 0
       ? `${blockingGroups} blocking group${blockingGroups === 1 ? '' : 's'} remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?`

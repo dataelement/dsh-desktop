@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parse, stringify } from 'yaml'
@@ -80,6 +80,38 @@ describe('plugin-recovery', () => {
 
   it('returns an empty Safe Mode list when the profile is unavailable', async () => {
     await expect(listInstalledProfilePlugins(join(testDir, 'missing'))).resolves.toEqual([])
+  })
+
+  it('lists the most recently installed profile plugin first', async () => {
+    await writeFile(
+      profilePackageJsonPath(testDir),
+      JSON.stringify({
+        dependencies: {
+          'plugin-old': '1.0.0',
+          'plugin-new': '2.0.0',
+          'plugin-without-directory': '3.0.0'
+        },
+        dsh: {
+          profile: {
+            bundles: ['plugin-old', 'plugin-new', 'plugin-without-directory']
+          }
+        }
+      })
+    )
+    const modulesDirectory = join(testDir, 'profiles', 'web', 'node_modules')
+    const oldDirectory = join(modulesDirectory, 'plugin-old')
+    const newDirectory = join(modulesDirectory, 'plugin-new')
+    await mkdir(oldDirectory, { recursive: true })
+    await mkdir(newDirectory, { recursive: true })
+    const now = Date.now()
+    await utimes(oldDirectory, new Date(now), new Date(now))
+    await utimes(newDirectory, new Date(now + 60_000), new Date(now + 60_000))
+
+    await expect(listInstalledProfilePlugins(testDir)).resolves.toEqual([
+      'plugin-new',
+      'plugin-old',
+      'plugin-without-directory'
+    ])
   })
 
   it('uninstalls specific offending plugin from package.json dependencies and bundles', async () => {

@@ -86,7 +86,7 @@ describe('Safe Mode', () => {
       incompatible: true
     })
     expect(model.issueGroups).toEqual([])
-    expect(model.restartLabel).toBe('暂不处理并退出安全模式')
+    expect(model.restartLabel).toBe('完成并退出安全模式')
     expect(model.restartConfirm).toContain('仍有 1 组阻断问题')
   })
 

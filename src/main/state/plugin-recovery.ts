@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { parse } from 'yaml'
 import { removeTree } from './remove-tree'
@@ -102,7 +102,31 @@ export async function listInstalledProfilePlugins(dshHome: string): Promise<stri
     const manifest = JSON.parse(
       await readFile(profilePackageJsonPath(dshHome), 'utf8')
     ) as ProfileManifest
-    return configuredProfilePlugins(manifest)
+    const plugins = configuredProfilePlugins(manifest)
+    const modulesDirectory = join(dshHome, 'profiles', 'web', 'node_modules')
+    const entries = await Promise.all(
+      plugins.map(async (name, index) => {
+        try {
+          const info = await lstat(join(modulesDirectory, name))
+          // Profiles do not persist an installedAt field. The root package
+          // entry is created or replaced by pnpm during installation/update,
+          // making its newest filesystem timestamp the closest generic signal
+          // available for presenting recently installed plugins first.
+          return { name, index, installedAt: Math.max(info.birthtimeMs, info.mtimeMs) }
+        } catch {
+          return { name, index, installedAt: undefined }
+        }
+      })
+    )
+    entries.sort((left, right) => {
+      if (left.installedAt === undefined && right.installedAt === undefined) {
+        return left.index - right.index
+      }
+      if (left.installedAt === undefined) return 1
+      if (right.installedAt === undefined) return -1
+      return right.installedAt - left.installedAt || left.index - right.index
+    })
+    return entries.map(({ name }) => name)
   } catch {
     return []
   }
