@@ -860,17 +860,39 @@ export class LanMobileBridge {
       const sessionId = fields.sessionId
       const listed = await this.invokeHarness('session/list', { _request: {} })
       if (!listed.ok) return listed
-      const items = (listed.value as { items?: { sessionId?: unknown; projections?: { asOfSeq?: unknown } }[] }).items ?? []
+      const items = (listed.value as {
+        items?: {
+          sessionId?: unknown
+          projections?: { asOfSeq?: unknown; values?: unknown }
+        }[]
+      }).items ?? []
       const row = items.find((item) => item.sessionId === sessionId)
-      const throughSeq = row?.projections?.asOfSeq
+      const projections = row?.projections
+      const throughSeq = projections?.asOfSeq
       if (typeof throughSeq !== 'number') return { ok: false, error: 'Harness has no cursor for this session.' }
-      return this.invokeHarness('session/page', {
+      const page = await this.invokeHarness('session/page', {
         request: {
           address: { kind: 'session', sessionId },
           throughSeq,
           ...(typeof fields.maxMessages === 'number' ? { maxMessages: fields.maxMessages } : {})
         }
       })
+      if (!page.ok) return page
+      const value = page.value as { records?: unknown; hasMore?: unknown }
+      if (!Array.isArray(value?.records)) {
+        return { ok: false, error: 'Harness returned invalid session history.' }
+      }
+      // Harness 0.1.2 calls the durable entries `records` and serves
+      // projections on the list row. Keep the stable mobile-page contract so
+      // cached pages can still render messages, running state, and todos.
+      return {
+        ok: true,
+        value: {
+          events: value.records,
+          projections,
+          hasMore: value.hasMore === true
+        }
+      }
     }
 
     const route = HARNESS_ENDPOINTS[method]

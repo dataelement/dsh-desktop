@@ -505,6 +505,82 @@ describe('LAN mobile bridge pairing surface', () => {
     )
     expect(restoredAfterSafariPaired.status).toBe(200)
   })
+
+  it('adapts Harness 0.1.2 history records to the stable mobile page contract', async () => {
+    let pageRequest: unknown
+    const projections = {
+      asOfSeq: 7,
+      values: {
+        todos: [{ content: 'Restore mobile history', status: 'in_progress' }]
+      }
+    }
+    const records = [
+      {
+        type: 'event',
+        event: { type: 'user/message', time: 1, content: [{ type: 'text', text: 'hello' }] }
+      }
+    ]
+    const harness = createServer(async (request, response) => {
+      if (request.method !== 'POST') {
+        response.statusCode = 404
+        response.end()
+        return
+      }
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(Buffer.from(chunk))
+      const envelope = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+        rpcId: string
+        method: string
+        payload: { args: unknown }
+      }
+      const value = envelope.method === 'session/list'
+        ? {
+            items: [
+              {
+                sessionId: 'session-1',
+                updatedAt: 1,
+                running: false,
+                blank: false,
+                projections
+              }
+            ]
+          }
+        : { records, hasMore: false }
+      if (envelope.method === 'session/page') pageRequest = envelope.payload.args
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({
+        type: 'server-response',
+        rpcId: envelope.rpcId,
+        result: { ok: true, value }
+      }))
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+
+    const history = await mobileRpc(port, cookie, 'session.history', {
+      sessionId: 'session-1',
+      maxMessages: 100
+    })
+
+    expect(history.status).toBe(200)
+    expect(await history.json()).toEqual({
+      ok: true,
+      value: { events: records, projections, hasMore: false }
+    })
+    expect(pageRequest).toEqual({
+      request: {
+        address: { kind: 'session', sessionId: 'session-1' },
+        throughSeq: 7,
+        maxMessages: 100
+      }
+    })
+  })
 })
 
 describe('LAN mobile bridge user questions', () => {
