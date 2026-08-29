@@ -581,6 +581,83 @@ describe('LAN mobile bridge pairing surface', () => {
       }
     })
   })
+
+  it('streams native session follow snapshots and events to an authorized phone', async () => {
+    let sessionOpen: unknown
+    const harness = createServer((_request, response) => {
+      response.statusCode = 404
+      response.end()
+    })
+    const muxServer = new WebSocketServer({ noServer: true })
+    webSocketServers.push(muxServer)
+    harness.on('upgrade', (request, socket, head) => {
+      if (request.url !== '/api/remote.mux') return socket.destroy()
+      muxServer.handleUpgrade(request, socket, head, (client) => {
+        const peer = client as TestWebSocket & {
+          on(event: 'message', listener: (data: Buffer) => void): void
+        }
+        peer.on('message', (data) => {
+          const opened = JSON.parse(data.toString('utf8')) as {
+            streamId: string
+            endpoint: string
+            payload: unknown
+          }
+          if (opened.endpoint !== 'session/follow') return
+          sessionOpen = opened.payload
+          peer.send(JSON.stringify({
+            type: 'item',
+            streamId: opened.streamId,
+            value: {
+              type: 'snapshot',
+              cursor: 2,
+              records: [{ type: 'event', event: { type: 'user/message', seq: 2 } }],
+              hasMore: false,
+              projections: { asOfSeq: 2, values: {} }
+            }
+          }))
+          peer.send(JSON.stringify({
+            type: 'item',
+            streamId: opened.streamId,
+            value: { type: 'event', event: { type: 'assistant/chunk', seq: 3 } }
+          }))
+        })
+      })
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const abort = new AbortController()
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/session/stream?sessionId=session-1`,
+      { headers: { cookie }, signal: abort.signal }
+    )
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/event-stream')
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let body = ''
+    await waitFor(async () => {
+      const chunk = await reader.read()
+      body += decoder.decode(chunk.value, { stream: true })
+      return body.includes('event: snapshot') && body.includes('event: event')
+    })
+    abort.abort()
+    expect(body).toContain('"type":"snapshot"')
+    expect(body).toContain('"type":"assistant/chunk"')
+    expect(sessionOpen).toEqual({
+      args: {
+        request: {
+          address: { kind: 'session', sessionId: 'session-1' },
+          maxMessages: 100
+        }
+      }
+    })
+  })
 })
 
 describe('LAN mobile bridge user questions', () => {

@@ -49,6 +49,11 @@ describe('LAN mobile page', () => {
     expect(html).toContain("if(history.state?.view==='chat')history.back()")
     expect(html).toContain("function showSessionList()")
     expect(html).toContain("function handleHistory(state)")
+    expect(html).toContain("function recentSession()")
+    expect(html).toContain("await openRecentSession()")
+    expect(html).toContain("new EventSource('/api/session/stream?sessionId='")
+    expect(html).toContain("source.addEventListener('snapshot'")
+    expect(html).toContain("source.addEventListener('event'")
     expect(html).toContain('id="questionComposer" class="question-composer" hidden')
     expect(html).toContain("rpc('interaction.pending',{sessionId})")
     expect(html).toContain("rpc('interaction.answer',{rpcId:current.rpcId")
@@ -86,7 +91,7 @@ describe('LAN mobile page', () => {
     expect(html).toContain("optimisticPrompts=optimisticPrompts.filter(item=>(counts.get(item.text)||0)<item.targetCount)")
     expect(html).toContain('class=\"skeleton\"')
     expect(html).toContain(
-      'const delay=agentRunning||pendingQuestion?HISTORY_POLL_ACTIVE_MS:idlePollMs'
+      'const delay=streamConnected?HISTORY_POLL_IDLE_CAP_MS:agentRunning||pendingQuestion?HISTORY_POLL_ACTIVE_MS:idlePollMs'
     )
     expect(html).toContain('HISTORY_POLL_ACTIVE_MS=250,HISTORY_POLL_IDLE_MS=750')
     // An idle chat left open must not keep refetching the whole history forever.
@@ -111,7 +116,7 @@ describe('LAN mobile page', () => {
     expect(html).not.toContain("(streaming?' open':'')")
     expect(html).toContain('class="thinking" data-state="\'+state+\'"')
     expect(html).toContain(
-      'key=JSON.stringify([messages,pending?.rpcId||null,agentRunning,currentTodos,todoExpanded])'
+      'key=JSON.stringify([messages,pendingQuestion?.rpcId||null,agentRunning,currentTodos,todoExpanded])'
     )
     expect(html).toContain('class=\"tool\" data-state=')
     expect(html).toContain('class=\"activity-leading\"')
