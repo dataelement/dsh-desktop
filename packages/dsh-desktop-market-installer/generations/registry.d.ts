@@ -3,6 +3,7 @@ export interface Generation {
   pluginName: string
   version: string
   directory: string
+  sourceSpec?: string
 }
 
 export interface RegistryLayout {
@@ -25,7 +26,7 @@ export function withRegistryLock<T>(
 ): Promise<T>
 export function writeGenerationMeta(
   directory: string,
-  meta: { pluginName: string; version: string }
+  meta: { pluginName: string; version: string; sourceSpec?: string }
 ): Promise<void>
 export function listGenerations(dshHome: string): Promise<Generation[]>
 export function readDesired(dshHome: string): Promise<string[]>

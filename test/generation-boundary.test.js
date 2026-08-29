@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDesktopPnpmService } from '../packages/dsh-desktop-market-installer/index.js'
-import { readDesired } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
+import { installGeneration } from '../packages/dsh-desktop-market-installer/generations/installer.mjs'
+import {
+  listGenerations,
+  readDesired
+} from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
 
 /**
  * `runExternalMarketPluginInstall` is the boundary dsh-market 1.6+
@@ -122,6 +126,38 @@ describe('the market install boundary', () => {
     const desired = await readDesired(home)
     expect(desired).toHaveLength(1)
     expect(desired[0]).toMatch(/^widget\+2\.0\.0\+/u)
+  })
+
+  it('stages an exact copy of an installed external source and records its provenance', async () => {
+    const home = await freshHome()
+    const source = join(home, 'legacy-source-plugin')
+    await mkdir(source, { recursive: true })
+    await writeFile(join(source, 'package.json'), JSON.stringify({ name: 'source-plugin', version: '1.2.3' }))
+    await writeFile(join(source, 'installed-marker.txt'), 'exact installed tree\n')
+
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: 'github:example/source-plugin#main',
+      expectedPluginName: 'source-plugin',
+      sourceSpec: 'github:example/source-plugin#main',
+      sourceDirectory: source,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused',
+      runInstall: async (stagingDir) => {
+        expect(await readFile(join(stagingDir, 'source', 'source-plugin', 'installed-marker.txt'), 'utf8'))
+          .toBe('exact installed tree\n')
+        return stubGenerationInstall('source-plugin', '1.2.3')(stagingDir)
+      }
+    })
+
+    expect(result.ok).toBe(true)
+    expect(await listGenerations(home)).toEqual([
+      expect.objectContaining({
+        pluginName: 'source-plugin',
+        version: '1.2.3',
+        sourceSpec: 'github:example/source-plugin#main'
+      })
+    ])
   })
 
   it('serialises against a concurrent operation', async () => {

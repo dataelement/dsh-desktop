@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
@@ -129,7 +129,7 @@ export async function installGeneration(options) {
   const { dshHome, pluginSpec, onTrace } = options
   const trace = (line) => onTrace?.(`generation-install: ${line}`)
   const layout = await ensureRegistryDirectories(dshHome)
-  const pluginName = pluginSpec.replace(/@[^@/]+$/u, '') || pluginSpec
+  const pluginName = options.expectedPluginName ?? (pluginSpec.replace(/@[^@/]+$/u, '') || pluginSpec)
 
   const stagingDir = join(layout.staging, randomUUID())
   await mkdir(stagingDir, { recursive: true })
@@ -145,8 +145,15 @@ export async function installGeneration(options) {
   const cleanupStaging = () => rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
 
   try {
-    trace(`installing ${pluginSpec} into staging`)
-    const runInstall = options.runInstall ?? ((dir) => defaultRunInstall(options, dir))
+    let installSpec = pluginSpec
+    if (options.sourceDirectory !== undefined) {
+      const sourceCopy = join(stagingDir, 'source', pluginName.replace(/^@/u, '').replace(/[/\\]/gu, '+'))
+      await mkdir(join(stagingDir, 'source'), { recursive: true })
+      await cp(options.sourceDirectory, sourceCopy, { recursive: true, dereference: true })
+      installSpec = `file:${sourceCopy}`
+    }
+    trace(`installing ${options.sourceSpec ?? pluginSpec} into staging`)
+    const runInstall = options.runInstall ?? ((dir) => defaultRunInstall({ ...options, pluginSpec: installSpec }, dir))
     const started = Date.now()
     const { code, output } = await runInstall(stagingDir)
     if (code !== 0) {
@@ -180,7 +187,11 @@ export async function installGeneration(options) {
       trace(`generation ${id} already exists, reusing`)
       await cleanupStaging()
     } else {
-      await writeGenerationMeta(stagingDir, { pluginName, version })
+      await writeGenerationMeta(stagingDir, {
+        pluginName,
+        version,
+        ...(options.sourceSpec === undefined ? {} : { sourceSpec: options.sourceSpec })
+      })
       await rename(stagingDir, generationDir)
       trace(`promoted to ${id}`)
     }
