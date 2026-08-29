@@ -1,8 +1,163 @@
-diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-index 5c89b80..193f5b7 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -1278,8 +1278,9 @@ function mapUsage(usage) {
+@@ -985,6 +985,22 @@
+ * @param config - the resolved section to check.
+ * @throws Error naming the route and model that cannot be served.
+ */
++let invalidProviderReporter = null;
++/**
++* Install the per-provider failure reporter that `assertServiceable` and
++* `resolveProfiles` call when one route's profile cannot be served. The
++* reporter is the only path that surfaces these to the operator: the failing
++* route is dropped from the live registry, the other routes continue to
++* register normally, and the bad profile stays in `settings.yaml` so the user
++* can fix it. The previous behaviour — throwing on the first failing route —
++* disabled every route in the namespace, so the Models settings page showed no
++* provider rows and both "Add provider" buttons stayed disabled with no
++* diagnostic. This avoids the cascading-silent-drop path entirely.
++* @param reporter - callback taking `(provider, error)`; pass null to clear.
++*/
++function setInvalidProviderReporter(reporter) {
++	invalidProviderReporter = reporter;
++}
+ function assertServiceable(config) {
+ 	resolveProfiles(config.providers);
+ }
+@@ -999,63 +1015,86 @@
+ * per-request reads. This is the one explicit resolve step, so an omitted dict
+ * resolves to the empty (dormant) route set here rather than through a hidden
+ * fallback, and each route's models and pi-ai provider are materialized once.
++*
++* A route whose profile cannot be served (missing `api` for an unknown model,
++* non-finite numbers, removed legacy fields, etc.) does NOT abort the rest of
++* the map: the bad route is dropped from the result, the reporter wired by
++* `setInvalidProviderReporter` is called with the offending name and error,
++* and the namespace registration proceeds so the other routes stay live. This
++* keeps the user's working providers visible after one bad entry, which is the
++* behaviour the Models settings page assumes when it lists `addable` rows and
++* surfaces the "Add custom provider" form.
+ * @param providers - configured provider profiles keyed by route.
+-* @returns validated profiles in configuration order.
++* @returns validated profiles in configuration order, with unserviceable
++*   entries omitted.
+ */
+ function resolveProfiles(providers) {
+ 	if (Array.isArray(providers)) throw new Error("llm-pi-ai: providers is now a dict keyed by provider route, not an array of profiles");
+ 	const entries = Object.entries(providers ?? {});
+ 	const resolved = /* @__PURE__ */ new Map();
+ 	for (const [provider, source] of entries) {
+-		rejectRemovedFields(provider, source);
+-		if (provider.length === 0) throw new Error("llm-pi-ai: provider names must be non-empty");
+-		if (source.baseURL !== void 0 && source.baseURL.length === 0) throw new Error(`llm-pi-ai: provider "${provider}" has an empty baseURL`);
+-		if (source.displayName !== void 0 && source.displayName.length === 0) throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`);
+-		const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? 3e5;
+-		if (!Number.isFinite(streamIdleTimeoutMs) || streamIdleTimeoutMs <= 0 || streamIdleTimeoutMs > MAX_TIMER_DELAY_MS) throw new Error(`llm-pi-ai: provider "${provider}" streamIdleTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`);
+-		const maxRequestImageBytes = source.maxRequestImageBytes ?? 20971520;
+-		if (!Number.isInteger(maxRequestImageBytes) || maxRequestImageBytes <= 0) throw new Error(`llm-pi-ai: provider "${provider}" maxRequestImageBytes must be a positive integer`);
+-		const requestImagePixelBudget = source.requestImagePixelBudget ?? 4194304;
+-		if (!Number.isSafeInteger(requestImagePixelBudget) || requestImagePixelBudget <= 0) throw new Error(`llm-pi-ai: provider "${provider}" requestImagePixelBudget must be a positive safe integer`);
+-		const requestImageMaxBytes = source.requestImageMaxBytes ?? 1048576;
+-		if (!Number.isSafeInteger(requestImageMaxBytes) || requestImageMaxBytes <= 0) throw new Error(`llm-pi-ai: provider "${provider}" requestImageMaxBytes must be a positive safe integer`);
+-		const defaultInput = [...source.defaultInput ?? DEFAULT_INPUT];
+-		if (defaultInput.length === 0) throw new Error(`llm-pi-ai: provider "${provider}" defaultInput must name at least one modality`);
+-		const displayName = source.displayName ?? provider;
+-		const catalog = resolveRouteModels({
+-			provider,
+-			...source.api === void 0 ? {} : { api: source.api },
+-			...source.baseURL === void 0 ? {} : { baseURL: source.baseURL },
+-			...source.models === void 0 ? {} : { models: source.models },
+-			...source.modelOverrides === void 0 ? {} : { modelOverrides: source.modelOverrides },
+-			...source.compat === void 0 ? {} : { compat: source.compat },
+-			defaultInput,
+-			defaultContextWindow: source.defaultContextWindow ?? 262144,
+-			defaultMaxTokens: source.defaultMaxTokens ?? 32768
+-		});
+-		const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source;
+-		resolved.set(provider, {
+-			...rest,
+-			provider,
+-			displayName,
+-			...apiKeyEnv === void 0 ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
+-			streamIdleTimeoutMs,
+-			maxRequestImageBytes,
+-			requestImagePixelBudget,
+-			requestImageMaxBytes,
+-			retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
+-			...rest.headers === void 0 ? {} : { headers: { ...rest.headers } },
+-			...rest.thinkingBudgets === void 0 ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
+-			configuredMaxTokens: catalog.configuredMaxTokens,
+-			piProvider: buildProvider({
++		try {
++			rejectRemovedFields(provider, source);
++			if (provider.length === 0) throw new Error("llm-pi-ai: provider names must be non-empty");
++			if (source.baseURL !== void 0 && source.baseURL.length === 0) throw new Error(`llm-pi-ai: provider "${provider}" has an empty baseURL`);
++			if (source.displayName !== void 0 && source.displayName.length === 0) throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`);
++			const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? 3e5;
++			if (!Number.isFinite(streamIdleTimeoutMs) || streamIdleTimeoutMs <= 0 || streamIdleTimeoutMs > MAX_TIMER_DELAY_MS) throw new Error(`llm-pi-ai: provider "${provider}" streamIdleTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`);
++			const maxRequestImageBytes = source.maxRequestImageBytes ?? 20971520;
++			if (!Number.isInteger(maxRequestImageBytes) || maxRequestImageBytes <= 0) throw new Error(`llm-pi-ai: provider "${provider}" maxRequestImageBytes must be a positive integer`);
++			const requestImagePixelBudget = source.requestImagePixelBudget ?? 4194304;
++			if (!Number.isSafeInteger(requestImagePixelBudget) || requestImagePixelBudget <= 0) throw new Error(`llm-pi-ai: provider "${provider}" requestImagePixelBudget must be a positive safe integer`);
++			const requestImageMaxBytes = source.requestImageMaxBytes ?? 1048576;
++			if (!Number.isSafeInteger(requestImageMaxBytes) || requestImageMaxBytes <= 0) throw new Error(`llm-pi-ai: provider "${provider}" requestImageMaxBytes must be a positive safe integer`);
++			const defaultInput = [...source.defaultInput ?? DEFAULT_INPUT];
++			if (defaultInput.length === 0) throw new Error(`llm-pi-ai: provider "${provider}" defaultInput must name at least one modality`);
++			const displayName = source.displayName ?? provider;
++			const catalog = resolveRouteModels({
+ 				provider,
+-				displayName,
+ 				...source.api === void 0 ? {} : { api: source.api },
+ 				...source.baseURL === void 0 ? {} : { baseURL: source.baseURL },
+-				models: catalog.models,
+-				namesCredential: apiKeyEnv !== void 0
+-			})
+-		});
++				...source.models === void 0 ? {} : { models: source.models },
++				...source.modelOverrides === void 0 ? {} : { modelOverrides: source.modelOverrides },
++				...source.compat === void 0 ? {} : { compat: source.compat },
++				defaultInput,
++				defaultContextWindow: source.defaultContextWindow ?? 262144,
++				defaultMaxTokens: source.defaultMaxTokens ?? 32768
++			});
++			const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source;
++			resolved.set(provider, {
++				...rest,
++				provider,
++				displayName,
++				...apiKeyEnv === void 0 ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
++				streamIdleTimeoutMs,
++				maxRequestImageBytes,
++				requestImagePixelBudget,
++				requestImageMaxBytes,
++				retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
++				...rest.headers === void 0 ? {} : { headers: { ...rest.headers } },
++				...rest.thinkingBudgets === void 0 ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
++				configuredMaxTokens: catalog.configuredMaxTokens,
++				piProvider: buildProvider({
++					provider,
++					displayName,
++					...source.api === void 0 ? {} : { api: source.api },
++					...source.baseURL === void 0 ? {} : { baseURL: source.baseURL },
++					models: catalog.models,
++					namesCredential: apiKeyEnv !== void 0
++				})
++			});
++		} catch (error) {
++			/* Per-provider failure isolation: one bad profile must not abort
++			 * the whole namespace. The bad route is dropped from `resolved`,
++			 * the live registry receives only the good routes, and the
++			 * reporter is the only signal to the operator. Without the
++			 * reporter (e.g. a test that did not install one) the throw
++			 * path is preserved by the catch above — but since we caught
++			 * before re-throwing, the loop just continues. The Models
++			 * settings page will list the surviving rows and surface an
++			 * empty-custom-protocol state, not a phantom empty page. */
++			if (invalidProviderReporter !== null) invalidProviderReporter(provider, error instanceof Error ? error : new Error(String(error)));
++		}
+ 	}
+ 	return resolved;
+ }
+@@ -1278,8 +1317,9 @@
  	};
  }
  function classifyPiAiError(message) {
@@ -13,3 +168,25 @@ index 5c89b80..193f5b7 100644
  	if (/\b429\b|rate.?limit/i.test(message)) return "RATE_LIMIT";
  	if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return "INVALID_REQUEST";
  	if (/\b400\b|invalid.?request/i.test(message)) return "INVALID_REQUEST";
+@@ -2447,6 +2487,21 @@
+ 	let lastRaw;
+ 	let memoized;
+ 	/**
++	* Per-provider failure reporter wired into `assertServiceable` and
++	* `resolveProfiles`. One bad profile must not abort the whole namespace
++	* (issue dataelement/dsh-desktop#239): the route is dropped, the others
++	* stay live, and the user gets a one-line warning naming the route and
++	* the cause. The message mirrors the dsh-llm-pi-ai error style so it
++	* reads as the same source.
++	* @param provider - the offending route name.
++	* @param error - the error thrown by validation / catalog resolution.
++	*/
++	const reportInvalidProvider = (provider, error) => {
++		const reason = error instanceof Error ? error.message : String(error);
++		ctx.logger.warn(`llm-pi-ai: dropping provider "${provider}" — its profile cannot be served (${reason}); the route is removed from the live registry, the other routes in the llm-pi-ai namespace continue to register, and the profile remains in settings.yaml so it can be edited.`);
++	};
++	setInvalidProviderReporter(reportInvalidProvider);
++	/**
+ 	* The resolved profiles for the current configuration, memoized by the raw
+ 	* snapshot's identity — which is also what makes the adapter's own snapshot
+ 	* stable across operations that observe no change.
