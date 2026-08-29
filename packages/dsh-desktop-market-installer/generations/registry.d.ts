@@ -33,6 +33,8 @@ export function readLastKnownGood(dshHome: string): Promise<string[]>
 export function writeDesired(dshHome: string, generationIds: string[]): Promise<void>
 export function commitLastKnownGood(dshHome: string): Promise<void>
 export function revertToLastKnownGood(dshHome: string): Promise<string[]>
+export function disableGeneration(dshHome: string, pluginName: string): Promise<boolean>
+export function isGenerationPlugin(dshHome: string, pluginName: string): Promise<boolean>
 export function resolveEnabledGenerations(dshHome: string): Promise<Map<string, Generation>>
 export function collectUnreferencedGenerations(dshHome: string): Promise<string[]>
 export function sweepRegistry(dshHome: string): Promise<{ removed: string[]; failed: string[] }>

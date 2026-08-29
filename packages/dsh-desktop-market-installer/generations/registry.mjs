@@ -207,6 +207,30 @@ export async function revertToLastKnownGood(dshHome) {
 }
 
 /**
+ * Drop every generation of `pluginName` from `desired`. This is how a plugin
+ * gets uninstalled: the recovery and Safe Mode paths route here for a
+ * generation plugin instead of `dsh plugin remove`, because `desired` is what
+ * projection re-derives the profile from — a `pnpm remove` would be undone on
+ * the next launch. The generation directory stays for a fast re-enable and is
+ * swept on a later cold start.
+ * @returns whether a generation was removed.
+ */
+export async function disableGeneration(dshHome, pluginName) {
+  const [desired, generations] = await Promise.all([readDesired(dshHome), listGenerations(dshHome)])
+  const byId = new Map(generations.map((generation) => [generation.id, generation]))
+  const next = desired.filter((id) => byId.get(id)?.pluginName !== pluginName)
+  if (next.length === desired.length) return false
+  await writeDesired(dshHome, next)
+  return true
+}
+
+/** Whether any promoted generation provides `pluginName`. */
+export async function isGenerationPlugin(dshHome, pluginName) {
+  const generations = await listGenerations(dshHome)
+  return generations.some((generation) => generation.pluginName === pluginName)
+}
+
+/**
  * The name -> directory map the loader resolves against. Built from `desired`
  * so a generation that exists on disk but is not currently wanted is invisible
  * to resolution while still available for a fast rollback.

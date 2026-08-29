@@ -1,5 +1,7 @@
 import {
   commitLastKnownGood,
+  disableGeneration,
+  isGenerationPlugin,
   readDesired,
   readLastKnownGood,
   revertToLastKnownGood,
@@ -71,6 +73,31 @@ export async function rollBackToLastKnownGood(dshHome: string, note: Note): Prom
   note(
     `[desktop] a new plugin set failed to boot; rolled back to the last working set ` +
       `(${reverted.length} generation(s))`
+  )
+  return true
+}
+
+/**
+ * Uninstall a plugin that is a generation: drop it from `desired` and
+ * reproject. Returns false when the plugin is not a generation, so the caller
+ * can fall through to the shared-tree `dsh plugin remove`.
+ *
+ * The recovery and Safe Mode paths must come here for a generation — a
+ * `pnpm remove` edits the shared tree, but projection re-derives the profile
+ * from `desired` on the next launch and the plugin comes straight back.
+ */
+export async function uninstallGenerationPlugin(
+  dshHome: string,
+  pluginName: string,
+  note: Note
+): Promise<boolean> {
+  if (!(await isGenerationPlugin(dshHome, pluginName).catch(() => false))) return false
+  const removed = await disableGeneration(dshHome, pluginName).catch(() => false)
+  await projectGenerations(dshHome).catch(() => undefined)
+  note(
+    removed
+      ? `[desktop] disabled the ${pluginName} generation; it will be swept on a later cold start`
+      : `[desktop] ${pluginName} was already not an enabled generation`
   )
   return true
 }

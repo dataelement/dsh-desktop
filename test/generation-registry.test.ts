@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   collectUnreferencedGenerations,
+  disableGeneration,
+  isGenerationPlugin,
   commitLastKnownGood,
   ensureRegistryDirectories,
   generationId,
@@ -165,5 +167,31 @@ describe('the plugin generation registry', () => {
       { staleAfterMs: 0, retryMs: 1, timeoutMs: 2000 }
     )
     expect(result).toBe('acquired')
+  })
+
+  it('disables a generation by dropping every id for that plugin from desired', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'teams+0.1.14+aaaa', '@nanmicoder/dsh-agent-teams', '0.1.14')
+    await fakeGeneration(home, 'teams+0.1.13+bbbb', '@nanmicoder/dsh-agent-teams', '0.1.13')
+    await fakeGeneration(home, 'sidebar+1+cccc', 'dsh-better-sidebar', '1.0.0')
+    await writeDesired(home, ['teams+0.1.14+aaaa', 'teams+0.1.13+bbbb', 'sidebar+1+cccc'])
+
+    expect(await isGenerationPlugin(home, '@nanmicoder/dsh-agent-teams')).toBe(true)
+    expect(await isGenerationPlugin(home, 'never-installed')).toBe(false)
+
+    const removed = await disableGeneration(home, '@nanmicoder/dsh-agent-teams')
+    expect(removed).toBe(true)
+    expect(await readDesired(home)).toEqual(['sidebar+1+cccc'])
+
+    // the generation directories are untouched — kept for a fast re-enable
+    expect((await listGenerations(home)).map((g) => g.id).sort()).toEqual([
+      'sidebar+1+cccc',
+      'teams+0.1.13+bbbb',
+      'teams+0.1.14+aaaa'
+    ])
+
+    // disabling something that is not desired is a no-op
+    expect(await disableGeneration(home, '@nanmicoder/dsh-agent-teams')).toBe(false)
   })
 })

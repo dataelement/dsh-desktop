@@ -67,7 +67,8 @@ import {
   desiredIsUntried,
   markGenerationsBooted,
   prepareGenerationsForLaunch,
-  rollBackToLastKnownGood
+  rollBackToLastKnownGood,
+  uninstallGenerationPlugin
 } from './state/generation-launch'
 import {
   confirmMigration,
@@ -1614,6 +1615,22 @@ async function removeProfilePluginCompletely(
   environment: NodeJS.ProcessEnv,
   logPrefix: string
 ): Promise<boolean> {
+  // A generation plugin is uninstalled by dropping it from `desired` and
+  // reprojecting — a `pnpm remove` on its `link:` dep is undone by the next
+  // projection, which re-derives the profile from `desired`.
+  if (
+    await uninstallGenerationPlugin(dshHome, pluginName, (line) => runtime.note(line)).catch(
+      () => false
+    )
+  ) {
+    await cleanupPluginOwnedComponents({
+      dshHome,
+      pluginName,
+      log: (message) => runtime.note(`[${logPrefix}] ${message}`)
+    }).catch(() => undefined)
+    return !(await listInstalledProfilePlugins(dshHome)).includes(pluginName)
+  }
+
   const cleanup = await cleanupPluginOwnedComponents({
     dshHome,
     pluginName,
