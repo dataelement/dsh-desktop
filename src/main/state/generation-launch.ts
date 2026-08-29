@@ -11,6 +11,7 @@ import {
   isGenerationPlugin,
   readDesired,
   readLastKnownGood,
+  resolveEnabledGenerations,
   revertToLastKnownGood,
   sweepRegistry
 } from 'dsh-desktop-market-installer/generations/registry'
@@ -110,14 +111,27 @@ export async function uninstallGenerationPlugin(
   note: Note
 ): Promise<boolean> {
   if (!(await isGenerationPlugin(dshHome, pluginName).catch(() => false))) return false
-  const removed = await disableGeneration(dshHome, pluginName).catch(() => false)
-  await projectGenerations(dshHome).catch(() => undefined)
-  note(
-    removed
-      ? `[desktop] disabled the ${pluginName} generation; it will be swept on a later cold start`
-      : `[desktop] ${pluginName} was already not an enabled generation`
-  )
-  return true
+  try {
+    const removed = await disableGeneration(dshHome, pluginName)
+    await projectGenerations(dshHome)
+    const stillEnabled = (await resolveEnabledGenerations(dshHome)).has(pluginName)
+    if (stillEnabled) {
+      note(`[desktop] failed to disable the ${pluginName} generation`)
+      return false
+    }
+    note(
+      removed
+        ? `[desktop] disabled the ${pluginName} generation; it will be swept on a later cold start`
+        : `[desktop] ${pluginName} was already not an enabled generation`
+    )
+    return true
+  } catch (error) {
+    note(
+      `[desktop] failed to disable the ${pluginName} generation: ` +
+        `${error instanceof Error ? error.message : error}`
+    )
+    return false
+  }
 }
 
 /**

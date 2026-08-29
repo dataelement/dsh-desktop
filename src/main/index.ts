@@ -16,12 +16,9 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
-import { extractFailureCause, HarnessRuntime, resolveShellEnvironment } from './runtime/harness-runtime'
+import { extractFailureCause, HarnessRuntime } from './runtime/harness-runtime'
 import { launchDisclaimedUtilityProcess } from './runtime/disclaimed-utility-process'
-import {
-  installProfileDependenciesWithDsh,
-  removeProfilePluginWithDsh
-} from './runtime/profile-plugin-command'
+import { installProfileDependenciesWithDsh } from './runtime/profile-plugin-command'
 import { clearDamagedPackageDirectories, hasProfile } from './state/profile-repair'
 import {
   clearProfileInstallMarker,
@@ -59,8 +56,7 @@ import { ensureLaunchRoot } from './state/launch-root'
 import {
   listInstalledProfilePlugins,
   pruneMissingProfileBundles,
-  resetPluginProfile,
-  uninstallPluginFromProfile
+  resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
 import {
@@ -78,6 +74,14 @@ import {
   rollBackMigration
 } from './state/generation-migration'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
+import {
+  confirmPluginRemovalsBooted,
+  enforcePendingPluginRemovals,
+  listPendingPluginRemovals,
+  removePluginSafely,
+  shouldDeferProfileMaintenance,
+  type PluginRemovalResult
+} from './state/plugin-removal'
 import {
   appBundlePathFromExecutable,
   auditLaunchAgents,
@@ -171,6 +175,7 @@ const startInSafeMode = shouldStartInSafeMode(process.argv)
 // the recovery page do not count: both are local pages that render on a
 // machine whose harness never will.
 let harnessRendered = false
+let pluginRemovalsConfirmedThisProcess = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
@@ -878,6 +883,14 @@ async function openHarness(
     if (navigationVersion !== mainWindowNavigationVersion) return
   }
   markHarnessRendered()
+  // Safe Mode proves only the isolated recovery profile. Confirm an uninstall
+  // against the normal web profile once per app process, so its backup gets a
+  // full later launch before it is garbage-collected.
+  if (!safeModeVisible && !pluginRemovalsConfirmedThisProcess) {
+    pluginRemovalsConfirmedThisProcess = true
+    const dshHome = join(app.getPath('userData'), 'harness')
+    void confirmPluginRemovalsBooted(dshHome, (line) => runtime?.note(line)).catch(() => undefined)
+  }
   if (runtime.snapshot().url !== url || window.isDestroyed()) return
   await syncNativeTheme(window)
   raiseWindowWithoutStealingFocus(
@@ -1037,34 +1050,45 @@ function launchHarness(): Promise<void> {
     // Restore its snapshot before projection or package repair can observe the
     // partially switched profile.
     await recoverInterruptedMigration(dshHome, (line) => runtime.note(line))
+    // A removal tombstone is authoritative even if its later cleanup failed.
+    // Enforce it before and after projection so a generation pointer cannot
+    // silently add the disabled bundle back during a recovery launch.
+    await enforcePendingPluginRemovals(dshHome, (line) => runtime.note(line))
     // Cold start, Harness stopped: sweep unreferenced plugin generations and
     // reproject so the profile's links match `desired`. A no-op on a profile
     // that has never used a generation.
     await prepareGenerationsForLaunch(dshHome, (line) => runtime.note(line))
+    await enforcePendingPluginRemovals(dshHome, (line) => runtime.note(line))
     // One-time move of a pre-upgrade profile (community plugins in the shared
     // tree) onto the generation model. Runs before the shared-tree repair and,
     // when it succeeds, replaces it — the migration has already rebuilt the
     // tree down to what stays there.
-    const migrated = await migrateProfileToGenerations({
-      dshHome,
-      nodeExecutablePath: bundledNodePath(),
-      pnpmEntryPath: bundledPnpmEntryPath(),
-      dshEntryPath: dshEntryPath(),
-      note: (line) => runtime.note(line),
-      reinstallSharedTree: async () => {
-        await clearProfileInstallMarker(dshHome)
-        const result = await installProfileDependenciesWithDsh({
-          dshHome,
-          dshEntryPath: dshEntryPath(),
-          nodeExecutablePath: bundledNodePath(),
-          pnpmEntryPath: bundledPnpmEntryPath(),
-          pnpmRunnerPath: bundledPnpmRunnerPath()
-        })
-        if (result.ok) await markProfileInstallComplete(dshHome)
-        return result
-      }
-    })
-    if (!migrated) await repairProfilePackages(dshHome)
+    const deferMaintenance = await shouldDeferProfileMaintenance(dshHome).catch(() => false)
+    let migrated = false
+    if (deferMaintenance) {
+      runtime.note('[desktop] profile package maintenance deferred while plugin removal is pending verification')
+    } else {
+      migrated = await migrateProfileToGenerations({
+        dshHome,
+        nodeExecutablePath: bundledNodePath(),
+        pnpmEntryPath: bundledPnpmEntryPath(),
+        dshEntryPath: dshEntryPath(),
+        note: (line) => runtime.note(line),
+        reinstallSharedTree: async () => {
+          await clearProfileInstallMarker(dshHome)
+          const result = await installProfileDependenciesWithDsh({
+            dshHome,
+            dshEntryPath: dshEntryPath(),
+            nodeExecutablePath: bundledNodePath(),
+            pnpmEntryPath: bundledPnpmEntryPath(),
+            pnpmRunnerPath: bundledPnpmRunnerPath()
+          })
+          if (result.ok) await markProfileInstallComplete(dshHome)
+          return result
+        }
+      })
+      if (!migrated) await repairProfilePackages(dshHome)
+    }
     await pruneMissingProfileBundles(dshHome).catch(() => false)
     await reportProfileConsistency(dshHome)
     await auditInstalledLaunchAgents(dshHome)
@@ -1417,15 +1441,14 @@ async function showPluginRecovery(options?: {
         applyPendingFrontendEvidence()
         continue
       } else if (action === 'uninstall' && detection.plugins.length > 0) {
+        // The normal web Harness may still have the failing plugin imported.
+        // macOS permits renaming an open directory, but Windows does not; stop
+        // the process before quarantine so both platforms use the same path.
+        await runtime.stop()
         const failedPlugins: string[] = []
         for (const plugin of detection.plugins) {
-          const removed = await removeProfilePluginCompletely(
-            dshHome,
-            plugin,
-            resolveShellEnvironment(),
-            'plugin-recovery'
-          )
-          if (removed) {
+          const removal = await removeProfilePluginCompletely(dshHome, plugin, 'plugin-recovery')
+          if (removal.disabled) {
             if (!removedPlugins.includes(plugin)) removedPlugins.push(plugin)
           } else {
             failedPlugins.push(plugin)
@@ -1566,13 +1589,11 @@ async function waitForSafeModeAction(options: {
   return actionPromise
 }
 
-async function removeSafeModePlugin(dshHome: string, pluginName: string): Promise<boolean> {
-  return removeProfilePluginCompletely(
-    dshHome,
-    pluginName,
-    process.env,
-    'safe-mode'
-  )
+async function removeSafeModePlugin(
+  dshHome: string,
+  pluginName: string
+): Promise<PluginRemovalResult> {
+  return removeProfilePluginCompletely(dshHome, pluginName, 'safe-mode')
 }
 
 async function repairSafeModeCompatibilityIssues(
@@ -1633,61 +1654,27 @@ async function repairSafeModeCompatibilityIssues(
 async function removeProfilePluginCompletely(
   dshHome: string,
   pluginName: string,
-  environment: NodeJS.ProcessEnv,
   logPrefix: string
-): Promise<boolean> {
-  // A generation plugin is uninstalled by dropping it from `desired` and
-  // reprojecting — a `pnpm remove` on its `link:` dep is undone by the next
-  // projection, which re-derives the profile from `desired`.
-  if (
-    await uninstallGenerationPlugin(dshHome, pluginName, (line) => runtime.note(line)).catch(
-      () => false
-    )
-  ) {
-    await cleanupPluginOwnedComponents({
+): Promise<PluginRemovalResult> {
+  const result = await removePluginSafely({
+    dshHome,
+    pluginName,
+    cleanupOwnedComponents: () => cleanupPluginOwnedComponents({
       dshHome,
       pluginName,
       log: (message) => runtime.note(`[${logPrefix}] ${message}`)
-    }).catch(() => undefined)
-    return !(await listInstalledProfilePlugins(dshHome)).includes(pluginName)
-  }
-
-  const cleanup = await cleanupPluginOwnedComponents({
-    dshHome,
-    pluginName,
-    log: (message) => runtime.note(`[${logPrefix}] ${message}`)
+    }),
+    uninstallGeneration: () => uninstallGenerationPlugin(
+      dshHome,
+      pluginName,
+      (line) => runtime.note(line)
+    ),
+    note: (line) => runtime.note(`[${logPrefix}] ${line}`)
   })
-  if (!cleanup.ok) {
-    for (const failure of cleanup.failures) {
-      runtime.note(`[${logPrefix}] failed to clean components for ${pluginName}: ${failure}`)
-    }
-    return false
+  for (const failure of result.failures) {
+    runtime.note(`[${logPrefix}] ${pluginName} remains disabled; cleanup pending: ${failure}`)
   }
-
-  const removed = await uninstallPluginFromProfile(dshHome, pluginName, async (name) => {
-    const result = await removeProfilePluginWithDsh(
-      {
-        dshHome,
-        dshEntryPath: dshEntryPath(),
-        nodeExecutablePath: bundledNodePath(),
-        pnpmEntryPath: bundledPnpmEntryPath(),
-        pnpmRunnerPath: bundledPnpmRunnerPath(),
-        environment
-      },
-      name
-    )
-    if (!result.ok) {
-      runtime.note(`[${logPrefix}] failed to remove ${name}: ${result.detail ?? 'unknown error'}`)
-    }
-    return result.ok
-  })
-  // Both recovery paths pass an exact configured root bundle. The fallback
-  // must not widen that ownership to similarly-named or same-scope siblings.
-  if (removed || await resetPluginProfile(dshHome, pluginName, false)) return true
-  // A package command can finish the profile edit but fail its own final
-  // verification (for example after a lockfile cleanup). Treat the observable
-  // profile state as authoritative instead of reporting a false failure.
-  return !(await listInstalledProfilePlugins(dshHome)).includes(pluginName)
+  return result
 }
 
 async function showSafeMode(): Promise<void> {
@@ -1713,7 +1700,9 @@ async function showSafeModeManager(): Promise<void> {
 
   try {
     while (!quitting) {
-      const installed = await listInstalledProfilePlugins(dshHome)
+      const active = await listInstalledProfilePlugins(dshHome)
+      const pendingRemovals = await listPendingPluginRemovals(dshHome)
+      const installed = [...new Set([...active, ...pendingRemovals])]
       const compatibility = await inspectProfileCompatibility(
         dshHome,
         join(app.getAppPath(), 'node_modules')
@@ -1776,18 +1765,25 @@ async function showSafeModeManager(): Promise<void> {
       }
 
       const failedPlugins: string[] = []
+      const pendingPlugins: string[] = []
       for (const plugin of selectedPlugins) {
-        if (!(await removeSafeModePlugin(dshHome, plugin))) failedPlugins.push(plugin)
+        const removal = await removeSafeModePlugin(dshHome, plugin)
+        if (!removal.disabled) failedPlugins.push(plugin)
+        else if (removal.pending) pendingPlugins.push(plugin)
       }
       const failed = repairFailures + failedPlugins.length
-      notice = failed === 0
+      notice = pendingPlugins.length > 0
+        ? isChinese
+          ? `已禁用 ${pendingPlugins.length} 个插件；物理清理待重试。插件不会在后续启动中重新启用。`
+          : `Disabled ${pendingPlugins.length} plugin${pendingPlugins.length === 1 ? '' : 's'}; physical cleanup is pending. They will stay disabled on later launches.`
+        : failed === 0
         ? isChinese
           ? `处理完成：修复 ${repaired} 项，卸载 ${selectedPlugins.length} 个插件。`
           : `Completed: ${repaired} repair${repaired === 1 ? '' : 's'} and ${selectedPlugins.length} plugin removal${selectedPlugins.length === 1 ? '' : 's'}.`
         : isChinese
           ? `已修复 ${repaired} 项、卸载 ${selectedPlugins.length - failedPlugins.length} 个插件；${failed} 项未能处理。`
           : `Completed ${repaired} repairs and removed ${selectedPlugins.length - failedPlugins.length} plugins; ${failed} items could not be processed.`
-      noticeTone = failed === 0 ? 'success' : 'error'
+      noticeTone = failed === 0 && pendingPlugins.length === 0 ? 'success' : 'error'
     }
   } finally {
     safeModeActionResolver = undefined

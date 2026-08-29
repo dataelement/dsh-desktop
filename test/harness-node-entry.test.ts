@@ -1,15 +1,8 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import childProcess from 'node:child_process'
-
-function applyWindowsHide(options: any): any {
-  if (options && typeof options === 'object' && options.windowsHide !== undefined) {
-    return options
-  }
-  if (options && typeof options === 'object') {
-    return { ...options, windowsHide: true }
-  }
-  return { windowsHide: true }
-}
+import { execFileSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
+import { join } from 'node:path'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { applyWindowsHide } from '../build/windows-child-process-hide.mjs'
 
 describe('applyWindowsHide helper', () => {
   it('adds windowsHide: true when options is undefined', () => {
@@ -39,6 +32,37 @@ describe('applyWindowsHide helper', () => {
       stdio: 'pipe',
       windowsHide: true
     })
+  })
+})
+
+describe('windowsHide ESM built-in synchronization', () => {
+  it('reaches modules that import spawn as a named ESM export', () => {
+    const helperUrl = pathToFileURL(
+      join(process.cwd(), 'build', 'windows-child-process-hide.mjs')
+    ).href
+    const script = `
+      import childProcess from 'node:child_process'
+      import { syncBuiltinESMExports } from 'node:module'
+      import { enforceWindowsChildProcessHide } from ${JSON.stringify(helperUrl)}
+
+      let observed
+      childProcess.spawn = (_command, _args, options) => {
+        observed = options
+        return { marker: true }
+      }
+      enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExports)
+
+      const fixture = await import('data:text/javascript,' + encodeURIComponent(
+        'import { spawn } from "node:child_process"; export function run() { return spawn("fixture", [], { cwd: "C:/fixture" }) }'
+      ))
+      fixture.run()
+      process.stdout.write(JSON.stringify(observed))
+    `
+    const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+      encoding: 'utf8'
+    })
+
+    expect(JSON.parse(output)).toEqual({ cwd: 'C:/fixture', windowsHide: true })
   })
 })
 
