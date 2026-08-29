@@ -549,13 +549,30 @@ export function buildInstallArguments(dshEntry = resolveDshEntry()) {
     'plugin',
     '--profile',
     MARKET_PROFILE,
-    'add',
-    `${MARKET_PACKAGE}@${RECOMMENDED_MARKET_VERSION}`
+    ...buildMarketInstallArguments()
   ]
 }
 
 export function buildUninstallArguments(dshEntry = resolveDshEntry()) {
-  return [dshEntry, 'plugin', '--profile', MARKET_PROFILE, 'remove', MARKET_PACKAGE]
+  return [
+    dshEntry,
+    'plugin',
+    '--profile',
+    MARKET_PROFILE,
+    ...buildMarketUninstallArguments()
+  ]
+}
+
+function buildMarketInstallArguments() {
+  return [
+    'add',
+    '--workspace-root',
+    `${MARKET_PACKAGE}@${RECOMMENDED_MARKET_VERSION}`
+  ]
+}
+
+function buildMarketUninstallArguments() {
+  return ['remove', '--workspace-root', MARKET_PACKAGE]
 }
 
 async function atomicWrite(path, contents) {
@@ -702,10 +719,7 @@ export async function apply(ctx) {
     }
 
     try {
-      await runProfileCommand(
-        ['add', `${MARKET_PACKAGE}@${RECOMMENDED_MARKET_VERSION}`],
-        'Installation'
-      )
+      await runProfileCommand(buildMarketInstallArguments(), 'Installation')
 
       const installed = await readMarketInstallation(home)
       if (!installed.installedVersion) {
@@ -748,7 +762,7 @@ export async function apply(ctx) {
     }
 
     try {
-      await runProfileCommand(['remove', MARKET_PACKAGE], 'Uninstallation')
+      await runProfileCommand(buildMarketUninstallArguments(), 'Uninstallation')
 
       const removed = await readMarketInstallation(home)
       if (removed.dependency || removed.installedVersion) {

@@ -31,6 +31,7 @@ describe('desktop plugin market installer', () => {
       '--profile',
       'web',
       'add',
+      '--workspace-root',
       'dshmarket@latest'
     ])
     expect(MARKET_PACKAGE).toBe('dshmarket')
@@ -44,6 +45,7 @@ describe('desktop plugin market installer', () => {
       '--profile',
       'web',
       'remove',
+      '--workspace-root',
       'dshmarket'
     ])
   })
