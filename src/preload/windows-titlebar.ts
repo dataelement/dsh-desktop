@@ -1,9 +1,14 @@
 import type { IpcRenderer } from 'electron'
+import { WINDOWS_TITLEBAR_HEIGHT } from '../shared/desktop-menu'
 
 const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
 const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
 const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
+const NO_DRAG_PATCH_SELECTOR =
+  'button, a, input, select, textarea, [role="button"], [data-dsh-no-drag]'
+// One above the drag region (2147483644), below the update card (2147483646).
+const NO_DRAG_PATCH_Z_INDEX = '2147483645'
 
 interface TitlebarLayoutMountOptions {
   document: Document
@@ -16,6 +21,7 @@ export function mountWindowsTitlebarLayout(options: TitlebarLayoutMountOptions):
 
   installLayout(document)
   installDragRegion(document)
+  installNoDragPatches(document)
   trackSidebarLayout(document)
 
   document.addEventListener('pointerdown', () => {
@@ -90,6 +96,74 @@ function installDragRegion(document: Document): void {
   dragRegion.id = DRAG_REGION_ID
   dragRegion.setAttribute('aria-hidden', 'true')
   document.body.appendChild(dragRegion)
+}
+
+/**
+ * The drag region above intentionally sits on top of every page element, so
+ * `-webkit-app-region` resolves to `drag` for the whole strip and the global
+ * `no-drag` rule on buttons below it never wins (app-region is resolved by
+ * paint order, not DOM proximity — pointer-events does not opt out of it).
+ * Punch transparent `no-drag` holes one layer above the drag region for every
+ * interactive element that intersects the strip, so Harness controls (and
+ * third-party plugin UI) stay clickable while the rest of the strip keeps
+ * dragging the window.
+ */
+function installNoDragPatches(document: Document): void {
+  const patches = new Map<Element, HTMLElement>()
+
+  const sync = (): void => {
+    for (const [element, patch] of patches) {
+      if (!element.isConnected) {
+        patch.remove()
+        patches.delete(element)
+      }
+    }
+    for (const element of document.querySelectorAll<HTMLElement>(NO_DRAG_PATCH_SELECTOR)) {
+      const rect = element.getBoundingClientRect()
+      if (rect.width <= 0 || rect.bottom <= 0 || rect.top >= WINDOWS_TITLEBAR_HEIGHT) {
+        const stale = patches.get(element)
+        if (stale) {
+          stale.remove()
+          patches.delete(element)
+        }
+        continue
+      }
+      const top = Math.max(rect.top, 0)
+      const height = Math.min(rect.bottom, WINDOWS_TITLEBAR_HEIGHT) - top
+      let patch = patches.get(element)
+      if (!patch) {
+        patch = document.createElement('div')
+        patch.setAttribute('aria-hidden', 'true')
+        patch.style.position = 'fixed'
+        patch.style.pointerEvents = 'none'
+        patch.style.userSelect = 'none'
+        patch.style.background = 'transparent'
+        patch.style.zIndex = NO_DRAG_PATCH_Z_INDEX
+        patch.style.setProperty('-webkit-app-region', 'no-drag')
+        document.body.appendChild(patch)
+        patches.set(element, patch)
+      }
+      patch.style.left = `${rect.left}px`
+      patch.style.top = `${top}px`
+      patch.style.width = `${rect.width}px`
+      patch.style.height = `${height}px`
+    }
+  }
+
+  let frame: number | null = null
+  const schedule = (): void => {
+    if (frame !== null) return
+    frame = window.requestAnimationFrame(() => {
+      frame = null
+      sync()
+    })
+  }
+
+  const observer = new MutationObserver(schedule)
+  observer.observe(document.documentElement, { childList: true, subtree: true })
+  window.addEventListener('resize', schedule, { passive: true })
+  window.addEventListener('scroll', schedule, { passive: true, capture: true })
+  sync()
 }
 
 function trackSidebarLayout(document: Document): void {

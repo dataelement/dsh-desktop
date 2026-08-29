@@ -48,6 +48,25 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain("document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')")
   })
 
+  it('punches no-drag holes above the drag region so strip controls stay clickable', async () => {
+    const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
+
+    expect(preload).toContain('installNoDragPatches(document)')
+    expect(preload).toContain(
+      "'button, a, input, select, textarea, [role=\"button\"], [data-dsh-no-drag]'"
+    )
+    // Patches must sit one layer above the drag region to win the app-region
+    // resolution, and must not intercept clicks themselves.
+    expect(preload).toContain("const NO_DRAG_PATCH_Z_INDEX = '2147483645'")
+    expect(preload).toContain("patch.style.zIndex = NO_DRAG_PATCH_Z_INDEX")
+    expect(preload).toContain("patch.style.pointerEvents = 'none'")
+    expect(preload).toContain("patch.style.setProperty('-webkit-app-region', 'no-drag')")
+    // Patches only cover the titlebar strip and track layout changes.
+    expect(preload).toContain('rect.top >= WINDOWS_TITLEBAR_HEIGHT')
+    expect(preload).toContain("addEventListener('scroll', schedule, { passive: true, capture: true })")
+    expect(preload).toContain("new MutationObserver(schedule)")
+  })
+
   it('accepts only the fixed menu command allowlist', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
 
