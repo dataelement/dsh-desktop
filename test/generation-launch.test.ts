@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-app-boot'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   desiredIsUntried,
@@ -52,6 +53,23 @@ describe('the launch-process half of the generation model', () => {
   afterEach(async () => {
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
+  })
+
+  it('initializes a missing web profile from the shipped template before projection', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-genlaunch-empty-'))
+    homes.push(home)
+
+    await prepareGenerationsForLaunch(home, silent)
+
+    const profileDir = join(home, 'profiles', 'web')
+    const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
+    const template = PROFILE_TEMPLATES.web
+    expect(template).toBeDefined()
+    expect(manifest.dsh.profile.bundles).toEqual(template?.bundles)
+    expect(await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8')).toContain('[]')
+    expect(await readFile(join(profileDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
+      'nodeLinker: hoisted'
+    )
   })
 
   it('is a no-op on a profile that has never used a generation', async () => {

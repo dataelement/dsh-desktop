@@ -1,3 +1,10 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+  initProfile,
+  PROFILE_TEMPLATES,
+  resolveProfileDir
+} from '@deepseek-ai/dsh-app-boot'
 import {
   commitLastKnownGood,
   disableGeneration,
@@ -36,6 +43,17 @@ export async function prepareGenerationsForLaunch(dshHome: string, note: Note): 
     if (failed.length > 0) {
       // Inert — nothing resolves against them; the next cold start retries.
       note(`[desktop] ${failed.length} generation(s) could not be removed yet, will retry`)
+    }
+    // Projection must not invent an empty profile manifest. On a first launch,
+    // doing so prevents app-boot from installing the shipped web bundles and
+    // leaves Desktop overlays waiting forever for services such as connection.
+    // Use the same initializer and template app-boot itself uses so its defaults
+    // remain the single source of truth.
+    const profileDir = resolveProfileDir('web', dshHome)
+    if (!existsSync(join(profileDir, 'package.json'))) {
+      const template = PROFILE_TEMPLATES.web
+      if (template === undefined) throw new Error('Harness does not define the web profile template')
+      initProfile(profileDir, template.bundles, template.patchReload)
     }
     const projection = await projectGenerations(dshHome)
     if (projection.linked.length > 0 || projection.unlinked.length > 0) {
