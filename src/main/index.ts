@@ -9,6 +9,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  powerMonitor,
   shell,
   Tray,
   utilityProcess,
@@ -736,6 +737,18 @@ function ensureTray(): void {
     ])
   )
   tray.on('click', restoreMainWindow)
+}
+
+function installOsShutdownQuitGuard(): void {
+  // While close-to-tray is active the window 'close' handler keeps calling
+  // preventDefault (see shouldKeepRunningInBackground). During a real OS
+  // shutdown or logoff that would make Windows show the "app is preventing
+  // shutdown" screen or force-kill the app after a timeout. Electron emits
+  // powerMonitor 'shutdown' before session end, so flip the existing quitting
+  // flag there and let the close proceed through the normal lifecycle.
+  powerMonitor.on('shutdown', () => {
+    quitting = true
+  })
 }
 
 function createWindow(): BrowserWindow {
@@ -1747,6 +1760,7 @@ async function bootstrap(): Promise<void> {
   registerUpdateHandlers()
   nativeTheme.themeSource = harnessThemePreference()
   ensureTray()
+  installOsShutdownQuitGuard()
   createWindow()
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),
