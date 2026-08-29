@@ -2188,6 +2188,10 @@ if (isDaemonLaunch(process.env, process.platform)) {
       event.preventDefault()
       quitting = true
       stopUpdateManager()
+      // Windows leaves the tray icon behind as a ghost until the user hovers
+      // over it unless it is destroyed explicitly before the process exits.
+      if (tray && !tray.isDestroyed()) tray.destroy()
+      tray = undefined
       void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
     })
   }
