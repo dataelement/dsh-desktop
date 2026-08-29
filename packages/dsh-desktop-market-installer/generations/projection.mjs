@@ -45,6 +45,16 @@ function profileDir(dshHome, profile = 'web') {
   return join(dshHome, 'profiles', profile)
 }
 
+/** Whether an installed package declares its own `dsh.bundle` patch layer. */
+async function declaresBundle(packageDir) {
+  try {
+    const manifest = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
+    return typeof manifest.dsh?.bundle?.patch === 'string'
+  } catch {
+    return false
+  }
+}
+
 /**
  * A directory link that works on Windows without Developer Mode. `junction`
  * targets must be absolute; they behave as symlinks for module resolution.
@@ -139,10 +149,6 @@ async function syncProfileManifest(dir, enabled) {
     manifest = { name: 'dsh-profile-web', private: true }
   }
 
-  const existingBundles = (manifest.dsh?.profile?.bundles ?? []).filter((name) => IN_BOX_BUNDLES.has(name))
-  const pluginNames = [...enabled.keys()].sort()
-  const bundles = [...existingBundles, ...pluginNames]
-
   // Keep whatever real pnpm dependencies the profile already had (dshmarket,
   // anything installed the old way) and drop any that are now generations —
   // those resolve through the symlink and must not be in what `pnpm install`
@@ -152,6 +158,21 @@ async function syncProfileManifest(dir, enabled) {
   for (const [name, spec] of Object.entries(currentDeps)) {
     if (!enabled.has(name)) dependencies[name] = spec
   }
+
+  // Bundle entries that survive: in-box bundles, plus any kept dependency that
+  // declares its own `dsh.bundle` (dshmarket). A bundle-declaring dependency
+  // left out of `bundles` makes the consistency check report "installed and
+  // declares a bundle, but is not composed", which the app surfaces as a
+  // restart prompt on every launch.
+  const declaredBundles = (manifest.dsh?.profile?.bundles ?? []).filter((name) =>
+    IN_BOX_BUNDLES.has(name)
+  )
+  for (const name of Object.keys(dependencies)) {
+    if (declaredBundles.includes(name)) continue
+    if (await declaresBundle(join(dir, 'node_modules', name))) declaredBundles.push(name)
+  }
+  const pluginNames = [...enabled.keys()].sort()
+  const bundles = [...declaredBundles, ...pluginNames]
 
   const next = {
     ...manifest,
@@ -166,9 +187,20 @@ async function syncProfileManifest(dir, enabled) {
   }
 
   const body = `${JSON.stringify(next, undefined, 2)}\n`
-  const temporary = `${manifestPath}.${process.pid}.${Date.now()}.tmp`
-  await writeFile(temporary, body, 'utf8')
-  await rename(temporary, manifestPath)
+  // Only touch the file when it actually changes. The projection runs every
+  // launch; rewriting an identical manifest churns its mtime and breaks the
+  // `.install-complete` fingerprint for no reason.
+  let current
+  try {
+    current = await readFile(manifestPath, 'utf8')
+  } catch {
+    current = undefined
+  }
+  if (current !== body) {
+    const temporary = `${manifestPath}.${process.pid}.${Date.now()}.tmp`
+    await writeFile(temporary, body, 'utf8')
+    await rename(temporary, manifestPath)
+  }
 
   return bundles
 }

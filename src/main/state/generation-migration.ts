@@ -46,6 +46,16 @@ function profileDir(dshHome: string): string {
   return join(dshHome, 'profiles', 'web')
 }
 
+/** Whether an installed package declares its own `dsh.bundle` patch layer. */
+async function declaresBundle(packageDir: string): Promise<boolean> {
+  try {
+    const manifest = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
+    return typeof manifest?.dsh?.bundle?.patch === 'string'
+  } catch {
+    return false
+  }
+}
+
 export function isProfileMigrated(dshHome: string): boolean {
   return existsSync(join(profileDir(dshHome), MARKER))
 }
@@ -130,9 +140,18 @@ async function rewriteManifest(dshHome: string, pluginNames: string[]): Promise<
   }
   if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.35.0'
 
-  const inBoxBundles = (snapshot.dsh?.profile?.bundles ?? []).filter((name: string) =>
+  const keptBundles = (snapshot.dsh?.profile?.bundles ?? []).filter((name: string) =>
     KEEP_IN_SHARED_TREE.has(name)
   )
+  // A kept dependency that declares its own `dsh.bundle` (dshmarket) has to
+  // stay composed, or the consistency check reports it and the app prompts a
+  // restart every launch.
+  for (const name of Object.keys(keptDeps)) {
+    if (keptBundles.includes(name)) continue
+    if (await declaresBundle(join(profileDir(dshHome), `node_modules${SNAPSHOT_SUFFIX}`, name))) {
+      keptBundles.push(name)
+    }
+  }
   const next = {
     ...snapshot,
     dependencies: keptDeps,
@@ -140,7 +159,7 @@ async function rewriteManifest(dshHome: string, pluginNames: string[]): Promise<
       ...snapshot.dsh,
       profile: {
         ...(snapshot.dsh?.profile ?? {}),
-        bundles: [...inBoxBundles, ...pluginNames.sort()]
+        bundles: [...keptBundles, ...pluginNames.sort()]
       }
     }
   }

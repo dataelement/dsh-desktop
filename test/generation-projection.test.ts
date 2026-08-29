@@ -39,7 +39,11 @@ describe('generation projection onto the app-boot contract', () => {
 
   async function initProfile(home: string): Promise<void> {
     const dir = join(home, 'profiles', 'web')
-    await mkdir(dir, { recursive: true })
+    await mkdir(join(dir, 'node_modules', 'dshmarket'), { recursive: true })
+    await writeFile(
+      join(dir, 'node_modules', 'dshmarket', 'package.json'),
+      JSON.stringify({ name: 'dshmarket', version: '1.35.0', dsh: { bundle: { patch: './cordis.patch.yml' } } })
+    )
     await writeFile(
       join(dir, 'package.json'),
       JSON.stringify({
@@ -78,10 +82,12 @@ describe('generation projection onto the app-boot contract', () => {
     const manifest = JSON.parse(
       await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
     )
-    // in-box bundles stay in front, enabled plugins follow
+    // in-box bundles + the bundle-declaring dependency (dshmarket) stay in
+    // front, enabled plugins follow
     expect(manifest.dsh.profile.bundles).toEqual([
       '@deepseek-ai/dsh-base',
       '@deepseek-ai/dsh-web-app',
+      'dshmarket',
       '@linxin666/dsh-pet',
       'dsh-better-sidebar'
     ])
