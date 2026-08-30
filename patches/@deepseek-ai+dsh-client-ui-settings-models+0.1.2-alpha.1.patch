@@ -581,7 +581,7 @@ index a7689db..ee4304f 100644
  					})
  				]
  			});
-@@ -1821,6 +2113,26 @@ window.__ModuleLoader__.load({
+@@ -1821,6 +2113,27 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -593,6 +593,7 @@ index a7689db..ee4304f 100644
 +			"anthropic",
 +			"google",
 +			"openrouter",
++			"orcarouter",
 +			"xai",
 +			"moonshotai-cn",
 +			"moonshotai",
@@ -731,7 +732,7 @@ index a7689db..ee4304f 100644
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2258,35 +2622,50 @@ window.__ModuleLoader__.load({
+@@ -2258,35 +2622,51 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -742,6 +743,7 @@ index a7689db..ee4304f 100644
 +			{ provider: "anthropic", displayName: "Anthropic", kind: "onboardingManufacturer" },
 +			{ provider: "google", displayName: "Google Gemini", kind: "onboardingManufacturer" },
 +			{ provider: "openrouter", displayName: "OpenRouter", kind: "onboardingAggregator" },
++			{ provider: "orcarouter", displayName: "OrcaRouter", kind: "onboardingAggregator" },
 +			{ provider: "xai", displayName: "xAI", kind: "onboardingManufacturer" },
 +			{ provider: "moonshotai-cn", displayName: "Moonshot / Kimi", kind: "onboardingManufacturer" },
 +			{ provider: "minimax-cn", displayName: "MiniMax", kind: "onboardingManufacturer" },

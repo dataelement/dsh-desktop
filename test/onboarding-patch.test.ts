@@ -8,6 +8,7 @@ const PI_AI_ONBOARDING_PROVIDERS = [
   'anthropic',
   'google',
   'openrouter',
+  'orcarouter',
   'xai',
   'moonshotai-cn',
   'minimax-cn',
