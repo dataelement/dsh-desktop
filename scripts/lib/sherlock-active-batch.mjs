@@ -241,6 +241,23 @@ function replaceLease(locations, current, next) {
   atomicWrite(locations.leaseFile, next)
 }
 
+function claimArchiveDestination(archiveDirectory) {
+  if (existsSync(archiveDirectory)) fail('目标归档目录已存在，拒绝覆盖。')
+  const claimFile = `${archiveDirectory}.claim`
+  let descriptor
+  try {
+    descriptor = openSync(claimFile, 'wx', 0o600)
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'EEXIST') {
+      fail('目标归档路径已被 claim 占用，拒绝覆盖。')
+    }
+    throw error
+  }
+  closeSync(descriptor)
+  if (existsSync(archiveDirectory)) fail('目标归档目录已存在，拒绝覆盖。')
+  return claimFile
+}
+
 export function readActiveBatchLease(repository) {
   return readLeaseFile(leaseLocations(repository).leaseFile)
 }
@@ -367,9 +384,10 @@ export function archiveActiveBatchLease({ repository, ownerToken, expectedBatchI
     const directoryTimestamp = archivedAt.replaceAll(':', '-')
     const archiveDirectory = path.join(locations.root, 'history', `${lease.batchId}-${outcome}-${directoryTimestamp}`)
     const archivePath = path.join(archiveDirectory, 'lease.json')
-    if (existsSync(archiveDirectory)) fail('目标归档目录已存在，拒绝覆盖。')
     mkdirSync(path.dirname(archiveDirectory), { recursive: true })
+    const claimFile = claimArchiveDestination(archiveDirectory)
     renameSync(locations.active, archiveDirectory)
+    try { unlinkSync(claimFile) } catch {}
     return { lease, archivePath }
   })
 }

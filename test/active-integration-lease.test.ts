@@ -69,6 +69,26 @@ function acquireInWorker(options: Parameters<typeof acquireActiveBatchLease>[0])
   })
 }
 
+function archiveInWorker(options: Parameters<typeof archiveActiveBatchLease>[0]) {
+  const moduleUrl = pathToFileURL(path.join(import.meta.dirname, '..', 'scripts', 'lib', 'sherlock-active-batch.mjs')).href
+  const program = [
+    `import { archiveActiveBatchLease } from ${JSON.stringify(moduleUrl)}`,
+    `const options = ${JSON.stringify(options)}`,
+    'try { archiveActiveBatchLease(options); process.stdout.write("archived") } catch (error) { process.stderr.write(error instanceof Error ? error.message : String(error)); process.exitCode = 1 }'
+  ].join('\n')
+  return new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', program], { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    child.on('error', reject)
+    child.on('close', (status) => resolve({ status, stdout, stderr }))
+  })
+}
+
 afterEach(() => {
   for (const value of fixtures.splice(0)) value.dispose()
 })
@@ -206,5 +226,39 @@ describe('durable active integration lease', () => {
     expect(value.repository.git(value.repository.main, 'worktree', 'list', '--porcelain')).toBe(beforeWorktrees)
     expect(value.repository.git(value.integration, 'status', '--porcelain=v1')).toBe(beforeStatus)
     expect(readFileSync(path.join(value.integration, value.manifestPath), 'utf8')).toBe(manifestContents)
+  })
+
+  it('allows one same-destination archive contender and preserves its lease bytes without changing Git state', async () => {
+    const value = setup()
+    acquireActiveBatchLease({ repository: value.integration, lease: value.lease, ownerToken: value.ownerToken })
+    const activeLeasePath = path.join(value.repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+    const leaseBytes = readFileSync(activeLeasePath)
+    const beforeRefs = value.repository.git(value.repository.main, 'for-each-ref', '--format=%(refname) %(objectname)')
+    const beforeWorktrees = value.repository.git(value.repository.main, 'worktree', 'list', '--porcelain')
+    const beforeStatus = value.repository.git(value.integration, 'status', '--porcelain=v1')
+    const options = { repository: value.integration, expectedBatchId: value.lease.batchId, outcome: 'cancelled' as const, archivedAt: '2026-08-31T04:04:00.000Z', explicitCancellation: true }
+    const [first, second] = await Promise.all([archiveInWorker(options), archiveInWorker(options)])
+    const archivePath = path.join(value.repository.commonDirectory, 'sherlock-integration', 'history', '20260831-01-cancelled-2026-08-31T04-04-00.000Z', 'lease.json')
+
+    expect([first.status, second.status].filter((status) => status === 0), `${first.stderr}\n${second.stderr}`).toHaveLength(1)
+    expect([first.stdout, second.stdout].filter((stdout) => stdout === 'archived')).toHaveLength(1)
+    expect(readFileSync(archivePath)).toEqual(leaseBytes)
+    expect(value.repository.git(value.repository.main, 'for-each-ref', '--format=%(refname) %(objectname)')).toBe(beforeRefs)
+    expect(value.repository.git(value.repository.main, 'worktree', 'list', '--porcelain')).toBe(beforeWorktrees)
+    expect(value.repository.git(value.integration, 'status', '--porcelain=v1')).toBe(beforeStatus)
+    expect(readFileSync(path.join(value.integration, value.manifestPath), 'utf8')).toBe(`{"batchId":"20260831-01"}\n`)
+  })
+
+  it('fails closed on a preexisting deterministic archive claim without moving the active lease', () => {
+    const value = setup()
+    acquireActiveBatchLease({ repository: value.integration, lease: value.lease, ownerToken: value.ownerToken })
+    const activeLeasePath = path.join(value.repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+    const leaseBytes = readFileSync(activeLeasePath)
+    const claim = 'sherlock-integration/history/20260831-01-cancelled-2026-08-31T04-05-00.000Z.claim'
+    value.repository.writeCommonIntegrationFile(claim, 'interrupted archive claim\n')
+
+    expect(() => archiveActiveBatchLease({ repository: value.integration, expectedBatchId: value.lease.batchId, outcome: 'cancelled', archivedAt: '2026-08-31T04:05:00.000Z', explicitCancellation: true })).toThrow(/claim|归档|占用/)
+    expect(readFileSync(activeLeasePath)).toEqual(leaseBytes)
+    expect(readFileSync(path.join(value.repository.commonDirectory, claim), 'utf8')).toBe('interrupted archive claim\n')
   })
 })
