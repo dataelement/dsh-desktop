@@ -194,6 +194,7 @@ export function listRangeCommits(repository, base, tip) {
     runGit(repository, [
       'log',
       '-z',
+      '--topo-order',
       '--reverse',
       '--format=%H%x00%P%x00%s',
       '--end-of-options',

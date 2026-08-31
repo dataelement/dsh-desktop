@@ -21,6 +21,12 @@ function object(value, label) {
   return value
 }
 
+function exactKeys(value, label, allowedKeys) {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.includes(key)) fail(`${label} 包含未知字段 ${key}。`)
+  }
+}
+
 function string(value, label, { nonEmpty = true } = {}) {
   if (typeof value !== 'string' || (nonEmpty && value.length === 0)) fail(`${label} 必须是非空字符串。`)
   return value
@@ -47,6 +53,8 @@ function safeRepositoryPath(value, label) {
   const filePath = string(value, label)
   if (
     filePath.includes('\0') ||
+    filePath.includes('\\') ||
+    /^[A-Za-z]:/.test(filePath) ||
     path.posix.isAbsolute(filePath) ||
     path.win32.isAbsolute(filePath) ||
     filePath === '.' ||
@@ -61,6 +69,7 @@ function safeRepositoryPath(value, label) {
 
 function validateCommit(value, index) {
   const commit = object(value, `commits[${index}]`)
+  exactKeys(commit, `commits[${index}]`, ['commit', 'parents', 'subject'])
   return {
     commit: sha(commit.commit, `commits[${index}].commit`),
     parents: strings(commit.parents, `commits[${index}].parents`).map((parent, parentIndex) =>
@@ -72,12 +81,20 @@ function validateCommit(value, index) {
 
 function validateFile(value, index) {
   const change = object(value, `files[${index}]`)
+  exactKeys(change, `files[${index}]`, ['status', 'path', 'previousPath'])
   const status = string(change.status, `files[${index}].status`)
-  if (!/^[A-Z][A-Z0-9]*$/.test(status)) fail(`files[${index}].status 无效。`)
+  const renameOrCopy = /^([RC])(\d{1,3})?$/.exec(status)
+  const ordinaryStatus = /^[ADMTUXB]$/.test(status)
+  if (!ordinaryStatus && (!renameOrCopy || (renameOrCopy[2] && Number(renameOrCopy[2]) > 100))) {
+    fail(`files[${index}].status 无效。`)
+  }
   const result = { status, path: safeRepositoryPath(change.path, `files[${index}].path`) }
-  const needsPreviousPath = status.startsWith('R') || status.startsWith('C')
+  const needsPreviousPath = Boolean(renameOrCopy)
   if (needsPreviousPath && change.previousPath === undefined) {
     fail(`files[${index}].previousPath 是重命名或复制记录的必填路径。`)
+  }
+  if (!needsPreviousPath && change.previousPath !== undefined) {
+    fail(`files[${index}].previousPath 只允许用于重命名或复制记录。`)
   }
   if (change.previousPath !== undefined) {
     result.previousPath = safeRepositoryPath(change.previousPath, `files[${index}].previousPath`)
@@ -87,10 +104,13 @@ function validateFile(value, index) {
 
 function validateCheck(value, index, tipCommit) {
   const check = object(value, `checks[${index}]`)
+  exactKeys(check, `checks[${index}]`, ['argv', 'outcome', 'summary', 'verifiedCommit', 'completedAt', 'timeoutMs'])
   if (!Array.isArray(check.argv) || check.argv.length === 0) fail(`checks[${index}].argv 必须是非空参数数组。`)
-  const argv = check.argv.map((argument, argumentIndex) =>
-    string(argument, `checks[${index}].argv[${argumentIndex}]`)
-  )
+  const argv = check.argv.map((argument, argumentIndex) => {
+    const valueString = string(argument, `checks[${index}].argv[${argumentIndex}]`)
+    if (valueString.includes('\0')) fail(`checks[${index}].argv[${argumentIndex}] 不能包含 NUL 字符。`)
+    return valueString
+  })
   if (check.outcome !== 'passed') fail(`checks[${index}].outcome 必须为 passed。`)
   const verifiedCommit = sha(check.verifiedCommit, `checks[${index}].verifiedCommit`)
   if (verifiedCommit !== tipCommit) fail(`checks[${index}].verifiedCommit 必须绑定当前 tipCommit。`)
@@ -109,6 +129,20 @@ function validateCheck(value, index, tipCommit) {
 
 export function validateFeatureHandoff(value) {
   const handoff = object(value, '交接卡')
+  exactKeys(handoff, '交接卡', [
+    'schemaVersion',
+    'featureName',
+    'branch',
+    'baseCommit',
+    'tipCommit',
+    'commits',
+    'files',
+    'checks',
+    'uiVerification',
+    'acceptanceCriteria',
+    'risks',
+    'generatedAt'
+  ])
   if (handoff.schemaVersion !== 1) fail('schemaVersion 必须为 1。')
   const branch = string(handoff.branch, 'branch')
   if (!featureBranch.test(branch)) fail('branch 必须匹配 codex/feat/<slug>-<YYYYMMDD>。')
@@ -120,11 +154,34 @@ export function validateFeatureHandoff(value) {
   const commitIds = new Set(commits.map((commit) => commit.commit))
   if (commitIds.size !== commits.length) fail('commits 不能包含重复提交。')
   if (commits.at(-1).commit !== tipCommit) fail('commits 必须按范围顺序结束于 tipCommit。')
+  if (commitIds.has(baseCommit)) fail('commits 不能包含 baseCommit。')
+  const commitPositions = new Map(commits.map((commit, index) => [commit.commit, index]))
+  const reachable = new Set([tipCommit])
+  const pending = [tipCommit]
+  while (pending.length > 0) {
+    const commit = commits[commitPositions.get(pending.pop())]
+    for (const parent of commit.parents) {
+      if (commitPositions.has(parent) && !reachable.has(parent)) {
+        reachable.add(parent)
+        pending.push(parent)
+      }
+    }
+  }
+  for (const [index, commit] of commits.entries()) {
+    for (const parent of commit.parents) {
+      if (parent === baseCommit) continue
+      const parentIndex = commitPositions.get(parent)
+      if (parentIndex === undefined) fail(`commits[${index}] 的父提交未包含在范围内。`)
+      if (parentIndex >= index) fail(`commits 必须按父提交在前的拓扑顺序排列。`)
+    }
+    if (!reachable.has(commit.commit)) fail(`commits[${index}] 是未连接到 tipCommit 的孤立提交。`)
+  }
   if (!Array.isArray(handoff.files)) fail('files 必须是数组。')
   const files = handoff.files.map(validateFile)
   if (!Array.isArray(handoff.checks)) fail('checks 必须是数组。')
   const checks = handoff.checks.map((check, index) => validateCheck(check, index, tipCommit))
   const uiVerification = object(handoff.uiVerification, 'uiVerification')
+  exactKeys(uiVerification, 'uiVerification', ['outcome', 'summary'])
   if (uiVerification.outcome !== 'passed' && uiVerification.outcome !== 'not-applicable') {
     fail('uiVerification.outcome 必须为 passed 或 not-applicable。')
   }
@@ -187,6 +244,9 @@ export function buildFeatureHandoff({ repository, baseCommit, metadata, generate
   const after = resolveRepositoryContext(context.worktreeRoot)
   if (after.branch !== context.branch || after.head !== context.head || resolveCommit(after.worktreeRoot, branchRef) !== after.head) {
     fail('生成期间功能分支引用发生变化。')
+  }
+  if (!readRepositoryStatus(after.worktreeRoot).sourceClean) {
+    fail('生成期间功能 worktree 出现未提交的源码改动。')
   }
   return handoff
 }
