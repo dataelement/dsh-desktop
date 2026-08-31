@@ -151,22 +151,18 @@ describe('Sherlock About settings', () => {
     expect(zh.productName).toBe('Sherlock')
     expect(zh.version).toBe('9.8.7')
     expect(zh.releaseNotes[0]).toEqual({
-      version: '0.7.4',
+      version: '0.7.5',
       date: '2026-08-31',
       items: [
-        '统一 Sherlock Agent 品牌表述，并修正部分会话中用户消息与助手回复的显示顺序',
-        '修复退出客户端时访问已销毁窗口导致的 JavaScript 报错',
-        '完善研究画布引用交互：点击文件、PPT 或助手回复组件即可选中并作为输入标签引用，PPT 组件不再显示下载按钮',
-        '优化研究输入标签：支持在标签之间准确放置光标，清晰显示输入位置，并消除选中时的抖动和位移',
-        '输入框可随内容行数自适应增高，画布中的助手回复内容支持直接编辑',
-        '对话和研究模式统一使用文件标签：按类型显示图标，悬停可查看包含后缀的完整文件名，并在发送时保留完整路径',
-        '完整汉化权限菜单，并优化研究组件、侧栏和输入框的交互细节'
+        '优化研究组件引用标签：选择组件后先以半透明状态提示，取消选择会自动移除，点击输入区后则固定保留',
+        '进一步放宽研究画布的缩小范围，并在视口偏离内容时提供快速回到内容的入口',
+        '新增简洁的 Sherlock 启动动画，改善客户端启动时的视觉衔接'
       ]
     })
-    expect(zh.releaseNotes[1]?.version).toBe('0.7.3')
+    expect(zh.releaseNotes[1]?.version).toBe('0.7.4')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[0]).toBe(
-      'Standardized Sherlock Agent branding and fixed the display order of user messages and assistant replies in affected conversations'
+      'Refined Research reference tags with a provisional translucent state, automatic removal on deselection, and persistent tags after focusing the composer'
     )
 
     const manualCheck = vi.fn(async () => ({
