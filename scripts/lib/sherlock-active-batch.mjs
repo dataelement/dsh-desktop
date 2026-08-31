@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import {
   closeSync,
   existsSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -241,21 +242,15 @@ function replaceLease(locations, current, next) {
   atomicWrite(locations.leaseFile, next)
 }
 
-function claimArchiveDestination(archiveDirectory) {
-  if (existsSync(archiveDirectory)) fail('目标归档目录已存在，拒绝覆盖。')
-  const claimFile = `${archiveDirectory}.claim`
-  let descriptor
+function reserveArchiveDestination(archiveDirectory) {
   try {
-    descriptor = openSync(claimFile, 'wx', 0o600)
+    mkdirSync(archiveDirectory, { mode: 0o700 })
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'EEXIST') {
-      fail('目标归档路径已被 claim 占用，拒绝覆盖。')
+      fail('目标归档目录已存在，拒绝覆盖。')
     }
     throw error
   }
-  closeSync(descriptor)
-  if (existsSync(archiveDirectory)) fail('目标归档目录已存在，拒绝覆盖。')
-  return claimFile
 }
 
 export function readActiveBatchLease(repository) {
@@ -385,9 +380,18 @@ export function archiveActiveBatchLease({ repository, ownerToken, expectedBatchI
     const archiveDirectory = path.join(locations.root, 'history', `${lease.batchId}-${outcome}-${directoryTimestamp}`)
     const archivePath = path.join(archiveDirectory, 'lease.json')
     mkdirSync(path.dirname(archiveDirectory), { recursive: true })
-    const claimFile = claimArchiveDestination(archiveDirectory)
-    renameSync(locations.active, archiveDirectory)
-    try { unlinkSync(claimFile) } catch {}
+    reserveArchiveDestination(archiveDirectory)
+    try {
+      linkSync(locations.leaseFile, archivePath)
+    } catch {
+      fail('归档 lease 发布失败；已保留活动租约和目标目录以便恢复。')
+    }
+    try {
+      unlinkSync(locations.leaseFile)
+      rmdirSync(locations.active)
+    } catch {
+      fail('归档 lease 已发布但 active 清理未完成；请显式恢复。')
+    }
     return { lease, archivePath }
   })
 }

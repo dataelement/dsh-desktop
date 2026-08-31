@@ -1,6 +1,7 @@
-import { chmodSync, existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import fs, { chmodSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { syncBuiltinESMExports } from 'node:module'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -249,7 +250,7 @@ describe('durable active integration lease', () => {
     expect(readFileSync(path.join(value.integration, value.manifestPath), 'utf8')).toBe(`{"batchId":"20260831-01"}\n`)
   })
 
-  it('fails closed on a preexisting deterministic archive claim without moving the active lease', () => {
+  it('uses the final destination rather than an obsolete adjacent claim as the archive authority', () => {
     const value = setup()
     acquireActiveBatchLease({ repository: value.integration, lease: value.lease, ownerToken: value.ownerToken })
     const activeLeasePath = path.join(value.repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
@@ -257,8 +258,57 @@ describe('durable active integration lease', () => {
     const claim = 'sherlock-integration/history/20260831-01-cancelled-2026-08-31T04-05-00.000Z.claim'
     value.repository.writeCommonIntegrationFile(claim, 'interrupted archive claim\n')
 
-    expect(() => archiveActiveBatchLease({ repository: value.integration, expectedBatchId: value.lease.batchId, outcome: 'cancelled', archivedAt: '2026-08-31T04:05:00.000Z', explicitCancellation: true })).toThrow(/claim|归档|占用/)
-    expect(readFileSync(activeLeasePath)).toEqual(leaseBytes)
+    const archived = archiveActiveBatchLease({ repository: value.integration, expectedBatchId: value.lease.batchId, outcome: 'cancelled', archivedAt: '2026-08-31T04:05:00.000Z', explicitCancellation: true })
+    expect(readFileSync(archived.archivePath)).toEqual(leaseBytes)
+    expect(existsSync(activeLeasePath)).toBe(false)
     expect(readFileSync(path.join(value.repository.commonDirectory, claim), 'utf8')).toBe('interrupted archive claim\n')
+  })
+
+  it('fails closed when the final archive directory or its lease file already exists', () => {
+    const value = setup()
+    acquireActiveBatchLease({ repository: value.integration, lease: value.lease, ownerToken: value.ownerToken })
+    const activeLeasePath = path.join(value.repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+    const leaseBytes = readFileSync(activeLeasePath)
+    const archiveDirectory = 'sherlock-integration/history/20260831-01-cancelled-2026-08-31T04-06-00.000Z'
+    value.repository.writeCommonIntegrationFile(`${archiveDirectory}/lease.json`, 'preexisting final lease\n')
+
+    expect(() => archiveActiveBatchLease({ repository: value.integration, expectedBatchId: value.lease.batchId, outcome: 'cancelled', archivedAt: '2026-08-31T04:06:00.000Z', explicitCancellation: true })).toThrow(/归档|存在|覆盖/)
+    expect(readFileSync(activeLeasePath)).toEqual(leaseBytes)
+    expect(readFileSync(path.join(value.repository.commonDirectory, archiveDirectory, 'lease.json'), 'utf8')).toBe('preexisting final lease\n')
+  })
+
+  it('does not replace a preexisting empty final archive directory', () => {
+    const value = setup()
+    acquireActiveBatchLease({ repository: value.integration, lease: value.lease, ownerToken: value.ownerToken })
+    const activeLeasePath = path.join(value.repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+    const leaseBytes = readFileSync(activeLeasePath)
+    const archiveDirectory = path.join(value.repository.commonDirectory, 'sherlock-integration', 'history', '20260831-01-cancelled-2026-08-31T04-08-00.000Z')
+    mkdirSync(archiveDirectory, { recursive: true })
+
+    expect(() => archiveActiveBatchLease({ repository: value.integration, expectedBatchId: value.lease.batchId, outcome: 'cancelled', archivedAt: '2026-08-31T04:08:00.000Z', explicitCancellation: true })).toThrow(/归档|存在|覆盖/)
+    expect(readFileSync(activeLeasePath)).toEqual(leaseBytes)
+    expect(existsSync(archiveDirectory)).toBe(true)
+    expect(existsSync(path.join(archiveDirectory, 'lease.json'))).toBe(false)
+  })
+
+  it('preserves active lease bytes and leaves a reserved final directory when publication fails', () => {
+    const value = setup()
+    acquireActiveBatchLease({ repository: value.integration, lease: value.lease, ownerToken: value.ownerToken })
+    const activeLeasePath = path.join(value.repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+    const leaseBytes = readFileSync(activeLeasePath)
+    const archiveDirectory = path.join(value.repository.commonDirectory, 'sherlock-integration', 'history', '20260831-01-cancelled-2026-08-31T04-07-00.000Z')
+    const originalLink = fs.linkSync
+    fs.linkSync = () => { throw new Error('controlled link publication failure') }
+    syncBuiltinESMExports()
+    try {
+      expect(() => archiveActiveBatchLease({ repository: value.integration, expectedBatchId: value.lease.batchId, outcome: 'cancelled', archivedAt: '2026-08-31T04:07:00.000Z', explicitCancellation: true })).toThrow(/发布失败|恢复/)
+    } finally {
+      fs.linkSync = originalLink
+      syncBuiltinESMExports()
+    }
+
+    expect(readFileSync(activeLeasePath)).toEqual(leaseBytes)
+    expect(existsSync(archiveDirectory)).toBe(true)
+    expect(existsSync(path.join(archiveDirectory, 'lease.json'))).toBe(false)
   })
 })
