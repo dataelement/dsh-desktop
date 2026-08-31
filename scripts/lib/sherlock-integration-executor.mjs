@@ -168,8 +168,10 @@ function recoveryResult({ batchId, branch, beforeCommit, repository, actions }) 
     branch,
     beforeCommit,
     afterCommit,
-    actions,
-    recoveryCommand: `npm run git:integration -- recover-owner --repo ${JSON.stringify(repository)} --manifest ${manifestPathFor(batchId)}`
+    actions: [
+      ...actions.map(({ kind, description }) => ({ kind, description })),
+      action('recovery-state-preserved', '已保留现有批次状态，待后续显式恢复流程处理。')
+    ]
   }
 }
 
@@ -188,10 +190,12 @@ function establishBatch({ repository, context, batchId, manifest, beforeCommit, 
 
   let integrationRepository = context.worktreeRoot
   let leaseAcquired = false
+  let worktreeCreated = false
   try {
     if (createArgv) {
       runGit(context.worktreeRoot, createArgv)
       integrationRepository = path.resolve(createArgv[4])
+      worktreeCreated = true
     }
     const integrationContext = resolveRepositoryContext(integrationRepository)
     if (integrationContext.branch !== branch || integrationContext.head !== beforeCommit) {
@@ -234,7 +238,9 @@ function establishBatch({ repository, context, batchId, manifest, beforeCommit, 
     })
     return { schemaVersion: 1, status: 'prepared', batchId, branch, beforeCommit, afterCommit, actions }
   } catch (error) {
-    if (leaseAcquired) return recoveryResult({ batchId, branch, beforeCommit, repository: integrationRepository, actions })
+    if (leaseAcquired || worktreeCreated) {
+      return recoveryResult({ batchId, branch, beforeCommit, repository: integrationRepository, actions })
+    }
     throw error
   }
 }

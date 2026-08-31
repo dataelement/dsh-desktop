@@ -8,7 +8,6 @@ export interface IntegrationExecutionResult {
   beforeCommit: string
   afterCommit: string
   actions: Array<{ kind: string; description: string; argv?: string[] }>
-  recoveryCommand?: string
 }
 
 export function createIntegrationBatch(options: {

@@ -51,7 +51,6 @@ function printHuman(result) {
     : result.status === 'prepared' ? 'INTEGRATION PREPARED'
       : 'INTEGRATION RECOVERY_REQUIRED'
   process.stdout.write(`${token} batch=${result.batchId} branch=${result.branch} before=${result.beforeCommit} after=${result.afterCommit}\n`)
-  if (result.recoveryCommand) process.stdout.write(`RECOVERY ${result.recoveryCommand}\n`)
 }
 
 try {

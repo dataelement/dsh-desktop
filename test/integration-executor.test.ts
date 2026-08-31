@@ -1,4 +1,4 @@
-import fs, { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import fs, { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
 import path from 'node:path'
@@ -188,6 +188,107 @@ describe('integration batch executor', () => {
     expect(existsSync(target)).toBe(false)
   })
 
+  it('retains a newly created worktree when an incompatible lease appears before acquisition', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'create-race')
+    const worktree = path.join(repository.main, '.worktrees', 'integration-20260831-11')
+    const base = repository.git(repository.main, 'rev-parse', 'HEAD')
+    const activeLease = path.join(repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+    const originalRealpath = fs.realpathSync
+    let injected = false
+    fs.realpathSync = ((...args: any[]) => {
+      const resolved = (originalRealpath as (...values: any[]) => string)(...args)
+      if (!injected && path.resolve(resolved) === worktree) {
+        injected = true
+        fs.mkdirSync(path.dirname(activeLease), { recursive: true })
+        writeFileSync(activeLease, `${JSON.stringify({
+          schemaVersion: 1,
+          revision: 1,
+          batchId: '20260831-99',
+          branch: 'codex/integration/20260831-99',
+          manifestPath: 'config/sherlock-integration-batches/20260831-99.json',
+          baseMainCommit: base,
+          currentTip: base,
+          ownerTokenHash: 'a'.repeat(64),
+          createdAt: '2026-08-31T05:10:00.000Z',
+          updatedAt: '2026-08-31T05:10:00.000Z'
+        })}\n`, 'utf8')
+      }
+      return resolved
+    }) as typeof fs.realpathSync
+    syncBuiltinESMExports()
+    let result
+    try {
+      result = createIntegrationBatch({ mainRepository: repository.main, worktreePath: worktree, batchId: '20260831-11', handoffPaths: [handoff], integrationChecks: checks(), dryRun: false, now: '2026-08-31T05:10:00.000Z' })
+    } finally {
+      fs.realpathSync = originalRealpath
+      syncBuiltinESMExports()
+    }
+
+    expect(injected).toBe(true)
+    expect(result).toMatchObject({ status: 'recovery-required', batchId: '20260831-11', beforeCommit: base, afterCommit: base })
+    expect(repository.git(worktree, 'branch', '--show-current')).toBe('codex/integration/20260831-11')
+    expect(repository.git(worktree, 'rev-parse', 'HEAD')).toBe(base)
+    expect(repository.git(worktree, 'status', '--porcelain=v1')).toBe('')
+    expect(readActiveBatchLease(worktree)).toMatchObject({ batchId: '20260831-99' })
+    expect(existsSync(path.join(worktree, 'config', 'sherlock-integration-batches', '20260831-11.json'))).toBe(false)
+    expect(JSON.stringify(result)).not.toContain(worktree)
+    expect(JSON.stringify(result)).not.toMatch(/npm run|recover-owner|--repo|\$\(|`/)
+  })
+
+  it('exits 4 from the CLI for the create/acquire race without emitting an executable recovery command', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'cli-race')
+    const checksPath = path.join(repository.root, 'checks.json')
+    writeFileSync(checksPath, `${JSON.stringify(checks())}\n`, 'utf8')
+    const worktree = path.join(repository.main, '.worktrees', 'integration-20260831-12')
+    const base = repository.git(repository.main, 'rev-parse', 'HEAD')
+    const helper = path.join(repository.root, 'inject-lease.mjs')
+    const shim = path.join(repository.root, 'git')
+    const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+    writeFileSync(helper, `#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+const common = process.env.SHERLOCK_RACE_COMMON
+const base = process.env.SHERLOCK_RACE_BASE
+const active = path.join(common, 'sherlock-integration', 'active')
+mkdirSync(active, { recursive: true })
+writeFileSync(path.join(active, 'lease.json'), JSON.stringify({ schemaVersion: 1, revision: 1, batchId: '20260831-99', branch: 'codex/integration/20260831-99', manifestPath: 'config/sherlock-integration-batches/20260831-99.json', baseMainCommit: base, currentTip: base, ownerTokenHash: 'a'.repeat(64), createdAt: '2026-08-31T05:11:00.000Z', updatedAt: '2026-08-31T05:11:00.000Z' }) + '\\n')
+`, 'utf8')
+    writeFileSync(shim, `#!/bin/sh
+"$SHERLOCK_REAL_GIT" "$@"
+status=$?
+if [ "$status" -eq 0 ] && [ "$1" = "-C" ] && [ "$3" = "worktree" ] && [ "$4" = "add" ] && [ "$5" = "-b" ]; then
+  "$SHERLOCK_RACE_HELPER"
+fi
+exit "$status"
+`, 'utf8')
+    chmodSync(helper, 0o755)
+    chmodSync(shim, 0o755)
+
+    const result = spawnSync(process.execPath, [integrationCli, 'create', '--repo', repository.main, '--worktree', worktree, '--batch', '20260831-12', '--handoff', handoff, '--checks', checksPath, '--json'], {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${repository.root}${path.delimiter}${process.env.PATH}`,
+        SHERLOCK_REAL_GIT: realGit,
+        SHERLOCK_RACE_HELPER: helper,
+        SHERLOCK_RACE_COMMON: repository.commonDirectory,
+        SHERLOCK_RACE_BASE: base
+      }
+    })
+
+    expect(result.status).toBe(4)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: 'recovery-required', batchId: '20260831-12' })
+    expect(result.stdout).not.toMatch(/npm run|recover-owner|--repo|\$\(|`|integration-20260831-12/)
+    expect(repository.git(worktree, 'branch', '--show-current')).toBe('codex/integration/20260831-12')
+    expect(repository.git(worktree, 'rev-parse', 'HEAD')).toBe(base)
+  })
+
   it('returns recovery-required after lease acquisition and preserves the worktree, branch, lease, and absent manifest for explicit recovery', () => {
     const repository = fixture()
     prepareIntegrationRoot(repository)
@@ -210,6 +311,11 @@ describe('integration batch executor', () => {
     }
 
     expect(result).toMatchObject({ status: 'recovery-required', batchId: '20260831-09', branch: 'codex/integration/20260831-09' })
+    expect(result).not.toHaveProperty('recoveryCommand')
+    expect(result.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'recovery-state-preserved' })
+    ]))
+    expect(result.actions.find((item) => item.kind === 'recovery-state-preserved')).not.toHaveProperty('argv')
     expect(repository.git(worktree, 'branch', '--show-current')).toBe('codex/integration/20260831-09')
     expect(readActiveBatchLease(worktree)).toMatchObject({ batchId: '20260831-09' })
     expect(existsSync(path.join(worktree, 'config', 'sherlock-integration-batches', '20260831-09.json'))).toBe(false)
