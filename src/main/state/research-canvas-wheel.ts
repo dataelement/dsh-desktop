@@ -4,6 +4,7 @@ import type {
   IpcMain,
   MouseInputEvent,
   MouseWheelInputEvent,
+  WebContents,
   WebContentsDidStartNavigationEventParams
 } from 'electron'
 import { registerTrustedMainWindowListener } from '../ipc-trust'
@@ -91,6 +92,7 @@ export class ResearchCanvasWheelRouter {
   private lastGeneration = 0
   private readonly retiredOwnerIds = new Set<string>()
   private disposed = false
+  private readonly webContents: WebContents
 
   private readonly onBeforeMouseEvent = (
     event: ElectronEvent,
@@ -120,7 +122,7 @@ export class ResearchCanvasWheelRouter {
       deltaMode: 0
     }
     try {
-      this.window.webContents.send(RESEARCH_CANVAS_WHEEL_EVENT_CHANNEL, payload)
+      this.webContents.send(RESEARCH_CANVAS_WHEEL_EVENT_CHANNEL, payload)
     } catch {
       this.clear()
       return
@@ -157,10 +159,11 @@ export class ResearchCanvasWheelRouter {
   }
 
   constructor(private readonly window: BrowserWindow) {
-    window.webContents.on('before-mouse-event', this.onBeforeMouseEvent)
-    window.webContents.on('did-start-navigation', this.onDidStartNavigation)
-    window.webContents.on('render-process-gone', this.onRendererGone)
-    window.webContents.on('destroyed', this.onRendererGone)
+    this.webContents = window.webContents
+    this.webContents.on('before-mouse-event', this.onBeforeMouseEvent)
+    this.webContents.on('did-start-navigation', this.onDidStartNavigation)
+    this.webContents.on('render-process-gone', this.onRendererGone)
+    this.webContents.on('destroyed', this.onRendererGone)
     window.on('closed', this.onWindowClosed)
   }
 
@@ -197,10 +200,10 @@ export class ResearchCanvasWheelRouter {
     if (this.disposed) return
     this.disposed = true
     this.resetForDocumentLifecycle()
-    this.window.webContents.off('before-mouse-event', this.onBeforeMouseEvent)
-    this.window.webContents.off('did-start-navigation', this.onDidStartNavigation)
-    this.window.webContents.off('render-process-gone', this.onRendererGone)
-    this.window.webContents.off('destroyed', this.onRendererGone)
+    this.webContents.off('before-mouse-event', this.onBeforeMouseEvent)
+    this.webContents.off('did-start-navigation', this.onDidStartNavigation)
+    this.webContents.off('render-process-gone', this.onRendererGone)
+    this.webContents.off('destroyed', this.onRendererGone)
     this.window.off('closed', this.onWindowClosed)
   }
 }

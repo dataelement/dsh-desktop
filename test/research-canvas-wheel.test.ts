@@ -18,14 +18,24 @@ function fixture() {
   }
   contents.mainFrame = { processId: 7, routingId: 41 }
   contents.send = vi.fn()
+  let destroyed = false
   const window = new EventEmitter() as EventEmitter & {
     isDestroyed(): boolean
-    webContents: typeof contents
+    readonly webContents: typeof contents
   }
-  window.isDestroyed = () => false
-  window.webContents = contents
+  window.isDestroyed = () => destroyed
+  Object.defineProperty(window, 'webContents', {
+    get: () => {
+      if (destroyed) throw new Error('Object has been destroyed')
+      return contents
+    }
+  })
   const router = installResearchCanvasWheelRouter(window as unknown as BrowserWindow)
-  return { contents, window, router }
+  const destroyWindow = (): void => {
+    destroyed = true
+    window.emit('closed')
+  }
+  return { contents, destroyWindow, window, router }
 }
 
 function wheelEvent() {
@@ -33,6 +43,22 @@ function wheelEvent() {
 }
 
 describe('research canvas native wheel router', () => {
+  it('does not access the destroyed BrowserWindow while handling its closed event', () => {
+    const { destroyWindow, router } = fixture()
+    expect(router.setRegion({
+      active: true, generation: 1,
+      ownerId: 'canvas-1',
+      left: 0, top: 0, width: 500, height: 400
+    })).toBe(true)
+
+    expect(destroyWindow).not.toThrow()
+    expect(router.setRegion({
+      active: true, generation: 2,
+      ownerId: 'canvas-1',
+      left: 0, top: 0, width: 500, height: 400
+    })).toBe(false)
+  })
+
   it('routes only bounded Command-wheel inside the current active content-DIP region', () => {
     const { contents, router } = fixture()
     expect(router.setRegion({
