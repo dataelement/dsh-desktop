@@ -278,3 +278,168 @@ export function writeFeatureHandoff(outputPath, handoff) {
   }
   return bytes
 }
+
+const batchIdPattern = /^\d{8}-\d{2}$/
+
+function batchFail(message) {
+  throw new Error(`集成批次清单无效：${message}`)
+}
+
+function batchObject(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) batchFail(`${label} 必须是对象。`)
+  return value
+}
+
+function batchExactKeys(value, label, allowedKeys) {
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.includes(key)) batchFail(`${label} 包含未知字段 ${key}。`)
+  }
+}
+
+function batchSha(value, label) {
+  if (typeof value !== 'string' || !fullSha.test(value)) batchFail(`${label} 必须是 40 位小写提交 SHA。`)
+  return value
+}
+
+function batchTimestamp(value, label) {
+  if (typeof value !== 'string' || value.length === 0 || Number.isNaN(Date.parse(value))) {
+    batchFail(`${label} 必须是可解析的时间。`)
+  }
+  return value
+}
+
+function batchArgv(value, label) {
+  if (!Array.isArray(value) || value.length === 0) batchFail(`${label} 必须是非空参数数组。`)
+  return value.map((argument, index) => {
+    if (typeof argument !== 'string' || argument.length === 0 || argument.includes('\0')) {
+      batchFail(`${label}[${index}] 必须是不含 NUL 的非空字符串。`)
+    }
+    return argument
+  })
+}
+
+function batchTimeout(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) batchFail(`${label} 必须是正整数。`)
+  return value
+}
+
+function validateBatchCheck(value, index, verifiedCommit) {
+  const check = batchObject(value, `checks[${index}]`)
+  batchExactKeys(check, `checks[${index}]`, ['argv', 'outcome', 'summary', 'verifiedCommit', 'completedAt', 'timeoutMs'])
+  if (check.outcome !== 'passed') batchFail(`checks[${index}].outcome 必须为 passed。`)
+  const actualVerifiedCommit = batchSha(check.verifiedCommit, `checks[${index}].verifiedCommit`)
+  if (actualVerifiedCommit !== verifiedCommit) batchFail(`checks[${index}].verifiedCommit 必须绑定验证提交。`)
+  if (typeof check.summary !== 'string' || check.summary.length === 0) batchFail(`checks[${index}].summary 必须是非空字符串。`)
+  return {
+    argv: batchArgv(check.argv, `checks[${index}].argv`),
+    outcome: 'passed',
+    summary: check.summary,
+    verifiedCommit: actualVerifiedCommit,
+    completedAt: batchTimestamp(check.completedAt, `checks[${index}].completedAt`),
+    timeoutMs: batchTimeout(check.timeoutMs, `checks[${index}].timeoutMs`)
+  }
+}
+
+function validateIntegrationCheck(value, index) {
+  const check = batchObject(value, `integrationChecks[${index}]`)
+  batchExactKeys(check, `integrationChecks[${index}]`, ['argv', 'timeoutMs'])
+  return {
+    argv: batchArgv(check.argv, `integrationChecks[${index}].argv`),
+    timeoutMs: batchTimeout(check.timeoutMs, `integrationChecks[${index}].timeoutMs`)
+  }
+}
+
+function validateMergedFeature(value, index) {
+  const merged = batchObject(value, `features[${index}].merged`)
+  batchExactKeys(merged, `features[${index}].merged`, ['mergeCommit', 'verificationCommit', 'checks', 'recordedAt'])
+  const mergeCommit = batchSha(merged.mergeCommit, `features[${index}].merged.mergeCommit`)
+  const verificationCommit = batchSha(merged.verificationCommit, `features[${index}].merged.verificationCommit`)
+  if (!Array.isArray(merged.checks)) batchFail(`features[${index}].merged.checks 必须是数组。`)
+  return {
+    mergeCommit,
+    verificationCommit,
+    checks: merged.checks.map((check, checkIndex) => validateBatchCheck(check, checkIndex, verificationCommit)),
+    recordedAt: batchTimestamp(merged.recordedAt, `features[${index}].merged.recordedAt`)
+  }
+}
+
+function validateMainSynchronization(value, index) {
+  const synchronization = batchObject(value, `mainSynchronizations[${index}]`)
+  batchExactKeys(synchronization, `mainSynchronizations[${index}]`, ['previousMainCommit', 'mainCommit', 'mergeCommit', 'verificationCommit', 'checks', 'recordedAt'])
+  const verificationCommit = batchSha(synchronization.verificationCommit, `mainSynchronizations[${index}].verificationCommit`)
+  if (!Array.isArray(synchronization.checks)) batchFail(`mainSynchronizations[${index}].checks 必须是数组。`)
+  return {
+    previousMainCommit: batchSha(synchronization.previousMainCommit, `mainSynchronizations[${index}].previousMainCommit`),
+    mainCommit: batchSha(synchronization.mainCommit, `mainSynchronizations[${index}].mainCommit`),
+    mergeCommit: batchSha(synchronization.mergeCommit, `mainSynchronizations[${index}].mergeCommit`),
+    verificationCommit,
+    checks: synchronization.checks.map((check, checkIndex) => validateBatchCheck(check, checkIndex, verificationCommit)),
+    recordedAt: batchTimestamp(synchronization.recordedAt, `mainSynchronizations[${index}].recordedAt`)
+  }
+}
+
+export function validateIntegrationBatchManifest(value) {
+  const manifest = batchObject(value, '集成批次清单')
+  batchExactKeys(manifest, '集成批次清单', [
+    'schemaVersion',
+    'batchId',
+    'branch',
+    'baseMainCommit',
+    'expectedMainCommit',
+    'createdAt',
+    'features',
+    'integrationChecks',
+    'mainSynchronizations'
+  ])
+  if (manifest.schemaVersion !== 1) batchFail('schemaVersion 必须为 1。')
+  if (typeof manifest.batchId !== 'string' || !batchIdPattern.test(manifest.batchId)) {
+    batchFail('batchId 必须匹配 YYYYMMDD-NN。')
+  }
+  const branch = `codex/integration/${manifest.batchId}`
+  if (manifest.branch !== branch) batchFail('branch 必须精确派生自 batchId。')
+  if (!Array.isArray(manifest.features) || manifest.features.length === 0) batchFail('features 必须是非空数组。')
+  const featureBranches = new Set()
+  const featureTips = new Set()
+  const features = manifest.features.map((feature, index) => {
+    const featureValue = batchObject(feature, `features[${index}]`)
+    batchExactKeys(featureValue, `features[${index}]`, ['handoff', 'merged'])
+    const handoff = validateFeatureHandoff(featureValue.handoff)
+    if (featureBranches.has(handoff.branch)) batchFail('features 不能包含重复 feature branch。')
+    if (featureTips.has(handoff.tipCommit)) batchFail('features 不能包含重复 feature tip。')
+    featureBranches.add(handoff.branch)
+    featureTips.add(handoff.tipCommit)
+    const result = { handoff }
+    if (featureValue.merged !== undefined) result.merged = validateMergedFeature(featureValue.merged, index)
+    return result
+  })
+  if (!Array.isArray(manifest.integrationChecks)) batchFail('integrationChecks 必须是数组。')
+  if (!Array.isArray(manifest.mainSynchronizations)) batchFail('mainSynchronizations 必须是数组。')
+  return {
+    schemaVersion: 1,
+    batchId: manifest.batchId,
+    branch,
+    baseMainCommit: batchSha(manifest.baseMainCommit, 'baseMainCommit'),
+    expectedMainCommit: batchSha(manifest.expectedMainCommit, 'expectedMainCommit'),
+    createdAt: batchTimestamp(manifest.createdAt, 'createdAt'),
+    features,
+    integrationChecks: manifest.integrationChecks.map(validateIntegrationCheck),
+    mainSynchronizations: manifest.mainSynchronizations.map(validateMainSynchronization)
+  }
+}
+
+export function createIntegrationBatchManifest({ batchId, branch, baseMainCommit, handoffs, integrationChecks, createdAt }) {
+  if (typeof batchId !== 'string' || !batchIdPattern.test(batchId)) batchFail('batchId 必须匹配 YYYYMMDD-NN。')
+  if (branch !== `codex/integration/${batchId}`) batchFail('branch 必须精确派生自 batchId。')
+  if (!Array.isArray(handoffs)) batchFail('handoffs 必须是数组。')
+  return validateIntegrationBatchManifest({
+    schemaVersion: 1,
+    batchId,
+    branch,
+    baseMainCommit,
+    expectedMainCommit: baseMainCommit,
+    createdAt,
+    features: handoffs.map((handoff) => ({ handoff })),
+    integrationChecks,
+    mainSynchronizations: []
+  })
+}
