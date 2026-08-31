@@ -1,78 +1,20 @@
-import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-
-const gitOutputLimit = 64 * 1024 * 1024
-
-function git(repository, ...args) {
-  return execFileSync('git', ['-C', repository, ...args], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: gitOutputLimit
-  }).trim()
-}
-
-function gitRaw(repository, ...args) {
-  return execFileSync('git', ['-C', repository, ...args], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: gitOutputLimit
-  })
-}
-
-function isSourcePath(filePath) {
-  return (
-    /^(src|packages|scripts|script|skills|test|build|config|patches|docs|\.githooks)\//.test(
-      filePath
-    ) ||
-    /^(package(?:-lock)?\.json|AGENTS\.md|electron-builder[^/]*\.cjs|tsconfig[^/]*\.json)$/.test(
-      filePath
-    )
-  )
-}
-
-function repositoryStatus(repository) {
-  const records = gitRaw(
-    repository,
-    'status',
-    '--porcelain=v1',
-    '-z',
-    '--untracked-files=all'
-  )
-    .split('\0')
-    .filter(Boolean)
-  return {
-    trackedChanges: records.filter((record) => !record.startsWith('?? ')),
-    untrackedSources: records
-      .filter((record) => record.startsWith('?? '))
-      .map((record) => record.slice(3))
-      .filter(isSourcePath)
-  }
-}
-
-function registeredWorktrees(repository) {
-  return gitRaw(repository, 'worktree', 'list', '--porcelain')
-    .trim()
-    .split(/\r?\n\r?\n/)
-    .filter(Boolean)
-    .map((block) => {
-      const fields = new Map(
-        block.split(/\r?\n/).map((line) => {
-          const separator = line.indexOf(' ')
-          return separator === -1 ? [line, ''] : [line.slice(0, separator), line.slice(separator + 1)]
-        })
-      )
-      return {
-        path: fields.get('worktree') ?? '',
-        branch: (fields.get('branch') ?? '').replace(/^refs\/heads\//, '') || '(detached HEAD)'
-      }
-    })
-    .filter((worktree) => worktree.path && existsSync(worktree.path))
-}
+import {
+  listRegisteredWorktrees,
+  readRepositoryStatus,
+  resolveRepositoryContext,
+  runGit
+} from './lib/sherlock-git-state.mjs'
+import { readActiveBatchLease } from './lib/sherlock-active-batch.mjs'
 
 function localBranches(repository) {
-  const output = git(repository, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')
+  const output = runGit(repository, [
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/heads'
+  ]).stdout.trim()
   return output ? output.split(/\r?\n/).filter(Boolean) : []
 }
 
@@ -93,8 +35,8 @@ function verifyMajorTag(repository, version, head) {
 
   const tag = `V${version}`
   try {
-    const tagType = git(repository, 'cat-file', '-t', `refs/tags/${tag}`)
-    const taggedCommit = git(repository, 'rev-list', '-n', '1', tag)
+    const tagType = runGit(repository, ['cat-file', '-t', `refs/tags/${tag}`]).stdout.trim()
+    const taggedCommit = runGit(repository, ['rev-list', '-n', '1', tag]).stdout.trim()
     if (tagType !== 'tag') {
       return [`大版本 ${version} 必须使用注释标签 ${tag}，不能使用轻量标签。`]
     }
@@ -108,12 +50,11 @@ function verifyMajorTag(repository, version, head) {
 }
 
 export function verifyFormalGitState(repository) {
-  const resolvedRepository = path.resolve(repository)
+  const context = resolveRepositoryContext(repository)
   const errors = []
-  const branch = git(resolvedRepository, 'branch', '--show-current')
-  const head = git(resolvedRepository, 'rev-parse', 'HEAD')
-  const { trackedChanges, untrackedSources } = repositoryStatus(resolvedRepository)
-  const version = readVersion(resolvedRepository)
+  const branch = context.branch ?? ''
+  const { trackedChanges, untrackedSources } = readRepositoryStatus(context.worktreeRoot)
+  const version = readVersion(context.worktreeRoot)
 
   if (branch !== 'main') {
     errors.push(`正式构建必须从 main 分支执行，当前分支是 ${branch || '(detached HEAD)'}。`)
@@ -124,23 +65,28 @@ export function verifyFormalGitState(repository) {
   if (untrackedSources.length > 0) {
     errors.push(`存在未纳入 Git 的源码文件：${untrackedSources.join('、')}`)
   }
+  if (readActiveBatchLease(context.worktreeRoot)) {
+    errors.push('存在活动集成租约；请先完成晋升或显式取消后再构建正式版。')
+  }
 
-  const currentWorktree = realpathSync(resolvedRepository)
-  for (const worktree of registeredWorktrees(resolvedRepository)) {
-    if (realpathSync(worktree.path) === currentWorktree) continue
-    const status = repositoryStatus(worktree.path)
+  const currentWorktree = realpathSync(context.worktreeRoot)
+  for (const worktree of listRegisteredWorktrees(context.worktreeRoot)) {
+    if (!existsSync(worktree.path) || realpathSync(worktree.path) === currentWorktree) continue
+    const status = readRepositoryStatus(worktree.path)
     if (status.trackedChanges.length > 0 || status.untrackedSources.length > 0) {
       errors.push(
-        `另一个 worktree 存在尚未提交的改动：${worktree.branch}（${worktree.path}）`
+        `另一个 worktree 存在尚未提交的改动：${worktree.branch ?? '(detached HEAD)'}（${worktree.path}）`
       )
     }
   }
 
-  const unmergedBranches = localBranches(resolvedRepository)
+  const unmergedBranches = localBranches(context.worktreeRoot)
     .filter((candidate) => candidate !== 'main')
     .map((candidate) => ({
       name: candidate,
-      ahead: Number(git(resolvedRepository, 'rev-list', '--count', `main..${candidate}`))
+      ahead: Number(
+        runGit(context.worktreeRoot, ['rev-list', '--count', `main..${candidate}`]).stdout.trim()
+      )
     }))
     .filter((candidate) => candidate.ahead > 0)
   if (unmergedBranches.length > 0) {
@@ -151,10 +97,10 @@ export function verifyFormalGitState(repository) {
     )
   }
 
-  errors.push(...verifyMajorTag(resolvedRepository, version, head))
+  errors.push(...verifyMajorTag(context.worktreeRoot, version, context.head))
   if (errors.length > 0) throw new Error(errors.join('\n'))
 
-  return { branch, head, version }
+  return { branch, head: context.head, version }
 }
 
 function readOption(name) {

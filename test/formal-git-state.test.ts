@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -42,13 +42,6 @@ afterEach(() => {
 })
 
 describe('formal Git source gate', () => {
-  it('allows Git status output larger than the Node default child-process buffer', () => {
-    const source = readFileSync(verifier, 'utf8')
-
-    expect(source).toMatch(/const gitOutputLimit = \d+ \* 1024 \* 1024/)
-    expect(source).toContain('maxBuffer: gitOutputLimit')
-  })
-
   it('accepts a clean patch release committed on main', () => {
     const repository = createRepository()
 
@@ -80,6 +73,21 @@ describe('formal Git source gate', () => {
     expect(result.stderr).toContain('src/new-feature.ts')
   })
 
+  it('ignores allowed generated output but rejects an unknown untracked root file', () => {
+    const repository = createRepository()
+    mkdirSync(path.join(repository, 'dist-local-integration'))
+    writeFileSync(path.join(repository, 'dist-local-integration', 'generated.js'), 'generated\n')
+
+    expect(verify(repository).status).toBe(0)
+
+    writeFileSync(path.join(repository, 'unexpected-root-file'), 'not generated\n')
+    const result = verify(repository)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('未纳入 Git 的源码文件')
+    expect(result.stderr).toContain('unexpected-root-file')
+  })
+
   it('rejects local session branches with commits missing from main', () => {
     const repository = createRepository()
     runGit(repository, 'switch', '-c', 'codex/other-session')
@@ -108,6 +116,43 @@ describe('formal Git source gate', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('codex/dirty-session')
     expect(result.stderr).toContain('另一个 worktree 存在尚未提交的改动')
+  })
+
+  it('rejects an active integration lease before a formal build can start', () => {
+    const repository = createRepository()
+    const head = runGit(repository, 'rev-parse', 'HEAD')
+    const leaseDirectory = path.join(repository, runGit(repository, 'rev-parse', '--git-common-dir'), 'sherlock-integration', 'active')
+    mkdirSync(leaseDirectory, { recursive: true })
+    writeFileSync(path.join(leaseDirectory, 'lease.json'), `${JSON.stringify({
+      schemaVersion: 1,
+      revision: 1,
+      batchId: '20260831-01',
+      branch: 'codex/integration/20260831-01',
+      manifestPath: 'config/sherlock-integration-batches/20260831-01.json',
+      baseMainCommit: head,
+      currentTip: head,
+      ownerTokenHash: 'a'.repeat(64),
+      createdAt: '2026-08-31T08:00:00.000Z',
+      updatedAt: '2026-08-31T08:00:00.000Z'
+    })}\n`, 'utf8')
+
+    const result = verify(repository)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('活动集成租约')
+  })
+
+  it('ignores a missing registered worktree while checking formal source state', () => {
+    const repository = createRepository()
+    const worktreeParent = mkdtempSync(path.join(os.tmpdir(), 'sherlock-stale-worktree-'))
+    scratchDirectories.push(worktreeParent)
+    const worktree = path.join(worktreeParent, 'worktree')
+    runGit(repository, 'worktree', 'add', worktree, '-b', 'codex/stale-session')
+    renameSync(worktree, `${worktree}-moved`)
+
+    const result = verify(repository)
+
+    expect(result.status).toBe(0)
   })
 
   it('requires an annotated Vx.0.0 tag on a major release commit', () => {
