@@ -53,3 +53,42 @@ export function continueIntegrationFeature(options: {
   dryRun: boolean
   now: string
 }): IntegrationExecutionResult
+export function recoverIntegrationOwnership(options: {
+  integrationRepository: string
+  manifestPath: string
+  confirmBatchId: string
+  confirmTip: string
+}): IntegrationExecutionResult
+export function synchronizeIntegrationMain(options: {
+  integrationRepository: string
+  manifestPath: string
+  ownerToken: string
+  dryRun: boolean
+  now: string
+}): IntegrationExecutionResult
+export function acceptIntegrationBatch(options: {
+  integrationRepository: string
+  manifestPath: string
+  commit: string
+  confirmBatchId: string
+  ownerToken: string
+  now: string
+}): IntegrationExecutionResult
+export function promoteIntegrationBatch(options: {
+  integrationRepository: string
+  manifestPath: string
+  mainWorktree: string
+  confirmBatchId: string
+  confirmTip: string
+  ownerToken: string
+  dryRun: boolean
+  now: string
+}): IntegrationExecutionResult
+export function cancelIntegrationBatch(options: {
+  integrationRepository: string
+  manifestPath: string
+  confirmBatchId: string
+  explicitCancellation: boolean
+  dryRun: boolean
+  now: string
+}): IntegrationExecutionResult

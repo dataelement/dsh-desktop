@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs, { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
@@ -8,10 +9,15 @@ import { acquireActiveBatchLease, readActiveBatchLease, updateActiveBatchTip } f
 import { resolveRepositoryContext } from '../scripts/lib/sherlock-git-state.mjs'
 import {
   adoptIntegrationBatch,
+  acceptIntegrationBatch,
+  cancelIntegrationBatch,
   continueIntegrationFeature,
   createIntegrationBatch,
   formatIntegrationRecoveryCommand,
-  mergeIntegrationFeature
+  mergeIntegrationFeature,
+  promoteIntegrationBatch,
+  recoverIntegrationOwnership,
+  synchronizeIntegrationMain
 } from '../scripts/lib/sherlock-integration-executor.mjs'
 import { createGitWorkflowFixture, type GitWorkflowFixture } from './helpers/git-workflow-fixture'
 
@@ -569,5 +575,107 @@ exit "$status"
       manifestPath: "/tmp/owner's repo/config/a b.json",
       featureBranch: "codex/feat/odd'branch-20260831"
     })).toBe("npm run git:integration -- continue --repo '/tmp/owner'\"'\"'s repo/$(nope)' --manifest '/tmp/owner'\"'\"'s repo/config/a b.json' --feature 'codex/feat/odd'\"'\"'branch-20260831'")
+  })
+
+  it('recovers the exact persisted owner without changing the batch, Git state, or lease bytes', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'recover-owner')
+    const integration = repository.createWorktree('integration-recover-owner', 'codex/integration/20260831-21')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-21', handoffPaths: [handoff], integrationChecks: checks(), dryRun: false, now: '2026-08-31T05:21:00.000Z' })
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-21.json')
+    const lease = readActiveBatchLease(integration)!
+    const before = repository.snapshot()
+
+    const result = recoverIntegrationOwnership({
+      integrationRepository: integration,
+      manifestPath,
+      confirmBatchId: '20260831-21',
+      confirmTip: lease.currentTip
+    })
+
+    expect(result).toMatchObject({ status: 'ownership-recovered', afterCommit: lease.currentTip })
+    expect(repository.snapshot()).toEqual(before)
+  })
+
+  it('synchronizes advanced main, invalidates acceptance, then accepts the exact manifest bytes without a Git commit', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'sync-main')
+    const integration = repository.createWorktree('integration-sync-main', 'codex/integration/20260831-22')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-22', handoffPaths: [handoff], integrationChecks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }], dryRun: false, now: '2026-08-31T05:22:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-22.json')
+    const expectedMainBefore = JSON.parse(readFileSync(manifestPath, 'utf8')).expectedMainCommit
+    mergeIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/sync-main-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:23:00.000Z' })
+    const acceptedTip = repository.git(integration, 'rev-parse', 'HEAD')
+    acceptIntegrationBatch({ integrationRepository: integration, manifestPath, commit: acceptedTip, confirmBatchId: '20260831-22', ownerToken, now: '2026-08-31T05:24:00.000Z' })
+    repository.write(repository.main, 'src/main-advance.ts', 'export const mainAdvance = true\n')
+    const mainTip = repository.commit(repository.main, '推进 main')
+
+    const synchronized = synchronizeIntegrationMain({ integrationRepository: integration, manifestPath, ownerToken, dryRun: false, now: '2026-08-31T05:25:00.000Z' })
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    const lease = readActiveBatchLease(integration)!
+    expect(synchronized).toMatchObject({ status: 'main-synchronized' })
+    expect(manifest.expectedMainCommit).toBe(mainTip)
+    expect(manifest.mainSynchronizations).toHaveLength(1)
+    expect(manifest.mainSynchronizations[0]).toMatchObject({ previousMainCommit: expectedMainBefore, mainCommit: mainTip })
+    expect(lease).toMatchObject({ currentTip: synchronized.afterCommit })
+    expect(lease.acceptedTip).toBeUndefined()
+    const beforeAcceptHead = repository.git(integration, 'rev-parse', 'HEAD')
+    const digest = createHash('sha256').update(readFileSync(manifestPath)).digest('hex')
+
+    const accepted = acceptIntegrationBatch({ integrationRepository: integration, manifestPath, commit: beforeAcceptHead, confirmBatchId: '20260831-22', ownerToken, now: '2026-08-31T05:26:00.000Z' })
+    expect(accepted).toMatchObject({ status: 'accepted', beforeCommit: beforeAcceptHead, afterCommit: beforeAcceptHead })
+    expect(repository.git(integration, 'rev-parse', 'HEAD')).toBe(beforeAcceptHead)
+    expect(readActiveBatchLease(integration)).toMatchObject({ acceptedTip: beforeAcceptHead, acceptedManifestDigest: digest })
+  }, 10000)
+
+  it('fast-forwards only an accepted exact integration tip into canonical clean main and archives the lease', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'promote')
+    const integration = repository.createWorktree('integration-promote', 'codex/integration/20260831-23')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-23', handoffPaths: [handoff], integrationChecks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }], dryRun: false, now: '2026-08-31T05:27:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-23.json')
+    const merged = mergeIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/promote-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:28:00.000Z' })
+    acceptIntegrationBatch({ integrationRepository: integration, manifestPath, commit: merged.afterCommit, confirmBatchId: '20260831-23', ownerToken, now: '2026-08-31T05:29:00.000Z' })
+
+    const promoted = promoteIntegrationBatch({ integrationRepository: integration, manifestPath, mainWorktree: repository.main, confirmBatchId: '20260831-23', confirmTip: merged.afterCommit, ownerToken, dryRun: false, now: '2026-08-31T05:30:00.000Z' })
+    expect(promoted).toMatchObject({ status: 'promoted', afterCommit: merged.afterCommit })
+    expect(repository.git(repository.main, 'rev-parse', 'HEAD')).toBe(merged.afterCommit)
+    expect(repository.git(repository.main, 'merge-base', '--is-ancestor', 'codex/feat/promote-20260831', 'HEAD')).toBe('')
+    expect(readActiveBatchLease(integration)).toBeNull()
+    expect(existsSync(path.join(repository.commonDirectory, 'sherlock-integration', 'history'))).toBe(true)
+  }, 10000)
+
+  it('requires explicit matching cancellation and archives only the lease while preserving batch files and refs', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'cancel')
+    const integration = repository.createWorktree('integration-cancel', 'codex/integration/20260831-24')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-24', handoffPaths: [handoff], integrationChecks: checks(), dryRun: false, now: '2026-08-31T05:31:00.000Z' })
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-24.json')
+    repository.write(integration, 'notes/untracked.txt', 'retain me\n')
+    const refs = repository.git(integration, 'for-each-ref', '--format=%(refname) %(objectname)')
+    const worktrees = repository.git(integration, 'worktree', 'list', '--porcelain')
+    const manifest = readFileSync(manifestPath)
+    const untracked = readFileSync(path.join(integration, 'notes', 'untracked.txt'))
+    const before = repository.snapshot()
+
+    expect(() => cancelIntegrationBatch({ integrationRepository: integration, manifestPath, confirmBatchId: 'wrong-batch', explicitCancellation: true, dryRun: false, now: '2026-08-31T05:32:00.000Z' })).toThrow(/batch|批次/)
+    expect(() => cancelIntegrationBatch({ integrationRepository: integration, manifestPath, confirmBatchId: '20260831-24', explicitCancellation: false, dryRun: false, now: '2026-08-31T05:32:00.000Z' })).toThrow(/取消|确认/)
+    expect(repository.snapshot()).toEqual(before)
+
+    const cancelled = cancelIntegrationBatch({ integrationRepository: integration, manifestPath, confirmBatchId: '20260831-24', explicitCancellation: true, dryRun: false, now: '2026-08-31T05:33:00.000Z' })
+    expect(cancelled).toMatchObject({ status: 'cancelled' })
+    expect(readActiveBatchLease(integration)).toBeNull()
+    expect(repository.git(integration, 'for-each-ref', '--format=%(refname) %(objectname)')).toBe(refs)
+    expect(repository.git(integration, 'worktree', 'list', '--porcelain')).toBe(worktrees)
+    expect(readFileSync(manifestPath)).toEqual(manifest)
+    expect(readFileSync(path.join(integration, 'notes', 'untracked.txt'))).toEqual(untracked)
   })
 })

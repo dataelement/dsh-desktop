@@ -4,7 +4,10 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import {
   acquireActiveBatchLease,
+  archiveActiveBatchLease,
+  markActiveBatchAccepted,
   readActiveBatchLease,
+  recoverActiveBatchOwnership,
   updateActiveBatchTip
 } from './sherlock-active-batch.mjs'
 import {
@@ -208,6 +211,66 @@ function readManifestForMutation(repository, manifestPath) {
   return { context, lease, manifest, manifestPath: expectedPath }
 }
 
+function manifestDigest(manifestPath) {
+  return createHash('sha256').update(readFileSync(manifestPath)).digest('hex')
+}
+
+function canonicalMainWorktree(repository) {
+  const candidates = listRegisteredWorktrees(repository)
+    .filter((entry) => entry.branch === 'main' && !entry.prunable)
+    .map((entry) => {
+      try { return resolveRepositoryContext(entry.path) } catch { return null }
+    })
+    .filter(Boolean)
+    .filter((context) => context.branch === 'main' && context.gitDirectory === context.commonDirectory)
+  if (candidates.length !== 1) fail('必须存在且只存在一个规范 main worktree。')
+  return candidates[0]
+}
+
+function requireExactConfirmation(value, expected, label) {
+  if (typeof value !== 'string' || value !== expected) fail(`${label} 必须精确匹配当前批次状态。`)
+}
+
+function resultFor(status, state, beforeCommit, afterCommit, actions) {
+  return {
+    schemaVersion: 1,
+    status,
+    batchId: state.lease.batchId,
+    branch: state.lease.branch,
+    beforeCommit,
+    afterCommit,
+    actions
+  }
+}
+
+function recordMainSynchronization({ repository, lease, manifest, manifestPath, previousMainCommit, mainCommit, mergeCommit, checks, now, ownerToken }) {
+  const nextManifest = validateIntegrationBatchManifest({
+    ...manifest,
+    expectedMainCommit: mainCommit,
+    mainSynchronizations: [...manifest.mainSynchronizations, {
+      previousMainCommit,
+      mainCommit,
+      mergeCommit,
+      verificationCommit: mergeCommit,
+      checks,
+      recordedAt: now
+    }]
+  })
+  writeFileSync(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`, 'utf8')
+  runGit(repository, ['add', '--', lease.manifestPath])
+  runGit(repository, ['commit', '-m', `集成：记录 main 同步验证`])
+  const recordCommit = resolveRepositoryContext(repository).head
+  updateActiveBatchTip({
+    repository,
+    ownerToken,
+    expectedRevision: lease.revision,
+    expectedTip: lease.currentTip,
+    nextTip: recordCommit,
+    updatedAt: now
+  })
+  return recordCommit
+}
+
 function verifyMutationOwner(context, lease, ownerToken, { requireLeaseTip = true } = {}) {
   if (typeof ownerToken !== 'string' || ownerToken.length === 0 || ownerToken.includes('\0')) fail('ownerToken 无效。')
   if (context.branch !== lease.branch) fail('当前 worktree 必须位于活动租约分支。')
@@ -244,8 +307,8 @@ function selectedFeature(manifest, featureBranch) {
   return feature
 }
 
-function requirePassingPreflight(repository, phase, manifestPath, featureBranch) {
-  const report = preflightIntegrationAction({ repository, phase, manifestPath, featureBranch })
+function requirePassingPreflight(repository, phase, manifestPath, featureBranch, mainWorktree, expectedAcceptedTip) {
+  const report = preflightIntegrationAction({ repository, phase, manifestPath, featureBranch, mainWorktree, expectedAcceptedTip })
   if (!report.ok) {
     const details = report.findings.filter((entry) => entry.severity === 'error').map((entry) => entry.message).join('；')
     fail(`预检未通过：${details || '未知原因'}`)
@@ -596,4 +659,174 @@ export function adoptIntegrationBatch({ integrationRepository, batchId, handoffP
     beforeCommit,
     dryRun
   })
+}
+
+export function recoverIntegrationOwnership({ integrationRepository, manifestPath, confirmBatchId, confirmTip }) {
+  const state = readManifestForMutation(integrationRepository, manifestPath)
+  requireExactConfirmation(confirmBatchId, state.lease.batchId, 'confirmBatchId')
+  requireExactConfirmation(confirmTip, state.lease.currentTip, 'confirmTip')
+  let recovered
+  try {
+    recovered = recoverActiveBatchOwnership({
+      repository: state.context.worktreeRoot,
+      expectedBatchId: confirmBatchId,
+      expectedTip: confirmTip,
+      expectedManifestDigest: manifestDigest(state.manifestPath)
+    })
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error))
+  }
+  if (recovered.lease.branch !== state.context.branch || recovered.lease.currentTip !== state.context.head) {
+    fail('恢复 owner 的 worktree 分支或 HEAD 已变化。')
+  }
+  return resultFor('ownership-recovered', state, state.context.head, state.context.head, [
+    action('recover-owner', '验证已持久化 owner token、租约、清单字节摘要和当前集成 tip。')
+  ])
+}
+
+export function synchronizeIntegrationMain({ integrationRepository, manifestPath, ownerToken, dryRun, now }) {
+  if (typeof dryRun !== 'boolean') fail('dryRun 必须为布尔值。')
+  checkedNow(now)
+  const state = readManifestForMutation(integrationRepository, manifestPath)
+  const main = canonicalMainWorktree(state.context.worktreeRoot)
+  sourceClean(main.worktreeRoot, '规范 main worktree')
+  requirePassingPreflight(state.context.worktreeRoot, 'sync-main', state.manifestPath, undefined, main.worktreeRoot)
+  verifyMutationOwner(state.context, state.lease, ownerToken)
+  const mainTip = resolveCommit(main.worktreeRoot, 'refs/heads/main')
+  if (main.head !== mainTip) fail('规范 main worktree 的 HEAD 必须精确等于本地 main tip。')
+  if (mainTip === state.manifest.expectedMainCommit) fail('当前 local main 没有可同步的新提交。')
+  if (!isAncestor(state.context.worktreeRoot, state.manifest.expectedMainCommit, mainTip)) {
+    fail('当前 local main 不再是 expectedMainCommit 的后继，拒绝同步。')
+  }
+  if (isAncestor(state.context.worktreeRoot, mainTip, state.context.head)) {
+    fail('当前 local main 已包含在集成历史中，拒绝伪造同步记录。')
+  }
+  const actions = [
+    action('merge-main', '以非 rebase 合并将当前 local main 同步到集成分支。', ['merge', '--no-ff', '--no-commit', 'refs/heads/main']),
+    ...state.manifest.integrationChecks.map((check) => action('run-integration-check', '在暂存 main 合并树执行声明的检查。', [...check.argv])),
+    action('commit-main-sync', '提交 main 同步边界。', ['commit', '-m', `集成：同步 main ${mainTip}`]),
+    action('record-main-sync-evidence', '提交精确 main 同步和检查证据。', ['commit', '-m', '集成：记录 main 同步验证'])
+  ]
+  if (dryRun) return resultFor('planned', state, state.context.head, state.context.head, actions)
+
+  const beforeCommit = state.context.head
+  const merge = runGit(state.context.worktreeRoot, ['merge', '--no-ff', '--no-commit', 'refs/heads/main'], { allowFailure: true })
+  if (merge.status !== 0) {
+    const inConflict = runGit(state.context.worktreeRoot, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { allowFailure: true }).status === 0
+    if (inConflict) return recoveryResult({ batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit, repository: state.context.worktreeRoot, actions })
+    fail(`同步 main 失败：${merge.stderr.trim() || merge.stdout.trim()}`)
+  }
+  try {
+    const stagedChecks = runDeclaredChecks(state.context.worktreeRoot, state.manifest.integrationChecks, '0'.repeat(40), now)
+    runGit(state.context.worktreeRoot, ['commit', '-m', `集成：同步 main ${mainTip}`])
+    const mergeCommit = resolveRepositoryContext(state.context.worktreeRoot).head
+    const parents = mergeParents(state.context.worktreeRoot, mergeCommit)
+    if (parents.length !== 2 || parents[0] !== beforeCommit || parents[1] !== mainTip) fail('main 同步合并边界父提交不匹配。')
+    const checks = stagedChecks.map((check) => ({ ...check, verifiedCommit: mergeCommit }))
+    const advancedLease = updateActiveBatchTip({
+      repository: state.context.worktreeRoot,
+      ownerToken,
+      expectedRevision: state.lease.revision,
+      expectedTip: beforeCommit,
+      nextTip: mergeCommit,
+      updatedAt: now
+    })
+    const afterCommit = recordMainSynchronization({
+      repository: state.context.worktreeRoot,
+      lease: advancedLease,
+      manifest: state.manifest,
+      manifestPath: state.manifestPath,
+      previousMainCommit: state.manifest.expectedMainCommit,
+      mainCommit: mainTip,
+      mergeCommit,
+      checks,
+      now,
+      ownerToken
+    })
+    return resultFor('main-synchronized', state, beforeCommit, afterCommit, actions)
+  } catch (error) {
+    if (error && typeof error === 'object' && error.checkFailure) {
+      const aborted = runGit(state.context.worktreeRoot, ['merge', '--abort'], { allowFailure: true })
+      if (aborted.status === 0) fail(error.message)
+    }
+    return recoveryResult({ batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit, repository: state.context.worktreeRoot, actions })
+  }
+}
+
+export function acceptIntegrationBatch({ integrationRepository, manifestPath, commit, confirmBatchId, ownerToken, now }) {
+  checkedNow(now)
+  const state = readManifestForMutation(integrationRepository, manifestPath)
+  requireExactConfirmation(confirmBatchId, state.lease.batchId, 'confirmBatchId')
+  requireExactConfirmation(commit, state.context.head, 'commit')
+  requirePassingPreflight(state.context.worktreeRoot, 'accept', state.manifestPath, undefined, undefined, commit)
+  verifyMutationOwner(state.context, state.lease, ownerToken)
+  try {
+    markActiveBatchAccepted({
+      repository: state.context.worktreeRoot,
+      ownerToken,
+      expectedRevision: state.lease.revision,
+      acceptedTip: commit,
+      acceptedManifestDigest: manifestDigest(state.manifestPath),
+      acceptedAt: now
+    })
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error))
+  }
+  return resultFor('accepted', state, state.context.head, state.context.head, [
+    action('accept-batch', '仅在租约中记录精确集成 tip 与原始清单字节摘要。')
+  ])
+}
+
+export function promoteIntegrationBatch({ integrationRepository, manifestPath, mainWorktree, confirmBatchId, confirmTip, ownerToken, dryRun, now }) {
+  if (typeof dryRun !== 'boolean') fail('dryRun 必须为布尔值。')
+  checkedNow(now)
+  const state = readManifestForMutation(integrationRepository, manifestPath)
+  const canonical = canonicalMainWorktree(state.context.worktreeRoot)
+  if (path.resolve(mainWorktree) !== canonical.worktreeRoot) fail('mainWorktree 必须精确等于已登记的规范 main worktree。')
+  sourceClean(canonical.worktreeRoot, '规范 main worktree')
+  requireExactConfirmation(confirmBatchId, state.lease.batchId, 'confirmBatchId')
+  requireExactConfirmation(confirmTip, state.context.head, 'confirmTip')
+  requirePassingPreflight(state.context.worktreeRoot, 'promote', state.manifestPath, undefined, canonical.worktreeRoot, confirmTip)
+  verifyMutationOwner(state.context, state.lease, ownerToken)
+  if (canonical.head !== state.manifest.expectedMainCommit) fail('规范 main worktree 的 HEAD 不再匹配 expectedMainCommit。')
+  if (state.lease.acceptedTip !== state.context.head || state.lease.acceptedManifestDigest !== manifestDigest(state.manifestPath)) {
+    fail('租约验收 tip 或清单字节摘要已过期。')
+  }
+  if (!isAncestor(state.context.worktreeRoot, canonical.head, state.context.head)) fail('集成 tip 不是规范 main 的 fast-forward 后继。')
+  for (const feature of state.manifest.features) {
+    if (!isAncestor(state.context.worktreeRoot, feature.handoff.tipCommit, state.context.head)) {
+      fail(`功能 tip 未包含在集成 tip 中：${feature.handoff.branch}`)
+    }
+  }
+  const actions = [action('promote-fast-forward', '仅以 --ff-only 将已验收集成分支推进规范 main。', ['merge', '--ff-only', state.lease.branch]), action('archive-lease', '将活动租约无覆盖归档为 promoted。')]
+  if (dryRun) return resultFor('planned', state, state.context.head, state.context.head, actions)
+  const promoted = runGit(canonical.worktreeRoot, ['merge', '--ff-only', state.lease.branch], { allowFailure: true })
+  if (promoted.status !== 0) fail(`推进 main 失败：${promoted.stderr.trim() || promoted.stdout.trim()}`)
+  const mainAfter = resolveRepositoryContext(canonical.worktreeRoot).head
+  if (mainAfter !== state.context.head) fail('推进后的 main HEAD 与已验收集成 tip 不匹配。')
+  for (const feature of state.manifest.features) {
+    if (!isAncestor(canonical.worktreeRoot, feature.handoff.tipCommit, mainAfter)) fail(`推进后的 main 缺少功能 tip：${feature.handoff.branch}`)
+  }
+  try {
+    archiveActiveBatchLease({ repository: state.context.worktreeRoot, ownerToken, expectedBatchId: state.lease.batchId, outcome: 'promoted', archivedAt: now })
+  } catch {
+    return recoveryResult({ batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit: state.context.head, repository: state.context.worktreeRoot, actions })
+  }
+  return resultFor('promoted', state, state.context.head, mainAfter, actions)
+}
+
+export function cancelIntegrationBatch({ integrationRepository, manifestPath, confirmBatchId, explicitCancellation, dryRun, now }) {
+  if (typeof dryRun !== 'boolean') fail('dryRun 必须为布尔值。')
+  checkedNow(now)
+  const state = readManifestForMutation(integrationRepository, manifestPath)
+  requireExactConfirmation(confirmBatchId, state.lease.batchId, 'confirmBatchId')
+  if (explicitCancellation !== true) fail('取消批次必须提供 explicitCancellation。')
+  const actions = [action('archive-lease', '仅归档活动租约为 cancelled，不清理分支、worktree 或文件。')]
+  if (dryRun) return resultFor('planned', state, state.context.head, state.context.head, actions)
+  try {
+    archiveActiveBatchLease({ repository: state.context.worktreeRoot, expectedBatchId: state.lease.batchId, outcome: 'cancelled', archivedAt: now, explicitCancellation: true })
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error))
+  }
+  return resultFor('cancelled', state, state.context.head, state.context.head, actions)
 }

@@ -397,7 +397,7 @@ export function preflightIntegrationAction({ repository, phase, manifestPath, fe
       if (mainContext.branch !== 'main') addError(report, 'main-worktree-branch-invalid', 'main worktree 必须位于 main 分支。', { branch: mainContext.branch })
       const status = attempt(report, 'main-worktree-status-failed', () => readRepositoryStatus(mainContext.worktreeRoot))
       if (status && !status.sourceClean) addError(report, 'main-worktree-dirty', 'main worktree 含未提交源码改动。')
-      if (manifest && mainContext.head !== manifest.expectedMainCommit) {
+      if (manifest && phase === 'promote' && mainContext.head !== manifest.expectedMainCommit) {
         addError(report, 'main-worktree-expected-mismatch', 'main worktree HEAD 必须精确匹配批次 expectedMainCommit。', { expected: manifest.expectedMainCommit, actual: mainContext.head })
       }
     }
