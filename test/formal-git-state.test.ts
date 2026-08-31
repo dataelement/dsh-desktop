@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -116,6 +116,19 @@ describe('formal Git source gate', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('codex/dirty-session')
     expect(result.stderr).toContain('另一个 worktree 存在尚未提交的改动')
+  })
+
+  it('ignores a missing registered worktree while checking formal source state', () => {
+    const repository = createRepository()
+    const worktreeParent = mkdtempSync(path.join(os.tmpdir(), 'sherlock-stale-worktree-'))
+    scratchDirectories.push(worktreeParent)
+    const worktree = path.join(worktreeParent, 'worktree')
+    runGit(repository, 'worktree', 'add', worktree, '-b', 'codex/stale-session')
+    renameSync(worktree, `${worktree}-moved`)
+
+    const result = verify(repository)
+
+    expect(result.status).toBe(0)
   })
 
   it('requires an annotated Vx.0.0 tag on a major release commit', () => {

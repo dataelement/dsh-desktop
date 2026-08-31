@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -53,6 +61,27 @@ describe('shared Git workflow state', () => {
     )
   })
 
+  it('preserves a linked worktree path ending in a space', () => {
+    const repository = fixture()
+    const linkedWorktree = repository.createWorktree('linked path ', 'codex/linked-path-space')
+
+    expect(linkedWorktree.endsWith(' ')).toBe(true)
+    expect(resolveRepositoryContext(linkedWorktree).worktreeRoot).toBe(linkedWorktree)
+  })
+
+  it('returns a recorded missing worktree path without resolving it', () => {
+    const repository = fixture()
+    const linkedWorktree = repository.createWorktree('stale-worktree', 'codex/stale-worktree')
+    renameSync(linkedWorktree, `${linkedWorktree}-moved`)
+
+    const stale = listRegisteredWorktrees(repository.main).find(
+      (worktree) => worktree.branch === 'codex/stale-worktree'
+    )
+
+    expect(stale).toMatchObject({ path: linkedWorktree, prunable: true })
+    expect(existsSync(stale?.path ?? '')).toBe(false)
+  })
+
   it('reports a detached HEAD without inventing a branch name', () => {
     const repository = fixture()
     repository.git(repository.main, 'switch', '--detach')
@@ -89,9 +118,12 @@ describe('shared Git workflow state', () => {
     const repository = fixture()
     repository.write(repository.main, 'src/new.ts', 'export const value = 1\n')
     repository.write(repository.main, 'dist-local-integration/generated.js', 'generated\n')
+    repository.write(repository.main, 'dist', 'root file\n')
+    repository.write(repository.main, 'dist-unknown/generated.js', 'unknown output\n')
+    symlinkSync('dist-local-integration', path.join(repository.main, 'output'))
 
     expect(readRepositoryStatus(repository.main)).toMatchObject({
-      untrackedSources: ['src/new.ts'],
+      untrackedSources: ['dist', 'dist-unknown/generated.js', 'output', 'src/new.ts'],
       untrackedOutputs: ['dist-local-integration/generated.js'],
       sourceClean: false
     })
@@ -108,6 +140,38 @@ describe('shared Git workflow state', () => {
     expect(isAncestor(repository.main, base, tip)).toBe(true)
     expect(listRangeCommits(repository.main, base, tip)).toEqual([
       { commit: tip, parents: [base], subject: '增加一个源码提交' }
+    ])
+  })
+
+  it('rejects option-shaped revisions before Git can create an output file', () => {
+    const repository = fixture()
+    const base = resolveCommit(repository.main, 'HEAD')
+    repository.write(repository.main, 'src/change.ts', 'export const value = 1\n')
+    const tip = repository.commit(repository.main, '增加变更用于注入回归')
+    const outputPath = path.join(repository.root, 'injected-output')
+    const injectedRevision = `--output=${outputPath}`
+
+    for (const call of [
+      () => resolveCommit(repository.main, injectedRevision),
+      () => isAncestor(repository.main, injectedRevision, tip),
+      () => listRangeCommits(repository.main, injectedRevision, tip),
+      () => diffNameStatus(repository.main, injectedRevision, tip)
+    ]) {
+      expect(call).toThrow('Git 修订版本不能以 - 开头。')
+      expect(existsSync(outputPath)).toBe(false)
+    }
+
+    expect(isAncestor(repository.main, base, tip)).toBe(true)
+  })
+
+  it('preserves an empty commit subject in NUL-delimited range history', () => {
+    const repository = fixture()
+    const base = resolveCommit(repository.main, 'HEAD')
+    repository.git(repository.main, 'commit', '--allow-empty', '--allow-empty-message', '-m', '')
+    const tip = resolveCommit(repository.main, 'HEAD')
+
+    expect(listRangeCommits(repository.main, base, tip)).toEqual([
+      { commit: tip, parents: [base], subject: '' }
     ])
   })
 

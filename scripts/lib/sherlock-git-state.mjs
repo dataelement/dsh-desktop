@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 
 const gitOutputLimit = 64 * 1024 * 1024
@@ -25,13 +25,35 @@ function outputRecords(output) {
   return output.split('\0').filter((record) => record.length > 0)
 }
 
+function nulFields(output) {
+  const fields = output.split('\0')
+  if (fields.at(-1) === '') fields.pop()
+  return fields
+}
+
+function removeGitLineTerminator(output) {
+  return output.endsWith('\n') ? output.slice(0, -1) : output
+}
+
 function absoluteGitPath(worktreeRoot, gitPath) {
   return path.normalize(realpathSync(path.resolve(worktreeRoot, gitPath)))
 }
 
+function recordedGitPath(worktreeRoot, gitPath) {
+  const absolutePath = path.normalize(path.resolve(worktreeRoot, gitPath))
+  return existsSync(absolutePath) ? path.normalize(realpathSync(absolutePath)) : absolutePath
+}
+
 function isGeneratedOutput(filePath) {
-  const [topLevel] = filePath.split('/', 1)
-  return generatedOutputRoots.has(topLevel)
+  const separator = filePath.indexOf('/')
+  return separator > 0 && generatedOutputRoots.has(filePath.slice(0, separator))
+}
+
+function assertRevision(revision) {
+  if (typeof revision !== 'string' || revision.startsWith('-')) {
+    throw new Error('Git 修订版本不能以 - 开头。')
+  }
+  return revision
 }
 
 export function runGit(repository, args, options = {}) {
@@ -58,15 +80,17 @@ export function runGit(repository, args, options = {}) {
 
 export function resolveRepositoryContext(repository) {
   const worktreeRoot = path.normalize(
-    realpathSync(path.resolve(runGit(repository, ['rev-parse', '--show-toplevel']).stdout.trim()))
+    realpathSync(
+      path.resolve(removeGitLineTerminator(runGit(repository, ['rev-parse', '--show-toplevel']).stdout))
+    )
   )
   const gitDirectory = absoluteGitPath(
     worktreeRoot,
-    runGit(worktreeRoot, ['rev-parse', '--git-dir']).stdout.trim()
+    removeGitLineTerminator(runGit(worktreeRoot, ['rev-parse', '--git-dir']).stdout)
   )
   const commonDirectory = absoluteGitPath(
     worktreeRoot,
-    runGit(worktreeRoot, ['rev-parse', '--git-common-dir']).stdout.trim()
+    removeGitLineTerminator(runGit(worktreeRoot, ['rev-parse', '--git-common-dir']).stdout)
   )
   const branchOutput = runGit(worktreeRoot, ['branch', '--show-current']).stdout.trim()
   const head = runGit(worktreeRoot, ['rev-parse', 'HEAD']).stdout.trim()
@@ -129,7 +153,7 @@ export function listRegisteredWorktrees(repository) {
       const branchReference = fields.get('branch') ?? ''
 
       return {
-        path: absoluteGitPath(path.resolve(repository), worktreePath),
+        path: recordedGitPath(path.resolve(repository), worktreePath),
         head: fields.get('HEAD') ?? '',
         branch: branchReference.replace(/^refs\/heads\//, '') || null,
         locked: fields.has('locked'),
@@ -139,28 +163,41 @@ export function listRegisteredWorktrees(repository) {
 }
 
 export function resolveCommit(repository, revision) {
-  return runGit(repository, ['rev-parse', '--verify', `${revision}^{commit}`]).stdout.trim()
+  const safeRevision = assertRevision(revision)
+  return runGit(repository, [
+    'rev-parse',
+    '--verify',
+    '--end-of-options',
+    `${safeRevision}^{commit}`
+  ]).stdout.trim()
 }
 
 export function isAncestor(repository, ancestor, descendant) {
+  const safeAncestor = assertRevision(ancestor)
+  const safeDescendant = assertRevision(descendant)
   const result = runGit(
     repository,
-    ['merge-base', '--is-ancestor', ancestor, descendant],
+    ['merge-base', '--is-ancestor', '--end-of-options', safeAncestor, safeDescendant],
     { allowFailure: true }
   )
   if (result.status === 0) return true
   if (result.status === 1) return false
-  throw new Error(gitFailureMessage(['merge-base', '--is-ancestor', ancestor, descendant], result))
+  throw new Error(
+    gitFailureMessage(['merge-base', '--is-ancestor', safeAncestor, safeDescendant], result)
+  )
 }
 
 export function listRangeCommits(repository, base, tip) {
-  const records = outputRecords(
+  const safeBase = assertRevision(base)
+  const safeTip = assertRevision(tip)
+  const records = nulFields(
     runGit(repository, [
       'log',
       '-z',
       '--reverse',
       '--format=%H%x00%P%x00%s',
-      `${base}..${tip}`
+      '--end-of-options',
+      `${safeBase}..${safeTip}`
     ]).stdout
   )
   if (records.length % 3 !== 0) throw new Error('Git 提交范围输出格式无效。')
@@ -177,6 +214,8 @@ export function listRangeCommits(repository, base, tip) {
 }
 
 export function diffNameStatus(repository, base, tip) {
+  const safeBase = assertRevision(base)
+  const safeTip = assertRevision(tip)
   const records = outputRecords(
     runGit(repository, [
       'diff',
@@ -184,8 +223,10 @@ export function diffNameStatus(repository, base, tip) {
       '-z',
       '--find-renames',
       '--find-copies-harder',
-      base,
-      tip
+      '--end-of-options',
+      safeBase,
+      safeTip,
+      '--'
     ]).stdout
   )
   const changes = []
