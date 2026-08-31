@@ -26,7 +26,9 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
         '进一步放宽研究画布的缩小范围，并在视口偏离内容时提供快速回到内容的入口',
         '新增简洁的 Sherlock 启动动画，改善客户端启动时的视觉衔接',
         '修复“新研究”首屏画布、顶栏和右侧对话区布局异常，并使用专用研究图标',
-        '修复研究画布中 PDF 已加载但页面显示为空白的问题'
+        '修复研究画布中 PDF 已加载但页面显示为空白的问题',
+        '完善空白研究右侧引导，在首条消息发送前显示品牌标题、工作区和模式入口',
+        '优化加入画布的助手回复组件尺寸，减少瘦长排版并保留自适应与手动缩放'
       ]
     },
     {
@@ -93,7 +95,9 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
         'Expanded the Research canvas zoom-out range and added a quick way to return to content when the viewport drifts away',
         'Added a restrained Sherlock launch animation for a smoother transition into the client',
         'Fixed the New Research first-screen canvas, header, and right-side conversation layout, and added a dedicated Research icon',
-        'Fixed blank PDF pages in the Research canvas after successful document loading'
+        'Fixed blank PDF pages in the Research canvas after successful document loading',
+        'Improved blank Research guidance with the Sherlock headline, workspace, and mode controls until the first message is sent',
+        'Widened assistant reply components added to the Research canvas while preserving adaptive sizing and manual resize controls'
       ]
     },
     {

@@ -381,6 +381,8 @@ async function mountConversationRoot(
   const sidebarRoot = createRoot(detailsPortalHost)
   const transitions = { enter: 0, leave: 0 }
   const translate = (key: string) => ({
+    'hero.headline': '迷雾之中，洞见真相',
+    'hero.preview': '预览版',
     'research.right.conversation': '对话',
     'research.right.files': '文件',
     'research.right.add': '添加标签页',
@@ -6930,8 +6932,8 @@ describe('Sherlock workspace and composer controls', () => {
         .toEqual(['ne', 'nw', 'se', 'sw'])
       expect((generic as HappyDOMHTMLElement | null)?.style.width).toBe('220px')
       expect((generic as HappyDOMHTMLElement | null)?.style.height).toBe('64px')
-      expect((assistant as HappyDOMHTMLElement | null)?.style.width).toBe('360px')
-      expect((assistant as HappyDOMHTMLElement | null)?.style.height).toBe('240px')
+      expect((assistant as HappyDOMHTMLElement | null)?.style.width).toBe('520px')
+      expect((assistant as HappyDOMHTMLElement | null)?.style.height).toBe('300px')
       expect(assistant?.querySelector('[data-research-node-title]')?.textContent).toBe('Answer')
     } finally {
       await mounted.cleanup()
@@ -6973,11 +6975,11 @@ describe('Sherlock workspace and composer controls', () => {
       expect(browserWindow.getComputedStyle(shield).pointerEvents).toBe('auto')
       expect(canvas.querySelector('[data-node-dragging="true"]')).toBeNull()
       expect(workspace.getSnapshot().artifacts).toMatchObject([
-        { id: 'assistant-a', x: 220, y: 210, width: 400, height: 260, sizeMode: 'manual' },
-        { id: 'assistant-b', x: 600, y: 200, width: 360, height: 240, sizeMode: 'auto' }
+        { id: 'assistant-a', x: 220, y: 210, width: 560, height: 320, sizeMode: 'manual' },
+        { id: 'assistant-b', x: 600, y: 200, width: 520, height: 300, sizeMode: 'auto' }
       ])
-      expect((card as HappyDOMHTMLElement).style.width).toBe('400px')
-      expect((card as HappyDOMHTMLElement).style.height).toBe('260px')
+      expect((card as HappyDOMHTMLElement).style.width).toBe('560px')
+      expect((card as HappyDOMHTMLElement).style.height).toBe('320px')
     } finally {
       await mounted.cleanup()
     }
@@ -7096,10 +7098,10 @@ describe('Sherlock workspace and composer controls', () => {
           }))
         })
         expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
-          x: 220, y: 210, width: 400, height: 260, sizeMode: 'manual'
+          x: 220, y: 210, width: 560, height: 320, sizeMode: 'manual'
         })
         expect(JSON.parse(values.get(`sherlock.research.canvas.artifacts.v1:${sessionId}`) ?? '[]')[0])
-          .not.toMatchObject({ width: 400, height: 260 })
+          .not.toMatchObject({ width: 560, height: 320 })
         expect(writes).toEqual([])
 
         if (finishMode === 'cleanup') {
@@ -7123,7 +7125,7 @@ describe('Sherlock workspace and composer controls', () => {
           `sherlock.research.canvas.selection.v1:${sessionId}`
         ])
         expect(JSON.parse(values.get(`sherlock.research.canvas.artifacts.v1:${sessionId}`) ?? '[]')[0])
-          .toMatchObject({ x: 220, y: 210, width: 400, height: 260, sizeMode: 'manual' })
+          .toMatchObject({ x: 220, y: 210, width: 560, height: 320, sizeMode: 'manual' })
       } finally {
         if (!cleaned) await mounted.cleanup()
       }
@@ -8382,6 +8384,43 @@ describe('Sherlock workspace and composer controls', () => {
       expect(shell?.getAttribute('data-phase')).toBe('active')
       expect(mounted.host.querySelector('[data-research-center]')).not.toBeNull()
       expect(composer?.classList.contains('uV2eYG_hero')).toBe(false)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('shows the Research empty-state headline and workspace controls until the first message', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      await act(async () => {
+        mounted.session.update({
+          composerPhase: 'blank',
+          blank: true,
+          chat: { order: [] }
+        })
+      })
+
+      const emptyState = mounted.detailsPortalHost.querySelector('[data-research-empty-state]')
+      const workspaceRow = mounted.detailsPortalHost.querySelector('[data-research-empty-workspace-row]')
+      const composer = mounted.detailsPortalHost.querySelector('[data-test-composer-bar]')
+      expect(emptyState?.textContent).toContain('迷雾之中，洞见真相')
+      expect(emptyState?.textContent).toContain('预览版')
+      expect(workspaceRow).not.toBeNull()
+      expect(workspaceRow?.parentElement).toBe(composer)
+      expect(workspaceRow?.nextElementSibling?.classList.contains('uV2eYG_card')).toBe(true)
+      expect(composer?.getAttribute('data-test-composer-has-accessory')).toBe('true')
+
+      await act(async () => {
+        mounted.session.update({
+          composerPhase: 'active',
+          blank: false,
+          chat: { order: ['message-1'] }
+        })
+      })
+
+      expect(mounted.detailsPortalHost.querySelector('[data-research-empty-state]')).toBeNull()
+      expect(mounted.detailsPortalHost.querySelector('[data-research-empty-workspace-row]')).toBeNull()
+      expect(composer?.getAttribute('data-test-composer-has-accessory')).toBe('false')
     } finally {
       await mounted.cleanup()
     }

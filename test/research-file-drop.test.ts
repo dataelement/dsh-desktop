@@ -134,7 +134,7 @@ describe('Research canvas file drops', () => {
     expect(workspace.getSnapshot().artifacts).toMatchObject([
       {
         kind: 'assistant-result', messageId: 'message-1', excerpt: markdown,
-        width: 360, sizeMode: 'auto'
+        width: 520, sizeMode: 'auto'
       },
       {
         kind: 'assistant-excerpt', messageId: 'message-2', excerpt: 'margin expanded'
@@ -1335,7 +1335,7 @@ describe('Research canvas file drops', () => {
     expect(client.normalizeResearchCanvasNodeGeometry({
       id: 'assistant', kind: 'assistant-result', messageId: 'm1', title: 'Answer',
       excerpt: 'Evidence', x: 0, y: 0
-    })).toEqual({ width: 360, height: 240, sizeMode: 'auto', resizable: true })
+    })).toEqual({ width: 520, height: 300, sizeMode: 'auto', resizable: true })
     expect(client.normalizeResearchCanvasNodeGeometry({
       id: 'image', name: 'chart.png', mediaType: 'image/png', source: 'computer', x: 0, y: 0
     })).toEqual({ width: 320, height: 272, sizeMode: 'auto', aspectRatio: 4 / 3, resizable: true })
@@ -1355,7 +1355,7 @@ describe('Research canvas file drops', () => {
     expect(client.normalizeResearchCanvasNodeGeometry({
       id: 'assistant', kind: 'assistant-result', width: -1, height: Number.NaN,
       sizeMode: 'broken', x: 0, y: 0
-    })).toEqual({ width: 360, height: 240, sizeMode: 'auto', resizable: true })
+    })).toEqual({ width: 520, height: 300, sizeMode: 'auto', resizable: true })
     expect(client.normalizeResearchCanvasNodeGeometry({
       id: 'assistant', kind: 'assistant-result', width: 9000, height: 8000,
       sizeMode: 'manual', x: 0, y: 0
@@ -1389,7 +1389,7 @@ describe('Research canvas file drops', () => {
     expect(client.resizeResearchCanvasNode(node, 'se', { x: 80, y: 40 }, 2))
       .toMatchObject({ x: 20, y: 10, width: 400, height: 260, sizeMode: 'manual' })
     expect(client.resizeResearchCanvasNode({ ...node, x: 100, y: 100 }, 'nw', { x: 40, y: 20 }, 2))
-      .toMatchObject({ x: 110, y: 105, width: 340, height: 230, sizeMode: 'manual' })
+      .toMatchObject({ x: 100, y: 105, width: 360, height: 230, sizeMode: 'manual' })
     expect(client.resizeResearchCanvasNode(node, 'ne', { x: 80, y: -40 }, 2))
       .toMatchObject({ x: 20, y: -10, width: 400, height: 260, sizeMode: 'manual' })
     expect(client.resizeResearchCanvasNode(node, 'sw', { x: -80, y: 40 }, 2))
@@ -1652,7 +1652,7 @@ describe('Research canvas file drops', () => {
     expect(artifacts).toEqual([
       {
         id: 'a1', kind: 'assistant-result', messageId: 'm1', title: 'Answer',
-        excerpt: 'Text', x: 1, y: 2, width: 360, height: 240, sizeMode: 'auto'
+        excerpt: 'Text', x: 1, y: 2, width: 520, height: 300, sizeMode: 'auto'
       }
     ])
     expect(client.parseResearchCanvasArtifactNodes('bad-json')).toEqual([])
@@ -1728,14 +1728,14 @@ describe('Research canvas file drops', () => {
     expect(placed).toEqual([{
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
       title: 'Answer', excerpt: 'Evidence', x: 120, y: 80,
-      width: 360, height: 240, sizeMode: 'auto'
+      width: 520, height: 300, sizeMode: 'auto'
     }])
     expect(client.placeResearchCanvasArtifact(
       placed, { ...payload, title: 'Revised' }, { x: 240, y: 160 }, () => 'unused'
     )).toEqual([{
       id: 'artifact-1', messageId: 'm1', kind: 'assistant-result',
       title: 'Answer', excerpt: 'Evidence', x: 240, y: 160,
-      width: 360, height: 240, sizeMode: 'auto'
+      width: 520, height: 300, sizeMode: 'auto'
     }])
   })
 
