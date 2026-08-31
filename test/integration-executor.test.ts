@@ -69,6 +69,20 @@ function handoffFile(repository: GitWorkflowFixture, name: string): string {
   return card
 }
 
+function acceptedPromotion(repository: GitWorkflowFixture, name: string, batchId: string) {
+  prepareIntegrationRoot(repository)
+  const handoff = handoffFile(repository, name)
+  const integration = repository.createWorktree(`integration-${name}`, `codex/integration/${batchId}`)
+  const integrationChecks = [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }] as [{ argv: [string, ...string[]]; timeoutMs: number }]
+  adoptIntegrationBatch({ integrationRepository: integration, batchId, handoffPaths: [handoff], integrationChecks, dryRun: false, now: '2026-08-31T06:00:00.000Z' })
+  const context = resolveRepositoryContext(integration)
+  const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+  const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', `${batchId}.json`)
+  const merged = mergeIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: `codex/feat/${name}-20260831`, ownerToken, dryRun: false, now: '2026-08-31T06:01:00.000Z' })
+  acceptIntegrationBatch({ integrationRepository: integration, manifestPath, commit: merged.afterCommit, confirmBatchId: batchId, ownerToken, now: '2026-08-31T06:02:00.000Z' })
+  return { integration, manifestPath, ownerToken, tip: merged.afterCommit, branch: `codex/feat/${name}-20260831` }
+}
+
 afterEach(() => {
   for (const value of fixtures.splice(0)) value.dispose()
 })
@@ -651,6 +665,138 @@ exit "$status"
     expect(readActiveBatchLease(integration)).toBeNull()
     expect(existsSync(path.join(repository.commonDirectory, 'sherlock-integration', 'history'))).toBe(true)
   }, 10000)
+
+  it('retains the active lease after post-FF confirmation fails and retries the exact promoted state without another merge', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'promote-confirmation')
+    const integration = repository.createWorktree('integration-promote-confirmation', 'codex/integration/20260831-25')
+    const confirmation = path.join(repository.root, 'confirmation.mjs')
+    writeFileSync(confirmation, 'process.exit(0)\n', 'utf8')
+    const integrationChecks = [{ argv: [process.execPath, confirmation], timeoutMs: 1000 }] as [{ argv: [string, ...string[]]; timeoutMs: number }]
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-25', handoffPaths: [handoff], integrationChecks, dryRun: false, now: '2026-08-31T05:34:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-25.json')
+    const merged = mergeIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/promote-confirmation-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:35:00.000Z' })
+    acceptIntegrationBatch({ integrationRepository: integration, manifestPath, commit: merged.afterCommit, confirmBatchId: '20260831-25', ownerToken, now: '2026-08-31T05:36:00.000Z' })
+    writeFileSync(confirmation, 'process.exit(9)\n', 'utf8')
+
+    const first = promoteIntegrationBatch({ integrationRepository: integration, manifestPath, mainWorktree: repository.main, confirmBatchId: '20260831-25', confirmTip: merged.afterCommit, ownerToken, dryRun: false, now: '2026-08-31T05:37:00.000Z' })
+    expect(first).toMatchObject({ status: 'recovery-required', afterCommit: merged.afterCommit })
+    expect(repository.git(repository.main, 'rev-parse', 'HEAD')).toBe(merged.afterCommit)
+    expect(readActiveBatchLease(integration)).toMatchObject({ currentTip: merged.afterCommit, acceptedTip: merged.afterCommit })
+
+    writeFileSync(confirmation, 'process.exit(0)\n', 'utf8')
+    const retried = promoteIntegrationBatch({ integrationRepository: integration, manifestPath, mainWorktree: repository.main, confirmBatchId: '20260831-25', confirmTip: merged.afterCommit, ownerToken, dryRun: false, now: '2026-08-31T05:38:00.000Z' })
+    expect(retried).toMatchObject({ status: 'promoted', beforeCommit: merged.afterCommit, afterCommit: merged.afterCommit })
+    expect(repository.git(repository.main, 'rev-parse', 'HEAD')).toBe(merged.afterCommit)
+    expect(readActiveBatchLease(integration)).toBeNull()
+  }, 15000)
+
+  it('retains the active lease after archive publication fails following FF and archives on a later exact retry', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'promote-archive')
+    const integration = repository.createWorktree('integration-promote-archive', 'codex/integration/20260831-26')
+    const integrationChecks = [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }] as [{ argv: [string, ...string[]]; timeoutMs: number }]
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-26', handoffPaths: [handoff], integrationChecks, dryRun: false, now: '2026-08-31T05:39:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-26.json')
+    const merged = mergeIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/promote-archive-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:40:00.000Z' })
+    acceptIntegrationBatch({ integrationRepository: integration, manifestPath, commit: merged.afterCommit, confirmBatchId: '20260831-26', ownerToken, now: '2026-08-31T05:41:00.000Z' })
+    fs.mkdirSync(path.join(repository.commonDirectory, 'sherlock-integration', 'history', '20260831-26-promoted-2026-08-31T05-42-00.000Z'), { recursive: true })
+
+    const first = promoteIntegrationBatch({ integrationRepository: integration, manifestPath, mainWorktree: repository.main, confirmBatchId: '20260831-26', confirmTip: merged.afterCommit, ownerToken, dryRun: false, now: '2026-08-31T05:42:00.000Z' })
+    expect(first).toMatchObject({ status: 'recovery-required' })
+    expect(repository.git(repository.main, 'rev-parse', 'HEAD')).toBe(merged.afterCommit)
+    expect(readActiveBatchLease(integration)).toMatchObject({ acceptedTip: merged.afterCommit })
+
+    const retried = promoteIntegrationBatch({ integrationRepository: integration, manifestPath, mainWorktree: repository.main, confirmBatchId: '20260831-26', confirmTip: merged.afterCommit, ownerToken, dryRun: false, now: '2026-08-31T05:43:00.000Z' })
+    expect(retried).toMatchObject({ status: 'promoted' })
+    expect(readActiveBatchLease(integration)).toBeNull()
+  }, 15000)
+
+  const promotionRejectionScenarios = [
+      {
+        name: 'dirty-promote', batchId: '20260831-27',
+        mutate: (repository: GitWorkflowFixture) => repository.write(repository.main, 'src/dirty-promote.ts', 'export const dirty = true\n'),
+        mainWorktree: (repository: GitWorkflowFixture, integration: string) => repository.main
+      },
+      {
+        name: 'wrong-main-path', batchId: '20260831-28',
+        mutate: () => {},
+        mainWorktree: (_repository: GitWorkflowFixture, integration: string) => integration
+      },
+      {
+        name: 'stale-expected-main', batchId: '20260831-29',
+        mutate: (repository: GitWorkflowFixture) => { repository.write(repository.main, 'src/stale-main.ts', 'export const stale = true\n'); repository.commit(repository.main, '推进 main') },
+        mainWorktree: (repository: GitWorkflowFixture) => repository.main
+      },
+      {
+        name: 'stale-accepted-tip', batchId: '20260831-30',
+        mutate: (repository: GitWorkflowFixture, state: ReturnType<typeof acceptedPromotion>) => {
+          const leasePath = path.join(repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+          const lease = JSON.parse(readFileSync(leasePath, 'utf8'))
+          lease.acceptedTip = '0'.repeat(40)
+          writeFileSync(leasePath, `${JSON.stringify(lease, null, 2)}\n`, 'utf8')
+        },
+        mainWorktree: (repository: GitWorkflowFixture) => repository.main
+      },
+      {
+        name: 'stale-accepted-digest', batchId: '20260831-31',
+        mutate: (repository: GitWorkflowFixture) => {
+          const leasePath = path.join(repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+          const lease = JSON.parse(readFileSync(leasePath, 'utf8'))
+          lease.acceptedManifestDigest = 'f'.repeat(64)
+          writeFileSync(leasePath, `${JSON.stringify(lease, null, 2)}\n`, 'utf8')
+        },
+        mainWorktree: (repository: GitWorkflowFixture) => repository.main
+      },
+      {
+        name: 'non-ff-history', batchId: '20260831-32',
+        mutate: (repository: GitWorkflowFixture, state: ReturnType<typeof acceptedPromotion>) => {
+          repository.write(repository.main, 'src/non-ff.ts', 'export const nonFastForward = true\n')
+          const mainTip = repository.commit(repository.main, '制造非 fast-forward main')
+          const manifest = JSON.parse(readFileSync(state.manifestPath, 'utf8'))
+          manifest.expectedMainCommit = mainTip
+          writeFileSync(state.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+          const nextTip = repository.commit(state.integration, '记录非快进测试状态')
+          const lease = readActiveBatchLease(state.integration)!
+          updateActiveBatchTip({ repository: state.integration, ownerToken: state.ownerToken, expectedRevision: lease.revision, expectedTip: lease.currentTip, nextTip, updatedAt: '2026-08-31T06:03:00.000Z' })
+          const leasePath = path.join(repository.commonDirectory, 'sherlock-integration', 'active', 'lease.json')
+          const acceptedLease = JSON.parse(readFileSync(leasePath, 'utf8'))
+          acceptedLease.acceptedTip = nextTip
+          acceptedLease.acceptedManifestDigest = createHash('sha256').update(readFileSync(state.manifestPath)).digest('hex')
+          acceptedLease.acceptedAt = '2026-08-31T06:03:01.000Z'
+          writeFileSync(leasePath, `${JSON.stringify(acceptedLease, null, 2)}\n`, 'utf8')
+          state.tip = nextTip
+        },
+        mainWorktree: (repository: GitWorkflowFixture) => repository.main
+      },
+      {
+        name: 'missing-feature-ancestor', batchId: '20260831-33',
+        mutate: (repository: GitWorkflowFixture, state: ReturnType<typeof acceptedPromotion>) => {
+          const listing = repository.git(state.integration, 'worktree', 'list', '--porcelain')
+          const featurePath = new RegExp(`worktree ([^\\n]+)\\nHEAD [^\\n]+\\nbranch refs/heads/${state.branch.replaceAll('/', '\\/')}`).exec(listing)?.[1]
+          if (!featurePath) throw new Error('missing feature fixture worktree')
+          repository.write(featurePath, 'src/feature-advanced.ts', 'export const advancedFeature = true\n')
+          repository.commit(featurePath, '移动 feature tip')
+        },
+        mainWorktree: (repository: GitWorkflowFixture) => repository.main
+      }
+    ]
+  for (const scenario of promotionRejectionScenarios) {
+    it(`rejects ${scenario.name} before FF without moving refs, worktrees, files, or leases`, () => {
+      const repository = fixture()
+      const state = acceptedPromotion(repository, scenario.name, scenario.batchId)
+      scenario.mutate(repository, state)
+      const before = repository.snapshot()
+      expect(() => promoteIntegrationBatch({ integrationRepository: state.integration, manifestPath: state.manifestPath, mainWorktree: scenario.mainWorktree(repository, state.integration), confirmBatchId: scenario.batchId, confirmTip: state.tip, ownerToken: state.ownerToken, dryRun: false, now: '2026-08-31T06:04:00.000Z' })).toThrow()
+      expect(repository.snapshot()).toEqual(before)
+    }, 10000)
+  }
 
   it('requires explicit matching cancellation and archives only the lease while preserving batch files and refs', () => {
     const repository = fixture()

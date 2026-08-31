@@ -786,33 +786,49 @@ export function promoteIntegrationBatch({ integrationRepository, manifestPath, m
   sourceClean(canonical.worktreeRoot, '规范 main worktree')
   requireExactConfirmation(confirmBatchId, state.lease.batchId, 'confirmBatchId')
   requireExactConfirmation(confirmTip, state.context.head, 'confirmTip')
-  requirePassingPreflight(state.context.worktreeRoot, 'promote', state.manifestPath, undefined, canonical.worktreeRoot, confirmTip)
   verifyMutationOwner(state.context, state.lease, ownerToken)
-  if (canonical.head !== state.manifest.expectedMainCommit) fail('规范 main worktree 的 HEAD 不再匹配 expectedMainCommit。')
   if (state.lease.acceptedTip !== state.context.head || state.lease.acceptedManifestDigest !== manifestDigest(state.manifestPath)) {
     fail('租约验收 tip 或清单字节摘要已过期。')
   }
-  if (!isAncestor(state.context.worktreeRoot, canonical.head, state.context.head)) fail('集成 tip 不是规范 main 的 fast-forward 后继。')
+  const alreadyPromoted = canonical.head === state.context.head
+  if (alreadyPromoted) {
+    requirePassingPreflight(state.context.worktreeRoot, 'accept', state.manifestPath, undefined, undefined, confirmTip)
+  } else {
+    requirePassingPreflight(state.context.worktreeRoot, 'promote', state.manifestPath, undefined, canonical.worktreeRoot, confirmTip)
+    if (canonical.head !== state.manifest.expectedMainCommit) fail('规范 main worktree 的 HEAD 不再匹配 expectedMainCommit。')
+    if (!isAncestor(state.context.worktreeRoot, canonical.head, state.context.head)) fail('集成 tip 不是规范 main 的 fast-forward 后继。')
+  }
   for (const feature of state.manifest.features) {
     if (!isAncestor(state.context.worktreeRoot, feature.handoff.tipCommit, state.context.head)) {
       fail(`功能 tip 未包含在集成 tip 中：${feature.handoff.branch}`)
     }
   }
-  const actions = [action('promote-fast-forward', '仅以 --ff-only 将已验收集成分支推进规范 main。', ['merge', '--ff-only', state.lease.branch]), action('archive-lease', '将活动租约无覆盖归档为 promoted。')]
+  const actions = [
+    ...(alreadyPromoted ? [] : [action('promote-fast-forward', '仅以 --ff-only 将已验收集成分支推进规范 main。', ['merge', '--ff-only', state.lease.branch])]),
+    ...state.manifest.integrationChecks.map((check) => action('confirm-promoted-main', '在已推进的规范 main 执行声明的集成确认。', [...check.argv])),
+    action('archive-lease', '将活动租约无覆盖归档为 promoted。')
+  ]
   if (dryRun) return resultFor('planned', state, state.context.head, state.context.head, actions)
-  const promoted = runGit(canonical.worktreeRoot, ['merge', '--ff-only', state.lease.branch], { allowFailure: true })
-  if (promoted.status !== 0) fail(`推进 main 失败：${promoted.stderr.trim() || promoted.stdout.trim()}`)
-  const mainAfter = resolveRepositoryContext(canonical.worktreeRoot).head
-  if (mainAfter !== state.context.head) fail('推进后的 main HEAD 与已验收集成 tip 不匹配。')
-  for (const feature of state.manifest.features) {
-    if (!isAncestor(canonical.worktreeRoot, feature.handoff.tipCommit, mainAfter)) fail(`推进后的 main 缺少功能 tip：${feature.handoff.branch}`)
+  if (!alreadyPromoted) {
+    const promoted = runGit(canonical.worktreeRoot, ['merge', '--ff-only', state.lease.branch], { allowFailure: true })
+    if (promoted.status !== 0) fail(`推进 main 失败：${promoted.stderr.trim() || promoted.stdout.trim()}`)
+  }
+  try {
+    runDeclaredChecks(canonical.worktreeRoot, state.manifest.integrationChecks, state.context.head, now)
+    const mainAfterConfirmation = resolveRepositoryContext(canonical.worktreeRoot).head
+    if (mainAfterConfirmation !== state.context.head) fail('确认后的 main HEAD 与已验收集成 tip 不匹配。')
+    for (const feature of state.manifest.features) {
+      if (!isAncestor(canonical.worktreeRoot, feature.handoff.tipCommit, mainAfterConfirmation)) fail(`确认后的 main 缺少功能 tip：${feature.handoff.branch}`)
+    }
+  } catch {
+    return recoveryResult({ batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit: state.context.head, repository: state.context.worktreeRoot, actions })
   }
   try {
     archiveActiveBatchLease({ repository: state.context.worktreeRoot, ownerToken, expectedBatchId: state.lease.batchId, outcome: 'promoted', archivedAt: now })
   } catch {
     return recoveryResult({ batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit: state.context.head, repository: state.context.worktreeRoot, actions })
   }
-  return resultFor('promoted', state, state.context.head, mainAfter, actions)
+  return resultFor('promoted', state, state.context.head, state.context.head, actions)
 }
 
 export function cancelIntegrationBatch({ integrationRepository, manifestPath, confirmBatchId, explicitCancellation, dryRun, now }) {
