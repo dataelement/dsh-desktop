@@ -174,7 +174,10 @@ async function loadClientBundle(
     if (id === '@deepseek-ai/dsh-client-ui-primitives') {
       const fallback = fakeModule() as object
       return new Proxy({
-        MarkdownText: ({ text }: { text: string }) => createElement('div', null, text)
+        MarkdownText: ({ text }: { text: string }) => createElement('div', null, text),
+        IconBranchOutline16: () => createElement('span', { 'data-test-icon': 'branch' }),
+        IconListPenOutline16: () => createElement('span', { 'data-test-icon': 'list-pen' }),
+        IconRefreshOutline16: () => createElement('span', { 'data-test-icon': 'refresh' })
       }, {
         get(target, property) {
           return Reflect.get(target, property) ?? Reflect.get(fallback, property)
@@ -932,6 +935,10 @@ async function mountResearchCanvas(options: {
     Component: ComponentType<{ sourceUrl: string; kind: string; title: string }>
     supports(kind: string): boolean
   }
+  selectionGeneration?: {
+    disabled?: boolean
+    generate(request: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
+  }
   fetch?: (input: string, init?: { signal?: AbortSignal }) => Promise<Response>
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
@@ -1065,6 +1072,7 @@ async function mountResearchCanvas(options: {
       setSelection(value: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
       selectedFiles(): Array<Record<string, unknown>>
       pendingOrphanRevocations(): string[]
+      observeAssistantResult(messageId: string, text: string): boolean
     }
   }
   const researchWorkspaces = new Registry(storage as Storage)
@@ -1075,6 +1083,10 @@ async function mountResearchCanvas(options: {
     t: (key: string) => string
     researchWorkspaces: InstanceType<typeof Registry>
     researchOfficePreview: InstanceType<typeof OfficeCoordinator>
+    selectionGeneration?: {
+      disabled?: boolean
+      generate(request: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
+    }
   }>
   const host = browserWindow.document.createElement('div')
   browserWindow.document.body.appendChild(host)
@@ -1084,6 +1096,7 @@ async function mountResearchCanvas(options: {
       sessionId,
       researchWorkspaces,
       researchOfficePreview,
+      selectionGeneration: options.selectionGeneration,
       t: () => '研究画布'
     })
     root.render(options.strictMode ? createElement(StrictMode, null, canvasNode) : canvasNode)
@@ -2010,20 +2023,25 @@ describe('Sherlock workspace and composer controls', () => {
     }
     const releasedImages: string[] = []
     const releasedResearchWorkspaces: string[] = []
+    const researchViewOwners: Array<Record<string, unknown>> = []
+    const generateResearchSelection = vi.fn(async () => ({ ok: true }))
     const renderSession = (sessionId: string) => createElement(
       client.ConversationSession as ComponentType<Record<string, unknown>>,
       {
         sessionId,
         useSession: (select: (state: Record<string, unknown>) => unknown) => select({
-          composerPhase: 'active', blank: false
+          composerPhase: 'active', blank: false, running: false
         }),
         useInput: (select: (state: Record<string, unknown>) => unknown) => select({
-          draft: ''
+          draft: '', queue: []
         }),
-        inputActions: { setDraft: () => undefined },
+        inputActions: { setDraft: () => undefined, generateResearchSelection },
         useStore: chat.useSelector,
         actions,
-        renderSlot: () => createElement('div', { 'data-bridged-view': '' }),
+        renderSlot: (_name: string, owner: Record<string, unknown>, options: { only?: string }) => {
+          if (options?.only === 'research') researchViewOwners.push(owner)
+          return createElement('div', { 'data-bridged-view': '' })
+        },
         views: {
           subscribe: () => () => undefined,
           version: () => 1,
@@ -2057,6 +2075,10 @@ describe('Sherlock workspace and composer controls', () => {
       expect(renderToStaticMarkup(
         (presentations.at(-1)?.conversationView ?? null) as ReactNode
       )).toContain('data-bridged-view')
+      expect(researchViewOwners.at(-1)?.selectionGeneration).toMatchObject({
+        disabled: false,
+        generate: generateResearchSelection
+      })
 
       await act(async () => {
         root.render(renderSession('session-bridge-next'))
@@ -2221,6 +2243,63 @@ describe('Sherlock workspace and composer controls', () => {
       await act(async () => { workspace.setAssistantActionsActive(false) })
       expect(host.querySelector('button[aria-label="添加到画布"]')).toBeNull()
       await act(async () => { root.unmount() })
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  it('settles a pending generated component when its assistant response appears', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    try {
+      const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+        document: browserWindow.document,
+        window: browserWindow
+      })
+      expect(client.ResearchAssistantCanvasAction).toBeTypeOf('function')
+      expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+      if (typeof client.ResearchAssistantCanvasAction !== 'function' ||
+          typeof client.ResearchWorkspaceRegistry !== 'function') return
+      const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+        for(id: string): {
+          setFiles(files: Array<Record<string, unknown>>): void
+          beginGeneration(kind: string, sourceNodeIds: string[], placement: Record<string, unknown>): Record<string, unknown> | null
+          getSnapshot(): { artifacts: Array<Record<string, unknown>> }
+          subscribeAssistantActions(listener: () => void): () => void
+          assistantActionsActive(): boolean
+          observeAssistantResult(messageId: string, text: string): boolean
+        }
+      }
+      const registry = new Registry(browserWindow.localStorage)
+      const workspace = registry.for('session-generated-assistant-result')
+      workspace.setFiles([{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf', source: 'computer',
+        x: 100, y: 100, width: 480, height: 360, sizeMode: 'manual'
+      }])
+      const target = workspace.beginGeneration('summary', ['source-file'], {
+        x: 620, y: 100, width: 380, height: 240, sizeMode: 'manual'
+      })
+      expect(target).not.toBeNull()
+      const host = browserWindow.document.createElement('div')
+      browserWindow.document.body.appendChild(host)
+      const root = createRoot(host)
+      try {
+        await act(async () => {
+          root.render(createElement(client.ResearchAssistantCanvasAction, {
+            messageId: 'generated-message',
+            text: '收入增长，但成本压力仍需继续验证。',
+            workspace
+          }))
+        })
+        expect(workspace.getSnapshot().artifacts).toMatchObject([{
+          id: target?.id,
+          messageId: 'generated-message',
+          generationStatus: 'settled',
+          excerpt: '收入增长，但成本压力仍需继续验证。'
+        }])
+      } finally {
+        await act(async () => { root.unmount() })
+      }
     } finally {
       restoreGlobals()
     }
@@ -6496,12 +6575,14 @@ describe('Sherlock workspace and composer controls', () => {
   })
 
   it('selects a persisted card and marquee-selects two cards', async () => {
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
     const mounted = await mountResearchCanvas({
       sessionId: 'session-marquee',
       files: [
         { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
         { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 300, y: 130 }
-      ]
+      ],
+      selectionGeneration: { generate }
     })
     try {
       const { browserWindow, canvas, host } = mounted
@@ -6532,9 +6613,421 @@ describe('Sherlock workspace and composer controls', () => {
         }))
       })
       expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(2)
+      expect(canvas.querySelector('[data-research-selection-actions]')).not.toBeNull()
+
+      await act(async () => {
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 3, x: 760, y: 560
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 3, x: 760, y: 560
+        }))
+      })
+      expect(canvas.querySelector('[data-research-selection-actions]')).toBeNull()
     } finally {
       await mounted.cleanup()
     }
+  })
+
+  it('computes one selection envelope and places generated components beside it', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const nodes = [
+      { id: 'file-a', kind: 'assistant-result', x: 100, y: 200, width: 400, height: 200, sizeMode: 'manual' },
+      { id: 'artifact-b', kind: 'assistant-result', x: 400, y: 300, width: 500, height: 300, sizeMode: 'manual' }
+    ]
+
+    expect(client.researchCanvasSelectionBounds).toBeTypeOf('function')
+    expect(client.researchCanvasGeneratedPlacement).toBeTypeOf('function')
+    if (typeof client.researchCanvasSelectionBounds !== 'function' ||
+        typeof client.researchCanvasGeneratedPlacement !== 'function') return
+
+    expect(client.researchCanvasSelectionBounds(nodes, ['file-a', 'artifact-b'])).toEqual({
+      left: -100,
+      top: 100,
+      right: 650,
+      bottom: 450,
+      width: 750,
+      height: 350
+    })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['file-a', 'artifact-b'],
+      'mind-map'
+    )).toEqual({ x: 962, y: 275, width: 560, height: 360, sizeMode: 'manual' })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['missing'],
+      'summary'
+    )).toBeNull()
+  })
+
+  it('shows two selection actions and starts a mind-map component beside the selection', async () => {
+    const generate = vi.fn(async () => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-selection-actions',
+      files: [
+        { id: 'file-a', path: '/w/a.dat', name: 'a.dat', source: 'computer', x: 100, y: 100 },
+        { id: 'file-b', path: '/w/b.dat', name: 'b.dat', source: 'computer', x: 360, y: 100 }
+      ],
+      selection: {
+        selectedNodeIds: ['file-a', 'file-b'],
+        orderedFileIds: ['file-a', 'file-b']
+      },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 800, height: 600 }) })
+
+      const toolbar = host.querySelector('[data-research-selection-actions]')
+      const mindMap = host.querySelector('button[aria-label="生成思维导图"]')
+      const summary = host.querySelector('button[aria-label="总结提炼"]')
+      expect(toolbar).not.toBeNull()
+      expect(mindMap?.textContent).toContain('生成思维导图')
+      expect(summary?.textContent).toContain('总结提炼')
+      if (mindMap === null) return
+
+      await act(async () => { click(browserWindow, mindMap) })
+
+      expect(generate).toHaveBeenCalledTimes(1)
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 'session-selection-actions',
+        kind: 'mind-map',
+        selectedNodeIds: ['file-a', 'file-b'],
+        targetNodeId: expect.any(String)
+      }))
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        kind: 'generated-mind-map',
+        generationStatus: 'pending',
+        sourceNodeIds: ['file-a', 'file-b'],
+        title: '思维导图',
+        x: 782,
+        y: 100,
+        width: 560,
+        height: 360
+      }])
+      expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([
+        workspace.getSnapshot().artifacts[0]?.id
+      ])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('settles the pending generated component from the next new assistant response', async () => {
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-selection-generation-result',
+      artifacts: [{
+        id: 'source-artifact', kind: 'assistant-result', messageId: 'message-source',
+        title: '助手回复', excerpt: '原始研究内容', x: 180, y: 180
+      }],
+      selection: { selectedNodeIds: ['source-artifact'], orderedFileIds: [] },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      await act(async () => {
+        workspace.setCanvasSize({ width: 900, height: 700 })
+        workspace.observeAssistantResult('message-existing', '已有回复')
+      })
+      const mindMap = host.querySelector('button[aria-label="生成思维导图"]')
+      expect(mindMap).not.toBeNull()
+      if (mindMap === null) return
+
+      await act(async () => { click(browserWindow, mindMap) })
+      const targetId = generate.mock.calls[0]?.[0]?.targetNodeId as string
+      expect(targetId).toBeTypeOf('string')
+      expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
+        .toMatchObject({ generationStatus: 'pending' })
+
+      await act(async () => {
+        workspace.observeAssistantResult('message-existing', '已有回复')
+      })
+      expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
+        .toMatchObject({ generationStatus: 'pending' })
+
+      await act(async () => {
+        workspace.observeAssistantResult(
+          'message-generated-map',
+          '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率'
+        )
+      })
+      expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
+        .toMatchObject({
+          generationStatus: 'settled',
+          messageId: 'message-generated-map',
+          excerpt: '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率'
+        })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('recovers an interrupted persisted generation as a retryable error', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const storage = new MemoryStorage()
+    const sessionId = 'session-interrupted-generation'
+    storage.setItem(`sherlock.research.canvas.files.v1:${sessionId}`, JSON.stringify([{
+      id: 'source-file', path: '/w/source.pdf', name: 'source.pdf', source: 'computer',
+      x: 100, y: 100
+    }]))
+    storage.setItem(`sherlock.research.canvas.artifacts.v1:${sessionId}`, JSON.stringify([{
+      id: 'generated-summary', kind: 'generated-summary', messageId: 'generated-summary',
+      title: '总结提炼', excerpt: '正在总结选中内容…', generationStatus: 'pending',
+      sourceNodeIds: ['source-file'], x: 600, y: 100, width: 380, height: 240,
+      sizeMode: 'manual'
+    }]))
+
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): {
+        getSnapshot(): { artifacts: Array<Record<string, unknown>> }
+      }
+    }
+    const workspace = new Registry(storage).for(sessionId)
+
+    expect(workspace.getSnapshot().artifacts).toMatchObject([{
+      id: 'generated-summary',
+      generationStatus: 'error',
+      generationError: '生成中断，请重试。',
+      excerpt: '生成中断，请重试。'
+    }])
+    expect(JSON.parse(storage.getItem(
+      `sherlock.research.canvas.artifacts.v1:${sessionId}`
+    ) ?? '[]')).toMatchObject([{
+      id: 'generated-summary', generationStatus: 'error'
+    }])
+  })
+
+  it('retries a failed generated component in place', async () => {
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: '模型暂时不可用' })
+      .mockResolvedValueOnce({ ok: true })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-retry',
+      files: [{
+        id: 'source-file', path: '/w/source.dat', name: 'source.dat',
+        source: 'computer', x: 100, y: 100
+      }],
+      selection: { selectedNodeIds: ['source-file'], orderedFileIds: ['source-file'] },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 900, height: 700 }) })
+      const summary = host.querySelector('button[aria-label="总结提炼"]')
+      expect(summary).not.toBeNull()
+      if (summary === null) return
+
+      await act(async () => { click(browserWindow, summary) })
+      const targetId = generate.mock.calls[0]?.[0]?.targetNodeId as string
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        id: targetId,
+        generationStatus: 'error',
+        generationError: '模型暂时不可用'
+      }])
+      const retry = host.querySelector(
+        `[data-research-artifact-card="${targetId}"] button[aria-label="重试生成"]`
+      )
+      expect(retry).not.toBeNull()
+      if (retry === null) return
+
+      await act(async () => { click(browserWindow, retry) })
+      expect(generate).toHaveBeenCalledTimes(2)
+      expect(generate.mock.calls[1]?.[0]).toMatchObject({
+        sessionId: 'session-generation-retry',
+        kind: 'summary',
+        selectedNodeIds: ['source-file'],
+        targetNodeId: targetId
+      })
+      expect(workspace.getSnapshot().artifacts).toHaveLength(1)
+      expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: targetId,
+        generationStatus: 'pending'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('parses the generated Markdown outline into a bounded mind-map tree', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.parseResearchMindMap).toBeTypeOf('function')
+    if (typeof client.parseResearchMindMap !== 'function') return
+
+    expect(client.parseResearchMindMap(
+      '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率'
+    )).toEqual({
+      label: '增长质量',
+      children: [
+        { label: '收入', children: [{ label: '海外业务', children: [] }] },
+        { label: '利润', children: [{ label: '毛利率', children: [] }] }
+      ]
+    })
+    expect(client.parseResearchMindMap('')).toBeNull()
+  })
+
+  it('renders a settled generated mind map as connected hierarchy nodes', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-rendered-mind-map',
+      files: [{
+        id: 'source-file', path: '/w/source.dat', name: 'source.dat',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率',
+        generationStatus: 'settled', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 560, height: 360, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const mindMap = mounted.host.querySelector('[data-research-mind-map]')
+      expect(mindMap).not.toBeNull()
+      expect(Array.from(
+        mounted.host.querySelectorAll('[data-research-mind-map-node]')
+      ).map((node) => node.textContent)).toEqual([
+        '增长质量', '收入', '海外业务', '利润', '毛利率'
+      ])
+      expect(mounted.host.querySelectorAll('[data-research-mind-map-branch]')).toHaveLength(4)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('starts a selection generation without replacing the unsent composer draft', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function') return
+    const requests: Array<Record<string, unknown>> = []
+    const shell = new (client.SessionInputShell as new (deps: Record<string, unknown>) => any)({
+      actx: {},
+      defaultSink: () => undefined,
+      generationSink: async (request: Record<string, unknown>) => {
+        requests.push(request)
+        return { ok: true }
+      }
+    })
+    shell.setDraft('这是尚未发送的研究草稿')
+
+    expect(shell.actions.generateResearchSelection).toBeTypeOf('function')
+    const result = await shell.actions.generateResearchSelection({
+      sessionId: 'session-generation-draft',
+      kind: 'summary',
+      selectedNodeIds: ['source-a'],
+      targetNodeId: 'generated-summary-a'
+    })
+
+    expect(JSON.parse(JSON.stringify(result))).toEqual({ ok: true })
+    expect(JSON.parse(JSON.stringify(requests))).toEqual([{
+      sessionId: 'session-generation-draft',
+      kind: 'summary',
+      selectedNodeIds: ['source-a'],
+      targetNodeId: 'generated-summary-a'
+    }])
+    expect(shell.snapshot.draft).toBe('这是尚未发送的研究草稿')
+  })
+
+  it('builds a visible generation request with the complete selected component references', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.researchSelectionGenerationPrompt).toBeTypeOf('function')
+    if (typeof client.researchSelectionGenerationPrompt !== 'function' ||
+        typeof client.parseResearchPrompt !== 'function') return
+    const snapshot = {
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'artifact-source', kind: 'assistant-result', messageId: 'message-source',
+        title: '助手回复', excerpt: '完整的历史研究结论。', x: 300, y: 100
+      }]
+    }
+
+    const prompt = client.researchSelectionGenerationPrompt(
+      snapshot,
+      ['artifact-source', 'file-source'],
+      'mind-map'
+    )
+    expect(prompt).toBeTypeOf('string')
+    const parsed = client.parseResearchPrompt(prompt) as Record<string, unknown>
+    expect(parsed).toMatchObject({
+      text: '请基于选中的研究材料生成思维导图。请用 Markdown 层级列表输出：第一行以“# ”开头写中心主题，后续使用“- ”和两个空格缩进表达分支；只保留关键结论和关系。',
+      files: [{ id: 'file-source', path: '/w/source.pdf', name: 'source.pdf' }],
+      artifacts: [{
+        id: 'artifact-source', messageId: 'message-source',
+        title: '助手回复', excerpt: '完整的历史研究结论。'
+      }]
+    })
+    expect(client.researchSelectionGenerationPrompt(snapshot, ['missing'], 'summary'))
+      .toBeNull()
+  })
+
+  it('submits the selected-component request through the existing session queue', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.InputHub).toBeTypeOf('function')
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.InputHub !== 'function' ||
+        typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const storage = new MemoryStorage()
+    const sessionId = 'session-selection-generation-queue'
+    storage.setItem(`sherlock.research.canvas.files.v1:${sessionId}`, JSON.stringify([{
+      id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+      source: 'computer', x: 100, y: 100
+    }]))
+    storage.setItem(`sherlock.research.canvas.artifacts.v1:${sessionId}`, '[]')
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): {
+        beginGeneration(kind: string, sourceNodeIds: string[], placement: Record<string, unknown>): { id: string } | null
+      }
+    }
+    const Hub = client.InputHub as new (
+      rootCtx: Record<string, unknown>,
+      t: (key: string) => string,
+      researchWorkspaces: InstanceType<typeof Registry>
+    ) => {
+      generateResearchSelection(session: Record<string, unknown>, request: Record<string, unknown>): Promise<Record<string, unknown>>
+    }
+    const parseResearchPrompt = client.parseResearchPrompt as (text: unknown) => Record<string, unknown>
+    const researchWorkspaces = new Registry(storage)
+    const target = researchWorkspaces.for(sessionId).beginGeneration(
+      'summary',
+      ['source-file'],
+      { x: 500, y: 100, width: 380, height: 240, sizeMode: 'manual' }
+    )
+    expect(target).not.toBeNull()
+    const prompts: Array<{ content: Array<Record<string, unknown>>; mode: string }> = []
+    const session = {
+      sessionId,
+      async prompt(content: Array<Record<string, unknown>>, mode: string) {
+        prompts.push({ content, mode })
+        return { ok: true }
+      }
+    }
+    const hub = new Hub({}, (key: string) => key, researchWorkspaces)
+
+    const result = await hub.generateResearchSelection(session, {
+      sessionId,
+      kind: 'summary',
+      selectedNodeIds: ['source-file'],
+      targetNodeId: target?.id
+    })
+
+    expect(JSON.parse(JSON.stringify(result))).toEqual({ ok: true })
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0]?.mode).toBe('queue')
+    const parsed = parseResearchPrompt(prompts[0]?.content[0]?.text) as {
+      text: string
+      files: Array<Record<string, unknown>>
+    }
+    expect(parsed.text).toContain('总结提炼')
+    expect(parsed.files).toEqual([{
+      id: 'source-file', path: '/w/source.pdf', name: 'source.pdf'
+    }])
   })
 
   it('offers a bottom-center return control when the Research viewport has no components', async () => {
