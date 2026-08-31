@@ -315,6 +315,7 @@ async function mountConversationRoot(
       assistantActionsActive(): boolean
       removeSelectedFile(fileId: string): void
       setArtifacts(artifacts: Array<Record<string, unknown>>): void
+      updateArtifactContent(artifactId: string, content: string): boolean
       setSelection(selection: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
       setViewport(viewport: { scale: number; x: number; y: number }): void
       setCanvasSize(size: { width: number; height: number }): void
@@ -1053,6 +1054,7 @@ async function mountResearchCanvas(options: {
         artifacts: Array<Record<string, unknown>>
         selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
         viewport: { scale: number; x: number; y: number }
+        pendingMessageJump: string | null
       }
       setViewport(viewport: { scale: number; x: number; y: number }): void
       setCanvasSize(value: { width: number; height: number }): void
@@ -7895,6 +7897,32 @@ describe('Sherlock workspace and composer controls', () => {
       )).toEqual(['136px', '136px', '136px', '136px'])
       expect(mirrorLayer.querySelector('[data-research-file-tag]')).toBeNull()
       expect(mirrorLayer.querySelector('[data-research-artifact-tag]')).toBeNull()
+
+      const firstTag = backdropLayer.querySelector(
+        '[data-research-file-tag="measure-file-1"]'
+      )
+      expect(firstTag).not.toBeNull()
+      if (firstTag === null) return
+      Object.defineProperty(firstTag, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => new browserWindow.DOMRect(100, 20, 136, 24)
+      })
+      await act(async () => {
+        firstTag.dispatchEvent(new browserWindow.MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 220,
+          clientY: 32
+        }))
+      })
+      expect(textarea.selectionStart).toBe(referencePrefix.length)
+      expect(textarea.selectionEnd).toBe(referencePrefix.length + 1)
+      expect(firstTag.getAttribute('data-selected')).toBe('true')
+      const visibleCaret = backdropLayer.querySelector('[data-input-visible-caret]')
+      expect(visibleCaret).not.toBeNull()
+      expect(firstTag.previousElementSibling).toBe(visibleCaret)
+      expect(browserWindow.getComputedStyle(visibleCaret as HappyDOMElement).width)
+        .toBe('0px')
 
       await act(async () => {
         root.render(createElement(InputBar, { ...baseProps, variant: 'hero' }))
