@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index ec779d5..e4773f0 100644
+index ec779d5..39b40eb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -337,7 +337,7 @@ window.__ModuleLoader__.load({
@@ -114,7 +114,16 @@ index ec779d5..e4773f0 100644
  			document.head.appendChild(tag);
  		}
  		var WorkspaceBrowser_module_css_default = {
-@@ -1196,7 +1221,7 @@ window.__ModuleLoader__.load({
+@@ -1030,6 +1055,8 @@ window.__ModuleLoader__.load({
+ 		* focus() forces a synchronous layout and would jank the slide.
+ 		*/
+ 		const EXPAND_SLIDE_MS = 300;
++		/** Preserve the rail search intent when the sidebar owner remounts this slot as wide. */
++		let focusSearchAfterSidebarExpand = false;
+ 		/** Pause between the latest keystroke and a Host content-search request. */
+ 		const SEARCH_DEBOUNCE_MS = 250;
+ 		/** `session.search` wire bound, measured in JavaScript UTF-16 code units. */
+@@ -1196,7 +1223,7 @@ window.__ModuleLoader__.load({
  			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
  		}
  		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
@@ -123,7 +132,7 @@ index ec779d5..e4773f0 100644
  			const list = useSessions((s) => s);
  			const current = list.current;
  			const [expandedSessionGroups, setExpandedSessionGroups] = (0, react.useState)([]);
-@@ -1388,8 +1413,14 @@ window.__ModuleLoader__.load({
+@@ -1388,8 +1415,14 @@ window.__ModuleLoader__.load({
  											}
  										},
  										drag: workspaceDragProps,
@@ -140,7 +149,7 @@ index ec779d5..e4773f0 100644
  												/* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
  												if (group.workspaceId !== void 0) onRenameRequest(group.workspaceId, group.label);
  											},
-@@ -1644,7 +1675,7 @@ window.__ModuleLoader__.load({
+@@ -1644,7 +1677,7 @@ window.__ModuleLoader__.load({
  		* @param props - composed slot props (shell owner share + store + injected actions).
  		* @returns the region element tree.
  		*/
@@ -149,7 +158,39 @@ index ec779d5..e4773f0 100644
  			const workspaces = useWorkspaces((state) => state.items);
  			const workspacePhase = useWorkspaces((state) => state.phase);
  			const archivedSessionIds = useWorkspaces((state) => state.archivedSessionIds);
-@@ -2006,6 +2037,7 @@ window.__ModuleLoader__.load({
+@@ -1667,7 +1700,8 @@ window.__ModuleLoader__.load({
+ 				workspaces
+ 			]);
+ 			const [query, setQuery] = (0, react.useState)("");
+-			const [searchExpanded, setSearchExpanded] = (0, react.useState)(false);
++			const resumeSearchAfterSidebarExpand = wide && focusSearchAfterSidebarExpand;
++			const [searchExpanded, setSearchExpanded] = (0, react.useState)(resumeSearchAfterSidebarExpand);
+ 			const normalizedQuery = sanitizeSearchQuery(query).trim();
+ 			const [remoteSearch, setRemoteSearch] = (0, react.useState)({
+ 				query: "",
+@@ -1680,11 +1714,12 @@ window.__ModuleLoader__.load({
+ 			const [wsPickerOpen, setWsPickerOpen] = (0, react.useState)(false);
+ 			const wsPlusRef = (0, react.useRef)(null);
+ 			const composingRef = (0, react.useRef)(false);
+-			const [searchOnExpand, setSearchOnExpand] = (0, react.useState)(false);
++			const [searchOnExpand, setSearchOnExpand] = (0, react.useState)(resumeSearchAfterSidebarExpand);
+ 			(0, react.useEffect)(() => {
+ 				if (wide && searchOnExpand) {
+ 					const timer = window.setTimeout(() => {
+ 						searchInput.current?.focus({ preventScroll: true });
++						focusSearchAfterSidebarExpand = false;
+ 						setSearchOnExpand(false);
+ 					}, EXPAND_SLIDE_MS);
+ 					return () => {
+@@ -1972,6 +2007,7 @@ window.__ModuleLoader__.load({
+ 								className: WorkspaceBrowser_module_css_default.searchButton,
+ 								"aria-label": t("search.sessions.aria"),
+ 								onClick: () => {
++									focusSearchAfterSidebarExpand = true;
+ 									setSearchExpanded(true);
+ 									setSearchOnExpand(true);
+ 									expandSidebar();
+@@ -2006,6 +2042,7 @@ window.__ModuleLoader__.load({
  							t
  						}) : (0, react_jsx_runtime.jsx)(SessionTree, {
  							useSessions,
@@ -157,7 +198,7 @@ index ec779d5..e4773f0 100644
  							onSessionRename,
  							onSessionArchive,
  							forkSession,
-@@ -2211,6 +2243,7 @@ window.__ModuleLoader__.load({
+@@ -2211,6 +2248,7 @@ window.__ModuleLoader__.load({
  			"conflict.named": "已存在名为“{name}”的工作区。",
  			"folderError.title": "无法打开文件夹",
  			"folderError.retry": "重新选择",
@@ -165,7 +206,7 @@ index ec779d5..e4773f0 100644
  			"rename": "重命名",
  			"rename.workspace.title": "重命名工作区",
  			"rename.session.title": "重命名会话",
-@@ -2276,6 +2309,7 @@ window.__ModuleLoader__.load({
+@@ -2276,6 +2314,7 @@ window.__ModuleLoader__.load({
  			"conflict.named": "A workspace named “{name}” already exists.",
  			"folderError.title": "Couldn’t open folder",
  			"folderError.retry": "Choose again",
@@ -173,7 +214,7 @@ index ec779d5..e4773f0 100644
  			"rename": "Rename",
  			"rename.workspace.title": "Rename workspace",
  			"rename.session.title": "Rename session",
-@@ -2357,6 +2391,7 @@ window.__ModuleLoader__.load({
+@@ -2357,6 +2396,7 @@ window.__ModuleLoader__.load({
  				open: (sessionId) => {
  					ctx.sessions.open(sessionId);
  				},
@@ -181,7 +222,7 @@ index ec779d5..e4773f0 100644
  				searchSessions,
  				searchResultLimit: ctx.sessions.searchResultLimit,
  				renameSession: async (sessionId, title) => {
-@@ -2418,6 +2453,10 @@ window.__ModuleLoader__.load({
+@@ -2418,6 +2458,10 @@ window.__ModuleLoader__.load({
  		//#endregion
  		exports.apply = apply;
  		exports.inject = inject;

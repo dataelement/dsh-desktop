@@ -97,6 +97,7 @@ async function loadClientBundle(
     modules?: Record<string, unknown>
     styles?: InjectedStyle[]
     exposeInputBar?: boolean
+    transformSource?: (source: string) => string
     json?: JSON
   }
 ): Promise<ClientBundle> {
@@ -104,12 +105,13 @@ async function loadClientBundle(
     `node_modules/@deepseek-ai/${packageName}/lib/client.js`,
     'utf8'
   )
+  const transformedSource = options?.transformSource?.(bundleSource) ?? bundleSource
   const source = options?.exposeInputBar
-    ? bundleSource.replace(
+    ? transformedSource.replace(
         '		exports.apply = apply;',
         '		exports.apply = apply;\n		exports.__testInputBar = InputBar;'
       )
-    : bundleSource
+    : transformedSource
   const react = requireModule('react')
   const jsxRuntime = requireModule('react/jsx-runtime')
   let descriptor: BundleDescriptor | undefined
@@ -1289,6 +1291,139 @@ describe('Sherlock workspace and composer controls', () => {
     )
     expect(browserWindow.getComputedStyle(text).color).toBe('rgb(15, 17, 21)')
     expect(browserWindow.getComputedStyle(inlineCode).color).toBe('rgb(15, 17, 21)')
+  })
+
+  it('focuses workspace search after the collapsed sidebar remounts as expanded', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const primitives = new Proxy(
+      {
+        Tooltip: ({ children }: { children: ReactNode }) => children,
+        Menu: ({ anchor }: { anchor: ReactNode }) => anchor,
+        Modal: () => null,
+        Button: ({ children }: { children: ReactNode }) =>
+          createElement('button', null, children),
+        IconSearchOutline16: () => createElement('svg', { 'data-icon': 'search' }),
+        IconPersonalizationOutline16: () => null,
+        IconProjectAddOutline16: () => null,
+        IconCloseFill14: () => null
+      },
+      {
+        get(target, property) {
+          return Reflect.get(target, property) ?? (() => null)
+        }
+      }
+    )
+    const client = await loadClientBundle('dsh-client-ui-workspace', undefined, {
+      document: browserWindow.document,
+      window: browserWindow,
+      modules: {
+        '@deepseek-ai/dsh-client-ui-primitives': primitives,
+        clsx: requireModule('clsx')
+      },
+      transformSource: (source) => source.replace(
+        '\t\texports.apply = apply;',
+        '\t\texports.apply = apply;\n\t\texports.__testWorkspaceBrowser = WorkspaceBrowser;'
+      )
+    })
+    expect(client.__testWorkspaceBrowser).toBeTypeOf('function')
+    if (typeof client.__testWorkspaceBrowser !== 'function') {
+      restoreGlobals()
+      return
+    }
+
+    const WorkspaceBrowser = client.__testWorkspaceBrowser as ComponentType<Record<string, unknown>>
+    const container = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(container)
+    const root = createRoot(container)
+    const workspaceSnapshot = {
+      items: [],
+      phase: 'loading',
+      archivedSessionIds: []
+    }
+    const sessionSnapshot = {
+      ids: [],
+      byId: {},
+      phase: 'loading'
+    }
+    const storeSnapshot = {
+      groupBy: 'flat',
+      orderBy: 'manual',
+      groupExpansion: [],
+      sessionOrderByAccount: {},
+      sessionUpdatedAtByAccount: {}
+    }
+    const props: Record<string, unknown> = {
+      useSessions: (selector: (state: typeof sessionSnapshot) => unknown) =>
+        selector(sessionSnapshot),
+      useWorkspaces: (selector: (state: typeof workspaceSnapshot) => unknown) =>
+        selector(workspaceSnapshot),
+      useStore: (selector: (state: typeof storeSnapshot) => unknown) =>
+        selector(storeSnapshot),
+      useDirectoryFlow: (selector: (occupied: boolean) => unknown) => selector(false),
+      actions: {
+        retainAccountKeys: () => {},
+        setGroupBy: () => {},
+        setOrderBy: () => {},
+        syncSessionOrderAccount: () => {},
+        setSessionOrder: () => {},
+        setGroupExpanded: () => {}
+      },
+      startSession: () => {},
+      open: () => {},
+      openWorkspacePath: async () => {},
+      renameSession: async () => {},
+      forkSession: async () => {},
+      renameWorkspace: async () => {},
+      deleteWorkspace: async () => {},
+      insertWorkspaceBefore: async () => {},
+      archiveSession: async () => {},
+      insertSessionBefore: async () => {},
+      createWorkspace: async () => ({ workspaceId: 'workspace-new' }),
+      searchSessions: async () => ({ items: [], hasMore: false }),
+      searchResultLimit: 20,
+      renderSlot: () => null,
+      t: (key: string) => key
+    }
+    const renderBrowser = (wide: boolean) => root.render(createElement(
+      WorkspaceBrowser,
+      {
+        ...props,
+        key: wide ? 'wide' : 'rail',
+        wide,
+        expandSidebar: () => renderBrowser(true)
+      }
+    ))
+
+    try {
+      await act(async () => {
+        renderBrowser(false)
+      })
+      const searchButton = container.querySelector(
+        'button[aria-label="search.sessions.aria"]'
+      ) as HappyDOMHTMLElement | null
+      expect(searchButton).not.toBeNull()
+      if (searchButton === null) return
+
+      await act(async () => {
+        searchButton.click()
+      })
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 350))
+      })
+
+      const searchInput = container.querySelector(
+        'input[placeholder="search.placeholder"]'
+      ) as HappyDOMHTMLElement | null
+      expect(searchInput).not.toBeNull()
+      expect(searchInput?.tabIndex).toBe(0)
+      expect(browserWindow.document.activeElement).toBe(searchInput)
+    } finally {
+      await act(async () => {
+        root.unmount()
+      })
+      restoreGlobals()
+    }
   })
 
   it('uses a gray outline icon for the expanded current workspace', async () => {
