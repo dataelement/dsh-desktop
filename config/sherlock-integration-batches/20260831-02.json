@@ -1,0 +1,375 @@
+{
+  "schemaVersion": 1,
+  "batchId": "20260831-02",
+  "branch": "codex/integration/20260831-02",
+  "baseMainCommit": "aeaed5505e7f413ffd6a6d7393af00f39e8abcf6",
+  "expectedMainCommit": "aeaed5505e7f413ffd6a6d7393af00f39e8abcf6",
+  "createdAt": "2026-08-31T04:04:44.364Z",
+  "features": [
+    {
+      "handoff": {
+        "schemaVersion": 1,
+        "featureName": "Sherlock 会话集成控制",
+        "branch": "codex/feat/session-integration-controls-20260831",
+        "baseCommit": "d7e688325d475836e3394bed5607c526997233bb",
+        "tipCommit": "61585d482ad1ed9eb31435b53148aef4041265dc",
+        "commits": [
+          {
+            "commit": "77fdc812ddda44ab5bb4ac3c1aa3e2ff0751e671",
+            "parents": [
+              "d7e688325d475836e3394bed5607c526997233bb"
+            ],
+            "subject": "重构：统一 Sherlock Git 仓库状态检查"
+          },
+          {
+            "commit": "c6b65572c1796f58b186f618a3754acae91e487a",
+            "parents": [
+              "77fdc812ddda44ab5bb4ac3c1aa3e2ff0751e671"
+            ],
+            "subject": "修复：收紧 Sherlock Git 状态边界"
+          },
+          {
+            "commit": "9babe0f19d34f8d0c4e0b7f60cc42a6632e911ca",
+            "parents": [
+              "c6b65572c1796f58b186f618a3754acae91e487a"
+            ],
+            "subject": "工具：增加功能会话提交交接卡"
+          },
+          {
+            "commit": "f68a4f673301c228f4da8ddbe771f366cd48ce63",
+            "parents": [
+              "9babe0f19d34f8d0c4e0b7f60cc42a6632e911ca"
+            ],
+            "subject": "修复：收紧功能交接卡信任边界"
+          },
+          {
+            "commit": "f215d3618182f9c7c0fce3908e7b89312646e141",
+            "parents": [
+              "f68a4f673301c228f4da8ddbe771f366cd48ce63"
+            ],
+            "subject": "修复：拒绝无评分重命名状态"
+          },
+          {
+            "commit": "c1e2e95a1057b31c926a8d86c5621f49b8849830",
+            "parents": [
+              "f215d3618182f9c7c0fce3908e7b89312646e141"
+            ],
+            "subject": "工具：增加集成批次清单与只读预检"
+          },
+          {
+            "commit": "bda3727056734d678c63e6057f863b95a66d8a66",
+            "parents": [
+              "c1e2e95a1057b31c926a8d86c5621f49b8849830"
+            ],
+            "subject": "修复：补齐集成预检阶段门禁"
+          },
+          {
+            "commit": "35207e5cca3789f89f16dbb667ae740709825e2e",
+            "parents": [
+              "bda3727056734d678c63e6057f863b95a66d8a66"
+            ],
+            "subject": "修复：验证批次已合并证据"
+          },
+          {
+            "commit": "7e28afb06e7bd6cd58ebda132452c7d4a90ee63f",
+            "parents": [
+              "35207e5cca3789f89f16dbb667ae740709825e2e"
+            ],
+            "subject": "工具：增加单一集成批次租约"
+          },
+          {
+            "commit": "b1aa2b0665117890f0c7df41d1711cb93f81ecf3",
+            "parents": [
+              "7e28afb06e7bd6cd58ebda132452c7d4a90ee63f"
+            ],
+            "subject": "修复：防止租约归档竞态覆盖"
+          },
+          {
+            "commit": "cfc43da8c04241c9ce56c8b051991cc305bc4cd4",
+            "parents": [
+              "b1aa2b0665117890f0c7df41d1711cb93f81ecf3"
+            ],
+            "subject": "修复：以独占目录安全归档租约"
+          },
+          {
+            "commit": "ca293acc86b67d83024fc50cdf1e16d4d3e4ef73",
+            "parents": [
+              "cfc43da8c04241c9ce56c8b051991cc305bc4cd4"
+            ],
+            "subject": "工具：增加集成批次创建与接管"
+          },
+          {
+            "commit": "0004e9b4090364628e783742bec77af9d3fb7e5b",
+            "parents": [
+              "ca293acc86b67d83024fc50cdf1e16d4d3e4ef73"
+            ],
+            "subject": "修复：保留批次创建竞态现场"
+          },
+          {
+            "commit": "d3f5d8a1de3257b3b2cebd0e9015294e4147df7a",
+            "parents": [
+              "0004e9b4090364628e783742bec77af9d3fb7e5b"
+            ],
+            "subject": "集成：按完整功能历史合并并支持恢复"
+          },
+          {
+            "commit": "98d5f66bde68ce85bc1e9a41254209e657940bf0",
+            "parents": [
+              "d3f5d8a1de3257b3b2cebd0e9015294e4147df7a"
+            ],
+            "subject": "修复：补齐合并中断恢复状态"
+          },
+          {
+            "commit": "14fcb8d713bd18f71d101b44e67b1fcc3b75f683",
+            "parents": [
+              "98d5f66bde68ce85bc1e9a41254209e657940bf0"
+            ],
+            "subject": "集成：增加验收绑定与主分支安全推进"
+          },
+          {
+            "commit": "dfa183aeaf46287d53968994ac0c6dd024313733",
+            "parents": [
+              "14fcb8d713bd18f71d101b44e67b1fcc3b75f683"
+            ],
+            "subject": "修复：补齐主分支晋升确认与恢复"
+          },
+          {
+            "commit": "432a405950029ca08dd0a2e597f0447f72df87da",
+            "parents": [
+              "dfa183aeaf46287d53968994ac0c6dd024313733"
+            ],
+            "subject": "构建：增加共享客户端来源门禁"
+          },
+          {
+            "commit": "b0d784841be997c93773ff79d464bce57dd1967c",
+            "parents": [
+              "432a405950029ca08dd0a2e597f0447f72df87da"
+            ],
+            "subject": "文档：落地 Sherlock 多会话集成规范"
+          },
+          {
+            "commit": "61585d482ad1ed9eb31435b53148aef4041265dc",
+            "parents": [
+              "b0d784841be997c93773ff79d464bce57dd1967c"
+            ],
+            "subject": "修复：校准集成运行手册与退出码契约"
+          }
+        ],
+        "files": [
+          {
+            "status": "M",
+            "path": "AGENTS.md"
+          },
+          {
+            "status": "M",
+            "path": "docs/git-version-management.md"
+          },
+          {
+            "status": "A",
+            "path": "docs/sherlock-multi-session-integration-runbook.md"
+          },
+          {
+            "status": "M",
+            "path": "package.json"
+          },
+          {
+            "status": "A",
+            "path": "scripts/create-sherlock-session-handoff.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-active-batch.d.mts"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-active-batch.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-git-state.d.mts"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-git-state.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-cli-outcome.d.mts"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-cli-outcome.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-executor.d.mts"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-executor.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-model.d.mts"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-model.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-preflight.d.mts"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-integration-preflight.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-shared-source-gate.d.mts"
+          },
+          {
+            "status": "A",
+            "path": "scripts/lib/sherlock-shared-source-gate.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/manage-sherlock-integration.mjs"
+          },
+          {
+            "status": "M",
+            "path": "scripts/verify-formal-git-state.mjs"
+          },
+          {
+            "status": "A",
+            "path": "scripts/verify-sherlock-integration.mjs"
+          },
+          {
+            "status": "A",
+            "path": "test/active-integration-lease.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/formal-git-state.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/git-workflow-state.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/helpers/git-workflow-fixture.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/integration-batch.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/integration-cli-contract.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/integration-executor.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/session-handoff.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/shared-source-gate.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "vitest.config.ts"
+          }
+        ],
+        "checks": [
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/integration-cli-contract.test.ts"
+            ],
+            "outcome": "passed",
+            "summary": "Task 9 CLI contract 6/6",
+            "verifiedCommit": "61585d482ad1ed9eb31435b53148aef4041265dc",
+            "completedAt": "2026-08-31T03:51:47.000Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/formal-git-state.test.ts",
+              "test/git-local-policy.test.ts"
+            ],
+            "outcome": "passed",
+            "summary": "Task 9 formal/local policy 12/12",
+            "verifiedCommit": "61585d482ad1ed9eb31435b53148aef4041265dc",
+            "completedAt": "2026-08-31T03:51:47.000Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "typecheck"
+            ],
+            "outcome": "passed",
+            "summary": "Task 9 typecheck",
+            "verifiedCommit": "61585d482ad1ed9eb31435b53148aef4041265dc",
+            "completedAt": "2026-08-31T03:51:47.000Z",
+            "timeoutMs": 120000
+          }
+        ],
+        "uiVerification": {
+          "outcome": "not-applicable",
+          "summary": "local Git workflow tooling has no client UI"
+        },
+        "acceptanceCriteria": [
+          "功能交接精确绑定 61585d482ad1ed9eb31435b53148aef4041265dc",
+          "集成仅重跑 Task 9 聚焦检查与类型检查",
+          "验收和晋升在用户明确接受前保持待定"
+        ],
+        "risks": [
+          "canonical main 的 dist-local-0.7.4/ 未跟踪输出将阻止后续正式晋升源码清洁门禁，需由外部处理"
+        ],
+        "generatedAt": "2026-08-31T03:51:47.000Z"
+      }
+    }
+  ],
+  "integrationChecks": [
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/integration-cli-contract.test.ts"
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/formal-git-state.test.ts",
+        "test/git-local-policy.test.ts"
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "timeoutMs": 120000
+    }
+  ],
+  "mainSynchronizations": []
+}
