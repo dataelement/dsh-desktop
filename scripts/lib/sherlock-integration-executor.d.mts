@@ -8,6 +8,8 @@ export interface IntegrationExecutionResult {
   beforeCommit: string
   afterCommit: string
   actions: Array<{ kind: string; description: string; argv?: string[] }>
+  recoveryCommand?: string
+  conflictContext?: { integrationTip: string; featureTip: string; featureBase: string }
 }
 
 export function createIntegrationBatch(options: {
@@ -25,6 +27,29 @@ export function adoptIntegrationBatch(options: {
   batchId: string
   handoffPaths: string[]
   integrationChecks: IntegrationBatchManifest['integrationChecks']
+  dryRun: boolean
+  now: string
+}): IntegrationExecutionResult
+
+export function readPersistedIntegrationOwnerToken(repository: string): string
+export function formatIntegrationRecoveryCommand(options: {
+  repository: string
+  manifestPath: string
+  featureBranch: string
+}): string
+export function mergeIntegrationFeature(options: {
+  integrationRepository: string
+  manifestPath: string
+  featureBranch: string
+  ownerToken: string
+  dryRun: boolean
+  now: string
+}): IntegrationExecutionResult
+export function continueIntegrationFeature(options: {
+  integrationRepository: string
+  manifestPath: string
+  featureBranch: string
+  ownerToken: string
   dryRun: boolean
   now: string
 }): IntegrationExecutionResult
