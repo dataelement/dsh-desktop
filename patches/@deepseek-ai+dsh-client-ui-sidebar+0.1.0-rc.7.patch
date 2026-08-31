@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 9ca3639..3ff822c 100644
+index 9ca3639..ee985a7 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 @@ -23,16 +23,17 @@ window.__ModuleLoader__.load({
@@ -178,10 +178,15 @@ index 9ca3639..3ff822c 100644
  			"toggle.open": "Open sidebar",
  			"toggle.collapse": "Collapse sidebar"
  		};
-@@ -258,6 +292,14 @@ window.__ModuleLoader__.load({
+@@ -256,7 +290,17 @@ window.__ModuleLoader__.load({
+ 			}), "ui-sidebar: dictionaries");
+ 			const injectProps = () => ({
  				startSession: (workspaceId) => {
- 					ctx.workspaces.startSession(workspaceId);
- 				},
+-					ctx.workspaces.startSession(workspaceId);
++					ctx.workspaces.startSession(workspaceId, (sessionId) => {
++						window.dispatchEvent(new CustomEvent("sherlock:conversation-initial-chat", { detail: { sessionId } }));
++					});
++				},
 +				startResearchSession: (workspaceId) => {
 +					ctx.workspaces.startSession(workspaceId, (sessionId) => {
 +						try {
@@ -189,10 +194,9 @@ index 9ca3639..3ff822c 100644
 +						} catch {}
 +						window.dispatchEvent(new CustomEvent("sherlock:conversation-initial-research", { detail: { sessionId } }));
 +					});
-+				},
+ 				},
  				toggleSidebar: () => {
  					ctx.layout.toggleSidebar();
- 				}
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/SidebarRoot.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/SidebarRoot.d.ts
 index d53f185..7aa857c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/SidebarRoot.d.ts

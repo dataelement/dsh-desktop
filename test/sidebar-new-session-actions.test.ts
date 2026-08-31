@@ -161,6 +161,45 @@ describe('Sherlock sidebar new-session actions', () => {
     }
   })
 
+  it('requests Chat view before reopening a workspace blank session', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-sidebar', browserWindow)
+    let registration: {
+      inject: () => {
+        startSession: (workspaceId?: string) => void
+      }
+    } | undefined
+    const startSession = vi.fn((
+      _workspaceId?: string,
+      beforeOpen?: (sessionId: string) => void
+    ) => {
+      beforeOpen?.('session-reused-from-research')
+    })
+    const requested: Array<{ sessionId?: string }> = []
+    browserWindow.addEventListener('sherlock:conversation-initial-chat', (event) => {
+      requested.push((event as unknown as { detail: { sessionId?: string } }).detail)
+    })
+
+    ;(client.apply as (context: Record<string, unknown>) => void)({
+      effect: (run: () => unknown) => run(),
+      layout: { toggleSidebar: vi.fn() },
+      locale: { register: vi.fn() },
+      slots: {
+        register: (value: typeof registration) => {
+          registration = value
+          return vi.fn()
+        }
+      },
+      workspaces: { startSession }
+    })
+
+    registration?.inject().startSession()
+
+    expect(startSession).toHaveBeenCalledWith(undefined, expect.any(Function))
+    expect(requested).toEqual([{ sessionId: 'session-reused-from-research' }])
+  })
+
   it('prepares a requested session before opening it', async () => {
     const client = await loadClientBundle('dsh-client-runtime')
     const WorkspaceRuntime = client.WorkspaceRuntime as new (
@@ -289,6 +328,70 @@ describe('Sherlock sidebar new-session actions', () => {
       expect(host.querySelector('header')?.getAttribute('aria-hidden')).toBeNull()
       expect(host.querySelector('[data-conversation-view-id="research"]')
         ?.getAttribute('aria-selected')).toBe('true')
+    } finally {
+      await act(async () => { root.unmount() })
+    }
+  })
+
+  it('switches a reused blank Research session back to Chat on request', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle(
+      'dsh-client-ui-conversation', browserWindow,
+      ['ConversationSession']
+    )
+    const ConversationSession = client.__testConversationSession as (
+      props: Record<string, unknown>
+    ) => unknown
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const actions = {
+      setView: vi.fn(), setDraft: vi.fn(), setInspect: vi.fn()
+    }
+
+    try {
+      await act(async () => {
+        root.render(createElement(ConversationSession, {
+          sessionId: 'session-reused-from-research',
+          useSession: (selector: (value: Record<string, unknown>) => unknown) => selector({
+            composerPhase: 'blank', blank: true
+          }),
+          useInput: (selector: (value: Record<string, unknown>) => unknown) => selector({ draft: '' }),
+          inputActions: { setDraft: vi.fn() },
+          useStore: (selector: (value: Record<string, unknown>) => unknown) => selector({
+            view: 'research',
+            draft: '',
+            selection: null,
+            inspect: null,
+            researchRightTab: 'conversation',
+            researchFilesTabOpen: true,
+            researchConversationUnread: false
+          }),
+          actions,
+          views: {
+            subscribe: () => () => {},
+            version: () => 1,
+            list: () => [{ id: 'chat', label: '对话' }, { id: 'research', label: '研究' }]
+          },
+          renderSlot: (_name: string, _props?: unknown, options?: { only: string }) =>
+            options?.only === undefined
+              ? null
+              : createElement('div', { 'data-rendered-view': options.only }),
+          bindDraftMirror: () => () => {},
+          releaseSessionImages: vi.fn(),
+          releaseResearchWorkspace: vi.fn()
+        }))
+      })
+
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.CustomEvent(
+          'sherlock:conversation-initial-chat',
+          { detail: { sessionId: 'session-reused-from-research' } }
+        ))
+      })
+
+      expect(actions.setView).toHaveBeenCalledWith('chat')
     } finally {
       await act(async () => { root.unmount() })
     }

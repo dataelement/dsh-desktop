@@ -161,6 +161,7 @@ describe('Sherlock About settings', () => {
         '修复“新研究”首屏画布、顶栏和右侧对话区布局异常，并使用专用研究图标',
         '修复研究画布中 PDF 已加载但页面显示为空白的问题',
         '完善空白研究右侧引导，在首条消息发送前显示品牌标题；工作区和模式选择固定显示在输入框上方，并确保新对话不再丢失模式入口',
+        '修复空白研究会话复用时点击“新对话”无响应的问题，可直接切回新对话页面',
         '优化加入画布的助手回复组件尺寸，减少瘦长排版并保留自适应与手动缩放'
       ]
     })
@@ -174,6 +175,9 @@ describe('Sherlock About settings', () => {
     )
     expect(en.releaseNotes[0]?.items).toContain(
       'Improved blank Research guidance with the Sherlock headline, kept workspace and mode controls above the composer, and prevented the mode control from disappearing in New Chat'
+    )
+    expect(en.releaseNotes[0]?.items).toContain(
+      'Fixed New Chat doing nothing when reusing a blank Research session, so it now switches directly to the New Chat screen'
     )
     expect(en.releaseNotes[0]?.items).toContain(
       'Widened assistant reply components added to the Research canvas while preserving adaptive sizing and manual resize controls'
