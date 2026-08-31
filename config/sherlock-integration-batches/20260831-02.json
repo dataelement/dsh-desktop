@@ -339,6 +339,52 @@
           "canonical main 的 dist-local-0.7.4/ 未跟踪输出将阻止后续正式晋升源码清洁门禁，需由外部处理"
         ],
         "generatedAt": "2026-08-31T03:51:47.000Z"
+      },
+      "merged": {
+        "mergeCommit": "06f193405e640ddfb2b104023f0e946cb0546ded",
+        "verificationCommit": "06f193405e640ddfb2b104023f0e946cb0546ded",
+        "checks": [
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/integration-cli-contract.test.ts"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：npx vitest run test/integration-cli-contract.test.ts",
+            "verifiedCommit": "06f193405e640ddfb2b104023f0e946cb0546ded",
+            "completedAt": "2026-08-31T04:05:01.205Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/formal-git-state.test.ts",
+              "test/git-local-policy.test.ts"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：npx vitest run test/formal-git-state.test.ts test/git-local-policy.test.ts",
+            "verifiedCommit": "06f193405e640ddfb2b104023f0e946cb0546ded",
+            "completedAt": "2026-08-31T04:05:01.205Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "typecheck"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：npm run typecheck",
+            "verifiedCommit": "06f193405e640ddfb2b104023f0e946cb0546ded",
+            "completedAt": "2026-08-31T04:05:01.205Z",
+            "timeoutMs": 120000
+          }
+        ],
+        "recordedAt": "2026-08-31T04:05:01.205Z"
       }
     }
   ],
