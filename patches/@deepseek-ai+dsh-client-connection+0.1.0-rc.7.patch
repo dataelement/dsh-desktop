@@ -1,0 +1,12 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js b/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js
+index 81240d6..f6afd54 100644
+--- a/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js
+@@ -5623,6 +5623,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 				sessionId: sessionIdSchema,
+ 				items: array(object({
+ 					id: messageIdSchema$1,
++					anchorSeq: number().int().nonnegative().optional(),
+ 					placement: union([
+ 						literal("queued"),
+ 						literal("steering"),

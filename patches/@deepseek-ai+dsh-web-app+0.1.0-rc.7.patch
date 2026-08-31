@@ -1,0 +1,22 @@
+diff --git a/node_modules/@deepseek-ai/dsh-web-app/lib/index.js b/node_modules/@deepseek-ai/dsh-web-app/lib/index.js
+index 954e771..6ff4167 100644
+--- a/node_modules/@deepseek-ai/dsh-web-app/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-web-app/lib/index.js
+@@ -53,7 +53,7 @@ function resolveLanTrust(bindHost, extra) {
+ }
+ /** Model-visible orientation and acceptance boundary for sessions created through `dsh web`. */
+ function webSurfacePrompt(webUrl) {
+-	return `You are interacting with the user through the DeepSeek Harness Web GUI at ${webUrl}. When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI. The browser provides no implicit DOM, route, or screenshot context. The client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while \`pnpm run dev:web\` is also running from this same checkout to rebuild their bundles; verify that watcher before promising automatic updates. Every other change — the apps/web shell and plain packages — requires rebuilding the affected Web artifacts and verifying this existing URL after a page refresh. Starting another server does not update this GUI. The apps/web Vite entry builds the shell but is not a standalone application because only dsh web injects window.__DSH_BOOT__. Do not start a replacement server unless the user asks; if one is needed, use a managed background job and verify its exact URL.`;
++	return `You are interacting with the user through the Sherlock desktop interface at ${webUrl}. When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI. The browser provides no implicit DOM, route, or screenshot context. The client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while \`pnpm run dev:web\` is also running from this same checkout to rebuild their bundles; verify that watcher before promising automatic updates. Every other change — the apps/web shell and plain packages — requires rebuilding the affected Web artifacts and verifying this existing URL after a page refresh. Starting another server does not update this GUI. The apps/web Vite entry builds the shell but is not a standalone application because only dsh web injects window.__DSH_BOOT__. Do not start a replacement server unless the user asks; if one is needed, use a managed background job and verify its exact URL.`;
+ }
+ /** Resolve the canonical loopback URL from the active Web server. */
+ function localWebUrl(ctx) {
+@@ -95,7 +95,7 @@ function apply(ctx, config) {
+ 		ctx.inject(["shellEnv"], (runtimeCtx) => {
+ 			runtimeCtx.shellEnv.register({
+ 				name: "web-runtime",
+-				variables: { [DSH_WEB_URL]: { description: "Canonical local URL of the DeepSeek Harness Web GUI serving this session." } },
++				variables: { [DSH_WEB_URL]: { description: "Canonical local URL of the Sherlock desktop interface serving this session." } },
+ 				resolve: () => ({ [DSH_WEB_URL]: localWebUrl(runtimeCtx) })
+ 			});
+ 		});

@@ -1,0 +1,13 @@
+diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+index 3a53e81..55da9e4 100644
+--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+@@ -1208,7 +1208,7 @@ function addHarnessSourceSection(ctx, sourceRoot) {
+ 	return systemPrompt.section({
+ 		name: HARNESS_SOURCE_SECTION,
+ 		order: -99,
+-		text: `The DeepSeek Harness implementation checkout is at ${sourceRoot}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.`
++		text: `The Sherlock Agent implementation checkout is at ${sourceRoot}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend Sherlock Agent itself.`
+ 	});
+ }
+ //#endregion

@@ -56,11 +56,12 @@ describe('background subagent report queue', () => {
 
     const mirror = new (client.SessionQueueMirror as new () => {
       replace(items: unknown[]): void
-      snapshot(): Array<{ source?: { kind?: string } }>
+      snapshot(): Array<{ anchorSeq?: number; source?: { kind?: string } }>
     })()
     mirror.replace([
       {
         id: 'queue-1',
+        anchorSeq: 66,
         placement: 'queued',
         message: {
           id: 'message-1',
@@ -79,6 +80,58 @@ describe('background subagent report queue', () => {
       form: 'relay',
       senderSessionId: 'child-1'
     })
+    expect(mirror.snapshot()[0]?.anchorSeq).toBe(66)
+  })
+
+  it('anchors pending queue rows to the durable splice sequence', async () => {
+    const host = await import('@deepseek-ai/dsh-host-apiproxy') as unknown as Record<string, unknown>
+    expect(host.rememberQueueAnchorSeqs).toBeTypeOf('function')
+    expect(host.projectQueueItems).toBeTypeOf('function')
+    if (
+      typeof host.rememberQueueAnchorSeqs !== 'function' ||
+      typeof host.projectQueueItems !== 'function'
+    ) return
+
+    const anchors = new Map<string, number>()
+    const message = {
+      id: 'steering-1',
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: '继续，但先回答这个问题' }]
+    }
+    const splice = {
+      target: 'next-step',
+      start: 0,
+      removedCount: 0,
+      inserted: [message]
+    }
+
+    ;(host.rememberQueueAnchorSeqs as (
+      anchors: Map<string, number>,
+      event: { type: string; seq: number; data: typeof splice }
+    ) => void)(anchors, {
+      type: 'agent/inbox/spliced',
+      seq: 66,
+      data: splice
+    })
+
+    const items = (host.projectQueueItems as (
+      agent: { inbox: { nextTurn: unknown[]; nextStep: unknown[] } },
+      change: typeof splice,
+      anchors: ReadonlyMap<string, number>
+    ) => Array<{ id: string; anchorSeq?: number; placement: string }>)(
+      { inbox: { nextTurn: [], nextStep: [] } },
+      splice,
+      anchors
+    )
+
+    expect(items).toEqual([
+      {
+        id: 'steering-1',
+        anchorSeq: 66,
+        placement: 'steering',
+        message
+      }
+    ])
   })
 
   it('keeps internal subagent traffic out of the user-controlled queue', async () => {

@@ -1,16 +1,19 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-index 37b931e..3bf673c 100644
+index 37b931e..923095b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-@@ -7051,6 +7051,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+@@ -7049,8 +7049,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 			replace(items) {
+ 				this.current = items.map((item) => ({
  					id: item.id,
++					...item.anchorSeq === void 0 ? {} : { anchorSeq: item.anchorSeq },
  					messageId: item.message.id,
  					placement: item.placement,
 +					source: item.message.source,
  					content: item.message.content,
  					preview: previewOf(item.message.content),
  					text: textOf(item.message.content)
-@@ -10448,6 +10449,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+@@ -10448,6 +10450,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
  		function displayFailureMessage(failure) {
  			if (failure === null || typeof failure !== "object") return String(failure);
  			const record = failure;
@@ -19,7 +22,7 @@ index 37b931e..3bf673c 100644
  			if (record.code === "AUTH") return "API key is invalid";
  			return typeof record.message === "string" ? record.message : JSON.stringify(failure);
  		}
-@@ -10508,6 +10511,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+@@ -10508,6 +10512,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
  		exports.PendingWait = PendingWait;
  		exports.SessionCreateError = SessionCreateError;
  		exports.SessionProvideChannel = SessionProvideChannel;
@@ -27,3 +30,16 @@ index 37b931e..3bf673c 100644
  		exports.SessionRuntime = SessionRuntime;
  		exports.SlotRegistry = SlotRegistry;
  		exports.WorkspaceCreateError = WorkspaceCreateError;
+diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts
+index 43ac58b..2f18c2f 100644
+--- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts
+@@ -277,6 +277,8 @@ export type ToolCallBlock = RunningToolCall | ToolResultNode;
+ /** One transient inbox occurrence from the authoritative `session/queue` snapshot. */
+ export interface QueuedMessage {
+     readonly id: MessageId;
++    /** Durable event sequence where this transient row entered the inbox, when known. */
++    readonly anchorSeq?: number;
+     /** Stable message identity used for transient-to-durable steering handoff. */
+     readonly messageId: MessageId;
+     /** Agent-resolved placement; only queued rows accept queue mutations. */

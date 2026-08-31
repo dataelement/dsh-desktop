@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..1e98e32 100644
+index 1dd0e89..e2b9a43 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -1185,7 +1185,7 @@ index 1dd0e89..1e98e32 100644
  		/** Row position in scrollport coordinates (viewport-independent). */
  		function flowTop(row, scrollport) {
  			return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top;
-@@ -5332,36 +5982,538 @@ window.__ModuleLoader__.load({
+@@ -5332,96 +5982,724 @@ window.__ModuleLoader__.load({
  				scrollTop: scrollport.scrollTop
  			};
  		}
@@ -1212,6 +1212,23 @@ index 1dd0e89..1e98e32 100644
 -			(0, react.useEffect)(() => {
 -				const tick = () => {
 -					setElapsedMs(Math.max(0, Date.now() - anchor));
+-				};
+-				tick();
+-				const id = setInterval(tick, 1e3);
+-				return () => {
+-					clearInterval(id);
+-				};
+-			}, [anchor]);
+-			const showClock = elapsedMs >= 15e3;
+-			return (0, react_jsx_runtime.jsxs)("div", {
+-				className: ChatView_module_css_default.turnStatus,
+-				role: "status",
+-				"aria-live": "polite",
+-				children: ["Deep diving...", showClock && (0, react_jsx_runtime.jsx)("span", {
+-					className: ChatView_module_css_default.turnStatusClock,
+-					"aria-hidden": true,
+-					children: formatRunDuration(elapsedMs, t)
+-				})]
 +		/** Stable Turn identity for every Chat node shape. */
 +		function conversationNodeTurn(node) {
 +			const location = node?.location;
@@ -1379,8 +1396,42 @@ index 1dd0e89..1e98e32 100644
 +			return EXECUTION_DETAIL_GROUP_DEFINITIONS.flatMap((definition) => {
 +				const group = groups.get(definition.id);
 +				return group === void 0 ? [] : [group];
-+			});
-+		}
+ 			});
+ 		}
+-		/**
+-		* The chat view slot entry: pure component over the composed props; each
+-		* ordered business Node crosses the keyed renderer seat.
+-		*/
+-		function ChatView({ useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt, fileMentions, t }) {
+-			const order = useSession((s) => s.chat.order);
+-			const nodeStore = useSession((s) => s.chat.nodes);
+-			const timeline = useSession((s) => s.chat.timeline);
+-			const inbox = useSession((s) => s.queue);
+-			const cwd = useSessions((s) => s.byId[sessionId]?.cwd);
+-			const running = useSession((s) => s.running);
+-			const openState = useSession((s) => s.openState);
+-			const openError = useSession((s) => s.openError);
+-			const hasMore = useSession((s) => s.hasMore);
+-			const loadingOlder = useSession((s) => s.loadingOlder);
+-			const selectedCallId = useStore((s) => s.selection?.callId);
+-			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
+-			const runningTurnStart = (0, react.useMemo)(() => runningTurnStartTime(timeline), [timeline]);
+-			const listRef = (0, react.useRef)(null);
+-			const columnRef = (0, react.useRef)(null);
+-			const atBottomRef = (0, react.useRef)(true);
+-			const [atBottom, setAtBottom] = (0, react.useState)(true);
+-			/** Last position delivered or written on the main thread. */
+-			const observedTopRef = (0, react.useRef)(0);
+-			/** Paging anchor: semantic row/position at click, updated by reader scrolls
+-			* while the request is pending and restored after the prepend lands. */
+-			const anchorRef = (0, react.useRef)(null);
+-			const firstSeqRef = (0, react.useRef)(null);
+-			const openedRef = (0, react.useRef)(false);
+-			const lastKeyRef = (0, react.useRef)(null);
+-			const lastSteeringIdRef = (0, react.useRef)(null);
+-			/** Flow tip signature — follow-scroll only when this moves, never on a
+-			*  scroll-driven at-bottom chrome re-render (which would snap inertial
+-			*  scrolls the rest of the way to the floor). */
 +		/** Read only the structured arguments owned by a Tool call. Malformed or non-object input has no intent value. */
 +		function executionToolArgs(root) {
 +			const call = root !== null && typeof root === "object" && "kind" in root ? root.call : root;
@@ -1391,9 +1442,7 @@ index 1dd0e89..1e98e32 100644
 +				return {
 +					name: String(call?.name ?? "").toLowerCase(),
 +					args: typeof args === "object" && args !== null && !Array.isArray(args) ? args : null
- 				};
--				tick();
--				const id = setInterval(tick, 1e3);
++				};
 +			} catch {
 +				return { name: String(call?.name ?? "").toLowerCase(), args: null };
 +			}
@@ -1616,6 +1665,71 @@ index 1dd0e89..1e98e32 100644
 +			}
 +			return entries;
 +		}
++		/** Merge transient steering at its durable insertion sequence until handoff completes. */
++		function mergePendingSteeringFlow(flow, pending, nodeStore) {
++			const sequenced = pending.map((item, index) => ({
++				item,
++				index,
++				anchorSeq: item.anchorSeq
++			})).filter((entry) => typeof entry.anchorSeq === "number" && Number.isFinite(entry.anchorSeq)).sort((left, right) => left.anchorSeq - right.anchorSeq || left.index - right.index);
++			const unsequenced = pending.filter((item) => typeof item.anchorSeq !== "number" || !Number.isFinite(item.anchorSeq));
++			const merged = [];
++			let pendingIndex = 0;
++			const pushPending = (item) => merged.push({
++				kind: "pending-steering",
++				key: `pending-steering:${item.id}`,
++				item
++			});
++			const pushBefore = (anchorSeq) => {
++				while (pendingIndex < sequenced.length && sequenced[pendingIndex].anchorSeq < anchorSeq) {
++					pushPending(sequenced[pendingIndex].item);
++					pendingIndex++;
++				}
++			};
++			for (let flowIndex = 0; flowIndex < flow.length; flowIndex++) {
++				const entry = flow[flowIndex];
++				if (entry.kind === "node") {
++					const anchorSeq = nodeStore.get(entry.key)?.anchorSeq;
++					if (typeof anchorSeq === "number" && Number.isFinite(anchorSeq)) pushBefore(anchorSeq);
++					merged.push(entry);
++					continue;
++				}
++				let nodeKeys = [];
++				let boundary = false;
++				let segment = 0;
++				const pushExecution = (running, allowEmpty = false) => {
++					if (nodeKeys.length === 0 && !allowEmpty) return;
++					merged.push({
++						...entry,
++						key: `${entry.key}:pending:${segment++}`,
++						nodeKeys,
++						running
++					});
++					nodeKeys = [];
++				};
++				for (const key of entry.nodeKeys) {
++					const anchorSeq = nodeStore.get(key)?.anchorSeq;
++					if (typeof anchorSeq === "number" && Number.isFinite(anchorSeq)) while (pendingIndex < sequenced.length && sequenced[pendingIndex].anchorSeq < anchorSeq) {
++						pushExecution(false);
++						pushPending(sequenced[pendingIndex].item);
++						pendingIndex++;
++						boundary = true;
++					}
++					nodeKeys.push(key);
++				}
++				if (entry.running && flowIndex === flow.length - 1) while (pendingIndex < sequenced.length) {
++					pushExecution(false);
++					pushPending(sequenced[pendingIndex].item);
++					pendingIndex++;
++					boundary = true;
++				}
++				if (!boundary) merged.push(entry);
++				else pushExecution(entry.running, entry.running);
++			}
++			while (pendingIndex < sequenced.length) pushPending(sequenced[pendingIndex++].item);
++			for (const item of unsequenced) pushPending(item);
++			return merged;
++		}
 +		/** Latest durable user message, independent of internal nodes appended in the same render. */
 +		function latestDirectUserKey(order, nodeStore) {
 +			for (let index = order.length - 1; index >= 0; index--) {
@@ -1669,22 +1783,10 @@ index 1dd0e89..1e98e32 100644
 +				observer?.observe(scrollport);
 +				observer?.observe(column);
 +				if (composer !== null) observer?.observe(composer);
- 				return () => {
--					clearInterval(id);
++				return () => {
 +					window.removeEventListener("resize", update);
 +					observer?.disconnect();
- 				};
--			}, [anchor]);
--			const showClock = elapsedMs >= 15e3;
--			return (0, react_jsx_runtime.jsxs)("div", {
--				className: ChatView_module_css_default.turnStatus,
--				role: "status",
--				"aria-live": "polite",
--				children: ["Deep diving...", showClock && (0, react_jsx_runtime.jsx)("span", {
--					className: ChatView_module_css_default.turnStatusClock,
--					"aria-hidden": true,
--					children: formatRunDuration(elapsedMs, t)
--				})]
++				};
 +			}, [queries.length, listRef, columnRef]);
 +			(0, react.useLayoutEffect)(() => {
 +				const scroller = scrollerRef.current;
@@ -1746,14 +1848,25 @@ index 1dd0e89..1e98e32 100644
 +						children: hovered.query.preview
 +					})]
 +				})]
- 			});
- 		}
- 		/**
-@@ -5381,11 +6533,58 @@ window.__ModuleLoader__.load({
- 			const loadingOlder = useSession((s) => s.loadingOlder);
- 			const selectedCallId = useStore((s) => s.selection?.callId);
- 			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
--			const runningTurnStart = (0, react.useMemo)(() => runningTurnStartTime(timeline), [timeline]);
++			});
++		}
++		/**
++		* The chat view slot entry: pure component over the composed props; each
++		* ordered business Node crosses the keyed renderer seat.
++		*/
++		function ChatView({ useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt, fileMentions, t }) {
++			const order = useSession((s) => s.chat.order);
++			const nodeStore = useSession((s) => s.chat.nodes);
++			const timeline = useSession((s) => s.chat.timeline);
++			const inbox = useSession((s) => s.queue);
++			const cwd = useSessions((s) => s.byId[sessionId]?.cwd);
++			const running = useSession((s) => s.running);
++			const openState = useSession((s) => s.openState);
++			const openError = useSession((s) => s.openError);
++			const hasMore = useSession((s) => s.hasMore);
++			const loadingOlder = useSession((s) => s.loadingOlder);
++			const selectedCallId = useStore((s) => s.selection?.callId);
++			const pendingSteering = (0, react.useMemo)(() => inbox.filter((item) => item.placement === "steering"), [inbox]);
 +			const queries = (0, react.useMemo)(() => order.flatMap((key) => {
 +				const node = nodeStore.get(key);
 +				if (node?.kind !== "user" && node?.kind !== "steering") return [];
@@ -1777,6 +1890,7 @@ index 1dd0e89..1e98e32 100644
 +				return null;
 +			}, [running, runningTurn, order, nodeStore]);
 +			const compactFlow = (0, react.useMemo)(() => compactConversationFlow(order, nodeStore, runningTurnNumber), [order, nodeStore, runningTurnNumber]);
++			const renderFlow = (0, react.useMemo)(() => mergePendingSteeringFlow(compactFlow, pendingSteering, nodeStore), [compactFlow, pendingSteering, nodeStore]);
 +			const seatProps = (0, react.useMemo)(() => ({
 +				useSession,
 +				selectedCallId,
@@ -1800,26 +1914,27 @@ index 1dd0e89..1e98e32 100644
 +				renderSlot,
 +				t
 +			]);
- 			const listRef = (0, react.useRef)(null);
- 			const columnRef = (0, react.useRef)(null);
- 			const atBottomRef = (0, react.useRef)(true);
- 			const [atBottom, setAtBottom] = (0, react.useState)(true);
++			const listRef = (0, react.useRef)(null);
++			const columnRef = (0, react.useRef)(null);
++			const atBottomRef = (0, react.useRef)(true);
++			const [atBottom, setAtBottom] = (0, react.useState)(true);
 +			const [activeQueryKey, setActiveQueryKey] = (0, react.useState)(null);
 +			const activeQueryKeyRef = (0, react.useRef)(null);
- 			/** Last position delivered or written on the main thread. */
- 			const observedTopRef = (0, react.useRef)(0);
- 			/** Paging anchor: semantic row/position at click, updated by reader scrolls
-@@ -5394,7 +6593,9 @@ window.__ModuleLoader__.load({
- 			const firstSeqRef = (0, react.useRef)(null);
- 			const openedRef = (0, react.useRef)(false);
- 			const lastKeyRef = (0, react.useRef)(null);
++			/** Last position delivered or written on the main thread. */
++			const observedTopRef = (0, react.useRef)(0);
++			/** Paging anchor: semantic row/position at click, updated by reader scrolls
++			* while the request is pending and restored after the prepend lands. */
++			const anchorRef = (0, react.useRef)(null);
++			const firstSeqRef = (0, react.useRef)(null);
++			const openedRef = (0, react.useRef)(false);
++			const lastKeyRef = (0, react.useRef)(null);
 +			const lastUserKeyRef = (0, react.useRef)(null);
- 			const lastSteeringIdRef = (0, react.useRef)(null);
++			const lastSteeringIdRef = (0, react.useRef)(null);
 +			const runningRef = (0, react.useRef)(false);
- 			/** Flow tip signature — follow-scroll only when this moves, never on a
- 			*  scroll-driven at-bottom chrome re-render (which would snap inertial
- 			*  scrolls the rest of the way to the floor). */
-@@ -5402,26 +6603,37 @@ window.__ModuleLoader__.load({
++			/** Flow tip signature — follow-scroll only when this moves, never on a
++			*  scroll-driven at-bottom chrome re-render (which would snap inertial
++			*  scrolls the rest of the way to the floor). */
+ 			const followSigRef = (0, react.useRef)(null);
  			const firstKey = order[0];
  			const firstSeq = firstKey === void 0 ? null : nodeStore.get(firstKey)?.anchorSeq ?? null;
  			const lastKey = order.at(-1) ?? null;
@@ -1861,7 +1976,7 @@ index 1dd0e89..1e98e32 100644
  					else {
  						el.scrollTop = saved.scrollTop;
  						const row = anchorElement(local, saved.anchorKey);
-@@ -5436,6 +6648,7 @@ window.__ModuleLoader__.load({
+@@ -5436,6 +6714,7 @@ window.__ModuleLoader__.load({
  					}
  					firstSeqRef.current = firstSeq;
  					lastKeyRef.current = lastKey;
@@ -1869,7 +1984,7 @@ index 1dd0e89..1e98e32 100644
  					lastSteeringIdRef.current = lastSteeringId;
  					followSigRef.current = followSig;
  					return;
-@@ -5449,18 +6662,26 @@ window.__ModuleLoader__.load({
+@@ -5449,18 +6728,26 @@ window.__ModuleLoader__.load({
  					firstSeqRef.current = firstSeq;
  					/* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
  					lastKeyRef.current = lastKey;
@@ -1898,7 +2013,7 @@ index 1dd0e89..1e98e32 100644
  			});
  			const onScrollRef = (0, react.useRef)(() => {});
  			onScrollRef.current = () => {
-@@ -5468,6 +6689,7 @@ window.__ModuleLoader__.load({
+@@ -5468,6 +6755,7 @@ window.__ModuleLoader__.load({
  				/* v8 ignore next -- ref-null guard: the handler only fires while mounted. */
  				if (local === null) return;
  				const el = scrollerOf(local);
@@ -1906,7 +2021,7 @@ index 1dd0e89..1e98e32 100644
  				const floor = Math.max(0, el.scrollHeight - el.clientHeight);
  				const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;
  				const isAtBottom = movedByReader ? floor - el.scrollTop <= 25 : atBottomRef.current;
-@@ -5487,6 +6709,10 @@ window.__ModuleLoader__.load({
+@@ -5487,6 +6775,10 @@ window.__ModuleLoader__.load({
  				else if (position !== null) chatScroll.save(position);
  				observedTopRef.current = el.scrollTop;
  			};
@@ -1917,7 +2032,7 @@ index 1dd0e89..1e98e32 100644
  			(0, react.useEffect)(() => {
  				const local = listRef.current;
  				/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */
-@@ -5514,11 +6740,13 @@ window.__ModuleLoader__.load({
+@@ -5514,11 +6806,13 @@ window.__ModuleLoader__.load({
  				const column = columnRef.current;
  				const local = listRef.current;
  				if (column === null || local === null || typeof ResizeObserver === "undefined") return;
@@ -1932,7 +2047,7 @@ index 1dd0e89..1e98e32 100644
  				if (composer !== null) observer.observe(composer);
  				return () => {
  					observer.disconnect();
-@@ -5540,9 +6768,29 @@ window.__ModuleLoader__.load({
+@@ -5540,9 +6834,29 @@ window.__ModuleLoader__.load({
  				}
  				loadOlder();
  			};
@@ -1963,7 +2078,7 @@ index 1dd0e89..1e98e32 100644
  					ref: listRef,
  					className: ChatView_module_css_default.scroll,
  					children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -5570,22 +6818,21 @@ window.__ModuleLoader__.load({
+@@ -5570,28 +6884,27 @@ window.__ModuleLoader__.load({
  									children: loadingOlder ? t("loading") : t("chat.loadOlder")
  								})
  							}),
@@ -1983,7 +2098,18 @@ index 1dd0e89..1e98e32 100644
 -							running && (0, react_jsx_runtime.jsx)(TurnStatus, {
 -								startTime: runningTurnStart,
 -								t
-+							compactFlow.map((entry) => {
+-							}),
+-							pendingSteering.map((item) => (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
+-								content: item.content,
+-								loadImage,
+-								t
+-							}, item.id))
++							renderFlow.map((entry) => {
++								if (entry.kind === "pending-steering") return (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
++									content: entry.item.content,
++									loadImage,
++									t
++								}, entry.key);
 +								if (entry.kind === "node") return (0, react_jsx_runtime.jsx)(ChatNodeSeat, {
 +									nodeKey: entry.key,
 +									...seatProps
@@ -1998,10 +2124,11 @@ index 1dd0e89..1e98e32 100644
 +									seatProps,
 +									t
 +								}, entry.key);
- 							}),
- 							pendingSteering.map((item) => (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
- 								content: item.content,
-@@ -5607,7 +6854,7 @@ window.__ModuleLoader__.load({
++							})
+ 						]
+ 					}), !atBottom && (0, react_jsx_runtime.jsx)("div", {
+ 						className: ChatView_module_css_default.toBottomSlot,
+@@ -5607,7 +6920,7 @@ window.__ModuleLoader__.load({
  							children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, {})
  						})
  					})]
@@ -2010,7 +2137,7 @@ index 1dd0e89..1e98e32 100644
  			});
  		}
  		//#endregion
-@@ -5816,6 +7063,17 @@ window.__ModuleLoader__.load({
+@@ -5816,6 +7129,17 @@ window.__ModuleLoader__.load({
  		/** Simplified Chinese dictionary (the key-set source of truth). */
  		const zh = {
  			"view.chat": "对话",
@@ -2028,7 +2155,7 @@ index 1dd0e89..1e98e32 100644
  			"hint.plan": PLAN_NEXT_ACTION_ZH,
  			"hint.goal": "输入目标，智能体将持续执行",
  			"hint.goal.active": "当前目标进行中。可输入 edit 修改 / pause 暂停 / resume 继续 / clear 清除",
-@@ -5870,12 +7128,15 @@ window.__ModuleLoader__.load({
+@@ -5870,12 +7194,15 @@ window.__ModuleLoader__.load({
  			"settings.enter.description": "仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为",
  			"settings.enter.queue": "排队发送",
  			"settings.enter.steer": "插话发送",
@@ -2048,7 +2175,7 @@ index 1dd0e89..1e98e32 100644
  			"hero.preview": "预览版",
  			"hero.chooseWorkspace": "选择工作区",
  			"session.hierarchy": "会话层级",
-@@ -5896,6 +7157,46 @@ window.__ModuleLoader__.load({
+@@ -5896,6 +7223,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "历史加载失败：{message}（{code}）",
  			"chat.loadOlder": "加载更早",
  			"chat.toBottom": "回到底部",
@@ -2095,7 +2222,7 @@ index 1dd0e89..1e98e32 100644
  			"message.extraBlock": "附加内容块",
  			"message.contextInjection": "上下文注入",
  			"message.contextRecall": "跨会话召回",
-@@ -5981,6 +7282,17 @@ window.__ModuleLoader__.load({
+@@ -5981,6 +7348,17 @@ window.__ModuleLoader__.load({
  		/** English dictionary, checked complete against the zh key set. */
  		const en = {
  			"view.chat": "Chat",
@@ -2113,7 +2240,7 @@ index 1dd0e89..1e98e32 100644
  			"hint.plan": PLAN_NEXT_ACTION_EN,
  			"hint.goal": "describe the objective for a long-running task",
  			"hint.goal.active": "goal active — edit / pause / resume / clear",
-@@ -6035,12 +7347,15 @@ window.__ModuleLoader__.load({
+@@ -6035,12 +7413,15 @@ window.__ModuleLoader__.load({
  			"settings.enter.description": "Busy only; Cmd/Ctrl+Enter uses the other behavior",
  			"settings.enter.queue": "Queue",
  			"settings.enter.steer": "Steer",
@@ -2130,7 +2257,7 @@ index 1dd0e89..1e98e32 100644
  			"hero.preview": "Preview",
  			"hero.chooseWorkspace": "Choose workspace",
  			"session.hierarchy": "Session hierarchy",
-@@ -6061,6 +7376,46 @@ window.__ModuleLoader__.load({
+@@ -6061,6 +7442,46 @@ window.__ModuleLoader__.load({
  			"chat.loadError": "Failed to load history: {message} ({code})",
  			"chat.loadOlder": "Load earlier",
  			"chat.toBottom": "Back to bottom",
@@ -2177,7 +2304,7 @@ index 1dd0e89..1e98e32 100644
  			"message.extraBlock": "Extra content block",
  			"message.contextInjection": "Context injection",
  			"message.contextRecall": "Session recall",
-@@ -6383,7 +7738,7 @@ window.__ModuleLoader__.load({
+@@ -6383,7 +7804,7 @@ window.__ModuleLoader__.load({
  		*/
  		function QueueDock({ useSession, updateQueue, notify, t }) {
  			const inbox = useSession((s) => s.queue);
@@ -2186,7 +2313,7 @@ index 1dd0e89..1e98e32 100644
  			const running = useSession((s) => s.running);
  			const queueMutable = useSession((s) => s.subagent === null);
  			const [editing, setEditing] = (0, react.useState)(null);
-@@ -6627,7 +7982,7 @@ window.__ModuleLoader__.load({
+@@ -6627,7 +8048,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$7;
@@ -2195,7 +2322,7 @@ index 1dd0e89..1e98e32 100644
  			document.head.appendChild(tag);
  		}
  		var HeroShell_module_css_default = {
-@@ -6751,40 +8106,2816 @@ window.__ModuleLoader__.load({
+@@ -6751,40 +8172,2816 @@ window.__ModuleLoader__.load({
  				})]
  			});
  		}
@@ -5044,7 +5171,7 @@ index 1dd0e89..1e98e32 100644
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$6 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);--dsh-chat-content-width:748px;--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;min-width:0;height:100%;display:flex}.wSkVaW_header{border-bottom:1px solid #0000;flex:none;padding:12px 28px 0 20px;position:relative}.wSkVaW_header:after{content:\"\";z-index:0;background:var(--dsw-alias-border-l2);pointer-events:none;height:1px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_headerHidden{display:none}.wSkVaW_titleRow{align-items:center;gap:0;min-height:32px;display:flex}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;border-radius:12px;padding:4px 8px;font-size:14px;line-height:20px;overflow:hidden}.wSkVaW_crumb:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_tabs{z-index:1;gap:36px;margin-top:4px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 11px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden auto}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px;position:relative}.wSkVaW_heroGlow{z-index:-1;aspect-ratio:1051/468;pointer-events:none;width:135.438%;position:absolute;bottom:92px;left:50%;transform:translate(-50%,50%)}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding-left:20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
-@@ -6793,7 +10924,17 @@ window.__ModuleLoader__.load({
+@@ -6793,7 +10990,17 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$6;
@@ -5063,7 +5190,7 @@ index 1dd0e89..1e98e32 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -6822,7 +10963,354 @@ window.__ModuleLoader__.load({
+@@ -6822,7 +11029,354 @@ window.__ModuleLoader__.load({
  		};
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationRoot.js
@@ -5419,7 +5546,7 @@ index 1dd0e89..1e98e32 100644
  			const openState = useSession((s) => s.openState);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const pending = useSession((s) => s.pending) ?? [];
-@@ -6832,22 +11320,136 @@ window.__ModuleLoader__.load({
+@@ -6832,22 +11386,136 @@ window.__ModuleLoader__.load({
  			const summaryBlank = useSessions((s) => sessionId === void 0 ? void 0 : s.byId[sessionId]?.blank);
  			const workspaces = useWorkspaces((s) => s);
  			const composerBlock = useComposerBlock((block) => block);
@@ -5560,7 +5687,7 @@ index 1dd0e89..1e98e32 100644
  			(0, react.useEffect)(() => {
  				if (pendingWorkspaceId === void 0) return;
  				if (sessionWorkspace?.workspaceId === pendingWorkspaceId || workspaces.phase === "ready" && pendingWorkspace === void 0) setPendingWorkspaceId(void 0);
-@@ -6897,6 +11499,7 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +11565,7 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
@@ -5568,7 +5695,7 @@ index 1dd0e89..1e98e32 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +11516,69 @@ window.__ModuleLoader__.load({
+@@ -6913,38 +11582,69 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -5662,7 +5789,7 @@ index 1dd0e89..1e98e32 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +11614,20 @@ window.__ModuleLoader__.load({
+@@ -6980,6 +11680,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -5683,7 +5810,7 @@ index 1dd0e89..1e98e32 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +11682,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +11748,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -5701,7 +5828,7 @@ index 1dd0e89..1e98e32 100644
  				})] })
  			});
  		}
-@@ -7053,14 +11692,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +11758,42 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -5746,7 +5873,7 @@ index 1dd0e89..1e98e32 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +11738,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +11804,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -5756,7 +5883,7 @@ index 1dd0e89..1e98e32 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +11760,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +11826,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -5765,7 +5892,7 @@ index 1dd0e89..1e98e32 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +11813,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +11879,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -5783,7 +5910,7 @@ index 1dd0e89..1e98e32 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +11849,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +11915,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -5791,7 +5918,7 @@ index 1dd0e89..1e98e32 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +12741,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +12807,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -5822,7 +5949,7 @@ index 1dd0e89..1e98e32 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +12786,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +12852,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -5847,7 +5974,7 @@ index 1dd0e89..1e98e32 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +13740,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +13806,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -5856,7 +5983,7 @@ index 1dd0e89..1e98e32 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +13830,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +13896,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -5898,7 +6025,7 @@ index 1dd0e89..1e98e32 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +14039,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +14105,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -5915,7 +6042,7 @@ index 1dd0e89..1e98e32 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +14209,9 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +14275,9 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -5925,7 +6052,7 @@ index 1dd0e89..1e98e32 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +14251,11 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +14317,11 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -5938,7 +6065,7 @@ index 1dd0e89..1e98e32 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +14267,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +14333,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -5951,7 +6078,7 @@ index 1dd0e89..1e98e32 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +14316,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +14382,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -5965,7 +6092,7 @@ index 1dd0e89..1e98e32 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +14354,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +14420,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -5975,7 +6102,7 @@ index 1dd0e89..1e98e32 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +14486,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +14552,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -5990,7 +6117,7 @@ index 1dd0e89..1e98e32 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +14502,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +14568,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -5999,7 +6126,7 @@ index 1dd0e89..1e98e32 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +14526,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +14592,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -6008,7 +6135,7 @@ index 1dd0e89..1e98e32 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +14552,111 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +14618,112 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
@@ -6042,6 +6169,7 @@ index 1dd0e89..1e98e32 100644
 +		exports.UserStyleBubble = UserStyleBubble;
 +		exports.compactionDefinition = compactionDefinition;
 +		exports.compactConversationFlow = compactConversationFlow;
++		exports.mergePendingSteeringFlow = mergePendingSteeringFlow;
 +		exports.latestDirectUserKey = latestDirectUserKey;
 +		exports.settleConversationScrollBottom = settleConversationScrollBottom;
 +		exports.shouldFollowConversationBottom = shouldFollowConversationBottom;
@@ -6171,7 +6299,7 @@ index 0000000..b485863
 +//# sourceMappingURL=TurnTailNodeView.d.ts.map
 \ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 50939b2..95c90a4 100644
+index 50939b2..7649406 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -1,7 +1,7 @@
@@ -6322,7 +6450,7 @@ index 0000000..cbce2bd
 +//# sourceMappingURL=views.d.ts.map
 \ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
-index b8ebfaf..2334b5b 100644
+index b8ebfaf..094d3d3 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/contract.d.ts
 @@ -92,6 +92,12 @@ export interface ComposerKeyboard {
@@ -6385,7 +6513,7 @@ index 34909b7..e1c0000 100644
      /** Owner-resolution failure styling bit. */
      readonly invalid: boolean;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
-index 339e1ba..a152976 100644
+index 339e1ba..a0dcd74 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/facade.d.ts
 @@ -64,6 +64,12 @@ export declare class SessionInputShell implements SessionInput {
@@ -6419,7 +6547,7 @@ index 339e1ba..a152976 100644
      undo(): void;
      /** Redo the latest undone transaction. */
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
-index 00f283c..d24449e 100644
+index 00f283c..4ad026f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/hub.d.ts
 @@ -13,6 +13,28 @@ import type { InputTriggerController } from '@deepseek-ai/dsh-client-ui-input-tr
@@ -6463,7 +6591,7 @@ index 00f283c..d24449e 100644
       * Resolve the facade for one session-scope ctx (SessionInputResolver face).
       * @param actx - session-scope context.
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/machine.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/machine.d.ts
-index 0d55f64..db5b473 100644
+index 0d55f64..3570ad7 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/machine.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/input/machine.d.ts
 @@ -62,6 +62,8 @@ export declare class InputMachine {
@@ -6476,7 +6604,7 @@ index 0d55f64..db5b473 100644
      private casOk;
      private onBeginCommand;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
-index 627a46d..9572e90 100644
+index 627a46d..f9e5cff 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts
 @@ -1,5 +1,39 @@
@@ -6521,6 +6649,7 @@ index 627a46d..9572e90 100644
 +};
 +export declare function ConversationRoot({ sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock, useStore, actions, renderSlot, renderSlotChain, selectWorkspace, setResearchActive, researchWorkspaces, researchSidebar, t, }: ConversationRootProps): import("react").JSX.Element;
  //# sourceMappingURL=ConversationRoot.d.ts.map
+\ No newline at end of file
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts.orig b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationRoot.d.ts.orig
 new file mode 100644
 index 0000000..627a46d

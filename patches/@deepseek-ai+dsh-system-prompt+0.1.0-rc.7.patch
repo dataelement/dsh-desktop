@@ -1,0 +1,13 @@
+diff --git a/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js b/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
+index 7c166a8..785f652 100644
+--- a/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js
+@@ -166,7 +166,7 @@ var SystemPrompt = class extends Service {
+ 		if (config.includeHarnessIdentity ?? true) this.section({
+ 			name: "harness:identity",
+ 			order: -100,
+-			text: "You are an AI agent powered by DeepSeek Harness."
++			text: "You are Sherlock Agent."
+ 		});
+ 		this.section({
+ 			name: PERSONA_SECTION,

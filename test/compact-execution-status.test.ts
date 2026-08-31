@@ -522,6 +522,141 @@ describe('compact execution status', () => {
     ])
   })
 
+  it('places pending steering before later reply nodes and splits their execution group', async () => {
+    const client = await loadConversationBundle()
+    expect(client.mergePendingSteeringFlow).toBeTypeOf('function')
+    if (typeof client.mergePendingSteeringFlow !== 'function') return
+
+    const nodes = new Map([
+      [
+        'before-input',
+        {
+          key: 'before-input',
+          kind: 'assistant-step',
+          anchorSeq: 40,
+          location: turnLocation(7),
+          data: {}
+        }
+      ],
+      [
+        'after-input',
+        {
+          key: 'after-input',
+          kind: 'assistant-step',
+          anchorSeq: 80,
+          location: turnLocation(7),
+          data: {}
+        }
+      ]
+    ])
+    const flow = [
+      {
+        kind: 'execution',
+        key: 'execution:7',
+        turn: 7,
+        nodeKeys: ['before-input', 'after-input'],
+        running: true
+      }
+    ]
+    const pending = [
+      {
+        id: 'pending-input',
+        anchorSeq: 66,
+        placement: 'steering',
+        content: [{ type: 'text', text: '先回答这个问题' }]
+      }
+    ]
+
+    const merged = (client.mergePendingSteeringFlow as (
+      flow: unknown[],
+      pending: unknown[],
+      nodes: Map<string, unknown>
+    ) => Array<Record<string, unknown>>)(flow, pending, nodes)
+
+    expect(merged.map((entry) => ({
+      kind: entry.kind,
+      nodeKeys: entry.nodeKeys,
+      running: entry.running,
+      itemId: (entry.item as { id?: string } | undefined)?.id
+    }))).toEqual([
+      {
+        kind: 'execution',
+        nodeKeys: ['before-input'],
+        running: false,
+        itemId: undefined
+      },
+      {
+        kind: 'pending-steering',
+        nodeKeys: undefined,
+        running: undefined,
+        itemId: 'pending-input'
+      },
+      {
+        kind: 'execution',
+        nodeKeys: ['after-input'],
+        running: true,
+        itemId: undefined
+      }
+    ])
+  })
+
+  it('keeps an unanchored reconnect queue row at the visible conversation tail', async () => {
+    const client = await loadConversationBundle()
+    expect(client.mergePendingSteeringFlow).toBeTypeOf('function')
+    if (typeof client.mergePendingSteeringFlow !== 'function') return
+
+    const flow = [{ kind: 'node', key: 'answer' }]
+    const pending = [{ id: 'pending-input', placement: 'steering', content: [] }]
+    const merged = (client.mergePendingSteeringFlow as (
+      flow: unknown[],
+      pending: unknown[],
+      nodes: Map<string, unknown>
+    ) => Array<Record<string, unknown>>)(
+      flow,
+      pending,
+      new Map([['answer', { key: 'answer', kind: 'assistant-step', anchorSeq: 80 }]])
+    )
+
+    expect(merged.map((entry) => entry.kind)).toEqual(['node', 'pending-steering'])
+  })
+
+  it('moves the live execution indicator below steering that arrives after current progress', async () => {
+    const client = await loadConversationBundle()
+    expect(client.mergePendingSteeringFlow).toBeTypeOf('function')
+    if (typeof client.mergePendingSteeringFlow !== 'function') return
+
+    const merged = (client.mergePendingSteeringFlow as (
+      flow: unknown[],
+      pending: unknown[],
+      nodes: Map<string, unknown>
+    ) => Array<Record<string, unknown>>)(
+      [{
+        kind: 'execution',
+        key: 'execution:7',
+        turn: 7,
+        nodeKeys: ['current-progress'],
+        running: true
+      }],
+      [{ id: 'pending-input', anchorSeq: 66, placement: 'steering', content: [] }],
+      new Map([
+        [
+          'current-progress',
+          { key: 'current-progress', kind: 'assistant-step', anchorSeq: 40 }
+        ]
+      ])
+    )
+
+    expect(merged.map((entry) => ({
+      kind: entry.kind,
+      nodeKeys: entry.nodeKeys,
+      running: entry.running
+    }))).toEqual([
+      { kind: 'execution', nodeKeys: ['current-progress'], running: false },
+      { kind: 'pending-steering', nodeKeys: undefined, running: undefined },
+      { kind: 'execution', nodeKeys: [], running: true }
+    ])
+  })
+
   it('keeps automatic compaction visibly running when the runtime turn signal is briefly absent', async () => {
     const client = await loadConversationBundle()
     expect(client.compactConversationFlow).toBeTypeOf('function')

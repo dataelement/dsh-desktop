@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
-index 11ee6c4..636de98 100644
+index 11ee6c4..01cd376 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js
 @@ -1,8 +1,8 @@
@@ -216,7 +216,33 @@ index 11ee6c4..636de98 100644
  	routable: z$1.boolean(),
  	groups: z$1.array(modelProviderGroupSchema),
  	failures: z$1.array(modelCatalogFailureSchema)
-@@ -1675,6 +1851,21 @@ function changedWorkspaceView(workspaceId, value) {
+@@ -1666,6 +1842,25 @@ function changedWorkspaceView(workspaceId, value) {
+ 		updatedAt: record.updatedAt
+ 	};
+ }
++/** Remember the durable insertion point of every transient inbox message. */
++function rememberQueueAnchorSeqs(anchorSeqs, event) {
++	if (event.type !== "agent/inbox/spliced") return;
++	for (const message of event.data.inserted) anchorSeqs.set(message.id, event.seq);
++}
++/** Project both inbox lists, preserving the event position where each row entered. */
++function projectQueueItems(agent, splice, anchorSeqs = /* @__PURE__ */ new Map()) {
++	const project = (target) => {
++		const messages = target === "next-turn" ? agent.inbox.nextTurn : agent.inbox.nextStep;
++		return splice?.target === target ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted) : messages;
++	};
++	const item = (message, placement) => ({
++		id: message.id,
++		...anchorSeqs.has(message.id) ? { anchorSeq: anchorSeqs.get(message.id) } : {},
++		placement,
++		message
++	});
++	return [...project("next-turn").map((message) => item(message, "queued")), ...project("next-step").map((message) => item(message, message.source.kind === "user" ? "steering" : "context"))];
++}
+ /**
+ * Implement ApiProxy over a composed host context.
+ * @param ctx - a context with the Host spine and Workspace registry mounted.
+@@ -1675,6 +1870,21 @@ function changedWorkspaceView(workspaceId, value) {
  function createApiProxy(ctx, defaults) {
  	const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel ?? 6;
  	const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes ?? 1024;
@@ -238,7 +264,16 @@ index 11ee6c4..636de98 100644
  	/** The seed model each create/resume declares; re-read so it never goes stale. */
  	const agentOptions = () => {
  		const { provider, model } = defaults.defaultModelSelection();
-@@ -1709,12 +1900,13 @@ function createApiProxy(ctx, defaults) {
+@@ -1692,6 +1902,8 @@ function createApiProxy(ctx, defaults) {
+ 	* not enforcement: the wire is reachable directly.
+ 	*/
+ 	const presetSwitches = /* @__PURE__ */ new Map();
++	/** Process-local insertion anchors survive transient queue baselines and reconnects. */
++	const queueAnchorSeqs = /* @__PURE__ */ new Map();
+ 	/** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
+ 	const sessionCreations = /* @__PURE__ */ new Map();
+ 	/** Serializes path ownership and explicit title checks with Workspace mutations. */
+@@ -1709,12 +1921,13 @@ function createApiProxy(ctx, defaults) {
  	/**
  	* Install or return the session-local model selection that prompt assembly snapshots.
  	*
@@ -258,7 +293,7 @@ index 11ee6c4..636de98 100644
  	* per-session override tier on this wire — if one returns (a create-options
  	* contribution), it must fold in between the selection and the log.
  	*/
-@@ -1724,14 +1916,18 @@ function createApiProxy(ctx, defaults) {
+@@ -1724,14 +1937,18 @@ function createApiProxy(ctx, defaults) {
  		let picked;
  		const selection = {
  			get current() {
@@ -284,7 +319,49 @@ index 11ee6c4..636de98 100644
  			},
  			set current(next) {
  				picked = next;
-@@ -2295,6 +2491,11 @@ function createApiProxy(ctx, defaults) {
+@@ -1844,30 +2061,24 @@ function createApiProxy(ctx, defaults) {
+ 			stateVersion: 1
+ 		});
+ 	});
+-	/** Project both durable inbox lists, optionally including the splice currently being emitted. */
+-	const queueItems = (agent, splice) => {
+-		const project = (target) => {
+-			const messages = target === "next-turn" ? agent.inbox.nextTurn : agent.inbox.nextStep;
+-			return splice?.target === target ? messages.toSpliced(splice.start, splice.removedCount ?? 0, ...splice.inserted) : messages;
+-		};
+-		return [...project("next-turn").map((message) => ({
+-			id: message.id,
+-			placement: "queued",
+-			message
+-		})), ...project("next-step").map((message) => ({
+-			id: message.id,
+-			placement: message.source.kind === "user" ? "steering" : "context",
+-			message
+-		}))];
+-	};
+ 	ctx.on("session/event", (session, event) => {
+ 		if (event.type !== "agent/inbox/spliced") return;
+ 		const agent = ctx.agents.get(session.id);
+ 		if (agent?.session !== session) return;
++		let anchors = queueAnchorSeqs.get(session.id);
++		if (anchors === void 0) {
++			anchors = /* @__PURE__ */ new Map();
++			queueAnchorSeqs.set(session.id, anchors);
++		}
++		rememberQueueAnchorSeqs(anchors, event);
++		const items = projectQueueItems(agent, event.data, anchors);
++		const liveIds = new Set(items.map((item) => item.id));
++		for (const id of anchors.keys()) if (!liveIds.has(id)) anchors.delete(id);
++		if (anchors.size === 0) queueAnchorSeqs.delete(session.id);
+ 		broadcast({
+ 			type: "session/queue",
+ 			sessionId: session.id,
+-			items: queueItems(agent, event.data)
++			items
+ 		});
+ 	});
+ 	/** Remove a wait before settling it: synchronous deletion makes the first claimant win. */
+@@ -2295,6 +2506,11 @@ function createApiProxy(ctx, defaults) {
  		if ("error" in found) return { refused: err(request, found.error) };
  		const agent = found.agent;
  		const selection = selectionFor(agent).current;
@@ -296,7 +373,7 @@ index 11ee6c4..636de98 100644
  		if (!routeServed(selection.provider)) return { refused: err(request, {
  			code: "model-unavailable",
  			message: `no adapter serves provider "${selection.provider}"; select a model for this session`,
-@@ -2608,9 +2809,9 @@ function createApiProxy(ctx, defaults) {
+@@ -2608,9 +2824,9 @@ function createApiProxy(ctx, defaults) {
  				if ("error" in found) return err(request, found.error);
  				const current = selectionFor(found.agent).current;
  				const { groups, failures } = await buildModelCatalog(ctx);
@@ -308,7 +385,7 @@ index 11ee6c4..636de98 100644
  					routable,
  					groups,
  					failures
-@@ -2643,6 +2844,7 @@ function createApiProxy(ctx, defaults) {
+@@ -2643,6 +2859,7 @@ function createApiProxy(ctx, defaults) {
  							model: resolved.model,
  							...resolved.reasoningEffort === void 0 ? {} : { reasoningEffort: resolved.reasoningEffort }
  						};
@@ -316,7 +393,7 @@ index 11ee6c4..636de98 100644
  						selectionFor(found.agent).current = selected;
  						try {
  							await defaults.saveDefaultModelSelection?.(selected);
-@@ -3150,7 +3352,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3150,7 +3367,13 @@ function createApiProxy(ctx, defaults) {
  				}));
  			},
  			async pickDirectory(request, signal) {
@@ -331,7 +408,7 @@ index 11ee6c4..636de98 100644
  				if (capability.kind !== "native") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
-@@ -3172,7 +3380,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3172,7 +3395,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async listDirectory(request, signal) {
@@ -346,7 +423,7 @@ index 11ee6c4..636de98 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3190,7 +3404,13 @@ function createApiProxy(ctx, defaults) {
+@@ -3190,7 +3419,13 @@ function createApiProxy(ctx, defaults) {
  				}
  			},
  			async createDirectory(request) {
@@ -361,7 +438,7 @@ index 11ee6c4..636de98 100644
  				if (capability.kind !== "browse") return err(request, {
  					code: "directory-picker-unavailable",
  					message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-@@ -3244,6 +3464,127 @@ function createApiProxy(ctx, defaults) {
+@@ -3244,6 +3479,127 @@ function createApiProxy(ctx, defaults) {
  			}
  		},
  		agentPresets: {
@@ -489,7 +566,16 @@ index 11ee6c4..636de98 100644
  			async list(request) {
  				const presets = ctx.get("agentPresets");
  				if (presets === void 0) return ok(request, {
-@@ -4932,6 +5273,34 @@ function toFetchHandler(api) {
+@@ -3572,7 +3928,7 @@ function createApiProxy(ctx, defaults) {
+ 					if (agent?.session === session && agent.inbox.hasPending) queue.push(frame({
+ 						type: "session/queue",
+ 						sessionId: session.id,
+-						items: queueItems(agent)
++						items: projectQueueItems(agent, void 0, queueAnchorSeqs.get(session.id))
+ 					}));
+ 				}
+ 				const jobs = ctx.get("jobs");
+@@ -4932,6 +5288,34 @@ function toFetchHandler(api) {
  			rpcId: RpcId(randomUUID()),
  			payload: {}
  		}, req.signal));
@@ -524,7 +610,15 @@ index 11ee6c4..636de98 100644
  		if (path === "/api/session.export" && (req.method === "GET" || req.method === "HEAD")) {
  			const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams));
  			if (!parsed.success) return new Response("missing or invalid sessionId query parameter", { status: 400 });
-@@ -5531,7 +5900,6 @@ var ApiProxyService = class extends Service {
+@@ -5089,6 +5473,7 @@ const muxFrameSchema = z$1.discriminatedUnion("type", [
+ 		sessionId: sessionIdSchema,
+ 		items: z$1.array(z$1.object({
+ 			id: messageIdSchema$1,
++			anchorSeq: z$1.number().int().nonnegative().optional(),
+ 			placement: z$1.union([
+ 				z$1.literal("queued"),
+ 				z$1.literal("steering"),
+@@ -5531,7 +5916,6 @@ var ApiProxyService = class extends Service {
  		"agentDefaultModel",
  		"agents",
  		"attachments",
@@ -532,14 +626,39 @@ index 11ee6c4..636de98 100644
  		"llm",
  		"sessions",
  		"subagents",
-@@ -5584,4 +5952,4 @@ var ApiProxyService = class extends Service {
+@@ -5584,4 +5968,4 @@ var ApiProxyService = class extends Service {
  	}
  };
  //#endregion
 -export { AbstractApiClient, ApiProxyService, ApiProxyService as default, InProcessApiClient, RpcId, createApiProxy, toFetchHandler };
-+export { AbstractApiClient, ApiProxyService, ApiProxyService as default, InProcessApiClient, RpcId, createApiProxy, createBoundedSessionModelSelectionStore, resolveSessionModelSelection, toFetchHandler };
++export { AbstractApiClient, ApiProxyService, ApiProxyService as default, InProcessApiClient, RpcId, createApiProxy, createBoundedSessionModelSelectionStore, projectQueueItems, rememberQueueAnchorSeqs, resolveSessionModelSelection, toFetchHandler };
+diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.d.ts b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.d.ts
+index 5b82d8d..92f8067 100644
+--- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.d.ts
++++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.d.ts
+@@ -35,6 +35,8 @@ export type ToolEventView = {
+ export interface QueuedInboxItem {
+     /** Message identity used by inbox mutations. */
+     id: MessageId;
++    /** Durable event sequence where this transient row entered the inbox, when known. */
++    anchorSeq?: number;
+     /** Agent-resolved FIFO placement; queued and steering items render on different surfaces, context items stay invisible until claimed. */
+     placement: 'queued' | 'steering' | 'context';
+     /** Complete pending message; it is not durable until the Agent claims it. */
+diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.schema.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.schema.js
+index adcd82d..db313ba 100644
+--- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.schema.js
++++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/events.schema.js
+@@ -46,6 +46,7 @@ export const muxFrameSchema = z.discriminatedUnion('type', [
+         sessionId: sessionIdSchema,
+         items: z.array(z.object({
+             id: messageIdSchema,
++            anchorSeq: z.number().int().nonnegative().optional(),
+             placement: z.union([z.literal('queued'), z.literal('steering'), z.literal('context')]),
+             message: messageSchema,
+         })),
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts
-index 48132be..8498622 100644
+index 48132be..42a8940 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.d.ts
 @@ -145,7 +145,7 @@ export interface ModelCatalogFailure {
@@ -552,7 +671,7 @@ index 48132be..8498622 100644
       * Whether an adapter currently serves `current.provider`, and therefore
       * whether this session can start a turn at all. Deliberately NOT derivable
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js
-index 026ffb3..320db3f 100644
+index 026ffb3..7f88cee 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api/sessions.schema.js
 @@ -191,7 +191,7 @@ export const sessionModelsRequestSchema = z.object({
@@ -565,7 +684,7 @@ index 026ffb3..320db3f 100644
      groups: z.array(modelProviderGroupSchema),
      failures: z.array(modelCatalogFailureSchema),
 diff --git a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
-index 6737e91..3df5bad 100644
+index 6737e91..e3d8361 100644
 --- a/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/index.d.ts
 @@ -13,6 +13,7 @@
