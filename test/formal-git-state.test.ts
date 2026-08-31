@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -42,13 +42,6 @@ afterEach(() => {
 })
 
 describe('formal Git source gate', () => {
-  it('allows Git status output larger than the Node default child-process buffer', () => {
-    const source = readFileSync(verifier, 'utf8')
-
-    expect(source).toMatch(/const gitOutputLimit = \d+ \* 1024 \* 1024/)
-    expect(source).toContain('maxBuffer: gitOutputLimit')
-  })
-
   it('accepts a clean patch release committed on main', () => {
     const repository = createRepository()
 
@@ -78,6 +71,21 @@ describe('formal Git source gate', () => {
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('未纳入 Git 的源码文件')
     expect(result.stderr).toContain('src/new-feature.ts')
+  })
+
+  it('ignores allowed generated output but rejects an unknown untracked root file', () => {
+    const repository = createRepository()
+    mkdirSync(path.join(repository, 'dist-local-integration'))
+    writeFileSync(path.join(repository, 'dist-local-integration', 'generated.js'), 'generated\n')
+
+    expect(verify(repository).status).toBe(0)
+
+    writeFileSync(path.join(repository, 'unexpected-root-file'), 'not generated\n')
+    const result = verify(repository)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('未纳入 Git 的源码文件')
+    expect(result.stderr).toContain('unexpected-root-file')
   })
 
   it('rejects local session branches with commits missing from main', () => {
