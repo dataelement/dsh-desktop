@@ -65,6 +65,10 @@ describe('GitHub release contract', () => {
       to: 'splash.html'
     })
     expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/sherlock-logo.svg',
+      to: 'sherlock-logo.svg'
+    })
+    expect(packageJson.build.extraResources).not.toContainEqual({
       from: 'build/dsh-loader.gif',
       to: 'dsh-loader.gif'
     })
@@ -103,8 +107,17 @@ describe('GitHub release contract', () => {
 
     expect(main).toContain("desktopResourcePath('splash.html')")
     expect(main).toContain('await showSplash()')
-    expect(splash).toContain('Starting Sherlock')
-    expect(splash).toContain('src="dsh-loader.gif"')
+    expect(splash).toContain('Starting…')
+    expect(splash.match(/src="sherlock-logo\.svg"/g)).toHaveLength(2)
+    expect(splash).toContain('class="logo-sheen"')
+    expect(splash).toContain('class="keyhole-pulse"')
+    expect(splash).toContain('width: min(212px, 42vw)')
+    expect(splash).toContain('logo-sheen 5.6s')
+    expect(splash).toContain("document.documentElement.lang = 'zh-CN'")
+    expect(splash).not.toContain('mask: url(')
+    expect(splash).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(splash).not.toContain('dsh-loader.gif')
+    expect(splash).not.toContain('class="title"')
     expect(splash).not.toContain('class="track"')
     expect(patch).toMatch(/id: directory-picker\r?\n  disabled: true/)
     expect(patch).not.toContain('dsh-update-checker')

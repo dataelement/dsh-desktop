@@ -145,8 +145,8 @@
         "to": "splash.html"
       },
       {
-        "from": "build/dsh-loader.gif",
-        "to": "dsh-loader.gif"
+        "from": "build/sherlock-logo.svg",
+        "to": "sherlock-logo.svg"
       },
       {
         "from": "build/plugin-recovery.html",
