@@ -5160,6 +5160,178 @@ describe('Sherlock workspace and composer controls', () => {
     ])
   })
 
+  it('inserts ordinary Chat uploads as native file tags while serializing their full paths', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    expect(client.chatFileReferenceCodec).toBeTypeOf('object')
+    if (typeof client.SessionInputShell !== 'function' ||
+        typeof client.chatFileReferenceCodec !== 'object' ||
+        client.chatFileReferenceCodec === null) return
+
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    shell.setDraft('请分析')
+    shell.actions.insertFilePaths([
+      '/Users/test/Documents/年度报告.pdf',
+      '/Users/test/Documents/董事会材料.pptx'
+    ])
+
+    expect(shell.snapshot.draft).toBe('请分析\n\uFFFC \uFFFC ')
+    expect(shell.snapshot.occurrences).toMatchObject([
+      {
+        source: 'chat-file',
+        offset: 4,
+        label: '年度报告.pdf',
+        clipboardText: '年度报告.pdf'
+      },
+      {
+        source: 'chat-file',
+        offset: 6,
+        label: '董事会材料.pptx',
+        clipboardText: '董事会材料.pptx'
+      }
+    ])
+
+    const codec = client.chatFileReferenceCodec as {
+      serialize(ref: string, signal: AbortSignal): Promise<string>
+    }
+    await expect(codec.serialize(
+      shell.snapshot.occurrences[0].ref,
+      new AbortController().signal
+    )).resolves.toBe('📎 文件：`/Users/test/Documents/年度报告.pdf`')
+
+    const chatOccurrence = shell.snapshot.occurrences[0]
+    const selectedReferenceOccurrenceId = client.selectedResearchReferenceOccurrenceId as (
+      occurrences: Array<Record<string, unknown>>,
+      selection: { start: number; end: number }
+    ) => number | null
+    const deleteReferenceOccurrence = client.deleteResearchReferenceOccurrence as (
+      keyboard: Record<string, unknown>,
+      occurrenceId: number
+    ) => number | null
+    expect(selectedReferenceOccurrenceId(
+      shell.snapshot.occurrences,
+      { start: chatOccurrence.offset, end: chatOccurrence.offset + 1 }
+    )).toBe(chatOccurrence.occurrenceId)
+    expect(deleteReferenceOccurrence(shell, chatOccurrence.occurrenceId))
+      .toBe(chatOccurrence.offset)
+    expect(shell.snapshot.occurrences.some(
+      (occurrence: { occurrenceId: number }) =>
+        occurrence.occurrenceId === chatOccurrence.occurrenceId
+    )).toBe(false)
+
+    const fileReferenceKind = client.fileReferenceKind as (name: string) => string
+    expect([
+      'report.pdf', 'brief.docx', 'deck.pptx', 'notes.txt', 'chart.png', 'data.xlsx'
+    ].map(fileReferenceKind)).toEqual([
+      'pdf', 'word', 'presentation', 'text', 'image', 'spreadsheet'
+    ])
+  })
+
+  it('shows file-type icons and delayed full-name tooltips for Chat and Research tags', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow,
+      exposeInputBar: true,
+      modules: {
+        '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore },
+        '@deepseek-ai/dsh-client-ui-primitives': {
+          Tooltip: ({ children, delayMs, label, side }: Record<string, unknown>) =>
+            createElement('span', {
+              'data-file-tooltip': label,
+              'data-file-tooltip-delay': delayMs,
+              'data-file-tooltip-side': side
+            }, children),
+          IconPaperclipOutline16: () => createElement('span', { 'data-paperclip-icon': '' })
+        },
+        '@deepseek-ai/dsh-client-ui-attachment': {
+          DropOverlay: () => null,
+          AttachmentRail: () => null
+        }
+      }
+    })
+    const InputBar = client.__testInputBar as ComponentType<Record<string, unknown>>
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    expect(InputBar).toBeTypeOf('function')
+    expect(SessionInputShell).toBeTypeOf('function')
+    if (typeof InputBar !== 'function' || typeof SessionInputShell !== 'function' ||
+        typeof client.researchFileReference !== 'function') {
+      restoreGlobals()
+      return
+    }
+
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    const researchFile = {
+      id: 'research-pdf',
+      path: '/workspace/完整年度报告.pdf',
+      name: '完整年度报告.pdf',
+      displayName: '年报'
+    }
+    shell.actions.insertFilePaths(['/workspace/董事会材料.PPTX'])
+    shell.insertReference(
+      client.researchFileReference(researchFile),
+      {
+        start: shell.snapshot.draft.length,
+        end: shell.snapshot.draft.length,
+        draftRev: shell.snapshot.draftRev
+      }
+    )
+
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const props: Record<string, unknown> = {
+      useSession: (select: (state: Record<string, unknown>) => unknown) => select({
+        running: false, promptError: null, subagent: null, removed: false
+      }),
+      useInput: (select: (state: Record<string, unknown>) => unknown) =>
+        useSyncExternalStore(
+          shell.state.subscribe,
+          () => select(shell.snapshot),
+          () => select(shell.snapshot)
+        ),
+      inputActions: shell.actions,
+      keyboard: shell,
+      renderSlot: () => null,
+      useNotices: (select: (state: null) => unknown) => select(null),
+      useLexicon: (select: (state: Map<string, string[]>) => unknown) => select(new Map()),
+      useMenuLauncher: (select: (state: null) => unknown) => select(null),
+      useProjection: (_name: string, select?: (value: undefined) => unknown) =>
+        select === undefined ? undefined : select(undefined),
+      researchFileReferences: [researchFile],
+      sessionId: 'file-tag-session',
+      t: (key: string) => key,
+      variant: 'composer'
+    }
+
+    try {
+      await act(async () => { root.render(createElement(InputBar, props)); await Promise.resolve() })
+      const chatTag = host.querySelector('[data-reference-source="chat-file"]') as HappyDOMElement | null
+      const researchTag = host.querySelector('[data-reference-source="research-file"]') as HappyDOMElement | null
+      expect(chatTag?.querySelector('[data-file-reference-icon]')?.getAttribute('data-file-kind'))
+        .toBe('presentation')
+      expect(chatTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip'))
+        .toBe('董事会材料.PPTX')
+      expect(researchTag?.querySelector('[data-file-reference-icon]')?.getAttribute('data-file-kind'))
+        .toBe('pdf')
+      expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip'))
+        .toBe('完整年度报告.pdf')
+      expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip-delay'))
+        .toBe('500')
+      expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip-side'))
+        .toBe('top')
+
+    } finally {
+      await act(async () => { root.unmount() })
+      host.remove()
+      restoreGlobals()
+    }
+  })
+
   it('accepts pasted Research tags only when their exact file identity belongs to the active InputBar session', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)

@@ -18,6 +18,7 @@ import {
   type Event as HappyDOMEvent
 } from 'happy-dom'
 import {
+  DSH_FILE_DROP_INLINE_REFERENCE_MARKER,
   DSH_FILE_DROP_RESEARCH_CANVAS_MARKER,
   ensureDshFileDropResearchCanvasCompatibility
 } from '../src/main/state/dsh-file-drop-compat'
@@ -74,7 +75,7 @@ async function makeDshHome(clientSource?: string): Promise<{
 function installCaptureClient(
   browserWindow: Window,
   source: string,
-  onDrop: () => void,
+  onFilePaths: (paths: string[]) => void,
   onDragState: (active: boolean) => void
 ): () => void {
   let descriptor: {
@@ -143,7 +144,10 @@ function installCaptureClient(
         render({
           sessionId: 'session-1',
           input: { draft: '' },
-          inputActions: { setDraft: onDrop }
+          inputActions: {
+            setDraft: () => undefined,
+            insertFilePaths: onFilePaths
+          }
         })
       }
     }
@@ -178,18 +182,19 @@ describe('dsh-file-drop Research canvas compatibility', () => {
     })
     const patched = await readFile(clientPath, 'utf8')
     expect(patched).toContain(DSH_FILE_DROP_RESEARCH_CANVAS_MARKER)
+    expect(patched).toContain(DSH_FILE_DROP_INLINE_REFERENCE_MARKER)
     expect(await ensureDshFileDropResearchCanvasCompatibility(dshHome)).toEqual({
       status: 'already-compatible',
       clientPath
     })
 
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
-    let composerDrops = 0
+    const composerFilePaths: string[][] = []
     const dragStates: boolean[] = []
     const cleanup = installCaptureClient(
       browserWindow,
       patched,
-      () => { composerDrops += 1 },
+      (paths) => { composerFilePaths.push(paths) },
       (active) => { dragStates.push(active) }
     )
     const canvas = browserWindow.document.createElement('div')
@@ -216,7 +221,7 @@ describe('dsh-file-drop Research canvas compatibility', () => {
         dispatchFileDrag(browserWindow, canvasChild, type)
       }
       expect(reachedResearch).toEqual(['dragenter', 'dragover', 'dragleave', 'drop'])
-      expect(composerDrops).toBe(0)
+      expect(composerFilePaths).toEqual([])
       expect(dragStates.at(-1)).toBe(false)
 
       const outside = browserWindow.document.createElement('div')
@@ -227,7 +232,7 @@ describe('dsh-file-drop Research canvas compatibility', () => {
 
       expect(outsideDrop.defaultPrevented).toBe(true)
       expect(outsideTargetDrops).toBe(0)
-      expect(composerDrops).toBe(1)
+      expect(composerFilePaths).toEqual([['/tmp/report.pdf']])
     } finally {
       cleanup()
     }
@@ -272,6 +277,30 @@ describe('dsh-file-drop Research canvas compatibility', () => {
 
     expect(sawCompatibilityAtLaunch).toBe(true)
     expect(runtime.snapshot().phase).toBe('failed')
+  })
+
+  it('upgrades the previous Research-only compatibility patch in place', async () => {
+    const { dshHome, clientPath } = await makeDshHome()
+    expect((await ensureDshFileDropResearchCanvasCompatibility(dshHome)).status)
+      .toBe('patched')
+    const current = await readFile(clientPath, 'utf8')
+    const legacy = current.replace(
+      `      if (!inputActions || !Array.isArray(paths) || paths.length === 0) return
+      // ${DSH_FILE_DROP_INLINE_REFERENCE_MARKER}
+      if (typeof inputActions.insertFilePaths === 'function') {
+        inputActions.insertFilePaths(paths)
+        return
+      }`,
+      '      if (!inputActions) return'
+    )
+    expect(legacy).not.toBe(current)
+    await writeFile(clientPath, legacy, 'utf8')
+
+    expect(await ensureDshFileDropResearchCanvasCompatibility(dshHome)).toEqual({
+      status: 'patched',
+      clientPath
+    })
+    expect(await readFile(clientPath, 'utf8')).toBe(current)
   })
 
   it('does not guess when the named plugin client has an unknown capture shape', async () => {

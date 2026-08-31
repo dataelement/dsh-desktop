@@ -14,8 +14,10 @@ const PLUGIN_NAME = 'dsh-file-drop'
 const SUPPORTED_VERSION = '1.0.0'
 const PRISTINE_CLIENT_SHA256 =
   '51260b81dcee8c091ab708698d9c247b190d3e3b9884e930ad9e3742cb7c6377'
-const PATCHED_CLIENT_SHA256 =
+const LEGACY_PATCHED_CLIENT_SHA256 =
   'ef70d5f01c43a4a2451e46f6ef01eea8614a838a043a9eabe8a5e5597bf4ca77'
+const PATCHED_CLIENT_SHA256 =
+  'c8e269525a469cb1733a8318ab429be3152835997c828eabc5568c07c2044cdf'
 const ORIGINAL_FILE_GUARD = '          if (!hasFiles(e)) return'
 const RESEARCH_FILE_GUARD =
   '          if (!hasFiles(e) || releaseResearchCanvasEvent(e)) return'
@@ -24,9 +26,23 @@ const ORIGINAL_LEAVE_START = `        const onDragLeave = (e) => {
 const RESEARCH_LEAVE_START = `        const onDragLeave = (e) => {
           if (releaseResearchCanvasEvent(e)) return
           e.stopPropagation()`
+const ORIGINAL_APPEND_HELPER = `    function appendToDraft(inputActions, draft, paths) {
+      if (!inputActions) return
+      const lines = paths.map((p) => '📎 文件：\`' + p + '\`')`
+const INLINE_REFERENCE_MARKER =
+  'Sherlock dsh-file-drop compatibility: insert native inline file references.'
+const INLINE_REFERENCE_APPEND_HELPER = `    function appendToDraft(inputActions, draft, paths) {
+      if (!inputActions || !Array.isArray(paths) || paths.length === 0) return
+      // ${INLINE_REFERENCE_MARKER}
+      if (typeof inputActions.insertFilePaths === 'function') {
+        inputActions.insertFilePaths(paths)
+        return
+      }
+      const lines = paths.map((p) => '📎 文件：\`' + p + '\`')`
 
 export const DSH_FILE_DROP_RESEARCH_CANVAS_MARKER =
   'Sherlock dsh-file-drop compatibility: Research owns its canvas path.'
+export const DSH_FILE_DROP_INLINE_REFERENCE_MARKER = INLINE_REFERENCE_MARKER
 
 export type DshFileDropCompatibilityResult =
   | { status: 'not-installed'; clientPath: string }
@@ -45,17 +61,20 @@ function sourceIdentity(source: string): string {
 export function patchDshFileDropClientSource(source: string): string | undefined {
   const identity = sourceIdentity(source)
   if (identity === PATCHED_CLIENT_SHA256) return source
-  if (identity !== PRISTINE_CLIENT_SHA256) return undefined
-  if (
-    occurrenceCount(source, ORIGINAL_FILE_GUARD) !== 3 ||
-    occurrenceCount(source, ORIGINAL_LEAVE_START) !== 1
-  ) {
-    return undefined
-  }
+  const pristine = identity === PRISTINE_CLIENT_SHA256
+  const legacyPatched = identity === LEGACY_PATCHED_CLIENT_SHA256
+  if (!pristine && !legacyPatched) return undefined
+  if (occurrenceCount(source, ORIGINAL_APPEND_HELPER) !== 1) return undefined
 
   const hasFiles =
     "        const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')"
-  if (occurrenceCount(source, hasFiles) !== 1) return undefined
+  if (
+    pristine && (
+      occurrenceCount(source, ORIGINAL_FILE_GUARD) !== 3 ||
+      occurrenceCount(source, ORIGINAL_LEAVE_START) !== 1 ||
+      occurrenceCount(source, hasFiles) !== 1
+    )
+  ) return undefined
   const researchOwnership = `${hasFiles}
         // ${DSH_FILE_DROP_RESEARCH_CANVAS_MARKER}
         const isResearchCanvasEvent = (e) => {
@@ -69,10 +88,16 @@ export function patchDshFileDropClientSource(source: string): string | undefined
           return true
         }`
 
-  const patched = source
-    .replace(hasFiles, researchOwnership)
-    .replaceAll(ORIGINAL_FILE_GUARD, RESEARCH_FILE_GUARD)
-    .replace(ORIGINAL_LEAVE_START, RESEARCH_LEAVE_START)
+  const researchCompatible = pristine
+    ? source
+        .replace(hasFiles, researchOwnership)
+        .replaceAll(ORIGINAL_FILE_GUARD, RESEARCH_FILE_GUARD)
+        .replace(ORIGINAL_LEAVE_START, RESEARCH_LEAVE_START)
+    : source
+  const patched = researchCompatible.replace(
+    ORIGINAL_APPEND_HELPER,
+    INLINE_REFERENCE_APPEND_HELPER
+  )
   return sourceIdentity(patched) === PATCHED_CLIENT_SHA256 ? patched : undefined
 }
 
@@ -196,7 +221,10 @@ export async function ensureDshFileDropResearchCanvasCompatibility(
   if (identity === PATCHED_CLIENT_SHA256) {
     return { status: 'already-compatible', clientPath }
   }
-  if (identity !== PRISTINE_CLIENT_SHA256) {
+  if (
+    identity !== PRISTINE_CLIENT_SHA256 &&
+    identity !== LEGACY_PATCHED_CLIENT_SHA256
+  ) {
     return {
       status: 'unsupported',
       clientPath,
