@@ -5641,6 +5641,126 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('keeps canvas-selected Research tags provisional until the user clicks the editable composer', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow,
+      exposeInputBar: true,
+      modules: {
+        '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore },
+        '@deepseek-ai/dsh-client-ui-primitives': {
+          Tooltip: ({ children }: { children: unknown }) => children,
+          IconPaperclipOutline16: () => createElement('span', { 'data-paperclip-icon': '' })
+        },
+        '@deepseek-ai/dsh-client-ui-attachment': {
+          DropOverlay: () => null,
+          AttachmentRail: () => null
+        }
+      }
+    })
+    const InputBar = client.__testInputBar as ComponentType<Record<string, unknown>>
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    expect(InputBar).toBeTypeOf('function')
+    expect(SessionInputShell).toBeTypeOf('function')
+    if (typeof InputBar !== 'function' || typeof SessionInputShell !== 'function') {
+      restoreGlobals()
+      return
+    }
+
+    const file = {
+      id: 'provisional-file', path: '/workspace/selection.pdf', name: 'selection.pdf',
+      source: 'computer'
+    }
+    const artifact = {
+      id: 'provisional-artifact', messageId: 'message-selection', title: '助手回复',
+      excerpt: '这段结论需要重点引用。'
+    }
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    shell.setDraft('继续分析')
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const render = async (selected: boolean) => {
+      const props: Record<string, unknown> = {
+        useSession: (select: (state: Record<string, unknown>) => unknown) => select({
+          running: false, promptError: null, subagent: null, removed: false
+        }),
+        useInput: (select: (state: Record<string, unknown>) => unknown) =>
+          useSyncExternalStore(
+            shell.state.subscribe,
+            () => select(shell.snapshot),
+            () => select(shell.snapshot)
+          ),
+        inputActions: { pruneImages: () => undefined, submit: () => undefined },
+        keyboard: shell,
+        renderSlot: () => null,
+        useNotices: (select: (state: null) => unknown) => select(null),
+        useLexicon: (select: (state: Map<string, string[]>) => unknown) => select(new Map()),
+        useMenuLauncher: (select: (state: null) => unknown) => select(null),
+        useProjection: (_name: string, select?: (value: undefined) => unknown) =>
+          select === undefined ? undefined : select(undefined),
+        researchFileReferences: selected ? [file] : [],
+        researchArtifactReferences: selected ? [artifact] : [],
+        sessionId: 'provisional-tag-session',
+        t: (key: string) => key,
+        variant: 'composer'
+      }
+      await act(async () => {
+        root.render(createElement(InputBar, props))
+        await Promise.resolve()
+      })
+    }
+
+    try {
+      await render(true)
+      const provisionalFile = host.querySelector(
+        '[data-research-file-tag="provisional-file"]'
+      ) as HappyDOMElement | null
+      const provisionalArtifact = host.querySelector(
+        '[data-research-artifact-tag="provisional-artifact"]'
+      ) as HappyDOMElement | null
+      expect(provisionalFile).not.toBeNull()
+      expect(provisionalArtifact).not.toBeNull()
+      if (provisionalFile === null || provisionalArtifact === null) return
+      expect(provisionalFile.getAttribute('data-provisional')).toBe('true')
+      expect(provisionalArtifact.getAttribute('data-provisional')).toBe('true')
+      expect(Number(browserWindow.getComputedStyle(provisionalFile).opacity)).toBe(0.52)
+
+      await render(false)
+      expect(host.querySelector('[data-research-file-tag]')).toBeNull()
+      expect(host.querySelector('[data-research-artifact-tag]')).toBeNull()
+      expect(shell.snapshot.draft).toBe('继续分析')
+
+      await render(true)
+      const textarea = host.querySelector('textarea') as HappyDOMElement | null
+      expect(textarea).not.toBeNull()
+      if (textarea === null) return
+      await act(async () => {
+        textarea.dispatchEvent(new browserWindow.MouseEvent('click', {
+          bubbles: true, cancelable: true, clientX: 0, clientY: 0, detail: 1
+        }))
+        await Promise.resolve()
+      })
+
+      expect(host.querySelector('[data-research-file-tag]')?.getAttribute('data-provisional'))
+        .toBeNull()
+      expect(host.querySelector('[data-research-artifact-tag]')?.getAttribute('data-provisional'))
+        .toBeNull()
+
+      await render(false)
+      expect(host.querySelector('[data-research-file-tag="provisional-file"]')).not.toBeNull()
+      expect(host.querySelector(
+        '[data-research-artifact-tag="provisional-artifact"]'
+      )).not.toBeNull()
+    } finally {
+      await act(async () => { root.unmount() })
+      host.remove()
+      restoreGlobals()
+    }
+  })
+
   it('rerenders a renamed selected Research tag in place without moving the caret', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
