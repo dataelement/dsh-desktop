@@ -1064,6 +1064,14 @@ describe('Research canvas file drops', () => {
       .for('rename-session').getSnapshot().artifacts[0]).toMatchObject({
         id: 'artifact-1', title: '结论摘要'
       })
+
+    expect(workspace.updateArtifactContent('artifact-1', '# 修订结论\n\n- 第一条')).toBe(true)
+    expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe('# 修订结论\n\n- 第一条')
+    expect(new client.ResearchWorkspaceRegistry(storage)
+      .for('rename-session').getSnapshot().artifacts[0]?.excerpt)
+      .toBe('# 修订结论\n\n- 第一条')
+    expect(workspace.updateArtifactContent('artifact-1', '  \n\t ')).toBe(false)
+    expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe('# 修订结论\n\n- 第一条')
   })
 
   it('restores no more than the bounded session node count', async () => {

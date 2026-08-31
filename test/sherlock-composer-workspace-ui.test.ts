@@ -5704,6 +5704,100 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('edits assistant reply content from the canvas context menu and persists Markdown', async () => {
+    const storage = new MemoryStorage()
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-edit-assistant-content',
+      storage,
+      artifacts: [{
+        id: 'artifact-a', kind: 'assistant-result', messageId: 'm1',
+        title: '助手回复', excerpt: '# 原结论\n\n原始内容', x: 500, y: 180
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const body = host.querySelector('[data-research-artifact-content]')
+      expect(body).not.toBeNull()
+      if (body === null) return
+      await act(async () => {
+        body.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 260, clientY: 180
+        }))
+      })
+      const edit = host.querySelector('[data-research-context-edit-content]')
+      expect(edit?.textContent).toBe('编辑内容')
+      await act(async () => { click(browserWindow, edit) })
+
+      const editor = host.querySelector(
+        '[data-research-content-input="artifact-a"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(editor)
+      if (editor === null) return
+      const revised = '# 新结论\n\n- 支持删改\n- 保留 Markdown'
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, revised)
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', metaKey: true, bubbles: true, cancelable: true
+        }))
+      })
+
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe(revised)
+      expect(JSON.parse(storage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-edit-assistant-content'
+      ) ?? '[]')[0]?.excerpt).toBe(revised)
+      expect(host.querySelector('[data-research-content-input]')).toBeNull()
+      expect(host.querySelector('[data-research-artifact-content]')?.textContent)
+        .toContain('支持删改')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('opens assistant reply editing by double-clicking its body and cancels with Escape', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-cancel-assistant-content',
+      artifacts: [{
+        id: 'artifact-a', kind: 'assistant-result', messageId: 'm1',
+        title: '助手回复', excerpt: '保留原内容', x: 500, y: 180
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const body = host.querySelector('[data-research-artifact-content]')
+      expect(body).not.toBeNull()
+      if (body === null) return
+      await act(async () => {
+        body.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-content-input="artifact-a"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      if (editor === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, '不应保存')
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+        }))
+        editor.blur()
+      })
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe('保留原内容')
+      expect(workspace.getSnapshot().pendingMessageJump).toBeNull()
+      expect(host.querySelector('[data-research-content-input]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('owns accepted drops at the canvas root and restores their cards by session', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
@@ -7513,6 +7607,15 @@ describe('Sherlock workspace and composer controls', () => {
         '[data-research-artifact-tag="assistant-result-composer"]'
       )
       expect(tag?.textContent).toBe('助手回复 · 行业景气度正在回升。')
+      await act(async () => {
+        workspace.updateArtifactContent(
+          'assistant-result-composer',
+          '行业景气度已经确认回升。'
+        )
+      })
+      expect(browserWindow.document.querySelector(
+        '[data-research-artifact-tag="assistant-result-composer"]'
+      )?.textContent).toBe('助手回复 · 行业景气度已经确认回升。')
     } finally {
       await mounted.cleanup()
     }
@@ -7682,7 +7785,8 @@ describe('Sherlock workspace and composer controls', () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
     const primitives = {
-      Tooltip: ({ children }: { children: unknown }) => children
+      Tooltip: ({ children }: { children: unknown }) => children,
+      IconPaperclipOutline16: () => null
     }
     const attachments = {
       DropOverlay: () => null,
@@ -7706,10 +7810,23 @@ describe('Sherlock workspace and composer controls', () => {
     const host = browserWindow.document.createElement('div')
     browserWindow.document.body.appendChild(host)
     const root = createRoot(host)
+    const referenceFiles = Array.from({ length: 4 }, (_, index) => ({
+      id: `measure-file-${index + 1}`,
+      path: `/w/measure-${index + 1}.pdf`,
+      name: `measure-${index + 1}.pdf`
+    }))
+    const referencePrefix = '第一行\n'
     const inputState = {
-      draft: '第一行\\n第二行',
+      draft: `${referencePrefix}${'\uFFFC'.repeat(referenceFiles.length)}第二行`,
       imageIds: [],
-      occurrences: [],
+      occurrences: referenceFiles.map((file, index) => ({
+        occurrenceId: `measure-occurrence-${index + 1}`,
+        offset: referencePrefix.length + index,
+        source: 'research-file',
+        ref: JSON.stringify(file),
+        label: file.name,
+        clipboardText: file.name
+      })),
       phase: 'idle',
       queue: []
     }
@@ -7722,7 +7839,11 @@ describe('Sherlock workspace and composer controls', () => {
       }),
       useInput: (select: (state: typeof inputState) => unknown) => select(inputState),
       inputActions: {},
-      keyboard: { snapshot: inputState },
+      keyboard: {
+        snapshot: inputState,
+        updateResearchReferenceOccurrences: () => false
+      },
+      researchFileReferences: referenceFiles,
       renderSlot: () => null,
       useNotices: (select: (state: null) => unknown) => select(null),
       useLexicon: (select: (state: Record<string, unknown>) => unknown) => select({}),
@@ -7766,6 +7887,14 @@ describe('Sherlock workspace and composer controls', () => {
       expect(mirrorStyle.paddingBottom).toBe('8px')
       expect(sharedStyle.paddingLeft).toBe(textareaStyle.paddingLeft)
       expect(sharedStyle.paddingRight).toBe(textareaStyle.paddingRight)
+      const measureChips = mirrorLayer.querySelectorAll('[data-input-measure-chip]')
+      expect(backdropLayer.querySelectorAll('[data-research-file-tag]')).toHaveLength(4)
+      expect(measureChips).toHaveLength(4)
+      expect(Array.from(measureChips).map((chip) =>
+        browserWindow.getComputedStyle(chip).width
+      )).toEqual(['136px', '136px', '136px', '136px'])
+      expect(mirrorLayer.querySelector('[data-research-file-tag]')).toBeNull()
+      expect(mirrorLayer.querySelector('[data-research-artifact-tag]')).toBeNull()
 
       await act(async () => {
         root.render(createElement(InputBar, { ...baseProps, variant: 'hero' }))
