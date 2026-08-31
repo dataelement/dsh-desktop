@@ -49,6 +49,51 @@
 
 final result: passed
 
+## 研究画布选中内容生成工具栏 QA（2026-08-31）
+
+### 比较证据
+
+- Source visual truth: `/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-2b9becae-be06-4343-bfce-365bbc4b02e4.png`，556 × 328 px。
+- Rendered implementation: `/tmp/sherlock-research-selection-toolbar-final-622d9ccc.jpeg`，1178 × 768 px；真实本地包 `/Users/heyafeng/Documents/ChatGPT/dsh/.worktrees/integration-20260831-03/dist-notarized/mac-arm64/Sherlock.app`，集成提交 `622d9ccc6f1b97d273492207aecdb3ffd65a73ec`，版本 0.7.5。
+- Viewport: Sherlock 标准窗口 1178 × 768 CSS px；系统截图为 1178 × 768 px，device density normalization 为 1:1。参考图没有可验证的 CSS viewport，因此只比较组件结构、位置、密度、字体层级、图标风格和表面处理，不虚构逐像素比例结论。
+- State: Research 深色主题；一个完整可见的 PDF 组件处于选中状态，工具栏位于选择框上方。参考图为浅色主题且包含更多通用画布操作；本实现按用户范围只预置“生成思维导图”“总结提炼”。
+- Full-view comparison: 参考图与实机图已在同一比较输入中以原始分辨率并列检查。实机保留右侧共享对话区、点阵画布和选中描边；工具栏没有挤压或遮挡持久控件。
+- Focused-region comparison: 未另做裁切。两张原始图中的工具栏文字、16 px 图标、边框、圆角、间距和阴影均可直接辨认，继续裁切不会增加判断信息。
+
+### Findings
+
+- 没有残留 P0/P1/P2。工具栏以 42 px 高、13 px 圆角、细边框和轻阴影呈现，中心对齐在选区上方；两个操作均使用 Sherlock 现有图标库与字体 token。深色实现与浅色参考的色面差异来自当前用户主题，语义层级和对比度一致。
+- 字体与排版：13 px 强调字重、图文 6 px 间距，两个中文标签完整显示，无截断、异常换行或字重漂移。
+- 间距与布局：工具栏与选择框保持约 8–10 px 间隔；滚动画布后继续跟随选区。选区贴近或越出视口上缘时，工具栏会优先保持可见，这是有意的边界约束，不作为与完整可见参考状态的视觉偏差。
+- 颜色与 token：深色背景、悬浮表面、边框、文本和蓝色选中描边均复用现有 Sherlock token；未引入第二套颜色体系。
+- 图像与资产：本功能没有新增产品图像；两个图标使用 `IconBranchOutline16` 和 `IconListPenOutline16`，没有自绘 SVG、Emoji 或占位资产。
+- 文案与内容：“生成思维导图”“总结提炼”与用户指定文案一致；`aria-label` 与可见文本一致。
+
+### Open Questions
+
+- 无。参考图中的其他通用操作不在本次范围内，未复制到 Sherlock。
+
+### Implementation Checklist
+
+- [x] 单选组件后显示工具栏；点击画布空白处后隐藏。
+- [x] 框选多组件、选择包围盒与工具栏显隐由聚焦 DOM 测试覆盖。
+- [x] 两项操作进入现有会话队列且不替换未发送草稿。
+- [x] 加载、完成、失败、原位重试和重启中断恢复均由聚焦测试覆盖。
+- [x] 思维导图层级节点/连接结构和总结富文本渲染均由聚焦测试覆盖。
+- [x] 本地包校验、Developer ID 签名和真实 Sherlock 主界面检查通过；明确跳过 Apple 公证、上传、版本变化和源码推送。
+
+### Comparison History
+
+- Pass 1: 初次实机捕获时选中组件本身越出画布上缘，工具栏按可见性约束落在组件可见区域内；该状态与参考图的完整可见选区不等价，没有据此提出错误的像素偏差。
+- Normalization: 通过画布滚动让同一组件完整进入视口，再次选择并捕获 `/tmp/sherlock-research-selection-toolbar-final-622d9ccc.jpeg`。
+- Pass 2: 在等价的完整可见选区状态下，未发现可操作 P0/P1/P2；没有因视觉比较而修改实现。
+
+### Follow-up Polish
+
+- 无阻塞项。若以后扩展第三个以上动作，可沿用同一高度和分组节奏，并在窄视口验证水平碰撞策略。
+
+final result: passed
+
 ## Research canvas visual components QA (2026-08-28)
 
 - Exact packaged app: `/Users/heyafeng/Documents/ChatGPT/dsh/.worktrees/research-canvas-file-drop/dist-notarized/mac-arm64/Sherlock.app` (`0.7.3`). The app was built and launched with `./script/build_and_run.sh --verify`; Apple notarization, uploads, the public update feed, version changes, tags, and pushes were intentionally skipped.
