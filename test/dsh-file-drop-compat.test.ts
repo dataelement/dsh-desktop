@@ -19,6 +19,7 @@ import {
 } from 'happy-dom'
 import {
   DSH_FILE_DROP_INLINE_REFERENCE_MARKER,
+  DSH_FILE_DROP_QUIET_SUCCESS_MARKER,
   DSH_FILE_DROP_RESEARCH_CANVAS_MARKER,
   ensureDshFileDropResearchCanvasCompatibility
 } from '../src/main/state/dsh-file-drop-compat'
@@ -183,6 +184,10 @@ describe('dsh-file-drop Research canvas compatibility', () => {
     const patched = await readFile(clientPath, 'utf8')
     expect(patched).toContain(DSH_FILE_DROP_RESEARCH_CANVAS_MARKER)
     expect(patched).toContain(DSH_FILE_DROP_INLINE_REFERENCE_MARKER)
+    expect(patched).toContain(DSH_FILE_DROP_QUIET_SUCCESS_MARKER)
+    expect(patched).not.toContain('✓ 已获取')
+    expect(patched).not.toContain('个文件已上传')
+    expect(patched).toContain("errs.length > 0 ? '✗ '")
     expect(await ensureDshFileDropResearchCanvasCompatibility(dshHome)).toEqual({
       status: 'already-compatible',
       clientPath
@@ -292,6 +297,24 @@ describe('dsh-file-drop Research canvas compatibility', () => {
         return
       }`,
       '      if (!inputActions) return'
+    ).replace(
+      `        // ${DSH_FILE_DROP_QUIET_SUCCESS_MARKER}
+        statusStore.set(null)`,
+      "        statusStore.set('✓ 已获取 ' + direct.length + ' 个原始路径（桌面壳）')"
+    ).replace(
+      `      const text = errs.length > 0 ? '✗ ' + errs.join('；') : ''
+      statusStore.set(text || null)`,
+      `      const text = [
+        ok.length > 0 ? '✓ ' + ok.length + ' 个文件已上传' : '',
+        errs.length > 0 ? '✗ ' + errs.join('；') : '',
+      ].filter(Boolean).join('　')
+      statusStore.set(text || '没有文件被处理')`
+    ).replace(
+      '          statusStore.set(null)',
+      "          statusStore.set('✓ 已获取 ' + shellPaths.length + ' 个原始路径（桌面壳）')"
+    ).replace(
+      '          statusStore.set(null)',
+      "          statusStore.set('✓ 已获取 ' + paths.length + ' 个文件路径')"
     )
     expect(legacy).not.toBe(current)
     await writeFile(clientPath, legacy, 'utf8')

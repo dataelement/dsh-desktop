@@ -16,8 +16,10 @@ const PRISTINE_CLIENT_SHA256 =
   '51260b81dcee8c091ab708698d9c247b190d3e3b9884e930ad9e3742cb7c6377'
 const LEGACY_PATCHED_CLIENT_SHA256 =
   'ef70d5f01c43a4a2451e46f6ef01eea8614a838a043a9eabe8a5e5597bf4ca77'
-const PATCHED_CLIENT_SHA256 =
+const INLINE_REFERENCE_PATCHED_CLIENT_SHA256 =
   'c8e269525a469cb1733a8318ab429be3152835997c828eabc5568c07c2044cdf'
+const PATCHED_CLIENT_SHA256 =
+  '333b2a3b543af91176cd5ff7d56163290d15b84861fbd6dcc59d45c24c18e1c9'
 const ORIGINAL_FILE_GUARD = '          if (!hasFiles(e)) return'
 const RESEARCH_FILE_GUARD =
   '          if (!hasFiles(e) || releaseResearchCanvasEvent(e)) return'
@@ -39,10 +41,30 @@ const INLINE_REFERENCE_APPEND_HELPER = `    function appendToDraft(inputActions,
         return
       }
       const lines = paths.map((p) => '📎 文件：\`' + p + '\`')`
+const DIRECT_PATH_SUCCESS =
+  "        statusStore.set('✓ 已获取 ' + direct.length + ' 个原始路径（桌面壳）')"
+const QUIET_DIRECT_PATH_SUCCESS = `        // Sherlock dsh-file-drop compatibility: hide transient success notices.
+        statusStore.set(null)`
+const UPLOAD_STATUS_BLOCK = `      const text = [
+        ok.length > 0 ? '✓ ' + ok.length + ' 个文件已上传' : '',
+        errs.length > 0 ? '✗ ' + errs.join('；') : '',
+      ].filter(Boolean).join('　')
+      statusStore.set(text || '没有文件被处理')`
+const QUIET_UPLOAD_STATUS_BLOCK = `      const text = errs.length > 0 ? '✗ ' + errs.join('；') : ''
+      statusStore.set(text || null)`
+const SHELL_DROP_SUCCESS =
+  "          statusStore.set('✓ 已获取 ' + shellPaths.length + ' 个原始路径（桌面壳）')"
+const QUIET_SHELL_DROP_SUCCESS = '          statusStore.set(null)'
+const URI_DROP_SUCCESS =
+  "          statusStore.set('✓ 已获取 ' + paths.length + ' 个文件路径')"
+const QUIET_URI_DROP_SUCCESS = '          statusStore.set(null)'
+const QUIET_SUCCESS_MARKER =
+  'Sherlock dsh-file-drop compatibility: hide transient success notices.'
 
 export const DSH_FILE_DROP_RESEARCH_CANVAS_MARKER =
   'Sherlock dsh-file-drop compatibility: Research owns its canvas path.'
 export const DSH_FILE_DROP_INLINE_REFERENCE_MARKER = INLINE_REFERENCE_MARKER
+export const DSH_FILE_DROP_QUIET_SUCCESS_MARKER = QUIET_SUCCESS_MARKER
 
 export type DshFileDropCompatibilityResult =
   | { status: 'not-installed'; clientPath: string }
@@ -63,8 +85,11 @@ export function patchDshFileDropClientSource(source: string): string | undefined
   if (identity === PATCHED_CLIENT_SHA256) return source
   const pristine = identity === PRISTINE_CLIENT_SHA256
   const legacyPatched = identity === LEGACY_PATCHED_CLIENT_SHA256
-  if (!pristine && !legacyPatched) return undefined
-  if (occurrenceCount(source, ORIGINAL_APPEND_HELPER) !== 1) return undefined
+  const inlineReferencePatched = identity === INLINE_REFERENCE_PATCHED_CLIENT_SHA256
+  if (!pristine && !legacyPatched && !inlineReferencePatched) return undefined
+  if (!inlineReferencePatched && occurrenceCount(source, ORIGINAL_APPEND_HELPER) !== 1) {
+    return undefined
+  }
 
   const hasFiles =
     "        const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')"
@@ -94,10 +119,20 @@ export function patchDshFileDropClientSource(source: string): string | undefined
         .replaceAll(ORIGINAL_FILE_GUARD, RESEARCH_FILE_GUARD)
         .replace(ORIGINAL_LEAVE_START, RESEARCH_LEAVE_START)
     : source
-  const patched = researchCompatible.replace(
-    ORIGINAL_APPEND_HELPER,
-    INLINE_REFERENCE_APPEND_HELPER
-  )
+  const inlineCompatible = inlineReferencePatched
+    ? researchCompatible
+    : researchCompatible.replace(ORIGINAL_APPEND_HELPER, INLINE_REFERENCE_APPEND_HELPER)
+  if (
+    occurrenceCount(inlineCompatible, DIRECT_PATH_SUCCESS) !== 1 ||
+    occurrenceCount(inlineCompatible, UPLOAD_STATUS_BLOCK) !== 1 ||
+    occurrenceCount(inlineCompatible, SHELL_DROP_SUCCESS) !== 1 ||
+    occurrenceCount(inlineCompatible, URI_DROP_SUCCESS) !== 1
+  ) return undefined
+  const patched = inlineCompatible
+    .replace(DIRECT_PATH_SUCCESS, QUIET_DIRECT_PATH_SUCCESS)
+    .replace(UPLOAD_STATUS_BLOCK, QUIET_UPLOAD_STATUS_BLOCK)
+    .replace(SHELL_DROP_SUCCESS, QUIET_SHELL_DROP_SUCCESS)
+    .replace(URI_DROP_SUCCESS, QUIET_URI_DROP_SUCCESS)
   return sourceIdentity(patched) === PATCHED_CLIENT_SHA256 ? patched : undefined
 }
 
@@ -223,7 +258,8 @@ export async function ensureDshFileDropResearchCanvasCompatibility(
   }
   if (
     identity !== PRISTINE_CLIENT_SHA256 &&
-    identity !== LEGACY_PATCHED_CLIENT_SHA256
+    identity !== LEGACY_PATCHED_CLIENT_SHA256 &&
+    identity !== INLINE_REFERENCE_PATCHED_CLIENT_SHA256
   ) {
     return {
       status: 'unsupported',

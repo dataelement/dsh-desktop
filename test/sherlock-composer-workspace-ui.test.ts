@@ -5178,7 +5178,7 @@ describe('Sherlock workspace and composer controls', () => {
       '/Users/test/Documents/董事会材料.pptx'
     ])
 
-    expect(shell.snapshot.draft).toBe('请分析\n\uFFFC \uFFFC ')
+    expect(shell.snapshot.draft).toBe('请分析 \uFFFC \uFFFC ')
     expect(shell.snapshot.occurrences).toMatchObject([
       {
         source: 'chat-file',
@@ -5527,7 +5527,7 @@ describe('Sherlock workspace and composer controls', () => {
     expect(shell.snapshot.occurrences).toEqual(before.occurrences)
   })
 
-  it('draws the selected inline Research tag with the business-primary outline', async () => {
+  it('lets Chat file tags receive pointer events and draws selected file tags with the business-primary outline', async () => {
     const styles: InjectedStyle[] = []
     await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
     const inputBarCss = styles.find(({ pluginCss }) =>
@@ -5536,6 +5536,12 @@ describe('Sherlock workspace and composer controls', () => {
 
     expect(inputBarCss).toContain(
       '.uV2eYG_chip[data-reference-source=research-file][data-selected=true]{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-1px}'
+    )
+    expect(inputBarCss).toContain(
+      '.uV2eYG_chip[data-reference-source=chat-file]{pointer-events:auto;cursor:grab;z-index:2}'
+    )
+    expect(inputBarCss).toContain(
+      '.uV2eYG_chip[data-reference-source=chat-file][data-selected=true]{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-1px}'
     )
   })
 
