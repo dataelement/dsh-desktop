@@ -83,7 +83,7 @@ function validateFile(value, index) {
   const change = object(value, `files[${index}]`)
   exactKeys(change, `files[${index}]`, ['status', 'path', 'previousPath'])
   const status = string(change.status, `files[${index}].status`)
-  const renameOrCopy = /^([RC])(\d{1,3})?$/.exec(status)
+  const renameOrCopy = /^([RC])(\d{1,3})$/.exec(status)
   const ordinaryStatus = /^[ADMTUXB]$/.test(status)
   if (!ordinaryStatus && (!renameOrCopy || (renameOrCopy[2] && Number(renameOrCopy[2]) > 100))) {
     fail(`files[${index}].status 无效。`)

@@ -251,12 +251,20 @@ describe('feature session handoffs', () => {
       expect(() => validateFeatureHandoff({ ...value, files: [{ status: 'M', path: unsafePath }] })).toThrow(/路径|path/)
     }
     expect(() => validateFeatureHandoff({ ...value, files: [{ status: 'R101', path: 'src/new.ts', previousPath: 'src/old.ts' }] })).toThrow(/status|状态/)
+    for (const status of ['R', 'C']) {
+      expect(() => validateFeatureHandoff({ ...value, files: [{ status, path: 'src/new.ts', previousPath: 'src/old.ts' }] })).toThrow(/status|状态/)
+    }
     expect(() => validateFeatureHandoff({ ...value, files: [{ status: 'M', path: 'src/file.ts', previousPath: 'src/old.ts' }] })).toThrow(/previousPath|路径/)
     expect(() => validateFeatureHandoff({ ...value, checks: [{ ...value.checks[0], argv: ['npm', 'run\u0000typecheck'] }] })).toThrow(/argv|参数/)
     expect(() => validateFeatureHandoff({ ...value, checks: [{ ...value.checks[0], command: 'npm test' }] })).toThrow(/未知字段|command|字段/)
     expect(validateFeatureHandoff({ ...value, files: [{ status: 'C100', path: 'src/copied.ts', previousPath: 'src/source.ts' }] }).files).toEqual([
       { status: 'C100', path: 'src/copied.ts', previousPath: 'src/source.ts' }
     ])
+    for (const status of ['R0', 'R100', 'C0', 'C100']) {
+      expect(validateFeatureHandoff({ ...value, files: [{ status, path: 'src/new.ts', previousPath: 'src/old.ts' }] }).files).toEqual([
+        { status, path: 'src/new.ts', previousPath: 'src/old.ts' }
+      ])
+    }
   })
 
   it('fails closed when metadata access dirties the feature worktree after the initial status check', () => {
