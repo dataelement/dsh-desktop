@@ -7818,12 +7818,13 @@ describe('Sherlock workspace and composer controls', () => {
       name: `measure-${index + 1}.pdf`
     }))
     const referencePrefix = '第一行\n'
+    const referenceGap = ' '
     const inputState = {
-      draft: `${referencePrefix}${'\uFFFC'.repeat(referenceFiles.length)}第二行`,
+      draft: `${referencePrefix}${referenceFiles.map(() => '\uFFFC').join(referenceGap)}第二行`,
       imageIds: [],
       occurrences: referenceFiles.map((file, index) => ({
         occurrenceId: `measure-occurrence-${index + 1}`,
-        offset: referencePrefix.length + index,
+        offset: referencePrefix.length + index * 2,
         source: 'research-file',
         ref: JSON.stringify(file),
         label: file.name,
@@ -7923,6 +7924,35 @@ describe('Sherlock workspace and composer controls', () => {
       expect(firstTag.previousElementSibling).toBe(visibleCaret)
       expect(browserWindow.getComputedStyle(visibleCaret as HappyDOMElement).width)
         .toBe('0px')
+
+      const secondTag = backdropLayer.querySelector(
+        '[data-research-file-tag="measure-file-2"]'
+      )
+      const gapSegment = firstTag.nextElementSibling
+      expect(secondTag).not.toBeNull()
+      expect(gapSegment?.textContent).toBe(referenceGap)
+      const gapTextNode = gapSegment?.firstChild
+      expect(gapTextNode).not.toBeNull()
+      if (secondTag === null || gapTextNode === null || gapTextNode === undefined) return
+      Object.defineProperty(browserWindow.document, 'caretPositionFromPoint', {
+        configurable: true,
+        value: () => ({ offsetNode: gapTextNode, offset: 1 })
+      })
+      textarea.setSelectionRange(inputState.draft.length, inputState.draft.length)
+      await act(async () => {
+        textarea.dispatchEvent(new browserWindow.MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 240,
+          clientY: 32,
+          detail: 1
+        }))
+      })
+      expect(textarea.selectionStart).toBe(referencePrefix.length + 2)
+      expect(textarea.selectionEnd).toBe(referencePrefix.length + 2)
+      expect(firstTag.getAttribute('data-selected')).toBeNull()
+      expect(secondTag.previousElementSibling?.hasAttribute('data-input-visible-caret'))
+        .toBe(true)
 
       await act(async () => {
         root.render(createElement(InputBar, { ...baseProps, variant: 'hero' }))
