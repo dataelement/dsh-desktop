@@ -6278,6 +6278,42 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('offers a bottom-center return control when the Research viewport has no components', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-return-to-content',
+      viewport: { scale: 1, x: 0, y: 0 },
+      files: [{
+        id: 'file-far', path: '/w/far.pptx', name: 'far.pptx', source: 'computer',
+        x: 3_000, y: 2_000, width: 480, height: 360, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      await act(async () => {
+        workspace.setCanvasSize({ width: 800, height: 600 })
+      })
+
+      const notice = host.querySelector('[data-research-empty-viewport]')
+      const button = host.querySelector('[data-research-return-to-content]')
+      expect(notice?.textContent).toContain('视口内无内容')
+      expect(button?.textContent).toBe('回到内容')
+      expect(button).not.toBeNull()
+      if (button === null) return
+
+      await act(async () => {
+        button.dispatchEvent(new browserWindow.MouseEvent('click', {
+          bubbles: true, cancelable: true
+        }))
+      })
+
+      expect(workspace.getSnapshot().viewport)
+        .toEqual({ scale: 0.8, x: -2_000, y: -1_300 })
+      expect(host.querySelector('[data-research-empty-viewport]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('supports Command-toggle, Shift-add, blank clear, and Escape clear', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-selection-modes',

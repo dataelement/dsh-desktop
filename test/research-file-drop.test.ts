@@ -226,6 +226,66 @@ describe('Research canvas file drops', () => {
     expect(node).toMatchObject({ x: 1_100, y: 300, width: 320, height: 272 })
   })
 
+  it('keeps pointer-anchored Research zoom available down to 20 percent', async () => {
+    const client = await loadConversationClient()
+    expect(client.nextResearchCanvasViewport).toBeTypeOf('function')
+    if (typeof client.nextResearchCanvasViewport !== 'function') return
+
+    const zoomed = client.nextResearchCanvasViewport(
+      { scale: 1, x: 40, y: -20 },
+      { metaKey: true, deltaY: 10_000, pointerX: 300, pointerY: 200 }
+    )
+
+    expect(zoomed.scale).toBe(0.2)
+    expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(260, 8)
+    expect((200 - zoomed.y) / zoomed.scale).toBeCloseTo(220, 8)
+  })
+
+  it('reports an empty Research viewport only when every component is outside it', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchCanvasHasVisibleNodes).toBeTypeOf('function')
+    if (typeof client.researchCanvasHasVisibleNodes !== 'function') return
+    const nodes = [
+      { id: 'near', name: 'near.pdf', source: 'computer', x: 100, y: 100 },
+      { id: 'far', name: 'far.pdf', source: 'computer', x: 2_000, y: 2_000 }
+    ]
+    const canvasSize = { width: 800, height: 600 }
+
+    expect(client.researchCanvasHasVisibleNodes(
+      nodes, { scale: 1, x: 0, y: 0 }, canvasSize
+    )).toBe(true)
+    expect(client.researchCanvasHasVisibleNodes(
+      nodes, { scale: 1, x: -4_000, y: -4_000 }, canvasSize
+    )).toBe(false)
+    expect(client.researchCanvasHasVisibleNodes(
+      [], { scale: 1, x: -4_000, y: -4_000 }, canvasSize
+    )).toBe(false)
+  })
+
+  it('returns to the nearest Research component with a moderate zoom instead of fitting all', async () => {
+    const client = await loadConversationClient()
+    expect(client.researchCanvasReturnViewport).toBeTypeOf('function')
+    if (typeof client.researchCanvasReturnViewport !== 'function') return
+    const nodes = [
+      {
+        id: 'nearest', name: 'nearest.pptx', source: 'computer', x: 3_000, y: 2_000,
+        width: 480, height: 360, sizeMode: 'manual'
+      },
+      {
+        id: 'distant', name: 'distant.pptx', source: 'computer', x: -5_000, y: -5_000,
+        width: 480, height: 360, sizeMode: 'manual'
+      }
+    ]
+    const canvasSize = { width: 800, height: 600 }
+
+    expect(client.researchCanvasReturnViewport(
+      nodes, { scale: 1, x: -2_500, y: -1_700 }, canvasSize
+    )).toEqual({ scale: 0.8, x: -2_000, y: -1_300 })
+    expect(client.researchCanvasReturnViewport(
+      nodes, { scale: 0.5, x: -2_500, y: -1_700 }, canvasSize
+    )).toEqual({ scale: 0.5, x: -1_100, y: -700 })
+  })
+
   it('normalizes natural image ratio against the existing 32px titled-frame geometry', async () => {
     const client = await loadConversationClient()
     expect(client.researchImageGeometryForNaturalSize).toBeTypeOf('function')
