@@ -118,6 +118,11 @@ describe('Sherlock bundled Office preview adapter', () => {
     const patched = patchSherlockOfficePreviewClient(source)
 
     expect(patchSherlockOfficePreviewClient(patched)).toBe(patched)
+    const previousResearchAdapter = patched.replace(
+      '...(kind === "pptx" ? { toolbar: "host" } : {})',
+      '...(kind === "pptx" ? { toolbar: "inline" } : {})'
+    )
+    expect(patchSherlockOfficePreviewClient(previousResearchAdapter)).toBe(patched)
     expect(patched).toContain('/* sherlock:office-preview-service:v1 */')
     expect(patched).toContain('ctx.provide("officePreview", officePreviewService)')
     expect(patched).toContain('ctx.inject(["betterSidebar"]')
@@ -166,6 +171,18 @@ describe('Sherlock bundled Office preview adapter', () => {
       const fallback = service.Component({ sourceUrl, kind: 'docx', title: 'report.docx' })
       expect(fallback.props['data-sherlock-office-preview-unavailable']).toBe('')
     }
+  })
+
+  it('suppresses the built-in PPT download toolbar in the Research adapter', async () => {
+    const client = await loadPatchedOfficeClient()
+    const element = client.officePreviewService.Component({
+      sourceUrl: 'sherlock-preview://capability_pptx/',
+      kind: 'pptx',
+      title: 'research.pptx'
+    })
+
+    expect(element.type.name).toBe('PptxView')
+    expect(element.props.toolbar).toBe('host')
   })
 
   it('provides the adapter without Better Sidebar and registers the legacy viewers when it appears', async () => {

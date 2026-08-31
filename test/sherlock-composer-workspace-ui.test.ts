@@ -315,6 +315,7 @@ async function mountConversationRoot(
       assistantActionsActive(): boolean
       removeSelectedFile(fileId: string): void
       setArtifacts(artifacts: Array<Record<string, unknown>>): void
+      setSelection(selection: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
       setViewport(viewport: { scale: number; x: number; y: number }): void
       setCanvasSize(size: { width: number; height: number }): void
     }
@@ -520,10 +521,18 @@ async function mountConversationRoot(
         accessory?: unknown
         overlay?: unknown
         researchFileReferences?: Array<{ id: string; name: string; path?: string }>
+        researchArtifactReferences?: Array<{
+          id: string
+          messageId: string
+          title: string
+          excerpt: string
+          label: string
+        }>
         footer?: unknown
         variant?: 'hero' | 'composer'
       } | undefined
       const references = composerOwner?.researchFileReferences ?? []
+      const artifactReferences = composerOwner?.researchArtifactReferences ?? []
       const draft = input.get().draft
       const rootClass = composerOwner?.variant === 'hero'
         ? 'uV2eYG_root uV2eYG_hero'
@@ -556,7 +565,12 @@ async function mountConversationRoot(
                       'data-research-file-tag': file.id,
                       'data-reference-source': 'research-file',
                       'aria-invalid': file.path === undefined ? 'true' : undefined
-                    }, file.name.split(/[\\/]/).at(-1)))
+                    }, file.name.split(/[\\/]/).at(-1))),
+                    ...artifactReferences.map((artifact) => createElement('span', {
+                      key: `${artifact.id}-${index}`,
+                      'data-research-artifact-tag': artifact.id,
+                      'data-reference-source': 'research-artifact'
+                    }, artifact.label))
                   ] : [])
                 ])
               ),
@@ -5029,6 +5043,84 @@ describe('Sherlock workspace and composer controls', () => {
     expect(html).not.toContain('SHERLOCK_RESEARCH_FILES_V1')
   })
 
+  it('serializes the complete selected assistant reply while projecting only its inline label', async () => {
+    const primitives = new Proxy({
+      MessageText: ({ text }: { text: string }) => createElement('span', null, text)
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const attachment = new Proxy({ ImageGallery: () => null }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: {
+        '@deepseek-ai/dsh-client-ui-primitives': primitives,
+        '@deepseek-ai/dsh-client-ui-attachment': attachment
+      }
+    })
+    expect(client.researchArtifactReference).toBeTypeOf('function')
+    expect(client.researchArtifactReferenceCodec).toBeTypeOf('object')
+    expect(client.extractResearchReferences).toBeTypeOf('function')
+    if (typeof client.researchArtifactReference !== 'function' ||
+        typeof client.extractResearchReferences !== 'function') return
+
+    const artifact = {
+      id: 'assistant-result-1',
+      messageId: 'message-1',
+      title: '助手回复',
+      excerpt: '营收同比增长 28%。\n第二段是完整分析。'
+    }
+    const reference = client.researchArtifactReference(artifact) as {
+      ref: string
+      label: string
+    }
+    expect(reference.label).toBe('助手回复 · 营收同比增长 28%。')
+    const marker = await (client.researchArtifactReferenceCodec as {
+      serialize(ref: string, signal: AbortSignal): Promise<string>
+    }).serialize(reference.ref, new AbortController().signal)
+    const extracted = client.extractResearchReferences(`重点分析${marker}的风险`) as {
+      text: string
+      files: unknown[]
+      occurrences: unknown[]
+      artifacts: Array<Record<string, string>>
+      artifactOccurrences: Array<{ artifactId: string; offset: number }>
+    }
+    expect(extracted).toMatchObject({
+      text: '重点分析的风险',
+      files: [],
+      occurrences: [],
+      artifacts: [artifact],
+      artifactOccurrences: [{ artifactId: artifact.id, offset: 4 }]
+    })
+    const prompt = (client.serializeResearchPrompt as (...args: unknown[]) => string)(
+      extracted.files,
+      extracted.text,
+      extracted.occurrences,
+      extracted.artifacts,
+      extracted.artifactOccurrences
+    )
+    const parsed = (client.parseResearchPrompt as (text: string) => Record<string, unknown>)(prompt)
+    expect(parsed).toMatchObject({
+      text: extracted.text,
+      artifacts: [artifact],
+      artifactOccurrences: extracted.artifactOccurrences
+    })
+
+    const html = renderToStaticMarkup(createElement(client.UserStyleBubble, {
+      content: [{ type: 'text', text: prompt }],
+      imageLoader: async () => '',
+      t: (key: string) => key
+    }))
+    expect(html).toContain('data-research-message-artifact="assistant-result-1"')
+    expect(html).toContain('助手回复 · 营收同比增长 28%。')
+    expect(html).not.toContain('第二段是完整分析')
+    expect(prompt).toContain('第二段是完整分析')
+  })
+
   it('moves inline Research tags through the composer clipboard without arrow controls', async () => {
     const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
       modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
@@ -5271,6 +5363,95 @@ describe('Sherlock workspace and composer controls', () => {
     expect(inputBarCss).toContain(
       '.uV2eYG_chip[data-reference-source=research-file][data-selected=true]{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-1px}'
     )
+  })
+
+  it('syncs a selected assistant reply into a removable inline tag without deleting its canvas node', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow,
+      exposeInputBar: true,
+      modules: {
+        '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore },
+        '@deepseek-ai/dsh-client-ui-primitives': {
+          Tooltip: ({ children }: { children: unknown }) => children,
+          IconPaperclipOutline16: () => createElement('span', { 'data-paperclip-icon': '' })
+        },
+        '@deepseek-ai/dsh-client-ui-attachment': {
+          DropOverlay: () => null,
+          AttachmentRail: () => null
+        }
+      }
+    })
+    const InputBar = client.__testInputBar as ComponentType<Record<string, unknown>>
+    const SessionInputShell = client.SessionInputShell as new (deps: Record<string, unknown>) => any
+    expect(InputBar).toBeTypeOf('function')
+    expect(SessionInputShell).toBeTypeOf('function')
+    if (typeof InputBar !== 'function' || typeof SessionInputShell !== 'function') {
+      restoreGlobals()
+      return
+    }
+    const artifact = {
+      id: 'assistant-result-tag', messageId: 'message-tag', title: '助手回复',
+      excerpt: '利润率提升，现金流同步改善。'
+    }
+    const canvasArtifacts = [artifact]
+    const shell = new SessionInputShell({ actx: {}, defaultSink: () => undefined })
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    const props: Record<string, unknown> = {
+      useSession: (select: (state: Record<string, unknown>) => unknown) => select({
+        running: false, promptError: null, subagent: null, removed: false
+      }),
+      useInput: (select: (state: Record<string, unknown>) => unknown) =>
+        useSyncExternalStore(
+          shell.state.subscribe,
+          () => select(shell.snapshot),
+          () => select(shell.snapshot)
+        ),
+      inputActions: { pruneImages: () => undefined, submit: () => undefined },
+      keyboard: shell,
+      renderSlot: () => null,
+      useNotices: (select: (state: null) => unknown) => select(null),
+      useLexicon: (select: (state: Map<string, string[]>) => unknown) => select(new Map()),
+      useMenuLauncher: (select: (state: null) => unknown) => select(null),
+      useProjection: (_name: string, select?: (value: undefined) => unknown) =>
+        select === undefined ? undefined : select(undefined),
+      researchFileReferences: [],
+      researchArtifactReferences: [artifact],
+      sessionId: 'artifact-tag-session',
+      t: (key: string) => key,
+      variant: 'composer'
+    }
+    try {
+      await act(async () => { root.render(createElement(InputBar, props)); await Promise.resolve() })
+      const tag = host.querySelector(
+        '[data-research-artifact-tag="assistant-result-tag"]'
+      ) as HappyDOMElement | null
+      const textarea = host.querySelector('textarea') as HappyDOMElement | null
+      expect(tag?.textContent).toBe('助手回复 · 利润率提升，现金流同步改善。')
+      expect(textarea).not.toBeNull()
+      if (tag === null || textarea === null) return
+
+      await act(async () => { click(browserWindow, tag) })
+      expect(tag.getAttribute('data-selected')).toBe('true')
+      await act(async () => {
+        textarea.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Backspace', code: 'Backspace', bubbles: true, cancelable: true
+        }))
+        await Promise.resolve()
+      })
+
+      expect(shell.snapshot.occurrences).toEqual([])
+      expect(host.querySelector('[data-research-artifact-tag]')).toBeNull()
+      expect(canvasArtifacts).toEqual([artifact])
+    } finally {
+      await act(async () => { root.unmount() })
+      host.remove()
+      restoreGlobals()
+    }
   })
 
   it('rerenders a renamed selected Research tag in place without moving the caret', async () => {
@@ -6363,21 +6544,20 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('lets interactive rich preview bodies own pointer events until Space-pan is active', async () => {
+  it('selects interactive rich preview bodies without stealing their pointer interactions', async () => {
     const mounted = await mountResearchCanvas({
       sessionId: 'session-rich-preview-ownership',
       files: [
         { id: 'html', path: '/w/model.html', name: 'model.html', mediaType: 'text/html', source: 'computer', x: 300, y: 220 }
       ],
-      selection: { selectedNodeIds: ['html'], orderedFileIds: ['html'] }
+      selection: { selectedNodeIds: [], orderedFileIds: [] }
     })
     try {
       const { browserWindow, canvas, host, workspace } = mounted
       const body = host.querySelector('[data-research-preview-body]')
-      const handle = host.querySelector('[data-research-resize-handle="se"]')
       expect(body).not.toBeNull()
-      expect(handle).not.toBeNull()
-      if (body === null || handle === null) return
+      expect(host.querySelector('[data-research-resize-handle="se"]')).toBeNull()
+      if (body === null) return
 
       let previewWheel: HappyDOMEvent | undefined
       await act(async () => {
@@ -6403,6 +6583,10 @@ describe('Sherlock workspace and composer controls', () => {
       expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual(['html'])
       expect(workspace.getSnapshot().files[0]).toMatchObject({ x: 300, y: 220 })
       expect(canvas.querySelector('[data-research-marquee]')).toBeNull()
+
+      const handle = host.querySelector('[data-research-resize-handle="se"]')
+      expect(handle).not.toBeNull()
+      if (handle === null) return
 
       ;(canvas as unknown as { focus(): void }).focus()
       await act(async () => {
@@ -7284,6 +7468,35 @@ describe('Sherlock workspace and composer controls', () => {
       await act(async () => { actions.setView('research') })
       expect(Array.from(tags()).map((tag) => tag.getAttribute('data-research-file-tag')))
         .toEqual(['file-b', 'file-a'])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('provides selected assistant replies to the Research composer as quote tags', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      const { browserWindow, workspace } = mounted
+      await act(async () => {
+        workspace.setArtifacts([{
+          id: 'assistant-result-composer',
+          kind: 'assistant-result',
+          messageId: 'message-composer',
+          title: '助手回复',
+          excerpt: '行业景气度正在回升。',
+          x: 300,
+          y: 180
+        }])
+        workspace.setSelection({
+          selectedNodeIds: ['assistant-result-composer'],
+          orderedFileIds: []
+        })
+      })
+
+      const tag = browserWindow.document.querySelector(
+        '[data-research-artifact-tag="assistant-result-composer"]'
+      )
+      expect(tag?.textContent).toBe('助手回复 · 行业景气度正在回升。')
     } finally {
       await mounted.cleanup()
     }

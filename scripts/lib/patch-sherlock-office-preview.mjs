@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const PATCH_MARKER = '/* sherlock:office-preview-service:v1 */'
-const PATCHED_CLIENT_SHA256 = 'efd1ff027f5595e9818b5b522750310879d754c541002bb29d8d9035aeae1e24'
+const PATCHED_CLIENT_SHA256 = 'a7bc4165caeb71789875ea86202527ac108a37d8fb5da8b48c6004e4df409d50'
 
 const PATCH_INTEGRITY_ANCHORS = Object.freeze([
   [PATCH_MARKER, 1],
@@ -24,6 +24,7 @@ const PATCH_INTEGRITY_ANCHORS = Object.freeze([
   ['if (!lifecycle.attach({ destroy: () => { viewer.destroy(); mount.remove(); } })) return;', 1],
   ['const inject = [];', 1],
   ['function OfficePreviewComponent(props) {', 1],
+  ['...(kind === "pptx" ? { toolbar: "host" } : {})', 1],
   ['const officePreviewService = Object.freeze({', 1],
   ['ctx.provide("officePreview", officePreviewService);', 1],
   ['ctx.inject(["betterSidebar"]', 1],
@@ -110,8 +111,16 @@ function transformExactSection(source, startMarker, endMarker, label, transform)
  */
 export function patchSherlockOfficePreviewClient(source) {
   if (source.includes(PATCH_MARKER)) {
-    assertOfficePreviewPatchIntegrity(source)
-    return source
+    const migrated = source.includes('...(kind === "pptx" ? { toolbar: "inline" } : {})')
+      ? replaceExact(
+          source,
+          '...(kind === "pptx" ? { toolbar: "inline" } : {})',
+          '...(kind === "pptx" ? { toolbar: "host" } : {})',
+          'Research PPT toolbar mode'
+        )
+      : source
+    assertOfficePreviewPatchIntegrity(migrated)
+    return migrated
   }
   let next = source
 
@@ -401,7 +410,7 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\tscope: officePreviewScope,
 \t\t\t\tpath: props.sourceUrl,
 \t\t\t\ttitle: props.title,
-\t\t\t\t...(kind === "pptx" ? { toolbar: "inline" } : {})
+\t\t\t\t...(kind === "pptx" ? { toolbar: "host" } : {})
 \t\t\t});
 \t\t}
 \t\tconst officePreviewService = Object.freeze({

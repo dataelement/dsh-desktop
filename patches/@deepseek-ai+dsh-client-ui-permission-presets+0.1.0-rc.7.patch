@@ -1,0 +1,55 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-permission-presets/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-permission-presets/lib/client.js
+index f85bd5d..ba0ab2b 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-permission-presets/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-permission-presets/lib/client.js
+@@ -30,6 +30,12 @@ window.__ModuleLoader__.load({
+ 		function displayPermissionPreset(value, name) {
+ 			return value === "danger-full-access" ? "Full access" : displayPresetName(name);
+ 		}
++		function settingsPermissionPresetLabel(option, t) {
++			if (option.id === "read-only") return t("mode.readOnly");
++			if (option.id === "workspace-write") return t("mode.workspaceWrite");
++			if (option.id === "danger-full-access") return t("mode.fullAccess");
++			return option.label;
++		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-permission-presets/src/client/PermissionRow.module.css.mjs
+ 		const css = ".oY77xG_row{border-bottom:1px solid var(--dsw-alias-border-l2);align-items:center;gap:8px;padding:16px 0;display:flex}.oY77xG_rowText{flex-direction:column;flex:1;gap:4px;min-width:0;padding-right:48px;display:flex}.oY77xG_title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}.oY77xG_desc{color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px}.oY77xG_selector{background:var(--dsw-alias-bg-module-platform);height:36px;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:18px;align-items:center;gap:12px;padding:0 14px;font-size:14px;line-height:22px;display:inline-flex}.oY77xG_selector:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.oY77xG_selector:disabled{cursor:default}.oY77xG_chevron{flex:none}";
+@@ -78,7 +84,7 @@ window.__ModuleLoader__.load({
+ 			if (state.status === "unavailable") return null;
+ 			const selected = state.options.find((option) => option.id === state.currentValue);
+ 			const busy = state.status === "loading" || state.status === "saving" || confirmingFullAccess;
+-			const label = selected?.label ?? (busy ? t("loading") : t("unavailable"));
++			const label = selected !== void 0 ? settingsPermissionPresetLabel(selected, t) : busy ? t("loading") : t("unavailable");
+ 			const description = state.error ?? t("description");
+ 			return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsxs)("div", {
+ 				className: PermissionRow_module_css_default.row,
+@@ -99,7 +105,7 @@ window.__ModuleLoader__.load({
+ 					},
+ 					items: state.options.map((option) => ({
+ 						id: option.id,
+-						label: option.label
++						label: settingsPermissionPresetLabel(option, t)
+ 					})),
+ 					selectedId: state.currentValue,
+ 					onSelect: (id) => {
+@@ -156,6 +162,9 @@ window.__ModuleLoader__.load({
+ 			"description": "选择新会话的默认权限模式",
+ 			"loading": "加载中",
+ 			"unavailable": "不可用",
++			"mode.readOnly": "只读",
++			"mode.workspaceWrite": "工作区写入",
++			"mode.fullAccess": "完全访问",
+ 			"confirm.title": "确认启用 Full access？",
+ 			"confirm.description": "启用 Full access 后，新会话将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任后续任务时使用。",
+ 			"confirm.acknowledge": "我已了解风险，并愿意继续",
+@@ -168,6 +177,9 @@ window.__ModuleLoader__.load({
+ 			"description": "Choose the default permission mode for new sessions",
+ 			"loading": "Loading",
+ 			"unavailable": "Unavailable",
++			"mode.readOnly": "Read Only",
++			"mode.workspaceWrite": "Workspace Write",
++			"mode.fullAccess": "Full access",
+ 			"confirm.title": "Enable Full access?",
+ 			"confirm.description": "Full access lets new sessions reduce confirmation steps and perform more actions directly, including sensitive operations, file changes, or external commands. Only use it when you trust subsequent tasks.",
+ 			"confirm.acknowledge": "I understand the risks and want to continue",
