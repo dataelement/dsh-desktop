@@ -3512,6 +3512,8 @@ describe('Sherlock workspace and composer controls', () => {
         '[data-research-pdf-preview]'
       ) as unknown as HTMLCanvasElement
       expect(canvas.style.width).toBe('318px')
+      expect(canvas.width).toBeGreaterThan(0)
+      expect(canvas.height).toBeGreaterThan(0)
       expect(body.scrollWidth).toBe(body.clientWidth)
       expect(body.scrollHeight).toBe(body.clientHeight)
 
@@ -8366,6 +8368,23 @@ describe('Sherlock workspace and composer controls', () => {
     expect(layoutCss).toContain(
       '.wSkVaW_root[data-phase=hero] .wSkVaW_composerHero{box-sizing:border-box;width:100%;max-width:812px}'
     )
+  })
+
+  it('keeps a blank Research session in the full canvas layout with a docked composer', async () => {
+    const mounted = await mountConversationRoot('research')
+    try {
+      await act(async () => {
+        mounted.session.update({ composerPhase: 'blank', blank: true })
+      })
+
+      const shell = mounted.host.querySelector('[data-phase]')
+      const composer = mounted.browserWindow.document.querySelector('[data-test-composer-bar]')
+      expect(shell?.getAttribute('data-phase')).toBe('active')
+      expect(mounted.host.querySelector('[data-research-center]')).not.toBeNull()
+      expect(composer?.classList.contains('uV2eYG_hero')).toBe(false)
+    } finally {
+      await mounted.cleanup()
+    }
   })
 
   it('restores each session own Details selection when switching Research sessions before leaving', async () => {

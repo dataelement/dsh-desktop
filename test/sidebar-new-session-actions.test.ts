@@ -100,12 +100,12 @@ async function loadClientBundle(
       const Tooltip = ({ children }: { children: unknown }) => children
       const IconNewChat = ({ className }: { className?: string }) =>
         createElement('span', { className, 'data-test-icon': 'chat' })
-      const IconResearch = ({ className }: { className?: string }) =>
-        createElement('span', { className, 'data-test-icon': 'research' })
+      const IconSearch = ({ className }: { className?: string }) =>
+        createElement('span', { className, 'data-test-icon': 'search' })
       return new Proxy({
         Tooltip,
         IconNewChatOutline16: IconNewChat,
-        IconSearchOutline16: IconResearch,
+        IconSearchOutline16: IconSearch,
         IconPanelLeftOutline16: IconNewChat
       }, { get: (target, property) => Reflect.get(target, property) ?? fakeModule() })
     }
@@ -148,8 +148,9 @@ describe('Sherlock sidebar new-session actions', () => {
       const research = host.querySelector('button[aria-label="新建研究"]') as HTMLElement | null
       expect(chat?.textContent).toContain('新对话')
       expect(research?.textContent).toContain('新研究')
-      expect(chat?.querySelector('[data-test-icon]')?.outerHTML)
-        .not.toBe(research?.querySelector('[data-test-icon]')?.outerHTML)
+      expect(chat?.querySelector('[data-test-icon="chat"]')).not.toBeNull()
+      expect(research?.querySelector('[data-sherlock-research-icon]')).not.toBeNull()
+      expect(research?.querySelector('[data-test-icon="search"]')).toBeNull()
 
       await act(async () => { chat?.click() })
       await act(async () => { research?.click() })
@@ -207,8 +208,12 @@ describe('Sherlock sidebar new-session actions', () => {
       'session-new-research'
     )
     const client = await loadClientBundle(
-      'dsh-client-ui-conversation', browserWindow, ['ConversationSession']
+      'dsh-client-ui-conversation', browserWindow,
+      ['ConversationSessionHeader', 'ConversationSession']
     )
+    const ConversationSessionHeader = client.__testConversationSessionHeader as (
+      props: Record<string, unknown>
+    ) => unknown
     const ConversationSession = client.__testConversationSession as (
       props: Record<string, unknown>
     ) => unknown
@@ -225,38 +230,65 @@ describe('Sherlock sidebar new-session actions', () => {
       researchFilesTabOpen: true,
       researchConversationUnread: false
     }
+    const useSession = (selector: (value: Record<string, unknown>) => unknown) => selector({
+      composerPhase: 'blank', blank: true
+    })
+    const views = {
+      subscribe: () => () => {},
+      version: () => 1,
+      list: () => [{ id: 'chat', label: '对话' }, { id: 'research', label: '研究' }]
+    }
+    const actions = {
+      setView: vi.fn(), setDraft: vi.fn(), setInspect: vi.fn()
+    }
+    const renderSlot = (_name: string, _props?: unknown, options?: { only: string }) => {
+      if (options?.only === undefined) return null
+      renderedViews.push(options.only)
+      return createElement('div', { 'data-rendered-view': options.only })
+    }
 
     try {
       await act(async () => {
-        root.render(createElement(ConversationSession, {
-          sessionId: 'session-new-research',
-          useSession: (selector: (value: Record<string, unknown>) => unknown) => selector({
-            composerPhase: 'active', blank: false
+        root.render(createElement(react.Fragment as unknown as string, null,
+          createElement(ConversationSessionHeader, {
+            sessionId: 'session-new-research',
+            useSession,
+            useSessions: (selector: (value: Record<string, unknown>) => unknown) => selector({
+              byId: {
+                'session-new-research': {
+                  id: 'session-new-research', displayTitle: '新对话', origin: 'root'
+                }
+              }
+            }),
+            useStore: (selector: (value: typeof state) => unknown) => selector(state),
+            actions,
+            renderSlot,
+            views,
+            open: vi.fn(),
+            t: (key: string) => key
           }),
-          useInput: (selector: (value: Record<string, unknown>) => unknown) => selector({ draft: '' }),
-          inputActions: { setDraft: vi.fn() },
-          useStore: (selector: (value: typeof state) => unknown) => selector(state),
-          actions: {
-            setView: vi.fn(), setDraft: vi.fn(), setInspect: vi.fn()
-          },
-          views: {
-            subscribe: () => () => {},
-            version: () => 1,
-            list: () => [{ id: 'chat', label: '对话' }, { id: 'research', label: '研究' }]
-          },
-          renderSlot: (_name: string, _props: unknown, options: { only: string }) => {
-            renderedViews.push(options.only)
-            return createElement('div', { 'data-rendered-view': options.only })
-          },
-          bindDraftMirror: () => () => {},
-          releaseSessionImages: vi.fn(),
-          releaseResearchWorkspace: vi.fn()
-        }))
+          createElement(ConversationSession, {
+            sessionId: 'session-new-research',
+            useSession,
+            useInput: (selector: (value: Record<string, unknown>) => unknown) => selector({ draft: '' }),
+            inputActions: { setDraft: vi.fn() },
+            useStore: (selector: (value: typeof state) => unknown) => selector(state),
+            actions,
+            views,
+            renderSlot,
+            bindDraftMirror: () => () => {},
+            releaseSessionImages: vi.fn(),
+            releaseResearchWorkspace: vi.fn()
+          })
+        ))
       })
 
       expect(renderedViews.at(-1)).toBe('research')
       expect(host.querySelector('[data-rendered-view="research"]')).not.toBeNull()
       expect(host.querySelector('[data-rendered-view="chat"]')).toBeNull()
+      expect(host.querySelector('header')?.getAttribute('aria-hidden')).toBeNull()
+      expect(host.querySelector('[data-conversation-view-id="research"]')
+        ?.getAttribute('aria-selected')).toBe('true')
     } finally {
       await act(async () => { root.unmount() })
     }

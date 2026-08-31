@@ -127,4 +127,18 @@ describe('Sherlock sidebar branding', () => {
     expect(logo).toContain('viewBox="275 334 1317 180"')
     expect(logo).not.toContain('transform="matrix(')
   })
+
+  it('installs the dedicated Research action icon into the static frontend', async () => {
+    const source = await readFile(path.join(projectRoot, 'build', 'sherlock-research.svg'), 'utf8')
+    const installed = await readFile(path.join(
+      projectRoot,
+      'node_modules',
+      '@deepseek-ai',
+      'dsh-web-frontend',
+      'dist',
+      'sherlock-research.svg'
+    ), 'utf8')
+
+    expect(installed).toBe(source)
+  })
 })

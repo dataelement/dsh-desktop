@@ -5,6 +5,7 @@ import path from 'node:path'
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const source = path.join(projectRoot, 'build', 'icon.png')
 const sherlockSource = path.join(projectRoot, 'build', 'sherlock-logo.svg')
+const sherlockResearchSource = path.join(projectRoot, 'build', 'sherlock-research.svg')
 const destinationDirectory = path.join(
   projectRoot,
   'node_modules',
@@ -15,6 +16,7 @@ const destinationDirectory = path.join(
 const destination = path.join(destinationDirectory, 'sherlock-icon.png')
 const legacyDestination = path.join(destinationDirectory, 'dsh-desktop-logo.png')
 const sherlockDestination = path.join(destinationDirectory, 'sherlock-logo.svg')
+const sherlockResearchDestination = path.join(destinationDirectory, 'sherlock-research.svg')
 const indexPath = path.join(destinationDirectory, 'index.html')
 const manifestPath = path.join(destinationDirectory, 'manifest.webmanifest')
 const shippedPresetRoot = path.join(
@@ -54,6 +56,7 @@ function replaceRequiredAny(contents, searches, replacement, file) {
 await mkdir(destinationDirectory, { recursive: true })
 await copyFile(source, destination)
 await copyFile(sherlockSource, sherlockDestination)
+await copyFile(sherlockResearchSource, sherlockResearchDestination)
 await rm(legacyDestination, { force: true })
 await rm(sherlockPresetRoot, { recursive: true, force: true })
 await mkdir(sherlockPresetRoot, { recursive: true })
@@ -111,5 +114,6 @@ await writeFile(
 console.log(`Installed Sherlock brand assets: ${[
   destination,
   sherlockDestination,
+  sherlockResearchDestination,
   path.join(sherlockPresetRoot, 'standard')
 ].map((file) => path.relative(projectRoot, file)).join(', ')}`)

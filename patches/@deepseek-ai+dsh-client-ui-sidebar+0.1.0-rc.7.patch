@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 9ca3639..6c6fa40 100644
+index 9ca3639..3ff822c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 @@ -23,16 +23,17 @@ window.__ModuleLoader__.load({
@@ -14,7 +14,7 @@ index 9ca3639..6c6fa40 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}.hHd-Xa_sherlockLogo{display:block;width:120px;height:17px;flex:none;background:currentColor;-webkit-mask:url(/sherlock-logo.svg) center/contain no-repeat;mask:url(/sherlock-logo.svg) center/contain no-repeat}.hHd-Xa_collapsed .hHd-Xa_toggle .hHd-Xa_panelIcon{display:inline}.hHd-Xa_newSessionGroup{display:flex;gap:8px;margin:0 2px 8px}.hHd-Xa_newSessionGroup .hHd-Xa_newSession{flex:1;min-width:0;margin:0;padding:8px 10px}.hHd-Xa_collapsed .hHd-Xa_newSessionGroup{flex-direction:column;align-items:flex-start;gap:4px;margin:0 0 12px}.hHd-Xa_collapsed .hHd-Xa_newSessionGroup .hHd-Xa_newSession{flex:none;margin:0}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root{background:rgba(255,255,255,.62)}body[data-ds-dark-theme] .hHd-Xa_root{background:rgba(18,18,20,.46)}" : "") + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
++			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}.hHd-Xa_sherlockLogo{display:block;width:120px;height:17px;flex:none;background:currentColor;-webkit-mask:url(/sherlock-logo.svg) center/contain no-repeat;mask:url(/sherlock-logo.svg) center/contain no-repeat}.hHd-Xa_researchIcon{display:block;width:16px;height:16px;flex:none;background:currentColor;-webkit-mask:url(/sherlock-research.svg) center/contain no-repeat;mask:url(/sherlock-research.svg) center/contain no-repeat}.hHd-Xa_collapsed .hHd-Xa_researchIcon{width:18px;height:18px}.hHd-Xa_collapsed .hHd-Xa_toggle .hHd-Xa_panelIcon{display:inline}.hHd-Xa_newSessionGroup{display:flex;gap:8px;margin:0 2px 8px}.hHd-Xa_newSessionGroup .hHd-Xa_newSession{flex:1;min-width:0;margin:0;padding:8px 10px}.hHd-Xa_collapsed .hHd-Xa_newSessionGroup{flex-direction:column;align-items:flex-start;gap:4px;margin:0 0 12px}.hHd-Xa_collapsed .hHd-Xa_newSessionGroup .hHd-Xa_newSession{flex:none;margin:0}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root{background:rgba(255,255,255,.62)}body[data-ds-dark-theme] .hHd-Xa_root{background:rgba(18,18,20,.46)}" : "") + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
@@ -22,11 +22,12 @@ index 9ca3639..6c6fa40 100644
  			"iconButton": "hHd-Xa_iconButton",
  			"settingsArea": "hHd-Xa_settingsArea",
  			"wide": "hHd-Xa_wide",
-@@ -46,16 +47,25 @@ window.__ModuleLoader__.load({
+@@ -46,16 +47,26 @@ window.__ModuleLoader__.load({
  			"fading": "hHd-Xa_fading",
  			"wide-in": "hHd-Xa_wide-in",
  			"newSessionLabel": "hHd-Xa_newSessionLabel",
 +			"newSessionGroup": "hHd-Xa_newSessionGroup",
++			"researchIcon": "hHd-Xa_researchIcon",
  			"railIn": "hHd-Xa_railIn",
  			"rail-in": "hHd-Xa_rail-in",
  			"toggle": "hHd-Xa_toggle",
@@ -49,7 +50,7 @@ index 9ca3639..6c6fa40 100644
  		//#region lib/types/client/SidebarRoot.js
  		/**
  		* Sidebar shell: column geometry only. Collapse is a slide plus crossfade:
-@@ -88,7 +98,7 @@ window.__ModuleLoader__.load({
+@@ -88,7 +99,7 @@ window.__ModuleLoader__.load({
  		* @param props - composed slot props (runtime share + injected callbacks, contract/slots.ts).
  		* @returns the sidebar element tree.
  		*/
@@ -58,7 +59,7 @@ index 9ca3639..6c6fa40 100644
  			const [settled, setSettled] = (0, react.useState)(collapsed);
  			(0, react.useEffect)(() => {
  				if (!collapsed) {
-@@ -138,6 +148,8 @@ window.__ModuleLoader__.load({
+@@ -138,6 +149,8 @@ window.__ModuleLoader__.load({
  			}, [pointerInside]);
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -67,7 +68,7 @@ index 9ca3639..6c6fa40 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -153,11 +165,12 @@ window.__ModuleLoader__.load({
+@@ -153,11 +166,12 @@ window.__ModuleLoader__.load({
  						children: [wide && (0, react_jsx_runtime.jsx)("button", {
  							type: "button",
  							className: clsx(SidebarRoot_module_css_default.brand, SidebarRoot_module_css_default.wide),
@@ -83,7 +84,7 @@ index 9ca3639..6c6fa40 100644
  						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
  							label: collapsed ? t("toggle.open") : t("toggle.collapse"),
  							delayMs: 500,
-@@ -168,32 +181,48 @@ window.__ModuleLoader__.load({
+@@ -168,32 +182,48 @@ window.__ModuleLoader__.load({
  								onClick: () => {
  									toggleSidebar();
  								},
@@ -144,7 +145,7 @@ index 9ca3639..6c6fa40 100644
 +								onClick: () => {
 +									startResearchSession();
 +								},
-+								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutline16, { size: wide ? 14 : 18 }), wide && (0, react_jsx_runtime.jsx)("span", {
++								children: [(0, react_jsx_runtime.jsx)("span", { className: SidebarRoot_module_css_default.researchIcon, "data-sherlock-research-icon": "", "aria-hidden": "true" }), wide && (0, react_jsx_runtime.jsx)("span", {
 +									className: clsx(SidebarRoot_module_css_default.newSessionLabel, SidebarRoot_module_css_default.wide),
 +									children: t("session.newResearch")
 +								})]
@@ -153,7 +154,7 @@ index 9ca3639..6c6fa40 100644
  					}),
  					(0, react_jsx_runtime.jsx)("div", {
  						className: SidebarRoot_module_css_default.regionArea,
-@@ -222,15 +251,19 @@ window.__ModuleLoader__.load({
+@@ -222,15 +252,19 @@ window.__ModuleLoader__.load({
  		/** `sidebar` namespace dictionaries: shell controls (brand row, New Session, fold toggle). */
  		/** Simplified Chinese dictionary (the key-set source of truth). */
  		const zh = {
@@ -177,7 +178,7 @@ index 9ca3639..6c6fa40 100644
  			"toggle.open": "Open sidebar",
  			"toggle.collapse": "Collapse sidebar"
  		};
-@@ -258,6 +291,14 @@ window.__ModuleLoader__.load({
+@@ -258,6 +292,14 @@ window.__ModuleLoader__.load({
  				startSession: (workspaceId) => {
  					ctx.workspaces.startSession(workspaceId);
  				},

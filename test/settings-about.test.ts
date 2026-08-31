@@ -157,13 +157,18 @@ describe('Sherlock About settings', () => {
         '侧栏新增并排的“新对话”和“新研究”入口，“新研究”可直接创建并进入研究模式',
         '优化研究组件引用标签：选择组件后先以半透明状态提示，取消选择会自动移除，点击输入区后则固定保留',
         '进一步放宽研究画布的缩小范围，并在视口偏离内容时提供快速回到内容的入口',
-        '新增简洁的 Sherlock 启动动画，改善客户端启动时的视觉衔接'
+        '新增简洁的 Sherlock 启动动画，改善客户端启动时的视觉衔接',
+        '修复“新研究”首屏画布、顶栏和右侧对话区布局异常，并使用专用研究图标',
+        '修复研究画布中 PDF 已加载但页面显示为空白的问题'
       ]
     })
     expect(zh.releaseNotes[1]?.version).toBe('0.7.4')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[1]).toBe(
       'Refined Research reference tags with a provisional translucent state, automatic removal on deselection, and persistent tags after focusing the composer'
+    )
+    expect(en.releaseNotes[0]?.items).toContain(
+      'Fixed blank PDF pages in the Research canvas after successful document loading'
     )
 
     const manualCheck = vi.fn(async () => ({
