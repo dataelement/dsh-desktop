@@ -151,21 +151,21 @@ describe('Sherlock About settings', () => {
     expect(zh.productName).toBe('Sherlock')
     expect(zh.version).toBe('9.8.7')
     expect(zh.releaseNotes[0]).toEqual({
-      version: '0.7.3',
-      date: '2026-08-28',
+      version: '0.7.4',
+      date: '2026-08-31',
       items: [
-        '新增完整研究模式：中央画布与右侧固定对话协同工作，支持文件拖入、框选、多选、移动和删除',
-        '文件标签可与输入文字混合编辑，支持拖动排序、选中、键盘删除并随消息发送',
-        '升级画布可视化组件：支持图片、PDF 连续滚动、HTML 交互以及 Word、Excel、PPT、Markdown 和代码预览',
-        '支持调整画布组件尺寸与名称，并同步更新输入框中的附件标签',
-        '优化对话、研究与轨迹页的输入框、滚动、菜单层级、加载状态和响应式布局',
-        '修复旧对话模型选择丢失，并移除 Memory Evolve 与 Hindsight 记忆插件及其工具调用'
+        '统一 Sherlock Agent 品牌表述，并修正部分会话中用户消息与助手回复的显示顺序',
+        '修复退出客户端时访问已销毁窗口导致的 JavaScript 报错',
+        '完善研究画布引用交互：点击文件、PPT 或助手回复组件即可选中并作为输入标签引用，PPT 组件不再显示下载按钮',
+        '优化研究输入标签：支持在标签之间准确放置光标，清晰显示输入位置，并消除选中时的抖动和位移',
+        '输入框可随内容行数自适应增高，画布中的助手回复内容支持直接编辑',
+        '完整汉化权限菜单，并优化研究组件、侧栏和输入框的交互细节'
       ]
     })
-    expect(zh.releaseNotes[1]?.version).toBe('0.7.2')
+    expect(zh.releaseNotes[1]?.version).toBe('0.7.3')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[0]).toBe(
-      'Added a complete Research mode with a central canvas, fixed right-side conversation, file drops, marquee selection, multi-select, movement, and deletion'
+      'Standardized Sherlock Agent branding and fixed the display order of user messages and assistant replies in affected conversations'
     )
 
     const manualCheck = vi.fn(async () => ({

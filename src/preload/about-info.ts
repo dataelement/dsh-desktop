@@ -18,6 +18,18 @@ type ManualUpdateChecker = () => Promise<UpdateStatus>
 const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
   zh: [
     {
+      version: '0.7.4',
+      date: '2026-08-31',
+      items: [
+        '统一 Sherlock Agent 品牌表述，并修正部分会话中用户消息与助手回复的显示顺序',
+        '修复退出客户端时访问已销毁窗口导致的 JavaScript 报错',
+        '完善研究画布引用交互：点击文件、PPT 或助手回复组件即可选中并作为输入标签引用，PPT 组件不再显示下载按钮',
+        '优化研究输入标签：支持在标签之间准确放置光标，清晰显示输入位置，并消除选中时的抖动和位移',
+        '输入框可随内容行数自适应增高，画布中的助手回复内容支持直接编辑',
+        '完整汉化权限菜单，并优化研究组件、侧栏和输入框的交互细节'
+      ]
+    },
+    {
       version: '0.7.3',
       date: '2026-08-28',
       items: [
@@ -59,6 +71,18 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
     }
   ],
   en: [
+    {
+      version: '0.7.4',
+      date: '2026-08-31',
+      items: [
+        'Standardized Sherlock Agent branding and fixed the display order of user messages and assistant replies in affected conversations',
+        'Fixed a JavaScript error caused by accessing a destroyed window while quitting the client',
+        'Improved Research canvas references: click a file, PowerPoint, or assistant reply component to select and cite it as an input tag, while PowerPoint components no longer show a download button',
+        'Improved Research input tags with precise caret placement between tags, a clearly visible insertion point, and stable selection without jitter or displacement',
+        'Made the composer grow with its content and added direct editing for assistant reply components on the canvas',
+        'Completed permission-menu localization and refined Research components, the sidebar, and composer interactions'
+      ]
+    },
     {
       version: '0.7.3',
       date: '2026-08-28',
