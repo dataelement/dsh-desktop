@@ -118,6 +118,30 @@ describe('formal Git source gate', () => {
     expect(result.stderr).toContain('另一个 worktree 存在尚未提交的改动')
   })
 
+  it('rejects an active integration lease before a formal build can start', () => {
+    const repository = createRepository()
+    const head = runGit(repository, 'rev-parse', 'HEAD')
+    const leaseDirectory = path.join(repository, runGit(repository, 'rev-parse', '--git-common-dir'), 'sherlock-integration', 'active')
+    mkdirSync(leaseDirectory, { recursive: true })
+    writeFileSync(path.join(leaseDirectory, 'lease.json'), `${JSON.stringify({
+      schemaVersion: 1,
+      revision: 1,
+      batchId: '20260831-01',
+      branch: 'codex/integration/20260831-01',
+      manifestPath: 'config/sherlock-integration-batches/20260831-01.json',
+      baseMainCommit: head,
+      currentTip: head,
+      ownerTokenHash: 'a'.repeat(64),
+      createdAt: '2026-08-31T08:00:00.000Z',
+      updatedAt: '2026-08-31T08:00:00.000Z'
+    })}\n`, 'utf8')
+
+    const result = verify(repository)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('活动集成租约')
+  })
+
   it('ignores a missing registered worktree while checking formal source state', () => {
     const repository = createRepository()
     const worktreeParent = mkdtempSync(path.join(os.tmpdir(), 'sherlock-stale-worktree-'))

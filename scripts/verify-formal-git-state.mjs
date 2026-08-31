@@ -7,6 +7,7 @@ import {
   resolveRepositoryContext,
   runGit
 } from './lib/sherlock-git-state.mjs'
+import { readActiveBatchLease } from './lib/sherlock-active-batch.mjs'
 
 function localBranches(repository) {
   const output = runGit(repository, [
@@ -63,6 +64,9 @@ export function verifyFormalGitState(repository) {
   }
   if (untrackedSources.length > 0) {
     errors.push(`存在未纳入 Git 的源码文件：${untrackedSources.join('、')}`)
+  }
+  if (readActiveBatchLease(context.worktreeRoot)) {
+    errors.push('存在活动集成租约；请先完成晋升或显式取消后再构建正式版。')
   }
 
   const currentWorktree = realpathSync(context.worktreeRoot)
