@@ -5325,6 +5325,13 @@ describe('Sherlock workspace and composer controls', () => {
       expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip-side'))
         .toBe('top')
 
+      await act(async () => {
+        chatTag?.dispatchEvent(new browserWindow.MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      expect(host.querySelector('[data-reference-source="chat-file"]')?.getAttribute('data-selected'))
+        .toBe('true')
+
     } finally {
       await act(async () => { root.unmount() })
       host.remove()

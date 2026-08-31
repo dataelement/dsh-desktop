@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..6079265 100644
+index 1dd0e89..04c644c 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -678,7 +678,7 @@ index 1dd0e89..6079265 100644
 +			}, [sessionId, researchFileReferences === void 0, researchArtifactReferences === void 0]);
 +			(0, react.useEffect)(() => {
 +				if (selectedResearchOccurrenceId === null) return;
-+				if (!input?.occurrences.some((occurrence) => occurrence.occurrenceId === selectedResearchOccurrenceId && (occurrence.source === RESEARCH_FILE_REFERENCE_SOURCE || occurrence.source === RESEARCH_ARTIFACT_REFERENCE_SOURCE))) setSelectedResearchOccurrenceId(null);
++				if (!input?.occurrences.some((occurrence) => occurrence.occurrenceId === selectedResearchOccurrenceId && (occurrence.source === CHAT_FILE_REFERENCE_SOURCE || occurrence.source === RESEARCH_FILE_REFERENCE_SOURCE || occurrence.source === RESEARCH_ARTIFACT_REFERENCE_SOURCE))) setSelectedResearchOccurrenceId(null);
 +			}, [input?.occurrences, selectedResearchOccurrenceId]);
  			(0, react.useEffect)(() => {
  				if (input === void 0 || inputActions === void 0) return;
