@@ -105,6 +105,8 @@ describe('Sherlock standard agent preset policy', () => {
     expect(source).toContain(
       '[role=menu]:has(.cubgiG_item){width:420px!important;max-width:calc(100vw - 24px)}'
     )
+    expect(source).toContain('data-agent-preset-fallback')
+    expect(source).toContain('children: t("presetStandardName")')
   })
 
   it('falls back old session preset selections to standard mode', async () => {

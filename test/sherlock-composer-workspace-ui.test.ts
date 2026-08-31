@@ -8406,9 +8406,14 @@ describe('Sherlock workspace and composer controls', () => {
       expect(emptyState?.textContent).toContain('迷雾之中，洞见真相')
       expect(emptyState?.textContent).toContain('预览版')
       expect(workspaceRow).not.toBeNull()
-      expect(workspaceRow?.parentElement).toBe(composer)
-      expect(workspaceRow?.nextElementSibling?.classList.contains('uV2eYG_card')).toBe(true)
-      expect(composer?.getAttribute('data-test-composer-has-accessory')).toBe('true')
+      expect(composer).not.toBeNull()
+      if (workspaceRow === null || composer === null) return
+      expect(workspaceRow?.parentElement).not.toBe(composer)
+      expect(workspaceRow?.parentElement).toBe(composer?.parentElement)
+      const composerStackChildren = Array.from(workspaceRow?.parentElement?.children ?? [])
+      expect(composerStackChildren.indexOf(workspaceRow))
+        .toBeLessThan(composerStackChildren.indexOf(composer))
+      expect(composer?.getAttribute('data-test-composer-has-accessory')).toBe('false')
 
       await act(async () => {
         mounted.session.update({

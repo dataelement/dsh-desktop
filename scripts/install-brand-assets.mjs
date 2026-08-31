@@ -35,6 +35,7 @@ const sherlockPresetRoot = path.join(
   'config',
   'sherlock-agent-presets'
 )
+const sherlockPersonaText = 'You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}. During multi-step work, provide concise user-facing progress updates in the user\'s language before substantial new work and after meaningful milestones. Each update should briefly state what has been established and what comes next, then continue the task without waiting for acknowledgment. Do not reveal private reasoning, raw commands, local paths, credentials, or repetitive tool logs. For long-running work, provide a useful update whenever you regain control after a meaningful phase instead of leaving the user with only a loading indicator. Keep the final answer focused on the outcome and do not repeat the entire progress transcript.'
 
 function replaceRequired(contents, search, replacement, file) {
   if (contents.includes(replacement)) return contents
@@ -64,6 +65,18 @@ await cp(
   path.join(shippedPresetRoot, 'standard'),
   path.join(sherlockPresetRoot, 'standard'),
   { recursive: true }
+)
+const sherlockAgentPath = path.join(sherlockPresetRoot, 'standard', 'agent.cordis.yml')
+const sherlockAgent = await readFile(sherlockAgentPath, 'utf8')
+await writeFile(
+  sherlockAgentPath,
+  replaceRequired(
+    sherlockAgent,
+    'You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.',
+    sherlockPersonaText,
+    path.relative(projectRoot, sherlockAgentPath)
+  ),
+  'utf8'
 )
 
 const index = await readFile(indexPath, 'utf8')

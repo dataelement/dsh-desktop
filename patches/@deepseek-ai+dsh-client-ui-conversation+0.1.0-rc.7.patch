@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..0135c19 100644
+index 1dd0e89..1083fb5 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -5809,13 +5809,13 @@ index 1dd0e89..0135c19 100644
 +			};
 +			scheduleComposerBottomSettles(settle, requestAnimationFrame, setTimeout);
 +		}
-+		function ComposerSurface({ zone, hero, inputBar, pending, session, heroWorkspaceRow, renderSlot, renderSlotChain, seatResizeRef, t }) {
++		function ComposerSurface({ zone, hero, researchEmpty, inputBar, pending, session, heroWorkspaceRow, renderSlot, renderSlotChain, seatResizeRef, t }) {
 +			const composerBar = (0, react_jsx_runtime.jsxs)("div", {
 +				className: clsx(ConversationRoot_module_css_default.composerStack, hero && ConversationRoot_module_css_default.composerHero),
 +				children: [
 +					hero && (0, react_jsx_runtime.jsx)(HeroGlow, { className: ConversationRoot_module_css_default.heroGlow }),
 +					hero && (0, react_jsx_runtime.jsx)(HeroShell, { t }),
-+					hero && heroWorkspaceRow,
++					(hero || researchEmpty) && heroWorkspaceRow,
 +					zone !== void 0 && renderSlot("conversation.input.dock", zone),
 +					inputBar
 +				]
@@ -6292,17 +6292,16 @@ index 1dd0e89..0135c19 100644
  				children: [
  					(0, react_jsx_runtime.jsx)(WorkspaceChip, {
  						buttonRef: pickerAnchor,
-@@ -6897,6 +12127,9 @@ window.__ModuleLoader__.load({
+@@ -6897,6 +12127,8 @@ window.__ModuleLoader__.load({
  			const inert = sessionId === void 0 || hero && chipTitle === void 0;
  			const inputBar = renderSlot("conversation.composer.bar", {
  				variant: hero ? "hero" : "composer",
-+				accessory: researchEmpty ? heroWorkspaceRow : void 0,
 +				researchFileReferences,
 +				researchArtifactReferences,
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,44 +12146,94 @@ window.__ModuleLoader__.load({
+@@ -6913,44 +12145,95 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -6332,6 +6331,7 @@ index 1dd0e89..0135c19 100644
 +			const composerSurface = (0, react_jsx_runtime.jsx)(ComposerSurface, {
 +				zone,
 +				hero,
++				researchEmpty,
 +				inputBar,
 +				pending,
 +				session,
