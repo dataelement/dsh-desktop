@@ -101,7 +101,7 @@ function instrumentDelayedOfficeEngine(source: string, kind: 'docx' | 'pptx'): s
   if (source.split(engineImport).length - 1 !== 1) throw new Error('PPTX engine import anchor missing')
   return source.replace(
     engineImport,
-    'const PptxViewer = { open: __sherlockOfficeTest.openPptx }; const RECOMMENDED_ZIP_LIMITS = {};'
+    'const PptxViewer = { open: __sherlockOfficeTest.openPptx }; const RECOMMENDED_ZIP_LIMITS = __sherlockOfficeTest.recommendedZipLimits ?? {};'
   )
 }
 
@@ -269,6 +269,59 @@ describe('Sherlock bundled Office preview adapter', () => {
       expect(calls[0]!.mount.parentElement).not.toBeNull()
       expect(calls[0]!.options.scrollContainer).toBe(calls[0]!.mount.parentElement)
       expect(calls[0]!.options.scrollContainer).not.toBe(calls[0]!.mount)
+    } finally {
+      await act(async () => { root.unmount() })
+      restoreGlobals()
+    }
+  })
+
+  it('aligns the PPTX renderer entry limit with the validated 64 MiB Office boundary', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    const recommendedZipLimits = {
+      maxEntries: 4_000,
+      maxEntryUncompressedBytes: 32 * 1024 * 1024,
+      maxTotalUncompressedBytes: 256 * 1024 * 1024,
+      maxMediaBytes: 192 * 1024 * 1024,
+      maxConcurrency: 8
+    }
+    const calls: Array<{ zipLimits?: Record<string, number> }> = []
+    const client = await loadPatchedOfficeClient({
+      document: browserWindow.document,
+      window: browserWindow,
+      fetch: async () => new Response(new Uint8Array([1, 2, 3])),
+      sourceTransform: (source) => instrumentDelayedOfficeEngine(source, 'pptx'),
+      testEngine: {
+        recommendedZipLimits,
+        async openPptx(
+          _bytes: ArrayBuffer,
+          _mount: HappyDOMHTMLElement,
+          options: { zipLimits?: Record<string, number> }
+        ) {
+          calls.push(options)
+          return { destroy() {} }
+        }
+      }
+    })
+    const host = browserWindow.document.createElement('div')
+    browserWindow.document.body.appendChild(host)
+    const root = createRoot(host)
+    try {
+      await act(async () => {
+        root.render(client.officePreviewService.Component({
+          sourceUrl: 'sherlock-preview://capability-large-media/',
+          kind: 'pptx',
+          title: 'large-media.pptx'
+        }))
+        await Promise.resolve()
+      })
+      await waitForCalls(calls, 1)
+
+      expect(calls[0]!.zipLimits).toEqual({
+        ...recommendedZipLimits,
+        maxEntryUncompressedBytes: 64 * 1024 * 1024
+      })
+      expect(recommendedZipLimits.maxEntryUncompressedBytes).toBe(32 * 1024 * 1024)
     } finally {
       await act(async () => { root.unmount() })
       restoreGlobals()

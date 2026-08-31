@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 const PATCH_MARKER = '/* sherlock:office-preview-service:v1 */'
-const PATCHED_CLIENT_SHA256 = 'a7bc4165caeb71789875ea86202527ac108a37d8fb5da8b48c6004e4df409d50'
+const PATCHED_CLIENT_SHA256 = 'be2bb640433d2e7a80f1beb7992bba871c2e2f8748fbc950ae3adcdc3977e143'
 
 const PATCH_INTEGRITY_ANCHORS = Object.freeze([
   [PATCH_MARKER, 1],
@@ -21,6 +21,7 @@ const PATCH_INTEGRITY_ANCHORS = Object.freeze([
   ['if (!lifecycle.attach(univer)) return;', 1],
   ['const viewer = await PptxViewer.open(bytes, mount, {', 1],
   ['...continuousPptxViewerOptions(lifecycle.signal, host),', 1],
+  ['zipLimits: { ...RECOMMENDED_ZIP_LIMITS, maxEntryUncompressedBytes: 64 * 1024 * 1024 }', 1],
   ['if (!lifecycle.attach({ destroy: () => { viewer.destroy(); mount.remove(); } })) return;', 1],
   ['const inject = [];', 1],
   ['function OfficePreviewComponent(props) {', 1],
@@ -103,6 +104,17 @@ function transformExactSection(source, startMarker, endMarker, label, transform)
   return source.slice(0, start) + patched + source.slice(end)
 }
 
+function alignPptxZipEntryLimit(source) {
+  const aligned = 'zipLimits: { ...RECOMMENDED_ZIP_LIMITS, maxEntryUncompressedBytes: 64 * 1024 * 1024 }'
+  if (source.includes(aligned)) return source
+  return replaceExact(
+    source,
+    'zipLimits: RECOMMENDED_ZIP_LIMITS',
+    aligned,
+    'PPTX ZIP entry limit'
+  )
+}
+
 /**
  * Publish the bundled Office engines as a capability-only Cordis service while
  * leaving their existing Better Sidebar viewers registered through the same
@@ -111,7 +123,7 @@ function transformExactSection(source, startMarker, endMarker, label, transform)
  */
 export function patchSherlockOfficePreviewClient(source) {
   if (source.includes(PATCH_MARKER)) {
-    const migrated = source.includes('...(kind === "pptx" ? { toolbar: "inline" } : {})')
+    let migrated = source.includes('...(kind === "pptx" ? { toolbar: "inline" } : {})')
       ? replaceExact(
           source,
           '...(kind === "pptx" ? { toolbar: "inline" } : {})',
@@ -119,6 +131,7 @@ export function patchSherlockOfficePreviewClient(source) {
           'Research PPT toolbar mode'
         )
       : source
+    migrated = alignPptxZipEntryLimit(migrated)
     assertOfficePreviewPatchIntegrity(migrated)
     return migrated
   }
@@ -373,6 +386,7 @@ export function patchSherlockOfficePreviewClient(source) {
 \t\t\t\t\tmount.remove();
 \t\t\t\t};`,
     'PPTX teardown')
+  next = alignPptxZipEntryLimit(next)
 
   next = replaceExact(
     next,
