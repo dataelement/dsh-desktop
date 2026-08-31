@@ -223,6 +223,91 @@ function mergeInProgress(repository) {
   return runGit(repository, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { allowFailure: true }).status === 0
 }
 
+function resolveRecordedCommit(report, repository, commit, code, label) {
+  try {
+    const resolved = resolveCommit(repository, commit)
+    if (resolved !== commit) {
+      addError(report, code, `${label} 没有精确解析为记录的提交。`, { expected: commit, actual: resolved })
+      return undefined
+    }
+    return resolved
+  } catch (error) {
+    addError(report, code, `${label} 不可解析。`, {
+      commit,
+      error: error instanceof Error ? error.message : String(error)
+    })
+    return undefined
+  }
+}
+
+function requireAncestor(report, repository, ancestor, descendant, code, message, details) {
+  if (!ancestor || !descendant) return
+  const result = attempt(report, `${code}-check-failed`, () => isAncestor(repository, ancestor, descendant))
+  if (result === false) addError(report, code, message, details)
+}
+
+function validateMergedFeatureEvidence(report, repository, integrationHead, feature, featureVerification) {
+  const merged = feature.merged
+  if (!merged) return
+  const mergeCommit = resolveRecordedCommit(report, repository, merged.mergeCommit, 'merged-merge-commit-unresolved', '记录的 mergeCommit')
+  const verificationCommit = resolveRecordedCommit(report, repository, merged.verificationCommit, 'merged-verification-commit-unresolved', '记录的 verificationCommit')
+  requireAncestor(
+    report,
+    repository,
+    mergeCommit,
+    integrationHead,
+    'merged-merge-commit-not-reachable',
+    '记录的 mergeCommit 不是当前集成 HEAD 的祖先。',
+    { mergeCommit: merged.mergeCommit, head: integrationHead, branch: feature.handoff.branch }
+  )
+  requireAncestor(
+    report,
+    repository,
+    verificationCommit,
+    integrationHead,
+    'merged-verification-commit-not-reachable',
+    '记录的 verificationCommit 不是当前集成 HEAD 的祖先。',
+    { verificationCommit: merged.verificationCommit, head: integrationHead, branch: feature.handoff.branch }
+  )
+  requireAncestor(
+    report,
+    repository,
+    feature.handoff.tipCommit,
+    mergeCommit,
+    'merged-feature-tip-not-merged',
+    '功能 tip 不是记录的 mergeCommit 的祖先。',
+    { tipCommit: feature.handoff.tipCommit, mergeCommit: merged.mergeCommit, branch: feature.handoff.branch }
+  )
+  requireAncestor(
+    report,
+    repository,
+    mergeCommit,
+    verificationCommit,
+    'merged-verification-not-after-merge',
+    '记录的 verificationCommit 必须等于或位于 mergeCommit 之后。',
+    { mergeCommit: merged.mergeCommit, verificationCommit: merged.verificationCommit, branch: feature.handoff.branch }
+  )
+  for (const check of merged.checks) {
+    if (check.verifiedCommit !== merged.verificationCommit) {
+      addError(report, 'merged-check-tip-mismatch', '记录的合并检查未绑定 verificationCommit。', {
+        verifiedCommit: check.verifiedCommit,
+        verificationCommit: merged.verificationCommit,
+        argv: check.argv,
+        branch: feature.handoff.branch
+      })
+    }
+  }
+  const liveMerged = featureVerification?.findings.some(
+    (item) => item.code === 'feature-already-merged' && item.severity === 'info'
+  )
+  if (!liveMerged) {
+    addError(report, 'merged-live-feature-not-integrated', '实时功能预检未证明该功能已完整合入当前集成历史。', {
+      branch: feature.handoff.branch,
+      tipCommit: feature.handoff.tipCommit
+    })
+  }
+}
+
 export function preflightIntegrationAction({ repository, phase, manifestPath, featureBranch, mainWorktree, expectedAcceptedTip }) {
   if (!phases.has(phase)) throw new Error('phase 必须是受支持的集成阶段。')
   const requirements = phaseRequirements[phase]
@@ -286,11 +371,18 @@ export function preflightIntegrationAction({ repository, phase, manifestPath, fe
         : requirements.allFeaturesMerged || phase === 'sync-main' || phase === 'recover-owner'
           ? manifest.features
           : []
+      const featureVerifications = new Map()
       for (const feature of featuresToVerify) {
         const featureResult = attempt(report, 'feature-preflight-failed', () => verifyFeatureHandoff({ repository, handoff: feature.handoff, batchMainCommit: report.head }))
+        featureVerifications.set(feature.handoff.branch, featureResult)
         if (featureResult) {
           report.findings.push(...featureResult.findings)
           if (!featureResult.ok) report.ok = false
+        }
+      }
+      if (requirements.allFeaturesMerged) {
+        for (const feature of manifest.features) {
+          validateMergedFeatureEvidence(report, repository, report.head, feature, featureVerifications.get(feature.handoff.branch))
         }
       }
     }

@@ -228,4 +228,59 @@ describe('tracked integration batch manifests and read-only preflight', () => {
     }
     expect(actionKinds.size).toBe(8)
   })
+
+  it('rejects fabricated merged records for accept and promote when the feature is not integrated', () => {
+    const repository = fixture()
+    const { base, handoff } = createFeature(repository, 'fabricated-merged')
+    const integration = repository.createWorktree('integration-fabricated-merged', 'codex/integration/20260831-04')
+    const fakeMergeCommit = 'c'.repeat(40)
+    const fakeVerificationCommit = 'd'.repeat(40)
+    const manifest = {
+      ...createIntegrationBatchManifest({
+        batchId: '20260831-04',
+        branch: 'codex/integration/20260831-04',
+        baseMainCommit: base,
+        handoffs: [handoff],
+        integrationChecks: [{ argv: ['npm', 'run', 'typecheck'], timeoutMs: 120000 }],
+        createdAt: '2026-08-31T03:02:00.000Z'
+      }),
+      features: [{
+        handoff,
+        merged: {
+          mergeCommit: fakeMergeCommit,
+          verificationCommit: fakeVerificationCommit,
+          checks: [{
+            argv: ['npm', 'run', 'typecheck'],
+            outcome: 'passed',
+            summary: 'fabricated evidence',
+            verifiedCommit: fakeVerificationCommit,
+            completedAt: '2026-08-31T03:03:00.000Z',
+            timeoutMs: 120000
+          }],
+          recordedAt: '2026-08-31T03:03:00.000Z'
+        }
+      }]
+    }
+    const manifestPath = writeManifest(repository, manifest)
+    const integrationHead = repository.git(integration, 'rev-parse', 'HEAD')
+    const cases: Array<{
+      phase: 'accept' | 'promote'
+      options: Omit<Parameters<typeof preflightIntegrationAction>[0], 'repository' | 'phase'>
+    }> = [
+      { phase: 'accept', options: { manifestPath, expectedAcceptedTip: integrationHead } },
+      { phase: 'promote', options: { manifestPath, mainWorktree: repository.main, expectedAcceptedTip: integrationHead } }
+    ]
+
+    for (const testCase of cases) {
+      const before = repository.snapshot()
+      const report = preflightIntegrationAction({ repository: integration, phase: testCase.phase, ...testCase.options })
+      expect(repository.snapshot().equals(before)).toBe(true)
+      expect(report.ok).toBe(false)
+      expect(report.findings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'merged-merge-commit-unresolved', severity: 'error' }),
+        expect.objectContaining({ code: 'merged-verification-commit-unresolved', severity: 'error' }),
+        expect.objectContaining({ code: 'merged-live-feature-not-integrated', severity: 'error' })
+      ]))
+    }
+  })
 })
