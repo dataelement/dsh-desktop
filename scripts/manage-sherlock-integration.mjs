@@ -12,6 +12,7 @@ import {
   recoverIntegrationOwnership,
   synchronizeIntegrationMain
 } from './lib/sherlock-integration-executor.mjs'
+import { formatIntegrationError, formatIntegrationOutcome } from './lib/sherlock-integration-cli-outcome.mjs'
 
 function fail(message) {
   throw new Error(message)
@@ -80,21 +81,7 @@ function readChecks(file) {
 }
 
 function printHuman(result) {
-  const token = result.status === 'planned' ? 'INTEGRATION PLANNED'
-    : result.status === 'prepared' ? 'INTEGRATION PREPARED'
-      : result.status === 'merged' ? 'INTEGRATION MERGED'
-        : result.status === 'conflict' ? 'INTEGRATION CONFLICT'
-          : result.status === 'ownership-recovered' ? 'INTEGRATION OWNERSHIP_RECOVERED'
-            : result.status === 'main-synchronized' ? 'INTEGRATION MAIN_SYNCHRONIZED'
-              : result.status === 'accepted' ? 'INTEGRATION ACCEPTED'
-                : result.status === 'promoted' ? 'INTEGRATION PROMOTED'
-                  : result.status === 'cancelled' ? 'INTEGRATION CANCELLED'
-                    : 'INTEGRATION RECOVERY_REQUIRED'
-  process.stdout.write(`${token} batch=${result.batchId} branch=${result.branch} before=${result.beforeCommit} after=${result.afterCommit}\n`)
-  if (result.conflictContext) {
-    process.stdout.write(`CONFLICT integrationTip=${result.conflictContext.integrationTip} featureTip=${result.conflictContext.featureTip} featureBase=${result.conflictContext.featureBase}\n`)
-  }
-  if (result.recoveryCommand) process.stdout.write(`RECOVERY ${result.recoveryCommand}\n`)
+  process.stdout.write(formatIntegrationOutcome(result).output)
 }
 
 function printHelp() {
@@ -132,9 +119,9 @@ try {
                   : cancelIntegrationBatch({ integrationRepository: options.repo, manifestPath: options.manifest, confirmBatchId: options.confirm_batch, explicitCancellation: options.explicit_cancellation === true, dryRun: Boolean(options.dry_run), now }))
   if (options.json) process.stdout.write(`${JSON.stringify(result)}\n`)
   else printHuman(result)
-  process.exitCode = result.status === 'recovery-required' ? 4 : result.status === 'conflict' ? 3 : 0
+  process.exitCode = formatIntegrationOutcome(result).exitCode
   }
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
-  process.exitCode = error && typeof error === 'object' && error.integrationExit === 1 ? 1 : 2
+  process.exitCode = formatIntegrationError(error).exitCode
 }

@@ -27,12 +27,14 @@ npm run git:handoff -- --repo ../sherlock-<slug> --base <full-main-sha> --metada
 
 ```bash
 npm run git:integration -- create --repo /absolute/path/to/canonical-main --worktree /absolute/path/to/integration-20260831-01 --batch 20260831-01 --handoff /absolute/path/to/handoff-a.json --checks /absolute/path/to/integration-checks.json --dry-run --json
+npm run git:integration:preflight -- --repo /absolute/path/to/canonical-main --phase prepare
 npm run git:integration -- create --repo /absolute/path/to/canonical-main --worktree /absolute/path/to/integration-20260831-01 --batch 20260831-01 --handoff /absolute/path/to/handoff-a.json --checks /absolute/path/to/integration-checks.json
 ```
 
 仅当 Git 已登记的同名 integration worktree 精确位于当前本地 `main` tip、没有清单且没有冲突租约时才可接管：
 
 ```bash
+npm run git:integration:preflight -- --repo /absolute/path/to/integration-20260831-01 --phase prepare
 npm run git:integration -- adopt --repo /absolute/path/to/integration-20260831-01 --batch 20260831-01 --handoff /absolute/path/to/handoff-a.json --checks /absolute/path/to/integration-checks.json
 ```
 
@@ -57,6 +59,7 @@ npm run git:integration -- continue --repo /absolute/path/to/integration-2026083
 中断的 owner 只能在确认同一批次和精确集成 tip 后恢复；不要手改 common-dir lease 或 owner token。
 
 ```bash
+npm run git:integration:preflight -- --repo /absolute/path/to/integration-20260831-01 --phase recover-owner --manifest /absolute/path/to/integration-20260831-01/config/sherlock-integration-batches/20260831-01.json --commit <exact-integration-sha>
 npm run git:integration -- recover-owner --repo /absolute/path/to/integration-20260831-01 --manifest /absolute/path/to/integration-20260831-01/config/sherlock-integration-batches/20260831-01.json --confirm-batch 20260831-01 --confirm-tip <exact-integration-sha>
 ```
 
@@ -79,6 +82,7 @@ npm run git:integration -- accept --repo /absolute/path/to/integration-20260831-
 只有已接受、clean 且可 fast-forward 的 canonical `main` 才可晋升。先使用 dry run，确认后执行真实晋升：
 
 ```bash
+npm run git:integration:preflight -- --repo /absolute/path/to/integration-20260831-01 --phase promote --manifest /absolute/path/to/integration-20260831-01/config/sherlock-integration-batches/20260831-01.json --commit <accepted-integration-sha> --main-worktree /absolute/path/to/canonical-main
 npm run git:integration -- promote --repo /absolute/path/to/integration-20260831-01 --manifest /absolute/path/to/integration-20260831-01/config/sherlock-integration-batches/20260831-01.json --main-worktree /absolute/path/to/canonical-main --confirm-batch 20260831-01 --confirm-tip <accepted-integration-sha> --dry-run
 npm run git:integration -- promote --repo /absolute/path/to/integration-20260831-01 --manifest /absolute/path/to/integration-20260831-01/config/sherlock-integration-batches/20260831-01.json --main-worktree /absolute/path/to/canonical-main --confirm-batch 20260831-01 --confirm-tip <accepted-integration-sha>
 ```
@@ -86,6 +90,7 @@ npm run git:integration -- promote --repo /absolute/path/to/integration-20260831
 若用户明确放弃该批次，保留 worktree、分支与记录，仅以显式取消归档租约：
 
 ```bash
+npm run git:integration:preflight -- --repo /absolute/path/to/integration-20260831-01 --phase cancel --manifest /absolute/path/to/integration-20260831-01/config/sherlock-integration-batches/20260831-01.json
 npm run git:integration -- cancel --repo /absolute/path/to/integration-20260831-01 --manifest /absolute/path/to/integration-20260831-01/config/sherlock-integration-batches/20260831-01.json --confirm-batch 20260831-01 --explicit-cancellation
 ```
 
@@ -102,11 +107,11 @@ npm run git:integration -- cancel --repo /absolute/path/to/integration-20260831-
 
 | 退出码 | 含义 | stdout / stderr 约定 |
 | --- | --- | --- |
-| 0 | 成功、帮助或已计划的 dry run | `--json` 为单一 JSON stdout；人类输出使用稳定 `INTEGRATION ...` / `PREFLIGHT PASSED` token |
-| 1 | 只读预检阻止操作 | stdout 为 `PREFLIGHT BLOCKED` 和 findings |
-| 2 | 参数、输入或执行器错误 | 诊断仅写 stderr，stdout 为空 |
-| 3 | 保留的合并冲突 | stdout 以 `INTEGRATION CONFLICT` 开始，并提供冲突提交上下文 |
-| 4 | 必须显式恢复的状态 | stdout 以 `INTEGRATION RECOVERY_REQUIRED` 开始，现场不会被删除 |
+| 0 | 成功、帮助或已计划的 dry run | `--json` 为单一 JSON stdout；非 JSON 的成功使用稳定 `INTEGRATION ...` / `PREFLIGHT PASSED` token |
+| 1 | 只读预检阻止操作，或 lifecycle 的策略/状态拒绝 | preflight 在 stdout 写 `PREFLIGHT BLOCKED` 和 findings；lifecycle 拒绝的诊断写 stderr，stdout 为空 |
+| 2 | 无效 CLI 参数、输入或 schema/执行错误 | 诊断仅写 stderr，stdout 为空 |
+| 3 | 保留的合并冲突结果 | 非 JSON lifecycle stdout 以 `INTEGRATION CONFLICT` 开始，并提供冲突提交上下文 |
+| 4 | 必须显式恢复的结果 | 非 JSON lifecycle stdout 以 `INTEGRATION RECOVERY_REQUIRED` 开始，现场不会被删除 |
 
 使用 `--help` 获取可执行参数面：
 

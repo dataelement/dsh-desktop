@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createGitWorkflowFixture, type GitWorkflowFixture } from './helpers/git-workflow-fixture'
+import { formatIntegrationError, formatIntegrationOutcome } from '../scripts/lib/sherlock-integration-cli-outcome.mjs'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const handoffCli = path.join(projectRoot, 'scripts', 'create-sherlock-session-handoff.mjs')
@@ -71,5 +72,30 @@ describe('Sherlock integration CLI contract', () => {
 
     expect(result).toMatchObject({ status: 0, stderr: '' })
     expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, phase: 'prepare', branch: 'main' })
+  })
+
+  it('forwards preflight accepted-tip and canonical-main inputs to every phase that requires them', () => {
+    const repository = fixture()
+    const missingManifest = path.join(repository.root, 'missing-manifest.json')
+    const commit = 'a'.repeat(40)
+    const phases = [
+      { phase: 'recover-owner', args: ['--commit', commit] },
+      { phase: 'accept', args: ['--commit', commit] },
+      { phase: 'promote', args: ['--commit', commit, '--main-worktree', repository.main] }
+    ]
+
+    for (const { phase, args } of phases) {
+      const result = run(preflightCli, ['--repo', repository.main, '--phase', phase, '--manifest', missingManifest, ...args, '--json'])
+      const report = JSON.parse(result.stdout)
+      expect(result).toMatchObject({ status: 1, stderr: '' })
+      expect(report.findings.some((finding: { code: string }) => finding.code === 'phase-input-required')).toBe(false)
+    }
+  })
+
+  it('maps lifecycle rejection, conflict, and recovery outcomes to their public exit code and output channel', () => {
+    expect(formatIntegrationError({ integrationExit: 1 })).toEqual({ exitCode: 1, channel: 'stderr' })
+    expect(formatIntegrationError(new Error('invalid input'))).toEqual({ exitCode: 2, channel: 'stderr' })
+    expect(formatIntegrationOutcome({ status: 'conflict', batchId: '20260831-01', branch: 'codex/integration/20260831-01', beforeCommit: 'a'.repeat(40), afterCommit: 'b'.repeat(40) })).toMatchObject({ exitCode: 3, channel: 'stdout', output: expect.stringContaining('INTEGRATION CONFLICT') })
+    expect(formatIntegrationOutcome({ status: 'recovery-required', batchId: '20260831-01', branch: 'codex/integration/20260831-01', beforeCommit: 'a'.repeat(40), afterCommit: 'b'.repeat(40) })).toMatchObject({ exitCode: 4, channel: 'stdout', output: expect.stringContaining('INTEGRATION RECOVERY_REQUIRED') })
   })
 })
