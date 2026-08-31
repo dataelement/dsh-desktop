@@ -8,6 +8,7 @@ function usage() {
 }
 
 function parseArguments(argv) {
+  if (argv.length === 1 && argv[0] === '--help') return { help: true }
   const values = new Map()
   for (let index = 0; index < argv.length; index += 1) {
     const option = argv[index]
@@ -36,6 +37,10 @@ function parseArguments(argv) {
 
 function main() {
   const options = parseArguments(process.argv.slice(2))
+  if (options.help) {
+    process.stdout.write(`${usage()}\n`)
+    return
+  }
   const metadata = JSON.parse(readFileSync(options.metadataPath, 'utf8'))
   const handoff = buildFeatureHandoff({
     repository: options.repository,

@@ -2,7 +2,7 @@
 
 ## 目标
 
-保证每个 session 的开发成果都有可追溯提交，并在正式构建前确认所有准备发布的本地分支都已进入 `main`，避免“开发环境已经修改、正式版仍缺少功能”。
+保证每个 session 的开发成果都有可追溯提交，并在正式构建前确认所有准备发布的本地分支都已进入 `main`，避免“开发环境已经修改、正式版仍缺少功能”。本地 `main` 是日常集成权威，不会自动同步上游。
 
 ## 日常修改
 
@@ -15,7 +15,17 @@
    git commit -m "修复：确保正式版加载最新内置 PPT Skill"
    ```
 
-5. 确认成果后合并到本地 `main`，再删除已合并的临时分支。
+5. 多 session 功能按 `docs/sherlock-multi-session-integration-runbook.md` 交接、预检、集成和用户接受后，才以 fast-forward 推进本地 `main`。不要删除已合并的临时分支或 worktree；保留它们供验收和恢复检查。
+
+## 上游同步
+
+日常集成禁止自动 `pull`、`fetch` 后合并、rebase、push 或重写历史。本地 `main` 与上游的差异必须在独立的 `codex/upstream-sync/<YYYYMMDD>` 分支中审阅、验证和决定；该审阅不与功能集成、用户接受或正式发布混在同一个任务或提交中。
+
+## 三个独立门槛
+
+- 集成：交接卡、只读 preflight、lease 和集成分支记录完整功能历史。
+- 接受：用户接受精确 integration tip；它只记录 acceptance，不推进 `main`。
+- 正式发布：仅从干净本地 `main` 运行正式发布手册；签名、公证、Cloudflare 和更新器仍为独立门槛。
 
 首次使用或重新克隆仓库后执行：
 

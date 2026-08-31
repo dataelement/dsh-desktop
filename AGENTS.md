@@ -6,6 +6,8 @@
 - 该触发语授权：同步当前开发成果到正式构建、修改版本号、运行聚焦检查、打包和签名、发布到 Sherlock 的 Cloudflare R2、验证公开更新源、提交并推送发布相关源码到既有 Fork 发布分支。
 - 不要强行合并 `dataelement/dsh-desktop` 的上游 `main`，不要覆盖或提交无关的用户改动。
 - 每次完成一项修改并通过相关聚焦验证后，必须创建本地 Git 提交；提交信息必须用中文清楚说明内容，不得把多个 session 的未确认改动混入同一提交。
+- 多 session 功能必须按 `docs/sherlock-multi-session-integration-runbook.md` 交接、预检、集成和接受；本地 `main` 是日常集成权威，禁止自动上游同步。上游差异只在独立 `codex/upstream-sync/<YYYYMMDD>` 审阅流程处理。
+- 功能 worktree 不得构建或替换共享 Sherlock 客户端。Plan A 集成工具现已生效；Plan B 的共享客户端来源/构建 runner 和 Plan C 的隔离功能预览尚未生效。Plan B 落地前，本地测试请求仍按本文件既有 `docs/sherlock-local-test-runbook.md` 规则执行。
 - 正式构建只能从干净的本地 `main` 提交执行；若其他本地分支仍有尚未合并到 `main` 的提交，或其他 worktree 仍有未提交的修改，必须停止构建并先完成取舍、提交或合并。
 - 当版本为 `1.0.0`、`2.0.0` 等大版本时，必须在正式构建提交上创建本地注释标签 `V1.0.0`、`V2.0.0`。未经用户明确授权，不得向远端推送任何版本标签，以免触发未配置的 GitHub Actions。
 - 开发完成不要运行全功能测试；只运行发布手册列出的聚焦测试以及被本次改动直接影响的测试。
