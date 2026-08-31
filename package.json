@@ -33,6 +33,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
     "git:policy:install": "node scripts/install-local-git-policy.mjs",
     "git:formal:verify": "node scripts/verify-formal-git-state.mjs",
+    "git:handoff": "node scripts/create-sherlock-session-handoff.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "package:dir": "npm run build && electron-builder --dir",
