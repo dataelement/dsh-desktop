@@ -21,6 +21,7 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
       version: '0.7.5',
       date: '2026-08-31',
       items: [
+        '侧栏新增并排的“新对话”和“新研究”入口，“新研究”可直接创建并进入研究模式',
         '优化研究组件引用标签：选择组件后先以半透明状态提示，取消选择会自动移除，点击输入区后则固定保留',
         '进一步放宽研究画布的缩小范围，并在视口偏离内容时提供快速回到内容的入口',
         '新增简洁的 Sherlock 启动动画，改善客户端启动时的视觉衔接'
@@ -85,6 +86,7 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
       version: '0.7.5',
       date: '2026-08-31',
       items: [
+        'Added separate New Chat and New Research sidebar actions, with New Research opening directly in Research mode',
         'Refined Research reference tags with a provisional translucent state, automatic removal on deselection, and persistent tags after focusing the composer',
         'Expanded the Research canvas zoom-out range and added a quick way to return to content when the viewport drifts away',
         'Added a restrained Sherlock launch animation for a smoother transition into the client'

@@ -1,18 +1,32 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-index 37b931e..923095b 100644
+index 37b931e..5e6ed1f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/client.js
-@@ -7049,8 +7049,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
- 			replace(items) {
- 				this.current = items.map((item) => ({
+@@ -7051,6 +7051,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
  					id: item.id,
-+					...item.anchorSeq === void 0 ? {} : { anchorSeq: item.anchorSeq },
  					messageId: item.message.id,
  					placement: item.placement,
 +					source: item.message.source,
  					content: item.message.content,
  					preview: previewOf(item.message.content),
  					text: textOf(item.message.content)
+@@ -9922,7 +9923,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 			* stays usable).
+ 			* @param workspaceId - explicit target Workspace for scoped actions.
+ 			*/
+-			startSession(workspaceId) {
++			startSession(workspaceId, beforeOpen) {
+ 				const workspace = this.list.getSnapshot();
+ 				const current = this.sessions.list.getSnapshot().current;
+ 				const currentWorkspaceId = current === void 0 ? void 0 : workspace.items.find((item) => item.sessionIds.includes(current))?.workspaceId;
+@@ -9932,6 +9933,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 					return;
+ 				}
+ 				this.connectWorkspace(target).then((sessionId) => {
++					beforeOpen?.(sessionId);
+ 					this.sessions.open(sessionId);
+ 				}, (reason) => {
+ 					console.warn("new session failed:", reason);
 @@ -10448,6 +10450,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
  		function displayFailureMessage(failure) {
  			if (failure === null || typeof failure !== "object") return String(failure);
@@ -30,16 +44,32 @@ index 37b931e..923095b 100644
  		exports.SessionRuntime = SessionRuntime;
  		exports.SlotRegistry = SlotRegistry;
  		exports.WorkspaceCreateError = WorkspaceCreateError;
-diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts
-index 43ac58b..2f18c2f 100644
---- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts
-+++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/sessions/conversation.d.ts
-@@ -277,6 +277,8 @@ export type ToolCallBlock = RunningToolCall | ToolResultNode;
- /** One transient inbox occurrence from the authoritative `session/queue` snapshot. */
- export interface QueuedMessage {
-     readonly id: MessageId;
-+    /** Durable event sequence where this transient row entered the inbox, when known. */
-+    readonly anchorSeq?: number;
-     /** Stable message identity used for transient-to-durable steering handoff. */
-     readonly messageId: MessageId;
-     /** Agent-resolved placement; only queued rows accept queue mutations. */
+diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/contract/workspaces.d.ts b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/contract/workspaces.d.ts
+index fe9180d..828fc8c 100644
+--- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/contract/workspaces.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/contract/workspaces.d.ts
+@@ -25,8 +25,10 @@ export interface IWorkspaces {
+      * list state.
+      * @param workspaceId - explicit target; omitted inherits the current
+      * Session's Workspace before falling back to the recency projection.
++     * @param beforeOpen - optional preparation hook invoked with the resolved
++     * session id immediately before navigation.
+      */
+-    startSession(workspaceId?: WorkspaceId): void;
++    startSession(workspaceId?: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): void;
+     /**
+      * Register an existing path as a Workspace.
+      * @param input - the Host create payload.
+diff --git a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/workspaces/service.d.ts b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/workspaces/service.d.ts
+index bd8d3b6..ac22003 100644
+--- a/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/workspaces/service.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-runtime/lib/types/client/workspaces/service.d.ts
+@@ -84,7 +84,7 @@ export declare class WorkspaceRuntime implements IWorkspaces {
+      * stays usable).
+      * @param workspaceId - explicit target Workspace for scoped actions.
+      */
+-    startSession(workspaceId?: WorkspaceId): void;
++    startSession(workspaceId?: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): void;
+     /**
+      * Register an existing path as a Workspace.
+      * @param input - the Host create payload.

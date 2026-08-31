@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 9ca3639..1b212bf 100644
+index 9ca3639..6c6fa40 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 @@ -23,16 +23,17 @@ window.__ModuleLoader__.load({
@@ -14,7 +14,7 @@ index 9ca3639..1b212bf 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}.hHd-Xa_sherlockLogo{display:block;width:120px;height:17px;flex:none;background:currentColor;-webkit-mask:url(/sherlock-logo.svg) center/contain no-repeat;mask:url(/sherlock-logo.svg) center/contain no-repeat}.hHd-Xa_collapsed .hHd-Xa_toggle .hHd-Xa_panelIcon{display:inline}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root{background:rgba(255,255,255,.62)}body[data-ds-dark-theme] .hHd-Xa_root{background:rgba(18,18,20,.46)}" : "") + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
++			tag.textContent = css + ".hHd-Xa_root:not(.hHd-Xa_collapsed){padding-top:32px}.hHd-Xa_sherlockLogo{display:block;width:120px;height:17px;flex:none;background:currentColor;-webkit-mask:url(/sherlock-logo.svg) center/contain no-repeat;mask:url(/sherlock-logo.svg) center/contain no-repeat}.hHd-Xa_collapsed .hHd-Xa_toggle .hHd-Xa_panelIcon{display:inline}.hHd-Xa_newSessionGroup{display:flex;gap:8px;margin:0 2px 8px}.hHd-Xa_newSessionGroup .hHd-Xa_newSession{flex:1;min-width:0;margin:0;padding:8px 10px}.hHd-Xa_collapsed .hHd-Xa_newSessionGroup{flex-direction:column;align-items:flex-start;gap:4px;margin:0 0 12px}.hHd-Xa_collapsed .hHd-Xa_newSessionGroup .hHd-Xa_newSession{flex:none;margin:0}" + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root{background:rgba(255,255,255,.62)}body[data-ds-dark-theme] .hHd-Xa_root{background:rgba(18,18,20,.46)}" : "") + (navigator.userAgent.includes("Macintosh") ? ".hHd-Xa_root.hHd-Xa_collapsed{padding:46px 22px 6px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
@@ -22,7 +22,14 @@ index 9ca3639..1b212bf 100644
  			"iconButton": "hHd-Xa_iconButton",
  			"settingsArea": "hHd-Xa_settingsArea",
  			"wide": "hHd-Xa_wide",
-@@ -52,10 +53,18 @@ window.__ModuleLoader__.load({
+@@ -46,16 +47,25 @@ window.__ModuleLoader__.load({
+ 			"fading": "hHd-Xa_fading",
+ 			"wide-in": "hHd-Xa_wide-in",
+ 			"newSessionLabel": "hHd-Xa_newSessionLabel",
++			"newSessionGroup": "hHd-Xa_newSessionGroup",
+ 			"railIn": "hHd-Xa_railIn",
+ 			"rail-in": "hHd-Xa_rail-in",
+ 			"toggle": "hHd-Xa_toggle",
  			"collapsed": "hHd-Xa_collapsed",
  			"regionArea": "hHd-Xa_regionArea",
  			"panelIcon": "hHd-Xa_panelIcon",
@@ -42,7 +49,16 @@ index 9ca3639..1b212bf 100644
  		//#region lib/types/client/SidebarRoot.js
  		/**
  		* Sidebar shell: column geometry only. Collapse is a slide plus crossfade:
-@@ -138,6 +147,8 @@ window.__ModuleLoader__.load({
+@@ -88,7 +98,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - composed slot props (runtime share + injected callbacks, contract/slots.ts).
+ 		* @returns the sidebar element tree.
+ 		*/
+-		function SidebarRoot({ collapsed, width, startSession, toggleSidebar, t, renderSlot }) {
++		function SidebarRoot({ collapsed, width, startSession, startResearchSession, toggleSidebar, t, renderSlot }) {
+ 			const [settled, setSettled] = (0, react.useState)(collapsed);
+ 			(0, react.useEffect)(() => {
+ 				if (!collapsed) {
+@@ -138,6 +148,8 @@ window.__ModuleLoader__.load({
  			}, [pointerInside]);
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -51,7 +67,7 @@ index 9ca3639..1b212bf 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -153,11 +164,12 @@ window.__ModuleLoader__.load({
+@@ -153,11 +165,12 @@ window.__ModuleLoader__.load({
  						children: [wide && (0, react_jsx_runtime.jsx)("button", {
  							type: "button",
  							className: clsx(SidebarRoot_module_css_default.brand, SidebarRoot_module_css_default.wide),
@@ -67,7 +83,7 @@ index 9ca3639..1b212bf 100644
  						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
  							label: collapsed ? t("toggle.open") : t("toggle.collapse"),
  							delayMs: 500,
-@@ -168,13 +180,10 @@ window.__ModuleLoader__.load({
+@@ -168,32 +181,48 @@ window.__ModuleLoader__.load({
  								onClick: () => {
  									toggleSidebar();
  								},
@@ -83,3 +99,142 @@ index 9ca3639..1b212bf 100644
  							})
  						})]
  					}),
+-					(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+-						label: t("session.new.label"),
+-						delayMs: 500,
+-						disabled: wide,
+-						children: (0, react_jsx_runtime.jsxs)("button", {
+-							type: "button",
+-							className: SidebarRoot_module_css_default.newSession,
+-							"aria-label": t("session.new.label"),
+-							onClick: () => {
+-								startSession();
+-							},
+-							children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconNewChatOutline16, { size: wide ? 14 : 18 }), wide && (0, react_jsx_runtime.jsx)("span", {
+-								className: clsx(SidebarRoot_module_css_default.newSessionLabel, SidebarRoot_module_css_default.wide),
+-								children: t("session.new")
+-							})]
+-						})
++					(0, react_jsx_runtime.jsxs)("div", {
++						className: SidebarRoot_module_css_default.newSessionGroup,
++						children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++							label: t("session.new.label"),
++							delayMs: 500,
++							disabled: wide,
++							children: (0, react_jsx_runtime.jsxs)("button", {
++								type: "button",
++								className: SidebarRoot_module_css_default.newSession,
++								"aria-label": t("session.new.label"),
++								onClick: () => {
++									startSession();
++								},
++								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconNewChatOutline16, { size: wide ? 14 : 18 }), wide && (0, react_jsx_runtime.jsx)("span", {
++									className: clsx(SidebarRoot_module_css_default.newSessionLabel, SidebarRoot_module_css_default.wide),
++									children: t("session.new")
++								})]
++							})
++						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
++							label: t("session.newResearch.label"),
++							delayMs: 500,
++							disabled: wide,
++							children: (0, react_jsx_runtime.jsxs)("button", {
++								type: "button",
++								className: SidebarRoot_module_css_default.newSession,
++								"aria-label": t("session.newResearch.label"),
++								onClick: () => {
++									startResearchSession();
++								},
++								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutline16, { size: wide ? 14 : 18 }), wide && (0, react_jsx_runtime.jsx)("span", {
++									className: clsx(SidebarRoot_module_css_default.newSessionLabel, SidebarRoot_module_css_default.wide),
++									children: t("session.newResearch")
++								})]
++							})
++						})]
+ 					}),
+ 					(0, react_jsx_runtime.jsx)("div", {
+ 						className: SidebarRoot_module_css_default.regionArea,
+@@ -222,15 +251,19 @@ window.__ModuleLoader__.load({
+ 		/** `sidebar` namespace dictionaries: shell controls (brand row, New Session, fold toggle). */
+ 		/** Simplified Chinese dictionary (the key-set source of truth). */
+ 		const zh = {
+-			"session.new": "新会话",
+-			"session.new.label": "新建会话",
++			"session.new": "新对话",
++			"session.new.label": "新建对话",
++			"session.newResearch": "新研究",
++			"session.newResearch.label": "新建研究",
+ 			"toggle.open": "打开侧边栏",
+ 			"toggle.collapse": "收起侧边栏"
+ 		};
+ 		/** English dictionary, checked complete against the zh key set. */
+ 		const en = {
+-			"session.new": "New Session",
+-			"session.new.label": "New session",
++			"session.new": "New Chat",
++			"session.new.label": "New chat",
++			"session.newResearch": "New Research",
++			"session.newResearch.label": "New research",
+ 			"toggle.open": "Open sidebar",
+ 			"toggle.collapse": "Collapse sidebar"
+ 		};
+@@ -258,6 +291,14 @@ window.__ModuleLoader__.load({
+ 				startSession: (workspaceId) => {
+ 					ctx.workspaces.startSession(workspaceId);
+ 				},
++				startResearchSession: (workspaceId) => {
++					ctx.workspaces.startSession(workspaceId, (sessionId) => {
++						try {
++							window.sessionStorage.setItem("sherlock.conversation.initial-research-session.v1", sessionId);
++						} catch {}
++						window.dispatchEvent(new CustomEvent("sherlock:conversation-initial-research", { detail: { sessionId } }));
++					});
++				},
+ 				toggleSidebar: () => {
+ 					ctx.layout.toggleSidebar();
+ 				}
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/SidebarRoot.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/SidebarRoot.d.ts
+index d53f185..7aa857c 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/SidebarRoot.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/SidebarRoot.d.ts
+@@ -4,5 +4,5 @@ import type { SidebarRootComponentProps } from './contract/slots.ts';
+  * @param props - composed slot props (runtime share + injected callbacks, contract/slots.ts).
+  * @returns the sidebar element tree.
+  */
+-export declare function SidebarRoot({ collapsed, width, startSession, toggleSidebar, t, renderSlot, }: SidebarRootComponentProps): import("react").JSX.Element;
++export declare function SidebarRoot({ collapsed, width, startSession, startResearchSession, toggleSidebar, t, renderSlot, }: SidebarRootComponentProps): import("react").JSX.Element;
+ //# sourceMappingURL=SidebarRoot.d.ts.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
+index dc15aa7..fe3d206 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
+@@ -78,6 +78,8 @@ export type SidebarRootInjected = {
+      * recent Workspace, or clear into the New Session pure view when none exist.
+      */
+     startSession: (workspaceId?: WorkspaceId) => void;
++    /** Start a blank Session whose first visible conversation view is Research. */
++    startResearchSession: (workspaceId?: WorkspaceId) => void;
+     /** Toggle the sidebar column through the layout service. */
+     toggleSidebar: () => void;
+ };
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/locales.d.ts
+index 4bfe2ad..b1e153f 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/locales.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/locales.d.ts
+@@ -3,6 +3,8 @@
+ export declare const zh: {
+     'session.new': string;
+     'session.new.label': string;
++    'session.newResearch': string;
++    'session.newResearch.label': string;
+     'toggle.open': string;
+     'toggle.collapse': string;
+ };
+@@ -12,6 +14,8 @@ export type SidebarKey = keyof typeof zh;
+ export declare const en: {
+     'session.new': string;
+     'session.new.label': string;
++    'session.newResearch': string;
++    'session.newResearch.label': string;
+     'toggle.open': string;
+     'toggle.collapse': string;
+ };

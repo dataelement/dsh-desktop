@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1dd0e89..32dca61 100644
+index 1dd0e89..79b26d1 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
@@ -6273,7 +6273,7 @@ index 1dd0e89..32dca61 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -6913,38 +12135,69 @@ window.__ModuleLoader__.load({
+@@ -6913,44 +12135,89 @@ window.__ModuleLoader__.load({
  				rightItems: zone === void 0 ? null : renderSlot("conversation.input.right", zone),
  				footer: !hero && zone !== void 0 ? renderSlot("conversation.composer.dock", zone) : null
  			});
@@ -6367,7 +6367,27 @@ index 1dd0e89..32dca61 100644
  			});
  		}
  		//#endregion
-@@ -6980,6 +12233,20 @@ window.__ModuleLoader__.load({
+ 		//#region lib/types/client/skeleton/ConversationSession.js
+ 		/** Strict per-session header/body content inserted into the resident conversation layout. */
+ 		const DEFAULT_VIEW_ID = "chat";
++		const INITIAL_RESEARCH_SESSION_KEY = "sherlock.conversation.initial-research-session.v1";
++		const INITIAL_RESEARCH_SESSION_EVENT = "sherlock:conversation-initial-research";
++		function isInitialResearchSession(sessionId) {
++			try {
++				return window.sessionStorage.getItem(INITIAL_RESEARCH_SESSION_KEY) === sessionId;
++			} catch {
++				return false;
++			}
++		}
++		function clearInitialResearchSession(sessionId) {
++			try {
++				if (window.sessionStorage.getItem(INITIAL_RESEARCH_SESSION_KEY) === sessionId) window.sessionStorage.removeItem(INITIAL_RESEARCH_SESSION_KEY);
++			} catch {}
++		}
+ 		/** Resolve by id and keep stale persisted selections on the stable Chat fallback. */
+ 		function resolveActiveView(tabs, selectedId) {
+ 			const requestedId = selectedId ?? DEFAULT_VIEW_ID;
+@@ -6980,6 +12247,20 @@ window.__ModuleLoader__.load({
  				return other !== void 0 && item.id === other.id && item.displayTitle === other.displayTitle;
  			});
  		}
@@ -6388,7 +6408,7 @@ index 1dd0e89..32dca61 100644
  		/**
  		* Renders Session header chrome above the resident conversation scrollport.
  		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
-@@ -7034,16 +12301,7 @@ window.__ModuleLoader__.load({
+@@ -7034,16 +12315,7 @@ window.__ModuleLoader__.load({
  				}), tabs.length > 1 && (0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.tabs,
  					role: "tablist",
@@ -6406,7 +6426,7 @@ index 1dd0e89..32dca61 100644
  				})] })
  			});
  		}
-@@ -7053,14 +12311,42 @@ window.__ModuleLoader__.load({
+@@ -7053,14 +12325,59 @@ window.__ModuleLoader__.load({
  		* @param props - Strict Session input/store, view ledger, and render shares.
  		* @returns the active view area, or null while the Session remains blank.
  		*/
@@ -6414,7 +6434,9 @@ index 1dd0e89..32dca61 100644
 +		function ConversationSession({ sessionId, useSession, useInput, inputActions, useStore, actions, renderSlot, views, bindDraftMirror, releaseSessionImages, releaseResearchWorkspace, onResearchPresentation }) {
  			(0, react.useSyncExternalStore)(views.subscribe, views.version);
 -			const active = resolveActiveView(views.list(), useStore((s) => s.view));
-+			const view = useStore((s) => s.view ?? "chat");
++			const storedView = useStore((s) => s.view ?? "chat");
++			const initialResearchRequested = isInitialResearchSession(sessionId);
++			const view = initialResearchRequested ? "research" : storedView;
 +			const active = resolveActiveView(views.list(), view);
  			const composerPhase = useSession((s) => s.composerPhase);
  			const blank = useSession((s) => s.blank);
@@ -6425,6 +6447,21 @@ index 1dd0e89..32dca61 100644
 +			const researchRightTab = useStore((s) => s.researchRightTab ?? "conversation");
 +			const researchFilesTabOpen = useStore((s) => s.researchFilesTabOpen ?? true);
 +			const researchConversationUnread = useStore((s) => s.researchConversationUnread ?? false);
++			(0, react.useLayoutEffect)(() => {
++				const activate = (event) => {
++					if (event.detail?.sessionId !== sessionId) return;
++					clearInitialResearchSession(sessionId);
++					actions.setView("research");
++				};
++				window.addEventListener(INITIAL_RESEARCH_SESSION_EVENT, activate);
++				if (initialResearchRequested) {
++					clearInitialResearchSession(sessionId);
++					actions.setView("research");
++				}
++				return () => {
++					window.removeEventListener(INITIAL_RESEARCH_SESSION_EVENT, activate);
++				};
++			}, [actions, initialResearchRequested, sessionId]);
 +			const onInspectDone = (0, react.useCallback)(() => {
 +				actions.setInspect(null);
 +			}, [actions]);
@@ -6451,7 +6488,7 @@ index 1dd0e89..32dca61 100644
  			(0, react.useEffect)(() => {
  				if (inputState.draft === "" && storedDraft !== "") inputActions.setDraft(storedDraft);
  				const unmirror = bindDraftMirror(actions.setDraft);
-@@ -7071,6 +12357,9 @@ window.__ModuleLoader__.load({
+@@ -7071,6 +12388,9 @@ window.__ModuleLoader__.load({
  			(0, react.useEffect)(() => () => {
  				releaseSessionImages(sessionId);
  			}, [releaseSessionImages, sessionId]);
@@ -6461,7 +6498,7 @@ index 1dd0e89..32dca61 100644
  			if (blank && composerPhase === "blank") return null;
  			return (0, react_jsx_runtime.jsx)("div", {
  				className: ConversationRoot_module_css_default.viewArea,
-@@ -7090,7 +12379,7 @@ window.__ModuleLoader__.load({
+@@ -7090,7 +12410,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$5;
@@ -6470,7 +6507,7 @@ index 1dd0e89..32dca61 100644
  			document.head.appendChild(tag);
  		}
  		var DetailsPanel_module_css_default = {
-@@ -7143,13 +12432,17 @@ window.__ModuleLoader__.load({
+@@ -7143,13 +12463,17 @@ window.__ModuleLoader__.load({
  		}
  		function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }) {
  			const selection = useStore((s) => s.selection);
@@ -6488,7 +6525,7 @@ index 1dd0e89..32dca61 100644
  					children: [(0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.title,
  						children: selection === null ? t("details.title") : material?.name ?? selection.toolName ?? t("details.title")
-@@ -7175,6 +12468,7 @@ window.__ModuleLoader__.load({
+@@ -7175,6 +12499,7 @@ window.__ModuleLoader__.load({
  					})]
  				}), (0, react_jsx_runtime.jsx)("div", {
  					className: DetailsPanel_module_css_default.body,
@@ -6496,7 +6533,7 @@ index 1dd0e89..32dca61 100644
  					children: selection === null || callId === void 0 ? (0, react_jsx_runtime.jsx)("div", {
  						className: DetailsPanel_module_css_default.empty,
  						children: t("details.empty")
-@@ -8066,13 +13360,30 @@ window.__ModuleLoader__.load({
+@@ -8066,13 +13391,30 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region lib/types/client/conversation-nodes/compaction.js
  		function fallbackState$2(context) {
@@ -6527,7 +6564,7 @@ index 1dd0e89..32dca61 100644
  		/** Automatic compaction lifecycle and landed checkpoint Definition. */
  		const compactionDefinition = {
  			kind: "compaction",
-@@ -8094,11 +13405,21 @@ window.__ModuleLoader__.load({
+@@ -8094,11 +13436,21 @@ window.__ModuleLoader__.load({
  				}
  				return null;
  			},
@@ -6552,7 +6589,7 @@ index 1dd0e89..32dca61 100644
  				const marker = compactSummary(state.summary, state.checkpoint);
  				return chatNode(context, "compaction", marker.seq, marker);
  			}
-@@ -9038,7 +14359,7 @@ window.__ModuleLoader__.load({
+@@ -9038,7 +14390,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/AssistantMarkdown.module.css.mjs
@@ -6561,7 +6598,7 @@ index 1dd0e89..32dca61 100644
  		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/AssistantMarkdown.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -9128,29 +14449,36 @@ window.__ModuleLoader__.load({
+@@ -9128,29 +14480,36 @@ window.__ModuleLoader__.load({
  			const data = node.data;
  			const turn = node.location.kind === "turn" || node.location.kind === "step" ? node.location.turn : void 0;
  			const tail = useTurnData("turn-tail");
@@ -6603,7 +6640,7 @@ index 1dd0e89..32dca61 100644
  		});
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/chat/GenericCommandCard.module.css.mjs
-@@ -9330,13 +14658,14 @@ window.__ModuleLoader__.load({
+@@ -9330,13 +14689,14 @@ window.__ModuleLoader__.load({
  			});
  			const runMs = turn.start === void 0 || turn.end === void 0 ? void 0 : Math.max(0, turn.end.time - turn.start.time);
  			const messageId = closing.finalNode.messageId;
@@ -6620,7 +6657,7 @@ index 1dd0e89..32dca61 100644
  					time: closing.time,
  					runMs,
  					ttftMs: data.ttftMs,
-@@ -9499,6 +14828,9 @@ window.__ModuleLoader__.load({
+@@ -9499,6 +14859,9 @@ window.__ModuleLoader__.load({
  			const workspaces = ctx.workspaces;
  			const layout = ctx.layout;
  			const slots = ctx.slots;
@@ -6630,7 +6667,7 @@ index 1dd0e89..32dca61 100644
  			registerConversationNodes(ctx);
  			registerChatNodeRenderers(ctx);
  			ctx.effect(() => ctx.locale.register(NS, {
-@@ -9538,8 +14870,13 @@ window.__ModuleLoader__.load({
+@@ -9538,8 +14901,13 @@ window.__ModuleLoader__.load({
  				subscribe: (fn) => slots.subscribe("conversation.view", fn),
  				version: () => slots.getVersion("conversation.view")
  			};
@@ -6645,7 +6682,7 @@ index 1dd0e89..32dca61 100644
  			ctx.effect(() => sessions.provide({
  				hooks: ["input"],
  				props: ["inputActions"],
-@@ -9551,9 +14888,9 @@ window.__ModuleLoader__.load({
+@@ -9551,9 +14919,9 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}), "ui-conversation: input standard-kit provider");
@@ -6658,7 +6695,7 @@ index 1dd0e89..32dca61 100644
  				children: {
  					"conversation.session": {
  						kind: "single",
-@@ -9600,8 +14937,11 @@ window.__ModuleLoader__.load({
+@@ -9600,8 +14968,11 @@ window.__ModuleLoader__.load({
  						scope: "root"
  					}
  				},
@@ -6672,7 +6709,7 @@ index 1dd0e89..32dca61 100644
  					selectWorkspace: async (workspaceId) => {
  						const nextId = await workspaces.connectWorkspace(workspaceId);
  						if (sessionId !== void 0 && nextId !== sessionId) {
-@@ -9635,6 +14975,9 @@ window.__ModuleLoader__.load({
+@@ -9635,6 +15006,9 @@ window.__ModuleLoader__.load({
  						releaseSessionImages: (id) => {
  							conversation.releaseSessionImages(id);
  						},
@@ -6682,7 +6719,7 @@ index 1dd0e89..32dca61 100644
  						bindDraftMirror: (write) => inputHub.shell(sessionId).bindMirror(write)
  					};
  				}
-@@ -9764,9 +15107,13 @@ window.__ModuleLoader__.load({
+@@ -9764,9 +15138,13 @@ window.__ModuleLoader__.load({
  					return {
  						openDetails: (target) => {
  							actions.select(target);
@@ -6697,7 +6734,7 @@ index 1dd0e89..32dca61 100644
  						openFile: (path) => {
  							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
  							workspaces.openPath((0, _deepseek_ai_dsh_client_runtime_client.resolveWorkspacePath)(cwd, path)).catch(() => {});
-@@ -9776,6 +15123,8 @@ window.__ModuleLoader__.load({
+@@ -9776,6 +15154,8 @@ window.__ModuleLoader__.load({
  						},
  						loadImage: (attachment) => conversation.resolveImage(sessionId, attachment),
  						inspectCall: (callId) => {
@@ -6706,7 +6743,7 @@ index 1dd0e89..32dca61 100644
  							actions.setInspect({ callId });
  							actions.setView("trajectory");
  						},
-@@ -9798,6 +15147,8 @@ window.__ModuleLoader__.load({
+@@ -9798,6 +15178,8 @@ window.__ModuleLoader__.load({
  					};
  				}
  			}, ChatView);
@@ -6715,7 +6752,7 @@ index 1dd0e89..32dca61 100644
  			slots.register({
  				name: "conversation.composer.dock",
  				id: "stats",
-@@ -9822,9 +15173,122 @@ window.__ModuleLoader__.load({
+@@ -9822,9 +15204,122 @@ window.__ModuleLoader__.load({
  					layout.closeDetails();
  				} })
  			}, DetailsPanel);
