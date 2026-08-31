@@ -1207,7 +1207,7 @@ describe('Sherlock workspace and composer controls', () => {
     expect(horizontalMetricsOffset).toBeGreaterThanOrEqual(0)
     expect(font.readUInt16BE(horizontalMetricsOffset + 4)).toBeGreaterThanOrEqual(8000)
     expect(inputBarCss).toContain(
-      '.uV2eYG_chip{display:inline-block;height:24px;line-height:24px;vertical-align:middle}'
+      '.uV2eYG_chip{box-sizing:border-box;display:inline-block;width:136px;min-width:136px;max-width:136px;height:24px;line-height:24px;vertical-align:middle}'
     )
     expect(inputBarCss).toContain(
       '.uV2eYG_chipLabel{width:calc(100% - 12px);height:22px;gap:6px'
@@ -7048,6 +7048,22 @@ describe('Sherlock workspace and composer controls', () => {
     expect(researchCss).toContain('[data-node-dragging=true]')
     expect(researchCss).toContain(':focus-visible')
     expect(researchCss).toContain('body[data-ds-dark-theme] .rScV5Q_artifactCard')
+  })
+
+  it('keeps Research component geometry stable while selected', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const researchCss = styles.find(({ pluginCss }) =>
+      pluginCss?.endsWith('/ResearchCanvas.module.css')
+    )?.textContent ?? ''
+
+    expect(researchCss).toContain(
+      '.rScV5Q_fileCard[data-selected=true],.rScV5Q_artifactCard[data-selected=true]{border-color:var(--dsw-alias-state-business-primary);box-shadow:'
+    )
+    expect(researchCss).toContain(
+      '.rScV5Q_richNode[data-selected=true]{border-color:var(--dsw-alias-state-business-primary);box-shadow:'
+    )
+    expect(researchCss).not.toMatch(/\[data-selected=true\]\{border:2px/)
   })
 
   it('keeps the global Research conversation tab fluid at narrow sidebar widths', async () => {
