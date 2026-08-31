@@ -293,6 +293,47 @@ function manifestWithMergedFeature(manifest, featureBranch, merged) {
   })
 }
 
+function exactMergedEvidence(feature, checks, mergeCommit) {
+  const merged = feature.merged
+  if (!merged || merged.mergeCommit !== mergeCommit || merged.verificationCommit !== mergeCommit) return false
+  if (merged.checks.length !== checks.length) return false
+  return merged.checks.every((check, index) =>
+    check.verifiedCommit === mergeCommit &&
+    check.outcome === 'passed' &&
+    check.timeoutMs === checks[index].timeoutMs &&
+    check.summary === `已在暂存合并树执行：${checks[index].argv.join(' ')}` &&
+    JSON.stringify(check.argv) === JSON.stringify(checks[index].argv)
+  )
+}
+
+function assertLiveFeatureTip(repository, feature) {
+  if (resolveCommit(repository, `refs/heads/${feature.handoff.branch}`) !== feature.handoff.tipCommit) {
+    fail('功能分支引用不再指向交接卡 tip。')
+  }
+}
+
+function stagedManifestOnly(repository, manifestPath) {
+  const unstaged = runGit(repository, ['diff', '--name-only', '--']).stdout
+  const staged = runGit(repository, ['diff', '--cached', '--name-only', '--']).stdout.trim().split('\n').filter(Boolean)
+  return unstaged.length === 0 && staged.length === 1 && staged[0] === manifestPath
+}
+
+function headManifest(repository, manifestPath) {
+  try {
+    return validateIntegrationBatchManifest(JSON.parse(runGit(repository, ['show', `HEAD:${manifestPath}`]).stdout))
+  } catch {
+    return null
+  }
+}
+
+function boundaryForContinuation(repository, feature, lease) {
+  const context = resolveRepositoryContext(repository)
+  const parents = mergeParents(repository, context.head)
+  if (parents.length !== 2 || parents[1] !== feature.handoff.tipCommit) return null
+  if (lease.currentTip !== context.head && parents[0] !== lease.currentTip) return null
+  return { context, mergeCommit: context.head }
+}
+
 function recordMergedFeature({ repository, lease, manifest, manifestPath, featureBranch, mergeCommit, checks, now, ownerToken }) {
   const nextManifest = manifestWithMergedFeature(manifest, featureBranch, {
     mergeCommit,
@@ -394,7 +435,39 @@ export function continueIntegrationFeature({ integrationRepository, manifestPath
   checkedNow(now)
   const state = readManifestForMutation(integrationRepository, manifestPath)
   const feature = selectedFeature(state.manifest, featureBranch)
-  if (feature.merged) fail('功能已经记录为完成合并。')
+  const actions = mergeActions(featureBranch, state.manifest.integrationChecks)
+  if (feature.merged) {
+    assertLiveFeatureTip(state.context.worktreeRoot, feature)
+    verifyMutationOwner(state.context, state.lease, ownerToken, { requireLeaseTip: false })
+    const headRecord = headManifest(state.context.worktreeRoot, state.lease.manifestPath)
+    const recordParents = mergeParents(state.context.worktreeRoot, state.context.head)
+    const clean = readRepositoryStatus(state.context.worktreeRoot).sourceClean
+    if (
+      headRecord && !headRecord.features.find((entry) => entry.handoff.branch === featureBranch)?.merged &&
+      clean === false && stagedManifestOnly(state.context.worktreeRoot, state.lease.manifestPath)
+    ) {
+      const boundary = boundaryForContinuation(state.context.worktreeRoot, feature, state.lease)
+      if (!boundary || !exactMergedEvidence(feature, state.manifest.integrationChecks, boundary.mergeCommit)) {
+        fail('暂存的合并记录不满足精确恢复条件。')
+      }
+      if (dryRun) return { schemaVersion: 1, status: 'planned', batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit: boundary.mergeCommit, afterCommit: boundary.mergeCommit, actions }
+      runGit(state.context.worktreeRoot, ['commit', '-m', `集成：记录功能 ${featureBranch} 合并验证`])
+      const recordCommit = resolveRepositoryContext(state.context.worktreeRoot).head
+      const nextLease = updateActiveBatchTip({ repository: state.context.worktreeRoot, ownerToken, expectedRevision: state.lease.revision, expectedTip: state.lease.currentTip, nextTip: recordCommit, updatedAt: now })
+      return { schemaVersion: 1, status: 'merged', batchId: nextLease.batchId, branch: nextLease.branch, beforeCommit: boundary.mergeCommit, afterCommit: recordCommit, actions }
+    }
+    if (
+      clean && recordParents.length === 1 && recordParents[0] === state.lease.currentTip &&
+      runGit(state.context.worktreeRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', state.context.head]).stdout.trim() === state.lease.manifestPath &&
+      runGit(state.context.worktreeRoot, ['show', '-s', '--format=%s', state.context.head]).stdout.trim() === `集成：记录功能 ${featureBranch} 合并验证` &&
+      exactMergedEvidence(feature, state.manifest.integrationChecks, state.lease.currentTip)
+    ) {
+      if (dryRun) return { schemaVersion: 1, status: 'planned', batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit: state.context.head, afterCommit: state.context.head, actions }
+      const nextLease = updateActiveBatchTip({ repository: state.context.worktreeRoot, ownerToken, expectedRevision: state.lease.revision, expectedTip: state.lease.currentTip, nextTip: state.context.head, updatedAt: now })
+      return { schemaVersion: 1, status: 'merged', batchId: nextLease.batchId, branch: nextLease.branch, beforeCommit: state.context.head, afterCommit: state.context.head, actions }
+    }
+    fail('功能已经记录为完成合并。')
+  }
   requirePassingPreflight(state.context.worktreeRoot, 'continue', state.manifestPath, featureBranch)
   verifyMutationOwner(state.context, state.lease, ownerToken, { requireLeaseTip: false })
   const parents = mergeParents(state.context.worktreeRoot, state.context.head)
@@ -406,7 +479,6 @@ export function continueIntegrationFeature({ integrationRepository, manifestPath
   ) {
     fail('continue 只能记录父提交精确匹配租约 tip 和功能 tip 的边界合并。')
   }
-  const actions = mergeActions(featureBranch, state.manifest.integrationChecks)
   if (dryRun) return { schemaVersion: 1, status: 'planned', batchId: state.lease.batchId, branch: state.lease.branch, beforeCommit: state.context.head, afterCommit: state.context.head, actions }
   const mergeCommit = state.context.head
   try {

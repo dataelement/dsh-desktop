@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildFeatureHandoff } from '../scripts/lib/sherlock-integration-model.mjs'
-import { acquireActiveBatchLease, readActiveBatchLease } from '../scripts/lib/sherlock-active-batch.mjs'
+import { acquireActiveBatchLease, readActiveBatchLease, updateActiveBatchTip } from '../scripts/lib/sherlock-active-batch.mjs'
 import { resolveRepositoryContext } from '../scripts/lib/sherlock-git-state.mjs'
 import {
   adoptIntegrationBatch,
@@ -437,6 +437,130 @@ exit "$status"
 
     expect(repository.git(integration, 'rev-parse', `${result.afterCommit}^`)).toBe(boundary)
     expect(repository.git(integration, 'show', '-s', '--format=%P', boundary).split(' ')).toHaveLength(2)
+  })
+
+  it('commits only an exact staged manifest record after a boundary merge interruption', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'staged-record')
+    const integration = repository.createWorktree('integration-staged-record', 'codex/integration/20260831-16')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-16', handoffPaths: [handoff], integrationChecks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }], dryRun: false, now: '2026-08-31T05:16:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-16.json')
+    repository.git(integration, 'merge', '--no-ff', '--no-edit', 'codex/feat/staged-record-20260831')
+    const boundary = repository.git(integration, 'rev-parse', 'HEAD')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.features[0].merged = {
+      mergeCommit: boundary,
+      verificationCommit: boundary,
+      checks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], outcome: 'passed', summary: `已在暂存合并树执行：${process.execPath} -e process.exit(0)`, verifiedCommit: boundary, completedAt: '2026-08-31T05:17:00.000Z', timeoutMs: 1000 }],
+      recordedAt: '2026-08-31T05:17:00.000Z'
+    }
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    repository.git(integration, 'add', '--', 'config/sherlock-integration-batches/20260831-16.json')
+
+    const result = continueIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/staged-record-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:18:00.000Z' })
+
+    expect(repository.git(integration, 'rev-parse', `${result.afterCommit}^`)).toBe(boundary)
+    expect(repository.git(integration, 'status', '--porcelain=v1')).toBe('')
+    expect(readActiveBatchLease(integration)).toMatchObject({ currentTip: result.afterCommit })
+  })
+
+  it('performs only the outstanding lease CAS after an exact manifest record commit', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'record-cas')
+    const integration = repository.createWorktree('integration-record-cas', 'codex/integration/20260831-17')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-17', handoffPaths: [handoff], integrationChecks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }], dryRun: false, now: '2026-08-31T05:17:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-17.json')
+    const before = context.head
+    repository.git(integration, 'merge', '--no-ff', '--no-edit', 'codex/feat/record-cas-20260831')
+    const boundary = repository.git(integration, 'rev-parse', 'HEAD')
+    const lease = readActiveBatchLease(integration)!
+    updateActiveBatchTip({ repository: integration, ownerToken, expectedRevision: lease.revision, expectedTip: before, nextTip: boundary, updatedAt: '2026-08-31T05:18:00.000Z' })
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.features[0].merged = {
+      mergeCommit: boundary,
+      verificationCommit: boundary,
+      checks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], outcome: 'passed', summary: `已在暂存合并树执行：${process.execPath} -e process.exit(0)`, verifiedCommit: boundary, completedAt: '2026-08-31T05:18:00.000Z', timeoutMs: 1000 }],
+      recordedAt: '2026-08-31T05:18:00.000Z'
+    }
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    repository.git(integration, 'add', '--', 'config/sherlock-integration-batches/20260831-17.json')
+    repository.git(integration, 'commit', '-m', '集成：记录功能 codex/feat/record-cas-20260831 合并验证')
+    const record = repository.git(integration, 'rev-parse', 'HEAD')
+
+    const result = continueIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/record-cas-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:19:00.000Z' })
+
+    expect(result.afterCommit).toBe(record)
+    expect(repository.git(integration, 'rev-parse', 'HEAD')).toBe(record)
+    expect(readActiveBatchLease(integration)).toMatchObject({ currentTip: record })
+  })
+
+  it('retains a real conflict and prints both-side commit context with CLI exit 3', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'conflict-output')
+    const integration = repository.createWorktree('integration-conflict-output', 'codex/integration/20260831-18')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-18', handoffPaths: [handoff], integrationChecks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }], dryRun: false, now: '2026-08-31T05:18:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-18.json')
+    const lease = readActiveBatchLease(integration)!
+    repository.write(integration, 'src/conflict-output.ts', 'export const integrationSide = true\n')
+    const integrationTip = repository.commit(integration, '集成侧冲突')
+    updateActiveBatchTip({ repository: integration, ownerToken, expectedRevision: lease.revision, expectedTip: lease.currentTip, nextTip: integrationTip, updatedAt: '2026-08-31T05:19:00.000Z' })
+    const manifestBytes = readFileSync(manifestPath)
+    const leaseBefore = JSON.stringify(readActiveBatchLease(integration))
+
+    const result = spawnSync(process.execPath, [integrationCli, 'merge', '--repo', integration, '--manifest', manifestPath, '--feature', 'codex/feat/conflict-output-20260831'], { cwd: projectRoot, encoding: 'utf8' })
+
+    expect(result.status).toBe(3)
+    expect(result.stdout).toContain(`integrationTip=${integrationTip}`)
+    expect(result.stdout).toMatch(/featureTip=[0-9a-f]{40} featureBase=[0-9a-f]{40}/)
+    expect(spawnSync('git', ['-C', integration, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], { encoding: 'utf8' }).status).toBe(0)
+    expect(readFileSync(manifestPath)).toEqual(manifestBytes)
+    expect(JSON.stringify(readActiveBatchLease(integration))).toBe(leaseBefore)
+  })
+
+  it('aborts and restores when a declared argv check times out', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'timeout-check')
+    const integration = repository.createWorktree('integration-timeout-check', 'codex/integration/20260831-19')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-19', handoffPaths: [handoff], integrationChecks: [{ argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'], timeoutMs: 25 }], dryRun: false, now: '2026-08-31T05:19:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    const before = repository.snapshot()
+
+    expect(() => mergeIntegrationFeature({ integrationRepository: integration, manifestPath: path.join(integration, 'config', 'sherlock-integration-batches', '20260831-19.json'), featureBranch: 'codex/feat/timeout-check-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:20:00.000Z' })).toThrow(/检查失败/)
+    expect(repository.snapshot().equals(before)).toBe(true)
+  })
+
+  it('rejects a moved feature ref and a wrong owner token before mutating the integration batch', () => {
+    const repository = fixture()
+    prepareIntegrationRoot(repository)
+    const handoff = handoffFile(repository, 'owner-and-ref')
+    const integration = repository.createWorktree('integration-owner-and-ref', 'codex/integration/20260831-20')
+    adoptIntegrationBatch({ integrationRepository: integration, batchId: '20260831-20', handoffPaths: [handoff], integrationChecks: [{ argv: [process.execPath, '-e', 'process.exit(0)'], timeoutMs: 1000 }], dryRun: false, now: '2026-08-31T05:20:00.000Z' })
+    const context = resolveRepositoryContext(integration)
+    const manifestPath = path.join(integration, 'config', 'sherlock-integration-batches', '20260831-20.json')
+    const beforeWrongOwner = repository.snapshot()
+    expect(() => mergeIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/owner-and-ref-20260831', ownerToken: 'wrong-owner', dryRun: false, now: '2026-08-31T05:21:00.000Z' })).toThrow(/owner token/)
+    expect(repository.snapshot().equals(beforeWrongOwner)).toBe(true)
+
+    const worktreeList = repository.git(integration, 'worktree', 'list', '--porcelain')
+    const featurePath = /worktree ([^\n]+)\nHEAD [^\n]+\nbranch refs\/heads\/codex\/feat\/owner-and-ref-20260831/.exec(worktreeList)?.[1]
+    expect(featurePath).toBeTruthy()
+    repository.write(featurePath!, 'src/moved.ts', 'export const moved = true\n')
+    repository.commit(featurePath!, '移动功能引用')
+    const beforeMovedRef = repository.snapshot()
+    const ownerToken = JSON.parse(readFileSync(path.join(context.gitDirectory, 'sherlock-integration-owner.json'), 'utf8')).ownerToken
+    expect(() => mergeIntegrationFeature({ integrationRepository: integration, manifestPath, featureBranch: 'codex/feat/owner-and-ref-20260831', ownerToken, dryRun: false, now: '2026-08-31T05:22:00.000Z' })).toThrow(/预检|移动|tip/)
+    expect(repository.snapshot().equals(beforeMovedRef)).toBe(true)
   })
 
   it('renders a usable recovery command with POSIX quoting for hostile paths and branches', () => {
