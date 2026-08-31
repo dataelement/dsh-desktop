@@ -182,4 +182,50 @@ describe('tracked integration batch manifests and read-only preflight', () => {
     expect(invalidPhase.stdout).toBe('')
     expect(invalidPhase.stderr).toMatch(/phase|阶段/)
   })
+
+  it('fails closed with distinct phase actions when each of the eight phases lacks or receives a forbidden prerequisite', () => {
+    const repository = fixture()
+    const { base, handoff } = createFeature(repository, 'phase-gates')
+    const integration = repository.createWorktree('integration-phase-gates', 'codex/integration/20260831-03')
+    const manifest = createIntegrationBatchManifest({
+      batchId: '20260831-03',
+      branch: 'codex/integration/20260831-03',
+      baseMainCommit: base,
+      handoffs: [handoff],
+      integrationChecks: [{ argv: ['npm', 'run', 'typecheck'], timeoutMs: 120000 }],
+      createdAt: '2026-08-31T03:02:00.000Z'
+    })
+    const manifestPath = writeManifest(repository, manifest)
+    const cases: Array<{
+      phase: Parameters<typeof preflightIntegrationAction>[0]['phase']
+      options: Omit<Parameters<typeof preflightIntegrationAction>[0], 'repository' | 'phase'>
+      action: string
+      finding: string
+    }> = [
+      { phase: 'prepare', options: { manifestPath }, action: 'prepare-batch', finding: 'phase-input-forbidden' },
+      { phase: 'merge', options: { manifestPath }, action: 'merge-feature', finding: 'phase-input-required' },
+      { phase: 'continue', options: { manifestPath }, action: 'continue-merge', finding: 'phase-input-required' },
+      { phase: 'recover-owner', options: { manifestPath }, action: 'recover-owner', finding: 'phase-input-required' },
+      { phase: 'sync-main', options: { manifestPath }, action: 'synchronize-main', finding: 'phase-input-required' },
+      { phase: 'accept', options: { manifestPath }, action: 'accept-batch', finding: 'phase-input-required' },
+      { phase: 'promote', options: { manifestPath }, action: 'promote-fast-forward', finding: 'phase-input-required' },
+      { phase: 'cancel', options: { manifestPath, featureBranch: handoff.branch }, action: 'cancel-batch', finding: 'phase-input-forbidden' }
+    ]
+
+    const actionKinds = new Set<string>()
+    for (const testCase of cases) {
+      const before = repository.snapshot()
+      const report = preflightIntegrationAction({ repository: integration, phase: testCase.phase, ...testCase.options })
+      expect(repository.snapshot().equals(before)).toBe(true)
+      expect(report.ok).toBe(false)
+      expect(report.plannedActions).toEqual([
+        expect.objectContaining({ kind: testCase.action })
+      ])
+      expect(report.findings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: testCase.finding, severity: 'error' })
+      ]))
+      actionKinds.add(report.plannedActions[0]!.kind)
+    }
+    expect(actionKinds.size).toBe(8)
+  })
 })

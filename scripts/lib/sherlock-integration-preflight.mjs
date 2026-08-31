@@ -15,6 +15,40 @@ import { validateFeatureHandoff, validateIntegrationBatchManifest } from './sher
 
 const fullSha = /^[0-9a-f]{40}$/
 const phases = new Set(['prepare', 'merge', 'continue', 'recover-owner', 'sync-main', 'accept', 'promote', 'cancel'])
+const phaseRequirements = Object.freeze({
+  prepare: {
+    manifest: 'forbidden', feature: 'forbidden', mainWorktree: 'forbidden', acceptedTip: 'forbidden',
+    sourceClean: true, action: 'prepare-batch', description: '准备创建新的集成批次。'
+  },
+  merge: {
+    manifest: 'required', feature: 'required', mainWorktree: 'forbidden', acceptedTip: 'forbidden',
+    sourceClean: true, noMergeHead: true, unrecordedFeature: true, action: 'merge-feature', description: '验证合并指定功能。'
+  },
+  continue: {
+    manifest: 'required', feature: 'required', mainWorktree: 'forbidden', acceptedTip: 'forbidden',
+    sourceClean: true, continuation: true, action: 'continue-merge', description: '验证继续或恢复指定功能的合并。'
+  },
+  'recover-owner': {
+    manifest: 'required', feature: 'forbidden', mainWorktree: 'forbidden', acceptedTip: 'required',
+    sourceClean: true, integrationBranch: true, action: 'recover-owner', description: '验证集成批次的 owner 恢复。'
+  },
+  'sync-main': {
+    manifest: 'required', feature: 'forbidden', mainWorktree: 'required', acceptedTip: 'forbidden',
+    sourceClean: true, action: 'synchronize-main', description: '验证与 main 的同步。'
+  },
+  accept: {
+    manifest: 'required', feature: 'forbidden', mainWorktree: 'forbidden', acceptedTip: 'required',
+    sourceClean: true, allFeaturesMerged: true, action: 'accept-batch', description: '验证集成批次验收。'
+  },
+  promote: {
+    manifest: 'required', feature: 'forbidden', mainWorktree: 'required', acceptedTip: 'required',
+    sourceClean: true, allFeaturesMerged: true, action: 'promote-fast-forward', description: '验证向 main 的 fast-forward 推进。'
+  },
+  cancel: {
+    manifest: 'required', feature: 'forbidden', mainWorktree: 'forbidden', acceptedTip: 'forbidden',
+    action: 'cancel-batch', description: '验证显式取消集成批次。'
+  }
+})
 
 function finding(code, severity, message, details) {
   return details === undefined ? { code, severity, message } : { code, severity, message, details }
@@ -163,14 +197,52 @@ export function verifyFeatureHandoff({ repository, handoff, batchMainCommit }) {
   return report
 }
 
-function actionFor(phase) {
-  return { kind: phase, description: `只读预检已完成；${phase} 阶段的变更必须由集成执行器显式执行。` }
+function actionFor(requirements, featureBranch) {
+  const target = requirements.feature === 'required' && featureBranch ? `功能 ${featureBranch}` : '批次'
+  return { kind: requirements.action, description: `${requirements.description}目标：${target}；变更必须由集成执行器显式执行。` }
+}
+
+function hasInput(value) {
+  return typeof value === 'string' && value.length > 0
+}
+
+function validatePhaseInputs(report, requirements, inputs) {
+  for (const [name, requirement] of Object.entries(requirements)) {
+    if (!['manifest', 'feature', 'mainWorktree', 'acceptedTip'].includes(name)) continue
+    const value = inputs[name]
+    if (requirement === 'required' && !hasInput(value)) {
+      addError(report, 'phase-input-required', `${name} 是 ${report.phase} 阶段的必填输入。`, { phase: report.phase, input: name })
+    }
+    if (requirement === 'forbidden' && value !== undefined) {
+      addError(report, 'phase-input-forbidden', `${name} 不允许用于 ${report.phase} 阶段。`, { phase: report.phase, input: name })
+    }
+  }
+}
+
+function mergeInProgress(repository) {
+  return runGit(repository, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { allowFailure: true }).status === 0
 }
 
 export function preflightIntegrationAction({ repository, phase, manifestPath, featureBranch, mainWorktree, expectedAcceptedTip }) {
   if (!phases.has(phase)) throw new Error('phase 必须是受支持的集成阶段。')
+  const requirements = phaseRequirements[phase]
   const report = reportFor(repository, phase)
-  report.plannedActions.push(actionFor(phase))
+  report.plannedActions.push(actionFor(requirements, featureBranch))
+  validatePhaseInputs(report, requirements, {
+    manifest: manifestPath,
+    feature: featureBranch,
+    mainWorktree,
+    acceptedTip: expectedAcceptedTip
+  })
+  if (requirements.sourceClean) {
+    const status = attempt(report, 'integration-worktree-status-failed', () => readRepositoryStatus(repository))
+    if (status && !status.sourceClean) {
+      addError(report, 'integration-worktree-dirty', '当前集成 worktree 含未提交源码改动。', {
+        trackedChanges: status.trackedChanges,
+        untrackedSources: status.untrackedSources
+      })
+    }
+  }
   let manifest
   if (manifestPath) {
     try {
@@ -181,13 +253,40 @@ export function preflightIntegrationAction({ repository, phase, manifestPath, fe
     if (manifest) {
       report.batchId = manifest.batchId
       if (report.branch !== manifest.branch) addError(report, 'integration-branch-mismatch', '当前分支不是清单指定的集成分支。', { expected: manifest.branch, actual: report.branch })
+      if (requirements.integrationBranch && (!report.branch || !/^codex\/integration\/\d{8}-\d{2}$/.test(report.branch))) {
+        addError(report, 'integration-branch-required', '当前 worktree 必须位于合法集成分支。', { branch: report.branch })
+      }
       const baseAncestor = attempt(report, 'batch-base-ancestry-check-failed', () => isAncestor(repository, manifest.baseMainCommit, report.head))
       if (baseAncestor === false) addError(report, 'batch-base-not-ancestor', '批次 baseMainCommit 不是当前集成提交的祖先。', { base: manifest.baseMainCommit, head: report.head })
       const expectedAncestor = attempt(report, 'batch-expected-main-ancestry-check-failed', () => isAncestor(repository, manifest.expectedMainCommit, report.head))
       if (expectedAncestor === false) addError(report, 'batch-expected-main-not-ancestor', '批次 expectedMainCommit 不是当前集成提交的祖先。', { expectedMainCommit: manifest.expectedMainCommit, head: report.head })
-      const selected = featureBranch ? manifest.features.filter((feature) => feature.handoff.branch === featureBranch) : manifest.features
-      if (featureBranch && selected.length === 0) addError(report, 'feature-not-in-batch', '指定功能分支不在批次清单中。', { featureBranch })
-      for (const feature of selected) {
+      const selected = requirements.feature === 'required' && hasInput(featureBranch)
+        ? manifest.features.filter((feature) => feature.handoff.branch === featureBranch)
+        : []
+      if (requirements.feature === 'required' && hasInput(featureBranch) && selected.length !== 1) {
+        addError(report, 'feature-not-in-batch', '指定功能分支不在批次清单中。', { featureBranch })
+      }
+      if (requirements.unrecordedFeature && selected[0]?.merged) {
+        addError(report, 'feature-already-recorded-merged', '指定功能已记录为完成合并，不能再次执行 merge。', { featureBranch })
+      }
+      if (requirements.continuation && selected[0]) {
+        const feature = selected[0]
+        const continued = attempt(report, 'continuation-state-check-failed', () =>
+          mergeInProgress(repository) || (!feature.merged && isAncestor(repository, feature.handoff.tipCommit, report.head))
+        )
+        if (!continued) addError(report, 'continuation-state-required', 'continue 阶段必须检测到 MERGE_HEAD 或未记录的功能 tip 已在当前 HEAD 中。', { featureBranch })
+        if (feature.merged) addError(report, 'feature-already-recorded-merged', '已记录完成合并的功能不能继续 merge。', { featureBranch })
+      }
+      if (requirements.allFeaturesMerged) {
+        const unmerged = manifest.features.filter((feature) => !feature.merged).map((feature) => feature.handoff.branch)
+        if (unmerged.length > 0) addError(report, 'batch-features-unmerged', '验收或推进前必须记录所有功能已完成合并。', { branches: unmerged })
+      }
+      const featuresToVerify = requirements.feature === 'required'
+        ? selected
+        : requirements.allFeaturesMerged || phase === 'sync-main' || phase === 'recover-owner'
+          ? manifest.features
+          : []
+      for (const feature of featuresToVerify) {
         const featureResult = attempt(report, 'feature-preflight-failed', () => verifyFeatureHandoff({ repository, handoff: feature.handoff, batchMainCommit: report.head }))
         if (featureResult) {
           report.findings.push(...featureResult.findings)
@@ -195,19 +294,20 @@ export function preflightIntegrationAction({ repository, phase, manifestPath, fe
         }
       }
     }
-  } else if (phase !== 'prepare') {
-    addError(report, 'batch-manifest-required', '此阶段必须提供批次清单。')
   }
-  if (expectedAcceptedTip !== undefined) {
+  if (requirements.acceptedTip === 'required' && hasInput(expectedAcceptedTip)) {
     if (!fullSha.test(expectedAcceptedTip)) addError(report, 'accepted-tip-invalid', 'expectedAcceptedTip 必须是完整小写 SHA。')
     else if (report.head !== expectedAcceptedTip) addError(report, 'accepted-tip-mismatch', '当前集成提交不是预期验收提交。', { expected: expectedAcceptedTip, actual: report.head })
   }
-  if (mainWorktree) {
+  if (requirements.mainWorktree === 'required' && hasInput(mainWorktree)) {
     const mainContext = attempt(report, 'main-worktree-invalid', () => resolveRepositoryContext(mainWorktree))
     if (mainContext) {
       if (mainContext.branch !== 'main') addError(report, 'main-worktree-branch-invalid', 'main worktree 必须位于 main 分支。', { branch: mainContext.branch })
       const status = attempt(report, 'main-worktree-status-failed', () => readRepositoryStatus(mainContext.worktreeRoot))
       if (status && !status.sourceClean) addError(report, 'main-worktree-dirty', 'main worktree 含未提交源码改动。')
+      if (manifest && mainContext.head !== manifest.expectedMainCommit) {
+        addError(report, 'main-worktree-expected-mismatch', 'main worktree HEAD 必须精确匹配批次 expectedMainCommit。', { expected: manifest.expectedMainCommit, actual: mainContext.head })
+      }
     }
   }
   return report
