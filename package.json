@@ -35,6 +35,7 @@
     "git:formal:verify": "node scripts/verify-formal-git-state.mjs",
     "git:handoff": "node scripts/create-sherlock-session-handoff.mjs",
     "git:integration:preflight": "node scripts/verify-sherlock-integration.mjs",
+    "git:integration": "node scripts/manage-sherlock-integration.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "package:dir": "npm run build && electron-builder --dir",
