@@ -466,6 +466,7 @@ function createWindow(): BrowserWindow {
       : {}),
     ...(isMacOS
       ? {
+          acceptFirstMouse: true,
           vibrancy: 'menu' as const,
           visualEffectState: 'active' as const,
           backgroundColor: '#00000000'
