@@ -94,6 +94,16 @@ final result: passed
 
 final result: passed
 
+## 思维导图组件顶栏一致性 QA（2026-09-01）
+
+- 用户问题参考：`/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-b348fbd7-bc32-4c0d-a3d5-4cd1f8200a80.png`，其中思维导图使用了白色特殊顶栏，与普通组件的深色顶栏不一致。
+- 真实本地包：`/Users/heyafeng/Documents/ChatGPT/dsh/.worktrees/integration-20260901-04/dist-notarized/mac-arm64/Sherlock.app`，集成提交 `7dd0d3641e981625dd02a756aa40f7fa0f1f923f`；实机图 `/tmp/sherlock-research-mind-map-final-7dd0d364.jpg`。
+- 参考图与实机图已在同一原始分辨率比较输入中检查。思维导图现在直接复用普通组件顶栏变量，顶栏为一致的深色表面；白色背景仅保留在思维导图内容区。
+- 实机中 PDF、简要思维导图和常规思维导图的顶栏视觉层级一致；标题仍可读，图表白底、蓝色节点及灰色连接线不受影响。
+- 聚焦测试 153/153、`npm run typecheck`、干净依赖重放、包内容校验和 Developer ID 签名校验通过；构建明确跳过 Apple 公证、上传、版本变化和源码推送。
+
+final result: passed
+
 ## Research canvas visual components QA (2026-08-28)
 
 - Exact packaged app: `/Users/heyafeng/Documents/ChatGPT/dsh/.worktrees/research-canvas-file-drop/dist-notarized/mac-arm64/Sherlock.app` (`0.7.3`). The app was built and launched with `./script/build_and_run.sh --verify`; Apple notarization, uploads, the public update feed, version changes, tags, and pushes were intentionally skipped.
