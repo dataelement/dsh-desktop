@@ -176,6 +176,7 @@ async function loadClientBundle(
       return new Proxy({
         MarkdownText: ({ text }: { text: string }) => createElement('div', null, text),
         IconBranchOutline16: () => createElement('span', { 'data-test-icon': 'branch' }),
+        IconChevronDownOutline14: () => createElement('span', { 'data-test-icon': 'chevron-down' }),
         IconListPenOutline16: () => createElement('span', { 'data-test-icon': 'list-pen' }),
         IconRefreshOutline16: () => createElement('span', { 'data-test-icon': 'refresh' })
       }, {
@@ -6652,8 +6653,21 @@ describe('Sherlock workspace and composer controls', () => {
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['file-a', 'artifact-b'],
-      'mind-map'
-    )).toEqual({ x: 962, y: 275, width: 560, height: 360, sizeMode: 'manual' })
+      'mind-map',
+      'brief'
+    )).toEqual({ x: 982, y: 275, width: 600, height: 500, sizeMode: 'manual' })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['file-a', 'artifact-b'],
+      'mind-map',
+      'standard'
+    )).toEqual({ x: 1042, y: 275, width: 720, height: 600, sizeMode: 'manual' })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['file-a', 'artifact-b'],
+      'mind-map',
+      'detailed'
+    )).toEqual({ x: 1102, y: 275, width: 840, height: 700, sizeMode: 'manual' })
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['missing'],
@@ -6661,7 +6675,7 @@ describe('Sherlock workspace and composer controls', () => {
     )).toBeNull()
   })
 
-  it('shows two selection actions and starts a mind-map component beside the selection', async () => {
+  it('keeps selection actions visible with the context menu and starts the chosen mind-map detail', async () => {
     const generate = vi.fn(async () => ({ ok: true }))
     const mounted = await mountResearchCanvas({
       sessionId: 'session-selection-actions',
@@ -6687,24 +6701,48 @@ describe('Sherlock workspace and composer controls', () => {
       expect(summary?.textContent).toContain('总结提炼')
       if (mindMap === null) return
 
+      const selectedCard = host.querySelector('[data-research-file-card="file-a"]')
+      expect(selectedCard).not.toBeNull()
+      await act(async () => {
+        selectedCard?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 180, clientY: 120
+        }))
+      })
+      expect(host.querySelector('[role="menu"]')).not.toBeNull()
+      expect(host.querySelector('[data-research-selection-actions]')).not.toBeNull()
+
       await act(async () => { click(browserWindow, mindMap) })
+      expect(mindMap.getAttribute('aria-expanded')).toBe('true')
+      const detailMenu = host.querySelector('[data-research-mind-map-menu]')
+      expect(detailMenu?.getAttribute('role')).toBe('menu')
+      expect(Array.from(detailMenu?.querySelectorAll('[role="menuitem"]') ?? [])
+        .map((item) => item.textContent)).toEqual([
+          '简要不超过 3 层，高度概括',
+          '常规平衡阅读效率与内容理解',
+          '详细充分展开内容关系细节'
+        ])
+      const brief = host.querySelector('[data-research-mind-map-detail="brief"]')
+      expect(brief).not.toBeNull()
+      await act(async () => { click(browserWindow, brief as HappyDOMElement | null) })
 
       expect(generate).toHaveBeenCalledTimes(1)
       expect(generate).toHaveBeenCalledWith(expect.objectContaining({
         sessionId: 'session-selection-actions',
         kind: 'mind-map',
+        detail: 'brief',
         selectedNodeIds: ['file-a', 'file-b'],
         targetNodeId: expect.any(String)
       }))
       expect(workspace.getSnapshot().artifacts).toMatchObject([{
         kind: 'generated-mind-map',
         generationStatus: 'pending',
+        generationDetail: 'brief',
         sourceNodeIds: ['file-a', 'file-b'],
         title: '思维导图',
-        x: 782,
+        x: 802,
         y: 100,
-        width: 560,
-        height: 360
+        width: 600,
+        height: 500
       }])
       expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([
         workspace.getSnapshot().artifacts[0]?.id
@@ -6736,6 +6774,9 @@ describe('Sherlock workspace and composer controls', () => {
       if (mindMap === null) return
 
       await act(async () => { click(browserWindow, mindMap) })
+      const standard = host.querySelector('[data-research-mind-map-detail="standard"]')
+      expect(standard).not.toBeNull()
+      await act(async () => { click(browserWindow, standard as HappyDOMElement | null) })
       const targetId = generate.mock.calls[0]?.[0]?.targetNodeId as string
       expect(targetId).toBeTypeOf('string')
       expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
@@ -6852,7 +6893,7 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('parses the generated Markdown outline into a bounded mind-map tree', async () => {
+  it('limits only brief mind maps to three levels and preserves deeper regular maps', async () => {
     const client = await loadClientBundle('dsh-client-ui-conversation')
     expect(client.parseResearchMindMap).toBeTypeOf('function')
     if (typeof client.parseResearchMindMap !== 'function') return
@@ -6866,6 +6907,26 @@ describe('Sherlock workspace and composer controls', () => {
         { label: '利润', children: [{ label: '毛利率', children: [] }] }
       ]
     })
+    const deepOutline = '# 经营质量\n- 增长\n  - 收入\n    - 海外\n      - 东南亚'
+    expect(client.parseResearchMindMap(deepOutline, 'brief')).toEqual({
+      label: '经营质量',
+      children: [{
+        label: '增长',
+        children: [
+          { label: '收入', children: [] },
+          { label: '海外', children: [] },
+          { label: '东南亚', children: [] }
+        ]
+      }]
+    })
+    expect(client.parseResearchMindMap(deepOutline, 'standard'))
+      .toMatchObject({ children: [{ children: [{ children: [{ children: [
+        { label: '东南亚' }
+      ] }] }] }] })
+    expect(client.parseResearchMindMap(deepOutline, 'detailed'))
+      .toMatchObject({ children: [{ children: [{ children: [{ children: [
+        { label: '东南亚' }
+      ] }] }] }] })
     expect(client.parseResearchMindMap('')).toBeNull()
   })
 
@@ -6879,13 +6940,15 @@ describe('Sherlock workspace and composer controls', () => {
       artifacts: [{
         id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
         title: '思维导图', excerpt: '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率',
-        generationStatus: 'settled', sourceNodeIds: ['source-file'],
-        x: 600, y: 260, width: 560, height: 360, sizeMode: 'manual'
+        generationStatus: 'settled', generationDetail: 'detailed', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
       }]
     })
     try {
       const mindMap = mounted.host.querySelector('[data-research-mind-map]')
       expect(mindMap).not.toBeNull()
+      expect(mindMap?.getAttribute('data-research-mind-map-detail')).toBe('detailed')
+      expect(mounted.host.querySelector('[data-research-generated-mind-map]')).not.toBeNull()
       expect(Array.from(
         mounted.host.querySelectorAll('[data-research-mind-map-node]')
       ).map((node) => node.textContent)).toEqual([
@@ -6951,20 +7014,53 @@ describe('Sherlock workspace and composer controls', () => {
     const prompt = client.researchSelectionGenerationPrompt(
       snapshot,
       ['artifact-source', 'file-source'],
-      'mind-map'
+      'mind-map',
+      'brief'
     )
     expect(prompt).toBeTypeOf('string')
     const parsed = client.parseResearchPrompt(prompt) as Record<string, unknown>
     expect(parsed).toMatchObject({
-      text: '请基于选中的研究材料生成思维导图。请用 Markdown 层级列表输出：第一行以“# ”开头写中心主题，后续使用“- ”和两个空格缩进表达分支；只保留关键结论和关系。',
       files: [{ id: 'file-source', path: '/w/source.pdf', name: 'source.pdf' }],
       artifacts: [{
         id: 'artifact-source', messageId: 'message-source',
         title: '助手回复', excerpt: '完整的历史研究结论。'
       }]
     })
+    expect(parsed.text).toContain('简要模式')
+    expect(parsed.text).toContain('总层级不得超过 3 层')
+    expect(parsed.text).toContain('适合直接截图粘贴到公司 PPT')
+    const standardPrompt = client.parseResearchPrompt(
+      client.researchSelectionGenerationPrompt(
+        snapshot, ['artifact-source'], 'mind-map', 'standard'
+      )
+    ) as Record<string, unknown>
+    const detailedPrompt = client.parseResearchPrompt(
+      client.researchSelectionGenerationPrompt(
+        snapshot, ['artifact-source'], 'mind-map', 'detailed'
+      )
+    ) as Record<string, unknown>
+    expect(standardPrompt.text).toContain('常规模式')
+    expect(standardPrompt.text).toContain('不设置固定层级上限')
+    expect(detailedPrompt.text).toContain('详细模式')
+    expect(detailedPrompt.text).toContain('不设置固定层级上限')
     expect(client.researchSelectionGenerationPrompt(snapshot, ['missing'], 'summary'))
       .toBeNull()
+  })
+
+  it('uses the approved PPT-ready white canvas, square nodes, palette, and connectors', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const css = styles.find(({ pluginCss }) =>
+      pluginCss?.endsWith('/ResearchCanvas.module.css')
+    )?.textContent ?? ''
+
+    expect(css).toContain('[data-research-generated-mind-map]{background:#fff;border-radius:0;box-shadow:none}')
+    expect(css).toContain('font-family:STHeiti_YFD,"STHeiti SC","PingFang SC",sans-serif')
+    expect(css).toContain('[data-research-mind-map-depth="0"]{background:rgb(0,80,150)}')
+    expect(css).toContain('[data-research-mind-map-depth="1"]{background:rgb(0,120,180)}')
+    expect(css).toContain('[data-research-mind-map-depth="2"]{background:rgb(30,185,225)}')
+    expect(css).toContain('border-radius:0;box-shadow:none')
+    expect(css).toContain('background:rgb(150,150,150)')
   })
 
   it('submits the selected-component request through the existing session queue', async () => {
