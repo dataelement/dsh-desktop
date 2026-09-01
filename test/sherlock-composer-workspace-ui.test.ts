@@ -939,8 +939,10 @@ async function mountResearchCanvas(options: {
   selectionGeneration?: {
     disabled?: boolean
     generate(request: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
+    inspect?(request: Record<string, unknown>): Promise<Record<string, unknown>>
+    cancel?(request: Record<string, unknown>): Promise<Record<string, unknown>>
   }
-  fetch?: (input: string, init?: { signal?: AbortSignal }) => Promise<Response>
+  fetch?: (input: string, init?: RequestInit) => Promise<Response>
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const { sessionId } = options
@@ -1073,7 +1075,12 @@ async function mountResearchCanvas(options: {
       setSelection(value: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
       selectedFiles(): Array<Record<string, unknown>>
       pendingOrphanRevocations(): string[]
-      observeAssistantResult(messageId: string, text: string): boolean
+      beginGeneration(kind: string, sourceNodeIds: string[], placement: Record<string, unknown>, detail?: string): Record<string, unknown> | null
+      attachGenerationTask(nodeId: string, receipt: Record<string, unknown>): boolean
+      applyGenerationInspection(nodeId: string, inspection: Record<string, unknown>): boolean
+      retryGeneration(nodeId: string): Record<string, unknown> | null
+      removeNodes(nodeIds: string[]): void
+      setGenerationCancelSink(sink?: (request: Record<string, unknown>) => unknown): void
     }
   }
   const researchWorkspaces = new Registry(storage as Storage)
@@ -1087,6 +1094,8 @@ async function mountResearchCanvas(options: {
     selectionGeneration?: {
       disabled?: boolean
       generate(request: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
+      inspect?(request: Record<string, unknown>): Promise<Record<string, unknown>>
+      cancel?(request: Record<string, unknown>): Promise<Record<string, unknown>>
     }
   }>
   const host = browserWindow.document.createElement('div')
@@ -1115,6 +1124,7 @@ async function mountResearchCanvas(options: {
     client,
     host,
     workspace,
+    researchWorkspaces,
     detachOfficePreview,
     researchOfficePreview,
     async cleanup() {
@@ -2266,7 +2276,7 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('settles a pending generated component when its assistant response appears', async () => {
+  it('keeps a queued generated component isolated from right-conversation assistant results', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
     try {
@@ -2285,7 +2295,6 @@ describe('Sherlock workspace and composer controls', () => {
           getSnapshot(): { artifacts: Array<Record<string, unknown>> }
           subscribeAssistantActions(listener: () => void): () => void
           assistantActionsActive(): boolean
-          observeAssistantResult(messageId: string, text: string): boolean
         }
       }
       const registry = new Registry(browserWindow.localStorage)
@@ -2311,9 +2320,9 @@ describe('Sherlock workspace and composer controls', () => {
         })
         expect(workspace.getSnapshot().artifacts).toMatchObject([{
           id: target?.id,
-          messageId: 'generated-message',
-          generationStatus: 'settled',
-          excerpt: '收入增长，但成本压力仍需继续验证。'
+          messageId: target?.id,
+          generationStatus: 'queued',
+          excerpt: '正在准备任务…'
         }])
       } finally {
         await act(async () => { root.unmount() })
@@ -2974,7 +2983,7 @@ describe('Sherlock workspace and composer controls', () => {
       }],
       modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives },
       async fetch(url, init) {
-        fetches.push({ url, signal: init?.signal })
+        fetches.push({ url, signal: init?.signal ?? undefined })
         return new Response(markdown, {
           headers: {
             'Content-Type': 'text/markdown; charset=utf-8',
@@ -3038,7 +3047,7 @@ describe('Sherlock workspace and composer controls', () => {
         x: 200, y: 200
       }],
       async fetch(_url, init) {
-        fetchSignal = init?.signal
+        fetchSignal = init?.signal ?? undefined
         return {
           ok: true,
           headers: new Headers(),
@@ -3150,7 +3159,7 @@ describe('Sherlock workspace and composer controls', () => {
         x: 200, y: 200, width: 420, height: 320, sizeMode: 'manual'
       }],
       async fetch(_url, init) {
-        fetches.push({ signal: init?.signal })
+        fetches.push({ signal: init?.signal ?? undefined })
         return new Response(source, {
           headers: { 'Content-Length': String(Buffer.byteLength(source)) }
         })
@@ -6672,19 +6681,19 @@ describe('Sherlock workspace and composer controls', () => {
       ['file-a', 'artifact-b'],
       'mind-map',
       'brief'
-    )).toEqual({ x: 1102, y: 275, width: 840, height: 700, sizeMode: 'manual' })
+    )).toEqual({ x: 942, y: 275, width: 520, height: 300, sizeMode: 'auto' })
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['file-a', 'artifact-b'],
       'mind-map',
       'standard'
-    )).toEqual({ x: 1162, y: 275, width: 960, height: 800, sizeMode: 'manual' })
+    )).toEqual({ x: 942, y: 275, width: 520, height: 300, sizeMode: 'auto' })
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['file-a', 'artifact-b'],
       'mind-map',
       'detailed'
-    )).toEqual({ x: 1222, y: 275, width: 1080, height: 900, sizeMode: 'manual' })
+    )).toEqual({ x: 942, y: 275, width: 520, height: 300, sizeMode: 'auto' })
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['missing'],
@@ -6711,10 +6720,10 @@ describe('Sherlock workspace and composer controls', () => {
       await act(async () => { workspace.setCanvasSize({ width: 800, height: 600 }) })
 
       const toolbar = host.querySelector('[data-research-selection-actions]')
-      const mindMap = host.querySelector('button[aria-label="生成思维导图"]')
+      const mindMap = host.querySelector('button[aria-label="思维导图"]')
       const summary = host.querySelector('button[aria-label="总结提炼"]')
       expect(toolbar).not.toBeNull()
-      expect(mindMap?.textContent).toContain('生成思维导图')
+      expect(mindMap?.textContent).toContain('思维导图')
       expect(summary?.textContent).toContain('总结提炼')
       if (mindMap === null) return
 
@@ -6752,14 +6761,15 @@ describe('Sherlock workspace and composer controls', () => {
       }))
       expect(workspace.getSnapshot().artifacts).toMatchObject([{
         kind: 'generated-mind-map',
-        generationStatus: 'pending',
+        generationStatus: 'queued',
         generationDetail: 'brief',
         sourceNodeIds: ['file-a', 'file-b'],
         title: '思维导图',
-        x: 922,
+        x: 762,
         y: 100,
-        width: 840,
-        height: 700
+        width: 520,
+        height: 300,
+        sizeMode: 'auto'
       }])
       expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([
         workspace.getSnapshot().artifacts[0]?.id
@@ -6769,7 +6779,132 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('settles the pending generated component from the next new assistant response', async () => {
+  it('persists an immutable bounded source snapshot and task identity', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-snapshot',
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'artifact-source', kind: 'assistant-result', messageId: 'message-source',
+        title: '已有结论', excerpt: '不可变的原始结论', x: 300, y: 100
+      }]
+    })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'summary',
+        ['file-source', 'artifact-source'],
+        { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+      )
+      expect(target).toMatchObject({
+        generationStatus: 'queued',
+        generationSources: [
+          { id: 'file-source', type: 'file', title: 'source.pdf', path: '/w/source.pdf' },
+          { id: 'artifact-source', type: 'artifact', title: '已有结论', text: '不可变的原始结论' }
+        ]
+      })
+      expect(Object.isFrozen((target as { generationSources: unknown[] }).generationSources)).toBe(true)
+      expect(mounted.workspace.attachGenerationTask(String(target?.id), {
+        taskId: 'task-snapshot', canvasNodeId: target?.id,
+        state: 'running', childSessionId: 'child-snapshot', lastSeq: 2, events: []
+      })).toBe(true)
+
+      const restored = JSON.parse(mounted.browserWindow.localStorage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-generation-snapshot'
+      ) ?? '[]')
+      expect(restored.find((node: { generationTaskId?: string }) =>
+        node.generationTaskId === 'task-snapshot')).toMatchObject({
+        generationTaskId: 'task-snapshot',
+        generationChildSessionId: 'child-snapshot',
+        generationStatus: 'running',
+        generationSources: (target as { generationSources: unknown[] }).generationSources
+      })
+      expect(JSON.stringify(restored)).not.toContain('generationEvents')
+      expect(JSON.stringify(restored)).not.toContain('generationPartialText')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('routes task inspection by node and task id and retries from the saved snapshot', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-routing',
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }]
+    })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'mind-map', ['file-source'],
+        { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }, 'brief'
+      ) as Record<string, unknown>
+      expect(mounted.workspace.attachGenerationTask(String(target.id), {
+        taskId: 'task-a', canvasNodeId: target.id, state: 'running',
+        childSessionId: 'child-a', lastSeq: 2, events: []
+      })).toBe(true)
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-b', canvasNodeId: target.id, state: 'completed',
+        lastSeq: 4, finalOutput: '# 错误任务', events: []
+      })).toBe(false)
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-a', canvasNodeId: 'different-node', state: 'completed',
+        lastSeq: 4, finalOutput: '# 错误节点', events: []
+      })).toBe(false)
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-a', canvasNodeId: target.id, state: 'failed',
+        lastSeq: 4, error: '生成失败，请重试。', events: []
+      })).toBe(true)
+
+      const retry = mounted.workspace.retryGeneration(String(target.id))
+      expect(retry).toMatchObject({
+        id: target.id, kind: 'mind-map', detail: 'brief',
+        generationSources: [{
+          id: 'file-source', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+        }]
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).not.toHaveProperty('generationTaskId')
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        generationStatus: 'queued', generationDetail: 'brief'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('cancels an active task when its destination component is deleted', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-delete',
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }]
+    })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'summary', ['file-source'],
+        { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+      ) as Record<string, unknown>
+      mounted.workspace.attachGenerationTask(String(target.id), {
+        taskId: 'task-delete', canvasNodeId: target.id, state: 'running',
+        childSessionId: 'child-delete', lastSeq: 2, events: []
+      })
+      const cancel = vi.fn()
+      mounted.workspace.setGenerationCancelSink(cancel)
+
+      mounted.workspace.removeNodes([String(target.id)])
+
+      expect(cancel).toHaveBeenCalledWith({
+        parentSessionId: 'session-generation-delete', taskId: 'task-delete'
+      })
+      expect(mounted.workspace.getSnapshot().artifacts).toEqual([])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('does not settle generated components from right-conversation assistant replies', async () => {
     const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
     const mounted = await mountResearchCanvas({
       sessionId: 'session-selection-generation-result',
@@ -6784,9 +6919,8 @@ describe('Sherlock workspace and composer controls', () => {
       const { browserWindow, host, workspace } = mounted
       await act(async () => {
         workspace.setCanvasSize({ width: 900, height: 700 })
-        workspace.observeAssistantResult('message-existing', '已有回复')
       })
-      const mindMap = host.querySelector('button[aria-label="生成思维导图"]')
+      const mindMap = host.querySelector('button[aria-label="思维导图"]')
       expect(mindMap).not.toBeNull()
       if (mindMap === null) return
 
@@ -6797,32 +6931,17 @@ describe('Sherlock workspace and composer controls', () => {
       const targetId = generate.mock.calls[0]?.[0]?.targetNodeId as string
       expect(targetId).toBeTypeOf('string')
       expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
-        .toMatchObject({ generationStatus: 'pending' })
+        .toMatchObject({ generationStatus: 'queued' })
 
-      await act(async () => {
-        workspace.observeAssistantResult('message-existing', '已有回复')
-      })
+      expect(workspace).not.toHaveProperty('observeAssistantResult')
       expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
-        .toMatchObject({ generationStatus: 'pending' })
-
-      await act(async () => {
-        workspace.observeAssistantResult(
-          'message-generated-map',
-          '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率'
-        )
-      })
-      expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
-        .toMatchObject({
-          generationStatus: 'settled',
-          messageId: 'message-generated-map',
-          excerpt: '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率'
-        })
+        .toMatchObject({ generationStatus: 'queued' })
     } finally {
       await mounted.cleanup()
     }
   })
 
-  it('recovers an interrupted persisted generation as a retryable error', async () => {
+  it('recovers a legacy pending generation as an interrupted state', async () => {
     const client = await loadClientBundle('dsh-client-ui-conversation')
     expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
     if (typeof client.ResearchWorkspaceRegistry !== 'function') return
@@ -6848,15 +6967,11 @@ describe('Sherlock workspace and composer controls', () => {
 
     expect(workspace.getSnapshot().artifacts).toMatchObject([{
       id: 'generated-summary',
-      generationStatus: 'error',
-      generationError: '生成中断，请重试。',
-      excerpt: '生成中断，请重试。'
+      generationStatus: 'interrupted',
+      generationError: '任务已中断，请重试。',
+      excerpt: '正在总结选中内容…'
     }])
-    expect(JSON.parse(storage.getItem(
-      `sherlock.research.canvas.artifacts.v1:${sessionId}`
-    ) ?? '[]')).toMatchObject([{
-      id: 'generated-summary', generationStatus: 'error'
-    }])
+    expect(workspace.getSnapshot().artifacts[0]?.generationSources).toBeUndefined()
   })
 
   it('retries a failed generated component in place', async () => {
@@ -6883,7 +6998,7 @@ describe('Sherlock workspace and composer controls', () => {
       const targetId = generate.mock.calls[0]?.[0]?.targetNodeId as string
       expect(workspace.getSnapshot().artifacts).toMatchObject([{
         id: targetId,
-        generationStatus: 'error',
+        generationStatus: 'failed',
         generationError: '模型暂时不可用'
       }])
       const retry = host.querySelector(
@@ -6903,8 +7018,212 @@ describe('Sherlock workspace and composer controls', () => {
       expect(workspace.getSnapshot().artifacts).toHaveLength(1)
       expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
         id: targetId,
-        generationStatus: 'pending'
+        generationStatus: 'queued'
       })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renders generation progress in the destination component and removes it after completion', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-process',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }]
+    })
+    try {
+      let target!: Record<string, unknown>
+      await act(async () => {
+        target = mounted.workspace.beginGeneration(
+          'mind-map', ['source-file'],
+          { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }, 'brief'
+        ) as Record<string, unknown>
+        mounted.workspace.attachGenerationTask(String(target.id), {
+          taskId: 'task-process', canvasNodeId: target.id, state: 'running',
+          childSessionId: 'child-process', lastSeq: 4,
+          events: [
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 1, type: 'queued' },
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 2, type: 'started' },
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 3, type: 'tool-started', tool: '读取文件' },
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 4, type: 'assistant-delta', text: '正在归纳关键关系' }
+          ]
+        })
+      })
+
+      const cardSelector = `[data-research-artifact-card="${String(target.id)}"]`
+      const runningCard = mounted.host.querySelector(cardSelector)
+      expect(runningCard?.getAttribute('data-research-generation-state')).toBe('running')
+      expect(runningCard?.querySelector('[data-research-node-title]')?.textContent).toBe('思维导图')
+      expect(runningCard?.querySelector('[data-research-generation-process]')?.textContent)
+        .toContain('正在读取文件')
+      expect(runningCard?.querySelector('[data-research-generation-process]')?.textContent)
+        .toContain('正在归纳关键关系')
+      expect(runningCard?.querySelector('[data-research-generation-cancel]')?.textContent).toBe('停止')
+      expect(runningCard?.hasAttribute('data-research-generated-mind-map')).toBe(false)
+
+      await act(async () => {
+        mounted.workspace.applyGenerationInspection(String(target.id), {
+          taskId: 'task-process', canvasNodeId: target.id, state: 'failed',
+          lastSeq: 5, error: '模型暂时不可用', events: []
+        })
+      })
+      const failedCard = mounted.host.querySelector(cardSelector)
+      expect(failedCard?.querySelector('[data-research-generation-process]')).toBeNull()
+      expect(failedCard?.querySelector('[data-research-generation-failure]')?.textContent)
+        .toContain('模型暂时不可用')
+      expect(failedCard?.querySelector('button[aria-label="重试生成"]')).not.toBeNull()
+
+      await act(async () => {
+        mounted.workspace.retryGeneration(String(target.id))
+        mounted.workspace.attachGenerationTask(String(target.id), {
+          taskId: 'task-process-retry', canvasNodeId: target.id, state: 'running',
+          childSessionId: 'child-process-retry', lastSeq: 1, events: []
+        })
+        mounted.workspace.applyGenerationInspection(String(target.id), {
+          taskId: 'task-process-retry', canvasNodeId: target.id, state: 'completed',
+          lastSeq: 2, finalOutput: '# 核心结论\n- 收益来源\n  - 经营改善', events: []
+        })
+      })
+      const completedCard = mounted.host.querySelector(cardSelector)
+      expect(completedCard?.getAttribute('data-research-generation-state')).toBe('completed')
+      expect(completedCard?.hasAttribute('data-research-generated-mind-map')).toBe(true)
+      expect(completedCard?.querySelector('[data-research-generation-process]')).toBeNull()
+      expect(completedCard?.querySelector('[data-research-generation-failure]')).toBeNull()
+      expect(completedCard?.querySelector('[data-research-mind-map]')).not.toBeNull()
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        width: 840, height: 700, sizeMode: 'auto'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('auto-sizes generation progress within bounds and preserves manual geometry', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.researchGenerationAutoGeometry).toBeTypeOf('function')
+    expect(client.researchGenerationFinalGeometry).toBeTypeOf('function')
+    if (typeof client.researchGenerationAutoGeometry !== 'function' ||
+        typeof client.researchGenerationFinalGeometry !== 'function') return
+
+    const active = {
+      kind: 'generated-mind-map', sizeMode: 'auto', generationDetail: 'brief',
+      generationEvents: Array.from({ length: 12 }, (_, index) => ({
+        type: index % 2 === 0 ? 'tool-started' : 'tool-finished'
+      })),
+      generationPartialText: '内容'.repeat(6000)
+    }
+    expect(client.researchGenerationAutoGeometry(active)).toEqual({ width: 640, height: 560 })
+    expect(client.researchGenerationAutoGeometry({ ...active, sizeMode: 'manual' })).toBeNull()
+    expect(client.researchGenerationFinalGeometry(active, '# 简要导图')).toEqual({
+      width: 840, height: 700
+    })
+    expect(840 / 700).toBeCloseTo(1.2, 5)
+    expect(client.researchGenerationFinalGeometry({
+      kind: 'generated-summary', sizeMode: 'auto'
+    }, '总结'.repeat(6000))).toEqual({ width: 520, height: 640 })
+    expect(client.researchGenerationFinalGeometry({ ...active, sizeMode: 'manual' }, '# 导图'))
+      .toBeNull()
+  })
+
+  it('reattaches and independently applies concurrent persisted task results', async () => {
+    const pendingA = deferred<Record<string, unknown>>()
+    const pendingB = deferred<Record<string, unknown>>()
+    const inspect = vi.fn((request: Record<string, unknown>) =>
+      request.taskId === 'task-a' ? pendingA.promise : pendingB.promise)
+    const sources = [{
+      id: 'source-file', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+    }]
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-concurrent-poll',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [
+        {
+          id: 'node-a', kind: 'generated-summary', messageId: 'node-a', title: '总结提炼',
+          excerpt: '正在准备任务…', generationStatus: 'running', sourceNodeIds: ['source-file'],
+          generationSources: sources, generationTaskId: 'task-a', generationChildSessionId: 'child-a',
+          generationLastSeq: 1, x: 600, y: 100, width: 520, height: 300, sizeMode: 'auto'
+        },
+        {
+          id: 'node-b', kind: 'generated-summary', messageId: 'node-b', title: '总结提炼',
+          excerpt: '正在准备任务…', generationStatus: 'running', sourceNodeIds: ['source-file'],
+          generationSources: sources, generationTaskId: 'task-b', generationChildSessionId: 'child-b',
+          generationLastSeq: 1, x: 600, y: 450, width: 520, height: 300, sizeMode: 'auto'
+        }
+      ],
+      selectionGeneration: {
+        generate: vi.fn(async () => ({ ok: true })), inspect
+      }
+    })
+    try {
+      expect(inspect).toHaveBeenCalledTimes(2)
+      expect(inspect.mock.calls.map(([request]) => request)).toEqual(expect.arrayContaining([
+        { parentSessionId: 'session-generation-concurrent-poll', taskId: 'task-a', afterSeq: 1 },
+        { parentSessionId: 'session-generation-concurrent-poll', taskId: 'task-b', afterSeq: 1 }
+      ]))
+
+      await act(async () => {
+        pendingB.resolve({
+          taskId: 'task-b', canvasNodeId: 'node-b', state: 'completed',
+          lastSeq: 2, finalOutput: '第二个任务先完成', events: []
+        })
+        await Promise.resolve()
+      })
+      expect(mounted.workspace.getSnapshot().artifacts.find((node) => node.id === 'node-b'))
+        .toMatchObject({ generationStatus: 'completed', excerpt: '第二个任务先完成' })
+      expect(mounted.workspace.getSnapshot().artifacts.find((node) => node.id === 'node-a'))
+        .toMatchObject({ generationStatus: 'running', excerpt: '正在准备任务…' })
+
+      await act(async () => {
+        pendingA.resolve({
+          taskId: 'task-a', canvasNodeId: 'node-a', state: 'completed',
+          lastSeq: 2, finalOutput: '第一个任务随后完成', events: []
+        })
+        await Promise.resolve()
+      })
+      expect(mounted.workspace.getSnapshot().artifacts).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'node-a', generationStatus: 'completed', excerpt: '第一个任务随后完成' }),
+        expect.objectContaining({ id: 'node-b', generationStatus: 'completed', excerpt: '第二个任务先完成' })
+      ]))
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('turns a missing persisted task into a component-local interrupted state', async () => {
+    const missing = Object.assign(new Error('not found'), { status: 404 })
+    const inspect = vi.fn(async () => { throw missing })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-missing-task',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'node-missing', kind: 'generated-summary', messageId: 'node-missing', title: '总结提炼',
+        excerpt: '正在准备任务…', generationStatus: 'running', sourceNodeIds: ['source-file'],
+        generationSources: [{
+          id: 'source-file', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+        }],
+        generationTaskId: 'task-missing', generationChildSessionId: 'child-missing',
+        generationLastSeq: 3, x: 600, y: 100, width: 520, height: 300, sizeMode: 'auto'
+      }],
+      selectionGeneration: {
+        generate: vi.fn(async () => ({ ok: true })), inspect
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve() })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: 'node-missing', generationStatus: 'interrupted',
+        generationError: '任务已中断，请重试。'
+      })
+      expect(mounted.host.querySelector('[data-research-generation-failure]')?.textContent)
+        .toContain('任务已中断，请重试。')
     } finally {
       await mounted.cleanup()
     }
@@ -6997,7 +7316,7 @@ describe('Sherlock workspace and composer controls', () => {
           '- 数据来源：行情接口与财报数据必须交叉验证。',
           '  - 毛利率'
         ].join('\n'),
-        generationStatus: 'settled', generationDetail: 'detailed', sourceNodeIds: ['source-file'],
+        generationStatus: 'completed', generationDetail: 'detailed', sourceNodeIds: ['source-file'],
         x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
       }]
     })
@@ -7127,7 +7446,7 @@ describe('Sherlock workspace and composer controls', () => {
       pluginCss?.endsWith('/ResearchCanvas.module.css')
     )?.textContent ?? ''
 
-    expect(css).toContain('[data-research-generated-mind-map]{background:#fff;border-radius:0;box-shadow:none}')
+    expect(css).not.toContain('[data-research-generated-mind-map]{background:#fff;border-radius:0;box-shadow:none}')
     expect(css).not.toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{display:none}')
     expect(css).not.toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{')
     expect(css).toContain('[data-research-generated-mind-map]>.rScV5Q_previewBody{background:#fff}')
@@ -7151,67 +7470,83 @@ describe('Sherlock workspace and composer controls', () => {
     expect(css).toContain('.rScV5Q_mindMapBranch:only-child:after{display:none}')
   })
 
-  it('submits the selected-component request through the existing session queue', async () => {
-    const client = await loadClientBundle('dsh-client-ui-conversation')
-    expect(client.InputHub).toBeTypeOf('function')
-    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
-    if (typeof client.InputHub !== 'function' ||
-        typeof client.ResearchWorkspaceRegistry !== 'function') return
-    const storage = new MemoryStorage()
-    const sessionId = 'session-selection-generation-queue'
-    storage.setItem(`sherlock.research.canvas.files.v1:${sessionId}`, JSON.stringify([{
-      id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
-      source: 'computer', x: 100, y: 100
-    }]))
-    storage.setItem(`sherlock.research.canvas.artifacts.v1:${sessionId}`, '[]')
-    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
-      for(id: string): {
-        beginGeneration(kind: string, sourceNodeIds: string[], placement: Record<string, unknown>): { id: string } | null
+  it('starts selected-component generation through the isolated task service', async () => {
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async () => ({
+      ok: true,
+      status: 202,
+      async json() {
+        return {
+          taskId: 'task-isolated', canvasNodeId: 'generated-summary',
+          state: 'running', childSessionId: 'child-isolated', lastSeq: 2, events: []
+        }
       }
-    }
-    const Hub = client.InputHub as new (
-      rootCtx: Record<string, unknown>,
-      t: (key: string) => string,
-      researchWorkspaces: InstanceType<typeof Registry>
-    ) => {
-      generateResearchSelection(session: Record<string, unknown>, request: Record<string, unknown>): Promise<Record<string, unknown>>
-    }
-    const parseResearchPrompt = client.parseResearchPrompt as (text: unknown) => Record<string, unknown>
-    const researchWorkspaces = new Registry(storage)
-    const target = researchWorkspaces.for(sessionId).beginGeneration(
-      'summary',
-      ['source-file'],
-      { x: 500, y: 100, width: 380, height: 240, sizeMode: 'manual' }
-    )
-    expect(target).not.toBeNull()
-    const prompts: Array<{ content: Array<Record<string, unknown>>; mode: string }> = []
-    const session = {
-      sessionId,
-      async prompt(content: Array<Record<string, unknown>>, mode: string) {
-        prompts.push({ content, mode })
-        return { ok: true }
-      }
-    }
-    const hub = new Hub({}, (key: string) => key, researchWorkspaces)
-
-    const result = await hub.generateResearchSelection(session, {
-      sessionId,
-      kind: 'summary',
-      selectedNodeIds: ['source-file'],
-      targetNodeId: target?.id
+    } as Response))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-selection-generation-isolated',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      fetch: fetchMock
     })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'summary', ['source-file'],
+        { x: 500, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+      ) as Record<string, unknown>
+      const generatedId = String(target.id)
+      fetchMock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 202,
+        async json() {
+          return {
+            taskId: 'task-isolated', canvasNodeId: generatedId,
+            state: 'running', childSessionId: 'child-isolated', lastSeq: 2, events: []
+          }
+        }
+      } as Response))
+      const prompt = vi.fn()
+      const session = { sessionId: 'session-selection-generation-isolated', prompt }
+      const Hub = mounted.client.InputHub as new (
+        rootCtx: Record<string, unknown>,
+        t: (key: string) => string,
+        researchWorkspaces: typeof mounted.researchWorkspaces
+      ) => {
+        generateResearchSelection(session: Record<string, unknown>, request: Record<string, unknown>): Promise<Record<string, unknown>>
+      }
+      const hub = new Hub({}, (key: string) => key, mounted.researchWorkspaces)
 
-    expect(JSON.parse(JSON.stringify(result))).toEqual({ ok: true })
-    expect(prompts).toHaveLength(1)
-    expect(prompts[0]?.mode).toBe('queue')
-    const parsed = parseResearchPrompt(prompts[0]?.content[0]?.text) as {
-      text: string
-      files: Array<Record<string, unknown>>
+      const result = await hub.generateResearchSelection(session, {
+        sessionId: session.sessionId,
+        kind: 'summary',
+        selectedNodeIds: ['source-file'],
+        targetNodeId: generatedId
+      })
+
+      expect(result).toMatchObject({ ok: true, taskId: 'task-isolated' })
+      expect(prompt).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/sherlock/research-tasks/start',
+        expect.objectContaining({ method: 'POST', cache: 'no-store', credentials: 'same-origin' })
+      )
+      const payload = JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))
+      expect(payload).toEqual({
+        parentSessionId: session.sessionId,
+        canvasNodeId: generatedId,
+        kind: 'summary',
+        sources: [{
+          id: 'source-file', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+        }]
+      })
+      expect(mounted.workspace.getSnapshot().artifacts.find((node) => node.id === generatedId))
+        .toMatchObject({
+          generationTaskId: 'task-isolated',
+          generationChildSessionId: 'child-isolated',
+          generationStatus: 'running'
+        })
+    } finally {
+      await mounted.cleanup()
     }
-    expect(parsed.text).toContain('总结提炼')
-    expect(parsed.files).toEqual([{
-      id: 'source-file', path: '/w/source.pdf', name: 'source.pdf'
-    }])
   })
 
   it('offers a bottom-center return control when the Research viewport has no components', async () => {
