@@ -1101,6 +1101,9 @@ async function mountResearchCanvas(options: {
       selectedFiles(): Array<Record<string, unknown>>
       pendingOrphanRevocations(): string[]
       createWebLink(url: string, placement?: Record<string, unknown>): Record<string, unknown> | null
+      updateWebLink(nodeId: string, url: string): boolean
+      applyWebLinkInspection(nodeId: string, expectedUrl: string, inspection: Record<string, unknown>): boolean
+      renameNode(nodeId: string, title: string): boolean
       createContainerDraft(placement?: Record<string, unknown>): Record<string, unknown> | null
       beginContainerGeneration(nodeId: string, prompt: string): Record<string, unknown> | null
       setContainerRefresh(nodeId: string, minutes: number): boolean
@@ -8141,6 +8144,118 @@ describe('Sherlock workspace and composer controls', () => {
     } finally {
       await mounted.cleanup()
     }
+  })
+
+  it('migrates legacy URL-like web titles to clean automatic titles', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-web-title-migration' })
+    try {
+      const parse = mounted.client.parseResearchCanvasArtifactNodes as (
+        raw: string
+      ) => Array<Record<string, unknown>>
+      expect(parse).toBeTypeOf('function')
+
+      const make = (id: string, title: string, url: string) => ({
+        id,
+        kind: 'web-link',
+        messageId: id,
+        title,
+        excerpt: url,
+        url,
+        x: 100,
+        y: 100
+      })
+      const parsed = parse(JSON.stringify([
+        make('legacy-percent', '%20www.baidu.com', 'https://www.baidu.com/'),
+        make('legacy-url', 'https://example.com/report', 'https://example.com/report'),
+        make('legacy-empty', '', 'https://empty.example/path'),
+        make('legacy-custom', '我的监控页面', 'https://custom.example/path')
+      ]))
+
+      expect(parsed).toMatchObject([
+        { id: 'legacy-percent', title: 'www.baidu.com', titleMode: 'auto' },
+        { id: 'legacy-url', title: 'example.com', titleMode: 'auto' },
+        { id: 'legacy-empty', title: 'empty.example', titleMode: 'auto' },
+        { id: 'legacy-custom', title: '我的监控页面', titleMode: 'custom' }
+      ])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('updates only current automatic web titles and preserves a user rename', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-web-title-mode' })
+    try {
+      let node: Record<string, unknown> | null = null
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        node = mounted.workspace.createWebLink('https://example.com/report')
+      })
+      expect(node).toMatchObject({
+        title: 'example.com',
+        titleMode: 'auto',
+        url: 'https://example.com/report'
+      })
+      if (node === null) return
+      const nodeId = String(mounted.workspace.getSnapshot().artifacts[0]?.id)
+
+      let changed = false
+      await act(async () => {
+        changed = mounted.workspace.applyWebLinkInspection(
+          nodeId,
+          'https://example.com/report',
+          { title: '真实页面标题' }
+        )
+      })
+      expect(changed).toBe(true)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '真实页面标题',
+        titleMode: 'auto'
+      })
+
+      await act(async () => {
+        changed = mounted.workspace.renameNode(nodeId, '我的标题')
+      })
+      expect(changed).toBe(true)
+      expect(mounted.workspace.applyWebLinkInspection(
+        nodeId,
+        'https://example.com/report',
+        { title: '不应覆盖' }
+      )).toBe(false)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '我的标题',
+        titleMode: 'custom'
+      })
+
+      await act(async () => {
+        changed = mounted.workspace.updateWebLink(nodeId, 'https://next.example/dashboard')
+      })
+      expect(changed).toBe(true)
+      expect(mounted.workspace.applyWebLinkInspection(
+        nodeId,
+        'https://example.com/report',
+        { title: '过期响应' }
+      )).toBe(false)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: 'next.example',
+        titleMode: 'auto',
+        url: 'https://next.example/dashboard'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps responsive web viewport scaling between sixty-five and one hundred percent', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const layout = client.researchWebFrameLayout as (
+      containerWidth: number,
+      scrollWidth: number
+    ) => { logicalWidth: number; scale: number }
+    expect(layout).toBeTypeOf('function')
+    expect(layout(720, 720)).toEqual({ logicalWidth: 720, scale: 1 })
+    expect(layout(720, 1_200)).toEqual({ logicalWidth: 1_108, scale: 0.65 })
+    expect(layout(400, 4_000)).toEqual({ logicalWidth: 615, scale: 0.65 })
+    expect(layout(900, 1_000)).toEqual({ logicalWidth: 1_000, scale: 0.9 })
   })
 
   it('keeps a bottom global toolbar for links and native container drafts', async () => {
