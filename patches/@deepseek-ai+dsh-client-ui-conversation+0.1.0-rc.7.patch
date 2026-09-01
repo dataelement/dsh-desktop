@@ -6333,14 +6333,23 @@ index 1dd0e89..a442752 100644
 +					return;
 +				}
 +				const read = window.dshDesktop?.researchWebReader?.read;
-+				if (typeof read !== "function") {
++				const linkFrame = window.dshDesktop?.researchLinkFrame;
++				if (typeof read !== "function" || typeof linkFrame?.authorize !== "function") {
 +					setReader({ status: "unavailable", article: null });
 +					return;
 +				}
 +				let active = true;
 +				setReader({ status: "loading", article: null });
-+				read({ sessionId, nodeId: node.id, url: node.url }).then((result) => {
++				linkFrame.authorize({ sessionId, nodeId: node.id, url: node.url }).then((authorization) => {
++					const authorizedUrl = normalizeResearchWebUrl(authorization?.url);
++					if (!active || authorizedUrl === null || authorizedUrl !== normalizeResearchWebUrl(node.url)) return null;
++					return read({ sessionId, nodeId: node.id, url: authorizedUrl });
++				}).then((result) => {
 +					if (!active) return;
++					if (result === null) {
++						setReader({ status: "unavailable", article: null });
++						return;
++					}
 +					const url = normalizeResearchWebUrl(result?.url);
 +					const ready = result?.status === "ready" && url !== null && isResearchWechatArticleUrl(url) && typeof result?.title === "string" && typeof result?.bodyHtml === "string";
 +					if (!ready) {
@@ -6353,7 +6362,10 @@ index 1dd0e89..a442752 100644
 +				}).catch(() => {
 +					if (active) setReader({ status: "unavailable", article: null });
 +				});
-+				return () => { active = false; };
++				return () => {
++					active = false;
++					Promise.resolve(linkFrame.release?.({ sessionId, nodeId: node.id })).catch(() => void 0);
++				};
 +			}, [sessionId, node.id, node.url, visible, attempt, onInspection]);
 +			if (reader.status === "offscreen") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-offscreen-placeholder": "", children: "网页已暂停" });
 +			if (reader.status === "loading") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-preview-loading": "", children: "正在安全读取文章…" });
