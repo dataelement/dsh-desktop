@@ -18,6 +18,21 @@ type ManualUpdateChecker = () => Promise<UpdateStatus>
 const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
   zh: [
     {
+      version: '0.7.6',
+      date: '2026-09-02',
+      items: [
+        '研究组件新增“思维导图”和“总结提炼”工具：可在所选内容旁生成新组件，思维导图提供简要、常规和详细三种模式',
+        '画布生成任务改为在目标组件内独立展示进度与失败重试，支持最多四路并发，并与右侧对话互不占用',
+        '统一思维导图为适合直接粘贴到 PPT 的横向白底样式，优化节点宽度、换行、对齐、连线和画布比例；支持双击编辑节点',
+        '总结提炼组件支持双击编辑；消息和输入框中的研究标签采用紧凑布局、补全类型图标，并可点击定位到对应画布组件',
+        '修复侧栏收起时点击搜索无法显示输入框的问题，展开后会直接聚焦搜索框',
+        '画布空白处右键新增“整理画布”，按内容尺寸混合平铺组件；“全选”会选择画布中的全部组件',
+        '画布底部新增“链接”和“容器”：链接组件可自动读取网页标题、自适应显示页面，并为微信文章提供安全阅读视图；智能容器可生成 KPI、图表、表格或文字内容',
+        '所有研究组件新增下载入口，思维导图支持 SVG、PNG 和 JPG；同时优化底栏间距和画布缩放下限',
+        '修复从 PowerPoint 组件生成思维导图失败、网页与微信链接读取竞态及智能容器生成失败等问题'
+      ]
+    },
+    {
       version: '0.7.5',
       date: '2026-08-31',
       items: [
@@ -87,6 +102,21 @@ const releaseNotes: Record<SherlockAboutLocale, SherlockReleaseNote[]> = {
     }
   ],
   en: [
+    {
+      version: '0.7.6',
+      date: '2026-09-02',
+      items: [
+        'Added Mind Map and Summary tools for Research components, creating new components beside the selected source with concise, standard, and detailed mind-map modes',
+        'Canvas generation jobs now show progress and retry states inside their target components, support up to four concurrent jobs, and no longer occupy the right-side conversation',
+        'Standardized mind maps as landscape, white-background layouts ready for PowerPoint, with improved node widths, wrapping, alignment, connectors, aspect ratio, and double-click text editing',
+        'Added double-click editing for summaries, compact Research tags with complete type icons in messages and the composer, and click-to-locate navigation back to canvas components',
+        'Fixed the collapsed-sidebar Search action so it expands the sidebar, shows the search field, and focuses it immediately',
+        'Added Arrange Canvas to the empty-canvas context menu with content-aware mixed tiling, while Select All now selects every canvas component',
+        'Added Link and Container tools to the canvas toolbar: Link components resolve real page titles, resize web content responsively, and use a safe reader for WeChat articles, while smart containers can generate KPI panels, charts, tables, or text',
+        'Added downloads to every Research component, including SVG, PNG, and JPG for mind maps, and refined the bottom toolbar spacing and canvas zoom floor',
+        'Fixed mind-map generation from PowerPoint components, web and WeChat reader races, and failed smart-container generation'
+      ]
+    },
     {
       version: '0.7.5',
       date: '2026-08-31',

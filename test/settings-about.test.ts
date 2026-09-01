@@ -151,36 +151,33 @@ describe('Sherlock About settings', () => {
     expect(zh.productName).toBe('Sherlock')
     expect(zh.version).toBe('9.8.7')
     expect(zh.releaseNotes[0]).toEqual({
-      version: '0.7.5',
-      date: '2026-08-31',
+      version: '0.7.6',
+      date: '2026-09-02',
       items: [
-        '侧栏新增并排的“新对话”和“新研究”入口，“新研究”可直接创建并进入研究模式',
-        '优化研究组件引用标签：选择组件后先以半透明状态提示，取消选择会自动移除，点击输入区后则固定保留',
-        '进一步放宽研究画布的缩小范围，并在视口偏离内容时提供快速回到内容的入口',
-        '新增简洁的 Sherlock 启动动画，改善客户端启动时的视觉衔接',
-        '修复“新研究”首屏画布、顶栏和右侧对话区布局异常，并使用专用研究图标',
-        '修复研究画布中 PDF 已加载但页面显示为空白的问题',
-        '完善空白研究右侧引导，在首条消息发送前显示品牌标题；工作区和模式选择固定显示在输入框上方，并确保新对话不再丢失模式入口',
-        '修复空白研究会话复用时点击“新对话”无响应的问题，可直接切回新对话页面',
-        '优化加入画布的助手回复组件尺寸，减少瘦长排版并保留自适应与手动缩放'
+        '研究组件新增“思维导图”和“总结提炼”工具：可在所选内容旁生成新组件，思维导图提供简要、常规和详细三种模式',
+        '画布生成任务改为在目标组件内独立展示进度与失败重试，支持最多四路并发，并与右侧对话互不占用',
+        '统一思维导图为适合直接粘贴到 PPT 的横向白底样式，优化节点宽度、换行、对齐、连线和画布比例；支持双击编辑节点',
+        '总结提炼组件支持双击编辑；消息和输入框中的研究标签采用紧凑布局、补全类型图标，并可点击定位到对应画布组件',
+        '修复侧栏收起时点击搜索无法显示输入框的问题，展开后会直接聚焦搜索框',
+        '画布空白处右键新增“整理画布”，按内容尺寸混合平铺组件；“全选”会选择画布中的全部组件',
+        '画布底部新增“链接”和“容器”：链接组件可自动读取网页标题、自适应显示页面，并为微信文章提供安全阅读视图；智能容器可生成 KPI、图表、表格或文字内容',
+        '所有研究组件新增下载入口，思维导图支持 SVG、PNG 和 JPG；同时优化底栏间距和画布缩放下限',
+        '修复从 PowerPoint 组件生成思维导图失败、网页与微信链接读取竞态及智能容器生成失败等问题'
       ]
     })
-    expect(zh.releaseNotes[1]?.version).toBe('0.7.4')
+    expect(zh.releaseNotes[1]?.version).toBe('0.7.5')
     expect(en.version).toBe('9.8.7')
     expect(en.releaseNotes[0]?.items[1]).toBe(
-      'Refined Research reference tags with a provisional translucent state, automatic removal on deselection, and persistent tags after focusing the composer'
+      'Canvas generation jobs now show progress and retry states inside their target components, support up to four concurrent jobs, and no longer occupy the right-side conversation'
     )
     expect(en.releaseNotes[0]?.items).toContain(
-      'Fixed blank PDF pages in the Research canvas after successful document loading'
+      'Added Link and Container tools to the canvas toolbar: Link components resolve real page titles, resize web content responsively, and use a safe reader for WeChat articles, while smart containers can generate KPI panels, charts, tables, or text'
     )
     expect(en.releaseNotes[0]?.items).toContain(
-      'Improved blank Research guidance with the Sherlock headline, kept workspace and mode controls above the composer, and prevented the mode control from disappearing in New Chat'
+      'Added downloads to every Research component, including SVG, PNG, and JPG for mind maps, and refined the bottom toolbar spacing and canvas zoom floor'
     )
     expect(en.releaseNotes[0]?.items).toContain(
-      'Fixed New Chat doing nothing when reusing a blank Research session, so it now switches directly to the New Chat screen'
-    )
-    expect(en.releaseNotes[0]?.items).toContain(
-      'Widened assistant reply components added to the Research canvas while preserving adaptive sizing and manual resize controls'
+      'Fixed mind-map generation from PowerPoint components, web and WeChat reader races, and failed smart-container generation'
     )
 
     const manualCheck = vi.fn(async () => ({
