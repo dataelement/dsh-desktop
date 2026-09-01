@@ -82,6 +82,10 @@ import {
   registerResearchCanvasWheelIpc,
   type ResearchCanvasWheelRouter
 } from './state/research-canvas-wheel'
+import {
+  ResearchLinkFrameRegistry,
+  registerResearchLinkFrameHandlers
+} from './state/research-link-frame'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: RESEARCH_PREVIEW_SCHEME,
@@ -117,6 +121,7 @@ let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
 let harnessThemePreferenceSyncTimer: ReturnType<typeof setInterval> | undefined
 let researchFilePreviewRegistry: ResearchFilePreviewRegistry | undefined
 let researchCanvasWheelRouter: ResearchCanvasWheelRouter | undefined
+const researchLinkFrameRegistry = new ResearchLinkFrameRegistry()
 
 function cancelPluginRecoverySessionReset(): void {
   if (pluginRecoveryResetTimer) clearTimeout(pluginRecoveryResetTimer)
@@ -513,7 +518,9 @@ function createWindow(): BrowserWindow {
     rendererPluginFailureLogs = rendererPluginFailureLogs.slice(-50)
   })
   installPluginRecoveryNavigation(window)
-  secureWindow(window)
+  secureWindow(window, {
+    allowsResearchFrameUrl: (url) => researchLinkFrameRegistry.allows(url)
+  })
   const canvasWheelRouter = installResearchCanvasWheelRouter(window)
   researchCanvasWheelRouter = canvasWheelRouter
   installContextMenu(window, harnessLocale)
@@ -708,6 +715,11 @@ function registerHarnessHandlers(): void {
     getMainWindow: () => mainWindow,
     getRouter: () => researchCanvasWheelRouter,
     onRejected: (error) => console.warn('[research-canvas] rejected wheel region update', error)
+  })
+  registerResearchLinkFrameHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    registry: researchLinkFrameRegistry
   })
 }
 

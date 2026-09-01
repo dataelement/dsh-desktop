@@ -1,7 +1,10 @@
 import { shell, type BrowserWindow } from 'electron'
 import { canGrantWindowPermission, isTrustedAppUrl } from './security-policy'
 
-export function secureWindow(window: BrowserWindow): void {
+export function secureWindow(
+  window: BrowserWindow,
+  options: { allowsResearchFrameUrl?(url: string): boolean } = {}
+): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isTrustedAppUrl(url)) return { action: 'allow' }
     if (isExternalUrl(url)) void shell.openExternal(url)
@@ -28,6 +31,11 @@ export function secureWindow(window: BrowserWindow): void {
       return
     }
     if (isPreviewUrl(event.url)) return
+    try {
+      if (options.allowsResearchFrameUrl?.(event.url) === true) return
+    } catch {
+      // Fail closed when the authorization registry cannot decide.
+    }
     event.preventDefault()
   })
 

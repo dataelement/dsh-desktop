@@ -20,6 +20,7 @@ import {
   safePathForFile
 } from './research-file-path'
 import { createResearchCanvasWheelBridge } from './research-canvas-wheel'
+import { createResearchLinkFrameBridge } from './research-link-frame'
 
 if (process.isMainFrame) {
 const DEVELOPER_MODE_STYLE_ID = 'sherlock-developer-mode-style'
@@ -171,6 +172,9 @@ contextBridge.exposeInMainWorld(
         ipcRenderer.sendSync('research:canvas-storage:set', key, value) === true
     }),
     researchCanvasWheel: createResearchCanvasWheelBridge(ipcRenderer),
+    researchLinkFrame: createResearchLinkFrameBridge(
+      (channel, value) => ipcRenderer.invoke(channel, value)
+    ),
     researchPreview: createResearchPreviewBridge(
       webUtils.getPathForFile,
       (channel, value) => ipcRenderer.invoke(channel, value)
