@@ -12,6 +12,10 @@ describe('research link frame authorization', () => {
       .toBe('https://example.com/report#part')
     expect(normalizeResearchLinkUrl('http://Example.com:80/path'))
       .toBe('http://example.com/path')
+    expect(normalizeResearchLinkUrl(' http:// www.baidu.com '))
+      .toBe('http://www.baidu.com/')
+    expect(normalizeResearchLinkUrl('http://%20www.baidu.com/'))
+      .toBe('http://www.baidu.com/')
     for (const value of [
       'javascript:alert(1)',
       'data:text/html,hello',

@@ -2486,6 +2486,10 @@ describe('Research canvas file drops', () => {
       .toBe('https://example.com/dashboard')
     expect(client.normalizeResearchWebUrl('http://Example.com:80/path'))
       .toBe('http://example.com/path')
+    expect(client.normalizeResearchWebUrl(' http:// www.baidu.com '))
+      .toBe('http://www.baidu.com/')
+    expect(client.normalizeResearchWebUrl('http://%20www.baidu.com/'))
+      .toBe('http://www.baidu.com/')
     for (const value of [
       'file:///tmp/report.html',
       'javascript:alert(1)',

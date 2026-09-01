@@ -56,7 +56,10 @@ function researchLinkAuthorization(value: unknown): ResearchLinkAuthorization {
 
 export function normalizeResearchLinkUrl(value: unknown): string | null {
   if (typeof value !== 'string') return null
-  const source = value.trim()
+  const source = value.trim().replace(
+    /^(https?:\/\/)(?:(?:%0[9a-d])|%20|[\u0009-\u000d\u0020])+/i,
+    '$1'
+  )
   if (source.length === 0 || source.length > MAX_URL_LENGTH) return null
   try {
     const parsed = new URL(source)

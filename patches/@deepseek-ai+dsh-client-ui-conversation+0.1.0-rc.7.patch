@@ -2740,7 +2740,7 @@ index 1dd0e89..1a6c25f 100644
 +		}
 +		function normalizeResearchWebUrl(value) {
 +			if (typeof value !== "string") return null;
-+			const source = value.trim();
++			const source = value.trim().replace(/^(https?:\/\/)(?:(?:%0[9a-d])|%20|[\u0009-\u000d\u0020])+/i, "$1");
 +			if (source.length === 0 || source.length > 8192) return null;
 +			try {
 +				const Url = typeof globalThis.URL === "function" ? globalThis.URL : globalThis.window?.URL;
