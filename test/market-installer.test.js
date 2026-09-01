@@ -1,8 +1,12 @@
-import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/state/profile-store'
+import { ensureRegistryDirectories, readDesired, writeDesired, writeGenerationMeta } from '../packages/dsh-desktop-market-installer/generations/registry'
 import {
   INSTALL_PATH,
   MARKET_PACKAGE,
@@ -247,7 +251,8 @@ describe('desktop plugin market installer', () => {
       binDirectory,
       dshEntryPath: fakeDshEntry,
       executablePath: process.execPath,
-      environment
+      environment,
+      home: root
     })
     const handle = service.runPlugin(['remove', 'example-plugin'], root)
     expect(() => service.runPlugin(['install'], root)).toThrow(
@@ -381,5 +386,133 @@ describe('desktop plugin market installer', () => {
     expect(main).toContain("ipcMain.handle('market:uninstall'")
     expect(main).toContain("await runtime.stop()")
     expect(main).toMatch(/'dshmarket',\s+true/u)
+  })
+
+  /**
+   * A scratch profile with one enabled generation, mirroring what
+   * projectGenerations produces for a real plugin-market install.
+   */
+  async function generationProfile(pluginName = '@example/voice-mode') {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-market-generation-remove-')))
+    const generationId = `example+voice-mode+1.0.0+test`
+    const generationDir = join(root, 'profiles', '.generations', 'live', generationId)
+    await ensureRegistryDirectories(root)
+    await mkdir(generationDir, { recursive: true })
+    await writeGenerationMeta(generationDir, { pluginName, version: '1.0.0' })
+    const packageDir = join(generationDir, 'node_modules', pluginName)
+    await mkdir(packageDir, { recursive: true })
+    await writeFile(
+      join(packageDir, 'package.json'),
+      JSON.stringify({ name: pluginName, version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } } })
+    )
+    await writeFile(join(packageDir, 'cordis.patch.yml'), '[]\n')
+    await writeDesired(root, [generationId])
+
+    const profileDirectory = join(root, 'profiles', 'web')
+    await mkdir(join(profileDirectory, 'node_modules'), { recursive: true })
+    await writeFile(
+      join(profileDirectory, 'package.json'),
+      JSON.stringify({
+        dependencies: {
+          [pluginName]: `link:../.generations/live/${generationId}/node_modules/${pluginName}`,
+          dshmarket: '^1.0.0'
+        },
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dshmarket', pluginName] } }
+      })
+    )
+    await mkdir(join(profileDirectory, 'node_modules', ...pluginName.split('/').slice(0, -1)), {
+      recursive: true
+    })
+    await symlink(
+      packageDir,
+      join(profileDirectory, 'node_modules', pluginName),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    )
+    return { root, profileDirectory, pluginName, generationId }
+  }
+
+  it('removes a generation plugin through the registry, not pnpm, so it stays gone', async () => {
+    const { root, profileDirectory, pluginName, generationId } = await generationProfile()
+    let spawned = 0
+    const service = createDesktopPnpmService({
+      home: root,
+      binDirectory: join(root, '.desktop-bin'),
+      dshEntryPath: join(root, 'unused-dsh-entry.mjs'),
+      executablePath: process.execPath,
+      spawnProcess: () => {
+        spawned += 1
+        throw new Error('a generation plugin must never reach pnpm')
+      }
+    })
+
+    const handle = service.runPlugin(
+      ['remove', '-w', pluginName, '--reporter=ndjson'],
+      profileDirectory
+    )
+    let stdout = ''
+    handle.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8')
+    })
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    expect(spawned).toBe(0)
+    expect(stdout).toContain('removed')
+
+    const manifest = JSON.parse(await readFile(join(profileDirectory, 'package.json'), 'utf8'))
+    expect(manifest.dependencies[pluginName]).toBeUndefined()
+    expect(manifest.dsh.profile.bundles).not.toContain(pluginName)
+    expect(existsSync(join(profileDirectory, 'node_modules', pluginName))).toBe(false)
+    // The authoritative registry no longer wants the plugin, so the next
+    // launch's projection cannot bring it back — the uninstall persists.
+    expect(await readDesired(root)).toEqual([])
+    expect(existsSync(join(root, 'profiles', '.generations', 'live', generationId))).toBe(true)
+    await service.dispose()
+  })
+
+  it('falls through to pnpm for a remove that is not a generation plugin', async () => {
+    const { root, profileDirectory } = await generationProfile()
+    const spawned = []
+    const service = createDesktopPnpmService({
+      home: root,
+      binDirectory: join(root, '.desktop-bin'),
+      dshEntryPath: '/app/dsh/bin.js',
+      executablePath: '/app/electron',
+      environment: process.env,
+      spawnProcess: (executable, argv, options) => {
+        spawned.push({ executable, argv, options })
+        const child = new EventEmitter()
+        child.stdout = new PassThrough()
+        child.stderr = new PassThrough()
+        child.pid = 4242
+        setTimeout(() => {
+          child.stdout.end()
+          child.stderr.end()
+          child.emit('close', 0, null)
+        }, 10)
+        return child
+      }
+    })
+
+    // dshmarket lives in the shared tree, not in the generations registry.
+    const handle = service.runPlugin(
+      ['remove', '-w', 'dshmarket', '--reporter=ndjson'],
+      profileDirectory
+    )
+    handle.stdout.resume()
+    handle.stderr.resume()
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    expect(spawned).toHaveLength(1)
+    expect(spawned[0].executable).toBe('/app/electron')
+    expect(spawned[0].argv).toEqual([
+      '/app/dsh/bin.js',
+      'plugin',
+      '--profile',
+      'web',
+      'remove',
+      '-w',
+      'dshmarket',
+      '--reporter=ndjson'
+    ])
+    expect(spawned[0].options.cwd).toBe(profileDirectory)
+    await service.dispose()
   })
 })
