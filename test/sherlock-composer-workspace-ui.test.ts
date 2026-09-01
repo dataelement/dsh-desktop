@@ -6893,7 +6893,7 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('limits only brief mind maps to three levels and preserves deeper regular maps', async () => {
+  it('keeps brief mind maps screenshot-ready while preserving deeper regular maps', async () => {
     const client = await loadClientBundle('dsh-client-ui-conversation')
     expect(client.parseResearchMindMap).toBeTypeOf('function')
     if (typeof client.parseResearchMindMap !== 'function') return
@@ -6914,10 +6914,44 @@ describe('Sherlock workspace and composer controls', () => {
         label: '增长',
         children: [
           { label: '收入', children: [] },
-          { label: '海外', children: [] },
-          { label: '东南亚', children: [] }
+          { label: '海外', children: [] }
         ]
       }]
+    })
+    const denseOutline = [
+      '# 黄金多因子模型',
+      '- 核心结论',
+      '  - 收益来源',
+      '  - 风险边界',
+      '  - 失效条件',
+      '- 因子筛选',
+      '  - 价值',
+      '  - 质量',
+      '  - 动量',
+      '- 模型构建',
+      '  - 权重',
+      '  - 再平衡',
+      '  - 约束',
+      '- 改进方向',
+      '  - 宏观状态',
+      '  - 交易成本'
+    ].join('\n')
+    expect(client.parseResearchMindMap(denseOutline, 'brief')).toEqual({
+      label: '黄金多因子模型',
+      children: [
+        { label: '核心结论', children: [
+          { label: '收益来源', children: [] },
+          { label: '风险边界', children: [] }
+        ] },
+        { label: '因子筛选', children: [
+          { label: '价值', children: [] },
+          { label: '质量', children: [] }
+        ] },
+        { label: '模型构建', children: [
+          { label: '权重', children: [] },
+          { label: '再平衡', children: [] }
+        ] }
+      ]
     })
     expect(client.parseResearchMindMap(deepOutline, 'standard'))
       .toMatchObject({ children: [{ children: [{ children: [{ children: [
@@ -7028,6 +7062,7 @@ describe('Sherlock workspace and composer controls', () => {
     })
     expect(parsed.text).toContain('简要模式')
     expect(parsed.text).toContain('总层级不得超过 3 层')
+    expect(parsed.text).toContain('节点总数不超过 10 个')
     expect(parsed.text).toContain('适合直接截图粘贴到公司 PPT')
     const standardPrompt = client.parseResearchPrompt(
       client.researchSelectionGenerationPrompt(

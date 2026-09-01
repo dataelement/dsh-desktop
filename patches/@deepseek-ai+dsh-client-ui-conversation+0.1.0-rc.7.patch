@@ -2766,7 +2766,7 @@ index 1dd0e89..bc4e218 100644
 +			}
 +			if (files.length === 0 && artifacts.length === 0) return null;
 +			const detail = researchMindMapDetail(requestedDetail);
-+			const detailInstruction = detail === 'brief' ? '这是简要模式：内容必须高度概括，总层级不得超过 3 层（中心主题计为第 1 层），只保留最关键的主题、结论与关系。' : detail === 'detailed' ? '这是详细模式：不设置固定层级上限，根据材料充分展开因果、并列、从属和递进关系，使用户能够详细理解内容关系细节。' : '这是常规模式：不设置固定层级上限，根据材料保留理解主题所需的关系层次，在阅读时间与内容理解之间取得平衡。';
++			const detailInstruction = detail === 'brief' ? '这是简要模式：内容必须高度概括，总层级不得超过 3 层（中心主题计为第 1 层）；只保留 2–3 个一级主题，每个一级主题保留 1–2 个二级要点，节点总数不超过 10 个，只保留最关键的主题、结论与关系。' : detail === 'detailed' ? '这是详细模式：不设置固定层级上限，根据材料充分展开因果、并列、从属和递进关系，使用户能够详细理解内容关系细节。' : '这是常规模式：不设置固定层级上限，根据材料保留理解主题所需的关系层次，在阅读时间与内容理解之间取得平衡。';
 +			const text = kind === 'mind-map' ? `请基于选中的研究材料生成思维导图。${detailInstruction}请用 Markdown 层级列表输出：第一行以“# ”开头写中心主题，后续使用“- ”和两个空格缩进表达分支；每个节点使用简洁中文短语，不要输出说明、前言或代码围栏。结构应适合直接截图粘贴到公司 PPT。` : '请基于选中的研究材料进行总结提炼。请输出一段结构紧凑、信息密度高的中文总结，保留关键结论、依据、风险和待验证事项，不要复述任务说明。';
 +			try {
 +				return serializeResearchPrompt(files, text, [], artifacts, []);
@@ -3579,6 +3579,12 @@ index 1dd0e89..bc4e218 100644
 +				stack.at(-1).node.children.push(node);
 +				stack.push({ depth, node });
 +				count += 1;
++			}
++			if (detail === 'brief') {
++				root.children = root.children.slice(0, 3).map((child) => ({
++					...child,
++					children: child.children.slice(0, 2)
++				}));
 +			}
 +			return root;
 +		}
