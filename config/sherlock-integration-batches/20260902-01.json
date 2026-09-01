@@ -1,0 +1,649 @@
+{
+  "schemaVersion": 1,
+  "batchId": "20260902-01",
+  "branch": "codex/integration/20260902-01",
+  "baseMainCommit": "92ffca452ff50ec7eef0ffe8c0006a30e2454845",
+  "expectedMainCommit": "92ffca452ff50ec7eef0ffe8c0006a30e2454845",
+  "createdAt": "2026-09-01T23:02:52.715Z",
+  "features": [
+    {
+      "handoff": {
+        "schemaVersion": 1,
+        "featureName": "研究画布链接与智能容器修复",
+        "branch": "codex/feat/research-selection-actions-20260831",
+        "baseCommit": "92ffca452ff50ec7eef0ffe8c0006a30e2454845",
+        "tipCommit": "9de649c477b5002835f5dae1333888ff158b7ccf",
+        "commits": [
+          {
+            "commit": "420595a9f79087dbec07b5a964c7ed3c9ea0e8fe",
+            "parents": [
+              "92ffca452ff50ec7eef0ffe8c0006a30e2454845"
+            ],
+            "subject": "功能：新增研究画布选中内容生成工具栏"
+          },
+          {
+            "commit": "73f17a0431ba69127f2b1bea0d48bd11a348284d",
+            "parents": [
+              "420595a9f79087dbec07b5a964c7ed3c9ea0e8fe"
+            ],
+            "subject": "功能：完善研究画布思维导图生成模式"
+          },
+          {
+            "commit": "b2eef021b7173ceecfe3737c96fa56285001f683",
+            "parents": [
+              "73f17a0431ba69127f2b1bea0d48bd11a348284d"
+            ],
+            "subject": "修正：限制简要思维导图节点密度"
+          },
+          {
+            "commit": "96c8c05fc99d6d935e15e1ad4b0563fd3b2d47cb",
+            "parents": [
+              "b2eef021b7173ceecfe3737c96fa56285001f683"
+            ],
+            "subject": "修正：优化思维导图组件框与横向布局"
+          },
+          {
+            "commit": "015755aed38a06d53f80ffe3192733553e0167f5",
+            "parents": [
+              "96c8c05fc99d6d935e15e1ad4b0563fd3b2d47cb"
+            ],
+            "subject": "修正：重建研究画布依赖补丁"
+          },
+          {
+            "commit": "415f9161fe25d6083a9fa146039d6113af6436db",
+            "parents": [
+              "015755aed38a06d53f80ffe3192733553e0167f5"
+            ],
+            "subject": "修正：统一思维导图组件顶栏样式"
+          },
+          {
+            "commit": "8326e6c3dce414c52f5c197ff928d2ec1215c47d",
+            "parents": [
+              "415f9161fe25d6083a9fa146039d6113af6436db"
+            ],
+            "subject": "修复：连接复杂思维导图根节点"
+          },
+          {
+            "commit": "c17fc5dff8479199046674ad4b4eaf82fdd13df1",
+            "parents": [
+              "8326e6c3dce414c52f5c197ff928d2ec1215c47d"
+            ],
+            "subject": "修复：允许未激活窗口首次点击搜索"
+          },
+          {
+            "commit": "eadd9450cf716cd58713ae3d86984543899a4c78",
+            "parents": [
+              "c17fc5dff8479199046674ad4b4eaf82fdd13df1"
+            ],
+            "subject": "修复：显示侧栏搜索框并优化导图文字排版"
+          },
+          {
+            "commit": "1b04dcf7aca47c31f08130b757fe5173bceff2a5",
+            "parents": [
+              "eadd9450cf716cd58713ae3d86984543899a4c78"
+            ],
+            "subject": "设计：画布生成任务独立并发执行"
+          },
+          {
+            "commit": "f412e892f4aa62986e05119391c3bf662ddb697f",
+            "parents": [
+              "1b04dcf7aca47c31f08130b757fe5173bceff2a5"
+            ],
+            "subject": "文档：明确排队任务子会话标识可选"
+          },
+          {
+            "commit": "4841258a1b95e355aba285fc2a14a414c76a4572",
+            "parents": [
+              "f412e892f4aa62986e05119391c3bf662ddb697f"
+            ],
+            "subject": "计划：拆解画布独立生成任务实施步骤"
+          },
+          {
+            "commit": "de5ba62b359735a0f7004a12117cb3c9704fe441",
+            "parents": [
+              "4841258a1b95e355aba285fc2a14a414c76a4572"
+            ],
+            "subject": "功能：定义画布生成任务服务契约"
+          },
+          {
+            "commit": "42acef46a033a3e0976f6d2bc471005600fb486b",
+            "parents": [
+              "de5ba62b359735a0f7004a12117cb3c9704fe441"
+            ],
+            "subject": "功能：支持画布任务四路并发调度"
+          },
+          {
+            "commit": "33b8f7d22e446c165552a76cc89921643d46da60",
+            "parents": [
+              "42acef46a033a3e0976f6d2bc471005600fb486b"
+            ],
+            "subject": "功能：接入画布子任务运行与恢复服务"
+          },
+          {
+            "commit": "51d4a341dee40af855b6e26f4343ebcea3c89973",
+            "parents": [
+              "33b8f7d22e446c165552a76cc89921643d46da60"
+            ],
+            "subject": "构建：打包画布生成任务运行服务"
+          },
+          {
+            "commit": "5f9a3271788d74a07c49d1c9cace7f7e0a320ea8",
+            "parents": [
+              "51d4a341dee40af855b6e26f4343ebcea3c89973"
+            ],
+            "subject": "修复：确保画布任务终态可被客户端接收"
+          },
+          {
+            "commit": "19fd1035daf3fb8a06e13e9e0311fe562bc69b6e",
+            "parents": [
+              "5f9a3271788d74a07c49d1c9cace7f7e0a320ea8"
+            ],
+            "subject": "功能：在画布组件内并发执行生成任务"
+          },
+          {
+            "commit": "a7bc2d2efa38a57cbf645922f5d8e52a7f747a39",
+            "parents": [
+              "19fd1035daf3fb8a06e13e9e0311fe562bc69b6e"
+            ],
+            "subject": "修复：启动画布任务并持续同步状态"
+          },
+          {
+            "commit": "e9543254aa1396450baebdf44e93ce1de79b4297",
+            "parents": [
+              "a7bc2d2efa38a57cbf645922f5d8e52a7f747a39"
+            ],
+            "subject": "修复：通过宿主会话解析器启动画布任务"
+          },
+          {
+            "commit": "84bf22c6e576d8596f4799a4a531fc877669b72b",
+            "parents": [
+              "e9543254aa1396450baebdf44e93ce1de79b4297"
+            ],
+            "subject": "修复：隔离画布任务的外部工具能力"
+          },
+          {
+            "commit": "85829a0fb7a0a08927b79cf3cc08ab5919c14284",
+            "parents": [
+              "84bf22c6e576d8596f4799a4a531fc877669b72b"
+            ],
+            "subject": "优化：紧凑显示已发送的引用标签"
+          },
+          {
+            "commit": "5590be1741511da600ea60101443418b784b5f3e",
+            "parents": [
+              "85829a0fb7a0a08927b79cf3cc08ab5919c14284"
+            ],
+            "subject": "修复：回收文件生成结果并紧凑排列引用标签"
+          },
+          {
+            "commit": "bed9fa322125046f89003fb80408df53efe6087a",
+            "parents": [
+              "5590be1741511da600ea60101443418b784b5f3e"
+            ],
+            "subject": "完善：研究标签显示类型图标并支持画布定位"
+          },
+          {
+            "commit": "3d3a26c5aca6c1b66cd907a46403c50b5f9d4643",
+            "parents": [
+              "bed9fa322125046f89003fb80408df53efe6087a"
+            ],
+            "subject": "修复：支持从PPT组件生成思维导图"
+          },
+          {
+            "commit": "925d7f70305c31c271590b4041c0ef90e434abf9",
+            "parents": [
+              "3d3a26c5aca6c1b66cd907a46403c50b5f9d4643"
+            ],
+            "subject": "功能：支持编辑思维导图节点并统一短语对齐"
+          },
+          {
+            "commit": "173797b4db0ed2a0f04e497fa1cacaae1fde4387",
+            "parents": [
+              "925d7f70305c31c271590b4041c0ef90e434abf9"
+            ],
+            "subject": "功能：支持整理画布并全选全部组件"
+          },
+          {
+            "commit": "2e480a238bc521f4b71a146b4000bcc58ff91e13",
+            "parents": [
+              "173797b4db0ed2a0f04e497fa1cacaae1fde4387"
+            ],
+            "subject": "功能：支持编辑总结提炼内容"
+          },
+          {
+            "commit": "aa1a55497df9e39602637d1dbc8a484bfa9cfc44",
+            "parents": [
+              "2e480a238bc521f4b71a146b4000bcc58ff91e13"
+            ],
+            "subject": "文档：规划研究画布全局功能栏"
+          },
+          {
+            "commit": "a9dea0f4d922770598df041d65dd0de1cac7c159",
+            "parents": [
+              "aa1a55497df9e39602637d1dbc8a484bfa9cfc44"
+            ],
+            "subject": "功能：建立研究网页组件安全边界"
+          },
+          {
+            "commit": "4e73b381de1146dee3b7fb4ef3e541a1d892f72a",
+            "parents": [
+              "a9dea0f4d922770598df041d65dd0de1cac7c159"
+            ],
+            "subject": "功能：支持智能容器独立生成任务"
+          },
+          {
+            "commit": "2d2c73f390896eda223dd0536fac153af974572d",
+            "parents": [
+              "4e73b381de1146dee3b7fb4ef3e541a1d892f72a"
+            ],
+            "subject": "功能：新增研究画布链接与智能容器"
+          },
+          {
+            "commit": "853dd68898d3f3b165e3b37e9a195e88acaae081",
+            "parents": [
+              "2d2c73f390896eda223dd0536fac153af974572d"
+            ],
+            "subject": "构建：设置本地测试版版本为 0.7.6"
+          },
+          {
+            "commit": "dc4de5c9ea3c2e936d9683ecdf7cf51f4e653a76",
+            "parents": [
+              "853dd68898d3f3b165e3b37e9a195e88acaae081"
+            ],
+            "subject": "修复：规范化链接组件中的网址空格"
+          },
+          {
+            "commit": "2c62f89b6c80edef839c2b6be9c98ce3480d2c62",
+            "parents": [
+              "dc4de5c9ea3c2e936d9683ecdf7cf51f4e653a76"
+            ],
+            "subject": "设计：明确研究组件标题自适应与下载方案"
+          },
+          {
+            "commit": "a902791ee694b857f30e16fce98d1464bd79ba85",
+            "parents": [
+              "2c62f89b6c80edef839c2b6be9c98ce3480d2c62"
+            ],
+            "subject": "设计：补充微信文章安全阅读视图"
+          },
+          {
+            "commit": "4b5ae8a0bfa8d000d71af8b1acc895c4edcd4b27",
+            "parents": [
+              "a902791ee694b857f30e16fce98d1464bd79ba85"
+            ],
+            "subject": "计划：拆分研究网页体验与组件下载实施"
+          },
+          {
+            "commit": "f42136eb7e6cbc66001497699dff0eaa0471a30f",
+            "parents": [
+              "4b5ae8a0bfa8d000d71af8b1acc895c4edcd4b27"
+            ],
+            "subject": "功能：新增微信文章安全阅读服务"
+          },
+          {
+            "commit": "e9fe95e3a9f686d10e07e6f571fbe0392896265e",
+            "parents": [
+              "f42136eb7e6cbc66001497699dff0eaa0471a30f"
+            ],
+            "subject": "功能：扩展研究网页检查与阅读桥"
+          },
+          {
+            "commit": "413267fdbc09410734c115cc70bae7464a03531b",
+            "parents": [
+              "e9fe95e3a9f686d10e07e6f571fbe0392896265e"
+            ],
+            "subject": "功能：持久化网页标题并计算自适应布局"
+          },
+          {
+            "commit": "93cb88ebcbc1ec2b504a9e9a50292b3b090cb56b",
+            "parents": [
+              "413267fdbc09410734c115cc70bae7464a03531b"
+            ],
+            "subject": "修复：自适应展示网页并错开画布底栏"
+          },
+          {
+            "commit": "6258cdc9b5210577637f7c1343fff834ebc219bd",
+            "parents": [
+              "93cb88ebcbc1ec2b504a9e9a50292b3b090cb56b"
+            ],
+            "subject": "功能：新增研究组件安全下载服务"
+          },
+          {
+            "commit": "ea7cf0275bdcc51f3d13cb359c8272c784189238",
+            "parents": [
+              "6258cdc9b5210577637f7c1343fff834ebc219bd"
+            ],
+            "subject": "功能：按组件类型生成下载描述"
+          },
+          {
+            "commit": "4b4903d506764c3b4a8a24e64392aeb08f9473c5",
+            "parents": [
+              "ea7cf0275bdcc51f3d13cb359c8272c784189238"
+            ],
+            "subject": "功能：思维导图支持矢量与图片下载"
+          },
+          {
+            "commit": "9d1a7043798cf720c13e7b3550024aae9fa640cb",
+            "parents": [
+              "4b4903d506764c3b4a8a24e64392aeb08f9473c5"
+            ],
+            "subject": "功能：所有研究组件增加下载入口"
+          },
+          {
+            "commit": "803f04605c0b7b89ba873a40155e11749bc69139",
+            "parents": [
+              "9d1a7043798cf720c13e7b3550024aae9fa640cb"
+            ],
+            "subject": "修复：原生生成监控容器并读取微信正文"
+          },
+          {
+            "commit": "a21da56404896561c43f227b05cf6960b02077fc",
+            "parents": [
+              "803f04605c0b7b89ba873a40155e11749bc69139"
+            ],
+            "subject": "优化：缩小画布底栏并放宽缩放下限"
+          },
+          {
+            "commit": "56c60e12a5b8dcedde886e6094d17856fa0f25be",
+            "parents": [
+              "a21da56404896561c43f227b05cf6960b02077fc"
+            ],
+            "subject": "优化：整理画布改为内容自适应混合平铺"
+          },
+          {
+            "commit": "5cf401cfe9c279273d7c30de87768e83108b806b",
+            "parents": [
+              "56c60e12a5b8dcedde886e6094d17856fa0f25be"
+            ],
+            "subject": "修复：恢复链接读取与智能容器生成"
+          },
+          {
+            "commit": "2293083892654886da57b2046c414d849a96ebc1",
+            "parents": [
+              "5cf401cfe9c279273d7c30de87768e83108b806b"
+            ],
+            "subject": "修复：补齐微信文章组件读取授权"
+          },
+          {
+            "commit": "9de649c477b5002835f5dae1333888ff158b7ccf",
+            "parents": [
+              "2293083892654886da57b2046c414d849a96ebc1"
+            ],
+            "subject": "修复：消除微信链接组件读取竞态"
+          }
+        ],
+        "files": [
+          {
+            "status": "M",
+            "path": "build/dsh-desktop.patch.yml"
+          },
+          {
+            "status": "M",
+            "path": "build/harness-node-entry.mjs"
+          },
+          {
+            "status": "M",
+            "path": "build/sherlock-bundled-plugins.json"
+          },
+          {
+            "status": "A",
+            "path": "docs/superpowers/plans/2026-09-01-research-canvas-downloads.md"
+          },
+          {
+            "status": "A",
+            "path": "docs/superpowers/plans/2026-09-01-research-canvas-global-toolbar.md"
+          },
+          {
+            "status": "A",
+            "path": "docs/superpowers/plans/2026-09-01-research-canvas-isolated-generation-tasks.md"
+          },
+          {
+            "status": "A",
+            "path": "docs/superpowers/plans/2026-09-01-research-web-link-experience.md"
+          },
+          {
+            "status": "A",
+            "path": "docs/superpowers/specs/2026-09-01-research-canvas-global-toolbar-design.md"
+          },
+          {
+            "status": "A",
+            "path": "docs/superpowers/specs/2026-09-01-research-canvas-isolated-generation-tasks-design.md"
+          },
+          {
+            "status": "A",
+            "path": "docs/superpowers/specs/2026-09-01-research-canvas-title-resize-download-design.md"
+          },
+          {
+            "status": "M",
+            "path": "package-lock.json"
+          },
+          {
+            "status": "M",
+            "path": "package.json"
+          },
+          {
+            "status": "A",
+            "path": "packages/dsh-research-task-runtime/index.js"
+          },
+          {
+            "status": "A",
+            "path": "packages/dsh-research-task-runtime/package.json"
+          },
+          {
+            "status": "M",
+            "path": "patches/@deepseek-ai+dsh-client-ui-conversation+0.1.0-rc.7.patch"
+          },
+          {
+            "status": "M",
+            "path": "patches/@deepseek-ai+dsh-client-ui-workspace+0.1.0-rc.7.patch"
+          },
+          {
+            "status": "M",
+            "path": "src/main/index.ts"
+          },
+          {
+            "status": "M",
+            "path": "src/main/runtime/harness-runtime.ts"
+          },
+          {
+            "status": "M",
+            "path": "src/main/security.ts"
+          },
+          {
+            "status": "A",
+            "path": "src/main/state/research-canvas-export.ts"
+          },
+          {
+            "status": "M",
+            "path": "src/main/state/research-file-preview.ts"
+          },
+          {
+            "status": "A",
+            "path": "src/main/state/research-link-frame.ts"
+          },
+          {
+            "status": "A",
+            "path": "src/main/state/research-web-reader.ts"
+          },
+          {
+            "status": "M",
+            "path": "src/preload/index.ts"
+          },
+          {
+            "status": "A",
+            "path": "src/preload/research-canvas-export.ts"
+          },
+          {
+            "status": "A",
+            "path": "src/preload/research-link-frame.ts"
+          },
+          {
+            "status": "A",
+            "path": "src/preload/research-web-reader.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/bundled-plugin-profile.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/dsh-file-drop-compat.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/harness-bundled-package-resolution.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/research-canvas-export.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/research-file-drop.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/research-file-preview.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/research-link-frame.test.ts"
+          },
+          {
+            "status": "A",
+            "path": "test/research-task-runtime.test.js"
+          },
+          {
+            "status": "A",
+            "path": "test/research-web-reader.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/runtime.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/security.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/sherlock-composer-workspace-ui.test.ts"
+          },
+          {
+            "status": "M",
+            "path": "test/sidebar-vibrancy.test.ts"
+          }
+        ],
+        "checks": [
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/research-web-reader.test.ts",
+              "test/research-task-runtime.test.js"
+            ],
+            "outcome": "passed",
+            "summary": "网页读取与容器任务运行时 41 项聚焦测试通过",
+            "verifiedCommit": "9de649c477b5002835f5dae1333888ff158b7ccf",
+            "completedAt": "2026-09-01T23:01:52.000Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/sherlock-composer-workspace-ui.test.ts",
+              "-t",
+              "(renders public WeChat articles through the scriptless safe reader|keeps responsive web viewport scaling|uses the authorized frame name|renders generated container)"
+            ],
+            "outcome": "passed",
+            "summary": "微信链接单次授权读取与画布链接容器聚焦测试通过",
+            "verifiedCommit": "9de649c477b5002835f5dae1333888ff158b7ccf",
+            "completedAt": "2026-09-01T23:01:52.000Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "typecheck"
+            ],
+            "outcome": "passed",
+            "summary": "TypeScript 类型检查通过",
+            "verifiedCommit": "9de649c477b5002835f5dae1333888ff158b7ccf",
+            "completedAt": "2026-09-01T23:01:52.000Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "build"
+            ],
+            "outcome": "passed",
+            "summary": "Electron Vite 构建通过",
+            "verifiedCommit": "9de649c477b5002835f5dae1333888ff158b7ccf",
+            "completedAt": "2026-09-01T23:01:52.000Z",
+            "timeoutMs": 120000
+          }
+        ],
+        "uiVerification": {
+          "outcome": "passed",
+          "summary": "受控渲染已验证微信文章仅授权读取一次并显示安全正文；真实打包客户端仍将作为最终验收门。"
+        },
+        "acceptanceCriteria": [
+          "微信文章链接在组件内显示真实标题与安全阅读正文",
+          "微信标题回写不触发重复授权或失败态",
+          "智能容器任务完成后显示原生 KPI 图表表格或文字组件"
+        ],
+        "risks": [
+          "外部网站仍可能因网络或服务端策略临时不可用",
+          "真实客户端验证前不得接受或晋升该批次"
+        ],
+        "generatedAt": "2026-09-01T23:01:52.000Z"
+      }
+    }
+  ],
+  "integrationChecks": [
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/research-web-reader.test.ts",
+        "test/research-task-runtime.test.js"
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "argv": [
+        "npx",
+        "vitest",
+        "run",
+        "test/sherlock-composer-workspace-ui.test.ts",
+        "-t",
+        "(renders public WeChat articles through the scriptless safe reader|keeps responsive web viewport scaling|uses the authorized frame name|renders generated container)"
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "timeoutMs": 120000
+    }
+  ],
+  "mainSynchronizations": []
+}
