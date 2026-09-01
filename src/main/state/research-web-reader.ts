@@ -75,7 +75,16 @@ async function boundedResponseText(response: Response): Promise<string | null> {
   let bytes = 0
   try {
     while (true) {
-      const chunk = await reader.read()
+      let chunk: ReadableStreamReadResult<Uint8Array>
+      try {
+        chunk = await reader.read()
+      } catch (error) {
+        // Some WeChat article responses close the long trailing script payload early
+        // after the complete article markup has already arrived. Preserve those bytes;
+        // the strict article parser below still rejects incomplete or malformed content.
+        if (bytes === 0) throw error
+        break
+      }
       if (chunk.done) break
       bytes += chunk.value.byteLength
       if (bytes > MAX_RESPONSE_BYTES) {

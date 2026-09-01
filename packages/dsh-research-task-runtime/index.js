@@ -795,6 +795,19 @@ export class ResearchTaskRuntime {
 export function createSubagentAdapter(ctx) {
   let disposed = false
 
+  const availableTools = (parent, kind) => {
+    if (kind !== 'container') return []
+    const getTool = parent?.ctx?.tools?.get
+    if (typeof getTool !== 'function') return []
+    try {
+      return ['web_search', 'web_fetch'].filter((tool) => (
+        getTool.call(parent.ctx.tools, tool) !== undefined
+      ))
+    } catch {
+      return []
+    }
+  }
+
   const resolveParent = async (parentSessionId) => {
     const live = ctx.agents.get(parentSessionId)
     if (live?.id === parentSessionId) return live
@@ -817,14 +830,18 @@ export function createSubagentAdapter(ctx) {
   return {
     async start({ parentSessionId, kind, prompt, signal, onSessionEvent }) {
       const parent = await resolveParent(parentSessionId)
+      const allowedTools = availableTools(parent, kind)
+      const effectivePrompt = kind === 'container' && allowedTools.length === 0
+        ? `${prompt}\n\n当前任务未提供网页检索工具。不要声称已经获取实时或最新数据；遇到实时、监控类需求时，请生成可直接展示的原生 KPI、图表或表格结构，并把尚未取得的数值明确写为“待更新”或“待接入数据源”。`
+        : prompt
       const run = await ctx.subagents.start('spawn', {
         label: '画布生成任务',
         parent,
         signal,
-        prompt: [{ type: 'text', text: prompt }],
+        prompt: [{ type: 'text', text: effectivePrompt }],
         maxDepth: 1,
         toolFilter: {
-          allow: kind === 'container' ? ['web_search', 'web_fetch'] : []
+          allow: allowedTools
         },
         persona: RESEARCH_TASK_PERSONA
       })

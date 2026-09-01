@@ -724,7 +724,15 @@ describe('Research task Subagent adapter', () => {
 
   it('allows only read-only web lookup tools for native container tasks', async () => {
     const { createSubagentAdapter } = await runtimeModule()
-    const parent = { id: 'parent-1', session: { events: [] } }
+    const parent = {
+      id: 'parent-1',
+      session: { events: [] },
+      ctx: {
+        tools: {
+          get: vi.fn((name) => ['web_search', 'web_fetch'].includes(name) ? { name } : undefined)
+        }
+      }
+    }
     const child = { id: 'child-1', session: { id: 'child-1', events: [] } }
     const run = {
       id: child.id,
@@ -744,6 +752,35 @@ describe('Research task Subagent adapter', () => {
 
     expect(ctx.subagents.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
       toolFilter: { allow: ['web_search', 'web_fetch'] }
+    }))
+    await handle.dispose()
+  })
+
+  it('starts native container tasks without naming unavailable global web tools', async () => {
+    const { createSubagentAdapter } = await runtimeModule()
+    const parent = { id: 'parent-1', session: { events: [] } }
+    const child = { id: 'child-1', session: { id: 'child-1', events: [] } }
+    const run = {
+      id: child.id,
+      localAgent: child,
+      result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: '完成' }] }),
+      dispose: vi.fn(async () => undefined)
+    }
+    const ctx = sessionEventContext(parent, child, run)
+
+    const handle = await createSubagentAdapter(ctx).start({
+      parentSessionId: parent.id,
+      kind: 'container',
+      prompt: '生成比特币价格监控',
+      signal: new AbortController().signal,
+      onSessionEvent: vi.fn()
+    })
+
+    expect(ctx.subagents.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
+      toolFilter: { allow: [] },
+      prompt: [expect.objectContaining({
+        text: expect.stringContaining('当前任务未提供网页检索工具')
+      })]
     }))
     await handle.dispose()
   })

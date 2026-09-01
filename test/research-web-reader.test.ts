@@ -84,6 +84,36 @@ describe('Research WeChat article reader', () => {
     )
   })
 
+  it('keeps a complete WeChat article when the server closes the trailing response early', async () => {
+    const html = `<!doctype html><html><head>
+      <meta property="og:title" content="英伟达豪掷70亿，下场做开放大模型了">
+    </head><body><div id="js_content"><p>文章正文已经完整到达。</p></div></body></html>`
+    const bytes = new TextEncoder().encode(html)
+    let delivered = false
+    const response = new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!delivered) {
+          delivered = true
+          controller.enqueue(bytes)
+          return
+        }
+        controller.error(new TypeError('terminated'))
+      }
+    }), {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' }
+    })
+
+    await expect(readResearchWechatArticle(
+      { url: 'https://mp.weixin.qq.com/s/article-id' },
+      fixtureDependencies(vi.fn(async () => response))
+    )).resolves.toMatchObject({
+      status: 'ready',
+      title: '英伟达豪掷70亿，下场做开放大模型了',
+      bodyHtml: '<p>文章正文已经完整到达。</p>'
+    })
+  })
+
   it('fails closed when a redirect leaves the public WeChat article allowlist', async () => {
     const fetch = vi.fn(async () => htmlResponse('', {
       status: 302,
