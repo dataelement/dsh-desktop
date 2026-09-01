@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "batchId": "20260902-02",
+  "branch": "codex/integration/20260902-02",
+  "baseMainCommit": "5b1373bcc0a11105a92814c1ebb53e6059c509e0",
+  "expectedMainCommit": "5b1373bcc0a11105a92814c1ebb53e6059c509e0",
+  "createdAt": "2026-09-01T23:54:01.813Z",
+  "features": [
+    {
+      "handoff": {
+        "schemaVersion": 1,
+        "featureName": "研究画布 0.7.6 实机验收记录",
+        "branch": "codex/feat/research-selection-actions-qa-20260831",
+        "baseCommit": "92ffca452ff50ec7eef0ffe8c0006a30e2454845",
+        "tipCommit": "87348b34f93d02431e436271ced716c84c903983",
+        "commits": [
+          {
+            "commit": "b2836276a47c3bb514d22aed1b7407067eee04a4",
+            "parents": [
+              "92ffca452ff50ec7eef0ffe8c0006a30e2454845"
+            ],
+            "subject": "验证：记录研究组件生成工具栏实机设计验收"
+          },
+          {
+            "commit": "56a010933430ea9911769dc81aaa0f620687177a",
+            "parents": [
+              "b2836276a47c3bb514d22aed1b7407067eee04a4"
+            ],
+            "subject": "文档：记录思维导图顶栏视觉复核"
+          },
+          {
+            "commit": "87348b34f93d02431e436271ced716c84c903983",
+            "parents": [
+              "56a010933430ea9911769dc81aaa0f620687177a"
+            ],
+            "subject": "文档：记录复杂导图连线与搜索焦点复核"
+          }
+        ],
+        "files": [
+          {
+            "status": "M",
+            "path": "design-qa.md"
+          }
+        ],
+        "checks": [
+          {
+            "argv": [
+              "git",
+              "diff",
+              "--check",
+              "92ffca452ff50ec7eef0ffe8c0006a30e2454845..87348b34f93d02431e436271ced716c84c903983"
+            ],
+            "outcome": "passed",
+            "summary": "三条实机验收记录的差异格式检查通过",
+            "verifiedCommit": "87348b34f93d02431e436271ced716c84c903983",
+            "completedAt": "2026-09-01T23:53:36Z",
+            "timeoutMs": 30000
+          }
+        ],
+        "uiVerification": {
+          "outcome": "passed",
+          "summary": "记录了研究组件生成工具栏、思维导图顶栏、复杂导图连线与侧栏搜索焦点的真实客户端复核。"
+        },
+        "acceptanceCriteria": [
+          "保留 0.7.6 研究画布相关实机验收证据。"
+        ],
+        "risks": [],
+        "generatedAt": "2026-09-01T23:53:36Z"
+      }
+    }
+  ],
+  "integrationChecks": [
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "92ffca452ff50ec7eef0ffe8c0006a30e2454845..87348b34f93d02431e436271ced716c84c903983"
+      ],
+      "timeoutMs": 30000
+    }
+  ],
+  "mainSynchronizations": []
+}
