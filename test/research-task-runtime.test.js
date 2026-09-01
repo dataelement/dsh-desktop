@@ -509,7 +509,7 @@ describe('Research task Subagent adapter', () => {
     result.resolve({ stopReason: 'completed', output: [{ type: 'text', text: '完成' }] })
   })
 
-  it('starts a fresh local child from the exact live parent with read-only tools', async () => {
+  it('starts a fresh local child from the exact live parent without external tools', async () => {
     const { createSubagentAdapter } = await runtimeModule()
     const parent = { id: 'parent-1', session: { events: [] } }
     const first = assistantChunk('text-delta', '已读取材料')
@@ -538,7 +538,7 @@ describe('Research task Subagent adapter', () => {
       parent,
       prompt: [{ type: 'text', text: '产品固定提示词' }],
       maxDepth: 1,
-      toolFilter: { allow: ['read', 'grep', 'glob', 'web_search', 'web_fetch'] }
+      toolFilter: { allow: [] }
     }))
     expect(ctx.subagents.start.mock.calls[0][1].persona).toContain('画布')
     expect(parent.session.events).toHaveLength(0)

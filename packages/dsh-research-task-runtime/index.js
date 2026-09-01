@@ -23,7 +23,6 @@ const MAX_PUBLIC_EVENTS = 160
 const MAX_FINAL_OUTPUT = 240_000
 const MAX_TERMINAL_TASKS = 200
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
-const READ_ONLY_TOOLS = ['read', 'grep', 'glob', 'web_search', 'web_fetch']
 const RESEARCH_TASK_PERSONA = '你是 Sherlock 研究画布的内容生成助手。只处理给定的画布任务和资料，不与用户展开对话，不泄露私有推理、工具参数或内部错误；最终只输出产品提示词要求的内容。'
 const DETAILS = new Set(['brief', 'standard', 'detailed'])
 const REQUEST_KEYS = new Set([
@@ -591,7 +590,7 @@ export function createSubagentAdapter(ctx) {
         signal,
         prompt: [{ type: 'text', text: prompt }],
         maxDepth: 1,
-        toolFilter: { allow: [...READ_ONLY_TOOLS] },
+        toolFilter: { allow: [] },
         persona: RESEARCH_TASK_PERSONA
       })
       const child = run.localAgent
