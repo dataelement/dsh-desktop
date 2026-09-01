@@ -226,7 +226,7 @@ describe('Research canvas file drops', () => {
     expect(node).toMatchObject({ x: 1_100, y: 300, width: 320, height: 272 })
   })
 
-  it('keeps pointer-anchored Research zoom available down to 20 percent', async () => {
+  it('keeps pointer-anchored Research zoom available down to 10 percent', async () => {
     const client = await loadConversationClient()
     expect(client.nextResearchCanvasViewport).toBeTypeOf('function')
     if (typeof client.nextResearchCanvasViewport !== 'function') return
@@ -236,7 +236,7 @@ describe('Research canvas file drops', () => {
       { metaKey: true, deltaY: 10_000, pointerX: 300, pointerY: 200 }
     )
 
-    expect(zoomed.scale).toBe(0.2)
+    expect(zoomed.scale).toBe(0.1)
     expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(260, 8)
     expect((200 - zoomed.y) / zoomed.scale).toBeCloseTo(220, 8)
   })

@@ -9073,11 +9073,21 @@ describe('Sherlock workspace and composer controls', () => {
       expect(notice?.textContent).toContain('视口内无内容')
       expect(button?.textContent).toBe('回到内容')
       expect(button).not.toBeNull()
-      expect(browserWindow.getComputedStyle(notice as unknown as HappyDOMElement).bottom)
-        .toBe('78px')
-      expect(browserWindow.getComputedStyle(
-        host.querySelector('[data-research-global-toolbar]') as unknown as HappyDOMElement
-      ).bottom).toBe('24px')
+      const toolbar = host.querySelector(
+        '[data-research-global-toolbar]'
+      ) as unknown as HappyDOMElement
+      const noticeStyle = browserWindow.getComputedStyle(notice as unknown as HappyDOMElement)
+      const toolbarStyle = browserWindow.getComputedStyle(toolbar)
+      const toolbarButton = toolbar.querySelector('button') as unknown as HappyDOMElement
+      const toolbarIcon = toolbar.querySelector('svg') as unknown as HappyDOMElement
+      expect(noticeStyle.bottom).toBe('90px')
+      expect(toolbarStyle.bottom).toBe('20px')
+      expect(toolbarStyle.height).toBe('38px')
+      expect(browserWindow.getComputedStyle(toolbarButton).height).toBe('32px')
+      expect(browserWindow.getComputedStyle(toolbarIcon).width).toBe('16px')
+      expect(Number.parseFloat(noticeStyle.bottom) - (
+        Number.parseFloat(toolbarStyle.bottom) + Number.parseFloat(toolbarStyle.height)
+      )).toBe(32)
       if (button === null) return
 
       await act(async () => {
