@@ -8533,6 +8533,8 @@ describe('Sherlock workspace and composer controls', () => {
         sessionId: 'session-wechat-safe-reader', nodeId: 'wechat-link',
         url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA'
       })
+      expect(authorize).toHaveBeenCalledTimes(1)
+      expect(read).toHaveBeenCalledTimes(1)
       expect(iframe).not.toBeNull()
       expect(iframe?.getAttribute('sandbox')).toBe('')
       expect(iframe?.srcdoc).toContain('文章正文')

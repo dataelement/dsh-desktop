@@ -6327,6 +6327,8 @@ index 1dd0e89..a442752 100644
 +		function ResearchCanvasWechatReader({ node, sessionId, visible, onInspection }) {
 +			const [attempt, setAttempt] = (0, react.useState)(0);
 +			const [reader, setReader] = (0, react.useState)({ status: visible ? "loading" : "offscreen", article: null });
++			const onInspectionRef = (0, react.useRef)(onInspection);
++			onInspectionRef.current = onInspection;
 +			(0, react.useEffect)(() => {
 +				if (!visible) {
 +					setReader({ status: "offscreen", article: null });
@@ -6358,7 +6360,7 @@ index 1dd0e89..a442752 100644
 +					}
 +					const article = { ...result, url };
 +					setReader({ status: "ready", article });
-+					onInspection?.(node.url, { title: article.title });
++					onInspectionRef.current?.(node.url, { title: article.title });
 +				}).catch(() => {
 +					if (active) setReader({ status: "unavailable", article: null });
 +				});
@@ -6366,7 +6368,7 @@ index 1dd0e89..a442752 100644
 +					active = false;
 +					Promise.resolve(linkFrame.release?.({ sessionId, nodeId: node.id })).catch(() => void 0);
 +				};
-+			}, [sessionId, node.id, node.url, visible, attempt, onInspection]);
++			}, [sessionId, node.id, node.url, visible, attempt]);
 +			if (reader.status === "offscreen") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-offscreen-placeholder": "", children: "网页已暂停" });
 +			if (reader.status === "loading") return (0, react_jsx_runtime.jsx)("div", { className: "rScV5Q_previewPlaceholder", "data-research-preview-loading": "", children: "正在安全读取文章…" });
 +			if (reader.status !== "ready" || reader.article === null) return (0, react_jsx_runtime.jsxs)("div", {
