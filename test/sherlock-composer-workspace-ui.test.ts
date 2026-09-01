@@ -6655,19 +6655,19 @@ describe('Sherlock workspace and composer controls', () => {
       ['file-a', 'artifact-b'],
       'mind-map',
       'brief'
-    )).toEqual({ x: 982, y: 275, width: 600, height: 500, sizeMode: 'manual' })
+    )).toEqual({ x: 1102, y: 275, width: 840, height: 700, sizeMode: 'manual' })
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['file-a', 'artifact-b'],
       'mind-map',
       'standard'
-    )).toEqual({ x: 1042, y: 275, width: 720, height: 600, sizeMode: 'manual' })
+    )).toEqual({ x: 1162, y: 275, width: 960, height: 800, sizeMode: 'manual' })
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['file-a', 'artifact-b'],
       'mind-map',
       'detailed'
-    )).toEqual({ x: 1102, y: 275, width: 840, height: 700, sizeMode: 'manual' })
+    )).toEqual({ x: 1222, y: 275, width: 1080, height: 900, sizeMode: 'manual' })
     expect(client.researchCanvasGeneratedPlacement(
       nodes,
       ['missing'],
@@ -6739,10 +6739,10 @@ describe('Sherlock workspace and composer controls', () => {
         generationDetail: 'brief',
         sourceNodeIds: ['file-a', 'file-b'],
         title: '思维导图',
-        x: 802,
+        x: 922,
         y: 100,
-        width: 600,
-        height: 500
+        width: 840,
+        height: 700
       }])
       expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([
         workspace.getSnapshot().artifacts[0]?.id
@@ -6983,6 +6983,9 @@ describe('Sherlock workspace and composer controls', () => {
       expect(mindMap).not.toBeNull()
       expect(mindMap?.getAttribute('data-research-mind-map-detail')).toBe('detailed')
       expect(mounted.host.querySelector('[data-research-generated-mind-map]')).not.toBeNull()
+      expect(mounted.host.querySelector(
+        '[data-research-generated-mind-map] > [data-research-node-title][data-research-node-move-handle]'
+      )?.textContent).toBe('思维导图')
       expect(Array.from(
         mounted.host.querySelectorAll('[data-research-mind-map-node]')
       ).map((node) => node.textContent)).toEqual([
@@ -7090,12 +7093,20 @@ describe('Sherlock workspace and composer controls', () => {
     )?.textContent ?? ''
 
     expect(css).toContain('[data-research-generated-mind-map]{background:#fff;border-radius:0;box-shadow:none}')
+    expect(css).not.toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{display:none}')
+    expect(css).toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{background:#fff')
     expect(css).toContain('font-family:STHeiti_YFD,"STHeiti SC","PingFang SC",sans-serif')
     expect(css).toContain('[data-research-mind-map-depth="0"]{background:rgb(0,80,150)}')
     expect(css).toContain('[data-research-mind-map-depth="1"]{background:rgb(0,120,180)}')
     expect(css).toContain('[data-research-mind-map-depth="2"]{background:rgb(30,185,225)}')
     expect(css).toContain('border-radius:0;box-shadow:none')
     expect(css).toContain('background:rgb(150,150,150)')
+    expect(css).toContain('width:184px;min-height:54px;max-width:184px')
+    expect(css).not.toContain('.rScV5Q_mindMapChildren:before')
+    expect(css).toContain('.rScV5Q_mindMapBranch:after')
+    expect(css).toContain('.rScV5Q_mindMapBranch:first-child:after{top:50%}')
+    expect(css).toContain('.rScV5Q_mindMapBranch:last-child:after{bottom:50%}')
+    expect(css).toContain('.rScV5Q_mindMapBranch:only-child:after{display:none}')
   })
 
   it('submits the selected-component request through the existing session queue', async () => {
