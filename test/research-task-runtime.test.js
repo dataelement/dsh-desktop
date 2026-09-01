@@ -1,7 +1,8 @@
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import { strToU8, zipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
 
 const runtimeModule = () => import('../packages/dsh-research-task-runtime/index.js')
@@ -204,6 +205,43 @@ describe('Research task contract and prompt', () => {
     expect(prompt).toContain('金价的核心驱动包括实际利率、美元和央行购金。')
   })
 
+  it('extracts PPTX slide text in presentation order', async () => {
+    const { loadResearchFileText } = await runtimeModule()
+    const directory = await mkdtemp(join(tmpdir(), 'research-task-pptx-'))
+    const path = join(directory, '企业 AI 平台.pptx')
+    const archive = zipSync({
+      '[Content_Types].xml': strToU8('<?xml version="1.0"?><Types/>'),
+      'ppt/slides/slide2.xml': strToU8([
+        '<?xml version="1.0"?>',
+        '<p:sld xmlns:p="p" xmlns:a="a"><p:cSld><a:p>',
+        '<a:r><a:t>能力积累 &amp; 持续迭代</a:t></a:r>',
+        '</a:p></p:cSld></p:sld>'
+      ].join('')),
+      'ppt/slides/slide1.xml': strToU8([
+        '<?xml version="1.0"?>',
+        '<p:sld xmlns:p="p" xmlns:a="a"><p:cSld>',
+        '<a:p><a:r><a:t>企业 AI 应用</a:t></a:r><a:br/>',
+        '<a:r><a:t>研究体系</a:t></a:r></a:p>',
+        '</p:cSld></p:sld>'
+      ].join('')),
+      'ppt/slideLayouts/slideLayout1.xml': strToU8('<a:t>不应提取的版式文字</a:t>')
+    })
+    await writeFile(path, archive)
+
+    try {
+      await expect(loadResearchFileText({ path })).resolves.toBe([
+        '第 1 页',
+        '企业 AI 应用',
+        '研究体系',
+        '',
+        '第 2 页',
+        '能力积累 & 持续迭代'
+      ].join('\n'))
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('keeps standard and detailed mind maps free of a fixed level cap', async () => {
     const { buildResearchTaskPrompt, validateResearchTaskStart } = await runtimeModule()
 
@@ -372,6 +410,32 @@ describe('Research task four-slot scheduling', () => {
 })
 
 describe('Research task cancellation and terminal cleanup', () => {
+  it('preserves safe source extraction errors without starting a child', async () => {
+    const { ResearchTaskRuntime } = await runtimeModule()
+    const launches = deferredTaskAdapter()
+    const runtime = new ResearchTaskRuntime({
+      adapter: launches.adapter,
+      storage: memoryTaskStorage(),
+      createId: sequentialTaskIds()
+    })
+    const receipt = await runtime.start(briefMindMapRequest({
+      sources: [{
+        id: 'unsupported-file',
+        type: 'file',
+        title: '暂不支持的表格.xlsx',
+        path: '/workspace/暂不支持的表格.xlsx'
+      }]
+    }))
+
+    await eventually(() => expect(runtime.inspect({
+      parentSessionId: 'parent-1', taskId: receipt.taskId, afterSeq: 0
+    })).toMatchObject({
+      state: 'failed',
+      error: '暂不支持读取所选文件类型'
+    }))
+    expect(launches.startedTaskIds()).toEqual([])
+  })
+
   it('cancels queued work without launching it', async () => {
     const { ResearchTaskRuntime } = await runtimeModule()
     const launches = deferredTaskAdapter()

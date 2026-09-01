@@ -10,6 +10,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "fflate": "0.8.3",
     "pdfjs-dist": "4.10.38"
   },
   "license": "MIT"
