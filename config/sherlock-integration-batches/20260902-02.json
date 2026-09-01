@@ -66,6 +66,26 @@
         ],
         "risks": [],
         "generatedAt": "2026-09-01T23:53:36Z"
+      },
+      "merged": {
+        "mergeCommit": "8b327b961ed6fd559388c7b25b5928fb10871bf3",
+        "verificationCommit": "8b327b961ed6fd559388c7b25b5928fb10871bf3",
+        "checks": [
+          {
+            "argv": [
+              "git",
+              "diff",
+              "--check",
+              "92ffca452ff50ec7eef0ffe8c0006a30e2454845..87348b34f93d02431e436271ced716c84c903983"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：git diff --check 92ffca452ff50ec7eef0ffe8c0006a30e2454845..87348b34f93d02431e436271ced716c84c903983",
+            "verifiedCommit": "8b327b961ed6fd559388c7b25b5928fb10871bf3",
+            "completedAt": "2026-09-01T23:54:14.904Z",
+            "timeoutMs": 30000
+          }
+        ],
+        "recordedAt": "2026-09-01T23:54:14.904Z"
       }
     }
   ],
