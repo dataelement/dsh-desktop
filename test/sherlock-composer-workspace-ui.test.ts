@@ -7094,7 +7094,8 @@ describe('Sherlock workspace and composer controls', () => {
 
     expect(css).toContain('[data-research-generated-mind-map]{background:#fff;border-radius:0;box-shadow:none}')
     expect(css).not.toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{display:none}')
-    expect(css).toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{background:#fff')
+    expect(css).not.toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{')
+    expect(css).toContain('[data-research-generated-mind-map]>.rScV5Q_previewBody{background:#fff}')
     expect(css).toContain('font-family:STHeiti_YFD,"STHeiti SC","PingFang SC",sans-serif')
     expect(css).toContain('[data-research-mind-map-depth="0"]{background:rgb(0,80,150)}')
     expect(css).toContain('[data-research-mind-map-depth="1"]{background:rgb(0,120,180)}')
