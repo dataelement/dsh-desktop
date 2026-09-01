@@ -437,12 +437,17 @@ describe('Research task cancellation and terminal cleanup', () => {
     const receipt = await runtime.start(summaryRequest('node-1'))
     await launches.waitForStarts(1)
     launches.event(receipt.taskId, assistantChunk('text-delta', '流式草稿'))
+    const runningSeq = runtime.inspect({
+      parentSessionId: 'parent-1', taskId: receipt.taskId, afterSeq: 0
+    }).lastSeq
     launches.complete(receipt.taskId, '最终结果')
     await launches.waitForDisposed(receipt.taskId)
 
-    expect(runtime.inspect({
+    const completed = runtime.inspect({
       parentSessionId: 'parent-1', taskId: receipt.taskId, afterSeq: 0
-    })).toMatchObject({ state: 'completed', finalOutput: '最终结果', events: [] })
+    })
+    expect(completed).toMatchObject({ state: 'completed', finalOutput: '最终结果', events: [] })
+    expect(completed.lastSeq).toBeGreaterThan(runningSeq)
     expect(JSON.stringify(storage.snapshot())).not.toContain('流式草稿')
   })
 })

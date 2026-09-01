@@ -205,6 +205,7 @@ function taskDocument(task) {
     ...(task.childSessionId === undefined ? {} : { childSessionId: task.childSessionId }),
     ...(task.finalOutput === undefined ? {} : { finalOutput: task.finalOutput }),
     ...(task.error === undefined ? {} : { error: task.error }),
+    lastSeq: task.lastSeq,
     createdAt: task.createdAt,
     ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
     ...(task.completedAt === undefined ? {} : { completedAt: task.completedAt })
@@ -272,7 +273,11 @@ function restoredTask(raw, now) {
     ...request,
     state: interrupted ? 'interrupted' : originalState,
     createdAt: timestamp(stored.createdAt, now),
-    lastSeq: 0,
+    lastSeq: interrupted
+      ? Number.MAX_SAFE_INTEGER
+      : Number.isSafeInteger(stored.lastSeq) && stored.lastSeq >= 0
+        ? stored.lastSeq
+        : 0,
     events: [],
     cancelRequested: false,
     controller: undefined,
@@ -526,6 +531,7 @@ export class ResearchTaskRuntime {
 
   async finish(task, state, value) {
     if (terminalState(task.state)) return
+    task.lastSeq = Math.min(Number.MAX_SAFE_INTEGER, task.lastSeq + 1)
     task.state = state
     task.completedAt = this.now()
     task.events = []
