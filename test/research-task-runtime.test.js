@@ -183,6 +183,27 @@ describe('Research task contract and prompt', () => {
     expect(prompt).not.toContain('systemPrompt')
   })
 
+  it('materializes selected file content before starting an isolated child', async () => {
+    const { buildResearchTaskExecutionPrompt } = await runtimeModule()
+    const loadFileText = vi.fn(async (source) => {
+      expect(source).toMatchObject({
+        type: 'file',
+        title: '黄金研究报告.pdf',
+        path: '/workspace/黄金研究报告.pdf'
+      })
+      return '报告正文：美元、实际利率与央行购金共同影响金价。'
+    })
+
+    const prompt = await buildResearchTaskExecutionPrompt(briefMindMapRequest(), {
+      loadFileText
+    })
+
+    expect(loadFileText).toHaveBeenCalledTimes(1)
+    expect(prompt).toContain('报告正文：美元、实际利率与央行购金共同影响金价。')
+    expect(prompt).not.toContain('/workspace/黄金研究报告.pdf')
+    expect(prompt).toContain('金价的核心驱动包括实际利率、美元和央行购金。')
+  })
+
   it('keeps standard and detailed mind maps free of a fixed level cap', async () => {
     const { buildResearchTaskPrompt, validateResearchTaskStart } = await runtimeModule()
 

@@ -1324,11 +1324,13 @@ describe('Sherlock workspace and composer controls', () => {
       window: browserWindow
     })
     browserWindow.document.body.innerHTML = [
-      '<div class="gdEzaW_userStack">',
-      '<div class="gdEzaW_bubble">',
+      '<div class="gdEzaW_userStack" data-research-inline="true">',
+      '<div class="gdEzaW_bubble" data-research-inline="true">',
+      '<span data-research-message-files="inline">',
       '<span class="gdEzaW_refChip">总结提炼</span>',
       '<span class="gdEzaW_refChip">助手回复 · 黄金研究</span>',
       '<span>你好</span>',
+      '</span>',
       '</div>',
       '</div>'
     ].join('')
@@ -1336,16 +1338,33 @@ describe('Sherlock workspace and composer controls', () => {
     const stack = browserWindow.document.querySelector('.gdEzaW_userStack')
     const bubble = browserWindow.document.querySelector('.gdEzaW_bubble')
     const chip = browserWindow.document.querySelector('.gdEzaW_refChip')
+    const inlineReferences = browserWindow.document.querySelector(
+      '[data-research-message-files="inline"]'
+    )
     expect(stack).not.toBeNull()
     expect(bubble).not.toBeNull()
     expect(chip).not.toBeNull()
-    if (stack === null || bubble === null || chip === null) return
+    expect(inlineReferences).not.toBeNull()
+    if (
+      stack === null ||
+      bubble === null ||
+      chip === null ||
+      inlineReferences === null
+    )
+      return
 
     const stackStyle = browserWindow.getComputedStyle(stack)
     const bubbleStyle = browserWindow.getComputedStyle(bubble)
     const chipStyle = browserWindow.getComputedStyle(chip)
-    expect(stackStyle.maxWidth).toBe('min(640px,92%)')
+    const inlineReferencesStyle = browserWindow.getComputedStyle(inlineReferences)
+    expect(stackStyle.width).toBe('92%')
+    expect(stackStyle.maxWidth).toBe('640px')
+    expect(bubbleStyle.width).toBe('max-content')
     expect(bubbleStyle.padding).toBe('8px 12px')
+    expect(inlineReferencesStyle.display).toBe('inline-flex')
+    expect(inlineReferencesStyle.flexWrap).toBe('wrap')
+    expect(inlineReferencesStyle.alignItems).toBe('center')
+    expect(inlineReferencesStyle.gap).toBe('4px')
     expect(chipStyle.display).toBe('inline-flex')
     expect(chipStyle.width).toBe('136px')
     expect(chipStyle.minWidth).toBe('136px')

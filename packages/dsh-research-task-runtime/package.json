@@ -9,5 +9,8 @@
     ".": "./index.js",
     "./package.json": "./package.json"
   },
+  "dependencies": {
+    "pdfjs-dist": "4.10.38"
+  },
   "license": "MIT"
 }

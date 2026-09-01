@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, extname, isAbsolute, join } from 'node:path'
 
 export const name = 'sherlock-research-task-runtime'
 export const inject = ['agents', 'subagents', 'typert', 'webServer']
@@ -22,7 +22,14 @@ const MAX_EVENT_TEXT = 8_192
 const MAX_PUBLIC_EVENTS = 160
 const MAX_FINAL_OUTPUT = 240_000
 const MAX_TERMINAL_TASKS = 200
+const MAX_SOURCE_FILE_BYTES = 64 * 1024 * 1024
+const MAX_EXTRACTED_SOURCE_BYTES = 100_000
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
+const NATIVE_TEXT_EXTENSIONS = new Set([
+  '.c', '.cc', '.cpp', '.css', '.csv', '.go', '.h', '.hpp', '.html', '.java',
+  '.js', '.json', '.jsx', '.kt', '.log', '.md', '.mjs', '.py', '.rb', '.rs',
+  '.sh', '.sql', '.swift', '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml'
+])
 const RESEARCH_TASK_PERSONA = '你是 Sherlock 研究画布的内容生成助手。只处理给定的画布任务和资料，不与用户展开对话，不泄露私有推理、工具参数或内部错误；最终只输出产品提示词要求的内容。'
 const DETAILS = new Set(['brief', 'standard', 'detailed'])
 const REQUEST_KEYS = new Set([
@@ -166,6 +173,109 @@ export function buildResearchTaskPrompt(request) {
     ? `请基于下方选中的研究材料生成思维导图。${mindMapDetailInstruction(validated.detail)}请用 Markdown 层级列表输出：第一行以“# ”开头写中心主题，后续使用“- ”和两个空格缩进表达分支；每个节点使用简洁中文短语并尽量控制在 18 个中文字符以内，避免末行仅剩单个汉字；完整句子左对齐，短语或词语居中。不要输出说明、前言或代码围栏。结构应采用横向展开、适合直接截图粘贴到公司 PPT。`
     : '请基于下方选中的研究材料进行总结提炼。请输出一段结构紧凑、信息密度高的中文总结，保留关键结论、依据、风险和待验证事项，不要复述任务说明。'
   return `${instruction}\n\n${sources}`
+}
+
+function truncateUtf8(value, maxBytes) {
+  const bytes = Buffer.from(value, 'utf8')
+  if (bytes.byteLength <= maxBytes) return value
+  let end = maxBytes
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end -= 1
+  return bytes.subarray(0, end).toString('utf8')
+}
+
+function boundedExtractedText(value) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (text.length === 0) {
+    throw new ResearchTaskError('SOURCE_EMPTY', '选中的文件没有可提取文字')
+  }
+  return truncateUtf8(text, MAX_EXTRACTED_SOURCE_BYTES).trim()
+}
+
+async function boundedSourceBytes(path) {
+  const info = await stat(path)
+  if (!info.isFile() || info.size <= 0) {
+    throw new ResearchTaskError('SOURCE_UNREADABLE', '选中的文件无法读取')
+  }
+  if (info.size > MAX_SOURCE_FILE_BYTES) {
+    throw new ResearchTaskError('SOURCE_TOO_LARGE', '选中的文件过大')
+  }
+  return new Uint8Array(await readFile(path))
+}
+
+async function extractPdfText(path) {
+  const data = await boundedSourceBytes(path)
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const loadingTask = getDocument({
+    data,
+    isEvalSupported: false,
+    useSystemFonts: true,
+    useWorkerFetch: false
+  })
+  let document
+  try {
+    document = await loadingTask.promise
+    if (!Number.isSafeInteger(document?.numPages) || document.numPages < 1) {
+      throw new ResearchTaskError('SOURCE_UNREADABLE', '选中的 PDF 无法读取')
+    }
+    const pages = []
+    let totalBytes = 0
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber)
+      try {
+        const content = await page.getTextContent()
+        const text = content.items
+          .map((item) => `${typeof item?.str === 'string' ? item.str : ''}${item?.hasEOL ? '\n' : ''}`)
+          .join('')
+          .trim()
+        if (text.length === 0) continue
+        const pageBytes = Buffer.byteLength(text, 'utf8')
+        if (totalBytes + pageBytes > MAX_EXTRACTED_SOURCE_BYTES) {
+          const remaining = MAX_EXTRACTED_SOURCE_BYTES - totalBytes
+          if (remaining > 0) pages.push(truncateUtf8(text, remaining).trim())
+          break
+        }
+        pages.push(text)
+        totalBytes += pageBytes
+      } finally {
+        page.cleanup?.()
+      }
+    }
+    return boundedExtractedText(pages.join('\n\n'))
+  } finally {
+    await (document?.destroy?.() ?? loadingTask.destroy?.())
+  }
+}
+
+export async function loadResearchFileText(source) {
+  const extension = extname(source.path).toLowerCase()
+  if (extension === '.pdf') return extractPdfText(source.path)
+  if (!NATIVE_TEXT_EXTENSIONS.has(extension)) {
+    throw new ResearchTaskError('SOURCE_UNSUPPORTED', '暂不支持读取所选文件类型')
+  }
+  return boundedExtractedText(Buffer.from(await boundedSourceBytes(source.path)).toString('utf8'))
+}
+
+export async function buildResearchTaskExecutionPrompt(
+  request,
+  { loadFileText = loadResearchFileText } = {}
+) {
+  const validated = validateResearchTaskStart(request)
+  const sources = await Promise.all(validated.sources.map(async (source) => {
+    if (source.type !== 'file') return source
+    return {
+      id: source.id,
+      type: 'artifact',
+      title: source.title,
+      text: boundedExtractedText(await loadFileText(source))
+    }
+  }))
+  return buildResearchTaskPrompt({
+    parentSessionId: validated.parentSessionId,
+    canvasNodeId: validated.canvasNodeId,
+    kind: validated.kind,
+    ...(validated.detail === undefined ? {} : { detail: validated.detail }),
+    sources
+  })
 }
 
 function eventText(value) {
@@ -473,7 +583,7 @@ export class ResearchTaskRuntime {
       handle = await this.adapter.start({
         taskId: task.taskId,
         parentSessionId: task.parentSessionId,
-        prompt: buildResearchTaskPrompt(taskRequest(task)),
+        prompt: await buildResearchTaskExecutionPrompt(taskRequest(task)),
         signal: task.controller.signal,
         onSessionEvent: (event) => {
           if (task.state === 'running') this.onSessionEvent(task, event)
