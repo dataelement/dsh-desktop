@@ -7194,6 +7194,55 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('starts polling when a task is attached after the canvas has mounted', async () => {
+    let targetId = ''
+    const inspect = vi.fn(async (request: Record<string, unknown>) => ({
+      taskId: request.taskId,
+      canvasNodeId: targetId,
+      state: 'failed',
+      lastSeq: 2,
+      error: '生成失败，请重试。',
+      events: []
+    }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-late-poll',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      selectionGeneration: {
+        generate: vi.fn(async () => ({ ok: true })), inspect
+      }
+    })
+    try {
+      expect(inspect).not.toHaveBeenCalled()
+      await act(async () => {
+        const target = mounted.workspace.beginGeneration(
+          'summary', ['source-file'],
+          { x: 600, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+        ) as Record<string, unknown>
+        targetId = String(target.id)
+        mounted.workspace.attachGenerationTask(targetId, {
+          taskId: 'task-late', canvasNodeId: targetId, state: 'queued',
+          lastSeq: 1, events: []
+        })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      })
+
+      expect(inspect).toHaveBeenCalledWith({
+        parentSessionId: 'session-generation-late-poll',
+        taskId: 'task-late',
+        afterSeq: 1
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: targetId, generationStatus: 'failed',
+        generationError: '生成失败，请重试。'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('turns a missing persisted task into a component-local interrupted state', async () => {
     const missing = Object.assign(new Error('not found'), { status: 404 })
     const inspect = vi.fn(async () => { throw missing })

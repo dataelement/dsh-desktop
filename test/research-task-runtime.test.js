@@ -567,6 +567,47 @@ describe('Research task Subagent adapter', () => {
     })).rejects.toMatchObject({ code: 'PARENT_NOT_LIVE' })
     expect(ctx.subagents.start).not.toHaveBeenCalled()
   })
+
+  it('resumes an idle persisted parent before starting a local child', async () => {
+    const { createSubagentAdapter } = await runtimeModule()
+    const parent = { id: 'parent-1', session: { events: [] } }
+    const child = { id: 'child-1', session: { id: 'child-1', events: [] } }
+    const childDispose = vi.fn(async () => undefined)
+    const parentDispose = vi.fn(async () => undefined)
+    const run = {
+      id: child.id,
+      localAgent: child,
+      result: Promise.resolve({
+        stopReason: 'completed', output: [{ type: 'text', text: '完成' }]
+      }),
+      dispose: childDispose
+    }
+    let liveParent
+    const ctx = sessionEventContext(parent, child, run)
+    ctx.agents.get = vi.fn((id) => id === parent.id ? liveParent : undefined)
+    ctx.agents.resume = vi.fn(async ({ resumeSessionId }) => {
+      expect(resumeSessionId).toBe(parent.id)
+      liveParent = parent
+      return { agent: parent, dispose: parentDispose }
+    })
+    const adapter = createSubagentAdapter(ctx)
+
+    const handle = await adapter.start({
+      parentSessionId: parent.id,
+      prompt: '产品固定提示词',
+      signal: new AbortController().signal,
+      onSessionEvent: vi.fn()
+    })
+
+    expect(ctx.agents.resume).toHaveBeenCalledTimes(1)
+    expect(ctx.subagents.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
+      parent
+    }))
+    await handle.dispose()
+    expect(parentDispose).not.toHaveBeenCalled()
+    await adapter.dispose()
+    expect(parentDispose).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('Research task persistence and restart recovery', () => {
