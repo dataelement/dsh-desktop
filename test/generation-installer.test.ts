@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  generationBuildApprovals,
   installGeneration,
+  pinnedGitBuildApproval,
   verifyGenerationPeers
 } from '../packages/dsh-desktop-market-installer/generations/installer'
 import { listGenerations, registryLayout } from '../packages/dsh-desktop-market-installer/generations/registry'
@@ -36,6 +38,90 @@ describe('the generation installer', () => {
       return { code: 0, output: 'Done in 4.2s' }
     }
   }
+
+  it('accepts only explicit safe build approvals from the Profile workspace', () => {
+    const sha = 'a'.repeat(40)
+    expect(generationBuildApprovals([
+      'packages:',
+      '  - .',
+      'allowBuilds:',
+      '  cloudflared: true',
+      '  ignored-package: false',
+      "  '@linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git': true",
+      `  "@linxin666/dsh-remote-web-ui@https://codeload.github.com/zhu1090093659/dsh-web/tar.gz/${sha}": true`,
+      '  ../../outside: true',
+      '  arbitrary key: true',
+      '  placeholder: set this to true or false',
+      ''
+    ].join('\r\n'))).toEqual([
+      'cloudflared',
+      '@linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git',
+      `@linxin666/dsh-remote-web-ui@https://codeload.github.com/zhu1090093659/dsh-web/tar.gz/${sha}`
+    ])
+  })
+
+  it('derives pnpm 10 git prepare keys only from a matching repository approval', () => {
+    const sha = 'a'.repeat(40)
+    const spec = `github:zhu1090093659/dsh-web#${sha}&path:/packages/dsh-remote-web-ui`
+    const stable = '@linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git'
+    const exact = `@linxin666/dsh-remote-web-ui@git+ssh://git@github.com/zhu1090093659/dsh-web.git#${sha}&path:/packages/dsh-remote-web-ui`
+
+    expect(pinnedGitBuildApproval('@linxin666/dsh-remote-web-ui', spec, [stable])).toBe(exact)
+    expect(pinnedGitBuildApproval('@linxin666/dsh-remote-web-ui', spec, [
+      '@linxin666/dsh-remote-web-ui'
+    ])).toBeUndefined()
+    expect(pinnedGitBuildApproval('@linxin666/dsh-remote-web-ui', spec, [
+      '@linxin666/dsh-remote-web-ui@git+https://github.com/other/repo.git'
+    ])).toBeUndefined()
+  })
+
+  it('forwards Profile build approvals into the isolated pnpm staging workspace', async () => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(profile, { recursive: true })
+    await writeFile(
+      join(profile, 'pnpm-workspace.yaml'),
+      [
+        'packages:',
+        '  - .',
+        'allowBuilds:',
+        '  cloudflared: true',
+        "  '@linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git': true",
+        '  esbuild: false',
+        'patchedDependencies:',
+        '  unsafe: ./outside.patch',
+        ''
+      ].join('\n')
+    )
+
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: 'github:zhu1090093659/dsh-web#path:/packages/dsh-remote-web-ui',
+      expectedPluginName: '@linxin666/dsh-remote-web-ui',
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      runInstall: stubInstall(async (staging) => {
+        const stagedPolicy = await readFile(join(staging, 'pnpm-workspace.yaml'), 'utf8')
+        expect(stagedPolicy).toContain('"cloudflared": true')
+        expect(stagedPolicy).toContain(
+          '"@linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git": true'
+        )
+        expect(stagedPolicy).not.toContain('git+ssh://')
+        expect(stagedPolicy).not.toContain('esbuild')
+        expect(stagedPolicy).not.toContain('patchedDependencies')
+
+        const pkg = join(staging, 'node_modules', '@linxin666', 'dsh-remote-web-ui')
+        await mkdir(pkg, { recursive: true })
+        await writeFile(
+          join(pkg, 'package.json'),
+          JSON.stringify({ name: '@linxin666/dsh-remote-web-ui', version: '0.3.11' })
+        )
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+      })
+    })
+
+    expect(result.ok).toBe(true)
+  })
 
   it('promotes a clean install into a generation and records its metadata', async () => {
     const home = await freshHome()

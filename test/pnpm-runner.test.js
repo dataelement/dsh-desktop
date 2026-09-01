@@ -7,7 +7,9 @@ import {
   MARKER,
   SIDELINE_MARKER,
   blockedTargets,
+  gitPrepareApprovalKey,
   lockedRenameTarget,
+  mergeApprovedGitPrepareKey,
   runWithLockRecovery,
   sidelinePath,
   suspendGenerationProjectionForPnpm
@@ -22,11 +24,19 @@ const WINDOWS_LOCK_FAILURE = [
 const BLOCKED_TARGET =
   'C:\\Users\\u\\AppData\\Roaming\\dsh-desktop-dev\\harness\\profiles\\web\\node_modules\\argparse'
 
+const GIT_SHA = 'c36e0d9992d31a81972e8eebe5208eab7d2e7ed3'
+const GIT_EXACT_KEY = `@linxin666/dsh-remote-web-ui@git+ssh://git@github.com/zhu1090093659/dsh-web.git#${GIT_SHA}&path:/packages/dsh-remote-web-ui`
+const GIT_PREPARE_FAILURE = [
+  'ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED Failed to prepare git-hosted package',
+  'onlyBuiltDependencies:',
+  `  - "${GIT_EXACT_KEY}"`
+].join('\n')
+
 function fakePnpm(runs) {
   const calls = []
-  const spawnProcess = (executable, args) => {
+  const spawnProcess = (executable, args, options) => {
     const run = runs[calls.length] ?? { code: 0, output: '' }
-    calls.push({ executable, args })
+    calls.push({ executable, args, options })
     const child = new EventEmitter()
     child.stdout = new EventEmitter()
     child.stderr = new EventEmitter()
@@ -46,6 +56,66 @@ function fakePnpm(runs) {
 }
 
 describe('packaged pnpm runner', () => {
+  it('extracts only a safe exact key from pnpm git prepare failures', () => {
+    expect(gitPrepareApprovalKey(GIT_PREPARE_FAILURE)).toBe(GIT_EXACT_KEY)
+    expect(gitPrepareApprovalKey(GIT_PREPARE_FAILURE.replace('github.com/', 'evil.example/')))
+      .toBeUndefined()
+    expect(gitPrepareApprovalKey(`onlyBuiltDependencies:\n  - "${GIT_EXACT_KEY}"`))
+      .toBeUndefined()
+  })
+
+  it('maps an approved repository to pnpm 10s pinned git key', () => {
+    const yaml = [
+      'packages:',
+      '  - .',
+      'allowBuilds:',
+      "  '@linxin666/dsh-remote-web-ui': true",
+      '  @linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git: true',
+      ''
+    ].join('\r\n')
+    const merged = mergeApprovedGitPrepareKey(yaml, GIT_PREPARE_FAILURE)
+    expect(merged.key).toBe(GIT_EXACT_KEY)
+    expect(merged.workspaceYaml).toContain(`  "${GIT_EXACT_KEY}": true\r\n`)
+
+    const unrelated = yaml.replace('zhu1090093659/dsh-web', 'other/repo')
+    expect(mergeApprovedGitPrepareKey(unrelated, GIT_PREPARE_FAILURE).key).toBeUndefined()
+  })
+
+  it('automatically retries a git prepare after the repository was approved', async () => {
+    const profile = await mkdtemp(join(tmpdir(), 'dsh-pnpm-git-approval-'))
+    const workspacePath = join(profile, 'pnpm-workspace.yaml')
+    try {
+      await writeFile(workspacePath, [
+        'packages:',
+        '  - .',
+        'allowBuilds:',
+        '  @linxin666/dsh-remote-web-ui@git+https://github.com/zhu1090093659/dsh-web.git: true',
+        ''
+      ].join('\n'))
+      const { spawnProcess, calls } = fakePnpm([
+        { code: 1, output: GIT_PREPARE_FAILURE },
+        { code: 0, output: '' }
+      ])
+      const lines = []
+
+      const result = await runWithLockRecovery('/node', ['/pnpm.cjs', 'add', 'github:x/y'], {
+        profileDirectory: profile,
+        spawnProcess,
+        wait: async () => undefined,
+        report: (line) => lines.push(line)
+      })
+
+      expect(result.code).toBe(0)
+      expect(calls).toHaveLength(2)
+      expect(calls[0].options.env.npm_config_pm_on_fail).toBeUndefined()
+      expect(calls[1].options.env.npm_config_pm_on_fail).toBe('ignore')
+      expect(await readFile(workspacePath, 'utf8')).toContain(`"${GIT_EXACT_KEY}": true`)
+      expect(lines.join('\n')).toContain('mapped the approved Git build')
+    } finally {
+      await rm(profile, { recursive: true, force: true })
+    }
+  })
+
   it('temporarily removes only generation-owned dependency fields and restores them', async () => {
     const profile = await mkdtemp(join(tmpdir(), 'dsh-pnpm-projection-'))
     const manifestPath = join(profile, 'package.json')

@@ -257,6 +257,45 @@ export async function publishGenerationManifest(dshHome, profile = 'web') {
   return { plugins: [...enabled.keys()], bundles }
 }
 
+/**
+ * Expose only generation links whose Profile path does not exist yet.
+ *
+ * dsh-market validates a successful add against node_modules before it
+ * returns control to the user. A brand-new path has no Windows replacement
+ * conflict, so it is safe to create for that validation. An existing path is
+ * never touched here: updates keep running from the old generation until the
+ * next cold start replaces the link.
+ */
+export async function exposeMissingGenerationLinks(dshHome, profile = 'web') {
+  const { dir, manifestState, enabled, targets } = await prepareGenerationProjection(dshHome, profile)
+  const modulesDir = join(dir, 'node_modules')
+  const linked = []
+  for (const [pluginName] of enabled) {
+    const linkPath = join(modulesDir, pluginName)
+    const target = targets.get(pluginName)
+    if (target === undefined) throw new Error(`Enabled generation target was not prevalidated: ${pluginName}`)
+    try {
+      const info = await lstat(linkPath)
+      if (!info.isSymbolicLink()) continue
+      const current = await readlink(linkPath).catch(() => '')
+      const currentTarget = current === '' ? '' : resolve(dirname(linkPath), current)
+      if (currentTarget === target) continue
+      const activeBundles = manifestState.manifest.dsh?.profile?.bundles ?? []
+      // A generation link left by a rejected/uninstalled pre-restart add is
+      // safe to replace on retry: it is neither composed nor desired. Never
+      // use this path for an active bundle or for a link another owner wrote.
+      if (activeBundles.includes(pluginName) || !currentTarget.includes(GENERATION_LINK_MARKER)) {
+        continue
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    await ensureDirLink(linkPath, target)
+    linked.push(pluginName)
+  }
+  return linked
+}
+
 async function prepareGenerationProjection(dshHome, profile) {
   const dir = profileDir(dshHome, profile)
   // Validate the authoritative Profile manifest before touching links. A

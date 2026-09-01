@@ -3,6 +3,7 @@ import type { Generation } from './registry'
 
 export interface GenerationInstallOptions {
   dshHome: string
+  profile?: string
   pluginSpec: string
   /** Package name expected after installing a non-registry or aliased spec. */
   expectedPluginName?: string
@@ -12,6 +13,8 @@ export interface GenerationInstallOptions {
   sourceDirectory?: string
   nodeExecutablePath: string
   pnpmEntryPath: string
+  /** Hard ceiling for the pnpm subprocess; defaults to 12 minutes. */
+  installTimeoutMs?: number
   spawnProcess?: unknown
   environment?: NodeJS.ProcessEnv
   onTrace?: (line: string) => void
@@ -30,6 +33,14 @@ export interface GenerationInstallResult {
 export function installGeneration(
   options: GenerationInstallOptions
 ): Promise<GenerationInstallResult>
+
+export function generationBuildApprovals(workspaceYaml: string): string[]
+
+export function pinnedGitBuildApproval(
+  pluginName: string,
+  pluginSpec: string,
+  approvals: string[]
+): string | undefined
 
 export function verifyGenerationPeers(
   dshHome: string,

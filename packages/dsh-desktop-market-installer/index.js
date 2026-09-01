@@ -9,7 +9,10 @@ import { fileURLToPath } from 'node:url'
 import { PassThrough } from 'node:stream'
 
 import { installGeneration } from './generations/installer.mjs'
-import { publishGenerationManifest } from './generations/projection.mjs'
+import {
+  exposeMissingGenerationLinks,
+  publishGenerationManifest
+} from './generations/projection.mjs'
 import {
   disableGeneration,
   listGenerations,
@@ -470,8 +473,9 @@ export function createDesktopPnpmService(options) {
    *
    * The plugin is installed as its own immutable generation rather than into
    * the shared hoisted tree: a fresh directory, promoted by one rename, never
-   * replaced. Only manifest inventory is published while Harness is live; the
-   * node_modules junction changes on the next cold start.
+   * replaced. Only a missing link may be created while Harness is live so the
+   * market can validate a new install; an existing node_modules junction and
+   * the bundle composition change only on the next cold start.
    */
   const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
@@ -504,7 +508,12 @@ export function createDesktopPnpmService(options) {
           return generation === undefined || generation.pluginName !== install.generation.pluginName
         })
         await writeDesired(home, [...kept, install.generation.id])
+        // dsh-market validates a clean add against node_modules immediately.
+        // Creating a missing path cannot hit Windows' replace-existing rename;
+        // existing links (updates) remain untouched until cold start.
+        const exposed = await exposeMissingGenerationLinks(home)
         const published = await publishGenerationManifest(home)
+        if (exposed.length > 0) write(`available for validation: ${exposed.join(', ')}`)
         write(`staged for next restart: ${published.plugins.join(', ')}`)
         write(`bundles: ${JSON.stringify(published.bundles)}`)
         return { exitCode: 0 }

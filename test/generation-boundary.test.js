@@ -85,7 +85,7 @@ describe('the market install boundary', () => {
     expect(typeof svc.runExternalMarketPluginInstall).toBe('function')
   })
 
-  it('installs a generation and defers its node_modules projection until cold start', async () => {
+  it('exposes a new generation for market validation and defers bundle activation until cold start', async () => {
     const home = await freshHome()
     const svc = service(home, stubGenerationInstall('demo-plugin', '9.9.9'))
 
@@ -109,10 +109,12 @@ describe('the market install boundary', () => {
     expect(manifest.dependencies['demo-plugin']).toBe('9.9.9')
     expect(manifest.pnpm.overrides['demo-plugin']).toMatch(/^link:/u)
     const link = join(home, 'profiles', 'web', 'node_modules', 'demo-plugin')
-    await expect(lstat(link)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+    const validationTarget = await readlink(link)
 
     await projectGenerations(home)
     expect((await lstat(link)).isSymbolicLink()).toBe(true)
+    expect(await readlink(link)).toBe(validationTarget)
     const activeManifest = JSON.parse(
       await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
     )
@@ -151,6 +153,35 @@ describe('the market install boundary', () => {
       await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')
     )
     expect(inactiveManifest.dsh.profile.bundles).not.toContain('demo-plugin')
+  })
+
+  it('replaces a stale validation-only link when a rejected install is retried', async () => {
+    const home = await freshHome()
+    const firstService = service(home, stubGenerationInstall('broken-plugin', '1.0.0'))
+    await drainHandle(
+      firstService.runExternalMarketPluginInstall(
+        ['add', 'broken-plugin@1.0.0'],
+        join(home, 'profiles', 'web')
+      )
+    )
+    const link = join(home, 'profiles', 'web', 'node_modules', 'broken-plugin')
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+    const rejectedTarget = await readlink(link)
+
+    await drainHandle(
+      firstService.runPlugin(['remove', 'broken-plugin'], join(home, 'profiles', 'web'))
+    )
+    expect(await readlink(link)).toBe(rejectedTarget)
+
+    await drainHandle(
+      service(home, stubGenerationInstall('broken-plugin', '2.0.0')).runExternalMarketPluginInstall(
+        ['add', 'broken-plugin@2.0.0'],
+        join(home, 'profiles', 'web')
+      )
+    )
+
+    expect(await readlink(link)).not.toBe(rejectedTarget)
+    expect((await readDesired(home))[0]).toMatch(/^broken-plugin\+2\.0\.0\+/u)
   })
 
   it('keeps the active generation link unchanged until an update reaches cold start', async () => {

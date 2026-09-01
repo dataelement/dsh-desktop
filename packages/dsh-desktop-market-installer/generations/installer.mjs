@@ -30,12 +30,102 @@ import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './
 /** Packages the host is the sole owner of; a generation must never carry its own copy. */
 const HOST_SINGLETON_PATTERNS = [/^react$/u, /^react-dom$/u, /^@deepseek-ai\//u]
 
+const PACKAGE_NAME_PATTERN = /^(?:@[A-Za-z0-9-~][A-Za-z0-9._~-]*\/)?[A-Za-z0-9-~][A-Za-z0-9._~-]*$/u
+const GIT_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@git\+https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/u
+const CODELOAD_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@https:\/\/codeload\.github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/tar\.gz\/[0-9a-f]{40}$/u
+const PINNED_GITHUB_TARGET_PATTERN = /^github:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
+const PINNED_GIT_APPROVAL_PATTERN = /@git\+ssh:\/\/git@github\.com\//u
+const GENERATION_INSTALL_TIMEOUT_MS = 12 * 60 * 1000
+
 function isHostSingleton(name) {
   return HOST_SINGLETON_PATTERNS.some((pattern) => pattern.test(name))
 }
 
 function installationClosureDir(dshHome) {
   return join(dshHome, 'profiles', 'node_modules')
+}
+
+function safeBuildApprovalKey(key) {
+  return PACKAGE_NAME_PATTERN.test(key) ||
+    GIT_ALLOW_BUILD_PATTERN.test(key) ||
+    CODELOAD_ALLOW_BUILD_PATTERN.test(key)
+}
+
+/**
+ * Read only explicit, safe `allowBuilds: ...: true` entries from a Profile
+ * workspace file. Generation installs run in a separate pnpm workspace, so
+ * an approval written by dsh-market has to cross that boundary deliberately.
+ * No other Profile workspace setting is inherited: patchedDependencies and
+ * relative package globs would be invalid inside the immutable staging tree.
+ */
+export function generationBuildApprovals(workspaceYaml) {
+  if (typeof workspaceYaml !== 'string' || workspaceYaml === '') return []
+  const blockPattern = /allowBuilds:[ \t]*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)*)/gu
+  const approved = new Set()
+  for (const block of workspaceYaml.matchAll(blockPattern)) {
+    for (const line of block[1].split(/\r?\n/u)) {
+      const match = /^[ \t]+(\S.*?)\s*:\s*(true|false)\s*$/u.exec(line)
+      if (match === null || match[2] !== 'true') continue
+      let key = match[1]
+      if (
+        key.length >= 2 &&
+        ((key.startsWith("'") && key.endsWith("'")) ||
+          (key.startsWith('"') && key.endsWith('"')))
+      ) {
+        key = key.slice(1, -1)
+      }
+      if (safeBuildApprovalKey(key)) approved.add(key)
+    }
+  }
+  return [...approved]
+}
+
+/**
+ * pnpm 10 matches a git prepare approval against its normalized, commit-pinned
+ * SSH resolution id. dsh-market deliberately records stable HTTPS/codeload
+ * identities instead, so derive the narrower runtime key only when the same
+ * package and repository were already approved by the user.
+ */
+export function pinnedGitBuildApproval(pluginName, pluginSpec, approvals) {
+  if (!PACKAGE_NAME_PATTERN.test(pluginName)) return undefined
+  const target = PINNED_GITHUB_TARGET_PATTERN.exec(pluginSpec)
+  if (target?.groups === undefined) return undefined
+  const { owner, repo, sha, subpath = '' } = target.groups
+  const stable = `${pluginName}@git+https://github.com/${owner}/${repo}.git`
+  const codeload = `${pluginName}@https://codeload.github.com/${owner}/${repo}/tar.gz/${sha}`
+  if (!approvals.includes(stable) && !approvals.includes(codeload)) return undefined
+  return `${pluginName}@git+ssh://git@github.com/${owner}/${repo}.git#${sha}${subpath}`
+}
+
+async function stageBuildApprovals(
+  dshHome,
+  stagingDir,
+  profile = 'web',
+  pluginName,
+  pluginSpec
+) {
+  const source = join(dshHome, 'profiles', profile, 'pnpm-workspace.yaml')
+  let yaml
+  try {
+    yaml = await readFile(source, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return []
+    throw error
+  }
+  const approvals = generationBuildApprovals(yaml)
+  const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, approvals)
+  const stagedApprovals = pinned === undefined ? approvals : [...approvals, pinned]
+  if (stagedApprovals.length === 0) return []
+  const lines = [
+    'packages:',
+    '  - .',
+    '',
+    'allowBuilds:',
+    ...stagedApprovals.map((key) => `  ${JSON.stringify(key)}: true`),
+    ''
+  ]
+  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), lines.join('\n'), 'utf8')
+  return stagedApprovals
 }
 
 async function defaultRunInstall(options, stagingDir) {
@@ -63,9 +153,12 @@ async function defaultRunInstall(options, stagingDir) {
     }
     child.stdout?.on('data', collect)
     child.stderr?.on('data', collect)
-    // A generation install that needs a timeout has already failed the point of
-    // the exercise; record it rather than waiting the full ceiling out.
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5 * 60 * 1000)
+    // Source monorepos can legitimately spend several minutes in prepare, but
+    // they still stay below the host's fifteen-minute operation ceiling.
+    const timer = setTimeout(
+      () => child.kill('SIGKILL'),
+      options.installTimeoutMs ?? GENERATION_INSTALL_TIMEOUT_MS
+    )
     options.registerChild?.(child)
     child.once('close', (code) => {
       clearTimeout(timer)
@@ -130,6 +223,16 @@ export async function installGeneration(options) {
   const cleanupStaging = () => rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
 
   try {
+    const approvals = await stageBuildApprovals(
+      dshHome,
+      stagingDir,
+      options.profile ?? 'web',
+      pluginName,
+      pluginSpec
+    )
+    if (approvals.length > 0) {
+      trace(`forwarded ${approvals.length} approved build-script key(s) into staging`)
+    }
     let installSpec = pluginSpec
     if (options.sourceDirectory !== undefined) {
       const sourceCopy = join(stagingDir, 'source', pluginName.replace(/^@/u, '').replace(/[/\\]/gu, '+'))
@@ -138,7 +241,23 @@ export async function installGeneration(options) {
       installSpec = `file:${sourceCopy}`
     }
     trace(`installing ${options.sourceSpec ?? pluginSpec} into staging`)
-    const runInstall = options.runInstall ?? ((dir) => defaultRunInstall({ ...options, pluginSpec: installSpec }, dir))
+    // A git subpackage can declare a pnpm version different from its workspace
+    // root (the dsh-web remote UI currently does). Once this exact source has
+    // been approved, let pnpm follow its own documented compatibility path
+    // instead of failing before the authorized prepare script can run.
+    const approvedGitPrepare = approvals.some((key) => PINNED_GIT_APPROVAL_PATTERN.test(key))
+    const installEnvironment = approvedGitPrepare
+      ? {
+          ...(options.environment ?? process.env),
+          npm_config_pm_on_fail: 'ignore',
+          PNPM_CONFIG_PM_ON_FAIL: 'ignore'
+        }
+      : options.environment
+    const runInstall = options.runInstall ?? ((dir) => defaultRunInstall({
+      ...options,
+      environment: installEnvironment,
+      pluginSpec: installSpec
+    }, dir))
     const started = Date.now()
     const { code, output } = await runInstall(stagingDir)
     if (code !== 0) {

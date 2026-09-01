@@ -14,3 +14,4 @@ export function publishGenerationManifest(
   dshHome: string,
   profile?: string
 ): Promise<PublishedGenerationManifest>
+export function exposeMissingGenerationLinks(dshHome: string, profile?: string): Promise<string[]>
