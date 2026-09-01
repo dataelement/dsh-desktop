@@ -8474,6 +8474,94 @@ describe('Sherlock workspace and composer controls', () => {
     expect(svg).not.toMatch(/script|foreignObject|var\(--/)
   })
 
+  it('builds a PPT-ready mind map export with balanced text and edge connectors', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const build = client.buildResearchMindMapSvg as (
+      text: string,
+      detail: string,
+      measureText: (text: string) => number
+    ) => { svg: string; width: number; height: number } | null
+    expect(build).toBeTypeOf('function')
+    const result = build([
+      '# 中心主题',
+      '- 四件事可直接迁移',
+      '  - 这是一个需要左对齐显示的完整句子，便于用户快速理解。',
+      '- 三个不同层级的差异',
+      '  - 产品定位',
+      '- 路径已做市场验证'
+    ].join('\n'), 'brief', (text) => Array.from(text).length * 14)
+
+    expect(result).not.toBeNull()
+    if (result === null) return
+    expect(result.width / result.height).toBeCloseTo(1.2, 1)
+    expect(result.svg).toContain('<rect width="100%" height="100%" fill="#ffffff"')
+    expect(result.svg).toContain('rgb(0,80,150)')
+    expect(result.svg).toContain('rgb(0,120,180)')
+    expect(result.svg).toContain('rgb(30,185,225)')
+    expect(result.svg).toContain('STHeiti_YFD')
+    expect(result.svg).toContain('stroke-width="1.2"')
+    expect(result.svg).toContain('text-anchor="start"')
+    expect(result.svg).toContain('text-anchor="middle"')
+    expect(result.svg).not.toMatch(/foreignObject|script|shadow|\srx=/)
+    expect(result.svg).not.toMatch(/<tspan[^>]*>[。，；！？]<\/tspan>/)
+    expect(result.svg).toMatch(/<path d="M [\d.]+ [\d.]+ H [\d.]+ V [\d.]+ H [\d.]+"/)
+  })
+
+  it('rasterizes mind map SVG to 2x PNG and JPG on white', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const rasterize = client.rasterizeResearchMindMapSvg as (
+      svg: string,
+      width: number,
+      height: number,
+      format: 'png' | 'jpg',
+      environment: Record<string, unknown>
+    ) => Promise<{ base64: string; width: number; height: number }>
+    expect(rasterize).toBeTypeOf('function')
+    const events: string[] = []
+    const formats: Array<{ type: string; quality?: number }> = []
+    const canvas = {
+      getContext: () => ({
+        set fillStyle(value: string) { events.push(`fillStyle:${value}`) },
+        fillRect: (...values: number[]) => events.push(`fillRect:${values.join(',')}`),
+        drawImage: () => events.push('drawImage')
+      }),
+      toBlob(callback: (blob: unknown) => void, type: string, quality?: number) {
+        formats.push({ type, quality })
+        callback({ type })
+      }
+    }
+    const sizes: Array<[number, number]> = []
+    const environment = {
+      createCanvas(width: number, height: number) {
+        sizes.push([width, height])
+        return canvas
+      },
+      createImage() {
+        return {
+          onload: null as null | (() => void),
+          onerror: null as null | (() => void),
+          set src(_value: string) { queueMicrotask(() => this.onload?.()) }
+        }
+      },
+      createSvgUrl: () => 'blob:mind-map',
+      revokeSvgUrl: (url: string) => events.push(`revoke:${url}`),
+      blobToBase64: async () => 'ZmFrZQ=='
+    }
+
+    await expect(rasterize('<svg/>', 640, 360, 'png', environment))
+      .resolves.toEqual({ base64: 'ZmFrZQ==', width: 1280, height: 720 })
+    await expect(rasterize('<svg/>', 640, 360, 'jpg', environment))
+      .resolves.toEqual({ base64: 'ZmFrZQ==', width: 1280, height: 720 })
+    expect(sizes).toEqual([[1280, 720], [1280, 720]])
+    expect(formats).toEqual([
+      { type: 'image/png', quality: undefined },
+      { type: 'image/jpeg', quality: 0.92 }
+    ])
+    expect(events.indexOf('fillRect:0,0,1280,720')).toBeLessThan(events.indexOf('drawImage'))
+    expect(events).toContain('fillStyle:#ffffff')
+    expect(events).toContain('revoke:blob:mind-map')
+  })
+
   it('keeps a bottom global toolbar for links and native container drafts', async () => {
     const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
     const release = vi.fn(async () => ({ ok: true }))
