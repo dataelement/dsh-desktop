@@ -12,6 +12,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  net,
   protocol,
   session,
   shell,
@@ -730,7 +731,11 @@ function registerHarnessHandlers(): void {
   registerResearchWebReaderHandlers({
     ipcMain,
     getMainWindow: () => mainWindow,
-    registry: researchLinkFrameRegistry
+    registry: researchLinkFrameRegistry,
+    dependencies: {
+      fetch: (input, init) => net.fetch(input, init),
+      createTimeoutSignal: (milliseconds) => AbortSignal.timeout(milliseconds)
+    }
   })
   const exportFileOperations = researchCanvasExportFileOperations()
   registerResearchCanvasExportHandlers({

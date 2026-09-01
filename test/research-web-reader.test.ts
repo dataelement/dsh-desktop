@@ -165,6 +165,48 @@ describe('Research WeChat article reader', () => {
     })
   })
 
+  it('uses the injected Chromium fetch dependency at the trusted IPC boundary', async () => {
+    const handlers = new Map<string, (event: any, value: unknown) => unknown>()
+    const ipcMain = {
+      removeHandler: vi.fn((channel: string) => handlers.delete(channel)),
+      handle: vi.fn((channel: string, handler: (event: any, value: unknown) => unknown) => {
+        handlers.set(channel, handler)
+      })
+    }
+    const mainFrame = { processId: 7, routingId: 41 }
+    const webContents = { mainFrame }
+    const window = { isDestroyed: () => false, webContents }
+    const registry = new ResearchLinkFrameRegistry(() => 'd'.repeat(32))
+    const url = 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA'
+    registry.authorize({ sessionId: 'session-1', nodeId: 'node-1', url })
+    const chromiumFetch = vi.fn(async () => htmlResponse(`<!doctype html><html><head>
+      <meta property="og:title" content="英伟达豪掷70亿，下场做开放大模型了">
+    </head><body><div id="js_content"><p>文章正文</p></div></body></html>`))
+    const defaultFetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+      new Error('Node certificate chain rejected')
+    )
+    try {
+      registerResearchWebReaderHandlers({
+        ipcMain,
+        getMainWindow: () => window,
+        registry,
+        dependencies: fixtureDependencies(chromiumFetch)
+      })
+
+      const read = handlers.get('research:web-reader:read')
+      await expect(Promise.resolve(read?.({
+        sender: webContents,
+        senderFrame: { ...mainFrame }
+      }, { sessionId: 'session-1', nodeId: 'node-1', url }))).resolves.toMatchObject({
+        status: 'ready',
+        title: '英伟达豪掷70亿，下场做开放大模型了'
+      })
+      expect(chromiumFetch).toHaveBeenCalledTimes(1)
+    } finally {
+      defaultFetch.mockRestore()
+    }
+  })
+
   it('allows only the trusted main frame to read the currently authorized article URL', async () => {
     const handlers = new Map<string, (event: any, value: unknown) => unknown>()
     const ipcMain = {

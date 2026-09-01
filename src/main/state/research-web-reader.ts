@@ -250,6 +250,7 @@ export function registerResearchWebReaderHandlers(options: {
   getMainWindow(): TrustedWindow | undefined
   registry: ResearchLinkFrameRegistry
   readArticle?(input: ResearchWebReaderInput): Promise<ResearchWebReaderResult>
+  dependencies?: ResearchWebReaderDependencies
 }): void {
   options.ipcMain.removeHandler('research:web-reader:read')
   registerTrustedMainWindowHandler(
@@ -272,7 +273,7 @@ export function registerResearchWebReaderHandlers(options: {
         return { status: 'unavailable', reason: 'unsupported' }
       }
       const readArticle = options.readArticle ?? ((input: ResearchWebReaderInput) =>
-        readResearchWechatArticle(input))
+        readResearchWechatArticle(input, options.dependencies))
       return readArticle({ url: request.url })
     }
   )

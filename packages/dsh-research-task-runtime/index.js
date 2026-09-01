@@ -185,17 +185,28 @@ function mindMapDetailInstruction(detail) {
   return '这是常规模式：不设置固定层级上限，根据材料保留理解主题所需的关系层次，在阅读时间与内容理解之间取得平衡。'
 }
 
+function containerPromptHasExplicitWebUrl(prompt) {
+  return /https?:\/\/[^\s<>"'`]+/iu.test(prompt)
+}
+
 export function buildResearchTaskPrompt(request) {
   const validated = validateResearchTaskStart(request)
   if (validated.kind === 'container') {
+    const allowsWeb = containerPromptHasExplicitWebUrl(validated.prompt)
     return [
       '请把用户的画布容器需求转换为一个安全、可由 Sherlock 原生组件直接渲染的 JSON 对象。',
-      '只允许输出以下五种 schema 之一，字段必须完全一致，不得增加任何字段：',
-      '{"version": 1, "type": "web", "title": "标题", "url": "https://example.com", "description": "可选说明"}',
+      `只允许输出以下${allowsWeb ? '五' : '四'}种 schema 之一，字段必须完全一致，不得增加任何字段：`,
+      ...(allowsWeb ? [
+        '{"version": 1, "type": "web", "title": "标题", "url": "https://example.com", "description": "可选说明"}'
+      ] : []),
       '{"version": 1, "type": "chart", "title": "标题", "variant": "bar 或 line", "labels": ["标签"], "series": [{"name": "系列名", "values": [1]}]}',
       '{"version": 1, "type": "table", "title": "标题", "columns": ["列名"], "rows": [["单元格"]]}',
       '{"version": 1, "type": "kpi", "title": "标题", "items": [{"label": "指标", "value": "数值", "change": "可选变化"}]}',
       '{"version": 1, "type": "markdown", "title": "标题", "content": "Markdown 内容"}',
+      allowsWeb
+        ? '只有用户明确提供的 http 或 https 网址才能用于 web；不得把用户没有提供的网址替换成自行猜测的网站。'
+        : '用户未提供明确网址时，不得生成 web，也不得自行猜测或推荐外部网站；请使用 chart、table、kpi 或 markdown 原生呈现。',
+      '当需求涉及实时、监控或最新数据时，先使用只读网页搜索或网页读取工具取得当前信息，再优先输出原生 kpi、chart 或 table，并在标题或标签中标明数据时点；不得用网站首页代替监控内容。',
       '不要输出 HTML 或 JavaScript，不要输出代码围栏、解释、前言或 JSON 之外的文字。',
       '图表最多 24 个标签和 6 个系列；表格最多 12 列和 100 行；KPI 最多 12 项。',
       '',
@@ -688,6 +699,7 @@ export class ResearchTaskRuntime {
       handle = await this.adapter.start({
         taskId: task.taskId,
         parentSessionId: task.parentSessionId,
+        kind: task.kind,
         prompt: await buildResearchTaskExecutionPrompt(taskRequest(task)),
         signal: task.controller.signal,
         onSessionEvent: (event) => {
@@ -803,7 +815,7 @@ export function createSubagentAdapter(ctx) {
   }
 
   return {
-    async start({ parentSessionId, prompt, signal, onSessionEvent }) {
+    async start({ parentSessionId, kind, prompt, signal, onSessionEvent }) {
       const parent = await resolveParent(parentSessionId)
       const run = await ctx.subagents.start('spawn', {
         label: '画布生成任务',
@@ -811,7 +823,9 @@ export function createSubagentAdapter(ctx) {
         signal,
         prompt: [{ type: 'text', text: prompt }],
         maxDepth: 1,
-        toolFilter: { allow: [] },
+        toolFilter: {
+          allow: kind === 'container' ? ['web_search', 'web_fetch'] : []
+        },
         persona: RESEARCH_TASK_PERSONA
       })
       const child = run.localAgent

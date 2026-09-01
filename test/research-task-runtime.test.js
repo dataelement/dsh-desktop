@@ -180,12 +180,21 @@ describe('Research task contract and prompt', () => {
 
     expect(executionPrompt).toBe(prompt)
     expect(prompt).toContain('"version": 1')
-    for (const type of ['web', 'chart', 'table', 'kpi', 'markdown']) {
+    for (const type of ['chart', 'table', 'kpi', 'markdown']) {
       expect(prompt).toContain(`"type": "${type}"`)
     }
+    expect(prompt).not.toContain('"type": "web"')
+    expect(prompt).toContain('未提供明确网址时，不得生成 web')
+    expect(prompt).toContain('实时、监控或最新数据')
     expect(prompt).toContain('不要输出 HTML 或 JavaScript')
     expect(prompt).toContain('制作一张展示月度收入趋势的柱状图')
     expect(prompt).not.toContain('来源 1')
+
+    const explicitWebPrompt = buildResearchTaskPrompt({
+      ...containerRequest(),
+      prompt: '在组件中加载 https://example.com/dashboard'
+    })
+    expect(explicitWebPrompt).toContain('"type": "web"')
   })
 
   it('rejects renderer-owned prompts and unsupported task kinds', async () => {
@@ -687,6 +696,7 @@ describe('Research task Subagent adapter', () => {
 
     const handle = await createSubagentAdapter(ctx).start({
       parentSessionId: parent.id,
+      kind: 'summary',
       prompt: '产品固定提示词',
       signal: new AbortController().signal,
       onSessionEvent
@@ -710,6 +720,57 @@ describe('Research task Subagent adapter', () => {
 
     await handle.dispose()
     expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows only read-only web lookup tools for native container tasks', async () => {
+    const { createSubagentAdapter } = await runtimeModule()
+    const parent = { id: 'parent-1', session: { events: [] } }
+    const child = { id: 'child-1', session: { id: 'child-1', events: [] } }
+    const run = {
+      id: child.id,
+      localAgent: child,
+      result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: '完成' }] }),
+      dispose: vi.fn(async () => undefined)
+    }
+    const ctx = sessionEventContext(parent, child, run)
+
+    const handle = await createSubagentAdapter(ctx).start({
+      parentSessionId: parent.id,
+      kind: 'container',
+      prompt: '生成比特币价格监控',
+      signal: new AbortController().signal,
+      onSessionEvent: vi.fn()
+    })
+
+    expect(ctx.subagents.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
+      toolFilter: { allow: ['web_search', 'web_fetch'] }
+    }))
+    await handle.dispose()
+  })
+
+  it('passes the validated task kind to the isolated task adapter', async () => {
+    const { ResearchTaskRuntime } = await runtimeModule()
+    const start = vi.fn(async () => ({
+      childSessionId: 'child-container',
+      result: Promise.resolve({
+        stopReason: 'completed',
+        output: [{
+          type: 'text',
+          text: '{"version":1,"type":"kpi","title":"比特币监控","items":[{"label":"价格","value":"待更新"}]}'
+        }]
+      }),
+      dispose: async () => undefined
+    }))
+    const runtime = new ResearchTaskRuntime({
+      adapter: { start },
+      storage: memoryTaskStorage(),
+      createId: () => 'task-container-kind'
+    })
+
+    await runtime.start({ ...containerRequest(), prompt: '生成比特币价格监控' })
+    await eventually(() => expect(start).toHaveBeenCalledTimes(1))
+
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ kind: 'container' }))
   })
 
   it('fails without mutating the parent when the exact parent is no longer live', async () => {
