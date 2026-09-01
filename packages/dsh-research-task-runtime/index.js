@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 
 export const MAX_ACTIVE_PER_PARENT = 4
@@ -12,6 +13,8 @@ const MAX_ID_LENGTH = 256
 const MAX_TITLE_LENGTH = 512
 const MAX_PATH_LENGTH = 8_192
 const MAX_EVENT_TEXT = 8_192
+const MAX_PUBLIC_EVENTS = 160
+const MAX_FINAL_OUTPUT = 240_000
 const DETAILS = new Set(['brief', 'standard', 'detailed'])
 const REQUEST_KEYS = new Set([
   'parentSessionId',
@@ -174,4 +177,273 @@ export function publicEventFromSessionEvent(event) {
     return { type: 'tool-finished', failed: event.data?.error !== undefined }
   }
   return null
+}
+
+function terminalState(state) {
+  return state === 'completed' ||
+    state === 'failed' ||
+    state === 'cancelled' ||
+    state === 'interrupted'
+}
+
+function taskDocument(task) {
+  return {
+    taskId: task.taskId,
+    parentSessionId: task.parentSessionId,
+    canvasNodeId: task.canvasNodeId,
+    kind: task.kind,
+    ...(task.detail === undefined ? {} : { detail: task.detail }),
+    sources: task.sources,
+    state: task.state,
+    ...(task.childSessionId === undefined ? {} : { childSessionId: task.childSessionId }),
+    ...(task.finalOutput === undefined ? {} : { finalOutput: task.finalOutput }),
+    ...(task.error === undefined ? {} : { error: task.error }),
+    createdAt: task.createdAt,
+    ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
+    ...(task.completedAt === undefined ? {} : { completedAt: task.completedAt })
+  }
+}
+
+function finalText(output) {
+  if (!Array.isArray(output)) return undefined
+  const text = output
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
+    .trim()
+  return text.length === 0 ? undefined : text.slice(0, MAX_FINAL_OUTPUT)
+}
+
+function taskRequest(task) {
+  return {
+    parentSessionId: task.parentSessionId,
+    canvasNodeId: task.canvasNodeId,
+    kind: task.kind,
+    ...(task.detail === undefined ? {} : { detail: task.detail }),
+    sources: task.sources
+  }
+}
+
+function publicTask(task, afterSeq = 0) {
+  return {
+    taskId: task.taskId,
+    canvasNodeId: task.canvasNodeId,
+    state: task.state,
+    ...(task.childSessionId === undefined ? {} : { childSessionId: task.childSessionId }),
+    ...(task.finalOutput === undefined ? {} : { finalOutput: task.finalOutput }),
+    ...(task.error === undefined ? {} : { error: task.error }),
+    createdAt: task.createdAt,
+    ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
+    ...(task.completedAt === undefined ? {} : { completedAt: task.completedAt }),
+    lastSeq: task.lastSeq,
+    events: task.events
+      .filter((event) => event.seq > afterSeq)
+      .map((event) => ({ ...event }))
+  }
+}
+
+export class ResearchTaskRuntime {
+  constructor({ adapter, storage, now = Date.now, createId = randomUUID }) {
+    if (typeof adapter?.start !== 'function') {
+      throw new TypeError('ResearchTaskRuntime requires an adapter.')
+    }
+    if (typeof storage?.save !== 'function') {
+      throw new TypeError('ResearchTaskRuntime requires storage.')
+    }
+    this.adapter = adapter
+    this.storage = storage
+    this.now = now
+    this.createId = createId
+    this.tasks = new Map()
+    this.parents = new Map()
+    this.persistChain = Promise.resolve()
+    this.disposed = false
+  }
+
+  parentQueue(parentSessionId) {
+    let queue = this.parents.get(parentSessionId)
+    if (queue === undefined) {
+      queue = { active: new Set(), pending: [] }
+      this.parents.set(parentSessionId, queue)
+    }
+    return queue
+  }
+
+  appendEvent(task, value) {
+    if (terminalState(task.state)) return
+    task.lastSeq += 1
+    task.events.push({
+      taskId: task.taskId,
+      canvasNodeId: task.canvasNodeId,
+      seq: task.lastSeq,
+      time: this.now(),
+      ...value
+    })
+    if (task.events.length > MAX_PUBLIC_EVENTS) {
+      task.events.splice(0, task.events.length - MAX_PUBLIC_EVENTS)
+    }
+  }
+
+  persistedDocument() {
+    return {
+      version: 1,
+      tasks: [...this.tasks.values()].map(taskDocument)
+    }
+  }
+
+  persist() {
+    const document = this.persistedDocument()
+    this.persistChain = this.persistChain
+      .catch(() => undefined)
+      .then(() => this.storage.save(document))
+    return this.persistChain
+  }
+
+  ownedTask(parentSessionId, taskId) {
+    const task = this.tasks.get(taskId)
+    if (task === undefined || task.parentSessionId !== parentSessionId) {
+      throw new ResearchTaskError('TASK_NOT_FOUND', '任务不存在')
+    }
+    return task
+  }
+
+  async start(raw) {
+    if (this.disposed) throw new ResearchTaskError('RUNTIME_DISPOSED', '任务服务已停止')
+    const request = validateResearchTaskStart(raw)
+    const taskId = requiredString(this.createId(), MAX_ID_LENGTH, '任务标识无效')
+    if (this.tasks.has(taskId)) throw new ResearchTaskError('TASK_EXISTS', '任务标识重复')
+    const createdAt = this.now()
+    const task = {
+      taskId,
+      parentSessionId: request.parentSessionId,
+      canvasNodeId: request.canvasNodeId,
+      kind: request.kind,
+      detail: request.detail,
+      sources: request.sources,
+      state: 'queued',
+      createdAt,
+      lastSeq: 0,
+      events: [],
+      cancelRequested: false,
+      controller: new AbortController(),
+      runPromise: undefined
+    }
+    this.appendEvent(task, { type: 'queued' })
+    this.tasks.set(taskId, task)
+    this.parentQueue(task.parentSessionId).pending.push(taskId)
+    await this.persist()
+    this.pump(task.parentSessionId)
+    return publicTask(task, 0)
+  }
+
+  inspect({ parentSessionId, taskId, afterSeq = 0 }) {
+    const parent = requiredString(parentSessionId, MAX_ID_LENGTH, '研究会话标识无效')
+    const id = requiredString(taskId, MAX_ID_LENGTH, '任务标识无效')
+    if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
+      throw new ResearchTaskError('INVALID_REQUEST', '任务游标无效')
+    }
+    return publicTask(this.ownedTask(parent, id), afterSeq)
+  }
+
+  async cancel({ parentSessionId, taskId }) {
+    const parent = requiredString(parentSessionId, MAX_ID_LENGTH, '研究会话标识无效')
+    const id = requiredString(taskId, MAX_ID_LENGTH, '任务标识无效')
+    const task = this.ownedTask(parent, id)
+    if (terminalState(task.state)) return publicTask(task, 0)
+    if (task.cancelRequested) return publicTask(task, 0)
+    task.cancelRequested = true
+    const queue = this.parentQueue(task.parentSessionId)
+    const pendingIndex = queue.pending.indexOf(task.taskId)
+    if (pendingIndex !== -1) queue.pending.splice(pendingIndex, 1)
+    task.controller.abort('canvas-task-cancelled')
+    await this.finish(task, 'cancelled', { error: '任务已取消，可重试。' })
+    if (!queue.active.has(task.taskId)) this.pump(task.parentSessionId)
+    return publicTask(task, 0)
+  }
+
+  pump(parentSessionId) {
+    if (this.disposed) return
+    const queue = this.parentQueue(parentSessionId)
+    while (queue.active.size < MAX_ACTIVE_PER_PARENT && queue.pending.length > 0) {
+      const taskId = queue.pending.shift()
+      const task = this.tasks.get(taskId)
+      if (task === undefined || task.state !== 'queued' || task.cancelRequested) continue
+      queue.active.add(taskId)
+      task.runPromise = this.run(task)
+    }
+  }
+
+  onSessionEvent(task, sessionEvent) {
+    if (task.state !== 'running') return
+    const value = publicEventFromSessionEvent(sessionEvent)
+    if (value === null) return
+    this.appendEvent(task, value)
+  }
+
+  async run(task) {
+    let handle
+    try {
+      handle = await this.adapter.start({
+        taskId: task.taskId,
+        parentSessionId: task.parentSessionId,
+        prompt: buildResearchTaskPrompt(taskRequest(task)),
+        signal: task.controller.signal,
+        onSessionEvent: (event) => this.onSessionEvent(task, event)
+      })
+      if (task.cancelRequested || terminalState(task.state)) return
+      task.childSessionId = requiredString(
+        handle.childSessionId,
+        MAX_ID_LENGTH,
+        '子会话标识无效'
+      )
+      task.state = 'running'
+      task.startedAt = this.now()
+      this.appendEvent(task, { type: 'started' })
+      await this.persist()
+      const result = await handle.result
+      if (task.cancelRequested || terminalState(task.state)) return
+      const output = finalText(result?.output)
+      if (result?.stopReason === 'completed' && output !== undefined) {
+        await this.finish(task, 'completed', { finalOutput: output })
+      } else {
+        const message = result?.stopReason === 'max-tokens'
+          ? '生成内容达到长度上限，请重试。'
+          : result?.stopReason === 'refusal'
+            ? '任务未能生成内容，请重试。'
+            : result?.stopReason === 'aborted'
+              ? '任务已取消，可重试。'
+              : '生成失败，请重试。'
+        await this.finish(
+          task,
+          result?.stopReason === 'aborted' ? 'cancelled' : 'failed',
+          { error: message }
+        )
+      }
+    } catch {
+      if (!terminalState(task.state)) {
+        await this.finish(
+          task,
+          task.cancelRequested ? 'cancelled' : 'failed',
+          { error: task.cancelRequested ? '任务已取消，可重试。' : '生成失败，请重试。' }
+        )
+      }
+    } finally {
+      if (handle !== undefined) await handle.dispose().catch(() => undefined)
+      const queue = this.parentQueue(task.parentSessionId)
+      queue.active.delete(task.taskId)
+      task.controller = undefined
+      task.runPromise = undefined
+      this.pump(task.parentSessionId)
+    }
+  }
+
+  async finish(task, state, value) {
+    if (terminalState(task.state)) return
+    task.state = state
+    task.completedAt = this.now()
+    task.events = []
+    if (value.finalOutput !== undefined) task.finalOutput = value.finalOutput
+    if (value.error !== undefined) task.error = value.error
+    await this.persist()
+  }
 }
