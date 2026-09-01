@@ -1317,6 +1317,45 @@ describe('Sherlock workspace and composer controls', () => {
     expect(browserWindow.getComputedStyle(inlineCode).color).toBe('rgb(15, 17, 21)')
   })
 
+  it('keeps sent Research tags in the same compact inline rhythm as the composer', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    browserWindow.document.body.innerHTML = [
+      '<div class="gdEzaW_userStack">',
+      '<div class="gdEzaW_bubble">',
+      '<span class="gdEzaW_refChip">总结提炼</span>',
+      '<span class="gdEzaW_refChip">助手回复 · 黄金研究</span>',
+      '<span>你好</span>',
+      '</div>',
+      '</div>'
+    ].join('')
+
+    const stack = browserWindow.document.querySelector('.gdEzaW_userStack')
+    const bubble = browserWindow.document.querySelector('.gdEzaW_bubble')
+    const chip = browserWindow.document.querySelector('.gdEzaW_refChip')
+    expect(stack).not.toBeNull()
+    expect(bubble).not.toBeNull()
+    expect(chip).not.toBeNull()
+    if (stack === null || bubble === null || chip === null) return
+
+    const stackStyle = browserWindow.getComputedStyle(stack)
+    const bubbleStyle = browserWindow.getComputedStyle(bubble)
+    const chipStyle = browserWindow.getComputedStyle(chip)
+    expect(stackStyle.maxWidth).toBe('min(640px,92%)')
+    expect(bubbleStyle.padding).toBe('8px 12px')
+    expect(chipStyle.display).toBe('inline-flex')
+    expect(chipStyle.width).toBe('136px')
+    expect(chipStyle.minWidth).toBe('136px')
+    expect(chipStyle.maxWidth).toBe('136px')
+    expect(chipStyle.height).toBe('24px')
+    expect(chipStyle.alignItems).toBe('center')
+    expect(chipStyle.overflow).toBe('hidden')
+    expect(chipStyle.textOverflow).toBe('ellipsis')
+  })
+
   it('focuses workspace search after the collapsed sidebar remounts as expanded', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
