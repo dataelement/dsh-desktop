@@ -603,6 +603,66 @@
           "真实客户端验证前不得接受或晋升该批次"
         ],
         "generatedAt": "2026-09-01T23:01:52.000Z"
+      },
+      "merged": {
+        "mergeCommit": "0eda55171b2acd81b99003966d94fa85821a839f",
+        "verificationCommit": "0eda55171b2acd81b99003966d94fa85821a839f",
+        "checks": [
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/research-web-reader.test.ts",
+              "test/research-task-runtime.test.js"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：npx vitest run test/research-web-reader.test.ts test/research-task-runtime.test.js",
+            "verifiedCommit": "0eda55171b2acd81b99003966d94fa85821a839f",
+            "completedAt": "2026-09-01T23:12:52.558Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npx",
+              "vitest",
+              "run",
+              "test/sherlock-composer-workspace-ui.test.ts",
+              "-t",
+              "(renders public WeChat articles through the scriptless safe reader|keeps responsive web viewport scaling|uses the authorized frame name|renders generated container)"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：npx vitest run test/sherlock-composer-workspace-ui.test.ts -t (renders public WeChat articles through the scriptless safe reader|keeps responsive web viewport scaling|uses the authorized frame name|renders generated container)",
+            "verifiedCommit": "0eda55171b2acd81b99003966d94fa85821a839f",
+            "completedAt": "2026-09-01T23:12:52.558Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "typecheck"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：npm run typecheck",
+            "verifiedCommit": "0eda55171b2acd81b99003966d94fa85821a839f",
+            "completedAt": "2026-09-01T23:12:52.558Z",
+            "timeoutMs": 120000
+          },
+          {
+            "argv": [
+              "npm",
+              "run",
+              "build"
+            ],
+            "outcome": "passed",
+            "summary": "已在暂存合并树执行：npm run build",
+            "verifiedCommit": "0eda55171b2acd81b99003966d94fa85821a839f",
+            "completedAt": "2026-09-01T23:12:52.558Z",
+            "timeoutMs": 120000
+          }
+        ],
+        "recordedAt": "2026-09-01T23:12:52.558Z"
       }
     }
   ],
