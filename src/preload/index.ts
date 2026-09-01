@@ -22,6 +22,7 @@ import {
 import { createResearchCanvasWheelBridge } from './research-canvas-wheel'
 import { createResearchLinkFrameBridge } from './research-link-frame'
 import { createResearchWebReaderBridge } from './research-web-reader'
+import { createResearchCanvasExportBridge } from './research-canvas-export'
 
 if (process.isMainFrame) {
 const DEVELOPER_MODE_STYLE_ID = 'sherlock-developer-mode-style'
@@ -177,6 +178,9 @@ contextBridge.exposeInMainWorld(
       (channel, value) => ipcRenderer.invoke(channel, value)
     ),
     researchWebReader: createResearchWebReaderBridge(
+      (channel, value) => ipcRenderer.invoke(channel, value)
+    ),
+    researchCanvasExport: createResearchCanvasExportBridge(
       (channel, value) => ipcRenderer.invoke(channel, value)
     ),
     researchPreview: createResearchPreviewBridge(

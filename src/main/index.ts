@@ -15,7 +15,8 @@ import {
   protocol,
   session,
   shell,
-  type BrowserWindowConstructorOptions
+  type BrowserWindowConstructorOptions,
+  type SaveDialogOptions
 } from 'electron'
 import {
   extractDuplicateLoaderEntryId,
@@ -87,6 +88,10 @@ import {
   registerResearchLinkFrameHandlers
 } from './state/research-link-frame'
 import { registerResearchWebReaderHandlers } from './state/research-web-reader'
+import {
+  registerResearchCanvasExportHandlers,
+  researchCanvasExportFileOperations
+} from './state/research-canvas-export'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: RESEARCH_PREVIEW_SCHEME,
@@ -726,6 +731,22 @@ function registerHarnessHandlers(): void {
     ipcMain,
     getMainWindow: () => mainWindow,
     registry: researchLinkFrameRegistry
+  })
+  const exportFileOperations = researchCanvasExportFileOperations()
+  registerResearchCanvasExportHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    dependencies: {
+      showSaveDialog: async (options) => {
+        const window = mainWindow
+        return !window || window.isDestroyed()
+          ? { canceled: true }
+          : dialog.showSaveDialog(window, options as SaveDialogOptions)
+      },
+      writeFile: exportFileOperations.writeFile,
+      copyFile: exportFileOperations.copyFile,
+      resolveExportSource: (value) => researchFilePreviewRegistry!.resolveExportSource(value)
+    }
   })
 }
 
