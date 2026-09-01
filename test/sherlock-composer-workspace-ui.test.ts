@@ -6622,6 +6622,123 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('edits a completed generated summary in place and persists multiline content with Command-Enter', async () => {
+    const storage = new MemoryStorage()
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-edit-generated-summary',
+      storage,
+      artifacts: [{
+        id: 'summary-a', kind: 'generated-summary', messageId: 'summary-message',
+        title: '总结提炼', excerpt: '原总结内容', generationStatus: 'completed',
+        sourceNodeIds: ['source-a'], x: 500, y: 180
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const body = host.querySelector('[data-research-artifact-content]')
+      expect(body).not.toBeNull()
+      if (body === null) return
+      await act(async () => {
+        body.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-content-input="summary-a"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(editor)
+      if (editor === null) return
+
+      const revised = '第一段总结\n\n第二段补充关系'
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, revised)
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+      expect(host.querySelector('[data-research-content-input="summary-a"]')).not.toBeNull()
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe('原总结内容')
+
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', metaKey: true, bubbles: true, cancelable: true
+        }))
+      })
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe(revised)
+      expect(JSON.parse(storage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-edit-generated-summary'
+      ) ?? '[]')[0]?.excerpt).toBe(revised)
+      expect(host.querySelector('[data-research-content-input]')).toBeNull()
+      expect(host.querySelector('[data-research-artifact-content]')?.textContent)
+        .toContain('第二段补充关系')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('cancels completed summary editing with Escape and does not edit an active summary', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-summary-edit-boundary',
+      artifacts: [
+        {
+          id: 'summary-complete', kind: 'generated-summary', messageId: 'complete-message',
+          title: '总结提炼', excerpt: '保留总结', generationStatus: 'completed',
+          sourceNodeIds: ['source-a'], x: 300, y: 180
+        },
+        {
+          id: 'summary-active', kind: 'generated-summary', messageId: 'active-message',
+          title: '总结提炼', excerpt: '正在准备任务…', generationStatus: 'queued',
+          sourceNodeIds: ['source-a'], x: 760, y: 180
+        }
+      ]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const complete = host.querySelector('[data-research-artifact-card="summary-complete"] [data-research-artifact-content]')
+      const active = host.querySelector('[data-research-artifact-card="summary-active"] [data-research-artifact-content]')
+      expect(complete).not.toBeNull()
+      expect(active).not.toBeNull()
+      if (complete === null || active === null) return
+
+      await act(async () => {
+        active.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      expect(host.querySelector('[data-research-content-input="summary-active"]')).toBeNull()
+
+      await act(async () => {
+        complete.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-content-input="summary-complete"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      if (editor === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, '不应保存')
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+        }))
+        editor.blur()
+      })
+      expect(workspace.getSnapshot().artifacts.find((node) => node.id === 'summary-complete')?.excerpt)
+        .toBe('保留总结')
+      expect(host.querySelector('[data-research-content-input]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('owns accepted drops at the canvas root and restores their cards by session', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
