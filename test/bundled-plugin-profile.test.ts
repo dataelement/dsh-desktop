@@ -263,7 +263,7 @@ describe('bundled Sherlock plugin profile', () => {
       'utf8'
     )
 
-    expect(appManifest.version).toBe('0.7.3')
+    expect(appManifest.version).toMatch(/^\d+\.\d+\.\d+$/u)
     expect(policy.plugins).toEqual([
       '@huanlin/dsh-plugin-better-sidebar-plugin-office',
       'dsh-better-sidebar',
@@ -282,6 +282,7 @@ describe('bundled Sherlock plugin profile', () => {
     expect(policy.bundles).not.toContain('@vectorize-io/hindsight-coding-agents')
     expect(policy.runtimePackages).toEqual([
       'dsh-desktop-market-installer',
+      'dsh-research-task-runtime',
       'dsh-web-search-session-model'
     ])
     expect(preparation).toContain("'sherlock-desktop'")

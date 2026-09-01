@@ -75,4 +75,37 @@ describe('bundled Harness package resolution', () => {
       await rm(fixture, { recursive: true, force: true })
     }
   })
+
+  it('maps the Research task runtime package to Sherlock app resources', async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'sherlock-bundled-research-task-'))
+    try {
+      const runtimeEntry = join(fixture, 'bundled-research-task.mjs')
+      const profileDirectory = join(fixture, 'profile')
+      const dshEntry = join(profileDirectory, 'runner.mjs')
+      await mkdir(profileDirectory)
+      await writeFile(runtimeEntry, "export const source = 'bundled-research-task'\n", 'utf8')
+      await writeFile(
+        dshEntry,
+        "import { source } from 'dsh-research-task-runtime'\nprocess.stdout.write(`research=${source}\\n`)\n",
+        'utf8'
+      )
+
+      const result = spawnSync(
+        resolve('node_modules/node/bin/node'),
+        ['--expose-internals', resolve('build/harness-node-entry.mjs'), dshEntry],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            DSH_DESKTOP_RESEARCH_TASK_ENTRY: pathToFileURL(runtimeEntry).href
+          }
+        }
+      )
+
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toContain('research=bundled-research-task')
+    } finally {
+      await rm(fixture, { recursive: true, force: true })
+    }
+  })
 })

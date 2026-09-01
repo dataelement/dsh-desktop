@@ -34,6 +34,11 @@
       # dependency closure; the plugin's visible identity remains Sherlock.
       name: dsh-desktop-market-installer
 
+    # Canvas generation runs in isolated child sessions owned by Sherlock, so
+    # it stays independent from the visible Research conversation.
+    - id: sherlock-research-task-runtime
+      name: dsh-research-task-runtime
+
 # dsh-market normally offers to restart its own Node process after mutations.
 # The desktop shell has the real lifecycle authority, so keep that behavior off
 # whenever the optional plugin is present in the composed profile.

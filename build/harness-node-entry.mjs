@@ -19,12 +19,16 @@ process.stdout.write(`[harness-node] DSH_HOME=${process.env.DSH_HOME ?? ''}\n`)
 
 const bundledWebSearchEntry = process.env.DSH_DESKTOP_WEB_SEARCH_ENTRY
 const bundledMarketInstallerEntry = process.env.DSH_DESKTOP_MARKET_INSTALLER_ENTRY
+const bundledResearchTaskEntry = process.env.DSH_DESKTOP_RESEARCH_TASK_ENTRY
 const bundledPackageEntries = new Map([
   ...(bundledWebSearchEntry
     ? [['dsh-web-search-session-model', bundledWebSearchEntry]]
     : []),
   ...(bundledMarketInstallerEntry
     ? [['dsh-desktop-market-installer', bundledMarketInstallerEntry]]
+    : []),
+  ...(bundledResearchTaskEntry
+    ? [['dsh-research-task-runtime', bundledResearchTaskEntry]]
     : [])
 ])
 if (bundledPackageEntries.size > 0) {
@@ -41,6 +45,9 @@ if (bundledWebSearchEntry) {
 }
 if (bundledMarketInstallerEntry) {
   process.stdout.write('[harness-node] bundled market installer mapped\n')
+}
+if (bundledResearchTaskEntry) {
+  process.stdout.write('[harness-node] bundled Research task runtime mapped\n')
 }
 
 if (!dshEntryPath) {

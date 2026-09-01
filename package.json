@@ -77,6 +77,7 @@
     "@deepseek-ai/dsh-workflow": "0.1.0-rc.7",
     "apache-arrow": "18.1.0",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
+    "dsh-research-task-runtime": "file:packages/dsh-research-task-runtime",
     "dsh-web-search-session-model": "file:packages/dsh-web-search-session-model",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",

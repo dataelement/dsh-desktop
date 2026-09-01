@@ -377,6 +377,12 @@ function bundledMarketInstallerEntry(): string {
   ).href
 }
 
+function bundledResearchTaskEntry(): string {
+  return pathToFileURL(
+    join(app.getAppPath(), 'node_modules', 'dsh-research-task-runtime', 'index.js')
+  ).href
+}
+
 function desktopIconPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'icon.png')
@@ -1038,6 +1044,7 @@ async function bootstrap(): Promise<void> {
     bundledSkillDirectory: bundledSkillDirectory(),
     bundledWebSearchEntry: bundledWebSearchEntry(),
     bundledMarketInstallerEntry: bundledMarketInstallerEntry(),
+    bundledResearchTaskEntry: bundledResearchTaskEntry(),
     localSearchUrl: localSearchRuntime.endpoint.url,
     localSearchToken: localSearchRuntime.endpoint.token,
     dshHome,

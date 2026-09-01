@@ -14,6 +14,7 @@ export interface HarnessRuntimeOptions {
   bundledSkillDirectory: string
   bundledWebSearchEntry: string
   bundledMarketInstallerEntry: string
+  bundledResearchTaskEntry: string
   localSearchUrl: string
   localSearchToken: string
   dshHome: string
@@ -46,7 +47,8 @@ export function buildHarnessSpawnOptions(
   bundledSkillDirectory?: string,
   bundledWebSearchEntry?: string,
   localSearch?: { url: string; token: string },
-  bundledMarketInstallerEntry?: string
+  bundledMarketInstallerEntry?: string,
+  bundledResearchTaskEntry?: string
 ): SpawnOptionsWithoutStdio {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -64,6 +66,9 @@ export function buildHarnessSpawnOptions(
         : {}),
       ...(bundledMarketInstallerEntry
         ? { DSH_DESKTOP_MARKET_INSTALLER_ENTRY: bundledMarketInstallerEntry }
+        : {}),
+      ...(bundledResearchTaskEntry
+        ? { DSH_DESKTOP_RESEARCH_TASK_ENTRY: bundledResearchTaskEntry }
         : {}),
       ...(localSearch
         ? {
@@ -200,7 +205,8 @@ export class HarnessRuntime {
             url: this.options.localSearchUrl,
             token: this.options.localSearchToken
           },
-          this.options.bundledMarketInstallerEntry
+          this.options.bundledMarketInstallerEntry,
+          this.options.bundledResearchTaskEntry
         )
       )
     } catch (error) {
