@@ -8381,6 +8381,99 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('maps every component family to a safe export descriptor and escapes CSV', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-export-descriptors' })
+    try {
+      const descriptor = mounted.client.researchCanvasExportDescriptor as (
+        node: Record<string, unknown>, sessionId: string
+      ) => Record<string, unknown> | null
+      const fileName = mounted.client.researchCanvasExportFileName as (
+        title: string, extension: string
+      ) => string
+      expect(descriptor).toBeTypeOf('function')
+      expect(fileName('%20研究/结论?.md', 'md')).toBe('研究结论.md')
+
+      expect(descriptor({
+        id: 'pdf-1', name: 'report.pdf', source: 'computer',
+        authorizationId: 'authorization_1', x: 0, y: 0
+      }, 'session-1')).toEqual({
+        kind: 'original', sessionId: 'session-1', nodeId: 'pdf-1',
+        authorizationId: 'authorization_1', suggestedName: 'report.pdf'
+      })
+      expect(descriptor({
+        id: 'missing-file', name: 'missing.pdf', source: 'computer', x: 0, y: 0
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'txt' })
+      expect(descriptor({
+        id: 'assistant', kind: 'assistant-result', title: '研究结论', excerpt: '正文'
+      }, 'session-1')).toMatchObject({
+        kind: 'text', format: 'md', suggestedName: '研究结论.md',
+        content: '# 研究结论\n\n正文\n'
+      })
+      expect(descriptor({
+        id: 'web', kind: 'web-link', title: '研究页面',
+        url: 'https://example.com/report', excerpt: 'https://example.com/report'
+      }, 'session-1')).toMatchObject({
+        kind: 'webloc', suggestedName: '研究页面.webloc',
+        url: 'https://example.com/report'
+      })
+      expect(descriptor({
+        id: 'mind-map', kind: 'generated-mind-map', title: '逻辑图',
+        excerpt: '# 中心\n- 分支', generationStatus: 'completed', generationDetail: 'brief'
+      }, 'session-1')).toMatchObject({
+        kind: 'mind-map', suggestedName: '逻辑图', detail: 'brief'
+      })
+      expect(descriptor({
+        id: 'failed-map', kind: 'generated-mind-map', title: '失败导图',
+        excerpt: '生成失败', generationStatus: 'failed', generationError: '请求超时'
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'txt' })
+
+      const table = descriptor({
+        id: 'table', kind: 'generated-container', title: '对比表',
+        generationStatus: 'completed',
+        containerSpec: {
+          version: 1, type: 'table', title: '对比表',
+          columns: ['名称', '备注'],
+          rows: [['A,产品', '包含"引号"'], ['B', '两行\n文字']]
+        }
+      }, 'session-1')
+      expect(table).toMatchObject({ kind: 'text', format: 'csv' })
+      expect(String(table?.content)).toBe(
+        '名称,备注\r\n"A,产品","包含""引号"""\r\nB,"两行\n文字"\r\n'
+      )
+      expect(descriptor({
+        id: 'kpi', kind: 'generated-container', title: '核心指标',
+        generationStatus: 'completed', containerSpec: {
+          version: 1, type: 'kpi', title: '核心指标',
+          items: [{ label: '收入', value: '12 亿', change: '+8%' }]
+        }
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'md' })
+      expect(descriptor({
+        id: 'draft', kind: 'generated-container', title: '待生成容器',
+        generationStatus: 'draft', containerPrompt: '做一张表格'
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'txt' })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('builds a standalone literal-color chart SVG for download', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const build = client.buildResearchContainerChartSvg as (
+      spec: Record<string, unknown>
+    ) => string | null
+    expect(build).toBeTypeOf('function')
+    const svg = build({
+      version: 1, type: 'chart', title: '收入趋势', variant: 'line',
+      labels: ['一月', '二月'],
+      series: [{ name: '收入', values: [10, 12] }]
+    })
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('收入趋势')
+    expect(svg).toContain('rgb(0,80,150)')
+    expect(svg).toContain('STHeiti_YFD')
+    expect(svg).not.toMatch(/script|foreignObject|var\(--/)
+  })
+
   it('keeps a bottom global toolbar for links and native container drafts', async () => {
     const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
     const release = vi.fn(async () => ({ ok: true }))
