@@ -18,6 +18,7 @@ export const MAX_BODY_BYTES = 384 * 1024
 const MAX_ID_LENGTH = 256
 const MAX_TITLE_LENGTH = 512
 const MAX_PATH_LENGTH = 8_192
+const MAX_CONTAINER_PROMPT = 8_000
 const MAX_EVENT_TEXT = 8_192
 const MAX_PUBLIC_EVENTS = 160
 const MAX_FINAL_OUTPUT = 240_000
@@ -40,7 +41,8 @@ const REQUEST_KEYS = new Set([
   'canvasNodeId',
   'kind',
   'detail',
-  'sources'
+  'sources',
+  'prompt'
 ])
 const FILE_SOURCE_KEYS = new Set(['id', 'type', 'title', 'path'])
 const ARTIFACT_SOURCE_KEYS = new Set(['id', 'type', 'title', 'text'])
@@ -120,8 +122,22 @@ export function validateResearchTaskStart(value) {
     MAX_ID_LENGTH,
     '组件标识无效'
   )
-  if (request.kind !== 'mind-map' && request.kind !== 'summary') {
+  if (request.kind !== 'mind-map' && request.kind !== 'summary' && request.kind !== 'container') {
     throw new ResearchTaskError('INVALID_REQUEST', '不支持的任务类型')
+  }
+  if (request.kind === 'container') {
+    if (Object.hasOwn(request, 'detail') || Object.hasOwn(request, 'sources')) {
+      throw new ResearchTaskError('INVALID_REQUEST', '容器任务只接受内容提示')
+    }
+    return Object.freeze({
+      parentSessionId,
+      canvasNodeId,
+      kind: 'container',
+      prompt: requiredString(request.prompt, MAX_CONTAINER_PROMPT, '容器内容提示无效')
+    })
+  }
+  if (Object.hasOwn(request, 'prompt')) {
+    throw new ResearchTaskError('INVALID_REQUEST', '所选内容任务不接受容器提示')
   }
   let detail
   if (request.kind === 'mind-map') {
@@ -171,6 +187,21 @@ function mindMapDetailInstruction(detail) {
 
 export function buildResearchTaskPrompt(request) {
   const validated = validateResearchTaskStart(request)
+  if (validated.kind === 'container') {
+    return [
+      '请把用户的画布容器需求转换为一个安全、可由 Sherlock 原生组件直接渲染的 JSON 对象。',
+      '只允许输出以下五种 schema 之一，字段必须完全一致，不得增加任何字段：',
+      '{"version": 1, "type": "web", "title": "标题", "url": "https://example.com", "description": "可选说明"}',
+      '{"version": 1, "type": "chart", "title": "标题", "variant": "bar 或 line", "labels": ["标签"], "series": [{"name": "系列名", "values": [1]}]}',
+      '{"version": 1, "type": "table", "title": "标题", "columns": ["列名"], "rows": [["单元格"]]}',
+      '{"version": 1, "type": "kpi", "title": "标题", "items": [{"label": "指标", "value": "数值", "change": "可选变化"}]}',
+      '{"version": 1, "type": "markdown", "title": "标题", "content": "Markdown 内容"}',
+      '不要输出 HTML 或 JavaScript，不要输出代码围栏、解释、前言或 JSON 之外的文字。',
+      '图表最多 24 个标签和 6 个系列；表格最多 12 列和 100 行；KPI 最多 12 项。',
+      '',
+      `用户需求：${validated.prompt}`
+    ].join('\n')
+  }
   const sources = validated.sources.map(sourceSection).join('\n\n')
   const instruction = validated.kind === 'mind-map'
     ? `请基于下方选中的研究材料生成思维导图。${mindMapDetailInstruction(validated.detail)}请用 Markdown 层级列表输出：第一行以“# ”开头写中心主题，后续使用“- ”和两个空格缩进表达分支；每个节点使用简洁中文短语并尽量控制在 18 个中文字符以内，避免末行仅剩单个汉字；完整句子左对齐，短语或词语居中。不要输出说明、前言或代码围栏。结构应采用横向展开、适合直接截图粘贴到公司 PPT。`
@@ -334,6 +365,7 @@ export async function buildResearchTaskExecutionPrompt(
   { loadFileText = loadResearchFileText } = {}
 ) {
   const validated = validateResearchTaskStart(request)
+  if (validated.kind === 'container') return buildResearchTaskPrompt(validated)
   const sources = await Promise.all(validated.sources.map(async (source) => {
     if (source.type !== 'file') return source
     return {
@@ -383,7 +415,8 @@ function taskDocument(task) {
     canvasNodeId: task.canvasNodeId,
     kind: task.kind,
     ...(task.detail === undefined ? {} : { detail: task.detail }),
-    sources: task.sources,
+    ...(task.sources === undefined ? {} : { sources: task.sources }),
+    ...(task.prompt === undefined ? {} : { prompt: task.prompt }),
     state: task.state,
     ...(task.childSessionId === undefined ? {} : { childSessionId: task.childSessionId }),
     ...(task.finalOutput === undefined ? {} : { finalOutput: task.finalOutput }),
@@ -411,7 +444,8 @@ function taskRequest(task) {
     canvasNodeId: task.canvasNodeId,
     kind: task.kind,
     ...(task.detail === undefined ? {} : { detail: task.detail }),
-    sources: task.sources
+    ...(task.sources === undefined ? {} : { sources: task.sources }),
+    ...(task.prompt === undefined ? {} : { prompt: task.prompt })
   }
 }
 
@@ -444,7 +478,8 @@ function restoredTask(raw, now) {
     canvasNodeId: stored.canvasNodeId,
     kind: stored.kind,
     ...(stored.detail === undefined ? {} : { detail: stored.detail }),
-    sources: stored.sources
+    ...(stored.sources === undefined ? {} : { sources: stored.sources }),
+    ...(stored.prompt === undefined ? {} : { prompt: stored.prompt })
   })
   const originalState = stored.state
   if (!TERMINAL_STATES.has(originalState) && originalState !== 'queued' && originalState !== 'running') {
@@ -585,11 +620,7 @@ export class ResearchTaskRuntime {
     const createdAt = this.now()
     const task = {
       taskId,
-      parentSessionId: request.parentSessionId,
-      canvasNodeId: request.canvasNodeId,
-      kind: request.kind,
-      detail: request.detail,
-      sources: request.sources,
+      ...request,
       state: 'queued',
       createdAt,
       lastSeq: 0,
