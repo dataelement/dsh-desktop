@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 
 export const name = 'sherlock-research-task-runtime'
-export const inject = ['agents', 'subagents', 'webServer']
+export const inject = ['agents', 'subagents', 'typert', 'webServer']
 
 export const MAX_ACTIVE_PER_PARENT = 4
 export const MAX_SOURCES = 24
@@ -561,42 +561,25 @@ export class ResearchTaskRuntime {
 }
 
 export function createSubagentAdapter(ctx) {
-  const resumedParents = new Map()
-  const pendingParents = new Map()
   let disposed = false
 
   const resolveParent = async (parentSessionId) => {
     const live = ctx.agents.get(parentSessionId)
     if (live?.id === parentSessionId) return live
-    const pending = pendingParents.get(parentSessionId)
-    if (pending !== undefined) return pending
-    if (disposed || typeof ctx.agents.resume !== 'function') {
+    const provider = ctx.typert?.lookups?.get('agent')
+    if (disposed || typeof provider?.resolve !== 'function') {
       throw new ResearchTaskError('PARENT_NOT_LIVE', '研究会话当前不可用')
     }
-    const resume = (async () => {
-      let handle
-      try {
-        handle = await ctx.agents.resume({ resumeSessionId: parentSessionId })
-        const parent = handle?.agent
-        if (parent?.id !== parentSessionId || ctx.agents.get(parentSessionId) !== parent) {
-          if (typeof handle?.dispose === 'function') {
-            await handle.dispose().catch(() => undefined)
-          }
-          throw new ResearchTaskError('PARENT_NOT_LIVE', '研究会话当前不可用')
-        }
-        resumedParents.set(parentSessionId, handle)
+    try {
+      const parent = await provider.resolve(parentSessionId)
+      if (parent?.id === parentSessionId && ctx.agents.get(parentSessionId) === parent) {
         return parent
-      } catch (error) {
-        const racedParent = ctx.agents.get(parentSessionId)
-        if (racedParent?.id === parentSessionId) return racedParent
-        if (error instanceof ResearchTaskError) throw error
-        throw new ResearchTaskError('PARENT_NOT_LIVE', '研究会话当前不可用')
-      } finally {
-        pendingParents.delete(parentSessionId)
       }
-    })()
-    pendingParents.set(parentSessionId, resume)
-    return resume
+    } catch {
+      const racedParent = ctx.agents.get(parentSessionId)
+      if (racedParent?.id === parentSessionId) return racedParent
+    }
+    throw new ResearchTaskError('PARENT_NOT_LIVE', '研究会话当前不可用')
   }
 
   return {
@@ -652,10 +635,6 @@ export function createSubagentAdapter(ctx) {
     async dispose() {
       if (disposed) return
       disposed = true
-      await Promise.allSettled(pendingParents.values())
-      const handles = [...resumedParents.values()].reverse()
-      resumedParents.clear()
-      for (const handle of handles) await handle.dispose().catch(() => undefined)
     }
   }
 }

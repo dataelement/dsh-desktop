@@ -568,12 +568,11 @@ describe('Research task Subagent adapter', () => {
     expect(ctx.subagents.start).not.toHaveBeenCalled()
   })
 
-  it('resumes an idle persisted parent before starting a local child', async () => {
+  it('resolves an idle persisted parent through the configured Host lookup', async () => {
     const { createSubagentAdapter } = await runtimeModule()
     const parent = { id: 'parent-1', session: { events: [] } }
     const child = { id: 'child-1', session: { id: 'child-1', events: [] } }
     const childDispose = vi.fn(async () => undefined)
-    const parentDispose = vi.fn(async () => undefined)
     const run = {
       id: child.id,
       localAgent: child,
@@ -585,11 +584,12 @@ describe('Research task Subagent adapter', () => {
     let liveParent
     const ctx = sessionEventContext(parent, child, run)
     ctx.agents.get = vi.fn((id) => id === parent.id ? liveParent : undefined)
-    ctx.agents.resume = vi.fn(async ({ resumeSessionId }) => {
-      expect(resumeSessionId).toBe(parent.id)
+    const resolve = vi.fn(async (sessionId) => {
+      expect(sessionId).toBe(parent.id)
       liveParent = parent
-      return { agent: parent, dispose: parentDispose }
+      return parent
     })
+    ctx.typert = { lookups: { get: vi.fn((key) => key === 'agent' ? { resolve } : undefined) } }
     const adapter = createSubagentAdapter(ctx)
 
     const handle = await adapter.start({
@@ -599,14 +599,13 @@ describe('Research task Subagent adapter', () => {
       onSessionEvent: vi.fn()
     })
 
-    expect(ctx.agents.resume).toHaveBeenCalledTimes(1)
+    expect(resolve).toHaveBeenCalledTimes(1)
+    expect(ctx.typert.lookups.get).toHaveBeenCalledWith('agent')
     expect(ctx.subagents.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
       parent
     }))
     await handle.dispose()
-    expect(parentDispose).not.toHaveBeenCalled()
     await adapter.dispose()
-    expect(parentDispose).toHaveBeenCalledTimes(1)
   })
 })
 
