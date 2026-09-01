@@ -240,6 +240,7 @@ async function mountConversationRoot(
     composer?: ReactNode
     composerHeight?: number
     sidebarWidth?: number
+    userMessagePrompt?: string
   } = {}
 ) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
@@ -301,7 +302,10 @@ async function mountConversationRoot(
   const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
     document: browserWindow.document,
     window: browserWindow,
-    modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
+    modules: {
+      '@deepseek-ai/dsh-client-ui-primitives': primitives,
+      '@deepseek-ai/dsh-client-ui-attachment': { ImageGallery: () => null }
+    }
   })
   expect(client.ConversationRoot).toBeTypeOf('function')
   if (typeof client.ConversationRoot !== 'function') {
@@ -314,12 +318,15 @@ async function mountConversationRoot(
       getSnapshot(): {
         files: Array<Record<string, unknown>>
         artifacts: Array<Record<string, unknown>>
+        selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
         viewport: { scale: number; x: number; y: number }
         canvasSize: { width: number; height: number }
         pendingMessageJump: string | null
       }
       assistantActionsActive(): boolean
+      focusNode(nodeId: string): boolean
       removeSelectedFile(fileId: string): void
+      removeNodes(nodeIds: string[]): void
       setArtifacts(artifacts: Array<Record<string, unknown>>): void
       updateArtifactContent(artifactId: string, content: string): boolean
       setSelection(selection: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
@@ -469,7 +476,13 @@ async function mountConversationRoot(
   }
   const renderChatView = (activeSessionId = sessionId) => createElement('div', { 'data-chat-view': '' },
     assistantMessage === undefined
-      ? 'message-1'
+      ? composerOptions.userMessagePrompt === undefined
+        ? 'message-1'
+        : createElement(client.UserStyleBubble as ComponentType<Record<string, unknown>>, {
+            content: [{ type: 'text', text: composerOptions.userMessagePrompt }],
+            imageLoader: async () => '',
+            t: translate
+          })
       : createElement('div', {
           'data-assistant-message-id': assistantMessage.messageId,
           'data-assistant-message-settled': assistantMessage.settled === false
@@ -572,12 +585,14 @@ async function mountConversationRoot(
                     ...references.map((file) => createElement('span', {
                       key: `${file.id}-${index}`,
                       'data-research-file-tag': file.id,
+                      'data-research-reference-node-id': file.id,
                       'data-reference-source': 'research-file',
                       'aria-invalid': file.path === undefined ? 'true' : undefined
                     }, file.name.split(/[\\/]/).at(-1))),
                     ...artifactReferences.map((artifact) => createElement('span', {
                       key: `${artifact.id}-${index}`,
                       'data-research-artifact-tag': artifact.id,
+                      'data-research-reference-node-id': artifact.id,
                       'data-reference-source': 'research-artifact'
                     }, artifact.label))
                   ] : [])
@@ -5338,6 +5353,9 @@ describe('Sherlock workspace and composer controls', () => {
     }))
 
     expect(html).toContain('data-research-message-file="f1"')
+    expect(html).toContain('data-research-reference-node-id="f1"')
+    expect(html).toContain('data-file-reference-icon=""')
+    expect(html).toContain('data-file-kind="pdf"')
     expect(html).toContain('data-research-message-files="inline"')
     expect(html).toContain('private␟report.pdf')
     expect(html).toContain('compare ')
@@ -5421,9 +5439,61 @@ describe('Sherlock workspace and composer controls', () => {
       t: (key: string) => key
     }))
     expect(html).toContain('data-research-message-artifact="assistant-result-1"')
+    expect(html).toContain('data-research-reference-node-id="assistant-result-1"')
+    expect(html).toContain('data-research-artifact-icon=""')
+    expect(html).toContain('data-artifact-kind="assistant-reply"')
     expect(html).toContain('助手回复 · 营收同比增长 28%。')
     expect(html).not.toContain('第二段是完整分析')
     expect(prompt).toContain('第二段是完整分析')
+  })
+
+  it('renders a corresponding type icon for every Research artifact tag', async () => {
+    const primitives = new Proxy({
+      MessageText: ({ text }: { text: string }) => createElement('span', null, text)
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: {
+        '@deepseek-ai/dsh-client-ui-primitives': primitives,
+        '@deepseek-ai/dsh-client-ui-attachment': { ImageGallery: () => null }
+      }
+    })
+    expect(client.serializeResearchPrompt).toBeTypeOf('function')
+    expect(client.UserStyleBubble).toBeTypeOf('function')
+    if (typeof client.serializeResearchPrompt !== 'function' ||
+        typeof client.UserStyleBubble !== 'function') return
+
+    const artifacts = [
+      { id: 'reply', kind: 'assistant-result', messageId: 'm1', title: '助手回复', excerpt: '完整回复' },
+      { id: 'excerpt', kind: 'assistant-excerpt', messageId: 'm2', title: '助手摘录', excerpt: '关键摘录' },
+      { id: 'summary', kind: 'generated-summary', messageId: 'm3', title: '核心总结', excerpt: '总结内容' },
+      { id: 'mind-map', kind: 'generated-mind-map', messageId: 'm4', title: '我的导图', excerpt: '# 中心主题' },
+      { id: 'generic', messageId: 'm5', title: '研究组件', excerpt: '其他内容' }
+    ]
+    const prompt = (client.serializeResearchPrompt as (...args: unknown[]) => string)(
+      [], '', [], artifacts, []
+    )
+    const html = renderToStaticMarkup(createElement(client.UserStyleBubble, {
+      content: [{ type: 'text', text: prompt }],
+      imageLoader: async () => '',
+      t: (key: string) => key
+    }))
+
+    for (const [id, kind] of [
+      ['reply', 'assistant-reply'],
+      ['excerpt', 'assistant-excerpt'],
+      ['summary', 'summary'],
+      ['mind-map', 'mind-map'],
+      ['generic', 'artifact']
+    ]) {
+      expect(html).toContain(`data-research-message-artifact="${id}"`)
+      expect(html).toContain(`data-research-reference-node-id="${id}"`)
+      expect(html).toContain(`data-artifact-kind="${kind}"`)
+    }
+    expect(html.match(/data-research-artifact-icon=""/g)).toHaveLength(artifacts.length)
   })
 
   it('moves inline Research tags through the composer clipboard without arrow controls', async () => {
@@ -5621,6 +5691,8 @@ describe('Sherlock workspace and composer controls', () => {
         .toBe('董事会材料.PPTX')
       expect(researchTag?.querySelector('[data-file-reference-icon]')?.getAttribute('data-file-kind'))
         .toBe('pdf')
+      expect(researchTag?.getAttribute('data-research-reference-node-id'))
+        .toBe('research-pdf')
       expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip'))
         .toBe('完整年度报告.pdf')
       expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip-delay'))
@@ -5922,6 +5994,10 @@ describe('Sherlock workspace and composer controls', () => {
       ) as HappyDOMElement | null
       const textarea = host.querySelector('textarea') as HappyDOMElement | null
       expect(tag?.textContent).toBe('助手回复 · 利润率提升，现金流同步改善。')
+      expect(tag?.getAttribute('data-research-reference-node-id'))
+        .toBe('assistant-result-tag')
+      expect(tag?.querySelector('[data-research-artifact-icon]')
+        ?.getAttribute('data-artifact-kind')).toBe('assistant-reply')
       expect(textarea).not.toBeNull()
       if (tag === null || textarea === null) return
 
@@ -9783,6 +9859,96 @@ describe('Sherlock workspace and composer controls', () => {
     } finally {
       await mounted.cleanup()
     }
+  })
+
+  it('centers the canvas from composer and sent Research tags while preserving zoom', async () => {
+    const promptPayload = JSON.stringify({
+      files: [{ id: 'file-a', name: 'evidence.pdf', path: '/tmp/research/evidence.pdf' }],
+      occurrences: [{ fileId: 'file-a', offset: 0 }]
+    })
+    const mounted = await mountConversationRoot('research', undefined, undefined, {
+      userMessagePrompt: `␞SHERLOCK_RESEARCH_FILES_V1 ${promptPayload}␟继续分析`
+    })
+    try {
+      const { browserWindow, detailsPortalHost, host, workspace } = mounted
+      await act(async () => {
+        workspace.setCanvasSize({ width: 800, height: 600 })
+        workspace.setViewport({ scale: 0.75, x: 12, y: 23 })
+      })
+
+      const composerTag = browserWindow.document.querySelector(
+        '[data-research-file-tag="file-b"]'
+      ) as HappyDOMElement | null
+      expect(composerTag).not.toBeNull()
+      await act(async () => { composerTag?.dispatchEvent(new browserWindow.MouseEvent('click', { bubbles: true })) })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-b'], orderedFileIds: ['file-b']
+      })
+      expect(workspace.getSnapshot().viewport).toEqual({
+        scale: 0.75, x: 287.5, y: 210
+      })
+
+      await act(async () => {
+        workspace.setViewport({ scale: 0.75, x: -30, y: -40 })
+      })
+      const sentTag = detailsPortalHost.querySelector(
+        '[data-research-message-file="file-a"]'
+      ) as HappyDOMElement | null
+      expect(sentTag?.getAttribute('data-research-reference-node-id')).toBe('file-a')
+      await act(async () => { sentTag?.dispatchEvent(new browserWindow.MouseEvent('click', { bubbles: true })) })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-a'], orderedFileIds: ['file-a']
+      })
+      expect(workspace.getSnapshot().viewport).toEqual({
+        scale: 0.75, x: 325, y: 240
+      })
+
+      const viewportBeforeMissingClick = workspace.getSnapshot().viewport
+      await act(async () => { workspace.removeNodes(['file-a']) })
+      await act(async () => { sentTag?.dispatchEvent(new browserWindow.MouseEvent('click', { bubbles: true })) })
+      expect(workspace.getSnapshot().viewport).toEqual(viewportBeforeMissingClick)
+      expect(host.querySelector('[data-research-reference-status]')?.textContent)
+        .toContain('组件已删除或不可用')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('focuses a Research workspace node without changing the current zoom', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): {
+        getSnapshot(): {
+          selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
+          viewport: { scale: number; x: number; y: number }
+        }
+        setFiles(files: Array<Record<string, unknown>>): void
+        setArtifacts(artifacts: Array<Record<string, unknown>>): void
+        setCanvasSize(size: { width: number; height: number }): void
+        setViewport(viewport: { scale: number; x: number; y: number }): void
+        focusNode(nodeId: string): boolean
+      }
+    }
+    const workspace = new Registry(new MemoryStorage()).for('focus-node')
+    workspace.setFiles([{
+      id: 'file-focus', name: 'report.pdf', path: '/tmp/report.pdf', source: 'computer',
+      x: 200, y: 120
+    }])
+    workspace.setArtifacts([{
+      id: 'artifact-focus', kind: 'assistant-result', messageId: 'm-summary',
+      title: '助手回复', excerpt: '摘要', x: 640, y: 360
+    }])
+    workspace.setCanvasSize({ width: 960, height: 600 })
+    workspace.setViewport({ scale: 0.8, x: 44, y: -12 })
+
+    expect(workspace.focusNode('artifact-focus')).toBe(true)
+    expect(workspace.getSnapshot()).toMatchObject({
+      selection: { selectedNodeIds: ['artifact-focus'], orderedFileIds: [] },
+      viewport: { scale: 0.8, x: -32, y: 12 }
+    })
+    const beforeMissing = workspace.getSnapshot()
+    expect(workspace.focusNode('missing')).toBe(false)
+    expect(workspace.getSnapshot()).toBe(beforeMissing)
   })
 
   it('ignores wheel zoom when Command is not held', async () => {
