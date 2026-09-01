@@ -11,6 +11,8 @@ import { PassThrough } from 'node:stream'
 import { installGeneration } from './generations/installer.mjs'
 import { projectGenerations } from './generations/projection.mjs'
 import {
+  disableGeneration,
+  isGenerationPlugin,
   listGenerations,
   readDesired,
   withRegistryLock,
@@ -477,11 +479,124 @@ export function createDesktopPnpmService(options) {
     return handle
   }
 
+  /**
+   * Remove one plugin from the active profile.
+   *
+   * A generation plugin is removed through the generations registry — it is
+   * dropped from `desired.json` and the profile is reprojected — never via
+   * `pnpm remove`. The profile's manifest rows and `node_modules` link for a
+   * generation are projected from `desired.json` on every launch, so a plain
+   * pnpm remove succeeds and is silently undone on the next start when
+   * `projectGenerations` re-derives the profile from the registry (the plugin
+   * simply reappears after a refresh). Anything that is not a generation (a
+   * shared-tree dependency such as dshmarket, a github-sourced dependency,
+   * a leftover) falls through to the unchanged pnpm path, under the same
+   * registry lock so the two kinds of removal never interleave.
+   *
+   * The returned handle keeps the shape `runPlugin` promises: `stdout` and
+   * `stderr` streams the caller (dsh-market's desktop runtime) attaches data
+   * listeners to, a `done` promise resolving to `{ exitCode, signal }`, and a
+   * `cancel()` that kills a running pnpm child.
+   */
+  const runPluginRemoval = (args, invokingDir, signal) => {
+    const pluginName = args.slice(1).find((argument) => !argument.startsWith('-'))
+    if (typeof pluginName !== 'string' || pluginName === '') {
+      throw new Error('The remove operation needs a plugin name.')
+    }
+
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    let cancelled = false
+    let child
+
+    const cancel = () => {
+      cancelled = true
+      if (child) killProcessTree(child)
+    }
+
+    const done = (async () => {
+      // The registry check and the removal are one locked critical section,
+      // mirroring runExternalMarketPluginInstall: the lock is the
+      // cross-process serialization for .generations mutations. It is
+      // released again before the pnpm fallback below, which never touches
+      // the registry.
+      let outcome
+      try {
+        outcome = await withRegistryLock(home, async () => {
+          if (!(await isGenerationPlugin(home, pluginName))) {
+            return { kind: 'pnpm' }
+          }
+          const removed = await disableGeneration(home, pluginName)
+          const projection = await projectGenerations(home)
+          stdout.write(
+            removed
+              ? `removed ${pluginName} from the enabled plugin generations\n`
+              : `${pluginName} was already disabled\n`
+          )
+          stdout.write(`enabled: ${projection.linked.join(', ')}\n`)
+          return { kind: 'generation' }
+        })
+      } catch (error) {
+        stderr.write(error instanceof Error ? error.message : String(error))
+        return { exitCode: 1, signal: null }
+      }
+      if (outcome.kind === 'generation') {
+        return { exitCode: 0, signal: null }
+      }
+
+      // Not a generation plugin: the ordinary pnpm removal, unchanged.
+      if (closed) {
+        stderr.write('The DSH Desktop pnpm service has been disposed.')
+        return { exitCode: 127, signal: null }
+      }
+      void cleanStaleTemporaryDirectories(home).catch(() => undefined)
+      child = spawnProcess(
+        executablePath,
+        [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...args],
+        {
+          cwd: invokingDir,
+          env: buildPnpmEnvironment(binDirectory, environment, executablePath),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+          detached: process.platform !== 'win32'
+        }
+      )
+      const abort = () => cancel()
+      signal?.addEventListener('abort', abort, { once: true })
+      if (signal?.aborted) abort()
+      child.stdout.pipe(stdout)
+      child.stderr.pipe(stderr)
+      try {
+        return await new Promise((resolveDone, rejectDone) => {
+          child.once('error', rejectDone)
+          child.once('close', (exitCode, exitSignal) => {
+            resolveDone({ exitCode, signal: exitSignal })
+          })
+        })
+      } finally {
+        signal?.removeEventListener('abort', abort)
+      }
+    })().finally(() => {
+      stdout.end()
+      stderr.end()
+    })
+
+    const handle = { stdout, stderr, done, cancel }
+    active = handle
+    const release = () => {
+      if (active === handle) active = undefined
+    }
+    void done.then(release, release)
+    return handle
+  }
+
   const runPlugin = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
     if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
+
+    if (args[0] === 'remove') return runPluginRemoval(args, invokingDir, signal)
 
     void cleanStaleTemporaryDirectories(home).catch(() => undefined)
 
