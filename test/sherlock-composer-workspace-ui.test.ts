@@ -7532,6 +7532,148 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('edits one generated mind-map node in place and persists the existing hierarchy', async () => {
+    const storage = new MemoryStorage()
+    const original = [
+      '# 宏观变量',
+      '- 市场指标',
+      '  - 美元指数：负向R²21%',
+      '  - WTI原油'
+    ].join('\n')
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-edit-mind-map-node',
+      storage,
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: original,
+        generationStatus: 'completed', generationDetail: 'standard', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const metric = Array.from(
+        host.querySelectorAll('[data-research-mind-map-node]')
+      ).find((node) => node.textContent === '美元指数：负向R²21%')
+      expect(metric).not.toBeUndefined()
+      if (metric === undefined) return
+
+      await act(async () => {
+        metric.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-mind-map-node-input="generated-map:2"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(editor)
+      expect(workspace.getSnapshot().pendingMessageJump).toBeNull()
+      if (editor === null) return
+
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, '美元指数：负向R²25%')
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+
+      const revised = [
+        '# 宏观变量',
+        '- 市场指标',
+        '  - 美元指数：负向R²25%',
+        '  - WTI原油'
+      ].join('\n')
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe(revised)
+      expect(JSON.parse(storage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-edit-mind-map-node'
+      ) ?? '[]')[0]?.excerpt).toBe(revised)
+      expect(host.querySelector('[data-research-mind-map-node-input]')).toBeNull()
+      expect(Array.from(host.querySelectorAll('[data-research-mind-map-node]'))
+        .map((node) => node.textContent)).toContain('美元指数：负向R²25%')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('cancels generated mind-map node editing with Escape', async () => {
+    const original = '# 核心结论\n- 原始结论'
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-cancel-mind-map-node-edit',
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: original,
+        generationStatus: 'completed', generationDetail: 'brief', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const conclusion = Array.from(
+        host.querySelectorAll('[data-research-mind-map-node]')
+      ).find((node) => node.textContent === '原始结论')
+      expect(conclusion).not.toBeUndefined()
+      if (conclusion === undefined) return
+      await act(async () => {
+        conclusion.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-mind-map-node-input="generated-map:1"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      if (editor === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, '不应保存')
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+        }))
+        editor.blur()
+      })
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe(original)
+      expect(host.querySelector('[data-research-mind-map-node-input]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps compact metric labels centered while left-aligning explanatory sentences', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-mind-map-copy-alignment',
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: [
+          '# 宏观变量',
+          '- 美元指数：负向R²21%',
+          '- 实际利率：正向R²7.4%',
+          '- 数据来源：行情接口与财报数据必须交叉验证。'
+        ].join('\n'),
+        generationStatus: 'completed', generationDetail: 'standard', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const nodes = Array.from(
+        mounted.host.querySelectorAll('[data-research-mind-map-node]')
+      )
+      const copyKind = (label: string) => nodes.find((node) =>
+        node.textContent === label
+      )?.getAttribute('data-research-mind-map-copy')
+      expect(copyKind('美元指数：负向R²21%')).toBe('phrase')
+      expect(copyKind('实际利率：正向R²7.4%')).toBe('phrase')
+      expect(copyKind('数据来源：行情接口与财报数据必须交叉验证。')).toBe('sentence')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('starts a selection generation without replacing the unsent composer draft', async () => {
     const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
       modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
