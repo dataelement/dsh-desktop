@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { isAbsolute } from 'node:path'
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, isAbsolute, join } from 'node:path'
+
+export const name = 'sherlock-research-task-runtime'
+export const inject = ['agents', 'subagents', 'webServer']
 
 export const MAX_ACTIVE_PER_PARENT = 4
 export const MAX_SOURCES = 24
@@ -8,6 +13,7 @@ export const MAX_TOTAL_SOURCE_BYTES = 320_000
 export const START_PATH = '/sherlock/research-tasks/start'
 export const INSPECT_PATH = '/sherlock/research-tasks/inspect'
 export const CANCEL_PATH = '/sherlock/research-tasks/cancel'
+export const MAX_BODY_BYTES = 384 * 1024
 
 const MAX_ID_LENGTH = 256
 const MAX_TITLE_LENGTH = 512
@@ -15,6 +21,10 @@ const MAX_PATH_LENGTH = 8_192
 const MAX_EVENT_TEXT = 8_192
 const MAX_PUBLIC_EVENTS = 160
 const MAX_FINAL_OUTPUT = 240_000
+const MAX_TERMINAL_TASKS = 200
+const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
+const READ_ONLY_TOOLS = ['read', 'grep', 'glob', 'web_search', 'web_fetch']
+const RESEARCH_TASK_PERSONA = '你是 Sherlock 研究画布的内容生成助手。只处理给定的画布任务和资料，不与用户展开对话，不泄露私有推理、工具参数或内部错误；最终只输出产品提示词要求的内容。'
 const DETAILS = new Set(['brief', 'standard', 'detailed'])
 const REQUEST_KEYS = new Set([
   'parentSessionId',
@@ -180,10 +190,7 @@ export function publicEventFromSessionEvent(event) {
 }
 
 function terminalState(state) {
-  return state === 'completed' ||
-    state === 'failed' ||
-    state === 'cancelled' ||
-    state === 'interrupted'
+  return TERMINAL_STATES.has(state)
 }
 
 function taskDocument(task) {
@@ -242,6 +249,54 @@ function publicTask(task, afterSeq = 0) {
   }
 }
 
+function timestamp(value, fallback) {
+  return Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+function restoredTask(raw, now) {
+  const stored = record(raw, 'INVALID_STORAGE', '任务存储无效')
+  const request = validateResearchTaskStart({
+    parentSessionId: stored.parentSessionId,
+    canvasNodeId: stored.canvasNodeId,
+    kind: stored.kind,
+    ...(stored.detail === undefined ? {} : { detail: stored.detail }),
+    sources: stored.sources
+  })
+  const originalState = stored.state
+  if (!TERMINAL_STATES.has(originalState) && originalState !== 'queued' && originalState !== 'running') {
+    throw new ResearchTaskError('INVALID_STORAGE', '任务状态无效')
+  }
+  const interrupted = originalState === 'queued' || originalState === 'running'
+  const task = {
+    taskId: requiredString(stored.taskId, MAX_ID_LENGTH, '任务标识无效'),
+    ...request,
+    state: interrupted ? 'interrupted' : originalState,
+    createdAt: timestamp(stored.createdAt, now),
+    lastSeq: 0,
+    events: [],
+    cancelRequested: false,
+    controller: undefined,
+    runPromise: undefined
+  }
+  if (typeof stored.finalOutput === 'string' && stored.finalOutput.trim().length > 0) {
+    task.finalOutput = stored.finalOutput.slice(0, MAX_FINAL_OUTPUT)
+  }
+  if (interrupted) {
+    task.error = '任务因应用重启而中断，请重试。'
+    task.completedAt = now
+  } else {
+    if (typeof stored.error === 'string' && stored.error.trim().length > 0) {
+      task.error = stored.error.slice(0, MAX_EVENT_TEXT)
+    }
+    if (typeof stored.childSessionId === 'string' && stored.childSessionId.trim().length > 0) {
+      task.childSessionId = stored.childSessionId.slice(0, MAX_ID_LENGTH)
+    }
+    if (Number.isFinite(stored.startedAt)) task.startedAt = stored.startedAt
+    if (Number.isFinite(stored.completedAt)) task.completedAt = stored.completedAt
+  }
+  return { task, interrupted }
+}
+
 export class ResearchTaskRuntime {
   constructor({ adapter, storage, now = Date.now, createId = randomUUID }) {
     if (typeof adapter?.start !== 'function') {
@@ -258,6 +313,33 @@ export class ResearchTaskRuntime {
     this.parents = new Map()
     this.persistChain = Promise.resolve()
     this.disposed = false
+    this.restored = false
+  }
+
+  async restore() {
+    if (this.restored) return
+    if (this.tasks.size > 0) {
+      throw new ResearchTaskError('RUNTIME_ACTIVE', '任务服务已开始运行')
+    }
+    const document = await this.storage.load()
+    if (document === undefined) {
+      this.restored = true
+      return
+    }
+    if (document?.version !== 1 || !Array.isArray(document.tasks)) {
+      throw new ResearchTaskError('INVALID_STORAGE', '任务存储无效')
+    }
+    let changed = false
+    for (const raw of document.tasks) {
+      const restored = restoredTask(raw, this.now())
+      if (this.tasks.has(restored.task.taskId)) {
+        throw new ResearchTaskError('INVALID_STORAGE', '任务标识重复')
+      }
+      this.tasks.set(restored.task.taskId, restored.task)
+      changed ||= restored.interrupted
+    }
+    this.restored = true
+    if (changed) await this.persist()
   }
 
   parentQueue(parentSessionId) {
@@ -382,13 +464,17 @@ export class ResearchTaskRuntime {
 
   async run(task) {
     let handle
+    const startingEvents = []
     try {
       handle = await this.adapter.start({
         taskId: task.taskId,
         parentSessionId: task.parentSessionId,
         prompt: buildResearchTaskPrompt(taskRequest(task)),
         signal: task.controller.signal,
-        onSessionEvent: (event) => this.onSessionEvent(task, event)
+        onSessionEvent: (event) => {
+          if (task.state === 'running') this.onSessionEvent(task, event)
+          else if (!terminalState(task.state)) startingEvents.push(event)
+        }
       })
       if (task.cancelRequested || terminalState(task.state)) return
       task.childSessionId = requiredString(
@@ -399,6 +485,7 @@ export class ResearchTaskRuntime {
       task.state = 'running'
       task.startedAt = this.now()
       this.appendEvent(task, { type: 'started' })
+      for (const event of startingEvents) this.onSessionEvent(task, event)
       await this.persist()
       const result = await handle.result
       if (task.cancelRequested || terminalState(task.state)) return
@@ -446,4 +533,279 @@ export class ResearchTaskRuntime {
     if (value.error !== undefined) task.error = value.error
     await this.persist()
   }
+
+  async dispose() {
+    if (this.disposed) return
+    this.disposed = true
+    const running = []
+    for (const task of this.tasks.values()) {
+      if (terminalState(task.state)) continue
+      task.controller?.abort('research-task-runtime-disposed')
+      await this.finish(task, 'interrupted', {
+        error: '任务因应用关闭而中断，请重试。'
+      })
+      if (task.runPromise !== undefined) running.push(task.runPromise)
+    }
+    await Promise.allSettled(running)
+    await this.persistChain.catch(() => undefined)
+  }
+}
+
+export function createSubagentAdapter(ctx) {
+  return {
+    async start({ parentSessionId, prompt, signal, onSessionEvent }) {
+      const parent = ctx.agents.get(parentSessionId)
+      if (parent === undefined || parent.id !== parentSessionId) {
+        throw new ResearchTaskError('PARENT_NOT_LIVE', '研究会话当前不可用')
+      }
+      const run = await ctx.subagents.start('spawn', {
+        label: '画布生成任务',
+        parent,
+        signal,
+        prompt: [{ type: 'text', text: prompt }],
+        maxDepth: 1,
+        toolFilter: { allow: [...READ_ONLY_TOOLS] },
+        persona: RESEARCH_TASK_PERSONA
+      })
+      const child = run.localAgent
+      if (child === undefined || child.id !== run.id) {
+        await run.dispose().catch(() => undefined)
+        throw new ResearchTaskError('LOCAL_CHILD_REQUIRED', '画布任务无法在本地运行')
+      }
+
+      const seen = new Set()
+      const deliver = (event) => {
+        const seq = event?.seq
+        if (Number.isSafeInteger(seq)) {
+          if (seen.has(seq)) return
+          seen.add(seq)
+        }
+        onSessionEvent(event)
+      }
+      const off = ctx.on('session/event', (session, event) => {
+        if (session?.id === child.id) deliver(event)
+      })
+      try {
+        for (const event of [...child.session.events]) deliver(event)
+      } catch (error) {
+        off()
+        await run.dispose().catch(() => undefined)
+        throw error
+      }
+
+      let disposed = false
+      return {
+        childSessionId: child.id,
+        result: run.result,
+        async dispose() {
+          if (disposed) return
+          disposed = true
+          off()
+          await run.dispose()
+        }
+      }
+    }
+  }
+}
+
+function dshHome() {
+  return process.env.DSH_HOME || join(homedir(), '.dsh')
+}
+
+function boundedTaskDocument(document) {
+  const source = record(document, 'INVALID_STORAGE', '任务存储无效')
+  if (source.version !== 1 || !Array.isArray(source.tasks)) {
+    throw new ResearchTaskError('INVALID_STORAGE', '任务存储无效')
+  }
+  const terminal = source.tasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ task }) => terminalState(task?.state))
+    .sort((a, b) => {
+      const aTime = timestamp(a.task.completedAt, timestamp(a.task.createdAt, 0))
+      const bTime = timestamp(b.task.completedAt, timestamp(b.task.createdAt, 0))
+      return bTime - aTime || b.index - a.index
+    })
+    .slice(0, MAX_TERMINAL_TASKS)
+  const retainedTerminal = new Set(terminal.map(({ index }) => index))
+  return {
+    version: 1,
+    tasks: source.tasks.filter((task, index) => (
+      !terminalState(task?.state) || retainedTerminal.has(index)
+    ))
+  }
+}
+
+export class JsonResearchTaskStorage {
+  constructor(filePath = join(dshHome(), 'sherlock-research-tasks.json')) {
+    this.filePath = filePath
+  }
+
+  async load() {
+    try {
+      const document = JSON.parse(await readFile(this.filePath, 'utf8'))
+      return boundedTaskDocument(document)
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { version: 1, tasks: [] }
+      if (error instanceof SyntaxError) {
+        throw new ResearchTaskError('INVALID_STORAGE', '任务存储无效')
+      }
+      throw error
+    }
+  }
+
+  async save(document) {
+    const bounded = boundedTaskDocument(document)
+    await mkdir(dirname(this.filePath), { recursive: true })
+    const temporary = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify(bounded)}\n`, 'utf8')
+      await rename(temporary, this.filePath)
+    } catch (error) {
+      await unlink(temporary).catch(() => undefined)
+      throw error
+    }
+  }
+}
+
+function isLoopback(address) {
+  return address === '127.0.0.1' ||
+    address === '::1' ||
+    address === '[::1]' ||
+    address === '::ffff:127.0.0.1'
+}
+
+function hasForwardedAddress(req) {
+  return Boolean(
+    req.headers?.forwarded ||
+    req.headers?.['x-forwarded-for'] ||
+    req.headers?.['x-real-ip'] ||
+    req.headers?.['x-forwarded-host']
+  )
+}
+
+export function isTrustedRequest(req, mutation = false) {
+  if (!isLoopback(req.socket?.remoteAddress) || hasForwardedAddress(req)) return false
+  if (!mutation) return true
+  const origin = req.headers?.origin
+  const host = req.headers?.host
+  if (typeof origin !== 'string' || typeof host !== 'string') return false
+  try {
+    const parsed = new URL(origin)
+    return parsed.protocol === 'http:' && parsed.host === host && isLoopback(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
+export async function readJsonBody(req) {
+  const declared = Number(req.headers?.['content-length'])
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    throw new ResearchTaskError('BODY_TOO_LARGE', '请求内容过长')
+  }
+  const chunks = []
+  let bytes = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.from(chunk)
+    bytes += buffer.length
+    if (bytes > MAX_BODY_BYTES) {
+      throw new ResearchTaskError('BODY_TOO_LARGE', '请求内容过长')
+    }
+    chunks.push(buffer)
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    throw new ResearchTaskError('INVALID_REQUEST', '请求内容无效')
+  }
+}
+
+const ROUTE_METHODS = new Map([
+  [START_PATH, 'POST'],
+  [INSPECT_PATH, 'POST'],
+  [CANCEL_PATH, 'POST']
+])
+
+export function routeMethodStatus(path, method) {
+  const expected = ROUTE_METHODS.get(path)
+  if (expected === undefined) return 404
+  return method === expected ? 200 : 405
+}
+
+function sendJson(res, status, payload) {
+  const body = JSON.stringify(payload)
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body)
+  })
+  res.end(body)
+}
+
+function errorResponse(error) {
+  if (error instanceof ResearchTaskError) {
+    if (error.code === 'TASK_NOT_FOUND') return [404, { error: '任务不存在。' }]
+    if (error.code === 'PARENT_NOT_LIVE' || error.code === 'LOCAL_CHILD_REQUIRED') {
+      return [409, { error: error.message }]
+    }
+    if (error.code === 'RUNTIME_DISPOSED') return [409, { error: '任务服务已停止。' }]
+    if (error.code === 'BODY_TOO_LARGE' || error.code === 'INVALID_REQUEST') {
+      return [400, { error: error.message }]
+    }
+  }
+  return [500, { error: '画布任务服务暂时不可用。' }]
+}
+
+function researchTaskHandler(path, runtime) {
+  return async (req, res) => {
+    if (routeMethodStatus(path, req.method) !== 200) {
+      sendJson(res, 405, { error: 'Method not allowed.' })
+      return
+    }
+    const mutation = path === START_PATH || path === CANCEL_PATH
+    if (!isTrustedRequest(req, mutation)) {
+      sendJson(res, 403, { error: 'Request rejected.' })
+      return
+    }
+    try {
+      const body = await readJsonBody(req)
+      const result = path === START_PATH
+        ? await runtime.start(body)
+        : path === INSPECT_PATH
+          ? await runtime.inspect(body)
+          : await runtime.cancel(body)
+      sendJson(res, path === START_PATH ? 202 : 200, result)
+    } catch (error) {
+      const [status, payload] = errorResponse(error)
+      sendJson(res, status, payload)
+    }
+  }
+}
+
+export function registerResearchTaskRoutes(webServer, runtime) {
+  const disposers = [...ROUTE_METHODS.keys()].map((path) => webServer.register({
+    kind: 'exact',
+    path,
+    handler: researchTaskHandler(path, runtime)
+  }))
+  let disposed = false
+  return () => {
+    if (disposed) return
+    disposed = true
+    for (const dispose of disposers.reverse()) dispose()
+  }
+}
+
+export async function apply(ctx) {
+  const runtime = new ResearchTaskRuntime({
+    adapter: createSubagentAdapter(ctx),
+    storage: new JsonResearchTaskStorage()
+  })
+  await runtime.restore()
+  ctx.effect(() => {
+    const disposeRoutes = registerResearchTaskRoutes(ctx.webServer, runtime)
+    return async () => {
+      disposeRoutes()
+      await runtime.dispose()
+    }
+  })
 }

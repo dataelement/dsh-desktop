@@ -1,3 +1,7 @@
+import { mkdtemp, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 
 const runtimeModule = () => import('../packages/dsh-research-task-runtime/index.js')
@@ -440,5 +444,257 @@ describe('Research task cancellation and terminal cleanup', () => {
       parentSessionId: 'parent-1', taskId: receipt.taskId, afterSeq: 0
     })).toMatchObject({ state: 'completed', finalOutput: '最终结果', events: [] })
     expect(JSON.stringify(storage.snapshot())).not.toContain('流式草稿')
+  })
+})
+
+function sessionEventContext(parent, child, run) {
+  const listeners = new Set()
+  return {
+    agents: { get: vi.fn((id) => id === parent.id ? parent : undefined) },
+    subagents: { start: vi.fn(async () => run) },
+    on(name, listener) {
+      expect(name).toBe('session/event')
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    emit(session, event) {
+      for (const listener of listeners) listener(session, event)
+    },
+    child
+  }
+}
+
+function requestStream(body, options = {}) {
+  const request = Readable.from([Buffer.from(body)])
+  request.method = options.method ?? 'POST'
+  request.headers = options.headers ?? {}
+  request.socket = { remoteAddress: options.remoteAddress ?? '127.0.0.1' }
+  return request
+}
+
+describe('Research task Subagent adapter', () => {
+  it('keeps child events emitted while the adapter is still starting', async () => {
+    const { ResearchTaskRuntime } = await runtimeModule()
+    const result = Promise.withResolvers()
+    const runtime = new ResearchTaskRuntime({
+      adapter: {
+        async start(request) {
+          request.onSessionEvent(assistantChunk('text-delta', '启动阶段消息'))
+          return {
+            childSessionId: 'child-1',
+            result: result.promise,
+            dispose: async () => undefined
+          }
+        }
+      },
+      storage: memoryTaskStorage(),
+      createId: () => 'task-1'
+    })
+    const receipt = await runtime.start(summaryRequest('node-1'))
+
+    await eventually(() => expect(runtime.inspect({
+      parentSessionId: 'parent-1', taskId: receipt.taskId, afterSeq: 0
+    }).state).toBe('running'))
+    expect(runtime.inspect({
+      parentSessionId: 'parent-1', taskId: receipt.taskId, afterSeq: 0
+    }).events).toContainEqual(expect.objectContaining({
+      type: 'assistant-delta', text: '启动阶段消息'
+    }))
+
+    result.resolve({ stopReason: 'completed', output: [{ type: 'text', text: '完成' }] })
+  })
+
+  it('starts a fresh local child from the exact live parent with read-only tools', async () => {
+    const { createSubagentAdapter } = await runtimeModule()
+    const parent = { id: 'parent-1', session: { events: [] } }
+    const first = assistantChunk('text-delta', '已读取材料')
+    const child = { id: 'child-1', session: { id: 'child-1', events: [first] } }
+    const dispose = vi.fn(async () => undefined)
+    const run = {
+      id: child.id,
+      localAgent: child,
+      result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: '完成' }] }),
+      dispose
+    }
+    const ctx = sessionEventContext(parent, child, run)
+    const onSessionEvent = vi.fn()
+
+    const handle = await createSubagentAdapter(ctx).start({
+      parentSessionId: parent.id,
+      prompt: '产品固定提示词',
+      signal: new AbortController().signal,
+      onSessionEvent
+    })
+    ctx.emit(child.session, first)
+    const second = { ...assistantChunk('text-delta', '正在生成'), seq: 9 }
+    ctx.emit(child.session, second)
+
+    expect(ctx.subagents.start).toHaveBeenCalledWith('spawn', expect.objectContaining({
+      parent,
+      prompt: [{ type: 'text', text: '产品固定提示词' }],
+      maxDepth: 1,
+      toolFilter: { allow: ['read', 'grep', 'glob', 'web_search', 'web_fetch'] }
+    }))
+    expect(ctx.subagents.start.mock.calls[0][1].persona).toContain('画布')
+    expect(parent.session.events).toHaveLength(0)
+    expect(onSessionEvent).toHaveBeenCalledTimes(2)
+    expect(onSessionEvent).toHaveBeenNthCalledWith(1, first)
+    expect(onSessionEvent).toHaveBeenNthCalledWith(2, second)
+    expect(handle.childSessionId).toBe(child.id)
+
+    await handle.dispose()
+    expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails without mutating the parent when the exact parent is no longer live', async () => {
+    const { createSubagentAdapter } = await runtimeModule()
+    const ctx = sessionEventContext(
+      { id: 'different-parent', session: { events: [] } },
+      { id: 'child-1', session: { id: 'child-1', events: [] } },
+      {}
+    )
+
+    await expect(createSubagentAdapter(ctx).start({
+      parentSessionId: 'parent-1',
+      prompt: '提示词',
+      signal: new AbortController().signal,
+      onSessionEvent: vi.fn()
+    })).rejects.toMatchObject({ code: 'PARENT_NOT_LIVE' })
+    expect(ctx.subagents.start).not.toHaveBeenCalled()
+  })
+})
+
+describe('Research task persistence and restart recovery', () => {
+  it('restores terminal output and converts non-terminal tasks to interrupted', async () => {
+    const { ResearchTaskRuntime } = await runtimeModule()
+    const document = {
+      version: 1,
+      tasks: [
+        {
+          ...summaryRequest('complete-node'),
+          taskId: 'complete-task',
+          state: 'completed',
+          finalOutput: '最终总结',
+          createdAt: 100,
+          startedAt: 110,
+          completedAt: 120
+        },
+        {
+          ...summaryRequest('running-node'),
+          taskId: 'running-task',
+          childSessionId: 'old-child',
+          state: 'running',
+          createdAt: 200,
+          startedAt: 210
+        }
+      ]
+    }
+    const storage = memoryTaskStorage(document)
+    const adapter = { start: vi.fn(async () => { throw new Error('must not relaunch') }) }
+    const runtime = new ResearchTaskRuntime({ adapter, storage, now: () => 500 })
+
+    await runtime.restore()
+
+    expect(runtime.inspect({
+      parentSessionId: 'parent-1', taskId: 'complete-task', afterSeq: 0
+    })).toMatchObject({ state: 'completed', finalOutput: '最终总结' })
+    const interrupted = runtime.inspect({
+      parentSessionId: 'parent-1', taskId: 'running-task', afterSeq: 0
+    })
+    expect(interrupted).toMatchObject({
+      state: 'interrupted', error: '任务因应用重启而中断，请重试。', completedAt: 500
+    })
+    expect(interrupted).not.toHaveProperty('childSessionId')
+    expect(adapter.start).not.toHaveBeenCalled()
+  })
+
+  it('writes atomic JSON and retains only the newest 200 terminal tasks', async () => {
+    const { JsonResearchTaskStorage } = await runtimeModule()
+    const directory = await mkdtemp(join(tmpdir(), 'research-task-storage-'))
+    const filePath = join(directory, 'tasks.json')
+    const storage = new JsonResearchTaskStorage(filePath)
+    const tasks = Array.from({ length: 205 }, (_, index) => ({
+      ...summaryRequest(`node-${index}`),
+      taskId: `task-${index}`,
+      state: 'completed',
+      finalOutput: `结果 ${index}`,
+      createdAt: index,
+      completedAt: index
+    }))
+
+    await storage.save({ version: 1, tasks })
+
+    const saved = JSON.parse(await readFile(filePath, 'utf8'))
+    expect(saved.tasks).toHaveLength(200)
+    expect(saved.tasks[0].taskId).toBe('task-5')
+    expect(saved.tasks.at(-1).taskId).toBe('task-204')
+    await expect(storage.load()).resolves.toEqual(saved)
+  })
+})
+
+describe('Research task trusted HTTP surface', () => {
+  it('rejects remote, forwarded, cross-origin, wrong-method, and oversized requests', async () => {
+    const {
+      CANCEL_PATH,
+      INSPECT_PATH,
+      START_PATH,
+      isTrustedRequest,
+      readJsonBody,
+      routeMethodStatus
+    } = await runtimeModule()
+    const trustedHeaders = {
+      origin: 'http://127.0.0.1:43127',
+      host: '127.0.0.1:43127'
+    }
+
+    expect(isTrustedRequest(requestStream('{}', { remoteAddress: '10.0.0.2' }), true)).toBe(false)
+    expect(isTrustedRequest(requestStream('{}', {
+      headers: { ...trustedHeaders, forwarded: 'for=10.0.0.2' }
+    }), true)).toBe(false)
+    expect(isTrustedRequest(requestStream('{}', {
+      headers: { ...trustedHeaders, origin: 'https://evil.test' }
+    }), true)).toBe(false)
+    expect(isTrustedRequest(requestStream('{}', { headers: trustedHeaders }), true)).toBe(true)
+    await expect(readJsonBody(requestStream('x'.repeat(384 * 1024 + 1))))
+      .rejects.toMatchObject({ code: 'BODY_TOO_LARGE' })
+    expect(routeMethodStatus(START_PATH, 'GET')).toBe(405)
+    expect(routeMethodStatus(INSPECT_PATH, 'PUT')).toBe(405)
+    expect(routeMethodStatus(CANCEL_PATH, 'DELETE')).toBe(405)
+  })
+
+  it('registers only exact routes and returns no-store JSON', async () => {
+    const { START_PATH, registerResearchTaskRoutes } = await runtimeModule()
+    const routes = new Map()
+    const webServer = {
+      register: vi.fn((route) => {
+        routes.set(route.path, route)
+        return () => routes.delete(route.path)
+      })
+    }
+    const runtime = {
+      start: vi.fn(async (body) => ({ taskId: 'task-1', ...body, state: 'queued' })),
+      inspect: vi.fn(),
+      cancel: vi.fn()
+    }
+    const dispose = registerResearchTaskRoutes(webServer, runtime)
+    const request = requestStream(JSON.stringify(summaryRequest('node-1')), {
+      headers: { origin: 'http://127.0.0.1:43127', host: '127.0.0.1:43127' }
+    })
+    const response = {
+      status: undefined,
+      headers: undefined,
+      body: '',
+      writeHead(status, headers) { this.status = status; this.headers = headers },
+      end(body) { this.body = body }
+    }
+
+    expect([...routes.values()].every((route) => route.kind === 'exact')).toBe(true)
+    await routes.get(START_PATH).handler(request, response)
+    expect(response.status).toBe(202)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(JSON.parse(response.body)).toMatchObject({ taskId: 'task-1', state: 'queued' })
+
+    dispose()
+    expect(routes).toHaveLength(0)
   })
 })
