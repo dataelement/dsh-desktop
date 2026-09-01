@@ -18,7 +18,7 @@ type NavigationEvent = {
   initiator?: { processId: number; routingId: number } | null
 }
 
-function secureWindowFixture() {
+function secureWindowFixture(allowsResearchFrameUrl: (url: string) => boolean = () => false) {
   const listeners = new Map<string, (event: NavigationEvent, url?: string) => void>()
   const permissionCheck = vi.fn()
   const permissionRequest = vi.fn()
@@ -34,7 +34,7 @@ function secureWindowFixture() {
       setPermissionRequestHandler: permissionRequest
     }
   }
-  secureWindow({ webContents } as never)
+  secureWindow({ webContents } as never, { allowsResearchFrameUrl })
   return { listeners, mainFrame, webContents }
 }
 
@@ -61,6 +61,32 @@ describe('main-window navigation security', () => {
       expect(preventDefault, url).toHaveBeenCalledOnce()
     }
 
+    expect(shellOpenExternal).not.toHaveBeenCalled()
+  })
+
+  it('allows only research child-frame URLs approved by the active registry', () => {
+    const allowsResearchFrameUrl = vi.fn((url: string) =>
+      new URL(url).origin === 'https://approved.example'
+    )
+    const { listeners } = secureWindowFixture(allowsResearchFrameUrl)
+    const willFrameNavigate = listeners.get('will-frame-navigate')
+    const allowed = vi.fn()
+    const blocked = vi.fn()
+
+    willFrameNavigate?.({
+      url: 'https://approved.example/dashboard',
+      isMainFrame: false,
+      preventDefault: allowed
+    })
+    willFrameNavigate?.({
+      url: 'https://blocked.example/dashboard',
+      isMainFrame: false,
+      preventDefault: blocked
+    })
+
+    expect(allowsResearchFrameUrl).toHaveBeenCalledTimes(2)
+    expect(allowed).not.toHaveBeenCalled()
+    expect(blocked).toHaveBeenCalledOnce()
     expect(shellOpenExternal).not.toHaveBeenCalled()
   })
 

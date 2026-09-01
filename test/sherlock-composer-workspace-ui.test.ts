@@ -82,6 +82,18 @@ async function loadClientBundle(
       setRegion(value: Record<string, unknown>): boolean
       subscribe(listener: (value: Record<string, unknown>) => void): () => void
     }
+    researchLinkFrame?: {
+      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string; frameName?: string }>
+      inspect?(value: { sessionId: string; nodeId: string }): Promise<Record<string, unknown> | null>
+      release(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
+      releaseSession(sessionId: string): Promise<{ ok: boolean; removed: number }>
+    }
+    researchWebReader?: {
+      read(value: { sessionId: string; nodeId: string; url: string }): Promise<Record<string, unknown>>
+    }
+    researchCanvasExport?: {
+      save(value: Record<string, unknown>): Promise<Record<string, unknown>>
+    }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
       admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
@@ -174,7 +186,11 @@ async function loadClientBundle(
     if (id === '@deepseek-ai/dsh-client-ui-primitives') {
       const fallback = fakeModule() as object
       return new Proxy({
-        MarkdownText: ({ text }: { text: string }) => createElement('div', null, text)
+        MarkdownText: ({ text }: { text: string }) => createElement('div', null, text),
+        IconBranchOutline16: () => createElement('span', { 'data-test-icon': 'branch' }),
+        IconChevronDownOutline14: () => createElement('span', { 'data-test-icon': 'chevron-down' }),
+        IconListPenOutline16: () => createElement('span', { 'data-test-icon': 'list-pen' }),
+        IconRefreshOutline16: () => createElement('span', { 'data-test-icon': 'refresh' })
       }, {
         get(target, property) {
           return Reflect.get(target, property) ?? Reflect.get(fallback, property)
@@ -236,6 +252,7 @@ async function mountConversationRoot(
     composer?: ReactNode
     composerHeight?: number
     sidebarWidth?: number
+    userMessagePrompt?: string
   } = {}
 ) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
@@ -297,7 +314,10 @@ async function mountConversationRoot(
   const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
     document: browserWindow.document,
     window: browserWindow,
-    modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives }
+    modules: {
+      '@deepseek-ai/dsh-client-ui-primitives': primitives,
+      '@deepseek-ai/dsh-client-ui-attachment': { ImageGallery: () => null }
+    }
   })
   expect(client.ConversationRoot).toBeTypeOf('function')
   if (typeof client.ConversationRoot !== 'function') {
@@ -310,12 +330,15 @@ async function mountConversationRoot(
       getSnapshot(): {
         files: Array<Record<string, unknown>>
         artifacts: Array<Record<string, unknown>>
+        selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
         viewport: { scale: number; x: number; y: number }
         canvasSize: { width: number; height: number }
         pendingMessageJump: string | null
       }
       assistantActionsActive(): boolean
+      focusNode(nodeId: string): boolean
       removeSelectedFile(fileId: string): void
+      removeNodes(nodeIds: string[]): void
       setArtifacts(artifacts: Array<Record<string, unknown>>): void
       updateArtifactContent(artifactId: string, content: string): boolean
       setSelection(selection: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
@@ -465,7 +488,13 @@ async function mountConversationRoot(
   }
   const renderChatView = (activeSessionId = sessionId) => createElement('div', { 'data-chat-view': '' },
     assistantMessage === undefined
-      ? 'message-1'
+      ? composerOptions.userMessagePrompt === undefined
+        ? 'message-1'
+        : createElement(client.UserStyleBubble as ComponentType<Record<string, unknown>>, {
+            content: [{ type: 'text', text: composerOptions.userMessagePrompt }],
+            imageLoader: async () => '',
+            t: translate
+          })
       : createElement('div', {
           'data-assistant-message-id': assistantMessage.messageId,
           'data-assistant-message-settled': assistantMessage.settled === false
@@ -568,12 +597,14 @@ async function mountConversationRoot(
                     ...references.map((file) => createElement('span', {
                       key: `${file.id}-${index}`,
                       'data-research-file-tag': file.id,
+                      'data-research-reference-node-id': file.id,
                       'data-reference-source': 'research-file',
                       'aria-invalid': file.path === undefined ? 'true' : undefined
                     }, file.name.split(/[\\/]/).at(-1))),
                     ...artifactReferences.map((artifact) => createElement('span', {
                       key: `${artifact.id}-${index}`,
                       'data-research-artifact-tag': artifact.id,
+                      'data-research-reference-node-id': artifact.id,
                       'data-reference-source': 'research-artifact'
                     }, artifact.label))
                   ] : [])
@@ -909,6 +940,18 @@ async function mountResearchCanvas(options: {
       setRegion(value: Record<string, unknown>): boolean
       subscribe(listener: (value: Record<string, unknown>) => void): () => void
     }
+    researchLinkFrame?: {
+      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string; frameName?: string }>
+      inspect?(value: { sessionId: string; nodeId: string }): Promise<Record<string, unknown> | null>
+      release(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
+      releaseSession(sessionId: string): Promise<{ ok: boolean; removed: number }>
+    }
+    researchWebReader?: {
+      read(value: { sessionId: string; nodeId: string; url: string }): Promise<Record<string, unknown>>
+    }
+    researchCanvasExport?: {
+      save(value: Record<string, unknown>): Promise<Record<string, unknown>>
+    }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
       admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
@@ -932,7 +975,13 @@ async function mountResearchCanvas(options: {
     Component: ComponentType<{ sourceUrl: string; kind: string; title: string }>
     supports(kind: string): boolean
   }
-  fetch?: (input: string, init?: { signal?: AbortSignal }) => Promise<Response>
+  selectionGeneration?: {
+    disabled?: boolean
+    generate(request: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
+    inspect?(request: Record<string, unknown>): Promise<Record<string, unknown>>
+    cancel?(request: Record<string, unknown>): Promise<Record<string, unknown>>
+  }
+  fetch?: (input: string, init?: RequestInit) => Promise<Response>
 }) {
   const browserWindow = new Window({ url: 'https://sherlock.local/' })
   const { sessionId } = options
@@ -1065,6 +1114,19 @@ async function mountResearchCanvas(options: {
       setSelection(value: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
       selectedFiles(): Array<Record<string, unknown>>
       pendingOrphanRevocations(): string[]
+      createWebLink(url: string, placement?: Record<string, unknown>): Record<string, unknown> | null
+      updateWebLink(nodeId: string, url: string): boolean
+      applyWebLinkInspection(nodeId: string, expectedUrl: string, inspection: Record<string, unknown>): boolean
+      renameNode(nodeId: string, title: string): boolean
+      createContainerDraft(placement?: Record<string, unknown>): Record<string, unknown> | null
+      beginContainerGeneration(nodeId: string, prompt: string): Record<string, unknown> | null
+      setContainerRefresh(nodeId: string, minutes: number): boolean
+      beginGeneration(kind: string, sourceNodeIds: string[], placement: Record<string, unknown>, detail?: string): Record<string, unknown> | null
+      attachGenerationTask(nodeId: string, receipt: Record<string, unknown>): boolean
+      applyGenerationInspection(nodeId: string, inspection: Record<string, unknown>): boolean
+      retryGeneration(nodeId: string): Record<string, unknown> | null
+      removeNodes(nodeIds: string[]): void
+      setGenerationCancelSink(sink?: (request: Record<string, unknown>) => unknown): void
     }
   }
   const researchWorkspaces = new Registry(storage as Storage)
@@ -1075,6 +1137,12 @@ async function mountResearchCanvas(options: {
     t: (key: string) => string
     researchWorkspaces: InstanceType<typeof Registry>
     researchOfficePreview: InstanceType<typeof OfficeCoordinator>
+    selectionGeneration?: {
+      disabled?: boolean
+      generate(request: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
+      inspect?(request: Record<string, unknown>): Promise<Record<string, unknown>>
+      cancel?(request: Record<string, unknown>): Promise<Record<string, unknown>>
+    }
   }>
   const host = browserWindow.document.createElement('div')
   browserWindow.document.body.appendChild(host)
@@ -1084,6 +1152,7 @@ async function mountResearchCanvas(options: {
       sessionId,
       researchWorkspaces,
       researchOfficePreview,
+      selectionGeneration: options.selectionGeneration,
       t: () => '研究画布'
     })
     root.render(options.strictMode ? createElement(StrictMode, null, canvasNode) : canvasNode)
@@ -1101,6 +1170,7 @@ async function mountResearchCanvas(options: {
     client,
     host,
     workspace,
+    researchWorkspaces,
     detachOfficePreview,
     researchOfficePreview,
     async cleanup() {
@@ -1293,6 +1363,64 @@ describe('Sherlock workspace and composer controls', () => {
     expect(browserWindow.getComputedStyle(inlineCode).color).toBe('rgb(15, 17, 21)')
   })
 
+  it('keeps sent Research tags in the same compact inline rhythm as the composer', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      document: browserWindow.document,
+      window: browserWindow
+    })
+    browserWindow.document.body.innerHTML = [
+      '<div class="gdEzaW_userStack" data-research-inline="true">',
+      '<div class="gdEzaW_bubble" data-research-inline="true">',
+      '<span data-research-message-files="inline">',
+      '<span class="gdEzaW_refChip">总结提炼</span>',
+      '<span class="gdEzaW_refChip">助手回复 · 黄金研究</span>',
+      '<span>你好</span>',
+      '</span>',
+      '</div>',
+      '</div>'
+    ].join('')
+
+    const stack = browserWindow.document.querySelector('.gdEzaW_userStack')
+    const bubble = browserWindow.document.querySelector('.gdEzaW_bubble')
+    const chip = browserWindow.document.querySelector('.gdEzaW_refChip')
+    const inlineReferences = browserWindow.document.querySelector(
+      '[data-research-message-files="inline"]'
+    )
+    expect(stack).not.toBeNull()
+    expect(bubble).not.toBeNull()
+    expect(chip).not.toBeNull()
+    expect(inlineReferences).not.toBeNull()
+    if (
+      stack === null ||
+      bubble === null ||
+      chip === null ||
+      inlineReferences === null
+    )
+      return
+
+    const stackStyle = browserWindow.getComputedStyle(stack)
+    const bubbleStyle = browserWindow.getComputedStyle(bubble)
+    const chipStyle = browserWindow.getComputedStyle(chip)
+    const inlineReferencesStyle = browserWindow.getComputedStyle(inlineReferences)
+    expect(stackStyle.width).toBe('92%')
+    expect(stackStyle.maxWidth).toBe('640px')
+    expect(bubbleStyle.width).toBe('max-content')
+    expect(bubbleStyle.padding).toBe('8px 12px')
+    expect(inlineReferencesStyle.display).toBe('inline-flex')
+    expect(inlineReferencesStyle.flexWrap).toBe('wrap')
+    expect(inlineReferencesStyle.alignItems).toBe('center')
+    expect(inlineReferencesStyle.gap).toBe('4px')
+    expect(chipStyle.display).toBe('inline-flex')
+    expect(chipStyle.width).toBe('136px')
+    expect(chipStyle.minWidth).toBe('136px')
+    expect(chipStyle.maxWidth).toBe('136px')
+    expect(chipStyle.height).toBe('24px')
+    expect(chipStyle.alignItems).toBe('center')
+    expect(chipStyle.overflow).toBe('hidden')
+    expect(chipStyle.textOverflow).toBe('ellipsis')
+  })
+
   it('focuses workspace search after the collapsed sidebar remounts as expanded', async () => {
     const browserWindow = new Window({ url: 'https://sherlock.local/' })
     const restoreGlobals = installBrowserGlobals(browserWindow)
@@ -1423,6 +1551,23 @@ describe('Sherlock workspace and composer controls', () => {
         root.unmount()
       })
       restoreGlobals()
+    }
+  })
+
+  it('does not dismiss the visible search while the rail expansion click is still in flight', async () => {
+    const workspaceClient = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js',
+      'utf8'
+    )
+    const workspacePatch = await readFile(
+      'patches/@deepseek-ai+dsh-client-ui-workspace+0.1.0-rc.7.patch',
+      'utf8'
+    )
+
+    for (const source of [workspaceClient, workspacePatch]) {
+      expect(source).toContain(
+        'if (!wide || !searchExpanded || searchOnExpand) return;'
+      )
     }
   })
 
@@ -2010,20 +2155,25 @@ describe('Sherlock workspace and composer controls', () => {
     }
     const releasedImages: string[] = []
     const releasedResearchWorkspaces: string[] = []
+    const researchViewOwners: Array<Record<string, unknown>> = []
+    const generateResearchSelection = vi.fn(async () => ({ ok: true }))
     const renderSession = (sessionId: string) => createElement(
       client.ConversationSession as ComponentType<Record<string, unknown>>,
       {
         sessionId,
         useSession: (select: (state: Record<string, unknown>) => unknown) => select({
-          composerPhase: 'active', blank: false
+          composerPhase: 'active', blank: false, running: false
         }),
         useInput: (select: (state: Record<string, unknown>) => unknown) => select({
-          draft: ''
+          draft: '', queue: []
         }),
-        inputActions: { setDraft: () => undefined },
+        inputActions: { setDraft: () => undefined, generateResearchSelection },
         useStore: chat.useSelector,
         actions,
-        renderSlot: () => createElement('div', { 'data-bridged-view': '' }),
+        renderSlot: (_name: string, owner: Record<string, unknown>, options: { only?: string }) => {
+          if (options?.only === 'research') researchViewOwners.push(owner)
+          return createElement('div', { 'data-bridged-view': '' })
+        },
         views: {
           subscribe: () => () => undefined,
           version: () => 1,
@@ -2057,6 +2207,10 @@ describe('Sherlock workspace and composer controls', () => {
       expect(renderToStaticMarkup(
         (presentations.at(-1)?.conversationView ?? null) as ReactNode
       )).toContain('data-bridged-view')
+      expect(researchViewOwners.at(-1)?.selectionGeneration).toMatchObject({
+        disabled: false,
+        generate: generateResearchSelection
+      })
 
       await act(async () => {
         root.render(renderSession('session-bridge-next'))
@@ -2221,6 +2375,62 @@ describe('Sherlock workspace and composer controls', () => {
       await act(async () => { workspace.setAssistantActionsActive(false) })
       expect(host.querySelector('button[aria-label="添加到画布"]')).toBeNull()
       await act(async () => { root.unmount() })
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  it('keeps a queued generated component isolated from right-conversation assistant results', async () => {
+    const browserWindow = new Window({ url: 'https://sherlock.local/' })
+    const restoreGlobals = installBrowserGlobals(browserWindow)
+    try {
+      const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+        document: browserWindow.document,
+        window: browserWindow
+      })
+      expect(client.ResearchAssistantCanvasAction).toBeTypeOf('function')
+      expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+      if (typeof client.ResearchAssistantCanvasAction !== 'function' ||
+          typeof client.ResearchWorkspaceRegistry !== 'function') return
+      const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+        for(id: string): {
+          setFiles(files: Array<Record<string, unknown>>): void
+          beginGeneration(kind: string, sourceNodeIds: string[], placement: Record<string, unknown>): Record<string, unknown> | null
+          getSnapshot(): { artifacts: Array<Record<string, unknown>> }
+          subscribeAssistantActions(listener: () => void): () => void
+          assistantActionsActive(): boolean
+        }
+      }
+      const registry = new Registry(browserWindow.localStorage)
+      const workspace = registry.for('session-generated-assistant-result')
+      workspace.setFiles([{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf', source: 'computer',
+        x: 100, y: 100, width: 480, height: 360, sizeMode: 'manual'
+      }])
+      const target = workspace.beginGeneration('summary', ['source-file'], {
+        x: 620, y: 100, width: 380, height: 240, sizeMode: 'manual'
+      })
+      expect(target).not.toBeNull()
+      const host = browserWindow.document.createElement('div')
+      browserWindow.document.body.appendChild(host)
+      const root = createRoot(host)
+      try {
+        await act(async () => {
+          root.render(createElement(client.ResearchAssistantCanvasAction, {
+            messageId: 'generated-message',
+            text: '收入增长，但成本压力仍需继续验证。',
+            workspace
+          }))
+        })
+        expect(workspace.getSnapshot().artifacts).toMatchObject([{
+          id: target?.id,
+          messageId: target?.id,
+          generationStatus: 'queued',
+          excerpt: '正在准备任务…'
+        }])
+      } finally {
+        await act(async () => { root.unmount() })
+      }
     } finally {
       restoreGlobals()
     }
@@ -2877,7 +3087,7 @@ describe('Sherlock workspace and composer controls', () => {
       }],
       modules: { '@deepseek-ai/dsh-client-ui-primitives': primitives },
       async fetch(url, init) {
-        fetches.push({ url, signal: init?.signal })
+        fetches.push({ url, signal: init?.signal ?? undefined })
         return new Response(markdown, {
           headers: {
             'Content-Type': 'text/markdown; charset=utf-8',
@@ -2941,7 +3151,7 @@ describe('Sherlock workspace and composer controls', () => {
         x: 200, y: 200
       }],
       async fetch(_url, init) {
-        fetchSignal = init?.signal
+        fetchSignal = init?.signal ?? undefined
         return {
           ok: true,
           headers: new Headers(),
@@ -3053,7 +3263,7 @@ describe('Sherlock workspace and composer controls', () => {
         x: 200, y: 200, width: 420, height: 320, sizeMode: 'manual'
       }],
       async fetch(_url, init) {
-        fetches.push({ signal: init?.signal })
+        fetches.push({ signal: init?.signal ?? undefined })
         return new Response(source, {
           headers: { 'Content-Length': String(Buffer.byteLength(source)) }
         })
@@ -5174,6 +5384,9 @@ describe('Sherlock workspace and composer controls', () => {
     }))
 
     expect(html).toContain('data-research-message-file="f1"')
+    expect(html).toContain('data-research-reference-node-id="f1"')
+    expect(html).toContain('data-file-reference-icon=""')
+    expect(html).toContain('data-file-kind="pdf"')
     expect(html).toContain('data-research-message-files="inline"')
     expect(html).toContain('private␟report.pdf')
     expect(html).toContain('compare ')
@@ -5257,9 +5470,61 @@ describe('Sherlock workspace and composer controls', () => {
       t: (key: string) => key
     }))
     expect(html).toContain('data-research-message-artifact="assistant-result-1"')
+    expect(html).toContain('data-research-reference-node-id="assistant-result-1"')
+    expect(html).toContain('data-research-artifact-icon=""')
+    expect(html).toContain('data-artifact-kind="assistant-reply"')
     expect(html).toContain('助手回复 · 营收同比增长 28%。')
     expect(html).not.toContain('第二段是完整分析')
     expect(prompt).toContain('第二段是完整分析')
+  })
+
+  it('renders a corresponding type icon for every Research artifact tag', async () => {
+    const primitives = new Proxy({
+      MessageText: ({ text }: { text: string }) => createElement('span', null, text)
+    }, {
+      get(target, property) {
+        return Reflect.get(target, property) ?? (() => null)
+      }
+    })
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: {
+        '@deepseek-ai/dsh-client-ui-primitives': primitives,
+        '@deepseek-ai/dsh-client-ui-attachment': { ImageGallery: () => null }
+      }
+    })
+    expect(client.serializeResearchPrompt).toBeTypeOf('function')
+    expect(client.UserStyleBubble).toBeTypeOf('function')
+    if (typeof client.serializeResearchPrompt !== 'function' ||
+        typeof client.UserStyleBubble !== 'function') return
+
+    const artifacts = [
+      { id: 'reply', kind: 'assistant-result', messageId: 'm1', title: '助手回复', excerpt: '完整回复' },
+      { id: 'excerpt', kind: 'assistant-excerpt', messageId: 'm2', title: '助手摘录', excerpt: '关键摘录' },
+      { id: 'summary', kind: 'generated-summary', messageId: 'm3', title: '核心总结', excerpt: '总结内容' },
+      { id: 'mind-map', kind: 'generated-mind-map', messageId: 'm4', title: '我的导图', excerpt: '# 中心主题' },
+      { id: 'generic', messageId: 'm5', title: '研究组件', excerpt: '其他内容' }
+    ]
+    const prompt = (client.serializeResearchPrompt as (...args: unknown[]) => string)(
+      [], '', [], artifacts, []
+    )
+    const html = renderToStaticMarkup(createElement(client.UserStyleBubble, {
+      content: [{ type: 'text', text: prompt }],
+      imageLoader: async () => '',
+      t: (key: string) => key
+    }))
+
+    for (const [id, kind] of [
+      ['reply', 'assistant-reply'],
+      ['excerpt', 'assistant-excerpt'],
+      ['summary', 'summary'],
+      ['mind-map', 'mind-map'],
+      ['generic', 'artifact']
+    ]) {
+      expect(html).toContain(`data-research-message-artifact="${id}"`)
+      expect(html).toContain(`data-research-reference-node-id="${id}"`)
+      expect(html).toContain(`data-artifact-kind="${kind}"`)
+    }
+    expect(html.match(/data-research-artifact-icon=""/g)).toHaveLength(artifacts.length)
   })
 
   it('moves inline Research tags through the composer clipboard without arrow controls', async () => {
@@ -5457,6 +5722,8 @@ describe('Sherlock workspace and composer controls', () => {
         .toBe('董事会材料.PPTX')
       expect(researchTag?.querySelector('[data-file-reference-icon]')?.getAttribute('data-file-kind'))
         .toBe('pdf')
+      expect(researchTag?.getAttribute('data-research-reference-node-id'))
+        .toBe('research-pdf')
       expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip'))
         .toBe('完整年度报告.pdf')
       expect(researchTag?.querySelector('[data-file-tooltip]')?.getAttribute('data-file-tooltip-delay'))
@@ -5758,6 +6025,10 @@ describe('Sherlock workspace and composer controls', () => {
       ) as HappyDOMElement | null
       const textarea = host.querySelector('textarea') as HappyDOMElement | null
       expect(tag?.textContent).toBe('助手回复 · 利润率提升，现金流同步改善。')
+      expect(tag?.getAttribute('data-research-reference-node-id'))
+        .toBe('assistant-result-tag')
+      expect(tag?.querySelector('[data-research-artifact-icon]')
+        ?.getAttribute('data-artifact-kind')).toBe('assistant-reply')
       expect(textarea).not.toBeNull()
       if (tag === null || textarea === null) return
 
@@ -6061,6 +6332,299 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('offers context download for every canvas node family and mind map format choices', async () => {
+    const save = vi.fn(async () => ({ status: 'saved' }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-context-download-all',
+      files: [{
+        id: 'file-pdf', name: 'report.pdf', source: 'computer',
+        authorizationId: 'authorization-pdf', contentType: 'application/pdf',
+        x: 120, y: 100
+      }],
+      artifacts: [{
+        id: 'assistant', kind: 'assistant-result', messageId: 'assistant-message',
+        title: '助手回复', excerpt: 'Evidence', x: 380, y: 100
+      }, {
+        id: 'excerpt', kind: 'assistant-excerpt', messageId: 'excerpt-message',
+        title: '回复摘录', excerpt: 'Excerpt', x: 640, y: 100
+      }, {
+        id: 'summary', kind: 'generated-summary', messageId: 'summary-message',
+        title: '总结提炼', excerpt: 'Summary', generationStatus: 'completed',
+        sourceNodeIds: ['assistant'], x: 120, y: 360
+      }, {
+        id: 'map', kind: 'generated-mind-map', messageId: 'map-message',
+        title: '思维导图', excerpt: '# 中心\n- 分支', generationStatus: 'completed',
+        generationDetail: 'brief', sourceNodeIds: ['assistant'], x: 380, y: 360
+      }, {
+        id: 'web', kind: 'web-link', messageId: 'web-message', title: '研究页面',
+        titleMode: 'custom', excerpt: 'https://example.com/', url: 'https://example.com/',
+        x: 640, y: 360, width: 520, height: 300, sizeMode: 'manual'
+      }, {
+        id: 'container', kind: 'generated-container', messageId: 'container-message',
+        title: '关键指标', excerpt: 'kpi', generationStatus: 'completed',
+        generationLastSeq: 1, sourceNodeIds: [], containerPrompt: '生成关键指标',
+        refreshMinutes: 0, containerSpec: {
+          version: 1, type: 'kpi', title: '关键指标',
+          items: [{ label: '收入', value: '12 亿' }]
+        }, x: 900, y: 360, width: 520, height: 300, sizeMode: 'manual'
+      }],
+      dshDesktop: { researchCanvasExport: { save } }
+    })
+    try {
+      const { browserWindow, host } = mounted
+      const selectors = [
+        '[data-research-file-card="file-pdf"]',
+        '[data-research-artifact-card="assistant"]',
+        '[data-research-artifact-card="excerpt"]',
+        '[data-research-artifact-card="summary"]',
+        '[data-research-artifact-card="map"]',
+        '[data-research-artifact-card="web"]',
+        '[data-research-artifact-card="container"]'
+      ]
+      for (const [index, selector] of selectors.entries()) {
+        const target = host.querySelector(selector)
+        expect(target).not.toBeNull()
+        await act(async () => {
+          target?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 180 + index, clientY: 140 + index
+          }))
+        })
+        expect(host.querySelector('[data-research-context-download]')?.textContent)
+          .toContain('下载')
+      }
+
+      const map = host.querySelector('[data-research-artifact-card="map"]')
+      await act(async () => {
+        map?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 360, clientY: 260
+        }))
+      })
+      await act(async () => {
+        click(browserWindow, host.querySelector('[data-research-context-download]'))
+      })
+      expect(['svg', 'png', 'jpg'].map((format) =>
+        host.querySelector(`[data-research-download-format="${format}"]`)?.textContent
+      )).toEqual(['SVG', 'PNG', 'JPG'])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('downloads the right-clicked node only and reports save success or retryable errors', async () => {
+    const save = vi.fn()
+      .mockResolvedValueOnce({ status: 'saved' })
+      .mockResolvedValueOnce({ status: 'error', message: '保存失败，请重试。' })
+      .mockResolvedValueOnce({ status: 'saved' })
+    const artifacts = [{
+      id: 'assistant-a', kind: 'assistant-result', messageId: 'message-a',
+      title: '结论 A', excerpt: '内容 A', x: 220, y: 180
+    }, {
+      id: 'assistant-b', kind: 'assistant-result', messageId: 'message-b',
+      title: '结论 B', excerpt: '内容 B', x: 560, y: 180
+    }]
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-context-download-status',
+      artifacts,
+      selection: { selectedNodeIds: ['assistant-a', 'assistant-b'], orderedFileIds: [] },
+      dshDesktop: { researchCanvasExport: { save } }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const before = JSON.stringify(workspace.getSnapshot())
+      const openAndDownload = async (nodeId: string) => {
+        const target = host.querySelector(`[data-research-artifact-card="${nodeId}"]`)
+        await act(async () => {
+          target?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 240, clientY: 180
+          }))
+        })
+        await act(async () => {
+          click(browserWindow, host.querySelector('[data-research-context-download]'))
+          await Promise.resolve(); await Promise.resolve()
+        })
+      }
+
+      await openAndDownload('assistant-b')
+      expect(save).toHaveBeenNthCalledWith(1, {
+        kind: 'text', format: 'md', suggestedName: '结论 B.md',
+        content: '# 结论 B\n\n内容 B\n'
+      })
+      expect(host.querySelector('[data-research-download-feedback="assistant-b"]')?.textContent)
+        .toContain('已下载')
+
+      await openAndDownload('assistant-a')
+      const alert = host.querySelector('[data-research-download-feedback="assistant-a"]')
+      expect(alert?.getAttribute('role')).toBe('alert')
+      expect(alert?.textContent).toContain('保存失败，请重试。')
+      const retry = alert?.querySelector('[data-research-download-retry]')
+      expect(retry).not.toBeNull()
+      await act(async () => {
+        click(browserWindow, retry as HappyDOMElement | null)
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(save).toHaveBeenCalledTimes(3)
+      expect(JSON.stringify(workspace.getSnapshot())).toBe(before)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('opens a canvas context menu and selects every file and artifact from the menu or Command-A', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-canvas-context-select-all',
+      files: [
+        { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 420, y: 120 },
+        { id: 'file-a', path: '/w/a.pptx', name: 'a.pptx', source: 'computer', x: 120, y: 120 }
+      ],
+      artifacts: [
+        { id: 'summary', kind: 'generated-summary', messageId: 'summary-message', title: '总结提炼', excerpt: 'Summary', generationStatus: 'completed', sourceNodeIds: ['file-a'], x: 180, y: 420 },
+        { id: 'assistant', kind: 'assistant-result', messageId: 'assistant-message', title: '助手回复', excerpt: 'Evidence', x: 620, y: 240 }
+      ],
+      selection: { selectedNodeIds: ['file-b'], orderedFileIds: ['file-b'] }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      let blankMenuEvent: HappyDOMEvent | undefined
+      await act(async () => {
+        blankMenuEvent = new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 360, clientY: 260
+        })
+        canvas.dispatchEvent(blankMenuEvent)
+      })
+
+      expect(blankMenuEvent?.defaultPrevented).toBe(true)
+      expect(host.querySelector('[data-research-context-arrange]')?.textContent)
+        .toBe('整理画布')
+      const selectAll = host.querySelector('[data-research-context-select-all]')
+      expect(selectAll?.textContent).toContain('全选')
+      await act(async () => { click(browserWindow, selectAll as HappyDOMElement | null) })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-a', 'file-b', 'assistant', 'summary'],
+        orderedFileIds: ['file-a', 'file-b']
+      })
+
+      workspace.setSelection({ selectedNodeIds: [], orderedFileIds: [] })
+      ;(canvas as unknown as { focus(): void }).focus()
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'a', code: 'KeyA', metaKey: true, bubbles: true, cancelable: true
+        }))
+      })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-a', 'file-b', 'assistant', 'summary'],
+        orderedFileIds: ['file-a', 'file-b']
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('organizes mixed canvas components into a compact content-aware layout that fits the viewport', async () => {
+    const storage = new MemoryStorage()
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-organize-canvas',
+      storage,
+      artifacts: [
+        { id: 'assistant-b', kind: 'assistant-result', messageId: 'assistant-b-message', title: '助手回复 B', excerpt: 'Evidence B', x: 2100, y: -800, width: 300, height: 200, sizeMode: 'manual' },
+        { id: 'map', kind: 'generated-mind-map', messageId: 'map-message', title: '思维导图', excerpt: '# Map', generationStatus: 'completed', generationDetail: 'brief', sourceNodeIds: ['assistant-a'], x: -1800, y: 1400, width: 400, height: 300, sizeMode: 'manual' },
+        { id: 'assistant-a', kind: 'assistant-result', messageId: 'assistant-a-message', title: '助手回复 A', excerpt: 'Evidence A', x: -1200, y: -900, width: 300, height: 200, sizeMode: 'manual' },
+        { id: 'summary-short', kind: 'generated-summary', messageId: 'summary-short-message', title: '简短总结', excerpt: '一句话总结。', generationStatus: 'completed', sourceNodeIds: ['assistant-a'], x: 1600, y: 1200, width: 320, height: 180, sizeMode: 'manual' },
+        { id: 'summary-long', kind: 'generated-summary', messageId: 'summary-long-message', title: '详细总结', excerpt: '这是一段需要保留更多阅读空间的详细总结。'.repeat(48), generationStatus: 'completed', sourceNodeIds: ['assistant-a'], x: 1900, y: 1500, width: 320, height: 180, sizeMode: 'manual' }
+      ],
+      selection: { selectedNodeIds: ['assistant-b'], orderedFileIds: [] },
+      viewport: { scale: 1.8, x: -900, y: 500 }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 1000, height: 700 }) })
+      const before = workspace.getSnapshot()
+
+      await act(async () => {
+        canvas.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 460, clientY: 320
+        }))
+      })
+      const arrange = host.querySelector('[data-research-context-arrange]')
+      expect(arrange?.textContent).toBe('整理画布')
+      await act(async () => { click(browserWindow, arrange as HappyDOMElement | null) })
+
+      const after = workspace.getSnapshot()
+      expect(after.selection).toEqual({ selectedNodeIds: ['assistant-b'], orderedFileIds: [] })
+
+      const byId = new Map(after.artifacts.map((node) => [node.id, node]))
+      const rect = (id: string) => {
+        const node = byId.get(id)
+        expect(node).toBeDefined()
+        if (node === undefined) throw new Error(`Missing ${id}`)
+        const width = Number(node.width)
+        const height = Number(node.height)
+        return {
+          left: Number(node.x) - width / 2,
+          top: Number(node.y) - height / 2,
+          right: Number(node.x) + width / 2,
+          bottom: Number(node.y) + height / 2
+        }
+      }
+      const assistantA = rect('assistant-a')
+      const assistantB = rect('assistant-b')
+      const summaryShort = rect('summary-short')
+      const summaryLong = rect('summary-long')
+      const map = rect('map')
+
+      expect(Number(byId.get('summary-long')?.height))
+        .toBeGreaterThan(Number(byId.get('summary-short')?.height))
+      expect(Number(byId.get('map')?.width) / Number(byId.get('map')?.height))
+        .toBeCloseTo(1.2, 1)
+      expect(after.artifacts.some((node) => {
+        const previous = before.artifacts.find((candidate) => candidate.id === node.id)
+        return previous !== undefined && (
+          Number(node.width) !== Number(previous.width)
+          || Number(node.height) !== Number(previous.height)
+        )
+      })).toBe(true)
+
+      const differentTypesShareABand = [assistantA, assistantB].some((assistant) =>
+        [summaryShort, summaryLong, map].some((other) =>
+          Math.min(assistant.bottom, other.bottom) > Math.max(assistant.top, other.top)
+        )
+      )
+      expect(differentTypesShareABand).toBe(true)
+
+      const rectangles = [assistantA, assistantB, summaryShort, summaryLong, map]
+      for (const [index, first] of rectangles.entries()) {
+        for (const second of rectangles.slice(index + 1)) {
+          expect(
+            first.right + 24 <= second.left
+            || second.right + 24 <= first.left
+            || first.bottom + 24 <= second.top
+            || second.bottom + 24 <= first.top
+          ).toBe(true)
+        }
+      }
+
+      for (const node of after.artifacts) {
+        const width = Number(node.width) * after.viewport.scale
+        const height = Number(node.height) * after.viewport.scale
+        const centerX = Number(node.x) * after.viewport.scale + after.viewport.x
+        const centerY = Number(node.y) * after.viewport.scale + after.viewport.y
+        expect(centerX - width / 2).toBeGreaterThanOrEqual(47)
+        expect(centerX + width / 2).toBeLessThanOrEqual(953)
+        expect(centerY - height / 2).toBeGreaterThanOrEqual(47)
+        expect(centerY + height / 2).toBeLessThanOrEqual(653)
+      }
+      expect(after.viewport.scale).toBeLessThanOrEqual(1)
+      expect(after.viewport).not.toEqual(before.viewport)
+
+      const persisted = JSON.parse(
+        storage.getItem('sherlock.research.canvas.artifacts.v1:session-organize-canvas') ?? '[]'
+      ) as Array<Record<string, unknown>>
+      expect(persisted.map(({ id, x, y }) => ({ id, x, y })))
+        .toEqual(after.artifacts.map(({ id, x, y }) => ({ id, x, y })))
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('renames generic files and artifacts inline with Enter, Escape, and blur', async () => {
     const storage = new MemoryStorage()
     const mounted = await mountResearchCanvas({
@@ -6238,6 +6802,123 @@ describe('Sherlock workspace and composer controls', () => {
       })
       expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe('保留原内容')
       expect(workspace.getSnapshot().pendingMessageJump).toBeNull()
+      expect(host.querySelector('[data-research-content-input]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('edits a completed generated summary in place and persists multiline content with Command-Enter', async () => {
+    const storage = new MemoryStorage()
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-edit-generated-summary',
+      storage,
+      artifacts: [{
+        id: 'summary-a', kind: 'generated-summary', messageId: 'summary-message',
+        title: '总结提炼', excerpt: '原总结内容', generationStatus: 'completed',
+        sourceNodeIds: ['source-a'], x: 500, y: 180
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const body = host.querySelector('[data-research-artifact-content]')
+      expect(body).not.toBeNull()
+      if (body === null) return
+      await act(async () => {
+        body.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-content-input="summary-a"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(editor)
+      if (editor === null) return
+
+      const revised = '第一段总结\n\n第二段补充关系'
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, revised)
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+      expect(host.querySelector('[data-research-content-input="summary-a"]')).not.toBeNull()
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe('原总结内容')
+
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', metaKey: true, bubbles: true, cancelable: true
+        }))
+      })
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe(revised)
+      expect(JSON.parse(storage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-edit-generated-summary'
+      ) ?? '[]')[0]?.excerpt).toBe(revised)
+      expect(host.querySelector('[data-research-content-input]')).toBeNull()
+      expect(host.querySelector('[data-research-artifact-content]')?.textContent)
+        .toContain('第二段补充关系')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('cancels completed summary editing with Escape and does not edit an active summary', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-summary-edit-boundary',
+      artifacts: [
+        {
+          id: 'summary-complete', kind: 'generated-summary', messageId: 'complete-message',
+          title: '总结提炼', excerpt: '保留总结', generationStatus: 'completed',
+          sourceNodeIds: ['source-a'], x: 300, y: 180
+        },
+        {
+          id: 'summary-active', kind: 'generated-summary', messageId: 'active-message',
+          title: '总结提炼', excerpt: '正在准备任务…', generationStatus: 'queued',
+          sourceNodeIds: ['source-a'], x: 760, y: 180
+        }
+      ]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const complete = host.querySelector('[data-research-artifact-card="summary-complete"] [data-research-artifact-content]')
+      const active = host.querySelector('[data-research-artifact-card="summary-active"] [data-research-artifact-content]')
+      expect(complete).not.toBeNull()
+      expect(active).not.toBeNull()
+      if (complete === null || active === null) return
+
+      await act(async () => {
+        active.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      expect(host.querySelector('[data-research-content-input="summary-active"]')).toBeNull()
+
+      await act(async () => {
+        complete.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-content-input="summary-complete"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      if (editor === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, '不应保存')
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+        }))
+        editor.blur()
+      })
+      expect(workspace.getSnapshot().artifacts.find((node) => node.id === 'summary-complete')?.excerpt)
+        .toBe('保留总结')
       expect(host.querySelector('[data-research-content-input]')).toBeNull()
     } finally {
       await mounted.cleanup()
@@ -6496,12 +7177,14 @@ describe('Sherlock workspace and composer controls', () => {
   })
 
   it('selects a persisted card and marquee-selects two cards', async () => {
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
     const mounted = await mountResearchCanvas({
       sessionId: 'session-marquee',
       files: [
         { id: 'file-a', path: '/w/a.pdf', name: 'a.pdf', source: 'computer', x: 100, y: 100 },
         { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 300, y: 130 }
-      ]
+      ],
+      selectionGeneration: { generate }
     })
     try {
       const { browserWindow, canvas, host } = mounted
@@ -6532,6 +7215,1862 @@ describe('Sherlock workspace and composer controls', () => {
         }))
       })
       expect(canvas.querySelectorAll('[aria-selected="true"]')).toHaveLength(2)
+      expect(canvas.querySelector('[data-research-selection-actions]')).not.toBeNull()
+
+      await act(async () => {
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerdown', {
+          pointerId: 3, x: 760, y: 560
+        }))
+        canvas.dispatchEvent(pointer(browserWindow, 'pointerup', {
+          pointerId: 3, x: 760, y: 560
+        }))
+      })
+      expect(canvas.querySelector('[data-research-selection-actions]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('computes one selection envelope and places generated components beside it', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const nodes = [
+      { id: 'file-a', kind: 'assistant-result', x: 100, y: 200, width: 400, height: 200, sizeMode: 'manual' },
+      { id: 'artifact-b', kind: 'assistant-result', x: 400, y: 300, width: 500, height: 300, sizeMode: 'manual' }
+    ]
+
+    expect(client.researchCanvasSelectionBounds).toBeTypeOf('function')
+    expect(client.researchCanvasGeneratedPlacement).toBeTypeOf('function')
+    if (typeof client.researchCanvasSelectionBounds !== 'function' ||
+        typeof client.researchCanvasGeneratedPlacement !== 'function') return
+
+    expect(client.researchCanvasSelectionBounds(nodes, ['file-a', 'artifact-b'])).toEqual({
+      left: -100,
+      top: 100,
+      right: 650,
+      bottom: 450,
+      width: 750,
+      height: 350
+    })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['file-a', 'artifact-b'],
+      'mind-map',
+      'brief'
+    )).toEqual({ x: 942, y: 275, width: 520, height: 300, sizeMode: 'auto' })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['file-a', 'artifact-b'],
+      'mind-map',
+      'standard'
+    )).toEqual({ x: 942, y: 275, width: 520, height: 300, sizeMode: 'auto' })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['file-a', 'artifact-b'],
+      'mind-map',
+      'detailed'
+    )).toEqual({ x: 942, y: 275, width: 520, height: 300, sizeMode: 'auto' })
+    expect(client.researchCanvasGeneratedPlacement(
+      nodes,
+      ['missing'],
+      'summary'
+    )).toBeNull()
+  })
+
+  it('keeps selection actions visible with the context menu and starts the chosen mind-map detail', async () => {
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-selection-actions',
+      files: [
+        { id: 'file-a', path: '/w/a.dat', name: 'a.dat', source: 'computer', x: 100, y: 100 },
+        { id: 'file-b', path: '/w/b.dat', name: 'b.dat', source: 'computer', x: 360, y: 100 }
+      ],
+      selection: {
+        selectedNodeIds: ['file-a', 'file-b'],
+        orderedFileIds: ['file-a', 'file-b']
+      },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 800, height: 600 }) })
+
+      const toolbar = host.querySelector('[data-research-selection-actions]')
+      const mindMap = host.querySelector('button[aria-label="思维导图"]')
+      const summary = host.querySelector('button[aria-label="总结提炼"]')
+      expect(toolbar).not.toBeNull()
+      expect(mindMap?.textContent).toContain('思维导图')
+      expect(summary?.textContent).toContain('总结提炼')
+      if (mindMap === null) return
+
+      const selectedCard = host.querySelector('[data-research-file-card="file-a"]')
+      expect(selectedCard).not.toBeNull()
+      await act(async () => {
+        selectedCard?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 180, clientY: 120
+        }))
+      })
+      expect(host.querySelector('[role="menu"]')).not.toBeNull()
+      expect(host.querySelector('[data-research-selection-actions]')).not.toBeNull()
+
+      await act(async () => { click(browserWindow, mindMap) })
+      expect(mindMap.getAttribute('aria-expanded')).toBe('true')
+      const detailMenu = host.querySelector('[data-research-mind-map-menu]')
+      expect(detailMenu?.getAttribute('role')).toBe('menu')
+      expect(Array.from(detailMenu?.querySelectorAll('[role="menuitem"]') ?? [])
+        .map((item) => item.textContent)).toEqual([
+          '简要不超过 3 层，高度概括',
+          '常规平衡阅读效率与内容理解',
+          '详细充分展开内容关系细节'
+        ])
+      const brief = host.querySelector('[data-research-mind-map-detail="brief"]')
+      expect(brief).not.toBeNull()
+      await act(async () => { click(browserWindow, brief as HappyDOMElement | null) })
+
+      expect(generate).toHaveBeenCalledTimes(1)
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 'session-selection-actions',
+        kind: 'mind-map',
+        detail: 'brief',
+        selectedNodeIds: ['file-a', 'file-b'],
+        targetNodeId: expect.any(String)
+      }))
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        kind: 'generated-mind-map',
+        generationStatus: 'queued',
+        generationDetail: 'brief',
+        sourceNodeIds: ['file-a', 'file-b'],
+        title: '思维导图',
+        x: 762,
+        y: 100,
+        width: 520,
+        height: 300,
+        sizeMode: 'auto'
+      }])
+      expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([
+        workspace.getSnapshot().artifacts[0]?.id
+      ])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('persists an immutable bounded source snapshot and task identity', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-snapshot',
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'artifact-source', kind: 'assistant-result', messageId: 'message-source',
+        title: '已有结论', excerpt: '不可变的原始结论', x: 300, y: 100
+      }]
+    })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'summary',
+        ['file-source', 'artifact-source'],
+        { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+      )
+      expect(target).toMatchObject({
+        generationStatus: 'queued',
+        generationSources: [
+          { id: 'file-source', type: 'file', title: 'source.pdf', path: '/w/source.pdf' },
+          { id: 'artifact-source', type: 'artifact', title: '已有结论', text: '不可变的原始结论' }
+        ]
+      })
+      expect(Object.isFrozen((target as { generationSources: unknown[] }).generationSources)).toBe(true)
+      expect(mounted.workspace.attachGenerationTask(String(target?.id), {
+        taskId: 'task-snapshot', canvasNodeId: target?.id,
+        state: 'running', childSessionId: 'child-snapshot', lastSeq: 2, events: []
+      })).toBe(true)
+
+      const restored = JSON.parse(mounted.browserWindow.localStorage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-generation-snapshot'
+      ) ?? '[]')
+      expect(restored.find((node: { generationTaskId?: string }) =>
+        node.generationTaskId === 'task-snapshot')).toMatchObject({
+        generationTaskId: 'task-snapshot',
+        generationChildSessionId: 'child-snapshot',
+        generationStatus: 'running',
+        generationSources: (target as { generationSources: unknown[] }).generationSources
+      })
+      expect(JSON.stringify(restored)).not.toContain('generationEvents')
+      expect(JSON.stringify(restored)).not.toContain('generationPartialText')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('routes task inspection by node and task id and retries from the saved snapshot', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-routing',
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }]
+    })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'mind-map', ['file-source'],
+        { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }, 'brief'
+      ) as Record<string, unknown>
+      expect(mounted.workspace.attachGenerationTask(String(target.id), {
+        taskId: 'task-a', canvasNodeId: target.id, state: 'running',
+        childSessionId: 'child-a', lastSeq: 2, events: []
+      })).toBe(true)
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-b', canvasNodeId: target.id, state: 'completed',
+        lastSeq: 4, finalOutput: '# 错误任务', events: []
+      })).toBe(false)
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-a', canvasNodeId: 'different-node', state: 'completed',
+        lastSeq: 4, finalOutput: '# 错误节点', events: []
+      })).toBe(false)
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-a', canvasNodeId: target.id, state: 'failed',
+        lastSeq: 4, error: '生成失败，请重试。', events: []
+      })).toBe(true)
+
+      const retry = mounted.workspace.retryGeneration(String(target.id))
+      expect(retry).toMatchObject({
+        id: target.id, kind: 'mind-map', detail: 'brief',
+        generationSources: [{
+          id: 'file-source', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+        }]
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).not.toHaveProperty('generationTaskId')
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        generationStatus: 'queued', generationDetail: 'brief'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('cancels an active task when its destination component is deleted', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-delete',
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }]
+    })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'summary', ['file-source'],
+        { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+      ) as Record<string, unknown>
+      mounted.workspace.attachGenerationTask(String(target.id), {
+        taskId: 'task-delete', canvasNodeId: target.id, state: 'running',
+        childSessionId: 'child-delete', lastSeq: 2, events: []
+      })
+      const cancel = vi.fn()
+      mounted.workspace.setGenerationCancelSink(cancel)
+
+      mounted.workspace.removeNodes([String(target.id)])
+
+      expect(cancel).toHaveBeenCalledWith({
+        parentSessionId: 'session-generation-delete', taskId: 'task-delete'
+      })
+      expect(mounted.workspace.getSnapshot().artifacts).toEqual([])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('does not settle generated components from right-conversation assistant replies', async () => {
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-selection-generation-result',
+      artifacts: [{
+        id: 'source-artifact', kind: 'assistant-result', messageId: 'message-source',
+        title: '助手回复', excerpt: '原始研究内容', x: 180, y: 180
+      }],
+      selection: { selectedNodeIds: ['source-artifact'], orderedFileIds: [] },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      await act(async () => {
+        workspace.setCanvasSize({ width: 900, height: 700 })
+      })
+      const mindMap = host.querySelector('button[aria-label="思维导图"]')
+      expect(mindMap).not.toBeNull()
+      if (mindMap === null) return
+
+      await act(async () => { click(browserWindow, mindMap) })
+      const standard = host.querySelector('[data-research-mind-map-detail="standard"]')
+      expect(standard).not.toBeNull()
+      await act(async () => { click(browserWindow, standard as HappyDOMElement | null) })
+      const targetId = generate.mock.calls[0]?.[0]?.targetNodeId as string
+      expect(targetId).toBeTypeOf('string')
+      expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
+        .toMatchObject({ generationStatus: 'queued' })
+
+      expect(workspace).not.toHaveProperty('observeAssistantResult')
+      expect(workspace.getSnapshot().artifacts.find((node) => node.id === targetId))
+        .toMatchObject({ generationStatus: 'queued' })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('recovers a legacy pending generation as an interrupted state', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.ResearchWorkspaceRegistry).toBeTypeOf('function')
+    if (typeof client.ResearchWorkspaceRegistry !== 'function') return
+    const storage = new MemoryStorage()
+    const sessionId = 'session-interrupted-generation'
+    storage.setItem(`sherlock.research.canvas.files.v1:${sessionId}`, JSON.stringify([{
+      id: 'source-file', path: '/w/source.pdf', name: 'source.pdf', source: 'computer',
+      x: 100, y: 100
+    }]))
+    storage.setItem(`sherlock.research.canvas.artifacts.v1:${sessionId}`, JSON.stringify([{
+      id: 'generated-summary', kind: 'generated-summary', messageId: 'generated-summary',
+      title: '总结提炼', excerpt: '正在总结选中内容…', generationStatus: 'pending',
+      sourceNodeIds: ['source-file'], x: 600, y: 100, width: 380, height: 240,
+      sizeMode: 'manual'
+    }]))
+
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): {
+        getSnapshot(): { artifacts: Array<Record<string, unknown>> }
+      }
+    }
+    const workspace = new Registry(storage).for(sessionId)
+
+    expect(workspace.getSnapshot().artifacts).toMatchObject([{
+      id: 'generated-summary',
+      generationStatus: 'interrupted',
+      generationError: '任务已中断，请重试。',
+      excerpt: '正在总结选中内容…'
+    }])
+    expect(workspace.getSnapshot().artifacts[0]?.generationSources).toBeUndefined()
+  })
+
+  it('retries a failed generated component in place', async () => {
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ ok: false, error: '模型暂时不可用' })
+      .mockResolvedValueOnce({ ok: true })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-retry',
+      files: [{
+        id: 'source-file', path: '/w/source.dat', name: 'source.dat',
+        source: 'computer', x: 100, y: 100
+      }],
+      selection: { selectedNodeIds: ['source-file'], orderedFileIds: ['source-file'] },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 900, height: 700 }) })
+      const summary = host.querySelector('button[aria-label="总结提炼"]')
+      expect(summary).not.toBeNull()
+      if (summary === null) return
+
+      await act(async () => { click(browserWindow, summary) })
+      const targetId = generate.mock.calls[0]?.[0]?.targetNodeId as string
+      expect(workspace.getSnapshot().artifacts).toMatchObject([{
+        id: targetId,
+        generationStatus: 'failed',
+        generationError: '模型暂时不可用'
+      }])
+      const retry = host.querySelector(
+        `[data-research-artifact-card="${targetId}"] button[aria-label="重试生成"]`
+      )
+      expect(retry).not.toBeNull()
+      if (retry === null) return
+
+      await act(async () => { click(browserWindow, retry) })
+      expect(generate).toHaveBeenCalledTimes(2)
+      expect(generate.mock.calls[1]?.[0]).toMatchObject({
+        sessionId: 'session-generation-retry',
+        kind: 'summary',
+        selectedNodeIds: ['source-file'],
+        targetNodeId: targetId
+      })
+      expect(workspace.getSnapshot().artifacts).toHaveLength(1)
+      expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: targetId,
+        generationStatus: 'queued'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renders generation progress in the destination component and removes it after completion', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-process',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }]
+    })
+    try {
+      let target!: Record<string, unknown>
+      await act(async () => {
+        target = mounted.workspace.beginGeneration(
+          'mind-map', ['source-file'],
+          { x: 700, y: 100, width: 520, height: 300, sizeMode: 'auto' }, 'brief'
+        ) as Record<string, unknown>
+        mounted.workspace.attachGenerationTask(String(target.id), {
+          taskId: 'task-process', canvasNodeId: target.id, state: 'running',
+          childSessionId: 'child-process', lastSeq: 4,
+          events: [
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 1, type: 'queued' },
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 2, type: 'started' },
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 3, type: 'tool-started', tool: '读取文件' },
+            { taskId: 'task-process', canvasNodeId: target.id, seq: 4, type: 'assistant-delta', text: '正在归纳关键关系' }
+          ]
+        })
+      })
+
+      const cardSelector = `[data-research-artifact-card="${String(target.id)}"]`
+      const runningCard = mounted.host.querySelector(cardSelector)
+      expect(runningCard?.getAttribute('data-research-generation-state')).toBe('running')
+      expect(runningCard?.querySelector('[data-research-node-title]')?.textContent).toBe('思维导图')
+      expect(runningCard?.querySelector('[data-research-generation-process]')?.textContent)
+        .toContain('正在读取文件')
+      expect(runningCard?.querySelector('[data-research-generation-process]')?.textContent)
+        .toContain('正在归纳关键关系')
+      expect(runningCard?.querySelector('[data-research-generation-cancel]')?.textContent).toBe('停止')
+      expect(runningCard?.hasAttribute('data-research-generated-mind-map')).toBe(false)
+
+      await act(async () => {
+        mounted.workspace.applyGenerationInspection(String(target.id), {
+          taskId: 'task-process', canvasNodeId: target.id, state: 'failed',
+          lastSeq: 5, error: '模型暂时不可用', events: []
+        })
+      })
+      const failedCard = mounted.host.querySelector(cardSelector)
+      expect(failedCard?.querySelector('[data-research-generation-process]')).toBeNull()
+      expect(failedCard?.querySelector('[data-research-generation-failure]')?.textContent)
+        .toContain('模型暂时不可用')
+      expect(failedCard?.querySelector('button[aria-label="重试生成"]')).not.toBeNull()
+
+      await act(async () => {
+        mounted.workspace.retryGeneration(String(target.id))
+        mounted.workspace.attachGenerationTask(String(target.id), {
+          taskId: 'task-process-retry', canvasNodeId: target.id, state: 'running',
+          childSessionId: 'child-process-retry', lastSeq: 1, events: []
+        })
+        mounted.workspace.applyGenerationInspection(String(target.id), {
+          taskId: 'task-process-retry', canvasNodeId: target.id, state: 'completed',
+          lastSeq: 2, finalOutput: '# 核心结论\n- 收益来源\n  - 经营改善', events: []
+        })
+      })
+      const completedCard = mounted.host.querySelector(cardSelector)
+      expect(completedCard?.getAttribute('data-research-generation-state')).toBe('completed')
+      expect(completedCard?.hasAttribute('data-research-generated-mind-map')).toBe(true)
+      expect(completedCard?.querySelector('[data-research-generation-process]')).toBeNull()
+      expect(completedCard?.querySelector('[data-research-generation-failure]')).toBeNull()
+      expect(completedCard?.querySelector('[data-research-mind-map]')).not.toBeNull()
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        width: 840, height: 700, sizeMode: 'auto'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('auto-sizes generation progress within bounds and preserves manual geometry', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.researchGenerationAutoGeometry).toBeTypeOf('function')
+    expect(client.researchGenerationFinalGeometry).toBeTypeOf('function')
+    if (typeof client.researchGenerationAutoGeometry !== 'function' ||
+        typeof client.researchGenerationFinalGeometry !== 'function') return
+
+    const active = {
+      kind: 'generated-mind-map', sizeMode: 'auto', generationDetail: 'brief',
+      generationEvents: Array.from({ length: 12 }, (_, index) => ({
+        type: index % 2 === 0 ? 'tool-started' : 'tool-finished'
+      })),
+      generationPartialText: '内容'.repeat(6000)
+    }
+    expect(client.researchGenerationAutoGeometry(active)).toEqual({ width: 640, height: 560 })
+    expect(client.researchGenerationAutoGeometry({ ...active, sizeMode: 'manual' })).toBeNull()
+    expect(client.researchGenerationFinalGeometry(active, '# 简要导图')).toEqual({
+      width: 840, height: 700
+    })
+    expect(840 / 700).toBeCloseTo(1.2, 5)
+    expect(client.researchGenerationFinalGeometry({
+      kind: 'generated-summary', sizeMode: 'auto'
+    }, '总结'.repeat(6000))).toEqual({ width: 520, height: 640 })
+    expect(client.researchGenerationFinalGeometry({ ...active, sizeMode: 'manual' }, '# 导图'))
+      .toBeNull()
+  })
+
+  it('reattaches and independently applies concurrent persisted task results', async () => {
+    const pendingA = deferred<Record<string, unknown>>()
+    const pendingB = deferred<Record<string, unknown>>()
+    const inspect = vi.fn((request: Record<string, unknown>) =>
+      request.taskId === 'task-a' ? pendingA.promise : pendingB.promise)
+    const sources = [{
+      id: 'source-file', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+    }]
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-concurrent-poll',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [
+        {
+          id: 'node-a', kind: 'generated-summary', messageId: 'node-a', title: '总结提炼',
+          excerpt: '正在准备任务…', generationStatus: 'running', sourceNodeIds: ['source-file'],
+          generationSources: sources, generationTaskId: 'task-a', generationChildSessionId: 'child-a',
+          generationLastSeq: 1, x: 600, y: 100, width: 520, height: 300, sizeMode: 'auto'
+        },
+        {
+          id: 'node-b', kind: 'generated-summary', messageId: 'node-b', title: '总结提炼',
+          excerpt: '正在准备任务…', generationStatus: 'running', sourceNodeIds: ['source-file'],
+          generationSources: sources, generationTaskId: 'task-b', generationChildSessionId: 'child-b',
+          generationLastSeq: 1, x: 600, y: 450, width: 520, height: 300, sizeMode: 'auto'
+        }
+      ],
+      selectionGeneration: {
+        generate: vi.fn(async () => ({ ok: true })), inspect
+      }
+    })
+    try {
+      expect(inspect).toHaveBeenCalledTimes(2)
+      expect(inspect.mock.calls.map(([request]) => request)).toEqual(expect.arrayContaining([
+        { parentSessionId: 'session-generation-concurrent-poll', taskId: 'task-a', afterSeq: 1 },
+        { parentSessionId: 'session-generation-concurrent-poll', taskId: 'task-b', afterSeq: 1 }
+      ]))
+
+      await act(async () => {
+        pendingB.resolve({
+          taskId: 'task-b', canvasNodeId: 'node-b', state: 'completed',
+          lastSeq: 2, finalOutput: '第二个任务先完成', events: []
+        })
+        await Promise.resolve()
+      })
+      expect(mounted.workspace.getSnapshot().artifacts.find((node) => node.id === 'node-b'))
+        .toMatchObject({ generationStatus: 'completed', excerpt: '第二个任务先完成' })
+      expect(mounted.workspace.getSnapshot().artifacts.find((node) => node.id === 'node-a'))
+        .toMatchObject({ generationStatus: 'running', excerpt: '正在准备任务…' })
+
+      await act(async () => {
+        pendingA.resolve({
+          taskId: 'task-a', canvasNodeId: 'node-a', state: 'completed',
+          lastSeq: 2, finalOutput: '第一个任务随后完成', events: []
+        })
+        await Promise.resolve()
+      })
+      expect(mounted.workspace.getSnapshot().artifacts).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'node-a', generationStatus: 'completed', excerpt: '第一个任务随后完成' }),
+        expect.objectContaining({ id: 'node-b', generationStatus: 'completed', excerpt: '第二个任务先完成' })
+      ]))
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('starts polling when a task is attached after the canvas has mounted', async () => {
+    let targetId = ''
+    const inspect = vi.fn(async (request: Record<string, unknown>) => ({
+      taskId: request.taskId,
+      canvasNodeId: targetId,
+      state: 'failed',
+      lastSeq: 2,
+      error: '生成失败，请重试。',
+      events: []
+    }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-late-poll',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      selectionGeneration: {
+        generate: vi.fn(async () => ({ ok: true })), inspect
+      }
+    })
+    try {
+      expect(inspect).not.toHaveBeenCalled()
+      await act(async () => {
+        const target = mounted.workspace.beginGeneration(
+          'summary', ['source-file'],
+          { x: 600, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+        ) as Record<string, unknown>
+        targetId = String(target.id)
+        mounted.workspace.attachGenerationTask(targetId, {
+          taskId: 'task-late', canvasNodeId: targetId, state: 'queued',
+          lastSeq: 1, events: []
+        })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      })
+
+      expect(inspect).toHaveBeenCalledWith({
+        parentSessionId: 'session-generation-late-poll',
+        taskId: 'task-late',
+        afterSeq: 1
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: targetId, generationStatus: 'failed',
+        generationError: '生成失败，请重试。'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('turns a missing persisted task into a component-local interrupted state', async () => {
+    const missing = Object.assign(new Error('not found'), { status: 404 })
+    const inspect = vi.fn(async () => { throw missing })
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-generation-missing-task',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'node-missing', kind: 'generated-summary', messageId: 'node-missing', title: '总结提炼',
+        excerpt: '正在准备任务…', generationStatus: 'running', sourceNodeIds: ['source-file'],
+        generationSources: [{
+          id: 'source-file', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+        }],
+        generationTaskId: 'task-missing', generationChildSessionId: 'child-missing',
+        generationLastSeq: 3, x: 600, y: 100, width: 520, height: 300, sizeMode: 'auto'
+      }],
+      selectionGeneration: {
+        generate: vi.fn(async () => ({ ok: true })), inspect
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve() })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: 'node-missing', generationStatus: 'interrupted',
+        generationError: '任务已中断，请重试。'
+      })
+      expect(mounted.host.querySelector('[data-research-generation-failure]')?.textContent)
+        .toContain('任务已中断，请重试。')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps brief mind maps screenshot-ready while preserving deeper regular maps', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.parseResearchMindMap).toBeTypeOf('function')
+    if (typeof client.parseResearchMindMap !== 'function') return
+
+    expect(client.parseResearchMindMap(
+      '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率'
+    )).toEqual({
+      label: '增长质量',
+      children: [
+        { label: '收入', children: [{ label: '海外业务', children: [] }] },
+        { label: '利润', children: [{ label: '毛利率', children: [] }] }
+      ]
+    })
+    const deepOutline = '# 经营质量\n- 增长\n  - 收入\n    - 海外\n      - 东南亚'
+    expect(client.parseResearchMindMap(deepOutline, 'brief')).toEqual({
+      label: '经营质量',
+      children: [{
+        label: '增长',
+        children: [
+          { label: '收入', children: [] },
+          { label: '海外', children: [] }
+        ]
+      }]
+    })
+    const denseOutline = [
+      '# 黄金多因子模型',
+      '- 核心结论',
+      '  - 收益来源',
+      '  - 风险边界',
+      '  - 失效条件',
+      '- 因子筛选',
+      '  - 价值',
+      '  - 质量',
+      '  - 动量',
+      '- 模型构建',
+      '  - 权重',
+      '  - 再平衡',
+      '  - 约束',
+      '- 改进方向',
+      '  - 宏观状态',
+      '  - 交易成本'
+    ].join('\n')
+    expect(client.parseResearchMindMap(denseOutline, 'brief')).toEqual({
+      label: '黄金多因子模型',
+      children: [
+        { label: '核心结论', children: [
+          { label: '收益来源', children: [] },
+          { label: '风险边界', children: [] }
+        ] },
+        { label: '因子筛选', children: [
+          { label: '价值', children: [] },
+          { label: '质量', children: [] }
+        ] },
+        { label: '模型构建', children: [
+          { label: '权重', children: [] },
+          { label: '再平衡', children: [] }
+        ] }
+      ]
+    })
+    expect(client.parseResearchMindMap(deepOutline, 'standard'))
+      .toMatchObject({ children: [{ children: [{ children: [{ children: [
+        { label: '东南亚' }
+      ] }] }] }] })
+    expect(client.parseResearchMindMap(deepOutline, 'detailed'))
+      .toMatchObject({ children: [{ children: [{ children: [{ children: [
+        { label: '东南亚' }
+      ] }] }] }] })
+    expect(client.parseResearchMindMap('')).toBeNull()
+  })
+
+  it('renders a settled generated mind map as connected hierarchy nodes', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-rendered-mind-map',
+      files: [{
+        id: 'source-file', path: '/w/source.dat', name: 'source.dat',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: [
+          '# 增长质量',
+          '- Agent 编排与画布工作台',
+          '  - 海外业务',
+          '- 数据来源：行情接口与财报数据必须交叉验证。',
+          '  - 毛利率'
+        ].join('\n'),
+        generationStatus: 'completed', generationDetail: 'detailed', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const mindMap = mounted.host.querySelector('[data-research-mind-map]')
+      expect(mindMap).not.toBeNull()
+      expect(mindMap?.getAttribute('data-research-mind-map-detail')).toBe('detailed')
+      expect(mounted.host.querySelector('[data-research-generated-mind-map]')).not.toBeNull()
+      expect(mounted.host.querySelector(
+        '[data-research-generated-mind-map] > [data-research-node-title][data-research-node-move-handle]'
+      )?.textContent).toBe('思维导图')
+      expect(Array.from(
+        mounted.host.querySelectorAll('[data-research-mind-map-node]')
+      ).map((node) => node.textContent)).toEqual([
+        '增长质量', 'Agent 编排与画布工作台', '海外业务',
+        '数据来源：行情接口与财报数据必须交叉验证。', '毛利率'
+      ])
+      const renderedNodes = Array.from(
+        mounted.host.querySelectorAll('[data-research-mind-map-node]')
+      )
+      expect(renderedNodes.find((node) =>
+        node.textContent === 'Agent 编排与画布工作台'
+      )?.getAttribute('data-research-mind-map-copy')).toBe('phrase')
+      expect(renderedNodes.find((node) =>
+        node.textContent === '数据来源：行情接口与财报数据必须交叉验证。'
+      )?.getAttribute('data-research-mind-map-copy')).toBe('sentence')
+      expect(mounted.host.querySelectorAll('[data-research-mind-map-branch]')).toHaveLength(4)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('edits one generated mind-map node in place and persists the existing hierarchy', async () => {
+    const storage = new MemoryStorage()
+    const original = [
+      '# 宏观变量',
+      '- 市场指标',
+      '  - 美元指数：负向R²21%',
+      '  - WTI原油'
+    ].join('\n')
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-edit-mind-map-node',
+      storage,
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: original,
+        generationStatus: 'completed', generationDetail: 'standard', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const metric = Array.from(
+        host.querySelectorAll('[data-research-mind-map-node]')
+      ).find((node) => node.textContent === '美元指数：负向R²21%')
+      expect(metric).not.toBeUndefined()
+      if (metric === undefined) return
+
+      await act(async () => {
+        metric.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-mind-map-node-input="generated-map:2"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(editor)
+      expect(workspace.getSnapshot().pendingMessageJump).toBeNull()
+      if (editor === null) return
+
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, '美元指数：负向R²25%')
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+        }))
+      })
+
+      const revised = [
+        '# 宏观变量',
+        '- 市场指标',
+        '  - 美元指数：负向R²25%',
+        '  - WTI原油'
+      ].join('\n')
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe(revised)
+      expect(JSON.parse(storage.getItem(
+        'sherlock.research.canvas.artifacts.v1:session-edit-mind-map-node'
+      ) ?? '[]')[0]?.excerpt).toBe(revised)
+      expect(host.querySelector('[data-research-mind-map-node-input]')).toBeNull()
+      expect(Array.from(host.querySelectorAll('[data-research-mind-map-node]'))
+        .map((node) => node.textContent)).toContain('美元指数：负向R²25%')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('cancels generated mind-map node editing with Escape', async () => {
+    const original = '# 核心结论\n- 原始结论'
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-cancel-mind-map-node-edit',
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: original,
+        generationStatus: 'completed', generationDetail: 'brief', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const conclusion = Array.from(
+        host.querySelectorAll('[data-research-mind-map-node]')
+      ).find((node) => node.textContent === '原始结论')
+      expect(conclusion).not.toBeUndefined()
+      if (conclusion === undefined) return
+      await act(async () => {
+        conclusion.dispatchEvent(new browserWindow.MouseEvent('dblclick', {
+          bubbles: true, cancelable: true
+        }))
+      })
+      const editor = host.querySelector(
+        '[data-research-mind-map-node-input="generated-map:1"]'
+      ) as HappyDOMHTMLElement | null
+      expect(editor).not.toBeNull()
+      if (editor === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(editor, '不应保存')
+      await act(async () => {
+        editor.dispatchEvent(new browserWindow.Event('input', { bubbles: true }))
+        editor.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+        }))
+        editor.blur()
+      })
+      expect(workspace.getSnapshot().artifacts[0]?.excerpt).toBe(original)
+      expect(host.querySelector('[data-research-mind-map-node-input]')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps compact metric labels centered while left-aligning explanatory sentences', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-mind-map-copy-alignment',
+      artifacts: [{
+        id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
+        title: '思维导图', excerpt: [
+          '# 宏观变量',
+          '- 美元指数：负向R²21%',
+          '- 实际利率：正向R²7.4%',
+          '- 数据来源：行情接口与财报数据必须交叉验证。'
+        ].join('\n'),
+        generationStatus: 'completed', generationDetail: 'standard', sourceNodeIds: ['source-file'],
+        x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
+      }]
+    })
+    try {
+      const nodes = Array.from(
+        mounted.host.querySelectorAll('[data-research-mind-map-node]')
+      )
+      const copyKind = (label: string) => nodes.find((node) =>
+        node.textContent === label
+      )?.getAttribute('data-research-mind-map-copy')
+      expect(copyKind('美元指数：负向R²21%')).toBe('phrase')
+      expect(copyKind('实际利率：正向R²7.4%')).toBe('phrase')
+      expect(copyKind('数据来源：行情接口与财报数据必须交叉验证。')).toBe('sentence')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('starts a selection generation without replacing the unsent composer draft', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation', undefined, {
+      modules: { '@deepseek-ai/dsh-client-runtime/client': { createSnapshotStore } }
+    })
+    expect(client.SessionInputShell).toBeTypeOf('function')
+    if (typeof client.SessionInputShell !== 'function') return
+    const requests: Array<Record<string, unknown>> = []
+    const shell = new (client.SessionInputShell as new (deps: Record<string, unknown>) => any)({
+      actx: {},
+      defaultSink: () => undefined,
+      generationSink: async (request: Record<string, unknown>) => {
+        requests.push(request)
+        return { ok: true }
+      }
+    })
+    shell.setDraft('这是尚未发送的研究草稿')
+
+    expect(shell.actions.generateResearchSelection).toBeTypeOf('function')
+    const result = await shell.actions.generateResearchSelection({
+      sessionId: 'session-generation-draft',
+      kind: 'summary',
+      selectedNodeIds: ['source-a'],
+      targetNodeId: 'generated-summary-a'
+    })
+
+    expect(JSON.parse(JSON.stringify(result))).toEqual({ ok: true })
+    expect(JSON.parse(JSON.stringify(requests))).toEqual([{
+      sessionId: 'session-generation-draft',
+      kind: 'summary',
+      selectedNodeIds: ['source-a'],
+      targetNodeId: 'generated-summary-a'
+    }])
+    expect(shell.snapshot.draft).toBe('这是尚未发送的研究草稿')
+  })
+
+  it('builds a visible generation request with the complete selected component references', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.researchSelectionGenerationPrompt).toBeTypeOf('function')
+    if (typeof client.researchSelectionGenerationPrompt !== 'function' ||
+        typeof client.parseResearchPrompt !== 'function') return
+    const snapshot = {
+      files: [{
+        id: 'file-source', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      artifacts: [{
+        id: 'artifact-source', kind: 'assistant-result', messageId: 'message-source',
+        title: '助手回复', excerpt: '完整的历史研究结论。', x: 300, y: 100
+      }]
+    }
+
+    const prompt = client.researchSelectionGenerationPrompt(
+      snapshot,
+      ['artifact-source', 'file-source'],
+      'mind-map',
+      'brief'
+    )
+    expect(prompt).toBeTypeOf('string')
+    const parsed = client.parseResearchPrompt(prompt) as Record<string, unknown>
+    expect(parsed).toMatchObject({
+      files: [{ id: 'file-source', path: '/w/source.pdf', name: 'source.pdf' }],
+      artifacts: [{
+        id: 'artifact-source', messageId: 'message-source',
+        title: '助手回复', excerpt: '完整的历史研究结论。'
+      }]
+    })
+    expect(parsed.text).toContain('简要模式')
+    expect(parsed.text).toContain('总层级不得超过 3 层')
+    expect(parsed.text).toContain('节点总数不超过 10 个')
+    expect(parsed.text).toContain('适合直接截图粘贴到公司 PPT')
+    const standardPrompt = client.parseResearchPrompt(
+      client.researchSelectionGenerationPrompt(
+        snapshot, ['artifact-source'], 'mind-map', 'standard'
+      )
+    ) as Record<string, unknown>
+    const detailedPrompt = client.parseResearchPrompt(
+      client.researchSelectionGenerationPrompt(
+        snapshot, ['artifact-source'], 'mind-map', 'detailed'
+      )
+    ) as Record<string, unknown>
+    expect(standardPrompt.text).toContain('常规模式')
+    expect(standardPrompt.text).toContain('不设置固定层级上限')
+    expect(detailedPrompt.text).toContain('详细模式')
+    expect(detailedPrompt.text).toContain('不设置固定层级上限')
+    expect(detailedPrompt.text).toContain('避免末行仅剩单个汉字')
+    expect(detailedPrompt.text).toContain('完整句子左对齐，短语或词语居中')
+    expect(client.researchSelectionGenerationPrompt(snapshot, ['missing'], 'summary'))
+      .toBeNull()
+  })
+
+  it('uses the approved PPT-ready white canvas, square nodes, palette, and connectors', async () => {
+    const styles: InjectedStyle[] = []
+    await loadClientBundle('dsh-client-ui-conversation', undefined, { styles })
+    const css = styles.find(({ pluginCss }) =>
+      pluginCss?.endsWith('/ResearchCanvas.module.css')
+    )?.textContent ?? ''
+
+    expect(css).not.toContain('[data-research-generated-mind-map]{background:#fff;border-radius:0;box-shadow:none}')
+    expect(css).not.toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{display:none}')
+    expect(css).not.toContain('[data-research-generated-mind-map]>.rScV5Q_nodeTitle{')
+    expect(css).toContain('[data-research-generated-mind-map]>.rScV5Q_previewBody{background:#fff}')
+    expect(css).toContain('font-family:STHeiti_YFD,"STHeiti SC","PingFang SC",sans-serif')
+    expect(css).toContain('[data-research-mind-map-depth="0"]{background:rgb(0,80,150)}')
+    expect(css).toContain('[data-research-mind-map-depth="1"]{background:rgb(0,120,180)}')
+    expect(css).toContain('[data-research-mind-map-depth="2"]{background:rgb(30,185,225)}')
+    expect(css).toContain('border-radius:0;box-shadow:none')
+    expect(css).toContain('background:rgb(150,150,150)')
+    expect(css).toContain('width:200px;min-height:54px;max-width:200px')
+    expect(css).toContain('word-break:normal;overflow-wrap:break-word')
+    expect(css).toContain('[data-research-mind-map-copy="phrase"]{text-align:center;text-wrap:balance}')
+    expect(css).toContain('[data-research-mind-map-copy="sentence"]{justify-content:flex-start;text-align:left;text-wrap:pretty}')
+    expect(css).not.toContain('.rScV5Q_mindMapChildren:before')
+    expect(css).toContain('.rScV5Q_mindMapRoot+.rScV5Q_mindMapChildren:after{display:none}')
+    expect(css).toContain('.rScV5Q_mindMapRoot:after')
+    expect(css).toContain('left:100%;top:50%;width:20px;height:1px')
+    expect(css).toContain('.rScV5Q_mindMapBranch:after')
+    expect(css).toContain('.rScV5Q_mindMapBranch:first-child:after{top:50%}')
+    expect(css).toContain('.rScV5Q_mindMapBranch:last-child:after{bottom:50%}')
+    expect(css).toContain('.rScV5Q_mindMapBranch:only-child:after{display:none}')
+  })
+
+  it('starts selected-component generation through the isolated task service', async () => {
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async () => ({
+      ok: true,
+      status: 202,
+      async json() {
+        return {
+          taskId: 'task-isolated', canvasNodeId: 'generated-summary',
+          state: 'running', childSessionId: 'child-isolated', lastSeq: 2, events: []
+        }
+      }
+    } as Response))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-selection-generation-isolated',
+      files: [{
+        id: 'source-file', path: '/w/source.pdf', name: 'source.pdf',
+        source: 'computer', x: 100, y: 100
+      }],
+      fetch: fetchMock
+    })
+    try {
+      const target = mounted.workspace.beginGeneration(
+        'summary', ['source-file'],
+        { x: 500, y: 100, width: 520, height: 300, sizeMode: 'auto' }
+      ) as Record<string, unknown>
+      const generatedId = String(target.id)
+      fetchMock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 202,
+        async json() {
+          return {
+            taskId: 'task-isolated', canvasNodeId: generatedId,
+            state: 'running', childSessionId: 'child-isolated', lastSeq: 2, events: []
+          }
+        }
+      } as Response))
+      const prompt = vi.fn()
+      const session = { sessionId: 'session-selection-generation-isolated', prompt }
+      const Hub = mounted.client.InputHub as new (
+        rootCtx: Record<string, unknown>,
+        t: (key: string) => string,
+        researchWorkspaces: typeof mounted.researchWorkspaces
+      ) => {
+        generateResearchSelection(session: Record<string, unknown>, request: Record<string, unknown>): Promise<Record<string, unknown>>
+      }
+      const hub = new Hub({}, (key: string) => key, mounted.researchWorkspaces)
+
+      const result = await hub.generateResearchSelection(session, {
+        sessionId: session.sessionId,
+        kind: 'summary',
+        selectedNodeIds: ['source-file'],
+        targetNodeId: generatedId
+      })
+
+      expect(result).toMatchObject({ ok: true, taskId: 'task-isolated' })
+      expect(prompt).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/sherlock/research-tasks/start',
+        expect.objectContaining({ method: 'POST', cache: 'no-store', credentials: 'same-origin' })
+      )
+      const payload = JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))
+      expect(payload).toEqual({
+        parentSessionId: session.sessionId,
+        canvasNodeId: generatedId,
+        kind: 'summary',
+        sources: [{
+          id: 'source-file', type: 'file', title: 'source.pdf', path: '/w/source.pdf'
+        }]
+      })
+      expect(mounted.workspace.getSnapshot().artifacts.find((node) => node.id === generatedId))
+        .toMatchObject({
+          generationTaskId: 'task-isolated',
+          generationChildSessionId: 'child-isolated',
+          generationStatus: 'running'
+        })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('migrates legacy URL-like web titles to clean automatic titles', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-web-title-migration' })
+    try {
+      const parse = mounted.client.parseResearchCanvasArtifactNodes as (
+        raw: string
+      ) => Array<Record<string, unknown>>
+      expect(parse).toBeTypeOf('function')
+
+      const make = (id: string, title: string, url: string) => ({
+        id,
+        kind: 'web-link',
+        messageId: id,
+        title,
+        excerpt: url,
+        url,
+        x: 100,
+        y: 100
+      })
+      const parsed = parse(JSON.stringify([
+        make('legacy-percent', '%20www.baidu.com', 'https://www.baidu.com/'),
+        make('legacy-url', 'https://example.com/report', 'https://example.com/report'),
+        make('legacy-empty', '', 'https://empty.example/path'),
+        make('legacy-custom', '我的监控页面', 'https://custom.example/path')
+      ]))
+
+      expect(parsed).toMatchObject([
+        { id: 'legacy-percent', title: 'www.baidu.com', titleMode: 'auto' },
+        { id: 'legacy-url', title: 'example.com', titleMode: 'auto' },
+        { id: 'legacy-empty', title: 'empty.example', titleMode: 'auto' },
+        { id: 'legacy-custom', title: '我的监控页面', titleMode: 'custom' }
+      ])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('updates only current automatic web titles and preserves a user rename', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-web-title-mode' })
+    try {
+      let node: Record<string, unknown> | null = null
+      await act(async () => {
+        mounted.workspace.setCanvasSize({ width: 800, height: 600 })
+        node = mounted.workspace.createWebLink('https://example.com/report')
+      })
+      expect(node).toMatchObject({
+        title: 'example.com',
+        titleMode: 'auto',
+        url: 'https://example.com/report'
+      })
+      if (node === null) return
+      const nodeId = String(mounted.workspace.getSnapshot().artifacts[0]?.id)
+
+      let changed = false
+      await act(async () => {
+        changed = mounted.workspace.applyWebLinkInspection(
+          nodeId,
+          'https://example.com/report',
+          { title: '真实页面标题' }
+        )
+      })
+      expect(changed).toBe(true)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '真实页面标题',
+        titleMode: 'auto'
+      })
+
+      await act(async () => {
+        changed = mounted.workspace.renameNode(nodeId, '我的标题')
+      })
+      expect(changed).toBe(true)
+      expect(mounted.workspace.applyWebLinkInspection(
+        nodeId,
+        'https://example.com/report',
+        { title: '不应覆盖' }
+      )).toBe(false)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '我的标题',
+        titleMode: 'custom'
+      })
+
+      await act(async () => {
+        changed = mounted.workspace.updateWebLink(nodeId, 'https://next.example/dashboard')
+      })
+      expect(changed).toBe(true)
+      expect(mounted.workspace.applyWebLinkInspection(
+        nodeId,
+        'https://example.com/report',
+        { title: '过期响应' }
+      )).toBe(false)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: 'next.example',
+        titleMode: 'auto',
+        url: 'https://next.example/dashboard'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps responsive web viewport scaling between sixty-five and one hundred percent', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const layout = client.researchWebFrameLayout as (
+      containerWidth: number,
+      scrollWidth: number
+    ) => { logicalWidth: number; scale: number }
+    expect(layout).toBeTypeOf('function')
+    expect(layout(720, 720)).toEqual({ logicalWidth: 720, scale: 1 })
+    expect(layout(720, 1_200)).toEqual({ logicalWidth: 1_108, scale: 0.65 })
+    expect(layout(400, 4_000)).toEqual({ logicalWidth: 615, scale: 0.65 })
+    expect(layout(900, 1_000)).toEqual({ logicalWidth: 1_000, scale: 0.9 })
+  })
+
+  it('uses the authorized frame name, applies inspected titles, and rescales after resize', async () => {
+    const resizeObserverCallbacks: Array<() => void> = []
+    const inspect = vi.fn(async () => ({
+      url: 'https://example.com/report',
+      title: '真实页面标题',
+      scrollWidth: 1_200,
+      clientWidth: 720
+    }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-web-frame-inspection',
+      artifacts: [{
+        id: 'web-frame', kind: 'web-link', messageId: 'web-frame',
+        title: 'example.com', titleMode: 'auto', excerpt: 'https://example.com/report',
+        url: 'https://example.com/report', x: 400, y: 300,
+        width: 720, height: 480, sizeMode: 'manual'
+      }],
+      resizeObserverCallbacks,
+      dshDesktop: {
+        researchLinkFrame: {
+          authorize: vi.fn(async (value) => ({
+            url: value.url,
+            frameName: 'sherlock-research-link-0123456789abcdef0123456789abcdef'
+          })),
+          inspect,
+          release: vi.fn(async () => ({ ok: true })),
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      const iframe = mounted.host.querySelector('[data-research-web-frame]') as HTMLIFrameElement | null
+      const viewport = mounted.host.querySelector('[data-research-web-frame-viewport]') as HTMLElement | null
+      expect(iframe?.getAttribute('name'))
+        .toBe('sherlock-research-link-0123456789abcdef0123456789abcdef')
+      expect(viewport).not.toBeNull()
+      if (iframe === null || viewport === null) return
+
+      let viewportWidth = 720
+      Object.defineProperty(viewport, 'clientWidth', {
+        configurable: true,
+        get: () => viewportWidth
+      })
+      await act(async () => {
+        iframe.dispatchEvent(
+          new mounted.browserWindow.Event('load') as unknown as Event
+        )
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(inspect).toHaveBeenCalledWith({
+        sessionId: 'session-web-frame-inspection', nodeId: 'web-frame'
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '真实页面标题', titleMode: 'auto'
+      })
+      expect(iframe.style.width).toBe('1108px')
+      expect(iframe.style.transform).toBe('scale(0.65)')
+
+      viewportWidth = 900
+      await act(async () => { resizeObserverCallbacks.forEach((callback) => callback()) })
+      expect(iframe.style.width).toBe('1200px')
+      expect(iframe.style.transform).toBe('scale(0.75)')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renders public WeChat articles through the scriptless safe reader', async () => {
+    const read = vi.fn(async () => ({
+      status: 'ready',
+      url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA',
+      title: '英伟达豪掷70亿，下场做开放大模型了',
+      author: '示例作者',
+      publishTime: '2026年9月1日',
+      bodyHtml: '<p><strong>文章正文</strong></p>'
+    }))
+    const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-wechat-safe-reader',
+      artifacts: [{
+        id: 'wechat-link', kind: 'web-link', messageId: 'wechat-link',
+        title: 'mp.weixin.qq.com', titleMode: 'auto',
+        excerpt: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA',
+        url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA',
+        x: 400, y: 300, width: 720, height: 480, sizeMode: 'manual'
+      }],
+      dshDesktop: {
+        researchWebReader: { read },
+        researchLinkFrame: {
+          authorize,
+          release: vi.fn(async () => ({ ok: true })),
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      const iframe = mounted.host.querySelector('[data-research-wechat-reader]') as HTMLIFrameElement | null
+      expect(read).toHaveBeenCalledWith({
+        sessionId: 'session-wechat-safe-reader', nodeId: 'wechat-link',
+        url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA'
+      })
+      expect(authorize).toHaveBeenCalledWith({
+        sessionId: 'session-wechat-safe-reader', nodeId: 'wechat-link',
+        url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA'
+      })
+      expect(authorize).toHaveBeenCalledTimes(1)
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(iframe).not.toBeNull()
+      expect(iframe?.getAttribute('sandbox')).toBe('')
+      expect(iframe?.srcdoc).toContain('文章正文')
+      expect(iframe?.srcdoc).not.toContain('<script')
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '英伟达豪掷70亿，下场做开放大模型了', titleMode: 'auto'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('maps every component family to a safe export descriptor and escapes CSV', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-export-descriptors' })
+    try {
+      const descriptor = mounted.client.researchCanvasExportDescriptor as (
+        node: Record<string, unknown>, sessionId: string
+      ) => Record<string, unknown> | null
+      const fileName = mounted.client.researchCanvasExportFileName as (
+        title: string, extension: string
+      ) => string
+      expect(descriptor).toBeTypeOf('function')
+      expect(fileName('%20研究/结论?.md', 'md')).toBe('研究结论.md')
+
+      expect(descriptor({
+        id: 'pdf-1', name: 'report.pdf', source: 'computer',
+        authorizationId: 'authorization_1', x: 0, y: 0
+      }, 'session-1')).toEqual({
+        kind: 'original', sessionId: 'session-1', nodeId: 'pdf-1',
+        authorizationId: 'authorization_1', suggestedName: 'report.pdf'
+      })
+      expect(descriptor({
+        id: 'missing-file', name: 'missing.pdf', source: 'computer', x: 0, y: 0
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'txt' })
+      expect(descriptor({
+        id: 'assistant', kind: 'assistant-result', title: '研究结论', excerpt: '正文'
+      }, 'session-1')).toMatchObject({
+        kind: 'text', format: 'md', suggestedName: '研究结论.md',
+        content: '# 研究结论\n\n正文\n'
+      })
+      expect(descriptor({
+        id: 'web', kind: 'web-link', title: '研究页面',
+        url: 'https://example.com/report', excerpt: 'https://example.com/report'
+      }, 'session-1')).toMatchObject({
+        kind: 'webloc', suggestedName: '研究页面.webloc',
+        url: 'https://example.com/report'
+      })
+      expect(descriptor({
+        id: 'mind-map', kind: 'generated-mind-map', title: '逻辑图',
+        excerpt: '# 中心\n- 分支', generationStatus: 'completed', generationDetail: 'brief'
+      }, 'session-1')).toMatchObject({
+        kind: 'mind-map', suggestedName: '逻辑图', detail: 'brief'
+      })
+      expect(descriptor({
+        id: 'failed-map', kind: 'generated-mind-map', title: '失败导图',
+        excerpt: '生成失败', generationStatus: 'failed', generationError: '请求超时'
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'txt' })
+
+      const table = descriptor({
+        id: 'table', kind: 'generated-container', title: '对比表',
+        generationStatus: 'completed',
+        containerSpec: {
+          version: 1, type: 'table', title: '对比表',
+          columns: ['名称', '备注'],
+          rows: [['A,产品', '包含"引号"'], ['B', '两行\n文字']]
+        }
+      }, 'session-1')
+      expect(table).toMatchObject({ kind: 'text', format: 'csv' })
+      expect(String(table?.content)).toBe(
+        '名称,备注\r\n"A,产品","包含""引号"""\r\nB,"两行\n文字"\r\n'
+      )
+      expect(descriptor({
+        id: 'kpi', kind: 'generated-container', title: '核心指标',
+        generationStatus: 'completed', containerSpec: {
+          version: 1, type: 'kpi', title: '核心指标',
+          items: [{ label: '收入', value: '12 亿', change: '+8%' }]
+        }
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'md' })
+      expect(descriptor({
+        id: 'draft', kind: 'generated-container', title: '待生成容器',
+        generationStatus: 'draft', containerPrompt: '做一张表格'
+      }, 'session-1')).toMatchObject({ kind: 'text', format: 'txt' })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('builds a standalone literal-color chart SVG for download', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const build = client.buildResearchContainerChartSvg as (
+      spec: Record<string, unknown>
+    ) => string | null
+    expect(build).toBeTypeOf('function')
+    const svg = build({
+      version: 1, type: 'chart', title: '收入趋势', variant: 'line',
+      labels: ['一月', '二月'],
+      series: [{ name: '收入', values: [10, 12] }]
+    })
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('收入趋势')
+    expect(svg).toContain('rgb(0,80,150)')
+    expect(svg).toContain('STHeiti_YFD')
+    expect(svg).not.toMatch(/script|foreignObject|var\(--/)
+  })
+
+  it('builds a PPT-ready mind map export with balanced text and edge connectors', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const build = client.buildResearchMindMapSvg as (
+      text: string,
+      detail: string,
+      measureText: (text: string) => number
+    ) => { svg: string; width: number; height: number } | null
+    expect(build).toBeTypeOf('function')
+    const result = build([
+      '# 中心主题',
+      '- 四件事可直接迁移',
+      '  - 这是一个需要左对齐显示的完整句子，便于用户快速理解。',
+      '- 三个不同层级的差异',
+      '  - 产品定位',
+      '- 路径已做市场验证'
+    ].join('\n'), 'brief', (text) => Array.from(text).length * 14)
+
+    expect(result).not.toBeNull()
+    if (result === null) return
+    expect(result.width / result.height).toBeCloseTo(1.2, 1)
+    expect(result.svg).toContain('<rect width="100%" height="100%" fill="#ffffff"')
+    expect(result.svg).toContain('rgb(0,80,150)')
+    expect(result.svg).toContain('rgb(0,120,180)')
+    expect(result.svg).toContain('rgb(30,185,225)')
+    expect(result.svg).toContain('STHeiti_YFD')
+    expect(result.svg).toContain('stroke-width="1.2"')
+    expect(result.svg).toContain('text-anchor="start"')
+    expect(result.svg).toContain('text-anchor="middle"')
+    expect(result.svg).not.toMatch(/foreignObject|script|shadow|\srx=/)
+    expect(result.svg).not.toMatch(/<tspan[^>]*>[。，；！？]<\/tspan>/)
+    expect(result.svg).toMatch(/<path d="M [\d.]+ [\d.]+ H [\d.]+ V [\d.]+ H [\d.]+"/)
+  })
+
+  it('rasterizes mind map SVG to 2x PNG and JPG on white', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const rasterize = client.rasterizeResearchMindMapSvg as (
+      svg: string,
+      width: number,
+      height: number,
+      format: 'png' | 'jpg',
+      environment: Record<string, unknown>
+    ) => Promise<{ base64: string; width: number; height: number }>
+    expect(rasterize).toBeTypeOf('function')
+    const events: string[] = []
+    const formats: Array<{ type: string; quality?: number }> = []
+    const canvas = {
+      getContext: () => ({
+        set fillStyle(value: string) { events.push(`fillStyle:${value}`) },
+        fillRect: (...values: number[]) => events.push(`fillRect:${values.join(',')}`),
+        drawImage: () => events.push('drawImage')
+      }),
+      toBlob(callback: (blob: unknown) => void, type: string, quality?: number) {
+        formats.push({ type, quality })
+        callback({ type })
+      }
+    }
+    const sizes: Array<[number, number]> = []
+    const environment = {
+      createCanvas(width: number, height: number) {
+        sizes.push([width, height])
+        return canvas
+      },
+      createImage() {
+        return {
+          onload: null as null | (() => void),
+          onerror: null as null | (() => void),
+          set src(_value: string) { queueMicrotask(() => this.onload?.()) }
+        }
+      },
+      createSvgUrl: () => 'blob:mind-map',
+      revokeSvgUrl: (url: string) => events.push(`revoke:${url}`),
+      blobToBase64: async () => 'ZmFrZQ=='
+    }
+
+    await expect(rasterize('<svg/>', 640, 360, 'png', environment))
+      .resolves.toEqual({ base64: 'ZmFrZQ==', width: 1280, height: 720 })
+    await expect(rasterize('<svg/>', 640, 360, 'jpg', environment))
+      .resolves.toEqual({ base64: 'ZmFrZQ==', width: 1280, height: 720 })
+    expect(sizes).toEqual([[1280, 720], [1280, 720]])
+    expect(formats).toEqual([
+      { type: 'image/png', quality: undefined },
+      { type: 'image/jpeg', quality: 0.92 }
+    ])
+    expect(events.indexOf('fillRect:0,0,1280,720')).toBeLessThan(events.indexOf('drawImage'))
+    expect(events).toContain('fillStyle:#ffffff')
+    expect(events).toContain('revoke:blob:mind-map')
+  })
+
+  it('keeps a bottom global toolbar for links and native container drafts', async () => {
+    const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
+    const release = vi.fn(async () => ({ ok: true }))
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-global-toolbar-ui',
+      dshDesktop: {
+        researchLinkFrame: {
+          authorize,
+          release,
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const createWebLink = vi.spyOn(workspace, 'createWebLink')
+      const toolbar = host.querySelector('[data-research-global-toolbar]')
+      const linkButton = host.querySelector('[data-research-global-link]')
+      const containerButton = host.querySelector('[data-research-global-container]')
+      expect(toolbar?.getAttribute('role')).toBe('toolbar')
+      expect(linkButton?.textContent).toContain('链接')
+      expect(containerButton?.textContent).toContain('容器')
+
+      await act(async () => { click(browserWindow, linkButton) })
+      const linkInput = host.querySelector('[data-research-link-input]') as HTMLInputElement | null
+      expect(host.querySelector('[data-research-link-popover]')).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(linkInput)
+      if (linkInput === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLInputElement.prototype, 'value'
+      )?.set?.call(linkInput, 'https://Example.com/dashboard')
+      await act(async () => {
+        linkInput.dispatchEvent(new browserWindow.Event('input', { bubbles: true }) as unknown as Event)
+      })
+      expect(linkInput.value).toBe('https://Example.com/dashboard')
+      await act(async () => {
+        click(browserWindow, host.querySelector('[data-research-link-submit]'))
+        await Promise.resolve()
+      })
+      expect(createWebLink).toHaveBeenCalledWith('https://Example.com/dashboard')
+      expect(host.querySelector('[role="alert"]')?.textContent ?? null).toBeNull()
+      const linkNode = workspace.getSnapshot().artifacts.find((node) => node.kind === 'web-link')
+      expect(linkNode).toMatchObject({
+        title: 'example.com',
+        url: 'https://example.com/dashboard',
+        width: 720,
+        height: 480
+      })
+      expect(authorize).toHaveBeenCalledWith({
+        sessionId: 'session-global-toolbar-ui',
+        nodeId: linkNode?.id,
+        url: 'https://example.com/dashboard'
+      })
+      expect(host.querySelector('[data-research-web-frame]')?.getAttribute('src'))
+        .toBe('https://example.com/dashboard')
+
+      await act(async () => { click(browserWindow, containerButton) })
+      const prompt = host.querySelector('[data-research-container-prompt]') as HTMLTextAreaElement | null
+      expect(prompt).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(prompt)
+      if (prompt === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(prompt, '制作月度收入柱状图')
+      await act(async () => {
+        prompt.dispatchEvent(new browserWindow.Event('input', { bubbles: true }) as unknown as Event)
+      })
+      await act(async () => {
+        prompt.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', metaKey: true, bubbles: true, cancelable: true
+        }) as unknown as Event)
+        await Promise.resolve()
+      })
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 'session-global-toolbar-ui',
+        kind: 'container',
+        targetNodeId: expect.any(String),
+        prompt: '制作月度收入柱状图'
+      }))
+      expect(generate.mock.calls.at(-1)?.[0]).not.toHaveProperty('selectedNodeIds')
+      expect(workspace.getSnapshot().artifacts.find((node) => node.kind === 'generated-container'))
+        .toMatchObject({
+          generationStatus: 'queued',
+          containerPrompt: '制作月度收入柱状图'
+        })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('starts native container generation through the isolated task service and applies validated output', async () => {
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async () => ({
+      ok: true,
+      status: 202,
+      async json() {
+        return {
+          taskId: 'task-container', canvasNodeId: 'container-placeholder',
+          state: 'running', childSessionId: 'child-container', lastSeq: 2, events: []
+        }
+      }
+    } as Response))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-container-generation-isolated',
+      fetch: fetchMock
+    })
+    try {
+      const draft = mounted.workspace.createContainerDraft({
+        x: 500, y: 300, width: 520, height: 300, sizeMode: 'auto'
+      }) as Record<string, unknown>
+      const target = mounted.workspace.beginContainerGeneration(
+        String(draft.id),
+        '制作收入、利润和现金流三项核心指标'
+      ) as Record<string, unknown>
+      const generatedId = String(target.id)
+      fetchMock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 202,
+        async json() {
+          return {
+            taskId: 'task-container', canvasNodeId: generatedId,
+            state: 'running', childSessionId: 'child-container', lastSeq: 2, events: []
+          }
+        }
+      } as Response))
+      const session = { sessionId: 'session-container-generation-isolated' }
+      const Hub = mounted.client.InputHub as new (
+        rootCtx: Record<string, unknown>,
+        t: (key: string) => string,
+        researchWorkspaces: typeof mounted.researchWorkspaces
+      ) => {
+        generateResearchSelection(session: Record<string, unknown>, request: Record<string, unknown>): Promise<Record<string, unknown>>
+      }
+      const hub = new Hub({}, (key: string) => key, mounted.researchWorkspaces)
+
+      const result = await hub.generateResearchSelection(session, {
+        sessionId: session.sessionId,
+        kind: 'container',
+        targetNodeId: generatedId,
+        prompt: target.prompt
+      })
+
+      expect(result).toMatchObject({ ok: true, taskId: 'task-container' })
+      const payload = JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))
+      expect(payload).toEqual({
+        parentSessionId: session.sessionId,
+        canvasNodeId: generatedId,
+        kind: 'container',
+        prompt: '制作收入、利润和现金流三项核心指标'
+      })
+      expect(mounted.workspace.applyGenerationInspection(generatedId, {
+        taskId: 'task-container', canvasNodeId: generatedId, state: 'completed',
+        lastSeq: 3, completedAt: 1_000, events: [],
+        finalOutput: JSON.stringify({
+          version: 1, type: 'kpi', title: '核心经营指标',
+          items: [
+            { label: '收入', value: '12 亿', change: '+8%' },
+            { label: '利润', value: '2.6 亿' },
+            { label: '现金流', value: '3.1 亿' }
+          ]
+        })
+      })).toBe(true)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: generatedId,
+        kind: 'generated-container',
+        title: '核心经营指标',
+        generationStatus: 'completed',
+        width: 640,
+        height: 420,
+        lastSuccessfulAt: 1_000,
+        containerSpec: {
+          version: 1,
+          type: 'kpi',
+          items: [
+            { label: '收入', value: '12 亿', change: '+8%' },
+            { label: '利润', value: '2.6 亿' },
+            { label: '现金流', value: '3.1 亿' }
+          ]
+        }
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).not.toHaveProperty('generationEvents')
+      expect(mounted.workspace.getSnapshot().artifacts[0]).not.toHaveProperty('generationPartialText')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('fails malformed native container output and retries from the saved prompt', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-container-invalid-output' })
+    try {
+      const draft = mounted.workspace.createContainerDraft({
+        x: 400, y: 240, width: 520, height: 300, sizeMode: 'auto'
+      }) as Record<string, unknown>
+      const target = mounted.workspace.beginContainerGeneration(
+        String(draft.id), '制作一张可执行脚本'
+      ) as Record<string, unknown>
+      expect(mounted.workspace.attachGenerationTask(String(target.id), {
+        taskId: 'task-invalid-container', canvasNodeId: target.id,
+        state: 'running', childSessionId: 'child-invalid-container', lastSeq: 1, events: []
+      })).toBe(true)
+
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-invalid-container', canvasNodeId: target.id,
+        state: 'completed', lastSeq: 2,
+        finalOutput: '{"version":1,"type":"script","code":"alert(1)"}', events: []
+      })).toBe(true)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        generationStatus: 'failed',
+        generationError: '生成内容格式无效，请重试。',
+        containerPrompt: '制作一张可执行脚本'
+      })
+      expect(mounted.workspace.retryGeneration(String(target.id))).toMatchObject({
+        id: target.id,
+        kind: 'container',
+        prompt: '制作一张可执行脚本'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renders all five native container types without executable HTML', async () => {
+    const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
+    const base = {
+      kind: 'generated-container', generationStatus: 'completed',
+      generationLastSeq: 3, sourceNodeIds: [], refreshMinutes: 0,
+      sizeMode: 'manual', width: 640, height: 420
+    }
+    const specs = [{
+      id: 'container-web', title: '市场页面', containerPrompt: '创建市场网页',
+      excerpt: 'web', containerSpec: {
+        version: 1, type: 'web', title: '市场页面', url: 'https://example.com/market'
+      }
+    }, {
+      id: 'container-chart', title: '收入趋势', containerPrompt: '创建收入图',
+      excerpt: 'chart', containerSpec: {
+        version: 1, type: 'chart', title: '收入趋势', variant: 'line',
+        labels: ['一月', '二月'], series: [{ name: '收入', values: [10, 12] }]
+      }
+    }, {
+      id: 'container-table', title: '产品数据', containerPrompt: '创建产品表',
+      excerpt: 'table', containerSpec: {
+        version: 1, type: 'table', title: '产品数据',
+        columns: ['产品', '规模'], rows: [['A', 10], ['B', 12]]
+      }
+    }, {
+      id: 'container-kpi', title: '关键指标', containerPrompt: '创建关键指标',
+      excerpt: 'kpi', containerSpec: {
+        version: 1, type: 'kpi', title: '关键指标',
+        items: [{ label: '收入', value: '12 亿', change: '+8%' }]
+      }
+    }, {
+      id: 'container-markdown', title: '研究结论', containerPrompt: '创建研究结论',
+      excerpt: 'markdown', containerSpec: {
+        version: 1, type: 'markdown', title: '研究结论',
+        content: '## 结论\n\n<script>alert(1)</script> 增长保持稳定。'
+      }
+    }].map((item, index) => ({
+      ...base, ...item, messageId: item.id,
+      x: 400 + index * 40, y: 300 + index * 40
+    }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-container-native-renderers',
+      artifacts: specs,
+      dshDesktop: {
+        researchLinkFrame: {
+          authorize,
+          release: vi.fn(async () => ({ ok: true })),
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve() })
+      expect(mounted.host.querySelector('[data-research-container-chart="line"]')).not.toBeNull()
+      expect(mounted.host.querySelector('[data-research-container-table]')?.textContent)
+        .toContain('产品')
+      expect(mounted.host.querySelector('[data-research-container-kpi]')?.textContent)
+        .toContain('12 亿')
+      expect(mounted.host.querySelector('[data-research-container-markdown]')?.textContent)
+        .toContain('<script>alert(1)</script>')
+      expect(mounted.host.querySelector('script')).toBeNull()
+      expect(authorize).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 'session-container-native-renderers',
+        nodeId: 'container-web',
+        url: 'https://example.com/market'
+      }))
+      expect(mounted.host.querySelector('[data-research-web-frame]')).not.toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps prior container content visible while a manual refresh runs', async () => {
+    const generate = vi.fn(async () => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-container-refresh-ui',
+      artifacts: [{
+        id: 'container-refresh', kind: 'generated-container', messageId: 'container-refresh',
+        title: '关键指标', excerpt: 'kpi', generationStatus: 'completed', generationLastSeq: 3,
+        sourceNodeIds: [], containerPrompt: '刷新关键经营指标', refreshMinutes: 0,
+        lastSuccessfulAt: 1_000,
+        containerSpec: {
+          version: 1, type: 'kpi', title: '关键指标',
+          items: [{ label: '收入', value: '12 亿', change: '+8%' }]
+        },
+        x: 400, y: 300, width: 640, height: 420, sizeMode: 'manual'
+      }],
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      expect(host.querySelector('[data-research-container-kpi]')?.textContent).toContain('12 亿')
+      await act(async () => {
+        click(browserWindow, host.querySelector('[data-research-container-refresh]'))
+        await Promise.resolve()
+      })
+
+      expect(generate).toHaveBeenCalledWith({
+        sessionId: 'session-container-refresh-ui',
+        kind: 'container',
+        targetNodeId: 'container-refresh',
+        prompt: '刷新关键经营指标'
+      })
+      expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
+        generationStatus: 'queued',
+        containerSpec: { type: 'kpi' }
+      })
+      expect(host.querySelector('[data-research-container-kpi]')?.textContent).toContain('12 亿')
+      expect(host.querySelector('[data-research-container-refreshing]')).not.toBeNull()
+
+      const interval = host.querySelector('[data-research-container-refresh-interval]') as HTMLSelectElement | null
+      expect(interval).not.toBeNull()
+      if (interval !== null) {
+        Object.getOwnPropertyDescriptor(
+          browserWindow.HTMLSelectElement.prototype, 'value'
+        )?.set?.call(interval, '5')
+        await act(async () => {
+          interval.dispatchEvent(new browserWindow.Event('change', { bubbles: true }) as unknown as Event)
+        })
+        expect(workspace.getSnapshot().artifacts[0]).toMatchObject({ refreshMinutes: 5 })
+      }
     } finally {
       await mounted.cleanup()
     }
@@ -6557,6 +9096,21 @@ describe('Sherlock workspace and composer controls', () => {
       expect(notice?.textContent).toContain('视口内无内容')
       expect(button?.textContent).toBe('回到内容')
       expect(button).not.toBeNull()
+      const toolbar = host.querySelector(
+        '[data-research-global-toolbar]'
+      ) as unknown as HappyDOMElement
+      const noticeStyle = browserWindow.getComputedStyle(notice as unknown as HappyDOMElement)
+      const toolbarStyle = browserWindow.getComputedStyle(toolbar)
+      const toolbarButton = toolbar.querySelector('button') as unknown as HappyDOMElement
+      const toolbarIcon = toolbar.querySelector('svg') as unknown as HappyDOMElement
+      expect(noticeStyle.bottom).toBe('90px')
+      expect(toolbarStyle.bottom).toBe('20px')
+      expect(toolbarStyle.height).toBe('38px')
+      expect(browserWindow.getComputedStyle(toolbarButton).height).toBe('32px')
+      expect(browserWindow.getComputedStyle(toolbarIcon).width).toBe('16px')
+      expect(Number.parseFloat(noticeStyle.bottom) - (
+        Number.parseFloat(toolbarStyle.bottom) + Number.parseFloat(toolbarStyle.height)
+      )).toBe(32)
       if (button === null) return
 
       await act(async () => {
@@ -8664,6 +11218,96 @@ describe('Sherlock workspace and composer controls', () => {
     } finally {
       await mounted.cleanup()
     }
+  })
+
+  it('centers the canvas from composer and sent Research tags while preserving zoom', async () => {
+    const promptPayload = JSON.stringify({
+      files: [{ id: 'file-a', name: 'evidence.pdf', path: '/tmp/research/evidence.pdf' }],
+      occurrences: [{ fileId: 'file-a', offset: 0 }]
+    })
+    const mounted = await mountConversationRoot('research', undefined, undefined, {
+      userMessagePrompt: `␞SHERLOCK_RESEARCH_FILES_V1 ${promptPayload}␟继续分析`
+    })
+    try {
+      const { browserWindow, detailsPortalHost, host, workspace } = mounted
+      await act(async () => {
+        workspace.setCanvasSize({ width: 800, height: 600 })
+        workspace.setViewport({ scale: 0.75, x: 12, y: 23 })
+      })
+
+      const composerTag = browserWindow.document.querySelector(
+        '[data-research-file-tag="file-b"]'
+      ) as HappyDOMElement | null
+      expect(composerTag).not.toBeNull()
+      await act(async () => { composerTag?.dispatchEvent(new browserWindow.MouseEvent('click', { bubbles: true })) })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-b'], orderedFileIds: ['file-b']
+      })
+      expect(workspace.getSnapshot().viewport).toEqual({
+        scale: 0.75, x: 287.5, y: 210
+      })
+
+      await act(async () => {
+        workspace.setViewport({ scale: 0.75, x: -30, y: -40 })
+      })
+      const sentTag = detailsPortalHost.querySelector(
+        '[data-research-message-file="file-a"]'
+      ) as HappyDOMElement | null
+      expect(sentTag?.getAttribute('data-research-reference-node-id')).toBe('file-a')
+      await act(async () => { sentTag?.dispatchEvent(new browserWindow.MouseEvent('click', { bubbles: true })) })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-a'], orderedFileIds: ['file-a']
+      })
+      expect(workspace.getSnapshot().viewport).toEqual({
+        scale: 0.75, x: 325, y: 240
+      })
+
+      const viewportBeforeMissingClick = workspace.getSnapshot().viewport
+      await act(async () => { workspace.removeNodes(['file-a']) })
+      await act(async () => { sentTag?.dispatchEvent(new browserWindow.MouseEvent('click', { bubbles: true })) })
+      expect(workspace.getSnapshot().viewport).toEqual(viewportBeforeMissingClick)
+      expect(host.querySelector('[data-research-reference-status]')?.textContent)
+        .toContain('组件已删除或不可用')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('focuses a Research workspace node without changing the current zoom', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const Registry = client.ResearchWorkspaceRegistry as new (storage: Storage) => {
+      for(id: string): {
+        getSnapshot(): {
+          selection: { selectedNodeIds: string[]; orderedFileIds: string[] }
+          viewport: { scale: number; x: number; y: number }
+        }
+        setFiles(files: Array<Record<string, unknown>>): void
+        setArtifacts(artifacts: Array<Record<string, unknown>>): void
+        setCanvasSize(size: { width: number; height: number }): void
+        setViewport(viewport: { scale: number; x: number; y: number }): void
+        focusNode(nodeId: string): boolean
+      }
+    }
+    const workspace = new Registry(new MemoryStorage()).for('focus-node')
+    workspace.setFiles([{
+      id: 'file-focus', name: 'report.pdf', path: '/tmp/report.pdf', source: 'computer',
+      x: 200, y: 120
+    }])
+    workspace.setArtifacts([{
+      id: 'artifact-focus', kind: 'assistant-result', messageId: 'm-summary',
+      title: '助手回复', excerpt: '摘要', x: 640, y: 360
+    }])
+    workspace.setCanvasSize({ width: 960, height: 600 })
+    workspace.setViewport({ scale: 0.8, x: 44, y: -12 })
+
+    expect(workspace.focusNode('artifact-focus')).toBe(true)
+    expect(workspace.getSnapshot()).toMatchObject({
+      selection: { selectedNodeIds: ['artifact-focus'], orderedFileIds: [] },
+      viewport: { scale: 0.8, x: -32, y: 12 }
+    })
+    const beforeMissing = workspace.getSnapshot()
+    expect(workspace.focusNode('missing')).toBe(false)
+    expect(workspace.getSnapshot()).toBe(beforeMissing)
   })
 
   it('ignores wheel zoom when Command is not held', async () => {

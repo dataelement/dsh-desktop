@@ -348,6 +348,42 @@ function countingRealFileSystem() {
 }
 
 describe('Research file preview authorization registry', () => {
+  it('resolves only an exact active original file for export and revalidates its path', async () => {
+    const { registry, root } = await fixture()
+    const sourceDirectory = path.join(root, 'exports')
+    const outsideDirectory = path.join(root, 'outside')
+    const filePath = path.join(sourceDirectory, 'report.pdf')
+    const outsidePath = path.join(outsideDirectory, 'outside.pdf')
+    await mkdir(sourceDirectory, { recursive: true })
+    await mkdir(outsideDirectory, { recursive: true })
+    await writeFile(filePath, Buffer.from('%PDF-1.7\n'))
+    await writeFile(outsidePath, Buffer.from('%PDF-1.7\n'))
+
+    const admitted = await registry.admitFinder({
+      path: filePath, sessionId: 'session-1', nodeId: 'node-export'
+    })
+    expectDescriptor(admitted)
+    const request = {
+      sessionId: 'session-1', nodeId: 'node-export',
+      authorizationId: admitted.authorizationId
+    }
+    await expect(registry.resolveExportSource(request)).resolves.toEqual({
+      path: await realpath(filePath), name: 'report.pdf'
+    })
+    await expect(registry.resolveExportSource({ ...request, nodeId: 'other-node' }))
+      .resolves.toBeNull()
+
+    await rm(filePath)
+    await symlink(outsidePath, filePath)
+    await expect(registry.resolveExportSource(request)).resolves.toBeNull()
+    await rm(filePath)
+    await mkdir(filePath)
+    await expect(registry.resolveExportSource(request)).resolves.toBeNull()
+
+    expect(registry.revokeAuthorization(admitted.authorizationId)).toBe(true)
+    await expect(registry.resolveExportSource(request)).resolves.toBeNull()
+  })
+
   it('releases only the exact ephemeral capability and keeps durable authorization restorable', async () => {
     const { registry, root } = await fixture()
     const filePath = path.join(root, 'ephemeral.png')

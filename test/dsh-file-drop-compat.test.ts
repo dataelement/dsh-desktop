@@ -265,6 +265,7 @@ describe('dsh-file-drop Research canvas compatibility', () => {
       bundledSkillDirectory: root,
       bundledWebSearchEntry: 'file:///tmp/session-model.js',
       bundledMarketInstallerEntry: 'file:///tmp/market-installer.js',
+      bundledResearchTaskEntry: 'file:///tmp/research-task.js',
       localSearchUrl: 'http://127.0.0.1:43123',
       localSearchToken: 'test-search-token',
       dshHome,

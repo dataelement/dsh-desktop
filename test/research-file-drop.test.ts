@@ -226,7 +226,7 @@ describe('Research canvas file drops', () => {
     expect(node).toMatchObject({ x: 1_100, y: 300, width: 320, height: 272 })
   })
 
-  it('keeps pointer-anchored Research zoom available down to 20 percent', async () => {
+  it('keeps pointer-anchored Research zoom available down to 10 percent', async () => {
     const client = await loadConversationClient()
     expect(client.nextResearchCanvasViewport).toBeTypeOf('function')
     if (typeof client.nextResearchCanvasViewport !== 'function') return
@@ -236,7 +236,7 @@ describe('Research canvas file drops', () => {
       { metaKey: true, deltaY: 10_000, pointerX: 300, pointerY: 200 }
     )
 
-    expect(zoomed.scale).toBe(0.2)
+    expect(zoomed.scale).toBe(0.1)
     expect((300 - zoomed.x) / zoomed.scale).toBeCloseTo(260, 8)
     expect((200 - zoomed.y) / zoomed.scale).toBeCloseTo(220, 8)
   })
@@ -2475,5 +2475,187 @@ describe('Research canvas file drops', () => {
     expect(html).toContain('draggable="true"')
     expect(html).toContain('data-sherlock-file-drag-source="/w/outputs/report.pdf"')
     expect(html).toContain('>report.pdf</span>')
+  })
+
+  it('canonicalizes only safe web component URLs', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.normalizeResearchWebUrl).toBeTypeOf('function')
+    if (typeof client.normalizeResearchWebUrl !== 'function') return
+
+    expect(client.normalizeResearchWebUrl(' HTTPS://Example.com:443/dashboard '))
+      .toBe('https://example.com/dashboard')
+    expect(client.normalizeResearchWebUrl('http://Example.com:80/path'))
+      .toBe('http://example.com/path')
+    expect(client.normalizeResearchWebUrl(' http:// www.baidu.com '))
+      .toBe('http://www.baidu.com/')
+    expect(client.normalizeResearchWebUrl('http://%20www.baidu.com/'))
+      .toBe('http://www.baidu.com/')
+    for (const value of [
+      'file:///tmp/report.html',
+      'javascript:alert(1)',
+      'data:text/html,hello',
+      'https://user:pass@example.com/',
+      `https://example.com/${'x'.repeat(8_192)}`
+    ]) {
+      expect(client.normalizeResearchWebUrl(value), value).toBeNull()
+    }
+  })
+
+  it('accepts five exact bounded native container schemas and rejects executable or malformed output', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.parseResearchContainerSpec).toBeTypeOf('function')
+    if (typeof client.parseResearchContainerSpec !== 'function') return
+
+    const fixtures = [
+      {
+        version: 1, type: 'web', title: '市场监控',
+        url: 'https://example.com/market', description: '公开市场页面'
+      },
+      {
+        version: 1, type: 'chart', title: '收入趋势', variant: 'bar',
+        labels: ['一月', '二月'], series: [{ name: '收入', values: [10, 12] }]
+      },
+      {
+        version: 1, type: 'table', title: '产品数据',
+        columns: ['产品', '规模'], rows: [['A', 10], ['B', 12]]
+      },
+      {
+        version: 1, type: 'kpi', title: '核心指标',
+        items: [{ label: '收入', value: '12 亿', change: '+8%' }]
+      },
+      {
+        version: 1, type: 'markdown', title: '研究结论',
+        content: '## 结论\n\n增长保持稳定。'
+      }
+    ]
+    for (const fixture of fixtures) {
+      expect(client.parseResearchContainerSpec(JSON.stringify(fixture)))
+        .toEqual(fixture)
+    }
+    expect(client.parseResearchContainerSpec('```json\n' + JSON.stringify(fixtures[1]) + '\n```'))
+      .toEqual(fixtures[1])
+    expect(client.parseResearchContainerSpec(JSON.stringify({
+      version: 1, type: 'markdown', title: '危险内容', content: '<script>alert(1)</script>',
+      script: 'alert(1)'
+    }))).toBeNull()
+    expect(client.parseResearchContainerSpec({
+      version: 1, type: 'chart', title: '错误图表', variant: 'line',
+      labels: ['一月'], series: [{ name: '收入', values: [Number.POSITIVE_INFINITY] }]
+    })).toBeNull()
+    expect(client.parseResearchContainerSpec('{"version":1,"type":"script"}')).toBeNull()
+  })
+
+  it('persists bounded web-link and container draft artifacts while rejecting invalid fields', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.parseResearchCanvasArtifactNodes).toBeTypeOf('function')
+    if (typeof client.parseResearchCanvasArtifactNodes !== 'function') return
+    const nodes = [{
+      id: 'link-1', kind: 'web-link', messageId: 'link-1', title: 'example.com',
+      excerpt: 'https://example.com/dashboard', url: 'https://example.com/dashboard',
+      x: 200, y: 180, width: 720, height: 480, sizeMode: 'auto'
+    }, {
+      id: 'container-1', kind: 'generated-container', messageId: 'container-1',
+      title: '智能容器', excerpt: '描述想创建的内容', generationStatus: 'draft',
+      containerPrompt: '', refreshMinutes: 0,
+      x: 500, y: 180, width: 520, height: 300, sizeMode: 'auto'
+    }]
+
+    expect(client.parseResearchCanvasArtifactNodes(JSON.stringify(nodes)))
+      .toMatchObject(nodes)
+    expect(client.parseResearchCanvasArtifactNodes(JSON.stringify([{
+      ...nodes[0], url: 'javascript:alert(1)'
+    }]))).toEqual([])
+    expect(client.parseResearchCanvasArtifactNodes(JSON.stringify([{
+      ...nodes[1], refreshMinutes: 2
+    }]))).toEqual([])
+  })
+
+  it('places new global-toolbar nodes at the visible center with a bounded cascade', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.researchCanvasViewportPlacement).toBeTypeOf('function')
+    if (typeof client.researchCanvasViewportPlacement !== 'function') return
+    const snapshot = {
+      viewport: { scale: 0.5, x: -100, y: -50 },
+      canvasSize: { width: 800, height: 600 }
+    }
+
+    expect(client.researchCanvasViewportPlacement(snapshot, 'web-link', 0))
+      .toEqual({ x: 1_000, y: 700, width: 720, height: 480, sizeMode: 'auto' })
+    expect(client.researchCanvasViewportPlacement(snapshot, 'generated-container', 8))
+      .toEqual({ x: 1_144, y: 844, width: 520, height: 300, sizeMode: 'auto' })
+    expect(client.researchCanvasViewportPlacement(snapshot, 'unknown', 0)).toBeNull()
+  })
+
+  it('allows scheduled container refresh only while the completed component is active and due', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    expect(client.researchContainerRefreshDue).toBeTypeOf('function')
+    if (typeof client.researchContainerRefreshDue !== 'function') return
+    const node = {
+      kind: 'generated-container', generationStatus: 'completed', refreshMinutes: 1,
+      lastSuccessfulAt: 1_000, containerSpec: { version: 1, type: 'markdown' }
+    }
+
+    expect(client.researchContainerRefreshDue(node, {
+      visible: true, documentVisible: true, inert: false, now: 61_000
+    })).toBe(true)
+    for (const state of [
+      { visible: false, documentVisible: true, inert: false, now: 61_000 },
+      { visible: true, documentVisible: false, inert: false, now: 61_000 },
+      { visible: true, documentVisible: true, inert: true, now: 61_000 },
+      { visible: true, documentVisible: true, inert: false, now: 60_999 }
+    ]) {
+      expect(client.researchContainerRefreshDue(node, state)).toBe(false)
+    }
+    expect(client.researchContainerRefreshDue({
+      ...node, generationStatus: 'running'
+    }, {
+      visible: true, documentVisible: true, inert: false, now: 120_000
+    })).toBe(false)
+  })
+
+  it('creates, updates, selects, and restores global-toolbar artifacts through the workspace', async () => {
+    const client = await loadClientBundle('dsh-client-ui-conversation')
+    const storage = memoryStorage({})
+    const registry = new client.ResearchWorkspaceRegistry(storage)
+    const workspace = registry.for('global-toolbar-session')
+    workspace.setCanvasSize({ width: 800, height: 600 })
+    workspace.setViewport({ scale: 1, x: 0, y: 0 })
+
+    expect(workspace.createWebLink).toBeTypeOf('function')
+    expect(workspace.createContainerDraft).toBeTypeOf('function')
+    expect(workspace.updateWebLink).toBeTypeOf('function')
+    expect(workspace.updateContainerDraft).toBeTypeOf('function')
+    expect(workspace.setContainerRefresh).toBeTypeOf('function')
+    if (typeof workspace.createWebLink !== 'function') return
+
+    const link = workspace.createWebLink('https://Example.com/dashboard')
+    expect(link).toMatchObject({
+      kind: 'web-link', title: 'example.com', url: 'https://example.com/dashboard',
+      x: 400, y: 300, width: 720, height: 480
+    })
+    expect(workspace.getSnapshot().selection.selectedNodeIds).toEqual([link.id])
+    expect(workspace.updateWebLink(link.id, 'javascript:alert(1)')).toBe(false)
+    expect(workspace.updateWebLink(link.id, 'https://example.org/next')).toBe(true)
+
+    const container = workspace.createContainerDraft()
+    expect(container).toMatchObject({
+      kind: 'generated-container', generationStatus: 'draft',
+      containerPrompt: '', refreshMinutes: 0,
+      x: 424, y: 324, width: 520, height: 300
+    })
+    expect(workspace.updateContainerDraft(container.id, '  ')).toBe(false)
+    expect(workspace.updateContainerDraft(container.id, '制作月度收入柱状图')).toBe(true)
+    expect(workspace.setContainerRefresh(container.id, 2)).toBe(false)
+    expect(workspace.setContainerRefresh(container.id, 5)).toBe(true)
+
+    const restored = new client.ResearchWorkspaceRegistry(storage)
+      .for('global-toolbar-session').getSnapshot()
+    expect(restored.artifacts).toMatchObject([{
+      id: link.id, kind: 'web-link', url: 'https://example.org/next'
+    }, {
+      id: container.id, kind: 'generated-container',
+      containerPrompt: '制作月度收入柱状图', refreshMinutes: 5
+    }])
+    expect(restored.selection.selectedNodeIds).toEqual([container.id])
   })
 })

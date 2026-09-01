@@ -9,6 +9,16 @@ async function readProjectFile(relativePath: string): Promise<string> {
 }
 
 describe('Sherlock macOS sidebar vibrancy', () => {
+  it('passes the first click through when the macOS window is inactive', async () => {
+    const main = await readProjectFile('src/main/index.ts')
+
+    const macWindowOptions = main.match(
+      /\.\.\.\(isMacOS[\s\S]*?\? \{([\s\S]*?)\}\s*: \{/
+    )?.[1]
+
+    expect(macWindowOptions).toContain('acceptFirstMouse: true')
+  })
+
   it('creates a native macOS sidebar material while preserving solid fallback windows', async () => {
     const main = await readProjectFile('src/main/index.ts')
 

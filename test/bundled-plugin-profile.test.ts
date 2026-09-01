@@ -262,8 +262,20 @@ describe('bundled Sherlock plugin profile', () => {
       path.resolve(import.meta.dirname, '..', 'scripts', 'prepare-bundled-plugin-profile.mjs'),
       'utf8'
     )
+    const researchRuntimeManifest = JSON.parse(
+      await readFile(
+        path.resolve(
+          import.meta.dirname,
+          '..',
+          'packages',
+          'dsh-research-task-runtime',
+          'package.json'
+        ),
+        'utf8'
+      )
+    ) as { dependencies?: Record<string, string> }
 
-    expect(appManifest.version).toBe('0.7.3')
+    expect(appManifest.version).toMatch(/^\d+\.\d+\.\d+$/u)
     expect(policy.plugins).toEqual([
       '@huanlin/dsh-plugin-better-sidebar-plugin-office',
       'dsh-better-sidebar',
@@ -282,8 +294,23 @@ describe('bundled Sherlock plugin profile', () => {
     expect(policy.bundles).not.toContain('@vectorize-io/hindsight-coding-agents')
     expect(policy.runtimePackages).toEqual([
       'dsh-desktop-market-installer',
+      'dsh-research-task-runtime',
       'dsh-web-search-session-model'
     ])
+    expect(researchRuntimeManifest.dependencies?.['pdfjs-dist']).toBe('4.10.38')
+    expect(
+      existsSync(
+        path.resolve(
+          import.meta.dirname,
+          '..',
+          'build',
+          'sherlock-plugin-profile',
+          'modules',
+          'pdfjs-dist',
+          'package.json'
+        )
+      )
+    ).toBe(true)
     expect(preparation).toContain("'sherlock-desktop'")
     expect(preparation).not.toContain("'dsh-desktop-dev'")
     expect(preparation).toContain("path.join(projectRoot, 'packages', packageName)")

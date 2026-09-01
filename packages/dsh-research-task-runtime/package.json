@@ -1,0 +1,17 @@
+{
+  "name": "dsh-research-task-runtime",
+  "version": "0.1.0",
+  "description": "Sherlock host runtime for isolated Research canvas generation tasks.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "fflate": "0.8.3",
+    "pdfjs-dist": "4.10.38"
+  },
+  "license": "MIT"
+}

@@ -952,6 +952,23 @@ export class ResearchFilePreviewRegistry {
     return verified ? this.issue(record) : null
   }
 
+  async resolveExportSource(value: unknown): Promise<{ path: string; name: string } | null> {
+    if (!this.validRestoreRequest(value) || Object.keys(value).length !== 3) return null
+    const record = this.authorizations.get(value.authorizationId)
+    if (!record || record.sessionId !== value.sessionId || record.nodeId !== value.nodeId) return null
+    if (!await this.verifyRecord(record)) return null
+    try {
+      const target = await this.fileSystem.realpath(record.path)
+      const root = await this.fileSystem.realpath(record.root)
+      const file = await this.fileSystem.stat(target)
+      return file.isFile() && isContained(root, target)
+        ? { path: target, name: record.name }
+        : null
+    } catch {
+      return null
+    }
+  }
+
   releaseCapability(value: unknown): boolean {
     if (!this.validReleaseRequest(value)) return false
     const capability = this.capabilities.get(value.capabilityToken)

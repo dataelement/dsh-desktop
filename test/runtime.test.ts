@@ -126,6 +126,25 @@ describe('Harness launch contract', () => {
     })
   })
 
+  it('exposes the bundled Research task runtime entry to Harness', () => {
+    const options = buildHarnessSpawnOptions(
+      '/Users/tester/Library/Application Support/dsh-desktop/launch-root',
+      '/Users/tester/Library/Application Support/dsh-desktop/harness',
+      'darwin',
+      { PATH: '/usr/bin' },
+      '/Applications/Sherlock.app/Contents/Resources/sherlock-skills',
+      undefined,
+      undefined,
+      undefined,
+      'file:///Applications/Sherlock.app/Contents/Resources/app/node_modules/dsh-research-task-runtime/index.js'
+    )
+
+    expect(options.env).toMatchObject({
+      DSH_DESKTOP_RESEARCH_TASK_ENTRY:
+        'file:///Applications/Sherlock.app/Contents/Resources/app/node_modules/dsh-research-task-runtime/index.js'
+    })
+  })
+
   it('passes the authenticated local-search endpoint only to the Harness environment', () => {
     const options = buildHarnessSpawnOptions(
       '/Users/tester/Library/Application Support/dsh-desktop/launch-root',

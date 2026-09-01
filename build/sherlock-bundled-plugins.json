@@ -8,6 +8,7 @@
   ],
   "runtimePackages": [
     "dsh-desktop-market-installer",
+    "dsh-research-task-runtime",
     "dsh-web-search-session-model"
   ],
   "excludedPlugins": [

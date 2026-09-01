@@ -12,10 +12,12 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  net,
   protocol,
   session,
   shell,
-  type BrowserWindowConstructorOptions
+  type BrowserWindowConstructorOptions,
+  type SaveDialogOptions
 } from 'electron'
 import {
   extractDuplicateLoaderEntryId,
@@ -82,6 +84,15 @@ import {
   registerResearchCanvasWheelIpc,
   type ResearchCanvasWheelRouter
 } from './state/research-canvas-wheel'
+import {
+  ResearchLinkFrameRegistry,
+  registerResearchLinkFrameHandlers
+} from './state/research-link-frame'
+import { registerResearchWebReaderHandlers } from './state/research-web-reader'
+import {
+  registerResearchCanvasExportHandlers,
+  researchCanvasExportFileOperations
+} from './state/research-canvas-export'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: RESEARCH_PREVIEW_SCHEME,
@@ -117,6 +128,7 @@ let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
 let harnessThemePreferenceSyncTimer: ReturnType<typeof setInterval> | undefined
 let researchFilePreviewRegistry: ResearchFilePreviewRegistry | undefined
 let researchCanvasWheelRouter: ResearchCanvasWheelRouter | undefined
+const researchLinkFrameRegistry = new ResearchLinkFrameRegistry()
 
 function cancelPluginRecoverySessionReset(): void {
   if (pluginRecoveryResetTimer) clearTimeout(pluginRecoveryResetTimer)
@@ -377,6 +389,12 @@ function bundledMarketInstallerEntry(): string {
   ).href
 }
 
+function bundledResearchTaskEntry(): string {
+  return pathToFileURL(
+    join(app.getAppPath(), 'node_modules', 'dsh-research-task-runtime', 'index.js')
+  ).href
+}
+
 function desktopIconPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'icon.png')
@@ -466,6 +484,7 @@ function createWindow(): BrowserWindow {
       : {}),
     ...(isMacOS
       ? {
+          acceptFirstMouse: true,
           vibrancy: 'menu' as const,
           visualEffectState: 'active' as const,
           backgroundColor: '#00000000'
@@ -506,7 +525,9 @@ function createWindow(): BrowserWindow {
     rendererPluginFailureLogs = rendererPluginFailureLogs.slice(-50)
   })
   installPluginRecoveryNavigation(window)
-  secureWindow(window)
+  secureWindow(window, {
+    allowsResearchFrameUrl: (url) => researchLinkFrameRegistry.allows(url)
+  })
   const canvasWheelRouter = installResearchCanvasWheelRouter(window)
   researchCanvasWheelRouter = canvasWheelRouter
   installContextMenu(window, harnessLocale)
@@ -701,6 +722,36 @@ function registerHarnessHandlers(): void {
     getMainWindow: () => mainWindow,
     getRouter: () => researchCanvasWheelRouter,
     onRejected: (error) => console.warn('[research-canvas] rejected wheel region update', error)
+  })
+  registerResearchLinkFrameHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    registry: researchLinkFrameRegistry
+  })
+  registerResearchWebReaderHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    registry: researchLinkFrameRegistry,
+    dependencies: {
+      fetch: (input, init) => net.fetch(input, init),
+      createTimeoutSignal: (milliseconds) => AbortSignal.timeout(milliseconds)
+    }
+  })
+  const exportFileOperations = researchCanvasExportFileOperations()
+  registerResearchCanvasExportHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    dependencies: {
+      showSaveDialog: async (options) => {
+        const window = mainWindow
+        return !window || window.isDestroyed()
+          ? { canceled: true }
+          : dialog.showSaveDialog(window, options as SaveDialogOptions)
+      },
+      writeFile: exportFileOperations.writeFile,
+      copyFile: exportFileOperations.copyFile,
+      resolveExportSource: (value) => researchFilePreviewRegistry!.resolveExportSource(value)
+    }
   })
 }
 
@@ -1037,6 +1088,7 @@ async function bootstrap(): Promise<void> {
     bundledSkillDirectory: bundledSkillDirectory(),
     bundledWebSearchEntry: bundledWebSearchEntry(),
     bundledMarketInstallerEntry: bundledMarketInstallerEntry(),
+    bundledResearchTaskEntry: bundledResearchTaskEntry(),
     localSearchUrl: localSearchRuntime.endpoint.url,
     localSearchToken: localSearchRuntime.endpoint.token,
     dshHome,
