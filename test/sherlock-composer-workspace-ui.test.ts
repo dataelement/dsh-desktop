@@ -1440,6 +1440,23 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('does not dismiss the visible search while the rail expansion click is still in flight', async () => {
+    const workspaceClient = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js',
+      'utf8'
+    )
+    const workspacePatch = await readFile(
+      'patches/@deepseek-ai+dsh-client-ui-workspace+0.1.0-rc.7.patch',
+      'utf8'
+    )
+
+    for (const source of [workspaceClient, workspacePatch]) {
+      expect(source).toContain(
+        'if (!wide || !searchExpanded || searchOnExpand) return;'
+      )
+    }
+  })
+
   it('uses a gray outline icon for the expanded current workspace', async () => {
     const primitives = new Proxy(
       {
@@ -6973,7 +6990,13 @@ describe('Sherlock workspace and composer controls', () => {
       }],
       artifacts: [{
         id: 'generated-map', kind: 'generated-mind-map', messageId: 'message-map',
-        title: '思维导图', excerpt: '# 增长质量\n- 收入\n  - 海外业务\n- 利润\n  - 毛利率',
+        title: '思维导图', excerpt: [
+          '# 增长质量',
+          '- Agent 编排与画布工作台',
+          '  - 海外业务',
+          '- 数据来源：行情接口与财报数据必须交叉验证。',
+          '  - 毛利率'
+        ].join('\n'),
         generationStatus: 'settled', generationDetail: 'detailed', sourceNodeIds: ['source-file'],
         x: 600, y: 260, width: 840, height: 700, sizeMode: 'manual'
       }]
@@ -6989,8 +7012,18 @@ describe('Sherlock workspace and composer controls', () => {
       expect(Array.from(
         mounted.host.querySelectorAll('[data-research-mind-map-node]')
       ).map((node) => node.textContent)).toEqual([
-        '增长质量', '收入', '海外业务', '利润', '毛利率'
+        '增长质量', 'Agent 编排与画布工作台', '海外业务',
+        '数据来源：行情接口与财报数据必须交叉验证。', '毛利率'
       ])
+      const renderedNodes = Array.from(
+        mounted.host.querySelectorAll('[data-research-mind-map-node]')
+      )
+      expect(renderedNodes.find((node) =>
+        node.textContent === 'Agent 编排与画布工作台'
+      )?.getAttribute('data-research-mind-map-copy')).toBe('phrase')
+      expect(renderedNodes.find((node) =>
+        node.textContent === '数据来源：行情接口与财报数据必须交叉验证。'
+      )?.getAttribute('data-research-mind-map-copy')).toBe('sentence')
       expect(mounted.host.querySelectorAll('[data-research-mind-map-branch]')).toHaveLength(4)
     } finally {
       await mounted.cleanup()
@@ -7081,6 +7114,8 @@ describe('Sherlock workspace and composer controls', () => {
     expect(standardPrompt.text).toContain('不设置固定层级上限')
     expect(detailedPrompt.text).toContain('详细模式')
     expect(detailedPrompt.text).toContain('不设置固定层级上限')
+    expect(detailedPrompt.text).toContain('避免末行仅剩单个汉字')
+    expect(detailedPrompt.text).toContain('完整句子左对齐，短语或词语居中')
     expect(client.researchSelectionGenerationPrompt(snapshot, ['missing'], 'summary'))
       .toBeNull()
   })
@@ -7102,7 +7137,10 @@ describe('Sherlock workspace and composer controls', () => {
     expect(css).toContain('[data-research-mind-map-depth="2"]{background:rgb(30,185,225)}')
     expect(css).toContain('border-radius:0;box-shadow:none')
     expect(css).toContain('background:rgb(150,150,150)')
-    expect(css).toContain('width:184px;min-height:54px;max-width:184px')
+    expect(css).toContain('width:200px;min-height:54px;max-width:200px')
+    expect(css).toContain('word-break:normal;overflow-wrap:break-word')
+    expect(css).toContain('[data-research-mind-map-copy="phrase"]{text-align:center;text-wrap:balance}')
+    expect(css).toContain('[data-research-mind-map-copy="sentence"]{justify-content:flex-start;text-align:left;text-wrap:pretty}')
     expect(css).not.toContain('.rScV5Q_mindMapChildren:before')
     expect(css).toContain('.rScV5Q_mindMapRoot+.rScV5Q_mindMapChildren:after{display:none}')
     expect(css).toContain('.rScV5Q_mindMapRoot:after')

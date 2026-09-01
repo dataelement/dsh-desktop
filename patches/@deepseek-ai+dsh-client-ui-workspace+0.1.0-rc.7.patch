@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index ec779d5..39b40eb 100644
+index ec779d5..bf024e2 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -337,7 +337,7 @@ window.__ModuleLoader__.load({
@@ -182,7 +182,24 @@ index ec779d5..39b40eb 100644
  						setSearchOnExpand(false);
  					}, EXPAND_SLIDE_MS);
  					return () => {
-@@ -1972,6 +2007,7 @@ window.__ModuleLoader__.load({
+@@ -1701,7 +1736,7 @@ window.__ModuleLoader__.load({
+ 				searchOnExpand
+ 			]);
+ 			(0, react.useEffect)(() => {
+-				if (!wide || !searchExpanded) return;
++				if (!wide || !searchExpanded || searchOnExpand) return;
+ 				const onClick = (event) => {
+ 					if (!(event.target instanceof Node) || searchRoot.current?.contains(event.target) === true) return;
+ 					searchInput.current?.blur();
+@@ -1714,6 +1749,7 @@ window.__ModuleLoader__.load({
+ 				};
+ 			}, [
+ 				normalizedQuery,
++				searchOnExpand,
+ 				wide,
+ 				searchExpanded
+ 			]);
+@@ -1972,6 +2008,7 @@ window.__ModuleLoader__.load({
  								className: WorkspaceBrowser_module_css_default.searchButton,
  								"aria-label": t("search.sessions.aria"),
  								onClick: () => {
@@ -190,7 +207,7 @@ index ec779d5..39b40eb 100644
  									setSearchExpanded(true);
  									setSearchOnExpand(true);
  									expandSidebar();
-@@ -2006,6 +2042,7 @@ window.__ModuleLoader__.load({
+@@ -2006,6 +2043,7 @@ window.__ModuleLoader__.load({
  							t
  						}) : (0, react_jsx_runtime.jsx)(SessionTree, {
  							useSessions,
@@ -198,7 +215,7 @@ index ec779d5..39b40eb 100644
  							onSessionRename,
  							onSessionArchive,
  							forkSession,
-@@ -2211,6 +2248,7 @@ window.__ModuleLoader__.load({
+@@ -2211,6 +2249,7 @@ window.__ModuleLoader__.load({
  			"conflict.named": "已存在名为“{name}”的工作区。",
  			"folderError.title": "无法打开文件夹",
  			"folderError.retry": "重新选择",
@@ -206,7 +223,7 @@ index ec779d5..39b40eb 100644
  			"rename": "重命名",
  			"rename.workspace.title": "重命名工作区",
  			"rename.session.title": "重命名会话",
-@@ -2276,6 +2314,7 @@ window.__ModuleLoader__.load({
+@@ -2276,6 +2315,7 @@ window.__ModuleLoader__.load({
  			"conflict.named": "A workspace named “{name}” already exists.",
  			"folderError.title": "Couldn’t open folder",
  			"folderError.retry": "Choose again",
@@ -214,7 +231,7 @@ index ec779d5..39b40eb 100644
  			"rename": "Rename",
  			"rename.workspace.title": "Rename workspace",
  			"rename.session.title": "Rename session",
-@@ -2357,6 +2396,7 @@ window.__ModuleLoader__.load({
+@@ -2357,6 +2397,7 @@ window.__ModuleLoader__.load({
  				open: (sessionId) => {
  					ctx.sessions.open(sessionId);
  				},
@@ -222,7 +239,7 @@ index ec779d5..39b40eb 100644
  				searchSessions,
  				searchResultLimit: ctx.sessions.searchResultLimit,
  				renameSession: async (sessionId, title) => {
-@@ -2418,6 +2458,10 @@ window.__ModuleLoader__.load({
+@@ -2418,6 +2459,10 @@ window.__ModuleLoader__.load({
  		//#endregion
  		exports.apply = apply;
  		exports.inject = inject;
