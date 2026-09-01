@@ -83,9 +83,13 @@ async function loadClientBundle(
       subscribe(listener: (value: Record<string, unknown>) => void): () => void
     }
     researchLinkFrame?: {
-      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string }>
+      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string; frameName?: string }>
+      inspect?(value: { sessionId: string; nodeId: string }): Promise<Record<string, unknown> | null>
       release(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
       releaseSession(sessionId: string): Promise<{ ok: boolean; removed: number }>
+    }
+    researchWebReader?: {
+      read(value: { sessionId: string; nodeId: string; url: string }): Promise<Record<string, unknown>>
     }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
@@ -934,9 +938,13 @@ async function mountResearchCanvas(options: {
       subscribe(listener: (value: Record<string, unknown>) => void): () => void
     }
     researchLinkFrame?: {
-      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string }>
+      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string; frameName?: string }>
+      inspect?(value: { sessionId: string; nodeId: string }): Promise<Record<string, unknown> | null>
       release(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
       releaseSession(sessionId: string): Promise<{ ok: boolean; removed: number }>
+    }
+    researchWebReader?: {
+      read(value: { sessionId: string; nodeId: string; url: string }): Promise<Record<string, unknown>>
     }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
@@ -8258,6 +8266,121 @@ describe('Sherlock workspace and composer controls', () => {
     expect(layout(900, 1_000)).toEqual({ logicalWidth: 1_000, scale: 0.9 })
   })
 
+  it('uses the authorized frame name, applies inspected titles, and rescales after resize', async () => {
+    const resizeObserverCallbacks: Array<() => void> = []
+    const inspect = vi.fn(async () => ({
+      url: 'https://example.com/report',
+      title: '真实页面标题',
+      scrollWidth: 1_200,
+      clientWidth: 720
+    }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-web-frame-inspection',
+      artifacts: [{
+        id: 'web-frame', kind: 'web-link', messageId: 'web-frame',
+        title: 'example.com', titleMode: 'auto', excerpt: 'https://example.com/report',
+        url: 'https://example.com/report', x: 400, y: 300,
+        width: 720, height: 480, sizeMode: 'manual'
+      }],
+      resizeObserverCallbacks,
+      dshDesktop: {
+        researchLinkFrame: {
+          authorize: vi.fn(async (value) => ({
+            url: value.url,
+            frameName: 'sherlock-research-link-0123456789abcdef0123456789abcdef'
+          })),
+          inspect,
+          release: vi.fn(async () => ({ ok: true })),
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      const iframe = mounted.host.querySelector('[data-research-web-frame]') as HTMLIFrameElement | null
+      const viewport = mounted.host.querySelector('[data-research-web-frame-viewport]') as HTMLElement | null
+      expect(iframe?.getAttribute('name'))
+        .toBe('sherlock-research-link-0123456789abcdef0123456789abcdef')
+      expect(viewport).not.toBeNull()
+      if (iframe === null || viewport === null) return
+
+      let viewportWidth = 720
+      Object.defineProperty(viewport, 'clientWidth', {
+        configurable: true,
+        get: () => viewportWidth
+      })
+      await act(async () => {
+        iframe.dispatchEvent(
+          new mounted.browserWindow.Event('load') as unknown as Event
+        )
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(inspect).toHaveBeenCalledWith({
+        sessionId: 'session-web-frame-inspection', nodeId: 'web-frame'
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '真实页面标题', titleMode: 'auto'
+      })
+      expect(iframe.style.width).toBe('1108px')
+      expect(iframe.style.transform).toBe('scale(0.65)')
+
+      viewportWidth = 900
+      await act(async () => { resizeObserverCallbacks.forEach((callback) => callback()) })
+      expect(iframe.style.width).toBe('1200px')
+      expect(iframe.style.transform).toBe('scale(0.75)')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renders public WeChat articles through the scriptless safe reader', async () => {
+    const read = vi.fn(async () => ({
+      status: 'ready',
+      url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA',
+      title: '英伟达豪掷70亿，下场做开放大模型了',
+      author: '示例作者',
+      publishTime: '2026年9月1日',
+      bodyHtml: '<p><strong>文章正文</strong></p>'
+    }))
+    const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-wechat-safe-reader',
+      artifacts: [{
+        id: 'wechat-link', kind: 'web-link', messageId: 'wechat-link',
+        title: 'mp.weixin.qq.com', titleMode: 'auto',
+        excerpt: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA',
+        url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA',
+        x: 400, y: 300, width: 720, height: 480, sizeMode: 'manual'
+      }],
+      dshDesktop: {
+        researchWebReader: { read },
+        researchLinkFrame: {
+          authorize,
+          release: vi.fn(async () => ({ ok: true })),
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      const iframe = mounted.host.querySelector('[data-research-wechat-reader]') as HTMLIFrameElement | null
+      expect(read).toHaveBeenCalledWith({
+        sessionId: 'session-wechat-safe-reader', nodeId: 'wechat-link',
+        url: 'https://mp.weixin.qq.com/s/8KsqPVeAfMMev43BXwvCFA'
+      })
+      expect(authorize).not.toHaveBeenCalled()
+      expect(iframe).not.toBeNull()
+      expect(iframe?.getAttribute('sandbox')).toBe('')
+      expect(iframe?.srcdoc).toContain('文章正文')
+      expect(iframe?.srcdoc).not.toContain('<script')
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        title: '英伟达豪掷70亿，下场做开放大模型了', titleMode: 'auto'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('keeps a bottom global toolbar for links and native container drafts', async () => {
     const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
     const release = vi.fn(async () => ({ ok: true }))
@@ -8626,6 +8749,11 @@ describe('Sherlock workspace and composer controls', () => {
       expect(notice?.textContent).toContain('视口内无内容')
       expect(button?.textContent).toBe('回到内容')
       expect(button).not.toBeNull()
+      expect(browserWindow.getComputedStyle(notice as unknown as HappyDOMElement).bottom)
+        .toBe('78px')
+      expect(browserWindow.getComputedStyle(
+        host.querySelector('[data-research-global-toolbar]') as unknown as HappyDOMElement
+      ).bottom).toBe('24px')
       if (button === null) return
 
       await act(async () => {
