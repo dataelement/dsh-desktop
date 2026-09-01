@@ -82,6 +82,11 @@ async function loadClientBundle(
       setRegion(value: Record<string, unknown>): boolean
       subscribe(listener: (value: Record<string, unknown>) => void): () => void
     }
+    researchLinkFrame?: {
+      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string }>
+      release(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
+      releaseSession(sessionId: string): Promise<{ ok: boolean; removed: number }>
+    }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
       admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
@@ -928,6 +933,11 @@ async function mountResearchCanvas(options: {
       setRegion(value: Record<string, unknown>): boolean
       subscribe(listener: (value: Record<string, unknown>) => void): () => void
     }
+    researchLinkFrame?: {
+      authorize(value: { sessionId: string; nodeId: string; url: string }): Promise<{ url: string }>
+      release(value: { sessionId: string; nodeId: string }): Promise<{ ok: boolean }>
+      releaseSession(sessionId: string): Promise<{ ok: boolean; removed: number }>
+    }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
       admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
@@ -1090,6 +1100,10 @@ async function mountResearchCanvas(options: {
       setSelection(value: { selectedNodeIds: string[]; orderedFileIds: string[] }): void
       selectedFiles(): Array<Record<string, unknown>>
       pendingOrphanRevocations(): string[]
+      createWebLink(url: string, placement?: Record<string, unknown>): Record<string, unknown> | null
+      createContainerDraft(placement?: Record<string, unknown>): Record<string, unknown> | null
+      beginContainerGeneration(nodeId: string, prompt: string): Record<string, unknown> | null
+      setContainerRefresh(nodeId: string, minutes: number): boolean
       beginGeneration(kind: string, sourceNodeIds: string[], placement: Record<string, unknown>, detail?: string): Record<string, unknown> | null
       attachGenerationTask(nodeId: string, receipt: Record<string, unknown>): boolean
       applyGenerationInspection(nodeId: string, inspection: Record<string, unknown>): boolean
@@ -7091,7 +7105,7 @@ describe('Sherlock workspace and composer controls', () => {
   })
 
   it('keeps selection actions visible with the context menu and starts the chosen mind-map detail', async () => {
-    const generate = vi.fn(async () => ({ ok: true }))
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
     const mounted = await mountResearchCanvas({
       sessionId: 'session-selection-actions',
       files: [
@@ -8124,6 +8138,354 @@ describe('Sherlock workspace and composer controls', () => {
           generationChildSessionId: 'child-isolated',
           generationStatus: 'running'
         })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps a bottom global toolbar for links and native container drafts', async () => {
+    const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
+    const release = vi.fn(async () => ({ ok: true }))
+    const generate = vi.fn(async (_request: Record<string, unknown>) => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-global-toolbar-ui',
+      dshDesktop: {
+        researchLinkFrame: {
+          authorize,
+          release,
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      },
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const createWebLink = vi.spyOn(workspace, 'createWebLink')
+      const toolbar = host.querySelector('[data-research-global-toolbar]')
+      const linkButton = host.querySelector('[data-research-global-link]')
+      const containerButton = host.querySelector('[data-research-global-container]')
+      expect(toolbar?.getAttribute('role')).toBe('toolbar')
+      expect(linkButton?.textContent).toContain('链接')
+      expect(containerButton?.textContent).toContain('容器')
+
+      await act(async () => { click(browserWindow, linkButton) })
+      const linkInput = host.querySelector('[data-research-link-input]') as HTMLInputElement | null
+      expect(host.querySelector('[data-research-link-popover]')).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(linkInput)
+      if (linkInput === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLInputElement.prototype, 'value'
+      )?.set?.call(linkInput, 'https://Example.com/dashboard')
+      await act(async () => {
+        linkInput.dispatchEvent(new browserWindow.Event('input', { bubbles: true }) as unknown as Event)
+      })
+      expect(linkInput.value).toBe('https://Example.com/dashboard')
+      await act(async () => {
+        click(browserWindow, host.querySelector('[data-research-link-submit]'))
+        await Promise.resolve()
+      })
+      expect(createWebLink).toHaveBeenCalledWith('https://Example.com/dashboard')
+      expect(host.querySelector('[role="alert"]')?.textContent ?? null).toBeNull()
+      const linkNode = workspace.getSnapshot().artifacts.find((node) => node.kind === 'web-link')
+      expect(linkNode).toMatchObject({
+        title: 'example.com',
+        url: 'https://example.com/dashboard',
+        width: 720,
+        height: 480
+      })
+      expect(authorize).toHaveBeenCalledWith({
+        sessionId: 'session-global-toolbar-ui',
+        nodeId: linkNode?.id,
+        url: 'https://example.com/dashboard'
+      })
+      expect(host.querySelector('[data-research-web-frame]')?.getAttribute('src'))
+        .toBe('https://example.com/dashboard')
+
+      await act(async () => { click(browserWindow, containerButton) })
+      const prompt = host.querySelector('[data-research-container-prompt]') as HTMLTextAreaElement | null
+      expect(prompt).not.toBeNull()
+      expect(browserWindow.document.activeElement).toBe(prompt)
+      if (prompt === null) return
+      Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype, 'value'
+      )?.set?.call(prompt, '制作月度收入柱状图')
+      await act(async () => {
+        prompt.dispatchEvent(new browserWindow.Event('input', { bubbles: true }) as unknown as Event)
+      })
+      await act(async () => {
+        prompt.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', metaKey: true, bubbles: true, cancelable: true
+        }) as unknown as Event)
+        await Promise.resolve()
+      })
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 'session-global-toolbar-ui',
+        kind: 'container',
+        targetNodeId: expect.any(String),
+        prompt: '制作月度收入柱状图'
+      }))
+      expect(generate.mock.calls.at(-1)?.[0]).not.toHaveProperty('selectedNodeIds')
+      expect(workspace.getSnapshot().artifacts.find((node) => node.kind === 'generated-container'))
+        .toMatchObject({
+          generationStatus: 'queued',
+          containerPrompt: '制作月度收入柱状图'
+        })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('starts native container generation through the isolated task service and applies validated output', async () => {
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async () => ({
+      ok: true,
+      status: 202,
+      async json() {
+        return {
+          taskId: 'task-container', canvasNodeId: 'container-placeholder',
+          state: 'running', childSessionId: 'child-container', lastSeq: 2, events: []
+        }
+      }
+    } as Response))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-container-generation-isolated',
+      fetch: fetchMock
+    })
+    try {
+      const draft = mounted.workspace.createContainerDraft({
+        x: 500, y: 300, width: 520, height: 300, sizeMode: 'auto'
+      }) as Record<string, unknown>
+      const target = mounted.workspace.beginContainerGeneration(
+        String(draft.id),
+        '制作收入、利润和现金流三项核心指标'
+      ) as Record<string, unknown>
+      const generatedId = String(target.id)
+      fetchMock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 202,
+        async json() {
+          return {
+            taskId: 'task-container', canvasNodeId: generatedId,
+            state: 'running', childSessionId: 'child-container', lastSeq: 2, events: []
+          }
+        }
+      } as Response))
+      const session = { sessionId: 'session-container-generation-isolated' }
+      const Hub = mounted.client.InputHub as new (
+        rootCtx: Record<string, unknown>,
+        t: (key: string) => string,
+        researchWorkspaces: typeof mounted.researchWorkspaces
+      ) => {
+        generateResearchSelection(session: Record<string, unknown>, request: Record<string, unknown>): Promise<Record<string, unknown>>
+      }
+      const hub = new Hub({}, (key: string) => key, mounted.researchWorkspaces)
+
+      const result = await hub.generateResearchSelection(session, {
+        sessionId: session.sessionId,
+        kind: 'container',
+        targetNodeId: generatedId,
+        prompt: target.prompt
+      })
+
+      expect(result).toMatchObject({ ok: true, taskId: 'task-container' })
+      const payload = JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))
+      expect(payload).toEqual({
+        parentSessionId: session.sessionId,
+        canvasNodeId: generatedId,
+        kind: 'container',
+        prompt: '制作收入、利润和现金流三项核心指标'
+      })
+      expect(mounted.workspace.applyGenerationInspection(generatedId, {
+        taskId: 'task-container', canvasNodeId: generatedId, state: 'completed',
+        lastSeq: 3, completedAt: 1_000, events: [],
+        finalOutput: JSON.stringify({
+          version: 1, type: 'kpi', title: '核心经营指标',
+          items: [
+            { label: '收入', value: '12 亿', change: '+8%' },
+            { label: '利润', value: '2.6 亿' },
+            { label: '现金流', value: '3.1 亿' }
+          ]
+        })
+      })).toBe(true)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        id: generatedId,
+        kind: 'generated-container',
+        title: '核心经营指标',
+        generationStatus: 'completed',
+        width: 640,
+        height: 420,
+        lastSuccessfulAt: 1_000,
+        containerSpec: {
+          version: 1,
+          type: 'kpi',
+          items: [
+            { label: '收入', value: '12 亿', change: '+8%' },
+            { label: '利润', value: '2.6 亿' },
+            { label: '现金流', value: '3.1 亿' }
+          ]
+        }
+      })
+      expect(mounted.workspace.getSnapshot().artifacts[0]).not.toHaveProperty('generationEvents')
+      expect(mounted.workspace.getSnapshot().artifacts[0]).not.toHaveProperty('generationPartialText')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('fails malformed native container output and retries from the saved prompt', async () => {
+    const mounted = await mountResearchCanvas({ sessionId: 'session-container-invalid-output' })
+    try {
+      const draft = mounted.workspace.createContainerDraft({
+        x: 400, y: 240, width: 520, height: 300, sizeMode: 'auto'
+      }) as Record<string, unknown>
+      const target = mounted.workspace.beginContainerGeneration(
+        String(draft.id), '制作一张可执行脚本'
+      ) as Record<string, unknown>
+      expect(mounted.workspace.attachGenerationTask(String(target.id), {
+        taskId: 'task-invalid-container', canvasNodeId: target.id,
+        state: 'running', childSessionId: 'child-invalid-container', lastSeq: 1, events: []
+      })).toBe(true)
+
+      expect(mounted.workspace.applyGenerationInspection(String(target.id), {
+        taskId: 'task-invalid-container', canvasNodeId: target.id,
+        state: 'completed', lastSeq: 2,
+        finalOutput: '{"version":1,"type":"script","code":"alert(1)"}', events: []
+      })).toBe(true)
+      expect(mounted.workspace.getSnapshot().artifacts[0]).toMatchObject({
+        generationStatus: 'failed',
+        generationError: '生成内容格式无效，请重试。',
+        containerPrompt: '制作一张可执行脚本'
+      })
+      expect(mounted.workspace.retryGeneration(String(target.id))).toMatchObject({
+        id: target.id,
+        kind: 'container',
+        prompt: '制作一张可执行脚本'
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('renders all five native container types without executable HTML', async () => {
+    const authorize = vi.fn(async (value: { url: string }) => ({ url: value.url }))
+    const base = {
+      kind: 'generated-container', generationStatus: 'completed',
+      generationLastSeq: 3, sourceNodeIds: [], refreshMinutes: 0,
+      sizeMode: 'manual', width: 640, height: 420
+    }
+    const specs = [{
+      id: 'container-web', title: '市场页面', containerPrompt: '创建市场网页',
+      excerpt: 'web', containerSpec: {
+        version: 1, type: 'web', title: '市场页面', url: 'https://example.com/market'
+      }
+    }, {
+      id: 'container-chart', title: '收入趋势', containerPrompt: '创建收入图',
+      excerpt: 'chart', containerSpec: {
+        version: 1, type: 'chart', title: '收入趋势', variant: 'line',
+        labels: ['一月', '二月'], series: [{ name: '收入', values: [10, 12] }]
+      }
+    }, {
+      id: 'container-table', title: '产品数据', containerPrompt: '创建产品表',
+      excerpt: 'table', containerSpec: {
+        version: 1, type: 'table', title: '产品数据',
+        columns: ['产品', '规模'], rows: [['A', 10], ['B', 12]]
+      }
+    }, {
+      id: 'container-kpi', title: '关键指标', containerPrompt: '创建关键指标',
+      excerpt: 'kpi', containerSpec: {
+        version: 1, type: 'kpi', title: '关键指标',
+        items: [{ label: '收入', value: '12 亿', change: '+8%' }]
+      }
+    }, {
+      id: 'container-markdown', title: '研究结论', containerPrompt: '创建研究结论',
+      excerpt: 'markdown', containerSpec: {
+        version: 1, type: 'markdown', title: '研究结论',
+        content: '## 结论\n\n<script>alert(1)</script> 增长保持稳定。'
+      }
+    }].map((item, index) => ({
+      ...base, ...item, messageId: item.id,
+      x: 400 + index * 40, y: 300 + index * 40
+    }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-container-native-renderers',
+      artifacts: specs,
+      dshDesktop: {
+        researchLinkFrame: {
+          authorize,
+          release: vi.fn(async () => ({ ok: true })),
+          releaseSession: vi.fn(async () => ({ ok: true, removed: 0 }))
+        }
+      }
+    })
+    try {
+      await act(async () => { await Promise.resolve() })
+      expect(mounted.host.querySelector('[data-research-container-chart="line"]')).not.toBeNull()
+      expect(mounted.host.querySelector('[data-research-container-table]')?.textContent)
+        .toContain('产品')
+      expect(mounted.host.querySelector('[data-research-container-kpi]')?.textContent)
+        .toContain('12 亿')
+      expect(mounted.host.querySelector('[data-research-container-markdown]')?.textContent)
+        .toContain('<script>alert(1)</script>')
+      expect(mounted.host.querySelector('script')).toBeNull()
+      expect(authorize).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 'session-container-native-renderers',
+        nodeId: 'container-web',
+        url: 'https://example.com/market'
+      }))
+      expect(mounted.host.querySelector('[data-research-web-frame]')).not.toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps prior container content visible while a manual refresh runs', async () => {
+    const generate = vi.fn(async () => ({ ok: true }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-container-refresh-ui',
+      artifacts: [{
+        id: 'container-refresh', kind: 'generated-container', messageId: 'container-refresh',
+        title: '关键指标', excerpt: 'kpi', generationStatus: 'completed', generationLastSeq: 3,
+        sourceNodeIds: [], containerPrompt: '刷新关键经营指标', refreshMinutes: 0,
+        lastSuccessfulAt: 1_000,
+        containerSpec: {
+          version: 1, type: 'kpi', title: '关键指标',
+          items: [{ label: '收入', value: '12 亿', change: '+8%' }]
+        },
+        x: 400, y: 300, width: 640, height: 420, sizeMode: 'manual'
+      }],
+      selectionGeneration: { generate }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      expect(host.querySelector('[data-research-container-kpi]')?.textContent).toContain('12 亿')
+      await act(async () => {
+        click(browserWindow, host.querySelector('[data-research-container-refresh]'))
+        await Promise.resolve()
+      })
+
+      expect(generate).toHaveBeenCalledWith({
+        sessionId: 'session-container-refresh-ui',
+        kind: 'container',
+        targetNodeId: 'container-refresh',
+        prompt: '刷新关键经营指标'
+      })
+      expect(workspace.getSnapshot().artifacts[0]).toMatchObject({
+        generationStatus: 'queued',
+        containerSpec: { type: 'kpi' }
+      })
+      expect(host.querySelector('[data-research-container-kpi]')?.textContent).toContain('12 亿')
+      expect(host.querySelector('[data-research-container-refreshing]')).not.toBeNull()
+
+      const interval = host.querySelector('[data-research-container-refresh-interval]') as HTMLSelectElement | null
+      expect(interval).not.toBeNull()
+      if (interval !== null) {
+        Object.getOwnPropertyDescriptor(
+          browserWindow.HTMLSelectElement.prototype, 'value'
+        )?.set?.call(interval, '5')
+        await act(async () => {
+          interval.dispatchEvent(new browserWindow.Event('change', { bubbles: true }) as unknown as Event)
+        })
+        expect(workspace.getSnapshot().artifacts[0]).toMatchObject({ refreshMinutes: 5 })
+      }
     } finally {
       await mounted.cleanup()
     }
