@@ -91,6 +91,9 @@ async function loadClientBundle(
     researchWebReader?: {
       read(value: { sessionId: string; nodeId: string; url: string }): Promise<Record<string, unknown>>
     }
+    researchCanvasExport?: {
+      save(value: Record<string, unknown>): Promise<Record<string, unknown>>
+    }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
       admitSidebarFile?(value: { sessionId: string; nodeId: string; relativePath: string }): Promise<Record<string, string> | null>
@@ -945,6 +948,9 @@ async function mountResearchCanvas(options: {
     }
     researchWebReader?: {
       read(value: { sessionId: string; nodeId: string; url: string }): Promise<Record<string, unknown>>
+    }
+    researchCanvasExport?: {
+      save(value: Record<string, unknown>): Promise<Record<string, unknown>>
     }
     researchPreview?: {
       admitFinderFile?(file: File, identity: { sessionId: string; nodeId: string }): Promise<Record<string, string> | null>
@@ -6321,6 +6327,143 @@ describe('Sherlock workspace and composer controls', () => {
       expect(workspace.getSnapshot().selection).toEqual({
         selectedNodeIds: [], orderedFileIds: []
       })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('offers context download for every canvas node family and mind map format choices', async () => {
+    const save = vi.fn(async () => ({ status: 'saved' }))
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-context-download-all',
+      files: [{
+        id: 'file-pdf', name: 'report.pdf', source: 'computer',
+        authorizationId: 'authorization-pdf', contentType: 'application/pdf',
+        x: 120, y: 100
+      }],
+      artifacts: [{
+        id: 'assistant', kind: 'assistant-result', messageId: 'assistant-message',
+        title: '助手回复', excerpt: 'Evidence', x: 380, y: 100
+      }, {
+        id: 'excerpt', kind: 'assistant-excerpt', messageId: 'excerpt-message',
+        title: '回复摘录', excerpt: 'Excerpt', x: 640, y: 100
+      }, {
+        id: 'summary', kind: 'generated-summary', messageId: 'summary-message',
+        title: '总结提炼', excerpt: 'Summary', generationStatus: 'completed',
+        sourceNodeIds: ['assistant'], x: 120, y: 360
+      }, {
+        id: 'map', kind: 'generated-mind-map', messageId: 'map-message',
+        title: '思维导图', excerpt: '# 中心\n- 分支', generationStatus: 'completed',
+        generationDetail: 'brief', sourceNodeIds: ['assistant'], x: 380, y: 360
+      }, {
+        id: 'web', kind: 'web-link', messageId: 'web-message', title: '研究页面',
+        titleMode: 'custom', excerpt: 'https://example.com/', url: 'https://example.com/',
+        x: 640, y: 360, width: 520, height: 300, sizeMode: 'manual'
+      }, {
+        id: 'container', kind: 'generated-container', messageId: 'container-message',
+        title: '关键指标', excerpt: 'kpi', generationStatus: 'completed',
+        generationLastSeq: 1, sourceNodeIds: [], containerPrompt: '生成关键指标',
+        refreshMinutes: 0, containerSpec: {
+          version: 1, type: 'kpi', title: '关键指标',
+          items: [{ label: '收入', value: '12 亿' }]
+        }, x: 900, y: 360, width: 520, height: 300, sizeMode: 'manual'
+      }],
+      dshDesktop: { researchCanvasExport: { save } }
+    })
+    try {
+      const { browserWindow, host } = mounted
+      const selectors = [
+        '[data-research-file-card="file-pdf"]',
+        '[data-research-artifact-card="assistant"]',
+        '[data-research-artifact-card="excerpt"]',
+        '[data-research-artifact-card="summary"]',
+        '[data-research-artifact-card="map"]',
+        '[data-research-artifact-card="web"]',
+        '[data-research-artifact-card="container"]'
+      ]
+      for (const [index, selector] of selectors.entries()) {
+        const target = host.querySelector(selector)
+        expect(target).not.toBeNull()
+        await act(async () => {
+          target?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 180 + index, clientY: 140 + index
+          }))
+        })
+        expect(host.querySelector('[data-research-context-download]')?.textContent)
+          .toContain('下载')
+      }
+
+      const map = host.querySelector('[data-research-artifact-card="map"]')
+      await act(async () => {
+        map?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 360, clientY: 260
+        }))
+      })
+      await act(async () => {
+        click(browserWindow, host.querySelector('[data-research-context-download]'))
+      })
+      expect(['svg', 'png', 'jpg'].map((format) =>
+        host.querySelector(`[data-research-download-format="${format}"]`)?.textContent
+      )).toEqual(['SVG', 'PNG', 'JPG'])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('downloads the right-clicked node only and reports save success or retryable errors', async () => {
+    const save = vi.fn()
+      .mockResolvedValueOnce({ status: 'saved' })
+      .mockResolvedValueOnce({ status: 'error', message: '保存失败，请重试。' })
+      .mockResolvedValueOnce({ status: 'saved' })
+    const artifacts = [{
+      id: 'assistant-a', kind: 'assistant-result', messageId: 'message-a',
+      title: '结论 A', excerpt: '内容 A', x: 220, y: 180
+    }, {
+      id: 'assistant-b', kind: 'assistant-result', messageId: 'message-b',
+      title: '结论 B', excerpt: '内容 B', x: 560, y: 180
+    }]
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-context-download-status',
+      artifacts,
+      selection: { selectedNodeIds: ['assistant-a', 'assistant-b'], orderedFileIds: [] },
+      dshDesktop: { researchCanvasExport: { save } }
+    })
+    try {
+      const { browserWindow, host, workspace } = mounted
+      const before = JSON.stringify(workspace.getSnapshot())
+      const openAndDownload = async (nodeId: string) => {
+        const target = host.querySelector(`[data-research-artifact-card="${nodeId}"]`)
+        await act(async () => {
+          target?.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, clientX: 240, clientY: 180
+          }))
+        })
+        await act(async () => {
+          click(browserWindow, host.querySelector('[data-research-context-download]'))
+          await Promise.resolve(); await Promise.resolve()
+        })
+      }
+
+      await openAndDownload('assistant-b')
+      expect(save).toHaveBeenNthCalledWith(1, {
+        kind: 'text', format: 'md', suggestedName: '结论 B.md',
+        content: '# 结论 B\n\n内容 B\n'
+      })
+      expect(host.querySelector('[data-research-download-feedback="assistant-b"]')?.textContent)
+        .toContain('已下载')
+
+      await openAndDownload('assistant-a')
+      const alert = host.querySelector('[data-research-download-feedback="assistant-a"]')
+      expect(alert?.getAttribute('role')).toBe('alert')
+      expect(alert?.textContent).toContain('保存失败，请重试。')
+      const retry = alert?.querySelector('[data-research-download-retry]')
+      expect(retry).not.toBeNull()
+      await act(async () => {
+        click(browserWindow, retry as HappyDOMElement | null)
+        await Promise.resolve(); await Promise.resolve()
+      })
+      expect(save).toHaveBeenCalledTimes(3)
+      expect(JSON.stringify(workspace.getSnapshot())).toBe(before)
     } finally {
       await mounted.cleanup()
     }
