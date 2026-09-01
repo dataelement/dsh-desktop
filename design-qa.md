@@ -104,6 +104,17 @@ final result: passed
 
 final result: passed
 
+## 常规与详细导图根节点连线 QA（2026-09-01）
+
+- 用户问题参考：`/var/folders/rm/jy4dz49s171fl1dxd9qr3hh80000gp/T/codex-clipboard-f8663a18-0bf4-4e2b-99a5-38200739808d.png`，复杂子树高度超过组件内容区时，根节点与一级主线之间出现断口。
+- 真实本地包：`/Users/heyafeng/Documents/ChatGPT/dsh/.worktrees/integration-20260901-05/dist-notarized/mac-arm64/Sherlock.app`，精确集成提交 `b7cfdf9e33d6c047d6c4ad4f710f7c42d1910d8f`；实机全图 `/tmp/sherlock-research-mind-map-final-b7cfdf9e.jpg`，复杂导图检查图 `/tmp/sherlock-research-mind-map-standard-crop2-b7cfdf9e.jpg`。
+- 根节点连接段现在由根节点自身在垂直中心向右绘制固定 20 px，根层子树不再用整个超高子树的 50% 高度反推连接位置；嵌套层级仍保留原有父节点到子主线的连接规则。
+- 参考问题图与新包实机图已在同一比较输入中检查。常规/详细模式的根节点、连接段与一级纵向主线连续，未再出现参考图中的空白断口；节点样式、白底、深色普通组件顶栏和后续层级线条保持不变。
+- 同一新包实机点击折叠侧栏的“搜索会话”入口后直接输入 `focusprobe`，文本进入搜索框，证明 `92ffca45` 的指定触发路径仍在；测试文本随后清空。
+- 聚焦测试 153/153、类型检查、干净依赖重放、包校验和 Developer ID 签名校验通过；没有执行全功能测试、公证、上传或发布。
+
+final result: passed
+
 ## Research canvas visual components QA (2026-08-28)
 
 - Exact packaged app: `/Users/heyafeng/Documents/ChatGPT/dsh/.worktrees/research-canvas-file-drop/dist-notarized/mac-arm64/Sherlock.app` (`0.7.3`). The app was built and launched with `./script/build_and_run.sh --verify`; Apple notarization, uploads, the public update feed, version changes, tags, and pushes were intentionally skipped.
