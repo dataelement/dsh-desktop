@@ -6301,6 +6301,144 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
+  it('opens a canvas context menu and selects every file and artifact from the menu or Command-A', async () => {
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-canvas-context-select-all',
+      files: [
+        { id: 'file-b', path: '/w/b.pdf', name: 'b.pdf', source: 'computer', x: 420, y: 120 },
+        { id: 'file-a', path: '/w/a.pptx', name: 'a.pptx', source: 'computer', x: 120, y: 120 }
+      ],
+      artifacts: [
+        { id: 'summary', kind: 'generated-summary', messageId: 'summary-message', title: '总结提炼', excerpt: 'Summary', generationStatus: 'completed', sourceNodeIds: ['file-a'], x: 180, y: 420 },
+        { id: 'assistant', kind: 'assistant-result', messageId: 'assistant-message', title: '助手回复', excerpt: 'Evidence', x: 620, y: 240 }
+      ],
+      selection: { selectedNodeIds: ['file-b'], orderedFileIds: ['file-b'] }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      let blankMenuEvent: HappyDOMEvent | undefined
+      await act(async () => {
+        blankMenuEvent = new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 360, clientY: 260
+        })
+        canvas.dispatchEvent(blankMenuEvent)
+      })
+
+      expect(blankMenuEvent?.defaultPrevented).toBe(true)
+      expect(host.querySelector('[data-research-context-arrange]')?.textContent)
+        .toBe('整理画布')
+      const selectAll = host.querySelector('[data-research-context-select-all]')
+      expect(selectAll?.textContent).toContain('全选')
+      await act(async () => { click(browserWindow, selectAll as HappyDOMElement | null) })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-a', 'file-b', 'assistant', 'summary'],
+        orderedFileIds: ['file-a', 'file-b']
+      })
+
+      workspace.setSelection({ selectedNodeIds: [], orderedFileIds: [] })
+      ;(canvas as unknown as { focus(): void }).focus()
+      await act(async () => {
+        browserWindow.dispatchEvent(new browserWindow.KeyboardEvent('keydown', {
+          key: 'a', code: 'KeyA', metaKey: true, bubbles: true, cancelable: true
+        }))
+      })
+      expect(workspace.getSnapshot().selection).toEqual({
+        selectedNodeIds: ['file-a', 'file-b', 'assistant', 'summary'],
+        orderedFileIds: ['file-a', 'file-b']
+      })
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('organizes canvas components into type bands without overlap and fits them to the viewport', async () => {
+    const storage = new MemoryStorage()
+    const mounted = await mountResearchCanvas({
+      sessionId: 'session-organize-canvas',
+      storage,
+      artifacts: [
+        { id: 'assistant-b', kind: 'assistant-result', messageId: 'assistant-b-message', title: '助手回复 B', excerpt: 'Evidence B', x: 2100, y: -800, width: 300, height: 200, sizeMode: 'manual' },
+        { id: 'map', kind: 'generated-mind-map', messageId: 'map-message', title: '思维导图', excerpt: '# Map', generationStatus: 'completed', generationDetail: 'brief', sourceNodeIds: ['assistant-a'], x: -1800, y: 1400, width: 400, height: 300, sizeMode: 'manual' },
+        { id: 'assistant-a', kind: 'assistant-result', messageId: 'assistant-a-message', title: '助手回复 A', excerpt: 'Evidence A', x: -1200, y: -900, width: 300, height: 200, sizeMode: 'manual' },
+        { id: 'summary', kind: 'generated-summary', messageId: 'summary-message', title: '总结提炼', excerpt: 'Summary', generationStatus: 'completed', sourceNodeIds: ['assistant-a'], x: 1600, y: 1200, width: 320, height: 180, sizeMode: 'manual' }
+      ],
+      selection: { selectedNodeIds: ['assistant-b'], orderedFileIds: [] },
+      viewport: { scale: 1.8, x: -900, y: 500 }
+    })
+    try {
+      const { browserWindow, canvas, host, workspace } = mounted
+      await act(async () => { workspace.setCanvasSize({ width: 1000, height: 700 }) })
+      const before = workspace.getSnapshot()
+      const beforeSizes = new Map(before.artifacts.map((node) => [
+        String(node.id), { width: node.width, height: node.height, sizeMode: node.sizeMode }
+      ]))
+
+      await act(async () => {
+        canvas.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: 460, clientY: 320
+        }))
+      })
+      const arrange = host.querySelector('[data-research-context-arrange]')
+      expect(arrange?.textContent).toBe('整理画布')
+      await act(async () => { click(browserWindow, arrange as HappyDOMElement | null) })
+
+      const after = workspace.getSnapshot()
+      expect(after.selection).toEqual({ selectedNodeIds: ['assistant-b'], orderedFileIds: [] })
+      expect(after.artifacts.map((node) => [node.id, node.width, node.height, node.sizeMode]))
+        .toEqual(after.artifacts.map((node) => [
+          node.id,
+          beforeSizes.get(String(node.id))?.width,
+          beforeSizes.get(String(node.id))?.height,
+          beforeSizes.get(String(node.id))?.sizeMode
+        ]))
+
+      const byId = new Map(after.artifacts.map((node) => [node.id, node]))
+      const rect = (id: string) => {
+        const node = byId.get(id)
+        expect(node).toBeDefined()
+        if (node === undefined) throw new Error(`Missing ${id}`)
+        const width = Number(node.width)
+        const height = Number(node.height)
+        return {
+          left: Number(node.x) - width / 2,
+          top: Number(node.y) - height / 2,
+          right: Number(node.x) + width / 2,
+          bottom: Number(node.y) + height / 2
+        }
+      }
+      const assistantA = rect('assistant-a')
+      const assistantB = rect('assistant-b')
+      const summary = rect('summary')
+      const map = rect('map')
+      expect(Math.max(assistantA.bottom, assistantB.bottom) + 56).toBeLessThanOrEqual(summary.top)
+      expect(summary.bottom + 56).toBeLessThanOrEqual(map.top)
+      expect(
+        assistantA.right + 32 <= assistantB.left || assistantB.right + 32 <= assistantA.left
+      ).toBe(true)
+
+      for (const node of after.artifacts) {
+        const width = Number(node.width) * after.viewport.scale
+        const height = Number(node.height) * after.viewport.scale
+        const centerX = Number(node.x) * after.viewport.scale + after.viewport.x
+        const centerY = Number(node.y) * after.viewport.scale + after.viewport.y
+        expect(centerX - width / 2).toBeGreaterThanOrEqual(47)
+        expect(centerX + width / 2).toBeLessThanOrEqual(953)
+        expect(centerY - height / 2).toBeGreaterThanOrEqual(47)
+        expect(centerY + height / 2).toBeLessThanOrEqual(653)
+      }
+      expect(after.viewport.scale).toBeLessThanOrEqual(1)
+      expect(after.viewport).not.toEqual(before.viewport)
+
+      const persisted = JSON.parse(
+        storage.getItem('sherlock.research.canvas.artifacts.v1:session-organize-canvas') ?? '[]'
+      ) as Array<Record<string, unknown>>
+      expect(persisted.map(({ id, x, y }) => ({ id, x, y })))
+        .toEqual(after.artifacts.map(({ id, x, y }) => ({ id, x, y })))
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('renames generic files and artifacts inline with Enter, Escape, and blur', async () => {
     const storage = new MemoryStorage()
     const mounted = await mountResearchCanvas({
