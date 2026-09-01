@@ -6519,7 +6519,7 @@ describe('Sherlock workspace and composer controls', () => {
     }
   })
 
-  it('organizes canvas components into type bands without overlap and fits them to the viewport', async () => {
+  it('organizes mixed canvas components into a compact content-aware layout that fits the viewport', async () => {
     const storage = new MemoryStorage()
     const mounted = await mountResearchCanvas({
       sessionId: 'session-organize-canvas',
@@ -6528,7 +6528,8 @@ describe('Sherlock workspace and composer controls', () => {
         { id: 'assistant-b', kind: 'assistant-result', messageId: 'assistant-b-message', title: '助手回复 B', excerpt: 'Evidence B', x: 2100, y: -800, width: 300, height: 200, sizeMode: 'manual' },
         { id: 'map', kind: 'generated-mind-map', messageId: 'map-message', title: '思维导图', excerpt: '# Map', generationStatus: 'completed', generationDetail: 'brief', sourceNodeIds: ['assistant-a'], x: -1800, y: 1400, width: 400, height: 300, sizeMode: 'manual' },
         { id: 'assistant-a', kind: 'assistant-result', messageId: 'assistant-a-message', title: '助手回复 A', excerpt: 'Evidence A', x: -1200, y: -900, width: 300, height: 200, sizeMode: 'manual' },
-        { id: 'summary', kind: 'generated-summary', messageId: 'summary-message', title: '总结提炼', excerpt: 'Summary', generationStatus: 'completed', sourceNodeIds: ['assistant-a'], x: 1600, y: 1200, width: 320, height: 180, sizeMode: 'manual' }
+        { id: 'summary-short', kind: 'generated-summary', messageId: 'summary-short-message', title: '简短总结', excerpt: '一句话总结。', generationStatus: 'completed', sourceNodeIds: ['assistant-a'], x: 1600, y: 1200, width: 320, height: 180, sizeMode: 'manual' },
+        { id: 'summary-long', kind: 'generated-summary', messageId: 'summary-long-message', title: '详细总结', excerpt: '这是一段需要保留更多阅读空间的详细总结。'.repeat(48), generationStatus: 'completed', sourceNodeIds: ['assistant-a'], x: 1900, y: 1500, width: 320, height: 180, sizeMode: 'manual' }
       ],
       selection: { selectedNodeIds: ['assistant-b'], orderedFileIds: [] },
       viewport: { scale: 1.8, x: -900, y: 500 }
@@ -6537,9 +6538,6 @@ describe('Sherlock workspace and composer controls', () => {
       const { browserWindow, canvas, host, workspace } = mounted
       await act(async () => { workspace.setCanvasSize({ width: 1000, height: 700 }) })
       const before = workspace.getSnapshot()
-      const beforeSizes = new Map(before.artifacts.map((node) => [
-        String(node.id), { width: node.width, height: node.height, sizeMode: node.sizeMode }
-      ]))
 
       await act(async () => {
         canvas.dispatchEvent(new browserWindow.MouseEvent('contextmenu', {
@@ -6552,13 +6550,6 @@ describe('Sherlock workspace and composer controls', () => {
 
       const after = workspace.getSnapshot()
       expect(after.selection).toEqual({ selectedNodeIds: ['assistant-b'], orderedFileIds: [] })
-      expect(after.artifacts.map((node) => [node.id, node.width, node.height, node.sizeMode]))
-        .toEqual(after.artifacts.map((node) => [
-          node.id,
-          beforeSizes.get(String(node.id))?.width,
-          beforeSizes.get(String(node.id))?.height,
-          beforeSizes.get(String(node.id))?.sizeMode
-        ]))
 
       const byId = new Map(after.artifacts.map((node) => [node.id, node]))
       const rect = (id: string) => {
@@ -6576,13 +6567,40 @@ describe('Sherlock workspace and composer controls', () => {
       }
       const assistantA = rect('assistant-a')
       const assistantB = rect('assistant-b')
-      const summary = rect('summary')
+      const summaryShort = rect('summary-short')
+      const summaryLong = rect('summary-long')
       const map = rect('map')
-      expect(Math.max(assistantA.bottom, assistantB.bottom) + 56).toBeLessThanOrEqual(summary.top)
-      expect(summary.bottom + 56).toBeLessThanOrEqual(map.top)
-      expect(
-        assistantA.right + 32 <= assistantB.left || assistantB.right + 32 <= assistantA.left
-      ).toBe(true)
+
+      expect(Number(byId.get('summary-long')?.height))
+        .toBeGreaterThan(Number(byId.get('summary-short')?.height))
+      expect(Number(byId.get('map')?.width) / Number(byId.get('map')?.height))
+        .toBeCloseTo(1.2, 1)
+      expect(after.artifacts.some((node) => {
+        const previous = before.artifacts.find((candidate) => candidate.id === node.id)
+        return previous !== undefined && (
+          Number(node.width) !== Number(previous.width)
+          || Number(node.height) !== Number(previous.height)
+        )
+      })).toBe(true)
+
+      const differentTypesShareABand = [assistantA, assistantB].some((assistant) =>
+        [summaryShort, summaryLong, map].some((other) =>
+          Math.min(assistant.bottom, other.bottom) > Math.max(assistant.top, other.top)
+        )
+      )
+      expect(differentTypesShareABand).toBe(true)
+
+      const rectangles = [assistantA, assistantB, summaryShort, summaryLong, map]
+      for (const [index, first] of rectangles.entries()) {
+        for (const second of rectangles.slice(index + 1)) {
+          expect(
+            first.right + 24 <= second.left
+            || second.right + 24 <= first.left
+            || first.bottom + 24 <= second.top
+            || second.bottom + 24 <= first.top
+          ).toBe(true)
+        }
+      }
 
       for (const node of after.artifacts) {
         const width = Number(node.width) * after.viewport.scale
