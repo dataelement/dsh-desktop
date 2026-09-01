@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -16,6 +16,38 @@ function localBranches(repository) {
     'refs/heads'
   ]).stdout.trim()
   return output ? output.split(/\r?\n/).filter(Boolean) : []
+}
+
+function explicitlyCancelledIntegrationBranches(repository) {
+  const context = resolveRepositoryContext(repository)
+  const historyRoot = path.join(context.commonDirectory, 'sherlock-integration', 'history')
+  const cancelled = new Set()
+  if (!existsSync(historyRoot)) return cancelled
+
+  for (const entry of readdirSync(historyRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const match = /^(\d{8}-\d{2})-cancelled-/.exec(entry.name)
+    if (!match) continue
+    const batchId = match[1]
+    const leaseFile = path.join(historyRoot, entry.name, 'lease.json')
+    if (!existsSync(leaseFile)) continue
+
+    try {
+      const lease = JSON.parse(readFileSync(leaseFile, 'utf8'))
+      const branch = `codex/integration/${batchId}`
+      if (
+        lease?.schemaVersion === 1 &&
+        lease?.batchId === batchId &&
+        lease?.branch === branch &&
+        lease?.currentTip === runGit(repository, ['rev-parse', `refs/heads/${branch}`], { allowFailure: true }).stdout.trim()
+      ) {
+        cancelled.add(branch)
+      }
+    } catch {
+      // Invalid or stale archives must not weaken the formal source gate.
+    }
+  }
+  return cancelled
 }
 
 function readVersion(repository) {
@@ -80,8 +112,9 @@ export function verifyFormalGitState(repository) {
     }
   }
 
+  const cancelledIntegrationBranches = explicitlyCancelledIntegrationBranches(context.worktreeRoot)
   const unmergedBranches = localBranches(context.worktreeRoot)
-    .filter((candidate) => candidate !== 'main')
+    .filter((candidate) => candidate !== 'main' && !cancelledIntegrationBranches.has(candidate))
     .map((candidate) => ({
       name: candidate,
       ahead: Number(

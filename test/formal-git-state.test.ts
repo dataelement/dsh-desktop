@@ -88,9 +88,9 @@ describe('formal Git source gate', () => {
     expect(result.stderr).toContain('unexpected-root-file')
   })
 
-  it('rejects local session branches with commits missing from main', () => {
+  it('rejects an unarchived integration branch with commits missing from main', () => {
     const repository = createRepository()
-    runGit(repository, 'switch', '-c', 'codex/other-session')
+    runGit(repository, 'switch', '-c', 'codex/integration/20260831-02')
     writeFileSync(path.join(repository, 'session.txt'), 'unmerged\n', 'utf8')
     runGit(repository, 'add', 'session.txt')
     runGit(repository, 'commit', '-m', '另一个会话的修改')
@@ -99,8 +99,45 @@ describe('formal Git source gate', () => {
     const result = verify(repository)
 
     expect(result.status).toBe(1)
-    expect(result.stderr).toContain('codex/other-session')
+    expect(result.stderr).toContain('codex/integration/20260831-02')
     expect(result.stderr).toContain('尚未合并到 main')
+  })
+
+  it('ignores an integration branch whose exact batch was explicitly cancelled and archived', () => {
+    const repository = createRepository()
+    const baseMainCommit = runGit(repository, 'rev-parse', 'HEAD')
+    const branch = 'codex/integration/20260831-01'
+    runGit(repository, 'switch', '-c', branch)
+    writeFileSync(path.join(repository, 'cancelled-batch.txt'), 'not for release\n', 'utf8')
+    runGit(repository, 'add', 'cancelled-batch.txt')
+    runGit(repository, 'commit', '-m', '已取消的集成批次')
+    const cancelledTip = runGit(repository, 'rev-parse', 'HEAD')
+    runGit(repository, 'switch', 'main')
+
+    const historyDirectory = path.join(
+      repository,
+      runGit(repository, 'rev-parse', '--git-common-dir'),
+      'sherlock-integration',
+      'history',
+      '20260831-01-cancelled-2026-08-31T08-30-00.000Z'
+    )
+    mkdirSync(historyDirectory, { recursive: true })
+    writeFileSync(path.join(historyDirectory, 'lease.json'), `${JSON.stringify({
+      schemaVersion: 1,
+      revision: 2,
+      batchId: '20260831-01',
+      branch,
+      manifestPath: 'config/sherlock-integration-batches/20260831-01.json',
+      baseMainCommit,
+      currentTip: cancelledTip,
+      ownerTokenHash: 'a'.repeat(64),
+      createdAt: '2026-08-31T08:00:00.000Z',
+      updatedAt: '2026-08-31T08:15:00.000Z'
+    })}\n`, 'utf8')
+
+    const result = verify(repository)
+
+    expect(result.status, result.stderr).toBe(0)
   })
 
   it('rejects uncommitted changes left in another session worktree', () => {
