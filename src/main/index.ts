@@ -86,6 +86,7 @@ import {
   ResearchLinkFrameRegistry,
   registerResearchLinkFrameHandlers
 } from './state/research-link-frame'
+import { registerResearchWebReaderHandlers } from './state/research-web-reader'
 
 protocol.registerSchemesAsPrivileged([{
   scheme: RESEARCH_PREVIEW_SCHEME,
@@ -717,6 +718,11 @@ function registerHarnessHandlers(): void {
     onRejected: (error) => console.warn('[research-canvas] rejected wheel region update', error)
   })
   registerResearchLinkFrameHandlers({
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    registry: researchLinkFrameRegistry
+  })
+  registerResearchWebReaderHandlers({
     ipcMain,
     getMainWindow: () => mainWindow,
     registry: researchLinkFrameRegistry

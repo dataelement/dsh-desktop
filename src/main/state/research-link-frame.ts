@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto'
+import type { WebFrameMain } from 'electron'
 import { registerTrustedMainWindowHandler, type TrustedWindow } from '../ipc-trust'
 
 const MAX_ID_LENGTH = 256
@@ -8,8 +10,16 @@ type ResearchLinkIdentity = {
   nodeId: string
 }
 
-type ResearchLinkAuthorization = ResearchLinkIdentity & {
+export type ResearchLinkAuthorization = ResearchLinkIdentity & {
   url: string
+  frameName: string
+}
+
+export type ResearchLinkFrameInspection = {
+  url: string
+  title: string
+  scrollWidth: number
+  clientWidth: number
 }
 
 type ResearchLinkFrameIpcMain = {
@@ -42,7 +52,10 @@ function researchLinkIdentity(value: unknown): ResearchLinkIdentity {
   return { sessionId, nodeId }
 }
 
-function researchLinkAuthorization(value: unknown): ResearchLinkAuthorization {
+function researchLinkAuthorization(
+  value: unknown,
+  frameName: string
+): ResearchLinkAuthorization {
   const record = exactRecord(value, ['sessionId', 'nodeId', 'url'])
   const sessionId = boundedId(record?.sessionId)
   const nodeId = boundedId(record?.nodeId)
@@ -51,7 +64,25 @@ function researchLinkAuthorization(value: unknown): ResearchLinkAuthorization {
     throw new TypeError('Research link frame identity is invalid.')
   }
   if (url === null) throw new TypeError('Research link URL is invalid.')
-  return { sessionId, nodeId, url }
+  return { sessionId, nodeId, url, frameName }
+}
+
+const RESEARCH_LINK_INSPECTION_SCRIPT = `(() => ({
+  title: document.title,
+  scrollWidth: Math.max(document.documentElement?.scrollWidth ?? 0, document.body?.scrollWidth ?? 0),
+  clientWidth: Math.max(document.documentElement?.clientWidth ?? 0, window.innerWidth ?? 0)
+}))()`
+
+function boundedInspectionMetric(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100_000
+    ? Math.round(value)
+    : null
+}
+
+function inspectionTitle(value: unknown): string {
+  return typeof value === 'string'
+    ? value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 512)
+    : ''
 }
 
 export function normalizeResearchLinkUrl(value: unknown): string | null {
@@ -86,14 +117,61 @@ export function normalizeResearchLinkUrl(value: unknown): string | null {
 export class ResearchLinkFrameRegistry {
   private readonly nodes = new Map<string, ResearchLinkAuthorization>()
 
+  constructor(
+    private readonly randomId: () => string = () => randomBytes(16).toString('hex')
+  ) {}
+
   private key(value: ResearchLinkIdentity): string {
     return `${value.sessionId}\u0000${value.nodeId}`
   }
 
-  authorize(value: unknown): { url: string } {
-    const authorization = researchLinkAuthorization(value)
+  authorize(value: unknown): { url: string; frameName: string } {
+    const token = this.randomId()
+    if (!/^[a-f0-9]{32}$/i.test(token)) throw new TypeError('Research link frame token is invalid.')
+    const authorization = researchLinkAuthorization(
+      value,
+      `sherlock-research-link-${token.toLowerCase()}`
+    )
     this.nodes.set(this.key(authorization), authorization)
-    return { url: authorization.url }
+    return { url: authorization.url, frameName: authorization.frameName }
+  }
+
+  resolve(value: unknown): ResearchLinkAuthorization | null {
+    const identity = researchLinkIdentity(value)
+    return this.nodes.get(this.key(identity)) ?? null
+  }
+
+  async inspect(
+    value: unknown,
+    frames: readonly WebFrameMain[]
+  ): Promise<ResearchLinkFrameInspection | null> {
+    const authorization = this.resolve(value)
+    if (authorization === null) return null
+    const authorizedOrigin = new URL(authorization.url).origin
+    const frame = frames.find((candidate) => {
+      if (candidate.name !== authorization.frameName || candidate.isDestroyed()) return false
+      const currentUrl = normalizeResearchLinkUrl(candidate.url)
+      return currentUrl !== null && new URL(currentUrl).origin === authorizedOrigin
+    })
+    if (frame === undefined) return null
+    const url = normalizeResearchLinkUrl(frame.url)
+    if (url === null) return null
+    try {
+      const result = await frame.executeJavaScript(RESEARCH_LINK_INSPECTION_SCRIPT)
+      if (typeof result !== 'object' || result === null || Array.isArray(result)) return null
+      const record = result as Record<string, unknown>
+      const scrollWidth = boundedInspectionMetric(record.scrollWidth)
+      const clientWidth = boundedInspectionMetric(record.clientWidth)
+      if (scrollWidth === null || clientWidth === null) return null
+      return {
+        url,
+        title: inspectionTitle(record.title),
+        scrollWidth,
+        clientWidth
+      }
+    } catch {
+      return null
+    }
   }
 
   release(value: unknown): boolean {
@@ -135,6 +213,16 @@ export function registerResearchLinkFrameHandlers(options: {
 }): void {
   const handlers: Array<[string, (value: unknown) => unknown]> = [
     ['research:link-frame:authorize', (value) => options.registry.authorize(value)],
+    ['research:link-frame:inspect', (value) => {
+      const window = options.getMainWindow() as (TrustedWindow & {
+        webContents: {
+          mainFrame: TrustedWindow['webContents']['mainFrame'] & {
+            framesInSubtree?: WebFrameMain[]
+          }
+        }
+      }) | undefined
+      return options.registry.inspect(value, window?.webContents.mainFrame.framesInSubtree ?? [])
+    }],
     ['research:link-frame:release', (value) => ({ ok: options.registry.release(value) })],
     ['research:link-frame:release-session', (value) => ({
       ok: true,

@@ -29,10 +29,13 @@ describe('research link frame authorization', () => {
   })
 
   it('allows only active node URLs and same-origin redirects until the last owner releases', () => {
-    const registry = new ResearchLinkFrameRegistry()
+    const registry = new ResearchLinkFrameRegistry(() => 'a'.repeat(32))
     expect(registry.authorize({
       sessionId: 'session-1', nodeId: 'node-1', url: 'https://example.com/report'
-    })).toEqual({ url: 'https://example.com/report' })
+    })).toEqual({
+      url: 'https://example.com/report',
+      frameName: `sherlock-research-link-${'a'.repeat(32)}`
+    })
     registry.authorize({
       sessionId: 'session-1', nodeId: 'node-2', url: 'https://example.com/other'
     })
@@ -67,6 +70,7 @@ describe('research link frame authorization', () => {
     expect(Object.isFrozen(bridge)).toBe(true)
 
     await bridge.authorize({ sessionId: 's1', nodeId: 'n1', url: 'https://example.com/' })
+    await bridge.inspect({ sessionId: 's1', nodeId: 'n1' })
     await bridge.release({ sessionId: 's1', nodeId: 'n1' })
     await bridge.releaseSession('s1')
 
@@ -74,9 +78,57 @@ describe('research link frame authorization', () => {
       ['research:link-frame:authorize', {
         sessionId: 's1', nodeId: 'n1', url: 'https://example.com/'
       }],
+      ['research:link-frame:inspect', { sessionId: 's1', nodeId: 'n1' }],
       ['research:link-frame:release', { sessionId: 's1', nodeId: 'n1' }],
       ['research:link-frame:release-session', { sessionId: 's1' }]
     ])
+  })
+
+  it('inspects only the exact authorized live frame with a fixed script', async () => {
+    const registry = new ResearchLinkFrameRegistry(() => 'b'.repeat(32))
+    const authorization = registry.authorize({
+      sessionId: 'session-1', nodeId: 'node-1', url: 'https://example.com/report'
+    })
+    const executeJavaScript = vi.fn(async (script: string) => ({
+      title: ` ${'真实标题'.repeat(80)} `,
+      scrollWidth: 1_280,
+      clientWidth: 720
+    }))
+    const frame = {
+      name: authorization.frameName,
+      url: 'https://example.com/redirected',
+      isDestroyed: () => false,
+      executeJavaScript
+    }
+
+    await expect(registry.inspect(
+      { sessionId: 'session-1', nodeId: 'node-1' },
+      [frame] as never
+    )).resolves.toEqual({
+      url: 'https://example.com/redirected',
+      title: '真实标题'.repeat(80).slice(0, 512),
+      scrollWidth: 1_280,
+      clientWidth: 720
+    })
+    expect(executeJavaScript).toHaveBeenCalledOnce()
+    expect(executeJavaScript.mock.calls[0]?.[0]).toContain('document.title')
+    expect(executeJavaScript.mock.calls[0]?.[0]).not.toContain('session-1')
+    expect(executeJavaScript.mock.calls[0]?.[0]).not.toContain('node-1')
+
+    for (const invalid of [
+      { ...frame, name: 'other-frame' },
+      { ...frame, url: 'https://other.example/report' },
+      { ...frame, isDestroyed: () => true }
+    ]) {
+      await expect(registry.inspect(
+        { sessionId: 'session-1', nodeId: 'node-1' },
+        [invalid] as never
+      )).resolves.toBeNull()
+    }
+    await expect(registry.inspect(
+      { sessionId: 'session-1', nodeId: 'missing' },
+      [frame] as never
+    )).resolves.toBeNull()
   })
 
   it('registers handlers that accept only the trusted main frame', async () => {
@@ -87,7 +139,7 @@ describe('research link frame authorization', () => {
         handlers.set(channel, handler)
       })
     }
-    const mainFrame = { processId: 7, routingId: 41 }
+    const mainFrame = { processId: 7, routingId: 41, framesInSubtree: [] }
     const webContents = { mainFrame }
     const window = { isDestroyed: () => false, webContents }
     const registry = new ResearchLinkFrameRegistry()
@@ -107,7 +159,10 @@ describe('research link frame authorization', () => {
     await expect(Promise.resolve(authorize?.({
       sender: webContents,
       senderFrame: { ...mainFrame }
-    }, payload))).resolves.toEqual({ url: 'https://example.com/' })
+    }, payload))).resolves.toMatchObject({
+      url: 'https://example.com/',
+      frameName: expect.stringMatching(/^sherlock-research-link-[a-f0-9]{32}$/)
+    })
     expect(registry.allows('https://example.com/next')).toBe(true)
   })
 })

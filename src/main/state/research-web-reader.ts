@@ -1,6 +1,7 @@
 import { load } from 'cheerio'
 import sanitizeHtml from 'sanitize-html'
-import { normalizeResearchLinkUrl } from './research-link-frame'
+import { registerTrustedMainWindowHandler, type TrustedWindow } from '../ipc-trust'
+import { normalizeResearchLinkUrl, type ResearchLinkFrameRegistry } from './research-link-frame'
 
 const MAX_RESPONSE_BYTES = 6 * 1024 * 1024
 const MAX_BODY_BYTES = 4 * 1024 * 1024
@@ -33,6 +34,11 @@ export type ResearchWebReaderDependencies = {
 
 type ResearchWebReaderInput = {
   url: string
+}
+
+type ResearchWebReaderRequest = ResearchWebReaderInput & {
+  sessionId: string
+  nodeId: string
 }
 
 const defaultDependencies: ResearchWebReaderDependencies = {
@@ -210,4 +216,64 @@ export async function readResearchWechatArticle(
     }
   }
   return { status: 'unavailable', reason: 'response' }
+}
+
+type ResearchWebReaderIpcMain = {
+  removeHandler(channel: string): void
+  handle(channel: string, handler: (event: any, value: unknown) => unknown): unknown
+}
+
+function exactReaderRequest(value: unknown): ResearchWebReaderRequest | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(record)
+  if (keys.length !== 3 || !['sessionId', 'nodeId', 'url'].every((key) => keys.includes(key))) {
+    return null
+  }
+  if (
+    typeof record.sessionId !== 'string' || record.sessionId.length === 0 || record.sessionId.length > 256 ||
+    typeof record.nodeId !== 'string' || record.nodeId.length === 0 || record.nodeId.length > 256 ||
+    typeof record.url !== 'string'
+  ) {
+    return null
+  }
+  const url = normalizeResearchLinkUrl(record.url)
+  return url === null ? null : {
+    sessionId: record.sessionId,
+    nodeId: record.nodeId,
+    url
+  }
+}
+
+export function registerResearchWebReaderHandlers(options: {
+  ipcMain: ResearchWebReaderIpcMain
+  getMainWindow(): TrustedWindow | undefined
+  registry: ResearchLinkFrameRegistry
+  readArticle?(input: ResearchWebReaderInput): Promise<ResearchWebReaderResult>
+}): void {
+  options.ipcMain.removeHandler('research:web-reader:read')
+  registerTrustedMainWindowHandler(
+    options.ipcMain,
+    'research:web-reader:read',
+    options.getMainWindow,
+    async (_event, value: unknown) => {
+      const request = exactReaderRequest(value)
+      if (request === null) return { status: 'unavailable', reason: 'unsupported' }
+      let authorization
+      try {
+        authorization = options.registry.resolve({
+          sessionId: request.sessionId,
+          nodeId: request.nodeId
+        })
+      } catch {
+        return { status: 'unavailable', reason: 'unsupported' }
+      }
+      if (authorization === null || authorization.url !== request.url) {
+        return { status: 'unavailable', reason: 'unsupported' }
+      }
+      const readArticle = options.readArticle ?? ((input: ResearchWebReaderInput) =>
+        readResearchWechatArticle(input))
+      return readArticle({ url: request.url })
+    }
+  )
 }

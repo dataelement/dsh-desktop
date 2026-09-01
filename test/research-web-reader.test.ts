@@ -2,8 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   isResearchWechatArticleUrl,
   readResearchWechatArticle,
+  registerResearchWebReaderHandlers,
   type ResearchWebReaderDependencies
 } from '../src/main/state/research-web-reader'
+import { ResearchLinkFrameRegistry } from '../src/main/state/research-link-frame'
+import { createResearchWebReaderBridge } from '../src/preload/research-web-reader'
 
 function fixtureDependencies(
   fetch: ResearchWebReaderDependencies['fetch']
@@ -144,5 +147,74 @@ describe('Research WeChat article reader', () => {
       { url: 'https://mp.weixin.qq.com/s/article-id' },
       fixtureDependencies(vi.fn(async () => { throw new Error('offline') }))
     )).resolves.toEqual({ status: 'unavailable', reason: 'network' })
+  })
+
+  it('exposes a frozen preload bridge with one exact IPC channel', async () => {
+    const invoke = vi.fn(async () => ({ status: 'unavailable', reason: 'content' }))
+    const bridge = createResearchWebReaderBridge(invoke)
+    expect(Object.isFrozen(bridge)).toBe(true)
+
+    await bridge.read({
+      sessionId: 'session-1', nodeId: 'node-1',
+      url: 'https://mp.weixin.qq.com/s/article-id'
+    })
+
+    expect(invoke).toHaveBeenCalledWith('research:web-reader:read', {
+      sessionId: 'session-1', nodeId: 'node-1',
+      url: 'https://mp.weixin.qq.com/s/article-id'
+    })
+  })
+
+  it('allows only the trusted main frame to read the currently authorized article URL', async () => {
+    const handlers = new Map<string, (event: any, value: unknown) => unknown>()
+    const ipcMain = {
+      removeHandler: vi.fn((channel: string) => handlers.delete(channel)),
+      handle: vi.fn((channel: string, handler: (event: any, value: unknown) => unknown) => {
+        handlers.set(channel, handler)
+      })
+    }
+    const mainFrame = { processId: 7, routingId: 41 }
+    const webContents = { mainFrame }
+    const window = { isDestroyed: () => false, webContents }
+    const registry = new ResearchLinkFrameRegistry(() => 'c'.repeat(32))
+    registry.authorize({
+      sessionId: 'session-1', nodeId: 'node-1',
+      url: 'https://mp.weixin.qq.com/s/article-id'
+    })
+    const readArticle = vi.fn(async () => ({
+      status: 'ready' as const,
+      url: 'https://mp.weixin.qq.com/s/article-id',
+      title: '文章标题',
+      bodyHtml: '<p>正文</p>'
+    }))
+    registerResearchWebReaderHandlers({
+      ipcMain,
+      getMainWindow: () => window,
+      registry,
+      readArticle
+    })
+
+    const read = handlers.get('research:web-reader:read')
+    const payload = {
+      sessionId: 'session-1', nodeId: 'node-1',
+      url: 'https://mp.weixin.qq.com/s/article-id'
+    }
+    expect(() => read?.({
+      sender: webContents,
+      senderFrame: { processId: 7, routingId: 42 }
+    }, payload)).toThrow('main Sherlock window')
+    await expect(Promise.resolve(read?.({
+      sender: webContents,
+      senderFrame: { ...mainFrame }
+    }, payload))).resolves.toMatchObject({ status: 'ready', title: '文章标题' })
+    expect(readArticle).toHaveBeenCalledWith({ url: payload.url })
+
+    await expect(Promise.resolve(read?.({
+      sender: webContents,
+      senderFrame: { ...mainFrame }
+    }, { ...payload, url: 'https://mp.weixin.qq.com/s/other' }))).resolves.toEqual({
+      status: 'unavailable', reason: 'unsupported'
+    })
+    expect(readArticle).toHaveBeenCalledTimes(1)
   })
 })

@@ -12,7 +12,18 @@ export type ResearchLinkFrameAuthorization = ResearchLinkFrameIdentity & {
 export function createResearchLinkFrameBridge(invoke: ResearchLinkFrameInvoke) {
   return Object.freeze({
     authorize(value: ResearchLinkFrameAuthorization) {
-      return invoke('research:link-frame:authorize', value) as Promise<{ url: string }>
+      return invoke('research:link-frame:authorize', value) as Promise<{
+        url: string
+        frameName: string
+      }>
+    },
+    inspect(value: ResearchLinkFrameIdentity) {
+      return invoke('research:link-frame:inspect', value) as Promise<{
+        url: string
+        title: string
+        scrollWidth: number
+        clientWidth: number
+      } | null>
     },
     release(value: ResearchLinkFrameIdentity) {
       return invoke('research:link-frame:release', value) as Promise<{ ok: boolean }>
