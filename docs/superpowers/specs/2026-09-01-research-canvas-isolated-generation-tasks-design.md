@@ -80,10 +80,13 @@ type ResearchTaskStart = {
 
 type ResearchTaskReceipt = {
   taskId: string
-  childSessionId: string
+  childSessionId?: string
   state: 'queued' | 'running'
 }
 ```
+
+`childSessionId` is absent while a task is waiting for one of the four active
+slots and becomes available in the first running or later inspection snapshot.
 
 The service also supports task inspection/reconnection and cancellation. Every
 streamed event carries `taskId`, a monotonically increasing task-local sequence,
