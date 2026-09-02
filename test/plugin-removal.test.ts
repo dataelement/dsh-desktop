@@ -255,7 +255,7 @@ describe('durable plugin removal', () => {
     expect(await shouldDeferProfileMaintenance(dshHome)).toBe(true)
     await confirmPluginRemovalsBooted(dshHome)
     expect(await shouldDeferProfileMaintenance(dshHome)).toBe(false)
-    // The verified backup is never auto-deleted; the user must confirm.
+    // The verified backup is kept after the first boot.
     expect(existsSync(result.backupDirectory as string)).toBe(true)
     const pending = await snapshotPluginRemovalLedger(dshHome)
     expect(pending.pendingDeletion).toHaveLength(1)
@@ -263,12 +263,8 @@ describe('durable plugin removal', () => {
     expect(firstPending).toBeDefined()
     expect(firstPending?.pluginName).toBe('@example/plugin-a')
     expect(firstPending?.bootVerifiedAt).toBeDefined()
-    // A second confirmPluginRemovalsBooted still leaves the backup in place.
+    // A second confirmPluginRemovalsBooted automatically cleans the verified backup.
     await confirmPluginRemovalsBooted(dshHome)
-    expect(existsSync(result.backupDirectory as string)).toBe(true)
-    // The user can opt in to cleanup; that is the only path that removes it.
-    const cleanup = await cleanupVerifiedRemovalBackup(dshHome, result.removalId as string)
-    expect(cleanup).toEqual({ ok: true })
     expect(existsSync(result.backupDirectory as string)).toBe(false)
     const verified = await listVerifiedRemovalBackups(dshHome)
     expect(verified).toEqual([])

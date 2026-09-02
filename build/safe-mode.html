@@ -70,18 +70,6 @@
       .empty { display: none; margin: 0; padding: 24px 18px; color: var(--muted); background: var(--surface); text-align: center; font-size: 13px; }
       .empty.visible { display: block; }
       .safety { margin: 15px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-      .backup-card { margin-top:18px; padding:14px 16px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
-      .backup-heading { margin:0; font-size:13px; font-weight:700; }
-      .backup-summary { margin:5px 0 12px; color:var(--muted); font-size:11px; line-height:1.5; }
-      .backups { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
-      .backup { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center; padding:10px 11px; border:1px solid var(--line); border-radius:10px; background:var(--soft); }
-      .backup-name { overflow-wrap:anywhere; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; font-weight:650; }
-      .backup-meta, .backup-status { margin-top:3px; color:var(--muted); font-size:10px; line-height:1.4; overflow-wrap:anywhere; }
-      .backup-status { color:var(--ink); }
-      .backup-actions { display:flex; gap:6px; }
-      .backup-button { padding:5px 8px; border:1px solid var(--strong); border-radius:8px; color:var(--ink); background:var(--surface); cursor:pointer; font-size:10px; font-weight:650; white-space:nowrap; }
-      .backup-button.danger { color:var(--danger); border-color:rgba(195,59,56,.35); }
-      .backup-button:disabled { opacity:.45; cursor:not-allowed; }
       .actions { display:flex; justify-content:flex-end; gap:9px; margin-top:22px; }
       .button { min-height: 39px; padding: 9px 15px; border: 1px solid var(--strong); border-radius: 10px; color: var(--ink); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 620; }
       .button:hover { background: var(--soft); }
@@ -111,11 +99,6 @@
           <p class="empty" id="empty"></p>
         </section>
         <p class="safety" id="safety-note"></p>
-        <section class="backup-card" id="backup-card" hidden aria-labelledby="backup-heading">
-          <h2 class="backup-heading" id="backup-heading"></h2>
-          <p class="backup-summary" id="backup-summary"></p>
-          <ul class="backups" id="backups"></ul>
-        </section>
         <div class="actions">
           <button class="button" id="recovery-open" type="button" hidden></button>
           <button class="button" id="apply" type="button" disabled></button>
@@ -143,8 +126,6 @@
       setText('restart', model.restartLabel)
       setText('quit', model.quitLabel)
       setText('select-all', model.selectAllLabel)
-      setText('backup-heading', model.backupHeading)
-      setText('backup-summary', model.backupSummary)
       setText('recovery-open', model.recoveryOpenLabel)
       document.getElementById('agent').setAttribute('aria-label', model.agentLabel || 'Close')
       const notice = document.getElementById('notice')
@@ -214,26 +195,6 @@
       const updateSelection = () => { apply.disabled = !allCheckboxes.some((checkbox) => checkbox.checked) }
       for (const checkbox of allCheckboxes) checkbox.addEventListener('change', updateSelection)
       document.getElementById('select-all').addEventListener('click', () => { const selected = allCheckboxes.every((checkbox) => checkbox.checked); for (const checkbox of allCheckboxes) checkbox.checked = !selected; updateSelection() })
-      const backupItems = Array.isArray(model.backupItems) ? model.backupItems : []
-      const backupCard = document.getElementById('backup-card')
-      const backups = document.getElementById('backups')
-      if (backupItems.length > 0) backupCard.hidden = false
-      for (const backup of backupItems) {
-        const item = document.createElement('li'); item.className = 'backup'
-        const copy = document.createElement('div')
-        const name = document.createElement('div'); name.className = 'backup-name'; name.textContent = String(backup.pluginName)
-        const meta = document.createElement('div'); meta.className = 'backup-meta'; meta.textContent = [backup.disabledAtLabel, backup.generationLabel, backup.backupDirectory].filter(Boolean).join(' · ')
-        const status = document.createElement('div'); status.className = 'backup-status'; status.textContent = String(backup.statusLabel || '')
-        copy.append(name, meta, status)
-        const actions = document.createElement('div'); actions.className = 'backup-actions'
-        const open = document.createElement('button'); open.type = 'button'; open.className = 'backup-button'; open.textContent = String(backup.openLabel || '')
-        const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'backup-button'; restore.textContent = String(backup.restoreLabel || ''); restore.disabled = backup.restoreReady !== true
-        open.addEventListener('click', () => { open.disabled = true; restore.disabled = true; remove.disabled = true; void window.dshSafeMode.action('backup-open', { removalId: String(backup.removalId) }) })
-        restore.addEventListener('click', () => { open.disabled = true; restore.disabled = true; remove.disabled = true; void window.dshSafeMode.action('backup-restore', { removalId: String(backup.removalId) }) })
-        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'backup-button danger'; remove.textContent = String(backup.deleteLabel || ''); remove.disabled = backup.cleanupReady !== true || model.recoveryLocked === true
-        remove.addEventListener('click', () => { open.disabled = true; restore.disabled = true; remove.disabled = true; void window.dshSafeMode.action('backup-delete', { removalId: String(backup.removalId) }) })
-        actions.append(open, restore, remove); item.append(copy, actions); backups.appendChild(item)
-      }
       apply.addEventListener('click', () => {
         const plugins = pluginCheckboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
         const issues = issueCheckboxes.filter((checkbox) => checkbox.checked).flatMap((checkbox) => {

@@ -919,18 +919,37 @@ export async function confirmPluginRemovalsBooted(
   for (const entry of Object.values(ledger.removals)) {
     if (
       entry.status !== 'removed' ||
-      entry.bootVerifiedAt !== undefined ||
       entry.restoreStartedAt !== undefined ||
       entry.legacyComponentClaim !== undefined
     ) continue
-    entry.bootVerifiedAt = verifiedAt
-    entry.updatedAt = verifiedAt
-    changed = true
-    note(entry.restoredAt === undefined
-      ? `[plugin-removal] boot-verified removal ${entry.removalId} of ${entry.pluginName}; ` +
-          `recovery backup kept at ${entry.backupDirectory} until user confirms cleanup`
-      : `[plugin-removal] boot-verified restored plugin ${entry.pluginName}; ` +
-          `recovery backup ${entry.removalId} remains user-managed`)
+
+    if (entry.bootVerifiedAt === undefined) {
+      entry.bootVerifiedAt = verifiedAt
+      entry.updatedAt = verifiedAt
+      changed = true
+      note(entry.restoredAt === undefined
+        ? `[plugin-removal] boot-verified removal ${entry.removalId} of ${entry.pluginName}; ` +
+            `recovery backup will be auto-cleaned on next launch`
+        : `[plugin-removal] boot-verified restored plugin ${entry.pluginName}; ` +
+            `recovery backup ${entry.removalId} remains user-managed`)
+      continue
+    }
+
+    if (entry.restoredAt !== undefined || entry.backupDeletedAt !== undefined) continue
+
+    try {
+      await rm(entry.backupDirectory, { recursive: true, force: true })
+      entry.backupDeletedAt = verifiedAt
+      entry.updatedAt = verifiedAt
+      changed = true
+      note(`[plugin-removal] auto-cleaned verified recovery backup for ${entry.pluginName} (${entry.removalId})`)
+    } catch (error) {
+      const detail = `verified backup cleanup failed: ${error instanceof Error ? error.message : error}`
+      if (!entry.failures.includes(detail)) entry.failures.push(detail)
+      entry.updatedAt = verifiedAt
+      changed = true
+      note(`[plugin-removal] failed to auto-clean recovery backup for ${entry.pluginName}: ${detail}`)
+    }
   }
   if (changed) await writeLedger(dshHome, ledger)
 }

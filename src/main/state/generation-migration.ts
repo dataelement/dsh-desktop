@@ -165,8 +165,11 @@ async function migrationPlan(dshHome: string, plugins: readonly string[]): Promi
     } catch {
       throw new Error(`${name} has no readable installed package manifest`)
     }
-    const version = installedManifest.version
-    if (typeof version !== 'string') throw new Error(`${name} has no installed version`)
+    const rawVersion = installedManifest.version
+    const version =
+      typeof rawVersion === 'string' && rawVersion.trim() !== ''
+        ? rawVersion.trim()
+        : '0.0.0'
     const declared = manifest.dependencies?.[name]
     const sourceSpec = typeof declared === 'string' ? declared : `${name}@${version}`
     planned.push({
