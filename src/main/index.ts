@@ -1163,19 +1163,6 @@ function launchHarness(): Promise<void> {
         if (upgradedMarket) {
           runtime.note(`[desktop] upgraded dshmarket baseline to ^${VERIFIED_MARKET_BASELINE} in profile manifest`)
           await clearProfileInstallMarker(dshHome)
-          const result = await installProfileDependenciesWithDsh({
-            dshHome,
-            dshEntryPath: dshEntryPath(),
-            nodeExecutablePath: bundledNodePath(),
-            pnpmEntryPath: bundledPnpmEntryPath(),
-            pnpmRunnerPath: bundledPnpmRunnerPath()
-          })
-          if (result.ok) {
-            await markProfileInstallComplete(dshHome)
-            runtime.note('[desktop] successfully installed upgraded dshmarket baseline')
-          } else {
-            runtime.note(`[desktop] failed to install upgraded dshmarket baseline: ${result.detail}`)
-          }
         }
       },
       enforcePendingPluginRemovals: () =>
