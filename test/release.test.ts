@@ -183,6 +183,17 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.portable).toBeUndefined()
   })
 
+  it('keeps update metadata on the latest channel for pre-release versions', async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(projectRoot, 'package.json'), 'utf8')
+    ) as { build: { detectUpdateChannel?: boolean } }
+
+    // A version like 0.8.0-rc.1 would otherwise make electron-builder write
+    // rc-mac.yml / rc.yml instead of latest-mac.yml / latest.yml, which every
+    // downstream release step expects by name.
+    expect(packageJson.build.detectUpdateChannel).toBe(false)
+  })
+
   it('turns a selected Windows drive root into an application directory', async () => {
     const installer = await readFile(
       path.join(projectRoot, 'build', 'installer.nsh'),
@@ -416,7 +427,8 @@ describe('GitHub release contract', () => {
     expect(workflow).not.toContain('security find-generic-password')
     expect(workflow).not.toContain('WINDOWS_SIGNING_KEYCHAIN_SERVICE')
     expect(workflow).toContain('finalize-windows-release.mjs')
-    expect(workflow).toContain('version="${GITHUB_REF_NAME#v}"')
+    // Version comes from the pre-release input on a dispatch, else the tag ref.
+    expect(workflow).toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')
     expect(workflow).toContain('pattern: macos-*')
     expect(workflow).toMatch(
       /publish:[\s\S]*?needs\.sign-windows\.result == 'success'[\s\S]*?- sign-windows/

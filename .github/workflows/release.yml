@@ -523,8 +523,13 @@ jobs:
           test -s "$installer.sig"
           rm -f "$installer.sig"
       - name: Rebuild Windows update metadata
+        env:
+          PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          # On a tag push the version is the tag; on a pre-release dispatch
+          # GITHUB_REF_NAME is the branch, so take it from the input instead.
+          version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"
+          version="${version#v}"
           node scripts/finalize-windows-release.mjs \
             "$WINDOWS_SIGNING_WORK_DIR/release" \
             "$version"

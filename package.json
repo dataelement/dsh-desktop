@@ -369,6 +369,7 @@
         "url": "https://dshdesktop.com/updates/latest/"
       }
     ],
+    "detectUpdateChannel": false,
     "artifactName": "dsh-desktop-${os}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.developer-tools",
