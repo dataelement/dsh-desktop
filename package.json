@@ -25,8 +25,8 @@
   "scripts": {
     "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "build:market": "npm --prefix packages/dshmarket run build",
+    "build": "npm run build:market && electron-vite build",
+    "build:market": "tsc -p packages/dshmarket/tsconfig.json",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
