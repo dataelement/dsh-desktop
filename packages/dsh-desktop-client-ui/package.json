@@ -23,8 +23,8 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-alpha.4",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-alpha.4",
-    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.2-alpha.4"
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.2-rc.1"
   }
 }

@@ -1,6 +1,6 @@
 # 升级到 Harness 0.1.2-alpha.1
 
-> 本文档记录 0.1.1-rc.2 → 0.1.2-alpha.1 的升级。后续见 [harness-0.1.2-alpha.3-upgrade.md](./harness-0.1.2-alpha.3-upgrade.md) 及 [harness-0.1.2-alpha.4-upgrade.md](./harness-0.1.2-alpha.4-upgrade.md)。
+> 本文档记录 0.1.1-rc.2 → 0.1.2-alpha.1 的升级。后续见 [harness-0.1.2-alpha.3-upgrade.md](./harness-0.1.2-alpha.3-upgrade.md)、[harness-0.1.2-alpha.4-upgrade.md](./harness-0.1.2-alpha.4-upgrade.md) 及 [harness-0.1.2-rc.1-upgrade.md](./harness-0.1.2-rc.1-upgrade.md)。
 
 对照上游 [`dsh-v0.1.2-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1)
 （2026-08-27 发布）从 `0.1.1-rc.2` 升级。

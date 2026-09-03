@@ -35,7 +35,7 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.2-alpha.4"
+    "@deepseek-ai/dsh-host-webserver": "^0.1.2-rc.1"
   },
   "dependencies": {
     "pnpm": "10.34.5"

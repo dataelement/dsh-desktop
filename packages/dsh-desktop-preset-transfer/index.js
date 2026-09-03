@@ -28,7 +28,7 @@ const EXPORT_PATH = '/api/agent-preset.export'
 const IMPORT_PATH = '/api/agent-preset.import'
 
 /** Harness version stamped into an exported manifest. */
-const PRESET_SOURCE_DSH_VERSION = '0.1.2-alpha.4'
+const PRESET_SOURCE_DSH_VERSION = '0.1.2-rc.1'
 
 const PRESET_ARCHIVE_FORMAT = "dsh-preset";
 const PRESET_ARCHIVE_VERSION = 1;

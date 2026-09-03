@@ -8,47 +8,47 @@ import { describe, expect, it } from 'vitest'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
-// version tracks the patch-filename suffix; bumped per-entry as Task 5b migrates each patch to alpha.4
+// version tracks the patch-filename suffix; bumped per-entry as Task 5b migrates each patch to rc.1
 const patchedPackages = [
   {
     name: 'dsh-session-persistence',
-    version: '0.1.2-alpha.4',
+    version: '0.1.2-rc.1',
     file: 'lib/index.js',
     markers: ['assertDeletable(id)', 'async delete(id)', 'await this.backend.deleteStored(id)']
   },
   {
     name: 'dsh-session-persistence-jsonl',
-    version: '0.1.2-alpha.4',
+    version: '0.1.2-rc.1',
     file: 'lib/index.js',
     markers: ['delete(id) {', 'return this.coordinator.delete(id)', 'async deleteStored(id)']
   },
   {
     name: 'dsh-workspace',
-    version: '0.1.2-alpha.4',
+    version: '0.1.2-rc.1',
     file: 'lib/index.js',
     markers: ['forgetSession(sessionId)', 'archivedSessionIds: state.archivedSessionIds.filter']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.2-alpha.4',
+    version: '0.1.2-rc.1',
     file: 'lib/index.js',
     markers: ['disposeOwned(sessionId)', 'await persistence.delete(request.sessionId)', 'workspaceRegistry.forgetSession(request.sessionId)']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.2-alpha.4',
+    version: '0.1.2-rc.1',
     file: 'lib/client.js',
     markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'if (this.watched === sessionId) this.watched = void 0']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.2-alpha.4',
+    version: '0.1.2-rc.1',
     file: 'lib/typert.host.js',
     markers: ["id: '@deepseek-ai/dsh-api-session-controller#session/delete'", "method: 'delete'"]
   },
   {
     name: 'dsh-client-ui-workspace',
-    version: '0.1.2-alpha.4',
+    version: '0.1.2-rc.1',
     file: 'lib/client.js',
     markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await sessions.delete(sessionId)']
   }
