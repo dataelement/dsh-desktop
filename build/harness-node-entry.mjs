@@ -41,6 +41,12 @@ process.stdout.write(`[harness-node] DSH_HOME=${process.env.DSH_HOME ?? ''}\n`)
 // third-party plugins alike — without needing an upstream fix in each of
 // them. A caller that explicitly sets windowsHide keeps its own choice.
 if (process.platform === 'win32') {
+  // The Harness is spawned console-less (detached + windowsHide), so child
+  // console apps flash their own window unless the Harness owns a hidden
+  // console for them to inherit (issue #233).
+  const { createHiddenConsole } = await import('./windows-hidden-console.mjs')
+  createHiddenConsole()
+
   enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExports)
 
   process.stdout.write('[harness-node] windowsHide enforcement enabled for child processes\n')
