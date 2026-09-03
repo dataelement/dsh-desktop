@@ -134,8 +134,25 @@ export interface PatchState {
   inserts: string[]
 }
 
-/** Row ids the market is allowed to write: plain unquoted YAML scalars. */
-const ROW_ID_RE = /^[A-Za-z0-9_.-]+$/u
+/** Row ids the market may write unquoted: plain YAML scalars. */
+const PLAIN_ROW_ID_RE = /^[A-Za-z0-9_.-]+$/u
+
+/**
+ * Serialize a row id as a YAML scalar, double-quoting it when it is not a
+ * plain scalar. Loader entry ids may be npm package names such as
+ * `@scope/name`; the leading `@` is a reserved YAML indicator, so a bare
+ * `- id: @scope/name` is not valid YAML and breaks the profile overlay
+ * (issue #241). A double-quoted scalar (`"@scope/name"`) is valid YAML and
+ * is round-tripped by the line scanner below.
+ */
+function yamlRowId(rowId: string): string {
+  return PLAIN_ROW_ID_RE.test(rowId) ? rowId : JSON.stringify(rowId)
+}
+
+/** Reverse {@link yamlRowId}: strip the double quotes around a quoted scalar. */
+function unquoteYamlRowId(raw: string): string {
+  return raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw
+}
 
 /**
  * Line-wise scan of one patch file — the plugin-hub shapes. Deliberately
@@ -161,15 +178,16 @@ export function readUserPatchState(patchPath: string): PatchState {
     }
     if (/^- /u.test(line)) inInsert = false
     if (inInsert) {
-      const insertRow = /^ {4}- id: ([A-Za-z0-9_.-]+)/u.exec(line)
-      if (insertRow !== null) inserts.push(insertRow[1])
+      const insertRow = /^ {4}- id: ((?:[A-Za-z0-9_.-]+)|"(?:[^"]*)")/u.exec(line)
+      if (insertRow !== null) inserts.push(unquoteYamlRowId(insertRow[1]))
       continue
     }
-    const disableRow = /^- id: ([A-Za-z0-9_.-]+)\s*$/u.exec(line)
+    const disableRow = /^- id: ((?:[A-Za-z0-9_.-]+)|"(?:[^"]*)")\s*$/u.exec(line)
     if (disableRow === null) continue
+    const rowId = unquoteYamlRowId(disableRow[1])
     const next = lines[index + 1] ?? ''
-    if (/^ {2}disabled: true\s*$/u.test(next)) disables.push(disableRow[1])
-    else if (/^ {2}disabled: false\s*$/u.test(next)) forced.push(disableRow[1])
+    if (/^ {2}disabled: true\s*$/u.test(next)) disables.push(rowId)
+    else if (/^ {2}disabled: false\s*$/u.test(next)) forced.push(rowId)
   }
   return { disables, forced, inserts }
 }
@@ -385,7 +403,7 @@ function escapeRegExp(value: string): string {
 }
 
 function rowBlock(rowId: string, disabled: boolean): string {
-  return `- id: ${rowId}\n  disabled: ${disabled ? 'true' : 'false'}\n`
+  return `- id: ${yamlRowId(rowId)}\n  disabled: ${disabled ? 'true' : 'false'}\n`
 }
 
 /**
@@ -451,9 +469,6 @@ function appendPatchEntry(patchPath: string, block: string): { ok: boolean; reas
 /** Disable one row: append `- id: X` + `disabled: true` (idempotent). */
 export function disableRow(patchPath: string, rowId: string): Promise<{ ok: boolean; reason: string | null }> {
   return queuedWrite(async () => {
-    if (!ROW_ID_RE.test(rowId)) {
-      return { ok: false, reason: `行 id 含特殊字符,不支持写入补丁层 / row id ${rowId} cannot be written to the patch layer` }
-    }
     const state = readUserPatchState(patchPath)
     if (state.disables.includes(rowId)) return { ok: true, reason: null }
     const result = appendPatchEntry(patchPath, rowBlock(rowId, true))
@@ -466,9 +481,6 @@ export function disableRow(patchPath: string, rowId: string): Promise<{ ok: bool
  * `disabled: false` when a lower layer (bundle/home patch) holds it down. */
 export function enableRow(patchPath: string, rowId: string): Promise<{ ok: boolean; reason: string | null }> {
   return queuedWrite(async () => {
-    if (!ROW_ID_RE.test(rowId)) {
-      return { ok: false, reason: `行 id 含特殊字符,不支持写入补丁层 / row id ${rowId} cannot be written to the patch layer` }
-    }
     const state = readUserPatchState(patchPath)
     const blockRe = new RegExp(`^- id: ['\"]?${escapeRegExp(rowId)}['\"]?\\r?\\n  disabled: true\\r?\\n`, 'mu')
     const text = (() => {
