@@ -30,7 +30,7 @@ import {
   clearProfileInstallMarker,
   markProfileInstallComplete
 } from './state/profile-install-marker'
-import { inspectProfileConsistency } from './state/profile-consistency'
+import { healProfileBundles, inspectProfileConsistency } from './state/profile-consistency'
 import {
   disableProfilePlugins,
   inspectProfileCompatibility,
@@ -1030,6 +1030,10 @@ async function showSplash(): Promise<void> {
  */
 async function reportProfileConsistency(dshHome: string): Promise<void> {
   try {
+    const healed = await healProfileBundles(dshHome)
+    if (healed.length > 0) {
+      runtime.note(`[desktop] auto-composed ${healed.length} missing bundle(s): ${healed.join(', ')}`)
+    }
     const findings = await inspectProfileConsistency(dshHome)
     const store = await inspectStoreConsistency(dshHome)
     if (store) findings.push(store)

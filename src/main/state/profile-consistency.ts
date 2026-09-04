@@ -156,3 +156,50 @@ export async function inspectProfileConsistency(dshHome: string): Promise<string
 
   return findings
 }
+
+/**
+ * Auto-heal uncomposed bundles: if a plugin is declared as a dependency and
+ * installed with a bundle manifest, ensure it is added to manifest.dsh.profile.bundles.
+ * Completely silent, fail-safe, and zero network overhead.
+ */
+export async function healProfileBundles(dshHome: string): Promise<string[]> {
+  const manifestPath = profilePackageJsonPath(dshHome)
+  let manifestText: string
+  let manifest: ProfileManifest & { dsh?: { profile?: { bundles?: string[] }; [key: string]: unknown }; [key: string]: unknown }
+  try {
+    manifestText = await readFile(manifestPath, 'utf8')
+    manifest = JSON.parse(manifestText)
+  } catch {
+    return []
+  }
+
+  const nodeModulesPath = join(dirname(manifestPath), 'node_modules')
+  const currentBundles = manifest.dsh?.profile?.bundles ?? []
+  const bundleSet = new Set(currentBundles)
+  const dependencies = Object.keys(manifest.dependencies ?? {})
+  const healed: string[] = []
+
+  for (const dependency of dependencies) {
+    if (bundleSet.has(dependency)) continue
+    const { installed, bundle } = await inspectPackage(nodeModulesPath, dependency)
+    if (installed && bundle) {
+      currentBundles.push(dependency)
+      bundleSet.add(dependency)
+      healed.push(dependency)
+    }
+  }
+
+  if (healed.length > 0) {
+    try {
+      if (!manifest.dsh) manifest.dsh = {}
+      if (!manifest.dsh.profile) manifest.dsh.profile = {}
+      manifest.dsh.profile.bundles = currentBundles
+      const { writeFile } = await import('node:fs/promises')
+      await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
+    } catch {
+      // Best-effort auto-healing; never crash startup if write fails
+    }
+  }
+
+  return healed
+}

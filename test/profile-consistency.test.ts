@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { inspectProfileConsistency } from '../src/main/state/profile-consistency'
+import { healProfileBundles, inspectProfileConsistency } from '../src/main/state/profile-consistency'
 
 describe('profile consistency', () => {
   const homes: string[] = []
@@ -109,5 +109,34 @@ describe('profile consistency', () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-consistency-empty-'))
     homes.push(home)
     await expect(inspectProfileConsistency(home)).resolves.toEqual([])
+  })
+
+  it('auto-heals uncomposed bundles into manifest dsh.profile.bundles', async () => {
+    const { home, modules } = await profileHome({
+      dependencies: { 'dsh-better-sidebar': '^1.0.0', 'dsh-dream-skin': '^1.0.0' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } }
+    })
+    await install(modules, 'dsh-better-sidebar', true)
+    await install(modules, 'dsh-dream-skin', true)
+
+    // Before heal, consistency reports they are installed but not composed
+    const beforeFindings = await inspectProfileConsistency(home)
+    expect(beforeFindings).toContain('dsh-better-sidebar is installed and declares a bundle, but is not composed')
+    expect(beforeFindings).toContain('dsh-dream-skin is installed and declares a bundle, but is not composed')
+
+    // Heal
+    const healed = await healProfileBundles(home)
+    expect(healed).toEqual(['dsh-better-sidebar', 'dsh-dream-skin'])
+
+    // After heal, consistency reports clean
+    await expect(inspectProfileConsistency(home)).resolves.toEqual([])
+
+    // Check package.json
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(manifest.dsh.profile.bundles).toEqual([
+      '@deepseek-ai/dsh-base',
+      'dsh-better-sidebar',
+      'dsh-dream-skin'
+    ])
   })
 })
