@@ -41,7 +41,7 @@ index dd1dc8d..493bfc1 100644
  		var ModelsSection_module_css_default = {
  			"addActions": "qy-_KG_addActions",
  			"addBlock": "qy-_KG_addBlock",
-@@ -158,6 +190,142 @@ window.__ModuleLoader__.load({
+@@ -158,6 +190,149 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -154,6 +154,9 @@ index dd1dc8d..493bfc1 100644
 +		*/
 +		function ModelReasoningEffortsField(props) {
 +			const ids = reasoningEffortIds(props.model);
++			const canonical = ids.join(", ");
++			const [draft, setDraft] = (0, react.useState)(null);
++			const value = draft !== null ? draft : canonical;
 +			return (0, react_jsx_runtime.jsxs)("div", {
 +				className: "dshModelReasoningField",
 +				children: [
@@ -165,12 +168,16 @@ index dd1dc8d..493bfc1 100644
 +						}), (0, react_jsx_runtime.jsx)("input", {
 +							className: ModelsSection_module_css_default["input"],
 +							type: "text",
-+							value: ids.join(", "),
++							value,
 +							placeholder: props.t("modelReasoningLevelsPlaceholder"),
 +							"aria-label": `${props.t("modelReasoningLevels")} ${String(props.index + 1)}`,
 +							disabled: props.disabled,
 +							onChange: (event) => {
++								setDraft(event.target.value);
 +								props.onChange(nextReasoningEfforts(props.model, parseEffortList(event.target.value)));
++							},
++							onBlur: () => {
++								setDraft(null);
 +							}
 +						}), (0, react_jsx_runtime.jsx)("span", {
 +							className: "dshModelReasoningHint",

@@ -245,6 +245,24 @@ describe('settings model reasoning effort field', () => {
     )
   })
 
+  it('allows trailing commas during input and trims them on blur in the UI component', async () => {
+    const client = await readFile(settingsModelsClient, 'utf8')
+    const field = reasoningFieldSource(client)
+
+    // Verify draft state exists to allow typing trailing commas smoothly
+    expect(field).toContain('const [draft, setDraft] = (0, react.useState)(null);')
+    expect(field).toContain('const value = draft !== null ? draft : canonical;')
+    expect(field).toContain('setDraft(event.target.value);')
+    expect(field).toContain('onBlur: () => {')
+    expect(field).toContain('setDraft(null);')
+
+    // Verify trailing commas in text are ignored by parseEffortList
+    const { parseEffortList } = await loadReasoningHelpers()
+    expect(parseEffortList('low, medium, ')).toEqual(['low', 'medium'])
+    expect(parseEffortList('low,')).toEqual(['low'])
+    expect(parseEffortList('low,   ')).toEqual(['low'])
+  })
+
   it('guards the bundled adapter contract and the regenerated patch', async () => {
     const [catalogTypes, configTypes, patch] = await Promise.all([
       readFile(piAiCatalogTypes, 'utf8'),
