@@ -6,7 +6,7 @@ describe('packaged client module resolution', () => {
     const [loaderPatch, clientModulesPatch] = await Promise.all([
       readFile('patches/@deepseek-ai+cordis-plugin-loader+1.0.3.patch', 'utf8'),
       readFile(
-        'patches/@deepseek-ai+dsh-client-modules+0.1.2-alpha.4.patch',
+        'patches/@deepseek-ai+dsh-client-modules+0.1.2-rc.1.patch',
         'utf8'
       )
     ])

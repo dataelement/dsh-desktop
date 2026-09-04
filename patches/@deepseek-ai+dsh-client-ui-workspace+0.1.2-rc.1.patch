@@ -1,0 +1,857 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+@@ -179,7 +179,8 @@
+ 					orderBy: "updated",
+ 					groupExpansion: {},
+ 					sessionOrderByAccount: {},
+-					sessionUpdatedAtByAccount: {}
++					sessionUpdatedAtByAccount: {},
++					unreadSessionIds: []
+ 				}),
+ 				persist: "dsh.workspace.view.v5",
+ 				actions: {
+@@ -204,6 +205,13 @@
+ 					},
+ 					setSessionOrder: (d, accountKey, order) => {
+ 						d.sessionOrderByAccount[accountKey] = order;
++					},
++					markSessionUnread: (d, sessionId) => {
++						const unread = d.unreadSessionIds ?? (d.unreadSessionIds = []);
++						if (!unread.includes(sessionId)) unread.push(sessionId);
++					},
++					markSessionRead: (d, sessionId) => {
++						d.unreadSessionIds = (d.unreadSessionIds ?? []).filter((id) => id !== sessionId);
+ 					}
+ 				}
+ 			});
+@@ -527,8 +535,8 @@
+ 			};
+ 		}
+ 		//#endregion
+-		//#region \0dsh-css:/private/tmp/dsh-harness-v0.1.2-rc.1/packages/client/ui-workspace/src/client/rows/Rows.module.css.mjs
+-		const css$2 = ".A5jQHq_projectRow,.A5jQHq_sessionRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.A5jQHq_projectRow:hover,.A5jQHq_sessionRow:hover,.A5jQHq_sessionRow.A5jQHq_selected{background:var(--dsw-alias-interactive-bg-hover)}.A5jQHq_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.A5jQHq_searchResultRow:hover,.A5jQHq_searchResultRow.A5jQHq_selected{background:var(--dsw-alias-interactive-bg-hover)}.A5jQHq_searchResultHeading{align-items:center;min-width:0;display:flex}.A5jQHq_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;flex:0 auto;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.A5jQHq_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.A5jQHq_searchResultWorkspace,.A5jQHq_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.A5jQHq_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.A5jQHq_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.A5jQHq_projectRow{box-sizing:border-box;align-items:center;height:34px}.A5jQHq_projectRow .A5jQHq_rowActions{height:20px}.A5jQHq_sessionRow{height:32px;animation:A5jQHq_row-in .15s var(--ds-ease-in-out);gap:0}.A5jQHq_sessionRow .A5jQHq_title{margin:0 6px 0 4px}.A5jQHq_flatSessionRowWithoutStatus .A5jQHq_title{margin-left:0}@keyframes A5jQHq_row-in{0%{opacity:0}}.A5jQHq_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.A5jQHq_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.A5jQHq_folderActive{color:var(--dsw-alias-state-business-primary)}.A5jQHq_projectRow .A5jQHq_chevron{display:none}.A5jQHq_projectRow:hover .A5jQHq_chevron{display:inline-flex}.A5jQHq_projectRow:hover .A5jQHq_folder{display:none}.A5jQHq_arrow{transition:transform .15s var(--ds-ease-in-out)}.A5jQHq_arrowOpen{transform:rotate(90deg)}.A5jQHq_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.A5jQHq_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.A5jQHq_renameInput{border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.A5jQHq_sessionRow .A5jQHq_title{flex:1}.A5jQHq_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.A5jQHq_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.A5jQHq_scheduleIndicator{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;margin-right:6px;display:inline-flex}.A5jQHq_searchScheduleIndicator{margin-left:4px;margin-right:0}.A5jQHq_dot{flex:none}.A5jQHq_rowActions{flex:none;align-items:center;gap:12px;display:none}.A5jQHq_projectRow:hover .A5jQHq_rowActions,.A5jQHq_sessionRow:hover .A5jQHq_rowActions,.A5jQHq_projectRow.A5jQHq_menuOpen .A5jQHq_rowActions,.A5jQHq_sessionRow.A5jQHq_menuOpen .A5jQHq_rowActions{display:inline-flex}.A5jQHq_sessionRow:hover .A5jQHq_time,.A5jQHq_sessionRow.A5jQHq_menuOpen .A5jQHq_time{display:none}.A5jQHq_projectRow.A5jQHq_menuOpen,.A5jQHq_sessionRow.A5jQHq_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.A5jQHq_sessionRow.A5jQHq_dropBefore,.A5jQHq_sessionRow.A5jQHq_dropAfter{position:relative}.A5jQHq_sessionRow.A5jQHq_dropBefore:before,.A5jQHq_sessionRow.A5jQHq_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.A5jQHq_sessionRow.A5jQHq_dropBefore:before{top:-7px}.A5jQHq_sessionRow.A5jQHq_dropAfter:after{bottom:-7px}.A5jQHq_hoverContent{flex-direction:column;gap:8px;display:flex}.A5jQHq_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.A5jQHq_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.A5jQHq_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.A5jQHq_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.A5jQHq_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.A5jQHq_iconButton:hover{color:var(--dsw-alias-label-primary)}.A5jQHq_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.A5jQHq_sessionRow,.A5jQHq_arrow{transition:none;animation:none}}";
++		//#region \0dsh-css:/Users/alex/Documents/Code/AI/deepseek-harness/packages/client/ui-workspace/src/client/rows/Rows.module.css.mjs
++		const css$2 = ".DZ80Kq_projectRow,.DZ80Kq_sessionRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.DZ80Kq_projectRow:hover,.DZ80Kq_sessionRow:hover,.DZ80Kq_sessionRow.DZ80Kq_selected{background:var(--dsw-alias-interactive-bg-hover)}.DZ80Kq_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.DZ80Kq_searchResultRow:hover,.DZ80Kq_searchResultRow.DZ80Kq_selected{background:var(--dsw-alias-interactive-bg-hover)}.DZ80Kq_searchResultHeading{align-items:center;min-width:0;display:flex}.DZ80Kq_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;flex:0 auto;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.DZ80Kq_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.DZ80Kq_searchResultWorkspace,.DZ80Kq_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.DZ80Kq_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.DZ80Kq_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.DZ80Kq_projectRow{box-sizing:border-box;align-items:center;height:34px}.DZ80Kq_projectRow .DZ80Kq_rowActions{height:20px}.DZ80Kq_sessionRow{height:32px;animation:DZ80Kq_row-in .15s var(--ds-ease-in-out);gap:0}.DZ80Kq_sessionRow .DZ80Kq_title{margin:0 6px 0 4px}.DZ80Kq_unreadTitle{font-weight:600}.DZ80Kq_unreadDot,.DZ80Kq_unreadMenuIcon{box-sizing:border-box;background:var(--dsw-alias-state-business-primary);border-radius:50%;display:inline-block}.DZ80Kq_unreadDot{width:7px;height:7px}.DZ80Kq_unreadMenuIcon{border:2px solid var(--dsw-specific-menu);width:9px;height:9px;box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary)}.DZ80Kq_flatSessionRowWithoutStatus .DZ80Kq_title{margin-left:0}@keyframes DZ80Kq_row-in{0%{opacity:0}}.DZ80Kq_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.DZ80Kq_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.DZ80Kq_folderActive{color:var(--dsw-alias-state-business-primary)}.DZ80Kq_projectRow .DZ80Kq_chevron{display:none}.DZ80Kq_projectRow:hover .DZ80Kq_chevron{display:inline-flex}.DZ80Kq_projectRow:hover .DZ80Kq_folder{display:none}.DZ80Kq_arrow{transition:transform .15s var(--ds-ease-in-out)}.DZ80Kq_arrowOpen{transform:rotate(90deg)}.DZ80Kq_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.DZ80Kq_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.DZ80Kq_renameInput{border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.DZ80Kq_sessionRow .DZ80Kq_title{flex:1}.DZ80Kq_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.DZ80Kq_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.DZ80Kq_scheduleIndicator{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;margin-right:6px;display:inline-flex}.DZ80Kq_searchScheduleIndicator{margin-left:4px;margin-right:0}.DZ80Kq_dot{flex:none}.DZ80Kq_rowActions{flex:none;align-items:center;gap:12px;display:none}.DZ80Kq_projectRow:hover .DZ80Kq_rowActions,.DZ80Kq_sessionRow:hover .DZ80Kq_rowActions,.DZ80Kq_projectRow.DZ80Kq_menuOpen .DZ80Kq_rowActions,.DZ80Kq_sessionRow.DZ80Kq_menuOpen .DZ80Kq_rowActions{display:inline-flex}.DZ80Kq_sessionRow:hover .DZ80Kq_time,.DZ80Kq_sessionRow.DZ80Kq_menuOpen .DZ80Kq_time{display:none}.DZ80Kq_projectRow.DZ80Kq_menuOpen,.DZ80Kq_sessionRow.DZ80Kq_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.DZ80Kq_sessionRow.DZ80Kq_dropBefore,.DZ80Kq_sessionRow.DZ80Kq_dropAfter{position:relative}.DZ80Kq_sessionRow.DZ80Kq_dropBefore:before,.DZ80Kq_sessionRow.DZ80Kq_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.DZ80Kq_sessionRow.DZ80Kq_dropBefore:before{top:-7px}.DZ80Kq_sessionRow.DZ80Kq_dropAfter:after{bottom:-7px}.DZ80Kq_hoverContent{flex-direction:column;gap:8px;display:flex}.DZ80Kq_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.DZ80Kq_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.DZ80Kq_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.DZ80Kq_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.DZ80Kq_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.DZ80Kq_iconButton:hover{color:var(--dsw-alias-label-primary)}.DZ80Kq_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.DZ80Kq_sessionRow,.DZ80Kq_arrow{transition:none;animation:none}}";
+ 		const tagId$2 = "@deepseek-ai/dsh-client-ui-workspace/Rows.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -538,42 +546,45 @@
+ 			document.head.appendChild(tag);
+ 		}
+ 		var Rows_module_css_default = {
+-			"arrow": "A5jQHq_arrow",
+-			"arrowOpen": "A5jQHq_arrowOpen",
+-			"chevron": "A5jQHq_chevron",
+-			"dot": "A5jQHq_dot",
+-			"dropAfter": "A5jQHq_dropAfter",
+-			"dropBefore": "A5jQHq_dropBefore",
+-			"flatSessionRowWithoutStatus": "A5jQHq_flatSessionRowWithoutStatus",
+-			"folder": "A5jQHq_folder",
+-			"folderActive": "A5jQHq_folderActive",
+-			"hoverContent": "A5jQHq_hoverContent",
+-			"hoverPath": "A5jQHq_hoverPath",
+-			"hoverStatus": "A5jQHq_hoverStatus",
+-			"hoverTime": "A5jQHq_hoverTime",
+-			"hoverTitle": "A5jQHq_hoverTitle",
+-			"iconButton": "A5jQHq_iconButton",
+-			"menuOpen": "A5jQHq_menuOpen",
+-			"meta": "A5jQHq_meta",
+-			"projectRow": "A5jQHq_projectRow",
+-			"projectText": "A5jQHq_projectText",
+-			"renameInput": "A5jQHq_renameInput",
+-			"row-in": "A5jQHq_row-in",
+-			"rowActions": "A5jQHq_rowActions",
+-			"scheduleIndicator": "A5jQHq_scheduleIndicator",
+-			"searchResultHeading": "A5jQHq_searchResultHeading",
+-			"searchResultMeta": "A5jQHq_searchResultMeta",
+-			"searchResultRow": "A5jQHq_searchResultRow",
+-			"searchResultSnippet": "A5jQHq_searchResultSnippet",
+-			"searchResultTitle": "A5jQHq_searchResultTitle",
+-			"searchResultWorkspace": "A5jQHq_searchResultWorkspace",
+-			"searchScheduleIndicator": "A5jQHq_searchScheduleIndicator",
+-			"selected": "A5jQHq_selected",
+-			"sessionRow": "A5jQHq_sessionRow",
+-			"slot": "A5jQHq_slot",
+-			"time": "A5jQHq_time",
+-			"title": "A5jQHq_title",
+-			"visuallyHidden": "A5jQHq_visuallyHidden"
++			"arrow": "DZ80Kq_arrow",
++			"arrowOpen": "DZ80Kq_arrowOpen",
++			"chevron": "DZ80Kq_chevron",
++			"dot": "DZ80Kq_dot",
++			"dropAfter": "DZ80Kq_dropAfter",
++			"dropBefore": "DZ80Kq_dropBefore",
++			"flatSessionRowWithoutStatus": "DZ80Kq_flatSessionRowWithoutStatus",
++			"folder": "DZ80Kq_folder",
++			"folderActive": "DZ80Kq_folderActive",
++			"hoverContent": "DZ80Kq_hoverContent",
++			"hoverPath": "DZ80Kq_hoverPath",
++			"hoverStatus": "DZ80Kq_hoverStatus",
++			"hoverTime": "DZ80Kq_hoverTime",
++			"hoverTitle": "DZ80Kq_hoverTitle",
++			"iconButton": "DZ80Kq_iconButton",
++			"menuOpen": "DZ80Kq_menuOpen",
++			"meta": "DZ80Kq_meta",
++			"projectRow": "DZ80Kq_projectRow",
++			"projectText": "DZ80Kq_projectText",
++			"renameInput": "DZ80Kq_renameInput",
++			"row-in": "DZ80Kq_row-in",
++			"rowActions": "DZ80Kq_rowActions",
++			"scheduleIndicator": "DZ80Kq_scheduleIndicator",
++			"searchResultHeading": "DZ80Kq_searchResultHeading",
++			"searchResultMeta": "DZ80Kq_searchResultMeta",
++			"searchResultRow": "DZ80Kq_searchResultRow",
++			"searchResultSnippet": "DZ80Kq_searchResultSnippet",
++			"searchResultTitle": "DZ80Kq_searchResultTitle",
++			"searchResultWorkspace": "DZ80Kq_searchResultWorkspace",
++			"searchScheduleIndicator": "DZ80Kq_searchScheduleIndicator",
++			"selected": "DZ80Kq_selected",
++			"sessionRow": "DZ80Kq_sessionRow",
++			"slot": "DZ80Kq_slot",
++			"time": "DZ80Kq_time",
++			"title": "DZ80Kq_title",
++			"unreadDot": "DZ80Kq_unreadDot",
++			"unreadMenuIcon": "DZ80Kq_unreadMenuIcon",
++			"unreadTitle": "DZ80Kq_unreadTitle",
++			"visuallyHidden": "DZ80Kq_visuallyHidden"
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/rows/Rows.js
+@@ -581,7 +592,7 @@
+ 		* Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
+ 		* all data and callbacks arrive via props. Hover swaps (folder->chevron,
+ 		* time->ellipsis, action buttons) are CSS-only. Row ... menus are visual-only
+-		* except workspace Rename/Delete and session Rename/Fork/Archive; the session
++		* except workspace Rename/Delete and session Rename/Fork/Archive/Delete; the session
+ 		* and workspace hover cards are suppressed while a menu is open.
+ 		*/
+ 		/** Row display title: blank rows show the localized New Session label. */
+@@ -655,7 +666,14 @@
+ 			const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
+ 			const active = group.expanded && group.containsCurrent;
+ 			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
+-			const workspaceMenuItems = [{
++			const canOpenInFinder = typeof window !== "undefined" && typeof window.dshDesktop?.openInFinder === "function";
++			const workspaceMenuItems = [];
++			if (canOpenInFinder) workspaceMenuItems.push({
++				id: "openInFinder",
++				label: t("menu.openInFinder"),
++				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpen16, {})
++			});
++			workspaceMenuItems.push({
+ 				id: "rename",
+ 				label: t("rename"),
+ 				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
+@@ -664,7 +682,7 @@
+ 				label: t("delete.workspace"),
+ 				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
+ 				danger: true
+-			}];
++			});
+ 			const ownRow = (0, react_jsx_runtime.jsxs)("div", {
+ 				className: clsx(Rows_module_css_default.projectRow, menuOpen && Rows_module_css_default.menuOpen),
+ 				role: "treeitem",
+@@ -703,7 +721,13 @@
+ 							items: workspaceMenuItems,
+ 							onSelect: (id) => {
+ 								setMenuOpen(false);
+-								/* v8 ignore next -- Menu can emit only the rename and delete rows supplied above. */
++								if (id === "openInFinder") {
++									if (row.cwd !== void 0 && typeof window.dshDesktop?.openInFinder === "function") window.dshDesktop.openInFinder(row.cwd).catch((reason) => {
++										console.warn("open in finder rejected:", reason);
++									});
++									return;
++								}
++								/* v8 ignore next -- Menu can emit only the open, rename, and delete rows supplied above. */
+ 								if (id !== "rename" && id !== "delete") return;
+ 								if (id === "rename") actions.rename();
+ 								else actions.delete();
+@@ -902,12 +926,15 @@
+ 		* @param props.onRename - open the session rename dialog (id + current title).
+ 		* @param props.onFork - fork a session at its last completed turn.
+ 		* @param props.onArchive - archive a session by id.
++		* @param props.onDelete - open the permanent-deletion confirmation dialog.
++		* @param props.unread - whether the Session was manually marked unread.
++		* @param props.onUnreadChange - toggle the Session's local unread marker.
+ 		* @param props.drag - optional draggable-row wiring.
+ 		* @param props.flat - omit the empty status slot in the hierarchy-free flat list.
+ 		* @param props.t - the browser root's locale seat.
+ 		* @returns the session row.
+ 		*/
+-		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false, t }) {
++		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, unread = false, onUnreadChange = () => {}, drag, flat = false, t }) {
+ 			const row = node;
+ 			const title = displayTitle(node, t);
+ 			const selected = node.id === currentId;
+@@ -926,19 +953,42 @@
+ 					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
+ 				},
+ 				{
++					id: unread ? "markRead" : "markUnread",
++					label: t(unread ? "menu.markRead" : "menu.markUnread"),
++					icon: (0, react_jsx_runtime.jsx)("span", {
++						className: Rows_module_css_default.unreadMenuIcon,
++						style: {
++							background: "transparent",
++							border: "1.5px solid currentColor",
++							boxShadow: "none"
++						}
++					})
++				},
++				{
+ 					id: "archive",
+ 					label: t("menu.archiveSession"),
+ 					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutline20, { size: 16 })
++				},
++				{
++					id: "delete",
++					label: t("delete.session"),
++					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
++					danger: true
+ 				}
+ 			];
+ 			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.HoverCard, {
+ 				anchor: (0, react_jsx_runtime.jsxs)("div", {
+-					className: clsx(Rows_module_css_default.sessionRow, selected && Rows_module_css_default.selected, menuOpen && Rows_module_css_default.menuOpen, flat && !showStatus && Rows_module_css_default.flatSessionRowWithoutStatus, drag?.marker === "before" && Rows_module_css_default.dropBefore, drag?.marker === "after" && Rows_module_css_default.dropAfter),
++					className: clsx(Rows_module_css_default.sessionRow, selected && Rows_module_css_default.selected, menuOpen && Rows_module_css_default.menuOpen, flat && !showStatus && !unread && Rows_module_css_default.flatSessionRowWithoutStatus, drag?.marker === "before" && Rows_module_css_default.dropBefore, drag?.marker === "after" && Rows_module_css_default.dropAfter),
+ 					role: "treeitem",
+ 					"aria-selected": selected,
+ 					onClick: () => {
+ 						onOpen(node.id);
+ 					},
++					onContextMenu: (event) => {
++						event.preventDefault();
++						event.stopPropagation();
++						if (!row.blank) setMenuOpen(true);
++					},
+ 					draggable: drag !== void 0,
+ 					onDragStart: drag === void 0 ? void 0 : (e) => {
+ 						e.dataTransfer.effectAllowed = "move";
+@@ -958,12 +1008,15 @@
+ 						drag.drop(rowHalf(e));
+ 					},
+ 					children: [
+-						(!flat || showStatus) && (0, react_jsx_runtime.jsx)("span", {
++						(!flat || showStatus || unread) && (0, react_jsx_runtime.jsx)("span", {
+ 							className: Rows_module_css_default.slot,
+-							children: showStatus && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
++							children: showStatus ? (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses }) : unread ? (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: "done" }), (0, react_jsx_runtime.jsx)("span", {
++								className: Rows_module_css_default.visuallyHidden,
++								children: t("status.unread")
++							})] }) : null
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+-							className: Rows_module_css_default.title,
++							className: clsx(Rows_module_css_default.title, unread && Rows_module_css_default.unreadTitle),
+ 							children: title
+ 						}),
+ 						row.hasActiveSchedule && (0, react_jsx_runtime.jsx)(ActiveScheduleIndicator, { t }),
+@@ -983,7 +1036,10 @@
+ 									setMenuOpen(false);
+ 									if (id === "rename") onRename(node.id, row.title);
+ 									if (id === "fork") onFork(node.id);
++									if (id === "markUnread") onUnreadChange(node.id, true);
++									if (id === "markRead") onUnreadChange(node.id, false);
+ 									if (id === "archive") onArchive(node.id);
++									if (id === "delete") onDelete?.(node.id, row.title);
+ 								},
+ 								portal: true,
+ 								closeOnPointerLeave: true,
+@@ -1013,8 +1069,8 @@
+ 			});
+ 		}
+ 		//#endregion
+-		//#region \0dsh-css:/private/tmp/dsh-harness-v0.1.2-rc.1/packages/client/ui-workspace/src/client/WorkspacePicker.module.css.mjs
+-		const css$1 = ".asD3Yq_modalAction{min-width:72px}.asD3Yq_modalError,.asD3Yq_menuStatus{margin-top:8px;font-size:12px;line-height:18px}.asD3Yq_modalError{color:var(--dsw-alias-state-error-primary)}.asD3Yq_menuStatus{color:var(--dsw-alias-label-secondary)}";
++		//#region \0dsh-css:/Users/alex/Documents/Code/AI/deepseek-harness/packages/client/ui-workspace/src/client/WorkspacePicker.module.css.mjs
++		const css$1 = ".zAfTYW_modalAction{min-width:72px}.zAfTYW_modalError,.zAfTYW_menuStatus{margin-top:8px;font-size:12px;line-height:18px}.zAfTYW_modalError{color:var(--dsw-alias-state-error-primary)}.zAfTYW_menuStatus{color:var(--dsw-alias-label-secondary)}";
+ 		const tagId$1 = "@deepseek-ai/dsh-client-ui-workspace/WorkspacePicker.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -1024,9 +1080,9 @@
+ 			document.head.appendChild(tag);
+ 		}
+ 		var WorkspacePicker_module_css_default = {
+-			"menuStatus": "asD3Yq_menuStatus",
+-			"modalAction": "asD3Yq_modalAction",
+-			"modalError": "asD3Yq_modalError"
++			"menuStatus": "zAfTYW_menuStatus",
++			"modalAction": "zAfTYW_modalAction",
++			"modalError": "zAfTYW_modalError"
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/WorkspacePicker.js
+@@ -1183,8 +1239,8 @@
+ 			});
+ 		}
+ 		//#endregion
+-		//#region \0dsh-css:/private/tmp/dsh-harness-v0.1.2-rc.1/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css.mjs
+-		const css = ".EsU6Kq_root{--dsh-session-list-edge-inset:var(--dsh-sidebar-inline-padding);--dsh-session-list-scrollbar-width:8px;--dsh-session-list-scrollbar-offset:2px;box-sizing:border-box;min-height:0;padding-right:var(--dsh-session-list-edge-inset);flex-direction:column;flex:1;display:flex}.EsU6Kq_root.EsU6Kq_rail{padding-right:0}.EsU6Kq_iconButton{corner-shape:round;cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.EsU6Kq_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.EsU6Kq_sectionHeader{box-sizing:border-box;height:36px;color:var(--dsw-alias-label-tertiary);border-radius:12px;flex:none;justify-content:flex-end;align-items:center;gap:4px;margin-bottom:4px;padding-left:4px;display:flex;overflow:hidden}.EsU6Kq_root:not(.EsU6Kq_rail) .EsU6Kq_sectionHeader{margin-top:2px;margin-right:-4px}.EsU6Kq_sectionLabel{white-space:nowrap;opacity:1;visibility:visible;min-width:0;max-width:45%;transition:max-width .18s var(--ds-ease-in-out), margin-right .18s var(--ds-ease-in-out), opacity .12s var(--ds-ease-in-out), transform .18s var(--ds-ease-in-out), visibility 0s linear;flex:none;line-height:20px;overflow:hidden}.EsU6Kq_sectionLabelHidden{opacity:0;visibility:hidden;max-width:0;margin-right:-4px;transition-delay:0s,0s,0s,0s,.18s;transform:translate(-4px)}.EsU6Kq_searchSlot{box-sizing:border-box;min-width:0;max-width:28px;transition:max-width .18s var(--ds-ease-in-out), padding-left .18s var(--ds-ease-in-out);flex:1;align-items:center;margin-left:auto;padding-left:0;display:flex}.EsU6Kq_searchSlotExpanded{max-width:100%;padding-left:0}.EsU6Kq_headerActions{opacity:1;visibility:visible;max-width:60px;transition:max-width .18s var(--ds-ease-in-out), opacity .12s var(--ds-ease-in-out), transform .18s var(--ds-ease-in-out), visibility 0s linear;flex:none;align-items:center;gap:4px;display:flex;overflow:hidden}.EsU6Kq_headerActionsHidden{opacity:0;visibility:hidden;pointer-events:none;max-width:0;transition-delay:0s,0s,0s,.18s;transform:translate(4px)}.EsU6Kq_search{box-sizing:border-box;corner-shape:round;cursor:text;width:100%;height:28px;color:var(--dsw-alias-label-secondary);transition:width .18s var(--ds-ease-in-out), padding .18s var(--ds-ease-in-out), border-color .18s var(--ds-ease-in-out), background-color .18s var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;flex:none;align-items:center;gap:0;margin:0;padding:0;display:flex;overflow:hidden}.EsU6Kq_searchExpanded{border:.5px solid var(--dsw-alias-border-l4);width:calc(100% + 4px);height:30px;color:var(--dsw-alias-label-caption);background:0 0;border-radius:10px;margin-inline:-2px;padding:0 4px 0 0}.EsU6Kq_searchButton{corner-shape:round;cursor:pointer;width:28px;height:28px;color:inherit;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.EsU6Kq_searchExpanded .EsU6Kq_searchButton{width:28px;height:30px}.EsU6Kq_searchButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.EsU6Kq_searchExpanded .EsU6Kq_searchButton:hover{background:0 0}.EsU6Kq_searchInput{opacity:0;pointer-events:none;width:0;min-width:0;color:var(--dsw-alias-label-primary);transition:opacity .12s var(--ds-ease-in-out);background:0 0;border:none;outline:none;flex:1;font-size:13px;line-height:18px}.EsU6Kq_searchExpanded .EsU6Kq_searchInput{opacity:1;pointer-events:auto;margin-left:-2px}.EsU6Kq_searchInput::placeholder{color:var(--dsw-alias-label-tertiary)}.EsU6Kq_clearButton{corner-shape:round;cursor:pointer;width:24px;height:24px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.EsU6Kq_clearButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.EsU6Kq_rail .EsU6Kq_sectionHeader{justify-content:flex-start;gap:0;margin-bottom:12px;padding-left:0}.EsU6Kq_rail .EsU6Kq_headerActions{max-width:none}.EsU6Kq_rail .EsU6Kq_iconButton{width:36px;height:36px;color:var(--dsw-alias-label-primary)}.EsU6Kq_rail .EsU6Kq_search{background:0 0;border-color:#0000;gap:0;width:36px;height:36px;margin:0 0 12px;padding:0}.EsU6Kq_rail .EsU6Kq_searchButton{width:36px;height:36px;color:var(--dsw-alias-label-primary)}.EsU6Kq_rail .EsU6Kq_searchButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.EsU6Kq_listArea{min-height:0;margin-left:-4px;margin-right:calc(-1 * var(--dsh-session-list-edge-inset));flex-direction:column;flex:1;padding-left:4px;display:flex;overflow:visible}.EsU6Kq_rail .EsU6Kq_listArea{margin-left:0;margin-right:0;padding-left:0}.EsU6Kq_treeBody{flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.EsU6Kq_fade{left:0;right:var(--dsh-session-list-edge-inset);background:linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill));pointer-events:none;height:24px;position:absolute;bottom:0}.EsU6Kq_wide{animation:EsU6Kq_wide-in .2s var(--ds-ease-in-out)}@keyframes EsU6Kq_wide-in{0%{opacity:0}}.EsU6Kq_list{min-height:0;margin-left:-4px;margin-right:var(--dsh-session-list-scrollbar-offset);padding-left:4px;padding-right:calc(var(--dsh-session-list-edge-inset) - var(--dsh-session-list-scrollbar-width) - var(--dsh-session-list-scrollbar-offset));scrollbar-gutter:stable;flex:1;padding-bottom:16px;overflow-y:auto}.EsU6Kq_flatList>*+*,.EsU6Kq_searchTree>[role=treeitem]+[role=treeitem],.EsU6Kq_groupSection>*+*{margin-top:2px}.EsU6Kq_searchStatus,.EsU6Kq_searchWarning{color:var(--dsw-alias-label-tertiary);padding:10px 12px;font-size:12px;line-height:18px}.EsU6Kq_searchWarning{color:var(--dsw-alias-label-secondary)}.EsU6Kq_groupSection{position:relative}.EsU6Kq_groupSection+.EsU6Kq_groupSection{margin-top:4px}.EsU6Kq_listTopDropIndicator,.EsU6Kq_workspaceDropBefore:before,.EsU6Kq_workspaceDropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:0}.EsU6Kq_listTopDropIndicator{top:-8px;left:0;right:var(--dsh-session-list-edge-inset)}.EsU6Kq_listTopDropActive>.EsU6Kq_workspaceDropBefore:first-child:before{display:none}.EsU6Kq_workspaceDropBefore:before{top:-8px}.EsU6Kq_workspaceDropAfter:after{bottom:-8px}.EsU6Kq_sessionOverflowButton{cursor:pointer;text-align:left;width:100%;height:28px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:8px;padding:0 12px 0 28px;font-size:12px}.EsU6Kq_groupSection>.EsU6Kq_sessionOverflowButton{margin-top:0}.EsU6Kq_sessionOverflowButton:hover{color:var(--dsw-alias-label-secondary);background:0 0}.EsU6Kq_empty{color:var(--dsw-alias-label-tertiary);padding:16px 12px;font-size:13px}.EsU6Kq_renameInput{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);width:100%;height:44px;color:var(--dsw-alias-label-primary);background:0 0;border-radius:22px;outline:none;padding:7px 14px;font-size:14px;font-weight:400;line-height:22px}.EsU6Kq_renameInput:disabled{color:var(--dsw-alias-label-dimmed)}.EsU6Kq_renameError{color:var(--dsw-alias-state-error-primary);margin-top:8px;font-size:12px;line-height:18px}.EsU6Kq_deleteAction:not(:disabled){color:var(--dsw-alias-state-error-primary)}.EsU6Kq_deleteStatus{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}@media (prefers-reduced-motion:reduce){.EsU6Kq_wide{animation:none}.EsU6Kq_search,.EsU6Kq_sectionLabel,.EsU6Kq_searchSlot,.EsU6Kq_searchInput,.EsU6Kq_headerActions{transition:none}}";
++		//#region \0dsh-css:/Users/alex/Documents/Code/AI/deepseek-harness/packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.module.css.mjs
++		const css = ".WL7F9W_root{--dsh-session-list-edge-inset:var(--dsh-sidebar-inline-padding);--dsh-session-list-scrollbar-width:8px;--dsh-session-list-scrollbar-offset:2px;box-sizing:border-box;min-height:0;padding-right:var(--dsh-session-list-edge-inset);flex-direction:column;flex:1;display:flex}.WL7F9W_root.WL7F9W_rail{padding-right:0}.WL7F9W_iconButton{corner-shape:round;cursor:pointer;width:28px;height:28px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.WL7F9W_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.WL7F9W_sectionHeader{box-sizing:border-box;height:36px;color:var(--dsw-alias-label-tertiary);border-radius:12px;flex:none;justify-content:flex-end;align-items:center;gap:4px;margin-bottom:4px;padding-left:4px;display:flex;overflow:hidden}.WL7F9W_root:not(.WL7F9W_rail) .WL7F9W_sectionHeader{margin-top:2px;margin-right:-4px}.WL7F9W_sectionLabel{white-space:nowrap;opacity:1;visibility:visible;min-width:0;max-width:45%;transition:max-width .18s var(--ds-ease-in-out), margin-right .18s var(--ds-ease-in-out), opacity .12s var(--ds-ease-in-out), transform .18s var(--ds-ease-in-out), visibility 0s linear;flex:none;line-height:20px;overflow:hidden}.WL7F9W_sectionLabelHidden{opacity:0;visibility:hidden;max-width:0;margin-right:-4px;transition-delay:0s,0s,0s,0s,.18s;transform:translate(-4px)}.WL7F9W_searchSlot{box-sizing:border-box;min-width:0;max-width:28px;transition:max-width .18s var(--ds-ease-in-out), padding-left .18s var(--ds-ease-in-out);flex:1;align-items:center;margin-left:auto;padding-left:0;display:flex}.WL7F9W_searchSlotExpanded{max-width:100%;padding-left:0}.WL7F9W_headerActions{opacity:1;visibility:visible;max-width:60px;transition:max-width .18s var(--ds-ease-in-out), opacity .12s var(--ds-ease-in-out), transform .18s var(--ds-ease-in-out), visibility 0s linear;flex:none;align-items:center;gap:4px;display:flex;overflow:hidden}.WL7F9W_headerActionsHidden{opacity:0;visibility:hidden;pointer-events:none;max-width:0;transition-delay:0s,0s,0s,.18s;transform:translate(4px)}.WL7F9W_search{box-sizing:border-box;corner-shape:round;cursor:text;width:100%;height:28px;color:var(--dsw-alias-label-secondary);transition:width .18s var(--ds-ease-in-out), padding .18s var(--ds-ease-in-out), border-color .18s var(--ds-ease-in-out), background-color .18s var(--ds-ease-in-out);background:0 0;border:none;border-radius:50%;flex:none;align-items:center;gap:0;margin:0;padding:0;display:flex;overflow:hidden}.WL7F9W_searchExpanded{border:.5px solid var(--dsw-alias-border-l4);width:calc(100% + 4px);height:30px;color:var(--dsw-alias-label-caption);background:0 0;border-radius:10px;margin-inline:-2px;padding:0 4px 0 0}.WL7F9W_searchButton{corner-shape:round;cursor:pointer;width:28px;height:28px;color:inherit;background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.WL7F9W_searchExpanded .WL7F9W_searchButton{width:28px;height:30px}.WL7F9W_searchButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.WL7F9W_searchExpanded .WL7F9W_searchButton:hover{background:0 0}.WL7F9W_searchInput{opacity:0;pointer-events:none;width:0;min-width:0;color:var(--dsw-alias-label-primary);transition:opacity .12s var(--ds-ease-in-out);background:0 0;border:none;outline:none;flex:1;font-size:13px;line-height:18px}.WL7F9W_searchExpanded .WL7F9W_searchInput{opacity:1;pointer-events:auto;margin-left:-2px}.WL7F9W_searchInput::placeholder{color:var(--dsw-alias-label-tertiary)}.WL7F9W_clearButton{corner-shape:round;cursor:pointer;width:24px;height:24px;color:var(--dsw-alias-label-secondary);background:0 0;border:none;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.WL7F9W_clearButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.WL7F9W_rail .WL7F9W_sectionHeader{justify-content:flex-start;gap:0;margin-bottom:12px;padding-left:0}.WL7F9W_rail .WL7F9W_headerActions{max-width:none}.WL7F9W_rail .WL7F9W_iconButton{width:36px;height:36px;color:var(--dsw-alias-label-primary)}.WL7F9W_rail .WL7F9W_search{background:0 0;border-color:#0000;gap:0;width:36px;height:36px;margin:0 0 12px;padding:0}.WL7F9W_rail .WL7F9W_searchButton{width:36px;height:36px;color:var(--dsw-alias-label-primary)}.WL7F9W_rail .WL7F9W_searchButton:hover{background:var(--dsw-alias-interactive-bg-hover)}.WL7F9W_listArea{min-height:0;margin-left:-4px;margin-right:calc(-1 * var(--dsh-session-list-edge-inset));flex-direction:column;flex:1;padding-left:4px;display:flex;overflow:visible}.WL7F9W_rail .WL7F9W_listArea{margin-left:0;margin-right:0;padding-left:0}.WL7F9W_treeBody{flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.WL7F9W_fade{left:0;right:var(--dsh-session-list-edge-inset);background:linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill));pointer-events:none;height:24px;position:absolute;bottom:0}.WL7F9W_wide{animation:WL7F9W_wide-in .2s var(--ds-ease-in-out)}@keyframes WL7F9W_wide-in{0%{opacity:0}}.WL7F9W_list{min-height:0;margin-left:-4px;margin-right:var(--dsh-session-list-scrollbar-offset);padding-left:4px;padding-right:calc(var(--dsh-session-list-edge-inset) - var(--dsh-session-list-scrollbar-width) - var(--dsh-session-list-scrollbar-offset));scrollbar-gutter:stable;flex:1;padding-bottom:16px;overflow-y:auto}.WL7F9W_flatList>*+*,.WL7F9W_searchTree>[role=treeitem]+[role=treeitem],.WL7F9W_groupSection>*+*{margin-top:2px}.WL7F9W_searchStatus,.WL7F9W_searchWarning{color:var(--dsw-alias-label-tertiary);padding:10px 12px;font-size:12px;line-height:18px}.WL7F9W_searchWarning{color:var(--dsw-alias-label-secondary)}.WL7F9W_groupSection{position:relative}.WL7F9W_groupSection+.WL7F9W_groupSection{margin-top:4px}.WL7F9W_listTopDropIndicator,.WL7F9W_workspaceDropBefore:before,.WL7F9W_workspaceDropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:0}.WL7F9W_listTopDropIndicator{top:-8px;left:0;right:var(--dsh-session-list-edge-inset)}.WL7F9W_listTopDropActive>.WL7F9W_workspaceDropBefore:first-child:before{display:none}.WL7F9W_workspaceDropBefore:before{top:-8px}.WL7F9W_workspaceDropAfter:after{bottom:-8px}.WL7F9W_sessionOverflowButton{cursor:pointer;text-align:left;width:100%;height:28px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:8px;padding:0 12px 0 28px;font-size:12px}.WL7F9W_groupSection>.WL7F9W_sessionOverflowButton{margin-top:0}.WL7F9W_sessionOverflowButton:hover{color:var(--dsw-alias-label-secondary);background:0 0}.WL7F9W_empty{color:var(--dsw-alias-label-tertiary);padding:16px 12px;font-size:13px}.WL7F9W_renameInput{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);width:100%;height:44px;color:var(--dsw-alias-label-primary);background:0 0;border-radius:22px;outline:none;padding:7px 14px;font-size:14px;font-weight:400;line-height:22px}.WL7F9W_renameInput:disabled{color:var(--dsw-alias-label-dimmed)}.WL7F9W_renameError{color:var(--dsw-alias-state-error-primary);margin-top:8px;font-size:12px;line-height:18px}.WL7F9W_deleteAction:not(:disabled){color:var(--dsw-alias-state-error-primary)}.WL7F9W_deleteStatus{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}@media (prefers-reduced-motion:reduce){.WL7F9W_wide{animation:none}.WL7F9W_search,.WL7F9W_sectionLabel,.WL7F9W_searchSlot,.WL7F9W_searchInput,.WL7F9W_headerActions{transition:none}}";
+ 		const tagId = "@deepseek-ai/dsh-client-ui-workspace/WorkspaceBrowser.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -1194,42 +1250,42 @@
+ 			document.head.appendChild(tag);
+ 		}
+ 		var WorkspaceBrowser_module_css_default = {
+-			"clearButton": "EsU6Kq_clearButton",
+-			"deleteAction": "EsU6Kq_deleteAction",
+-			"deleteStatus": "EsU6Kq_deleteStatus",
+-			"empty": "EsU6Kq_empty",
+-			"fade": "EsU6Kq_fade",
+-			"flatList": "EsU6Kq_flatList",
+-			"groupSection": "EsU6Kq_groupSection",
+-			"headerActions": "EsU6Kq_headerActions",
+-			"headerActionsHidden": "EsU6Kq_headerActionsHidden",
+-			"iconButton": "EsU6Kq_iconButton",
+-			"list": "EsU6Kq_list",
+-			"listArea": "EsU6Kq_listArea",
+-			"listTopDropActive": "EsU6Kq_listTopDropActive",
+-			"listTopDropIndicator": "EsU6Kq_listTopDropIndicator",
+-			"rail": "EsU6Kq_rail",
+-			"renameError": "EsU6Kq_renameError",
+-			"renameInput": "EsU6Kq_renameInput",
+-			"root": "EsU6Kq_root",
+-			"search": "EsU6Kq_search",
+-			"searchButton": "EsU6Kq_searchButton",
+-			"searchExpanded": "EsU6Kq_searchExpanded",
+-			"searchInput": "EsU6Kq_searchInput",
+-			"searchSlot": "EsU6Kq_searchSlot",
+-			"searchSlotExpanded": "EsU6Kq_searchSlotExpanded",
+-			"searchStatus": "EsU6Kq_searchStatus",
+-			"searchTree": "EsU6Kq_searchTree",
+-			"searchWarning": "EsU6Kq_searchWarning",
+-			"sectionHeader": "EsU6Kq_sectionHeader",
+-			"sectionLabel": "EsU6Kq_sectionLabel",
+-			"sectionLabelHidden": "EsU6Kq_sectionLabelHidden",
+-			"sessionOverflowButton": "EsU6Kq_sessionOverflowButton",
+-			"treeBody": "EsU6Kq_treeBody",
+-			"wide": "EsU6Kq_wide",
+-			"wide-in": "EsU6Kq_wide-in",
+-			"workspaceDropAfter": "EsU6Kq_workspaceDropAfter",
+-			"workspaceDropBefore": "EsU6Kq_workspaceDropBefore"
++			"clearButton": "WL7F9W_clearButton",
++			"deleteAction": "WL7F9W_deleteAction",
++			"deleteStatus": "WL7F9W_deleteStatus",
++			"empty": "WL7F9W_empty",
++			"fade": "WL7F9W_fade",
++			"flatList": "WL7F9W_flatList",
++			"groupSection": "WL7F9W_groupSection",
++			"headerActions": "WL7F9W_headerActions",
++			"headerActionsHidden": "WL7F9W_headerActionsHidden",
++			"iconButton": "WL7F9W_iconButton",
++			"list": "WL7F9W_list",
++			"listArea": "WL7F9W_listArea",
++			"listTopDropActive": "WL7F9W_listTopDropActive",
++			"listTopDropIndicator": "WL7F9W_listTopDropIndicator",
++			"rail": "WL7F9W_rail",
++			"renameError": "WL7F9W_renameError",
++			"renameInput": "WL7F9W_renameInput",
++			"root": "WL7F9W_root",
++			"search": "WL7F9W_search",
++			"searchButton": "WL7F9W_searchButton",
++			"searchExpanded": "WL7F9W_searchExpanded",
++			"searchInput": "WL7F9W_searchInput",
++			"searchSlot": "WL7F9W_searchSlot",
++			"searchSlotExpanded": "WL7F9W_searchSlotExpanded",
++			"searchStatus": "WL7F9W_searchStatus",
++			"searchTree": "WL7F9W_searchTree",
++			"searchWarning": "WL7F9W_searchWarning",
++			"sectionHeader": "WL7F9W_sectionHeader",
++			"sectionLabel": "WL7F9W_sectionLabel",
++			"sectionLabelHidden": "WL7F9W_sectionLabelHidden",
++			"sessionOverflowButton": "WL7F9W_sessionOverflowButton",
++			"treeBody": "WL7F9W_treeBody",
++			"wide": "WL7F9W_wide",
++			"wide-in": "WL7F9W_wide-in",
++			"workspaceDropAfter": "WL7F9W_workspaceDropAfter",
++			"workspaceDropBefore": "WL7F9W_workspaceDropBefore"
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/rows/WorkspaceBrowser.js
+@@ -1429,7 +1485,7 @@
+ 			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+ 		}
+ 		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
+-		function SessionTree({ useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t }) {
++		function SessionTree({ useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds, unreadSessionIds, onUnreadChange, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionDelete, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t }) {
+ 			const list = useSessions((s) => s);
+ 			const pendingInteractions = useSessionPendingInteraction((s) => s);
+ 			const current = list.current;
+@@ -1661,6 +1717,41 @@
+ 									}),
+ 									(sessionsExpanded ? group.sessions : collapsed.rows).map((node) => {
+ 										const sameGroupDrag = drag !== null && drag.accountKey === group.key;
++										const dragProps = {
++											start: () => {
++												sessionDropCommitted.current = false;
++												setDrag({
++													accountKey: group.key,
++													sessionId: node.id,
++													over: null
++												});
++											},
++											active: sameGroupDrag,
++											marker: sameGroupDrag && drag.over?.id === node.id ? drag.over.half : null,
++											hover: (half) => {
++												/* v8 ignore next -- narrowing guard: Rows gates hover on `active`, which is false while the drag state is null. */
++												setDrag((d) => d === null ? d : {
++													...d,
++													over: {
++														id: node.id,
++														half
++													}
++												});
++											},
++											drop: (half) => {
++												/* v8 ignore next -- narrowing guard: Rows gates drop on `active`, which is false while the drag state is null. */
++												if (drag === null) return;
++												commitSessionDrag(drag, {
++													id: node.id,
++													half
++												});
++											},
++											end: () => {
++												if (drag?.over !== null && drag?.over !== void 0) commitSessionDrag(drag, drag.over);
++												else setDrag(null);
++												sessionDropCommitted.current = false;
++											}
++										};
+ 										return (0, react_jsx_runtime.jsx)(SessionNodeItem, {
+ 											node,
+ 											currentId: current,
+@@ -1669,41 +1760,10 @@
+ 											onRename: onSessionRename,
+ 											onFork: forkSession,
+ 											onArchive: onSessionArchive,
+-											drag: {
+-												start: () => {
+-													sessionDropCommitted.current = false;
+-													setDrag({
+-														accountKey: group.key,
+-														sessionId: node.id,
+-														over: null
+-													});
+-												},
+-												active: sameGroupDrag,
+-												marker: sameGroupDrag && drag.over?.id === node.id ? drag.over.half : null,
+-												hover: (half) => {
+-													/* v8 ignore next -- narrowing guard: Rows gates hover on `active`, which is false while the drag state is null. */
+-													setDrag((d) => d === null ? d : {
+-														...d,
+-														over: {
+-															id: node.id,
+-															half
+-														}
+-													});
+-												},
+-												drop: (half) => {
+-													/* v8 ignore next -- narrowing guard: Rows gates drop on `active`, which is false while the drag state is null. */
+-													if (drag === null) return;
+-													commitSessionDrag(drag, {
+-														id: node.id,
+-														half
+-													});
+-												},
+-												end: () => {
+-													if (drag?.over !== null && drag?.over !== void 0) commitSessionDrag(drag, drag.over);
+-													else setDrag(null);
+-													sessionDropCommitted.current = false;
+-												}
+-											},
++											onDelete: onSessionDelete,
++											unread: unreadSessionIds.includes(node.id),
++											onUnreadChange,
++											drag: dragProps,
+ 											t
+ 										}, node.id);
+ 									}),
+@@ -1725,7 +1785,7 @@
+ 			});
+ 		}
+ 		/** The flat "In one list" body: every session is one draggable top-level row. */
+-		function FlatList({ useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
++		function FlatList({ useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, onSessionDelete, unreadSessionIds, onUnreadChange, archivedSessionIds, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t }) {
+ 			const list = useSessions((s) => s);
+ 			const pendingInteractions = useSessionPendingInteraction((s) => s);
+ 			const baseRows = (0, react.useMemo)(() => deriveFlat(list, archivedSessionIds, pendingInteractions), [
+@@ -1808,6 +1868,9 @@
+ 							onRename: onSessionRename,
+ 							onFork: forkSession,
+ 							onArchive: onSessionArchive,
++							onDelete: onSessionDelete,
++							unread: unreadSessionIds.includes(node.id),
++							onUnreadChange,
+ 							flat: true,
+ 							drag: {
+ 								start: () => {
+@@ -1911,7 +1974,7 @@
+ 		* @param props - composed slot props (shell owner share + store + injected actions).
+ 		* @returns the region element tree.
+ 		*/
+-		function WorkspaceBrowser({ wide, expandSidebar, useSessions, useSessionPendingInteraction, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, renderSlot, t }) {
++		function WorkspaceBrowser({ wide, expandSidebar, useSessions, useSessionPendingInteraction, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, deleteSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, renderSlot, t }) {
+ 			const home = useHostInfo((info) => info.home);
+ 			const workspaces = useWorkspaces((state) => state.items);
+ 			const workspacePhase = useWorkspaces((state) => state.phase);
+@@ -1922,6 +1985,15 @@
+ 			const groupExpansion = useStore((s) => s.groupExpansion);
+ 			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
+ 			const sessionUpdatedAtByAccount = useStore((s) => s.sessionUpdatedAtByAccount);
++			const unreadSessionIds = useStore((s) => s.unreadSessionIds ?? []);
++			const onUnreadChange = (sessionId, unread) => {
++				if (unread) actions.markSessionUnread(sessionId);
++				else actions.markSessionRead(sessionId);
++			};
++			const openSession = (sessionId) => {
++				actions.markSessionRead(sessionId);
++				open(sessionId);
++			};
+ 			const currentBlankSessionId = useSessions((state) => {
+ 				const current = state.current;
+ 				return current !== void 0 && state.byId[current]?.blank === true ? current : void 0;
+@@ -2108,8 +2180,36 @@
+ 				});
+ 				setSessionRenameDraft(currentTitle);
+ 				setSessionRenameError(null);
++			};
++			const [sessionDeleteTarget, setSessionDeleteTarget] = (0, react.useState)(null);
++			const [sessionDeleting, setSessionDeleting] = (0, react.useState)(false);
++			const [sessionDeleteError, setSessionDeleteError] = (0, react.useState)(null);
++			const closeSessionDelete = () => {
++				if (sessionDeleting) return;
++				setSessionDeleteTarget(null);
++				setSessionDeleteError(null);
++			};
++			const confirmSessionDelete = () => {
++				if (sessionDeleting || sessionDeleteTarget === null) return;
++				setSessionDeleting(true);
++				setSessionDeleteError(null);
++				deleteSession(sessionDeleteTarget.sessionId).then(() => {
++					setSessionDeleting(false);
++					setSessionDeleteTarget(null);
++				}).catch((reason) => {
++					setSessionDeleting(false);
++					setSessionDeleteError(reason instanceof Error ? reason.message : String(reason));
++				});
+ 			};
++			const onSessionDelete = (sessionId, title) => {
++				setSessionDeleteTarget({
++					sessionId,
++					title
++				});
++				setSessionDeleteError(null);
++			};
+ 			const onSessionArchive = (sessionId) => {
++				actions.markSessionRead(sessionId);
+ 				archiveSession(sessionId).catch((reason) => {
+ 					console.warn("session archive rejected:", reason);
+ 				});
+@@ -2281,7 +2381,7 @@
+ 						children: wide && (normalizedQuery !== "" ? (0, react_jsx_runtime.jsx)(SearchResults, {
+ 							useSessions,
+ 							useSessionPendingInteraction,
+-							open,
++							open: openSession,
+ 							workspaces,
+ 							archivedSessionIds,
+ 							query: normalizedQuery,
+@@ -2291,11 +2391,14 @@
+ 						}) : groupBy === "flat" ? (0, react_jsx_runtime.jsx)(FlatList, {
+ 							useSessions,
+ 							useSessionPendingInteraction,
+-							open,
++							open: openSession,
+ 							forkSession,
+ 							onSessionRename,
+ 							onSessionArchive,
++							onSessionDelete,
+ 							archivedSessionIds,
++							unreadSessionIds,
++							onUnreadChange,
+ 							orderBy,
+ 							sessionOrderByAccount,
+ 							sessionUpdatedAtByAccount,
+@@ -2307,6 +2410,7 @@
+ 							useSessionPendingInteraction,
+ 							onSessionRename,
+ 							onSessionArchive,
++							onSessionDelete,
+ 							forkSession,
+ 							workspaces,
+ 							groupExpansion,
+@@ -2316,8 +2420,10 @@
+ 							syncSessionOrderAccount: actions.syncSessionOrderAccount,
+ 							setSessionOrder: actions.setSessionOrder,
+ 							archivedSessionIds,
++							unreadSessionIds,
++							onUnreadChange,
+ 							startSession,
+-							open,
++							open: openSession,
+ 							insertWorkspaceBefore,
+ 							insertSessionBefore,
+ 							orderBy,
+@@ -2443,6 +2549,34 @@
+ 						})]
+ 					}),
+ 					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
++						open: sessionDeleteTarget !== null,
++						onClose: closeSessionDelete,
++						closeLabel: t("close"),
++						title: t("delete.session"),
++						...sessionDeleteTarget === null ? {} : { description: t("delete.session.desc", { name: sessionDeleteTarget.title }) },
++						footer: (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++							variant: "outline",
++							disabled: sessionDeleting,
++							onClick: closeSessionDelete,
++							children: t("cancel")
++						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++							variant: "outline",
++							className: WorkspaceBrowser_module_css_default.deleteAction,
++							disabled: sessionDeleting,
++							onClick: confirmSessionDelete,
++							children: t("delete.session")
++						})] }),
++						children: [sessionDeleting && (0, react_jsx_runtime.jsx)("div", {
++							className: WorkspaceBrowser_module_css_default.deleteStatus,
++							role: "status",
++							children: t("delete.session.pending")
++						}), sessionDeleteError !== null && (0, react_jsx_runtime.jsx)("div", {
++							className: WorkspaceBrowser_module_css_default.renameError,
++							role: "alert",
++							children: sessionDeleteError
++						})]
++					}),
++					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+ 						open: deleteTarget !== null,
+ 						onClose: closeDelete,
+ 						closeLabel: t("close"),
+@@ -2507,6 +2641,7 @@
+ 			"search.noMatches": "无匹配会话",
+ 			"search.hasMore": "仅显示前 {n} 条结果，请缩小搜索范围。",
+ 			"menu.addWorkspace": "添加工作区…",
++			"menu.openInFinder": "在 Finder 中打开",
+ 			"picker.loading": "正在加载工作区…",
+ 			"conflict.named": "已存在名为“{name}”的工作区。",
+ 			"folderError.title": "无法打开文件夹",
+@@ -2519,7 +2654,12 @@
+ 			"delete.workspace": "删除工作区",
+ 			"delete.desc": "将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。",
+ 			"delete.pending": "正在删除工作区…",
++			"delete.session": "删除会话",
++			"delete.session.desc": "将永久删除“{name}”的会话记录与执行轨迹。工作区文件会保留。此操作无法撤销。",
++			"delete.session.pending": "正在删除会话…",
+ 			"menu.fork": "分叉会话",
++			"menu.markUnread": "标为未读",
++			"menu.markRead": "标为已读",
+ 			"menu.archiveSession": "归档会话",
+ 			"sessions.count.one": "{n} 个会话",
+ 			"sessions.count.other": "{n} 个会话",
+@@ -2534,6 +2674,7 @@
+ 			"status.planReview": "计划待审",
+ 			"status.waitingAnswer": "等待回答",
+ 			"status.completed": "已完成",
++			"status.unread": "未读",
+ 			"schedule.active": "有活动定时任务",
+ 			"hover.created": "创建于 {time}",
+ 			"hover.copied": "已复制",
+@@ -2573,6 +2714,7 @@
+ 			"search.noMatches": "No matching sessions",
+ 			"search.hasMore": "Showing the first {n} results. Narrow your search.",
+ 			"menu.addWorkspace": "Add workspace…",
++			"menu.openInFinder": "Open in Finder",
+ 			"picker.loading": "Loading workspaces…",
+ 			"conflict.named": "A workspace named “{name}” already exists.",
+ 			"folderError.title": "Couldn’t open folder",
+@@ -2585,7 +2727,12 @@
+ 			"delete.workspace": "Delete workspace",
+ 			"delete.desc": "This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.",
+ 			"delete.pending": "Deleting workspace…",
++			"delete.session": "Delete session",
++			"delete.session.desc": "This permanently deletes the conversation history and execution trace for “{name}”. Workspace files are kept. This can’t be undone.",
++			"delete.session.pending": "Deleting session…",
+ 			"menu.fork": "Fork session",
++			"menu.markUnread": "Mark as unread",
++			"menu.markRead": "Mark as read",
+ 			"menu.archiveSession": "Archive session",
+ 			"sessions.count.one": "{n} session",
+ 			"sessions.count.other": "{n} sessions",
+@@ -2600,6 +2747,7 @@
+ 			"status.planReview": "Plan awaiting review",
+ 			"status.waitingAnswer": "Waiting for answer",
+ 			"status.completed": "Completed",
++			"status.unread": "Unread",
+ 			"schedule.active": "Has active scheduled task",
+ 			"hover.created": "Created {time}",
+ 			"hover.copied": "Copied",
+@@ -2685,6 +2833,9 @@
+ 						sessions.open(childId);
+ 					}).catch(() => {});
+ 				},
++				deleteSession: async (sessionId) => {
++					await sessions.delete(sessionId);
++				},
+ 				renameWorkspace: async (workspaceId, title) => {
+ 					await workspaces.rename(workspaceId, title);
+ 				},
+@@ -2737,4 +2888,4 @@
+ 	}
+ });
+
+-//# sourceMappingURL=client.js.map
+\ No newline at end of file
++//# sourceMappingURL=client.js.map
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+@@ -115,6 +115,8 @@
+     renameSession: (sessionId: SessionId, title: string) => Promise<void>;
+     /** Fork a Session at its last completed turn and open the child. */
+     forkSession: (sessionId: SessionId) => void;
++    /** Permanently delete a Session while retaining its Workspace files. */
++    deleteSession: (sessionId: SessionId) => Promise<void>;
+     /** Rename a Host Workspace (rejects on name conflict; resolves on durability). */
+     renameWorkspace: (workspaceId: WorkspaceId, title: string) => Promise<void>;
+     /** Delete only a Host Workspace registration; directory and Session logs remain. */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
+@@ -30,6 +30,7 @@
+     'search.noMatches': string;
+     'search.hasMore': string;
+     'menu.addWorkspace': string;
++    'menu.openInFinder': string;
+     'picker.loading': string;
+     'conflict.named': string;
+     'folderError.title': string;
+@@ -42,7 +43,12 @@
+     'delete.workspace': string;
+     'delete.desc': string;
+     'delete.pending': string;
++    'delete.session': string;
++    'delete.session.desc': string;
++    'delete.session.pending': string;
+     'menu.fork': string;
++    'menu.markUnread': string;
++    'menu.markRead': string;
+     'menu.archiveSession': string;
+     'sessions.count.one': string;
+     'sessions.count.other': string;
+@@ -57,6 +63,7 @@
+     'status.planReview': string;
+     'status.waitingAnswer': string;
+     'status.completed': string;
++    'status.unread': string;
+     'schedule.active': string;
+     'hover.created': string;
+     'hover.copied': string;
+@@ -98,6 +105,7 @@
+     'search.noMatches': string;
+     'search.hasMore': string;
+     'menu.addWorkspace': string;
++    'menu.openInFinder': string;
+     'picker.loading': string;
+     'conflict.named': string;
+     'folderError.title': string;
+@@ -110,7 +118,12 @@
+     'delete.workspace': string;
+     'delete.desc': string;
+     'delete.pending': string;
++    'delete.session': string;
++    'delete.session.desc': string;
++    'delete.session.pending': string;
+     'menu.fork': string;
++    'menu.markUnread': string;
++    'menu.markRead': string;
+     'menu.archiveSession': string;
+     'sessions.count.one': string;
+     'sessions.count.other': string;
+@@ -125,6 +138,7 @@
+     'status.planReview': string;
+     'status.waitingAnswer': string;
+     'status.completed': string;
++    'status.unread': string;
+     'schedule.active': string;
+     'hover.created': string;
+     'hover.copied': string;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
+@@ -2,6 +2,13 @@
+ import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts';
+ /** The standard locale seat, prop-passed from the browser root. */
+ type RowTranslate = WorkspaceBrowserProps['t'];
++declare global {
++    interface Window {
++        dshDesktop?: {
++            openInFinder?: (path: string) => Promise<void>;
++        };
++    }
++}
+ /**
+  * Row drag wiring supplied by the tree owner. `drop` reports the half of the
+  * row where the pointer released so the owner can resolve an insert anchor.
+@@ -77,12 +84,15 @@
+  * @param props.onRename - open the session rename dialog (id + current title).
+  * @param props.onFork - fork a session at its last completed turn.
+  * @param props.onArchive - archive a session by id.
++ * @param props.onDelete - open the permanent-deletion confirmation dialog.
++ * @param props.unread - whether the Session was manually marked unread.
++ * @param props.onUnreadChange - toggle the Session's local unread marker.
+  * @param props.drag - optional draggable-row wiring.
+  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
+  * @param props.t - the browser root's locale seat.
+  * @returns the session row.
+  */
+-export declare function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat, t }: {
++export declare function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, unread, onUnreadChange, drag, flat, t }: {
+     node: SessionNode;
+     currentId: string | undefined;
+     now: number;
+@@ -93,6 +103,10 @@
+     onFork: (id: SessionNode['id']) => void;
+     /** Archive this session (row menu action; commits without a dialog). */
+     onArchive: (id: SessionNode['id']) => void;
++    /** Open the permanent-deletion confirmation dialog. */
++    onDelete?: ((id: SessionNode['id'], currentTitle: string) => void) | undefined;
++    unread?: boolean | undefined;
++    onUnreadChange?: ((id: SessionNode['id'], unread: boolean) => void) | undefined;
+     /** Present only on draggable rows (workspace-group sessions outside search). */
+     drag?: RowDragProps | undefined;
+     /** The row is rendered without a parent Workspace header. */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/WorkspaceBrowser.d.ts
+@@ -4,5 +4,5 @@
+  * @param props - composed slot props (shell owner share + store + injected actions).
+  * @returns the region element tree.
+  */
+-export declare function WorkspaceBrowser({ wide, expandSidebar, useSessions, useSessionPendingInteraction, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
++export declare function WorkspaceBrowser({ wide, expandSidebar, useSessions, useSessionPendingInteraction, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, deleteSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, renderSlot, t, }: WorkspaceBrowserProps): import("react").JSX.Element;
+ //# sourceMappingURL=WorkspaceBrowser.d.ts.map
+\ No newline at end of file
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
+@@ -22,6 +22,8 @@
+     sessionOrderByAccount: Record<string, string[]>;
+     /** Last observed update timestamps per order account for one-time promotion events. */
+     sessionUpdatedAtByAccount: Record<string, Record<string, number>>;
++    /** Browser-local manually unread Session identities. */
++    unreadSessionIds: string[];
+ };
+ /**
+  * Annotation twin of the actions literal below (the export needs a declared
+@@ -34,6 +36,8 @@
+     retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void;
+     syncSessionOrderAccount: (draft: WorkspaceViewState, accountKey: string, order: string[], updatedAt: Record<string, number>) => void;
+     setSessionOrder: (draft: WorkspaceViewState, accountKey: string, order: string[]) => void;
++    markSessionUnread: (draft: WorkspaceViewState, sessionId: string) => void;
++    markSessionRead: (draft: WorkspaceViewState, sessionId: string) => void;
+ };
+ /**
+  * Create the workspace browser viewing store handle.

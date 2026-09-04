@@ -15,7 +15,7 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.2-alpha.4",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.2-rc.1",
     "fflate": "^0.8.2"
   },
   "types": "./index.d.ts"

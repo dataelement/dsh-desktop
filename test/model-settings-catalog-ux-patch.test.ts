@@ -117,7 +117,7 @@ describe('settings provider editor sticky actions', () => {
     expect(client).toContain('.dshProviderEditorStickyFooter{')
     expect(client).toContain('position:sticky;bottom:-24px')
     expect(client).toContain(
-      '.dshProviderEditorExpanded .A_4Mua_customizedBody{padding-bottom:72px}'
+      '.dshProviderEditorExpanded .qy-_KG_customizedBody{padding-bottom:72px}'
     )
     expect(client).toContain('" dshProviderEditorExpanded"')
     expect(client).toContain(

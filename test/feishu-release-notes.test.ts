@@ -175,12 +175,18 @@ Description here.
   it(
     'builds a prerelease prompt with previous tag and prerelease notices',
     () => {
+      const repo = buildTagFixtureRepo([
+        { message: 'base', date: '2026-01-01T00:00:00', tag: 'v0.7.0' },
+        { message: 'stable work', date: '2026-02-01T00:00:00', tag: 'v0.7.1' },
+        { message: 'prerelease cut', date: '2026-03-01T00:00:00', tag: '0.7.2' }
+      ])
       const output = execFileSync(
         'python3',
         [scriptPath, 'build-prompt', '--tag', '0.7.2', '--prerelease'],
         {
           encoding: 'utf8',
-          env: pythonEnv
+          env: pythonEnv,
+          cwd: repo
         }
       )
 
