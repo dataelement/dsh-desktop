@@ -273,6 +273,8 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-workbuddy-ppt": "file:packages/kimi-ppt/dsh-workbuddy-ppt-0.1.1-rc.2-desktop-kimi-20260904.tgz",
+    "@deepseek-ai/dsh-experimental-kimi-ppt-standard-adapter": "file:packages/kimi-ppt/deepseek-ai-dsh-experimental-kimi-ppt-standard-adapter-0.1.1-rc.2-desktop-kimi-20260904.tgz",
     "dshmarket": "file:packages/dshmarket",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",
