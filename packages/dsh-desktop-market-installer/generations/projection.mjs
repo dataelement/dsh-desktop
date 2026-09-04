@@ -245,14 +245,15 @@ export async function projectGenerations(dshHome, profile = 'web') {
  * Publish the desired generation set for inventory and the next launch without
  * touching the active Profile's node_modules. Market operations run inside the
  * live Harness, so replacing even a junction there recreates the Windows
- * rename conflict generations are meant to avoid. The cold-start projector
- * materializes these links after Harness has stopped.
+ * rename conflict generations are meant to avoid. A removal may still update
+ * the manifest's bundle list: that only changes what the *next* Harness boot
+ * composes, while leaving the current process and its links intact.
  */
-export async function publishGenerationManifest(dshHome, profile = 'web') {
+export async function publishGenerationManifest(dshHome, profile = 'web', { syncBundles = false } = {}) {
   const { dir, manifestState, enabled, linkSpecs } =
     await prepareGenerationProjection(dshHome, profile)
   const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, {
-    syncBundles: false
+    syncBundles
   })
   return { plugins: [...enabled.keys()], bundles }
 }

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parse, stringify } from 'yaml'
@@ -80,6 +80,60 @@ describe('plugin-recovery', () => {
 
   it('returns an empty Safe Mode list when the profile is unavailable', async () => {
     await expect(listInstalledProfilePlugins(join(testDir, 'missing'))).resolves.toEqual([])
+  })
+
+  it('lists a generation-linked bundle left behind by an interrupted uninstall', async () => {
+    await writeFile(
+      profilePackageJsonPath(testDir),
+      JSON.stringify({
+        dependencies: { '@deepseek-ai/dsh-base': '0.1.0' },
+        dsh: {
+          profile: {
+            bundles: ['@deepseek-ai/dsh-base', '@example/stale-generation', 'plain-bundle-entry']
+          }
+        }
+      })
+    )
+    const generationDirectory = join(
+      testDir,
+      'profiles',
+      '.generations',
+      'live',
+      'example+stale-generation+1.0.0'
+    )
+    const generationPackage = join(
+      generationDirectory,
+      'node_modules',
+      '@example',
+      'stale-generation'
+    )
+    await mkdir(generationPackage, { recursive: true })
+    await writeFile(
+      join(generationDirectory, 'generation.json'),
+      JSON.stringify({ pluginName: '@example/stale-generation' })
+    )
+    await writeFile(
+      join(generationPackage, 'package.json'),
+      JSON.stringify({ name: '@example/stale-generation' })
+    )
+    const profilePackage = join(
+      testDir,
+      'profiles',
+      'web',
+      'node_modules',
+      '@example',
+      'stale-generation'
+    )
+    await mkdir(join(profilePackage, '..'), { recursive: true })
+    await symlink(
+      generationPackage,
+      profilePackage,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    )
+
+    await expect(listInstalledProfilePlugins(testDir)).resolves.toEqual([
+      '@example/stale-generation'
+    ])
   })
 
   it('lists the most recently installed profile plugin first', async () => {

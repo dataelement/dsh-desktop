@@ -220,36 +220,54 @@
       .button.primary:hover { border-color: var(--button-hover); background: var(--button-hover); }
       .button[disabled] { opacity: 0.64; cursor: wait; transform: none; }
 
-      .upgrade-card {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        margin-top: 14px;
-        padding: 12px 16px;
-        border-radius: 12px;
-        border: 1px solid rgba(38, 122, 74, 0.28);
-        background: rgba(38, 122, 74, 0.08);
-      }
-      .upgrade-icon {
-        font-size: 18px;
-        line-height: 1;
-        flex: 0 0 auto;
-        margin-top: 1px;
-      }
-      .upgrade-info {
-        min-width: 0;
-      }
-      .upgrade-title {
-        margin: 0 0 3px;
-        color: var(--ink);
-        font-size: 13px;
-        font-weight: 650;
-      }
-      .upgrade-hint {
-        margin: 0;
-        color: var(--muted);
+      [hidden] { display: none !important; }
+
+      .plugin-upgrade-btn {
+        margin-left: auto;
+        padding: 4px 10px;
+        border: 1px solid rgba(22, 163, 74, 0.28);
+        border-radius: 8px;
+        color: #15803d;
+        background: rgba(22, 163, 74, 0.08);
+        cursor: pointer;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-size: 12px;
-        line-height: 1.5;
+        font-weight: 550;
+        line-height: 1.4;
+        white-space: nowrap;
+        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+      }
+      .plugin-upgrade-btn:hover {
+        background: rgba(22, 163, 74, 0.16);
+        border-color: rgba(22, 163, 74, 0.4);
+      }
+      .plugin-upgrade-btn:active {
+        transform: translateY(1px);
+      }
+      .plugin-upgrade-btn:disabled {
+        opacity: 0.6;
+        cursor: wait;
+        transform: none;
+      }
+      :root[data-theme="dark"] .plugin-upgrade-btn {
+        color: #4ade80;
+        background: rgba(74, 222, 128, 0.12);
+        border-color: rgba(74, 222, 128, 0.25);
+      }
+      :root[data-theme="dark"] .plugin-upgrade-btn:hover {
+        background: rgba(74, 222, 128, 0.2);
+        border-color: rgba(74, 222, 128, 0.45);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) .plugin-upgrade-btn {
+          color: #4ade80;
+          background: rgba(74, 222, 128, 0.12);
+          border-color: rgba(74, 222, 128, 0.25);
+        }
+        :root:not([data-theme="light"]) .plugin-upgrade-btn:hover {
+          background: rgba(74, 222, 128, 0.2);
+          border-color: rgba(74, 222, 128, 0.45);
+        }
       }
 
       .advanced {
@@ -395,16 +413,9 @@
           <ul class="plugins" id="plugins"></ul>
         </section>
 
-        <div class="upgrade-card" id="upgrade-card" hidden>
-          <div class="upgrade-icon">💡</div>
-          <div class="upgrade-info">
-            <p class="upgrade-title" id="upgrade-title"></p>
-            <p class="upgrade-hint" id="upgrade-hint"></p>
-          </div>
-        </div>
-
         <div class="decision-row">
           <div class="actions">
+            <button class="button" id="safe-mode" type="button"></button>
             <button class="button" id="secondary" type="button" hidden></button>
             <button class="button primary" id="primary" type="button"></button>
           </div>
@@ -460,6 +471,18 @@
       setText('technical', model.rawError)
       setText('show-log', model.logLabel)
       setText('quit', model.quitLabel)
+      const safeModeBtn = document.getElementById('safe-mode')
+      if (safeModeBtn) {
+        safeModeBtn.textContent = model.safeModeLabel || (model.locale === 'zh' ? '进入安全模式' : 'Enter Safe Mode')
+        safeModeBtn.addEventListener('click', () => {
+          safeModeBtn.disabled = true
+          primary.disabled = true
+          if (secondary) secondary.disabled = true
+          document.querySelectorAll('.plugin-upgrade-btn').forEach((btn) => { btn.disabled = true })
+          safeModeBtn.textContent = model.locale === 'zh' ? '正在进入安全模式…' : 'Entering Safe Mode…'
+          navigate('safe-mode')
+        })
+      }
 
       const progress = document.getElementById('progress')
       if (model.progress) {
@@ -485,6 +508,29 @@
           name.className = 'plugin-name'
           name.textContent = String(plugin)
           item.append(mark, name)
+
+          const candidate = model.upgradeCandidate
+          const candidateName = candidate
+            ? (candidate.packageName.startsWith('@')
+                ? candidate.packageName.slice(candidate.packageName.indexOf('/') + 1)
+                : candidate.packageName)
+            : undefined
+
+          if (candidate && (candidateName === plugin || model.plugins.length === 1)) {
+            const upgradeBtn = document.createElement('button')
+            upgradeBtn.type = 'button'
+            upgradeBtn.className = 'plugin-upgrade-btn plugin-upgrade'
+            const versionStr = candidate.targetVersion.startsWith('v')
+              ? candidate.targetVersion
+              : `v${candidate.targetVersion}`
+            upgradeBtn.textContent = model.upgradeHint || (model.locale === 'zh' ? '该插件有新的兼容版本' : 'A compatible update is available')
+            upgradeBtn.title = model.locale === 'zh' ? `可升级至 ${versionStr}` : `Can upgrade to ${versionStr}`
+            upgradeBtn.addEventListener('click', () => {
+              primary.click()
+            })
+            item.appendChild(upgradeBtn)
+          }
+
           pluginList.appendChild(item)
         }
       }
@@ -498,18 +544,16 @@
       }
       const primary = document.getElementById('primary')
       const secondary = document.getElementById('secondary')
-      const upgradeCard = document.getElementById('upgrade-card')
 
       if (model.upgradeCandidate) {
-        upgradeCard.hidden = false
-        setText('upgrade-title', model.locale === 'zh' ? '发现已适配兼容的新版本' : 'Compatible update available')
-        setText('upgrade-hint', model.upgradeHint)
         setText('primary', model.upgradeLabel)
         setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '仍要卸载此插件' : 'Uninstall plugin instead'))
         secondary.hidden = false
         secondary.addEventListener('click', () => {
           secondary.disabled = true
           primary.disabled = true
+          if (safeModeBtn) safeModeBtn.disabled = true
+          document.querySelectorAll('.plugin-upgrade-btn').forEach((btn) => { btn.disabled = true })
           secondary.textContent = model.locale === 'zh' ? '正在卸载…' : 'Removing…'
           navigate('uninstall')
         })
@@ -520,6 +564,8 @@
       primary.addEventListener('click', () => {
         primary.disabled = true
         if (secondary) secondary.disabled = true
+        if (safeModeBtn) safeModeBtn.disabled = true
+        document.querySelectorAll('.plugin-upgrade-btn').forEach((btn) => { btn.disabled = true })
         if (model.upgradeCandidate) {
           primary.textContent = model.upgradeBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
           navigate('upgrade')

@@ -118,8 +118,8 @@ describe('plugin recovery view model', () => {
       }
     })
     expect(model.upgradeCandidate?.targetVersion).toBe('2.0.0')
-    expect(model.upgradeLabel).toBe('升级至 v2.0.0 并重启')
-    expect(model.upgradeHint).toContain('v2.0.0')
+    expect(model.upgradeLabel).toBe('升级插件并重启')
+    expect(model.upgradeHint).toBe('该插件有新的兼容版本')
     expect(model.uninstallLabel).toBe('仍要卸载此插件')
   })
 })

@@ -12,6 +12,7 @@ export interface PublishedGenerationManifest {
 export function projectGenerations(dshHome: string, profile?: string): Promise<ProjectionResult>
 export function publishGenerationManifest(
   dshHome: string,
-  profile?: string
+  profile?: string,
+  options?: { syncBundles?: boolean }
 ): Promise<PublishedGenerationManifest>
 export function exposeMissingGenerationLinks(dshHome: string, profile?: string): Promise<string[]>

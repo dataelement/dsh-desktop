@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { lstat, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { lstat, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parse } from 'yaml'
 import { removeTree } from './remove-tree'
 import { bundleEntryIds, prunePatchLayer } from './patch-layer'
@@ -92,17 +92,74 @@ function configuredProfilePlugins(manifest: ProfileManifest): string[] {
 }
 
 /**
+ * A generation uninstall can be interrupted after its dependency was removed
+ * but before projection removes its bundle and node_modules link. Only expose
+ * that residue to Safe Mode when the link resolves to the generation registry
+ * and its metadata names the same plugin. A bundle entry by itself is not
+ * enough: it may be a user-maintained profile customization.
+ */
+export async function isStaleGenerationBundle(
+  dshHome: string,
+  packageName: string
+): Promise<boolean> {
+  const packagePath = join(dshHome, 'profiles', 'web', 'node_modules', packageName)
+  const generationsDirectory = resolve(dshHome, 'profiles', '.generations', 'live')
+
+  try {
+    if (!(await lstat(packagePath)).isSymbolicLink()) return false
+    const resolvedPackagePath = await realpath(packagePath)
+    const insideGenerations = relative(generationsDirectory, resolvedPackagePath)
+    if (
+      insideGenerations === '' ||
+      insideGenerations === '..' ||
+      insideGenerations.startsWith(`..${sep}`) ||
+      isAbsolute(insideGenerations)
+    ) return false
+
+    const segments = insideGenerations.split(sep)
+    const packageSegments = packageName.split('/')
+    if (
+      segments.length !== packageSegments.length + 2 ||
+      segments[1] !== 'node_modules' ||
+      !packageSegments.every((segment, index) => segments[index + 2] === segment)
+    ) return false
+
+    const generation = JSON.parse(
+      await readFile(join(generationsDirectory, segments[0]!, 'generation.json'), 'utf8')
+    ) as { pluginName?: unknown }
+    return generation.pluginName === packageName
+  } catch {
+    return false
+  }
+}
+
+/**
  * User-installed bundle packages that Safe Mode can manage without starting
- * Harness. Reading both dependencies and bundles avoids presenting transitive
- * packages as plugins, or offering to remove a package that is not active in
- * the profile.
+ * Harness. Normally a package must occur in both dependencies and bundles to
+ * avoid exposing transitive packages. The exception is a proven generation
+ * residue: its dependency is gone, while an active profile link still points
+ * into the generation registry. Including it lets Safe Mode finish an
+ * interrupted uninstall without treating arbitrary bundle entries as plugins.
  */
 export async function listInstalledProfilePlugins(dshHome: string): Promise<string[]> {
   try {
     const manifest = JSON.parse(
       await readFile(profilePackageJsonPath(dshHome), 'utf8')
     ) as ProfileManifest
-    const plugins = configuredProfilePlugins(manifest)
+    const dependencies = manifest.dependencies ?? {}
+    const configuredPlugins = configuredProfilePlugins(manifest)
+    const residualCandidates = (manifest.dsh?.profile?.bundles ?? []).filter(
+      (bundle) => isThirdPartyPackageName(bundle) && !(bundle in dependencies)
+    )
+    const residualPlugins = await Promise.all(
+      residualCandidates.map(async (bundle) =>
+        await isStaleGenerationBundle(dshHome, bundle) ? bundle : undefined
+      )
+    )
+    const plugins = [...new Set([
+      ...configuredPlugins,
+      ...residualPlugins.filter((plugin): plugin is string => plugin !== undefined)
+    ])]
     const modulesDirectory = join(dshHome, 'profiles', 'web', 'node_modules')
     const entries = await Promise.all(
       plugins.map(async (name, index) => {

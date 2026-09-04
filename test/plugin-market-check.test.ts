@@ -68,6 +68,17 @@ describe('plugin-market-check', () => {
       }
     }
     expect(inferPluginRuntimeCompatibility(deprecatedDepManifest, '0.1.2').isCompatible).toBe(false)
+
+    const subPackagePeerManifest: NpmPackageManifest = {
+      name: 'dsh-better-sidebar',
+      version: '0.17.1',
+      peerDependencies: {
+        '@deepseek-ai/dsh-agent': '^0.1.0-rc.8',
+        '@deepseek-ai/cordis': '^4.0.1'
+      }
+    }
+    expect(inferPluginRuntimeCompatibility(subPackagePeerManifest, '0.1.2-rc.1').isCompatible).toBe(false)
+    expect(inferPluginRuntimeCompatibility(subPackagePeerManifest, '0.1.0-rc.9').isCompatible).toBe(true)
   })
 
   it('evaluates plugin market compatibility for upgrade candidates', async () => {

@@ -20,4 +20,10 @@ describe('plugin recovery page', () => {
     expect(html).toContain('id="show-log"')
     expect(html).toContain('id="quit"')
   })
+
+  it('renders concise upgrade indicator directly on the plugin item without emojis', () => {
+    expect(html).not.toContain('💡')
+    expect(html).not.toContain('id="upgrade-card"')
+    expect(html).toContain('plugin-upgrade')
+  })
 })

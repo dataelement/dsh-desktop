@@ -541,7 +541,13 @@ export function createDesktopPnpmService(options) {
           if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
           write(`Disabling ${generationRemoval} generation for the next restart…`)
           await disableGeneration(home, generationRemoval)
-          const published = await publishGenerationManifest(home)
+          // Do not replace the active link while Harness is running, but do
+          // remove this bundle from the next boot's composition now. Waiting
+          // for startup projection leaves an uninstalled plugin live forever
+          // when an unrelated migration preflight is deferred.
+          const published = await publishGenerationManifest(home, MARKET_PROFILE, {
+            syncBundles: true
+          })
           write(`staged for next restart: ${published.plugins.join(', ')}`)
           return { exitCode: 0 }
         })

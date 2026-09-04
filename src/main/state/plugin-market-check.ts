@@ -270,13 +270,16 @@ export function inferPluginRuntimeCompatibility(
   manifest: NpmPackageManifest,
   currentRuntimeVersion: string
 ): { isCompatible: boolean; reason?: string } {
-  // 1. Check peerDependencies for @deepseek-ai/dsh or @deepseek-ai/dsh-web-app
+  // 1. Check peerDependencies for @deepseek-ai/* packages (e.g. @deepseek-ai/dsh, @deepseek-ai/dsh-agent, etc.)
   const peers = manifest.peerDependencies ?? {}
-  const dshPeer = peers['@deepseek-ai/dsh'] || peers['@deepseek-ai/dsh-web-app']
-  if (dshPeer && !satisfiesRange(currentRuntimeVersion, dshPeer)) {
-    return {
-      isCompatible: false,
-      reason: `Declares peer @deepseek-ai/dsh (${dshPeer}), incompatible with runtime ${currentRuntimeVersion}`
+  for (const [peerPkg, peerRange] of Object.entries(peers)) {
+    if (peerPkg.startsWith('@deepseek-ai/') && peerPkg !== '@deepseek-ai/cordis') {
+      if (peerRange && !satisfiesRange(currentRuntimeVersion, peerRange)) {
+        return {
+          isCompatible: false,
+          reason: `Declares peer ${peerPkg} (${peerRange}), incompatible with runtime ${currentRuntimeVersion}`
+        }
+      }
     }
   }
 

@@ -35,6 +35,7 @@ export interface PluginRecoveryViewModel {
   launchDirectory?: string
   rawError: string
   quitLabel: string
+  safeModeLabel: string
   canUninstall: boolean
 }
 
@@ -193,11 +194,11 @@ export function buildPluginRecoveryViewModel(options: {
       primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在进入安全模式…',
       upgradeCandidate,
       upgradeLabel: upgradeCandidate
-        ? `升级至 v${upgradeCandidate.targetVersion} 并重启`
+        ? '升级插件并重启'
         : undefined,
       upgradeBusyLabel: upgradeCandidate ? '正在升级…' : undefined,
       upgradeHint: upgradeCandidate
-        ? `检测到作者已发布兼容的新版本 v${upgradeCandidate.targetVersion}${upgradeCandidate.installedVersion ? `（当前 v${upgradeCandidate.installedVersion}）` : ''}，建议直接升级。`
+        ? '该插件有新的兼容版本'
         : undefined,
       uninstallLabel: upgradeCandidate ? '仍要卸载此插件' : undefined,
       logLabel: '打开 Harness 日志',
@@ -207,6 +208,7 @@ export function buildPluginRecoveryViewModel(options: {
       launchDirectory: snapshot.launchDirectory,
       rawError: snapshot.message,
       quitLabel: '退出 DSH Desktop',
+      safeModeLabel: '进入安全模式',
       canUninstall
     }
   }
@@ -236,11 +238,11 @@ export function buildPluginRecoveryViewModel(options: {
     primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Entering Safe Mode…',
     upgradeCandidate,
     upgradeLabel: upgradeCandidate
-      ? `Upgrade to v${upgradeCandidate.targetVersion} and restart`
+      ? 'Upgrade plugin and restart'
       : undefined,
     upgradeBusyLabel: upgradeCandidate ? 'Upgrading…' : undefined,
     upgradeHint: upgradeCandidate
-      ? `A compatible update v${upgradeCandidate.targetVersion} is available${upgradeCandidate.installedVersion ? ` (installed v${upgradeCandidate.installedVersion})` : ''}. We recommend upgrading.`
+      ? 'A compatible update is available'
       : undefined,
     uninstallLabel: upgradeCandidate ? 'Uninstall this plugin instead' : undefined,
     logLabel: 'Open Harness log',
@@ -250,6 +252,7 @@ export function buildPluginRecoveryViewModel(options: {
     launchDirectory: snapshot.launchDirectory,
     rawError: snapshot.message,
     quitLabel: 'Quit DSH Desktop',
+    safeModeLabel: 'Enter Safe Mode',
     canUninstall
   }
 }

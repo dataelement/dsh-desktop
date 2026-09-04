@@ -144,7 +144,9 @@ describe('the market install boundary', () => {
     const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
     expect(manifest.dependencies['demo-plugin']).toBeUndefined()
     expect(manifest.pnpm?.overrides?.['demo-plugin']).toBeUndefined()
-    expect(manifest.dsh.profile.bundles).toContain('demo-plugin')
+    // Uninstall immediately removes the plugin from the next Harness boot's
+    // composition. Its active link remains intact until the process stops.
+    expect(manifest.dsh.profile.bundles).not.toContain('demo-plugin')
     expect(await readlink(link)).toBe(activeTarget)
 
     await projectGenerations(home)
