@@ -2,11 +2,10 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 index 28eaff9..2445f81 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -28,6 +28,11 @@
+@@ -28,6 +28,10 @@
    },
    "license": "MIT",
    "dependencies": {
-+    "@deepseek-ai/dsh-experimental-kimi-ppt-standard-adapter": "0.1.1-rc.2",
 +    "dsh-desktop-client-ui": "0.1.0",
 +    "dsh-desktop-hmr-fallback": "0.1.0",
 +    "dsh-desktop-market-installer": "0.1.0",
