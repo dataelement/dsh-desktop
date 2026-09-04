@@ -220,6 +220,38 @@
       .button.primary:hover { border-color: var(--button-hover); background: var(--button-hover); }
       .button[disabled] { opacity: 0.64; cursor: wait; transform: none; }
 
+      .upgrade-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-top: 14px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(38, 122, 74, 0.28);
+        background: rgba(38, 122, 74, 0.08);
+      }
+      .upgrade-icon {
+        font-size: 18px;
+        line-height: 1;
+        flex: 0 0 auto;
+        margin-top: 1px;
+      }
+      .upgrade-info {
+        min-width: 0;
+      }
+      .upgrade-title {
+        margin: 0 0 3px;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 650;
+      }
+      .upgrade-hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
       .advanced {
         margin-top: 24px;
         border-top: 1px solid var(--line);
@@ -363,8 +395,17 @@
           <ul class="plugins" id="plugins"></ul>
         </section>
 
+        <div class="upgrade-card" id="upgrade-card" hidden>
+          <div class="upgrade-icon">💡</div>
+          <div class="upgrade-info">
+            <p class="upgrade-title" id="upgrade-title"></p>
+            <p class="upgrade-hint" id="upgrade-hint"></p>
+          </div>
+        </div>
+
         <div class="decision-row">
           <div class="actions">
+            <button class="button" id="secondary" type="button" hidden></button>
             <button class="button primary" id="primary" type="button"></button>
           </div>
           <p class="safety">
@@ -412,7 +453,6 @@
       setText('reason-title', model.reasonTitle)
       setText('reason-detail', model.reasonDetail)
       setText('safety-note', model.safetyNote)
-      setText('primary', model.primaryLabel)
       setText('advanced-label', model.advancedLabel)
       setText('launch-directory-label', model.launchDirectoryLabel)
       setText('launch-directory', model.launchDirectory || '—')
@@ -457,10 +497,36 @@
         }
       }
       const primary = document.getElementById('primary')
+      const secondary = document.getElementById('secondary')
+      const upgradeCard = document.getElementById('upgrade-card')
+
+      if (model.upgradeCandidate) {
+        upgradeCard.hidden = false
+        setText('upgrade-title', model.locale === 'zh' ? '发现已适配兼容的新版本' : 'Compatible update available')
+        setText('upgrade-hint', model.upgradeHint)
+        setText('primary', model.upgradeLabel)
+        setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '仍要卸载此插件' : 'Uninstall plugin instead'))
+        secondary.hidden = false
+        secondary.addEventListener('click', () => {
+          secondary.disabled = true
+          primary.disabled = true
+          secondary.textContent = model.locale === 'zh' ? '正在卸载…' : 'Removing…'
+          navigate('uninstall')
+        })
+      } else {
+        setText('primary', model.primaryLabel)
+      }
+
       primary.addEventListener('click', () => {
         primary.disabled = true
-        primary.textContent = model.primaryBusyLabel
-        navigate(model.canUninstall ? 'uninstall' : 'safe-mode')
+        if (secondary) secondary.disabled = true
+        if (model.upgradeCandidate) {
+          primary.textContent = model.upgradeBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
+          navigate('upgrade')
+        } else {
+          primary.textContent = model.primaryBusyLabel
+          navigate(model.canUninstall ? 'uninstall' : 'safe-mode')
+        }
       })
       document.getElementById('show-log').addEventListener('click', () => navigate('show-log'))
       document.getElementById('quit').addEventListener('click', () => navigate('quit'))

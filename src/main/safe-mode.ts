@@ -1,4 +1,5 @@
 import type { ProfileCompatibilityIssue } from './state/profile-compatibility'
+import type { PluginHealthReport, PluginHealthStatus } from './state/plugin-market-check'
 
 export type SafeModeLocale = 'en' | 'zh'
 
@@ -24,10 +25,17 @@ export interface SafeModeIssueGroupViewModel {
 export interface SafeModePluginViewModel {
   name: string
   statusLabel?: string
-  statusTone?: 'warning' | 'danger'
+  statusTone?: 'warning' | 'danger' | 'success'
   actionLabel: string
   incompatible: boolean
   suspected: boolean
+  healthStatus?: PluginHealthStatus
+  healthLabel?: string
+  installedVersion?: string
+  latestVersion?: string
+  upgradeReady?: boolean
+  upgradeVersion?: string
+  upgradeButtonLabel?: string
 }
 
 export interface SafeModeBackupViewModel {
@@ -73,6 +81,9 @@ export interface SafeModeViewModel {
   quitLabel: string
   notice?: string
   noticeTone?: 'success' | 'error'
+  upgradeAllLabel?: string
+  upgradeAllBusyLabel?: string
+  upgradeReadyCount: number
 }
 
 export function shouldStartInSafeMode(argv: readonly string[]): boolean {
@@ -84,6 +95,7 @@ export function buildSafeModeViewModel(options: {
   plugins: readonly string[]
   suspectedPlugins?: readonly string[]
   issues?: readonly ProfileCompatibilityIssue[]
+  healthReports?: readonly PluginHealthReport[]
   backups?: readonly {
     removalId: string
     pluginName: string
@@ -150,9 +162,13 @@ export function buildSafeModeViewModel(options: {
     ...incompatiblePlugins,
     ...suspectedPlugins
   ])].sort((left, right) => Number(suspectedPlugins.has(right)) - Number(suspectedPlugins.has(left)))
+  const healthReportByPlugin = new Map(
+    (options.healthReports ?? []).map((report) => [report.packageName, report])
+  )
   const pluginItems = plugins.map((name): SafeModePluginViewModel => {
     const incompatible = incompatiblePlugins.has(name)
     const suspected = suspectedPlugins.has(name)
+    const report = healthReportByPlugin.get(name)
     const labels = [
       ...(suspected
         ? [options.locale === 'zh' ? '本次启动日志推断' : 'inferred from this startup log']
@@ -161,6 +177,22 @@ export function buildSafeModeViewModel(options: {
         ? [options.locale === 'zh' ? '版本不兼容' : 'version incompatible']
         : [])
     ]
+    if (report?.healthLabel && !incompatible && !suspected) {
+      labels.push(report.healthLabel)
+    }
+    const statusTone = incompatible
+      ? 'danger'
+      : suspected
+        ? 'warning'
+        : report?.upgradeReady
+          ? 'success'
+          : undefined
+    const upgradeButtonLabel = report?.upgradeReady && report.upgradeVersion
+      ? options.locale === 'zh'
+        ? `升级至 v${report.upgradeVersion}`
+        : `Upgrade to v${report.upgradeVersion}`
+      : undefined
+
     return {
       name,
       statusLabel: labels.length > 0
@@ -168,12 +200,20 @@ export function buildSafeModeViewModel(options: {
           ? `（${labels.join('，')}）`
           : `(${labels.join(', ')})`
         : undefined,
-      statusTone: incompatible ? 'danger' : suspected ? 'warning' : undefined,
+      statusTone,
       actionLabel: options.locale === 'zh' ? '卸载插件' : 'Remove plugin',
       incompatible,
-      suspected
+      suspected,
+      ...(report?.healthStatus !== undefined ? { healthStatus: report.healthStatus } : {}),
+      ...(report?.healthLabel !== undefined ? { healthLabel: report.healthLabel } : {}),
+      ...(report?.installedVersion !== undefined ? { installedVersion: report.installedVersion } : {}),
+      ...(report?.latestVersion !== undefined ? { latestVersion: report.latestVersion } : {}),
+      ...(report?.upgradeReady !== undefined ? { upgradeReady: report.upgradeReady } : {}),
+      ...(report?.upgradeVersion !== undefined ? { upgradeVersion: report.upgradeVersion } : {}),
+      ...(upgradeButtonLabel !== undefined ? { upgradeButtonLabel } : {})
     }
   })
+  const upgradeReadyCount = pluginItems.filter((item) => item.upgradeReady).length
   const groups = new Map<string, SafeModeIssueViewModel[]>()
   for (const issue of issues.filter((issue) => issue.resolution !== 'disable-plugin')) {
     const id = issue.groupId ?? `${issue.resolution}:${issue.target}`
@@ -308,7 +348,12 @@ export function buildSafeModeViewModel(options: {
         : undefined,
       quitLabel: '退出 DSH Desktop',
       notice: options.notice,
-      noticeTone: options.noticeTone
+      noticeTone: options.noticeTone,
+      upgradeAllLabel: upgradeReadyCount > 0
+        ? `一键升级 ${upgradeReadyCount} 个已适配插件`
+        : undefined,
+      upgradeAllBusyLabel: '正在批量升级…',
+      upgradeReadyCount
     }
   }
 
@@ -345,6 +390,11 @@ export function buildSafeModeViewModel(options: {
       : undefined,
     quitLabel: 'Quit DSH Desktop',
     notice: options.notice,
-    noticeTone: options.noticeTone
+    noticeTone: options.noticeTone,
+    upgradeAllLabel: upgradeReadyCount > 0
+      ? `Upgrade ${upgradeReadyCount} compatible plugin${upgradeReadyCount === 1 ? '' : 's'}`
+      : undefined,
+    upgradeAllBusyLabel: 'Upgrading plugins…',
+    upgradeReadyCount
   }
 }

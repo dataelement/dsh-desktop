@@ -104,4 +104,22 @@ describe('plugin recovery view model', () => {
     expect(html).toContain("navigate('show-log')")
     expect(html).not.toContain('id="restart"')
   })
+
+  it('configures upgrade candidate when a compatible update is available', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(),
+      plugins: ['plugin-a'],
+      removedPlugins: [],
+      locale: 'zh',
+      upgradeCandidate: {
+        packageName: 'plugin-a',
+        targetVersion: '2.0.0',
+        installedVersion: '1.0.0'
+      }
+    })
+    expect(model.upgradeCandidate?.targetVersion).toBe('2.0.0')
+    expect(model.upgradeLabel).toBe('升级至 v2.0.0 并重启')
+    expect(model.upgradeHint).toContain('v2.0.0')
+    expect(model.uninstallLabel).toBe('仍要卸载此插件')
+  })
 })

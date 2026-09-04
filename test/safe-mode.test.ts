@@ -349,4 +349,39 @@ describe('Safe Mode', () => {
       await rm(dshHome, { recursive: true, force: true })
     }
   })
+
+  it('enriches plugin items with health reports and upgrade candidates', () => {
+    const model = buildSafeModeViewModel({
+      locale: 'zh',
+      plugins: ['plugin-a', 'plugin-b'],
+      healthReports: [
+        {
+          packageName: 'plugin-a',
+          installedVersion: '1.0.0',
+          latestVersion: '2.0.0',
+          healthStatus: 'incompatible-fixed-in-latest',
+          healthLabel: '不兼容（最新版 v2.0.0 已适配）',
+          upgradeReady: true,
+          upgradeVersion: '2.0.0'
+        },
+        {
+          packageName: 'plugin-b',
+          installedVersion: '1.2.0',
+          latestVersion: '1.2.0',
+          healthStatus: 'up-to-date',
+          healthLabel: '已是最新版',
+          upgradeReady: false
+        }
+      ]
+    })
+    expect(model.upgradeReadyCount).toBe(1)
+    expect(model.upgradeAllLabel).toBe('一键升级 1 个已适配插件')
+    const itemA = model.pluginItems.find((p) => p.name === 'plugin-a')
+    expect(itemA?.upgradeReady).toBe(true)
+    expect(itemA?.upgradeVersion).toBe('2.0.0')
+    expect(itemA?.upgradeButtonLabel).toBe('升级至 v2.0.0')
+    const itemB = model.pluginItems.find((p) => p.name === 'plugin-b')
+    expect(itemB?.upgradeReady).toBe(false)
+    expect(itemB?.upgradeButtonLabel).toBeUndefined()
+  })
 })

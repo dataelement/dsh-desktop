@@ -2,6 +2,12 @@ import type { RuntimeSnapshot } from '../shared/contracts'
 
 export type PluginRecoveryLocale = 'en' | 'zh'
 
+export interface PluginRecoveryUpgradeCandidate {
+  packageName: string
+  targetVersion: string
+  installedVersion?: string
+}
+
 export interface PluginRecoveryViewModel {
   locale: PluginRecoveryLocale
   brand: string
@@ -17,6 +23,11 @@ export interface PluginRecoveryViewModel {
   safetyNote: string
   primaryLabel: string
   primaryBusyLabel: string
+  upgradeCandidate?: PluginRecoveryUpgradeCandidate
+  upgradeLabel?: string
+  upgradeBusyLabel?: string
+  upgradeHint?: string
+  uninstallLabel?: string
   logLabel: string
   advancedLabel: string
   errorLabel: string
@@ -146,8 +157,9 @@ export function buildPluginRecoveryViewModel(options: {
   removedPlugins: readonly string[]
   locale: PluginRecoveryLocale
   notice?: string
+  upgradeCandidate?: PluginRecoveryUpgradeCandidate
 }): PluginRecoveryViewModel {
-  const { snapshot, locale, notice } = options
+  const { snapshot, locale, notice, upgradeCandidate } = options
   const pluginPackages = [...new Set(options.plugins)]
   const plugins = pluginPackages.map(displayPluginName)
   const removedPlugins = [...new Set(options.removedPlugins)].map(displayPluginName)
@@ -179,6 +191,15 @@ export function buildPluginRecoveryViewModel(options: {
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
         : '进入安全模式',
       primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在进入安全模式…',
+      upgradeCandidate,
+      upgradeLabel: upgradeCandidate
+        ? `升级至 v${upgradeCandidate.targetVersion} 并重启`
+        : undefined,
+      upgradeBusyLabel: upgradeCandidate ? '正在升级…' : undefined,
+      upgradeHint: upgradeCandidate
+        ? `检测到作者已发布兼容的新版本 v${upgradeCandidate.targetVersion}${upgradeCandidate.installedVersion ? `（当前 v${upgradeCandidate.installedVersion}）` : ''}，建议直接升级。`
+        : undefined,
+      uninstallLabel: upgradeCandidate ? '仍要卸载此插件' : undefined,
       logLabel: '打开 Harness 日志',
       advancedLabel: '查看技术详情',
       errorLabel: '错误信息',
@@ -213,6 +234,15 @@ export function buildPluginRecoveryViewModel(options: {
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
       : 'Enter Safe Mode',
     primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Entering Safe Mode…',
+    upgradeCandidate,
+    upgradeLabel: upgradeCandidate
+      ? `Upgrade to v${upgradeCandidate.targetVersion} and restart`
+      : undefined,
+    upgradeBusyLabel: upgradeCandidate ? 'Upgrading…' : undefined,
+    upgradeHint: upgradeCandidate
+      ? `A compatible update v${upgradeCandidate.targetVersion} is available${upgradeCandidate.installedVersion ? ` (installed v${upgradeCandidate.installedVersion})` : ''}. We recommend upgrading.`
+      : undefined,
+    uninstallLabel: upgradeCandidate ? 'Uninstall this plugin instead' : undefined,
     logLabel: 'Open Harness log',
     advancedLabel: 'View technical details',
     errorLabel: 'Error details',

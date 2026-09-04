@@ -75,7 +75,17 @@
       .button:hover { background: var(--soft); }
       .button.primary { border-color: var(--button); color: var(--button-ink); background: var(--button); }
       .button.danger { color:var(--danger); border-color:rgba(195,59,56,.35); }
+      .button.success { color:var(--success); border-color:rgba(38,122,74,.35); }
+      .button.success:hover { background:rgba(38,122,74,.08); }
       .button[disabled] { opacity: .55; cursor: default; }
+      .plugin-item { display:flex; align-items:center; justify-content:space-between; border-top:1px solid var(--line); background:var(--surface); }
+      .plugin-item:first-child { border-top:0; }
+      .plugin-item .plugin { flex:1 1 auto; min-width:0; }
+      .plugin-upgrade-btn { margin-right:14px; min-height:28px; padding:4px 10px; border:1px solid var(--success); border-radius:8px; color:var(--success); background:transparent; cursor:pointer; font-size:11px; font-weight:650; white-space:nowrap; flex:0 0 auto; }
+      .plugin-upgrade-btn:hover { background:rgba(38,122,74,.09); }
+      .plugin-upgrade-btn[disabled] { opacity:.55; cursor:wait; }
+      .plugin-status.success { color:var(--success); }
+      .plugin-version { margin-left:4px; color:var(--muted); font-size:11px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
       .footer { display: flex; justify-content: flex-end; padding: 0 32px 18px; }
       .quit { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
       :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; }
@@ -101,6 +111,7 @@
         <p class="safety" id="safety-note"></p>
         <div class="actions">
           <button class="button" id="recovery-open" type="button" hidden></button>
+          <button class="button success" id="upgrade-all" type="button" hidden></button>
           <button class="button" id="apply" type="button" disabled></button>
           <button class="button primary" id="restart" type="button"></button>
         </div>
@@ -136,6 +147,7 @@
       const list = document.getElementById('items')
       const empty = document.getElementById('empty')
       const apply = document.getElementById('apply')
+      const upgradeAll = document.getElementById('upgrade-all')
       const recoveryOpen = document.getElementById('recovery-open')
       const agent = document.getElementById('agent')
       const restart = document.getElementById('restart')
@@ -144,6 +156,10 @@
         document.getElementById('safety-note').hidden = true
         apply.hidden = true
         recoveryOpen.hidden = false
+      }
+      if (model.upgradeAllLabel && model.upgradeReadyCount > 0 && model.recoveryLocked !== true) {
+        upgradeAll.hidden = false
+        upgradeAll.textContent = model.upgradeAllLabel
       }
       const pluginCheckboxes = []
       const issueCheckboxes = []
@@ -175,20 +191,48 @@
         : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))
       for (const plugin of pluginItems) {
         const item = document.createElement('li')
+        item.className = 'plugin-item'
         const label = document.createElement('label'); label.className = 'plugin'
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin.name)
         const copy = document.createElement('span'); copy.className = 'plugin-copy'
         const title = document.createElement('span'); title.className = 'plugin-title'
         const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.name)
         title.appendChild(name)
+        if (plugin.installedVersion) {
+          const ver = document.createElement('span')
+          ver.className = 'plugin-version'
+          ver.textContent = `v${plugin.installedVersion}`
+          title.appendChild(ver)
+        }
         if (plugin.statusLabel) {
           const status = document.createElement('span'); status.className = 'plugin-status'; status.textContent = String(plugin.statusLabel)
           if (plugin.statusTone === 'warning') status.classList.add('warning')
+          else if (plugin.statusTone === 'success') status.classList.add('success')
           title.appendChild(status)
         }
         const action = document.createElement('span'); action.className = 'plugin-action'; action.textContent = String(plugin.actionLabel || '')
         copy.append(title, action)
-        label.append(checkbox, copy); item.appendChild(label); list.appendChild(item); pluginCheckboxes.push(checkbox)
+        label.append(checkbox, copy); item.appendChild(label)
+
+        if (plugin.upgradeButtonLabel) {
+          const upgradeBtn = document.createElement('button')
+          upgradeBtn.type = 'button'
+          upgradeBtn.className = 'plugin-upgrade-btn'
+          upgradeBtn.textContent = String(plugin.upgradeButtonLabel)
+          upgradeBtn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            upgradeBtn.disabled = true
+            upgradeBtn.textContent = model.locale === 'zh' ? '正在升级…' : 'Upgrading…'
+            apply.disabled = true
+            if (upgradeAll) upgradeAll.disabled = true
+            restart.disabled = true
+            agent.disabled = true
+            void window.dshSafeMode.action('upgrade', { plugins: [plugin.name] })
+          })
+          item.appendChild(upgradeBtn)
+        }
+
+        list.appendChild(item); pluginCheckboxes.push(checkbox)
       }
       const allCheckboxes = [...issueCheckboxes, ...pluginCheckboxes]
       if (allCheckboxes.length === 0) empty.classList.add('visible')
@@ -202,13 +246,24 @@
         })
         if (plugins.length === 0 && issues.length === 0) return
         apply.disabled = true; apply.textContent = model.applyBusyLabel; agent.disabled = true; restart.disabled = true
+        if (upgradeAll) upgradeAll.disabled = true
         void window.dshSafeMode.action('apply', { plugins, issues })
       })
+      upgradeAll.addEventListener('click', () => {
+        const targets = pluginItems.filter((p) => p.upgradeReady).map((p) => p.name)
+        if (targets.length === 0) return
+        upgradeAll.disabled = true
+        upgradeAll.textContent = model.upgradeAllBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
+        apply.disabled = true
+        restart.disabled = true
+        agent.disabled = true
+        void window.dshSafeMode.action('upgrade', { plugins: targets })
+      })
       recoveryOpen.addEventListener('click', () => { recoveryOpen.disabled = true; void window.dshSafeMode.action('recovery-open', {}) })
-      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; apply.disabled = true; restart.disabled = true; void window.dshSafeMode.action('agent', {}) })
+      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; apply.disabled = true; restart.disabled = true; if (upgradeAll) upgradeAll.disabled = true; void window.dshSafeMode.action('agent', {}) })
       restart.addEventListener('click', () => {
         if (model.restartConfirm && !window.confirm(String(model.restartConfirm))) return
-        restart.disabled = true; restart.textContent = model.restartBusyLabel; apply.disabled = true; agent.disabled = true; void window.dshSafeMode.action('restart', {})
+        restart.disabled = true; restart.textContent = model.restartBusyLabel; apply.disabled = true; agent.disabled = true; if (upgradeAll) upgradeAll.disabled = true; void window.dshSafeMode.action('restart', {})
       })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', {}))
     </script>
