@@ -102,6 +102,10 @@ import {
   shouldLoadHarnessUrl
 } from './window-navigation'
 import {
+  DesktopStorageManager,
+  type DesktopStorageAction
+} from './state/desktop-storage'
+import {
   raiseWindowWithoutStealingFocus,
   type WindowFocusIntent
 } from './window-raise'
@@ -156,6 +160,7 @@ let windowsMenuDark = false
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
+let desktopStorageManager: DesktopStorageManager | undefined
 let mobileBridge: LanMobileBridge
 let launchDirectory: string
 let quitting = false
@@ -919,6 +924,7 @@ function createWindow(): BrowserWindow {
     window.setMenuBarVisibility(false)
   }
   window.on('close', (event) => {
+    desktopStorageManager?.flushSync()
     if (!shouldKeepRunningInBackground(process.platform, quitting)) return
     event.preventDefault()
     window.hide()
@@ -1204,6 +1210,7 @@ function launchHarness(): Promise<void> {
     maintenanceAllowedRestoreId = undefined
     await refreshMigrationRecoveryLock(dshHome)
     await auditInstalledLaunchAgents(dshHome)
+    desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
     await runtime.start(launchDirectory)
 
     // A failed launch must not rewrite the user's enabled plugin set. Recovery
@@ -1246,6 +1253,7 @@ function launchSafeHarness(): Promise<void> {
     await runtime.stop()
     await ensureSafeModeProfile(dshHome)
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
+    desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
     await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
     if (runtime.snapshot().phase === 'ready') {
       void mobileBridge.start().catch(showUnexpectedError)
@@ -1288,6 +1296,18 @@ async function uninstallMarketAndRestart(): Promise<{ ok: boolean }> {
 }
 
 function registerHarnessHandlers(): void {
+  ipcMain.removeAllListeners('dsh:storage-load-sync')
+  ipcMain.on('dsh:storage-load-sync', (event) => {
+    event.returnValue = desktopStorageManager?.getAll() ?? {}
+  })
+
+  ipcMain.removeAllListeners('dsh:storage-sync')
+  ipcMain.on('dsh:storage-sync', (_event, action) => {
+    if (action && typeof action === 'object') {
+      desktopStorageManager?.applyAction(action as DesktopStorageAction)
+    }
+  })
+
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
@@ -2410,6 +2430,12 @@ async function bootstrap(): Promise<void> {
   registerUpdateHandlers()
   nativeTheme.themeSource = harnessThemePreference()
   ensureTray()
+  const dshHome = join(app.getPath('userData'), 'harness')
+  desktopStorageManager = new DesktopStorageManager(join(dshHome, 'profiles', 'web'), {
+    onError: (error, context) => {
+      console.warn(`[desktop-storage] error during ${context}:`, error)
+    }
+  })
   createWindow()
   runtime = new HarnessRuntime({
     dshEntryPath: dshEntryPath(),
@@ -2692,6 +2718,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
       if (quitting || !runtime) return
       event.preventDefault()
       quitting = true
+      desktopStorageManager?.flushSync()
       stopUpdateManager()
       // Windows leaves the tray icon behind as a ghost until the user hovers
       // over it unless it is destroyed explicitly before the process exits.
