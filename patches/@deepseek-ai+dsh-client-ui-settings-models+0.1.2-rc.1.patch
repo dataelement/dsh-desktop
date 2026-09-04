@@ -1,7 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
+index dd1dc8d..dfb9636 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-@@ -64,72 +64,110 @@
+@@ -64,72 +64,110 @@ window.__ModuleLoader__.load({
  			tag.textContent = css$3;
  			document.head.appendChild(tag);
  		}
@@ -177,14 +178,10 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  		};
  		//#endregion
  		//#region lib/types/client/EditorFooter.js
-@@ -154,7 +192,187 @@
- 					disabled: props.submitDisabled,
- 					onClick: props.onSubmit,
- 					children: props.busy ? t(props.submitBusyLabelKey) : t(props.submitLabelKey)
-+				})]
-+			});
-+		}
-+		//#endregion
+@@ -158,6 +196,142 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		//#endregion
 +		//#region lib/types/client/ModelImageInputToggle.js
 +		/** Whether one model explicitly declares image input in the adapter-owned field. */
 +		function imageInputEnabled(model, field) {
@@ -218,7 +215,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
 +						className: "dshModelModalityHint",
 +						children: props.t("modelImageInputHint")
 +					})]
- 				})]
++				})]
 +			});
 +		}
 +		//#endregion
@@ -249,73 +246,51 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
 +		//#endregion
 +		//#region lib/types/client/ModelReasoningEffortsField.js
 +		/**
-+		* Reasoning effort support lives on `model.reasoning` (a per-model capability,
-+		* not a provider-level one). The composer reads the same shape, so the
-+		* declaration here lands directly in the dropdown the user sees in chat.
++		* Persisted model capability configuration uses `reasoningEfforts`; the
++		* adapter later resolves it into the runtime `model.reasoning` shape used by
++		* the composer.
 +		*/
-+		/** Whether the model has any reasoning effort level declared. */
-+		function reasoningEnabled(model) {
-+			return Array.isArray(model.reasoning?.efforts);
-+		}
-+		/** The declared effort levels; missing or malformed becomes an empty list. */
-+		function reasoningEfforts(model) {
-+			return Array.isArray(model.reasoning?.efforts) ? model.reasoning.efforts : [];
-+		}
-+		/** The default effort id, if the user picked one. */
-+		function reasoningDefault(model) {
-+			return typeof model.reasoning?.defaultEffort === "string" && model.reasoning.defaultEffort.length > 0 ? model.reasoning.defaultEffort : void 0;
++		/** Read the canonical per-model reasoning capability declaration. */
++		function configuredReasoningEfforts(model) {
++			const configured = model.reasoningEfforts;
++			return configured !== null && typeof configured === "object" && !Array.isArray(configured) ? configured : {};
 +		}
 +		/** Parse a comma-separated list of effort ids into a clean string array. */
 +		function parseEffortList(text) {
 +			return text.split(",").map((value) => value.trim()).filter((value) => value.length > 0);
 +		}
 +		/**
-+		* Reuse the user's earlier name when an id reappears after an edit, so
-+		* typing `low, high` after `low, medium, high` keeps the "Medium" row
-+		* rather than re-falling back to the id.
-+		* @param ids - cleaned ids in display order.
-+		* @param previous - last-known levels, in their previous order.
-+		* @returns the levels the new payload should carry.
++		* Read the IDs shown in the editor. Legacy #215 rows remain visible long
++		* enough for an edit to migrate them to the canonical configuration field.
 +		*/
-+		function rehydrateLevels(ids, previous) {
-+			const lookup = /* @__PURE__ */ new Map();
-+			for (const level of previous) {
-+				if (level !== null && typeof level === "object" && typeof level.id === "string" && level.id.length > 0) lookup.set(level.id, level);
-+			}
-+			return ids.map((id) => {
-+				const known = lookup.get(id);
-+				return known ?? { id, name: id };
-+			});
++		function reasoningEffortIds(model) {
++			const configuredIds = Object.keys(configuredReasoningEfforts(model));
++			if (configuredIds.length > 0) return configuredIds;
++			const legacy = model.reasoning?.efforts;
++			if (!Array.isArray(legacy)) return [];
++			return legacy.filter((level) => level !== null && typeof level === "object" && typeof level.id === "string" && level.id.trim().length > 0).map((level) => level.id);
 +		}
 +		/**
-+		* Compose the next `model.reasoning` value. The list of ids drives
-+		* everything: clearing the list removes the capability outright, and
-+		* the default follows the first id when its previous value was lost.
++		* Build the next persisted capability map. Existing wire values are retained;
++		* newly entered IDs use identity mapping.
 +		* @param model - the current model row.
 +		* @param ids - cleaned ids from the comma-separated field.
-+		* @returns the next reasoning payload, or undefined to drop it.
++		* @returns the next reasoning-efforts map, or undefined to drop it.
 +		*/
-+		function nextReasoning(model, ids) {
++		function nextReasoningEfforts(model, ids) {
 +			if (ids.length === 0) return void 0;
-+			const previous = reasoningEfforts(model);
-+			const previousDefault = reasoningDefault(model);
-+			const nextLevels = rehydrateLevels(ids, previous);
-+			const defaultStillPresent = previousDefault !== void 0 && nextLevels.some((level) => level.id === previousDefault);
-+			return {
-+				defaultEffort: defaultStillPresent ? previousDefault : nextLevels[0].id,
-+				efforts: nextLevels
-+			};
++			const configured = configuredReasoningEfforts(model);
++			return Object.fromEntries(ids.map((id) => [id, Object.prototype.hasOwnProperty.call(configured, id) ? configured[id] : id]));
 +		}
 +		/**
 +		* Render the per-model reasoning effort declaration control. One
-+		* comma-separated text field carries the effort ids, and a picker
-+		* selects the default; clearing the text drops the capability.
++		* comma-separated text field carries the effort IDs; clearing it drops the
++		* per-model capability declaration.
 +		* @param props - model row, row index, copy callback, disabled flag, and writer.
 +		* @returns the reasoning control.
 +		*/
 +		function ModelReasoningEffortsField(props) {
-+			const levels = reasoningEfforts(props.model);
-+			const defaultEffort = reasoningDefault(props.model);
++			const ids = reasoningEffortIds(props.model);
 +			return (0, react_jsx_runtime.jsxs)("div", {
 +				className: "dshModelReasoningField",
 +				children: [
@@ -327,45 +302,26 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
 +						}), (0, react_jsx_runtime.jsx)("input", {
 +							className: ModelsSection_module_css_default["input"],
 +							type: "text",
-+							value: levels.map((level) => level.id).join(", "),
++							value: ids.join(", "),
 +							placeholder: props.t("modelReasoningLevelsPlaceholder"),
 +							"aria-label": `${props.t("modelReasoningLevels")} ${String(props.index + 1)}`,
 +							disabled: props.disabled,
 +							onChange: (event) => {
-+								props.onChange(nextReasoning(props.model, parseEffortList(event.target.value)));
++								props.onChange(nextReasoningEfforts(props.model, parseEffortList(event.target.value)));
 +							}
 +						}), (0, react_jsx_runtime.jsx)("span", {
 +							className: "dshModelReasoningHint",
 +							children: props.t("modelReasoningLevelsHint")
 +						})]
-+					}),
-+					levels.length === 0 ? null : (0, react_jsx_runtime.jsxs)("label", {
-+						className: ModelsSection_module_css_default["modelField"],
-+						children: [(0, react_jsx_runtime.jsx)("span", {
-+							className: ModelsSection_module_css_default["modelFieldLabel"],
-+							children: props.t("modelReasoningDefault")
-+						}), (0, react_jsx_runtime.jsx)("select", {
-+							className: `${ModelsSection_module_css_default["input"]} ${ModelsSection_module_css_default["selectInput"]}`,
-+							value: defaultEffort ?? levels[0].id,
-+							"aria-label": `${props.t("modelReasoningDefault")} ${String(props.index + 1)}`,
-+							disabled: props.disabled,
-+							onChange: (event) => {
-+								props.onChange({
-+									defaultEffort: event.target.value,
-+									efforts: levels
-+								});
-+							},
-+							children: levels.map((level) => (0, react_jsx_runtime.jsx)("option", {
-+								value: level.id,
-+								children: level.name
-+							}, level.id))
-+						})]
 +					})
 +				]
- 			});
- 		}
- 		//#endregion
-@@ -259,6 +477,7 @@
++			});
++		}
++		//#endregion
+ 		//#region lib/types/client/DeepSeekModelsEditor.js
+ 		/**
+ 		* Curated editor for the direct DeepSeek adapter's advisory model catalog.
+@@ -259,6 +433,7 @@ window.__ModuleLoader__.load({
  		function DeepSeekModelsEditor(props) {
  			const [editing, setEditing] = (0, react.useState)(() => /* @__PURE__ */ new Map());
  			const [expanded, setExpanded] = (0, react.useState)(() => /* @__PURE__ */ new Set());
@@ -373,7 +329,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			const update = (index, key, value) => {
  				const next = props.models.map((model, at) => {
  					const copy = { ...model };
-@@ -367,12 +586,20 @@
+@@ -367,12 +542,20 @@ window.__ModuleLoader__.load({
  							children: props.t("resetModels")
  						}) : null]
  					}),
@@ -395,7 +351,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  							className: ModelsSection_module_css_default["modelEntry"],
  							children: [(0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["modelRow"],
-@@ -398,12 +625,23 @@
+@@ -398,12 +581,23 @@ window.__ModuleLoader__.load({
  										value: typeof model["name"] === "string" ? model["name"] : "",
  										placeholder: props.t("modelName"),
  										"aria-label": `${props.t("modelName")} ${String(index + 1)}`,
@@ -425,7 +381,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  										type: "button",
  										className: ModelsSection_module_css_default["iconButton"],
  										"aria-label": `${props.t("modelAdvanced")} ${String(index + 1)}`,
-@@ -428,18 +666,9 @@
+@@ -428,18 +622,9 @@ window.__ModuleLoader__.load({
  								]
  							}), expanded.has(index) ? (0, react_jsx_runtime.jsxs)("div", {
  								className: ModelsSection_module_css_default["modelAdvanced"],
@@ -445,7 +401,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  					})
  				]
  			});
-@@ -557,6 +786,7 @@
+@@ -557,6 +742,7 @@ window.__ModuleLoader__.load({
  			const [candidateQuery, setCandidateQuery] = (0, react.useState)("");
  			const [expanded, setExpanded] = (0, react.useState)(/* @__PURE__ */ new Set());
  			const [editing, setEditing] = (0, react.useState)(/* @__PURE__ */ new Map());
@@ -453,16 +409,15 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			/** Buffer key for one capacity field; the row half moves when rows do. */
  			const bufferKey = (index, field) => `${String(index)}:${field}`;
  			const editCapacity = (index, field, text) => {
-@@ -690,12 +920,20 @@
- 								children: busy ? t("fetching") : t("fetchModels")
+@@ -691,11 +877,19 @@ window.__ModuleLoader__.load({
  							})
  						]
-+					}),
+ 					}),
 +					(0, react_jsx_runtime.jsx)(ModelCatalogSearch, {
 +						value: props.modelQuery,
 +						onChange: props.onModelQueryChange,
 +						t
- 					}),
++					}),
  					models.length === 0 ? (0, react_jsx_runtime.jsx)("p", {
  						className: ModelsSection_module_css_default["modelEmpty"],
  						children: t("modelsEmpty")
@@ -475,7 +430,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  						className: ModelsSection_module_css_default["modelEntry"],
  						children: [(0, react_jsx_runtime.jsxs)("div", {
  							className: ModelsSection_module_css_default["modelRow"],
-@@ -717,12 +955,23 @@
+@@ -717,12 +911,23 @@ window.__ModuleLoader__.load({
  									value: textOf(model, "name"),
  									placeholder: t("modelName"),
  									"aria-label": `${t("modelName")} ${index + 1}`,
@@ -505,7 +460,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  									type: "button",
  									className: ModelsSection_module_css_default["iconButton"],
  									"aria-label": `${t("modelAdvanced")} ${index + 1}`,
-@@ -788,18 +1037,17 @@
+@@ -788,18 +993,17 @@ window.__ModuleLoader__.load({
  										editCapacity(index, "maxTokens", event.target.value);
  									}
  								})]
@@ -515,7 +470,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
 +								t,
 +								disabled,
 +								onChange: (next) => {
-+									patch(index, { reasoning: next });
++									patch(index, { reasoningEfforts: next, reasoning: void 0 });
 +								}
  							})]
  						}) : null]
@@ -532,7 +487,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  					failure !== void 0 ? (0, react_jsx_runtime.jsx)("p", {
  						className: ModelsSection_module_css_default["error"],
  						children: failure
-@@ -1155,6 +1403,7 @@
+@@ -1155,6 +1359,7 @@ window.__ModuleLoader__.load({
  			const [protocol, setProtocol] = (0, react.useState)(protocols[0] ?? "");
  			const [keyDraft, setKeyDraft] = (0, react.useState)("");
  			const [models, setModels] = (0, react.useState)([]);
@@ -540,7 +495,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
  			/**
-@@ -1212,6 +1461,11 @@
+@@ -1212,6 +1417,11 @@ window.__ModuleLoader__.load({
  					setBusy(false);
  				}
  			};
@@ -552,7 +507,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["editor"],
  				children: [
-@@ -1327,6 +1581,8 @@
+@@ -1327,6 +1537,8 @@ window.__ModuleLoader__.load({
  					(0, react_jsx_runtime.jsx)(ModelListEditor, {
  						models,
  						onChange: setModels,
@@ -561,7 +516,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  						probe: {
  							settingsNs: NS$1,
  							baseURL,
-@@ -1346,18 +1602,27 @@
+@@ -1346,18 +1558,27 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: hint
  					}),
@@ -601,7 +556,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  					})
  				]
  			});
-@@ -1445,6 +1710,8 @@
+@@ -1445,6 +1666,8 @@ window.__ModuleLoader__.load({
  			const [keyState, setKeyState] = (0, react.useState)(void 0);
  			const [busy, setBusy] = (0, react.useState)(false);
  			const [failure, setFailure] = (0, react.useState)(void 0);
@@ -610,7 +565,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			const [committedOriginal, setCommittedOriginal] = (0, react.useState)(() => schema.getPath(namespace.user, settingsPath));
  			const [expectedRevision, setExpectedRevision] = (0, react.useState)(() => namespace.revision);
  			const root = (0, react.useMemo)(() => schema.rehydrate(namespace.schema), [namespace.schema, schema]);
-@@ -1565,6 +1832,15 @@
+@@ -1565,6 +1788,15 @@ window.__ModuleLoader__.load({
  			const inheritedModels = () => {
  				return schema.getPath(namespace.base, [...settingsPath, "models"]) ?? schema.nodeAtPath(root, [...settingsPath, "models"])?.meta.default;
  			};
@@ -626,7 +581,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			/**
  			* The curated fields of one known adapter family. The family arrives
  			* narrowed so the per-family branches below are total: an unknown namespace
-@@ -1582,6 +1858,8 @@
+@@ -1582,6 +1814,8 @@ window.__ModuleLoader__.load({
  				const catalogProps = {
  					models,
  					overridden: modelsOverridden,
@@ -635,7 +590,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  					t,
  					disabled,
  					onChange: (next) => {
-@@ -1620,6 +1898,10 @@
+@@ -1620,6 +1854,10 @@ window.__ModuleLoader__.load({
  					]
  				}), props.credentialOnly === true ? null : (0, react_jsx_runtime.jsxs)("details", {
  					className: ModelsSection_module_css_default["customized"],
@@ -646,7 +601,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -1696,8 +1978,22 @@
+@@ -1696,8 +1934,22 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -670,7 +625,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -1721,19 +2017,15 @@
+@@ -1721,19 +1973,15 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
  					}),
@@ -699,7 +654,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  					})
  				]
  			});
-@@ -1830,6 +2122,26 @@
+@@ -1830,6 +2078,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -726,7 +681,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1859,6 +2171,8 @@
+@@ -1859,6 +2127,8 @@ window.__ModuleLoader__.load({
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
  			const [declaring, setDeclaring] = (0, react.useState)(false);
@@ -735,7 +690,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -1928,11 +2242,17 @@
+@@ -1928,11 +2198,17 @@ window.__ModuleLoader__.load({
  			};
  			const anyUsable = state.rows.some(providerUsable);
  			const configured = state.rows.filter((row) => row.configured);
@@ -754,7 +709,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: ModelsSection_module_css_default["section"],
  				children: [
-@@ -2067,20 +2387,62 @@
+@@ -2067,20 +2343,62 @@ window.__ModuleLoader__.load({
  									children: [(0, react_jsx_runtime.jsx)("span", {
  										className: ModelsSection_module_css_default["fieldLabel"],
  										children: t("provider")
@@ -831,7 +786,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  									})]
  								}),
  								(0, react_jsx_runtime.jsx)(ProviderEditor, {
-@@ -2132,6 +2494,8 @@
+@@ -2132,6 +2450,8 @@ window.__ModuleLoader__.load({
  									setDeclaring(false);
  									setAdding(true);
  									setEditing(targetOf(first));
@@ -840,7 +795,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  								},
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
  							}), (0, react_jsx_runtime.jsxs)("button", {
-@@ -2240,8 +2604,8 @@
+@@ -2240,8 +2560,8 @@ window.__ModuleLoader__.load({
  			});
  		}
  		//#endregion
@@ -851,7 +806,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -2267,35 +2631,50 @@
+@@ -2267,35 +2587,50 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -920,7 +875,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2633,6 +3012,8 @@
+@@ -2633,6 +2968,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -929,7 +884,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2664,7 +3045,16 @@
+@@ -2664,7 +3001,15 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "Uses the provider default",
  			maxTokens: "Max output tokens",
  			maxTokensPlaceholder: "Uses the provider default",
@@ -942,12 +897,11 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
 +			modelSearchEmpty: "No matching models.",
 +			modelReasoningLevels: "Reasoning effort levels",
 +			modelReasoningLevelsPlaceholder: "e.g. low, medium, high",
-+			modelReasoningLevelsHint: "Comma-separated. Leave blank to disable effort selection in chat.",
-+			modelReasoningDefault: "Default effort",
++			modelReasoningLevelsHint: "Comma-separated effort ids. These levels become selectable in chat; leave blank to remove the per-model declaration.",
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2712,10 +3102,14 @@
+@@ -2712,10 +3057,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 0.1 remains in testing for Harness developers. Many areas need further improvement, and we welcome feedback from the developer community. DeepSeek Harness's core plugins and foundational APIs will continue to evolve rapidly over the coming months.\n\nWe look forward to exploring the limits of intelligence with developers around the world, building on open-source, open, reusable, and composable infrastructure. We welcome Harness developers everywhere to join the DSH plugin ecosystem.",
  			welcomeContinue: "Continue",
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -965,7 +919,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2735,6 +3129,8 @@
+@@ -2735,6 +3084,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -974,7 +928,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2766,7 +3162,16 @@
+@@ -2766,7 +3117,15 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "使用提供方默认值",
  			maxTokens: "最大输出 token 数",
  			maxTokensPlaceholder: "使用提供方默认值",
@@ -987,12 +941,11 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
 +			modelSearchEmpty: "没有找到匹配的模型。",
 +			modelReasoningLevels: "推理等级",
 +			modelReasoningLevelsPlaceholder: "例如：low, medium, high",
-+			modelReasoningLevelsHint: "使用英文逗号分隔；留空则关闭会话中的推理等级选择。",
-+			modelReasoningDefault: "默认等级",
++			modelReasoningLevelsHint: "使用英文逗号分隔推理等级；这些等级将在会话中可选择，留空则移除此模型的推理等级声明。",
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2814,10 +3219,14 @@
+@@ -2814,10 +3173,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。",
  			welcomeContinue: "继续",
  			welcomeError: "暂时无法保存确认状态，请重试。",
@@ -1010,7 +963,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.
  			onboardingSaving: "保存中…",
  			keyRequired: "请输入 API 密钥后继续。"
  		};
-@@ -2942,4 +3351,4 @@
+@@ -2942,4 +3305,4 @@ window.__ModuleLoader__.load({
  	}
  });
 
