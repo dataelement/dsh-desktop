@@ -184,6 +184,29 @@ export interface CloudflareTunnelInstance extends InternetTunnelInstance {
   provider: 'cloudflare'
 }
 
+/**
+ * Stop a spawned child with a SIGTERM grace period, escalating to SIGKILL
+ * only while the process is still running. `ChildProcess.killed` becomes true
+ * as soon as kill() is *called* — it reports intent, not liveness — so an
+ * escalation guarded by `!child.killed` is dead code and a cloudflared that
+ * ignores SIGTERM would survive every cleanup. Exit status (`exitCode`/
+ * `signalCode`) is the liveness signal Node actually maintains.
+ */
+export function terminateChildProcess(
+  child: {
+    exitCode: number | null
+    signalCode: NodeJS.Signals | null
+    kill(signal: NodeJS.Signals): boolean
+  },
+  graceMs = 2000
+): void {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  child.kill('SIGTERM')
+  setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  }, graceMs).unref?.()
+}
+
 export async function startCloudflareQuickTunnel(options: {
   port: number
   binaryPath: string
@@ -246,12 +269,7 @@ export async function startCloudflareQuickTunnel(options: {
 
     const cleanup = () => {
       try {
-        if (!child.killed) {
-          child.kill('SIGTERM')
-          setTimeout(() => {
-            if (!child.killed) child.kill('SIGKILL')
-          }, 2000).unref?.()
-        }
+        terminateChildProcess(child)
       } catch {}
     }
   })
