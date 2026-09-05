@@ -10,7 +10,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js 
  				if (path === void 0) return void 0;
  				return {
  					open: () => {
-@@ -218,6 +218,21 @@
+@@ -218,6 +218,28 @@
  					title: path
  				};
  			} };
@@ -20,12 +20,19 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js 
 +		* in the current turn. Keep bare identifiers inert: without a slash, an
 +		* absolute-path prefix, or a conventional filename suffix, inline code is
 +		* much more likely to be a command, package, or symbol than a local path.
++		*
++		* A leading `@` plus a single slash is a scoped package name, and a bare
++		* `local@domain.tld` is an email address; both are far more common in
++		* assistant prose than files with those exact shapes, and neither is
++		* openable. An explicit `./@scope/pkg` still resolves as a path above.
 +		*/
 +		function localPathReference(value) {
 +			const candidate = value.trim();
 +			if (candidate === "" || /[\r\n]/.test(candidate) || /^(?:https?|data|javascript):/i.test(candidate)) return void 0;
 +			const path = candidate.replace(/(?:#L\d+(?:C\d+)?|:\d+(?::\d+)?)$/, "");
 +			if (/^(?:\/|~[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path)) return path;
++			if (/^@[^\\/@\s]+\/[^\\/@\s]+$/.test(path)) return void 0;
++			if (/^[^@\s\\/]+@[^@\s\\/]+\.[A-Za-z]{2,}$/.test(path)) return void 0;
 +			if (/[\\/]/.test(path) || /[\\/]$/.test(path)) return path;
 +			if (/^[^\\/]+\.[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(path)) return path;
 +			return void 0;
