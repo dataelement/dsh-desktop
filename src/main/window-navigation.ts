@@ -83,3 +83,14 @@ export function isAbortedNavigationError(error: unknown): boolean {
     /(?:^|\s)ERR_ABORTED\s*\(-3\)(?:\s|$)/.test(navigationError.message)
   )
 }
+
+/**
+ * Chromium reports a cancelled in-flight load as `did-fail-load` with the
+ * numeric net error ERR_ABORTED (-3). `webContents.stop()` followed by a new
+ * load — restart flows, recovery pages, Safe Mode toggles, second-instance
+ * reopens — cancels the previous navigation that way, so the code above is not
+ * enough for the event shape, which carries `errorCode: number`.
+ */
+export function isAbortedNavigationCode(errorCode: number): boolean {
+  return errorCode === -3
+}

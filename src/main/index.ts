@@ -98,6 +98,7 @@ import {
 import {
   clearStaleHarnessAuthCookies,
   desktopHarnessUrl,
+  isAbortedNavigationCode,
   isAbortedNavigationError,
   shouldLoadHarnessUrl
 } from './window-navigation'
@@ -387,6 +388,14 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
   })
   webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) return
+    // A programmatic switch (restart, recovery page, Safe Mode toggle,
+    // second-instance reopen) calls webContents.stop() before the next
+    // loadFile/loadURL, and Electron reports the cancelled in-flight load as
+    // did-fail-load with ERR_ABORTED (-3). That is a benign supersession —
+    // openHarness treats it the same way at the loadURL await site — so do not
+    // spend a recovery reload (or the shared reload budget) on a navigation
+    // nobody cancelled on purpose.
+    if (isAbortedNavigationCode(errorCode)) return
     clearProfileBootConfirmation()
     // The harness web server is local; a failure to reach it is almost
     // always the renderer dropping, not a real network error. Surface the
