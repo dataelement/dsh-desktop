@@ -13,7 +13,7 @@ export interface GenerationInstallOptions {
   sourceDirectory?: string
   nodeExecutablePath: string
   pnpmEntryPath: string
-  /** Hard ceiling for the pnpm subprocess; defaults to 12 minutes. */
+  /** Hard ceiling for the pnpm subprocess; defaults to 90 seconds. */
   installTimeoutMs?: number
   spawnProcess?: unknown
   environment?: NodeJS.ProcessEnv

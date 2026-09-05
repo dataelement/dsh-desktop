@@ -523,7 +523,7 @@
             const versionStr = candidate.targetVersion.startsWith('v')
               ? candidate.targetVersion
               : `v${candidate.targetVersion}`
-            upgradeBtn.textContent = model.upgradeHint || (model.locale === 'zh' ? '该插件有新的兼容版本' : 'A compatible update is available')
+            upgradeBtn.textContent = model.upgradeHint || (model.locale === 'zh' ? `该插件有新的兼容版本（${versionStr}）` : `A compatible update is available (${versionStr})`)
             upgradeBtn.title = model.locale === 'zh' ? `可升级至 ${versionStr}` : `Can upgrade to ${versionStr}`
             upgradeBtn.addEventListener('click', () => {
               primary.click()
@@ -547,7 +547,7 @@
 
       if (model.upgradeCandidate) {
         setText('primary', model.upgradeLabel)
-        setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '仍要卸载此插件' : 'Uninstall plugin instead'))
+        setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '卸载插件' : 'Uninstall plugin'))
         secondary.hidden = false
         secondary.addEventListener('click', () => {
           secondary.disabled = true

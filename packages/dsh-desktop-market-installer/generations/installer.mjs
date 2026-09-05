@@ -35,7 +35,7 @@ const GIT_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@git\+https:\/\/github\.com\/
 const CODELOAD_ALLOW_BUILD_PATTERN = /^[A-Za-z0-9@/_.-]+@https:\/\/codeload\.github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/tar\.gz\/[0-9a-f]{40}$/u
 const PINNED_GITHUB_TARGET_PATTERN = /^github:(?<owner>[A-Za-z0-9_.-]+)\/(?<repo>[A-Za-z0-9_.-]+)#(?<sha>[0-9a-f]{40})(?<subpath>&path:\/(?:(?!\.\.?\/)[A-Za-z0-9_.-]+\/)*(?!\.\.?$)[A-Za-z0-9_.-]+)?$/u
 const PINNED_GIT_APPROVAL_PATTERN = /@git\+ssh:\/\/git@github\.com\//u
-const GENERATION_INSTALL_TIMEOUT_MS = 12 * 60 * 1000
+const GENERATION_INSTALL_TIMEOUT_MS = 90 * 1000
 
 function isHostSingleton(name) {
   return HOST_SINGLETON_PATTERNS.some((pattern) => pattern.test(name))
@@ -153,8 +153,9 @@ async function defaultRunInstall(options, stagingDir) {
     }
     child.stdout?.on('data', collect)
     child.stderr?.on('data', collect)
-    // Source monorepos can legitimately spend several minutes in prepare, but
-    // they still stay below the host's fifteen-minute operation ceiling.
+    // Do not leave a launch or generation operation stalled indefinitely; the
+    // caller may override this ceiling when a longer explicit operation is
+    // appropriate.
     const timer = setTimeout(
       () => child.kill('SIGKILL'),
       options.installTimeoutMs ?? GENERATION_INSTALL_TIMEOUT_MS

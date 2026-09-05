@@ -25,5 +25,7 @@ describe('plugin recovery page', () => {
     expect(html).not.toContain('💡')
     expect(html).not.toContain('id="upgrade-card"')
     expect(html).toContain('plugin-upgrade')
+    expect(html).toContain('该插件有新的兼容版本（${versionStr}）')
+    expect(html).toContain("'卸载插件' : 'Uninstall plugin'")
   })
 })

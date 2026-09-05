@@ -198,9 +198,9 @@ export function buildPluginRecoveryViewModel(options: {
         : undefined,
       upgradeBusyLabel: upgradeCandidate ? '正在升级…' : undefined,
       upgradeHint: upgradeCandidate
-        ? '该插件有新的兼容版本'
+        ? `该插件有新的兼容版本（${upgradeCandidate.targetVersion.startsWith('v') ? upgradeCandidate.targetVersion : `v${upgradeCandidate.targetVersion}`}）`
         : undefined,
-      uninstallLabel: upgradeCandidate ? '仍要卸载此插件' : undefined,
+      uninstallLabel: upgradeCandidate ? '卸载插件' : undefined,
       logLabel: '打开 Harness 日志',
       advancedLabel: '查看技术详情',
       errorLabel: '错误信息',
@@ -242,9 +242,9 @@ export function buildPluginRecoveryViewModel(options: {
       : undefined,
     upgradeBusyLabel: upgradeCandidate ? 'Upgrading…' : undefined,
     upgradeHint: upgradeCandidate
-      ? 'A compatible update is available'
+      ? `A compatible update is available (${upgradeCandidate.targetVersion.startsWith('v') ? upgradeCandidate.targetVersion : `v${upgradeCandidate.targetVersion}`})`
       : undefined,
-    uninstallLabel: upgradeCandidate ? 'Uninstall this plugin instead' : undefined,
+    uninstallLabel: upgradeCandidate ? 'Uninstall plugin' : undefined,
     logLabel: 'Open Harness log',
     advancedLabel: 'View technical details',
     errorLabel: 'Error details',
