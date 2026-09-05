@@ -1,8 +1,90 @@
 diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-index 5c89b80..193f5b7 100644
+index c25e5c7..8a52d95 100644
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -1278,8 +1278,9 @@ function mapUsage(usage) {
+@@ -511,17 +511,49 @@ function invalid(provider, detail) {
+ 	throw new Error(`llm-pi-ai: provider "${provider}" ${detail}`);
+ }
+ /**
+-* The one wire protocol a catalog route's shipped models agree on. This is what
+-* lets a deployment add a model the installed catalog has not caught up with —
+-* a provider's newest release — without restating the protocol its siblings
+-* already use. A route whose shipped models disagree (an OpenAI-style catalog
+-* spanning Responses and Chat Completions) has no such answer, so a model it
+-* does not describe must name its protocol at the route.
+-*/
+-function sharedCatalogApi(defaults) {
+-	const apis = /* @__PURE__ */ new Set();
+-	for (const model of defaults.values()) apis.add(model.api);
+-	return apis.size === 1 ? [...apis][0] : void 0;
++* The endpoint a catalog route's shipped models are dominated by: the wire
++* protocol the most of them speak, paired with the baseUrl those models agree
++* on. This is what lets a deployment add a model the installed catalog has not
++* caught up with — a provider's newest release — without restating endpoint
++* facts its siblings already carry.
++*
++* Dominance rather than unanimity, because a route whose shipped models
++* disagree (a subscription gateway spanning Chat Completions, Responses, and
++* Anthropic Messages) otherwise has no answer at all — and a `models` entry
++* cannot name its own protocol, so the only recourse left was a route-level
++* `api`, which wins over *every* sibling's and so breaks the ones speaking
++* another. Between guessing the plurality protocol for one new model and making
++* the route unable to name a new model without corrupting its siblings, the
++* plurality is the lesser error and the recoverable one: a model whose protocol
++* was guessed wrong is refused by its endpoint, named, on first use.
++*
++* @param defaults - the installed catalog models for the route.
++* @param listable - when given, only protocols in this set are considered.
++* @returns the dominant `api` and its `baseUrl`; empty when nothing qualifies.
++*/
++function catalogEndpoint(defaults, listable) {
++	const tally = /* @__PURE__ */ new Map();
++	for (const model of defaults.values()) {
++		if (listable !== void 0 && !listable.has(model.api)) continue;
++		const key = `${model.api}\n${model.baseUrl ?? ""}`;
++		tally.set(key, (tally.get(key) ?? 0) + 1);
++	}
++	let winner;
++	let winningCount = 0;
++	/* Insertion order is catalog order and `>` keeps the incumbent, so a tie
++	resolves to whichever pair the catalog lists first — stable across runs. */
++	for (const [key, count] of tally) if (count > winningCount) {
++		winner = key;
++		winningCount = count;
++	}
++	if (winner === void 0) return {};
++	const separator = winner.indexOf("\n");
++	const api = winner.slice(0, separator);
++	const baseUrl = winner.slice(separator + 1);
++	return {
++		api,
++		...baseUrl.length === 0 ? {} : { baseUrl }
++	};
+ }
+ /**
+ * Resolve one model's reasoning capability from its declared efforts.
+@@ -628,7 +660,7 @@ function resolveRouteModels(request) {
+ 		...overrides[model.id]
+ 	}));
+ 	if (entries.length === 0) invalid(provider, "resolves no models; the installed catalog does not describe this route, so its models must be listed in configuration");
+-	const routeApi = sharedCatalogApi(defaults);
++	const routeEndpoint = catalogEndpoint(defaults);
+ 	assertOfferedCompatFields(provider, "route", request.compat);
+ 	for (const entry of entries) assertOfferedCompatFields(provider, `model "${entry.id}"`, entry.compat);
+ 	const seen = /* @__PURE__ */ new Set();
+@@ -638,9 +670,9 @@ function resolveRouteModels(request) {
+ 		if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`);
+ 		seen.add(entry.id);
+ 		const base = defaults.get(entry.id);
+-		const api = request.api ?? base?.api ?? routeApi;
++		const api = request.api ?? base?.api ?? routeEndpoint.api;
+ 		if (api === void 0) invalid(provider, `model "${entry.id}" needs an api; the installed catalog does not describe it, so set the route's api to the wire protocol its endpoint speaks`);
+-		const baseUrl = request.baseURL ?? base?.baseUrl ?? providerBaseUrl;
++		const baseUrl = request.baseURL ?? base?.baseUrl ?? routeEndpoint.baseUrl ?? providerBaseUrl;
+ 		if (baseUrl === void 0) invalid(provider, `model "${entry.id}" needs a baseURL; the installed catalog does not describe this route`);
+ 		const contextWindow = entry.contextWindow ?? base?.contextWindow ?? request.defaultContextWindow;
+ 		if (!Number.isInteger(contextWindow) || contextWindow <= 0) invalid(provider, `model "${entry.id}" contextWindow must be a positive integer`);
+@@ -1289,8 +1321,9 @@ function mapUsage(usage) {
  	};
  }
  function classifyPiAiError(message) {
@@ -13,3 +95,120 @@ index 5c89b80..193f5b7 100644
  	if (/\b429\b|rate.?limit/i.test(message)) return "RATE_LIMIT";
  	if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return "INVALID_REQUEST";
  	if (/\b400\b|invalid.?request/i.test(message)) return "INVALID_REQUEST";
+@@ -2017,11 +2050,20 @@ function authContextFrom(ctx) {
+ * Answering "which models can this provider serve?" for the configuration
+ * surface's "fetch available models" action.
+ *
+-* A route the installed pi-ai catalog ships is answered **from that catalog**,
+-* with no network call at all: pi-ai's registry is the authoritative list for
+-* its own providers, and it carries the capacities a listing endpoint would
+-* not disclose. Only a route the catalog does not describe — a gateway, a
+-* self-hosted server — is interrogated over the wire.
++* A route the installed pi-ai catalog ships is answered from that catalog **and
++* from its endpoint**, the two merged. The catalog carries the capacities a
++* listing endpoint does not disclose, so it wins wherever both describe a
++* model; but the catalog is a build-time snapshot and a subscription gateway
++* adds models between pi-ai releases. Answering from the snapshot alone left
++* this action unable to ever report a model newer than the installed pi-ai —
++* the listing the user pressed the button for. A route the catalog does not
++* describe — a gateway, a self-hosted server — is answered from its endpoint
++* alone, as before.
++*
++* A catalog route whose endpoint cannot be read still answers from the
++* snapshot: an unreachable network, a refused key, or a protocol with no
++* readable listing leaves the shipped catalog as the better answer, and this
++* action has always been able to answer a catalog route offline.
+ *
+ * Neither path is a catalog refresh. Nothing here is stored: the request
+ * carries a draft the user is still editing, and the reply is candidate
+@@ -2157,19 +2199,52 @@ function usableProbeKey(raw) {
+ *   refuses or fails the request, or the reply is not a model listing.
+ */
+ async function discoverModels(request, storedProfile) {
+-	if (request.provider !== void 0) {
+-		const installed = catalogModels(request.provider);
+-		if (installed.size > 0) return [...installed.values()].map((model) => ({
+-			id: model.id,
+-			name: model.name,
+-			contextWindow: model.contextWindow,
+-			maxTokens: model.maxTokens
+-		}));
++	const installed = request.provider === void 0 ? /* @__PURE__ */ new Map() : catalogModels(request.provider);
++	const shipped = () => [...installed.values()].map((model) => ({
++		id: model.id,
++		name: model.name,
++		contextWindow: model.contextWindow,
++		maxTokens: model.maxTokens
++	}));
++	if (installed.size === 0) return listEndpointModels(request, storedProfile, request.baseURL, request.api);
++	/* A catalog route's own endpoint facts, so the listing reaches the gateway
++	the route actually serves without the draft having to restate them. The
++	draft still wins: it is what the user is editing. */
++	const endpoint = catalogEndpoint(installed, LISTABLE_PROTOCOLS);
++	const baseURL = request.baseURL ?? endpoint.baseUrl;
++	const api = request.api ?? endpoint.api;
++	if (baseURL === void 0 || baseURL.length === 0 || api === void 0) return shipped();
++	let advertised;
++	try {
++		advertised = await listEndpointModels(request, storedProfile, baseURL, api);
++	} catch (error) {
++		/* Cancellation is the caller's own decision and must not be answered
++		with a stale list; every other failure — unreachable, refused, or
++		unreadable — leaves the shipped catalog as the better answer. */
++		if (error instanceof LlmError && error.code === "ABORTED") throw error;
++		return shipped();
+ 	}
+-	if (request.baseURL === void 0 || request.baseURL.length === 0) throw new LlmError(`pi-ai ships no catalog for provider "${request.provider ?? ""}", so its models can only come from its endpoint; set a baseURL, or enter this provider's models by hand`, "DISCOVERY_FAILED");
+-	const api = request.api ?? "openai-completions";
++	/* Catalog first: it carries capacities the listing omits. Endpoint order
++	decides where a model the catalog has not caught up with appears. */
++	const merged = new Map(advertised.map((model) => [model.id, model]));
++	for (const model of shipped()) merged.set(model.id, model);
++	return [...merged.values()];
++}
++/**
++* Read one endpoint's OpenAI-compatible model listing.
++* @param request - the draft being edited, for its credential and cancellation.
++* @param storedProfile - host-owned headers and lazy credential resolution.
++* @param baseURL - the endpoint to interrogate.
++* @param api - the wire protocol it speaks.
++* @returns the advertised models in endpoint order.
++* @throws LlmError when the protocol has no readable listing, the endpoint
++*   refuses or fails the request, or the reply is not a model listing.
++*/
++async function listEndpointModels(request, storedProfile, baseURL, api$1) {
++	if (baseURL === void 0 || baseURL.length === 0) throw new LlmError(`pi-ai ships no catalog for provider "${request.provider ?? ""}", so its models can only come from its endpoint; set a baseURL, or enter this provider's models by hand`, "DISCOVERY_FAILED");
++	const api = api$1 ?? "openai-completions";
+ 	if (!LISTABLE_PROTOCOLS.has(api)) throw new LlmError(`pi-ai protocol "${api}" has no model listing this build can read; enter this provider's models by hand`, "DISCOVERY_UNSUPPORTED");
+-	const url = listingUrl(request.baseURL);
++	const url = listingUrl(baseURL);
+ 	const stored = storedProfile?.();
+ 	const supplied = request.apiKey ?? await stored?.resolveApiKey();
+ 	const apiKey = supplied === void 0 ? void 0 : usableProbeKey(supplied);
+diff --git a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/types/discovery.d.ts b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/types/discovery.d.ts
+index 97c5944..a6d4130 100644
+--- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/types/discovery.d.ts
++++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/types/discovery.d.ts
+@@ -2,11 +2,17 @@
+  * Answering "which models can this provider serve?" for the configuration
+  * surface's "fetch available models" action.
+  *
+- * A route the installed pi-ai catalog ships is answered **from that catalog**,
+- * with no network call at all: pi-ai's registry is the authoritative list for
+- * its own providers, and it carries the capacities a listing endpoint would
+- * not disclose. Only a route the catalog does not describe — a gateway, a
+- * self-hosted server — is interrogated over the wire.
++ * A route the installed pi-ai catalog ships is answered from that catalog **and
++ * from its endpoint**, the two merged. The catalog carries the capacities a
++ * listing endpoint does not disclose, so it wins wherever both describe a
++ * model; but the catalog is a build-time snapshot and a subscription gateway
++ * adds models between pi-ai releases, so the endpoint is what reports a model
++ * newer than the installed pi-ai. A route the catalog does not describe — a
++ * gateway, a self-hosted server — is answered from its endpoint alone.
++ *
++ * A catalog route whose endpoint cannot be read still answers from the
++ * snapshot: an unreachable network, a refused key, or a protocol with no
++ * readable listing leaves the shipped catalog as the better answer.
+  *
+  * Neither path is a catalog refresh. Nothing here is stored: the request
+  * carries a draft the user is still editing, and the reply is candidate
