@@ -24,6 +24,21 @@ describe('buildVersionIndex', () => {
     ])
   })
 
+  it('orders prerelease counters numerically so rc.10 is newer than rc.9', () => {
+    const index = buildVersionIndex([
+      '1.2.3-rc.1',
+      '1.2.3-rc.10',
+      '1.2.3-rc.9',
+      '1.2.3-rc.2'
+    ])
+    expect(index.versions.map((v: { version: string }) => v.version)).toEqual([
+      '1.2.3-rc.10',
+      '1.2.3-rc.9',
+      '1.2.3-rc.2',
+      '1.2.3-rc.1'
+    ])
+  })
+
   it('derives tag and archiveUrl for each entry', () => {
     const [entry] = buildVersionIndex(['3.4.5']).versions
     expect(entry).toEqual({

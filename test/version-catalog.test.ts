@@ -31,6 +31,23 @@ describe('compareVersions', () => {
     expect(compareVersions('1.2.3', '1.2.3-rc.1')).toBe(1)
     expect(compareVersions('1.2.3-rc.1', '1.2.3-rc.2')).toBe(-1)
   })
+
+  it('compares prerelease counters numerically, not lexicographically', () => {
+    // "rc.10" < "rc.9" under string comparison; semver says the reverse.
+    expect(compareVersions('1.2.3-rc.10', '1.2.3-rc.9')).toBe(1)
+    expect(compareVersions('1.2.3-rc.9', '1.2.3-rc.10')).toBe(-1)
+    expect(compareVersions('1.2.3-alpha.10', '1.2.3-alpha.9')).toBe(1)
+    expect(compareVersions('1.2.3-rc.10', '1.2.3-rc.1')).toBe(1)
+  })
+
+  it('follows semver identifier precedence', () => {
+    // fewer identifiers < more ("alpha" < "alpha.1")
+    expect(compareVersions('1.2.3-alpha', '1.2.3-alpha.1')).toBe(-1)
+    // numeric identifiers < alphanumeric ones ("1" < "alpha")
+    expect(compareVersions('1.2.3-1', '1.2.3-alpha')).toBe(-1)
+    expect(compareVersions('1.2.3-alpha', '1.2.3-beta')).toBe(-1)
+    expect(compareVersions('1.2.3-rc.10', '1.2.3-rc.10')).toBe(0)
+  })
 })
 
 describe('parseVersionIndex', () => {

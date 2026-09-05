@@ -544,7 +544,9 @@ function skipButton(status: UpdateStatus): HTMLButtonElement {
 
 /** Compare two dotted versions; prerelease sorts below its release. Mirrors
  * `version-catalog.compareVersions` — a small duplication across the
- * main/preload boundary, kept local so the preload bundle stays standalone. */
+ * main/preload boundary, kept local so the preload bundle stays standalone.
+ * Keep the two implementations in lockstep, including the semver-style
+ * numeric prerelease comparison below ("rc.10" > "rc.9"). */
 function comparePreloadVersions(a: string, b: string): number {
   const parse = (value: string): [number[], string] => {
     const [core = '', ...pre] = value.trim().split('-')
@@ -557,10 +559,37 @@ function comparePreloadVersions(a: string, b: string): number {
   for (let i = 0; i < 3; i += 1) {
     if ((an[i] ?? 0) !== (bn[i] ?? 0)) return (an[i] ?? 0) - (bn[i] ?? 0)
   }
-  if (ap === bp) return 0
-  if (!ap) return 1
-  if (!bp) return -1
-  return ap < bp ? -1 : 1
+  return comparePrerelease(ap, bp)
+}
+
+function comparePrerelease(left: string, right: string): number {
+  if (left === right) return 0
+  if (!left) return 1
+  if (!right) return -1
+  const l = left.split('.')
+  const r = right.split('.')
+  const length = Math.max(l.length, r.length)
+  for (let i = 0; i < length; i += 1) {
+    const x = l[i]
+    const y = r[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    if (x === y) continue
+    const xn = /^\d+$/.test(x)
+    const yn = /^\d+$/.test(y)
+    if (xn && yn) {
+      const nx = x.replace(/^0+/, '') || '0'
+      const ny = y.replace(/^0+/, '') || '0'
+      if (nx.length !== ny.length) return nx.length < ny.length ? -1 : 1
+      if (nx !== ny) return nx < ny ? -1 : 1
+      continue
+    }
+    if (xn) return -1
+    if (yn) return 1
+    if (x < y) return -1
+    if (x > y) return 1
+  }
+  return 0
 }
 
 function loadVersionList(onDone?: () => void): void {
