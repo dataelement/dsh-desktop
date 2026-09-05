@@ -1114,6 +1114,14 @@ export class LanMobileBridge {
 
     await new Promise<void>((resolve) => {
       const socket = new WebSocket(url, { headers: cookie === undefined ? {} : { cookie } })
+      // `ws` raises 'error' asynchronously when close() aborts a still-CONNECTING
+      // socket ("WebSocket was closed before the connection was established") —
+      // exactly what finish() below does to unwind on abort. cleanup() has
+      // already removed the real handleError listener by the time that fires,
+      // so without a permanent sink here that self-inflicted error becomes an
+      // unhandled 'error' event and crashes the process. consumeMux guards the
+      // same close pattern with the identical sink; keep the two in lockstep.
+      socket.addEventListener('error', () => {})
       let settled = false
       const cleanup = (): void => {
         request.removeListener('close', finish)

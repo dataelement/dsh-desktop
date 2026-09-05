@@ -658,6 +658,46 @@ describe('LAN mobile bridge pairing surface', () => {
       }
     })
   })
+
+  it('does not crash when a session stream is aborted while the mux handshake is still connecting', async () => {
+    // Regression guard for the permanent ws 'error' sink in streamSession.
+    // Aborting the SSE request makes streamSession close its upstream mux
+    // WebSocket; when the handshake never completed, `ws` then raises 'error'
+    // asynchronously ("closed before the connection was established") after
+    // cleanup() has removed the real listener. Without a permanent sink that
+    // self-inflicted error becomes an unhandled 'error' event and takes the
+    // whole process down (consumeMux documents the identical crash path).
+    const upgraded: import('node:net').Socket[] = []
+    const harness = createServer((_request, response) => {
+      response.statusCode = 404
+      response.end()
+    })
+    // Swallow the upgrade: the mux socket stays CONNECTING on the bridge side.
+    harness.on('upgrade', (request, socket) => {
+      if (request.url !== '/api/remote.mux') return socket.destroy()
+      upgraded.push(socket)
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const abort = new AbortController()
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/session/stream?sessionId=session-1`,
+      { headers: { cookie }, signal: abort.signal }
+    )
+    expect(response.status).toBe(200)
+    abort.abort()
+    // Let the async 'error' (when present) fire; with the sink in place the
+    // process survives and the request unwinds cleanly.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    for (const socket of upgraded) socket.destroy()
+    expect(true).toBe(true)
+  })
 })
 
 describe('LAN mobile bridge user questions', () => {
