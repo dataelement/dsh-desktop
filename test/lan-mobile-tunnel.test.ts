@@ -13,7 +13,8 @@ import {
   ensureCloudflaredBinary,
   extractTryCloudflareUrl,
   resolveCurrentAssetSpec,
-  sha256OfFile
+  sha256OfFile,
+  terminateChildProcess
 } from '../src/main/mobile/cloudflared-tunnel'
 import {
   startTunnelWithFallback,
@@ -63,6 +64,56 @@ describe('Cloudflare Quick Tunnel utilities', () => {
     expect(linuxArm64?.spec.asset).toBe('cloudflared-linux-arm64')
 
     expect(CLOUDFLARED_VERSION).toBeTruthy()
+  })
+
+  describe('terminateChildProcess escalation', () => {
+    interface FakeChild {
+      exitCode: number | null
+      signalCode: NodeJS.Signals | null
+      killed: boolean
+      kill: (signal: NodeJS.Signals) => boolean
+    }
+
+    function fakeChild(): FakeChild {
+      const child = {
+        exitCode: null,
+        signalCode: null,
+        killed: false,
+        kill: vi.fn((signal: NodeJS.Signals) => {
+          child.killed = true
+          return true
+        })
+      }
+      return child
+    }
+
+    it('escalates to SIGKILL when SIGTERM did not stop the child', async () => {
+      const child = fakeChild()
+      terminateChildProcess(child, 10)
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL')
+    })
+
+    it('never escalates once the child has exited after SIGTERM', async () => {
+      const child = fakeChild()
+      vi.mocked(child.kill).mockImplementationOnce(() => {
+        child.killed = true
+        child.exitCode = 143
+        return true
+      })
+      terminateChildProcess(child, 10)
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      expect(child.kill).toHaveBeenCalledTimes(1)
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+    })
+
+    it('leaves an already-exited child untouched', () => {
+      const child = fakeChild()
+      child.exitCode = 0
+      terminateChildProcess(child, 10)
+      expect(child.kill).not.toHaveBeenCalled()
+    })
   })
 })
 
