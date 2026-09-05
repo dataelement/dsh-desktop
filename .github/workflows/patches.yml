@@ -1,0 +1,33 @@
+name: patch drift check
+
+on:
+  pull_request:
+    paths:
+      - 'patches/**'
+      - 'packages/harness-*/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/verify-patches.mjs'
+      - '.github/workflows/patches.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'packages/harness-*/**'
+      - 'scripts/verify-patches.mjs'
+
+jobs:
+  verify-patches:
+    name: Replay patches against vendored tarballs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The vendored tarballs are self-contained, so patch drift can be checked
+      # without Electron or the postinstall brand step.
+      - name: Install patch-package only
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify every patch applies to its pristine tarball
+        run: node scripts/verify-patches.mjs
