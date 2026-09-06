@@ -667,7 +667,7 @@ describe('LAN mobile bridge pairing surface', () => {
     // cleanup() has removed the real listener. Without a permanent sink that
     // self-inflicted error becomes an unhandled 'error' event and takes the
     // whole process down (consumeMux documents the identical crash path).
-    const upgraded: import('node:net').Socket[] = []
+    const upgraded: import('node:stream').Duplex[] = []
     const harness = createServer((_request, response) => {
       response.statusCode = 404
       response.end()
