@@ -1,0 +1,49 @@
+name: Linux x64 build
+
+on:
+  push:
+    branches:
+      - linux
+  pull_request:
+    branches:
+      - linux
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-x64:
+    name: Linux x64 AppImage
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        env:
+          # Upstream lockfile resolved URLs may point at registry.npmmirror.com,
+          # which newer npm treats as a remote fetch.
+          npm_config_allow_remote: all
+        run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - name: Package Linux x64 AppImage
+        run: npm run package:linux:x64
+      - name: Verify packaged Harness resources
+        run: |
+          test -x dist/linux-unpacked/resources/app/node_modules/node/bin/node
+          node dist/linux-unpacked/resources/app/node_modules/node/bin/node -p 'process.versions.node'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-desktop-linux-x64
+          path: dist/dsh-desktop-linux-x86_64.AppImage
+          if-no-files-found: error

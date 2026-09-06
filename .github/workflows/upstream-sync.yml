@@ -1,0 +1,74 @@
+name: Upstream sync check
+
+# Keeps the `linux` branch tracking dataelement/dsh-desktop:main. When upstream
+# moves, the port commits are rebased and re-validated; a clean result is pushed
+# and surfaced as a PR in this fork. A failing rebase or test run is the signal
+# that new upstream platform work needs porting attention.
+
+on:
+  schedule:
+    - cron: "23 4 * * 2" # Tue 04:23 UTC, weekly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: linux
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve upstream state
+        id: upstream
+        run: |
+          git remote add upstream https://github.com/dataelement/dsh-desktop.git
+          git fetch upstream main
+          echo "sha=$(git rev-parse upstream/main)" >> "$GITHUB_OUTPUT"
+          echo "behind=$(git rev-list --count HEAD..upstream/main)" >> "$GITHUB_OUTPUT"
+
+      - name: Rebase port commits onto upstream/main
+        if: steps.upstream.outputs.behind != '0'
+        run: |
+          git config user.name "upstream-sync[bot]"
+          git config user.email "upstream-sync[bot]@users.noreply.github.com"
+          git rebase upstream/main
+
+      - uses: actions/setup-node@v4
+        if: steps.upstream.outputs.behind != '0'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate after rebase
+        if: steps.upstream.outputs.behind != '0'
+        env:
+          npm_config_allow_remote: all
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+          npm run package:linux:x64
+
+      - name: Push rebased branch
+        if: steps.upstream.outputs.behind != '0'
+        run: git push --force-with-lease origin linux
+
+      - name: Open or refresh the sync PR
+        if: steps.upstream.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list --head linux --base main --state open --json number | grep -q . \
+            || gh pr create --head linux --base main \
+                 --title "upstream sync: rebase linux onto dataelement/dsh-desktop" \
+                 --body "Automated rebase pass (upstream/main at ${{ steps.upstream.outputs.sha }}). The linux-x64 build workflow carries the artifact."
