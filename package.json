@@ -40,7 +40,9 @@
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never"
+    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never",
+    "package:dev:linux:x64": "node scripts/verify-target.mjs linux x64 && npm run build && electron-builder --linux --x64 --publish never --config electron-builder.dev.cjs",
+    "package:linux:x64": "node scripts/verify-target.mjs linux x64 && npm run build && electron-builder --linux --x64 --publish never"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "file:packages/harness-0.1.2-rc.1/npm-vendor/deepseek-ai-cordis-4.0.2.tgz",
@@ -409,6 +411,20 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "linux": {
+      "icon": "build/app-icon-512.png",
+      "category": "Development",
+      "desktopName": "dsh-desktop.desktop",
+      "syncDesktopName": true,
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     }
   },
   "allowScripts": {

@@ -90,9 +90,9 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | 署名・公証済み DMG/ZIP | 対応 |
 | Windows x64 | コード署名済み NSIS インストーラー | 対応 |
 | Windows ARM64 | — | 未対応 |
-| Linux | — | 未対応 |
+| Linux x64 | ソースからビルドするコミュニティ版 AppImage | 対応 |
 
-Harness にはターゲット固有のネイティブ依存関係が含まれるため、各リリースは対応する OS とアーキテクチャ上でビルドされます。
+Harness にはターゲット固有のネイティブ依存関係が含まれるため、各リリースは対応する OS とアーキテクチャ上でビルドされます。Linux では `npm run package:linux:x64` で未署名のコミュニティ版 AppImage をソースからビルドできます。アプリ内アップデートは引き続き macOS/Windows のみで、Linux の場合は同期した上流ツリーから再ビルドします。
 
 ## 開発とアーキテクチャ
 

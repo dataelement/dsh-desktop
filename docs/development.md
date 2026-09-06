@@ -87,9 +87,30 @@ npm run package:mac:x64
 
 # Windows x64 NSIS installer, on a Windows x64 machine or runner
 npm run package:win
+
+# Linux x64 AppImage, on a Linux x64 machine or runner
+npm run package:linux:x64
 ```
 
 Do not invoke `electron-builder --win` from macOS or Linux for a distributable Windows package. The target verification scripts intentionally reject host/target mismatches.
+
+On Linux, the practical port surface is small: the Harness host already runs from
+the bundled Node.js on every non-macOS platform (see `build/harness-node-entry.mjs`),
+the POSIX pnpm shim and hostname-profile paths have live Linux branches, and the
+mobile tunnel asset map covers linux-x64/linux-arm64. Packaging needs a 512×512
+8-bit RGBA PNG (`build/app-icon-512.png`, committed); regenerating icns/ico with
+`scripts/generate-app-icons.mjs` stays macOS-only (`sips`/`iconutil`). AppImage
+window association under Wayland uses the packaged `desktopName`.
+
+Under npm ≥ 12 (Node ≥ 24 toolchains), dependency lifecycle scripts are blocked
+until reviewed. This repository carries the reviewed `allowScripts` approvals in
+`package.json`; the vendored `@deepseek-ai/dsh-subprocess-local` helper script
+(only chmods a macOS-only spawn helper) cannot take a portable `allowScripts`
+key because npm keys `file:` dependencies by their resolved absolute URL, so its
+script is skipped — harmless on Linux/Windows alike. Lockfile `resolved` URLs
+may point at `registry.npmmirror.com`; run installs with
+`npm_config_allow_remote=all` (or a project `.npmrc`) instead of rewriting the
+lockfile, and prefer reusing the registry that upstream pinned.
 
 For local unsigned development packages, use the corresponding `package:dev:*` command. Before handing off a Windows installer, verify that `resources/app/node_modules/node/bin/node.exe` exists in `win-unpacked` and require the packaged Windows Harness smoke test to pass.
 

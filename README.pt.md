@@ -91,9 +91,9 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | DMG/ZIP assinados e notarizados | Compatível |
 | Windows x64 | Instalador NSIS assinado | Compatível |
 | Windows ARM64 | — | Não compatível atualmente |
-| Linux | — | Não compatível atualmente |
+| Linux x64 | AppImage da comunidade (compilada do código) | Compatível |
 
-O Harness inclui dependências nativas, portanto cada artefato é compilado no sistema operacional e na arquitetura correspondentes.
+O Harness inclui dependências nativas, portanto cada artefato é compilado no sistema operacional e na arquitetura correspondentes. No Linux, compile a AppImage da comunidade não assinada com `npm run package:linux:x64`; o atualizador integrado continua exclusivo do macOS/Windows e no Linux rebuilda-se a partir de uma árvore sincronizada de upstream.
 
 ## Desenvolvimento e arquitetura
 
