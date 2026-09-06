@@ -383,7 +383,7 @@ export class HarnessRuntime {
       profile
     )
     const startupTimeoutMs =
-      this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 120_000 : 45_000)
+      this.options.startupTimeoutMs ?? (process.platform === 'win32' || process.platform === 'linux' ? 120_000 : 45_000)
 
     this.writeLog(`\n[desktop] starting ${new Date().toISOString()}`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
