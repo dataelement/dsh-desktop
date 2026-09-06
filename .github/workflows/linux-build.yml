@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: linux-build-${{ github.ref }}
@@ -47,3 +47,15 @@ jobs:
           name: dsh-desktop-linux-x64
           path: dist/dsh-desktop-linux-x86_64.AppImage
           if-no-files-found: error
+      - name: Name the release asset for sharing
+        if: github.event_name == 'push'
+        run: cp dist/dsh-desktop-linux-x86_64.AppImage dist/dsh-desktop-linux-x64.AppImage
+      - name: Refresh the rolling pre-release asset
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create linux-rolling --repo "$GITHUB_REPOSITORY" --prerelease \
+            --target linux --title "DSH Desktop Linux x64 (rolling)" \
+            --notes "Auto-refreshed on every push to the linux branch. Unsigned community build; needs FUSE (or run with --appimage-extract-and-run). Updates arrive whenever the linux branch is synced upstream." 2>/dev/null || true
+          gh release upload linux-rolling --repo "$GITHUB_REPOSITORY" --clobber dist/dsh-desktop-linux-x64.AppImage
