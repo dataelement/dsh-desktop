@@ -410,5 +410,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "allowScripts": {
+    "node-pty@1.2.0-beta.15": true,
+    "koffi@3.1.5": true,
+    "esbuild": true,
+    "node": true,
+    "electron-winstaller": false,
+    "protobufjs": false,
+    "@google/genai": false
   }
 }
