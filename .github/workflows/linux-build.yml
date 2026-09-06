@@ -41,7 +41,7 @@ jobs:
       - name: Verify packaged Harness resources
         run: |
           test -x dist/linux-unpacked/resources/app/node_modules/node/bin/node
-          node dist/linux-unpacked/resources/app/node_modules/node/bin/node -p 'process.versions.node'
+          dist/linux-unpacked/resources/app/node_modules/node/bin/node -p 'process.versions.node'
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-desktop-linux-x64
