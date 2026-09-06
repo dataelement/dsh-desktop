@@ -1,17 +1,17 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 696591c..90c1520 100644
+index 557185e..3206076 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
+@@ -29,7 +29,7 @@
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:32px}" + (navigator.userAgent.includes("Macintosh") ? "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"]{padding:46px 22px 6px}" : "");
++			tag.textContent = css + "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:32px}" + "[data-dsh-sidebar-region]{overflow-y:auto;overscroll-behavior:contain}" + (navigator.userAgent.includes("Macintosh") ? "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"]{padding:46px 22px 6px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
-@@ -150,6 +150,8 @@ window.__ModuleLoader__.load({
+@@ -150,6 +150,8 @@
  			const buildVersion = localBuildVersion();
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -20,7 +20,16 @@ index 696591c..90c1520 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -246,5 +248,6 @@ window.__ModuleLoader__.load({
+@@ -231,6 +233,7 @@
+ 						})
+ 					}),
+ 					(0, react_jsx_runtime.jsx)("div", {
++						"data-dsh-sidebar-region": "",
+ 						className: SidebarRoot_module_css_default.regionArea,
+ 						children: renderSlot("sidebar.workspaces", {
+ 							wide,
+@@ -245,6 +248,7 @@
+ 							className: SidebarRoot_module_css_default.footerActions,
  							children: renderSlot("sidebar.footer.action", { wide })
  						}), (0, react_jsx_runtime.jsx)("div", {
 +							"data-dsh-sidebar-settings": "",
