@@ -931,7 +931,8 @@ function createWindow(): BrowserWindow {
   if (process.platform === 'darwin') {
     window.setWindowButtonVisibility(true)
     window.setWindowButtonPosition({ x: 12, y: 9 })
-  } else if (isWindows) {
+  } else {
+    window.setAutoHideMenuBar(true)
     window.setMenuBarVisibility(false)
   }
   window.on('close', (event) => {

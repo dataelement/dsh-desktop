@@ -92,9 +92,9 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | Signed and notarized DMG/ZIP | Supported |
 | Windows x64 | Code-signed NSIS installer | Supported |
 | Windows ARM64 | — | Not currently supported |
-| Linux | — | Not currently supported |
+| Linux x64 | Community AppImage build (built from source) | Supported |
 
-Harness includes target-native dependencies, so every release artifact is built on the matching operating system and architecture.
+Harness includes target-native dependencies, so every release artifact is built on the matching operating system and architecture. On Linux, build the unsigned community AppImage from source with `npm run package:linux:x64`; the in-app updater stays macOS/Windows-only and Linux users rebuild from a synced upstream checkout instead.
 
 ## Development and architecture
 
