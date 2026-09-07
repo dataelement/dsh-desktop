@@ -30,6 +30,7 @@
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
+    "verify:patches": "node scripts/verify-patches.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "package:dir": "npm run build && electron-builder --dir",
