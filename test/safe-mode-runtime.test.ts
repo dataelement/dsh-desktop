@@ -65,7 +65,6 @@ registerHooks({ resolve(specifier, context, next) {
       expect(timings.some(event => event.stage === stage && event.run === launch.run), stage).toBe(true)
     }
     const imported = timings.find(event => event.stage === 'child.harness-import-and-init' && event.status === 'done')
-    expect(imported.moduleCount).toBeGreaterThan(0)
     expect(imported.cpuMs).toBeGreaterThanOrEqual(0)
     expect(JSON.stringify(timings)).not.toContain(recovered.snapshot().authToken)
 

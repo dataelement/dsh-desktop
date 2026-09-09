@@ -1,5 +1,5 @@
 import childProcess from 'node:child_process'
-import { syncBuiltinESMExports, registerHooks } from 'node:module'
+import { syncBuiltinESMExports } from 'node:module'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs'
@@ -25,38 +25,19 @@ const startupRun = process.env.DSH_DESKTOP_STARTUP_RUN
 const startupOrigin = performance.now()
 const initialCpu = process.cpuUsage()
 let startupStage = 'child.entry'
-let moduleCount = 0
-let moduleResolveMs = 0
-let moduleLoadMs = 0
-let lastPackage = ''
 function timing(stage, status = 'done', details = {}) {
   if (!startupRun) return
   const cpu = process.cpuUsage(initialCpu)
   process.stdout.write('[startup-timing] ' + JSON.stringify({
     ...details, scope: 'harness', run: startupRun, pid: process.pid, at: new Date().toISOString(),
     elapsedMs: Math.round(performance.now() - startupOrigin),
-    cpuMs: Math.round((cpu.user + cpu.system) / 1000), stage, status,
-    moduleCount, moduleResolveMs: Math.round(moduleResolveMs), moduleLoadMs: Math.round(moduleLoadMs),
-    lastPackage
+    cpuMs: Math.round((cpu.user + cpu.system) / 1000), stage, status
   }) + '\n')
 }
 timing(startupStage, 'begin', { processUptimeMs: Math.round(process.uptime() * 1000) })
-// Hooks observe synchronous resolution/source reads only, not module evaluation
-// or asynchronous plugin activation. Keep this distinction in diagnostic reports.
-const moduleHooks = startupRun ? registerHooks({
-  resolve(specifier, context, nextResolve) {
-    const start = performance.now()
-    try { return nextResolve(specifier, context) }
-    finally { moduleResolveMs += performance.now() - start }
-  },
-  load(url, context, nextLoad) {
-    const start = performance.now()
-    const match = url.replaceAll('\\', '/').match(/\/node_modules\/((?:@[^/]+\/)?[^/]+)/)
-    lastPackage = match?.[1] ?? (url.startsWith('node:') ? '<builtin>' : '<local-module>')
-    try { return nextLoad(url, context) }
-    finally { moduleCount++; moduleLoadMs += performance.now() - start }
-  }
-}) : undefined
+// Do not intercept Node module loading: synchronous loader hooks can change
+// CJS/ESM interop on bundled Node 24.9.0 (PPT/jsdom). Phase clocks and CPU
+// sampling must leave dependency resolution and evaluation untouched.
 const heartbeat = startupRun ? setInterval(() => timing(startupStage, 'waiting'), 5_000) : undefined
 heartbeat?.unref()
 
@@ -118,4 +99,3 @@ if (!dshEntryPath) {
 }
 
 clearInterval(heartbeat)
-moduleHooks?.deregister()
