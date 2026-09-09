@@ -6,6 +6,7 @@ import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
+import { StartupTrace } from './startup-trace'
 
 export interface HarnessRuntimeOptions {
   dshEntryPath: string
@@ -320,6 +321,14 @@ export function isHarnessStartupProbeHealthy(
 }
 
 export class HarnessRuntime {
+  private startupTrace?: StartupTrace
+
+  beginStartup(kind: string, version: string): StartupTrace {
+    return this.startupTrace = new StartupTrace((line) => this.note(line), { kind, version, platform: process.platform })
+  }
+
+  getStartupTrace(): StartupTrace | undefined { return this.startupTrace }
+
   private child?: HarnessChildProcess
   private logStream?: WriteStream
   private phase: RuntimePhase = 'idle'
@@ -346,7 +355,9 @@ export class HarnessRuntime {
     }
   }
 
-  async start(launchDirectory: string, profile = 'web'): Promise<void> {
+  async start(launchDirectory: string, profile = 'web', trace = this.beginStartup('runtime', 'unknown')): Promise<void> {
+    this.startupTrace = trace
+    trace.mark('runtime.prepare', 'begin')
     await this.stop()
     this.logRemainders.stdout = ''
     this.logRemainders.stderr = ''
@@ -398,19 +409,20 @@ export class HarnessRuntime {
     this.writeLog(`[desktop] patch ${patchPath}`)
     this.writeLog(`[desktop] endpoint ${url}`)
     this.setState('starting', 'Starting DeepSeek Harness…')
+    trace.mark('runtime.prepare')
 
     let child: HarnessChildProcess
     try {
-      child = this.options.launchProcess(
-        this.options.nodeExecutablePath,
-        args,
-        buildHarnessSpawnOptions(
-          launchDirectory,
-          this.options.dshHome,
-          process.platform,
-          resolveShellEnvironment()
-        )
+      const environment = trace.measureSync('shell.environment', () => resolveShellEnvironment(), {
+        cached: resolvedShellEnvironment !== undefined
+      })
+      const spawnOptions = buildHarnessSpawnOptions(
+        launchDirectory, this.options.dshHome, process.platform, environment
       )
+      spawnOptions.env = { ...spawnOptions.env, DSH_DESKTOP_STARTUP_RUN: trace.id }
+      child = trace.measureSync('process.spawn', () => this.options.launchProcess(
+        this.options.nodeExecutablePath, args, spawnOptions
+      ))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.writeLog(`[utility] launch failed: ${message}`)
@@ -419,7 +431,11 @@ export class HarnessRuntime {
     }
     this.child = child
 
-    child.stdout.on('data', (chunk: Buffer) => this.writeChunk('stdout', chunk))
+    let firstOutput = true
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (firstOutput) { trace.mark('child.first-stdout'); firstOutput = false }
+      this.writeChunk('stdout', chunk)
+    })
     child.stderr.on('data', (chunk: Buffer) => {
       this.writeChunk('stderr', chunk)
       if (this.child !== child || this.phase !== 'starting') return
@@ -464,6 +480,7 @@ ${cause}`
       )
     })
 
+    trace.mark('backend.ready', 'begin')
     const startedAt = Date.now()
     const progressTimer = setInterval(
       () => this.writeLog(`[desktop] waiting for Harness (${Math.round((Date.now() - startedAt) / 1000)}s)`),
@@ -479,6 +496,7 @@ ${cause}`
     if (this.child !== child) return
     if (!ready) {
       await this.stopChild(child)
+      trace.mark('backend.ready', 'timeout')
       this.setState(
         'failed',
         `Harness did not become ready within ${Math.round(startupTimeoutMs / 1000)} seconds.`
@@ -487,6 +505,7 @@ ${cause}`
     }
 
     this.url = url
+    trace.mark('backend.ready', 'done', { durationMs: Date.now() - startedAt })
     this.setState('ready', 'Harness is ready.')
   }
 
@@ -517,7 +536,10 @@ ${cause}`
       exitPromise,
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4_000))
     ])
-    if (!exited && child.exitCode === null) child.kill('SIGKILL')
+    if (!exited && child.exitCode === null) {
+      this.startupTrace?.mark('process.stop', 'force-kill')
+      child.kill('SIGKILL')
+    }
   }
 
   private setState(phase: RuntimePhase, message: string): void {
@@ -532,7 +554,9 @@ ${cause}`
     for (const line of lines) {
       if (line.length === 0) continue
       this.writeLog(`[${source}] ${line}`)
+      const previousToken = this.launchToken
       this.launchToken ??= extractLaunchToken(line)
+      if (!previousToken && this.launchToken) this.startupTrace?.mark('backend.url-announced')
     }
   }
 

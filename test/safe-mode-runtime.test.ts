@@ -54,6 +54,21 @@ registerHooks({ resolve(specifier, context, next) {
     await recovered.start(home, SAFE_MODE_PROFILE)
     expect(recovered.snapshot().phase, recovered.snapshot().logs.join('\n')).toBe('ready')
     expect(recovered.snapshot().authToken).toBeTruthy()
+    const timings = recovered.snapshot().logs.flatMap(line => {
+      const marker = '[startup-timing] '
+      const index = line.indexOf(marker)
+      return index < 0 ? [] : [JSON.parse(line.slice(index + marker.length))]
+    })
+    const launch = timings.find(event => event.stage === 'launch')
+    expect(launch).toBeDefined()
+    for (const stage of ['shell.environment', 'process.spawn', 'child.entry', 'child.harness-import-and-init', 'backend.ready']) {
+      expect(timings.some(event => event.stage === stage && event.run === launch.run), stage).toBe(true)
+    }
+    const imported = timings.find(event => event.stage === 'child.harness-import-and-init' && event.status === 'done')
+    expect(imported.moduleCount).toBeGreaterThan(0)
+    expect(imported.cpuMs).toBeGreaterThanOrEqual(0)
+    expect(JSON.stringify(timings)).not.toContain(recovered.snapshot().authToken)
+
     expect((await fetch(recovered.snapshot().url!)).status).toBe(401)
     // Recovery uses its own overlay and never edits the normal composition.
     expect(await readFile(normalPatch, 'utf8')).toContain('name: \'dsh-ppt-composer\'')

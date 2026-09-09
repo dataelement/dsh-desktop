@@ -443,6 +443,17 @@ jobs:
             if ($desktop.HasExited) {
               throw "DSH Desktop Dev exited after workspace and session creation (exit code $($desktop.ExitCode))."
             }
+            $timings = @($stableLog -split "`n" | ForEach-Object {
+              $marker = '[startup-timing] '
+              $offset = $_.IndexOf($marker)
+              if ($offset -ge 0) { $_.Substring($offset + $marker.Length) | ConvertFrom-Json }
+            })
+            foreach ($stage in @('profile.maintenance', 'shell.environment', 'child.harness-import-and-init', 'backend.ready', 'renderer.navigation')) {
+              if (-not ($timings | Where-Object { $_.stage -eq $stage -and $_.status -eq 'done' })) {
+                throw "Packaged startup timing is missing: $stage"
+              }
+            }
+            Write-Host 'Packaged startup timing milestones verified.'
             Write-Host 'Packaged Windows Harness smoke test passed.'
           } finally {
             if (Test-Path $logPath) {

@@ -320,7 +320,7 @@ describe('Safe Mode', () => {
     expect(preload).toContain('RENDERER_HEALTH_HEARTBEAT_MS')
     expect(main).toContain('PROFILE_BOOT_STABILITY_MS = 60_000')
     expect(main).toContain('clearProfileBootConfirmation()')
-    expect(main).toContain('reportProfileConsistency: () => reportProfileConsistency(dshHome)')
+    expect(main).toContain("reportProfileConsistency: () => trace.measure('profile.consistency', () => reportProfileConsistency(dshHome))")
     expect(main).not.toContain('repairProfilePackages:')
     expect(main).not.toContain('pruneMissingProfileBundles:')
     expect(JSON.parse(manifest).build.extraResources).toContainEqual({

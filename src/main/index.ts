@@ -987,6 +987,7 @@ async function openHarness(
   focusIntent: WindowFocusIntent = 'automatic'
 ): Promise<void> {
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const trace = runtime.getStartupTrace()
   const rendererUrl = desktopHarnessUrl(url, process.platform, runtime.snapshot().authToken)
   if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
     const navigationVersion = ++mainWindowNavigationVersion
@@ -1007,7 +1008,8 @@ async function openHarness(
       runtime.note(`[desktop] cleared ${clearedCookies} stale Harness authentication cookie(s)`)
     }
     try {
-      await window.loadURL(rendererUrl)
+      if (trace) await trace.measure('renderer.navigation', () => window.loadURL(rendererUrl))
+      else await window.loadURL(rendererUrl)
     } catch (error) {
       if (navigationVersion !== mainWindowNavigationVersion) return
       if (isAbortedNavigationError(error)) return
@@ -1017,6 +1019,35 @@ async function openHarness(
     }
     if (navigationVersion !== mainWindowNavigationVersion) return
   }
+  trace?.mark('renderer.document-loaded')
+  // This is a visible-composer milestone, not a claim that every plugin or
+  // session is ready. Observe without delaying navigation or capturing content.
+  if (trace) {
+    const contents = window.webContents
+    const started = performance.now()
+    const deadline = setTimeout(() => {
+      if (runtime.getStartupTrace() === trace) trace.mark('renderer.composer-visible', 'timeout')
+    }, 15_000)
+    void contents.executeJavaScript(`new Promise((resolve) => {
+      const deadline = Date.now() + 14000;
+      const inspect = () => {
+        const visible = [...document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]')]
+          .some(el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+            return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; });
+        if (visible || Date.now() >= deadline) resolve(visible);
+        else setTimeout(inspect, 250);
+      }; inspect();
+    })`).then((visible) => {
+      if (runtime.getStartupTrace() === trace && !contents.isDestroyed() && runtime.snapshot().url === url) {
+        trace.mark('renderer.composer-visible', visible ? 'observed' : 'timeout', {
+          durationMs: Math.round(performance.now() - started)
+        })
+      }
+    }).catch(() => {
+      if (runtime.getStartupTrace() === trace) trace.mark('renderer.composer-visible', 'unavailable')
+    }).finally(() => clearTimeout(deadline))
+  }
+
   markHarnessRendered()
   if (runtime.snapshot().url !== url || window.isDestroyed()) return
   await syncNativeTheme(window)
@@ -1176,19 +1207,20 @@ function launchHarness(): Promise<void> {
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
+    const trace = runtime.beginStartup('normal', app.getVersion())
     safeModeVisible = false
     const dshHome = join(app.getPath('userData'), 'harness')
-    await showSplash()
+    await trace.measure('splash', () => showSplash())
     // Migration and generation projection only hold on a stopped Harness, and
     // a restart still has the previous one running: start() stops it, but that
     // is after maintenance. Stopping here owns that mutation window.
-    await runtime.stop()
-    const maintenance = await runProfileStartupMaintenance({
+    await trace.measure('process.stop', () => runtime.stop())
+    const maintenance = await trace.measure('profile.maintenance', () => runProfileStartupMaintenance({
       note: (line) => runtime.note(line),
       recoverInterruptedMigration: () =>
-        recoverInterruptedMigration(dshHome, (line) => runtime.note(line)),
-      incompletePluginRestoreId: () => incompletePluginRestoreId(dshHome),
-      preparePackageStore: async () => {
+        trace.measure('profile.recover-migration', () => recoverInterruptedMigration(dshHome, (line) => runtime.note(line))),
+      incompletePluginRestoreId: () => trace.measure('profile.restore-check', () => incompletePluginRestoreId(dshHome)),
+      preparePackageStore: () => trace.measure('profile.store', async () => {
         // This must run after interrupted-migration recovery has allowed
         // Profile writes, but before any operation invokes pnpm.
         const pinned = await ensureStoreDirPinned(dshHome)
@@ -1198,14 +1230,14 @@ function launchHarness(): Promise<void> {
           runtime.note(`[desktop] upgraded dshmarket baseline to ^${VERIFIED_MARKET_BASELINE} in profile manifest`)
           await clearProfileInstallMarker(dshHome)
         }
-      },
+      }),
       enforcePendingPluginRemovals: () =>
-        enforcePendingPluginRemovals(dshHome, (line) => runtime.note(line)),
+        trace.measure('profile.removals', () => enforcePendingPluginRemovals(dshHome, (line) => runtime.note(line))),
       prepareGenerationsForLaunch: () =>
-        prepareGenerationsForLaunch(dshHome, (line) => runtime.note(line)),
+        trace.measure('profile.generations', () => prepareGenerationsForLaunch(dshHome, (line) => runtime.note(line))),
       shouldDeferProfileMaintenance: () => shouldDeferProfileMaintenance(dshHome),
       migrateProfileToGenerations: () =>
-        migrateProfileToGenerations({
+        trace.measure('profile.migrate', () => migrateProfileToGenerations({
           dshHome,
           nodeExecutablePath: bundledNodePath(),
           pnpmEntryPath: bundledPnpmEntryPath(),
@@ -1223,9 +1255,9 @@ function launchHarness(): Promise<void> {
             if (result.ok) await markProfileInstallComplete(dshHome)
             return result
           }
-        }),
-      reportProfileConsistency: () => reportProfileConsistency(dshHome)
-    })
+        })),
+      reportProfileConsistency: () => trace.measure('profile.consistency', () => reportProfileConsistency(dshHome))
+    }))
     if (maintenance.outcome === 'safe-recovery') {
       await enterMigrationSafeRecovery(
         dshHome,
@@ -1237,9 +1269,9 @@ function launchHarness(): Promise<void> {
     maintenanceRecoveryLocked = false
     maintenanceAllowedRestoreId = undefined
     await refreshMigrationRecoveryLock(dshHome)
-    await auditInstalledLaunchAgents(dshHome)
+    await trace.measure('launch-agents.audit', () => auditInstalledLaunchAgents(dshHome))
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
-    await runtime.start(launchDirectory)
+    await runtime.start(launchDirectory, 'web', trace)
 
     // A failed launch must not rewrite the user's enabled plugin set. Recovery
     // and Safe Mode operate on explicit, exact plugin selections; automatically
@@ -1254,7 +1286,7 @@ function launchHarness(): Promise<void> {
         const rollback = await rollBackMigration(dshHome, (line) => runtime.note(line))
         if (rollback.outcome === 'restored') {
           runtime.note('[desktop] restarting the verified pre-upgrade Profile without package repair')
-          await runtime.start(launchDirectory)
+          await runtime.start(launchDirectory, 'web', trace)
         } else {
           const reason = rollback.outcome === 'recovery-required'
             ? rollback.reason
@@ -1274,15 +1306,16 @@ function launchSafeHarness(): Promise<void> {
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
+    const trace = runtime.beginStartup('safe-mode', app.getVersion())
     safeModeVisible = true
     const dshHome = join(app.getPath('userData'), 'harness')
     await refreshMigrationRecoveryLock(dshHome)
-    await showSplash()
-    await runtime.stop()
-    await ensureSafeModeProfile(dshHome)
+    await trace.measure('splash', () => showSplash())
+    await trace.measure('process.stop', () => runtime.stop())
+    await trace.measure('profile.safe-mode', () => ensureSafeModeProfile(dshHome))
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
-    await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
+    await runtime.start(launchDirectory, SAFE_MODE_PROFILE, trace)
     if (runtime.snapshot().phase === 'ready') {
       void mobileBridge.start().catch(showUnexpectedError)
     }
