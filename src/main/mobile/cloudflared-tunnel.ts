@@ -5,6 +5,7 @@ import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { get as httpsGet } from 'node:https'
 import { dirname, join } from 'node:path'
 import { arch, platform } from 'node:os'
+import { pipeline } from 'node:stream/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { InternetTunnelInstance } from './internet-tunnel'
@@ -154,29 +155,42 @@ export async function ensureCloudflaredBinary(options: {
   }
 }
 
-function downloadFileWithRedirects(url: string, destination: string, maxRedirects = 5): Promise<void> {
+export function downloadFileWithRedirects(
+  url: string,
+  destination: string,
+  maxRedirects = 5,
+  timeoutMs = 30_000
+): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     if (maxRedirects <= 0) {
       return rejectPromise(new Error('Too many redirects while downloading cloudflared'))
     }
 
-    httpsGet(url, (res) => {
+    const request = httpsGet(url, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return resolvePromise(downloadFileWithRedirects(res.headers.location, destination, maxRedirects - 1))
+        res.resume()
+        return resolvePromise(
+          downloadFileWithRedirects(res.headers.location, destination, maxRedirects - 1, timeoutMs)
+        )
       }
       if (res.statusCode !== 200) {
+        res.resume()
         return rejectPromise(new Error(`Download failed with status ${res.statusCode}`))
       }
 
       const fileStream = createWriteStream(destination)
-      res.pipe(fileStream)
-      fileStream.on('finish', () => {
-        fileStream.close(() => resolvePromise())
+      // pipeline propagates response-side `error` and `aborted` events as well
+      // as destination errors. A plain pipe only observed the file stream, so
+      // a reset after the HTTP 200 headers left this promise pending forever.
+      res.once('aborted', () => {
+        fileStream.destroy(new Error('cloudflared download response was aborted'))
       })
-      fileStream.on('error', (err) => {
-        fileStream.close(() => rejectPromise(err))
-      })
-    }).on('error', rejectPromise)
+      void pipeline(res, fileStream).then(() => resolvePromise(), rejectPromise)
+    })
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(new Error(`cloudflared download timed out after ${timeoutMs / 1000}s`))
+    })
+    request.once('error', rejectPromise)
   })
 }
 
