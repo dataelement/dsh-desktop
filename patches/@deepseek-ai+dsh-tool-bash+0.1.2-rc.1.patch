@@ -1,0 +1,16 @@
+diff --git a/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js b/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js
+index 714c6ac..afc1475 100644
+--- a/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js
+@@ -392,7 +392,10 @@ function apply(ctx, config = {}) {
+ 				mode: approvedMode
+ 			};
+ 			const workdir = resolveWorkdir(args.workdir, exec, standingPolicy?.workspaceRoot);
+-			const dshEnv = ctx.shellEnv.collect(exec);
++			const dshEnv = {
++				...ctx.shellEnv.collect(exec),
++				DSH_LIVE_TERMINAL_CALL_ID: exec.callId
++			};
+ 			const request = {
+ 				command: args.command,
+ 				...workdir !== void 0 ? { workdir } : {},

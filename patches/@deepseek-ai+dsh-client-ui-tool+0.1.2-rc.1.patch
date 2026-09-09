@@ -1,0 +1,95 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js
+index e50ccb4..639543a 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-tool/lib/client.js
+@@ -733,6 +733,43 @@ window.__ModuleLoader__.load({
+ 				background: background === true
+ 			};
+ 		}
++		const LIVE_TERMINAL_PATH = "/dsh-desktop/live-terminal/output";
++		/** Read Desktop's non-consuming view of a running shell collector. */
++		function useLiveTerminalOutput(callId, running) {
++			const [output, setOutput] = (0, react.useState)(void 0);
++			(0, react.useEffect)(() => {
++				setOutput(void 0);
++				if (!running || callId === "") return;
++				let disposed = false;
++				let timer;
++				const poll = async () => {
++					try {
++						const response = await fetch(`${LIVE_TERMINAL_PATH}?callId=${encodeURIComponent(callId)}`, {
++							cache: "no-store",
++							credentials: "same-origin"
++						});
++						if (response.ok) {
++							const payload = await response.json();
++							if (!disposed && payload?.found === true && typeof payload.output === "string") setOutput(payload.output);
++						}
++					} catch {}
++					if (!disposed) timer = window.setTimeout(poll, 150);
++				};
++				void poll();
++				return () => {
++					disposed = true;
++					if (timer !== void 0) window.clearTimeout(timer);
++				};
++			}, [callId, running]);
++			return output;
++		}
++		function LiveTerminalBlock({ callId, ...props }) {
++			const output = useLiveTerminalOutput(callId, props.running === true);
++			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.TerminalBlock, {
++				...props,
++				output: props.running === true ? output ?? props.output : props.output
++			});
++		}
+ 		/**
+ 		* Parse the marker literals owned by `@deepseek-ai/dsh-shell/render` without
+ 		* importing that Host-only package into the Client dependency graph.
+@@ -1102,7 +1139,7 @@ window.__ModuleLoader__.load({
+ 				default: return null;
+ 			}
+ 		}
+-		function ToolRow({ t, variant, toolName, icon, title, summary, summarySuffix, bodyRaw, output, askQuestion, errorSummary, terminal, diff, read, search, web, state, filePath, onOpenFile, inspect }) {
++		function ToolRow({ t, callId, variant, toolName, icon, title, summary, summarySuffix, bodyRaw, output, askQuestion, errorSummary, terminal, diff, read, search, web, state, filePath, onOpenFile, inspect }) {
+ 			const [expanded, setExpanded] = (0, react.useState)(false);
+ 			const terminalLabels = (0, react.useMemo)(() => terminalBlockLabels(t), [t]);
+ 			const diffLabels = (0, react.useMemo)(() => diffBlockLabels(t), [t]);
+@@ -1188,7 +1225,8 @@ window.__ModuleLoader__.load({
+ 					] }),
+ 					children: (0, react_jsx_runtime.jsxs)("div", {
+ 						className: ToolRow_module_css_default.bodyWrap,
+-						children: [askQuestionBody !== null ? (0, react_jsx_runtime.jsx)(AskQuestionCard, { card: askQuestionBody }) : terminalBody !== null ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.TerminalBlock, {
++						children: [askQuestionBody !== null ? (0, react_jsx_runtime.jsx)(AskQuestionCard, { card: askQuestionBody }) : terminalBody !== null ? (0, react_jsx_runtime.jsx)(LiveTerminalBlock, {
++							callId,
+ 							...terminalBody.card,
+ 							maxLines: Infinity,
+ 							labels: terminalLabels,
+@@ -1286,6 +1324,7 @@ window.__ModuleLoader__.load({
+ 			const singleFile = model.filePath !== void 0;
+ 			return (0, react_jsx_runtime.jsx)(ToolRow, {
+ 				t,
++				callId: block.callId,
+ 				variant: model.variant,
+ 				toolName,
+ 				icon: VARIANT_ICONS[model.variant],
+@@ -1447,7 +1486,8 @@ window.__ModuleLoader__.load({
+ 				return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [terminal.description !== void 0 ? (0, react_jsx_runtime.jsx)("div", {
+ 					className: ToolDetails_module_css_default.description,
+ 					children: terminal.description
+-				}) : null, (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.TerminalBlock, {
++				}) : null, (0, react_jsx_runtime.jsx)(LiveTerminalBlock, {
++					callId: block.callId,
+ 					...terminal.card,
+ 					labels: terminalBlockLabels(t),
+ 					className: ToolDetails_module_css_default.cardBody
+@@ -1773,7 +1813,8 @@ window.__ModuleLoader__.load({
+ 					]
+ 				}), open && (0, react_jsx_runtime.jsxs)("div", {
+ 					className: bash_sample_module_css_default.bodyWrap,
+-					children: [terminal !== null ? (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.TerminalBlock, {
++					children: [terminal !== null ? (0, react_jsx_runtime.jsx)(LiveTerminalBlock, {
++						callId: block.callId,
+ 						...terminal.card,
+ 						maxLines: Infinity,
+ 						labels: terminalBlockLabels(t),
