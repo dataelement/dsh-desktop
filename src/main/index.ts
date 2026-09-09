@@ -16,6 +16,7 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
+import { clearStaleLoopbackHttpCache } from './cache-maintenance'
 import { extractFailureCause, HarnessRuntime } from './runtime/harness-runtime'
 import { launchDisclaimedUtilityProcess } from './runtime/disclaimed-utility-process'
 import {
@@ -992,6 +993,10 @@ async function openHarness(
     const navigationVersion = ++mainWindowNavigationVersion
     rendererPluginFailureLogs = []
     window.webContents.stop()
+    await clearStaleLoopbackHttpCache(
+      window.webContents.session,
+      (line) => runtime.note(line)
+    )
     const clearedCookies = await clearStaleHarnessAuthCookies(
       window.webContents.session.cookies,
       rendererUrl,
