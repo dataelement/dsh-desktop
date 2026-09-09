@@ -20,6 +20,7 @@ export interface HarnessRuntimeOptions {
     args: string[],
     options: SpawnOptionsWithoutStdio
   ): HarnessChildProcess
+  preferredPort?: number
   startupTimeoutMs?: number
   onChanged(snapshot: RuntimeSnapshot): void
 }
@@ -30,6 +31,8 @@ export interface HarnessChildProcess extends EventEmitter {
   readonly exitCode: number | null
   kill(signal?: NodeJS.Signals): boolean
 }
+
+export const DEFAULT_HARNESS_PORT = 43129
 
 /**
  * Resolve the user's interactive login shell environment.
@@ -380,7 +383,8 @@ export class HarnessRuntime {
     await mkdir(dirname(this.options.logPath), { recursive: true })
     this.logStream ??= createWriteStream(this.options.logPath, { flags: 'a' })
 
-    const port = await reservePort()
+    const preferredPort = this.options.preferredPort ?? DEFAULT_HARNESS_PORT
+    const { port, usedPreferredPort } = await reserveLoopbackPort(preferredPort)
     const url = `http://127.0.0.1:${port}`
     const args = buildNodeArguments(
       this.options.nodeEntryPath,
@@ -396,6 +400,11 @@ export class HarnessRuntime {
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
     this.writeLog(`[desktop] profile ${profile}`)
     this.writeLog(`[desktop] patch ${patchPath}`)
+    if (!usedPreferredPort) {
+      this.writeLog(
+        `[desktop] preferred endpoint http://127.0.0.1:${preferredPort} is unavailable; using a temporary port`
+      )
+    }
     this.writeLog(`[desktop] endpoint ${url}`)
     this.setState('starting', 'Starting DeepSeek Harness…')
 
@@ -778,12 +787,12 @@ export function formatExitCode(code: number): string {
   return `exit code ${code} (${hexadecimal})`
 }
 
-async function reservePort(): Promise<number> {
+async function reservePort(port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer()
     server.unref()
     server.once('error', reject)
-    server.listen({ host: '127.0.0.1', port: 0 }, () => {
+    server.listen({ host: '127.0.0.1', port }, () => {
       const address = server.address()
       if (!address || typeof address === 'string') {
         server.close()
@@ -794,6 +803,21 @@ async function reservePort(): Promise<number> {
       server.close((error) => (error ? reject(error) : resolve(port)))
     })
   })
+}
+
+/**
+ * Prefer a stable loopback origin so Chromium can reuse the Harness frontend
+ * cache across launches. A conflicting local process must not prevent Desktop
+ * from starting, so an ephemeral port remains the fallback.
+ */
+export async function reserveLoopbackPort(
+  preferredPort = DEFAULT_HARNESS_PORT
+): Promise<{ port: number; usedPreferredPort: boolean }> {
+  try {
+    return { port: await reservePort(preferredPort), usedPreferredPort: true }
+  } catch {
+    return { port: await reservePort(0), usedPreferredPort: false }
+  }
 }
 
 async function waitUntilReady(
