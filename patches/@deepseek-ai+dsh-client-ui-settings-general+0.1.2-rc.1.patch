@@ -1,0 +1,52 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+index 0457ae0..06356ce 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+@@ -31,7 +31,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-general";
+ 			tag.dataset.pluginCss = tagId$3;
+-			tag.textContent = css$3;
++			tag.textContent = css$3 + "[data-dsh-settings-header]{justify-content:flex-end}[data-dsh-settings-nav-footer]{flex:none;flex-direction:column;gap:8px;margin-top:auto;padding:8px 0 18px;display:flex}[data-dsh-settings-document-action]{flex-direction:column;align-items:stretch;gap:6px}[data-dsh-settings-document-action] button{width:100%;height:auto;min-height:32px;padding:5px 12px;line-height:20px;white-space:normal;text-align:center}[data-dsh-settings-document-action] [role=\"alert\"]{max-width:none;white-space:normal;text-align:center}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var SettingsRoot_module_css_default = {
+@@ -144,15 +144,16 @@ window.__ModuleLoader__.load({
+ 									children: row.label
+ 								})]
+ 							}, row.id))
++						}), (0, react_jsx_runtime.jsx)("div", {
++							"data-dsh-settings-nav-footer": "",
++							children: renderSlot("settings.action", {})
+ 						})]
+ 					}), (0, react_jsx_runtime.jsxs)("div", {
+ 						className: SettingsRoot_module_css_default.content,
+-						children: [(0, react_jsx_runtime.jsxs)("div", {
++						children: [(0, react_jsx_runtime.jsx)("div", {
++							"data-dsh-settings-header": "",
+ 							className: SettingsRoot_module_css_default.header,
+-							children: [(0, react_jsx_runtime.jsx)("div", {
+-								className: SettingsRoot_module_css_default.actions,
+-								children: renderSlot("settings.action", {})
+-							}), (0, react_jsx_runtime.jsxs)("button", {
++							children: (0, react_jsx_runtime.jsxs)("button", {
+ 								ref: closeButton,
+ 								type: "button",
+ 								className: SettingsRoot_module_css_default.close,
+@@ -161,7 +162,7 @@ window.__ModuleLoader__.load({
+ 									className: SettingsRoot_module_css_default.hiddenLabel,
+ 									children: renderSlot("settings.close", {})
+ 								})]
+-							})]
++							})
+ 						}), (0, react_jsx_runtime.jsx)("div", {
+ 							className: SettingsRoot_module_css_default.options,
+ 							children: active !== void 0 && renderSlot("settings.section", { close: onClose }, { only: active })
+@@ -373,6 +374,7 @@ window.__ModuleLoader__.load({
+ 			}, [controller]);
+ 			if (state.status !== "ready") return null;
+ 			return (0, react_jsx_runtime.jsxs)("div", {
++				"data-dsh-settings-document-action": "",
+ 				className: SettingsDocumentAction_module_css_default.action,
+ 				children: [state.error === null ? null : (0, react_jsx_runtime.jsx)("span", {
+ 					className: SettingsDocumentAction_module_css_default.error,
