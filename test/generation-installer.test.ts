@@ -123,6 +123,76 @@ describe('the generation installer', () => {
     expect(result.ok).toBe(true)
   })
 
+  it('pins the staging workspace to the registry the market read from (#337)', async () => {
+    const home = await freshHome()
+    let npmrc = ''
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: 'demo-plugin@2.1.0',
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      registry: 'https://mirrors.cloud.tencent.com/npm',
+      runInstall: stubInstall(async (staging) => {
+        npmrc = await readFile(join(staging, '.npmrc'), 'utf8')
+        const pkg = join(staging, 'node_modules', 'demo-plugin')
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'demo-plugin', version: '2.1.0' }))
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+      })
+    })
+
+    expect(result.ok).toBe(true)
+    expect(npmrc).toContain('registry=https://mirrors.cloud.tencent.com/npm/')
+    // The settings the promotion rename depends on are still there.
+    expect(npmrc).toContain('node-linker=hoisted')
+    expect(npmrc).toContain('side-effects-cache=false')
+  })
+
+  it('leaves the staging registry unpinned when the caller resolved none', async () => {
+    const home = await freshHome()
+    let npmrc = ''
+    await installGeneration({
+      dshHome: home,
+      pluginSpec: 'demo-plugin@2.1.0',
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      runInstall: stubInstall(async (staging) => {
+        npmrc = await readFile(join(staging, '.npmrc'), 'utf8')
+        const pkg = join(staging, 'node_modules', 'demo-plugin')
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'demo-plugin', version: '2.1.0' }))
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+      })
+    })
+
+    expect(npmrc).not.toContain('registry=')
+  })
+
+  it("reports pnpm's error code rather than the staging path that follows it (#337)", async () => {
+    const home = await freshHome()
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: 'dshmarket@1.45.0',
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      runInstall: async () => ({
+        code: 1,
+        output: [
+          'Progress: resolved 1, reused 0, downloaded 0, added 0',
+          'ERR_PNPM_NO_MATCHING_VERSION  No matching version found for dshmarket@1.45.0 while fetching it from https://registry.npmmirror.com/',
+          '',
+          'This error happened while installing a direct dependency of /tmp/.generations/staging/bfeb523f',
+          'The latest release of dshmarket is "1.44.0".'
+        ].join('\n')
+      })
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('ERR_PNPM_NO_MATCHING_VERSION')
+    expect(result.detail).toContain('registry.npmmirror.com')
+    expect(result.detail).not.toContain('This error happened while installing')
+  })
+
   it('promotes a clean install into a generation and records its metadata', async () => {
     const home = await freshHome()
     const result = await installGeneration({

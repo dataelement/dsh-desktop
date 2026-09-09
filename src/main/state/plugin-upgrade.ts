@@ -9,6 +9,8 @@ import {
   withRegistryLock,
   writeDesired
 } from 'dsh-desktop-market-installer/generations/registry'
+import { resolveMarketRegistry } from 'dsh-desktop-market-installer/market-registry'
+import { join } from 'node:path'
 
 export interface PluginUpgradeOptions {
   dshHome: string
@@ -42,6 +44,9 @@ export async function upgradePluginToGeneration(
       pluginSpec: spec,
       nodeExecutablePath,
       pnpmEntryPath,
+      // targetVersion came from the market's registry; fetch it from there
+      // too rather than from whatever ~/.npmrc happens to name (#337).
+      registry: await resolveMarketRegistry({ profileDir: join(dshHome, 'profiles', 'web') }),
       onTrace: (line) => note?.(`[plugin-upgrade] ${line}`)
     })
 

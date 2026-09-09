@@ -8,6 +8,7 @@ import {
 } from 'dsh-desktop-market-installer/generations/installer'
 import { projectGenerations } from 'dsh-desktop-market-installer/generations/projection'
 import { readDesired, writeDesired } from 'dsh-desktop-market-installer/generations/registry'
+import { resolveMarketRegistry } from 'dsh-desktop-market-installer/market-registry'
 
 /**
  * One-time move of a profile that installed community plugins into the shared
@@ -667,6 +668,9 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
         sourceDirectory: plugin.sourceDirectory,
         nodeExecutablePath: deps.nodeExecutablePath,
         pnpmEntryPath: deps.pnpmEntryPath,
+        // Registry-sourced plugins are re-fetched here; keep them on the
+        // registry the market reads rather than on ~/.npmrc's (#337).
+        registry: await resolveMarketRegistry({ profileDir: profileDir(dshHome) }),
         onTrace: (line) => note(`[desktop] ${line}`)
       })
       if (!result.ok || result.generation === undefined) {

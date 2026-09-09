@@ -200,8 +200,14 @@ function diagnosticLine(output) {
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter(Boolean)
-  const named = lines.filter((line) => /EPERM|EBUSY|EEXIST|ENOENT|ERR_PNPM|error/iu.test(line))
-  return (named.at(-1) ?? lines.at(-1))?.slice(0, 400)
+  // pnpm's error CODE names the cause, and it comes FIRST. The sentence that
+  // follows it — "This error happened while installing a direct dependency of
+  // <staging path>" — also matches /error/i and, being last, used to win: the
+  // log kept the path and dropped ERR_PNPM_NO_MATCHING_VERSION, which is why
+  // #337 could only be diagnosed by reproducing the install by hand.
+  const coded = lines.find((line) => /\bERR_[A-Z][A-Z0-9_]*\b/u.test(line))
+  const named = lines.filter((line) => /EPERM|EBUSY|EEXIST|ENOENT|error/iu.test(line))
+  return (coded ?? named.at(-1) ?? lines.at(-1))?.slice(0, 400)
 }
 
 export async function installGeneration(options) {
@@ -219,7 +225,18 @@ export async function installGeneration(options) {
   // node-linker=hoisted keeps every package a real directory under the
   // generation's own node_modules — no links into a `.pnpm` store that the
   // promotion rename would strand.
-  await writeFile(join(stagingDir, '.npmrc'), 'node-linker=hoisted\nside-effects-cache=false\n')
+  //
+  // The registry line, when the caller resolved one, is what keeps the source
+  // pnpm fetches from drifting away from the source the market read version
+  // metadata from (#337). A project `.npmrc` outranks the user's `~/.npmrc`,
+  // which is the only registry pnpm could see here before.
+  const settings = ['node-linker=hoisted', 'side-effects-cache=false']
+  if (typeof options.registry === 'string' && options.registry !== '') {
+    // npm's own convention terminates a registry with a slash.
+    settings.push(`registry=${options.registry.replace(/\/+$/u, '')}/`)
+    trace(`pinned staging to ${options.registry}`)
+  }
+  await writeFile(join(stagingDir, '.npmrc'), `${settings.join('\n')}\n`)
 
   const cleanupStaging = () => rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
 

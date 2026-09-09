@@ -20,6 +20,7 @@ import {
   withRegistryLock,
   writeDesired
 } from './generations/registry.mjs'
+import { resolveMarketRegistry } from './market-registry.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
 
@@ -487,6 +488,15 @@ export function createDesktopPnpmService(options) {
     const handle = asHandle(async ({ write }) =>
       withRegistryLock(home, async () => {
         write(`Installing ${spec} as an isolated generation…`)
+        // The market picked this exact version by reading ITS registry; the
+        // install has to fetch from the same one (#337). `args` is consulted
+        // too, so a market that names a registry outright is believed over
+        // anything inferred here.
+        const registry = await resolveMarketRegistry({
+          profileDir: profileDirectory(home),
+          args,
+          environment
+        })
         const install = await installGeneration({
           dshHome: home,
           pluginSpec: spec,
@@ -494,6 +504,7 @@ export function createDesktopPnpmService(options) {
           pnpmEntryPath,
           spawnProcess,
           environment,
+          registry,
           onTrace: write,
           onOutput: (chunk) => write(chunk.replace(/\r?\n$/u, '')),
           runInstall: options.runGenerationInstall

@@ -85,6 +85,39 @@ describe('the market install boundary', () => {
     expect(typeof svc.runExternalMarketPluginInstall).toBe('function')
   })
 
+  it('fetches from the registry the market read version metadata from (#337)', async () => {
+    const home = await freshHome()
+    await mkdir(join(home, 'profiles', 'web', '.dsh-market'), { recursive: true })
+    await writeFile(
+      join(home, 'profiles', 'web', '.dsh-market', 'state.json'),
+      JSON.stringify({ region: 'china', regionAuto: true })
+    )
+
+    let npmrc = ''
+    const svc = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'),
+      dshEntryPath: join(home, 'bin.js'),
+      executablePath: process.execPath,
+      home,
+      // Not process.env: a developer machine with npm_config_registry set
+      // would otherwise make this assert the opposite branch.
+      environment: {},
+      runGenerationInstall: async (stagingDir) => {
+        npmrc = await readFile(join(stagingDir, '.npmrc'), 'utf8')
+        return stubGenerationInstall('demo-plugin', '9.9.9')(stagingDir)
+      }
+    })
+
+    const result = await drainHandle(svc.runExternalMarketPluginInstall(
+      ['add', 'demo-plugin@9.9.9'],
+      join(home, 'profiles', 'web'),
+      undefined
+    ))
+
+    expect(result.exitCode).toBe(0)
+    expect(npmrc).toContain('registry=https://mirrors.cloud.tencent.com/npm/')
+  })
+
   it('exposes a new generation for market validation and defers bundle activation until cold start', async () => {
     const home = await freshHome()
     const svc = service(home, stubGenerationInstall('demo-plugin', '9.9.9'))
