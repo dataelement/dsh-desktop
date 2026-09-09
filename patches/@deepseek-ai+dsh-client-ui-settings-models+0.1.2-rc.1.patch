@@ -674,75 +674,6 @@ index dd1dc8d..493bfc1 100644
  		const css$1 = ".lbsctW_description{color:var(--dsw-alias-label-secondary);margin:0;font-size:14px;line-height:24px}.lbsctW_editor{margin-top:24px}@media (width<=560px){.lbsctW_editor{margin-top:20px}}";
  		const tagId$1 = "@deepseek-ai/dsh-client-ui-settings-models/DeepSeekOnboardingDialog.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
-@@ -2267,35 +2581,50 @@ window.__ModuleLoader__.load({
- 		function assertNever$1(_value) {
- 			throw new Error("unexpected DeepSeek onboarding state");
- 		}
-+		/** Mainstream catalog routes exposed during first-run setup. */
-+		const ONBOARDING_PROVIDERS = [
-+			{ provider: "deepseek-official", displayName: "DeepSeek", kind: "onboardingManufacturer" },
-+			{ provider: "openai", displayName: "OpenAI", kind: "onboardingManufacturer" },
-+			{ provider: "anthropic", displayName: "Anthropic", kind: "onboardingManufacturer" },
-+			{ provider: "google", displayName: "Google Gemini", kind: "onboardingManufacturer" },
-+			{ provider: "openrouter", displayName: "OpenRouter", kind: "onboardingAggregator" },
-+			{ provider: "xai", displayName: "xAI", kind: "onboardingManufacturer" },
-+			{ provider: "moonshotai-cn", displayName: "Moonshot / Kimi", kind: "onboardingManufacturer" },
-+			{ provider: "minimax-cn", displayName: "MiniMax", kind: "onboardingManufacturer" },
-+			{ provider: "zai-coding-cn", displayName: "智谱 GLM", kind: "onboardingManufacturer" },
-+			{ provider: "mistral", displayName: "Mistral AI", kind: "onboardingManufacturer" },
-+			{ provider: "groq", displayName: "Groq", kind: "onboardingInference" },
-+			{ provider: "together", displayName: "Together AI", kind: "onboardingInference" }
-+		];
- 		/**
--		* Prompt a first-run user for the official DeepSeek credential while no
--		* provider can serve requests and that credential is writable.
-+		* Prompt a first-run user to choose a supported mainstream provider and store
-+		* its credential while no configured route can serve requests.
- 		* @param props - settings-shell owner state and Models feature dependencies.
- 		* @returns the onboarding modal or null when onboarding needs no intervention.
- 		*/
- 		function DeepSeekOnboardingDialog(props) {
- 			const { complete, controller, useModels, operations, schema, t } = props;
- 			const state = useModels((snapshot) => snapshot);
--			const readiness = onboardingReadiness(state);
-+			const [selectedProvider, setSelectedProvider] = (0, react.useState)("deepseek-official");
-+			const choices = ONBOARDING_PROVIDERS.flatMap((choice) => {
-+				const row = state.rows.find((candidate) => candidate.entry.provider === choice.provider && candidate.entry.settingsNs !== "");
-+				return row === void 0 || state.namespaces.get(row.entry.settingsNs) === void 0 ? [] : [{
-+					...choice,
-+					row
-+				}];
-+			});
-+			const selected = choices.find((choice) => choice.provider === selectedProvider) ?? choices[0];
-+			const anyUsable = state.rows.some(providerUsable);
- 			(0, react.useEffect)(() => {
- 				if (state.status === "idle") controller.load();
- 			}, [controller, state.status]);
- 			(0, react.useEffect)(() => {
--				if (readiness.kind === "adapter-absent" || readiness.kind === "provider-ready" || readiness.kind === "unavailable") complete();
--			}, [complete, readiness.kind]);
--			switch (readiness.kind) {
--				case "loading":
--				case "adapter-absent":
--				case "provider-ready":
--				case "unavailable": return null;
--				case "credential-missing": break;
--				/* v8 ignore next -- every current readiness variant is handled above */
--				default: return assertNever$1(readiness);
--			}
--			const row = state.rows.find((candidate) => candidate.entry.provider === "deepseek-official" && candidate.entry.settingsNs === "llm-deepseek" && candidate.entry.settingsPath.length === 0);
--			const namespace = state.namespaces.get("llm-deepseek");
--			/* v8 ignore next 2 -- credential-missing is derived only from this exact joined row. */
--			if (row === void 0 || namespace === void 0) return null;
-+				if (anyUsable || state.status === "error" || state.status === "ready" && (!state.writable || choices.length === 0)) complete();
-+			}, [anyUsable, choices.length, complete, state.status, state.writable]);
-+			if (state.status === "idle" || state.status === "loading" || anyUsable || selected === void 0 || !state.writable) return null;
-+			const row = selected.row;
-+			const namespace = state.namespaces.get(row.entry.settingsNs);
-+			if (namespace === void 0) return null;
- 			const finishCredential = (changed) => {
- 				if (!changed) {
- 					complete();
 @@ -2633,6 +2962,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
@@ -769,24 +700,6 @@ index dd1dc8d..493bfc1 100644
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2712,10 +3051,14 @@ window.__ModuleLoader__.load({
- 			welcomeBody: "DeepSeek Harness 0.1 remains in testing for Harness developers. Many areas need further improvement, and we welcome feedback from the developer community. DeepSeek Harness's core plugins and foundational APIs will continue to evolve rapidly over the coming months.\n\nWe look forward to exploring the limits of intelligence with developers around the world, building on open-source, open, reusable, and composable infrastructure. We welcome Harness developers everywhere to join the DSH plugin ecosystem.",
- 			welcomeContinue: "Continue",
- 			welcomeError: "The acknowledgement could not be saved. Please try again.",
--			onboardingTitle: "Add an API key to get started",
--			onboardingDescription: "Configure the official DeepSeek provider to start building.",
-+			onboardingTitle: "Connect a model provider",
-+			onboardingDescription: "Choose a provider and enter its API key. DSH will enable that provider's built-in model catalog automatically.",
-+			onboardingProvider: "Model provider",
-+			onboardingManufacturer: "Model developer",
-+			onboardingAggregator: "Model aggregation platform",
-+			onboardingInference: "Inference platform",
- 			onboardingLater: "Configure later",
--			onboardingSave: "Save and continue",
-+			onboardingSave: "Connect and continue",
- 			onboardingSaving: "Saving…",
- 			keyRequired: "Enter an API key to continue."
- 		};
 @@ -2735,6 +3078,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
@@ -813,24 +726,6 @@ index dd1dc8d..493bfc1 100644
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2814,10 +3167,14 @@ window.__ModuleLoader__.load({
- 			welcomeBody: "DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。",
- 			welcomeContinue: "继续",
- 			welcomeError: "暂时无法保存确认状态，请重试。",
--			onboardingTitle: "添加一个 API Key 开始使用",
--			onboardingDescription: "配置 DeepSeek 官方模型，即可开始使用。",
-+			onboardingTitle: "接入模型提供方",
-+			onboardingDescription: "选择提供方并填写 API Key，DSH 会自动启用该提供方的内置模型目录。之后可在「设置 → 模型」中添加更多提供方。",
-+			onboardingProvider: "选择模型提供方",
-+			onboardingManufacturer: "模型厂商",
-+			onboardingAggregator: "模型聚合平台",
-+			onboardingInference: "推理服务平台",
- 			onboardingLater: "稍后配置",
--			onboardingSave: "保存并继续",
-+			onboardingSave: "接入并继续",
- 			onboardingSaving: "保存中…",
- 			keyRequired: "请输入 API 密钥后继续。"
- 		};
 @@ -2942,4 +3299,4 @@ window.__ModuleLoader__.load({
  	}
  });
