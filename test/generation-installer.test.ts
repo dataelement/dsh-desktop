@@ -468,6 +468,71 @@ describe('the generation installer', () => {
     )
   })
 
+  it('accepts an installed dependency that has no runtime entry point', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'type-only-dependency')
+    const modules = join(directory, 'node_modules')
+    const plugin = join(modules, 'type-consumer')
+    const typeOnly = join(modules, 'type-only-package')
+    await mkdir(plugin, { recursive: true })
+    await mkdir(typeOnly, { recursive: true })
+    await writeFile(
+      join(plugin, 'package.json'),
+      JSON.stringify({
+        name: 'type-consumer',
+        version: '1.0.0',
+        dependencies: { 'type-only-package': '1.0.0' }
+      })
+    )
+    await writeFile(
+      join(typeOnly, 'package.json'),
+      JSON.stringify({ name: 'type-only-package', version: '1.0.0', exports: {} })
+    )
+
+    const result = await verifyGenerationPeers(home, {
+      id: 'type-only-dependency',
+      pluginName: 'type-consumer',
+      version: '1.0.0',
+      directory
+    })
+
+    expect(result).toEqual({ ok: true, problems: [] })
+  })
+
+  it('accepts host and ordinary dependencies provided through closure directory links', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'linked-closure')
+    const plugin = join(directory, 'node_modules', 'linked-consumer')
+    const closure = join(home, 'profiles', 'node_modules')
+    const hostModules = join(home, 'desktop-app', 'node_modules')
+    await mkdir(plugin, { recursive: true })
+    await mkdir(closure, { recursive: true })
+    await writeFile(
+      join(plugin, 'package.json'),
+      JSON.stringify({
+        name: 'linked-consumer',
+        version: '1.0.0',
+        dependencies: { react: '*', 'ordinary-host-package': '*' }
+      })
+    )
+    for (const name of ['react', 'ordinary-host-package']) {
+      const target = join(hostModules, name)
+      await mkdir(target, { recursive: true })
+      await writeFile(join(target, 'package.json'), JSON.stringify({ name, main: 'index.js' }))
+      await writeFile(join(target, 'index.js'), 'module.exports = {}\n')
+      await symlink(target, join(closure, name), process.platform === 'win32' ? 'junction' : 'dir')
+    }
+
+    const result = await verifyGenerationPeers(home, {
+      id: 'linked-closure',
+      pluginName: 'linked-consumer',
+      version: '1.0.0',
+      directory
+    })
+
+    expect(result).toEqual({ ok: true, problems: [] })
+  })
+
   it('rejects an ordinary dependency that a nested package resolves outside the allowed roots', async () => {
     const home = await freshHome()
     const directory = join(home, 'profiles', '.generations', 'live', 'external-dependency')

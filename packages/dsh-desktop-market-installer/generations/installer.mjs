@@ -313,6 +313,19 @@ function isInsideDirectory(parent, candidate) {
   return path === '' || (!path.startsWith('..') && !isAbsolute(path))
 }
 
+async function linkedClosurePackageTarget(closure, dependency) {
+  if (!PACKAGE_NAME_PATTERN.test(dependency)) return undefined
+  const packagePath = join(closure, dependency)
+  const info = await pathInfo(packagePath, true)
+  if (info === undefined || !info.isSymbolicLink()) return undefined
+  return realpath(packagePath).catch(() => undefined)
+}
+
+function packageExistsInRoots(roots, dependency) {
+  if (!PACKAGE_NAME_PATTERN.test(dependency)) return false
+  return roots.some((root) => existsSync(join(root, dependency, 'package.json')))
+}
+
 async function pathInfo(path, missingAllowed = false) {
   try {
     return await lstat(path)
@@ -481,7 +494,11 @@ export async function verifyGenerationPeers(dshHome, generation) {
         manifest.peerDependenciesMeta?.[dependency]?.optional !== true
       const optional = !requiredDependency && !requiredPeer
       if (resolved === undefined) {
-        if (!optional) {
+        const installed = packageExistsInRoots(
+          [join(generationRoot, 'node_modules'), closure],
+          dependency
+        )
+        if (!optional && !installed) {
           problems.push(
             isHostSingleton(dependency)
               ? `${prefix}${dependency} does not resolve from the installation closure`
@@ -492,16 +509,23 @@ export async function verifyGenerationPeers(dshHome, generation) {
       }
       const realResolved = await realpath(resolved).catch(() => resolved)
       const insideClosure = isInsideDirectory(closure, realResolved)
+      const linkedClosureTarget = insideClosure
+        ? undefined
+        : await linkedClosurePackageTarget(closure, dependency)
+      const providedByLinkedClosurePackage =
+        linkedClosureTarget !== undefined && isInsideDirectory(linkedClosureTarget, realResolved)
       if (isHostSingleton(dependency)) {
-        if (!insideClosure) {
+        if (!insideClosure && !providedByLinkedClosurePackage) {
           problems.push(
             `${prefix}${dependency} resolves outside the installation closure: ${realResolved}`
           )
         }
       } else if (!insideClosure && !isInsideDirectory(generationRoot, realResolved)) {
-        problems.push(
-          `${prefix}${dependency} resolves outside the generation and installation closure: ${realResolved}`
-        )
+        if (!providedByLinkedClosurePackage) {
+          problems.push(
+            `${prefix}${dependency} resolves outside the generation and installation closure: ${realResolved}`
+          )
+        }
       }
     }
   }
