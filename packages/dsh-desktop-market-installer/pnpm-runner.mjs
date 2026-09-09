@@ -25,7 +25,7 @@
  * output, one pnpm run.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, watch } from 'node:fs'
+import { existsSync, realpathSync, watch } from 'node:fs'
 import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -646,8 +646,17 @@ async function readEntries(directory) {
   }
 }
 
+/**
+ * Whether this module is Node's entry script. Resolve the argv spelling first:
+ * Node canonicalizes import.meta.url through Windows junctions and symlinks,
+ * while process.argv[1] preserves the path used to launch the script.
+ */
+export function isMainModule(moduleUrl, entryPath, resolvePath = realpathSync) {
+  return entryPath !== undefined && moduleUrl === pathToFileURL(resolvePath(entryPath)).href
+}
+
 /* v8 ignore start -- the process wrapper around the tested runner */
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   const [pnpmEntry, ...pnpmArguments] = process.argv.slice(2)
   if (pnpmEntry === undefined) {
     process.stderr.write('dsh-desktop: the pnpm runner needs the pnpm entry path.\n')

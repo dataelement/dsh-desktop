@@ -2,12 +2,14 @@ import { EventEmitter } from 'node:events'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
   MARKER,
   SIDELINE_MARKER,
   blockedTargets,
   gitPrepareApprovalKey,
+  isMainModule,
   lockedRenameTarget,
   mergeApprovedGitPrepareKey,
   runWithLockRecovery,
@@ -56,6 +58,14 @@ function fakePnpm(runs) {
 }
 
 describe('packaged pnpm runner', () => {
+  it('recognizes the entry script when argv uses an aliased path', () => {
+    const canonical = '/real/profile/.desktop-bin/pnpm-runner.mjs'
+    const alias = '/linked/profile/.desktop-bin/pnpm-runner.mjs'
+
+    expect(isMainModule(pathToFileURL(canonical).href, alias, () => canonical)).toBe(true)
+    expect(isMainModule(pathToFileURL(canonical).href, undefined, () => canonical)).toBe(false)
+  })
+
   it('extracts only a safe exact key from pnpm git prepare failures', () => {
     expect(gitPrepareApprovalKey(GIT_PREPARE_FAILURE)).toBe(GIT_EXACT_KEY)
     expect(gitPrepareApprovalKey(GIT_PREPARE_FAILURE.replace('github.com/', 'evil.example/')))
