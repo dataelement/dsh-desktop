@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-index ef50847..bb94027 100644
+index ef50847..4f6b53b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 @@ -468,7 +468,7 @@ window.__ModuleLoader__.load({
@@ -11,7 +11,7 @@ index ef50847..bb94027 100644
  				if (path === void 0) return void 0;
  				return {
  					open: () => {
-@@ -479,6 +479,28 @@ window.__ModuleLoader__.load({
+@@ -479,6 +479,33 @@ window.__ModuleLoader__.load({
  				};
  			} };
  		}
@@ -21,18 +21,23 @@ index ef50847..bb94027 100644
 +		* absolute-path prefix, or a conventional filename suffix, inline code is
 +		* much more likely to be a command, package, or symbol than a local path.
 +		*
-+		* A leading `@` plus a single slash is a scoped package name, and a bare
-+		* `local@domain.tld` is an email address; both are far more common in
-+		* assistant prose than files with those exact shapes, and neither is
-+		* openable. An explicit `./@scope/pkg` still resolves as a path above.
++		* A leading `@` plus a single slash is a scoped package name (optionally
++		* with `@version`), and a bare `local@domain.tld` is an email address;
++		* both are far more common in assistant prose than files with those exact
++		* shapes, and neither is openable. An explicit `./@scope/pkg` or a path
++		* that continues past the package (`@scope/pkg@1.0.0/dist/index.js`)
++		* still resolves as a path above.
 +		*/
 +		function localPathReference(value) {
 +			const candidate = value.trim();
 +			if (candidate === "" || /[\r\n]/.test(candidate) || /^(?:https?|data|javascript):/i.test(candidate)) return void 0;
 +			const path = candidate.replace(/(?:#L\d+(?:C\d+)?|:\d+(?::\d+)?)$/, "");
 +			if (/^(?:\/|~[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path)) return path;
-+			if (/^@[^\\/@\s]+\/[^\\/@\s]+$/.test(path)) return void 0;
++			if (/^@[^\\/@\s]+\/[^\\/@\s]+(?:@[^\\/\s]+)?$/.test(path)) return void 0;
 +			if (/^[^@\s\\/]+@[^@\s\\/]+\.[A-Za-z]{2,}$/.test(path)) return void 0;
++			// Semver / package versions (v0.8.0, 1.2.3-rc.1) look like dotted filenames
++			// but are not openable workspace paths.
++			if (/^v?\d+(?:\.\d+){1,4}(?:-[A-Za-z0-9._-]+)?$/i.test(path)) return void 0;
 +			if (/[\\/]/.test(path) || /[\\/]$/.test(path)) return path;
 +			if (/^[^\\/]+\.[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(path)) return path;
 +			return void 0;
@@ -40,7 +45,7 @@ index ef50847..bb94027 100644
  		/** The single produced path whose basename is exactly `value`, else undefined. */
  		function onlyPathWithBasename(paths, value) {
  			const matches = paths.filter((path) => basename(path) === value);
-@@ -952,7 +974,6 @@ window.__ModuleLoader__.load({
+@@ -952,7 +979,6 @@ window.__ModuleLoader__.load({
  			ctx.provide("chatFileMentions", { forClosing(owner, sessionId) {
  				const paths = selectProducedFiles(owner);
  				const presented = presentedForClosing(owner);

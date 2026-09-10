@@ -71,10 +71,27 @@ describe('assistant local path links', () => {
     for (const value of [
       '@deepseek-ai/cordis',
       '@deepseek-ai/dsh-client-ui-deliverables',
+      '@deepseek-ai/dsh@0.1.2-rc.1',
       '@foo/bar',
+      '@foo/bar@1.0.0',
       '@plugin/name',
+      '@plugin/name@2.3.4-beta.1',
       'user@example.com',
       'first.last@sub.example.co',
+    ]) {
+      expect(localPathReference(value), value).toBeUndefined()
+    }
+  })
+
+  it('keeps bare version tokens inert', async () => {
+    const localPathReference = await loadLocalPathReference()
+
+    for (const value of [
+      'v0.8.0',
+      '0.8.0',
+      '1.2.3-rc.1',
+      '0.1.5-rc.1',
+      'v1.0.0-beta.2',
     ]) {
       expect(localPathReference(value), value).toBeUndefined()
     }
@@ -88,6 +105,7 @@ describe('assistant local path links', () => {
       '/tmp/@scope/pkg/index.js',
       'patches/@deepseek-ai+dsh-client-ui-deliverables+0.1.5-rc.1.patch',
       'node_modules/@foo/bar/lib/client.js',
+      '@scope/pkg@1.2.3/dist/index.js',
     ]) {
       expect(localPathReference(value), value).toBe(value)
     }

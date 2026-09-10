@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1b7f134..18b6d5e 100644
+index 1b7f134..e8cd1cb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -14650,12 +14650,13 @@ window.__ModuleLoader__.load({
@@ -80,7 +80,7 @@ index 1b7f134..18b6d5e 100644
  		* trigger instead of a parallel tree.
  		*/
 -		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, command, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
-+		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, command, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, extensionZone }) {
++		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, command, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, extensionZone, openUploadedFile }) {
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
@@ -104,7 +104,13 @@ index 1b7f134..18b6d5e 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -16095,13 +16095,19 @@ window.__ModuleLoader__.load({
+@@ -16090,18 +16090,25 @@ window.__ModuleLoader__.load({
+ 								onRetryFile: (id) => {
+ 									retryFileUpload?.(id);
+ 								},
++								onOpenUploadedFile: openUploadedFile,
+ 								dropLimits: imageLimits === void 0 ? void 0 : {
+ 									count: imageLimits.maxImagesPerMessage,
  									size: imageSizeText(imageLimits.maxImageBytes)
  								}
  							}),
@@ -131,7 +137,7 @@ index 1b7f134..18b6d5e 100644
  										(0, react_jsx_runtime.jsx)(ComposerContentEditable, {
  											editor: workspaceTrigger ? null : editor,
  											editable,
-@@ -16123,8 +16129,9 @@ window.__ModuleLoader__.load({
+@@ -16123,8 +16130,9 @@ window.__ModuleLoader__.load({
  											children: placeholderText
  										}),
  										(0, react_jsx_runtime.jsx)(DecoratorPortals, { editor: workspaceTrigger ? null : editor })
@@ -143,7 +149,7 @@ index 1b7f134..18b6d5e 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								className: InputBar_module_css_default.row,
-@@ -16155,7 +16162,7 @@ window.__ModuleLoader__.load({
+@@ -16155,7 +16163,7 @@ window.__ModuleLoader__.load({
  												type: "button",
  												className: InputBar_module_css_default.add,
  												"aria-label": t("file.attach"),
@@ -152,7 +158,7 @@ index 1b7f134..18b6d5e 100644
  												onMouseDown: keepFocus,
  												onClick: () => {
  													fileInputRef.current?.click();
-@@ -16167,8 +16174,10 @@ window.__ModuleLoader__.load({
+@@ -16167,8 +16175,10 @@ window.__ModuleLoader__.load({
  											ref: fileInputRef,
  											type: "file",
  											multiple: true,
@@ -164,7 +170,7 @@ index 1b7f134..18b6d5e 100644
  											onChange: onPickFiles
  										}),
  										(0, react_jsx_runtime.jsxs)("div", {
-@@ -16256,7 +16265,7 @@ window.__ModuleLoader__.load({
+@@ -16256,7 +16266,7 @@ window.__ModuleLoader__.load({
  							})
  						]
  					}),
@@ -173,7 +179,7 @@ index 1b7f134..18b6d5e 100644
  				]
  			});
  		});
-@@ -16641,6 +16650,10 @@ window.__ModuleLoader__.load({
+@@ -16641,6 +16651,10 @@ window.__ModuleLoader__.load({
  					"conversation.hero.agentPreset": {
  						kind: "single",
  						scope: "root"
@@ -184,7 +190,7 @@ index 1b7f134..18b6d5e 100644
  					}
  				},
  				inject: (sessionId) => ({
-@@ -16721,6 +16734,10 @@ window.__ModuleLoader__.load({
+@@ -16721,6 +16735,10 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "session-maybe"
  					},
@@ -195,7 +201,7 @@ index 1b7f134..18b6d5e 100644
  					"conversation.input.overlay": {
  						kind: "list",
  						scope: "session"
-@@ -16747,6 +16764,7 @@ window.__ModuleLoader__.load({
+@@ -16747,6 +16765,7 @@ window.__ModuleLoader__.load({
  					}
  				},
  				inject: (sessionId) => {
@@ -203,6 +209,26 @@ index 1b7f134..18b6d5e 100644
  					if (sessionId === void 0) return {
  						keyboard: void 0,
  						addFiles: void 0,
+@@ -16756,6 +16775,7 @@ window.__ModuleLoader__.load({
+ 						toggleCommandMenu: void 0,
+ 						stop: void 0,
+ 						command: void 0,
++						openUploadedFile: void 0,
+ 						hooks: {
+ 							busyEnter: submissionPolicy.busyEnter,
+ 							fileUploads: ABSENT_FILE_UPLOADS,
+@@ -16787,6 +16807,11 @@ window.__ModuleLoader__.load({
+ 						retryFileUpload: (id) => {
+ 							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
+ 						},
++						openUploadedFile: async (attachmentId) => {
++							const opener = ctx.get("openUploadedAttachment");
++							if (opener === void 0) throw new Error("ui-conversation: openUploadedAttachment is unavailable");
++							await opener.open(sessionId, attachmentId);
++						},
+ 						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
+ 							shell.dismissPopup();
+ 							const snapshot = shell.snapshot;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 index 4a1daf8..14db6ba 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts

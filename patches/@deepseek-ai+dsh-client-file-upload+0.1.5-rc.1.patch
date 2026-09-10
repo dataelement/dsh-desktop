@@ -1,0 +1,24 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
+index 167cc5d..780f957 100644
+--- a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
+@@ -230,6 +230,19 @@ let FileUploads = (() => {
+ 			return this.stagedFiles.get(agent.session)?.get(receiptId)?.file;
+ 		}
+ 		/**
++		* Find one staged durable file by attachment id inside the Agent scope.
++		* @param agent - receiving Agent.
++		* @param attachmentId - content-addressed file identity.
++		* @returns durable file reference, or `undefined` when nothing staged matches.
++		*/
++		findStagedFile(agent, attachmentId) {
++			this.assertAgentScope(agent);
++			const staged = this.stagedFiles.get(agent.session);
++			if (staged === void 0) return;
++			const id = String(attachmentId);
++			for (const upload of staged.values()) if (String(upload.file.attachmentId) === id) return upload.file;
++		}
++		/**
+ 		* Bind receipts while one prompt enters an Agent inbox.
+ 		* Disposal restores every prior binding unless the caller commits successful delivery.
+ 		* @param agent - receiving Agent.

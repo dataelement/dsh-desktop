@@ -1,8 +1,57 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
-index 0b50b91..3ce15f2 100644
+index 0b50b91..ba7ea13 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
-@@ -619,24 +619,29 @@ window.__ModuleLoader__.load({
+@@ -357,7 +357,7 @@ window.__ModuleLoader__.load({
+ 		});
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-attachment/src/FileCard.module.css.mjs
+-		const css$3 = ".gSkjMW_card{border:.5px solid var(--dsw-alias-border-l2,#0000001f);background:var(--dsw-specific-input-major,transparent);box-sizing:border-box;text-align:left;border-radius:16px;align-items:center;gap:10px;width:240px;height:64px;padding:0 12px;display:inline-flex;position:relative}.gSkjMW_failed{border-color:var(--dsw-alias-state-error-primary,#d54941)}.gSkjMW_icon{flex:none;justify-content:center;align-items:center;width:28px;height:28px;display:inline-flex}.gSkjMW_spinner{corner-shape:round;border:2px solid;border-top-color:#0000;border-radius:50%;width:20px;height:20px;animation:.8s linear infinite gSkjMW_file-card-spin}@keyframes gSkjMW_file-card-spin{to{transform:rotate(360deg)}}.gSkjMW_body{flex-direction:column;flex:1;min-width:0;padding:8px 0;display:flex}.gSkjMW_retry{color:inherit;font:inherit;text-align:left;cursor:pointer;background:0 0;border:0;padding:0}.gSkjMW_name{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px;overflow:hidden}.gSkjMW_meta{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-tertiary,#00000073);font-size:12px;line-height:15px;overflow:hidden}.gSkjMW_metaFailed{color:var(--dsw-alias-state-error-primary,#d54941)}.gSkjMW_remove{corner-shape:round;background:var(--dsw-alias-button-contrast-fill,#000000b8);width:18px;height:18px;color:var(--dsw-alias-label-primary-inverted,#fff);opacity:0;cursor:pointer;border:none;border-radius:50%;justify-content:center;align-items:center;padding:0;transition:opacity .2s ease-in-out;display:inline-flex;position:absolute;top:6px;right:6px}.gSkjMW_card:hover .gSkjMW_remove,.gSkjMW_remove:focus-visible{opacity:1}@media (pointer:coarse){.gSkjMW_remove{opacity:1}}@media (prefers-reduced-motion:reduce){.gSkjMW_remove{transition:none}}.gSkjMW_card:hover .gSkjMW_name,.gSkjMW_card:focus-within .gSkjMW_name{padding-right:18px}.gSkjMW_removeFailed{background:var(--dsw-alias-state-error-primary,#d54941);color:#fff;opacity:1}.gSkjMW_progressTrack{background:var(--dsw-alias-fill-tertiary,#00000014);border-radius:1px;height:2px;position:absolute;bottom:5px;left:12px;right:12px;overflow:hidden}.gSkjMW_progressBar{border-radius:inherit;background:var(--dsw-alias-brand-primary,#4d6bfe);width:35%;height:100%;animation:1.2s ease-in-out infinite alternate gSkjMW_file-card-progress;display:block}.gSkjMW_progressBar[style]{animation:none}@keyframes gSkjMW_file-card-progress{0%{transform:translate(-70%)}to{transform:translate(220%)}}@media (pointer:coarse){.gSkjMW_remove{opacity:1}}";
++		const css$3 = ".gSkjMW_card{border:.5px solid var(--dsw-alias-border-l2,#0000001f);background:var(--dsw-specific-input-major,transparent);box-sizing:border-box;text-align:left;border-radius:16px;align-items:center;gap:10px;width:240px;height:64px;padding:0 12px;display:inline-flex;position:relative}.gSkjMW_preview{color:inherit;font:inherit;text-align:left;cursor:pointer;background:0 0;border:0;padding:0}.gSkjMW_failed{border-color:var(--dsw-alias-state-error-primary,#d54941)}.gSkjMW_icon{flex:none;justify-content:center;align-items:center;width:28px;height:28px;display:inline-flex}.gSkjMW_spinner{corner-shape:round;border:2px solid;border-top-color:#0000;border-radius:50%;width:20px;height:20px;animation:.8s linear infinite gSkjMW_file-card-spin}@keyframes gSkjMW_file-card-spin{to{transform:rotate(360deg)}}.gSkjMW_body{flex-direction:column;flex:1;min-width:0;padding:8px 0;display:flex}.gSkjMW_retry{color:inherit;font:inherit;text-align:left;cursor:pointer;background:0 0;border:0;padding:0}.gSkjMW_name{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px;overflow:hidden}.gSkjMW_meta{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-tertiary,#00000073);font-size:12px;line-height:15px;overflow:hidden}.gSkjMW_metaFailed{color:var(--dsw-alias-state-error-primary,#d54941)}.gSkjMW_remove{corner-shape:round;background:var(--dsw-alias-button-contrast-fill,#000000b8);width:18px;height:18px;color:var(--dsw-alias-label-primary-inverted,#fff);opacity:0;cursor:pointer;border:none;border-radius:50%;justify-content:center;align-items:center;padding:0;transition:opacity .2s ease-in-out;display:inline-flex;position:absolute;top:6px;right:6px}.gSkjMW_card:hover .gSkjMW_remove,.gSkjMW_remove:focus-visible{opacity:1}@media (pointer:coarse){.gSkjMW_remove{opacity:1}}@media (prefers-reduced-motion:reduce){.gSkjMW_remove{transition:none}}.gSkjMW_card:hover .gSkjMW_name,.gSkjMW_card:focus-within .gSkjMW_name{padding-right:18px}.gSkjMW_removeFailed{background:var(--dsw-alias-state-error-primary,#d54941);color:#fff;opacity:1}.gSkjMW_progressTrack{background:var(--dsw-alias-fill-tertiary,#00000014);border-radius:1px;height:2px;position:absolute;bottom:5px;left:12px;right:12px;overflow:hidden}.gSkjMW_progressBar{border-radius:inherit;background:var(--dsw-alias-brand-primary,#4d6bfe);width:35%;height:100%;animation:1.2s ease-in-out infinite alternate gSkjMW_file-card-progress;display:block}.gSkjMW_progressBar[style]{animation:none}@keyframes gSkjMW_file-card-progress{0%{transform:translate(-70%)}to{transform:translate(220%)}}@media (pointer:coarse){.gSkjMW_remove{opacity:1}}";
+ 		const tagId$3 = "@deepseek-ai/dsh-client-ui-attachment/FileCard.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$3) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -377,6 +377,7 @@ window.__ModuleLoader__.load({
+ 			"metaFailed": "gSkjMW_metaFailed",
+ 			"name": "gSkjMW_name",
+ 			"progressBar": "gSkjMW_progressBar",
++			"preview": "gSkjMW_preview",
+ 			"progressTrack": "gSkjMW_progressTrack",
+ 			"remove": "gSkjMW_remove",
+ 			"removeFailed": "gSkjMW_removeFailed",
+@@ -386,7 +387,7 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		//#region lib/types/FileCard.js
+ 		/** One pending file card: type glyph, name, size or upload status, remove, retry. */
+-		function FileCard({ name, bytes, state, progress, labels, onRemove, onRetry }) {
++		function FileCard({ name, bytes, state, progress, labels, onRemove, onRetry, onOpen }) {
+ 			const extension = (0, _deepseek_ai_dsh_client_ui_primitives.fileExtension)(name).toUpperCase().slice(0, 8);
+ 			const meta = state === "uploading" ? labels.uploading : state === "error" ? labels.failed : [extension, (0, _deepseek_ai_dsh_client_ui_primitives.fileSizeText)(bytes)].filter((part) => part !== "").join(" ");
+ 			const retryable = state === "error";
+@@ -411,9 +412,11 @@ window.__ModuleLoader__.load({
+ 							className: `${FileCard_module_css_default.meta} ${FileCard_module_css_default.metaFailed}`,
+ 							children: meta
+ 						})]
+-					}) : (0, react_jsx_runtime.jsxs)("span", {
+-						className: FileCard_module_css_default.body,
++					}) : (0, react_jsx_runtime.jsxs)(onOpen === void 0 ? "span" : "button", {
++						type: onOpen === void 0 ? void 0 : "button",
++						className: onOpen === void 0 ? FileCard_module_css_default.body : `${FileCard_module_css_default.body} ${FileCard_module_css_default.preview}`,
+ 						"aria-label": labels.label,
++						onClick: onOpen,
+ 						children: [(0, react_jsx_runtime.jsx)("span", {
+ 							className: FileCard_module_css_default.name,
+ 							children: name
+@@ -603,7 +606,7 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		//#region lib/types/client/ComposerAttachments.js
+ 		/** Draft image previews, pending-file cards, drop target, and original-image preview. */
+-		function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, dropLimits, t }) {
++		function ComposerAttachments({ attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, onOpenUploadedFile, dropLimits, t }) {
+ 			const [preview, setPreview] = (0, react.useState)(null);
+ 			const [dragActive, setDragActive] = (0, react.useState)(false);
+ 			const dragDepth = (0, react.useRef)(0);
+@@ -619,24 +622,29 @@ window.__ModuleLoader__.load({
  					if (dataTransfer === null || !dataTransfer.types.includes("Files")) return null;
  					return dataTransfer;
  				};
@@ -35,7 +84,7 @@ index 0b50b91..3ce15f2 100644
  					dragDepth.current = Math.max(0, dragDepth.current - 1);
  					if (dragDepth.current === 0) setDragActive(false);
  					const leftViewport = event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight;
-@@ -644,7 +649,7 @@ window.__ModuleLoader__.load({
+@@ -644,7 +652,7 @@ window.__ModuleLoader__.load({
  				};
  				const onDrop = (event) => {
  					const dataTransfer = fileTransfer(event);
@@ -44,3 +93,15 @@ index 0b50b91..3ce15f2 100644
  					event.preventDefault();
  					reset();
  					if (canAcceptDrop) onAddFiles([...dataTransfer.files]);
+@@ -691,7 +699,10 @@ window.__ModuleLoader__.load({
+ 									},
+ 									onRetry: () => {
+ 										onRetryFile(attachment.id);
+-									}
++									},
++									onOpen: upload?.status === "ready" && upload.file !== void 0 && onOpenUploadedFile !== void 0 ? () => {
++										onOpenUploadedFile(upload.file.attachmentId);
++									} : void 0
+ 								});
+ 							}
+ 							return (0, react_jsx_runtime.jsxs)("div", {
