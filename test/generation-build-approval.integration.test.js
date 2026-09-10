@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -9,7 +9,9 @@ import { promisify } from 'node:util'
 import { installGeneration } from '../packages/dsh-desktop-market-installer/generations/installer.mjs'
 
 it('real pnpm refuses unapproved scripts and executes an explicitly approved rebuild in staging', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-build-approval-'))
+  // Windows TEMP may contain an 8.3 alias (RUNNER~1). pnpm resolves its
+  // workspace root to a real path; keep every install path in that form.
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-build-approval-')))
   const run = promisify(execFile)
   let server
   // Stable publication time: a moving timestamp can appear in the future
