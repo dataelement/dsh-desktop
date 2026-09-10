@@ -1,15 +1,15 @@
 import { shell, type BrowserWindow } from 'electron'
-import { canGrantWindowPermission, isTrustedAppUrl } from './security-policy'
+import { canGrantWindowPermission, shouldAllowWindowNavigation } from './security-policy'
 
 export function secureWindow(window: Pick<BrowserWindow, 'webContents'>): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isTrustedAppUrl(url)) return { action: 'allow' }
+    if (shouldAllowWindowNavigation(window.webContents.getURL(), url)) return { action: 'allow' }
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
   window.webContents.on('will-navigate', (event, url) => {
-    if (isTrustedAppUrl(url)) return
+    if (shouldAllowWindowNavigation(window.webContents.getURL(), url)) return
     event.preventDefault()
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url)
   })

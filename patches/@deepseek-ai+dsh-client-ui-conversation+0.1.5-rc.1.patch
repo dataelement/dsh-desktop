@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1b7f134..9ad78d3 100644
+index 1b7f134..18b6d5e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -14650,12 +14650,13 @@ window.__ModuleLoader__.load({
@@ -25,7 +25,7 @@ index 1b7f134..9ad78d3 100644
  			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow",
  			"root": "wSkVaW_root",
  			"scrollBody": "wSkVaW_scrollBody",
-@@ -14898,12 +14900,17 @@ window.__ModuleLoader__.load({
+@@ -14898,19 +14900,19 @@ window.__ModuleLoader__.load({
  							setPickerOpen(false);
  						}
  					}),
@@ -42,9 +42,17 @@ index 1b7f134..9ad78d3 100644
  				variant: hero ? "hero" : "composer",
 +				extensionZone: zone,
  				...inert ? {
- 					disabled: true,
- 					placeholder: t("placeholder.workspace"),
-@@ -15755,12 +15762,13 @@ window.__ModuleLoader__.load({
+-					disabled: true,
+-					placeholder: t("placeholder.workspace"),
+-					workspacePickerOpen: pickerOpen,
+-					onRequestWorkspace: () => {
+-						setPickerOpen(true);
+-					}
++					placeholder: t("placeholder.hero")
+ 				} : !inert && composerBlock !== void 0 ? {
+ 					blocked: composerBlock,
+ 					placeholder: composerBlock.reason
+@@ -15755,12 +15757,13 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
  		const css$1 = ".uV2eYG_root{padding:0 var(--dsh-composer-side-clearance) 8px;flex-direction:column;align-items:center;display:flex}.uV2eYG_root:has([data-composer-stats]){padding-bottom:4px}.uV2eYG_hero{padding:0 var(--dsh-composer-side-clearance)}.uV2eYG_notice{width:100%;max-width:var(--dsh-composer-card-max-width);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:8px;margin-bottom:6px;padding:4px 8px;font-size:12px;line-height:18px}.uV2eYG_card{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);--dsw-elevation-stroke-color:var(--dsw-alias-border-l2);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-elevation-soft);font-size:var(--dsh-content-font-size,14px);line-height:calc(24px + var(--dsh-content-font-delta,0px));--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;border-radius:22px;flex-direction:column;gap:12px;padding-top:8px;display:flex;position:relative}.uV2eYG_cardWorkspaceTrigger{--dsw-elevation-stroke-color:transparent;cursor:pointer}.uV2eYG_cardWorkspaceTrigger:after{content:\"\";background:var(--dsw-alias-border-l4);pointer-events:none;border-radius:22px;transition:background-color .1s;position:absolute;inset:-1px;-webkit-mask:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' fill='none' rx='22' ry='22' stroke='black' stroke-width='2' stroke-dasharray='4 4'/%3E%3C/svg%3E\");mask:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' fill='none' rx='22' ry='22' stroke='black' stroke-width='2' stroke-dasharray='4 4'/%3E%3C/svg%3E\")}.uV2eYG_cardWorkspaceTrigger :disabled{pointer-events:none}.uV2eYG_cardWorkspaceTrigger:hover:after{background:var(--dsw-alias-state-business-primary)}.uV2eYG_accessory{align-items:center;gap:8px;padding:10px 12px 0;display:flex}.uV2eYG_overlayAnchor{height:0;position:absolute;inset:0 0 auto}.uV2eYG_scroll{max-height:var(--dsh-composer-text-max-height);margin-right:4px;overflow-y:auto}.uV2eYG_scroll::-webkit-scrollbar-track{margin-top:8px}.uV2eYG_grow{position:relative}.uV2eYG_pending{corner-shape:round;background:var(--dsw-alias-state-business-primary);border-radius:50%;width:8px;height:8px;animation:1s ease-in-out infinite alternate uV2eYG_input-pending}@keyframes uV2eYG_input-pending{0%{opacity:.35}to{opacity:1}}.uV2eYG_input{box-sizing:border-box;min-height:36px;font-family:var(--dsw-font-family);font-size:inherit;line-height:inherit;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary);caret-color:var(--dsw-alias-state-business-primary);outline:none;padding:4px 8px 0 14px}.uV2eYG_input p{margin:0}.uV2eYG_input p:last-child:after{content:var(--dsh-composer-hint);color:var(--dsw-alias-label-caption)}.uV2eYG_placeholder{color:var(--dsw-alias-label-caption);white-space:nowrap;text-overflow:ellipsis;pointer-events:none;user-select:none;position:absolute;inset:4px 8px auto 14px;overflow:hidden}.uV2eYG_inputDisabled{color:var(--dsw-alias-label-tertiary);cursor:not-allowed}.uV2eYG_input[aria-haspopup=menu]{cursor:pointer}.uV2eYG_hero .uV2eYG_input{min-height:52px}.uV2eYG_hero .uV2eYG_placeholder{white-space:normal;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;display:-webkit-box}.uV2eYG_row{flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:2px 8px 6px;display:flex;container-type:inline-size}.uV2eYG_tools,.uV2eYG_modes,.uV2eYG_trailing{align-items:center;min-width:0;display:flex}.uV2eYG_tools,.uV2eYG_modes{gap:12px}.uV2eYG_trailing{flex:none;gap:12px;margin-left:auto}.uV2eYG_add{corner-shape:round;background:var(--dsw-specific-selector);width:28px;height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;display:grid}.uV2eYG_add:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-solid)}.uV2eYG_add:disabled{opacity:.5;cursor:default}.uV2eYG_select{max-width:220px;height:28px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer;appearance:none;background-color:#0000;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");background-position:right 4px center;background-repeat:no-repeat;background-size:12px 12px;border:none;border-radius:8px;outline:none;padding:0 20px 0 8px;font-size:13px;font-weight:500;line-height:20px}.uV2eYG_select:hover:not(:disabled){background-color:var(--dsw-alias-interactive-bg-hover)}.uV2eYG_select:disabled{opacity:.5;cursor:default}.uV2eYG_primary{corner-shape:round;background:var(--dsw-alias-button-info-fill);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}.uV2eYG_primary:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}.uV2eYG_primary:disabled{opacity:.4;cursor:default}.uV2eYG_retry{color:inherit;cursor:pointer;background:0 0;border:1px solid;border-radius:4px;margin-left:8px;padding:1px 8px;font-size:12px}";
@@ -59,7 +67,7 @@ index 1b7f134..9ad78d3 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -15779,6 +15787,7 @@ window.__ModuleLoader__.load({
+@@ -15779,6 +15782,7 @@ window.__ModuleLoader__.load({
  			"pending": "uV2eYG_pending",
  			"placeholder": "uV2eYG_placeholder",
  			"primary": "uV2eYG_primary",
@@ -67,7 +75,7 @@ index 1b7f134..9ad78d3 100644
  			"retry": "uV2eYG_retry",
  			"root": "uV2eYG_root",
  			"row": "uV2eYG_row",
-@@ -15803,7 +15812,7 @@ window.__ModuleLoader__.load({
+@@ -15803,7 +15807,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -76,7 +84,16 @@ index 1b7f134..9ad78d3 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -16075,10 +16084,6 @@ window.__ModuleLoader__.load({
+@@ -15939,7 +15943,7 @@ window.__ModuleLoader__.load({
+ 				showToast,
+ 				t
+ 			]);
+-			const canAcceptDrop = subagent === null && !locked && !machineBusy && addFiles !== void 0;
++			const canAcceptDrop = subagent === null && addFiles !== void 0;
+ 			const fileInputRef = (0, react.useRef)(null);
+ 			const onPickFiles = (e) => {
+ 				const picked = e.target.files === null ? [] : [...e.target.files];
+@@ -16075,10 +16079,6 @@ window.__ModuleLoader__.load({
  								className: InputBar_module_css_default.overlayAnchor,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -87,7 +104,7 @@ index 1b7f134..9ad78d3 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -16095,13 +16100,19 @@ window.__ModuleLoader__.load({
+@@ -16095,13 +16095,19 @@ window.__ModuleLoader__.load({
  									size: imageSizeText(imageLimits.maxImageBytes)
  								}
  							}),
@@ -114,7 +131,7 @@ index 1b7f134..9ad78d3 100644
  										(0, react_jsx_runtime.jsx)(ComposerContentEditable, {
  											editor: workspaceTrigger ? null : editor,
  											editable,
-@@ -16123,8 +16134,9 @@ window.__ModuleLoader__.load({
+@@ -16123,8 +16129,9 @@ window.__ModuleLoader__.load({
  											children: placeholderText
  										}),
  										(0, react_jsx_runtime.jsx)(DecoratorPortals, { editor: workspaceTrigger ? null : editor })
@@ -126,7 +143,28 @@ index 1b7f134..9ad78d3 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								className: InputBar_module_css_default.row,
-@@ -16256,7 +16268,7 @@ window.__ModuleLoader__.load({
+@@ -16155,7 +16162,7 @@ window.__ModuleLoader__.load({
+ 												type: "button",
+ 												className: InputBar_module_css_default.add,
+ 												"aria-label": t("file.attach"),
+-												disabled: subagent !== null || locked || machineBusy || addFiles === void 0,
++												disabled: subagent !== null || addFiles === void 0,
+ 												onMouseDown: keepFocus,
+ 												onClick: () => {
+ 													fileInputRef.current?.click();
+@@ -16167,8 +16174,10 @@ window.__ModuleLoader__.load({
+ 											ref: fileInputRef,
+ 											type: "file",
+ 											multiple: true,
+-											disabled: subagent !== null,
++											disabled: subagent !== null || addFiles === void 0,
+ 											hidden: true,
++											tabIndex: -1,
++											style: { display: "none" },
+ 											onChange: onPickFiles
+ 										}),
+ 										(0, react_jsx_runtime.jsxs)("div", {
+@@ -16256,7 +16265,7 @@ window.__ModuleLoader__.load({
  							})
  						]
  					}),
@@ -135,7 +173,7 @@ index 1b7f134..9ad78d3 100644
  				]
  			});
  		});
-@@ -16641,6 +16653,10 @@ window.__ModuleLoader__.load({
+@@ -16641,6 +16650,10 @@ window.__ModuleLoader__.load({
  					"conversation.hero.agentPreset": {
  						kind: "single",
  						scope: "root"
@@ -146,7 +184,7 @@ index 1b7f134..9ad78d3 100644
  					}
  				},
  				inject: (sessionId) => ({
-@@ -16721,6 +16737,10 @@ window.__ModuleLoader__.load({
+@@ -16721,6 +16734,10 @@ window.__ModuleLoader__.load({
  						kind: "single",
  						scope: "session-maybe"
  					},
@@ -157,6 +195,14 @@ index 1b7f134..9ad78d3 100644
  					"conversation.input.overlay": {
  						kind: "list",
  						scope: "session"
+@@ -16747,6 +16764,7 @@ window.__ModuleLoader__.load({
+ 					}
+ 				},
+ 				inject: (sessionId) => {
++					sessionId ??= sessions.list.getSnapshot().current;
+ 					if (sessionId === void 0) return {
+ 						keyboard: void 0,
+ 						addFiles: void 0,
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 index 4a1daf8..14db6ba 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts

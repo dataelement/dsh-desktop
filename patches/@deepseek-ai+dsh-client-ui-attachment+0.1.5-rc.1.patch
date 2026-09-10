@@ -1,0 +1,46 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
+index 0b50b91..3ce15f2 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js
+@@ -619,24 +619,29 @@ window.__ModuleLoader__.load({
+ 					if (dataTransfer === null || !dataTransfer.types.includes("Files")) return null;
+ 					return dataTransfer;
+ 				};
++				const overComposerCard = (event) => {
++					const target = event.target;
++					return target instanceof Element && target.closest("[data-composer-card]") !== null;
++				};
+ 				const reset = () => {
+ 					dragDepth.current = 0;
+ 					setDragActive(false);
+ 				};
+ 				const onDragEnter = (event) => {
+-					if (fileTransfer(event) === null) return;
++					if (fileTransfer(event) === null || !overComposerCard(event)) return;
+ 					event.preventDefault();
++					if (!canAcceptDrop) return;
+ 					dragDepth.current += 1;
+ 					setDragActive(true);
+ 				};
+ 				const onDragOver = (event) => {
+ 					const dataTransfer = fileTransfer(event);
+-					if (dataTransfer === null) return;
++					if (dataTransfer === null || !overComposerCard(event)) return;
+ 					event.preventDefault();
+ 					dataTransfer.dropEffect = canAcceptDrop ? "copy" : "none";
+ 				};
+ 				const onDragLeave = (event) => {
+-					if (fileTransfer(event) === null) return;
++					if (fileTransfer(event) === null || !overComposerCard(event)) return;
+ 					dragDepth.current = Math.max(0, dragDepth.current - 1);
+ 					if (dragDepth.current === 0) setDragActive(false);
+ 					const leftViewport = event.clientX <= 0 || event.clientY <= 0 || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight;
+@@ -644,7 +649,7 @@ window.__ModuleLoader__.load({
+ 				};
+ 				const onDrop = (event) => {
+ 					const dataTransfer = fileTransfer(event);
+-					if (dataTransfer === null) return;
++					if (dataTransfer === null || !overComposerCard(event)) return;
+ 					event.preventDefault();
+ 					reset();
+ 					if (canAcceptDrop) onAddFiles([...dataTransfer.files]);
