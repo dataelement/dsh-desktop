@@ -24,7 +24,7 @@ export class SafeModeOverlay {
     this.webContents = this.view.webContents
     this.view.setBackgroundColor('#00000000')
     this.view.setVisible(false)
-    secureWindow(this.view)
+    secureWindow(this.view, () => undefined)
     parent.contentView.addChildView(this.view)
     parent.on('resize', this.syncBounds)
     parent.on('enter-full-screen', this.syncBounds)

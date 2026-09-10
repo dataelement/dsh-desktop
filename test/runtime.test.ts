@@ -516,10 +516,14 @@ describe('offending plugin extraction', () => {
 })
 
 describe('navigation trust boundary', () => {
-  it('only trusts the launcher and loopback HTTP pages', () => {
+  it('only trusts the launcher and the exact configured app origin', () => {
     expect(isTrustedAppUrl('file:///app/index.html')).toBe(true)
-    expect(isTrustedAppUrl('http://127.0.0.1:43127')).toBe(true)
-    expect(isTrustedAppUrl('http://localhost:43127')).toBe(true)
+    const appUrl = 'http://127.0.0.1:43127'
+    expect(isTrustedAppUrl(`${appUrl}/session/1`, appUrl)).toBe(true)
+    expect(isTrustedAppUrl('http://localhost:43127', appUrl)).toBe(false)
+    expect(isTrustedAppUrl('http://127.0.0.1:8080', appUrl)).toBe(false)
+    expect(isTrustedAppUrl(appUrl)).toBe(false)
+    expect(isTrustedAppUrl('http://localhost:43127', 'http://localhost:43127')).toBe(true)
     expect(isTrustedAppUrl('https://127.0.0.1:43127')).toBe(false)
     expect(isTrustedAppUrl('http://example.com')).toBe(false)
     expect(isTrustedAppUrl('javascript:alert(1)')).toBe(false)

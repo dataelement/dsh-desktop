@@ -58,6 +58,7 @@ import {
   serializeGpuFallbackState
 } from './gpu-fallback'
 import { secureWindow } from './security'
+import { MAC_WINDOW_BUTTON_POSITION } from './window-button-position'
 import { SafeModeOverlay } from './safe-mode-overlay'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
@@ -932,18 +933,8 @@ function createWindow(): BrowserWindow {
   })
   if (process.platform === 'darwin') {
     window.setWindowButtonVisibility(true)
-    // Match the sidebar inset at the current zoom, with a 2px optical correction
-    // for the round native buttons relative to the logo's visible left edge.
-    const alignWindowButtons = (): void => {
-      if (window.isDestroyed()) return
-      window.setWindowButtonPosition({
-        x: Math.round(16 * window.webContents.getZoomFactor()) - 2,
-        y: 9
-      })
-    }
-    alignWindowButtons()
-    window.webContents.on('did-finish-load', alignWindowButtons)
-    window.webContents.on('zoom-changed', () => setImmediate(alignWindowButtons))
+    // Native window chrome stays fixed regardless of sidebar state or page zoom.
+    window.setWindowButtonPosition(MAC_WINDOW_BUTTON_POSITION)
   } else if (isWindows) {
     window.setMenuBarVisibility(false)
   }
@@ -964,7 +955,8 @@ function createWindow(): BrowserWindow {
     appendRendererPluginFailureLog(details.message)
   })
   installPluginRecoveryNavigation(window)
-  secureWindow(window)
+  // Resolve dynamically because Harness may restart on a different port.
+  secureWindow(window, () => runtime?.snapshot().url)
   installContextMenu(window, harnessLocale)
   installMainWindowRendererRecovery(window)
   window.on('closed', () => {
@@ -2567,7 +2559,7 @@ async function showMobilePairing(): Promise<void> {
       webSecurity: true
     }
   })
-  secureWindow(mobileWindow)
+  secureWindow(mobileWindow, () => snapshot.desktopUrl)
   mobileWindow.on('closed', () => {
     mobileWindow = undefined
   })

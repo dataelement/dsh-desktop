@@ -62,9 +62,7 @@ export function isExternalWebUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl)
     return (
-      (url.protocol === 'https:' || url.protocol === 'http:') &&
-      url.hostname !== '127.0.0.1' &&
-      url.hostname !== 'localhost'
+      url.protocol === 'https:' || url.protocol === 'http:'
     )
   } catch {
     return false

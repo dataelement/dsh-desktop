@@ -6,7 +6,7 @@ index cdaea1a..131fc45 100644
  		* LG breakpoint); a manual toggle below it re-expands over the squeezed center
  		* (stores.ts narrowExpanded). */
  		const SIDEBAR_AUTO_COLLAPSE = 1024;
-+		const COLLAPSED_SIDEBAR_WIDTH = navigator.userAgent.includes("Macintosh") ? 80 : 56;
++		const COLLAPSED_SIDEBAR_WIDTH = navigator.userAgent.includes("Macintosh") ? 96 : 56;
  		/**
  		* Clamp a panel width into its contract range.
  		* @param px - requested width.

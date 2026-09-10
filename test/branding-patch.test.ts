@@ -13,7 +13,9 @@ describe('DSH Desktop sidebar branding', () => {
     expect(main).toContain("document.body.hasAttribute('data-ds-dark-theme')")
     expect(main).toContain("window.setBackgroundColor(isDark ? '#141416' : '#ffffff')")
     expect(main).toContain('window.setWindowButtonVisibility(true)')
-    expect(main).toContain('x: Math.round(16 * window.webContents.getZoomFactor()) - 2')
+    expect(main).toContain('window.setWindowButtonPosition(MAC_WINDOW_BUTTON_POSITION)')
+    expect(main).not.toContain('desktop:window-button-anchor')
+    expect(main).not.toContain('alignWindowButtons')
     expect(main).toContain("titleBarStyle: 'hidden' as const")
     expect(main).not.toContain('dsh-desktop-titlebar-style')
     expect(main).not.toContain('--dsh-desktop-titlebar-height')
@@ -64,20 +66,22 @@ describe('DSH Desktop sidebar branding', () => {
     expect(patch).toContain('[data-dsh-sidebar-brand-identity]{gap:4px}')
     expect(patch).toContain('navigator.userAgent.includes("Macintosh")')
     expect(patch).toContain('padding-top:28px')
-    expect(patch).toContain('padding:32px 22px 6px')
+    expect(patch).toContain('padding:28px 30px 6px')
+    expect(patch).toContain('{height:60px;margin-bottom:8px}')
+    expect(patch).toContain('{height:38px}')
     expect(installedSidebar).toContain('renderSlot("sidebar.brand.mark"')
     expect(installedSidebar).toContain('renderSlot("sidebar.brand.name"')
     expect(installedSidebar).not.toContain('DshDesktopBrand')
     expect(installedSidebar).not.toContain('brandWordmark')
   })
 
-  it('uses an 80px macOS rail that clears the traffic lights', async () => {
+  it('uses a 96px macOS rail that clears the traffic lights', async () => {
     const patch = await readFile(
       patchPath('@deepseek-ai/dsh-client-ui-layout'),
       'utf8'
     )
 
-    expect(patch).toContain('navigator.userAgent.includes("Macintosh") ? 80 : 56')
+    expect(patch).toContain('navigator.userAgent.includes("Macintosh") ? 96 : 56')
     expect(patch).toContain('sidebar === 0 ? COLLAPSED_SIDEBAR_WIDTH')
   })
 
