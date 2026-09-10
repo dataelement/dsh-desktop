@@ -16,6 +16,7 @@ setupDesktopStoragePersistence()
 
 const ROOT_ID = 'dsh-desktop-update-root'
 const MOBILE_BUTTON_ID = 'dsh-desktop-mobile-button'
+const VERSION_LABEL_ID = 'dsh-desktop-version-label'
 const SAFE_MODE_BANNER_ID = 'dsh-desktop-safe-mode-banner'
 const locale: UpdateLocale = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 
@@ -47,6 +48,7 @@ let phoneConnected = false
 let sidebarSettingsArea: HTMLElement | undefined
 let sidebarRoot: HTMLElement | undefined
 let mobileButton: HTMLButtonElement | undefined
+let versionLabel: HTMLSpanElement | undefined
 let domSyncScheduled = false
 let bootScanSettled = false
 let bootFailureTriggered = false
@@ -185,7 +187,40 @@ function mountMobileButton(): void {
     mobileButton = created
   }
   if (mobileButton.parentElement !== settingsArea) settingsArea.appendChild(mobileButton)
+  mountVersionLabel(settingsArea)
   renderMobileButton()
+}
+
+/**
+ * Shows the running DSH Desktop version at the bottom of the sidebar, between
+ * the settings entry and the phone button. The version comes from the update
+ * status the main process already streams to this window, so no extra IPC.
+ */
+function mountVersionLabel(settingsArea: HTMLElement): void {
+  if (!versionLabel?.isConnected) {
+    versionLabel =
+      (document.getElementById(VERSION_LABEL_ID) as HTMLSpanElement | null) ?? undefined
+  }
+  if (!versionLabel) {
+    const created = document.createElement('span')
+    created.id = VERSION_LABEL_ID
+    created.title = locale === 'zh' ? 'DSH Desktop 版本' : 'DSH Desktop version'
+    versionLabel = created
+  }
+  if (versionLabel.parentElement !== settingsArea) {
+    settingsArea.insertBefore(versionLabel, mobileButton ?? null)
+  }
+  renderVersionLabel()
+}
+
+function renderVersionLabel(): void {
+  const label = versionLabel
+  if (!label) return
+  const version = currentStatus?.currentVersion
+  const text = version ? `v${version}` : ''
+  if (label.textContent !== text) label.textContent = text
+  const hidden = !text
+  if (label.hidden !== hidden) label.hidden = hidden
 }
 
 function renderMobileButton(): void {
@@ -412,6 +447,7 @@ function applyStatus(status: UpdateStatus): void {
   }
   if (status.phase !== 'available') accepting = false
   render()
+  renderVersionLabel()
 }
 
 function render(): void {
@@ -974,6 +1010,8 @@ const mobileButtonStyles = `
   #${MOBILE_BUTTON_ID}[hidden] { display:none; }
   #${MOBILE_BUTTON_ID} > span { position:absolute; top:4px; right:4px; width:7px; height:7px; border:1.5px solid var(--dsw-specific-sidebar-fill,#fff); border-radius:50%; background:#4da66d; opacity:0; }
   #${MOBILE_BUTTON_ID}.is-connected > span { opacity:1; }
+  #${VERSION_LABEL_ID} { position:absolute; right:40px; top:50%; transform:translateY(-50%); max-width:calc(100% - 96px); overflow:hidden; color:var(--dsw-alias-label-tertiary,#9aa0a6); font-size:11px; font-variant-numeric:tabular-nums; line-height:1; white-space:nowrap; text-overflow:ellipsis; pointer-events:auto; user-select:none; }
+  [data-dsh-sidebar-root][data-dsh-sidebar-wide="false"] #${VERSION_LABEL_ID}, #${VERSION_LABEL_ID}[hidden] { display:none; }
 `
 
 const aboutStyles = `
