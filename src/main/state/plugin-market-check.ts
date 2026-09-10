@@ -5,6 +5,7 @@ import { profilePackageJsonPath } from './plugin-recovery'
 export interface NpmPackageManifest {
   name: string
   version: string
+  deprecated?: string
   dependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
@@ -25,7 +26,7 @@ export interface NpmPackageManifest {
 export type PluginHealthStatus =
   | 'up-to-date'
   | 'upgrade-available'
-  | 'incompatible-fixed-in-latest'
+  | 'incompatible-upgrade-available'
   | 'incompatible-no-fix'
   | 'checking'
   | 'check-failed'
@@ -206,57 +207,83 @@ export function satisfiesRange(versionStr: string, range: string): boolean {
   })
 }
 
-// In-memory cache for package metadata to avoid repeated network hits
-const manifestCache = new Map<string, { manifest: NpmPackageManifest | null; timestamp: number }>()
+export interface NpmPackageVersions {
+  versions: Record<string, NpmPackageManifest>
+  'dist-tags': { latest: string }
+}
+
+// Cache the complete version list, independent of the installed/runtime version.
+const manifestCache = new Map<string, { metadata: NpmPackageVersions | null; timestamp: number }>()
 const CACHE_TTL_MS = 5 * 60 * 1000
 
-export async function fetchPluginManifestFromRegistry(
+export async function fetchPluginVersionsFromRegistry(
   packageName: string,
   options?: {
     registry?: string
     timeoutMs?: number
     fetchFn?: typeof fetch
   }
-): Promise<NpmPackageManifest | null> {
-  const cached = manifestCache.get(packageName)
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.manifest
-  }
+): Promise<NpmPackageVersions | null> {
+  const primaryRegistry = (options?.registry || DEFAULT_NPM_REGISTRY).replace(/\/$/, '')
+  const cacheKey = `${primaryRegistry}/${packageName}`
+  const cached = manifestCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.metadata
 
-  const registries = [
-    options?.registry || DEFAULT_NPM_REGISTRY,
-    FALLBACK_NPM_REGISTRY
-  ]
+  const registries = [...new Set([primaryRegistry, FALLBACK_NPM_REGISTRY])]
   const timeoutMs = options?.timeoutMs ?? DEFAULT_MARKET_CHECK_TIMEOUT_MS
   const fetchImpl = options?.fetchFn ?? fetch
 
   for (const registry of registries) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const url = `${registry.replace(/\/$/, '')}/${encodeURIComponent(packageName)}/latest`
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), timeoutMs)
-      const res = await fetchImpl(url, {
+      const res = await fetchImpl(`${registry}/${encodeURIComponent(packageName)}`, {
         signal: controller.signal,
-        headers: {
-          accept: 'application/json',
-          'user-agent': 'dsh-desktop'
-        }
-      }).finally(() => clearTimeout(timer))
-
-      if (res.ok) {
-        const data = (await res.json()) as NpmPackageManifest
-        if (data && typeof data.version === 'string') {
-          manifestCache.set(packageName, { manifest: data, timestamp: Date.now() })
-          return data
-        }
-      }
+        // Full metadata preserves custom dsh.minVersion; abbreviated install
+        // metadata is insufficient for this compatibility check.
+        headers: { accept: 'application/json', 'user-agent': 'dsh-desktop' }
+      })
+      if (!res.ok) continue
+      const data = (await res.json()) as NpmPackageVersions | null
+      if (!data?.versions || typeof data.versions !== 'object' || Array.isArray(data.versions)) continue
+      const latest = data['dist-tags']?.latest
+      if (typeof latest !== 'string' || !parseSemver(latest)) continue
+      const versions = Object.fromEntries(Object.entries(data.versions).filter(([version, manifest]) =>
+        parseSemver(version) && manifest?.version === version && manifest.name === packageName
+      ))
+      if (!versions[latest]) continue
+      const metadata: NpmPackageVersions = { versions, 'dist-tags': { latest } }
+      manifestCache.set(cacheKey, { metadata, timestamp: Date.now() })
+      return metadata
     } catch {
-      // Try next registry
+      // Try the fallback registry on transport, body or metadata errors.
+    } finally {
+      clearTimeout(timer)
     }
   }
-
-  manifestCache.set(packageName, { manifest: null, timestamp: Date.now() })
+  manifestCache.set(cacheKey, { metadata: null, timestamp: Date.now() })
   return null
+}
+
+/** Select the highest eligible release without installing/probing every version. */
+export function selectCompatiblePluginUpgrade(
+  metadata: NpmPackageVersions,
+  installedVersion: string | undefined,
+  currentRuntimeVersion: string
+): NpmPackageManifest | undefined {
+  const installed = installedVersion && parseSemver(installedVersion)
+  if (!installed || !installedVersion) return undefined
+  const latest = metadata['dist-tags'].latest
+  return Object.values(metadata.versions)
+    .filter((manifest) => {
+      const version = parseSemver(manifest.version)
+      return version && !manifest.deprecated &&
+        compareSemver(manifest.version, installedVersion) > 0 &&
+        compareSemver(manifest.version, latest) <= 0 &&
+        (installed.prerelease.length > 0 || version.prerelease.length === 0)
+    })
+    .sort((left, right) => compareSemver(right.version, left.version))
+    .find((manifest) => inferPluginRuntimeCompatibility(manifest, currentRuntimeVersion).isCompatible)
 }
 
 export function clearManifestCache(): void {
@@ -283,12 +310,15 @@ export function inferPluginRuntimeCompatibility(
     }
   }
 
-  // 2. Check engines.dsh
-  const engineDsh = manifest.engines?.dsh || manifest.dsh?.minVersion
-  if (engineDsh && !satisfiesRange(currentRuntimeVersion, engineDsh)) {
-    return {
-      isCompatible: false,
-      reason: `Requires engine DSH (${engineDsh}), incompatible with runtime ${currentRuntimeVersion}`
+  // Both declarations apply. A bare minVersion is a lower bound, not an exact pin.
+  const minVersion = manifest.dsh?.minVersion
+  const constraints = [manifest.engines?.dsh, minVersion && parseSemver(minVersion) ? `>=${minVersion}` : minVersion]
+  for (const constraint of constraints) {
+    if (constraint && !satisfiesRange(currentRuntimeVersion, constraint)) {
+      return {
+        isCompatible: false,
+        reason: `Requires DSH (${constraint}), incompatible with runtime ${currentRuntimeVersion}`
+      }
     }
   }
 
@@ -352,13 +382,13 @@ export async function evaluatePluginMarketCompatibility(options: {
   } = options
   const isZh = locale === 'zh'
 
-  const manifest = await fetchPluginManifestFromRegistry(packageName, {
+  const metadata = await fetchPluginVersionsFromRegistry(packageName, {
     registry: options.registry,
     timeoutMs: options.timeoutMs,
     fetchFn: options.fetchFn
   })
 
-  if (!manifest) {
+  if (!metadata) {
     return {
       packageName,
       installedVersion,
@@ -369,69 +399,40 @@ export async function evaluatePluginMarketCompatibility(options: {
     }
   }
 
-  const latestVersion = manifest.version
-  const compatibility = inferPluginRuntimeCompatibility(manifest, currentRuntimeVersion)
-  const isNewer = installedVersion ? compareSemver(latestVersion, installedVersion) > 0 : false
-
-  if (hasLocalIssue) {
-    if (isNewer && compatibility.isCompatible) {
-      return {
-        packageName,
-        installedVersion,
-        latestVersion,
-        healthStatus: 'incompatible-fixed-in-latest',
-        healthLabel: isZh
-          ? `不兼容（最新版 v${latestVersion} 已适配）`
-          : `Incompatible (v${latestVersion} is compatible)`,
-        upgradeReady: true,
-        upgradeVersion: latestVersion,
-        detail: isZh
-          ? `最新版 v${latestVersion} 已适配当前 DSH Runtime (${currentRuntimeVersion})，推荐升级`
-          : `Latest version v${latestVersion} supports current runtime (${currentRuntimeVersion}), upgrade recommended`
-      }
-    }
+  const latestVersion = metadata['dist-tags'].latest
+  if (!installedVersion || !parseSemver(installedVersion)) {
     return {
-      packageName,
-      installedVersion,
-      latestVersion,
-      healthStatus: 'incompatible-no-fix',
-      healthLabel: isZh ? '当前版本与最新版均不兼容' : 'Incompatible (no compatible update in market)',
-      upgradeReady: false,
-      detail: compatibility.reason ?? (isZh ? '市场最新版本仍未声明适配当前 Runtime' : 'Latest version is still not compatible')
+      packageName, installedVersion, latestVersion,
+      healthStatus: 'check-failed', upgradeReady: false,
+      healthLabel: isZh ? '无法确定已安装版本' : 'Installed version unavailable',
+      detail: isZh ? '无法确定升级范围，请先检查已安装插件。' : 'Cannot determine the upgrade range; inspect the installed plugin first.'
     }
   }
-
-  if (isNewer) {
-    if (compatibility.isCompatible) {
-      return {
-        packageName,
-        installedVersion,
-        latestVersion,
-        healthStatus: 'upgrade-available',
-        healthLabel: isZh ? `发现新版本 v${latestVersion}` : `Update available v${latestVersion}`,
-        upgradeReady: true,
-        upgradeVersion: latestVersion,
-        detail: isZh ? `可升级至 v${latestVersion}` : `Can upgrade to v${latestVersion}`
-      }
-    }
+  const candidate = selectCompatiblePluginUpgrade(metadata, installedVersion, currentRuntimeVersion)
+  if (candidate) {
     return {
-      packageName,
-      installedVersion,
-      latestVersion,
-      healthStatus: 'up-to-date',
-      healthLabel: isZh ? '已是最新兼容版本' : 'Up to date (compatible)',
-      upgradeReady: false,
-      detail: isZh ? '市场有新版，但与当前 Runtime 暂不兼容' : 'Newer version in market is not compatible with current runtime'
+      packageName, installedVersion, latestVersion,
+      healthStatus: hasLocalIssue ? 'incompatible-upgrade-available' : 'upgrade-available',
+      healthLabel: isZh
+        ? `${hasLocalIssue ? '加载异常，' : ''}可尝试升级至 v${candidate.version}`
+        : `${hasLocalIssue ? 'Load failure; ' : ''}update candidate v${candidate.version}`,
+      upgradeReady: true,
+      upgradeVersion: candidate.version,
+      detail: isZh
+        ? `在当前版本至 latest（v${latestVersion}）之间，v${candidate.version} 是未发现 DSH ${currentRuntimeVersion} 声明冲突的最高可选版本；升级后仍需验证启动。`
+        : `v${candidate.version} is the highest eligible update up to latest (v${latestVersion}) with no declared conflict with DSH ${currentRuntimeVersion}; startup must still be verified.`
     }
   }
-
   return {
-    packageName,
-    installedVersion,
-    latestVersion,
-    healthStatus: 'up-to-date',
-    healthLabel: isZh ? '已是最新版' : 'Up to date',
-    upgradeReady: false
+    packageName, installedVersion, latestVersion,
+    healthStatus: hasLocalIssue ? 'incompatible-no-fix' : 'up-to-date',
+    healthLabel: isZh
+      ? (hasLocalIssue ? '加载异常，未找到兼容更新' : '未找到兼容更新')
+      : (hasLocalIssue ? 'Load failure; no compatible update found' : 'No compatible update found'),
+    upgradeReady: false,
+    detail: isZh
+      ? `在已安装版本之后、latest（v${latestVersion}）以内，没有符合当前 DSH 和发布版本筛选条件的更新。`
+      : `No update after the installed version and up to latest (v${latestVersion}) satisfies the current DSH and release filters.`
   }
 }
 

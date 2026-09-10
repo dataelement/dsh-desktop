@@ -1682,6 +1682,7 @@ async function showPluginRecovery(options?: {
       const detection = await detectPluginRecovery({
         dshHome,
         initialLogs: recoveryLogs ?? snapshot.logs,
+        startupFailures: followRendererLogs ? undefined : snapshot.pluginFailures,
         readLatestLogs: followRendererLogs ? () => rendererPluginFailureLogs : undefined,
         excludedPlugins: removedPlugins,
         slotProviderNodeModulesPaths: [join(app.getAppPath(), 'node_modules')],
@@ -1695,7 +1696,9 @@ async function showPluginRecovery(options?: {
       if (detection.plugins.length === 1) {
         const targetPlugin = detection.plugins[0]!
         try {
-          const installedVersion = await readInstalledPluginVersion(dshHome, targetPlugin)
+          const loadedVersion = followRendererLogs ? undefined : snapshot.pluginFailures
+            ?.find((failure) => failure.owner?.packageName === targetPlugin)?.owner?.version
+          const installedVersion = loadedVersion ?? await readInstalledPluginVersion(dshHome, targetPlugin)
           const runtimeVersion =
             (await readBundledDshVersion(join(app.getAppPath(), 'node_modules'))) || '0.1.2-alpha.1'
           const check = await evaluatePluginMarketCompatibility({

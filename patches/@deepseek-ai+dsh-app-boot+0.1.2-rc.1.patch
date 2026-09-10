@@ -1,0 +1,103 @@
+diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+@@ -830,6 +830,19 @@
+ 	}
+ 	throw new Error(`${binName}: cannot resolve profile bundle ${JSON.stringify(packageName)} from the dsh installation or ${profileDir}; run 'dsh plugin --profile ${basename(profileDir)} install' if its dependency is not installed`);
+ }
++// Preserve provenance through structuredClone and patch composition. Only loader
++// rows are tagged; plugin config is never inspected or included in failure reports.
++function annotatePluginPatches(patches, owner) {
++	const entry = (row) => {
++		row.__dshPluginOwner = owner;
++		if (row.group && Array.isArray(row.config)) row.config.forEach(entry);
++	};
++	for (const patch of patches) {
++		if (Array.isArray(patch.insert)) patch.insert.forEach(entry);
++		else entry(patch);
++	}
++	return patches;
++}
+ /**
+ * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
+ * layer and parse the profile's own patch file. A listed bundle without a
+@@ -857,16 +870,26 @@
+ 	if (rawPatchReload !== void 0 && rawPatchReload !== "live" && rawPatchReload !== "startup") throw new Error(`${binName}: profile manifest ${join(dir, "package.json")} dsh.profile.patchReload must be "live" or "startup"`);
+ 	const patchReload = rawPatchReload ?? "live";
+ 	const layers = bundles.map((packageName) => {
+-		const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir);
+-		const declared = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).dsh?.bundle?.patch;
+-		if (declared === void 0) throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`);
+-		const patchPath = join(packageDir, declared);
+-		return {
+-			packageName,
+-			packageDir,
+-			patchPath,
+-			patches: loadOverlayPatches(binName, patchPath)
+-		};
++		const owner = { packageName };
++		try {
++			const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir);
++			owner.packageDir = packageDir;
++			const packageManifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
++			owner.version = packageManifest.version;
++			const declared = packageManifest.dsh?.bundle?.patch;
++			if (declared === void 0) throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`);
++			const patchPath = join(packageDir, declared);
++			return {
++				packageName,
++				packageDir,
++				patchPath,
++				patches: annotatePluginPatches(loadOverlayPatches(binName, patchPath), owner)
++			};
++		} catch (cause) {
++			const error = new Error(`failed to prepare profile bundle ${packageName}`, { cause });
++			error.dshPluginFailure = { stage: "prepare", packageName, owner, chain: [], message: cause instanceof Error ? cause.message : String(cause) };
++			throw error;
++		}
+ 	});
+ 	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
+ 	return {
+@@ -1432,6 +1455,7 @@
+ 	assertEntriesLoaded(ctx, binName);
+ 	const failures = [];
+ 	const rejectionReasons = [];
++	const activationErrors = [];
+ 	for (const entry of ctx.loader.entries()) {
+ 		const fiber = entry.fiber;
+ 		if (fiber === void 0 || entry.disabled) continue;
+@@ -1442,6 +1466,7 @@
+ 				await fiber.await();
+ 			} catch (error) {
+ 				rejectionReasons.push(error);
++				activationErrors.push(entry._failure("activate", error));
+ 				failures.push(`${entry.options.name}: ${formatActivationError(error)}`);
+ 			}
+ 			continue;
+@@ -1451,11 +1476,12 @@
+ 			const subject = missing.length === 1 ? "service" : "services";
+ 			failures.push(`${entry.options.name}: pending (waiting for ${subject}: ${missing.join(", ") || "unknown"})`);
+ 		} else failures.push(`${entry.options.name}: fiber state ${String(state)}`);
++		activationErrors.push(entry._failure("activate", new Error(failures[failures.length - 1])));
+ 	}
+ 	if (failures.length > 0) {
+ 		if (rejectionReasons.length > 0) await observeLoaderRejectionCheckpoint(rejectionReasons);
+ 		const noun = failures.length === 1 ? "entry" : "entries";
+-		throw new Error(`${binName}: ${String(failures.length)} ${noun} did not activate\n${failures.join("\n")}`);
++		throw new Error(`${binName}: ${String(failures.length)} ${noun} did not activate\n${failures.join("\n")}`, { cause: new AggregateError(activationErrors, "loader activation failed") });
+ 	}
+ }
+ /**
+@@ -1503,7 +1529,11 @@
+ 		await assertEntriesActivated(ctx, binName);
+ 		return ctx;
+ 	} catch (cause) {
+-		await ctx.fiber.dispose();
++		try {
++			await ctx.fiber.dispose();
++		} catch (cleanupError) {
++			cause = new AggregateError([cause, cleanupError], "plugin boot and cleanup failed");
++		}
+ 		const detail = cause instanceof Error ? cause.message : String(cause);
+ 		let deepest = cause;
+ 		while (deepest instanceof Error && deepest.cause !== void 0) deepest = deepest.cause;

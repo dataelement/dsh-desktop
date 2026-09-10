@@ -380,7 +380,7 @@ describe('Safe Mode', () => {
           packageName: 'plugin-a',
           installedVersion: '1.0.0',
           latestVersion: '2.0.0',
-          healthStatus: 'incompatible-fixed-in-latest',
+          healthStatus: 'incompatible-upgrade-available',
           healthLabel: '不兼容（最新版 v2.0.0 已适配）',
           upgradeReady: true,
           upgradeVersion: '2.0.0'

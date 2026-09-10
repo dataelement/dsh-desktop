@@ -22,6 +22,30 @@ function report(label, value) {
   process.stderr.write(`[harness-node] ${label}: ${value}\n`)
 }
 
+// Send loader-owned identity before the human-readable error. Do not serialize
+// arbitrary Error properties, plugin config, or the entire context/fiber graph.
+function reportPluginFailures(error) {
+  const failures = []
+  const visited = new Set()
+  function visit(value) {
+    if (!value || typeof value !== 'object' || visited.has(value)) return false
+    visited.add(value)
+    let nested = visit(value.cause)
+    if (value instanceof AggregateError) {
+      for (const child of value.errors) nested = visit(child) || nested
+    }
+    const failure = value.dshPluginFailure
+    if (!nested && failure && typeof failure === 'object') {
+      const { stage, entryId, packageName, owner, chain, message } = failure
+      failures.push({ stage, entryId, packageName, owner, chain, message })
+      return true
+    }
+    return nested
+  }
+  visit(error)
+  if (failures.length) report('plugin failures', JSON.stringify({ version: 1, failures }))
+}
+
 process.on('uncaughtException', (error) => report('uncaught exception', error?.stack ?? error))
 process.on('unhandledRejection', (error) => report('unhandled rejection', error?.stack ?? error))
 
@@ -62,6 +86,7 @@ if (!dshEntryPath) {
     await import(pathToFileURL(dshEntryPath).href)
     process.stdout.write('[harness-node] DSH entry loaded\n')
   } catch (error) {
+    reportPluginFailures(error)
     report('DSH entry failed', error?.stack ?? error)
     process.exitCode = 1
   }

@@ -1,3 +1,5 @@
+import type { PluginStartupFailure } from './plugin-startup-failure'
+
 export type RuntimePhase =
   | 'idle'
   | 'starting'
@@ -13,6 +15,7 @@ export interface RuntimeSnapshot {
   url?: string
   /** Per-process launch token; only `GET /?token=` exchanges it for a session cookie. */
   authToken?: string
+  pluginFailures?: PluginStartupFailure[]
 }
 
 export type UpdatePhase =

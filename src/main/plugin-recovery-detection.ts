@@ -4,7 +4,8 @@ import {
   extractPluginFailureReferences,
   extractSlotConflictName
 } from './runtime/harness-runtime'
-import { resolveProfileRecoveryPlugins } from './state/plugin-recovery'
+import { resolveProfileRecoveryPlugins, resolveStartupFailureOwners } from './state/plugin-recovery'
+import type { PluginStartupFailure } from '../shared/plugin-startup-failure'
 
 export const PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS = 1_500
 export const PLUGIN_RECOVERY_EVIDENCE_POLL_MS = 100
@@ -17,6 +18,7 @@ export interface PluginRecoveryDetection {
 interface DetectPluginRecoveryOptions {
   dshHome: string
   initialLogs: readonly string[]
+  startupFailures?: readonly PluginStartupFailure[]
   readLatestLogs?: () => readonly string[]
   excludedPlugins?: readonly string[]
   slotProviderNodeModulesPaths?: readonly string[]
@@ -39,6 +41,17 @@ function mergeLogs(...groups: readonly (readonly string[])[]): string[] {
 export async function detectPluginRecovery(
   options: DetectPluginRecoveryOptions
 ): Promise<PluginRecoveryDetection> {
+  if (options.startupFailures?.length) {
+    // Explicit load-site provenance is authoritative. Never mix in log-derived
+    // suspects when the loader reported an unknown or protected owner.
+    const owners = options.startupFailures.flatMap((failure) =>
+      failure.owner ? [failure.owner.packageName] : []
+    )
+    return {
+      logs: mergeLogs(options.initialLogs, options.readLatestLogs?.() ?? []),
+      plugins: await resolveStartupFailureOwners(options.dshHome, owners, options.excludedPlugins)
+    }
+  }
   const timeoutMs = Math.max(0, options.timeoutMs ?? 0)
   const pollIntervalMs = Math.max(1, options.pollIntervalMs ?? PLUGIN_RECOVERY_EVIDENCE_POLL_MS)
   const now = options.now ?? Date.now
