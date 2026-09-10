@@ -10,7 +10,7 @@ import { PassThrough } from 'node:stream'
 
 import { installGeneration } from './generations/installer.mjs'
 import {
-  exposeMissingGenerationLinks,
+  publishInstalledGeneration,
   publishGenerationManifest
 } from './generations/projection.mjs'
 import {
@@ -24,7 +24,7 @@ import { resolveMarketRegistry } from './market-registry.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
 
-export const RECOMMENDED_MARKET_VERSION = '^1.40.0'
+export const RECOMMENDED_MARKET_VERSION = '^1.45.1'
 export const MARKET_PACKAGE = 'dshmarket'
 export const MARKET_PROFILE = 'web'
 export const STATUS_PATH = '/dsh-desktop/market-installer/status'
@@ -474,9 +474,9 @@ export function createDesktopPnpmService(options) {
    *
    * The plugin is installed as its own immutable generation rather than into
    * the shared hoisted tree: a fresh directory, promoted by one rename, never
-   * replaced. Only a missing link may be created while Harness is live so the
-   * market can validate a new install; an existing node_modules junction and
-   * the bundle composition change only on the next cold start.
+   * replaced. After installation, the profile link switches immediately so
+   * the unmodified market reads the installed version before success returns.
+   * Already-loaded code may continue using the retained previous generation.
    */
   const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
@@ -500,6 +500,8 @@ export function createDesktopPnpmService(options) {
         const install = await installGeneration({
           dshHome: home,
           pluginSpec: spec,
+          expectedVersion: spec.slice(spec.lastIndexOf('@') + 1),
+          minimumReleaseAge: args.some(arg => /^--config\.(?:minimumReleaseAge|minimum-release-age)=0$/.test(arg)) ? 0 : 1440,
           nodeExecutablePath: executablePath,
           pnpmEntryPath,
           spawnProcess,
@@ -519,13 +521,14 @@ export function createDesktopPnpmService(options) {
           return generation === undefined || generation.pluginName !== install.generation.pluginName
         })
         await writeDesired(home, [...kept, install.generation.id])
-        // dsh-market validates a clean add against node_modules immediately.
-        // Creating a missing path cannot hit Windows' replace-existing rename;
-        // existing links (updates) remain untouched until cold start.
-        const exposed = await exposeMissingGenerationLinks(home)
-        const published = await publishGenerationManifest(home)
-        if (exposed.length > 0) write(`available for validation: ${exposed.join(', ')}`)
-        write(`staged for next restart: ${published.plugins.join(', ')}`)
+        let published
+        try {
+          published = await publishInstalledGeneration(home, install.generation.pluginName)
+        } catch (error) {
+          await writeDesired(home, desired)
+          throw error
+        }
+        write(`installed in profile: ${install.generation.pluginName}@${install.generation.version}`)
         write(`bundles: ${JSON.stringify(published.bundles)}`)
         return { exitCode: 0 }
       })

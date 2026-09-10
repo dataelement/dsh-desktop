@@ -2349,7 +2349,7 @@ async function showSafeModeManager(initial?: {
       const issueById = new Map(compatibility.issues.map((issue) => [issue.id, issue]))
       const selectedIssues = [...new Set(action.issues)]
         .map((id) => issueById.get(id))
-        .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined)
+        .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined && issue.resolution !== 'inspect-only')
       const installedSet = new Set(installed)
       const selectedPlugins = [...new Set(action.plugins)].filter((plugin) => installedSet.has(plugin))
       if (selectedIssues.length === 0 && selectedPlugins.length === 0) {

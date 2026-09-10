@@ -25,8 +25,7 @@
   "scripts": {
     "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
     "dev": "electron-vite dev",
-    "build": "npm run build:market && electron-vite build",
-    "build:market": "tsc -p packages/dshmarket/tsconfig.json",
+    "build": "electron-vite build",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
@@ -274,7 +273,7 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
-    "dshmarket": "file:packages/dshmarket",
+    "dshmarket": "1.45.1",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",
     "pnpm": "10.34.5",

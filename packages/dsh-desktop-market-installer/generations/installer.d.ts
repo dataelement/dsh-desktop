@@ -4,6 +4,9 @@ import type { Generation } from './registry'
 export interface GenerationInstallOptions {
   dshHome: string
   profile?: string
+  strictDepBuilds?: boolean
+  minimumReleaseAge?: number
+  expectedVersion?: string
   pluginSpec: string
   /** Package name expected after installing a non-registry or aliased spec. */
   expectedPluginName?: string

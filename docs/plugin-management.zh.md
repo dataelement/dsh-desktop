@@ -429,6 +429,10 @@ disabled ───────────────→ removed ─→ bootVer
 
 ## 8. 安装、启停、更新、卸载不是同一个动作
 
+当前安装流程（2026-09-10）：macOS 与 Windows 都先在新 generation 安装，再立即切换当前插件的 Profile 链接并同步版本声明，成功后才返回给第三方市场。macOS 使用符号链接，Windows 使用 junction；不会覆盖旧 generation 的文件。链接或声明更新失败时恢复旧链接与 `desired`，如果恢复也失败则报告保留下来的旧链接位置。
+
+磁盘上的已安装版本与当前进程已加载的代码需区分：切换 Profile 后市场可以读取新版，但完整运行状态仍需重启验证。旧 generation 在本次运行期间保留，下次启动且 Harness 尚未运行时由现有 sweep 清理；删除失败记录日志并留待后续启动重试。连续更新而不重启会暂时保留多份旧版。这次变更不承诺保留永久回滚副本，也不清理 pnpm 自己的共享下载缓存。
+
 | 用户动作 | 改动的状态 | 是否删除文件 | 是否需要重启 |
 | --- | --- | --- | --- |
 | 安装 generation | 新 live generation、`desired`、Profile 投影 | 否 | Host/Bundle 生效通常需要 Harness 重启；部分前端能力可热装载 |

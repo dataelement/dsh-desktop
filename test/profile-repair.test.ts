@@ -173,6 +173,8 @@ describe('profile repair', () => {
   })
 
   it('upgrades an older dshmarket baseline to the verified version', async () => {
+    const bundled = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+    expect(VERIFIED_MARKET_BASELINE).toBe(bundled.dependencies.dshmarket)
     const { home } = await profileHome() // profileHome creates dshmarket: '1.15.0'
     const upgraded = await ensureMinimumMarketBaseline(home)
     expect(upgraded).toBe(true)

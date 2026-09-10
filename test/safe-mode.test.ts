@@ -14,6 +14,25 @@ describe('Safe Mode', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
   })
 
+  it('shows static references as informational findings without blocking or selecting a repair', () => {
+    const model = buildSafeModeViewModel({
+      locale: 'zh', plugins: ['dsh-dream-skin'], issues: [{
+        id: 'static:legacy', kind: 'unverified-module-reference', severity: 'warning',
+        packageName: 'dsh-dream-skin', source: 'lib/client.js',
+        detail: 'Legacy compatibility fallback', resolution: 'inspect-only',
+        target: 'dsh-dream-skin', groupId: 'plugin:dsh-dream-skin',
+        groupName: 'dsh-dream-skin', groupKind: 'plugin'
+      }]
+    })
+    expect(model.restartConfirm).toBeUndefined()
+    expect(model.pluginItems[0]?.incompatible).toBe(false)
+    expect(model.issueGroups[0]).toMatchObject({
+      name: 'dsh-dream-skin', severityLabel: '警告', issueIds: [],
+      actionLabel: '仅提示；运行正常时无需处理'
+    })
+    expect(model.issueGroups[0]?.issues[0]?.kindLabel).toBe('兼容性待确认')
+  })
+
   it('explains isolation and presents plugin leftovers in one cleanup plan', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh',

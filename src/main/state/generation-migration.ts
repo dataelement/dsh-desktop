@@ -30,7 +30,8 @@ const MARKER = '.generations-migrated'
 const DEFER_MARKER = '.generations-deferred.json'
 const SNAPSHOT_SUFFIX = '.pre-generations'
 const SNAPSHOT_STATE = '.generations-pre-migration.json'
-const MIGRATION_PROTOCOL_VERSION = 4
+// Retry profiles deferred by the old root-entry dependency validator.
+const MIGRATION_PROTOCOL_VERSION = 6
 const SNAPSHOT_PROTOCOL_VERSION = 1
 const DEFER_RETRY_MS = 6 * 60 * 60 * 1000
 
@@ -510,7 +511,7 @@ async function rewriteManifest(dshHome: string): Promise<void> {
   for (const [name, spec] of Object.entries(snapshot.dependencies ?? {})) {
     if (KEEP_IN_SHARED_TREE.has(name)) keptDeps[name] = spec as string
   }
-  if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.40.0'
+  if (keptDeps.dshmarket === undefined) keptDeps.dshmarket = '^1.45.1'
 
   // Bundles are left to projection, which runs next and knows the generations.
   // Here we only trim to the shared-tree packages and keep in-box bundles.

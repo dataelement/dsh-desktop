@@ -220,6 +220,18 @@ describe('one-time profile migration to generations', () => {
     expect(installCalls.length).toBeGreaterThan(firstAttempts)
   })
 
+  it('retries a failure recorded by the previous dependency validation protocol', async () => {
+    const home = await preUpgradeProfile({ 'plugin-one': '1.0.0' })
+    await migrateProfileToGenerations(deps(home, async () => ({ ok: false, detail: 'failed' })))
+    const marker = join(home, 'profiles', 'web', '.generations-deferred.json')
+    const deferred = JSON.parse(await readFile(marker, 'utf8'))
+    deferred.protocol = 4
+    await writeFile(marker, JSON.stringify(deferred))
+    const attempts = installCalls.length
+    expect(await migrateProfileToGenerations(deps(home))).toEqual({ outcome: 'migrated' })
+    expect(installCalls.length).toBeGreaterThan(attempts)
+  })
+
   it('defers an unreadable installed plugin without touching the active profile or retrying unchanged input', async () => {
     const home = await preUpgradeProfile({ 'broken-plugin': '1.0.0' })
     const installedManifest = join(

@@ -141,7 +141,7 @@ export function isSemverLessThan(a: string, b: string): boolean {
   return a3 < b3
 }
 
-export const VERIFIED_MARKET_BASELINE = '1.40.0'
+export const VERIFIED_MARKET_BASELINE = '1.45.1'
 
 /**
  * Ensure an installed dshmarket dependency satisfies the verified baseline for

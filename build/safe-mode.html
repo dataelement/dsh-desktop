@@ -259,7 +259,8 @@
         title.append(name, badge); main.appendChild(title)
         const meta = document.createElement('div'); meta.className = 'issue-meta'; meta.textContent = [group.kindLabel, group.countLabel].filter(Boolean).join(' · '); main.appendChild(meta)
         const action = document.createElement('div'); action.className = 'issue-action'; action.textContent = String(group.actionLabel || ''); main.appendChild(action)
-        label.append(checkbox, main); item.appendChild(label); list.appendChild(item); issueCheckboxes.push(checkbox)
+        if ((group.issueIds || []).length > 0) { label.appendChild(checkbox); issueCheckboxes.push(checkbox) }
+        label.appendChild(main); item.appendChild(label); list.appendChild(item)
         const details = document.createElement('details'); details.className = 'issue-details'
         const detailsSummary = document.createElement('summary'); detailsSummary.textContent = String(group.detailLabel || group.countLabel || '')
         const findings = document.createElement('ul'); findings.className = 'findings'

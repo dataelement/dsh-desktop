@@ -1,14 +1,30 @@
 import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDesktopPnpmService } from '../packages/dsh-desktop-market-installer/index.js'
 import { installGeneration } from '../packages/dsh-desktop-market-installer/generations/installer.mjs'
 import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection.mjs'
 import {
   listGenerations,
+  sweepRegistry,
   readDesired
 } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
+
+const renameFault = vi.hoisted(() => ({ phase: '' }))
+vi.mock('node:fs/promises', async importOriginal => {
+  const fs = await importOriginal()
+  return { ...fs, rename: async (from, to) => {
+    const matches = renameFault.phase === 'old-link' ? String(to).includes('.dsh-previous-')
+      : renameFault.phase === 'new-link' ? String(from).includes('.dsh-next-')
+      : renameFault.phase === 'manifest' ? String(to).replaceAll('\\', '/').endsWith('/profiles/web/package.json') : false
+    if (matches) {
+      renameFault.phase = ''
+      throw Object.assign(new Error('EPERM: simulated occupied path'), { code: 'EPERM' })
+    }
+    return fs.rename(from, to)
+  } }
+})
 
 /**
  * `runExternalMarketPluginInstall` is the boundary dsh-market 1.6+
@@ -35,6 +51,7 @@ describe('the market install boundary', () => {
   }
 
   afterEach(async () => {
+    renameFault.phase = ''
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
   })
@@ -118,6 +135,29 @@ describe('the market install boundary', () => {
     expect(npmrc).toContain('registry=https://mirrors.cloud.tencent.com/npm/')
   })
 
+  it('passes release-age overrides and refuses to promote an install with blocked scripts', async () => {
+    const home = await freshHome()
+    const before = await readDesired(home)
+    const policies = []
+    const svc = service(home, async staging => {
+      policies.push(await readFile(join(staging, '.npmrc'), 'utf8'))
+      return { code: 1, output: 'ERR_PNPM_IGNORED_BUILDS Ignored build scripts: node-pty' }
+    })
+    const failed = await drainHandle(svc.runExternalMarketPluginInstall(
+      ['add', 'demo@1.0.0'], join(home, 'profiles', 'web')))
+    expect(failed.exitCode).toBe(1)
+    expect(failed.stderr).toContain('ERR_PNPM_IGNORED_BUILDS')
+    expect(policies[0]).not.toContain('strict-dep-builds=')
+    expect(policies[0]).toContain('minimum-release-age=1440')
+    await drainHandle(svc.runExternalMarketPluginInstall(
+      ['add', '--config.minimumReleaseAge=0', 'demo@1.0.0'], join(home, 'profiles', 'web')))
+    expect(policies[1]).toContain('minimum-release-age=0')
+    await drainHandle(svc.runExternalMarketPluginInstall(
+      ['add', '--config.minimum-release-age=0', 'demo@1.0.0'], join(home, 'profiles', 'web')))
+    expect(policies[2]).toContain('minimum-release-age=0')
+    expect(await readDesired(home)).toEqual(before)
+  })
+
   it('exposes a new generation for market validation and defers bundle activation until cold start', async () => {
     const home = await freshHome()
     const svc = service(home, stubGenerationInstall('demo-plugin', '9.9.9'))
@@ -131,7 +171,7 @@ describe('the market install boundary', () => {
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('isolated generation')
-    expect(result.stdout).toContain('staged for next restart: demo-plugin')
+    expect(result.stdout).toContain('installed in profile: demo-plugin@9.9.9')
 
     const desired = await readDesired(home)
     expect(desired).toHaveLength(1)
@@ -219,7 +259,7 @@ describe('the market install boundary', () => {
     expect((await readDesired(home))[0]).toMatch(/^broken-plugin\+2\.0\.0\+/u)
   })
 
-  it('keeps the active generation link unchanged until an update reaches cold start', async () => {
+  it('publishes the new version before returning success and retains old files until startup cleanup', async () => {
     const home = await freshHome()
     await drainHandle(
       service(home, stubGenerationInstall('widget', '1.0.0')).runExternalMarketPluginInstall(
@@ -238,12 +278,37 @@ describe('the market install boundary', () => {
       )
     )
 
-    expect(await readlink(link)).toBe(firstTarget)
+    expect(await readlink(link)).not.toBe(firstTarget)
+    expect(JSON.parse(await readFile(join(link, 'package.json'), 'utf8')).version).toBe('2.0.0')
+    expect(JSON.parse(await readFile(join(firstTarget, 'package.json'), 'utf8')).version).toBe('1.0.0')
     const staged = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
     expect(staged.dependencies.widget).toBe('2.0.0')
 
+    await sweepRegistry(home)
     await projectGenerations(home)
+    await expect(lstat(firstTarget)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(await readlink(link)).not.toBe(firstTarget)
+  })
+
+  it.each(['old-link', 'new-link', 'manifest'])('restores the previous profile when %s switching fails', async phase => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles/web')
+    await drainHandle(service(home, stubGenerationInstall('widget', '1.0.0'))
+      .runExternalMarketPluginInstall(['add', 'widget@1.0.0'], profile))
+    await projectGenerations(home)
+    const link = join(profile, 'node_modules/widget')
+    const oldTarget = await readlink(link)
+    const beforeManifest = await readFile(join(profile, 'package.json'), 'utf8')
+    const beforeDesired = await readDesired(home)
+    renameFault.phase = phase
+    const result = await drainHandle(service(home, stubGenerationInstall('widget', '2.0.0'))
+      .runExternalMarketPluginInstall(['add', 'widget@2.0.0'], profile))
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('EPERM')
+    expect(await readlink(link)).toBe(oldTarget)
+    expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(beforeManifest)
+    expect(await readDesired(home)).toEqual(beforeDesired)
+    expect(JSON.parse(await readFile(join(link, 'package.json'), 'utf8')).version).toBe('1.0.0')
   })
 
   it('replaces an earlier generation of the same plugin', async () => {

@@ -35,10 +35,12 @@ function pluginRealDirectory(profileNodeModules: string, pluginName: string): st
 export type ProfileCompatibilityIssueKind =
   | 'core-version-mismatch'
   | 'missing-client-module'
+  | 'unverified-module-reference'
   | 'workspace-version-mismatch'
 
 export type ProfileCompatibilityResolution =
   | 'disable-plugin'
+  | 'inspect-only'
   | 'quarantine-workspace'
   | 'rebuild-profile'
 
@@ -395,16 +397,14 @@ export async function inspectProfileCompatibility(
             ? `${pluginName}:${request}`
             : `${pluginName}:${componentName}:${request}`
           issues.push({
-            id: issueId('missing-client-module', target),
-            kind: 'missing-client-module',
-            severity: 'blocking',
+            id: issueId('unverified-module-reference', target),
+            kind: 'unverified-module-reference',
+            severity: 'warning',
             packageName: componentName,
             installedVersion: componentManifest.version,
             source: `${componentName}/${moduleSource.source}`,
-            detail: moduleSource.client
-              ? `The client bundle requires ${request}, which this Harness no longer provides.`
-              : `The plugin component requires ${request}, which neither this Harness nor the profile provides.`,
-            resolution: 'disable-plugin',
+            detail: `静态扫描发现 ${request} 引用，但未在宿主依赖中确认该包。它可能仅用于旧版本兼容或条件分支，不代表加载失败；若插件运行正常，无需处理。 / Static scan found a reference to ${request} without confirming its package in the host dependencies. It may be a compatibility fallback or conditional path; this does not establish a load failure. No action is needed if the plugin works.`,
+            resolution: 'inspect-only',
             target: pluginName,
             groupId: `plugin:${pluginName}`,
             groupName: pluginName,
