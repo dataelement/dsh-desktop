@@ -139,6 +139,7 @@ import { upgradePluginToGeneration } from './state/plugin-upgrade'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { windowsMenuViewBounds } from './windows-menu-view'
 import { shouldKeepRunningInBackground } from './close-to-tray'
+import { isWindowsCopyShortcut } from './copy-shortcut'
 import {
   MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
   shouldReloadAfterMainWindowRendererLoss
@@ -966,6 +967,11 @@ function createWindow(): BrowserWindow {
   installPluginRecoveryNavigation(window)
   secureWindow(window)
   installContextMenu(window, harnessLocale)
+  window.webContents.on('before-input-event', (event, input) => {
+    if (!isWindowsCopyShortcut(input, process.platform)) return
+    event.preventDefault()
+    window.webContents.copy()
+  })
   installMainWindowRendererRecovery(window)
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined

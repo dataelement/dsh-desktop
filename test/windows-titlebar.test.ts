@@ -24,6 +24,8 @@ describe('Windows titlebar menu', () => {
     expect(main).toContain('autoHideMenuBar: true')
     expect(main).toContain('window.setMenuBarVisibility(false)')
     expect(main).toContain('Menu.setApplicationMenu(Menu.buildFromTemplate(template))')
+    expect(main).toContain("window.webContents.on('before-input-event'")
+    expect(main).toContain('window.webContents.copy()')
   })
 
   it('keeps the entire Windows app full-height without a visible titlebar band', async () => {
