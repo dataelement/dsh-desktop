@@ -90,7 +90,8 @@ describe('DSH Desktop client slot occupants', () => {
       'sidebar.brand.name',
       'conversation.hero.brand.mark'
     ])
-    expect(appended).toHaveLength(1)
+    // The mark is drawn in currentColor, so no theme stylesheet is injected.
+    expect(appended).toHaveLength(0)
 
     const sidebarName = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.name'
@@ -103,6 +104,9 @@ describe('DSH Desktop client slot occupants', () => {
     )!.component({ size: 24 }) as { type: unknown; props: Record<string, unknown> }
     expect(sidebarMark.type).toBe('svg')
     expect(sidebarMark.props.height).toBe(17)
+    const [markPath] = sidebarMark.props.children as Array<{ type: unknown; props: Record<string, unknown> }>
+    expect(markPath.type).toBe('path')
+    expect(markPath.props.fill).toBe('currentColor')
 
     const heroMark = registrations.find(
       ({ config }) => config.name === 'conversation.hero.brand.mark'
