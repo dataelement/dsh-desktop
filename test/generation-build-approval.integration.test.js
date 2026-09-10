@@ -19,9 +19,10 @@ it('real pnpm refuses unapproved scripts and executes an explicitly approved reb
     for (const name of ['dependency', 'plugin']) await mkdir(join(root, name, 'package'), { recursive: true })
     await writeFile(join(root, 'dependency/package/package.json'), JSON.stringify({
       name: 'dsh-test-build-dependency', version: '1.0.0', main: 'built.js',
-      scripts: { install: 'node build.cjs' }
+      // Use the same executable that runs pnpm, not a PATH-selected node.cmd.
+      scripts: { install: `"${process.execPath}" build.cjs` }
     }))
-    await writeFile(join(root, 'dependency/package/build.cjs'), "require('node:fs').writeFileSync('built.js', 'module.exports = 42')")
+    await writeFile(join(root, 'dependency/package/build.cjs'), "require('node:fs').writeFileSync(require('node:path').join(__dirname, 'built.js'), 'module.exports = 42')")
     const dependencyTar = join(root, 'dependency.tgz')
     await run('tar', ['-czf', dependencyTar, '-C', join(root, 'dependency'), 'package'])
     await writeFile(join(root, 'plugin/package/package.json'), JSON.stringify({
@@ -55,8 +56,11 @@ it('real pnpm refuses unapproved scripts and executes an explicitly approved reb
     const profile = join(home, 'profiles/web')
     await mkdir(profile, { recursive: true })
     await writeFile(join(profile, 'pnpm-workspace.yaml'), 'allowBuilds:\n  dsh-test-build-dependency: true\n')
-    const approved = await installGeneration(options)
+    let buildOutput = ''
+    const approved = await installGeneration({ ...options, onOutput: chunk => { buildOutput += chunk } })
     expect(approved.ok, approved.detail).toBe(true)
-    expect(await readFile(join(approved.generation.directory, 'node_modules/dsh-test-build-dependency/built.js'), 'utf8')).toBe('module.exports = 42')
+    const builtFile = join(approved.generation.directory, 'node_modules/dsh-test-build-dependency/built.js')
+    const built = await readFile(builtFile, 'utf8').catch(error => String(error))
+    expect(built, `Approved build must produce ${builtFile}\n${buildOutput}`).toBe('module.exports = 42')
   } finally { if (server) await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) }
 }, 30_000)
