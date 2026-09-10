@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -361,6 +362,102 @@ describe('the market install boundary', () => {
         sourceSpec: 'github:example/source-plugin#main'
       })
     ])
+  })
+
+  /** A stubbed dsh CLI child that reports one clean pnpm run. */
+  function fakeCliSpawn(calls) {
+    return (_executablePath, args, options) => {
+      calls.push({ args, options })
+      const child = new EventEmitter()
+      child.stdout = new EventEmitter()
+      child.stderr = new EventEmitter()
+      child.pid = 4242
+      child.exitCode = null
+      setImmediate(() => {
+        child.stdout.emit('data', Buffer.from('Progress: resolved 1, done\n'))
+        child.exitCode = 0
+        child.emit('close', 0, null)
+      })
+      return child
+    }
+  }
+
+  it('updates dshmarket in the shared tree rather than switching its non-link directory', async () => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles', 'web')
+    // dshmarket is a core bundle: a real hoisted directory, never a link.
+    await mkdir(join(profile, 'node_modules', 'dshmarket'), { recursive: true })
+    await writeFile(
+      join(profile, 'node_modules', 'dshmarket', 'package.json'),
+      JSON.stringify({ name: 'dshmarket', version: '1.39.0' })
+    )
+    await mkdir(join(profile, '.dsh-market'), { recursive: true })
+    await writeFile(
+      join(profile, '.dsh-market', 'state.json'),
+      JSON.stringify({ region: 'china', regionAuto: true })
+    )
+
+    const calls = []
+    const svc = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'),
+      dshEntryPath: join(home, 'bin.js'),
+      executablePath: process.execPath,
+      home,
+      environment: {},
+      spawnProcess: fakeCliSpawn(calls)
+    })
+
+    const result = await drainHandle(
+      svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.45.1'], profile)
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('shared profile')
+    // Routed through the ordinary shared-tree `add`, never installGeneration.
+    expect(calls).toHaveLength(1)
+    expect(calls[0].args).toEqual(
+      expect.arrayContaining([
+        'plugin', '--profile', 'web', 'add', '--workspace-root', 'dshmarket@1.45.1'
+      ])
+    )
+    // Pinned to the market's own registry, exactly as the generation path is.
+    expect(calls[0].options.env.npm_config_registry).toBe('https://mirrors.cloud.tencent.com/npm')
+    // No generation artifacts: desired.json untouched, entry stays a real dir.
+    expect(await readDesired(home)).toEqual([])
+    expect((await lstat(join(profile, 'node_modules', 'dshmarket'))).isSymbolicLink()).toBe(false)
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(manifest.pnpm?.overrides?.dshmarket).toBeUndefined()
+  })
+
+  it('reports a failed dshmarket shared-tree update', async () => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles', 'web')
+    const svc = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'),
+      dshEntryPath: join(home, 'bin.js'),
+      executablePath: process.execPath,
+      home,
+      environment: {},
+      spawnProcess: (_e, _a, _o) => {
+        const child = new EventEmitter()
+        child.stdout = new EventEmitter()
+        child.stderr = new EventEmitter()
+        child.exitCode = null
+        setImmediate(() => {
+          child.stderr.emit('data', Buffer.from('ERR_PNPM_NO_MATCHING_VERSION\n'))
+          child.exitCode = 1
+          child.emit('close', 1, null)
+        })
+        return child
+      }
+    })
+
+    const result = await drainHandle(
+      svc.runExternalMarketPluginInstall(['add', 'dshmarket@9.9.9'], profile)
+    )
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('updating dshmarket exited with code 1')
   })
 
   it('serialises against a concurrent operation', async () => {

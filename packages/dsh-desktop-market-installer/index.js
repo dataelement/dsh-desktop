@@ -389,6 +389,12 @@ function removalTarget(args) {
   return args.slice(1).find((argument) => !argument.startsWith('-'))
 }
 
+/** The package name in an `add` spec: `dshmarket@1.45.1` → `dshmarket`. */
+export function packageNameFromSpec(spec) {
+  const at = spec.lastIndexOf('@')
+  return at > 0 ? spec.slice(0, at) : spec
+}
+
 /**
  * dsh-market routes ordinary removals through `runPlugin`. Generation plugins
  * must instead update desired.json, otherwise the next projection resurrects
@@ -477,6 +483,14 @@ export function createDesktopPnpmService(options) {
    * replaced. After installation, the profile link switches immediately so
    * the unmodified market reads the installed version before success returns.
    * Already-loaded code may continue using the retained previous generation.
+   *
+   * `dshmarket` is the exception: it is a core bundle the migration keeps in
+   * the shared hoisted tree (`KEEP_IN_SHARED_TREE`), so its profile entry is a
+   * real directory, not a generation link. `publishInstalledGeneration` refuses
+   * to switch a non-link directory by design, which made every market
+   * self-update fail with "Cannot switch a non-link plugin directory" once the
+   * immediate-switch path landed (#352). Route a `dshmarket` spec through the
+   * ordinary shared-tree `add` instead, which updates the directory in place.
    */
   const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
@@ -484,6 +498,72 @@ export function createDesktopPnpmService(options) {
     if (active) throw new Error('Another desktop pnpm operation is already running.')
     const spec = args.slice(1).find((argument) => !argument.startsWith('-'))
     if (spec === undefined) throw new Error('The install boundary needs a package spec.')
+
+    if (packageNameFromSpec(spec) === MARKET_PACKAGE) {
+      let child
+      const marketHandle = asHandle(async ({ write }) =>
+        withRegistryLock(home, async () => {
+          write(`Updating ${spec} in the shared profile…`)
+          // Keep the two halves on one registry, exactly as the generation
+          // path does (#337): the market chose this version from its region's
+          // registry, so the fetch has to use the same one.
+          const registry = await resolveMarketRegistry({
+            profileDir: profileDirectory(home),
+            args,
+            environment
+          })
+          const flags = args
+            .slice(1)
+            .filter((argument) => argument.startsWith('-') && argument !== '--workspace-root')
+          const addArgs = ['add', '--workspace-root', spec, ...flags]
+          const env = buildPnpmEnvironment(binDirectory, environment, executablePath)
+          if (registry !== null) env.npm_config_registry = registry
+          child = spawnProcess(
+            executablePath,
+            [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...addArgs],
+            {
+              cwd: invokingDir,
+              env,
+              stdio: ['ignore', 'pipe', 'pipe'],
+              windowsHide: true,
+              detached: process.platform !== 'win32'
+            }
+          )
+          signal?.addEventListener('abort', () => killProcessTree(child), { once: true })
+          child.stdout?.on('data', (chunk) => write(chunk.toString('utf8').replace(/\r?\n$/u, '')))
+          child.stderr?.on('data', (chunk) => write(chunk.toString('utf8').replace(/\r?\n$/u, '')))
+          const exit = await new Promise((resolveExit, rejectExit) => {
+            child.once('error', rejectExit)
+            child.once('close', (code, exitSignal) => resolveExit({ code, exitSignal }))
+          })
+          if (exit.code !== 0) {
+            return {
+              exitCode: 1,
+              message: `updating ${MARKET_PACKAGE} exited with ${
+                exit.exitSignal ? `signal ${exit.exitSignal}` : `code ${exit.code}`
+              }`
+            }
+          }
+          // A stale generation pointer would make the next launch try to
+          // re-link dshmarket over the directory pnpm just refreshed. It has
+          // no place in `desired.json` — drop it if an earlier broken build
+          // left one behind.
+          const [desired, generations] = await Promise.all([readDesired(home), listGenerations(home)])
+          const marketGenerationIds = new Set(
+            generations.filter((generation) => generation.pluginName === MARKET_PACKAGE).map((generation) => generation.id)
+          )
+          const pruned = desired.filter((id) => !marketGenerationIds.has(id))
+          if (pruned.length !== desired.length) await writeDesired(home, pruned)
+          write(`updated in profile: ${spec}`)
+          return { exitCode: 0 }
+        })
+      )
+      active = marketHandle
+      void marketHandle.done.finally(() => {
+        if (active === marketHandle) active = undefined
+      })
+      return marketHandle
+    }
 
     const handle = asHandle(async ({ write }) =>
       withRegistryLock(home, async () => {
