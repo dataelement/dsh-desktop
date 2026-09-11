@@ -5,6 +5,8 @@ export interface GenerationInstallOptions {
   dshHome: string
   profile?: string
   strictDepBuilds?: boolean
+  /** Explicit market peer policy; omitted retains pnpm's default behavior. */
+  autoInstallPeers?: boolean
   minimumReleaseAge?: number
   expectedVersion?: string
   pluginSpec: string

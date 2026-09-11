@@ -135,6 +135,8 @@ async function defaultRunInstall(options, stagingDir) {
       options.nodeExecutablePath,
       [options.pnpmEntryPath, 'add', options.pluginSpec,
         ...(options.registry ? [`--registry=${options.registry}`] : []),
+        ...(typeof options.autoInstallPeers === 'boolean'
+          ? [`--config.auto-install-peers=${options.autoInstallPeers}`] : []),
         ...(options.strictDepBuilds === true ? ['--config.strict-dep-builds=true'] : []),
         ...(Number.isSafeInteger(options.minimumReleaseAge) && options.minimumReleaseAge >= 0
           ? [`--config.minimum-release-age=${options.minimumReleaseAge}`] : [])

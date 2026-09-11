@@ -112,6 +112,46 @@ describe('the market install boundary', () => {
     expect(typeof svc.runExternalMarketPluginInstall).toBe('function')
   })
 
+  it.each(['auto-install-peers', 'autoInstallPeers'])('preserves %s on a peer-fetch retry through the pnpm subprocess', async key => {
+    const home = await freshHome()
+    const calls = []
+    const svc = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'),
+      dshEntryPath: join(home, 'bin.js'),
+      executablePath: process.execPath,
+      home,
+      spawnProcess: (_exe, args, options) => {
+        calls.push(args)
+        const child = new EventEmitter()
+        child.stdout = new EventEmitter()
+        child.stderr = new EventEmitter()
+        child.kill = () => {}
+        queueMicrotask(async () => {
+          if (!args.includes('--config.auto-install-peers=false')) {
+            child.stderr.emit('data', Buffer.from('ERR_PNPM_FETCH_404 @deepseek-ai/dsh-type-meta Not Found'))
+            child.emit('close', 1)
+            return
+          }
+          await stubGenerationInstall('demo-plugin', '1.2.4')(options.cwd)
+          child.emit('close', 0)
+        })
+        return child
+      }
+    })
+    const profile = join(home, 'profiles', 'web')
+    const first = await drainHandle(svc.runExternalMarketPluginInstall(['add', 'demo-plugin@1.2.4'], profile))
+    expect(first.exitCode).toBe(1)
+    expect(first.stderr).toContain('ERR_PNPM_FETCH_404')
+    const retry = await drainHandle(svc.runExternalMarketPluginInstall(
+      ['add', `--config.${key}=false`, 'demo-plugin@1.2.4'], profile))
+    expect(retry.exitCode).toBe(0)
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).not.toContain('--config.auto-install-peers=false')
+    expect(calls[1]).toContain('--config.auto-install-peers=false')
+    for (const args of calls) expect(args[2]).toBe('demo-plugin@1.2.4')
+    expect(readInstalledVersion('web', 'demo-plugin', profile)).toBe('1.2.4')
+  })
+
   it('fetches from the registry the market read version metadata from (#337)', async () => {
     const home = await freshHome()
     await mkdir(join(home, 'profiles', 'web', '.dsh-market'), { recursive: true })

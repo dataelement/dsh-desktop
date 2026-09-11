@@ -589,6 +589,12 @@ export function createDesktopPnpmService(options) {
           dshHome: home,
           pluginSpec: spec,
           expectedVersion: spec.slice(spec.lastIndexOf('@') + 1),
+          // Preserve the market's peer-fetch recovery policy across the
+          // Profile -> isolated generation boundary (including camelCase).
+          autoInstallPeers: args.reduce((value, arg) => {
+            const match = /^--config\.(?:autoInstallPeers|auto-install-peers)=(true|false)$/.exec(arg)
+            return match ? match[1] === 'true' : value
+          }, undefined),
           minimumReleaseAge: args.some(arg => /^--config\.(?:minimumReleaseAge|minimum-release-age)=0$/.test(arg)) ? 0 : 1440,
           nodeExecutablePath: executablePath,
           pnpmEntryPath,
