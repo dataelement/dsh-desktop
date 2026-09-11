@@ -27,19 +27,40 @@ describe('desktop service', () => {
     expect(isPrereleaseVersion('0.9.0-rc.1+build')).toBe(true)
     expect(() => desktopPlatform('linux', 'x64')).toThrow('Unsupported')
   })
-  it('uploads exactly the last 100 lines, with redaction before disk, and deletes only after acknowledgment', async () => {
+  it('uploads exactly the last 100 lines, with redaction before disk, and consumes the report after one upload attempt', async () => {
     const { options, request, service, dir } = fixture()
     writeFileSync(options.logPath, Array.from({ length: 200 }, (_, n) => `line ${n} api_key=privateValue`).join('\r\n') + '\r\n')
     service.capture('startup-failure', 'Bearer privateToken')
     const report = queued(service, dir)[0]
     expect(report.lines).toHaveLength(100); expect(report.lines[0]).toContain('line 100 ')
     expect(report.lines.at(-1)).toContain('line 199 '); expect(JSON.stringify(report)).not.toContain('private')
-    await service.flush(); expect(service.pending()).toHaveLength(1)
-    request.mockImplementation(async () => new Response(JSON.stringify({ accepted: true, eventId: 'wrong' })))
-    await service.flush(); expect(service.pending()).toHaveLength(1)
-    request.mockImplementation(async () => new Response(JSON.stringify({ accepted: true, eventId: report.eventId })))
     await service.flush(); expect(service.pending()).toHaveLength(0)
+    await service.flush()
+    await new DesktopService(options).flush()
+    expect(request).toHaveBeenCalledTimes(1)
     expect(request.mock.calls.at(-1)?.[0]).toBe(SERVICE_URL)
+  })
+  it.each([400, 500, 200])('discards reports on HTTP %s without retrying and continues draining', async status => {
+    const { service, request, options } = fixture()
+    request.mockImplementation(async () => new Response('invalid acknowledgment', { status }))
+    service.capture('startup-failure', 'first')
+    service.capture('renderer-crash', 'second')
+    await service.flush()
+    expect(service.pending()).toHaveLength(0)
+    await new DesktopService(options).flush()
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+  it('drains new reports captured while a request is in flight even if it fails', async () => {
+    const { service, request } = fixture()
+    let reject!: (error: Error) => void
+    request.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
+    service.capture('startup-failure', 'first')
+    const sending = service.flush()
+    service.capture('renderer-crash', 'second')
+    reject(new Error('offline'))
+    await sending
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(service.pending()).toHaveLength(0)
   })
   it('bounds huge lines, preserves partial lines, and reports missing logs', () => {
     const { options } = fixture()
@@ -48,7 +69,7 @@ describe('desktop service', () => {
     writeFileSync(options.logPath, 'x'.repeat(2_000_000) + '\nlast')
     expect(tailLog(options.logPath)).toEqual({ lines: ['last'], logStatus: 'truncated' })
   })
-  it('bounds the queue and coalesces concurrent retries', async () => {
+  it('bounds the queue and coalesces concurrent uploads', async () => {
     const { service, request } = fixture()
     for (let i = 0; i < 55; i++) service.capture('startup-failure', 'failure')
     expect(service.pending()).toHaveLength(50)

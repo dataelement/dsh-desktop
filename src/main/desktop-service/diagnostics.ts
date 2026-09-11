@@ -34,7 +34,6 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   app.prependListener('child-process-gone', childGone)
   const clean = () => safe(() => service.markCleanExit())
   app.on('will-quit', clean)
-  let timer: NodeJS.Timeout | undefined
   let previousAttempt = -1
   let wasReady = false
   let previousPhase: RuntimeSnapshot['phase'] | undefined
@@ -43,8 +42,6 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
       if (canSend) return
       canSend = true
       flush()
-      timer = setInterval(flush, 30_000)
-      timer.unref()
     },
     runtimeChanged(snapshot: RuntimeSnapshot, flushLog: () => Promise<void>, attempt = 0) {
       if (attempt !== previousAttempt) wasReady = false
@@ -61,7 +58,6 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
     startupFailed(error: unknown) { capture('startup-failure', error instanceof Error ? error.stack ?? error.message : String(error)) },
     markCleanExit: clean,
     dispose() {
-      clearInterval(timer)
       processEvents.removeListener('uncaughtExceptionMonitor', fatal)
       app.removeListener('web-contents-created', created)
       app.removeListener('child-process-gone', childGone)

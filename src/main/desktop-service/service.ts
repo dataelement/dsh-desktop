@@ -102,18 +102,17 @@ export class DesktopService {
     return this.flushing
   }
   private async flushPending(): Promise<void> {
-    for (const name of this.pending()) {
+    // Consume before sending: even an interrupted request must not be retried.
+    for (let name = this.pending()[0]; name; name = this.pending()[0]) {
       const path = join(this.outbox, name)
+      const body = readFileSync(path, 'utf8')
+      unlinkSync(path)
       try {
-        const body = readFileSync(path, 'utf8')
-        const response = await this.options.request(SERVICE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000), redirect: 'error' })
-        if (!response.ok) return
-        const receipt = await response.json() as { accepted?: boolean; eventId?: string }
-        if (!receipt.accepted || receipt.eventId !== name.slice(0, -5)) return
-        if (existsSync(path)) unlinkSync(path)
-      } catch { return }
+        await this.options.request(SERVICE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000), redirect: 'error' })
+      } catch { /* Best effort: failed reports are discarded. */ }
     }
   }
+
   async checkUpdate(): Promise<UpdateDecision> {
     const query = new URLSearchParams({ installationId: this.installationId, currentVersion: this.options.version, platform: this.platform })
     const response = await this.options.request(`${SERVICE_URL}/v1/updates/check?${query}`, { signal: AbortSignal.timeout(5000), redirect: 'error' })
