@@ -473,23 +473,33 @@ describe('the market install boundary', () => {
     expect(manifest.pnpm?.overrides?.dshmarket).toBeUndefined()
   })
 
-  it('updates a projected Market without invoking the shared-tree CLI', async () => {
+  it('collapses a projected Market generation back into the shared tree on update', async () => {
     const home = await freshHome()
     const profile = join(home, 'profiles/web')
+    // A build from before this fix left dshmarket projected as a generation.
     const first = await installGeneration({
       dshHome: home, pluginSpec: 'dshmarket@1.45.1', nodeExecutablePath: process.execPath,
       pnpmEntryPath: 'unused', runInstall: stubGenerationInstall('dshmarket', '1.45.1')
     })
     await writeDesired(home, [first.generation.id])
     await projectGenerations(home)
-    const oldTarget = await readlink(join(profile, 'node_modules/dshmarket'))
-    const result = await drainHandle(service(home, stubGenerationInstall('dshmarket', '1.46.0'))
-      .runExternalMarketPluginInstall(['add', 'dshmarket@1.46.0'], profile))
+    const marketPath = join(profile, 'node_modules/dshmarket')
+    expect((await lstat(marketPath)).isSymbolicLink()).toBe(true)
+
+    const calls = []
+    const svc = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'), dshEntryPath: join(home, 'bin.js'),
+      executablePath: process.execPath, home, environment: {}, spawnProcess: fakeCliSpawn(calls)
+    })
+    const result = await drainHandle(svc.runExternalMarketPluginInstall(['add', 'dshmarket@1.46.0'], profile))
+
     expect(result.exitCode).toBe(0)
+    // Never the generation path: the shared-tree CLI ran instead.
+    expect(calls).toHaveLength(1)
     expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.46.0')
-    expect(JSON.parse(await readFile(join(oldTarget, 'package.json'), 'utf8')).version).toBe('1.45.1')
-    await projectGenerations(home)
-    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.46.0')
+    expect((await lstat(marketPath)).isSymbolicLink()).toBe(false)
+    // The stale generation pointer has no further purpose.
+    expect(await readDesired(home)).toEqual([])
   })
 
   it('repairs stale Market staging without changing an ordinary plugin during shared-tree update', async () => {

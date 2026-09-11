@@ -470,16 +470,21 @@ export function createDesktopPnpmService(options) {
     return { stdout, stderr, done, cancel }
   }
 
-  // Only shared-tree Market entries reach this path. Never let pnpm own
-  // ordinary generation links, including a Market upgraded at cold start.
+  // dshmarket is a core bundle the migration keeps hoisted in the shared
+  // tree (KEEP_IN_SHARED_TREE in generation-migration.ts) and never a
+  // generation, regardless of what shape its node_modules entry happens to
+  // be in right now. An earlier build could still have left it projected as
+  // one — that ownership, and the symlink itself, are undone here before
+  // pnpm is allowed to touch the path, so dshmarket always lands back as a
+  // real directory.
   const updateSharedMarket = async (args, spec, invokingDir, write, isCancelled, setCancel) => {
     const profile = profileDirectory(home)
     const manifestPath = join(profile, 'package.json')
+    const marketPath = join(profile, 'node_modules', MARKET_PACKAGE)
     const before = await readFile(manifestPath, 'utf8')
     const manifest = JSON.parse(before)
     const owned = manifest.dsh?.desktop?.generationProjection?.plugins?.[MARKET_PACKAGE]
-    // Older staging builds may have published metadata over a real directory.
-    // Remove only that stale ownership before the pnpm runner isolates plugins.
+    let manifestChanged = false
     if (owned) {
       delete manifest.dsh.desktop.generationProjection.plugins[MARKET_PACKAGE]
       if (owned.previousOverride?.present) {
@@ -488,9 +493,19 @@ export function createDesktopPnpmService(options) {
         manifest.pnpm.overrides[MARKET_PACKAGE] = owned.previousOverride.value
       }
       else if (manifest.pnpm?.overrides) delete manifest.pnpm.overrides[MARKET_PACKAGE]
-      await atomicWrite(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+      manifestChanged = true
     }
+    if (manifestChanged) await atomicWrite(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     try {
+      const entry = await lstat(marketPath).catch(error => {
+        if (error?.code === 'ENOENT') return undefined
+        throw error
+      })
+      if (entry?.isSymbolicLink()) {
+        // Remove only the pointer. The generation directory it targets is
+        // untouched, so anything that already loaded it is unaffected.
+        await rm(marketPath, { force: true })
+      }
       const registry = await resolveMarketRegistry({ profileDir: profile, args, environment })
       if (isCancelled()) throw new Error('The package operation was aborted.')
       const env = buildPnpmEnvironment(binDirectory, environment, executablePath)
@@ -530,11 +545,20 @@ export function createDesktopPnpmService(options) {
    * `['add', 'name@exact.version', ...flags]` — a registry package pinned to an
    * exact version — and expects the same handle `runPlugin` returns.
    *
-   * The plugin is installed as its own immutable generation rather than into
-   * the shared hoisted tree: a fresh directory, promoted by one rename, never
-   * replaced. Publish the installed link before the official market validates
-   * its version; activation can still require a restart. A shared-tree Market
-   * remains pnpm-managed, while an already projected Market uses generations.
+   * Every plugin except dshmarket is installed as its own immutable
+   * generation rather than into the shared hoisted tree: a fresh directory,
+   * promoted by one rename, never replaced. Publish the installed link before
+   * the official market validates its version; activation can still require
+   * a restart.
+   *
+   * dshmarket never takes this path, regardless of what shape its current
+   * profile entry is in — it is a core bundle the migration keeps hoisted
+   * (KEEP_IN_SHARED_TREE), and letting it flip between a real directory and a
+   * generation link depending on which code path last touched it is what let
+   * a build incompatible with the host reach a live profile with no way to
+   * detect or roll it back (plugin-recovery excludes core bundles from its
+   * candidate list by design). `updateSharedMarket` always pnpm-manages it
+   * and always leaves it a real directory.
    */
   const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
@@ -549,11 +573,7 @@ export function createDesktopPnpmService(options) {
         if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
         const packageName = spec.slice(0, spec.lastIndexOf('@'))
         if (packageName === MARKET_PACKAGE) {
-          const entry = await lstat(join(profileDirectory(home), 'node_modules', MARKET_PACKAGE))
-            .catch(error => { if (error?.code === 'ENOENT') return undefined; throw error })
-          if (!entry?.isSymbolicLink()) {
-            return updateSharedMarket(args, spec, invokingDir, write, isCancelled, setCancel)
-          }
+          return updateSharedMarket(args, spec, invokingDir, write, isCancelled, setCancel)
         }
         write(`Installing ${spec} as an isolated generation…`)
         // The market picked this exact version by reading ITS registry; the
