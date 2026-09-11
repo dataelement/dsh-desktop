@@ -1,3 +1,4 @@
+import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { spawn } from 'node:child_process'
 import { join, resolve } from 'node:path'
@@ -868,6 +869,7 @@ function respondToGpuFallbackSignal(
   if (!plan.relaunch) return false
   gpuFallbackRelaunching = true
   app.relaunch()
+  desktopDiagnostics?.markCleanExit()
   app.exit(0)
   return true
 }
@@ -2738,6 +2740,7 @@ async function showMobilePairing(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  desktopDiagnostics?.startSending()
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
@@ -2787,6 +2790,7 @@ async function bootstrap(): Promise<void> {
         })
         : spawn(executablePath, args, options),
     onChanged: (snapshot) => {
+      desktopDiagnostics?.runtimeChanged(snapshot, () => runtime.flushLog(), runtime.launchAttemptId)
       if (snapshot.phase === 'ready' && snapshot.url) {
         void openHarness(snapshot.url).catch(showUnexpectedError)
       } else if (snapshot.phase === 'failed') {
@@ -3041,6 +3045,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
     // and the splash instead of blocking the main process right before the
     // Harness spawn. Only the instance that will actually launch pays for it.
     void prewarmShellEnvironment()
+    initializeDesktopService()
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
       const enterpriseLogin = enterpriseLoginDeepLinkFromArgv(argv)
@@ -3058,6 +3063,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
       }
     })
     app.whenReady().then(bootstrap).catch((error: unknown) => {
+      desktopDiagnostics?.startupFailed(error)
       showUnexpectedError(error)
       app.quit()
     })

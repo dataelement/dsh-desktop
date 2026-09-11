@@ -678,6 +678,14 @@ ${cause}`
     return line.startsWith('\n') ? `\n${stamp}${line.slice(1)}` : `${stamp}${line}`
   }
 
+  flushLog(): Promise<void> {
+    const stream = this.logStream
+    if (!stream || stream.destroyed || stream.writableEnded) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      stream.write('', error => error ? reject(error) : resolve())
+    })
+  }
+
   private closeLog(): void {
     this.logStream?.end()
     this.logStream = undefined
