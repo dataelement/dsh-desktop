@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index bf946f2..cee6145 100644
+index bf946f2..8625edb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -14183,12 +14183,13 @@ window.__ModuleLoader__.load({
@@ -44,7 +44,15 @@ index bf946f2..cee6145 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -15268,12 +15275,13 @@ window.__ModuleLoader__.load({
+@@ -14965,6 +14972,7 @@ window.__ModuleLoader__.load({
+ 			}))).filter((part) => part.width > 0);
+ 			return (0, react_jsx_runtime.jsxs)("span", {
+ 				ref: rootRef,
++				"data-dsh-context-meter": "",
+ 				className: ContextMeter_module_css_default.root,
+ 				children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+ 					label: t("context.aria", { percent: reading }),
+@@ -15268,12 +15276,13 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region \0dsh-css:/private/tmp/dsh-harness-v0.1.2-rc.1/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
  		const css$1 = ".VphDDa_root{padding:0 var(--dsh-composer-side-clearance) 8px;flex-direction:column;align-items:center;display:flex}.VphDDa_hero{padding:0 var(--dsh-composer-side-clearance)}.VphDDa_notice{width:100%;max-width:var(--dsh-composer-card-max-width);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);border-radius:8px;margin-bottom:6px;padding:4px 8px;font-size:12px;line-height:18px}.VphDDa_card{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);--dsw-elevation-stroke-color:var(--dsw-alias-border-l2);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-elevation-soft);font-size:var(--dsh-content-font-size,14px);line-height:calc(24px + var(--dsh-content-font-delta,0px));--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;border-radius:22px;flex-direction:column;gap:12px;padding-top:10px;display:flex;position:relative}.VphDDa_cardWorkspaceTrigger{--dsw-elevation-stroke-color:transparent;cursor:pointer}.VphDDa_cardWorkspaceTrigger:after{content:\"\";background:var(--dsw-alias-border-l4);pointer-events:none;border-radius:22px;transition:background-color .1s;position:absolute;inset:-1px;-webkit-mask:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' fill='none' rx='22' ry='22' stroke='black' stroke-width='2' stroke-dasharray='4 4'/%3E%3C/svg%3E\");mask:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' fill='none' rx='22' ry='22' stroke='black' stroke-width='2' stroke-dasharray='4 4'/%3E%3C/svg%3E\")}.VphDDa_cardWorkspaceTrigger :disabled{pointer-events:none}.VphDDa_cardWorkspaceTrigger:hover:after{background:var(--dsw-alias-state-business-primary)}.VphDDa_accessory{align-items:center;gap:8px;padding:10px 12px 0;display:flex}.VphDDa_overlayAnchor{height:0;position:absolute;inset:0 0 auto}.VphDDa_scroll{max-height:var(--dsh-composer-text-max-height);margin-right:4px;overflow-y:auto}.VphDDa_scroll::-webkit-scrollbar-track{margin-top:8px}.VphDDa_grow{position:relative}.VphDDa_pending{corner-shape:round;background:var(--dsw-alias-state-business-primary);border-radius:50%;width:8px;height:8px;animation:1s ease-in-out infinite alternate VphDDa_input-pending}@keyframes VphDDa_input-pending{0%{opacity:.35}to{opacity:1}}.VphDDa_input{box-sizing:border-box;font-family:var(--dsw-font-family);font-size:inherit;line-height:inherit;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary);caret-color:var(--dsw-alias-state-business-primary);outline:none;padding:4px 8px 0 16px}.VphDDa_input p{margin:0}.VphDDa_input p:last-child:after{content:var(--dsh-composer-hint);color:var(--dsw-alias-label-caption)}.VphDDa_placeholder{color:var(--dsw-alias-label-caption);pointer-events:none;user-select:none;position:absolute;inset:4px 8px auto 16px}.VphDDa_inputDisabled{color:var(--dsw-alias-label-tertiary);cursor:not-allowed}.VphDDa_input[aria-haspopup=menu]{cursor:pointer}.VphDDa_hero .VphDDa_input{min-height:52px}.VphDDa_row{flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:2px 8px 6px;display:flex;container-type:inline-size}.VphDDa_tools,.VphDDa_modes,.VphDDa_trailing{align-items:center;min-width:0;display:flex}.VphDDa_tools{gap:16px}.VphDDa_modes{gap:12px}.VphDDa_trailing{flex:none;gap:12px;margin-left:auto}.VphDDa_add{corner-shape:round;background:var(--dsw-specific-selector);width:28px;height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;display:grid}.VphDDa_add:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-solid)}.VphDDa_add:disabled{opacity:.5;cursor:default}.VphDDa_select{max-width:220px;height:28px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer;appearance:none;background-color:#0000;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");background-position:right 4px center;background-repeat:no-repeat;background-size:12px 12px;border:none;border-radius:8px;outline:none;padding:0 20px 0 8px;font-size:13px;font-weight:500;line-height:20px}.VphDDa_select:hover:not(:disabled){background-color:var(--dsw-alias-interactive-bg-hover)}.VphDDa_select:disabled{opacity:.5;cursor:default}.VphDDa_primary{corner-shape:round;background:var(--dsw-alias-button-info-fill);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}.VphDDa_primary:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}.VphDDa_primary:disabled{opacity:.4;cursor:default}.VphDDa_retry{color:inherit;cursor:pointer;background:0 0;border:1px solid;border-radius:4px;margin-left:8px;padding:1px 8px;font-size:12px}";
@@ -55,11 +63,11 @@ index bf946f2..cee6145 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-conversation";
  			tag.dataset.pluginCss = tagId$1;
 -			tag.textContent = css$1;
-+			tag.textContent = css$1 + pptAccessoryCss;
++			tag.textContent = css$1 + pptAccessoryCss + "[data-dsh-composer-add]{background:0 0}[data-dsh-composer-tools]{gap:4px}[data-dsh-composer-dock-row]{box-sizing:border-box;justify-content:center;align-items:center;width:100%;max-width:var(--dsh-composer-card-max-width);margin:0 auto;display:flex;position:relative}[data-dsh-composer-dock-row]:has([data-dsh-context-meter]){min-height:28px}[data-dsh-composer-dock-meter]{align-items:center;display:inline-flex;position:absolute;top:50%;right:13px;transform:translateY(-50%)}[data-dsh-composer-dock-meter] [data-dsh-context-meter] button{width:24px;height:24px}";
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -15292,6 +15300,7 @@ window.__ModuleLoader__.load({
+@@ -15292,6 +15301,7 @@ window.__ModuleLoader__.load({
  			"pending": "VphDDa_pending",
  			"placeholder": "VphDDa_placeholder",
  			"primary": "VphDDa_primary",
@@ -67,7 +75,7 @@ index bf946f2..cee6145 100644
  			"retry": "VphDDa_retry",
  			"root": "VphDDa_root",
  			"row": "VphDDa_row",
-@@ -15316,7 +15325,7 @@ window.__ModuleLoader__.load({
+@@ -15316,7 +15326,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -76,7 +84,7 @@ index bf946f2..cee6145 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const commandMenuOpen = useMenuLauncher((source) => source === "command");
-@@ -15562,10 +15571,6 @@ window.__ModuleLoader__.load({
+@@ -15562,10 +15572,6 @@ window.__ModuleLoader__.load({
  								className: InputBar_module_css_default.overlayAnchor,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -87,7 +95,7 @@ index bf946f2..cee6145 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -15578,13 +15583,19 @@ window.__ModuleLoader__.load({
+@@ -15578,13 +15584,19 @@ window.__ModuleLoader__.load({
  									size: imageSizeText(imageLimits.maxImageBytes)
  								}
  							}),
@@ -114,7 +122,7 @@ index bf946f2..cee6145 100644
  										(0, react_jsx_runtime.jsx)(ComposerContentEditable, {
  											editor: workspaceTrigger ? null : editor,
  											editable,
-@@ -15606,8 +15617,9 @@ window.__ModuleLoader__.load({
+@@ -15606,12 +15618,14 @@ window.__ModuleLoader__.load({
  											children: placeholderText
  										}),
  										(0, react_jsx_runtime.jsx)(DecoratorPortals, { editor: workspaceTrigger ? null : editor })
@@ -126,16 +134,49 @@ index bf946f2..cee6145 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								className: InputBar_module_css_default.row,
-@@ -15713,7 +15725,7 @@ window.__ModuleLoader__.load({
+ 								children: [(0, react_jsx_runtime.jsxs)("div", {
++									"data-dsh-composer-tools": "",
+ 									className: InputBar_module_css_default.tools,
+ 									children: [
+ 										(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+@@ -15620,6 +15634,7 @@ window.__ModuleLoader__.load({
+ 											delayMs: 500,
+ 											children: (0, react_jsx_runtime.jsx)("button", {
+ 												type: "button",
++												"data-dsh-composer-add": "",
+ 												className: InputBar_module_css_default.add,
+ 												"aria-label": t("input.commands"),
+ 												"aria-haspopup": "listbox",
+@@ -15641,10 +15656,6 @@ window.__ModuleLoader__.load({
+ 									children: [
+ 										input === void 0 || sessionId === void 0 ? null : renderSlot("conversation.input.right", {}),
+ 										sessionId === void 0 ? null : renderSlot("conversation.input.model", { locked: modelSeatLocked }),
+-										(0, react_jsx_runtime.jsx)(ContextMeter, {
+-											useProjection,
+-											t
+-										}),
+ 										interruptible && (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+ 											label: t("input.stop"),
+ 											side: "top",
+@@ -15713,7 +15724,16 @@ window.__ModuleLoader__.load({
  							})
  						]
  					}),
 -					variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null
-+					extensionZone !== void 0 ? renderSlot("conversation.composer.dock", extensionZone) : null
++					(0, react_jsx_runtime.jsxs)("div", {
++						"data-dsh-composer-dock-row": "",
++						children: [extensionZone !== void 0 ? renderSlot("conversation.composer.dock", extensionZone) : null, (0, react_jsx_runtime.jsx)("span", {
++							"data-dsh-composer-dock-meter": "",
++							children: (0, react_jsx_runtime.jsx)(ContextMeter, {
++								useProjection,
++								t
++							})
++						})]
++					})
  				]
  			});
  		});
-@@ -16089,6 +16101,10 @@ window.__ModuleLoader__.load({
+@@ -16089,6 +16109,10 @@ window.__ModuleLoader__.load({
  					"conversation.hero.agentPreset": {
  						kind: "single",
  						scope: "root"
@@ -146,7 +187,7 @@ index bf946f2..cee6145 100644
  					}
  				},
  				inject: (sessionId) => ({
-@@ -16169,6 +16185,10 @@ window.__ModuleLoader__.load({
+@@ -16169,6 +16193,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
