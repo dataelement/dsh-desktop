@@ -1,7 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js b/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
+index 025c443..fa51b89 100644
 --- a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
-@@ -7473,6 +7473,12 @@
+@@ -7732,6 +7732,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
  			"sessionId": intersection(string(), unknown()).readonly(),
  			"agentPreset": string().readonly().optional()
  		});
@@ -14,10 +15,11 @@ diff --git a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js b/node_modu
  		const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = object({
  			"address": union([object({
  				"kind": literal("session").readonly(),
-@@ -8180,6 +8186,33 @@
+@@ -8537,6 +8543,33 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 						"column": 3
  					}
  				},
- 				{
++				{
 +					id: "@deepseek-ai/dsh-api-session-controller#session/delete",
 +					service: "sessionController",
 +					namespace: "session",
@@ -44,7 +46,6 @@ diff --git a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js b/node_modu
 +						"column": 3
 +					}
 +				},
-+				{
+ 				{
  					id: "@deepseek-ai/dsh-api-session-controller#session/follow",
  					service: "sessionController",
- 					namespace: "session",

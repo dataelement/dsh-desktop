@@ -1,7 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+index 8dd94c6..0dd37d2 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-@@ -830,6 +830,19 @@
+@@ -830,6 +830,19 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
  	}
  	throw new Error(`${binName}: cannot resolve profile bundle ${JSON.stringify(packageName)} from the dsh installation or ${profileDir}; run 'dsh plugin --profile ${basename(profileDir)} install' if its dependency is not installed`);
  }
@@ -19,9 +20,9 @@ diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/
 +	return patches;
 +}
  /**
- * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
- * layer and parse the profile's own patch file. A listed bundle without a
-@@ -857,16 +870,26 @@
+ * Load an already initialized profile directory without resolving it through
+ * the shared Harness home. This is used by application-owned profiles whose
+@@ -847,16 +860,26 @@ function loadProfileDirectory(binName, dir, installAnchor, options = {}) {
  	if (rawPatchReload !== void 0 && rawPatchReload !== "live" && rawPatchReload !== "startup") throw new Error(`${binName}: profile manifest ${join(dir, "package.json")} dsh.profile.patchReload must be "live" or "startup"`);
  	const patchReload = rawPatchReload ?? "live";
  	const layers = bundles.map((packageName) => {
@@ -57,8 +58,8 @@ diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/
 +		}
  	});
  	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
- 	return {
-@@ -1432,6 +1455,7 @@
+ 	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
+@@ -1466,6 +1489,7 @@ async function assertEntriesActivated(ctx, binName) {
  	assertEntriesLoaded(ctx, binName);
  	const failures = [];
  	const rejectionReasons = [];
@@ -66,7 +67,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/
  	for (const entry of ctx.loader.entries()) {
  		const fiber = entry.fiber;
  		if (fiber === void 0 || entry.disabled) continue;
-@@ -1442,6 +1466,7 @@
+@@ -1476,6 +1500,7 @@ async function assertEntriesActivated(ctx, binName) {
  				await fiber.await();
  			} catch (error) {
  				rejectionReasons.push(error);
@@ -74,7 +75,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/
  				failures.push(`${entry.options.name}: ${formatActivationError(error)}`);
  			}
  			continue;
-@@ -1451,11 +1476,12 @@
+@@ -1485,11 +1510,12 @@ async function assertEntriesActivated(ctx, binName) {
  			const subject = missing.length === 1 ? "service" : "services";
  			failures.push(`${entry.options.name}: pending (waiting for ${subject}: ${missing.join(", ") || "unknown"})`);
  		} else failures.push(`${entry.options.name}: fiber state ${String(state)}`);
@@ -88,7 +89,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/
  	}
  }
  /**
-@@ -1503,7 +1529,11 @@
+@@ -1537,7 +1563,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
  		await assertEntriesActivated(ctx, binName);
  		return ctx;
  	} catch (cause) {
