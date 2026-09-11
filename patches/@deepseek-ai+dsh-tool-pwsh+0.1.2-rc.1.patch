@@ -1,0 +1,16 @@
+diff --git a/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js b/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js
+index ada4471..c2a9df5 100644
+--- a/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js
+@@ -370,7 +370,10 @@ function apply(ctx, config = {}) {
+ 				command: args.command,
+ 				...workdir !== void 0 ? { workdir } : {},
+ 				...args.timeoutMs !== void 0 ? { timeoutMs: args.timeoutMs } : {},
+-				dshEnv: ctx.shellEnv.collect(exec),
++				dshEnv: {
++					...ctx.shellEnv.collect(exec),
++					DSH_LIVE_TERMINAL_CALL_ID: exec.callId
++				},
+ 				...policy !== void 0 ? { sandboxPolicy: policy } : {}
+ 			};
+ 			if (args.run_in_background === true) {

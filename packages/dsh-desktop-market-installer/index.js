@@ -23,6 +23,7 @@ import {
 import { resolveMarketRegistry } from './market-registry.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
+import { installLiveTerminalStreaming } from './live-terminal.js'
 
 export const RECOMMENDED_MARKET_VERSION = '^1.45.1'
 export const MARKET_PACKAGE = 'dshmarket'
@@ -781,6 +782,7 @@ function killProcessTree(child) {
 }
 
 export async function apply(ctx) {
+  installLiveTerminalStreaming(ctx)
   const home = dshHome()
   const directory = profileDirectory(home)
   const manifestPath = join(directory, 'package.json')

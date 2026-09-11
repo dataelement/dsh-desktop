@@ -1,0 +1,55 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/TerminalBlock.module.css b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/TerminalBlock.module.css
+index 5198a51..0409faf 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/TerminalBlock.module.css
++++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/TerminalBlock.module.css
+@@ -61,6 +61,7 @@
+ /* Full-width l2 hairline between the command banner and the body — the same
+    divider the IN/OUT card draws between its sections. A running card is
+    banner-only, so it draws none. */
+-.block:not([data-running]) .header {
++.block:not([data-running]) .header,
++.block[data-has-output] .header {
+   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+ }
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
+index 2021e8f..9749ffe 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
+@@ -4028,6 +4028,7 @@ function renderLine$1(line) {
+ function TerminalBlock({ command, cwd, home, output, exitCode, signal, running = false, maxLines = 16, className, labels }) {
+ 	const copy = labels;
+ 	const text = output ?? "";
++	const outputRef = useRef(null);
+ 	const lines = useMemo(() => {
+ 		const parsed = parseAnsiLines(text);
+ 		const last = parsed[parsed.length - 1];
+@@ -4044,11 +4045,15 @@ function TerminalBlock({ command, cwd, home, output, exitCode, signal, running =
+ 		return (command.endsWith("\n") ? command.slice(0, -1) : command).split("\n");
+ 	}, [command]);
+ 	const empty = lines.every((line) => line.every((span) => span.text.trim() === ""));
+-	const { hidden, capped, headLines, tailLines } = headTailCap(lines.length, maxLines, expanded);
++	const { hidden, capped, headLines, tailLines } = headTailCap(lines.length, running ? Infinity : maxLines, expanded);
++	useLayoutEffect(() => {
++		if (running && outputRef.current !== null) outputRef.current.scrollTop = outputRef.current.scrollHeight;
++	}, [running, text]);
+ 	return jsxs("div", {
+ 		className: clsx(css$15.block, className),
+ 		"data-terminal": "",
+ 		"data-running": running ? "" : void 0,
++		"data-has-output": !empty ? "" : void 0,
+ 		children: [jsxs("div", {
+ 			className: css$15.header,
+ 			children: [
+@@ -4086,10 +4091,11 @@ function TerminalBlock({ command, cwd, home, output, exitCode, signal, running =
+ 					children: copied ? copy.copied : copy.copy
+ 				})
+ 			]
+-		}), !running && (empty ? jsx("div", {
++		}), (!running || !empty) && (empty ? jsx("div", {
+ 			className: css$15.empty,
+ 			children: copy.noOutput
+ 		}) : jsxs("div", {
++			ref: outputRef,
+ 			className: css$15.output,
+ 			children: [
+ 				(capped ? lines.slice(0, headLines) : lines).map((line, index) => jsx("div", {
