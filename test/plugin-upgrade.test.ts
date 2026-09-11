@@ -43,6 +43,14 @@ async function fixture() {
 }
 
 describe('upgradeMarketInSharedTree', () => {
+  it.each(['missing', 'unchanged'])('rejects a zero-exit install with an %s active package', async state => {
+    const { profile, market, options } = await fixture()
+    const before = await readFile(join(profile, 'package.json'), 'utf8')
+    if (state === 'missing') await rm(market, { recursive: true })
+    installMock.mockResolvedValue({ ok: true })
+    expect((await upgradeMarketInSharedTree(options)).ok).toBe(false)
+    expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(before)
+  })
   it('never installs dshmarket as a generation: it reinstalls the whole shared tree', async () => {
     installMock.mockImplementation(async () => {
       // Simulate the shared-tree reinstall landing the new version in place.

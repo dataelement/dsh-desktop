@@ -184,6 +184,13 @@ export async function upgradeMarketInSharedTree(
       })
       if (!result.ok) throw new Error(result.detail ?? 'shared-tree install failed')
 
+      // A zero exit code can be a CLI no-op. Verify the public Profile path
+      // before retiring any generation ownership or reporting success.
+      const installed = JSON.parse(await readFile(join(marketPath, 'package.json'), 'utf8')) as { version?: string }
+      if (installed.version !== targetVersion || (await lstat(marketPath)).isSymbolicLink()) {
+        throw new Error(`Market install expected a shared directory at ${targetVersion}, found ${installed.version ?? 'missing'} or a link`)
+      }
+
       // A dshmarket generation from an earlier build has no further purpose
       // once the shared-tree copy is current; drop its desired.json entry.
       const [desired, generations] = await Promise.all([readDesired(dshHome), listGenerations(dshHome)])
