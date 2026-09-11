@@ -181,7 +181,7 @@ export function buildSafeModeViewModel(options: {
         ? [options.locale === 'zh' ? '版本不兼容' : 'version incompatible']
         : [])
     ]
-    if (report?.healthLabel && !incompatible && !suspected) {
+    if (report?.healthLabel) {
       labels.push(report.healthLabel)
     }
     const statusTone = incompatible
@@ -354,7 +354,7 @@ export function buildSafeModeViewModel(options: {
       notice: options.notice,
       noticeTone: options.noticeTone,
       upgradeAllLabel: upgradeReadyCount > 0
-        ? `一键升级 ${upgradeReadyCount} 个已适配插件`
+        ? `一键升级 ${upgradeReadyCount} 个有更新的插件`
         : undefined,
       upgradeAllBusyLabel: '正在批量升级…',
       upgradeReadyCount
@@ -396,7 +396,7 @@ export function buildSafeModeViewModel(options: {
     notice: options.notice,
     noticeTone: options.noticeTone,
     upgradeAllLabel: upgradeReadyCount > 0
-      ? `Upgrade ${upgradeReadyCount} compatible plugin${upgradeReadyCount === 1 ? '' : 's'}`
+      ? `Upgrade ${upgradeReadyCount} plugin${upgradeReadyCount === 1 ? '' : 's'} with updates`
       : undefined,
     upgradeAllBusyLabel: 'Upgrading plugins…',
     upgradeReadyCount

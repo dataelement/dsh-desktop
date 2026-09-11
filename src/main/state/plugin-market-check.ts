@@ -46,6 +46,7 @@ export interface PluginUpgradeCandidate {
   packageName: string
   targetVersion: string
   installedVersion?: string
+  upgradeHint?: string
 }
 
 export const DEFAULT_NPM_REGISTRY = 'https://registry.npmmirror.com'
@@ -421,6 +422,35 @@ export async function evaluatePluginMarketCompatibility(options: {
       detail: isZh
         ? `在当前版本至 latest（v${latestVersion}）之间，v${candidate.version} 是未发现 DSH ${currentRuntimeVersion} 声明冲突的最高可选版本；升级后仍需验证启动。`
         : `v${candidate.version} is the highest eligible update up to latest (v${latestVersion}) with no declared conflict with DSH ${currentRuntimeVersion}; startup must still be verified.`
+    }
+  }
+  // A broken plugin still gets a user-initiated latest attempt when no
+  // compatible release matches. This is a fallback, not a compatibility verdict.
+  if (hasLocalIssue && compareSemver(latestVersion, installedVersion) > 0) {
+    const compatibility = inferPluginRuntimeCompatibility(metadata.versions[latestVersion]!, currentRuntimeVersion)
+    return {
+      packageName, installedVersion, latestVersion,
+      healthStatus: 'incompatible-upgrade-available',
+      healthLabel: isZh
+        ? `未找到兼容更新，可尝试 latest v${latestVersion}（兼容性未确认）`
+        : `No compatible update; try latest v${latestVersion} (compatibility unconfirmed)`,
+      upgradeReady: true,
+      upgradeVersion: latestVersion,
+      detail: (isZh
+        ? `未找到匹配当前 DSH 的更新版本，可尝试升级至 latest v${latestVersion}；不保证兼容，升级后仍需验证启动。`
+        : `No update matches the current DSH; you can try latest v${latestVersion}. Compatibility is not guaranteed; verify startup after upgrading.`) +
+        (compatibility.reason ? ` ${compatibility.reason}` : '')
+    }
+  }
+  if (hasLocalIssue && compareSemver(installedVersion, latestVersion) >= 0) {
+    return {
+      packageName, installedVersion, latestVersion,
+      healthStatus: 'incompatible-no-fix',
+      healthLabel: isZh ? '当前版本已是 latest 或更高，建议卸载问题插件' : 'Already at latest or newer; remove the failing plugin',
+      upgradeReady: false,
+      detail: isZh
+        ? `当前插件 v${installedVersion} 已是 latest（v${latestVersion}）或更高版本，仍阻挡启动。请卸载此插件并继续检测；不会降级或重复安装。`
+        : `Plugin v${installedVersion} is already at latest (v${latestVersion}) or newer and still blocks startup. Remove this plugin and continue checking; no downgrade or reinstall will be attempted.`
     }
   }
   return {

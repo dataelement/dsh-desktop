@@ -58,8 +58,8 @@ async function main(): Promise<void> {
   const preload = join(process.cwd(), 'out/preload/index.cjs')
   const names = ['calendar-plugin', 'search-plugin', 'notes-plugin', '@community/billing-plugin', '@community/longer-agent-memory-plugin', 'mobile-plugin']
   let closed = 0
-  for (const scenario of ['safe-mode', 'plugin-recovery', 'unidentified-plugin']) {
-    const page = scenario === 'unidentified-plugin' ? 'plugin-recovery' : scenario
+  for (const scenario of ['safe-mode', 'plugin-recovery', 'multiple-plugins', 'unidentified-plugin']) {
+    const page = scenario === 'unidentified-plugin' || scenario === 'multiple-plugins' ? 'plugin-recovery' : scenario
     await parent.loadURL('data:text/html,<body style="background:%2318181b;color:%23999">DSH Desktop</body>')
     const overlay = page === 'safe-mode' ? new SafeModeOverlay(parent, preload, () => { closed++ }) : undefined
     const contents = overlay?.webContents ?? parent.webContents
@@ -72,7 +72,11 @@ async function main(): Promise<void> {
         menu.setBounds(windowsMenuViewBounds({ width: width!, height: height! }, false))
       }
       const model = page === 'safe-mode' ? buildSafeModeViewModel({ locale, plugins: names }) : buildPluginRecoveryViewModel({
-        locale, plugins: scenario === 'unidentified-plugin' ? [] : [names[0]!], removedPlugins: [],
+        locale, plugins: scenario === 'unidentified-plugin' ? [] : scenario === 'multiple-plugins' ? names.slice(0, 3) : [names[0]!], removedPlugins: [],
+        pluginChecks: scenario === 'multiple-plugins' ? names.slice(0, 3).map((packageName, index) => ({
+          packageName, hint: index === 1 ? '已是 latest，仍阻挡启动，请卸载此插件。' : '可尝试升级，兼容性未确认；升级后仍需验证启动。',
+          upgradeCandidate: index === 1 ? undefined : { packageName, targetVersion: '2.0.0' }
+        })) : undefined,
         snapshot: { phase: 'failed', message: 'Plugin startup conflict', logs: ['duplicate prefix route "/calendar/api"'] }
       })
       if ('pluginItems' in model) {
@@ -145,6 +149,23 @@ async function main(): Promise<void> {
           return { action, disabled: document.getElementById('primary').disabled };
         })()`)
         assert.deepEqual(action, { action: 'safe-mode', disabled: true })
+      }
+      if (scenario === 'multiple-plugins') {
+        const perPluginActions = await contents.executeJavaScript(`(() => {
+          const actions = [];
+          window.dshRecovery = { action: value => { actions.push(value) } };
+          const rows = [...document.querySelectorAll('#plugins li')];
+          for (const button of document.querySelectorAll('#plugins button')) {
+            document.querySelectorAll('button').forEach(control => { control.disabled = false });
+            button.click();
+          }
+          return { actions, hints: rows.map(row => row.querySelector('.plugin-check-hint').textContent) };
+        })()`)
+        assert.deepEqual(perPluginActions.actions, [
+          `upgrade:${names[0]}`, `uninstall:${names[0]}`, `uninstall:${names[1]}`,
+          `upgrade:${names[2]}`, `uninstall:${names[2]}`
+        ])
+        assert.equal(perPluginActions.hints.length, 3)
       }
       results.push({ page, scenario, locale, theme, requestedSize: [width,height], layout, popup })
     }

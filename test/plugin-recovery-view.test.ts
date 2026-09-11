@@ -105,6 +105,27 @@ describe('plugin recovery view model', () => {
     expect(html).not.toContain('id="restart"')
   })
 
+  it.each(['zh', 'en'] as const)('shows the latest fallback explanation instead of claiming compatibility (%s)', (locale) => {
+    const upgradeHint = locale === 'zh' ? '未找到匹配版本，可尝试 latest；不保证兼容。' : 'Try latest; compatibility is not guaranteed.'
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['plugin-a'], removedPlugins: [], locale,
+      upgradeCandidate: { packageName: 'plugin-a', targetVersion: '2.0.0', upgradeHint }
+    })
+    expect(model.upgradeHint).toBe(upgradeHint)
+    expect(model.upgradeLabel).toBeTruthy()
+  })
+
+  it.each(['zh', 'en'] as const)('makes removal the primary action when a latest-version plugin still blocks startup (%s)', (locale) => {
+    const notice = locale === 'zh' ? '已是 latest，仍阻挡启动，请卸载此插件。' : 'Already at latest and still blocking startup; remove this plugin.'
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['plugin-a'], removedPlugins: [], locale, notice
+    })
+    expect(model.notice).toBe(notice)
+    expect(model.canUninstall).toBe(true)
+    expect(model.upgradeCandidate).toBeUndefined()
+    expect(model.primaryLabel).toBe(locale === 'zh' ? '卸载此插件并继续检测' : 'Remove this plugin and continue')
+  })
+
   it('configures upgrade candidate when a compatible update is available', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(),

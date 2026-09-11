@@ -145,9 +145,33 @@ describe('plugin-market-check', () => {
       { version: '0.9.0' }, { version: '1.0.0' },
       { version: '2.0.0', engines: { dsh: '>=0.2.0' } }, { version: '3.0.0' }
     ], '2.0.0')
-    expect(await check(fetchFn, { hasLocalIssue: true })).toMatchObject({
-      upgradeReady: false, healthStatus: 'incompatible-no-fix'
+    for (const installedVersion of ['2.0.0', '3.0.0']) {
+      expect(await check(fetchFn, { hasLocalIssue: true, installedVersion })).toMatchObject({
+        upgradeReady: false, healthStatus: 'incompatible-no-fix',
+        healthLabel: expect.stringContaining('建议卸载'),
+        detail: expect.stringContaining('请卸载此插件并继续检测')
+      })
+      expect(await check(fetchFn, { installedVersion })).toMatchObject({ healthStatus: 'up-to-date' })
+      const english = await check(fetchFn, { hasLocalIssue: true, installedVersion, locale: 'en' })
+      expect(english.detail).toContain('Remove this plugin and continue checking')
+      expect(english.upgradeVersion).toBeUndefined()
+    }
+    expect(await check(fetchFn, { hasLocalIssue: true })).toMatchObject({ upgradeVersion: '2.0.0' })
+  })
+
+  it.each(['zh', 'en'] as const)('offers latest only for a failing plugin when no compatible update matches (%s)', async (locale) => {
+    const fetchFn = registry([
+      { version: '1.1.0', engines: { dsh: '>=0.2.0' } },
+      { version: '2.0.0', peerDependencies: { '@deepseek-ai/dsh': '>=0.3.0' } }
+    ])
+    expect(await check(fetchFn)).toMatchObject({ upgradeReady: false })
+    const report = await check(fetchFn, { hasLocalIssue: true, locale })
+    expect(report).toMatchObject({
+      upgradeReady: true, upgradeVersion: '2.0.0', latestVersion: '2.0.0',
+      healthStatus: 'incompatible-upgrade-available'
     })
+    expect(report.healthLabel).toContain(locale === 'zh' ? '兼容性未确认' : 'compatibility unconfirmed')
+    expect(report.detail).toContain('>=0.3.0')
   })
 
   it('skips deprecated versions and prereleases for stable installations', async () => {
@@ -189,9 +213,9 @@ describe('plugin-market-check', () => {
 
   it('reports unavailable metadata and unknown installed versions without claiming compatibility', async () => {
     const failed = vi.fn<typeof fetch>(async () => new Response('', { status: 503 }))
-    expect(await check(failed)).toMatchObject({ healthStatus: 'check-failed', upgradeReady: false })
+    expect(await check(failed, { hasLocalIssue: true })).toMatchObject({ healthStatus: 'check-failed', upgradeReady: false })
     clearManifestCache()
-    expect(await check(registry([{ version: '1.1.0' }]), { installedVersion: undefined }))
+    expect(await check(registry([{ version: '1.1.0' }]), { installedVersion: undefined, hasLocalIssue: true }))
       .toMatchObject({ healthStatus: 'check-failed', upgradeReady: false })
   })
 })

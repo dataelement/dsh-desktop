@@ -1,3 +1,4 @@
+import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -142,7 +143,7 @@ import {
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
 
-type PluginRecoveryAction = 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
+type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
   | { type: 'upgrade'; plugins: string[] }
@@ -860,7 +861,9 @@ function installPluginRecoveryNavigation(window: BrowserWindow): void {
 
     try {
       const action = new URL(targetUrl).hostname as PluginRecoveryAction
-      if (PLUGIN_RECOVERY_ACTIONS.has(action)) resolvePluginRecoveryAction(action)
+      const plugin = new URL(targetUrl).searchParams.get('plugin')
+      if (plugin && (action === 'upgrade' || action === 'uninstall')) resolvePluginRecoveryAction(`${action}:${plugin}`)
+      else if (PLUGIN_RECOVERY_ACTIONS.has(action)) resolvePluginRecoveryAction(action)
     } catch {
       // Ignore malformed recovery actions and keep the current recovery page visible.
     }
@@ -1611,6 +1614,7 @@ async function waitForPluginRecoveryAction(options: {
   removedPlugins: readonly string[]
   notice?: string
   upgradeCandidate?: PluginUpgradeCandidate
+  pluginChecks?: PluginRecoveryCheck[]
 }): Promise<PluginRecoveryAction> {
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const state = buildPluginRecoveryViewModel({
@@ -1693,37 +1697,25 @@ async function showPluginRecovery(options?: {
       waitForRendererEvidence = false
       if (applyPendingFrontendEvidence()) continue
 
-      let upgradeCandidate: PluginUpgradeCandidate | undefined
-      if (detection.plugins.length === 1) {
-        const targetPlugin = detection.plugins[0]!
-        try {
-          const loadedVersion = followRendererLogs ? undefined : snapshot.pluginFailures
+      const runtimeVersion =
+        (await readBundledDshVersion(join(app.getAppPath(), 'node_modules'))) || '0.1.2-alpha.1'
+      const pluginChecks = await checkBlockingPluginUpdates({
+        plugins: detection.plugins,
+        attemptedUpgrades,
+        locale: harnessLocale(),
+        check: async (targetPlugin) => {
+          // After an upgrade the failure snapshot may still describe the old
+          // process. Re-read the installed version before choosing another action.
+          const loadedVersion = followRendererLogs || attemptedUpgrades.has(targetPlugin) ? undefined : snapshot.pluginFailures
             ?.find((failure) => failure.owner?.packageName === targetPlugin)?.owner?.version
           const installedVersion = loadedVersion ?? await readInstalledPluginVersion(dshHome, targetPlugin)
-          const runtimeVersion =
-            (await readBundledDshVersion(join(app.getAppPath(), 'node_modules'))) || '0.1.2-alpha.1'
-          const check = await evaluatePluginMarketCompatibility({
-            packageName: targetPlugin,
-            installedVersion,
-            currentRuntimeVersion: runtimeVersion,
-            hasLocalIssue: true,
-            locale: harnessLocale()
+          return evaluatePluginMarketCompatibility({
+            packageName: targetPlugin, installedVersion, currentRuntimeVersion: runtimeVersion,
+            hasLocalIssue: true, locale: harnessLocale()
           })
-          if (
-            check.upgradeReady &&
-            check.upgradeVersion &&
-            attemptedUpgrades.get(targetPlugin) !== check.upgradeVersion
-          ) {
-            upgradeCandidate = {
-              packageName: targetPlugin,
-              targetVersion: check.upgradeVersion,
-              installedVersion
-            }
-          }
-        } catch (error) {
-          runtime.note(`[plugin-recovery] market check failed for ${targetPlugin}: ${String(error)}`)
         }
-      }
+      })
+      let upgradeCandidate = detection.plugins.length === 1 ? pluginChecks[0]?.upgradeCandidate : undefined
 
       const action = await waitForPluginRecoveryAction({
         snapshot: {
@@ -1734,14 +1726,22 @@ async function showPluginRecovery(options?: {
         plugins: detection.plugins,
         removedPlugins,
         notice,
-        upgradeCandidate
+        upgradeCandidate,
+        pluginChecks
       })
       notice = undefined
+      const target = selectPluginRecoveryTarget(action, detection.plugins)
+      if ((action.startsWith('upgrade:') || action.startsWith('uninstall:')) && !target) continue
+      if (target?.type === 'upgrade') {
+        upgradeCandidate = pluginChecks.find((check) => check.packageName === target.plugin)?.upgradeCandidate
+        if (!upgradeCandidate) continue
+      }
+      const removalTargets = target?.type === 'uninstall' ? [target.plugin] : detection.plugins
 
       if (action === 'refresh') {
         applyPendingFrontendEvidence()
         continue
-      } else if (action === 'upgrade' && upgradeCandidate) {
+      } else if ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate) {
         await runtime.stop()
         const upgradeResult = await upgradePluginToGeneration({
           dshHome,
@@ -1786,14 +1786,14 @@ async function showPluginRecovery(options?: {
           return
         }
         continue
-      } else if (action === 'uninstall' && detection.plugins.length > 0) {
+      } else if ((action === 'uninstall' || target?.type === 'uninstall') && removalTargets.length > 0) {
         // The normal web Harness may still have the failing plugin imported.
         // macOS permits renaming an open directory, but Windows does not; stop
         // the process before quarantine so both platforms use the same path.
         await runtime.stop()
         const failedPlugins: string[] = []
         const pendingPlugins: string[] = []
-        for (const plugin of detection.plugins) {
+        for (const plugin of removalTargets) {
           const removal = await removeProfilePluginCompletely(dshHome, plugin, 'plugin-recovery')
           if (removal.removed) {
             if (!removedPlugins.includes(plugin)) removedPlugins.push(plugin)
@@ -1812,7 +1812,7 @@ async function showPluginRecovery(options?: {
             `was not restarted: ${pendingPlugins.join(', ')}. Retry removal or enter Safe Mode.`
           continue
         }
-        if (failedPlugins.length === detection.plugins.length) {
+        if (failedPlugins.length === removalTargets.length) {
           notice = isChinese
             ? '未能修改插件配置。请打开 Harness 日志查看详情，或选择其他恢复方式。'
             : 'The plugin profile could not be updated. Open the Harness log for details or choose another recovery option.'
@@ -2728,7 +2728,7 @@ async function bootstrap(): Promise<void> {
   ipcMain.removeHandler('recovery:action')
   ipcMain.handle('recovery:action', (event, action: unknown) => {
     assertTrustedMainWindowEvent(event)
-    if (typeof action === 'string' && PLUGIN_RECOVERY_ACTIONS.has(action as PluginRecoveryAction)) {
+    if (typeof action === 'string' && (PLUGIN_RECOVERY_ACTIONS.has(action as PluginRecoveryAction) || /^(upgrade|uninstall):.+$/.test(action))) {
       resolvePluginRecoveryAction(action as PluginRecoveryAction)
       return { ok: true }
     }
