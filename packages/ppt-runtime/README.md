@@ -51,3 +51,7 @@ The build keeps the 192 reference JPGs only in the core skill directory. Both br
 The CLI resolves npm `.bin` symlinks before detecting its entry point. `check --json` retains its complete checker output and conventional nonzero exit code for failed validation; blocked `render --json` also prints complete diagnostics and `exported: false`. Neither bypasses the compiler checks.
 
 Authoring diagnostics group misplaced text-style fields by page while retaining per-field issues. Layout estimates wait until an element has a valid field structure. Tool diagnostics include confined absolute paths and `pptd_read_file` arguments. New files accept an omitted or empty `expected_sha256`; replacements still require the current hash. The bundled CLI and tool compiler apply the same structural checks.
+
+### Text escape semantics
+
+Multiline text uses actual line breaks, with YAML `|-` as the shared authoring form. The CLI and host use `lib/text-escapes.js` to report `text-escaped-newline` for literal `\n` or `\r` in text elements and table cells before export. An explicit boolean `literalEscapes: true` preserves intentionally displayed code, escape notation or paths; imported PPTX text carries this declaration when the original already displays those characters. The declaration leaves layout checks active. V4 automatic Skill snapshots explain the correction loop and replace older V2/V3 snapshots in active PPT sessions.

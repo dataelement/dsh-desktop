@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { textEscapeIssues, containsLiteralLineBreak } from "./text-escapes.js";
 import { wrapTextLines } from "./text-wrap.js";
 import { access, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -181,7 +182,8 @@ function convertedText(node, textBody, theme) {
 			color: typeof base.color === "string" ? base.color : "#000000",
 			align: [horizontal, vertical],
 			wrap: body?.getAttribute("wrap") !== "none",
-			text: markup
+			text: markup,
+			...containsLiteralLineBreak(markup) ? { literalEscapes: true } : {}
 		}
 	};
 }
@@ -399,6 +401,7 @@ function convertedTable(node, elementId, offsetX, offsetY, raw, theme) {
 			const align = Array.isArray(text.content.align) ? text.content.align : void 0;
 			return {
 				text: cell.text,
+				...containsLiteralLineBreak(cell.text) ? { literalEscapes: true } : {},
 				...cell.gridSpan > 1 ? { colSpan: cell.gridSpan } : {},
 				...cell.rowSpan > 1 ? { rowSpan: cell.rowSpan } : {},
 				...fillElement === void 0 ? {} : { fill: convertedFill({ element: fillElement }, theme) },
@@ -1932,6 +1935,7 @@ function checkElement(project, page, pageNumber, element, ids) {
 	}
 	if (type === "text") {
 		const content = record$1(element.content);
+		issues.push(...textEscapeIssues(content).map(issue => ({ ...issue, file: page.file, ...context })));
 		const styleIssue = themeReferenceIssue(project, content?.style, "textStyles", page.file, pageNumber, id);
 		if (styleIssue !== void 0) issues.push(styleIssue);
 		if (content === void 0 || typeof content.text !== "string") issues.push({
@@ -2047,7 +2051,9 @@ function checkElement(project, page, pageNumber, element, ids) {
 			if (styleIssue !== void 0) issues.push(styleIssue);
 		}
 		const rows = Array.isArray(element.rows) ? element.rows : [];
-		for (const rawRow of rows) for (const rawCell of Array.isArray(rawRow) ? rawRow : []) {
+		for (const [rowIndex, rawRow] of rows.entries()) for (const [columnIndex, rawCell] of (Array.isArray(rawRow) ? rawRow : []).entries()) {
+			const cell = record$1(rawCell) ?? { text: rawCell };
+			issues.push(...textEscapeIssues(cell, `rows[${rowIndex}][${columnIndex}]`).map(issue => ({ ...issue, file: page.file, ...context })));
 			const styleIssue = themeReferenceIssue(project, record$1(rawCell)?.textStyle, "textStyles", page.file, pageNumber, id);
 			if (styleIssue !== void 0) issues.push(styleIssue);
 		}

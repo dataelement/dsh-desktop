@@ -28,7 +28,7 @@ try {
         if (check.errorCount)
             throw Error(definition.id + ': ' + stdout);
         checks.push({ id: definition.id, ...check });
-        {
+        if (!process.argv.includes('--reuse-previews')) {
             const pngDir = scratch + '/' + definition.id;
             await run(process.execPath, [root + '/core/lib/bin.js', 'screenshot', dir + '/source', '-o', pngDir, '--scale', '1.3333333333', '--json']);
             const pngs = JSON.parse(await fs.readFile(pngDir + '/index.json', 'utf8')).pages.map(p => p.file);
