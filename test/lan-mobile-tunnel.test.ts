@@ -143,10 +143,12 @@ describe('Pinggy Tunnel utilities', () => {
   })
 
   it('uses a fixed Pinggy user and dedicated identity instead of the local login name', () => {
+    const knownHostsPath = join('/tmp', 'dsh-cloudflared', 'pinggy-known-hosts')
+    const identityPath = join('/tmp', 'dsh-cloudflared', 'pinggy-id')
     const args = buildPinggySshArgs({
       port: 39871,
-      knownHostsPath: '/tmp/dsh-cloudflared/pinggy-known-hosts',
-      identityPath: '/tmp/dsh-cloudflared/pinggy-id'
+      knownHostsPath,
+      identityPath
     })
     expect(PINGGY_USER).toBe('dsh')
     expect(PINGGY_USER).not.toBe(process.env.USER)
@@ -154,15 +156,13 @@ describe('Pinggy Tunnel utilities', () => {
     expect(args).toContain('-R')
     expect(args).toContain('0:127.0.0.1:39871')
     expect(args).toContain('-i')
-    expect(args).toContain('/tmp/dsh-cloudflared/pinggy-id')
+    expect(args).toContain(identityPath)
     expect(args).toContain('IdentitiesOnly=yes')
     expect(args).toContain('BatchMode=yes')
     expect(args).toContain(`User=${PINGGY_USER}`)
     expect(args.at(-1)).toBe(PINGGY_HOST)
     expect(args.join(' ')).not.toContain('@')
-    expect(pinggyIdentityPath('/tmp/dsh-cloudflared/pinggy-known-hosts')).toBe(
-      '/tmp/dsh-cloudflared/pinggy-id'
-    )
+    expect(pinggyIdentityPath(knownHostsPath)).toBe(identityPath)
   })
 
   it('reuses an existing Pinggy identity and creates one when missing', async () => {
