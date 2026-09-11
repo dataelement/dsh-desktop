@@ -594,6 +594,14 @@ ${cause}`
     this.logStream?.write(`${line}\n`)
   }
 
+  flushLog(): Promise<void> {
+    const stream = this.logStream
+    if (!stream || stream.destroyed || stream.writableEnded) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      stream.write('', error => error ? reject(error) : resolve())
+    })
+  }
+
   private closeLog(): void {
     this.logStream?.end()
     this.logStream = undefined
