@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -10,7 +10,7 @@ import { PassThrough } from 'node:stream'
 
 import { installGeneration } from './generations/installer.mjs'
 import {
-  exposeMissingGenerationLinks,
+  publishInstalledGeneration,
   publishGenerationManifest
 } from './generations/projection.mjs'
 import {
@@ -445,14 +445,17 @@ export function createDesktopPnpmService(options) {
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     let cancelled = false
+    let cancelTask
     const cancel = () => {
       cancelled = true
+      cancelTask?.()
     }
     const done = (async () => {
       try {
         const { exitCode, message } = await task({
           write: (line) => stdout.write(`${line}\n`),
-          isCancelled: () => cancelled
+          isCancelled: () => cancelled,
+          setCancel: (callback) => { cancelTask = callback; if (cancelled) callback() }
         })
         if (message) stderr.write(message)
         return { exitCode, signal: null }
@@ -467,6 +470,61 @@ export function createDesktopPnpmService(options) {
     return { stdout, stderr, done, cancel }
   }
 
+  // Only shared-tree Market entries reach this path. Never let pnpm own
+  // ordinary generation links, including a Market upgraded at cold start.
+  const updateSharedMarket = async (args, spec, invokingDir, write, isCancelled, setCancel) => {
+    const profile = profileDirectory(home)
+    const manifestPath = join(profile, 'package.json')
+    const before = await readFile(manifestPath, 'utf8')
+    const manifest = JSON.parse(before)
+    const owned = manifest.dsh?.desktop?.generationProjection?.plugins?.[MARKET_PACKAGE]
+    // Older staging builds may have published metadata over a real directory.
+    // Remove only that stale ownership before the pnpm runner isolates plugins.
+    if (owned) {
+      delete manifest.dsh.desktop.generationProjection.plugins[MARKET_PACKAGE]
+      if (owned.previousOverride?.present) {
+        manifest.pnpm ??= {}
+        manifest.pnpm.overrides ??= {}
+        manifest.pnpm.overrides[MARKET_PACKAGE] = owned.previousOverride.value
+      }
+      else if (manifest.pnpm?.overrides) delete manifest.pnpm.overrides[MARKET_PACKAGE]
+      await atomicWrite(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+    }
+    try {
+      const registry = await resolveMarketRegistry({ profileDir: profile, args, environment })
+      if (isCancelled()) throw new Error('The package operation was aborted.')
+      const env = buildPnpmEnvironment(binDirectory, environment, executablePath)
+      if (registry !== null) env.npm_config_registry = registry
+      const addArgs = args.includes('--workspace-root') ? args : [...args, '--workspace-root']
+      write(`Updating ${spec} in the shared profile…`)
+      const child = spawnProcess(executablePath,
+        [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...addArgs], {
+          cwd: invokingDir, env, stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true, detached: process.platform !== 'win32'
+        })
+      setCancel(() => killProcessTree(child))
+      child.stdout?.on('data', chunk => write(chunk.toString('utf8').replace(/\r?\n$/u, '')))
+      child.stderr?.on('data', chunk => write(chunk.toString('utf8').replace(/\r?\n$/u, '')))
+      const exit = await new Promise((resolveExit, rejectExit) => {
+        child.once('error', rejectExit)
+        child.once('close', (code, signal) => resolveExit({ code, signal }))
+      })
+      setCancel(() => {})
+      if (isCancelled() || exit.code !== 0) throw new Error(`Market install failed: ${exit.signal ?? exit.code}`)
+      const installed = JSON.parse(await readFile(join(profile, 'node_modules', MARKET_PACKAGE, 'package.json'), 'utf8'))
+      const expected = spec.slice(spec.lastIndexOf('@') + 1)
+      if (installed.version !== expected) throw new Error(`Market install expected ${expected}, found ${installed.version}`)
+      const [desired, generations] = await Promise.all([readDesired(home), listGenerations(home)])
+      const stale = new Set(generations.filter(g => g.pluginName === MARKET_PACKAGE).map(g => g.id))
+      await writeDesired(home, desired.filter(id => !stale.has(id)))
+      write(`installed in shared profile: ${spec}`)
+      return { exitCode: 0 }
+    } catch (error) {
+      await atomicWrite(manifestPath, before)
+      throw error
+    }
+  }
+
   /**
    * The install boundary dsh-market 1.6+ feature-detects. It hands us
    * `['add', 'name@exact.version', ...flags]` — a registry package pinned to an
@@ -474,24 +532,29 @@ export function createDesktopPnpmService(options) {
    *
    * The plugin is installed as its own immutable generation rather than into
    * the shared hoisted tree: a fresh directory, promoted by one rename, never
-   * replaced. Only a missing link may be created while Harness is live so the
-   * market can validate a new install; an existing node_modules entry and the
-   * bundle composition change only on the next cold start.
-   *
-   * Switching an existing entry here — a loaded junction, or `dshmarket`'s
-   * real directory — recreates the Windows locked-rename conflict generations
-   * exist to avoid; #352 tried it and every market self-update then failed or
-   * hung. Staging for the next restart is the contract this path keeps.
+   * replaced. Publish the installed link before the official market validates
+   * its version; activation can still require a restart. A shared-tree Market
+   * remains pnpm-managed, while an already projected Market uses generations.
    */
   const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
     if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
     const spec = args.slice(1).find((argument) => !argument.startsWith('-'))
     if (spec === undefined) throw new Error('The install boundary needs a package spec.')
 
-    const handle = asHandle(async ({ write }) =>
+    const handle = asHandle(async ({ write, isCancelled, setCancel }) =>
       withRegistryLock(home, async () => {
+        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+        const packageName = spec.slice(0, spec.lastIndexOf('@'))
+        if (packageName === MARKET_PACKAGE) {
+          const entry = await lstat(join(profileDirectory(home), 'node_modules', MARKET_PACKAGE))
+            .catch(error => { if (error?.code === 'ENOENT') return undefined; throw error })
+          if (!entry?.isSymbolicLink()) {
+            return updateSharedMarket(args, spec, invokingDir, write, isCancelled, setCancel)
+          }
+        }
         write(`Installing ${spec} as an isolated generation…`)
         // The market picked this exact version by reading ITS registry; the
         // install has to fetch from the same one (#337). `args` is consulted
@@ -525,16 +588,15 @@ export function createDesktopPnpmService(options) {
           const generation = byId.get(id)
           return generation === undefined || generation.pluginName !== install.generation.pluginName
         })
+        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
         await writeDesired(home, [...kept, install.generation.id])
-        // dsh-market validates a clean add against node_modules immediately.
-        // Creating a missing path cannot hit Windows' replace-existing rename;
-        // an existing entry (an update) stays on the old version until the next
-        // cold start's projection switches it while Harness is stopped.
-        const exposed = await exposeMissingGenerationLinks(home)
-        const published = await publishGenerationManifest(home)
-        if (exposed.length > 0) write(`available for validation: ${exposed.join(', ')}`)
-        write(`staged for next restart: ${install.generation.pluginName}@${install.generation.version}`)
-        write(`bundles: ${JSON.stringify(published.bundles)}`)
+        try {
+          await publishInstalledGeneration(home, install.generation.pluginName)
+        } catch (error) {
+          await writeDesired(home, desired)
+          throw error
+        }
+        write(`installed in profile: ${install.generation.pluginName}@${install.generation.version}; activation may require restart`)
         return { exitCode: 0 }
       })
     )

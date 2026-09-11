@@ -2,7 +2,7 @@ import {
   installGeneration,
   type GenerationInstallResult
 } from 'dsh-desktop-market-installer/generations/installer'
-import { projectGenerations } from 'dsh-desktop-market-installer/generations/projection'
+import { publishInstalledGeneration } from 'dsh-desktop-market-installer/generations/projection'
 import {
   listGenerations,
   readDesired,
@@ -29,6 +29,7 @@ export interface PluginUpgradeResult {
 /**
  * Install the target version of a plugin as an immutable generation and project
  * it into the web profile, replacing any older generation of that plugin.
+ * The caller must stop Harness first; this may replace a legacy real directory.
  */
 export async function upgradePluginToGeneration(
   options: PluginUpgradeOptions
@@ -68,7 +69,12 @@ export async function upgradePluginToGeneration(
     })
 
     await writeDesired(dshHome, [...kept, install.generation.id])
-    await projectGenerations(dshHome)
+    try {
+      await publishInstalledGeneration(dshHome, pluginName, 'web', { allowRealDirectory: true, syncBundles: true })
+    } catch (error) {
+      await writeDesired(dshHome, desired)
+      throw error
+    }
 
     note?.(`[plugin-upgrade] successfully upgraded ${pluginName} to v${targetVersion} (${install.generation.id})`)
     return { ok: true }

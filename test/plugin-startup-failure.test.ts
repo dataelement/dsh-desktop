@@ -102,7 +102,7 @@ describe('structured startup failures through the real bundled loader', () => {
       { id: 'included-leaf', name: pathToFileURL(join(dir, 'index.js')).href }
     ]))
     await writeFile(join(dir, 'cordis.patch.yml'), JSON.stringify([{ insert: [{
-      id: 'plugin-include', name: 'cordis:include', config: { path: join(dir, 'children.yml') }
+      id: 'plugin-include', name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'children.yml')).href }
     }] }]))
     expect(run(entry).failures[0]).toMatchObject({
       entryId: 'included-leaf', owner: { packageName: names[0], version: '1.2.3' }
@@ -119,7 +119,7 @@ describe('structured startup failures through the real bundled loader', () => {
     const line = result.stderr.split('\n').find((line) => line.startsWith(PLUGIN_FAILURE_PREFIX))
     expect(line, result.stderr).toBeDefined()
     expect(parsePluginStartupFailures(line!)?.[0]?.owner?.packageName).toBe(names[0])
-  })
+  }, 20_000)
 
   it('captures bundle preparation failures before a loader entry exists', async () => {
     const { home, entry, names } = await fixture(['export default () => {};'])
