@@ -22,7 +22,7 @@ export function initializeDesktopService(): void {
           type: 'question',
           title: '发送故障报告',
           message: '是否发送本次故障报告，帮助排查问题？',
-          detail: `版本：${report.version}\n故障类型：${report.kind}\n\n报告将发送到 https://dshdesktop.com/crash，包含安装 ID、版本、平台、故障时间、错误信息和 harness.log 最后最多 100 行（本次 ${report.lines.length} 行）。\n\n常见密钥和用户名路径已做脱敏，但仍可能包含文件名、项目名称或业务内容。仅用于故障排查，服务端保存期限为 30 天。\n\n点击“发送一次”仅同意发送本次报告；选择“不发送”将丢弃本次待传报告，不影响继续使用。`,
+          detail: `版本：${report.version}\n故障类型：${report.kind}\n\n报告将发送到 https://dshdesktop.com/crash，包含安装 ID、版本、平台、故障时间、错误信息和 harness.log 最后最多 100 行（本次 ${report.lines.length} 行）。\n\n点击“发送一次”仅同意发送本次报告；选择“不发送”将丢弃本次待传报告，不影响继续使用。`,
           buttons: ['不发送', '发送一次'],
           defaultId: 0,
           cancelId: 0,
