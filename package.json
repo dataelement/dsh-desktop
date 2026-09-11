@@ -365,6 +365,10 @@
         "to": "plugin-recovery.html"
       },
       {
+        "from": "build/web-import.html",
+        "to": "web-import.html"
+      },
+      {
         "from": "build/safe-mode.html",
         "to": "safe-mode.html"
       },

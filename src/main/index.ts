@@ -126,6 +126,14 @@ import {
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
+import { buildWebImportViewModel } from './web-import-view'
+import {
+  defaultWebHome,
+  importWebHome,
+  previewWebHome,
+  shouldOfferWebHomeImport,
+  writeSkipDecision
+} from './state/web-home-import'
 import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
 import {
   checkupAllProfilePlugins,
@@ -145,6 +153,7 @@ import {
 } from './main-window-recovery'
 
 type PluginRecoveryAction = 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
+type WebImportAction = 'import' | 'skip'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
   | { type: 'upgrade'; plugins: string[] }
@@ -179,6 +188,7 @@ let quitting = false
 let failureRecoveryVisible = false
 let harnessLaunchOperation: Promise<void> | undefined
 let pluginRecoveryActionResolver: ((action: PluginRecoveryAction) => void) | undefined
+let webImportActionResolver: ((action: WebImportAction) => void) | undefined
 let mainWindowNavigationVersion = 0
 let rendererPluginFailureLogs: string[] = []
 let pluginRecoveryRemovedPlugins: string[] = []
@@ -842,9 +852,24 @@ function isPluginRecoveryPage(url: string): boolean {
   }
 }
 
+function isWebImportPage(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'file:' && parsed.pathname.endsWith('/web-import.html')
+  } catch {
+    return false
+  }
+}
+
 function resolvePluginRecoveryAction(action: PluginRecoveryAction): void {
   const resolve = pluginRecoveryActionResolver
   pluginRecoveryActionResolver = undefined
+  resolve?.(action)
+}
+
+function resolveWebImportAction(action: WebImportAction): void {
+  const resolve = webImportActionResolver
+  webImportActionResolver = undefined
   resolve?.(action)
 }
 
@@ -856,6 +881,13 @@ function resolveSafeModeAction(action: SafeModeAction): void {
 
 function installPluginRecoveryNavigation(window: BrowserWindow): void {
   window.webContents.on('will-navigate', (event, targetUrl) => {
+    if (targetUrl.startsWith('dsh-import://')) {
+      event.preventDefault()
+      if (!isWebImportPage(window.webContents.getURL())) return
+      const action = new URL(targetUrl).hostname
+      if (action === 'import' || action === 'skip') resolveWebImportAction(action)
+      return
+    }
     if (!targetUrl.startsWith('dsh-recovery://')) return
     event.preventDefault()
     if (!isPluginRecoveryPage(window.webContents.getURL())) return
@@ -975,6 +1007,7 @@ function createWindow(): BrowserWindow {
     windowsMenuView = undefined
     windowsMenuOpen = false
     resolvePluginRecoveryAction('quit')
+    resolveWebImportAction('skip')
     resolveSafeModeAction({ type: 'quit' })
   })
   mainWindow = window
@@ -1026,6 +1059,76 @@ async function openHarness(
     () => app.isActive(),
     focusIntent
   )
+}
+
+async function maybeImportWebHome(dshHome: string): Promise<void> {
+  if (startInSafeMode) return
+  const webHome = defaultWebHome()
+  if (!await shouldOfferWebHomeImport(dshHome, webHome)) return
+
+  let notice: string | undefined
+  while (!quitting) {
+    const preview = await previewWebHome(webHome)
+    const choice = await showWebHomeImport(preview, notice)
+    if (choice !== 'import') {
+      await writeSkipDecision(dshHome, webHome)
+      runtime.note('[desktop] skipped importing web Harness home')
+      return
+    }
+
+    const window = mainWindow
+    try {
+      await importWebHome({
+        source: webHome,
+        dest: dshHome,
+        onProgress: (line) => {
+          runtime.note(`[desktop] web import: ${line}`)
+          if (!window || window.isDestroyed()) return
+          void window.webContents.executeJavaScript(
+            `(() => { const node = document.getElementById('progress'); if (!node) return; node.textContent = ${JSON.stringify(line)}; node.classList.add('visible'); })()`
+          ).catch(() => undefined)
+        }
+      })
+      runtime.note('[desktop] imported web Harness home')
+      await showSplash()
+      return
+    } catch (error) {
+      notice = error instanceof Error ? error.message : String(error)
+      runtime.note(`[desktop] web import failed: ${notice}`)
+    }
+  }
+}
+
+async function showWebHomeImport(
+  preview: Awaited<ReturnType<typeof previewWebHome>>,
+  notice?: string
+): Promise<WebImportAction> {
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const state = buildWebImportViewModel({
+    locale: harnessLocale(),
+    preview,
+    notice
+  })
+  const actionPromise = new Promise<WebImportAction>((resolve) => {
+    webImportActionResolver = resolve
+  })
+  const navigationVersion = ++mainWindowNavigationVersion
+  window.webContents.stop()
+  try {
+    await window.loadFile(desktopResourcePath('web-import.html'), {
+      query: {
+        state: JSON.stringify(state),
+        icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
+        theme: harnessThemePreference()
+      }
+    })
+  } catch (error) {
+    webImportActionResolver = undefined
+    throw error
+  }
+  if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return 'skip'
+  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
+  return actionPromise
 }
 
 async function showSplash(): Promise<void> {
@@ -1186,6 +1289,7 @@ function launchHarness(): Promise<void> {
     // is after maintenance. Stopping here owns that mutation window.
     await runtime.stop()
     runtime.note('[desktop] previous Harness stopped; starting profile maintenance')
+    await maybeImportWebHome(dshHome)
     const maintenance = await runProfileStartupMaintenance({
       note: (line) => runtime.note(line),
       recoverInterruptedMigration: () =>
@@ -2696,6 +2800,16 @@ async function bootstrap(): Promise<void> {
     assertTrustedMainWindowEvent(event)
     if (typeof action === 'string' && PLUGIN_RECOVERY_ACTIONS.has(action as PluginRecoveryAction)) {
       resolvePluginRecoveryAction(action as PluginRecoveryAction)
+      return { ok: true }
+    }
+    return { ok: false }
+  })
+  ipcMain.removeHandler('web-import:action')
+  ipcMain.handle('web-import:action', (event, action: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (!isWebImportPage(event.sender.getURL())) return { ok: false }
+    if (action === 'import' || action === 'skip') {
+      resolveWebImportAction(action)
       return { ok: true }
     }
     return { ok: false }
