@@ -60,7 +60,7 @@ export class DesktopService {
   private flushing?: Promise<void>
   private readonly outbox: string
   private readonly marker: string
-  constructor(private readonly options: { stateDir: string; logPath: string; version: string; platform: string; arch: string; request: Request }) {
+  constructor(private readonly options: { stateDir: string; logPath: string; version: string; platform: string; arch: string; request: Request; confirmUpload: (report: string) => Promise<boolean> }) {
     this.platform = desktopPlatform(options.platform, options.arch)
     if (!isVersion(options.version)) throw new Error('Invalid application version')
     this.outbox = join(options.stateDir, 'outbox')
@@ -108,6 +108,7 @@ export class DesktopService {
       const body = readFileSync(path, 'utf8')
       unlinkSync(path)
       try {
+        if (await this.options.confirmUpload(body) !== true) continue
         await this.options.request(SERVICE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000), redirect: 'error' })
       } catch { /* Best effort: failed reports are discarded. */ }
     }

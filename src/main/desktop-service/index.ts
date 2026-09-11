@@ -1,4 +1,4 @@
-import { app, net } from 'electron'
+import { app, dialog, net } from 'electron'
 import { join } from 'node:path'
 import { DesktopService } from './service'
 import { attachDiagnostics } from './diagnostics'
@@ -15,7 +15,21 @@ export function initializeDesktopService(): void {
       logPath: join(app.getPath('logs'), 'harness.log'),
       version: app.getVersion(), platform: process.platform, arch: process.arch,
       // Chromium networking uses the same proxy configuration as the desktop app.
-      request: (url, init) => net.fetch(url, init)
+      request: (url, init) => net.fetch(url, init),
+      confirmUpload: async body => {
+        const report = JSON.parse(body) as { version: string; kind: string; lines: string[] }
+        const { response } = await dialog.showMessageBox({
+          type: 'question',
+          title: '发送故障报告',
+          message: '是否发送本次故障报告，帮助排查问题？',
+          detail: `版本：${report.version}\n故障类型：${report.kind}\n\n报告将发送到 https://dshdesktop.com/crash，包含安装 ID、版本、平台、故障时间、错误信息和 harness.log 最后最多 100 行（本次 ${report.lines.length} 行）。\n\n常见密钥和用户名路径已做脱敏，但仍可能包含文件名、项目名称或业务内容。仅用于故障排查，服务端保存期限为 30 天。\n\n点击“发送一次”仅同意发送本次报告；选择“不发送”将丢弃本次待传报告，不影响继续使用。`,
+          buttons: ['不发送', '发送一次'],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true
+        })
+        return response === 1
+      }
     })
     desktopDiagnostics = attachDiagnostics(app, service, {
       onError: error => console.warn('[desktop-service]', error instanceof Error ? error.name : 'Diagnostic failure')

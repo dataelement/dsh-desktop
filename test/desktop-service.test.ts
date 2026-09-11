@@ -10,7 +10,7 @@ const disposers: Array<() => void> = []
 afterEach(() => { disposers.splice(0).forEach(fn => fn()); roots.splice(0).forEach(dir => rmSync(dir, { recursive: true, force: true })) })
 function fixture(request = vi.fn(async (_url: string, _init?: RequestInit): Promise<Response> => { throw new Error('offline') })) {
   const dir = mkdtempSync(join(tmpdir(), 'desktop-service-')); roots.push(dir)
-  const options = { stateDir: join(dir, 'state'), logPath: join(dir, 'harness.log'), version: '0.8.0', platform: 'darwin', arch: 'arm64', request }
+  const options = { stateDir: join(dir, 'state'), logPath: join(dir, 'harness.log'), version: '0.8.0', platform: 'darwin', arch: 'arm64', request, confirmUpload: vi.fn(async (_report: string) => true) }
   return { dir, options, request, service: new DesktopService(options) }
 }
 function queued(service: DesktopService, dir: string) {
@@ -57,10 +57,46 @@ describe('desktop service', () => {
     service.capture('startup-failure', 'first')
     const sending = service.flush()
     service.capture('renderer-crash', 'second')
+    await Promise.resolve()
     reject(new Error('offline'))
     await sending
     expect(request).toHaveBeenCalledTimes(2)
     expect(service.pending()).toHaveLength(0)
+  })
+  it('does not upload before explicit consent and sends exactly the confirmed report', async () => {
+    const { service, request, options } = fixture()
+    let approve!: (value: boolean) => void
+    options.confirmUpload.mockImplementationOnce(() => new Promise(resolve => { approve = resolve }))
+    service.capture('startup-failure', 'failure')
+    const sending = service.flush()
+    expect(options.confirmUpload).toHaveBeenCalledTimes(1)
+    expect(request).not.toHaveBeenCalled()
+    approve(true)
+    await sending
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls[0]?.[1]?.body).toBe(options.confirmUpload.mock.calls[0]?.[0])
+  })
+  it.each(['cancel', 'dialog-error'])('discards without sending on %s, including after restart', async outcome => {
+    const { service, request, options } = fixture()
+    if (outcome === 'cancel') options.confirmUpload.mockResolvedValue(false)
+    else options.confirmUpload.mockRejectedValue(new Error('dialog unavailable'))
+    service.capture('startup-failure', 'failure')
+    await service.flush()
+    await new DesktopService(options).flush()
+    expect(request).not.toHaveBeenCalled()
+    expect(service.pending()).toHaveLength(0)
+    expect(options.confirmUpload).toHaveBeenCalledTimes(1)
+  })
+  it('asks for consent on a fatal report recovered after restart', async () => {
+    const { service, options, request } = fixture()
+    service.beginSession()
+    service.captureFatal(new Error('fatal'))
+    const next = new DesktopService(options)
+    next.beginSession()
+    options.confirmUpload.mockResolvedValue(false)
+    await next.flush()
+    expect(options.confirmUpload).toHaveBeenCalledTimes(1)
+    expect(request).not.toHaveBeenCalled()
   })
   it('bounds huge lines, preserves partial lines, and reports missing logs', () => {
     const { options } = fixture()
