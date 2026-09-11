@@ -1,4 +1,4 @@
-import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, runPluginRecoveryUpgrades, type PluginRecoveryCheck } from './plugin-recovery-market'
+import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -143,7 +143,7 @@ import {
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
 
-type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'upgrade-all'
+type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
   | { type: 'upgrade'; plugins: string[] }
@@ -156,7 +156,7 @@ type SafeModeAction =
   | { type: 'quit' }
 
 const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
-  'upgrade-all',
+  'auto-process',
   'uninstall',
   'upgrade',
   'show-log',
@@ -1757,17 +1757,27 @@ async function showPluginRecovery(options?: {
       if (action === 'refresh') {
         applyPendingFrontendEvidence()
         continue
-      } else if (action === 'upgrade-all' || ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate)) {
-        const candidates = action === 'upgrade-all'
-          ? pluginChecks.flatMap(check => check.upgradeCandidate ? [check.upgradeCandidate] : [])
-          : [upgradeCandidate!]
-        if (candidates.length === 0) continue
+      } else if (action === 'auto-process' || ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate)) {
+        const plan = action === 'auto-process'
+          ? planPluginRecovery(pluginChecks)
+          : { upgrades: [upgradeCandidate!], removals: [], skipped: [] }
+        if (plan.upgrades.length + plan.removals.length === 0) {
+          notice = isChinese ? '尚未确定处理方案，请重试检查或逐项处理。' : 'No recovery actions are confirmed yet. Retry the check or handle plugins individually.'
+          continue
+        }
         await runtime.stop()
-        const results = await runPluginRecoveryUpgrades(candidates, candidate => upgradePluginToGeneration({
-          dshHome, pluginName: candidate.packageName, targetVersion: candidate.targetVersion,
-          nodeExecutablePath: bundledNodePath(), pnpmEntryPath: bundledPnpmEntryPath(),
-          note: line => runtime.note(line)
-        }))
+        const processed = await runPluginRecoveryPlan(plan, {
+          upgrade: candidate => upgradePluginToGeneration({
+            dshHome, pluginName: candidate.packageName, targetVersion: candidate.targetVersion,
+            nodeExecutablePath: bundledNodePath(), pnpmEntryPath: bundledPnpmEntryPath(),
+            note: line => runtime.note(line)
+          }),
+          remove: plugin => removeProfilePluginCompletely(dshHome, plugin, 'plugin-recovery')
+        })
+        const results = processed.upgrades
+        for (const removal of processed.removals) {
+          if (removal.removed && !removedPlugins.includes(removal.plugin)) removedPlugins.push(removal.plugin)
+        }
         for (const result of results) {
           // Only a successful installation invalidates old evidence. Failed
           // attempts remain retryable and must not be mistaken for bad releases.
@@ -1777,10 +1787,13 @@ async function showPluginRecovery(options?: {
           }
         }
         const failed = results.filter(result => !result.ok)
-        if (failed.length) {
-          notice = failed.map(result => `${result.candidate.packageName}: ${result.detail ?? (isChinese ? '升级失败' : 'Upgrade failed')}`).join('\n')
-          // Reinspect even after partial success; other plugins may still block.
-        }
+        const failedRemovals = processed.removals.filter(result => !result.removed || result.pending)
+        const processingFailed = failed.length > 0 || failedRemovals.length > 0 || plan.skipped.length > 0
+        notice = [
+          ...failed.map(result => `${result.candidate.packageName}: ${result.detail ?? (isChinese ? '升级失败，可重试' : 'Upgrade failed; retry available')}`),
+          ...failedRemovals.map(result => `${result.plugin}: ${result.detail ?? (isChinese ? '卸载未完成，请重试或进入安全模式' : 'Removal incomplete; retry or enter Safe Mode')}`),
+          ...plan.skipped.map(plugin => isChinese ? `${plugin}: 未能确定更新状态，已跳过自动处理。` : `${plugin}: update status is unknown; skipped automatic processing.`)
+        ].join('\n') || undefined
 
         const compatibility = await inspectProfileCompatibility(
           dshHome,
@@ -1794,13 +1807,13 @@ async function showPluginRecovery(options?: {
             `profile compatibility issue${blockingIssues.length === 1 ? '' : 's'} after upgrade`
           )
           notice = [notice, isChinese
-            ? `已完成本轮升级，仍有 ${blockingIssues.length} 项兼容问题，请继续处理剩余插件或进入安全模式。`
-            : `This upgrade pass is complete; ${blockingIssues.length} compatibility issues remain. Handle the remaining plugins or enter Safe Mode.`
+            ? `已完成本轮处理，仍有 ${blockingIssues.length} 项兼容问题，请继续处理剩余插件或进入安全模式。`
+            : `This recovery pass is complete; ${blockingIssues.length} compatibility issues remain. Handle the remaining plugins or enter Safe Mode.`
           ].filter(Boolean).join('\n')
           continue
         }
 
-        if (failed.length) continue
+        if (processingFailed) continue
         await launchWithFreshEvidence()
         if (applyPendingFrontendEvidence()) continue
         if (runtime.snapshot().phase === 'ready') {

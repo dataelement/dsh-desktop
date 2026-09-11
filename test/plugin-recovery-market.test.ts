@@ -1,9 +1,46 @@
 import { describe, expect, it } from 'vitest'
-import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, runPluginRecoveryUpgrades } from '../src/main/plugin-recovery-market'
+import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, runPluginRecoveryUpgrades, planPluginRecovery, runPluginRecoveryPlan } from '../src/main/plugin-recovery-market'
 import type { ProfileCompatibilityIssue } from '../src/main/state/profile-compatibility'
 import type { PluginHealthReport } from '../src/main/state/plugin-market-check'
 
 describe('per-plugin recovery checks', () => {
+  it('plans upgrades and removals together while leaving unknown checks untouched', async () => {
+    const checks = await checkBlockingPluginUpdates({
+      plugins: ['update', 'latest', 'unknown'], attemptedUpgrades: new Map(), locale: 'zh',
+      check: async packageName => ({ packageName,
+        healthStatus: packageName === 'update' ? 'incompatible-upgrade-available' : packageName === 'latest' ? 'incompatible-no-fix' : 'check-failed',
+        healthLabel: packageName, upgradeReady: packageName === 'update',
+        upgradeVersion: packageName === 'update' ? '1.5.0' : undefined
+      })
+    })
+    const plan = planPluginRecovery(checks)
+    expect(plan.upgrades.map(candidate => candidate.packageName)).toEqual(['update'])
+    expect(plan.removals).toEqual(['latest'])
+    expect(plan.skipped).toEqual(['unknown'])
+    const calls: string[] = []
+    const result = await runPluginRecoveryPlan(plan, {
+      upgrade: async candidate => { calls.push(`upgrade:${candidate.packageName}@${candidate.targetVersion}`); return { ok: true } },
+      remove: async plugin => { calls.push(`remove:${plugin}`); return { removed: true } }
+    })
+    expect(calls).toEqual(['upgrade:update@1.5.0', 'remove:latest'])
+    expect(result.upgrades[0]?.ok).toBe(true)
+    expect(result.removals[0]?.removed).toBe(true)
+  })
+
+  it('does not turn a failed upgrade into a removal and preserves pending removal outcomes', async () => {
+    const removals: string[] = []
+    const result = await runPluginRecoveryPlan({ upgrades: [{ packageName: 'a', targetVersion: '2.0.0' }], removals: ['b', 'c'], skipped: [] }, {
+      upgrade: async () => { throw new Error('offline') },
+      remove: async plugin => {
+        removals.push(plugin)
+        if (plugin === 'b') return { removed: false, pending: true }
+        throw new Error('locked')
+      }
+    })
+    expect(removals).toEqual(['b', 'c'])
+    expect(result.upgrades[0]?.ok).toBe(false)
+    expect(result.removals).toMatchObject([{ plugin: 'b', removed: false, pending: true }, { plugin: 'c', removed: false, detail: 'locked' }])
+  })
   const blocking = (target: string): ProfileCompatibilityIssue => ({
     id: target, kind: 'missing-client-module', severity: 'blocking', packageName: target,
     source: 'fixture', detail: 'missing', resolution: 'disable-plugin', target

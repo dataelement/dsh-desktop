@@ -16,16 +16,23 @@ function failedSnapshot(logs: string[] = []): RuntimeSnapshot {
 }
 
 describe('plugin recovery view model', () => {
-  it('offers bulk upgrade only for the blocking plugins with a selected update', () => {
+  it('keeps automatic processing as primary even when every blocker needs removal', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['a', 'b'], removedPlugins: [], locale: 'zh',
+      pluginChecks: ['a', 'b'].map(packageName => ({ packageName, hint: 'latest still fails', removalRecommended: true }))
+    })
+    expect(model.autoProcessLabel).toBe('一键自动处理（升级 0，卸载 2）')
+  })
+  it('shows a mixed automatic recovery plan as the primary action', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: ['a', 'b', 'c'], removedPlugins: [], locale: 'zh',
       pluginChecks: [
         { packageName: 'a', hint: 'intermediate', upgradeCandidate: { packageName: 'a', targetVersion: '1.5.0' } },
         { packageName: 'b', hint: 'latest', upgradeCandidate: { packageName: 'b', targetVersion: '2.0.0' } },
-        { packageName: 'c', hint: 'remove' }
+        { packageName: 'c', hint: 'remove', removalRecommended: true }
       ]
     })
-    expect(model.upgradeAllLabel).toBe('一键升级 2 个插件')
+    expect(model.autoProcessLabel).toBe('一键自动处理（升级 2，卸载 1）')
     expect(model.pluginChecks).toHaveLength(3)
     expect(model.upgradeCandidate).toBeUndefined()
   })

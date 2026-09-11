@@ -1,4 +1,4 @@
-import type { PluginRecoveryCheck } from './plugin-recovery-market'
+import { planPluginRecovery, type PluginRecoveryCheck } from './plugin-recovery-market'
 import type { RuntimeSnapshot } from '../shared/contracts'
 
 export type PluginRecoveryLocale = 'en' | 'zh'
@@ -27,7 +27,7 @@ export interface PluginRecoveryViewModel {
   primaryBusyLabel: string
   upgradeCandidate?: PluginRecoveryUpgradeCandidate
   pluginChecks?: PluginRecoveryCheck[]
-  upgradeAllLabel?: string
+  autoProcessLabel?: string
   upgradeLabel?: string
   upgradeBusyLabel?: string
   upgradeHint?: string
@@ -172,7 +172,7 @@ export function buildPluginRecoveryViewModel(options: {
   const canUninstall = plugins.length > 0
   const description = describePluginFailure(snapshot.logs, locale)
   const multiple = plugins.length > 1
-  const upgradeCount = options.pluginChecks?.filter(check => check.upgradeCandidate).length ?? 0
+  const plan = planPluginRecovery(options.pluginChecks ?? [])
 
   if (locale === 'zh') {
     return {
@@ -198,7 +198,7 @@ export function buildPluginRecoveryViewModel(options: {
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
         : '进入安全模式',
       primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在进入安全模式…',
-      upgradeAllLabel: multiple && upgradeCount > 0 ? `一键升级 ${upgradeCount} 个插件` : undefined,
+      autoProcessLabel: options.pluginChecks?.length ? `一键自动处理（升级 ${plan.upgrades.length}，卸载 ${plan.removals.length}）` : undefined,
       pluginChecks: options.pluginChecks,
       upgradeCandidate,
       upgradeLabel: upgradeCandidate
@@ -244,7 +244,7 @@ export function buildPluginRecoveryViewModel(options: {
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
       : 'Enter Safe Mode',
     primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Entering Safe Mode…',
-    upgradeAllLabel: multiple && upgradeCount > 0 ? `Upgrade all ${upgradeCount} plugins with updates` : undefined,
+    autoProcessLabel: options.pluginChecks?.length ? `Auto-recover (${plan.upgrades.length} upgrades, ${plan.removals.length} removals)` : undefined,
     pluginChecks: options.pluginChecks,
     upgradeCandidate,
     upgradeLabel: upgradeCandidate

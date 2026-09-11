@@ -37,6 +37,37 @@ export interface PluginRecoveryCheck {
   packageName: string
   hint: string
   upgradeCandidate?: PluginUpgradeCandidate
+  removalRecommended?: boolean
+}
+
+export function planPluginRecovery(checks: readonly PluginRecoveryCheck[]): {
+  upgrades: PluginUpgradeCandidate[]; removals: string[]; skipped: string[]
+} {
+  const upgrades: PluginUpgradeCandidate[] = []
+  const removals: string[] = []
+  const skipped: string[] = []
+  for (const check of checks) {
+    if (check.upgradeCandidate) upgrades.push(check.upgradeCandidate)
+    else if (check.removalRecommended) removals.push(check.packageName)
+    else skipped.push(check.packageName)
+  }
+  return { upgrades, removals, skipped }
+}
+
+export async function runPluginRecoveryPlan(
+  plan: ReturnType<typeof planPluginRecovery>,
+  handlers: {
+    upgrade: (candidate: PluginUpgradeCandidate) => Promise<{ ok: boolean; detail?: string }>
+    remove: (plugin: string) => Promise<{ removed: boolean; pending?: boolean; detail?: string }>
+  }
+) {
+  const upgrades = await runPluginRecoveryUpgrades(plan.upgrades, handlers.upgrade)
+  const removals = []
+  for (const plugin of plan.removals) {
+    try { removals.push({ plugin, ...await handlers.remove(plugin) }) }
+    catch (error) { removals.push({ plugin, removed: false, detail: error instanceof Error ? error.message : String(error) }) }
+  }
+  return { upgrades, removals }
 }
 
 /** Keep one failed registry check from hiding the other blocking plugins. */
@@ -59,7 +90,8 @@ export async function checkBlockingPluginUpdates(options: {
         hint: attempted
           ? options.locale === 'zh' ? '已尝试此版本，仍有启动问题，请卸载此插件并继续检测。' : 'This version was already attempted; remove the plugin and continue checking.'
           : report.detail ?? report.healthLabel,
-        upgradeCandidate
+        upgradeCandidate,
+        removalRecommended: attempted || report.healthStatus === 'incompatible-no-fix'
       }
     } catch {
       return {

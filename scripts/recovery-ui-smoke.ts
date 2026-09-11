@@ -75,6 +75,7 @@ async function main(): Promise<void> {
         locale, plugins: scenario === 'unidentified-plugin' ? [] : scenario === 'multiple-plugins' ? names.slice(0, 3) : [names[0]!], removedPlugins: [],
         pluginChecks: scenario === 'multiple-plugins' ? names.slice(0, 3).map((packageName, index) => ({
           packageName, hint: index === 1 ? '已是 latest，仍阻挡启动，请卸载此插件。' : '可尝试升级，兼容性未确认；升级后仍需验证启动。',
+          removalRecommended: index === 1,
           upgradeCandidate: index === 1 ? undefined : { packageName, targetVersion: '2.0.0' }
         })) : undefined,
         snapshot: { phase: 'failed', message: 'Plugin startup conflict', logs: ['duplicate prefix route "/calendar/api"'] }
@@ -165,7 +166,7 @@ async function main(): Promise<void> {
         })()`)
         assert.deepEqual(perPluginActions.actions, [
           `upgrade:${names[0]}`, `uninstall:${names[0]}`, `uninstall:${names[1]}`,
-          `upgrade:${names[2]}`, `uninstall:${names[2]}`, 'upgrade-all'
+          `upgrade:${names[2]}`, `uninstall:${names[2]}`, 'auto-process'
         ])
         assert.equal(perPluginActions.hints.length, 3)
       }
