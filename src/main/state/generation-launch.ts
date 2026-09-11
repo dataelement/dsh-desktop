@@ -66,16 +66,6 @@ export async function prepareGenerationsForLaunch(dshHome: string, note: Note): 
   }
 }
 
-/**
- * Whether this plugin is installed as a generation, and so is projected from
- * `desired` rather than owned by the profile manifest.
- *
- * Callers that report success or failure to the user need this BEFORE
- * attempting the removal. {@link uninstallGenerationPlugin} answers false both
- * for "not a generation, use pnpm instead" and for "is a generation, and
- * disabling it failed" — treating those the same is how an uninstall that left
- * the pointer in place still reported success (#330).
- */
 export async function isProjectedGenerationPlugin(
   dshHome: string,
   pluginName: string

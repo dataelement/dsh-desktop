@@ -1,0 +1,13 @@
+# Source files check out with LF everywhere. Without this, a Windows
+# checkout under autocrlf gets CRLF sources, the client sourcemap embeds
+# them in sourcesContent, and the committed map can never match a Windows
+# rebuild — the reproducibility guard measured exactly that on its second
+# run (#472). The bundle itself was already line-ending-clean; the map is
+# where checkout-time conversion leaks into a build artifact.
+* text=auto eol=lf
+# Binary-ish assets keep their bytes.
+*.png -text
+*.jpg -text
+*.gif -text
+*.ico -text
+*.woff2 -text

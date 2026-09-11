@@ -1,0 +1,20 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+@@ -195,6 +195,16 @@
+ 				setActiveId(id);
+ 				setOpen(true);
+ 			}, []);
++			(0, react.useEffect)(() => {
++				const openRequestedSection = (event) => {
++					if (!(event instanceof CustomEvent)) return;
++					const id = event.detail?.id;
++					if (typeof id !== "string" || id.trim() === "") return;
++					openSection(id);
++				};
++				window.addEventListener("dsh-desktop:open-settings-section", openRequestedSection);
++				return () => window.removeEventListener("dsh-desktop:open-settings-section", openRequestedSection);
++			}, [openSection]);
+ 			const rows = useSections((s) => s);
+ 			const connectionState = useConnectionState((state) => state);
+ 			const previousConnectionState = (0, react.useRef)(connectionState);

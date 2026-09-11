@@ -42,7 +42,15 @@ function startup(ensure: () => Promise<void>): ProfileStartupMaintenanceDeps {
 describe('market baseline at normal startup', () => {
   it('keeps the baseline aligned with the bundled market', async () => {
     const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(VERIFIED_MARKET_BASELINE).toBe(pkg.dependencies.dshmarket)
+    const spec = pkg.dependencies.dshmarket
+    if (typeof spec === 'string' && spec.startsWith('file:')) {
+      const local = JSON.parse(
+        await readFile(new URL(`../${spec.slice('file:'.length)}/package.json`, import.meta.url), 'utf8')
+      ) as { version?: string }
+      expect(VERIFIED_MARKET_BASELINE).toBe(local.version)
+      return
+    }
+    expect(VERIFIED_MARKET_BASELINE).toBe(spec)
   })
 
   it('upgrades an already-migrated Profile in the shared tree, never as a generation', async () => {

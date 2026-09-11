@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { patchPath, projectRoot } from './patch-path'
 
 describe('workspace Open in Finder integration', () => {
-  it('keeps the workspace UI patch on the Harness 0.1.2 package', async () => {
+  it('keeps the workspace UI patch on the Harness 0.1.5 package', async () => {
     const patch = await readFile(
       patchPath('@deepseek-ai/dsh-client-ui-workspace'),
       'utf8'
@@ -13,10 +13,10 @@ describe('workspace Open in Finder integration', () => {
     const patchNames = await readdir(path.join(projectRoot, 'patches'))
 
     expect(patchNames).toContain(
-      '@deepseek-ai+dsh-client-ui-workspace+0.1.2-rc.1.patch'
+      '@deepseek-ai+dsh-client-ui-workspace+0.1.5-rc.2.patch'
     )
     expect(patchNames).not.toContain(
-      '@deepseek-ai+dsh-client-ui-workspace+0.1.0-rc.8.patch'
+      '@deepseek-ai+dsh-client-ui-workspace+0.1.5-rc.1.patch'
     )
     expect(patch).toContain('id: "openInFinder"')
     expect(patch).toContain('t("menu.openInFinder")')

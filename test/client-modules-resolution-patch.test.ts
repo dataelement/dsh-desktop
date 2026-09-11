@@ -1,14 +1,12 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
+import { patchPath } from './patch-path'
 
 describe('packaged client module resolution', () => {
   it('uses the same createRequire fallback as the packaged Loader', async () => {
     const [loaderPatch, clientModulesPatch] = await Promise.all([
-      readFile('patches/@deepseek-ai+cordis-plugin-loader+1.0.3.patch', 'utf8'),
-      readFile(
-        'patches/@deepseek-ai+dsh-client-modules+0.1.2-rc.1.patch',
-        'utf8'
-      )
+      readFile(patchPath('@deepseek-ai/cordis-plugin-loader'), 'utf8'),
+      readFile(patchPath('@deepseek-ai/dsh-client-modules'), 'utf8')
     ])
 
     expect(loaderPatch).toContain('createRequire(new URL("package.json", this.ctx.baseUrl).href)')
