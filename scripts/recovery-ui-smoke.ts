@@ -58,8 +58,8 @@ async function main(): Promise<void> {
   const preload = join(process.cwd(), 'out/preload/index.cjs')
   const names = ['calendar-plugin', 'search-plugin', 'notes-plugin', '@community/billing-plugin', '@community/longer-agent-memory-plugin', 'mobile-plugin']
   let closed = 0
-  for (const scenario of ['safe-mode', 'plugin-recovery', 'multiple-plugins', 'unidentified-plugin']) {
-    const page = scenario === 'unidentified-plugin' || scenario === 'multiple-plugins' ? 'plugin-recovery' : scenario
+  for (const scenario of ['safe-mode', 'plugin-recovery', 'multiple-plugins', 'market-offline', 'unidentified-plugin']) {
+    const page = scenario === 'unidentified-plugin' || scenario === 'multiple-plugins' || scenario === 'market-offline' ? 'plugin-recovery' : scenario
     await parent.loadURL('data:text/html,<body style="background:%2318181b;color:%23999">DSH Desktop</body>')
     const overlay = page === 'safe-mode' ? new SafeModeOverlay(parent, preload, () => { closed++ }) : undefined
     const contents = overlay?.webContents ?? parent.webContents
@@ -72,8 +72,8 @@ async function main(): Promise<void> {
         menu.setBounds(windowsMenuViewBounds({ width: width!, height: height! }, false))
       }
       const model = page === 'safe-mode' ? buildSafeModeViewModel({ locale, plugins: names }) : buildPluginRecoveryViewModel({
-        locale, plugins: scenario === 'unidentified-plugin' ? [] : scenario === 'multiple-plugins' ? names.slice(0, 3) : [names[0]!], removedPlugins: [],
-        pluginChecks: scenario === 'multiple-plugins' ? names.slice(0, 3).map((packageName, index) => ({
+        locale, plugins: scenario === 'unidentified-plugin' ? [] : (scenario === 'multiple-plugins' || scenario === 'market-offline') ? names.slice(0, 3) : [names[0]!], removedPlugins: [],
+        pluginChecks: scenario === 'market-offline' ? names.slice(0, 3).map(packageName => ({ packageName, hint: 'ENOTFOUND — 请重新检查更新' })) : scenario === 'multiple-plugins' ? names.slice(0, 3).map((packageName, index) => ({
           packageName, hint: index === 1 ? '已是 latest，仍阻挡启动，请卸载此插件。' : '可尝试升级，兼容性未确认；升级后仍需验证启动。',
           removalRecommended: index === 1,
           upgradeCandidate: index === 1 ? undefined : { packageName, targetVersion: '2.0.0' }
@@ -169,6 +169,16 @@ async function main(): Promise<void> {
           `upgrade:${names[2]}`, `uninstall:${names[2]}`, 'auto-process'
         ])
         assert.equal(perPluginActions.hints.length, 3)
+      }
+      if (scenario === 'market-offline') {
+        const retry = await contents.executeJavaScript(`(() => {
+          let action;
+          window.dshRecovery = { action: value => { action = value } };
+          const label = document.getElementById('primary').textContent;
+          document.getElementById('primary').click();
+          return { action, label };
+        })()`)
+        assert.deepEqual(retry, { action: 'check-updates', label: locale === 'zh' ? '重新检查更新' : 'Retry update checks' })
       }
       results.push({ page, scenario, locale, theme, requestedSize: [width,height], layout, popup })
     }

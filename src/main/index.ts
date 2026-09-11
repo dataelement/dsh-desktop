@@ -5,6 +5,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { parse } from 'yaml'
 import {
   app,
+  net,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -143,7 +144,7 @@ import {
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
 
-type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process'
+type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
   | { type: 'upgrade'; plugins: string[] }
@@ -156,6 +157,7 @@ type SafeModeAction =
   | { type: 'quit' }
 
 const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
+  'check-updates',
   'auto-process',
   'uninstall',
   'upgrade',
@@ -1727,7 +1729,8 @@ async function showPluginRecovery(options?: {
           const installedVersion = loadedVersion ?? await readInstalledPluginVersion(dshHome, targetPlugin)
           return evaluatePluginMarketCompatibility({
             packageName: targetPlugin, installedVersion, currentRuntimeVersion: runtimeVersion,
-            hasLocalIssue: true, locale: harnessLocale()
+            hasLocalIssue: true, locale: harnessLocale(),
+            fetchFn: (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
           })
         }
       })
@@ -1754,7 +1757,7 @@ async function showPluginRecovery(options?: {
       }
       const removalTargets = target?.type === 'uninstall' ? [target.plugin] : detection.plugins
 
-      if (action === 'refresh') {
+      if (action === 'refresh' || action === 'check-updates') {
         applyPendingFrontendEvidence()
         continue
       } else if (action === 'auto-process' || ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate)) {
@@ -2191,6 +2194,7 @@ async function showSafeModeManager(initial?: {
             dshHome,
             bundledNodeModulesPath: join(app.getAppPath(), 'node_modules'),
             incompatiblePlugins: [...new Set([...safeModeSuspectedPlugins, ...incompatiblePluginNames])],
+            fetchFn: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
             locale: harnessLocale()
           })
         } catch (error) {

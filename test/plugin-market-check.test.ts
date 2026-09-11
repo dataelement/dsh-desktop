@@ -218,4 +218,17 @@ describe('plugin-market-check', () => {
     expect(await check(registry([{ version: '1.1.0' }]), { installedVersion: undefined, hasLocalIssue: true }))
       .toMatchObject({ healthStatus: 'check-failed', upgradeReady: false })
   })
+
+  it('retries immediately after a failed check instead of caching failure for five minutes', async () => {
+    const fetchFn = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(Object.assign(new Error('fetch failed'), { cause: { code: 'ENOTFOUND' } }))
+      .mockResolvedValueOnce(new Response('', { status: 503 }))
+      .mockImplementation(registry([{ version: '1.1.0' }]))
+    const failed = await check(fetchFn, { hasLocalIssue: true })
+    expect(failed.upgradeReady).toBe(false)
+    expect(failed.detail).toContain('ENOTFOUND')
+    expect(failed.detail).toContain('HTTP 503')
+    expect(await check(fetchFn, { hasLocalIssue: true })).toMatchObject({ upgradeReady: true, upgradeVersion: '1.1.0' })
+    expect(fetchFn).toHaveBeenCalledTimes(3)
+  })
 })

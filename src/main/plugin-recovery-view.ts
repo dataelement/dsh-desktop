@@ -27,6 +27,7 @@ export interface PluginRecoveryViewModel {
   primaryBusyLabel: string
   upgradeCandidate?: PluginRecoveryUpgradeCandidate
   pluginChecks?: PluginRecoveryCheck[]
+  retryCheckLabel?: string
   autoProcessLabel?: string
   upgradeLabel?: string
   upgradeBusyLabel?: string
@@ -173,6 +174,8 @@ export function buildPluginRecoveryViewModel(options: {
   const description = describePluginFailure(snapshot.logs, locale)
   const multiple = plugins.length > 1
   const plan = planPluginRecovery(options.pluginChecks ?? [])
+  const hasActions = plan.upgrades.length + plan.removals.length > 0
+  const retryCheck = (options.pluginChecks?.length ?? 0) > 0 && !hasActions
 
   if (locale === 'zh') {
     return {
@@ -198,7 +201,8 @@ export function buildPluginRecoveryViewModel(options: {
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
         : '进入安全模式',
       primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在进入安全模式…',
-      autoProcessLabel: options.pluginChecks?.length ? `一键自动处理（升级 ${plan.upgrades.length}，卸载 ${plan.removals.length}）` : undefined,
+      autoProcessLabel: hasActions ? `一键自动处理（升级 ${plan.upgrades.length}，卸载 ${plan.removals.length}）` : undefined,
+      retryCheckLabel: retryCheck ? '重新检查更新' : undefined,
       pluginChecks: options.pluginChecks,
       upgradeCandidate,
       upgradeLabel: upgradeCandidate
@@ -244,7 +248,8 @@ export function buildPluginRecoveryViewModel(options: {
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
       : 'Enter Safe Mode',
     primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Entering Safe Mode…',
-    autoProcessLabel: options.pluginChecks?.length ? `Auto-recover (${plan.upgrades.length} upgrades, ${plan.removals.length} removals)` : undefined,
+    autoProcessLabel: hasActions ? `Auto-recover (${plan.upgrades.length} upgrades, ${plan.removals.length} removals)` : undefined,
+    retryCheckLabel: retryCheck ? 'Retry update checks' : undefined,
     pluginChecks: options.pluginChecks,
     upgradeCandidate,
     upgradeLabel: upgradeCandidate

@@ -214,7 +214,7 @@ export interface NpmPackageVersions {
 }
 
 // Cache the complete version list, independent of the installed/runtime version.
-const manifestCache = new Map<string, { metadata: NpmPackageVersions | null; timestamp: number }>()
+const manifestCache = new Map<string, { metadata: NpmPackageVersions; timestamp: number }>()
 const CACHE_TTL_MS = 5 * 60 * 1000
 
 export async function fetchPluginVersionsFromRegistry(
@@ -223,6 +223,7 @@ export async function fetchPluginVersionsFromRegistry(
     registry?: string
     timeoutMs?: number
     fetchFn?: typeof fetch
+    onFailure?: (reason: string) => void
   }
 ): Promise<NpmPackageVersions | null> {
   const primaryRegistry = (options?.registry || DEFAULT_NPM_REGISTRY).replace(/\/$/, '')
@@ -244,25 +245,30 @@ export async function fetchPluginVersionsFromRegistry(
         // metadata is insufficient for this compatibility check.
         headers: { accept: 'application/json', 'user-agent': 'dsh-desktop' }
       })
-      if (!res.ok) continue
+      if (!res.ok) {
+        options?.onFailure?.(`${registry}: HTTP ${res.status}`)
+        continue
+      }
       const data = (await res.json()) as NpmPackageVersions | null
-      if (!data?.versions || typeof data.versions !== 'object' || Array.isArray(data.versions)) continue
+      if (!data?.versions || typeof data.versions !== 'object' || Array.isArray(data.versions)) throw new Error('Invalid version metadata')
       const latest = data['dist-tags']?.latest
-      if (typeof latest !== 'string' || !parseSemver(latest)) continue
+      if (typeof latest !== 'string' || !parseSemver(latest)) throw new Error('Invalid latest version')
       const versions = Object.fromEntries(Object.entries(data.versions).filter(([version, manifest]) =>
         parseSemver(version) && manifest?.version === version && manifest.name === packageName
       ))
-      if (!versions[latest]) continue
+      if (!versions[latest]) throw new Error('Latest version manifest is missing')
       const metadata: NpmPackageVersions = { versions, 'dist-tags': { latest } }
       manifestCache.set(cacheKey, { metadata, timestamp: Date.now() })
       return metadata
-    } catch {
+    } catch (error) {
+      const failure = error as { message?: string; cause?: { code?: string } }
+      options?.onFailure?.(`${registry}: ${failure.cause?.code ?? failure.message ?? 'Request failed'}`)
       // Try the fallback registry on transport, body or metadata errors.
     } finally {
       clearTimeout(timer)
     }
   }
-  manifestCache.set(cacheKey, { metadata: null, timestamp: Date.now() })
+  // A user retry must make a new request after a transient network failure.
   return null
 }
 
@@ -383,10 +389,12 @@ export async function evaluatePluginMarketCompatibility(options: {
   } = options
   const isZh = locale === 'zh'
 
+  const failures: string[] = []
   const metadata = await fetchPluginVersionsFromRegistry(packageName, {
     registry: options.registry,
     timeoutMs: options.timeoutMs,
-    fetchFn: options.fetchFn
+    fetchFn: options.fetchFn,
+    onFailure: reason => failures.push(reason)
   })
 
   if (!metadata) {
@@ -396,7 +404,8 @@ export async function evaluatePluginMarketCompatibility(options: {
       healthStatus: 'check-failed',
       healthLabel: isZh ? '未能连接市场检查' : 'Market check unavailable',
       upgradeReady: false,
-      detail: isZh ? '网络超时或市场暂无此插件' : 'Network timeout or package not found in market'
+      detail: (isZh ? '未能获取市场版本信息，请重新检查更新。' : 'Could not fetch market versions; retry the update check.') +
+        (failures.length ? ` ${failures.join('; ')}` : '')
     }
   }
 

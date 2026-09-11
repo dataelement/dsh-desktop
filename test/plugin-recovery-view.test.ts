@@ -16,6 +16,16 @@ function failedSnapshot(logs: string[] = []): RuntimeSnapshot {
 }
 
 describe('plugin recovery view model', () => {
+  it('offers a retry instead of a zero-action automatic recovery when all checks failed', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['a', 'b'], removedPlugins: [], locale: 'zh',
+      pluginChecks: ['a', 'b'].map(packageName => ({ packageName, hint: 'ENOTFOUND' }))
+    })
+    expect(model.retryCheckLabel).toBe('重新检查更新')
+    expect(model.autoProcessLabel).toBeUndefined()
+    expect(model.upgradeCandidate).toBeUndefined()
+    expect(model.canUninstall).toBe(true)
+  })
   it('keeps automatic processing as primary even when every blocker needs removal', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: ['a', 'b'], removedPlugins: [], locale: 'zh',

@@ -671,7 +671,9 @@
       const primary = document.getElementById('primary')
       const secondary = document.getElementById('secondary')
 
-      if (model.autoProcessLabel) {
+      if (model.retryCheckLabel) {
+        setText('primary', model.retryCheckLabel)
+      } else if (model.autoProcessLabel) {
         setText('primary', model.autoProcessLabel)
       } else if (model.upgradeCandidate) {
         setText('primary', model.upgradeLabel)
@@ -694,7 +696,10 @@
         if (secondary) secondary.disabled = true
         if (safeModeBtn) safeModeBtn.disabled = true
         document.querySelectorAll('.plugin-upgrade-btn').forEach((btn) => { btn.disabled = true })
-        if (model.autoProcessLabel) {
+        if (model.retryCheckLabel) {
+          primary.textContent = model.locale === 'zh' ? '正在检查更新…' : 'Checking updates…'
+          navigate('check-updates')
+        } else if (model.autoProcessLabel) {
           primary.textContent = model.locale === 'zh' ? '正在自动处理…' : 'Recovering plugins…'
           navigate('auto-process')
         } else if (model.upgradeCandidate) {
