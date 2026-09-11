@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   collectUnreferencedGenerations,
   disableGeneration,
@@ -17,6 +17,23 @@ import {
   writeDesired,
   writeGenerationMeta
 } from '../packages/dsh-desktop-market-installer/generations/registry'
+
+const removalFault = vi.hoisted(() => ({ trashPrefix: '' }))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      const normalized = String(args[0]).replaceAll('\\', '/')
+      if (removalFault.trashPrefix && normalized.includes(removalFault.trashPrefix)) {
+        removalFault.trashPrefix = ''
+        throw Object.assign(new Error('EPERM: simulated locked generation child'), { code: 'EPERM' })
+      }
+      return actual.rm(...args)
+    }
+  }
+})
 
 describe('the plugin generation registry', () => {
   const homes: string[] = []
@@ -39,6 +56,7 @@ describe('the plugin generation registry', () => {
   }
 
   afterEach(async () => {
+    removalFault.trashPrefix = ''
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })))
     homes.length = 0
   })
@@ -130,6 +148,64 @@ describe('the plugin generation registry', () => {
     expect(removed).toContain('staging/abandoned-uuid')
     const survivors = (await listGenerations(home)).map((generation) => generation.id)
     expect(survivors).toEqual(['keep+1+x'])
+  })
+
+  it('recovers an unreferenced generation left without metadata by a partial deletion', async () => {
+    const home = await freshHome()
+    const layout = await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'keep+1+x', 'keep', '1')
+    const incomplete = join(layout.generations, 'incomplete+2+y')
+    await mkdir(join(incomplete, 'node_modules', 'locked-plugin'), { recursive: true })
+    await writeFile(join(incomplete, 'node_modules', 'locked-plugin', 'index.js'), 'export {}\n')
+    await writeDesired(home, ['keep+1+x'])
+
+    expect((await listGenerations(home)).map((generation) => generation.id)).toEqual(['keep+1+x'])
+    expect(await collectUnreferencedGenerations(home)).toEqual(['incomplete+2+y'])
+
+    const { removed, failed } = await sweepRegistry(home)
+
+    expect(removed).toContain('incomplete+2+y')
+    expect(failed).toEqual([])
+    await expect(access(incomplete)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('moves an unreferenced generation out of live before deleting its contents', async () => {
+    const home = await freshHome()
+    const layout = await ensureRegistryDirectories(home)
+    const id = 'locked+1+x'
+    await fakeGeneration(home, id, 'locked', '1')
+    removalFault.trashPrefix = `/trash/${id}.`
+
+    const first = await sweepRegistry(home)
+
+    expect(first.removed).not.toContain(id)
+    expect(first.failed).toContain(id)
+    await expect(access(join(layout.generations, id))).rejects.toMatchObject({ code: 'ENOENT' })
+    const trashEntries = await readdir(layout.trash)
+    expect(trashEntries).toHaveLength(1)
+    expect(trashEntries[0]).toMatch(/^locked\+1\+x\./u)
+
+    const second = await sweepRegistry(home)
+    expect(second.removed).toContain(`trash/${trashEntries[0]}`)
+    expect(second.failed).toEqual([])
+    expect(await readdir(layout.trash)).toEqual([])
+  })
+
+  it('does not sweep a desired generation whose metadata is missing', async () => {
+    const home = await freshHome()
+    const layout = await ensureRegistryDirectories(home)
+    const incomplete = join(layout.generations, 'desired+1+x')
+    await mkdir(incomplete, { recursive: true })
+    await writeDesired(home, ['desired+1+x'])
+
+    expect(await listGenerations(home)).toEqual([])
+    await expect(resolveEnabledGenerations(home)).rejects.toThrow(
+      /Desired generation is missing or unreadable: desired\+1\+x/u
+    )
+    await expect(sweepRegistry(home)).rejects.toThrow(
+      /Desired generation is missing or unreadable: desired\+1\+x/u
+    )
+    await expect(access(incomplete)).resolves.toBeUndefined()
   })
 
   it('fails closed without sweeping generations when desired.json is corrupt', async () => {
