@@ -1,0 +1,251 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+index 306645f..50e44ad 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+@@ -66,6 +66,22 @@ window.__ModuleLoader__.load({
+ 			if (root !== "" && normalized.startsWith(`${root}/`)) return sessionFileAddress(sessionId, normalized.slice(root.length + 1));
+ 			return sessionFileAddress(sessionId, normalized);
+ 		}
++		function hostPathForOpen(cwd, path) {
++			const normalized = path.replace(/\\/g, "/");
++			if (isAbsoluteWorkspacePath(normalized)) return path;
++			const root = cwd === void 0 ? "" : cwd.replace(/\\/g, "/").replace(/\/+$/, "");
++			if (root === "") return path;
++			return `${root}/${normalized.replace(/^\/+/, "")}`;
++		}
++		async function openResolvedHostFile(ctx, sessionId, cwd, hostPath, options) {
++			const address = fileAddressFor(sessionId, cwd, hostPath);
++			if (ctx.sidebarRightTabs.candidates(address).length === 0) {
++				await ctx.remote.session.openWorkspacePath({ path: hostPath });
++				return;
++			}
++			if (options?.line === void 0) ctx.sidebarRight.openResource(address);
++			else ctx.sidebarRight.openResource(address, { params: { line: options.line } });
++		}
+ 		//#endregion
+ 		//#region lib/types/client/contract/snapshot.js
+ 		const EMPTY_LIST$1 = [];
+@@ -152,7 +168,7 @@ window.__ModuleLoader__.load({
+ 		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-chat/src/client/chat/MessageItem.module.css.mjs
+-		const css$15 = ".Sixlwa_userRow{flex-direction:column;align-items:flex-end;gap:6px;display:flex}.Sixlwa_userStack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702), 82%);flex-direction:column;align-items:flex-end;gap:8px;display:flex}.Sixlwa_bubble{background:var(--dsw-specific-bubble);max-width:100%;font-size:var(--dsh-content-font-size,14px);line-height:calc(22px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-primary);white-space:pre-wrap;word-break:break-word;border-radius:22px;padding:10px 16px}.Sixlwa_referenceSummary{color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(18px + var(--dsh-content-font-delta-secondary,0px))}.Sixlwa_contextRow,.Sixlwa_compactionRow{padding:2px 0}.Sixlwa_compactionButton{width:100%;height:calc(24px + var(--dsh-content-font-delta,0px));min-width:0;color:inherit;font:inherit;text-align:left;background:0 0;border:none;border-radius:6px;align-items:center;padding:0;display:flex}.Sixlwa_compactionButton:not(:disabled){cursor:pointer}.Sixlwa_compactionButton:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}.Sixlwa_compactionLeading{width:calc(16px + var(--dsh-content-font-delta,0px));height:calc(16px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-secondary);flex:none;place-items:center;margin-right:6px;display:inline-grid}.Sixlwa_compactionLeading svg{width:calc(14px + var(--dsh-content-font-delta,0px));height:calc(14px + var(--dsh-content-font-delta,0px))}.Sixlwa_compactionContextIcon,.Sixlwa_compactionDisclosureIcon{grid-area:1/1;justify-content:center;align-items:center;display:inline-flex}.Sixlwa_compactionDisclosureIcon,.Sixlwa_compactionButton:not(:disabled):hover .Sixlwa_compactionContextIcon,.Sixlwa_compactionButton:not(:disabled):focus-visible .Sixlwa_compactionContextIcon{opacity:0}.Sixlwa_compactionButton:not(:disabled):hover .Sixlwa_compactionDisclosureIcon,.Sixlwa_compactionButton:not(:disabled):focus-visible .Sixlwa_compactionDisclosureIcon{opacity:1}.Sixlwa_compactionTitle{font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(24px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-primary-dimmed);flex:none}.Sixlwa_compactionSep{background:var(--dsw-alias-label-caption);border-radius:1px;flex:none;width:2px;height:2px;margin:0 8px}.Sixlwa_compactionSummary{min-width:0;color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(24px + var(--dsh-content-font-delta,0px));text-overflow:ellipsis;white-space:nowrap;flex:auto;overflow:hidden}.Sixlwa_compactionBody{padding:4px 0 4px calc(22px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(24px + var(--dsh-content-font-delta,0px))}.Sixlwa_retryRow{color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px))}.Sixlwa_retrySummary{width:fit-content;color:inherit;cursor:pointer;user-select:none;border-radius:3px;align-items:center;gap:7px;padding:2px 0;list-style:none;display:inline-flex}.Sixlwa_retrySummary::-webkit-details-marker{display:none}.Sixlwa_retrySummary:after{content:\"\";opacity:.8;border-bottom:1.5px solid;border-right:1.5px solid;width:6px;height:6px;transition:transform .12s;transform:rotate(-45deg)}.Sixlwa_retrySummary:hover{color:var(--dsw-alias-label-secondary)}.Sixlwa_retrySummary:focus-visible{outline:1.5px solid var(--dsw-alias-button-info-fill);outline-offset:2px}.Sixlwa_retryText{color:inherit}.Sixlwa_retryRow[data-active] .Sixlwa_retryText{background:linear-gradient(90deg, var(--dsw-alias-label-tertiary) 0%, var(--dsw-alias-label-tertiary) 40%, var(--dsw-alias-label-secondary) 50%, var(--dsw-alias-label-tertiary) 60%, var(--dsw-alias-label-tertiary) 100%);color:#0000;background-position:100%;background-size:200% 100%;background-clip:text;animation:1.6s ease-in-out infinite Sixlwa_retry-shimmer}.Sixlwa_retryRow[open] .Sixlwa_retrySummary:after{transform:rotate(45deg)}.Sixlwa_retryDetails{overflow-wrap:anywhere;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(18px + var(--dsh-content-font-delta-secondary,0px));gap:2px;margin-top:3px;padding-left:14px;display:grid}.Sixlwa_retryDetailLabel{color:var(--dsw-alias-label-secondary)}.Sixlwa_turnErrorRow{font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));grid-template-columns:10px minmax(0,1fr) auto;align-items:start;gap:8px;padding:2px 0;display:grid}.Sixlwa_turnErrorDot{margin-top:5px}.Sixlwa_turnErrorCopy{overflow-wrap:anywhere;min-width:0}.Sixlwa_turnErrorTitle{color:var(--dsw-alias-state-error-primary);margin-right:6px;font-weight:600}.Sixlwa_turnErrorMessage{color:var(--dsw-alias-label-secondary)}.Sixlwa_turnErrorCode{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-markdown-code-block-small)}.Sixlwa_maxTokensTitle{color:var(--dsw-alias-state-warn-primary);margin-right:6px;font-weight:600}@keyframes Sixlwa_retry-shimmer{0%{background-position:100%}to{background-position:0}}@media (prefers-reduced-motion:reduce){.Sixlwa_retryRow[data-active] .Sixlwa_retryText{color:inherit;background:0 0;animation:none}}.Sixlwa_attachmentRow{flex-wrap:wrap;justify-content:flex-end;gap:8px;max-width:100%;display:flex}.Sixlwa_fileCard{border:.5px solid var(--dsw-alias-border-l2,#0000001f);background:var(--dsw-specific-input-major,transparent);box-sizing:border-box;border-radius:16px;flex:0 0 240px;align-items:center;gap:10px;width:240px;min-height:64px;padding:8px 12px;display:inline-flex}.Sixlwa_fileIcon{flex:none;width:28px;height:28px}.Sixlwa_fileContent{flex-direction:column;flex:1;min-width:0;display:flex}.Sixlwa_fileName{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px;overflow:hidden}.Sixlwa_fileMeta{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-tertiary,#00000073);font-size:12px;line-height:15px;overflow:hidden}";
++		const css$15 = ".Sixlwa_userRow{flex-direction:column;align-items:flex-end;gap:6px;display:flex}.Sixlwa_userStack{min-width:0;max-width:min(calc(var(--dsh-chat-content-width,748px) * .702), 82%);flex-direction:column;align-items:flex-end;gap:8px;display:flex}.Sixlwa_bubble{background:var(--dsw-specific-bubble);max-width:100%;font-size:var(--dsh-content-font-size,14px);line-height:calc(22px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-primary);white-space:pre-wrap;word-break:break-word;border-radius:22px;padding:10px 16px}.Sixlwa_referenceSummary{color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(18px + var(--dsh-content-font-delta-secondary,0px))}.Sixlwa_contextRow,.Sixlwa_compactionRow{padding:2px 0}.Sixlwa_compactionButton{width:100%;height:calc(24px + var(--dsh-content-font-delta,0px));min-width:0;color:inherit;font:inherit;text-align:left;background:0 0;border:none;border-radius:6px;align-items:center;padding:0;display:flex}.Sixlwa_compactionButton:not(:disabled){cursor:pointer}.Sixlwa_compactionButton:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}.Sixlwa_compactionLeading{width:calc(16px + var(--dsh-content-font-delta,0px));height:calc(16px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-secondary);flex:none;place-items:center;margin-right:6px;display:inline-grid}.Sixlwa_compactionLeading svg{width:calc(14px + var(--dsh-content-font-delta,0px));height:calc(14px + var(--dsh-content-font-delta,0px))}.Sixlwa_compactionContextIcon,.Sixlwa_compactionDisclosureIcon{grid-area:1/1;justify-content:center;align-items:center;display:inline-flex}.Sixlwa_compactionDisclosureIcon,.Sixlwa_compactionButton:not(:disabled):hover .Sixlwa_compactionContextIcon,.Sixlwa_compactionButton:not(:disabled):focus-visible .Sixlwa_compactionContextIcon{opacity:0}.Sixlwa_compactionButton:not(:disabled):hover .Sixlwa_compactionDisclosureIcon,.Sixlwa_compactionButton:not(:disabled):focus-visible .Sixlwa_compactionDisclosureIcon{opacity:1}.Sixlwa_compactionTitle{font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(24px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-primary-dimmed);flex:none}.Sixlwa_compactionSep{background:var(--dsw-alias-label-caption);border-radius:1px;flex:none;width:2px;height:2px;margin:0 8px}.Sixlwa_compactionSummary{min-width:0;color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(24px + var(--dsh-content-font-delta,0px));text-overflow:ellipsis;white-space:nowrap;flex:auto;overflow:hidden}.Sixlwa_compactionBody{padding:4px 0 4px calc(22px + var(--dsh-content-font-delta,0px));color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(24px + var(--dsh-content-font-delta,0px))}.Sixlwa_retryRow{color:var(--dsw-alias-label-tertiary);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px))}.Sixlwa_retrySummary{width:fit-content;color:inherit;cursor:pointer;user-select:none;border-radius:3px;align-items:center;gap:7px;padding:2px 0;list-style:none;display:inline-flex}.Sixlwa_retrySummary::-webkit-details-marker{display:none}.Sixlwa_retrySummary:after{content:\"\";opacity:.8;border-bottom:1.5px solid;border-right:1.5px solid;width:6px;height:6px;transition:transform .12s;transform:rotate(-45deg)}.Sixlwa_retrySummary:hover{color:var(--dsw-alias-label-secondary)}.Sixlwa_retrySummary:focus-visible{outline:1.5px solid var(--dsw-alias-button-info-fill);outline-offset:2px}.Sixlwa_retryText{color:inherit}.Sixlwa_retryRow[data-active] .Sixlwa_retryText{background:linear-gradient(90deg, var(--dsw-alias-label-tertiary) 0%, var(--dsw-alias-label-tertiary) 40%, var(--dsw-alias-label-secondary) 50%, var(--dsw-alias-label-tertiary) 60%, var(--dsw-alias-label-tertiary) 100%);color:#0000;background-position:100%;background-size:200% 100%;background-clip:text;animation:1.6s ease-in-out infinite Sixlwa_retry-shimmer}.Sixlwa_retryRow[open] .Sixlwa_retrySummary:after{transform:rotate(45deg)}.Sixlwa_retryDetails{overflow-wrap:anywhere;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(18px + var(--dsh-content-font-delta-secondary,0px));gap:2px;margin-top:3px;padding-left:14px;display:grid}.Sixlwa_retryDetailLabel{color:var(--dsw-alias-label-secondary)}.Sixlwa_turnErrorRow{font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));grid-template-columns:10px minmax(0,1fr) auto;align-items:start;gap:8px;padding:2px 0;display:grid}.Sixlwa_turnErrorDot{margin-top:5px}.Sixlwa_turnErrorCopy{overflow-wrap:anywhere;min-width:0}.Sixlwa_turnErrorTitle{color:var(--dsw-alias-state-error-primary);margin-right:6px;font-weight:600}.Sixlwa_turnErrorMessage{color:var(--dsw-alias-label-secondary)}.Sixlwa_turnErrorCode{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-markdown-code-block-small)}.Sixlwa_maxTokensTitle{color:var(--dsw-alias-state-warn-primary);margin-right:6px;font-weight:600}@keyframes Sixlwa_retry-shimmer{0%{background-position:100%}to{background-position:0}}@media (prefers-reduced-motion:reduce){.Sixlwa_retryRow[data-active] .Sixlwa_retryText{color:inherit;background:0 0;animation:none}}.Sixlwa_attachmentRow{flex-wrap:wrap;justify-content:flex-end;gap:8px;max-width:100%;display:flex}.Sixlwa_fileCard{border:.5px solid var(--dsw-alias-border-l2,#0000001f);background:var(--dsw-specific-input-major,transparent);box-sizing:border-box;border-radius:16px;flex:0 0 240px;align-items:center;gap:10px;width:240px;min-height:64px;padding:8px 12px;display:inline-flex}.Sixlwa_fileCardButton{color:inherit;font:inherit;cursor:pointer;appearance:none}.Sixlwa_fileIcon{flex:none;width:28px;height:28px}.Sixlwa_fileContent{flex-direction:column;flex:1;min-width:0;display:flex}.Sixlwa_fileName{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px;overflow:hidden}.Sixlwa_fileMeta{white-space:nowrap;text-overflow:ellipsis;color:var(--dsw-alias-label-tertiary,#00000073);font-size:12px;line-height:15px;overflow:hidden}";
+ 		const tagId$15 = "@deepseek-ai/dsh-client-ui-chat/MessageItem.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$15) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -175,6 +191,7 @@ window.__ModuleLoader__.load({
+ 			"compactionTitle": "Sixlwa_compactionTitle",
+ 			"contextRow": "Sixlwa_contextRow",
+ 			"fileCard": "Sixlwa_fileCard",
++			"fileCardButton": "Sixlwa_fileCardButton",
+ 			"fileContent": "Sixlwa_fileContent",
+ 			"fileIcon": "Sixlwa_fileIcon",
+ 			"fileMeta": "Sixlwa_fileMeta",
+@@ -1124,7 +1141,10 @@ window.__ModuleLoader__.load({
+ 			return Math.max(1, Math.ceil(milliseconds / 1e3));
+ 		}
+ 		function failureMessage(message, code, t) {
+-			return code === "AUTH" ? t("message.failure.auth") : message;
++			if (code === "AUTH") return t("message.failure.auth");
++			if (code === "QUOTA") return t("message.failure.quota");
++			if (code === "FORBIDDEN") return t("message.failure.forbidden");
++			return message;
+ 		}
+ 		function ModelRetryItem({ node, active, t }) {
+ 			const deadline = (0, react.useMemo)(() => Date.now() + node.delayMs, [node.delayMs, node.seq]);
+@@ -1230,7 +1250,7 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		/** Right-aligned bubble shared by user and steering rows. */
+-		function UserStyleBubble({ content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [], previewAttachments, t }) {
++		function UserStyleBubble({ content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [], previewAttachments, onOpenUploadedFile, t }) {
+ 			const { text, attachments: contentAttachments, rest } = contentParts(content);
+ 			const attachments = previewAttachments ?? contentAttachments;
+ 			const compactImages = attachments.length > 1;
+@@ -1250,9 +1270,13 @@ window.__ModuleLoader__.load({
+ 								images: [attachment.image],
+ 								align: "end",
+ 								compact: compactImages
+-							}) }, `image:${index}`) : (0, react_jsx_runtime.jsxs)("span", {
+-								className: MessageItem_module_css_default.fileCard,
++							}) }, `image:${index}`) : (0, react_jsx_runtime.jsxs)(onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? "button" : "span", {
++								type: onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? "button" : void 0,
++								className: onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? `${MessageItem_module_css_default.fileCard} ${MessageItem_module_css_default.fileCardButton}` : MessageItem_module_css_default.fileCard,
+ 								title: attachment.file.name,
++								onClick: onOpenUploadedFile === void 0 || attachment.file.attachmentId === void 0 ? void 0 : () => {
++									onOpenUploadedFile(attachment.file.attachmentId);
++								},
+ 								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
+ 									path: attachment.file.name,
+ 									className: MessageItem_module_css_default.fileIcon
+@@ -1312,7 +1336,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - the session snapshot's pending submission and render seats.
+ 		* @returns the echoed user bubble.
+ 		*/
+-		function PendingSubmissionBubble({ submission, renderMessageImages, t }) {
++		function PendingSubmissionBubble({ submission, renderMessageImages, onOpenUploadedFile, t }) {
+ 			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
+ 				content: (0, react.useMemo)(() => submission.text === "" ? [] : [{
+ 					type: "text",
+@@ -1331,6 +1355,7 @@ window.__ModuleLoader__.load({
+ 					file: attachment.value
+ 				}), [submission.attachments]),
+ 				renderMessageImages,
++				onOpenUploadedFile,
+ 				pending: submission.placement === "steering",
+ 				echo: true,
+ 				t,
+@@ -1344,11 +1369,12 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		/** User and admitted-steering keyed Chat renderer. */
+-		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, renderMessageImages, t }) {
++		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, renderMessageImages, onOpenUploadedFile, t }) {
+ 			const data = node.data;
+ 			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
+ 				content: data.content,
+ 				renderMessageImages,
++				onOpenUploadedFile,
+ 				...data.referenceLabels === void 0 ? {} : { referenceLabels: data.referenceLabels },
+ 				...data.skillNames === void 0 ? {} : { skillNames: data.skillNames },
+ 				t,
+@@ -1541,7 +1567,7 @@ window.__ModuleLoader__.load({
+ 			return location?.kind === "turn" || location?.kind === "step" ? location.turn.turn : void 0;
+ 		}
+ 		/** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
+-		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript, cwd, openFile, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t }) {
++		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript, cwd, openFile, onOpenUploadedFile, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t }) {
+ 			const node = useChatNode(nodeKey);
+ 			const routedNode = node;
+ 			const turn = turnOf(routedNode);
+@@ -1577,6 +1603,7 @@ window.__ModuleLoader__.load({
+ 			const owner = (0, react.useMemo)(() => node === void 0 ? null : {
+ 				cwd,
+ 				openFile,
++				onOpenUploadedFile,
+ 				inspectCall,
+ 				forkAt,
+ 				loadImage,
+@@ -1587,6 +1614,7 @@ window.__ModuleLoader__.load({
+ 				node,
+ 				cwd,
+ 				openFile,
++				onOpenUploadedFile,
+ 				inspectCall,
+ 				forkAt,
+ 				loadImage,
+@@ -2069,7 +2097,7 @@ window.__ModuleLoader__.load({
+ 		* The chat view slot entry: pure component over the composed props; each
+ 		* ordered business Node crosses the keyed renderer seat.
+ 		*/
+-		function ChatView({ useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot, sessionId, openFile, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions, useTranscriptView, useProjection, t }) {
++		function ChatView({ useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot, sessionId, openFile, openUploadedFile, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions, useTranscriptView, useProjection, t }) {
+ 			const order = useChat((s) => s.order);
+ 			const nodeStore = useChat((s) => s.nodes);
+ 			const turnNavigationItems = useChat((s) => s.navigation.items());
+@@ -2106,6 +2134,23 @@ window.__ModuleLoader__.load({
+ 					setFileOpenBusy(false);
+ 				});
+ 			}, [openFile, t]);
++			const requestOpenUploadedFile = (0, react.useCallback)((attachmentId) => {
++				if (openUploadedFile === void 0) return;
++				const id = ++fileOpenRequest.current;
++				setFileOpenBusy(true);
++				openUploadedFile(attachmentId).then(() => {
++					if (id !== fileOpenRequest.current) return;
++					setFileOpenError(null);
++					setFileOpenBusy(false);
++				}, (error) => {
++					if (id !== fileOpenRequest.current) return;
++					setFileOpenError({
++						path: String(attachmentId),
++						message: openFailureMessage(error, t("fileOpen.unknown"))
++					});
++					setFileOpenBusy(false);
++				});
++			}, [openUploadedFile, t]);
+ 			const closeFileOpenError = (0, react.useCallback)(() => {
+ 				fileOpenRequest.current += 1;
+ 				setFileOpenError(null);
+@@ -2542,6 +2587,7 @@ window.__ModuleLoader__.load({
+ 									actions,
+ 									cwd,
+ 									openFile: requestOpenFile,
++									onOpenUploadedFile: requestOpenUploadedFile,
+ 									inspectCall,
+ 									forkAt,
+ 									loadImage,
+@@ -2562,6 +2608,7 @@ window.__ModuleLoader__.load({
+ 								visibleSubmissions.map((submission) => (0, react_jsx_runtime.jsx)(PendingSubmissionBubble, {
+ 									submission,
+ 									renderMessageImages,
++									onOpenUploadedFile: requestOpenUploadedFile,
+ 									t
+ 								}, submission.requestId))
+ 							]
+@@ -2694,6 +2741,8 @@ window.__ModuleLoader__.load({
+ 			"message.retry.delay": "重试延迟：",
+ 			"message.retry.failure": "失败原因：",
+ 			"message.failure.auth": "API 密钥无效",
++			"message.failure.quota": "账户额度或余额不足，请充值或检查服务商的用量限制。",
++			"message.failure.forbidden": "模型服务商拒绝了本次请求，请检查账号权限、地区限制或模型开通情况。",
+ 			"message.turnError": "本轮运行失败",
+ 			"message.maxTokens": "已达到输出 token 上限",
+ 			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
+@@ -2800,6 +2849,8 @@ window.__ModuleLoader__.load({
+ 			"message.retry.delay": "Retry delay: ",
+ 			"message.retry.failure": "Failure reason: ",
+ 			"message.failure.auth": "API key is invalid",
++			"message.failure.quota": "Your account has insufficient quota or balance. Add credits or check your provider's usage limits.",
++			"message.failure.forbidden": "The model provider denied this request. Check your account permissions, region, or model access.",
+ 			"message.turnError": "This turn failed",
+ 			"message.maxTokens": "Output token limit reached",
+ 			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
+@@ -8239,7 +8290,8 @@ window.__ModuleLoader__.load({
+ 			"settingsScope",
+ 			"remote",
+ 			"remote.session",
+-			"sidebarRight"
++			"sidebarRight",
++			"sidebarRightTabs"
+ 		];
+ 		/**
+ 		* Mount all Chat-owned contributions.
+@@ -8273,6 +8325,14 @@ window.__ModuleLoader__.load({
+ 			const chatStore = createChatStore();
+ 			const chatScrollPositions = /* @__PURE__ */ new Map();
+ 			const transcriptView = new TranscriptViewPolicy(ctx.settingsScope.bind({ namespace: CHAT_SETTINGS_NAMESPACE }));
++			ctx.provide("openUploadedAttachment", { open: async (sessionId, attachmentId) => {
++				const binding = ctx.sessions.binding(sessionId);
++				if (binding === void 0) throw new Error(`ui-chat: unknown session "${sessionId}"`);
++				const result = await binding.session.readFileHostPath(attachmentId);
++				if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
++				const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
++				await openResolvedHostFile(ctx, sessionId, cwd, result.value.path);
++			} });
+ 			ctx.slots.inject("settings.general.item", () => ctx.slots.register({
+ 				name: "settings.general.item",
+ 				id: "transcript-view",
+@@ -8318,10 +8378,17 @@ window.__ModuleLoader__.load({
+ 							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
+ 							openFile: async (path, options) => {
+ 								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
+-								const url = fileAddressFor(sessionId, cwd, path);
+-								if (options?.line === void 0) ctx.sidebarRight.openResource(url);
+-								else ctx.sidebarRight.openResource(url, { params: { line: options.line } });
+-								await Promise.resolve();
++								const byName = await session.readFileHostPath({ name: path });
++								if (byName.ok) {
++									await openResolvedHostFile(ctx, sessionId, cwd, byName.value.path);
++									return;
++								}
++								await openResolvedHostFile(ctx, sessionId, cwd, hostPathForOpen(cwd, path), options);
++							},
++							openUploadedFile: async (attachmentId) => {
++								const opener = ctx.get("openUploadedAttachment");
++								if (opener === void 0) throw new Error("ui-chat: openUploadedAttachment is unavailable");
++								await opener.open(sessionId, attachmentId);
+ 							},
+ 							loadOlder: () => {
+ 								session.loadOlder();

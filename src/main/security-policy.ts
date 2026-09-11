@@ -20,6 +20,24 @@ export function isTrustedAppUrl(rawUrl: string): boolean {
   return isHarnessUrl(rawUrl)
 }
 
+function isFileUrl(rawUrl: string): boolean {
+  try {
+    return new URL(rawUrl).protocol === 'file:'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Guest-initiated navigations only. Main-process loadFile does not emit
+ * will-navigate, so overlay pages can still open. A drop on the Harness
+ * session would otherwise navigate to the user's file:// path.
+ */
+export function shouldAllowWindowNavigation(currentUrl: string, targetUrl: string): boolean {
+  if (isHarnessUrl(currentUrl) && isFileUrl(targetUrl)) return false
+  return isTrustedAppUrl(targetUrl)
+}
+
 export function canGrantWindowPermission(
   permission: string,
   requestingUrl: string | undefined,

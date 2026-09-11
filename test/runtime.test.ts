@@ -18,7 +18,11 @@ import {
   resolveShellEnvironment,
   updateReadyStability
 } from '../src/main/runtime/harness-runtime'
-import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
+import {
+  canGrantWindowPermission,
+  isTrustedAppUrl,
+  shouldAllowWindowNavigation
+} from '../src/main/security-policy'
 import { buildDisclaimedUtilityProcessSpec } from '../src/main/runtime/disclaimed-utility-process'
 import {
   clearStaleHarnessAuthCookies,
@@ -524,6 +528,28 @@ describe('navigation trust boundary', () => {
     expect(isTrustedAppUrl('https://127.0.0.1:43127')).toBe(false)
     expect(isTrustedAppUrl('http://example.com')).toBe(false)
     expect(isTrustedAppUrl('javascript:alert(1)')).toBe(false)
+  })
+
+  it('keeps a dropped file from navigating away from the Harness session', () => {
+    expect(
+      shouldAllowWindowNavigation('http://127.0.0.1:43127/?token=abc', 'file:///Users/me/notes.pdf')
+    ).toBe(false)
+    expect(
+      shouldAllowWindowNavigation('http://localhost:43127/session', 'file:///C:/Users/me/deck.pptx')
+    ).toBe(false)
+    expect(
+      shouldAllowWindowNavigation('http://127.0.0.1:43127/', 'http://127.0.0.1:43128/?token=next')
+    ).toBe(true)
+    expect(
+      shouldAllowWindowNavigation(
+        'file:///app/plugin-recovery.html',
+        'dsh-recovery://uninstall'
+      )
+    ).toBe(true)
+    expect(
+      shouldAllowWindowNavigation('file:///app/safe-mode.html', 'file:///app/safe-mode.html')
+    ).toBe(true)
+    expect(shouldAllowWindowNavigation('about:blank', 'file:///app/splash.html')).toBe(true)
   })
 
   it('only grants clipboard writes from the trusted main frame', () => {

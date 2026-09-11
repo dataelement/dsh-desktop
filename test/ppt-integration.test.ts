@@ -184,6 +184,10 @@ describe('DSH PPT built-in plugin', () => {
     expect(owner).toBeGreaterThan(-1)
     expect(input).toBeGreaterThan(owner)
     expect(catalog).toBeGreaterThan(input)
+    expect(client).toContain('const canAcceptDrop = subagent === null && addFiles !== void 0')
+    expect(client).toContain('sessionId ??= sessions.list.getSnapshot().current')
+    expect(client).toContain('placeholder: t("placeholder.hero")')
+    expect(client).not.toContain('onRequestWorkspace: () =>')
   })
 
   it('integrates hero mode actions with the adjacent agent-preset control style', async () => {
@@ -222,6 +226,19 @@ describe('DSH PPT built-in plugin', () => {
     expect(accessory).toBeGreaterThan(promptRow)
     expect(scroll).toBeGreaterThan(accessory)
     expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
+  })
+
+  it('only invites file drops on the composer card', async () => {
+    const client = await readFile(path.join(
+      projectRoot,
+      'node_modules',
+      '@deepseek-ai',
+      'dsh-client-ui-attachment',
+      'lib',
+      'client.js'
+    ), 'utf8')
+    expect(client).toContain('closest("[data-composer-card]")')
+    expect(client).toContain('if (fileTransfer(event) === null || !overComposerCard(event)) return')
   })
 
   it('declares both local artifacts and mounts only the PPT composer', async () => {

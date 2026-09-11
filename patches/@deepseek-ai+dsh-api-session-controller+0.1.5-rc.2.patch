@@ -1,8 +1,72 @@
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
-index 6226c83..40275c2 100644
+index 6226c83..38862c8 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
-@@ -2595,6 +2595,15 @@ window.__ModuleLoader__.load({
+@@ -1720,6 +1720,63 @@ window.__ModuleLoader__.load({
+ 					}
+ 				};
+ 			}
++			/**
++			* Resolve one session-authorized uploaded file to its Host filesystem path.
++			* Used to open the stock document-preview pane; never treat the display name as a workspace path.
++			* @param attachmentIdOrName - opaque id from a staged receipt / session file block, or `{ name }` for a unique display-name lookup.
++			* @returns the absolute host path and display name.
++			*/
++			async readFileHostPath(attachmentIdOrName) {
++				const query = new URLSearchParams({ sessionId: this.sessionId });
++				if (typeof attachmentIdOrName === "object" && attachmentIdOrName !== null && typeof attachmentIdOrName.name === "string") query.set("name", attachmentIdOrName.name);
++				else query.set("attachmentId", String(attachmentIdOrName));
++				const response = await fetch(`/api/session/fileHostPath?${query.toString()}`, { credentials: "include" });
++				if (response.status !== 200) return {
++					ok: false,
++					error: {
++						code: "gateway/internal",
++						message: `file host path failed with HTTP ${String(response.status)}`,
++						details: {}
++					}
++				};
++				const body = await response.json();
++				if (typeof body !== "object" || body === null || typeof body.ok !== "boolean") return {
++					ok: false,
++					error: {
++						code: "gateway/internal",
++						message: "file host path returned an invalid result",
++						details: {}
++					}
++				};
++				if (!body.ok) {
++					const error = body.error;
++					return {
++						ok: false,
++						error: {
++							code: typeof error?.code === "string" ? error.code : "gateway/internal",
++							message: typeof error?.message === "string" ? error.message : "file host path failed",
++							details: typeof error?.details === "object" && error.details !== null ? error.details : {}
++						}
++					};
++				}
++				const value = body.value;
++				if (typeof value?.path !== "string" || typeof value?.name !== "string" || typeof value?.bytes !== "number") return {
++					ok: false,
++					error: {
++						code: "gateway/internal",
++						message: "file host path returned an invalid value",
++						details: {}
++					}
++				};
++				return {
++					ok: true,
++					value: {
++						path: value.path,
++						name: value.name,
++						bytes: value.bytes
++					}
++				};
++			}
+ 			/** Apply one operation to a still-pending queue occurrence. */
+ 			async updateQueue(itemId, action) {
+ 				return this.remote.session.updateQueue({
+@@ -2595,6 +2652,15 @@ window.__ModuleLoader__.load({
  				}
  				return result;
  			}
@@ -18,7 +82,7 @@ index 6226c83..40275c2 100644
  			/**
  			* Contract session.fork; on success merge the child into summaries
  			* immediately (same synchronous-addressability guarantee as create). The
-@@ -2989,6 +2998,17 @@ window.__ModuleLoader__.load({
+@@ -2989,6 +3055,17 @@ window.__ModuleLoader__.load({
  				this.sourceSessionId = sourceSessionId;
  			}
  		};
@@ -36,7 +100,7 @@ index 6226c83..40275c2 100644
  		/**
  		* Display title projection: durable title, project directory basename, then
  		* the raw id.
-@@ -3214,6 +3234,16 @@ window.__ModuleLoader__.load({
+@@ -3214,6 +3291,16 @@ window.__ModuleLoader__.load({
  				this.projectList();
  				return result.value.sessionId;
  			}
@@ -54,9 +118,18 @@ index 6226c83..40275c2 100644
  			* Fork a session from a completed-turn prefix of the source (same
  			* synchronous-addressability guarantee as {@link ClientSessions.create}:
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
-index 0e94dd3..b60c449 100644
+index 0e94dd3..a6875fa 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
+@@ -3,7 +3,7 @@ import z from "@deepseek-ai/schemastery";
+ import { AssistantStreamAccumulator, ReasoningEffortId, assistantStreamChunks, createUserMessage, errorChain, freezeMessage } from "@deepseek-ai/dsh-llm";
+ import { canOpenNativePath, nativeFileManager, openNativePath, revealNativePath } from "@deepseek-ai/dsh-native-command";
+ import { Remote, RemoteError, TypertRemoteService, remoteErrorOf } from "@deepseek-ai/dsh-typert-protocol";
+-import { mkdir } from "node:fs/promises";
++import { link, mkdir } from "node:fs/promises";
+ import { installModelSelection } from "@deepseek-ai/dsh-agent";
+ import { SessionQueryError } from "@deepseek-ai/dsh-session-query";
+ import { randomUUID } from "node:crypto";
 @@ -177,11 +177,15 @@ var ApiSessionAgentController = class {
  	ctx;
  	resumes = /* @__PURE__ */ new Map();
@@ -191,7 +264,297 @@ index 0e94dd3..b60c449 100644
  			} catch (error) {
  				throw new RemoteError("gateway/internal", `failed to fork session "${request.sessionId}": ${String(error)}`, {});
  			}
-@@ -2485,6 +2531,7 @@ let SessionController = (() => {
+@@ -985,6 +1031,118 @@ function referencedImage(events, attachmentId) {
+ 		if (found !== void 0) return found;
+ 	}
+ }
++function fileBlockIn(content, match) {
++	if (!Array.isArray(content)) return void 0;
++	for (const value of content) {
++		if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
++		const block = value;
++		if (block.type === "file" && typeof block.attachment === "object" && block.attachment !== null) {
++			const ref = block.attachment;
++			if (match(ref)) return ref;
++		}
++		if (block.type === "tool-result") {
++			const nested = fileBlockIn(block.content, match);
++			if (nested !== void 0) return nested;
++		}
++	}
++}
++function fileInEvent(event, match) {
++	const data = event.data;
++	const direct = fileBlockIn(data.content, match);
++	if (direct !== void 0) return direct;
++	const message = fileBlockIn(data.message?.content, match);
++	if (message !== void 0) return message;
++	for (const inserted of data.inserted ?? []) {
++		const found = fileBlockIn(inserted.content, match);
++		if (found !== void 0) return found;
++	}
++	if (event.type === "assistant/message" || event.type === "assistant/attempt") for (const chunk of assistantStreamChunks(event.data.stream, "block-end")) {
++		const found = fileBlockIn([chunk.block], match);
++		if (found !== void 0) return found;
++	}
++}
++function referencedFile(events, attachmentId) {
++	for (const event of events) {
++		const found = fileInEvent(event, (ref) => String(ref.attachmentId) === attachmentId);
++		if (found !== void 0) return found;
++	}
++}
++/** Leaf name of a path-like display string (POSIX or Windows separators). */
++function basenameLeaf(value) {
++	const parts = String(value).split(/[/\\]/);
++	return parts[parts.length - 1] || String(value);
++}
++function fileNameMatches(refName, needle) {
++	const name = String(refName ?? "");
++	const needleBase = basenameLeaf(needle);
++	return name === needle || basenameLeaf(name) === needle || basenameLeaf(name) === needleBase;
++}
++/**
++* Collect every distinct file attachment whose display name or basename matches.
++* Used when assistant prose mentions a file by name rather than attachment id.
++*/
++function collectReferencedFilesByName(events, name) {
++	const matches = [];
++	const seen = /* @__PURE__ */ new Set();
++	const visit = (ref) => {
++		if (!fileNameMatches(ref.name, name)) return;
++		const id = String(ref.attachmentId);
++		if (seen.has(id)) return;
++		seen.add(id);
++		matches.push(ref);
++	};
++	for (const event of events) fileInEventCollect(event, visit);
++	return matches;
++}
++/**
++* Collect every distinct image attachment whose display name or basename matches.
++* Assistant prose often cites uploaded screenshots by filename.
++*/
++function collectReferencedImagesByName(events, name) {
++	const matches = [];
++	const seen = /* @__PURE__ */ new Set();
++	const visit = (ref) => {
++		if (!fileNameMatches(ref.name, name)) return;
++		const id = String(ref.attachmentId);
++		if (seen.has(id)) return;
++		seen.add(id);
++		matches.push(ref);
++	};
++	for (const event of events) imageInEventCollect(event, visit);
++	return matches;
++}
++function fileBlockInCollect(content, visit) {
++	if (!Array.isArray(content)) return;
++	for (const value of content) {
++		if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
++		const block = value;
++		if (block.type === "file" && typeof block.attachment === "object" && block.attachment !== null) visit(block.attachment);
++		if (block.type === "tool-result") fileBlockInCollect(block.content, visit);
++	}
++}
++function imageBlockInCollect(content, visit) {
++	if (!Array.isArray(content)) return;
++	for (const value of content) {
++		if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
++		const block = value;
++		if (block.type === "image" && typeof block.attachment === "object" && block.attachment !== null) visit(block.attachment);
++		if (block.type === "tool-result") imageBlockInCollect(block.content, visit);
++	}
++}
++function fileInEventCollect(event, visit) {
++	const data = event.data;
++	fileBlockInCollect(data.content, visit);
++	fileBlockInCollect(data.message?.content, visit);
++	for (const inserted of data.inserted ?? []) fileBlockInCollect(inserted.content, visit);
++	if (event.type === "assistant/message" || event.type === "assistant/attempt") for (const chunk of assistantStreamChunks(event.data.stream, "block-end")) fileBlockInCollect([chunk.block], visit);
++}
++function imageInEventCollect(event, visit) {
++	const data = event.data;
++	imageBlockInCollect(data.content, visit);
++	imageBlockInCollect(data.message?.content, visit);
++	for (const inserted of data.inserted ?? []) imageBlockInCollect(inserted.content, visit);
++	if (event.type === "assistant/message" || event.type === "assistant/attempt") for (const chunk of assistantStreamChunks(event.data.stream, "block-end")) imageBlockInCollect([chunk.block], visit);
++}
+ function routeServed(ctx, provider) {
+ 	return ctx.llm.listProviders().some((entry) => entry.id === provider);
+ }
+@@ -2374,6 +2532,170 @@ const SessionMediaReferences = {
+ 		}), "session-controller: /api/file");
+ 	}
+ };
++const FILE_HOST_PATH = "/api/session/fileHostPath";
++function fileHostPathResult(ok, payload) {
++	return new Response(JSON.stringify(ok ? { ok: true, value: payload } : { ok: false, error: payload }), {
++		status: 200,
++		headers: {
++			"content-type": "application/json; charset=utf-8",
++			"cache-control": "no-store"
++		}
++	});
++}
++async function resolveAuthorizedFileRef(ctx, sessionId, attachmentId) {
++	const live = ctx.agents.get(sessionId);
++	if (live !== void 0) {
++		const staged = ctx.fileUploads.findStagedFile(live, attachmentId);
++		if (staged !== void 0) return staged;
++	}
++	let events;
++	const attached = ctx.sessions.get(sessionId);
++	if (attached !== void 0) events = attached.snapshotEvents();
++	else {
++		try {
++			events = (await inspectApiSession(ctx, sessionId)).events;
++		} catch (error) {
++			if (error instanceof ApiSessionNotFound) throw new RemoteError("session/not-found", error.message, { sessionId });
++			if (error instanceof SessionQueryError && error.code === "SESSION_QUERY_SESSION_NOT_FOUND") throw new RemoteError("session/not-found", `session "${sessionId}" not found`, { sessionId });
++			throw new RemoteError("gateway/internal", `attachment authorization unavailable for session "${sessionId}": ${String(error)}`, {});
++		}
++	}
++	const ref = referencedFile(events, attachmentId);
++	if (ref === void 0) throw new RemoteError("session/attachment-invalid", "File is not referenced by this session.", { reason: "ATTACHMENT_NOT_REFERENCED" });
++	return ref;
++}
++async function resolveAuthorizedFileRefByName(ctx, sessionId, name) {
++	const matches = [];
++	const seen = /* @__PURE__ */ new Set();
++	const add = (kind, ref) => {
++		const id = String(ref.attachmentId);
++		if (seen.has(id)) return;
++		seen.add(id);
++		matches.push({ kind, ref });
++	};
++	let events;
++	const attached = ctx.sessions.get(sessionId);
++	if (attached !== void 0) events = attached.snapshotEvents();
++	else {
++		try {
++			events = (await inspectApiSession(ctx, sessionId)).events;
++		} catch (error) {
++			if (error instanceof ApiSessionNotFound) throw new RemoteError("session/not-found", error.message, { sessionId });
++			if (error instanceof SessionQueryError && error.code === "SESSION_QUERY_SESSION_NOT_FOUND") throw new RemoteError("session/not-found", `session "${sessionId}" not found`, { sessionId });
++			throw new RemoteError("gateway/internal", `attachment authorization unavailable for session "${sessionId}": ${String(error)}`, {});
++		}
++	}
++	for (const ref of collectReferencedFilesByName(events, name)) add("file", ref);
++	for (const ref of collectReferencedImagesByName(events, name)) add("image", ref);
++	if (matches.length === 0) throw new RemoteError("session/attachment-invalid", "File is not referenced by this session.", { reason: "ATTACHMENT_NOT_REFERENCED" });
++	if (matches.length > 1) throw new RemoteError("session/attachment-invalid", "Multiple uploaded files share this name.", { reason: "ATTACHMENT_NAME_AMBIGUOUS" });
++	return matches[0];
++}
++function attachmentHostPath(ctx, match, fallbackName) {
++	if (match.kind === "image") {
++		const host = ctx.attachments.imageHostPath(match.ref);
++		if (host === void 0) return;
++		return ensureImagePreviewPath(host, match.ref, fallbackName);
++	}
++	return ctx.attachments.fileHostPath(match.ref);
++}
++/**
++* Document preview picks an image body from the path suffix. Attachment objects
++* are extensionless digests, so mint a same-inode alias that ends in `.png` etc.
++*/
++async function ensureImagePreviewPath(hostPath, ref, fallbackName) {
++	const ext = imagePreviewExtension(ref, fallbackName);
++	if (ext === "" || hostPath.toLowerCase().endsWith(ext)) return hostPath;
++	const aliased = `${hostPath}${ext}`;
++	try {
++		await link(hostPath, aliased);
++	} catch (error) {
++		if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") return aliased;
++		throw error;
++	}
++	return aliased;
++}
++function imagePreviewExtension(ref, fallbackName) {
++	for (const candidate of [ref.name, fallbackName]) {
++		const leaf = basenameLeaf(String(candidate ?? ""));
++		const dot = leaf.lastIndexOf(".");
++		if (dot > 0 && dot < leaf.length - 1) {
++			const ext = leaf.slice(dot).toLowerCase();
++			if (/^\.[a-z0-9]{1,8}$/.test(ext)) return ext;
++		}
++	}
++	switch (String(ref.mediaType ?? "")) {
++		case "image/jpeg": return ".jpg";
++		case "image/png": return ".png";
++		case "image/gif": return ".gif";
++		case "image/webp": return ".webp";
++		case "image/bmp": return ".bmp";
++		case "image/svg+xml": return ".svg";
++		case "image/x-icon": return ".ico";
++		default: return ".png";
++	}
++}
++async function handleFileHostPath(ctx, request) {
++	if (request.method !== "GET") return new Response(null, {
++		status: 405,
++		headers: { allow: "GET" }
++	});
++	const url = new URL(request.url);
++	const sessionId = url.searchParams.get("sessionId");
++	const attachmentId = url.searchParams.get("attachmentId");
++	const name = url.searchParams.get("name");
++	if (sessionId === null || sessionId === "") return new Response("sessionId is required", { status: 400 });
++	const hasAttachmentId = attachmentId !== null && attachmentId !== "";
++	const hasName = name !== null && name !== "";
++	if (!hasAttachmentId && !hasName) return new Response("attachmentId or name is required", { status: 400 });
++	try {
++		let path;
++		let ref;
++		if (hasAttachmentId) {
++			ref = await resolveAuthorizedFileRef(ctx, brandString(sessionId), attachmentId);
++			path = ctx.attachments.fileHostPath(ref);
++		} else {
++			const match = await resolveAuthorizedFileRefByName(ctx, brandString(sessionId), name);
++			ref = match.ref;
++			path = await attachmentHostPath(ctx, match, name);
++		}
++		if (path === void 0) throw new RemoteError("session/attachment-invalid", "File host path is unavailable.", { reason: "FILE_HOST_PATH_UNAVAILABLE" });
++		return fileHostPathResult(true, {
++			path,
++			name: typeof ref.name === "string" && ref.name !== "" ? ref.name : name ?? String(ref.attachmentId),
++			bytes: typeof ref.bytes === "number" ? ref.bytes : 0
++		});
++	} catch (error) {
++		const failure = remoteErrorOf(error);
++		return fileHostPathResult(false, failure !== void 0 ? {
++			code: failure.code,
++			message: failure.message,
++			details: failure.details
++		} : {
++			code: "gateway/internal",
++			message: error instanceof Error ? error.message : String(error),
++			details: {}
++		});
++	}
++}
++const SessionFileHostPath = {
++	inject: [
++		"connection",
++		"attachments",
++		"fileUploads",
++		"agents",
++		"sessions",
++		"sessionQuery"
++	],
++	apply(ctx) {
++		ctx.effect(() => ctx.connection.fetch.register({
++			path: FILE_HOST_PATH,
++			methods: ["GET"],
++			requestBody: "buffered",
++			fetch: (request) => handleFileHostPath(ctx, request)
++		}), "session-controller: /api/session/fileHostPath");
++	}
++};
+ //#endregion
+ //#region lib/types/index.js
+ /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
+@@ -2485,6 +2807,7 @@ let SessionController = (() => {
  	let _canOpenWorkspacePath_decorators;
  	let _openWorkspacePath_decorators;
  	let _rename_decorators;
@@ -199,7 +562,7 @@ index 0e94dd3..b60c449 100644
  	let _fork_decorators;
  	let _prompt_decorators;
  	let _attachment_decorators;
-@@ -2504,6 +2551,7 @@ let SessionController = (() => {
+@@ -2504,6 +2827,7 @@ let SessionController = (() => {
  			_canOpenWorkspacePath_decorators = [Remote];
  			_openWorkspacePath_decorators = [Remote("openWorkspacePath")];
  			_rename_decorators = [Remote("rename")];
@@ -207,7 +570,7 @@ index 0e94dd3..b60c449 100644
  			_fork_decorators = [Remote("fork")];
  			_prompt_decorators = [Remote("prompt")];
  			_attachment_decorators = [Remote("attachment")];
-@@ -2600,6 +2648,17 @@ let SessionController = (() => {
+@@ -2600,6 +2924,17 @@ let SessionController = (() => {
  				},
  				metadata: _metadata
  			}, null, _instanceExtraInitializers);
@@ -225,8 +588,11 @@ index 0e94dd3..b60c449 100644
  			__esDecorate(this, null, _fork_decorators, {
  				kind: "method",
  				name: "fork",
-@@ -2747,7 +2806,8 @@ let SessionController = (() => {
+@@ -2745,9 +3080,11 @@ let SessionController = (() => {
+ 			this.canOpenPath = internals.canOpenPath ?? (() => config.nativeOpen ?? (internals.openPath !== void 0 || canOpenNativePath()));
+ 			ctx.plugin(SessionFileReferences);
  			ctx.plugin(SessionMediaReferences);
++			ctx.plugin(SessionFileHostPath);
  			ctx.plugin(SessionSkillCatalog);
  			ctx.on("session/created", (session) => {
 -				ctx.emit("api-session/added", this.listState.summaryFor(session));
@@ -235,7 +601,7 @@ index 0e94dd3..b60c449 100644
  			});
  			ctx.on("session/disposed", (session) => {
  				ctx.emit("api-session/removed", session.id);
-@@ -2903,6 +2963,10 @@ let SessionController = (() => {
+@@ -2903,6 +3240,10 @@ let SessionController = (() => {
  		rename(request) {
  			return this.commands.rename(request);
  		}
