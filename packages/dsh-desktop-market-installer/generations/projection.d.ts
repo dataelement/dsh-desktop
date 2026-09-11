@@ -15,5 +15,4 @@ export function publishGenerationManifest(
   profile?: string,
   options?: { syncBundles?: boolean }
 ): Promise<PublishedGenerationManifest>
-
-export function publishInstalledGeneration(dshHome: string, pluginName: string, profile?: string): Promise<PublishedGenerationManifest>
+export function exposeMissingGenerationLinks(dshHome: string, profile?: string): Promise<string[]>
