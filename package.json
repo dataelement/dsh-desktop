@@ -282,7 +282,8 @@
     "react-dom": "18.3.1",
     "ws": "^8.21.3",
     "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
-    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz"
+    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
+    "dsh-image-generation": "file:packages/dsh-image-generation"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

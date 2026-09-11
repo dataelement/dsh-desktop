@@ -1,0 +1,69 @@
+{
+  "name": "dsh-image-generation",
+  "version": "0.1.0",
+  "description": "Shared OpenAI and ByteDance image generation for DSH conversations, presentations and documents.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dataelement/dsh-desktop.git",
+    "directory": "packages/dsh-image-generation"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "image-generation",
+    "seedream",
+    "openai"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-settings-plugins",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-attachment"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "sharp": "^0.35.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox-policy": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-subprocess": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-skill": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.1"
+  }
+}

@@ -1,3 +1,8 @@
+# Connection owns the authenticated HTTP channels used by Desktop plugins.
+# Harness 0.1.5 resolves webServer through the Connection provider context.
+- id: connection
+  inject: [webRuntime, webServer]
+
 # Keep the stock directory-picker (auto) row active: the native backend
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
 # plugins reading the seam) work unmodified. The client surface keeps its
@@ -20,6 +25,10 @@
     # community plugin replaces the placeholder with its complete market UI.
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
+
+    # One shared image tool for conversations and Office workflows.
+    - id: dsh-image-generation
+      name: dsh-image-generation
 
     # DSH PPT owns one direct PPTD workflow and one standard Composer client.
     # The package contains no Tencent editor runtime or SlideP route.
