@@ -32,3 +32,14 @@ index a33402f..0f7ba8e 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+@@ -3738,7 +3738,7 @@
+ 		}
+ 		//#endregion
+ 		//#region \0dsh-css:/private/tmp/dsh-harness-v0.1.2-rc.1/packages/client/ui-chat/src/client/chat/StatsLine.module.css.mjs
+-		const css$2 = ".XZbVjq_root{text-align:center;max-width:var(--dsh-chat-content-width);box-sizing:border-box;width:100%;padding:4px calc(var(--dsh-composer-side-clearance) + 16px) 0px;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-overflow:ellipsis;margin:0 auto;display:block;overflow:hidden}.XZbVjq_sep{color:var(--dsw-alias-separator-primary);margin:0 10px}";
++		const css$2 = ".XZbVjq_root{text-align:center;max-width:none;box-sizing:border-box;width:100%;padding:4px calc(var(--dsh-composer-side-clearance) + 16px) 0px;font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-overflow:ellipsis;margin:0 auto;display:block;overflow:hidden}.XZbVjq_sep{color:var(--dsw-alias-separator-primary);margin:0 10px}";
+ 		const tagId$2 = "@deepseek-ai/dsh-client-ui-chat/StatsLine.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
+ 			const tag = document.createElement("style");
