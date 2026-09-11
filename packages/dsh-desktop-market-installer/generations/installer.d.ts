@@ -5,7 +5,7 @@ export interface GenerationInstallOptions {
   dshHome: string
   profile?: string
   strictDepBuilds?: boolean
-  /** Explicit market peer policy; omitted retains pnpm's default behavior. */
+  /** Explicit market peer policy; otherwise inherit the Profile's explicit boolean. */
   autoInstallPeers?: boolean
   minimumReleaseAge?: number
   expectedVersion?: string

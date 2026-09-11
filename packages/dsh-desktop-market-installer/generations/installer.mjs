@@ -218,6 +218,20 @@ function diagnosticLine(output) {
 }
 
 export async function installGeneration(options) {
+  // A standalone staging workspace cannot see the Profile's peer policy.
+  // Carry its explicit boolean into the subprocess before the first attempt:
+  // the market may spend its single retry on a different failure (release age).
+  // Explicit command-line policy takes precedence; do not copy workspace paths.
+  if (typeof options.autoInstallPeers !== 'boolean') {
+    const workspace = await readFile(
+      join(options.dshHome, 'profiles', options.profile ?? 'web', 'pnpm-workspace.yaml'), 'utf8'
+    ).catch(error => {
+      if (error.code === 'ENOENT') return ''
+      throw error
+    })
+    const policy = /^autoInstallPeers:[ \t]*(true|false)[ \t]*(?:#.*)?\r?$/m.exec(workspace)
+    if (policy) options = { ...options, autoInstallPeers: policy[1] === 'true' }
+  }
   const { dshHome, pluginSpec, onTrace } = options
   const trace = (line) => onTrace?.(`generation-install: ${line}`)
   const layout = await ensureRegistryDirectories(dshHome)
