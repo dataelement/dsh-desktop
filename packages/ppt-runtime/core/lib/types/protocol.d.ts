@@ -457,6 +457,7 @@ export interface OfficePptState {
     readonly templates: readonly OfficeTemplate[];
     /** Active composer workflow. It is model context, never visible draft text. */
     readonly presentationMode?: OfficePresentationMode;
+    readonly documentMode?: 'word' | 'excel';
     /** Template selected by the resident composer. The model tool uses it when template_id is omitted. */
     readonly selectedTemplateId?: OfficeTemplateId;
     readonly decks: readonly OfficeDeck[];

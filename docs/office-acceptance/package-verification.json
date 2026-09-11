@@ -1,0 +1,50 @@
+{
+  "status": "PASS",
+  "scope": "PR Office/PPT modules installed into the previously validated macOS development runtime bundle",
+  "skillCount": 188,
+  "businessSkillCount": 186,
+  "toolCount": 17,
+  "businessResourceCount": 678,
+  "examples": [
+    {
+      "id": "coffee-market",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": null,
+      "editRecalculation": null
+    },
+    {
+      "id": "equity-research",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": null,
+      "editRecalculation": null
+    },
+    {
+      "id": "annual-business",
+      "generatedFromReference": false,
+      "preview": "PASS",
+      "calculation": "PASS",
+      "editRecalculation": "PASS"
+    },
+    {
+      "id": "port-cargo",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": "PASS",
+      "editRecalculation": "PASS"
+    },
+    {
+      "id": "bio-assay",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": "PASS",
+      "editRecalculation": "PASS"
+    }
+  ],
+  "word": "create/edit/preview PASS",
+  "excel": "create/chart/edit/recalculate/preview PASS",
+  "runtime": "bundled Python/openpyxl and LibreOffice",
+  "liveModelAutonomy": "NOT_RUN",
+  "nativeOfficeSaveReopen": "NOT_RUN"
+}

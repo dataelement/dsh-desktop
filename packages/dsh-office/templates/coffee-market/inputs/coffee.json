@@ -1,0 +1,105 @@
+{
+  "title": "中国现制咖啡市场调研报告",
+  "subtitle": "2024 年度公开资料研究",
+  "sources": [
+    {
+      "id": 1,
+      "title": "Luckin Coffee 2024 财年与第四季度业绩",
+      "publisher": "Luckin Coffee",
+      "date": "2025-02-20",
+      "url": "https://investor.lkcoffee.com/static-files/994b3727-f41f-4206-99a9-75efcc3bee67",
+      "note": "第 1–2、5 页；门店、直营与联营、同店及财年数据。瑞幸门店为集团口径，包含海外。"
+    },
+    {
+      "id": 2,
+      "title": "Starbucks 2024 财年与第四季度业绩",
+      "publisher": "Starbucks",
+      "date": "2024-10-30",
+      "url": "https://investor.starbucks.com/news/financial-releases/news-details/2024/Starbucks-Reports-Q4-and-Full-Fiscal-Year-2024-Results/default.aspx",
+      "note": "China Supplemental Data；财年末为 2024-09-29，季度亦截至该日。"
+    },
+    {
+      "id": 3,
+      "title": "Tims China 2024 年度与第四季度业绩",
+      "publisher": "TH International",
+      "date": "2025-04-15",
+      "url": "https://ir.timschina.com/news-releases/news-release-details/tims-china-announces-fourth-quarter-and-full-year-2024-financial",
+      "note": "2024 全年、Key Operating Data；门店及同店数据均采用 Tims 持续经营口径。"
+    },
+    {
+      "id": 4,
+      "title": "Luckin Coffee 2024 第一季度业绩",
+      "publisher": "Luckin Coffee",
+      "date": "2024-04-30",
+      "url": "https://investor.luckincoffee.com/news-releases/news-release-details/luckin-coffee-inc-announces-first-quarter-2024-financial-results/",
+      "note": "用于核对季度季节性、价格因素与同店变化。"
+    },
+    {
+      "id": 5,
+      "title": "Starbucks 2024 第二财季业绩",
+      "publisher": "Starbucks",
+      "date": "2024-04-30",
+      "url": "https://investor.starbucks.com/news/financial-releases/news-details/2024/Starbucks-Reports-Q2-Fiscal-2024-Results/",
+      "note": "中国可比门店销售变化为 -11%；季度截至 2024-03-31。"
+    }
+  ],
+  "scenario": {
+    "days": 30,
+    "fixedCost": 52000,
+    "ingredientCost": 6,
+    "channelRatio": 0.1,
+    "prices": [
+      12,
+      14,
+      16,
+      18
+    ],
+    "volumes": [
+      150,
+      200,
+      250,
+      300,
+      350,
+      400,
+      450
+    ],
+    "monthlyProfitTenThousands": [
+      [
+        -3.0399999999999996,
+        -2.32,
+        -1.5999999999999992,
+        -0.8799999999999992,
+        -0.15999999999999928,
+        0.5600000000000007,
+        1.2800000000000007
+      ],
+      [
+        -2.23,
+        -1.24,
+        -0.25,
+        0.74,
+        1.73,
+        2.72,
+        3.71
+      ],
+      [
+        -1.42,
+        -0.16,
+        1.1,
+        2.36,
+        3.62,
+        4.88,
+        6.14
+      ],
+      [
+        -0.61,
+        0.9199999999999993,
+        2.45,
+        3.98,
+        5.509999999999999,
+        7.039999999999998,
+        8.57
+      ]
+    ]
+  }
+}

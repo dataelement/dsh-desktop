@@ -1,0 +1,27 @@
+{
+  "dsh-ppt": {
+    "changed": [
+      "package/lib/client.js",
+      "package/lib/index.js",
+      "package/lib/preview-manifest.js",
+      "package/lib/types/ppt-service.d.ts",
+      "package/lib/types/protocol.d.ts"
+    ],
+    "previewManifestMap": "identical",
+    "allOtherFilesIdentical": true
+  },
+  "dsh-ppt-composer": {
+    "changed": [
+      "package/lib/client.js"
+    ],
+    "previewManifestMap": "identical",
+    "allOtherFilesIdentical": true
+  },
+  "officeAcceptedPackageParity": {
+    "documentationChanges": [
+      "README.md",
+      "templates/README.md"
+    ],
+    "runtimeSkillsCasesPreviews": "identical bytes"
+  }
+}

@@ -45,6 +45,7 @@ async function fixture(existingRoot) {
           services?.includes?.('webServer')
             ? callback?.(host)
             : pluginCtx.inject(services, callback),
+        provide: pluginCtx.provide.bind(pluginCtx),
         systemPrompt: pluginCtx.systemPrompt,
         skills: pluginCtx.skills,
         on: pluginCtx.on.bind(pluginCtx),

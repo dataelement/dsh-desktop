@@ -1,0 +1,41 @@
+{
+  "name": "dsh-office",
+  "version": "0.2.0",
+  "description": "Governed Word and Excel authoring, preservation and calculation workflows for DSH Desktop",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./client": "./client.js"
+  },
+  "dependencies": {
+    "docx": "9.6.1",
+    "@xmldom/xmldom": "0.8.15",
+    "fflate": "^0.8.3",
+    "saxes": "^6.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-skill": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
+    "@deepseek-ai/schemastery": "3.18.2",
+    "react": "^18.3.1",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.1"
+  },
+  "license": "MIT",
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

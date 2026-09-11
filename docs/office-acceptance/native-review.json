@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "surface": "DSH Office White QA native desktop",
+  "checks": [
+    "Excel gallery has three white worksheet covers",
+    "annual-business overview has white worksheet and chart backgrounds",
+    "six sheet tabs present; switched to growth forecast",
+    "scrolled to second growth forecast preview",
+    "Escape returns to gallery with empty input"
+  ],
+  "screenshots": [
+    "native-gallery.png",
+    "native-overview.png",
+    "native-sheet-scroll.png"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "zip": "DSH-Excel白底统一版-mac-arm64.zip",
+  "bytes": 443722509,
+  "sha256": "544be60cf9cfa69207e732cae34d04c167aa6039bd1208eb6cc295479348578a",
+  "crc": "PASS",
+  "sourceAppArchiveParity": "PASS",
+  "sourceDocumentPreserved": "PASS",
+  "governmentPreviewPages": 4,
+  "annualPreviewPages": 20
+}

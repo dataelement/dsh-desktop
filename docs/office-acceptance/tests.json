@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "files": [
+    "office-template.test.mjs",
+    "office-template-ui.test.mjs",
+    "office-mode.test.mjs"
+  ],
+  "testFiles": 3,
+  "tests": 17,
+  "visualReview": "All 20 rendered pages inspected in contact sheet; page 1 also inspected at full size. White worksheet and chart backgrounds are visible."
+}

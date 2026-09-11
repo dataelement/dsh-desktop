@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "changedBackgrounds": {
+    "xl/styles.xml": 2,
+    "xl/drawings/charts/chart1.xml": 2,
+    "xl/drawings/charts/chart2.xml": 2,
+    "xl/drawings/charts/chart3.xml": 2,
+    "xl/drawings/charts/chart4.xml": 2,
+    "xl/drawings/charts/chart5.xml": 2,
+    "xl/drawings/charts/chart6.xml": 2,
+    "xl/drawings/charts/chart7.xml": 2,
+    "xl/drawings/charts/chart8.xml": 2,
+    "xl/drawings/charts/chart9.xml": 2,
+    "xl/drawings/charts/chart10.xml": 2,
+    "xl/drawings/charts/chart11.xml": 2
+  },
+  "otherArchivePartsIdentical": true,
+  "worksheetValuesFormulasAndCaches": "identical bytes",
+  "charts": 11,
+  "sha256": "86f505bcdce34bc36f32a43b32c7f680196a1ab3b36731c09e30f5686a1e7fbe"
+}

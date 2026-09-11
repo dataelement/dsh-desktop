@@ -282,7 +282,8 @@
     "react-dom": "18.3.1",
     "ws": "^8.21.3",
     "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
-    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz"
+    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
+    "dsh-office": "file:packages/dsh-office"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
@@ -375,6 +376,13 @@
       {
         "from": "build/windows-menu.html",
         "to": "windows-menu.html"
+      },
+      {
+        "from": "packages/dsh-office/business-skills",
+        "to": "app/node_modules/dsh-office/business-skills",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "publish": [

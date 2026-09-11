@@ -1,0 +1,23 @@
+{
+  "base": "f7aebb5",
+  "dependencyInstall": "PASS: npm ci with current lockfile; all 20 patches applied",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "fullRegression": {
+    "status": "PASS",
+    "files": 99,
+    "tests": 848,
+    "nativeRuntimeEnabled": true
+  },
+  "followup": {
+    "files": [
+      "ppt-integration.test.ts",
+      "office-native-runtime.test.mjs"
+    ],
+    "passed": 14,
+    "includesResolvedLayoutAssertions": 2,
+    "includesNativeRuntimeTests": 3
+  },
+  "officeAcceptedArtifactParity": "Runtime, Skills, case originals and previews are byte-identical; two README files updated",
+  "productionAcceptance": "macOS development isolation; Windows authoring confinement, native Office save-reopen and live model autonomy require separate evidence"
+}

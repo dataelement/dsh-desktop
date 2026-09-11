@@ -1,0 +1,445 @@
+[
+  {
+    "id": "coffee-market",
+    "title": "中国现制咖啡市场调研报告",
+    "description": "以公开披露为基础的 2024 年市场研究：品牌网络、同店表现、消费场景与门店贡献，7 页报告及来源索引。",
+    "mode": "word",
+    "sampleFile": "example.docx",
+    "pages": 7,
+    "revision": "20260911.6",
+    "category": "市场调研",
+    "authoringFile": "reference.mjs",
+    "inputs": [
+      "inputs/coffee.json",
+      "inputs/coffee-chart-1.png",
+      "inputs/coffee-chart-2.png",
+      "inputs/coffee-chart-3.png",
+      "inputs/coffee-chart-4.png"
+    ],
+    "files": {
+      "design.md": "26d1b1a6f5eb6a735d2bb9aa081548062098963b49fa8e4a483eb49a14e8949f",
+      "example.docx": "8cd61c57b0be98534ec361e7a4dfb38486ddc1547ac8c05426fc4f32680e958a",
+      "inputs/coffee-chart-1.png": "0fee82901ad2c57bdf947cdf1cc5371c2b3a46ace8a337f221043fab1fed6433",
+      "inputs/coffee-chart-2.png": "dbe65e6ae3744f88e0d3575d260d7649586b69ad84815a5ce815be3b83df6495",
+      "inputs/coffee-chart-3.png": "7efb38862ad9be524160cfdee3d948705606c04ff7028360954cfea847debc74",
+      "inputs/coffee-chart-4.png": "599963be708ddfae4ec5dca88351e510521e564f397d959f970cc4478b3342ea",
+      "inputs/coffee.json": "10fa13cef1ef672f6a5c649a33fc507a1cd9d36535754b9c6467527491762bdf",
+      "pages/1.webp": "8eb31916cc30d9465fbaff48192a84d58fa98dcac1020ddd1da343e6814fb311",
+      "pages/2.webp": "0ccda57426a35c47b9d9a6a4f4ae94c2503ba0b0371e7141e4d2299bb05360ab",
+      "pages/3.webp": "b7e74ff985e75dc36bd4c1472248679f0e111ffd59a93cf60d96cfeec8d7a050",
+      "pages/4.webp": "6fd5897e9ad1498edd6a1bbad76ab294486f362315f606c58c24968c5674fa39",
+      "pages/5.webp": "6e828ac9e314d32fed480cd4218a7e19d3af7f3e26ee8027647f722b6cd99243",
+      "pages/6.webp": "11faf489f051c9f5244c028c5865cd197b0afb523c64a543e53e84be8d683b2a",
+      "pages/7.webp": "e899df2a3fade7de9ac1da914810ee0863021bd564ccb1446d6699356afef7ac",
+      "reference.mjs": "ec4e764382b06c2618199d01d53a4ac52026f3d09b34a6ff6c18bcf45f517136",
+      "thumbnail.webp": "004b7f383570dcde49568fcdf777d38f4c32230a344a014b8ccef700ce6e182a"
+    },
+    "sampleSha256": "8cd61c57b0be98534ec361e7a4dfb38486ddc1547ac8c05426fc4f32680e958a",
+    "pageAspectRatio": 0.7073333333333334
+  },
+  {
+    "id": "equity-research",
+    "title": "小米汽车研究报告",
+    "description": "投资逻辑、经营数据与风险分析，配合图表和来源标注。示例文稿。",
+    "prompt": "参考「小米汽车研究报告」的章节结构与研报样式，帮我研究【公司或行业】。面向【读者】，重点分析【核心问题】，生成含图表与来源标注的 Word 报告。",
+    "pages": 12,
+    "revision": "20260911.5",
+    "category": "公司研报",
+    "inputs": [
+      "inputs/report-content.json",
+      "inputs/image1.png",
+      "inputs/image2.png",
+      "inputs/image3.png"
+    ],
+    "files": {
+      "example.docx": "377a91187d9e295c9a3a492a803599b3757e887a878a85f41eb03eea42809418",
+      "design.md": "6696eb6541996803ed102b0191083705fb365ee6f337c42060fd5b59605cf81e",
+      "reference.mjs": "4e3e8d7648162c9b00869dec94f134bdb28591f3e8a0d96fef29628514636781",
+      "inputs/report-content.json": "432ce1ed70b26747563bf29677f6eabd6a90d18a9cc51d626c8f9045f2cd02b1",
+      "inputs/image1.png": "3895d407c0a1ee03300b1b6cb2f88fda1d9659e5e343ee14ad66bc8b8a6ed7cd",
+      "inputs/image2.png": "988bdacfb12ab5fd70c3fbb8e3c3baecf88505bf0487028eb105a4ea59edde61",
+      "inputs/image3.png": "c026bbb0887d3c50979f0b729feda055b192fa094c3f9ebf357ee60ee7721bc9",
+      "thumbnail.webp": "d641299b0c2ca568160a21da0d7c92d6322dc1c21467ddc774b9fccbcf518a2f"
+    },
+    "sampleSha256": "377a91187d9e295c9a3a492a803599b3757e887a878a85f41eb03eea42809418",
+    "pageAspectRatio": 0.7070707070707071
+  },
+  {
+    "id": "government-notice",
+    "title": "中国中车质量安全月活动通知",
+    "description": "用户提供的 2025 年公文生成样例：活动主题、重点工作、组织实施与信息报送。保留原文待补充项。",
+    "mode": "word",
+    "sampleFile": "example.docx",
+    "pages": 4,
+    "revision": "20260911.5",
+    "category": "公文写作",
+    "inputs": [],
+    "files": {
+      "design.md": "5d03cb552bc97fa2856cd5c49a03222ee5070cc72929f7c8bc5ba9a47a8e6a29",
+      "example.docx": "c763f627f09e543505b4cfaea34487a0b8cd724b549e4762633153da61ddf961",
+      "pages/1.webp": "ede77abf7b4bc4d4cabf7c0568317fc1209b15bca72156640b5c9d98de04e093",
+      "pages/2.webp": "fcbcecefcaf89b286c5ccbdebc558d15b05e66ad4a653bb3a47222c290174c6a",
+      "pages/3.webp": "a64104a2403cc65c288e67b1a231f1a7461b8b06da1275c4a42c2178f930b2ae",
+      "pages/4.webp": "f3477daa7f45349ef04a925d9f726c1899d80b61551af516603e977254111c2f",
+      "thumbnail.webp": "cd0f5971f598dddc9227d438a927574e39d93d5d373cde7817dd5b999c3b5e45"
+    },
+    "sampleSha256": "c763f627f09e543505b4cfaea34487a0b8cd724b549e4762633153da61ddf961",
+    "pageAspectRatio": 0.707
+  },
+  {
+    "id": "annual-business",
+    "title": "年度经营与客户分析",
+    "description": "六张工作表联动年度经营、增长测算、收入质量与客户留存；包含日度波动、原生图表及计算明细。模拟数据。",
+    "mode": "excel",
+    "sampleFile": "example.xlsx",
+    "pages": 20,
+    "revision": "20260911.7",
+    "category": "经营分析",
+    "inputs": [],
+    "files": {
+      "design.md": "440cc5cc044661fb0abd1a476c717d166d08891f7eba6d23c5b1e0c2f29bf1b8",
+      "example.xlsx": "86f505bcdce34bc36f32a43b32c7f680196a1ab3b36731c09e30f5686a1e7fbe",
+      "pages/1.webp": "f53b0facc4dd425f37ebfa3f691e8d461a86955836a76274b727e5ef4c5f1970",
+      "pages/10.webp": "3dc3430b8e9c1af16d6b4dfa39d447402cc08353cf8c11bce7161fff6b800a0b",
+      "pages/11.webp": "30b1574c208c76d0cfebb7ece7718642f668709d05a50c6eb32457593707cc90",
+      "pages/12.webp": "cca483363d149e8716ecb8be0cb2e0fc1e5690547bbba610791cdc8a82438fba",
+      "pages/13.webp": "9aa191609876f08a4978d313788682a9f140b59cc92492af769f90442f0b5a34",
+      "pages/14.webp": "460900d3b6ba2cb14f036bed47ac581ccf49238b4b98c25d68368b2f9a94d45e",
+      "pages/15.webp": "52c0a721337e14ff1fbc24f78a15a9b0d9a6c82a8724ce275f930b34cf4a8cce",
+      "pages/16.webp": "8f1dbdde8dd73d2e627cc5621b5fcc0723cf8d099846e8d989a2ae0d55f4d988",
+      "pages/17.webp": "fc3b39b9f0503095ba4cd49af6f67c330638fdbd5cce9ba3d3f2bcf454559f56",
+      "pages/18.webp": "2eda48c510f5103990d66557ebf9e71d7d94f4179dd32eb4152b3a969d8339c9",
+      "pages/19.webp": "a51ea72fc3c70088552ff89ec9d7ea35a9c8ce99615d0b576e8cc68e3be735e5",
+      "pages/2.webp": "52049d81213f77a6591143d1f18f81687419aafb90bd5a103b85ffefb7d786dd",
+      "pages/20.webp": "d241de4f4d917ce4e7c5b46fc1a8be8f1a34540f480f5835324137b0b9663527",
+      "pages/3.webp": "93143ee1aeda2ec75db878e41afa56fa803ca52d5513663be5871fb795d778a2",
+      "pages/4.webp": "5f521c84a909fed6c86ce282dabdef466db34d0d2657a9d921a82febe94d29c3",
+      "pages/5.webp": "50a3fad3858b6189091dd834dd732f856150846777e5a3ed8fcf2baf5b61b501",
+      "pages/6.webp": "77f437d1f7d4497b6eae894438bf84ac5679b3c63a3abc70687d3eb335479add",
+      "pages/7.webp": "2e1d1df5aac2058713afe9e75107d18e16c2e3f12552837bf8bb3bd5665177e1",
+      "pages/8.webp": "842287d3e5c12467c2406631d5e58a2bd07fb0aa1e10fcbfac9df3fd8ce8770e",
+      "pages/9.webp": "fe53b070a9e629ddab0308fc05d43c9e6a3f0d9276069a9424d36a8c2b34cf62",
+      "thumbnail.webp": "414508603f1ec904961b71dc3948f087dc76bf4f724352f1d35ce40a50fe5638"
+    },
+    "sampleSha256": "86f505bcdce34bc36f32a43b32c7f680196a1ab3b36731c09e30f5686a1e7fbe",
+    "pageAspectRatio": 0.7821946169772257,
+    "sheets": [
+      {
+        "name": "经营总览",
+        "pages": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "name": "增长测算",
+        "pages": [
+          11,
+          12,
+          13
+        ]
+      },
+      {
+        "name": "增长质量",
+        "pages": [
+          14,
+          15,
+          16
+        ]
+      },
+      {
+        "name": "客户留存",
+        "pages": [
+          17,
+          18
+        ]
+      },
+      {
+        "name": "月度经营数据",
+        "pages": [
+          19
+        ]
+      },
+      {
+        "name": "客户批次数据",
+        "pages": [
+          20
+        ]
+      }
+    ],
+    "previewPages": [
+      {
+        "sheet": "经营总览",
+        "range": "A1:P51",
+        "aspectRatio": 0.7821946169772257
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A52:P101",
+        "aspectRatio": 0.9797717842323651
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A102:P149",
+        "aspectRatio": 0.94214463840399
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A150:P197",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A198:P245",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A246:P293",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A294:P341",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A342:P389",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A390:P437",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A438:P468",
+        "aspectRatio": 1.4519600307455802
+      },
+      {
+        "sheet": "增长测算",
+        "range": "A1:P44",
+        "aspectRatio": 0.9319190922545634
+      },
+      {
+        "sheet": "增长测算",
+        "range": "A45:P94",
+        "aspectRatio": 0.8259728902492348
+      },
+      {
+        "sheet": "增长测算",
+        "range": "A95:P138",
+        "aspectRatio": 0.9310004928536225
+      },
+      {
+        "sheet": "增长质量",
+        "range": "A1:P44",
+        "aspectRatio": 0.9319190922545634
+      },
+      {
+        "sheet": "增长质量",
+        "range": "A45:P95",
+        "aspectRatio": 0.8103818103818103
+      },
+      {
+        "sheet": "增长质量",
+        "range": "A96:P134",
+        "aspectRatio": 1.0529542920847268
+      },
+      {
+        "sheet": "客户留存",
+        "range": "A1:P42",
+        "aspectRatio": 0.9692149820420729
+      },
+      {
+        "sheet": "客户留存",
+        "range": "A43:P88",
+        "aspectRatio": 0.9603457041179461
+      },
+      {
+        "sheet": "月度经营数据",
+        "range": "A1:P48",
+        "aspectRatio": 0.9386834986474302
+      },
+      {
+        "sheet": "客户批次数据",
+        "range": "A1:P29",
+        "aspectRatio": 1.3708272859216255
+      }
+    ]
+  },
+  {
+    "id": "port-cargo",
+    "title": "青岚港货物流向与作业效率",
+    "description": "365 天、2,190 条模拟装卸记录；吞吐波动、进出港结构、航线与作业效率。5 张工作表。",
+    "mode": "excel",
+    "sampleFile": "example.xlsx",
+    "pages": 5,
+    "revision": "20260911.6",
+    "category": "物流分析",
+    "authoringFile": "reference.py",
+    "inputs": [
+      "inputs/port.json"
+    ],
+    "files": {
+      "checks.json": "9177a4a25d874aed39c0ebf06fb0c8bebba843bd0c9015e7574991fc4fd9b2be",
+      "design.md": "6af4ee11e3fc968f6715f872bf7d4061129d4cbb09c4a0876ca042c573178ba0",
+      "example.xlsx": "da9fd95dba329b1b216427acb309f1877939e9bf4ab56ac769c1d5874ad4d8fb",
+      "inputs/port.json": "b6804ce9a740a1a6e428430d42026031cfd1f010271ea0234ecb507ca377fef4",
+      "pages/1.webp": "f40ad17108536be9e0558503d1153a3d696cb7ff161365a5f798abb357616d6c",
+      "pages/2.webp": "f9a663bf230cff044e1bb189e5d6fc0b470ff8beb2b6578d7cad7fe208252223",
+      "pages/3.webp": "047ad24616b383b4eab57e96603e71cac6e46579a467522dd9c1b54f276a4420",
+      "pages/4.webp": "d3364d55e3c2758c8f16921a1d656392ca1494f2cec4e411f10b3440ee56fc2b",
+      "pages/5.webp": "e87358b267f9c6412da82364392870c674139969b16a01b6a2782d818705a142",
+      "reference.py": "f319b599ef770c8bd26d36327f51420b14c3ddea69a6af7227c7e21a4237ac20",
+      "thumbnail.webp": "4ce3c1be7e8468a08583ff1c2b36d6d9f7e1813bc92b06cb5e250267857f3475"
+    },
+    "sampleSha256": "da9fd95dba329b1b216427acb309f1877939e9bf4ab56ac769c1d5874ad4d8fb",
+    "pageAspectRatio": 0.7068620919387075,
+    "sheets": [
+      {
+        "name": "港口总览",
+        "pages": [
+          1
+        ]
+      },
+      {
+        "name": "货类与航线",
+        "pages": [
+          2
+        ]
+      },
+      {
+        "name": "作业效率",
+        "pages": [
+          3
+        ]
+      },
+      {
+        "name": "日度汇总",
+        "pages": [
+          4
+        ]
+      },
+      {
+        "name": "作业明细",
+        "pages": [
+          5
+        ]
+      }
+    ],
+    "previewPages": [
+      {
+        "sheet": "港口总览",
+        "range": "A1:P54",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "货类与航线",
+        "range": "A1:L52",
+        "aspectRatio": 1.414703110273327
+      },
+      {
+        "sheet": "作业效率",
+        "range": "A1:L52",
+        "aspectRatio": 1.414703110273327
+      },
+      {
+        "sheet": "日度汇总",
+        "range": "A1:H46",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "作业明细",
+        "range": "A1:L46",
+        "aspectRatio": 0.7068620919387075
+      }
+    ]
+  },
+  {
+    "id": "bio-assay",
+    "title": "荧光酶活性筛选与批次质控",
+    "description": "3 批次、288 个模拟孔位；剂量响应、技术重复 CV、跨批次统计与三板热力图。4 张工作表。",
+    "mode": "excel",
+    "sampleFile": "example.xlsx",
+    "pages": 4,
+    "revision": "20260911.6",
+    "category": "实验数据",
+    "authoringFile": "reference.py",
+    "inputs": [
+      "inputs/bio.json"
+    ],
+    "files": {
+      "checks.json": "afefc7658be06bedde904e2875ad3c892bdae4cc52279b245056fde8141e8700",
+      "design.md": "3efb883d344360904b9e176cde7f88638b763a707383cf48e42159e817518d41",
+      "example.xlsx": "f5d11a58196cae1a970e7dfb45f5c9eb10893720fb8a2a26de81a338fd000b5f",
+      "inputs/bio.json": "291009243a2d17c0f6b4b29bca6f0b496d8a90141d711bb0b3fe05883d3dcea6",
+      "pages/1.webp": "938f6746c0685d7e0bcdfcdfd21600b23def407f3989f8f128e53757e85f3e37",
+      "pages/2.webp": "02c5858e1804c7fdbfdbf0e9a5d4551d5bd19633558893938886b8dbeb7ea1aa",
+      "pages/3.webp": "5a39be6c08b0ba65d780a4fe729b24b31ef7997a02ef563a725e36599c493570",
+      "pages/4.webp": "f4414b8482e0ff5c763d1bac66be2697c0a0a5c579e174ec7a44734df1de2d4f",
+      "reference.py": "3d3df9a2223a602cfc1bc91bc8e9b58ab36cbc40944e3355554e9c8a5c394f6d",
+      "thumbnail.webp": "c4255d811fa9e60917f071b9542a197de91c26d72ac9f3ce120cfbfe31bed287"
+    },
+    "sampleSha256": "f5d11a58196cae1a970e7dfb45f5c9eb10893720fb8a2a26de81a338fd000b5f",
+    "pageAspectRatio": 0.7068620919387075,
+    "sheets": [
+      {
+        "name": "实验总览",
+        "pages": [
+          1
+        ]
+      },
+      {
+        "name": "剂量响应",
+        "pages": [
+          2
+        ]
+      },
+      {
+        "name": "板内质控",
+        "pages": [
+          3
+        ]
+      },
+      {
+        "name": "原始读数",
+        "pages": [
+          4
+        ]
+      }
+    ],
+    "previewPages": [
+      {
+        "sheet": "实验总览",
+        "range": "A1:P54",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "剂量响应",
+        "range": "A1:H52",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "板内质控",
+        "range": "A1:M57",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "原始读数",
+        "range": "A1:G46",
+        "aspectRatio": 0.7068620919387075
+      }
+    ]
+  }
+]

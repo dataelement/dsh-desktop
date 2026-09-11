@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "kind": "excel",
+  "title": "采购汇总 示例数据",
+  "sheets": [
+    {
+      "name": "采购汇总",
+      "columnWidths": [
+        26,
+        16,
+        18,
+        20
+      ],
+      "freezeRows": 1,
+      "filter": true,
+      "rows": [
+        [
+          "品类 示例数据",
+          "数量",
+          "单价 元",
+          "金额 元"
+        ],
+        [
+          "展示架",
+          3,
+          120,
+          {
+            "formula": "=B2*C2",
+            "format": "number"
+          }
+        ],
+        [
+          "包装盒",
+          5,
+          80,
+          {
+            "formula": "=B3*C3",
+            "format": "number"
+          }
+        ],
+        [
+          "样品册",
+          2,
+          50,
+          {
+            "formula": "=B4*C4",
+            "format": "number"
+          }
+        ],
+        [
+          "合计",
+          null,
+          null,
+          {
+            "formula": "=SUM(D2:D4)",
+            "format": "number"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "核对",
+      "columnWidths": [
+        26,
+        18,
+        30
+      ],
+      "rows": [
+        [
+          "项目",
+          "结果",
+          "口径"
+        ],
+        [
+          "采购金额",
+          {
+            "formula": "='采购汇总'!D5",
+            "format": "number"
+          },
+          "三类采购的金额合计"
+        ],
+        [
+          "结果核对",
+          {
+            "formula": "=B2=860"
+          },
+          "预期金额为 860 元"
+        ]
+      ]
+    }
+  ]
+}
