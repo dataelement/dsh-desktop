@@ -91,6 +91,13 @@ export interface MarketSharedTreeUpgradeOptions {
   targetVersion: string
   nodeExecutablePath: string
   pnpmEntryPath: string
+  /**
+   * The generation-aware pnpm runner. Required, not optional: this profile
+   * still projects ordinary plugins as generations, and `ensureProfilePnpmShim`
+   * refuses to run a plain pnpm against a projected profile rather than let it
+   * clobber their links.
+   */
+  pnpmRunnerPath: string
   note?: (line: string) => void
 }
 
@@ -114,7 +121,7 @@ export interface MarketSharedTreeUpgradeOptions {
 export async function upgradeMarketInSharedTree(
   options: MarketSharedTreeUpgradeOptions
 ): Promise<PluginUpgradeResult> {
-  const { dshHome, dshEntryPath, targetVersion, nodeExecutablePath, pnpmEntryPath, note } = options
+  const { dshHome, dshEntryPath, targetVersion, nodeExecutablePath, pnpmEntryPath, pnpmRunnerPath, note } = options
   const profileDirectory = join(dshHome, 'profiles', 'web')
   const manifestPath = join(profileDirectory, 'package.json')
   const marketPath = join(profileDirectory, 'node_modules', MARKET_PACKAGE)
@@ -172,6 +179,7 @@ export async function upgradeMarketInSharedTree(
         dshEntryPath,
         nodeExecutablePath,
         pnpmEntryPath,
+        pnpmRunnerPath,
         environment: registry !== null ? { ...process.env, npm_config_registry: registry } : undefined
       })
       if (!result.ok) throw new Error(result.detail ?? 'shared-tree install failed')

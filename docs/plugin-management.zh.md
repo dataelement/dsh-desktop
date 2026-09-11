@@ -496,7 +496,13 @@ Safe Mode 会在启动隔离 Profile 前停止正常 Harness，因此第三方 H
 
 恢复页面会检查市场中的插件兼容更新；找到可用版本时，用户可以升级对应插件。安全模式支持一键升级当前检查结果中已适配的插件，也可以卸载选中的问题插件，再尝试正常启动。没有可用更新或无法连接市场时，不应把它当成“插件一定兼容”或“已是最新版”。
 
-正常启动还会独立检查已启用 dshmarket 的实际版本。恢复锁、待确认卸载和迁移延迟期间跳过此升级；否则在 Harness 停止、generation 投影完成后检查，即使 Profile 早已完成迁移也执行。dshmarket 是迁移逻辑保留在共享目录树里的核心 bundle（`generation-migration.ts` 的 `KEEP_IN_SHARED_TREE`），永远不会被装成 generation：实际版本低于 Desktop 验证基线（当前 `1.45.1`），或它当前是遗留 generation 留下的软链接时，都会清理该链接与相关的 generation 归属声明，使用市场配置的 registry 把整个共享 Profile 树重装一遍，再重新读取实际版本确认。安装失败或复核失败进入安全恢复，不把仅修改依赖声明视为升级成功。已安装或已暂存并投影的更高版本不降级；已卸载或禁用的市场不自动装回。
+dshmarket 是迁移逻辑保留在共享目录树里的核心 bundle（`generation-migration.ts` 的 `KEEP_IN_SHARED_TREE`），**从头到尾不进 generation 系统**。这条不变量由三处共同保证：
+
+- `resolveEnabledGenerations` 过滤掉它，所以无论 `desired.json` 里有没有它的 generation 指针，投影都不会为它建软链接——残留指针是惰性数据，不会每次启动被重新投影出来。
+- 正常启动在 **generation 投影之前、待确认卸载门禁之前** 先做一次降级：遗留的软链接、`desired.json` 指针、`generationProjection` 归属和对应 override 全部清掉，但**保留 `dependencies` 声明和 `bundles` 条目**（清掉的话，后续修复会把它当成"用户主动卸载了市场"而拒绝重装）。
+- 随后对比实际版本与 Desktop 验证基线（当前 `1.45.1`），低于基线或文件缺失时，用市场配置的 registry 把整个共享 Profile 树重装一遍，再重新读取实际版本确认。
+
+这两步刻意不受"待确认卸载"门禁约束：卸载记录要靠一次成功启动才会被标记验证，而市场加载不了正是启动失败的原因——挡在门禁后面会形成死锁（修复等启动，启动等修复）。恢复锁、未完成的插件还原、以及迁移冻结仍然会挡住它，那几条路径需要保持 Profile 逐字节可回滚。安装失败或复核失败进入安全恢复，不把仅修改依赖声明视为升级成功；更高版本不降级，已卸载或禁用的市场不自动装回。
 
 市场自身的安装边界（`dsh-desktop-market-installer`）同理：无论 dshmarket 当前在磁盘上是实体目录还是遗留的 generation 链接，`add dshmarket@<version>` 都会先清理链接与归属声明，再走共享目录树里的普通 `pnpm add`，绝不会把它装成新的 generation。其它第三方插件不受影响，仍然走"装成独立 generation、立即切换链接"的流程。
 

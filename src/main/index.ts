@@ -22,7 +22,7 @@ import {
   installProfileDependenciesWithDsh,
   removeProfilePluginWithDsh
 } from './runtime/profile-plugin-command'
-import { ensureMarketBaseline } from './state/market-baseline'
+import { demoteMarketGeneration, ensureMarketBaseline } from './state/market-baseline'
 import {
   clearProfileInstallMarker,
   markProfileInstallComplete
@@ -1217,11 +1217,13 @@ function launchHarness(): Promise<void> {
             return result
           }
         }),
+      demoteMarketGeneration: () => demoteMarketGeneration(dshHome, (line) => runtime.note(line)),
       ensureMarketBaseline: () => ensureMarketBaseline({
         dshHome,
         dshEntryPath: dshEntryPath(),
         nodeExecutablePath: bundledNodePath(),
         pnpmEntryPath: bundledPnpmEntryPath(),
+        pnpmRunnerPath: bundledPnpmRunnerPath(),
         note: (line) => runtime.note(line)
       }),
       reportProfileConsistency: () => reportProfileConsistency(dshHome)

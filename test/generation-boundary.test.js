@@ -1,7 +1,7 @@
 import { readInstalledVersion } from '../node_modules/dshmarket/lib/profile.js'
 import { suspendGenerationProjectionForPnpm } from '../packages/dsh-desktop-market-installer/pnpm-runner.mjs'
 import { EventEmitter } from 'node:events'
-import { lstat, mkdir, mkdtemp, open, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, open, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -325,25 +325,28 @@ describe('the market install boundary', () => {
     expect(JSON.parse(await readFile(join(link, 'package.json'), 'utf8')).version).toBe('1.0.0')
   })
 
-  it('rolls back a cold-start Market directory replacement if manifest publication fails', async () => {
+  it('rolls back a cold-start directory replacement if manifest publication fails', async () => {
     const home = await freshHome()
     const profile = join(home, 'profiles/web')
-    const market = join(profile, 'node_modules/dshmarket')
-    await mkdir(market, { recursive: true })
-    await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.39.0' }))
+    // A legacy plugin installed as a real directory, being moved onto a
+    // generation for the first time. (Never dshmarket: that one is pinned to
+    // the shared tree and is filtered out of generation resolution.)
+    const legacy = join(profile, 'node_modules/widget')
+    await mkdir(legacy, { recursive: true })
+    await writeFile(join(legacy, 'package.json'), JSON.stringify({ name: 'widget', version: '1.39.0' }))
     const before = await readFile(join(profile, 'package.json'), 'utf8')
     const installed = await installGeneration({
-      dshHome: home, pluginSpec: 'dshmarket@1.45.1', nodeExecutablePath: process.execPath,
-      pnpmEntryPath: 'unused', runInstall: stubGenerationInstall('dshmarket', '1.45.1')
+      dshHome: home, pluginSpec: 'widget@1.45.1', nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused', runInstall: stubGenerationInstall('widget', '1.45.1')
     })
     await writeDesired(home, [installed.generation.id])
     renameFault.phase = 'manifest'
-    await expect(publishInstalledGeneration(home, 'dshmarket', 'web', { allowRealDirectory: true, syncBundles: true })).rejects.toThrow('EPERM')
-    expect((await lstat(market)).isSymbolicLink()).toBe(false)
-    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.39.0')
+    await expect(publishInstalledGeneration(home, 'widget', 'web', { allowRealDirectory: true, syncBundles: true })).rejects.toThrow('EPERM')
+    expect((await lstat(legacy)).isSymbolicLink()).toBe(false)
+    expect(readInstalledVersion('web', 'widget', profile)).toBe('1.39.0')
     expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(before)
-    await publishInstalledGeneration(home, 'dshmarket', 'web', { allowRealDirectory: true, syncBundles: true })
-    expect(readInstalledVersion('web', 'dshmarket', profile)).toBe('1.45.1')
+    await publishInstalledGeneration(home, 'widget', 'web', { allowRealDirectory: true, syncBundles: true })
+    expect(readInstalledVersion('web', 'widget', profile)).toBe('1.45.1')
   })
 
   it('replaces an earlier generation of the same plugin', async () => {
@@ -477,13 +480,15 @@ describe('the market install boundary', () => {
     const home = await freshHome()
     const profile = join(home, 'profiles/web')
     // A build from before this fix left dshmarket projected as a generation.
+    // Projection refuses to create that shape now, so write it by hand.
     const first = await installGeneration({
       dshHome: home, pluginSpec: 'dshmarket@1.45.1', nodeExecutablePath: process.execPath,
       pnpmEntryPath: 'unused', runInstall: stubGenerationInstall('dshmarket', '1.45.1')
     })
     await writeDesired(home, [first.generation.id])
-    await projectGenerations(home)
     const marketPath = join(profile, 'node_modules/dshmarket')
+    await mkdir(join(profile, 'node_modules'), { recursive: true })
+    await symlink(join(first.generation.directory, 'node_modules', 'dshmarket'), marketPath, 'junction')
     expect((await lstat(marketPath)).isSymbolicLink()).toBe(true)
 
     const calls = []

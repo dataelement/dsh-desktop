@@ -36,7 +36,8 @@ async function fixture() {
     dshEntryPath: '/unused/dsh',
     targetVersion: '1.45.1',
     nodeExecutablePath: process.execPath,
-    pnpmEntryPath: '/unused/pnpm'
+    pnpmEntryPath: '/unused/pnpm',
+    pnpmRunnerPath: '/unused/pnpm-runner.mjs'
   }
   return { home, profile, market, options }
 }
@@ -54,6 +55,12 @@ describe('upgradeMarketInSharedTree', () => {
 
     expect(result).toEqual({ ok: true })
     expect(installMock).toHaveBeenCalledTimes(1)
+    // The generation-aware runner has to reach the installer: ordinary plugins
+    // are still projected as generations, and ensureProfilePnpmShim refuses to
+    // run a plain pnpm against a projected profile rather than clobber them.
+    expect(installMock).toHaveBeenCalledWith(
+      expect.objectContaining({ pnpmRunnerPath: '/unused/pnpm-runner.mjs' })
+    )
     const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
     expect(manifest.dependencies.dshmarket).toBe('1.45.1')
     expect((await lstat(market)).isSymbolicLink()).toBe(false)
