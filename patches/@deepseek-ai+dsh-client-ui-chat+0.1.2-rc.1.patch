@@ -1,7 +1,16 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index a33402f..0f7ba8e 100644
+index 4f71a1a..6809f44 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+@@ -964,7 +964,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-chat";
+ 			tag.dataset.pluginCss = tagId$12;
+-			tag.textContent = css$12;
++			tag.textContent = css$12 + ".qJxi1G_timeStart,.qJxi1G_timeEnd{font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px)}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var MessageIconActions_module_css_default = {
 @@ -1074,7 +1074,10 @@ window.__ModuleLoader__.load({
  			return Math.max(1, Math.ceil(milliseconds / 1e3));
  		}
@@ -32,3 +41,21 @@ index a33402f..0f7ba8e 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
+@@ -3305,7 +3312,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-chat";
+ 			tag.dataset.pluginCss = tagId$4;
+-			tag.textContent = css$4;
++			tag.textContent = css$4 + ".CIMUaa_trigger{font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px)}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var TurnUsagePanel_module_css_default = {
+@@ -3737,7 +3744,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-chat";
+ 			tag.dataset.pluginCss = tagId$2;
+-			tag.textContent = css$2;
++			tag.textContent = css$2 + ".XZbVjq_root{font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px)}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var StatsLine_module_css_default = {
