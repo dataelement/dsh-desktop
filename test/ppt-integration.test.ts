@@ -60,7 +60,6 @@ describe('DSH PPT built-in plugin', () => {
     expect(core).not.toMatch(excluded)
     expect(adapter).toContain('conversation.hero.modeActions')
     expect(adapter).toContain('dsh-ppt')
-    expect(adapter).toContain('"webServer"')
     expect(adapter).not.toMatch(excluded)
   })
 

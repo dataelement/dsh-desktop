@@ -12,43 +12,43 @@ const projectRoot = path.resolve(import.meta.dirname, '..')
 const patchedPackages = [
   {
     name: 'dsh-session-persistence',
-    version: '0.1.5-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
     markers: ['does not support deletion', 'delete(_id, _options)', 'Permanently remove one stored Session identity']
   },
   {
     name: 'dsh-session-persistence-jsonl',
-    version: '0.1.5-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
     markers: ['async delete(id, options)', 'this.tracker.claimWrite(id)', 'this.coldLogMemo.delete(id)']
   },
   {
     name: 'dsh-workspace',
-    version: '0.1.5-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
     markers: ['forgetSession(sessionId)', 'archivedSessionIds: state.archivedSessionIds.filter']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.5-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
     markers: ['disposeOwned(sessionId)', 'await persistence.delete(request.sessionId)', 'workspaceRegistry.forgetSession(request.sessionId)']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.5-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/client.js',
     markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'if (this.watched === sessionId) this.watched = void 0']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.5-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/typert.host.js',
     markers: ["id: '@deepseek-ai/dsh-api-session-controller#session/delete'", "method: 'delete'"]
   },
   {
     name: 'dsh-client-ui-workspace',
-    version: '0.1.5-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/client.js',
     markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await sessions.delete(sessionId)']
   }

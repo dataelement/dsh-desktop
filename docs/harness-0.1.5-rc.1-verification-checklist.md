@@ -1,8 +1,10 @@
 # Harness 0.1.5-rc.1 真机验证清单
 
 配套 [harness-0.1.5-rc.1-upgrade.md](./harness-0.1.5-rc.1-upgrade.md)。
-自动化已覆盖的（vitest 749/750、tsc、build、`verify-harness-auth.mjs`）不再重复；
-这里只列**必须真机点一遍**的功能点，按风险排序。
+自动化已覆盖的（vitest 751/751、tsc、build、`verify-harness-auth.mjs`）不再重复；
+这里只列**必须真机点一遍**的功能点。
+
+**先做 §6 冷启动**，再按 §1 → §5 的顺序走。
 
 ## 0. 两套环境，覆盖面不同
 
@@ -13,7 +15,8 @@
 
 原因：未打包的 Electron 拿得到 Node 内部 ESM loader，签名打包后拿不到。
 `cordis-plugin-loader`、`dsh-client-modules`、`dsh-desktop-hmr-fallback` 三者只在打包态生效，
-**必须在 §4 用打包产物验证，dev 跑通不算数**。
+**必须在 §4 用打包产物验证，dev 跑通不算数**。（注意：这三者与 §6 的
+`Harness stopped unexpectedly (exit code 0)` 无关，那是启动入口契约问题，已修复。）
 
 排查位置（macOS，dev 构建的产品名是 `DSH Desktop Dev`）：
 
@@ -180,8 +183,34 @@
 
 ---
 
-## 6. 已知失败，不用重复排查
+## 6. 冷启动本身（最先做这一步）
 
-`test/safe-mode-runtime.test.ts` 一条用例失败：它的故障注入用了 ESM loader 钩子，
-而 0.1.5 下注册任何 loader 钩子都会让引导静默退出 0。**Desktop 真实启动路径不注册钩子**，
-已单独验证能正常引导服务。详见升级文档 §5。真机验证时若 §4 全过即可确认无产品影响。
+0.1.5 把 CLI 改成 `if (import.meta.main)` 门禁 + `runCli` 导出，我们的
+`build/harness-node-entry.mjs` 是导入它的，一度导致**加载后静默 exit 0**，界面只报
+`Harness stopped unexpectedly (exit code 0 (0x00000000))`。已修复，但这是本次最容易复发的点。
+
+- [ ] 冷启动能进主界面；`harness.log` 里能看到 `[harness-node] invoking DSH runCli()`
+      紧接着 `dsh web: http://127.0.0.1:<port>/?token=…`
+- [ ] 日志里**不应**出现「`DSH entry loaded` 之后直接 exited (exit code 0)」
+- [ ] **一次冷启动只应有一条 `[desktop] starting`**。若出现
+      `starting → Harness entry failed → plugin recovery → 安全模式 → 再 starting`
+      的连环，说明有插件加载失败，每轮空转约 30 秒（这就是"启动超级慢"的样子）
+- [ ] 日志里没有 `cannot get property "..." without inject` /
+      `failed to apply loader entry ...`
+- [ ] 安全模式同样能起来（`profile desktop-safe-mode` 那次也要有 `dsh web:` 行）
+- [ ] 冷启动到界面可用的时间应在 **10 秒以内**（干净 DSH_HOME 实测 4–6 秒）
+
+## 7. 第三方插件兼容（真机独有，与本次改动无关但会挡住验证）
+
+真机日志已经暴露两个既有插件在 0.1.5 下的问题，验证前先确认它们不会挡路：
+
+- [ ] `dsh-usage-stats`：报 `StorageError: invalid unit name 'usage-stats-aliases'`
+      （0.1.5 的 `dsh-storage-json` 收紧了 unit 名校验）
+- [ ] `dsh-better-sidebar`：peer 校验失败导致 generation 迁移被冻结
+      （`@lexical/clipboard: typescript resolves outside the generation closure`）
+- [ ] `dsh-plugin-width-slider`：`cannot get property "webServer" without inject`
+      —— 与内置 PPT 插件同一个 0.1.5 破坏性改动，但这个插件不是我们的代码，
+      需要作者跟进或先禁用
+
+建议先用一个**干净的 `$DSH_HOME`** 跑完 §1–§5，再单独回来处理这两个插件的兼容，
+否则容易把插件问题误判成补丁问题。

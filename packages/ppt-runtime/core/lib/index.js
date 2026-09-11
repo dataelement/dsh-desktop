@@ -3593,7 +3593,6 @@ const name = "dsh-ppt";
 /** Required host services. */
 const inject = [
 	"connection",
-	"webServer",
 	"tools",
 	"systemPrompt",
 	"skills"
@@ -3616,6 +3615,11 @@ async function apply(ctx, config) {
 		maxDecksPerSession: config.maxDecksPerSession ?? 50,
 		maxActivities: config.maxActivities ?? 200
 	}), { maxSlides: config.maxSlides ?? 40 });
+	// Harness 0.1.5 registers an RPC channel as a webServer route owned by the
+	// Context that read `connection`, and that Context must itself declare
+	// `webServer`. Registering from a scoped inject Context is upstream's own
+	// pattern; reading `ctx.connection` directly throws
+	// `cannot get property "webServer" without inject` and fails the whole tree.
 	ctx.inject(["webServer"], (webCtx) => {
 		webCtx.connection.rpc.handle("/dsh-ppt", pptRpc(service), { authority: "trusted-host" });
 		// Older loaded clients can finish their in-flight requests after upgrade.

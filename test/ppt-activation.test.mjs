@@ -34,20 +34,23 @@ async function fixture(existingRoot) {
   const plugin = ctx.plugin({
     inject: ['systemPrompt', 'skills'],
     async apply(pluginCtx) {
-      const connection = { rpc: { handle: (_route, handler) => { rpc = handler } } }
       const host = {
+        // The plugin scopes its webServer work under ctx.inject(['webServer'])
+        // (0.1.5 owns connection routes on the reading Context). This fixture
+        // has no webServer service, so run those callbacks on the same fake
+        // host — with the two members they touch — and delegate the rest.
+        effect: (run) => { run?.(); return () => {} },
+        webServer: { register: () => () => {} },
+        inject: (services, callback) =>
+          services?.includes?.('webServer')
+            ? callback?.(host)
+            : pluginCtx.inject(services, callback),
         systemPrompt: pluginCtx.systemPrompt,
         skills: pluginCtx.skills,
         on: pluginCtx.on.bind(pluginCtx),
         get: pluginCtx.get.bind(pluginCtx),
         tools: { register: (tool) => tools.push(tool) },
-        connection,
-        webServer: { register() { return () => {} } },
-        effect(register) { return register() },
-        inject(names, callback) {
-          if (Array.isArray(names) && names.includes('webServer')) return callback(host)
-          return pluginCtx.inject.call(pluginCtx, names, callback)
-        }
+        connection: { rpc: { handle: (_route, handler) => { rpc = handler } } }
       }
       await apply(host, { root })
     }

@@ -103,7 +103,7 @@ describe('assistant local path links', () => {
     for (const value of [
       './@scope/pkg',
       '/tmp/@scope/pkg/index.js',
-      'patches/@deepseek-ai+dsh-client-ui-deliverables+0.1.5-rc.1.patch',
+      'patches/@deepseek-ai+dsh-client-ui-deliverables+0.1.5-rc.2.patch',
       'node_modules/@foo/bar/lib/client.js',
       '@scope/pkg@1.2.3/dist/index.js',
     ]) {

@@ -13,10 +13,10 @@ describe('workspace Open in Finder integration', () => {
     const patchNames = await readdir(path.join(projectRoot, 'patches'))
 
     expect(patchNames).toContain(
-      '@deepseek-ai+dsh-client-ui-workspace+0.1.5-rc.1.patch'
+      '@deepseek-ai+dsh-client-ui-workspace+0.1.5-rc.2.patch'
     )
     expect(patchNames).not.toContain(
-      '@deepseek-ai+dsh-client-ui-workspace+0.1.2-rc.1.patch'
+      '@deepseek-ai+dsh-client-ui-workspace+0.1.5-rc.1.patch'
     )
     expect(patch).toContain('id: "openInFinder"')
     expect(patch).toContain('t("menu.openInFinder")')

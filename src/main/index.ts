@@ -16,7 +16,7 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
-import { extractFailureCause, HarnessRuntime } from './runtime/harness-runtime'
+import { extractFailureCause, HarnessRuntime, prewarmShellEnvironment } from './runtime/harness-runtime'
 import { launchDisclaimedUtilityProcess } from './runtime/disclaimed-utility-process'
 import {
   installProfileDependenciesWithDsh,
@@ -1177,12 +1177,15 @@ function launchHarness(): Promise<void> {
 
   harnessLaunchOperation = (async () => {
     safeModeVisible = false
+    runtime.beginLaunch('web profile')
     const dshHome = join(app.getPath('userData'), 'harness')
     await showSplash()
+    runtime.note('[desktop] splash shown')
     // Migration and generation projection only hold on a stopped Harness, and
     // a restart still has the previous one running: start() stops it, but that
     // is after maintenance. Stopping here owns that mutation window.
     await runtime.stop()
+    runtime.note('[desktop] previous Harness stopped; starting profile maintenance')
     const maintenance = await runProfileStartupMaintenance({
       note: (line) => runtime.note(line),
       recoverInterruptedMigration: () =>
@@ -1236,8 +1239,10 @@ function launchHarness(): Promise<void> {
     }
     maintenanceRecoveryLocked = false
     maintenanceAllowedRestoreId = undefined
+    runtime.note('[desktop] profile maintenance done')
     await refreshMigrationRecoveryLock(dshHome)
     await auditInstalledLaunchAgents(dshHome)
+    runtime.note('[desktop] LaunchAgent audit done')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
     await runtime.start(launchDirectory)
 
@@ -1275,6 +1280,7 @@ function launchSafeHarness(): Promise<void> {
 
   harnessLaunchOperation = (async () => {
     safeModeVisible = true
+    runtime.beginLaunch('safe mode')
     const dshHome = join(app.getPath('userData'), 'harness')
     await refreshMigrationRecoveryLock(dshHome)
     await showSplash()
@@ -2848,6 +2854,10 @@ if (isDaemonLaunch(process.env, process.platform)) {
   if (!singleInstance) {
     app.quit()
   } else {
+    // Start the login-shell capture now so it overlaps Electron's own startup
+    // and the splash instead of blocking the main process right before the
+    // Harness spawn. Only the instance that will actually launch pays for it.
+    void prewarmShellEnvironment()
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
       if (shouldStartInSafeMode(argv)) {
