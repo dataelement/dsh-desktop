@@ -1,8 +1,31 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index 1b3efb7..d8c468f 100644
+index 306645f..50e44ad 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
+@@ -66,6 +66,22 @@ window.__ModuleLoader__.load({
+ 			if (root !== "" && normalized.startsWith(`${root}/`)) return sessionFileAddress(sessionId, normalized.slice(root.length + 1));
+ 			return sessionFileAddress(sessionId, normalized);
+ 		}
++		function hostPathForOpen(cwd, path) {
++			const normalized = path.replace(/\\/g, "/");
++			if (isAbsoluteWorkspacePath(normalized)) return path;
++			const root = cwd === void 0 ? "" : cwd.replace(/\\/g, "/").replace(/\/+$/, "");
++			if (root === "") return path;
++			return `${root}/${normalized.replace(/^\/+/, "")}`;
++		}
++		async function openResolvedHostFile(ctx, sessionId, cwd, hostPath, options) {
++			const address = fileAddressFor(sessionId, cwd, hostPath);
++			if (ctx.sidebarRightTabs.candidates(address).length === 0) {
++				await ctx.remote.session.openWorkspacePath({ path: hostPath });
++				return;
++			}
++			if (options?.line === void 0) ctx.sidebarRight.openResource(address);
++			else ctx.sidebarRight.openResource(address, { params: { line: options.line } });
++		}
+ 		//#endregion
+ 		//#region lib/types/client/contract/snapshot.js
+ 		const EMPTY_LIST$1 = [];
+@@ -152,7 +168,7 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-chat/src/client/chat/MessageItem.module.css.mjs
@@ -11,7 +34,7 @@ index 1b3efb7..d8c468f 100644
  		const tagId$15 = "@deepseek-ai/dsh-client-ui-chat/MessageItem.module.css";
  		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$15) + "]") === null) {
  			const tag = document.createElement("style");
-@@ -175,6 +175,7 @@ window.__ModuleLoader__.load({
+@@ -175,6 +191,7 @@ window.__ModuleLoader__.load({
  			"compactionTitle": "Sixlwa_compactionTitle",
  			"contextRow": "Sixlwa_contextRow",
  			"fileCard": "Sixlwa_fileCard",
@@ -19,7 +42,7 @@ index 1b3efb7..d8c468f 100644
  			"fileContent": "Sixlwa_fileContent",
  			"fileIcon": "Sixlwa_fileIcon",
  			"fileMeta": "Sixlwa_fileMeta",
-@@ -1124,7 +1125,10 @@ window.__ModuleLoader__.load({
+@@ -1124,7 +1141,10 @@ window.__ModuleLoader__.load({
  			return Math.max(1, Math.ceil(milliseconds / 1e3));
  		}
  		function failureMessage(message, code, t) {
@@ -31,7 +54,7 @@ index 1b3efb7..d8c468f 100644
  		}
  		function ModelRetryItem({ node, active, t }) {
  			const deadline = (0, react.useMemo)(() => Date.now() + node.delayMs, [node.delayMs, node.seq]);
-@@ -1230,7 +1234,7 @@ window.__ModuleLoader__.load({
+@@ -1230,7 +1250,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Right-aligned bubble shared by user and steering rows. */
@@ -40,7 +63,7 @@ index 1b3efb7..d8c468f 100644
  			const { text, attachments: contentAttachments, rest } = contentParts(content);
  			const attachments = previewAttachments ?? contentAttachments;
  			const compactImages = attachments.length > 1;
-@@ -1250,9 +1254,13 @@ window.__ModuleLoader__.load({
+@@ -1250,9 +1270,13 @@ window.__ModuleLoader__.load({
  								images: [attachment.image],
  								align: "end",
  								compact: compactImages
@@ -56,7 +79,7 @@ index 1b3efb7..d8c468f 100644
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
  									path: attachment.file.name,
  									className: MessageItem_module_css_default.fileIcon
-@@ -1312,7 +1320,7 @@ window.__ModuleLoader__.load({
+@@ -1312,7 +1336,7 @@ window.__ModuleLoader__.load({
  		* @param props - the session snapshot's pending submission and render seats.
  		* @returns the echoed user bubble.
  		*/
@@ -65,7 +88,7 @@ index 1b3efb7..d8c468f 100644
  			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
  				content: (0, react.useMemo)(() => submission.text === "" ? [] : [{
  					type: "text",
-@@ -1331,6 +1339,7 @@ window.__ModuleLoader__.load({
+@@ -1331,6 +1355,7 @@ window.__ModuleLoader__.load({
  					file: attachment.value
  				}), [submission.attachments]),
  				renderMessageImages,
@@ -73,7 +96,7 @@ index 1b3efb7..d8c468f 100644
  				pending: submission.placement === "steering",
  				echo: true,
  				t,
-@@ -1344,11 +1353,12 @@ window.__ModuleLoader__.load({
+@@ -1344,11 +1369,12 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** User and admitted-steering keyed Chat renderer. */
@@ -87,7 +110,7 @@ index 1b3efb7..d8c468f 100644
  				...data.referenceLabels === void 0 ? {} : { referenceLabels: data.referenceLabels },
  				...data.skillNames === void 0 ? {} : { skillNames: data.skillNames },
  				t,
-@@ -1541,7 +1551,7 @@ window.__ModuleLoader__.load({
+@@ -1541,7 +1567,7 @@ window.__ModuleLoader__.load({
  			return location?.kind === "turn" || location?.kind === "step" ? location.turn.turn : void 0;
  		}
  		/** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
@@ -96,7 +119,7 @@ index 1b3efb7..d8c468f 100644
  			const node = useChatNode(nodeKey);
  			const routedNode = node;
  			const turn = turnOf(routedNode);
-@@ -1577,6 +1587,7 @@ window.__ModuleLoader__.load({
+@@ -1577,6 +1603,7 @@ window.__ModuleLoader__.load({
  			const owner = (0, react.useMemo)(() => node === void 0 ? null : {
  				cwd,
  				openFile,
@@ -104,7 +127,7 @@ index 1b3efb7..d8c468f 100644
  				inspectCall,
  				forkAt,
  				loadImage,
-@@ -1587,6 +1598,7 @@ window.__ModuleLoader__.load({
+@@ -1587,6 +1614,7 @@ window.__ModuleLoader__.load({
  				node,
  				cwd,
  				openFile,
@@ -112,7 +135,7 @@ index 1b3efb7..d8c468f 100644
  				inspectCall,
  				forkAt,
  				loadImage,
-@@ -2069,7 +2081,7 @@ window.__ModuleLoader__.load({
+@@ -2069,7 +2097,7 @@ window.__ModuleLoader__.load({
  		* The chat view slot entry: pure component over the composed props; each
  		* ordered business Node crosses the keyed renderer seat.
  		*/
@@ -121,7 +144,7 @@ index 1b3efb7..d8c468f 100644
  			const order = useChat((s) => s.order);
  			const nodeStore = useChat((s) => s.nodes);
  			const turnNavigationItems = useChat((s) => s.navigation.items());
-@@ -2106,6 +2118,23 @@ window.__ModuleLoader__.load({
+@@ -2106,6 +2134,23 @@ window.__ModuleLoader__.load({
  					setFileOpenBusy(false);
  				});
  			}, [openFile, t]);
@@ -145,7 +168,7 @@ index 1b3efb7..d8c468f 100644
  			const closeFileOpenError = (0, react.useCallback)(() => {
  				fileOpenRequest.current += 1;
  				setFileOpenError(null);
-@@ -2542,6 +2571,7 @@ window.__ModuleLoader__.load({
+@@ -2542,6 +2587,7 @@ window.__ModuleLoader__.load({
  									actions,
  									cwd,
  									openFile: requestOpenFile,
@@ -153,7 +176,7 @@ index 1b3efb7..d8c468f 100644
  									inspectCall,
  									forkAt,
  									loadImage,
-@@ -2562,6 +2592,7 @@ window.__ModuleLoader__.load({
+@@ -2562,6 +2608,7 @@ window.__ModuleLoader__.load({
  								visibleSubmissions.map((submission) => (0, react_jsx_runtime.jsx)(PendingSubmissionBubble, {
  									submission,
  									renderMessageImages,
@@ -161,7 +184,7 @@ index 1b3efb7..d8c468f 100644
  									t
  								}, submission.requestId))
  							]
-@@ -2694,6 +2725,8 @@ window.__ModuleLoader__.load({
+@@ -2694,6 +2741,8 @@ window.__ModuleLoader__.load({
  			"message.retry.delay": "重试延迟：",
  			"message.retry.failure": "失败原因：",
  			"message.failure.auth": "API 密钥无效",
@@ -170,7 +193,7 @@ index 1b3efb7..d8c468f 100644
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -2800,6 +2833,8 @@ window.__ModuleLoader__.load({
+@@ -2800,6 +2849,8 @@ window.__ModuleLoader__.load({
  			"message.retry.delay": "Retry delay: ",
  			"message.retry.failure": "Failure reason: ",
  			"message.failure.auth": "API key is invalid",
@@ -179,7 +202,17 @@ index 1b3efb7..d8c468f 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -8273,6 +8308,14 @@ window.__ModuleLoader__.load({
+@@ -8239,7 +8290,8 @@ window.__ModuleLoader__.load({
+ 			"settingsScope",
+ 			"remote",
+ 			"remote.session",
+-			"sidebarRight"
++			"sidebarRight",
++			"sidebarRightTabs"
+ 		];
+ 		/**
+ 		* Mount all Chat-owned contributions.
+@@ -8273,6 +8325,14 @@ window.__ModuleLoader__.load({
  			const chatStore = createChatStore();
  			const chatScrollPositions = /* @__PURE__ */ new Map();
  			const transcriptView = new TranscriptViewPolicy(ctx.settingsScope.bind({ namespace: CHAT_SETTINGS_NAMESPACE }));
@@ -189,24 +222,25 @@ index 1b3efb7..d8c468f 100644
 +				const result = await binding.session.readFileHostPath(attachmentId);
 +				if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
 +				const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
-+				ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, result.value.path));
++				await openResolvedHostFile(ctx, sessionId, cwd, result.value.path);
 +			} });
  			ctx.slots.inject("settings.general.item", () => ctx.slots.register({
  				name: "settings.general.item",
  				id: "transcript-view",
-@@ -8318,10 +8361,19 @@ window.__ModuleLoader__.load({
+@@ -8318,10 +8378,17 @@ window.__ModuleLoader__.load({
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
  								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
+-								const url = fileAddressFor(sessionId, cwd, path);
+-								if (options?.line === void 0) ctx.sidebarRight.openResource(url);
+-								else ctx.sidebarRight.openResource(url, { params: { line: options.line } });
+-								await Promise.resolve();
 +								const byName = await session.readFileHostPath({ name: path });
 +								if (byName.ok) {
-+									ctx.sidebarRight.openResource(fileAddressFor(sessionId, cwd, byName.value.path));
++									await openResolvedHostFile(ctx, sessionId, cwd, byName.value.path);
 +									return;
 +								}
- 								const url = fileAddressFor(sessionId, cwd, path);
- 								if (options?.line === void 0) ctx.sidebarRight.openResource(url);
- 								else ctx.sidebarRight.openResource(url, { params: { line: options.line } });
--								await Promise.resolve();
++								await openResolvedHostFile(ctx, sessionId, cwd, hostPathForOpen(cwd, path), options);
 +							},
 +							openUploadedFile: async (attachmentId) => {
 +								const opener = ctx.get("openUploadedAttachment");

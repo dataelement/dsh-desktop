@@ -1,0 +1,118 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/client.js
+index 6f532d1..c1a2725 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/client.js
+@@ -1057,6 +1057,26 @@ window.__ModuleLoader__.load({
+ 				default: return t("error.unavailable", { message: failure.message });
+ 			}
+ 		}
++		function isAbsoluteHostPath(path) {
++			return path.startsWith("/") || /^[A-Za-z]:[/\\]/.test(path) || path.startsWith("\\\\");
++		}
++		function canOfferLocalOpen(failure, path) {
++			return failure.code !== "workspace-file/not-found" && isAbsoluteHostPath(path);
++		}
++		function localOpenButton(t, className, path, failure, openWorkspacePath) {
++			if (openWorkspacePath === void 0 || !canOfferLocalOpen(failure, path)) return null;
++			return (0, react_jsx_runtime.jsx)("button", {
++				type: "button",
++				className,
++				"data-textpreview-open-local": true,
++				onClick: () => {
++					void Promise.resolve(openWorkspacePath(path)).catch((reason) => {
++						console.warn("ui-sidebar-documentpreview: local open failed:", reason);
++					});
++				},
++				children: t("openLocally")
++			});
++		}
+ 		//#endregion
+ 		//#region lib/types/client/icons.js
+ 		/** Two margin bars, a straight arrow running to the right one: lines run past the edge. */
+@@ -1406,7 +1426,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - composed slot props.
+ 		* @returns the content read so far with its controls, or a progress line.
+ 		*/
+-		function TextPreview({ useTabInfo, useResource, useStore, actions, loadPage, reloadPages, loadAll, reloadAll, useDocumentPreviews, renderSlot, t }) {
++		function TextPreview({ useTabInfo, useResource, useStore, actions, loadPage, reloadPages, loadAll, reloadAll, useDocumentPreviews, renderSlot, openWorkspacePath, t }) {
+ 			const { tab } = useTabInfo();
+ 			const { navigation, signal } = tab;
+ 			const meta = useResource(tab.contentId);
+@@ -1683,7 +1703,7 @@ window.__ModuleLoader__.load({
+ 									"data-textpreview-retry": true,
+ 									onClick: loadNext,
+ 									children: t("retry")
+-								})]
++								}), localOpenButton(t, TextPreview_module_css_default.action, displayPath, current.failure, openWorkspacePath)]
+ 							}) : (0, react_jsx_runtime.jsxs)("div", {
+ 								className: TextPreview_module_css_default.empty,
+ 								"data-textpreview-failed": current.failure.code,
+@@ -1703,7 +1723,8 @@ window.__ModuleLoader__.load({
+ 										"data-textpreview-retry": true,
+ 										onClick: reload,
+ 										children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutline16, { size: 14 }), t("retry")]
+-									})
++									}),
++									localOpenButton(t, TextPreview_module_css_default.retry, displayPath, current.failure, openWorkspacePath)
+ 								]
+ 							})),
+ 							mode === "text-pages" && current !== void 0 && loaded.length > 0 && !current.eof && current.failure === void 0 && (0, react_jsx_runtime.jsx)("button", {
+@@ -2050,7 +2071,8 @@ window.__ModuleLoader__.load({
+ 			"error.notText": "非文本文件，暂时无法预览。",
+ 			"error.notRegularFile": "该路径不是普通文件，没有可显示的内容。",
+ 			"error.unavailable": "读取失败：{message}",
+-			retry: "重试"
++			retry: "重试",
++			openLocally: "用本地应用打开"
+ 		};
+ 		/** English dictionary, checked against the Chinese key set. */
+ 		const en$5 = {
+@@ -2071,7 +2093,8 @@ window.__ModuleLoader__.load({
+ 			"error.notText": "Not a text file, preview is unavailable for now.",
+ 			"error.notRegularFile": "Not a regular file, nothing to display.",
+ 			"error.unavailable": "Read failed: {message}",
+-			retry: "Retry"
++			retry: "Retry",
++			openLocally: "Open with local app"
+ 		};
+ 		//#endregion
+ 		//#region lib/types/client/document/contract.js
+@@ -26922,7 +26945,8 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
+ 			"locale",
+ 			"sidebarRightTabs",
+ 			"remote",
+-			"remote.workspaceFiles"
++			"remote.workspaceFiles",
++			"remote.session"
+ 		];
+ 		/**
+ 		* Client plugin body: register the type, its dictionaries, its body, and its chip title.
+@@ -26955,7 +26979,8 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
+ 				} },
+ 				inject: (sessionId, actions) => ({
+ 					...face(sessionId, actions),
+-					hooks: { documentPreviews: source }
++					hooks: { documentPreviews: source },
++					openWorkspacePath: (path) => ctx.remote.session.openWorkspacePath({ path })
+ 				})
+ 			}, TextPreview)), "ui-sidebar-documentpreview: text body");
+ 			ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab.title", () => ctx.slots.register({
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/types/client/locales.d.ts
+index 7dc2cf3..d58ee5d 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/types/client/locales.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar-documentpreview/lib/types/client/locales.d.ts
+@@ -25,6 +25,7 @@ export declare const zh: {
+     'error.notRegularFile': string;
+     'error.unavailable': string;
+     retry: string;
++    openLocally: string;
+ };
+ /** Text-preview dictionary key union. */
+ export type SidebarDocumentPreviewKey = keyof typeof zh;
+@@ -48,5 +49,6 @@ export declare const en: {
+     'error.notRegularFile': string;
+     'error.unavailable': string;
+     retry: string;
++    openLocally: string;
+ };
+ //# sourceMappingURL=locales.d.ts.map

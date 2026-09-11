@@ -42,8 +42,11 @@ describe('uploaded file preview', () => {
 
     expect(chat).toContain('ctx.provide("openUploadedAttachment"')
     expect(chat).toContain('binding.session.readFileHostPath(attachmentId)')
-    expect(chat).toContain('fileAddressFor(sessionId, cwd, result.value.path)')
+    expect(chat).toContain('openResolvedHostFile(ctx, sessionId, cwd, result.value.path)')
+    expect(chat).toContain('sidebarRightTabs.candidates(address)')
+    expect(chat).toContain('ctx.remote.session.openWorkspacePath({ path: hostPath })')
     expect(chat).toContain('ctx.sidebarRight.openResource')
+    expect(chat).toContain('"sidebarRightTabs"')
     expect(chat).toContain('opener.open(sessionId, attachmentId)')
     expect(chat).toContain('onOpenUploadedFile(attachment.file.attachmentId)')
     expect(chat).not.toContain('openFile(attachment.file.name)')
@@ -63,8 +66,8 @@ describe('uploaded file preview', () => {
     const chat = await packageClient('dsh-client-ui-chat')
 
     expect(chat).toContain('session.readFileHostPath({ name: path })')
-    expect(chat).toContain('fileAddressFor(sessionId, cwd, byName.value.path)')
-    expect(chat).toContain('fileAddressFor(sessionId, cwd, path)')
+    expect(chat).toContain('openResolvedHostFile(ctx, sessionId, cwd, byName.value.path)')
+    expect(chat).toContain('hostPathForOpen(cwd, path)')
     expect(chat).not.toContain('openFile(attachment.file.name)')
   })
 
@@ -86,6 +89,8 @@ describe('uploaded file preview', () => {
     expect(sessionPatch).not.toContain('findStagedFilesByName')
     expect(chatPatch).toContain('openUploadedAttachment')
     expect(chatPatch).toContain('readFileHostPath({ name: path })')
+    expect(chatPatch).toContain('openResolvedHostFile')
+    expect(chatPatch).toContain('openWorkspacePath')
     expect(conversationPatch).toContain('openUploadedAttachment')
     expect(conversationPatch).not.toContain('binding.session.readFileHostPath')
     expect(attachmentPatch).toContain('onOpenUploadedFile')
@@ -93,5 +98,24 @@ describe('uploaded file preview', () => {
     expect(uploadPatch).not.toContain('findStagedFilesByName')
     expect(deliverablesPatch).toContain('v?\\d+(?:\\.\\d+){1,4}')
     expect(deliverablesPatch).toContain('@[^\\\\/@\\s]+\\/[^\\\\/@\\s]+(?:@[^\\\\/\\s]+)?')
+  })
+
+  it('offers a local-open action when sidebar preview cannot render the file', async () => {
+    const preview = await packageClient('dsh-client-ui-sidebar-documentpreview')
+    const previewPatch = await readFile(
+      patchPath('@deepseek-ai/dsh-client-ui-sidebar-documentpreview'),
+      'utf8'
+    )
+
+    expect(preview).toContain('function canOfferLocalOpen')
+    expect(preview).toContain('failure.code !== "workspace-file/not-found"')
+    expect(preview).toContain('data-textpreview-open-local')
+    expect(preview).toContain('openLocally: "用本地应用打开"')
+    expect(preview).toContain('openLocally: "Open with local app"')
+    expect(preview).toContain('ctx.remote.session.openWorkspacePath({ path })')
+    expect(preview).toContain('"remote.session"')
+    expect(preview).not.toContain('window.dshDesktop.openInFinder')
+    expect(previewPatch).toContain('openLocally')
+    expect(previewPatch).toContain('data-textpreview-open-local')
   })
 })
