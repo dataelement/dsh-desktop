@@ -58,6 +58,22 @@ interface ProfileLockfile {
 
 export type ProfilePluginRemovalRunner = (pluginName: string) => Promise<boolean>
 
+/** Validate explicit loader provenance against enabled roots, without guessing ownership. */
+export async function resolveStartupFailureOwners(
+  dshHome: string,
+  owners: readonly string[],
+  excludedPlugins: readonly string[] = []
+): Promise<string[]> {
+  try {
+    const manifest = JSON.parse(await readFile(profilePackageJsonPath(dshHome), 'utf8')) as ProfileManifest
+    const configured = new Set(configuredProfilePlugins(manifest))
+    const excluded = new Set(excludedPlugins)
+    return [...new Set(owners)].filter((owner) => configured.has(owner) && !excluded.has(owner))
+  } catch {
+    return []
+  }
+}
+
 const CORE_BUNDLES = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dshmarket'])
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i
 

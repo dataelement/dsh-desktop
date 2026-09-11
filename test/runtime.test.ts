@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -16,6 +17,7 @@ import {
   isHarnessStartupProbeHealthy,
   resolveEnvironmentPath,
   resolveShellEnvironment,
+  reserveLoopbackPort,
   updateReadyStability
 } from '../src/main/runtime/harness-runtime'
 import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
@@ -28,6 +30,43 @@ import {
 } from '../src/main/window-navigation'
 
 describe('Harness launch contract', () => {
+  it('reuses a preferred loopback port when it is available', async () => {
+    const probe = createServer()
+    await new Promise<void>((resolve, reject) => {
+      probe.once('error', reject)
+      probe.listen({ host: '127.0.0.1', port: 0 }, resolve)
+    })
+    const address = probe.address()
+    if (!address || typeof address === 'string') throw new Error('Expected a TCP address')
+    await new Promise<void>((resolve, reject) =>
+      probe.close((error) => (error ? reject(error) : resolve()))
+    )
+
+    await expect(reserveLoopbackPort(address.port)).resolves.toEqual({
+      port: address.port,
+      usedPreferredPort: true
+    })
+  })
+
+  it('falls back to an ephemeral port when the preferred port is occupied', async () => {
+    const occupied = createServer()
+    await new Promise<void>((resolve, reject) => {
+      occupied.once('error', reject)
+      occupied.listen({ host: '127.0.0.1', port: 0 }, resolve)
+    })
+    const address = occupied.address()
+    if (!address || typeof address === 'string') throw new Error('Expected a TCP address')
+
+    try {
+      const selected = await reserveLoopbackPort(address.port)
+      expect(selected.usedPreferredPort).toBe(false)
+      expect(selected.port).not.toBe(address.port)
+      expect(selected.port).toBeGreaterThan(0)
+    } finally {
+      await new Promise<void>((resolve) => occupied.close(() => resolve()))
+    }
+  })
+
   it('does not treat a briefly reachable port as a completed Harness startup', () => {
     const firstProbe = updateReadyStability(undefined, true, 1_000)
     expect(firstProbe).toEqual({ readySince: 1_000, ready: false })
@@ -49,7 +88,7 @@ describe('Harness launch contract', () => {
     expect(isHarnessStartupProbeHealthy(500, 'launch-token')).toBe(false)
   })
 
-  it('binds the web server to a random loopback port', () => {
+  it('builds the web server arguments for the selected loopback port', () => {
     expect(buildHarnessArguments(43127)).toEqual([
       'web',
       '--no-open',

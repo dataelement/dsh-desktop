@@ -1,3 +1,4 @@
+import { planPluginRecovery, type PluginRecoveryCheck } from './plugin-recovery-market'
 import type { RuntimeSnapshot } from '../shared/contracts'
 
 export type PluginRecoveryLocale = 'en' | 'zh'
@@ -6,6 +7,7 @@ export interface PluginRecoveryUpgradeCandidate {
   packageName: string
   targetVersion: string
   installedVersion?: string
+  upgradeHint?: string
 }
 
 export interface PluginRecoveryViewModel {
@@ -24,6 +26,9 @@ export interface PluginRecoveryViewModel {
   primaryLabel: string
   primaryBusyLabel: string
   upgradeCandidate?: PluginRecoveryUpgradeCandidate
+  pluginChecks?: PluginRecoveryCheck[]
+  retryCheckLabel?: string
+  autoProcessLabel?: string
   upgradeLabel?: string
   upgradeBusyLabel?: string
   upgradeHint?: string
@@ -159,6 +164,7 @@ export function buildPluginRecoveryViewModel(options: {
   locale: PluginRecoveryLocale
   notice?: string
   upgradeCandidate?: PluginRecoveryUpgradeCandidate
+  pluginChecks?: PluginRecoveryCheck[]
 }): PluginRecoveryViewModel {
   const { snapshot, locale, notice, upgradeCandidate } = options
   const pluginPackages = [...new Set(options.plugins)]
@@ -167,6 +173,9 @@ export function buildPluginRecoveryViewModel(options: {
   const canUninstall = plugins.length > 0
   const description = describePluginFailure(snapshot.logs, locale)
   const multiple = plugins.length > 1
+  const plan = planPluginRecovery(options.pluginChecks ?? [])
+  const hasActions = plan.upgrades.length + plan.removals.length > 0
+  const retryCheck = (options.pluginChecks?.length ?? 0) > 0 && !hasActions
 
   if (locale === 'zh') {
     return {
@@ -192,13 +201,16 @@ export function buildPluginRecoveryViewModel(options: {
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
         : '进入安全模式',
       primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在进入安全模式…',
+      autoProcessLabel: hasActions ? `一键自动处理（升级 ${plan.upgrades.length}，卸载 ${plan.removals.length}）` : undefined,
+      retryCheckLabel: retryCheck ? '重新检查更新' : undefined,
+      pluginChecks: options.pluginChecks,
       upgradeCandidate,
       upgradeLabel: upgradeCandidate
         ? '升级插件并重启'
         : undefined,
       upgradeBusyLabel: upgradeCandidate ? '正在升级…' : undefined,
       upgradeHint: upgradeCandidate
-        ? `该插件有新的兼容版本（${upgradeCandidate.targetVersion.startsWith('v') ? upgradeCandidate.targetVersion : `v${upgradeCandidate.targetVersion}`}）`
+        ? upgradeCandidate.upgradeHint ?? `该插件有新的兼容版本（${upgradeCandidate.targetVersion.startsWith('v') ? upgradeCandidate.targetVersion : `v${upgradeCandidate.targetVersion}`}）`
         : undefined,
       uninstallLabel: upgradeCandidate ? '卸载插件' : undefined,
       logLabel: '打开 Harness 日志',
@@ -236,13 +248,16 @@ export function buildPluginRecoveryViewModel(options: {
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
       : 'Enter Safe Mode',
     primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Entering Safe Mode…',
+    autoProcessLabel: hasActions ? `Auto-recover (${plan.upgrades.length} upgrades, ${plan.removals.length} removals)` : undefined,
+    retryCheckLabel: retryCheck ? 'Retry update checks' : undefined,
+    pluginChecks: options.pluginChecks,
     upgradeCandidate,
     upgradeLabel: upgradeCandidate
       ? 'Upgrade plugin and restart'
       : undefined,
     upgradeBusyLabel: upgradeCandidate ? 'Upgrading…' : undefined,
     upgradeHint: upgradeCandidate
-      ? `A compatible update is available (${upgradeCandidate.targetVersion.startsWith('v') ? upgradeCandidate.targetVersion : `v${upgradeCandidate.targetVersion}`})`
+      ? upgradeCandidate.upgradeHint ?? `A compatible update is available (${upgradeCandidate.targetVersion.startsWith('v') ? upgradeCandidate.targetVersion : `v${upgradeCandidate.targetVersion}`})`
       : undefined,
     uninstallLabel: upgradeCandidate ? 'Uninstall plugin' : undefined,
     logLabel: 'Open Harness log',

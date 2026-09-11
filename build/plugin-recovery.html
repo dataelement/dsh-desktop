@@ -134,6 +134,7 @@
       .plugins.visible { display: block; }
       .plugins li {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 11px;
         min-height: 44px;
@@ -154,6 +155,10 @@
         font-size: 12px;
         font-weight: 750;
       }
+      .plugin-check-actions { width: 100%; display: flex; justify-content: flex-end; gap: 8px; }
+      .plugin-check-actions .plugin-upgrade-btn { margin-left: 0; }
+      .plugin-check-actions .plugin-remove-btn { color: var(--text); border-color: var(--line-strong); background: var(--surface); }
+      .plugin-check-hint { width: 100%; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
       .plugin-name {
         min-width: 0;
         overflow-wrap: anywhere;
@@ -587,7 +592,7 @@
       const pluginList = document.getElementById('plugins')
       if (Array.isArray(model.plugins) && model.plugins.length > 0) {
         pluginList.classList.add('visible')
-        for (const plugin of model.plugins) {
+        for (const [pluginIndex, plugin] of model.plugins.entries()) {
           const item = document.createElement('li')
           const mark = document.createElement('span')
           mark.className = 'plugin-mark'
@@ -595,9 +600,36 @@
           mark.textContent = '!'
           const name = document.createElement('span')
           name.className = 'plugin-name'
-          name.textContent = String(plugin)
+          const check = model.pluginChecks?.[pluginIndex]
+          name.textContent = check?.packageName || String(plugin)
           item.append(mark, name)
 
+          if (check) {
+            const hint = document.createElement('span')
+            hint.className = 'plugin-check-hint'
+            hint.textContent = check.hint
+            item.appendChild(hint)
+            const actions = document.createElement('div')
+            actions.className = 'plugin-check-actions'
+            item.appendChild(actions)
+            const addAction = (type, label) => {
+              const button = document.createElement('button')
+              button.type = 'button'
+              button.className = `plugin-upgrade-btn${type === 'uninstall' ? ' plugin-remove-btn' : ''}`
+              button.textContent = label
+              button.addEventListener('click', () => {
+                document.querySelectorAll('button').forEach((control) => { control.disabled = true })
+                navigate(`${type}:${check.packageName}`)
+              })
+              actions.appendChild(button)
+            }
+            if (check.upgradeCandidate) {
+              addAction('upgrade', model.locale === 'zh'
+                ? `升级至 v${check.upgradeCandidate.targetVersion}`
+                : `Upgrade to v${check.upgradeCandidate.targetVersion}`)
+            }
+            addAction('uninstall', model.locale === 'zh' ? '卸载此插件' : 'Remove this plugin')
+          } else {
           const candidate = model.upgradeCandidate
           const candidateName = candidate
             ? (candidate.packageName.startsWith('@')
@@ -620,6 +652,8 @@
             item.appendChild(upgradeBtn)
           }
 
+          }
+
           pluginList.appendChild(item)
         }
       }
@@ -628,13 +662,20 @@
         if (window.dshRecovery && typeof window.dshRecovery.action === 'function') {
           void window.dshRecovery.action(action)
         } else {
-          location.href = `dsh-recovery://${action}`
+          const target = /^(upgrade|uninstall):(.+)$/.exec(action)
+          location.href = target
+            ? `dsh-recovery://${target[1]}?plugin=${encodeURIComponent(target[2])}`
+            : `dsh-recovery://${action}`
         }
       }
       const primary = document.getElementById('primary')
       const secondary = document.getElementById('secondary')
 
-      if (model.upgradeCandidate) {
+      if (model.retryCheckLabel) {
+        setText('primary', model.retryCheckLabel)
+      } else if (model.autoProcessLabel) {
+        setText('primary', model.autoProcessLabel)
+      } else if (model.upgradeCandidate) {
         setText('primary', model.upgradeLabel)
         setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '卸载插件' : 'Uninstall plugin'))
         secondary.hidden = false
@@ -655,7 +696,13 @@
         if (secondary) secondary.disabled = true
         if (safeModeBtn) safeModeBtn.disabled = true
         document.querySelectorAll('.plugin-upgrade-btn').forEach((btn) => { btn.disabled = true })
-        if (model.upgradeCandidate) {
+        if (model.retryCheckLabel) {
+          primary.textContent = model.locale === 'zh' ? '正在检查更新…' : 'Checking updates…'
+          navigate('check-updates')
+        } else if (model.autoProcessLabel) {
+          primary.textContent = model.locale === 'zh' ? '正在自动处理…' : 'Recovering plugins…'
+          navigate('auto-process')
+        } else if (model.upgradeCandidate) {
           primary.textContent = model.upgradeBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
           navigate('upgrade')
         } else {

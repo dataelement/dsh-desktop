@@ -5,6 +5,7 @@ import { chmod, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { get as httpsGet } from 'node:https'
 import { dirname, join } from 'node:path'
 import { arch, platform } from 'node:os'
+import { pipeline } from 'node:stream/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { InternetTunnelInstance } from './internet-tunnel'
@@ -193,48 +194,48 @@ export async function downloadCloudflaredWithRetry(
   throw lastError
 }
 
-function downloadFileWithRedirects(url: string, destination: string, maxRedirects = 5): Promise<void> {
+export function downloadFileWithRedirects(
+  url: string,
+  destination: string,
+  maxRedirects = 5,
+  timeoutMs = CLOUDFLARED_DOWNLOAD_TIMEOUT_MS
+): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     if (maxRedirects <= 0) {
       return rejectPromise(new Error('Too many redirects while downloading cloudflared'))
     }
 
-    let settled = false
-    const settle = (action: () => void) => {
-      if (settled) return
-      settled = true
-      action()
-    }
-
     const request = httpsGet(url, (res) => {
-      const redirectLocation = res.headers.location
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && redirectLocation) {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume()
-        return settle(() =>
-          resolvePromise(downloadFileWithRedirects(redirectLocation, destination, maxRedirects - 1))
+        return resolvePromise(
+          downloadFileWithRedirects(res.headers.location, destination, maxRedirects - 1, timeoutMs)
         )
       }
       if (res.statusCode !== 200) {
         res.resume()
-        return settle(() => rejectPromise(new Error(`Download failed with status ${res.statusCode}`)))
+        return rejectPromise(new Error(`Download failed with status ${res.statusCode}`))
       }
 
       const fileStream = createWriteStream(destination)
-      res.pipe(fileStream)
-      fileStream.on('finish', () => {
-        fileStream.close(() => settle(() => resolvePromise()))
+      // pipeline propagates response-side `error` and `aborted` events as well
+      // as destination errors. A plain pipe only observed the file stream, so
+      // a reset after the HTTP 200 headers left this promise pending forever.
+      res.once('aborted', () => {
+        fileStream.destroy(
+          Object.assign(new Error('cloudflared download response was aborted'), { code: 'ECONNRESET' })
+        )
       })
-      fileStream.on('error', (err) => {
-        fileStream.close(() => settle(() => rejectPromise(err)))
-      })
-      res.on('error', (err) => settle(() => rejectPromise(err)))
+      void pipeline(res, fileStream).then(() => resolvePromise(), rejectPromise)
     })
-    request.setTimeout(CLOUDFLARED_DOWNLOAD_TIMEOUT_MS, () => {
-      request.destroy()
-      const error = Object.assign(new Error('Download timed out'), { code: 'ETIMEDOUT' })
-      settle(() => rejectPromise(error))
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(
+        Object.assign(new Error(`cloudflared download timed out after ${timeoutMs / 1000}s`), {
+          code: 'ETIMEDOUT'
+        })
+      )
     })
-    request.on('error', (err) => settle(() => rejectPromise(err)))
+    request.once('error', rejectPromise)
   })
 }
 

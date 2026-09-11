@@ -5,11 +5,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   clearDamagedPackageDirectories,
-  ensureMinimumMarketBaseline,
   findDamagedPackageDirectories,
-  hasProfile,
-  isSemverLessThan,
-  VERIFIED_MARKET_BASELINE
+  hasProfile
 } from '../src/main/state/profile-repair'
 import { buildProfileInstallArguments } from '../src/main/runtime/profile-plugin-command'
 
@@ -161,45 +158,5 @@ describe('profile repair', () => {
       'install',
       '--no-frozen-lockfile'
     ])
-  })
-
-  it('compares semver versions correctly', () => {
-    expect(isSemverLessThan('1.36.0', '1.40.0')).toBe(true)
-    expect(isSemverLessThan('^1.35.0', '1.40.0')).toBe(true)
-    expect(isSemverLessThan('~1.39.0', '1.40.0')).toBe(true)
-    expect(isSemverLessThan('1.40.0', '1.40.0')).toBe(false)
-    expect(isSemverLessThan('1.40.1', '1.40.0')).toBe(false)
-    expect(isSemverLessThan('2.0.0', '1.40.0')).toBe(false)
-  })
-
-  it('upgrades an older dshmarket baseline to the verified version', async () => {
-    const bundled = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(VERIFIED_MARKET_BASELINE).toBe(bundled.dependencies.dshmarket)
-    const { home } = await profileHome() // profileHome creates dshmarket: '1.15.0'
-    const upgraded = await ensureMinimumMarketBaseline(home)
-    expect(upgraded).toBe(true)
-
-    const manifestPath = join(home, 'profiles', 'web', 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    expect(manifest.dependencies.dshmarket).toBe(`^${VERIFIED_MARKET_BASELINE}`)
-
-    // Running again on already upgraded profile returns false
-    const secondPass = await ensureMinimumMarketBaseline(home)
-    expect(secondPass).toBe(false)
-  })
-
-  it('leaves a profile without dshmarket alone', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'dsh-profile-repair-no-market-'))
-    homes.push(home)
-    const profile = join(home, 'profiles', 'web')
-    await mkdir(profile, { recursive: true })
-    await writeFile(
-      join(profile, 'package.json'),
-      JSON.stringify({ dependencies: { 'other-plugin': '1.0.0' } }),
-      'utf8'
-    )
-
-    const upgraded = await ensureMinimumMarketBaseline(home)
-    expect(upgraded).toBe(false)
   })
 })

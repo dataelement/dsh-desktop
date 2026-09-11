@@ -25,10 +25,10 @@
  * output, one pnpm run.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, watch } from 'node:fs'
+import { existsSync, realpathSync, watch } from 'node:fs'
 import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export const SIDELINE_MARKER = '.dsh-old-'
 export const RETRY_DELAY_MS = 750
@@ -646,8 +646,18 @@ async function readEntries(directory) {
   }
 }
 
+// npm file: dependencies are directory links in development. Node resolves
+// import.meta.url but leaves argv[1] linked; compare canonical paths on both
+// sides so the executable cannot silently become a successful no-op.
+function isCommandEntry() {
+  try {
+    return process.argv[1] !== undefined &&
+      realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+  } catch { return false }
+}
+
 /* v8 ignore start -- the process wrapper around the tested runner */
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isCommandEntry()) {
   const [pnpmEntry, ...pnpmArguments] = process.argv.slice(2)
   if (pnpmEntry === undefined) {
     process.stderr.write('dsh-desktop: the pnpm runner needs the pnpm entry path.\n')

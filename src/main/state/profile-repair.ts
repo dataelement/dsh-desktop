@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { lstat, readFile, readdir, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { isDisposableModuleDirectory, profilePackageJsonPath } from './plugin-recovery'
 import { removeTree } from './remove-tree'
@@ -125,63 +125,4 @@ async function exists(path: string): Promise<boolean> {
 /** Whether the profile is worth repairing at all — no profile, nothing to do. */
 export function hasProfile(dshHome: string): boolean {
   return existsSync(profilePackageJsonPath(dshHome))
-}
-
-function parseSemverTuple(v: string): [number, number, number] {
-  const clean = v.replace(/^[^0-9]+/, '')
-  const parts = clean.split('.').map((x) => parseInt(x, 10) || 0)
-  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0]
-}
-
-export function isSemverLessThan(a: string, b: string): boolean {
-  const [a1, a2, a3] = parseSemverTuple(a)
-  const [b1, b2, b3] = parseSemverTuple(b)
-  if (a1 !== b1) return a1 < b1
-  if (a2 !== b2) return a2 < b2
-  return a3 < b3
-}
-
-export const VERIFIED_MARKET_BASELINE = '1.45.1'
-
-/**
- * Ensure an installed dshmarket dependency satisfies the verified baseline for
- * this desktop release. Upgrades the manifest declaration and returns whether
- * an upgrade was applied (signaling that profile install markers should clear).
- */
-export async function ensureMinimumMarketBaseline(
-  dshHome: string,
-  minimumVersion: string = VERIFIED_MARKET_BASELINE
-): Promise<boolean> {
-  const manifestPath = profilePackageJsonPath(dshHome)
-  if (!existsSync(manifestPath)) return false
-
-  try {
-    const raw = await readFile(manifestPath, 'utf8')
-    const manifest = JSON.parse(raw) as { dependencies?: Record<string, string> }
-    const declaredSpec = manifest.dependencies?.dshmarket
-    if (!declaredSpec || typeof declaredSpec !== 'string') return false
-
-    // Check installed package version if present on disk
-    const marketPackagePath = join(dirname(manifestPath), 'node_modules', 'dshmarket', 'package.json')
-    let installedVersion: string | undefined
-    try {
-      const marketRaw = await readFile(marketPackagePath, 'utf8')
-      installedVersion = (JSON.parse(marketRaw) as { version?: string }).version
-    } catch {
-      // Not installed yet
-    }
-
-    const needsUpgrade =
-      (installedVersion !== undefined && isSemverLessThan(installedVersion, minimumVersion)) ||
-      isSemverLessThan(declaredSpec, minimumVersion)
-
-    if (!needsUpgrade) return false
-
-    if (!manifest.dependencies) manifest.dependencies = {}
-    manifest.dependencies.dshmarket = `^${minimumVersion}`
-    await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
-    return true
-  } catch {
-    return false
-  }
 }

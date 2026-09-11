@@ -4,8 +4,10 @@ import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node
 import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
+import { parsePluginStartupFailures, type PluginStartupFailure } from '../../shared/plugin-startup-failure'
 
 export interface HarnessRuntimeOptions {
   dshEntryPath: string
@@ -20,6 +22,7 @@ export interface HarnessRuntimeOptions {
     args: string[],
     options: SpawnOptionsWithoutStdio
   ): HarnessChildProcess
+  preferredPort?: number
   startupTimeoutMs?: number
   onChanged(snapshot: RuntimeSnapshot): void
 }
@@ -30,6 +33,8 @@ export interface HarnessChildProcess extends EventEmitter {
   readonly exitCode: number | null
   kill(signal?: NodeJS.Signals): boolean
 }
+
+export const DEFAULT_HARNESS_PORT = 43129
 
 /**
  * Resolve the user's interactive login shell environment.
@@ -328,6 +333,8 @@ export class HarnessRuntime {
   private url?: string
   private launchToken?: string
   private readonly logLines: string[] = []
+  private pluginFailures: PluginStartupFailure[] = []
+  private logDecoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
   private readonly logRemainders: Record<'stdout' | 'stderr', string> = {
     stdout: '',
     stderr: ''
@@ -342,14 +349,21 @@ export class HarnessRuntime {
       launchDirectory: this.launchDirectory,
       url: this.url,
       authToken: this.launchToken,
+      pluginFailures: structuredClone(this.pluginFailures),
       logs: [...this.logLines]
     }
   }
 
+  private launchAttempts = 0
+  get launchAttemptId(): number { return this.launchAttempts }
+
   async start(launchDirectory: string, profile = 'web'): Promise<void> {
     await this.stop()
+    this.launchAttempts++
     this.logRemainders.stdout = ''
     this.logRemainders.stderr = ''
+    this.pluginFailures = []
+    this.logDecoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
     this.launchDirectory = launchDirectory
     this.url = undefined
     this.launchToken = undefined
@@ -380,7 +394,8 @@ export class HarnessRuntime {
     await mkdir(dirname(this.options.logPath), { recursive: true })
     this.logStream ??= createWriteStream(this.options.logPath, { flags: 'a' })
 
-    const port = await reservePort()
+    const preferredPort = this.options.preferredPort ?? DEFAULT_HARNESS_PORT
+    const { port, usedPreferredPort } = await reserveLoopbackPort(preferredPort)
     const url = `http://127.0.0.1:${port}`
     const args = buildNodeArguments(
       this.options.nodeEntryPath,
@@ -396,6 +411,11 @@ export class HarnessRuntime {
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
     this.writeLog(`[desktop] profile ${profile}`)
     this.writeLog(`[desktop] patch ${patchPath}`)
+    if (!usedPreferredPort) {
+      this.writeLog(
+        `[desktop] preferred endpoint http://127.0.0.1:${preferredPort} is unavailable; using a temporary port`
+      )
+    }
     this.writeLog(`[desktop] endpoint ${url}`)
     this.setState('starting', 'Starting DeepSeek Harness…')
 
@@ -419,8 +439,11 @@ export class HarnessRuntime {
     }
     this.child = child
 
-    child.stdout.on('data', (chunk: Buffer) => this.writeChunk('stdout', chunk))
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (this.child === child) this.writeChunk('stdout', chunk)
+    })
     child.stderr.on('data', (chunk: Buffer) => {
+      if (this.child !== child) return
       this.writeChunk('stderr', chunk)
       if (this.child !== child || this.phase !== 'starting') return
 
@@ -527,10 +550,14 @@ ${cause}`
   }
 
   private writeChunk(source: 'stdout' | 'stderr', chunk: Buffer): void {
-    const lines = `${this.logRemainders[source]}${chunk.toString('utf8')}`.split(/\r?\n/)
+    const lines = `${this.logRemainders[source]}${this.logDecoders[source].write(chunk)}`.split(/\r?\n/)
     this.logRemainders[source] = lines.pop() ?? ''
     for (const line of lines) {
       if (line.length === 0) continue
+      if (source === 'stderr' && this.phase === 'starting') {
+        const failures = parsePluginStartupFailures(line)
+        if (failures) this.pluginFailures.push(...failures)
+      }
       this.writeLog(`[${source}] ${line}`)
       this.launchToken ??= extractLaunchToken(line)
     }
@@ -538,7 +565,7 @@ ${cause}`
 
   private flushLogRemainders(): void {
     for (const source of ['stdout', 'stderr'] as const) {
-      const line = this.logRemainders[source]
+      const line = this.logRemainders[source] + this.logDecoders[source].end()
       this.logRemainders[source] = ''
       if (line.length > 0) this.writeLog(`[${source}] ${line}`)
     }
@@ -565,6 +592,14 @@ ${cause}`
     this.logLines.push(line)
     if (this.logLines.length > 200) this.logLines.splice(0, this.logLines.length - 200)
     this.logStream?.write(`${line}\n`)
+  }
+
+  flushLog(): Promise<void> {
+    const stream = this.logStream
+    if (!stream || stream.destroyed || stream.writableEnded) return Promise.resolve()
+    return new Promise((resolve, reject) => {
+      stream.write('', error => error ? reject(error) : resolve())
+    })
   }
 
   private closeLog(): void {
@@ -778,12 +813,12 @@ export function formatExitCode(code: number): string {
   return `exit code ${code} (${hexadecimal})`
 }
 
-async function reservePort(): Promise<number> {
+async function reservePort(port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer()
     server.unref()
     server.once('error', reject)
-    server.listen({ host: '127.0.0.1', port: 0 }, () => {
+    server.listen({ host: '127.0.0.1', port }, () => {
       const address = server.address()
       if (!address || typeof address === 'string') {
         server.close()
@@ -794,6 +829,21 @@ async function reservePort(): Promise<number> {
       server.close((error) => (error ? reject(error) : resolve(port)))
     })
   })
+}
+
+/**
+ * Prefer a stable loopback origin so Chromium can reuse the Harness frontend
+ * cache across launches. A conflicting local process must not prevent Desktop
+ * from starting, so an ephemeral port remains the fallback.
+ */
+export async function reserveLoopbackPort(
+  preferredPort = DEFAULT_HARNESS_PORT
+): Promise<{ port: number; usedPreferredPort: boolean }> {
+  try {
+    return { port: await reservePort(preferredPort), usedPreferredPort: true }
+  } catch {
+    return { port: await reservePort(0), usedPreferredPort: false }
+  }
 }
 
 async function waitUntilReady(

@@ -45,6 +45,18 @@ export function registryLayout(dshHome) {
 const SAFE_PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/iu
 const SAFE_VERSION_PATTERN = /^[0-9a-z][0-9a-z._+-]*$/iu
 
+/**
+ * Packages the profile always keeps as real directories in its shared tree:
+ * pnpm-managed, and never resolved from a generation however one got into
+ * `desired`.
+ *
+ * The app-side `KEEP_IN_SHARED_TREE` (generation-migration.ts) lists the same
+ * intent for the migration, plus the two in-box bundles that never reach this
+ * registry at all. Nothing keeps the two in sync — only dshmarket is ever
+ * installable from the market, so only dshmarket needs guarding here.
+ */
+const SHARED_TREE_ONLY = new Set(['dshmarket'])
+
 function assertSafePackageName(pluginName, context = 'Generation plugin name') {
   if (typeof pluginName !== 'string' || !SAFE_PACKAGE_NAME_PATTERN.test(pluginName)) {
     throw new Error(`${context} is not a safe npm package name: ${String(pluginName)}`)
@@ -286,6 +298,11 @@ export async function resolveEnabledGenerations(dshHome) {
   const enabled = new Map()
   for (const id of desired) {
     const generation = byId.get(id)
+    // A core bundle is never resolved from a generation, whatever `desired`
+    // says. Projection would otherwise re-link it on every launch, which no
+    // later repair can outrun. Left in place rather than thrown on: the
+    // pointer is inert, and startup demotes it back to the shared tree.
+    if (generation !== undefined && SHARED_TREE_ONLY.has(generation.pluginName)) continue
     if (generation === undefined || !existsSync(generation.directory)) {
       throw new Error(`Desired generation is missing or unreadable: ${id}`)
     }

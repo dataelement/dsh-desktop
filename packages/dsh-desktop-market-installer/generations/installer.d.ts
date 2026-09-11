@@ -5,6 +5,8 @@ export interface GenerationInstallOptions {
   dshHome: string
   profile?: string
   strictDepBuilds?: boolean
+  /** Explicit market peer policy; otherwise inherit the Profile's explicit boolean. */
+  autoInstallPeers?: boolean
   minimumReleaseAge?: number
   expectedVersion?: string
   pluginSpec: string

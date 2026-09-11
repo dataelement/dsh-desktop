@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, readFile, rm, writeFile, symlink, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   MARKER,
@@ -20,6 +21,28 @@ const WINDOWS_LOCK_FAILURE = [
   "error: EPERM: operation not permitted, rename 'C:\\Users\\u\\AppData\\Roaming\\dsh-desktop-dev\\harness\\profiles\\web\\node_modules\\argparse_tmp_19856_4' -> 'C:\\Users\\u\\AppData\\Roaming\\dsh-desktop-dev\\harness\\profiles\\web\\node_modules\\argparse'",
   '    at Worker.<anonymous> (D:\\AA\\DSH Desktop Dev\\resources\\app\\node_modules\\pnpm\\dist\\pnpm.cjs:104217:22)'
 ].join('\n')
+
+it('dispatches pnpm through a linked package directory and preserves its exit code', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'pnpm linked entry ')))
+  try {
+    const linkedPackage = join(root, 'linked installer')
+    await symlink(resolve('packages/dsh-desktop-market-installer'), linkedPackage, 'junction')
+    const pnpm = join(root, 'fake-pnpm.cjs')
+    await writeFile(pnpm, 'console.log("pnpm-dispatched"); process.exitCode = 7;')
+    const result = spawnSync(process.execPath, [join(linkedPackage, 'pnpm-runner.mjs'), pnpm, '--version'], {
+      cwd: root, encoding: 'utf8', timeout: 10000
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.stdout).toContain('pnpm-dispatched')
+    expect(result.status).toBe(7)
+    // Importing the linked runner as a library must not execute its CLI.
+    const imported = spawnSync(process.execPath, ['--input-type=module', '-e',
+      `await import(${JSON.stringify(new URL('../packages/dsh-desktop-market-installer/pnpm-runner.mjs', import.meta.url).href)}); console.log("imported");`
+    ], { cwd: root, encoding: 'utf8', timeout: 10000 })
+    expect(imported.status).toBe(0)
+    expect(imported.stdout).toBe('imported\n')
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
 
 const BLOCKED_TARGET =
   'C:\\Users\\u\\AppData\\Roaming\\dsh-desktop-dev\\harness\\profiles\\web\\node_modules\\argparse'

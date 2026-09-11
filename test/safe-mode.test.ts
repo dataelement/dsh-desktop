@@ -375,13 +375,14 @@ describe('Safe Mode', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh',
       plugins: ['plugin-a', 'plugin-b'],
+      suspectedPlugins: ['plugin-a'],
       healthReports: [
         {
           packageName: 'plugin-a',
           installedVersion: '1.0.0',
           latestVersion: '2.0.0',
-          healthStatus: 'incompatible-fixed-in-latest',
-          healthLabel: '不兼容（最新版 v2.0.0 已适配）',
+          healthStatus: 'incompatible-upgrade-available',
+          healthLabel: '未找到兼容更新，可尝试 latest v2.0.0（兼容性未确认）',
           upgradeReady: true,
           upgradeVersion: '2.0.0'
         },
@@ -396,9 +397,10 @@ describe('Safe Mode', () => {
       ]
     })
     expect(model.upgradeReadyCount).toBe(1)
-    expect(model.upgradeAllLabel).toBe('一键升级 1 个已适配插件')
+    expect(model.upgradeAllLabel).toBe('一键升级 1 个有更新的插件')
     const itemA = model.pluginItems.find((p) => p.name === 'plugin-a')
     expect(itemA?.upgradeReady).toBe(true)
+    expect(itemA?.statusLabel).toContain('兼容性未确认')
     expect(itemA?.upgradeVersion).toBe('2.0.0')
     expect(itemA?.upgradeButtonLabel).toBe('升级至 v2.0.0')
     const itemB = model.pluginItems.find((p) => p.name === 'plugin-b')
