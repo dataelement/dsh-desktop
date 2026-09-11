@@ -22,10 +22,7 @@ import {
   installProfileDependenciesWithDsh,
   removeProfilePluginWithDsh
 } from './runtime/profile-plugin-command'
-import {
-  ensureMinimumMarketBaseline,
-  VERIFIED_MARKET_BASELINE
-} from './state/profile-repair'
+import { ensureMarketBaseline } from './state/market-baseline'
 import {
   clearProfileInstallMarker,
   markProfileInstallComplete
@@ -1194,11 +1191,6 @@ function launchHarness(): Promise<void> {
         // Profile writes, but before any operation invokes pnpm.
         const pinned = await ensureStoreDirPinned(dshHome)
         if (pinned) runtime.note(`[desktop] pinned the profile's pnpm store: ${pinned}`)
-        const upgradedMarket = await ensureMinimumMarketBaseline(dshHome)
-        if (upgradedMarket) {
-          runtime.note(`[desktop] upgraded dshmarket baseline to ^${VERIFIED_MARKET_BASELINE} in profile manifest`)
-          await clearProfileInstallMarker(dshHome)
-        }
       },
       enforcePendingPluginRemovals: () =>
         enforcePendingPluginRemovals(dshHome, (line) => runtime.note(line)),
@@ -1225,6 +1217,13 @@ function launchHarness(): Promise<void> {
             return result
           }
         }),
+      ensureMarketBaseline: () => ensureMarketBaseline({
+        dshHome,
+        dshEntryPath: dshEntryPath(),
+        nodeExecutablePath: bundledNodePath(),
+        pnpmEntryPath: bundledPnpmEntryPath(),
+        note: (line) => runtime.note(line)
+      }),
       reportProfileConsistency: () => reportProfileConsistency(dshHome)
     })
     if (maintenance.outcome === 'safe-recovery') {

@@ -42,6 +42,7 @@ export async function upgradePluginToGeneration(
     const install: GenerationInstallResult = await installGeneration({
       dshHome,
       pluginSpec: spec,
+      expectedVersion: targetVersion,
       nodeExecutablePath,
       pnpmEntryPath,
       // targetVersion came from the market's registry; fetch it from there

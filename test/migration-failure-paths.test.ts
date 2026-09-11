@@ -227,6 +227,7 @@ describe('migration failure paths (issue #250)', () => {
       prepareGenerationsForLaunch: prepare,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: () => migrateProfileToGenerations(migrationDeps),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
     return { run, prepareStore, enforce, prepare, report }
@@ -468,6 +469,7 @@ describe('migration failure paths (issue #250)', () => {
       prepareGenerationsForLaunch: prepare,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: migrate,
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 
@@ -496,6 +498,7 @@ describe('migration failure paths (issue #250)', () => {
       prepareGenerationsForLaunch: prepare,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 
@@ -523,6 +526,7 @@ describe('migration failure paths (issue #250)', () => {
       prepareGenerationsForLaunch: async () => undefined,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 
@@ -546,6 +550,7 @@ describe('migration failure paths (issue #250)', () => {
       },
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 

@@ -20,6 +20,7 @@ export interface ProfileStartupMaintenanceDeps {
   prepareGenerationsForLaunch: () => Promise<void>
   shouldDeferProfileMaintenance: () => Promise<boolean>
   migrateProfileToGenerations: () => Promise<MigrationOutcome>
+  ensureMarketBaseline: () => Promise<void>
   reportProfileConsistency: () => Promise<void>
 }
 
@@ -31,6 +32,8 @@ export interface ProfileStartupMaintenanceDeps {
  * prune, or repair after the failure. Startup never performs destructive
  * package repair or declaration pruning; it only reports inconsistencies for
  * an explicit recovery flow to handle later.
+ * The market's verified baseline is the targeted exception: after all gates
+ * and projection, it may install a market generation while Harness is stopped.
  */
 export async function runProfileStartupMaintenance(
   deps: ProfileStartupMaintenanceDeps
@@ -139,6 +142,13 @@ export async function runProfileStartupMaintenance(
     const reason = `profile maintenance transaction failed: ${
       error instanceof Error ? error.message : String(error)
     }`
+    deps.note(`[desktop] normal profile maintenance blocked: ${reason}`)
+    return { outcome: 'safe-recovery', reason }
+  }
+  try {
+    await deps.ensureMarketBaseline()
+  } catch (error) {
+    const reason = `dshmarket baseline upgrade failed: ${error instanceof Error ? error.message : String(error)}`
     deps.note(`[desktop] normal profile maintenance blocked: ${reason}`)
     return { outcome: 'safe-recovery', reason }
   }
