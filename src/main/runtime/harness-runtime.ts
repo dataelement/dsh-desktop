@@ -351,8 +351,12 @@ export class HarnessRuntime {
     }
   }
 
+  private launchAttempts = 0
+  get launchAttemptId(): number { return this.launchAttempts }
+
   async start(launchDirectory: string, profile = 'web'): Promise<void> {
     await this.stop()
+    this.launchAttempts++
     this.logRemainders.stdout = ''
     this.logRemainders.stderr = ''
     this.pluginFailures = []

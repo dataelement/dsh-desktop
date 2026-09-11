@@ -1,8 +1,60 @@
 import { describe, expect, it } from 'vitest'
-import { checkBlockingPluginUpdates, selectPluginRecoveryTarget } from '../src/main/plugin-recovery-market'
+import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, runPluginRecoveryUpgrades } from '../src/main/plugin-recovery-market'
+import type { ProfileCompatibilityIssue } from '../src/main/state/profile-compatibility'
 import type { PluginHealthReport } from '../src/main/state/plugin-market-check'
 
 describe('per-plugin recovery checks', () => {
+  const blocking = (target: string): ProfileCompatibilityIssue => ({
+    id: target, kind: 'missing-client-module', severity: 'blocking', packageName: target,
+    source: 'fixture', detail: 'missing', resolution: 'disable-plugin', target
+  })
+
+  it('does not offer latest for a repaired intermediate version just because another plugin still blocks', async () => {
+    const evidence = new PluginRecoveryEvidence()
+    const attemptedUpgrades = new Map([['a', '1.5.0']])
+    evidence.installed('a')
+    evidence.inspect([blocking('b')])
+    const checked: string[] = []
+    const check = async (packageName: string): Promise<PluginHealthReport> => {
+      checked.push(packageName)
+      return { packageName, healthStatus: 'incompatible-upgrade-available', healthLabel: 'latest fallback', upgradeReady: true, upgradeVersion: '2.0.0' }
+    }
+    await checkBlockingPluginUpdates({ plugins: evidence.targets(['a', 'b'], []), attemptedUpgrades, locale: 'zh', check })
+    expect(checked).toEqual(['b'])
+    // A fresh run can prove that only B still fails. A stays out of recovery.
+    evidence.freshLaunch()
+    expect(evidence.targets(['b'], [])).toEqual(['b'])
+    // Genuine fresh failure of the intermediate A must still be recoverable.
+    expect(evidence.targets(['a', 'b'], [])).toEqual(['a', 'b'])
+  })
+
+  it('uses current blocking evidence for the repaired plugin, but never warnings', () => {
+    const evidence = new PluginRecoveryEvidence()
+    evidence.installed('a')
+    evidence.inspect([{ ...blocking('a'), severity: 'warning' }, blocking('b')])
+    expect(evidence.targets(['a', 'b'], [])).toEqual(['b'])
+    evidence.inspect([blocking('a'), blocking('b')])
+    expect(evidence.targets(['a', 'b'], ['b'])).toEqual(['a'])
+  })
+
+  it('upgrades the selected versions serially and retains success when another install fails', async () => {
+    const calls: string[] = []
+    let active = 0
+    const results = await runPluginRecoveryUpgrades([
+      { packageName: 'a', targetVersion: '1.5.0' },
+      { packageName: 'b', targetVersion: '2.0.0' },
+      { packageName: 'c', targetVersion: '3.0.0' }
+    ], async candidate => {
+      expect(active++).toBe(0)
+      calls.push(`${candidate.packageName}@${candidate.targetVersion}`)
+      await Promise.resolve()
+      active--
+      if (candidate.packageName === 'b') throw new Error('network failure')
+      return { ok: true }
+    })
+    expect(calls).toEqual(['a@1.5.0', 'b@2.0.0', 'c@3.0.0'])
+    expect(results.map(result => result.ok)).toEqual([true, false, true])
+  })
   it('checks every unique blocker and isolates unavailable metadata', async () => {
     const called: string[] = []
     const results = await checkBlockingPluginUpdates({

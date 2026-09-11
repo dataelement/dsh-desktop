@@ -1,4 +1,4 @@
-import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, type PluginRecoveryCheck } from './plugin-recovery-market'
+import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, runPluginRecoveryUpgrades, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -143,7 +143,7 @@ import {
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
 
-type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
+type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'upgrade-all'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
   | { type: 'upgrade'; plugins: string[] }
@@ -156,6 +156,7 @@ type SafeModeAction =
   | { type: 'quit' }
 
 const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
+  'upgrade-all',
   'uninstall',
   'upgrade',
   'show-log',
@@ -1679,6 +1680,20 @@ async function showPluginRecovery(options?: {
   }
 
   const attemptedUpgrades = new Map<string, string>()
+  const evidence = new PluginRecoveryEvidence()
+  const launchWithFreshEvidence = async (): Promise<void> => {
+    const previousAttempt = runtime.launchAttemptId
+    recoveryMessage = undefined
+    recoveryLogs = undefined
+    followRendererLogs = false
+    waitForRendererEvidence = false
+    rendererPluginFailureLogs = []
+    takePendingFrontendPluginRecovery()
+    await launchHarness()
+    // Maintenance can block before Harness even starts. That must not turn
+    // its retained snapshot into fresh failure evidence for repaired plugins.
+    if (runtime.launchAttemptId !== previousAttempt) evidence.freshLaunch()
+  }
 
   try {
     while (!quitting) {
@@ -1693,6 +1708,7 @@ async function showPluginRecovery(options?: {
         slotProviderNodeModulesPaths: [join(app.getAppPath(), 'node_modules')],
         timeoutMs: waitForRendererEvidence ? PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS : 0
       })
+      detection.plugins = evidence.targets(detection.plugins, removedPlugins)
       appendPluginRecoveryDetectionLog(detection.plugins)
       waitForRendererEvidence = false
       if (applyPendingFrontendEvidence()) continue
@@ -1741,45 +1757,51 @@ async function showPluginRecovery(options?: {
       if (action === 'refresh') {
         applyPendingFrontendEvidence()
         continue
-      } else if ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate) {
+      } else if (action === 'upgrade-all' || ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate)) {
+        const candidates = action === 'upgrade-all'
+          ? pluginChecks.flatMap(check => check.upgradeCandidate ? [check.upgradeCandidate] : [])
+          : [upgradeCandidate!]
+        if (candidates.length === 0) continue
         await runtime.stop()
-        const upgradeResult = await upgradePluginToGeneration({
-          dshHome,
-          pluginName: upgradeCandidate.packageName,
-          targetVersion: upgradeCandidate.targetVersion,
-          nodeExecutablePath: bundledNodePath(),
-          pnpmEntryPath: bundledPnpmEntryPath(),
-          note: (line) => runtime.note(line)
-        })
-        attemptedUpgrades.set(upgradeCandidate.packageName, upgradeCandidate.targetVersion)
-
-        if (!upgradeResult.ok) {
-          notice = isChinese
-            ? `升级 ${upgradeCandidate.packageName} 到 v${upgradeCandidate.targetVersion} 失败：${upgradeResult.detail ?? '未知错误'}。您可以重试或卸载该插件。`
-            : `Failed to upgrade ${upgradeCandidate.packageName} to v${upgradeCandidate.targetVersion}: ${upgradeResult.detail ?? 'unknown error'}. You may retry or uninstall.`
-          continue
+        const results = await runPluginRecoveryUpgrades(candidates, candidate => upgradePluginToGeneration({
+          dshHome, pluginName: candidate.packageName, targetVersion: candidate.targetVersion,
+          nodeExecutablePath: bundledNodePath(), pnpmEntryPath: bundledPnpmEntryPath(),
+          note: line => runtime.note(line)
+        }))
+        for (const result of results) {
+          // Only a successful installation invalidates old evidence. Failed
+          // attempts remain retryable and must not be mistaken for bad releases.
+          if (result.ok) {
+            attemptedUpgrades.set(result.candidate.packageName, result.candidate.targetVersion)
+            evidence.installed(result.candidate.packageName)
+          }
+        }
+        const failed = results.filter(result => !result.ok)
+        if (failed.length) {
+          notice = failed.map(result => `${result.candidate.packageName}: ${result.detail ?? (isChinese ? '升级失败' : 'Upgrade failed')}`).join('\n')
+          // Reinspect even after partial success; other plugins may still block.
         }
 
         const compatibility = await inspectProfileCompatibility(
           dshHome,
           join(app.getAppPath(), 'node_modules')
         )
+        evidence.inspect(compatibility.issues)
         const blockingIssues = compatibility.issues.filter((issue) => issue.severity === 'blocking')
         if (blockingIssues.length > 0) {
           runtime.note(
             `[plugin-recovery] normal mode remains blocked by ${blockingIssues.length} ` +
             `profile compatibility issue${blockingIssues.length === 1 ? '' : 's'} after upgrade`
           )
-          notice = isChinese
-            ? `已升级至 v${upgradeCandidate.targetVersion}，但 Profile 仍有 ${blockingIssues.length} 项兼容问题。` +
-            '为避免再次进入空白界面，请进入安全模式继续处理。'
-            : `Upgraded to v${upgradeCandidate.targetVersion}, but ${blockingIssues.length} blocking profile compatibility ` +
-            `issue${blockingIssues.length === 1 ? ' remains' : 's remain'}. ` +
-            'Continue in Safe Mode to avoid another blank normal window.'
+          notice = [notice, isChinese
+            ? `已完成本轮升级，仍有 ${blockingIssues.length} 项兼容问题，请继续处理剩余插件或进入安全模式。`
+            : `This upgrade pass is complete; ${blockingIssues.length} compatibility issues remain. Handle the remaining plugins or enter Safe Mode.`
+          ].filter(Boolean).join('\n')
           continue
         }
 
-        await launchHarness()
+        if (failed.length) continue
+        await launchWithFreshEvidence()
         if (applyPendingFrontendEvidence()) continue
         if (runtime.snapshot().phase === 'ready') {
           schedulePluginRecoverySessionReset()
@@ -1827,6 +1849,7 @@ async function showPluginRecovery(options?: {
           dshHome,
           join(app.getAppPath(), 'node_modules')
         )
+        evidence.inspect(compatibility.issues)
         const blockingIssues = compatibility.issues.filter((issue) => issue.severity === 'blocking')
         if (blockingIssues.length > 0) {
           runtime.note(
@@ -1841,7 +1864,7 @@ async function showPluginRecovery(options?: {
             'Continue in Safe Mode to avoid another blank normal window.'
           continue
         }
-        await launchHarness()
+        await launchWithFreshEvidence()
         if (applyPendingFrontendEvidence()) continue
         if (runtime.snapshot().phase === 'ready') {
           schedulePluginRecoverySessionReset()
@@ -1849,7 +1872,7 @@ async function showPluginRecovery(options?: {
         }
         continue
       } else if (action === 'restart') {
-        await (safeModeVisible ? launchSafeHarness() : launchHarness())
+        await (safeModeVisible ? launchSafeHarness() : launchWithFreshEvidence())
         if (applyPendingFrontendEvidence()) continue
         if (runtime.snapshot().phase === 'ready') {
           schedulePluginRecoverySessionReset()

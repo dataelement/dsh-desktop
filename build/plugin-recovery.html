@@ -671,7 +671,9 @@
       const primary = document.getElementById('primary')
       const secondary = document.getElementById('secondary')
 
-      if (model.upgradeCandidate) {
+      if (model.upgradeAllLabel) {
+        setText('primary', model.upgradeAllLabel)
+      } else if (model.upgradeCandidate) {
         setText('primary', model.upgradeLabel)
         setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '卸载插件' : 'Uninstall plugin'))
         secondary.hidden = false
@@ -692,7 +694,10 @@
         if (secondary) secondary.disabled = true
         if (safeModeBtn) safeModeBtn.disabled = true
         document.querySelectorAll('.plugin-upgrade-btn').forEach((btn) => { btn.disabled = true })
-        if (model.upgradeCandidate) {
+        if (model.upgradeAllLabel) {
+          primary.textContent = model.locale === 'zh' ? '正在批量升级…' : 'Upgrading plugins…'
+          navigate('upgrade-all')
+        } else if (model.upgradeCandidate) {
           primary.textContent = model.upgradeBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
           navigate('upgrade')
         } else {

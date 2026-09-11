@@ -159,11 +159,13 @@ async function main(): Promise<void> {
             document.querySelectorAll('button').forEach(control => { control.disabled = false });
             button.click();
           }
+          document.querySelectorAll('button').forEach(control => { control.disabled = false });
+          document.getElementById('primary').click();
           return { actions, hints: rows.map(row => row.querySelector('.plugin-check-hint').textContent) };
         })()`)
         assert.deepEqual(perPluginActions.actions, [
           `upgrade:${names[0]}`, `uninstall:${names[0]}`, `uninstall:${names[1]}`,
-          `upgrade:${names[2]}`, `uninstall:${names[2]}`
+          `upgrade:${names[2]}`, `uninstall:${names[2]}`, 'upgrade-all'
         ])
         assert.equal(perPluginActions.hints.length, 3)
       }

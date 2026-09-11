@@ -16,6 +16,19 @@ function failedSnapshot(logs: string[] = []): RuntimeSnapshot {
 }
 
 describe('plugin recovery view model', () => {
+  it('offers bulk upgrade only for the blocking plugins with a selected update', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['a', 'b', 'c'], removedPlugins: [], locale: 'zh',
+      pluginChecks: [
+        { packageName: 'a', hint: 'intermediate', upgradeCandidate: { packageName: 'a', targetVersion: '1.5.0' } },
+        { packageName: 'b', hint: 'latest', upgradeCandidate: { packageName: 'b', targetVersion: '2.0.0' } },
+        { packageName: 'c', hint: 'remove' }
+      ]
+    })
+    expect(model.upgradeAllLabel).toBe('一键升级 2 个插件')
+    expect(model.pluginChecks).toHaveLength(3)
+    expect(model.upgradeCandidate).toBeUndefined()
+  })
   it('explains a duplicate route without exposing only a raw stack trace', () => {
     const description = describePluginFailure(
       ['[stderr] webserver: duplicate prefix route "/sidebar/api"'],

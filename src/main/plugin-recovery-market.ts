@@ -1,4 +1,37 @@
 import type { PluginHealthReport, PluginUpgradeCandidate } from './state/plugin-market-check'
+import type { ProfileCompatibilityIssue } from './state/profile-compatibility'
+
+/** Successful installs invalidate the old failure evidence for that plugin.
+ * A fresh launch or a current blocking inspection can establish a new failure.
+ */
+export class PluginRecoveryEvidence {
+  private repaired = new Set<string>()
+  private blockers: string[] = []
+
+  installed(plugin: string): void { this.repaired.add(plugin) }
+  inspect(issues: readonly ProfileCompatibilityIssue[]): void {
+    this.blockers = issues.filter(issue => issue.severity === 'blocking' && issue.resolution === 'disable-plugin')
+      .map(issue => issue.target)
+  }
+  freshLaunch(): void { this.repaired.clear(); this.blockers = [] }
+  targets(detected: readonly string[], removed: readonly string[]): string[] {
+    return [...new Set([...detected.filter(plugin => !this.repaired.has(plugin)), ...this.blockers])]
+      .filter(plugin => !removed.includes(plugin))
+  }
+}
+
+/** Use this screen's chosen versions, serially, and preserve partial success. */
+export async function runPluginRecoveryUpgrades(
+  candidates: readonly PluginUpgradeCandidate[],
+  upgrade: (candidate: PluginUpgradeCandidate) => Promise<{ ok: boolean; detail?: string }>
+): Promise<Array<{ candidate: PluginUpgradeCandidate; ok: boolean; detail?: string }>> {
+  const results = []
+  for (const candidate of candidates) {
+    try { results.push({ candidate, ...await upgrade(candidate) }) }
+    catch (error) { results.push({ candidate, ok: false, detail: error instanceof Error ? error.message : String(error) }) }
+  }
+  return results
+}
 
 export interface PluginRecoveryCheck {
   packageName: string

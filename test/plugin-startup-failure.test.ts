@@ -191,7 +191,9 @@ describe('structured startup failures through the real bundled loader', () => {
       onChanged() {}
     })
     try {
+      expect(runtime.launchAttemptId).toBe(0)
       await runtime.start(home)
+      expect(runtime.launchAttemptId).toBe(1)
       expect(runtime.snapshot().phase).toBe('failed')
       expect(runtime.snapshot().pluginFailures?.[0]?.owner?.packageName).toBe(names[0])
       for (let i = 0; i < 250; i++) runtime.note(`later diagnostic ${i}`)
@@ -202,6 +204,7 @@ describe('structured startup failures through the real bundled loader', () => {
       })).plugins).toEqual(names)
       await writeFile(entry, 'throw new Error("unrelated host failure");')
       await runtime.start(home)
+      expect(runtime.launchAttemptId).toBe(2)
       expect(runtime.snapshot().pluginFailures).toEqual([])
       expect(runtime.snapshot().message).toContain('unrelated host failure')
     } finally {
