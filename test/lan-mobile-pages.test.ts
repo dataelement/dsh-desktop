@@ -250,7 +250,8 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('id="qrCode"><svg></svg></div>')
     expect(desktop).toContain("document.getElementById('qrCode').innerHTML=j.qrSvg")
     expect(desktop).not.toContain("document.getElementById('qrContainer').innerHTML=j.qrSvg")
-    expect(desktop).toContain('if(phoneConnected||modeSwitching||tunnelActive===enableTunnel)return')
+    expect(desktop).toContain('if(phoneConnected||modeSwitching)return')
+    expect(desktop).toContain('if(selectedTunnelTab===enableTunnel&&tunnelActive===enableTunnel)return')
     expect(desktop).toContain('await finishTunnelProgress(completed,progressDuration)')
     expect(desktop).toContain('Phone connected')
     expect(desktop).toContain('You can close this window now.')
@@ -258,7 +259,7 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain("document.body.classList.toggle('phone-connected'")
     expect(desktop).toContain('function syncModeControls(connected)')
     expect(desktop).toContain(
-      'if(phoneConnected||modeSwitching||tunnelActive===enableTunnel)return'
+      'if(selectedTunnelTab===enableTunnel&&tunnelActive===enableTunnel)return'
     )
     expect(desktop).not.toContain('📶')
     expect(desktop).not.toContain('🌐')
@@ -473,6 +474,164 @@ describe('LAN mobile page', () => {
     )
     expect(desktop).toContain('.mode-btn:disabled{cursor:not-allowed;opacity:.5}')
     expect(desktop).toContain('id="fallbackLink" class="fallback-link hide"')
+  })
+
+  it('shows tunnel errors only on the internet tab', () => {
+    const wifi = renderDesktopPairingPage({
+      qrSvg: '<svg></svg>',
+      pairingUrl: 'http://192.168.1.2/pair?token=test',
+      expiresAt: Date.now() + 60_000,
+      locale: 'zh',
+      connected: false,
+      tunnelActive: false,
+      tunnelError: 'Unable to create an internet tunnel. Cloudflare: reset'
+    })
+    const internet = renderDesktopPairingPage({
+      qrSvg: '<svg></svg>',
+      pairingUrl: 'https://primary.trycloudflare.com/pair?token=test',
+      expiresAt: Date.now() + 60_000,
+      locale: 'zh',
+      connected: false,
+      tunnelActive: true,
+      tunnelProvider: 'cloudflare',
+      tunnelError: 'Unable to create an internet tunnel. Cloudflare: reset'
+    })
+    expect(wifi).toContain('id="tunnelError" class="tunnel-err"></div>')
+    expect(wifi).not.toContain('id="tunnelError" class="tunnel-err show"')
+    expect(wifi).toContain('selectedTunnelTab=false')
+    expect(internet).toContain(
+      'id="tunnelError" class="tunnel-err show">隧道建立失败：Unable to create an internet tunnel. Cloudflare: reset</div>'
+    )
+    expect(internet).toContain('selectedTunnelTab=true')
+  })
+
+  it('keeps the internet tab selected after a failed tunnel switch', async () => {
+    const desktop = renderDesktopPairingPage({
+      qrSvg: '<svg id="initial"></svg>',
+      pairingUrl: 'http://192.168.1.2/pair?token=test',
+      expiresAt: Date.now() + 60_000,
+      locale: 'zh',
+      connected: false
+    })
+    const script = /<script>([\s\S]*?)<\/script>/.exec(desktop)?.[1]
+    expect(script).toBeTruthy()
+
+    const classList = () => {
+      const values = new Set<string>()
+      return {
+        add: (...names: string[]) => names.forEach((name) => values.add(name)),
+        remove: (...names: string[]) => names.forEach((name) => values.delete(name)),
+        toggle: (name: string, force?: boolean) => {
+          const next = force ?? !values.has(name)
+          if (next) values.add(name)
+          else values.delete(name)
+          return next
+        },
+        contains: (name: string) => values.has(name)
+      }
+    }
+    const ids = [
+      'qrLoading',
+      'tunnelLoadingText',
+      'tunnelProgressValue',
+      'tunnelProgressBar',
+      'btnLan',
+      'btnTunnel',
+      'url',
+      'qrCode',
+      'modeHint',
+      'tunnelError',
+      'requestMode',
+      'address',
+      'request',
+      'connection',
+      'expires'
+    ]
+    const elements = Object.fromEntries(
+      ids.map((id) => [
+        id,
+        {
+          id,
+          classList: classList(),
+          disabled: false,
+          textContent: '',
+          innerHTML: '',
+          offsetWidth: 152,
+          style: { width: '' }
+        }
+      ])
+    )
+    const document = {
+      body: { classList: classList() },
+      getElementById: (id: string) => elements[id]
+    }
+    const fetch = async (input: string, init?: { body?: string }) => {
+      if (input === '/desktop/tunnel/toggle') {
+        const enable = init?.body ? (JSON.parse(init.body) as { enable?: boolean }).enable : true
+        if (enable) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: false,
+              error: 'Unable to create an internet tunnel. Cloudflare: reset'
+            })
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            active: false,
+            pairingUrl: 'http://192.168.1.2/pair?token=test',
+            qrSvg: '<svg id="lan"></svg>'
+          })
+        }
+      }
+      if (input === '/desktop/pending') {
+        return { ok: true, json: async () => ({}) }
+      }
+      if (input === '/desktop/status') {
+        return { ok: true, json: async () => ({ connected: false }) }
+      }
+      throw new Error(`Unexpected request: ${input}`)
+    }
+    const run = new Function(
+      'document',
+      'fetch',
+      'navigator',
+      'setInterval',
+      'setTimeout',
+      'location',
+      'window',
+      `${script};return {switchMode,selectedTunnelTab:()=>selectedTunnelTab}`
+    )
+    const api = run(
+      document,
+      fetch,
+      { clipboard: { writeText: () => undefined } },
+      () => 0,
+      (callback: () => void) => {
+        callback()
+        return 0
+      },
+      { reload: () => undefined },
+      { close: () => undefined }
+    ) as { switchMode: (enabled: boolean) => Promise<void>; selectedTunnelTab: () => boolean }
+
+    await api.switchMode(true)
+    expect(api.selectedTunnelTab()).toBe(true)
+    expect(elements.btnTunnel?.classList.contains('active')).toBe(true)
+    expect(elements.btnLan?.classList.contains('active')).toBe(false)
+    expect(elements.tunnelError?.classList.contains('show')).toBe(true)
+    expect(elements.tunnelError?.textContent).toContain('隧道建立失败：')
+    expect(elements.tunnelError?.textContent).toContain('Unable to create an internet tunnel')
+    expect(elements.modeHint?.textContent).toContain('4G/5G')
+
+    await api.switchMode(false)
+    expect(api.selectedTunnelTab()).toBe(false)
+    expect(elements.btnLan?.classList.contains('active')).toBe(true)
+    expect(elements.tunnelError?.classList.contains('show')).toBe(false)
+    expect(elements.tunnelError?.textContent).toContain('Unable to create an internet tunnel')
   })
 
   it('shows the backup-link action only for an active Cloudflare tunnel', () => {

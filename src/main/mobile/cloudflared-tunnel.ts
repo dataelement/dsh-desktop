@@ -12,6 +12,8 @@ import type { InternetTunnelInstance } from './internet-tunnel'
 const execFileAsync = promisify(execFile)
 
 export const CLOUDFLARED_VERSION = '2026.8.2'
+export const CLOUDFLARED_DOWNLOAD_ATTEMPTS = 3
+export const CLOUDFLARED_DOWNLOAD_TIMEOUT_MS = 30_000
 
 export interface CloudflareAssetSpec {
   asset: string
@@ -123,7 +125,7 @@ export async function ensureCloudflaredBinary(options: {
   const tempDownloadPath = join(options.cacheDir, `.download-${Date.now()}-${target.spec.asset}`)
 
   try {
-    const download = options.download ?? downloadFileWithRedirects
+    const download = options.download ?? downloadCloudflaredWithRetry
     await download(downloadUrl, tempDownloadPath)
 
     const actualSha256 = await sha256OfFile(tempDownloadPath)
@@ -154,29 +156,85 @@ export async function ensureCloudflaredBinary(options: {
   }
 }
 
+export function isRetryableDownloadError(error: unknown): boolean {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : ''
+  if (code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT') return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /ECONNRESET|ECONNREFUSED|ETIMEDOUT/.test(message)
+}
+
+export async function downloadCloudflaredWithRetry(
+  url: string,
+  destination: string,
+  options?: {
+    download?: (url: string, destination: string) => Promise<void>
+    attempts?: number
+    sleep?: (ms: number) => Promise<void>
+  }
+): Promise<void> {
+  const download = options?.download ?? downloadFileWithRedirects
+  const attempts = options?.attempts ?? CLOUDFLARED_DOWNLOAD_ATTEMPTS
+  const sleep = options?.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
+  let lastError: unknown
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await download(url, destination)
+      return
+    } catch (error) {
+      lastError = error
+      await rm(destination, { force: true }).catch(() => undefined)
+      if (attempt === attempts || !isRetryableDownloadError(error)) throw error
+      await sleep(200 * 2 ** (attempt - 1))
+    }
+  }
+  throw lastError
+}
+
 function downloadFileWithRedirects(url: string, destination: string, maxRedirects = 5): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     if (maxRedirects <= 0) {
       return rejectPromise(new Error('Too many redirects while downloading cloudflared'))
     }
 
-    httpsGet(url, (res) => {
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return resolvePromise(downloadFileWithRedirects(res.headers.location, destination, maxRedirects - 1))
+    let settled = false
+    const settle = (action: () => void) => {
+      if (settled) return
+      settled = true
+      action()
+    }
+
+    const request = httpsGet(url, (res) => {
+      const redirectLocation = res.headers.location
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && redirectLocation) {
+        res.resume()
+        return settle(() =>
+          resolvePromise(downloadFileWithRedirects(redirectLocation, destination, maxRedirects - 1))
+        )
       }
       if (res.statusCode !== 200) {
-        return rejectPromise(new Error(`Download failed with status ${res.statusCode}`))
+        res.resume()
+        return settle(() => rejectPromise(new Error(`Download failed with status ${res.statusCode}`)))
       }
 
       const fileStream = createWriteStream(destination)
       res.pipe(fileStream)
       fileStream.on('finish', () => {
-        fileStream.close(() => resolvePromise())
+        fileStream.close(() => settle(() => resolvePromise()))
       })
       fileStream.on('error', (err) => {
-        fileStream.close(() => rejectPromise(err))
+        fileStream.close(() => settle(() => rejectPromise(err)))
       })
-    }).on('error', rejectPromise)
+      res.on('error', (err) => settle(() => rejectPromise(err)))
+    })
+    request.setTimeout(CLOUDFLARED_DOWNLOAD_TIMEOUT_MS, () => {
+      request.destroy()
+      const error = Object.assign(new Error('Download timed out'), { code: 'ETIMEDOUT' })
+      settle(() => rejectPromise(error))
+    })
+    request.on('error', (err) => settle(() => rejectPromise(err)))
   })
 }
 

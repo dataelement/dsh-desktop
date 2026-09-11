@@ -2,12 +2,13 @@ import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { arch, platform } from 'node:os'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { InternetTunnelInstance } from './internet-tunnel'
 
 const execFileAsync = promisify(execFile)
-const PINGGY_HOST = 'free.pinggy.io'
+export const PINGGY_HOST = 'free.pinggy.io'
+export const PINGGY_USER = 'dsh'
 
 export interface PinggyTunnelInstance extends InternetTunnelInstance {
   provider: 'pinggy'
@@ -34,10 +35,79 @@ export async function findSshOnPath(
   }
 }
 
+export function buildPinggySshArgs(options: {
+  port: number
+  knownHostsPath: string
+  identityPath: string
+}): string[] {
+  return [
+    '-p',
+    '443',
+    '-R',
+    `0:127.0.0.1:${options.port}`,
+    '-i',
+    options.identityPath,
+    '-o',
+    'IdentitiesOnly=yes',
+    '-o',
+    'ExitOnForwardFailure=yes',
+    '-o',
+    'BatchMode=yes',
+    '-o',
+    'ConnectTimeout=15',
+    '-o',
+    'ServerAliveInterval=30',
+    '-o',
+    'ServerAliveCountMax=3',
+    '-o',
+    'StrictHostKeyChecking=accept-new',
+    '-o',
+    `UserKnownHostsFile=${options.knownHostsPath}`,
+    '-o',
+    `User=${PINGGY_USER}`,
+    PINGGY_HOST
+  ]
+}
+
+export function pinggyIdentityPath(knownHostsPath: string): string {
+  return join(dirname(knownHostsPath), 'pinggy-id')
+}
+
+export async function ensurePinggyIdentity(options: {
+  identityPath: string
+  sshPath?: string
+  createIdentity?: (identityPath: string) => Promise<void>
+}): Promise<string> {
+  if (existsSync(options.identityPath)) return options.identityPath
+  await mkdir(dirname(options.identityPath), { recursive: true })
+  if (options.createIdentity) {
+    await options.createIdentity(options.identityPath)
+  } else {
+    const keygenPath = resolveSshKeygen(options.sshPath)
+    await execFileAsync(keygenPath, ['-t', 'ed25519', '-f', options.identityPath, '-N', '', '-q'], {
+      timeout: 10_000
+    })
+  }
+  if (!existsSync(options.identityPath)) {
+    throw new Error(`ssh-keygen did not create Pinggy identity: ${options.identityPath}`)
+  }
+  return options.identityPath
+}
+
+function resolveSshKeygen(sshPath?: string): string {
+  if (sshPath) {
+    const sibling = join(dirname(sshPath), platform() === 'win32' ? 'ssh-keygen.exe' : 'ssh-keygen')
+    if (existsSync(sibling)) return sibling
+  }
+  return 'ssh-keygen'
+}
+
 export async function startPinggyTunnel(options: {
   port: number
   knownHostsPath: string
   sshPath?: string
+  identityPath?: string
+  createIdentity?: (identityPath: string) => Promise<void>
   timeoutMs?: number
   log?: (message: string) => void
 }): Promise<PinggyTunnelInstance> {
@@ -49,33 +119,18 @@ export async function startPinggyTunnel(options: {
   if (!existsSync(sshPath)) throw new Error(`OpenSSH client does not exist: ${sshPath}`)
 
   await mkdir(dirname(knownHostsPath), { recursive: true })
+  const identityPath = await ensurePinggyIdentity({
+    identityPath: options.identityPath ?? pinggyIdentityPath(knownHostsPath),
+    sshPath,
+    createIdentity: options.createIdentity
+  })
 
   return new Promise((resolvePromise, rejectPromise) => {
     let settled = false
     let output = ''
     const child = spawn(
       sshPath,
-      [
-        '-p',
-        '443',
-        '-R',
-        `0:127.0.0.1:${port}`,
-        '-o',
-        'ExitOnForwardFailure=yes',
-        '-o',
-        'BatchMode=yes',
-        '-o',
-        'ConnectTimeout=15',
-        '-o',
-        'ServerAliveInterval=30',
-        '-o',
-        'ServerAliveCountMax=3',
-        '-o',
-        'StrictHostKeyChecking=accept-new',
-        '-o',
-        `UserKnownHostsFile=${knownHostsPath}`,
-        PINGGY_HOST
-      ],
+      buildPinggySshArgs({ port, knownHostsPath, identityPath }),
       {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true
