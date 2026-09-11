@@ -1,0 +1,574 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+index a6834e1..d09bb0b 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+@@ -198,7 +198,8 @@ window.__ModuleLoader__.load({
+ 					orderBy: "updated",
+ 					groupExpansion: {},
+ 					sessionOrderByAccount: {},
+-					sessionUpdatedAtByAccount: {}
++					sessionUpdatedAtByAccount: {},
++					unreadSessionIds: []
+ 				}),
+ 				persist: "dsh.workspace.view.v5",
+ 				actions: {
+@@ -223,6 +224,13 @@ window.__ModuleLoader__.load({
+ 					},
+ 					setSessionOrder: (d, accountKey, order) => {
+ 						d.sessionOrderByAccount[accountKey] = order;
++					},
++					markSessionUnread: (d, sessionId) => {
++						const unread = d.unreadSessionIds ?? (d.unreadSessionIds = []);
++						if (!unread.includes(sessionId)) unread.push(sessionId);
++					},
++					markSessionRead: (d, sessionId) => {
++						d.unreadSessionIds = (d.unreadSessionIds ?? []).filter((id) => id !== sessionId);
+ 					}
+ 				}
+ 			});
+@@ -553,15 +561,19 @@ window.__ModuleLoader__.load({
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-workspace/src/client/rows/Rows.module.css.mjs
+ 		const css$2 = ".YDXeBa_projectRow,.YDXeBa_sessionRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;gap:6px;padding:0 8px;display:flex}.YDXeBa_projectRow:hover,.YDXeBa_sessionRow:hover,.YDXeBa_sessionRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultRow{box-sizing:border-box;cursor:pointer;text-align:left;width:100%;min-height:48px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:8px;flex-direction:column;align-items:stretch;padding:4px 8px;display:flex}.YDXeBa_searchResultRow:hover,.YDXeBa_searchResultRow.YDXeBa_selected{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_searchResultHeading{align-items:center;min-width:0;display:flex}.YDXeBa_searchResultTitle{text-overflow:ellipsis;white-space:nowrap;flex:0 auto;min-width:0;margin-left:4px;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_searchResultMeta{align-items:center;gap:6px;min-width:0;margin-left:20px;display:flex}.YDXeBa_searchResultWorkspace,.YDXeBa_searchResultSnippet{text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:17px;overflow:hidden}.YDXeBa_searchResultWorkspace{max-width:40%;color:var(--dsw-alias-label-tertiary);flex:none}.YDXeBa_searchResultSnippet{min-width:0;color:var(--dsw-alias-label-secondary);flex:1}.YDXeBa_projectRow{box-sizing:border-box;align-items:center;height:34px}.YDXeBa_projectRow .YDXeBa_rowActions{height:20px}.YDXeBa_sessionRow{height:32px;animation:YDXeBa_row-in .15s var(--ds-ease-in-out);gap:0}.YDXeBa_sessionRow .YDXeBa_title{margin:0 6px 0 4px}.YDXeBa_flatSessionRowWithoutStatus .YDXeBa_title{margin-left:0}@keyframes YDXeBa_row-in{0%{opacity:0}}.YDXeBa_slot{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;display:inline-flex}.YDXeBa_visuallyHidden{clip:rect(0 0 0 0);white-space:nowrap;width:1px;height:1px;position:absolute;overflow:hidden}.YDXeBa_folderActive{color:var(--dsw-alias-state-business-primary)}.YDXeBa_projectRow .YDXeBa_chevron{display:none}.YDXeBa_projectRow:hover .YDXeBa_chevron{display:inline-flex}.YDXeBa_projectRow:hover .YDXeBa_folder{display:none}.YDXeBa_arrow{transition:transform .15s var(--ds-ease-in-out)}.YDXeBa_arrowOpen{transform:rotate(90deg)}.YDXeBa_projectText{flex-direction:column;flex:1;gap:2px;min-width:0;display:flex}.YDXeBa_title{text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:14px;line-height:20px;overflow:hidden}.YDXeBa_renameInput{border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-button-elevated-fill);min-width:0;color:inherit;border-radius:4px;outline:none;padding:0 2px;font-size:14px;line-height:20px}.YDXeBa_sessionRow .YDXeBa_title{flex:1}.YDXeBa_meta{text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;overflow:hidden}.YDXeBa_time{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px;line-height:20px}.YDXeBa_scheduleIndicator{width:16px;height:20px;color:var(--dsw-alias-label-tertiary);flex:none;justify-content:center;align-items:center;margin-right:6px;display:inline-flex}.YDXeBa_searchScheduleIndicator{margin-left:4px;margin-right:0}.YDXeBa_dot{flex:none}.YDXeBa_rowActions{flex:none;align-items:center;gap:12px;display:none}.YDXeBa_projectRow:hover .YDXeBa_rowActions,.YDXeBa_sessionRow:hover .YDXeBa_rowActions,.YDXeBa_projectRow.YDXeBa_menuOpen .YDXeBa_rowActions,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_rowActions{display:inline-flex}.YDXeBa_sessionRow:hover .YDXeBa_time,.YDXeBa_sessionRow.YDXeBa_menuOpen .YDXeBa_time{display:none}.YDXeBa_projectRow.YDXeBa_menuOpen,.YDXeBa_sessionRow.YDXeBa_menuOpen{background:var(--dsw-alias-interactive-bg-hover)}.YDXeBa_sessionRow.YDXeBa_dropBefore,.YDXeBa_sessionRow.YDXeBa_dropAfter{position:relative}.YDXeBa_sessionRow.YDXeBa_dropBefore:before,.YDXeBa_sessionRow.YDXeBa_dropAfter:after{content:\"\";z-index:1;background:linear-gradient(55deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 0 / 5px 7px no-repeat, linear-gradient(125deg, transparent calc(50% - 1px), var(--dsw-alias-state-business-primary) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)) 0 5px / 5px 7px no-repeat, linear-gradient(var(--dsw-alias-state-business-primary) 0 0) 4px 5px / calc(100% - 4px) 2px no-repeat;pointer-events:none;height:12px;position:absolute;left:0;right:4px}.YDXeBa_sessionRow.YDXeBa_dropBefore:before{top:-7px}.YDXeBa_sessionRow.YDXeBa_dropAfter:after{bottom:-7px}.YDXeBa_hoverContent{flex-direction:column;gap:8px;display:flex}.YDXeBa_hoverTitle{color:#fff;overflow-wrap:break-word;font-size:14px;line-height:20px}.YDXeBa_hoverPath{color:#cfd3d6;word-break:break-all;font-size:12px;line-height:16px}.YDXeBa_hoverTime{color:#cfd3d6;font-size:12px;line-height:16px}.YDXeBa_hoverStatus{color:#adb2b8;align-items:center;gap:8px;font-size:12px;line-height:20px;display:flex}.YDXeBa_iconButton{cursor:pointer;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);background:0 0;border:none;border-radius:4px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}.YDXeBa_iconButton:hover{color:var(--dsw-alias-label-primary)}.YDXeBa_chevron{color:var(--dsw-alias-label-caption)}@media (prefers-reduced-motion:reduce){.YDXeBa_sessionRow,.YDXeBa_arrow{transition:none;animation:none}}";
++		const rowsDesktopCss = ".YDXeBa_unreadTitle{font-weight:600}.YDXeBa_unreadDot,.YDXeBa_unreadMenuIcon{box-sizing:border-box;background:var(--dsw-alias-state-business-primary);border-radius:50%;display:inline-block}.YDXeBa_unreadDot{width:7px;height:7px}.YDXeBa_unreadMenuIcon{border:2px solid var(--dsw-specific-menu);width:9px;height:9px;box-shadow:0 0 0 1px var(--dsw-alias-state-business-primary)}";
+ 		const tagId$2 = "@deepseek-ai/dsh-client-ui-workspace/Rows.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-workspace";
+ 			tag.dataset.pluginCss = tagId$2;
+-			tag.textContent = css$2;
++			tag.textContent = css$2 + rowsDesktopCss;
+ 			document.head.appendChild(tag);
+ 		}
+ 		var Rows_module_css_default = {
++			"unreadDot": "YDXeBa_unreadDot",
++			"unreadMenuIcon": "YDXeBa_unreadMenuIcon",
++			"unreadTitle": "YDXeBa_unreadTitle",
+ 			"arrow": "YDXeBa_arrow",
+ 			"arrowOpen": "YDXeBa_arrowOpen",
+ 			"chevron": "YDXeBa_chevron",
+@@ -605,7 +617,7 @@ window.__ModuleLoader__.load({
+ 		* Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
+ 		* all data and callbacks arrive via props. Hover swaps (folder->chevron,
+ 		* time->ellipsis, action buttons) are CSS-only. Row ... menus are visual-only
+-		* except workspace Rename/Delete and session Rename/Fork/Archive; the session
++		* except workspace Rename/Delete and session Rename/Fork/Archive/Delete; the session
+ 		* and workspace hover cards are suppressed while a menu is open.
+ 		*/
+ 		/** Row display title: blank rows show the localized New Session label. */
+@@ -679,7 +691,14 @@ window.__ModuleLoader__.load({
+ 			const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
+ 			const active = group.expanded && group.containsCurrent;
+ 			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
+-			const workspaceMenuItems = [{
++			const canOpenInFinder = typeof window !== "undefined" && typeof window.dshDesktop?.openInFinder === "function";
++			const workspaceMenuItems = [];
++			if (canOpenInFinder) workspaceMenuItems.push({
++				id: "openInFinder",
++				label: t("menu.openInFinder"),
++				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconFolderOpen16, {})
++			});
++			workspaceMenuItems.push({
+ 				id: "rename",
+ 				label: t("rename"),
+ 				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconEditOutline16, {})
+@@ -688,7 +707,7 @@ window.__ModuleLoader__.load({
+ 				label: t("delete.workspace"),
+ 				icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
+ 				danger: true
+-			}];
++			});
+ 			const ownRow = (0, react_jsx_runtime.jsxs)("div", {
+ 				className: clsx(Rows_module_css_default.projectRow, menuOpen && Rows_module_css_default.menuOpen),
+ 				role: "treeitem",
+@@ -727,7 +746,13 @@ window.__ModuleLoader__.load({
+ 							items: workspaceMenuItems,
+ 							onSelect: (id) => {
+ 								setMenuOpen(false);
+-								/* v8 ignore next -- Menu can emit only the rename and delete rows supplied above. */
++								if (id === "openInFinder") {
++									if (row.cwd !== void 0 && typeof window.dshDesktop?.openInFinder === "function") window.dshDesktop.openInFinder(row.cwd).catch((reason) => {
++										console.warn("open in finder rejected:", reason);
++									});
++									return;
++								}
++								/* v8 ignore next -- Menu can emit only the open, rename, and delete rows supplied above. */
+ 								if (id !== "rename" && id !== "delete") return;
+ 								if (id === "rename") actions.rename();
+ 								else actions.delete();
+@@ -926,13 +951,16 @@ window.__ModuleLoader__.load({
+ 		* @param props.onRename - open the session rename dialog (id + current title).
+ 		* @param props.onFork - fork a session at its last completed turn.
+ 		* @param props.onArchive - archive a session by id.
++		* @param props.onDelete - open the permanent-deletion confirmation dialog.
++		* @param props.unread - whether the Session was manually marked unread.
++		* @param props.onUnreadChange - toggle the Session's local unread marker.
+ 		* @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
+ 		* @param props.drag - optional draggable-row wiring.
+ 		* @param props.flat - omit the empty status slot in the hierarchy-free flat list.
+ 		* @param props.t - the browser root's locale seat.
+ 		* @returns the session row.
+ 		*/
+-		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat = false, t }) {
++		function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, unread = false, onUnreadChange = () => {}, onReveal, drag, flat = false, t }) {
+ 			const row = node;
+ 			const title = displayTitle(node, t);
+ 			const selected = node.id === currentId;
+@@ -956,21 +984,44 @@ window.__ModuleLoader__.load({
+ 					label: t("menu.fork"),
+ 					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBranchOutline16, {})
+ 				},
++				{
++					id: unread ? "markRead" : "markUnread",
++					label: t(unread ? "menu.markRead" : "menu.markUnread"),
++					icon: (0, react_jsx_runtime.jsx)("span", {
++						className: Rows_module_css_default.unreadMenuIcon,
++						style: {
++							background: "transparent",
++							border: "1.5px solid currentColor",
++							boxShadow: "none"
++						}
++					})
++				},
+ 				{
+ 					id: "archive",
+ 					label: t("menu.archiveSession"),
+ 					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutline20, { size: 16 })
++				},
++				{
++					id: "delete",
++					label: t("delete.session"),
++					icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconTrashOutline16, {}),
++					danger: true
+ 				}
+ 			];
+ 			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.HoverCard, {
+ 				anchor: (0, react_jsx_runtime.jsxs)("div", {
+ 					ref: rowRef,
+-					className: clsx(Rows_module_css_default.sessionRow, selected && Rows_module_css_default.selected, menuOpen && Rows_module_css_default.menuOpen, flat && !showStatus && Rows_module_css_default.flatSessionRowWithoutStatus, drag?.marker === "before" && Rows_module_css_default.dropBefore, drag?.marker === "after" && Rows_module_css_default.dropAfter),
++					className: clsx(Rows_module_css_default.sessionRow, selected && Rows_module_css_default.selected, menuOpen && Rows_module_css_default.menuOpen, flat && !showStatus && !unread && Rows_module_css_default.flatSessionRowWithoutStatus, drag?.marker === "before" && Rows_module_css_default.dropBefore, drag?.marker === "after" && Rows_module_css_default.dropAfter),
+ 					role: "treeitem",
+ 					"aria-selected": selected,
+ 					onClick: () => {
+ 						onOpen(node.id);
+ 					},
++					onContextMenu: (event) => {
++						event.preventDefault();
++						event.stopPropagation();
++						if (!row.blank) setMenuOpen(true);
++					},
+ 					draggable: drag !== void 0,
+ 					onDragStart: drag === void 0 ? void 0 : (e) => {
+ 						e.dataTransfer.effectAllowed = "move";
+@@ -990,12 +1041,15 @@ window.__ModuleLoader__.load({
+ 						drag.drop(rowHalf(e));
+ 					},
+ 					children: [
+-						(!flat || showStatus) && (0, react_jsx_runtime.jsx)("span", {
++						(!flat || showStatus || unread) && (0, react_jsx_runtime.jsx)("span", {
+ 							className: Rows_module_css_default.slot,
+-							children: showStatus && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
++							children: showStatus ? (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses }) : unread ? (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: "done" }), (0, react_jsx_runtime.jsx)("span", {
++								className: Rows_module_css_default.visuallyHidden,
++								children: t("status.unread")
++							})] }) : null
+ 						}),
+ 						(0, react_jsx_runtime.jsx)("span", {
+-							className: Rows_module_css_default.title,
++							className: clsx(Rows_module_css_default.title, unread && Rows_module_css_default.unreadTitle),
+ 							children: title
+ 						}),
+ 						row.hasActiveSchedule && (0, react_jsx_runtime.jsx)(ActiveScheduleIndicator, { t }),
+@@ -1015,7 +1069,10 @@ window.__ModuleLoader__.load({
+ 									setMenuOpen(false);
+ 									if (id === "rename") onRename(node.id, row.title);
+ 									if (id === "fork") onFork(node.id);
++									if (id === "markUnread") onUnreadChange(node.id, true);
++									if (id === "markRead") onUnreadChange(node.id, false);
+ 									if (id === "archive") onArchive(node.id);
++									if (id === "delete") onDelete?.(node.id, row.title);
+ 								},
+ 								portal: true,
+ 								closeOnPointerLeave: true,
+@@ -1461,7 +1518,7 @@ window.__ModuleLoader__.load({
+ 			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+ 		}
+ 		/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
+-		function SessionTree({ useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds, workspaceReady, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t, revealSessionId, onSessionRevealed }) {
++		function SessionTree({ useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds, unreadSessionIds, onUnreadChange, workspaceReady, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionDelete, insertWorkspaceBefore, insertSessionBefore, orderBy, groupExpansion, setGroupExpanded, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t, revealSessionId, onSessionRevealed }) {
+ 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
+ 			const list = useSessions((s) => s);
+ 			const pendingInteractions = useSessionPendingInteraction((s) => s);
+@@ -1757,6 +1814,9 @@ window.__ModuleLoader__.load({
+ 											onRename: onSessionRename,
+ 											onFork: forkSession,
+ 											onArchive: onSessionArchive,
++											onDelete: onSessionDelete,
++											unread: unreadSessionIds.includes(node.id),
++											onUnreadChange,
+ 											onReveal: node.id === revealSessionId && group.key === revealGroup ? () => {
+ 												onSessionRevealed(node.id);
+ 											} : void 0,
+@@ -1782,7 +1842,7 @@ window.__ModuleLoader__.load({
+ 			});
+ 		}
+ 		/** The flat "In one list" body: every session is one draggable top-level row. */
+-		function FlatList({ useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds, usePanelInfo, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, revealSessionId, onSessionRevealed, t }) {
++		function FlatList({ useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, onSessionDelete, unreadSessionIds, onUnreadChange, archivedSessionIds, usePanelInfo, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, revealSessionId, onSessionRevealed, t }) {
+ 			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
+ 			const list = useSessions((s) => s);
+ 			const pendingInteractions = useSessionPendingInteraction((s) => s);
+@@ -1866,6 +1926,9 @@ window.__ModuleLoader__.load({
+ 							onRename: onSessionRename,
+ 							onFork: forkSession,
+ 							onArchive: onSessionArchive,
++							onDelete: onSessionDelete,
++							unread: unreadSessionIds.includes(node.id),
++							onUnreadChange,
+ 							onReveal: node.id === revealSessionId ? () => {
+ 								onSessionRevealed(node.id);
+ 							} : void 0,
+@@ -1973,7 +2036,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - composed slot props (shell owner share + store + injected actions).
+ 		* @returns the region element tree.
+ 		*/
+-		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionPendingInteraction, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, renderSlot, t }) {
++		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionPendingInteraction, useWorkspaces, useStore, actions, startSession, open, renameSession, forkSession, deleteSession, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, archiveSession, insertSessionBefore, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, renderSlot, t }) {
+ 			const home = useHostInfo((info) => info.home);
+ 			const workspaces = useWorkspaces((state) => state.items);
+ 			const workspacePhase = useWorkspaces((state) => state.phase);
+@@ -1985,6 +2048,15 @@ window.__ModuleLoader__.load({
+ 			const groupExpansion = useStore((s) => s.groupExpansion);
+ 			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
+ 			const sessionUpdatedAtByAccount = useStore((s) => s.sessionUpdatedAtByAccount);
++			const unreadSessionIds = useStore((s) => s.unreadSessionIds ?? []);
++			const onUnreadChange = (sessionId, unread) => {
++				if (unread) actions.markSessionUnread(sessionId);
++				else actions.markSessionRead(sessionId);
++			};
++			const openSession = (sessionId) => {
++				actions.markSessionRead(sessionId);
++				open(sessionId);
++			};
+ 			const currentBlankSessionId = useSessions((state) => {
+ 				const current = state.current;
+ 				return current !== void 0 && state.byId[current]?.blank === true ? current : void 0;
+@@ -2185,7 +2257,35 @@ window.__ModuleLoader__.load({
+ 				setSessionRenameDraft(currentTitle);
+ 				setSessionRenameError(null);
+ 			};
++			const [sessionDeleteTarget, setSessionDeleteTarget] = (0, react.useState)(null);
++			const [sessionDeleting, setSessionDeleting] = (0, react.useState)(false);
++			const [sessionDeleteError, setSessionDeleteError] = (0, react.useState)(null);
++			const closeSessionDelete = () => {
++				if (sessionDeleting) return;
++				setSessionDeleteTarget(null);
++				setSessionDeleteError(null);
++			};
++			const confirmSessionDelete = () => {
++				if (sessionDeleting || sessionDeleteTarget === null) return;
++				setSessionDeleting(true);
++				setSessionDeleteError(null);
++				deleteSession(sessionDeleteTarget.sessionId).then(() => {
++					setSessionDeleting(false);
++					setSessionDeleteTarget(null);
++				}).catch((reason) => {
++					setSessionDeleting(false);
++					setSessionDeleteError(reason instanceof Error ? reason.message : String(reason));
++				});
++			};
++			const onSessionDelete = (sessionId, title) => {
++				setSessionDeleteTarget({
++					sessionId,
++					title
++				});
++				setSessionDeleteError(null);
++			};
+ 			const onSessionArchive = (sessionId) => {
++				actions.markSessionRead(sessionId);
+ 				archiveSession(sessionId).catch((reason) => {
+ 					console.warn("session archive rejected:", reason);
+ 				});
+@@ -2369,11 +2469,14 @@ window.__ModuleLoader__.load({
+ 							usePanelInfo,
+ 							useSessions,
+ 							useSessionPendingInteraction,
+-							open,
++							open: openSession,
+ 							forkSession,
+ 							onSessionRename,
+ 							onSessionArchive,
++							onSessionDelete,
+ 							archivedSessionIds,
++							unreadSessionIds,
++							onUnreadChange,
+ 							orderBy,
+ 							sessionOrderByAccount,
+ 							sessionUpdatedAtByAccount,
+@@ -2388,6 +2491,7 @@ window.__ModuleLoader__.load({
+ 							useSessionPendingInteraction,
+ 							onSessionRename,
+ 							onSessionArchive,
++							onSessionDelete,
+ 							forkSession,
+ 							workspaces,
+ 							workspaceReady: workspacePhase === "ready" && workspaceStreamState !== "loading",
+@@ -2398,8 +2502,10 @@ window.__ModuleLoader__.load({
+ 							syncSessionOrderAccount: actions.syncSessionOrderAccount,
+ 							setSessionOrder: actions.setSessionOrder,
+ 							archivedSessionIds,
++							unreadSessionIds,
++							onUnreadChange,
+ 							startSession,
+-							open,
++							open: openSession,
+ 							insertWorkspaceBefore,
+ 							insertSessionBefore,
+ 							orderBy,
+@@ -2526,6 +2632,34 @@ window.__ModuleLoader__.load({
+ 							children: sessionRenameError
+ 						})]
+ 					}),
++					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
++						open: sessionDeleteTarget !== null,
++						onClose: closeSessionDelete,
++						closeLabel: t("close"),
++						title: t("delete.session"),
++						...sessionDeleteTarget === null ? {} : { description: t("delete.session.desc", { name: sessionDeleteTarget.title }) },
++						footer: (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++							variant: "outline",
++							disabled: sessionDeleting,
++							onClick: closeSessionDelete,
++							children: t("cancel")
++						}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++							variant: "outline",
++							className: WorkspaceBrowser_module_css_default.deleteAction,
++							disabled: sessionDeleting,
++							onClick: confirmSessionDelete,
++							children: t("delete.session")
++						})] }),
++						children: [sessionDeleting && (0, react_jsx_runtime.jsx)("div", {
++							className: WorkspaceBrowser_module_css_default.deleteStatus,
++							role: "status",
++							children: t("delete.session.pending")
++						}), sessionDeleteError !== null && (0, react_jsx_runtime.jsx)("div", {
++							className: WorkspaceBrowser_module_css_default.renameError,
++							role: "alert",
++							children: sessionDeleteError
++						})]
++					}),
+ 					(0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+ 						open: deleteTarget !== null,
+ 						onClose: closeDelete,
+@@ -2591,6 +2725,7 @@ window.__ModuleLoader__.load({
+ 			"search.noMatches": "无匹配会话",
+ 			"search.hasMore": "仅显示前 {n} 条结果，请缩小搜索范围。",
+ 			"menu.addWorkspace": "添加工作区…",
++			"menu.openInFinder": "在 Finder 中打开",
+ 			"picker.loading": "正在加载工作区…",
+ 			"conflict.named": "已存在名为“{name}”的工作区。",
+ 			"folderError.title": "无法打开文件夹",
+@@ -2603,7 +2738,12 @@ window.__ModuleLoader__.load({
+ 			"delete.workspace": "删除工作区",
+ 			"delete.desc": "将把“{name}”从工作区列表中移除。文件夹与会话记录会保留，其会话将显示在“未分组”下。",
+ 			"delete.pending": "正在删除工作区…",
++			"delete.session": "删除会话",
++			"delete.session.desc": "将永久删除“{name}”的会话记录与执行轨迹。工作区文件会保留。此操作无法撤销。",
++			"delete.session.pending": "正在删除会话…",
+ 			"menu.fork": "分叉会话",
++			"menu.markUnread": "标为未读",
++			"menu.markRead": "标为已读",
+ 			"menu.archiveSession": "归档会话",
+ 			"sessions.count.one": "{n} 个会话",
+ 			"sessions.count.other": "{n} 个会话",
+@@ -2618,6 +2758,7 @@ window.__ModuleLoader__.load({
+ 			"status.planReview": "计划待审",
+ 			"status.waitingAnswer": "等待回答",
+ 			"status.completed": "已完成",
++			"status.unread": "未读",
+ 			"schedule.active": "有活动定时任务",
+ 			"hover.created": "创建于 {time}",
+ 			"hover.copied": "已复制",
+@@ -2657,6 +2798,7 @@ window.__ModuleLoader__.load({
+ 			"search.noMatches": "No matching sessions",
+ 			"search.hasMore": "Showing the first {n} results. Narrow your search.",
+ 			"menu.addWorkspace": "Add workspace…",
++			"menu.openInFinder": "Open in Finder",
+ 			"picker.loading": "Loading workspaces…",
+ 			"conflict.named": "A workspace named “{name}” already exists.",
+ 			"folderError.title": "Couldn’t open folder",
+@@ -2669,7 +2811,12 @@ window.__ModuleLoader__.load({
+ 			"delete.workspace": "Delete workspace",
+ 			"delete.desc": "This removes “{name}” from the workspace list. The folder and session logs will be kept. Its sessions will appear under Ungrouped.",
+ 			"delete.pending": "Deleting workspace…",
++			"delete.session": "Delete session",
++			"delete.session.desc": "This permanently deletes the conversation history and execution trace for “{name}”. Workspace files are kept. This can’t be undone.",
++			"delete.session.pending": "Deleting session…",
+ 			"menu.fork": "Fork session",
++			"menu.markUnread": "Mark as unread",
++			"menu.markRead": "Mark as read",
+ 			"menu.archiveSession": "Archive session",
+ 			"sessions.count.one": "{n} session",
+ 			"sessions.count.other": "{n} sessions",
+@@ -2684,6 +2831,7 @@ window.__ModuleLoader__.load({
+ 			"status.planReview": "Plan awaiting review",
+ 			"status.waitingAnswer": "Waiting for answer",
+ 			"status.completed": "Completed",
++			"status.unread": "Unread",
+ 			"schedule.active": "Has active scheduled task",
+ 			"hover.created": "Created {time}",
+ 			"hover.copied": "Copied",
+@@ -2766,6 +2914,9 @@ window.__ModuleLoader__.load({
+ 				forkSession: (sessionId) => {
+ 					uiWorkspace.forkSession(sessionId).catch(() => {});
+ 				},
++				deleteSession: async (sessionId) => {
++					await sessions.delete(sessionId);
++				},
+ 				renameWorkspace: async (workspaceId, title) => {
+ 					await workspaces.rename(workspaceId, title);
+ 				},
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+index 14ea953..eda6ca4 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+@@ -115,6 +115,8 @@ export type WorkspaceBrowserInjected = {
+     renameSession: (sessionId: SessionId, title: string) => Promise<void>;
+     /** Fork a Session at its last completed turn and open the child. */
+     forkSession: (sessionId: SessionId) => void;
++    /** Permanently delete a Session while retaining its Workspace files. */
++    deleteSession: (sessionId: SessionId) => Promise<void>;
+     /** Rename a Host Workspace (rejects on name conflict; resolves on durability). */
+     renameWorkspace: (workspaceId: WorkspaceId, title: string) => Promise<void>;
+     /** Delete only a Host Workspace registration; directory and Session logs remain. */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
+index e715e55..7c172b1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
+@@ -30,6 +30,7 @@ export declare const zh: {
+     'search.noMatches': string;
+     'search.hasMore': string;
+     'menu.addWorkspace': string;
++    'menu.openInFinder': string;
+     'picker.loading': string;
+     'conflict.named': string;
+     'folderError.title': string;
+@@ -42,7 +43,12 @@ export declare const zh: {
+     'delete.workspace': string;
+     'delete.desc': string;
+     'delete.pending': string;
++    'delete.session': string;
++    'delete.session.desc': string;
++    'delete.session.pending': string;
+     'menu.fork': string;
++    'menu.markUnread': string;
++    'menu.markRead': string;
+     'menu.archiveSession': string;
+     'sessions.count.one': string;
+     'sessions.count.other': string;
+@@ -57,6 +63,7 @@ export declare const zh: {
+     'status.planReview': string;
+     'status.waitingAnswer': string;
+     'status.completed': string;
++    'status.unread': string;
+     'schedule.active': string;
+     'hover.created': string;
+     'hover.copied': string;
+@@ -98,6 +105,7 @@ export declare const en: {
+     'search.noMatches': string;
+     'search.hasMore': string;
+     'menu.addWorkspace': string;
++    'menu.openInFinder': string;
+     'picker.loading': string;
+     'conflict.named': string;
+     'folderError.title': string;
+@@ -110,7 +118,12 @@ export declare const en: {
+     'delete.workspace': string;
+     'delete.desc': string;
+     'delete.pending': string;
++    'delete.session': string;
++    'delete.session.desc': string;
++    'delete.session.pending': string;
+     'menu.fork': string;
++    'menu.markUnread': string;
++    'menu.markRead': string;
+     'menu.archiveSession': string;
+     'sessions.count.one': string;
+     'sessions.count.other': string;
+@@ -125,6 +138,7 @@ export declare const en: {
+     'status.planReview': string;
+     'status.waitingAnswer': string;
+     'status.completed': string;
++    'status.unread': string;
+     'schedule.active': string;
+     'hover.created': string;
+     'hover.copied': string;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
+index 03b2435..b435993 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/rows/Rows.d.ts
+@@ -2,6 +2,13 @@ import type { WorkspaceBrowserProps } from '../contract/slots.ts';
+ import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts';
+ /** The standard locale seat, prop-passed from the browser root. */
+ type RowTranslate = WorkspaceBrowserProps['t'];
++declare global {
++    interface Window {
++        dshDesktop?: {
++            openInFinder?: (path: string) => Promise<void>;
++        };
++    }
++}
+ /**
+  * Row drag wiring supplied by the tree owner. `drop` reports the half of the
+  * row where the pointer released so the owner can resolve an insert anchor.
+@@ -77,13 +84,16 @@ export declare function SearchResultItem({ result, currentId, onOpen, t }: {
+  * @param props.onRename - open the session rename dialog (id + current title).
+  * @param props.onFork - fork a session at its last completed turn.
+  * @param props.onArchive - archive a session by id.
++ * @param props.onDelete - open the permanent-deletion confirmation dialog.
++ * @param props.unread - whether the Session was manually marked unread.
++ * @param props.onUnreadChange - toggle the Session's local unread marker.
+  * @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
+  * @param props.drag - optional draggable-row wiring.
+  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
+  * @param props.t - the browser root's locale seat.
+  * @returns the session row.
+  */
+-export declare function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onReveal, drag, flat, t, }: {
++export declare function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, unread, onUnreadChange, onReveal, drag, flat, t, }: {
+     node: SessionNode;
+     currentId: string | undefined;
+     now: number;
+@@ -94,6 +104,10 @@ export declare function SessionNodeItem({ node, currentId, now, onOpen, onRename
+     onFork: (id: SessionNode['id']) => void;
+     /** Archive this session (row menu action; commits without a dialog). */
+     onArchive: (id: SessionNode['id']) => void;
++    /** Open the permanent-deletion confirmation dialog. */
++    onDelete?: ((id: SessionNode['id'], currentTitle: string) => void) | undefined;
++    unread?: boolean | undefined;
++    onUnreadChange?: ((id: SessionNode['id'], unread: boolean) => void) | undefined;
+     /** Scroll this row into view after search navigation, then acknowledge it. */
+     onReveal?: (() => void) | undefined;
+     /** Present only on draggable rows (workspace-group sessions outside search). */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
+index 9081c1f..6246aab 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
+@@ -22,6 +22,8 @@ type WorkspaceViewState = {
+     sessionOrderByAccount: Record<string, string[]>;
+     /** Last observed update timestamps per order account for one-time promotion events. */
+     sessionUpdatedAtByAccount: Record<string, Record<string, number>>;
++    /** Browser-local manually unread Session identities. */
++    unreadSessionIds: string[];
+ };
+ /**
+  * Annotation twin of the actions literal below (the export needs a declared
+@@ -34,6 +36,8 @@ type WorkspaceViewActions = {
+     retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void;
+     syncSessionOrderAccount: (draft: WorkspaceViewState, accountKey: string, order: string[], updatedAt: Record<string, number>) => void;
+     setSessionOrder: (draft: WorkspaceViewState, accountKey: string, order: string[]) => void;
++    markSessionUnread: (draft: WorkspaceViewState, sessionId: string) => void;
++    markSessionRead: (draft: WorkspaceViewState, sessionId: string) => void;
+ };
+ /**
+  * Create the workspace browser viewing store handle.

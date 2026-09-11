@@ -1,0 +1,85 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+index 48a1455..c2324e6 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+@@ -2412,6 +2412,51 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 		return this.tracker.flushAll();
+ 	}
+ 	/**
++	* Permanently remove one stored Session identity.
++	*
++	* Takes the same exclusive write claim and directory lease `open(id,'write')`
++	* takes, so deletion never races a live writer in this process or another.
++	* Removes the exact log file and leaves the shared project directory in
++	* place; a session that never materialized has nothing durable to remove.
++	* @param id - the stored session to remove.
++	* @param options - optional cancellation.
++	* @returns whether a durable artifact was removed.
++	*/
++	async delete(id, options) {
++		options?.signal?.throwIfAborted();
++		await this.ensureRootEncoding();
++		options?.signal?.throwIfAborted();
++		if (this.tracker.hasPending(id)) throw new Error(`cannot delete session "${id}" while its unmaterialized create is live`);
++		this.tracker.claimWrite(id);
++		let lease;
++		try {
++			const resolved = await this.findLog(id, options?.signal);
++			if (resolved === void 0) return false;
++			const path = resolved.currentPath;
++			lease = await this.acquireLease(id, void 0, dirname(path));
++			try {
++				await rm(path);
++			} catch (error) {
++				if (isENOENT(error)) return false;
++				throw error;
++			}
++			if (process.platform !== "win32") await this.syncDirPosix(dirname(path));
++			return true;
++		} finally {
++			this.coldLogMemo.delete(id);
++			this.migrationPreparations.delete(id);
++			let releaseFailure;
++			try {
++				await lease?.release();
++			} catch (raw) {
++				/* v8 ignore next -- lock releases reject with Error */
++				releaseFailure = raw instanceof Error ? raw : new Error(String(raw));
++			}
++			this.tracker.releaseClaim(id);
++			if (releaseFailure !== void 0) throw releaseFailure;
++		}
++	}
++	/**
+ 	* Observe one stored session without reading its event log.
+ 	* @param id - the stored session to observe.
+ 	* @param options - optional cancellation.
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
+index 1863388..ba60b3a 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
+@@ -7,7 +7,7 @@
+  */
+ import { Context } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
+-import { SessionPersistence, type SessionAccess, type SessionHandle, type SessionHandleReadResult, type SessionPersistenceCreateOptions, type SessionPersistenceListOptions, type SessionPersistenceOpenOptions, type SessionPersistenceSnapshot, type SessionPersistenceStatOptions, type SessionPersistenceRevision as PersistenceRevision } from '@deepseek-ai/dsh-session-persistence';
++import { SessionPersistence, type SessionAccess, type SessionHandle, type SessionHandleReadResult, type SessionPersistenceCreateOptions, type SessionPersistenceDeleteOptions, type SessionPersistenceListOptions, type SessionPersistenceOpenOptions, type SessionPersistenceSnapshot, type SessionPersistenceStatOptions, type SessionPersistenceRevision as PersistenceRevision } from '@deepseek-ai/dsh-session-persistence';
+ import { JsonlSessionHandle } from './storage.ts';
+ import { SessionWriteLease } from './lease.ts';
+ import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session';
+@@ -103,6 +103,15 @@ declare class JsonlSessionPersistence extends SessionPersistence {
+      * @returns resolution once every write handle active at the call has flushed.
+      */
+     flush(): Promise<void>;
++    /**
++     * Permanently remove one stored Session identity. Takes the same exclusive
++     * write claim and directory lease a write open takes, removes the exact log
++     * file, and leaves the shared project directory in place.
++     * @param id - the stored session to remove.
++     * @param options - optional cancellation.
++     * @returns whether a durable artifact was removed.
++     */
++    delete(id: SessionId, options?: SessionPersistenceDeleteOptions): Promise<boolean>;
+     /**
+      * Observe one stored session without reading its event log.
+      * @param id - the stored session to observe.

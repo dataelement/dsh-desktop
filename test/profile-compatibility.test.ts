@@ -84,10 +84,9 @@ describe('profile compatibility recovery', () => {
         resolution: 'rebuild-profile'
       }),
       expect.objectContaining({
-        kind: 'unverified-module-reference',
-        severity: 'warning',
+        kind: 'missing-client-module',
         packageName: 'dsh-dream-skin',
-        resolution: 'inspect-only'
+        resolution: 'disable-plugin'
       }),
       expect.objectContaining({
         kind: 'workspace-version-mismatch',
@@ -162,33 +161,16 @@ describe('profile compatibility recovery', () => {
     )
 
     expect(issue).toMatchObject({
-      kind: 'unverified-module-reference',
-      severity: 'warning',
+      kind: 'missing-client-module',
       installedVersion: '0.3.6',
       source: '@example/dsh-remote-web-ui/lib/index.js',
       target: '@example/dsh-web-ui-all',
       groupId: 'plugin:@example/dsh-web-ui-all',
       groupName: '@example/dsh-web-ui-all',
       groupKind: 'plugin',
-      resolution: 'inspect-only'
+      resolution: 'disable-plugin'
     })
     expect(issue?.detail).toContain('@deepseek-ai/dsh-host-apiproxy/api/rpc')
-  })
-
-  it('does not block a plugin for a legacy require inside a compatibility fallback', async () => {
-    await manifest(join(bundled, '@deepseek-ai', 'dsh-client-store'), {
-      name: '@deepseek-ai/dsh-client-store', version: '0.1.2-rc.1'
-    })
-    await writeFile(join(profile, 'node_modules', 'dsh-dream-skin', 'lib', 'client.js'), `
-      let store;
-      try { store = require('@deepseek-ai/dsh-client-store') }
-      catch { store = require('@deepseek-ai/dsh-client-runtime/client') }
-    `)
-    const result = await inspectProfileCompatibility(dshHome, bundled)
-    const findings = result.issues.filter(issue => issue.target === 'dsh-dream-skin')
-    expect(findings).toHaveLength(1)
-    expect(findings[0]).toMatchObject({ severity: 'warning', resolution: 'inspect-only' })
-    expect(findings[0]?.detail).toContain('compatibility fallback')
   })
 
   it('disables an incompatible plugin without deleting its dependency or files', async () => {

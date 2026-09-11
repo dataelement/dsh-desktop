@@ -119,9 +119,7 @@ export function buildSafeModeViewModel(options: {
 }): SafeModeViewModel {
   const issues = (options.issues ?? []).map((issue): SafeModeIssueViewModel => {
     const zh = options.locale === 'zh'
-    const kindLabel = issue.kind === 'unverified-module-reference'
-      ? zh ? '兼容性待确认' : 'Compatibility unverified'
-      : zh
+    const kindLabel = zh
       ? issue.kind === 'core-version-mismatch'
         ? '核心版本冲突'
         : issue.kind === 'missing-client-module'
@@ -132,9 +130,7 @@ export function buildSafeModeViewModel(options: {
         : issue.kind === 'missing-client-module'
           ? 'Incompatible plugin'
           : 'Workspace dependency conflict'
-    const actionLabel = issue.resolution === 'inspect-only'
-      ? zh ? '仅提示；运行正常时无需处理' : 'Informational; no action needed if working'
-      : zh
+    const actionLabel = zh
       ? issue.resolution === 'disable-plugin'
         ? '暂停插件（保留数据）'
         : issue.resolution === 'quarantine-workspace'
@@ -251,7 +247,7 @@ export function buildSafeModeViewModel(options: {
       actionLabel,
       countLabel: zh ? `包含 ${grouped.length} 项检测结果` : `${grouped.length} finding${grouped.length === 1 ? '' : 's'}`,
       detailLabel: zh ? `查看 ${grouped.length} 项详情` : `View ${grouped.length} detail${grouped.length === 1 ? '' : 's'}`,
-      issueIds: grouped.filter((issue) => issue.resolution !== 'inspect-only').map((issue) => issue.id),
+      issueIds: grouped.map((issue) => issue.id),
       issues: grouped
     }
   })

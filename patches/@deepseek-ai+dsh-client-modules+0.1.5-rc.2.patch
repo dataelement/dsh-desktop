@@ -1,0 +1,82 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
+index b60880c..0d63b54 100644
+--- a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
+@@ -239,8 +239,12 @@ function sourceMapSnapshot(clientPath) {
+ }
+ /** Count generated lines while assembling indexed-map section offsets. */
+ function newlineCount(value) {
++	// `for (const char of value)` walks the string iterator one code point at a
++	// time and allocates each one; over multi-megabyte client bundles, counted
++	// on every combo build, that dominated Harness boot. indexOf scans natively
++	// and counts exactly the same "\n" occurrences.
+ 	let count = 0;
+-	for (const char of value) if (char === "\n") count += 1;
++	for (let index = value.indexOf("\n"); index !== -1; index = value.indexOf("\n", index + 1)) count += 1;
+ 	return count;
+ }
+ /** Resolve section sources against their original per-plugin map URL before combo relocation. */
+@@ -265,7 +269,10 @@ function comboSectionMap(record) {
+ }
+ /** Map each generated line to the same line in a bundled JavaScript source. */
+ function identitySectionMap(source, sourceUrl) {
+-	const mappings = Array.from({ length: newlineCount(source) }, (_, index) => index === 0 ? "AAAA" : "AACA").join(";");
++	// One segment per line: "AAAA" then "AACA" repeated, `;`-joined. Built with
++	// String#repeat instead of materializing a line-length array to join.
++	const lines = newlineCount(source);
++	const mappings = lines === 0 ? "" : `AAAA${";AACA".repeat(lines - 1)}`;
+ 	return {
+ 		version: 3,
+ 		names: [],
+@@ -312,6 +319,25 @@ function buildCombo(records, revision) {
+ 		sourceMapUrl
+ 	};
+ }
++/**
++* Per-record combos, memoised on the record object and validated by its rev.
++*
++* compose() runs on every graph flush and used to rebuild every single-record
++* combo each time; while a profile boots the graph flushes repeatedly as
++* plugins arrive, so each unchanged bundle was re-concatenated, re-hashed and
++* re-encoded about nine times (the 6.9MB document-preview bundle alone cost
++* ~40ms per pass). A record keeps its object identity until its source
++* changes, and rebuilt() assigns a new content-hash rev whenever its bytes
++* change, so an identity-plus-rev hit is exactly an unchanged artifact.
++*/
++const recordComboCache = /* @__PURE__ */ new WeakMap();
++function recordCombo(record) {
++	const cached = recordComboCache.get(record);
++	if (cached !== void 0 && cached.rev === record.entry.rev) return cached;
++	const artifact = buildCombo([record], record.entry.rev);
++	recordComboCache.set(record, artifact);
++	return artifact;
++}
+ /** Add initial-load scheduling metadata to a combo artifact. */
+ function buildBatch(phase, records) {
+ 	const artifact = buildCombo(records);
+@@ -604,7 +630,7 @@ var ClientModuleRegistry = class extends Service {
+ 		}
+ 		const responses = new Map(batchResponses);
+ 		for (const record of this.table.values()) {
+-			const artifact = buildCombo([record], record.entry.rev);
++			const artifact = recordCombo(record);
+ 			responses.set(artifact.url, {
+ 				body: artifact.script,
+ 				contentType: "text/javascript; charset=utf-8"
+@@ -703,7 +729,15 @@ var ClientModuleRegistry = class extends Service {
+ 				attributes: {}
+ 			}).url : internal.resolveSync(loaderName, baseUrl, {}).url;
+ 		} catch {
+-			return;
++			if (expectedPackageName === void 0) return;
++			try {
++				return {
++					path: createRequire(baseUrl).resolve(`${expectedPackageName}/package.json`),
++					packageName: expectedPackageName
++				};
++			} catch {
++				return;
++			}
+ 		}
+ 		return this.nearestPackage(moduleUrl, expectedPackageName);
+ 	}

@@ -22,7 +22,7 @@ afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true,
 afterEach(async () => { for (const dir of cleanups.splice(0)) await rm(dir, { recursive: true, force: true }) })
 
 async function fixture({ broken = true, malformed = false } = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'ppt-validation-'))
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'ppt-validation-')))
   cleanups.push(root)
   const workspace = path.join(root, 'workspace')
   const project = path.join(workspace, 'deck')
@@ -38,11 +38,20 @@ async function fixture({ broken = true, malformed = false } = {}) {
   if (malformed) await writeFile(path.join(project, files[0]), 'elements: [\n')
   const tools = new Map()
   let rpc
-  await apply({
-    inject() {}, skills: { registerProvider() {} }, systemPrompt: { section() {} }, on() {},
+  const host = {
+    // The plugin scopes its webServer work under ctx.inject(['webServer'])
+    // (0.1.5 owns connection routes on the reading Context). Give the fake host
+    // the two members those callbacks touch so they run inertly.
+    effect: (run) => { run?.(); return () => {} },
+    webServer: { register: () => () => {} },
+    inject: (services, callback) => {
+      if (services?.includes?.('webServer')) callback?.(host)
+    },
+    skills: { registerProvider() {} }, systemPrompt: { section() {} }, on() {},
     tools: { register: tool => tools.set(tool.name, tool) },
     connection: { rpc: { handle: (_route, handler) => { rpc = handler } } }
-  }, { root: path.join(root, 'storage') })
+  }
+  await apply(host, { root: path.join(root, 'storage') })
   const exec = { agent: { id: randomUUID(), session: { header: { cwd: workspace } } }, signal: new AbortController().signal }
   async function run(name, args) {
     const tool = tools.get(name)

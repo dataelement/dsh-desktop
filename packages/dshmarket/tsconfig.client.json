@@ -1,0 +1,24 @@
+{
+  // Typecheck-only project for the browser client sources (src/client), which
+  // tsdown bundles into client/client.js. The host tsconfig.json excludes
+  // this tree; `npm run typecheck` runs both projects.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": [],
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/client"
+  ]
+}

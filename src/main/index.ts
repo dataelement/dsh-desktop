@@ -1,7 +1,7 @@
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import {
@@ -12,6 +12,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  safeStorage,
   shell,
   Tray,
   utilityProcess,
@@ -23,7 +24,8 @@ import { clearStaleLoopbackHttpCache } from './cache-maintenance'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
-  HarnessRuntime
+  HarnessRuntime,
+  prewarmShellEnvironment
 } from './runtime/harness-runtime'
 import { launchDisclaimedUtilityProcess } from './runtime/disclaimed-utility-process'
 import {
@@ -149,6 +151,15 @@ import {
   MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
+import {
+  ENTERPRISE_LOGIN_PROTOCOL,
+  enterpriseLoginDeepLinkFromArgv,
+  parseEnterpriseLoginDeepLink,
+  type EnterpriseLoginDeepLink
+} from 'dsh-desktop-enterprise/deep-link'
+import { EnterpriseCredentialBroker } from './enterprise/credential-broker'
+import { SecureEnterpriseCredentialVault } from './enterprise/secure-credential-vault'
+import { migrateLegacyEnterpriseSettings } from './enterprise/legacy-settings-migration'
 
 type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates'
 type SafeModeAction =
@@ -223,6 +234,45 @@ let harnessRendered = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
+let enterpriseCredentialBroker: EnterpriseCredentialBroker | undefined
+let pendingEnterpriseLogin: EnterpriseLoginDeepLink | undefined
+
+function registerEnterpriseLoginProtocol(): void {
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient(ENTERPRISE_LOGIN_PROTOCOL)
+    return
+  }
+  const entry = process.argv[1]
+  if (entry) {
+    app.setAsDefaultProtocolClient(ENTERPRISE_LOGIN_PROTOCOL, process.execPath, [resolve(entry)])
+  }
+}
+
+function deliverPendingEnterpriseLogin(): void {
+  if (!pendingEnterpriseLogin || !mainWindow || mainWindow.isDestroyed()) return
+  if (!mainWindow.webContents.getURL().startsWith('http://127.0.0.1:')) return
+  mainWindow.webContents.send('enterprise:login-link', pendingEnterpriseLogin.url)
+  pendingEnterpriseLogin = undefined
+}
+
+function acceptEnterpriseLoginLink(value: string): boolean {
+  try {
+    pendingEnterpriseLogin = parseEnterpriseLoginDeepLink(value)
+  } catch (error) {
+    console.warn(
+      `[enterprise] rejected login link: ${error instanceof Error ? error.message : 'invalid link'}`
+    )
+    return false
+  }
+
+  const snapshot = runtime?.snapshot()
+  if (snapshot?.phase === 'ready' && snapshot.url) {
+    void openHarness(snapshot.url, 'user')
+      .then(deliverPendingEnterpriseLogin)
+      .catch(showUnexpectedError)
+  }
+  return true
+}
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -1036,6 +1086,7 @@ async function openHarness(
   }
   markHarnessRendered()
   if (runtime.snapshot().url !== url || window.isDestroyed()) return
+  deliverPendingEnterpriseLogin()
   await syncNativeTheme(window)
   raiseWindowWithoutStealingFocus(
     window,
@@ -1194,12 +1245,15 @@ function launchHarness(): Promise<void> {
 
   harnessLaunchOperation = (async () => {
     safeModeVisible = false
+    runtime.beginLaunch('web profile')
     const dshHome = join(app.getPath('userData'), 'harness')
     await showSplash()
+    runtime.note('[desktop] splash shown')
     // Migration and generation projection only hold on a stopped Harness, and
     // a restart still has the previous one running: start() stops it, but that
     // is after maintenance. Stopping here owns that mutation window.
     await runtime.stop()
+    runtime.note('[desktop] previous Harness stopped; starting profile maintenance')
     const maintenance = await runProfileStartupMaintenance({
       note: (line) => runtime.note(line),
       recoverInterruptedMigration: () =>
@@ -1257,8 +1311,22 @@ function launchHarness(): Promise<void> {
     }
     maintenanceRecoveryLocked = false
     maintenanceAllowedRestoreId = undefined
+    runtime.note('[desktop] profile maintenance done')
     await refreshMigrationRecoveryLock(dshHome)
+    try {
+      const migration = await migrateLegacyEnterpriseSettings(dshHome)
+      if (migration.changed) {
+        runtime.note(`[enterprise] retired legacy settings: ${migration.removed.join(', ')}`)
+      }
+    } catch (error) {
+      runtime.note(
+        `[enterprise] legacy settings migration failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
     await auditInstalledLaunchAgents(dshHome)
+    runtime.note('[desktop] LaunchAgent audit done')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
     await runtime.start(launchDirectory)
 
@@ -1296,6 +1364,7 @@ function launchSafeHarness(): Promise<void> {
 
   harnessLaunchOperation = (async () => {
     safeModeVisible = true
+    runtime.beginLaunch('safe mode')
     const dshHome = join(app.getPath('userData'), 'harness')
     await refreshMigrationRecoveryLock(dshHome)
     await showSplash()
@@ -2442,7 +2511,7 @@ async function showSafeModeManager(initial?: {
       const issueById = new Map(compatibility.issues.map((issue) => [issue.id, issue]))
       const selectedIssues = [...new Set(action.issues)]
         .map((id) => issueById.get(id))
-        .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined && issue.resolution !== 'inspect-only')
+        .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined)
       const installedSet = new Set(installed)
       const selectedPlugins = [...new Set(action.plugins)].filter((plugin) => installedSet.has(plugin))
       if (selectedIssues.length === 0 && selectedPlugins.length === 0) {
@@ -2678,6 +2747,19 @@ async function bootstrap(): Promise<void> {
   nativeTheme.themeSource = harnessThemePreference()
   ensureTray()
   const dshHome = join(app.getPath('userData'), 'harness')
+  const enterpriseVault = new SecureEnterpriseCredentialVault(
+    join(app.getPath('userData'), 'enterprise-credentials.v1'),
+    safeStorage
+  )
+  enterpriseCredentialBroker = new EnterpriseCredentialBroker(enterpriseVault, {
+    activateDesktop: async () => {
+      const snapshot = runtime?.snapshot()
+      if (snapshot?.phase === 'ready' && snapshot.url) {
+        await openHarness(snapshot.url, 'user')
+      }
+    }
+  })
+  const enterpriseEnvironment = await enterpriseCredentialBroker.start()
   desktopStorageManager = new DesktopStorageManager(join(dshHome, 'profiles', 'web'), {
     onError: (error, context) => {
       console.warn(`[desktop-storage] error during ${context}:`, error)
@@ -2695,6 +2777,12 @@ async function bootstrap(): Promise<void> {
     // Keep the Harness origin stable across launches. These ports are separate
     // from the production/development mobile bridge ports (43127/43128).
     preferredPort: DEFAULT_HARNESS_PORT + (developmentBuild ? 1 : 0),
+    extraEnvironment: {
+      ...enterpriseEnvironment,
+      ...(developmentBuild
+        ? { DSH_DESKTOP_ENTERPRISE_ALLOW_INSECURE_LOOPBACK: '1' }
+        : {})
+    },
     launchProcess: (executablePath, args, options) =>
       process.platform === 'darwin'
         ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
@@ -2942,13 +3030,29 @@ if (isDaemonLaunch(process.env, process.platform)) {
   configureApplicationLocale()
   configureGpuFallback()
   installGpuFallbackWatch()
+  registerEnterpriseLoginProtocol()
+  const initialEnterpriseLogin = enterpriseLoginDeepLinkFromArgv(process.argv)
+  if (initialEnterpriseLogin) pendingEnterpriseLogin = initialEnterpriseLogin
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    acceptEnterpriseLoginLink(url)
+  })
   const singleInstance = app.requestSingleInstanceLock()
   if (!singleInstance) {
     app.quit()
   } else {
+    // Start the login-shell capture now so it overlaps Electron's own startup
+    // and the splash instead of blocking the main process right before the
+    // Harness spawn. Only the instance that will actually launch pays for it.
+    void prewarmShellEnvironment()
     initializeDesktopService()
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
+      const enterpriseLogin = enterpriseLoginDeepLinkFromArgv(argv)
+      if (enterpriseLogin) {
+        acceptEnterpriseLoginLink(enterpriseLogin.url)
+        return
+      }
       if (shouldStartInSafeMode(argv)) {
         void showSafeMode().catch(showUnexpectedError)
         return
@@ -2989,7 +3093,11 @@ if (isDaemonLaunch(process.env, process.platform)) {
       // over it unless it is destroyed explicitly before the process exits.
       if (tray && !tray.isDestroyed()) tray.destroy()
       tray = undefined
-      void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
+      void Promise.all([
+        runtime.stop(),
+        mobileBridge?.stop(),
+        enterpriseCredentialBroker?.stop()
+      ]).finally(() => app.quit())
     })
   }
 }
