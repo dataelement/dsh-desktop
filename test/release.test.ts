@@ -363,9 +363,17 @@ describe('GitHub release contract', () => {
     expect(packageJson.scripts['package:dev:win']).toContain('electron-builder.dev.cjs')
     expect(packageJson.scripts['package:dev:win']).toContain('--publish never')
     expect(developmentConfig).toContain("appId: 'io.dsh.desktop.dev'")
+    expect(developmentConfig).toContain("require.resolve('electron/package.json')")
+    expect(developmentConfig).toContain('electronDist,')
     expect(developmentConfig).toContain("productName: 'DSH Desktop Dev'")
     expect(developmentConfig).toContain("output: 'dist-dev'")
     expect(developmentConfig).toContain("dshDesktopChannel: 'development'")
+    expect(developmentConfig).toContain('identity: null')
+    expect(developmentConfig).toContain('hardenedRuntime: false')
+    expect(developmentConfig).toContain('afterPack: adHocSignMacDevelopmentApp')
+    expect(developmentConfig).toContain("'--force', '--deep', '--sign', '-'")
+    expect(developmentConfig).toContain("'--timestamp=none'")
+    expect(developmentConfig).not.toContain("'--options', 'runtime'")
     expect(developmentConfig).toContain(
       "artifactName: 'dsh-desktop-dev-${os}-${arch}.${ext}'"
     )

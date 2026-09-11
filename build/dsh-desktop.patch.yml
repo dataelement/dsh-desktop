@@ -1,3 +1,8 @@
+# Connection owns the authenticated HTTP channels used by Desktop plugins.
+# Harness 0.1.5 resolves webServer through the Connection provider context.
+- id: connection
+  inject: [webRuntime, webServer]
+
 # Keep the stock directory-picker (auto) row active: the native backend
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
 # plugins reading the seam) work unmodified. The client surface keeps its
@@ -14,6 +19,11 @@
 - insert:
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
+
+    # Enterprise identity, token rotation, and the BiSheng model adapter are a
+    # built-in Desktop capability. Tokens remain in the shell's secure vault.
+    - id: dsh-desktop-enterprise
+      name: dsh-desktop-enterprise
 
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the

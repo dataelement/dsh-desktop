@@ -1,5 +1,4 @@
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
-index 28eaff9..2445f81 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
 @@ -28,6 +28,11 @@
@@ -14,3 +13,20 @@ index 28eaff9..2445f81 100644
      "commander": "^15.0.0",
      "js-yaml": "^4.2.0",
      "node-addon-require-builtin": "^0.1.4",
+@@ -99,7 +104,8 @@
+     "@deepseek-ai/dsh-workflow-worker-thread": "^0.1.5-rc.2",
+     "@deepseek-ai/dsh-webhook": "^0.1.5-rc.2",
+     "@deepseek-ai/dsh-http-proxy": "^0.1.5-rc.2",
+-    "@deepseek-ai/schemastery": "^3.18.2"
++    "@deepseek-ai/schemastery": "^3.18.2",
++    "dsh-desktop-enterprise": "0.2.0"
+   },
+   "devDependencies": {
+     "@agentclientprotocol/sdk": "1.4.0",
+@@ -148,4 +154,4 @@
+     "@deepseek-ai/dsh-user-approval": "^0.1.5-rc.2",
+     "@deepseek-ai/dsh-tools": "^0.1.5-rc.2"
+   }
+-}
+\ No newline at end of file
++}

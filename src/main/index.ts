@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { parse } from 'yaml'
 import {
@@ -9,6 +9,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  safeStorage,
   shell,
   Tray,
   utilityProcess,
@@ -143,6 +144,15 @@ import {
   MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
+import {
+  ENTERPRISE_LOGIN_PROTOCOL,
+  enterpriseLoginDeepLinkFromArgv,
+  parseEnterpriseLoginDeepLink,
+  type EnterpriseLoginDeepLink
+} from 'dsh-desktop-enterprise/deep-link'
+import { EnterpriseCredentialBroker } from './enterprise/credential-broker'
+import { SecureEnterpriseCredentialVault } from './enterprise/secure-credential-vault'
+import { migrateLegacyEnterpriseSettings } from './enterprise/legacy-settings-migration'
 
 type PluginRecoveryAction = 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode'
 type SafeModeAction =
@@ -215,6 +225,45 @@ let harnessRendered = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
+let enterpriseCredentialBroker: EnterpriseCredentialBroker | undefined
+let pendingEnterpriseLogin: EnterpriseLoginDeepLink | undefined
+
+function registerEnterpriseLoginProtocol(): void {
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient(ENTERPRISE_LOGIN_PROTOCOL)
+    return
+  }
+  const entry = process.argv[1]
+  if (entry) {
+    app.setAsDefaultProtocolClient(ENTERPRISE_LOGIN_PROTOCOL, process.execPath, [resolve(entry)])
+  }
+}
+
+function deliverPendingEnterpriseLogin(): void {
+  if (!pendingEnterpriseLogin || !mainWindow || mainWindow.isDestroyed()) return
+  if (!mainWindow.webContents.getURL().startsWith('http://127.0.0.1:')) return
+  mainWindow.webContents.send('enterprise:login-link', pendingEnterpriseLogin.url)
+  pendingEnterpriseLogin = undefined
+}
+
+function acceptEnterpriseLoginLink(value: string): boolean {
+  try {
+    pendingEnterpriseLogin = parseEnterpriseLoginDeepLink(value)
+  } catch (error) {
+    console.warn(
+      `[enterprise] rejected login link: ${error instanceof Error ? error.message : 'invalid link'}`
+    )
+    return false
+  }
+
+  const snapshot = runtime?.snapshot()
+  if (snapshot?.phase === 'ready' && snapshot.url) {
+    void openHarness(snapshot.url, 'user')
+      .then(deliverPendingEnterpriseLogin)
+      .catch(showUnexpectedError)
+  }
+  return true
+}
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -1019,6 +1068,7 @@ async function openHarness(
   }
   markHarnessRendered()
   if (runtime.snapshot().url !== url || window.isDestroyed()) return
+  deliverPendingEnterpriseLogin()
   await syncNativeTheme(window)
   raiseWindowWithoutStealingFocus(
     window,
@@ -1241,6 +1291,18 @@ function launchHarness(): Promise<void> {
     maintenanceAllowedRestoreId = undefined
     runtime.note('[desktop] profile maintenance done')
     await refreshMigrationRecoveryLock(dshHome)
+    try {
+      const migration = await migrateLegacyEnterpriseSettings(dshHome)
+      if (migration.changed) {
+        runtime.note(`[enterprise] retired legacy settings: ${migration.removed.join(', ')}`)
+      }
+    } catch (error) {
+      runtime.note(
+        `[enterprise] legacy settings migration failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
     await auditInstalledLaunchAgents(dshHome)
     runtime.note('[desktop] LaunchAgent audit done')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
@@ -2590,6 +2652,19 @@ async function bootstrap(): Promise<void> {
   nativeTheme.themeSource = harnessThemePreference()
   ensureTray()
   const dshHome = join(app.getPath('userData'), 'harness')
+  const enterpriseVault = new SecureEnterpriseCredentialVault(
+    join(app.getPath('userData'), 'enterprise-credentials.v1'),
+    safeStorage
+  )
+  enterpriseCredentialBroker = new EnterpriseCredentialBroker(enterpriseVault, {
+    activateDesktop: async () => {
+      const snapshot = runtime?.snapshot()
+      if (snapshot?.phase === 'ready' && snapshot.url) {
+        await openHarness(snapshot.url, 'user')
+      }
+    }
+  })
+  const enterpriseEnvironment = await enterpriseCredentialBroker.start()
   desktopStorageManager = new DesktopStorageManager(join(dshHome, 'profiles', 'web'), {
     onError: (error, context) => {
       console.warn(`[desktop-storage] error during ${context}:`, error)
@@ -2604,6 +2679,12 @@ async function bootstrap(): Promise<void> {
     dshSafePatchPath: desktopResourcePath('dsh-desktop-safe.patch.yml'),
     dshHome: join(app.getPath('userData'), 'harness'),
     logPath: join(app.getPath('logs'), 'harness.log'),
+    extraEnvironment: {
+      ...enterpriseEnvironment,
+      ...(developmentBuild
+        ? { DSH_DESKTOP_ENTERPRISE_ALLOW_INSECURE_LOOPBACK: '1' }
+        : {})
+    },
     launchProcess: (executablePath, args, options) =>
       process.platform === 'darwin'
         ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
@@ -2850,6 +2931,13 @@ if (isDaemonLaunch(process.env, process.platform)) {
   configureApplicationLocale()
   configureGpuFallback()
   installGpuFallbackWatch()
+  registerEnterpriseLoginProtocol()
+  const initialEnterpriseLogin = enterpriseLoginDeepLinkFromArgv(process.argv)
+  if (initialEnterpriseLogin) pendingEnterpriseLogin = initialEnterpriseLogin
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    acceptEnterpriseLoginLink(url)
+  })
   const singleInstance = app.requestSingleInstanceLock()
   if (!singleInstance) {
     app.quit()
@@ -2860,6 +2948,11 @@ if (isDaemonLaunch(process.env, process.platform)) {
     void prewarmShellEnvironment()
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
+      const enterpriseLogin = enterpriseLoginDeepLinkFromArgv(argv)
+      if (enterpriseLogin) {
+        acceptEnterpriseLoginLink(enterpriseLogin.url)
+        return
+      }
       if (shouldStartInSafeMode(argv)) {
         void showSafeMode().catch(showUnexpectedError)
         return
@@ -2899,7 +2992,11 @@ if (isDaemonLaunch(process.env, process.platform)) {
       // over it unless it is destroyed explicitly before the process exits.
       if (tray && !tray.isDestroyed()) tray.destroy()
       tray = undefined
-      void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
+      void Promise.all([
+        runtime.stop(),
+        mobileBridge?.stop(),
+        enterpriseCredentialBroker?.stop()
+      ]).finally(() => app.quit())
     })
   }
 }

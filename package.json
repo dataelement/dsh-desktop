@@ -29,6 +29,7 @@
     "build:market": "tsc -p packages/dshmarket/tsconfig.json",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "preview": "electron-vite preview",
+    "mock:enterprise": "node scripts/mock-bisheng-enterprise.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -270,6 +271,7 @@
     "@deepseek-ai/dsh-workspace": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "3.18.2",
     "dsh-desktop-client-ui": "file:packages/dsh-desktop-client-ui",
+    "dsh-desktop-enterprise": "file:packages/dsh-desktop-enterprise",
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
@@ -302,6 +304,14 @@
   "build": {
     "appId": "io.dsh.desktop",
     "productName": "DSH Desktop",
+    "protocols": [
+      {
+        "name": "DSH Desktop Enterprise Login",
+        "schemes": [
+          "dsh-desktop"
+        ]
+      }
+    ],
     "asar": false,
     "npmRebuild": false,
     "compression": "maximum",
