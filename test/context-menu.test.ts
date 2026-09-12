@@ -118,8 +118,8 @@ describe('conversation context menu', () => {
   it('recognizes only HTTP and HTTPS as external web URLs', () => {
     expect(isExternalWebUrl('https://example.com')).toBe(true)
     expect(isExternalWebUrl('http://example.com')).toBe(true)
-    expect(isExternalWebUrl('http://127.0.0.1:43127/session')).toBe(false)
-    expect(isExternalWebUrl('http://localhost:43127/settings')).toBe(false)
+    expect(isExternalWebUrl('http://127.0.0.1:43127/session')).toBe(true)
+    expect(isExternalWebUrl('http://localhost:43127/settings')).toBe(true)
     expect(isExternalWebUrl('file:///tmp/report.html')).toBe(false)
     expect(isExternalWebUrl('not a URL')).toBe(false)
   })

@@ -7,7 +7,7 @@ index 696591c..90c1520 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
 -			tag.textContent = css;
-+			tag.textContent = css + "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:32px}[data-dsh-sidebar-brand-identity]{gap:4px}" + (navigator.userAgent.includes("Macintosh") ? "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:28px}[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"]{padding:32px 22px 6px}" : "");
++			tag.textContent = css + "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:32px}[data-dsh-sidebar-brand-identity]{gap:4px}" + (navigator.userAgent.includes("Macintosh") ? "[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"true\"]{padding-top:28px}[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"]{padding:28px 30px 6px}[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"] [class*=\"_logoRow\"]{height:60px;margin-bottom:8px}[data-dsh-sidebar-root][data-dsh-sidebar-wide=\"false\"] [class*=\"_newSession\"]{height:38px}" : "");
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {

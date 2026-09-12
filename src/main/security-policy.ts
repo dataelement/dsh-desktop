@@ -10,14 +10,19 @@ function isHarnessUrl(rawUrl: string): boolean {
   }
 }
 
-export function isTrustedAppUrl(rawUrl: string): boolean {
+export function isTrustedAppUrl(rawUrl: string, appUrl?: string): boolean {
   try {
     const parsed = new URL(rawUrl)
     if (parsed.protocol === 'file:' || parsed.protocol === 'dsh-recovery:') return true
   } catch {
     return false
   }
-  return isHarnessUrl(rawUrl)
+  if (!appUrl || !isHarnessUrl(appUrl)) return false
+  try {
+    return new URL(rawUrl).origin === new URL(appUrl).origin
+  } catch {
+    return false
+  }
 }
 
 export function canGrantWindowPermission(
