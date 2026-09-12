@@ -28,7 +28,7 @@ try {
         if (check.errorCount)
             throw Error(definition.id + ': ' + stdout);
         checks.push({ id: definition.id, ...check });
-        {
+        if (!process.argv.includes('--reuse-previews')) {
             const pngDir = scratch + '/' + definition.id;
             await run(process.execPath, [root + '/core/lib/bin.js', 'screenshot', dir + '/source', '-o', pngDir, '--scale', '1.3333333333', '--json']);
             const pngs = JSON.parse(await fs.readFile(pngDir + '/index.json', 'utf8')).pages.map(p => p.file);
@@ -52,6 +52,8 @@ try {
         await fs.cp(root + '/' + kind, stage, { recursive: true, filter: p => !path.basename(p).startsWith('._') && path.basename(p) !== '.DS_Store' });
         await fs.cp(root + '/upstream', stage + '/licenses', { recursive: true });
         let client = await fs.readFile(stage + '/lib/client.js', 'utf8');
+        if (!client.includes('/* PERSONAL_TEMPLATE_MANAGER */')) throw Error('Missing personal template client marker');
+        client = client.replace('/* PERSONAL_TEMPLATE_MANAGER */', await fs.readFile(root + '/client/personal-template-manager.js', 'utf8'));
         if (!client.includes('/* GENERATED_PPT_PREVIEWS */ {}'))
             throw Error('Missing preview insertion marker');
         client = client.replace('/* GENERATED_PPT_PREVIEWS */ {}', JSON.stringify(previews));

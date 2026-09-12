@@ -1,3 +1,8 @@
+# Connection owns the authenticated HTTP channels used by Desktop plugins.
+# Harness 0.1.5 resolves webServer through the Connection provider context.
+- id: connection
+  inject: [webRuntime, webServer]
+
 # Keep the stock directory-picker (auto) row active: the native backend
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
 # plugins reading the seam) work unmodified. The client surface keeps its

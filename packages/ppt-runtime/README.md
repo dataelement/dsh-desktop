@@ -32,6 +32,16 @@ The legacy on-disk `kimi-ppt` directory is deliberately retained to preserve ses
 
 PPT remains preinstalled. Its automatic instructions are scoped to sessions where the user enabled the PPT button.
 
+### Personal PPT templates
+
+The chooser's **My templates** tab accepts PPTX files with the configured slide limit (40 by default). Uploads use the Host's shared transport and archive resource limits. They produce page previews and conversion diagnostics. **Save template** registers the reviewed file in the current Desktop profile; new sessions and restarts read the same library. Identical source bytes resolve to the saved template. Users can rename or remove entries; generated task projects stay available.
+
+The host stores source PPTX, editable PPTD pages, assets, previews and conversion records under `personal-templates/` inside the configured PPT data root. Drafts belong to their initiating session. Registered templates belong to this local Desktop profile, including remote connections to that profile. Account-based sharing and cross-device synchronization require a separate identity integration.
+
+`ppt_template_create_project` copies the selected personal template into a new confined workspace directory. The model then adapts that copy with the existing PPTD tools and exports through `pptd_render`. The saved source remains separate from generated task files. All conversion and copy operations use the existing bounded parser/compiler and host audit. Company template fidelity requires review of actual imported pages, particularly master elements and advanced Office objects. Product rules and evidence: [Personal PPT templates](../../docs/ppt-personal-templates.md).
+
+For runtime-only changes, `node scripts/build-ppt-runtime.mjs --reuse-previews` validates all built-in source decks and packages their existing reviewed previews. A full `npm run ppt:build` regenerates the built-in assets.
+
 Validation evidence and temporary exports live under ignored `doc/ppt-remediation/`. Windows packaging and native Windows PowerPoint require their own runner/device validation.
 
 ### Layout refinement
