@@ -1,8 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
-index b60880c..0d63b54 100644
 --- a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js
-@@ -239,8 +239,12 @@ function sourceMapSnapshot(clientPath) {
+@@ -239,8 +239,12 @@
  }
  /** Count generated lines while assembling indexed-map section offsets. */
  function newlineCount(value) {
@@ -16,7 +15,7 @@ index b60880c..0d63b54 100644
  	return count;
  }
  /** Resolve section sources against their original per-plugin map URL before combo relocation. */
-@@ -265,7 +269,10 @@ function comboSectionMap(record) {
+@@ -265,7 +269,10 @@
  }
  /** Map each generated line to the same line in a bundled JavaScript source. */
  function identitySectionMap(source, sourceUrl) {
@@ -28,10 +27,11 @@ index b60880c..0d63b54 100644
  	return {
  		version: 3,
  		names: [],
-@@ -312,6 +319,25 @@ function buildCombo(records, revision) {
+@@ -311,6 +318,25 @@
+ 		sourceMap,
  		sourceMapUrl
  	};
- }
++}
 +/**
 +* Per-record combos, memoised on the record object and validated by its rev.
 +*
@@ -50,11 +50,10 @@ index b60880c..0d63b54 100644
 +	const artifact = buildCombo([record], record.entry.rev);
 +	recordComboCache.set(record, artifact);
 +	return artifact;
-+}
+ }
  /** Add initial-load scheduling metadata to a combo artifact. */
  function buildBatch(phase, records) {
- 	const artifact = buildCombo(records);
-@@ -604,7 +630,7 @@ var ClientModuleRegistry = class extends Service {
+@@ -604,7 +630,7 @@
  		}
  		const responses = new Map(batchResponses);
  		for (const record of this.table.values()) {
@@ -63,7 +62,7 @@ index b60880c..0d63b54 100644
  			responses.set(artifact.url, {
  				body: artifact.script,
  				contentType: "text/javascript; charset=utf-8"
-@@ -703,7 +729,15 @@ var ClientModuleRegistry = class extends Service {
+@@ -703,7 +729,15 @@
  				attributes: {}
  			}).url : internal.resolveSync(loaderName, baseUrl, {}).url;
  		} catch {

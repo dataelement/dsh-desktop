@@ -1,11 +1,12 @@
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
-index 42486dc..28bd086 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
-@@ -454,6 +454,26 @@ var WorkspaceRegistry = class extends Service {
+@@ -452,6 +452,26 @@
+ 				...state,
+ 				archivedSessionIds: [...state.archivedSessionIds, sessionId]
  			});
- 		});
- 	}
++		});
++	}
 +	/** Remove a permanently deleted Session from Workspace and archive state. */
 +	forgetSession(sessionId) {
 +		return this.enqueueOperation(async () => {
@@ -24,16 +25,13 @@ index 42486dc..28bd086 100644
 +			this.headers.delete(sessionId);
 +			this.sessionPaths.delete(sessionId);
 +			this.invalidSessionPaths.delete(sessionId);
-+		});
-+	}
+ 		});
+ 	}
  	/**
- 	* Whether a session is live, header-indexed, or present in a fresh
- 	* persistence listing. Only a definite miss returns false — a failing
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
-index fc0fa1b..f22e468 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
-@@ -122,6 +122,8 @@ export declare class WorkspaceRegistry extends Service {
+@@ -122,6 +122,8 @@
       * @returns resolution after durability.
       */
      archiveSession(sessionId: SessionId): Promise<void>;
@@ -43,10 +41,9 @@ index fc0fa1b..f22e468 100644
       * Whether a session is live, header-indexed, or present in a fresh
       * persistence listing. Only a definite miss returns false — a failing
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
-index 8140b89..96634d7 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
-@@ -213,6 +213,31 @@ export class WorkspaceRegistry extends Service {
+@@ -213,6 +213,31 @@
              await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] });
          });
      }

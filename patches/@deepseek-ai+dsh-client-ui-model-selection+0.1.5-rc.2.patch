@@ -1,8 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
-index 209a74d..e407abd 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
-@@ -405,15 +405,71 @@ window.__ModuleLoader__.load({
+@@ -405,15 +405,71 @@
  		* store/verbs) + the standard locale seat.
  		* @returns the trigger and, while open, the two-level menu.
  		*/
@@ -74,7 +73,7 @@ index 209a74d..e407abd 100644
  			const menuRef = (0, react.useRef)(null);
  			const [menuPos, setMenuPos] = (0, react.useState)(null);
  			const itemRefs = (0, react.useRef)([]);
-@@ -427,6 +483,7 @@ window.__ModuleLoader__.load({
+@@ -427,6 +483,7 @@
  					...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
  				}
  			}))), [state.groups]);
@@ -82,7 +81,7 @@ index 209a74d..e407abd 100644
  			const currentChoice = choices[state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)];
  			const reasoning = currentChoice?.model.reasoning;
  			const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
-@@ -490,15 +547,20 @@ window.__ModuleLoader__.load({
+@@ -490,15 +547,20 @@
  				pane,
  				state
  			]);
@@ -103,7 +102,7 @@ index 209a74d..e407abd 100644
  				if (restoreFocus) queueMicrotask(() => {
  					triggerRef.current?.focus();
  				});
-@@ -507,12 +569,16 @@ window.__ModuleLoader__.load({
+@@ -507,12 +569,16 @@
  				const items = itemRefs.current.filter((item) => item !== null);
  				if (items.length === 0) return;
  				const active = items.findIndex((item) => item === document.activeElement);
@@ -122,7 +121,7 @@ index 209a74d..e407abd 100644
  					else close(true);
  					return;
  				}
-@@ -628,6 +694,7 @@ window.__ModuleLoader__.load({
+@@ -628,6 +694,7 @@
  								role: "menuitem",
  								className: ModelSelect_module_css_default.cell,
  								onClick: () => {
@@ -130,7 +129,7 @@ index 209a74d..e407abd 100644
  									setPane("model");
  								},
  								children: [
-@@ -662,6 +729,23 @@ window.__ModuleLoader__.load({
+@@ -662,6 +729,23 @@
  								]
  							})] }),
  							pane === "model" && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
@@ -154,7 +153,7 @@ index 209a74d..e407abd 100644
  								state.status === "loading" && (0, react_jsx_runtime.jsx)("div", {
  									className: ModelSelect_module_css_default.status,
  									children: t("status.loading")
-@@ -689,7 +773,7 @@ window.__ModuleLoader__.load({
+@@ -689,7 +773,7 @@
  								}, failure.id)),
  								(0, react_jsx_runtime.jsx)("div", {
  									className: clsx(ModelSelect_module_css_default.groups, "scrollable"),
@@ -163,7 +162,7 @@ index 209a74d..e407abd 100644
  										const headingId = `${id}-${group.id}`;
  										return (0, react_jsx_runtime.jsxs)("section", {
  											role: "group",
-@@ -733,6 +817,10 @@ window.__ModuleLoader__.load({
+@@ -733,6 +817,10 @@
  								state.status === "ready" && choices.length === 0 && (0, react_jsx_runtime.jsx)("div", {
  									className: ModelSelect_module_css_default.empty,
  									children: t("empty.models")
@@ -174,7 +173,7 @@ index 209a74d..e407abd 100644
  								})
  							] }),
  							pane === "effort" && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [state.error !== null && lastActionRef.current === "load" && (0, react_jsx_runtime.jsxs)("div", {
-@@ -805,12 +893,15 @@ window.__ModuleLoader__.load({
+@@ -805,12 +893,15 @@
  			"menu.aria": "模型与推理等级",
  			"menu.model": "模型",
  			"menu.effort": "推理等级",
@@ -190,7 +189,7 @@ index 209a74d..e407abd 100644
  			"blocked.composer": "当前模型不可用，请先选择模型",
  			"empty.efforts": "当前模型未提供推理等级。"
  		};
-@@ -828,12 +919,15 @@ window.__ModuleLoader__.load({
+@@ -828,12 +919,15 @@
  			"menu.aria": "Model and reasoning effort",
  			"menu.model": "Model",
  			"menu.effort": "Effort",

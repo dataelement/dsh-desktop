@@ -9,9 +9,12 @@ import type { AddressInfo } from 'node:net'
 import { LanMobileBridge } from '../src/main/mobile/lan-mobile-bridge'
 import {
   CLOUDFLARED_ASSETS,
+  CLOUDFLARED_DOWNLOAD_ATTEMPTS,
   CLOUDFLARED_VERSION,
+  downloadCloudflaredWithRetry,
   ensureCloudflaredBinary,
   extractTryCloudflareUrl,
+  isRetryableDownloadError,
   resolveCurrentAssetSpec,
   sha256OfFile,
   terminateChildProcess
@@ -20,7 +23,14 @@ import {
   startTunnelWithFallback,
   type InternetTunnelInstance
 } from '../src/main/mobile/internet-tunnel'
-import { extractPinggyUrl } from '../src/main/mobile/pinggy-tunnel'
+import {
+  buildPinggySshArgs,
+  ensurePinggyIdentity,
+  extractPinggyUrl,
+  PINGGY_HOST,
+  PINGGY_USER,
+  pinggyIdentityPath
+} from '../src/main/mobile/pinggy-tunnel'
 
 const bridges: LanMobileBridge[] = []
 const harnessServers: ReturnType<typeof createServer>[] = []
@@ -130,6 +140,48 @@ describe('Pinggy Tunnel utilities', () => {
       )
     ).toBe('https://rnckk-2405-201.run.pinggy-free.link')
     expect(extractPinggyUrl('ssh -p 443 free.pinggy.io')).toBeNull()
+  })
+
+  it('uses a fixed Pinggy user and dedicated identity instead of the local login name', () => {
+    const knownHostsPath = join('/tmp', 'dsh-cloudflared', 'pinggy-known-hosts')
+    const identityPath = join('/tmp', 'dsh-cloudflared', 'pinggy-id')
+    const args = buildPinggySshArgs({
+      port: 39871,
+      knownHostsPath,
+      identityPath
+    })
+    expect(PINGGY_USER).toBe('dsh')
+    expect(PINGGY_USER).not.toBe(process.env.USER)
+    expect(PINGGY_USER).not.toBe(process.env.USERNAME)
+    expect(args).toContain('-R')
+    expect(args).toContain('0:127.0.0.1:39871')
+    expect(args).toContain('-i')
+    expect(args).toContain(identityPath)
+    expect(args).toContain('IdentitiesOnly=yes')
+    expect(args).toContain('BatchMode=yes')
+    expect(args).toContain(`User=${PINGGY_USER}`)
+    expect(args.at(-1)).toBe(PINGGY_HOST)
+    expect(args.join(' ')).not.toContain('@')
+    expect(pinggyIdentityPath(knownHostsPath)).toBe(identityPath)
+  })
+
+  it('reuses an existing Pinggy identity and creates one when missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-pinggy-'))
+    const existing = join(dir, 'existing-id')
+    await writeFile(existing, 'key')
+    const created: string[] = []
+    expect(await ensurePinggyIdentity({ identityPath: existing })).toBe(existing)
+
+    const missing = join(dir, 'new-id')
+    await ensurePinggyIdentity({
+      identityPath: missing,
+      createIdentity: async (identityPath) => {
+        created.push(identityPath)
+        await writeFile(identityPath, 'generated')
+      }
+    })
+    expect(created).toEqual([missing])
+    expect(existsSync(missing)).toBe(true)
   })
 
   it('uses Pinggy only after Cloudflare fails', async () => {
@@ -430,6 +482,44 @@ describe('cloudflared download integrity', () => {
     } finally {
       spec.sha256 = originalSha
     }
+  })
+
+  it('retries retryable download resets then succeeds', async () => {
+    let attempts = 0
+    const dest = join(await mkdtemp(join(tmpdir(), 'dsh-dl-')), 'cloudflared')
+    await downloadCloudflaredWithRetry('https://example.com/cloudflared', dest, {
+      attempts: CLOUDFLARED_DOWNLOAD_ATTEMPTS,
+      sleep: async () => undefined,
+      download: async (_url, destination) => {
+        attempts += 1
+        if (attempts < 3) {
+          const error = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })
+          await writeFile(destination, `partial-${attempts}`)
+          throw error
+        }
+        await writeFile(destination, 'ok')
+      }
+    })
+    expect(attempts).toBe(3)
+    expect(existsSync(dest)).toBe(true)
+  })
+
+  it('does not retry non-reset download failures', async () => {
+    let attempts = 0
+    await expect(
+      downloadCloudflaredWithRetry('https://example.com/cloudflared', '/tmp/unused', {
+        sleep: async () => undefined,
+        download: async () => {
+          attempts += 1
+          throw new Error('Download failed with status 404')
+        }
+      })
+    ).rejects.toThrow(/status 404/)
+    expect(attempts).toBe(1)
+    expect(isRetryableDownloadError(Object.assign(new Error('reset'), { code: 'ECONNRESET' }))).toBe(
+      true
+    )
+    expect(isRetryableDownloadError(new Error('Download failed with status 404'))).toBe(false)
   })
 
   it('sweeps leftover .download-* files from interrupted runs', async () => {

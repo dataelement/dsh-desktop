@@ -1,8 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index 1b3efb7..74ff90d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-@@ -1124,7 +1124,10 @@ window.__ModuleLoader__.load({
+@@ -1124,7 +1124,10 @@
  			return Math.max(1, Math.ceil(milliseconds / 1e3));
  		}
  		function failureMessage(message, code, t) {
@@ -14,7 +13,7 @@ index 1b3efb7..74ff90d 100644
  		}
  		function ModelRetryItem({ node, active, t }) {
  			const deadline = (0, react.useMemo)(() => Date.now() + node.delayMs, [node.delayMs, node.seq]);
-@@ -2694,6 +2697,8 @@ window.__ModuleLoader__.load({
+@@ -2694,6 +2697,8 @@
  			"message.retry.delay": "重试延迟：",
  			"message.retry.failure": "失败原因：",
  			"message.failure.auth": "API 密钥无效",
@@ -23,7 +22,7 @@ index 1b3efb7..74ff90d 100644
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -2800,6 +2805,8 @@ window.__ModuleLoader__.load({
+@@ -2800,6 +2805,8 @@
  			"message.retry.delay": "Retry delay: ",
  			"message.retry.failure": "Failure reason: ",
  			"message.failure.auth": "API key is invalid",

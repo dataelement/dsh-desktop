@@ -1,8 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
-index 282f8e7..d4c47d8 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
-@@ -11,6 +11,7 @@ window.__ModuleLoader__.load({
+@@ -11,6 +11,7 @@
  		* LG breakpoint); a manual toggle below it re-expands over the squeezed center
  		* (stores.ts narrowExpanded). */
  		const SIDEBAR_AUTO_COLLAPSE = 1024;
@@ -10,7 +9,7 @@ index 282f8e7..d4c47d8 100644
  		/** Maximum normal right panel width as a fraction of the frame. */
  		const RIGHTBAR_MAX_RATIO = .7;
  		/** First-open right panel preference as a fraction of the frame. */
-@@ -34,7 +35,7 @@ window.__ModuleLoader__.load({
+@@ -34,7 +35,7 @@
  		*   without that track may the center fall below its minimum, down to zero.
  		*/
  		function computeColumns(viewport, sidebar, rightbar) {

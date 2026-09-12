@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-app-boot'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  prepareGenerationsForLaunch
+  isProjectedGenerationPlugin,
+  prepareGenerationsForLaunch,
+  uninstallGenerationPlugin
 } from '../src/main/state/generation-launch'
 import {
   ensureRegistryDirectories,
@@ -97,6 +99,94 @@ describe('the launch-process half of the generation model', () => {
     expect(existsSync(join(home, 'profiles', 'web', 'node_modules', 'keeper'))).toBe(true)
     const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
     expect(manifest.dsh.profile.bundles).toContain('keeper')
+  })
+
+  it('knows a generation install from a plain manifest one', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'dshmarket+1.44.0+af88ab682bc0', 'dshmarket')
+    await writeDesired(home, ['dshmarket+1.44.0+af88ab682bc0'])
+
+    expect(await isProjectedGenerationPlugin(home, 'dshmarket')).toBe(true)
+    expect(await isProjectedGenerationPlugin(home, 'never-installed')).toBe(false)
+  })
+
+  it('does not reproject an uninstalled generation on the next launch (#330)', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'widget+1.44.0+af88ab682bc0', 'widget')
+    await writeDesired(home, ['widget+1.44.0+af88ab682bc0'])
+    await prepareGenerationsForLaunch(home, silent)
+
+    const profile = join(home, 'profiles', 'web')
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(join(profile, 'node_modules', 'widget'))).toBe(true)
+
+    expect(await uninstallGenerationPlugin(home, 'widget', silent)).toBe(true)
+    // The restart that follows the uninstall is what used to bring it back.
+    await prepareGenerationsForLaunch(home, silent)
+
+    expect(await readDesired(home)).toEqual([])
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('widget')
+    expect(manifest.dsh.profile.bundles).not.toContain('widget')
+    expect(manifest.pnpm?.overrides ?? {}).not.toHaveProperty('widget')
+    expect(existsSync(join(profile, 'node_modules', 'widget'))).toBe(false)
+  })
+
+  it('never projects dshmarket, whatever desired.json says', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'dshmarket+1.44.0+af88ab682bc0', 'dshmarket')
+    await writeDesired(home, ['dshmarket+1.44.0+af88ab682bc0'])
+
+    await prepareGenerationsForLaunch(home, silent)
+
+    // dshmarket is a core bundle pinned to the shared tree: a stray pointer
+    // stays inert instead of becoming a link startup then has to undo.
+    const profile = join(home, 'profiles', 'web')
+    const { existsSync } = await import('node:fs')
+    expect(existsSync(join(profile, 'node_modules', 'dshmarket'))).toBe(false)
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(manifest.pnpm?.overrides ?? {}).not.toHaveProperty('dshmarket')
+  })
+
+  it('reprojects a generation that only a pnpm-level removal touched (#330)', async () => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await fakeGeneration(home, 'widget+1.44.0+af88ab682bc0', 'widget')
+    await writeDesired(home, ['widget+1.44.0+af88ab682bc0'])
+    await prepareGenerationsForLaunch(home, silent)
+
+    // Exactly what `dsh plugin remove --workspace-root dshmarket` leaves
+    // behind: the manifest rows are gone, `desired` is untouched.
+    const manifestPath = join(home, 'profiles', 'web', 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    delete manifest.dependencies.widget
+    delete manifest.pnpm?.overrides?.widget
+    manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(
+      (name: string) => name !== 'widget'
+    )
+    await writeFile(manifestPath, JSON.stringify(manifest))
+
+    await prepareGenerationsForLaunch(home, silent)
+
+    // Back, in full — this is the bug the generation branch exists to avoid.
+    const reprojected = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(await readDesired(home)).toEqual(['widget+1.44.0+af88ab682bc0'])
+    expect(reprojected.dsh.profile.bundles).toContain('widget')
+  })
+
+  it('uninstalls the market through the generation path rather than pnpm alone', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const uninstall = main.slice(
+      main.indexOf('async function disableMarketGeneration'),
+      main.indexOf('function registerHarnessHandlers')
+    )
+    expect(uninstall).toContain('isProjectedGenerationPlugin')
+    expect(uninstall).toContain('uninstallGenerationPlugin')
+    // The pnpm removal stays, for a profile that never used a generation.
+    expect(uninstall).toContain('removeProfilePluginWithDsh')
   })
 
   it('does not retain or restore generations from a stale rollback pointer', async () => {

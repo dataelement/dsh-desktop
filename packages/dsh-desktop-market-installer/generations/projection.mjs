@@ -1,4 +1,5 @@
-import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { resolveEnabledGenerations } from './registry.mjs'
 
@@ -242,13 +243,78 @@ export async function projectGenerations(dshHome, profile = 'web') {
 }
 
 /**
- * Publish the desired generation set for inventory and the next launch without
- * touching the active Profile's node_modules. Market operations run inside the
- * live Harness, so replacing even a junction there recreates the Windows
- * rename conflict generations are meant to avoid. A removal may still update
- * the manifest's bundle list: that only changes what the *next* Harness boot
- * composes, while leaving the current process and its links intact.
+ * Publish one installed plugin through the existing profile path before the
+ * market reads it. The caller holds the registry lock and restores desired
+ * on failure. Live callers move only links; both generations stay intact.
+ * A stopped Harness may also replace a legacy real directory transactionally.
  */
+export async function publishInstalledGeneration(dshHome, pluginName, profile = 'web', { allowRealDirectory = false, syncBundles = false } = {}) {
+  const { dir, manifestState, enabled, targets, linkSpecs } =
+    await prepareGenerationProjection(dshHome, profile)
+  const target = targets.get(pluginName)
+  if (target === undefined) throw new Error(`No enabled generation for ${pluginName}`)
+  const link = join(dir, 'node_modules', pluginName)
+  const suffix = randomUUID()
+  const nextLink = `${link}.dsh-next-${suffix}`
+  const oldLink = `${link}.dsh-previous-${suffix}`
+  let previousTarget
+  let previousIsDirectory = false
+  let movedOld = false
+  let installedNew = false
+  await mkdir(dirname(link), { recursive: true })
+  try {
+    try {
+      const info = await lstat(link)
+      previousIsDirectory = !info.isSymbolicLink()
+      if (previousIsDirectory && (!allowRealDirectory || !info.isDirectory())) {
+        throw new Error(`Cannot switch a non-link plugin directory: ${link}`)
+      }
+      if (await realpath(link) === await realpath(target)) {
+        const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })
+        return { plugins: [pluginName], bundles }
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    await symlink(target, nextLink, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      if (process.platform === 'win32' && !previousIsDirectory) {
+        // Remove only the junction, never rename a loaded directory or touch
+        // its target. Keep its target to recreate the pointer on failure.
+        previousTarget = await readlink(link)
+        await unlink(link)
+      } else {
+        await rename(link, oldLink)
+      }
+      movedOld = true
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    await rename(nextLink, link)
+    installedNew = true
+    // Validate through the public profile path, exactly where the market reads.
+    if (await realpath(link) !== await realpath(target)) throw new Error(`Plugin link switch did not select ${pluginName}`)
+    const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })
+    // Old plugin bytes remain in their generation for already-loaded modules.
+    await rm(oldLink, { force: true, recursive: previousIsDirectory }).catch(() => {})
+    return { plugins: [pluginName], bundles }
+  } catch (error) {
+    try {
+      if (installedNew) await rm(link, { force: true })
+      if (movedOld) {
+        if (previousTarget !== undefined) await symlink(previousTarget, link, 'junction')
+        else await rename(oldLink, link)
+      }
+    } catch (restoreError) {
+      throw new AggregateError([error, restoreError], `Plugin switch failed; previous link retained at ${oldLink}`)
+    }
+    throw error
+  } finally {
+    await rm(nextLink, { force: true }).catch(() => {})
+  }
+}
+
+/** Publish removal metadata without unlinking files still used by Harness. */
 export async function publishGenerationManifest(dshHome, profile = 'web', { syncBundles = false } = {}) {
   const { dir, manifestState, enabled, linkSpecs } =
     await prepareGenerationProjection(dshHome, profile)

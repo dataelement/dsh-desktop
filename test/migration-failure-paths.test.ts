@@ -223,10 +223,12 @@ describe('migration failure paths (issue #250)', () => {
       recoverInterruptedMigration: () => recoverInterruptedMigration(home, silent),
       incompletePluginRestoreId: async () => undefined,
       preparePackageStore: prepareStore,
+      demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: enforce,
       prepareGenerationsForLaunch: prepare,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: () => migrateProfileToGenerations(migrationDeps),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
     return { run, prepareStore, enforce, prepare, report }
@@ -464,10 +466,12 @@ describe('migration failure paths (issue #250)', () => {
       recoverInterruptedMigration: async () => ({ outcome: 'no-snapshot' }),
       incompletePluginRestoreId: async () => 'removal-exact-retry',
       preparePackageStore: prepareStore,
+      demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: enforce,
       prepareGenerationsForLaunch: prepare,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: migrate,
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 
@@ -490,12 +494,14 @@ describe('migration failure paths (issue #250)', () => {
       recoverInterruptedMigration: async () => ({ outcome: 'no-snapshot' }),
       incompletePluginRestoreId: async () => undefined,
       preparePackageStore: async () => undefined,
+      demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: async () => {
         throw new Error('EPERM: could not persist the removal ledger')
       },
       prepareGenerationsForLaunch: prepare,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 
@@ -514,6 +520,7 @@ describe('migration failure paths (issue #250)', () => {
       recoverInterruptedMigration: async () => ({ outcome: 'no-snapshot' }),
       incompletePluginRestoreId: async () => undefined,
       preparePackageStore: async () => undefined,
+      demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: async () => {
         enforcementAttempt += 1
         if (enforcementAttempt === 2) {
@@ -523,6 +530,7 @@ describe('migration failure paths (issue #250)', () => {
       prepareGenerationsForLaunch: async () => undefined,
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 
@@ -540,12 +548,14 @@ describe('migration failure paths (issue #250)', () => {
       recoverInterruptedMigration: async () => ({ outcome: 'no-snapshot' }),
       incompletePluginRestoreId: async () => undefined,
       preparePackageStore: async () => undefined,
+      demoteMarketGeneration: async () => false,
       enforcePendingPluginRemovals: async () => undefined,
       prepareGenerationsForLaunch: async () => {
         throw new Error('projection fixture failure')
       },
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
+      ensureMarketBaseline: async () => undefined,
       reportProfileConsistency: report
     })
 

@@ -119,7 +119,9 @@ export function buildSafeModeViewModel(options: {
 }): SafeModeViewModel {
   const issues = (options.issues ?? []).map((issue): SafeModeIssueViewModel => {
     const zh = options.locale === 'zh'
-    const kindLabel = zh
+    const kindLabel = issue.kind === 'unverified-module-reference'
+      ? zh ? '兼容性待确认' : 'Compatibility unverified'
+      : zh
       ? issue.kind === 'core-version-mismatch'
         ? '核心版本冲突'
         : issue.kind === 'missing-client-module'
@@ -130,7 +132,9 @@ export function buildSafeModeViewModel(options: {
         : issue.kind === 'missing-client-module'
           ? 'Incompatible plugin'
           : 'Workspace dependency conflict'
-    const actionLabel = zh
+    const actionLabel = issue.resolution === 'inspect-only'
+      ? zh ? '仅提示；运行正常时无需处理' : 'Informational; no action needed if working'
+      : zh
       ? issue.resolution === 'disable-plugin'
         ? '暂停插件（保留数据）'
         : issue.resolution === 'quarantine-workspace'
@@ -177,7 +181,7 @@ export function buildSafeModeViewModel(options: {
         ? [options.locale === 'zh' ? '版本不兼容' : 'version incompatible']
         : [])
     ]
-    if (report?.healthLabel && !incompatible && !suspected) {
+    if (report?.healthLabel) {
       labels.push(report.healthLabel)
     }
     const statusTone = incompatible
@@ -247,7 +251,7 @@ export function buildSafeModeViewModel(options: {
       actionLabel,
       countLabel: zh ? `包含 ${grouped.length} 项检测结果` : `${grouped.length} finding${grouped.length === 1 ? '' : 's'}`,
       detailLabel: zh ? `查看 ${grouped.length} 项详情` : `View ${grouped.length} detail${grouped.length === 1 ? '' : 's'}`,
-      issueIds: grouped.map((issue) => issue.id),
+      issueIds: grouped.filter((issue) => issue.resolution !== 'inspect-only').map((issue) => issue.id),
       issues: grouped
     }
   })
@@ -350,7 +354,7 @@ export function buildSafeModeViewModel(options: {
       notice: options.notice,
       noticeTone: options.noticeTone,
       upgradeAllLabel: upgradeReadyCount > 0
-        ? `一键升级 ${upgradeReadyCount} 个已适配插件`
+        ? `一键升级 ${upgradeReadyCount} 个有更新的插件`
         : undefined,
       upgradeAllBusyLabel: '正在批量升级…',
       upgradeReadyCount
@@ -392,7 +396,7 @@ export function buildSafeModeViewModel(options: {
     notice: options.notice,
     noticeTone: options.noticeTone,
     upgradeAllLabel: upgradeReadyCount > 0
-      ? `Upgrade ${upgradeReadyCount} compatible plugin${upgradeReadyCount === 1 ? '' : 's'}`
+      ? `Upgrade ${upgradeReadyCount} plugin${upgradeReadyCount === 1 ? '' : 's'} with updates`
       : undefined,
     upgradeAllBusyLabel: 'Upgrading plugins…',
     upgradeReadyCount

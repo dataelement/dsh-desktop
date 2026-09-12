@@ -1,8 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js
-index 798b9d3..6ef985d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-trajectory/lib/client.js
-@@ -196,6 +196,8 @@ window.__ModuleLoader__.load({
+@@ -196,6 +196,8 @@
  			"details.subtoolCalls": "子工具调用",
  			"details.error": "错误",
  			"details.failure.auth": "API 密钥无效",
@@ -11,7 +10,7 @@ index 798b9d3..6ef985d 100644
  			"details.retry": "重试",
  			"details.scheduled": "已计划",
  			"details.retryDelay": "重试延迟",
-@@ -373,6 +375,8 @@ window.__ModuleLoader__.load({
+@@ -374,6 +376,8 @@
  			"details.subtoolCalls": "Subtool calls",
  			"details.error": "Error",
  			"details.failure.auth": "API key is invalid",
@@ -20,7 +19,7 @@ index 798b9d3..6ef985d 100644
  			"details.retry": "Retry",
  			"details.scheduled": "Scheduled",
  			"details.retryDelay": "Retry delay",
-@@ -4232,6 +4236,8 @@ window.__ModuleLoader__.load({
+@@ -4241,6 +4245,8 @@
  		}
  		function requestErrorMessage(request, t) {
  			if (request.errorCode === "AUTH") return t("details.failure.auth");

@@ -123,6 +123,103 @@ describe('the generation installer', () => {
     expect(result.ok).toBe(true)
   })
 
+  it('pins the staging workspace to the registry the market read from (#337)', async () => {
+    const home = await freshHome()
+    let npmrc = ''
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: 'demo-plugin@2.1.0',
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      registry: 'https://mirrors.cloud.tencent.com/npm',
+      runInstall: stubInstall(async (staging) => {
+        npmrc = await readFile(join(staging, '.npmrc'), 'utf8')
+        const pkg = join(staging, 'node_modules', 'demo-plugin')
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'demo-plugin', version: '2.1.0' }))
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+      })
+    })
+
+    expect(result.ok).toBe(true)
+    expect(npmrc).toContain('registry=https://mirrors.cloud.tencent.com/npm/')
+    // The settings the promotion rename depends on are still there.
+    expect(npmrc).toContain('node-linker=hoisted')
+    expect(npmrc).toContain('side-effects-cache=false')
+  })
+
+  it('does not reuse pre-approval generation bytes when the same lockfile is rebuilt', async () => {
+    const home = await freshHome()
+    let built = false
+    const options = {
+      dshHome: home, pluginSpec: 'demo@1.0.0', nodeExecutablePath: 'node', pnpmEntryPath: 'pnpm',
+      runInstall: stubInstall(async staging => {
+        const pkg = join(staging, 'node_modules', 'demo')
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'demo', version: '1.0.0' }))
+        await writeFile(join(pkg, 'built.txt'), String(built))
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'same-lock')
+      })
+    }
+    const previous = await installGeneration(options)
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(profile, 'pnpm-workspace.yaml'), 'allowBuilds:\n  node-pty: true\n')
+    built = true
+    const approved = await installGeneration({ ...options, strictDepBuilds: true })
+    expect(approved.ok).toBe(true)
+    expect(approved.generation?.id).not.toBe(previous.generation?.id)
+    expect(await readFile(join(approved.generation!.directory, 'node_modules', 'demo', 'built.txt'), 'utf8')).toBe('true')
+    const mismatch = await installGeneration({ ...options, expectedVersion: '2.0.0' })
+    expect(mismatch.ok).toBe(false)
+    expect(mismatch.detail).toContain('ERR_RESOLVED_VERSION_MISMATCH')
+  })
+
+  it('leaves the staging registry unpinned when the caller resolved none', async () => {
+    const home = await freshHome()
+    let npmrc = ''
+    await installGeneration({
+      dshHome: home,
+      pluginSpec: 'demo-plugin@2.1.0',
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      runInstall: stubInstall(async (staging) => {
+        npmrc = await readFile(join(staging, '.npmrc'), 'utf8')
+        const pkg = join(staging, 'node_modules', 'demo-plugin')
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'demo-plugin', version: '2.1.0' }))
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+      })
+    })
+
+    expect(npmrc).not.toContain('registry=')
+  })
+
+  it("reports pnpm's error code rather than the staging path that follows it (#337)", async () => {
+    const home = await freshHome()
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: 'dshmarket@1.45.0',
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      runInstall: async () => ({
+        code: 1,
+        output: [
+          'Progress: resolved 1, reused 0, downloaded 0, added 0',
+          'ERR_PNPM_NO_MATCHING_VERSION  No matching version found for dshmarket@1.45.0 while fetching it from https://registry.npmmirror.com/',
+          '',
+          'This error happened while installing a direct dependency of /tmp/.generations/staging/bfeb523f',
+          'The latest release of dshmarket is "1.44.0".'
+        ].join('\n')
+      })
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('ERR_PNPM_NO_MATCHING_VERSION')
+    expect(result.detail).toContain('registry.npmmirror.com')
+    expect(result.detail).not.toContain('This error happened while installing')
+  })
+
   it('promotes a clean install into a generation and records its metadata', async () => {
     const home = await freshHome()
     const result = await installGeneration({
@@ -399,6 +496,59 @@ describe('the generation installer', () => {
     )
   })
 
+  it('accepts named Harness fallback links without trusting the rest of the checkout', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'linked-host')
+    const plugin = join(directory, 'node_modules', 'root-plugin')
+    const closure = join(home, 'profiles', 'node_modules')
+    const checkout = join(home, 'checkout', 'node_modules')
+    const provided = ['react', '@deepseek-ai/cordis', 'shared-util']
+    await mkdir(plugin, { recursive: true })
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({
+      name: 'root-plugin', dependencies: Object.fromEntries(provided.map(name => [name, '*']))
+    }))
+    for (const name of provided) {
+      const target = join(checkout, name)
+      await mkdir(target, { recursive: true })
+      await mkdir(join(closure, name, '..'), { recursive: true })
+      await writeFile(join(target, 'package.json'), JSON.stringify({ name, main: 'index.js' }))
+      await writeFile(join(target, 'index.js'), 'module.exports = {}')
+      await symlink(target, join(closure, name), 'junction')
+    }
+    const generation = { id: 'linked-host', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect(await verifyGenerationPeers(home, generation)).toEqual({ ok: true, problems: [] })
+
+    // A different React inside the plugin must still fail, even when the host
+    // has provided a valid React link to that same checkout.
+    const privateReact = join(plugin, 'node_modules', 'react')
+    await mkdir(privateReact, { recursive: true })
+    await writeFile(join(privateReact, 'package.json'), JSON.stringify({ name: 'react', main: 'index.js' }))
+    await writeFile(join(privateReact, 'index.js'), 'module.exports = {}')
+    const privateResult = await verifyGenerationPeers(home, generation)
+    expect(privateResult.ok).toBe(false)
+    expect(privateResult.problems).toEqual(expect.arrayContaining([
+      expect.stringMatching(/private host singleton react is present/u)
+    ]))
+    await rm(join(plugin, 'node_modules'), { recursive: true })
+
+    // Nor may a provided package's entry escape into an arbitrary sibling.
+    const sibling = join(checkout, 'unrelated.js')
+    await writeFile(sibling, 'module.exports = {}')
+    await mkdir(join(checkout, 'escaped-util'), { recursive: true })
+    await writeFile(join(checkout, 'escaped-util', 'package.json'), JSON.stringify({
+      name: 'escaped-util', main: 'index.js'
+    }))
+    await symlink(sibling, join(checkout, 'escaped-util', 'index.js'))
+    await symlink(join(checkout, 'escaped-util'), join(closure, 'escaped-util'), 'junction')
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({
+      name: 'root-plugin', dependencies: { 'escaped-util': '*' }
+    }))
+    const escaped = await verifyGenerationPeers(home, generation)
+    expect(escaped.problems).toContain(
+      `escaped-util resolves outside the generation and installation closure: ${await realpath(sibling)}`
+    )
+  })
+
   it('validates host singletons declared by a transitive package, not only the root plugin', async () => {
     const home = await freshHome()
     const directory = join(home, 'profiles', '.generations', 'live', 'transitive-peer')
@@ -439,6 +589,67 @@ describe('the generation installer', () => {
     expect(result.problems).toContain(
       'transitive-package: @deepseek-ai/cordis does not resolve from the installation closure'
     )
+  })
+
+  it('accepts type packages and subpath exports without root entries, but rejects a missing required package', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'lexical-shape')
+    const modules = join(directory, 'node_modules')
+    const packages = {
+      'root-plugin': { dependencies: { '@types/example': '*', 'type-only': '*', 'subpaths': '*', 'esm-only': '*', 'sdk-shape': '*' },
+        peerDependencies: { typescript: '*' }, peerDependenciesMeta: { typescript: { optional: true } } },
+      '@types/example': { types: 'index.d.ts' },
+      'type-only': { types: 'api.d.ts', exports: { '.': { types: './api.d.ts' } } },
+      'esm-only': { exports: { '.': { types: './index.d.ts', import: './index.mjs' } } },
+      subpaths: { exports: { './feature': './feature.js' } },
+      'sdk-shape': { exports: { '.': './missing.js', './client': { import: './client.mjs' } } }
+    }
+    for (const [name, fields] of Object.entries(packages)) {
+      await mkdir(join(modules, name), { recursive: true })
+      await writeFile(join(modules, name, 'package.json'), JSON.stringify({ name, ...fields }))
+    }
+    await writeFile(join(modules, '@types/example/index.d.ts'), 'export interface Example {}')
+    await writeFile(join(modules, 'sdk-shape/client.mjs'), 'export default {}')
+    await writeFile(join(modules, 'esm-only/index.mjs'), 'export default {}')
+    await writeFile(join(modules, 'type-only/api.d.ts'), 'export interface Api {}')
+    await writeFile(join(modules, 'subpaths/feature.js'), 'module.exports = {}')
+    // An optional development peer happens to resolve above the allowed roots.
+    const external = join(home, 'node_modules', 'typescript')
+    await mkdir(external, { recursive: true })
+    await writeFile(join(external, 'package.json'), JSON.stringify({ name: 'typescript', main: 'index.js' }))
+    await writeFile(join(external, 'index.js'), 'module.exports = {}')
+    const generation = { id: 'lexical-shape', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect(await verifyGenerationPeers(home, generation)).toEqual({ ok: true, problems: [] })
+    const externalSubpaths = join(home, 'node_modules', 'subpaths')
+    await mkdir(externalSubpaths, { recursive: true })
+    await writeFile(join(externalSubpaths, 'package.json'), JSON.stringify({
+      name: 'subpaths', exports: { './feature': './feature.js' }
+    }))
+    await writeFile(join(externalSubpaths, 'feature.js'), 'module.exports = {}')
+    await rm(join(modules, 'subpaths'), { recursive: true })
+    expect((await verifyGenerationPeers(home, generation)).problems).toContain(
+      `subpaths resolves outside the generation and installation closure: ${await realpath(join(externalSubpaths, 'feature.js'))}`
+    )
+    await rm(externalSubpaths, { recursive: true })
+    expect((await verifyGenerationPeers(home, generation)).problems).toContain(
+      'subpaths does not resolve from the generation or installation closure'
+    )
+  })
+
+  it('does not accept a broken root entry merely because its package manifest exists', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'broken-entry')
+    for (const [name, fields] of Object.entries({
+      'root-plugin': { dependencies: { broken: '*' } }, broken: { main: 'missing.js' }
+    })) {
+      const path = join(directory, 'node_modules', name)
+      await mkdir(path, { recursive: true })
+      await writeFile(join(path, 'package.json'), JSON.stringify({ name, ...fields }))
+    }
+    const result = await verifyGenerationPeers(home, {
+      id: 'broken-entry', pluginName: 'root-plugin', version: '1.0.0', directory
+    })
+    expect(result.problems).toContain('broken does not resolve from the generation or installation closure')
   })
 
   it('fails validation when a required ordinary dependency is missing', async () => {

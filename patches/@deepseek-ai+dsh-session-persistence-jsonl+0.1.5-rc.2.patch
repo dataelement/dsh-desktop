@@ -1,8 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
-index 48a1455..c2324e6 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
-@@ -2412,6 +2412,51 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+@@ -2412,6 +2412,51 @@
  		return this.tracker.flushAll();
  	}
  	/**
@@ -55,7 +54,6 @@ index 48a1455..c2324e6 100644
  	* @param id - the stored session to observe.
  	* @param options - optional cancellation.
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
-index 1863388..ba60b3a 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
 @@ -7,7 +7,7 @@
@@ -67,7 +65,7 @@ index 1863388..ba60b3a 100644
  import { JsonlSessionHandle } from './storage.ts';
  import { SessionWriteLease } from './lease.ts';
  import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session';
-@@ -103,6 +103,15 @@ declare class JsonlSessionPersistence extends SessionPersistence {
+@@ -103,6 +103,15 @@
       * @returns resolution once every write handle active at the call has flushed.
       */
      flush(): Promise<void>;

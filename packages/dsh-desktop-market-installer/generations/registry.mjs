@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -44,6 +44,18 @@ export function registryLayout(dshHome) {
 
 const SAFE_PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/iu
 const SAFE_VERSION_PATTERN = /^[0-9a-z][0-9a-z._+-]*$/iu
+
+/**
+ * Packages the profile always keeps as real directories in its shared tree:
+ * pnpm-managed, and never resolved from a generation however one got into
+ * `desired`.
+ *
+ * The app-side `KEEP_IN_SHARED_TREE` (generation-migration.ts) lists the same
+ * intent for the migration, plus the two in-box bundles that never reach this
+ * registry at all. Nothing keeps the two in sync — only dshmarket is ever
+ * installable from the market, so only dshmarket needs guarding here.
+ */
+const SHARED_TREE_ONLY = new Set(['dshmarket'])
 
 function assertSafePackageName(pluginName, context = 'Generation plugin name') {
   if (typeof pluginName !== 'string' || !SAFE_PACKAGE_NAME_PATTERN.test(pluginName)) {
@@ -218,8 +230,7 @@ export async function writeGenerationMeta(directory, meta) {
   await writeFile(join(directory, META_NAME), `${JSON.stringify(meta, undefined, 2)}\n`, 'utf8')
 }
 
-/** Every promoted generation currently on disk. */
-export async function listGenerations(dshHome) {
+async function listGenerationDirectoryIds(dshHome) {
   const { generations } = registryLayout(dshHome)
   let entries
   try {
@@ -233,12 +244,28 @@ export async function listGenerations(dshHome) {
       { cause: error }
     )
   }
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+}
+
+/** Every readable promoted generation currently on disk. */
+export async function listGenerations(dshHome) {
+  const { generations } = registryLayout(dshHome)
+  const ids = await listGenerationDirectoryIds(dshHome)
   const found = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const directory = join(generations, entry.name)
-    const meta = await readGenerationMeta(directory)
-    found.push({ id: entry.name, directory, ...meta })
+  for (const id of ids) {
+    const directory = join(generations, id)
+    let meta
+    try {
+      meta = await readGenerationMeta(directory)
+    } catch (error) {
+      // A failed recursive deletion can remove generation.json before Windows
+      // reports a locked descendant. Such an unreferenced shell must be inert
+      // so projection and the next sweep can recover. Other metadata failures
+      // remain fail-closed.
+      if (error?.cause?.code === 'ENOENT') continue
+      throw error
+    }
+    found.push({ id, directory, ...meta })
   }
   return found
 }
@@ -286,6 +313,11 @@ export async function resolveEnabledGenerations(dshHome) {
   const enabled = new Map()
   for (const id of desired) {
     const generation = byId.get(id)
+    // A core bundle is never resolved from a generation, whatever `desired`
+    // says. Projection would otherwise re-link it on every launch, which no
+    // later repair can outrun. Left in place rather than thrown on: the
+    // pointer is inert, and startup demotes it back to the shared tree.
+    if (generation !== undefined && SHARED_TREE_ONLY.has(generation.pluginName)) continue
     if (generation === undefined || !existsSync(generation.directory)) {
       throw new Error(`Desired generation is missing or unreadable: ${id}`)
     }
@@ -296,16 +328,23 @@ export async function resolveEnabledGenerations(dshHome) {
 
 /** The generation ids not referenced by the authoritative desired pointer. */
 export async function collectUnreferencedGenerations(dshHome) {
-  const [desired, all] = await Promise.all([
+  const layout = registryLayout(dshHome)
+  const [desired, directoryIds] = await Promise.all([
     readDesired(dshHome),
-    listGenerations(dshHome)
+    listGenerationDirectoryIds(dshHome)
   ])
-  const known = new Set(all.map((generation) => generation.id))
+  const known = new Set(directoryIds)
   for (const id of desired) {
     if (!known.has(id)) throw new Error(`Desired generation is missing or unreadable: ${id}`)
+    try {
+      await readGenerationMeta(join(layout.generations, id))
+    } catch (error) {
+      if (error?.cause?.code !== 'ENOENT') throw error
+      throw new Error(`Desired generation is missing or unreadable: ${id}`, { cause: error })
+    }
   }
   const referenced = new Set(desired)
-  return all.filter((generation) => !referenced.has(generation.id)).map((generation) => generation.id)
+  return directoryIds.filter((id) => !referenced.has(id))
 }
 
 /**
@@ -320,16 +359,8 @@ export async function sweepRegistry(dshHome) {
   const failed = []
 
   const unreferenced = await collectUnreferencedGenerations(dshHome)
-  for (const id of unreferenced) {
-    const directory = join(layout.generations, id)
-    try {
-      await rm(directory, { recursive: true, force: true })
-      removed.push(id)
-    } catch {
-      failed.push(id)
-    }
-  }
-
+  // Remove leftovers from earlier runs before moving new generations into
+  // trash. A failed delete below is intentionally left there until next run.
   for (const dir of [layout.staging, layout.trash]) {
     const label = dir === layout.staging ? 'staging' : 'trash'
     let entries = []
@@ -345,6 +376,21 @@ export async function sweepRegistry(dshHome) {
       } catch {
         failed.push(`${label}/${name}`)
       }
+    }
+  }
+
+  await mkdir(layout.trash, { recursive: true })
+  for (const id of unreferenced) {
+    const directory = join(layout.generations, id)
+    const trashed = join(layout.trash, `${id}.${randomUUID()}`)
+    try {
+      // Keep live atomic: even if Windows refuses to delete a locked child,
+      // the incomplete generation can no longer poison registry enumeration.
+      await rename(directory, trashed)
+      await rm(trashed, { recursive: true, force: true })
+      removed.push(id)
+    } catch {
+      failed.push(id)
     }
   }
 

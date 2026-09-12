@@ -4,6 +4,11 @@ import type { Generation } from './registry'
 export interface GenerationInstallOptions {
   dshHome: string
   profile?: string
+  strictDepBuilds?: boolean
+  /** Explicit market peer policy; otherwise inherit the Profile's explicit boolean. */
+  autoInstallPeers?: boolean
+  minimumReleaseAge?: number
+  expectedVersion?: string
   pluginSpec: string
   /** Package name expected after installing a non-registry or aliased spec. */
   expectedPluginName?: string
@@ -13,6 +18,12 @@ export interface GenerationInstallOptions {
   sourceDirectory?: string
   nodeExecutablePath: string
   pnpmEntryPath: string
+  /**
+   * Registry to pin the staging install to, keeping the source pnpm fetches
+   * from aligned with the source the market read metadata from. Omit to leave
+   * pnpm on whatever `~/.npmrc` says.
+   */
+  registry?: string | null
   /** Hard ceiling for the pnpm subprocess; defaults to 90 seconds. */
   installTimeoutMs?: number
   spawnProcess?: unknown

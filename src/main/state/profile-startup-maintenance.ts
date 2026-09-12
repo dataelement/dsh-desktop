@@ -16,10 +16,12 @@ export interface ProfileStartupMaintenanceDeps {
   recoverInterruptedMigration: () => Promise<MigrationRecoveryOutcome>
   incompletePluginRestoreId: () => Promise<string | undefined>
   preparePackageStore: () => Promise<void>
+  demoteMarketGeneration: () => Promise<boolean>
   enforcePendingPluginRemovals: () => Promise<void>
   prepareGenerationsForLaunch: () => Promise<void>
   shouldDeferProfileMaintenance: () => Promise<boolean>
   migrateProfileToGenerations: () => Promise<MigrationOutcome>
+  ensureMarketBaseline: () => Promise<void>
   reportProfileConsistency: () => Promise<void>
 }
 
@@ -31,6 +33,11 @@ export interface ProfileStartupMaintenanceDeps {
  * prune, or repair after the failure. Startup never performs destructive
  * package repair or declaration pruning; it only reports inconsistencies for
  * an explicit recovery flow to handle later.
+ * The market's verified baseline is the targeted exception: dshmarket is a
+ * core bundle, never a generation, and the app cannot boot without a working
+ * one — so it is demoted out of any generation and brought to the baseline in
+ * the shared tree ahead of projection and ahead of the removal-verification
+ * gate, while Harness is stopped.
  */
 export async function runProfileStartupMaintenance(
   deps: ProfileStartupMaintenanceDeps
@@ -83,6 +90,31 @@ export async function runProfileStartupMaintenance(
     return { outcome: 'safe-recovery', reason }
   }
 
+  /**
+   * dshmarket is never a generation, and a stray generation for it is
+   * re-linked by projection on *every* launch — so it is demoted back to the
+   * shared tree and brought to the verified baseline before projection runs.
+   *
+   * This deliberately runs even when a pending plugin removal has deferred
+   * the rest: a market that cannot load stops Harness from booting, and boot
+   * is what marks the removal verified. Leaving it behind that gate is what
+   * turned one incompatible market build into a permanent boot loop — the
+   * repair needed a successful boot to be allowed, and the boot needed the
+   * repair. A frozen migration still blocks it; that path keeps the legacy
+   * profile byte-for-byte for rollback.
+   */
+  const establishMarketBaseline = async (): Promise<string | undefined> => {
+    try {
+      await deps.demoteMarketGeneration()
+      await deps.ensureMarketBaseline()
+      return undefined
+    } catch (error) {
+      return `market baseline could not be established: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    }
+  }
+
   let deferRemovalMaintenance: boolean
   try {
     await deps.enforcePendingPluginRemovals()
@@ -95,6 +127,11 @@ export async function runProfileStartupMaintenance(
     return { outcome: 'safe-recovery', reason }
   }
   if (deferRemovalMaintenance) {
+    const marketFailure = await establishMarketBaseline()
+    if (marketFailure !== undefined) {
+      deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
+      return { outcome: 'safe-recovery', reason: marketFailure }
+    }
     // Projection is required to make a durable generation tombstone visible,
     // but migration/repair/prune remain blocked until removal is verified.
     try {
@@ -130,6 +167,12 @@ export async function runProfileStartupMaintenance(
       migration,
       migrationRebuiltSharedTree: false
     }
+  }
+
+  const marketFailure = await establishMarketBaseline()
+  if (marketFailure !== undefined) {
+    deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
+    return { outcome: 'safe-recovery', reason: marketFailure }
   }
 
   try {

@@ -1,8 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index f04f56e..ea63f7e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-@@ -31,7 +31,7 @@ window.__ModuleLoader__.load({
+@@ -31,7 +31,7 @@
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
@@ -11,7 +10,7 @@ index f04f56e..ea63f7e 100644
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
-@@ -188,6 +188,8 @@ window.__ModuleLoader__.load({
+@@ -188,6 +188,8 @@
  			const buildVersion = localBuildVersion();
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -20,7 +19,7 @@ index f04f56e..ea63f7e 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -209,6 +211,7 @@ window.__ModuleLoader__.load({
+@@ -209,6 +211,7 @@
  							},
  							children: (0, react_jsx_runtime.jsxs)("span", {
  								className: SidebarRoot_module_css_default.brandIdentity,
@@ -28,7 +27,7 @@ index f04f56e..ea63f7e 100644
  								"aria-hidden": "true",
  								children: [(0, react_jsx_runtime.jsx)("span", {
  									className: SidebarRoot_module_css_default.brandMark,
-@@ -295,6 +298,7 @@ window.__ModuleLoader__.load({
+@@ -295,6 +298,7 @@
  							className: SidebarRoot_module_css_default.footerActions,
  							children: renderSlot("sidebar.footer.action", { wide })
  						}), (0, react_jsx_runtime.jsx)("div", {
