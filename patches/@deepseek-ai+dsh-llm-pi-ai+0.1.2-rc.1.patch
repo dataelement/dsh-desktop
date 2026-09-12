@@ -13,3 +13,123 @@ index 5c89b80..193f5b7 100644
  	if (/\b429\b|rate.?limit/i.test(message)) return "RATE_LIMIT";
  	if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return "INVALID_REQUEST";
  	if (/\b400\b|invalid.?request/i.test(message)) return "INVALID_REQUEST";
+@@ -1365,6 +1366,15 @@ function mapStopReason(message, contextWindow) {
+ 		}
+ 	}
+ }
++
++/** Restore the terminal content array from completed stream blocks when a provider omits it. */
++function completeTerminalMessage(message, completed) {
++	if (Array.isArray(message.content)) return message;
++	return {
++		...message,
++		content: [...completed.entries()].sort(([left], [right]) => left - right).map(([, block]) => block)
++	};
++}
+ /**
+ * Translate the pi-ai event stream into StreamChunks. pi-ai never throws
+ * mid-stream — failures arrive as `error` events, which become error/aborted
+@@ -1378,6 +1388,7 @@ function mapStopReason(message, contextWindow) {
+ */
+ async function* toStreamChunks(events, contextWindow, callerSignal) {
+ 	const toolIds = /* @__PURE__ */ new Map();
++	const completed = /* @__PURE__ */ new Map();
+ 	for await (const event of events) switch (event.type) {
+ 		case "start": break;
+ 		case "text_start":
+@@ -1394,16 +1405,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal) {
+ 				text: event.delta
+ 			};
+ 			break;
+-		case "text_end":
++		case "text_end": {
++			const block = {
++				type: "text",
++				text: event.content
++			};
++			completed.set(event.contentIndex, block);
+ 			yield {
+ 				type: "block-end",
+ 				index: event.contentIndex,
+-				block: {
+-					type: "text",
+-					text: event.content
+-				}
++				block
+ 			};
+ 			break;
++		}
+ 		case "thinking_start":
+ 			yield {
+ 				type: "block-start",
+@@ -1418,16 +1432,19 @@ async function* toStreamChunks(events, contextWindow, callerSignal) {
+ 				text: event.delta
+ 			};
+ 			break;
+-		case "thinking_end":
++		case "thinking_end": {
++			const block = {
++				type: "reasoning",
++				text: event.content
++			};
++			completed.set(event.contentIndex, block);
+ 			yield {
+ 				type: "block-end",
+ 				index: event.contentIndex,
+-				block: {
+-					type: "reasoning",
+-					text: event.content
+-				}
++				block
+ 			};
+ 			break;
++		}
+ 		case "toolcall_start": {
+ 			const partial = event.partial.content[event.contentIndex];
+ 			const id = partial?.type === "toolCall" ? partial.id : "";
+@@ -1454,29 +1471,34 @@ async function* toStreamChunks(events, contextWindow, callerSignal) {
+ 			};
+ 			break;
+ 		}
+-		case "toolcall_end":
++		case "toolcall_end": {
++			const block = {
++				type: "tool-call",
++				id: brandString(event.toolCall.id),
++				name: event.toolCall.name,
++				arguments: JSON.stringify(event.toolCall.arguments)
++			};
++			completed.set(event.contentIndex, block);
+ 			yield {
+ 				type: "block-end",
+ 				index: event.contentIndex,
+-				block: {
+-					type: "tool-call",
+-					id: brandString(event.toolCall.id),
+-					name: event.toolCall.name,
+-					arguments: JSON.stringify(event.toolCall.arguments)
+-				}
++				block
+ 			};
+ 			break;
+-		case "done":
++		}
++		case "done": {
++			const message = completeTerminalMessage(event.message, completed);
+ 			yield {
+ 				type: "usage",
+-				usage: mapUsage(event.message.usage)
++				usage: mapUsage(message.usage)
+ 			};
+ 			yield {
+ 				type: "finish",
+-				reason: mapStopReason(event.message, contextWindow),
+-				replayState: toPiReplayState(event.message)
++				reason: mapStopReason(message, contextWindow),
++				replayState: toPiReplayState(message)
+ 			};
+ 			return;
++		}
+ 		case "error":
+ 			yield {
+ 				type: "usage",
