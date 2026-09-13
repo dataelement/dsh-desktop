@@ -27,9 +27,7 @@ describe('desktop provider onboarding patch', () => {
       readFile(patchPath('@deepseek-ai/dsh-client-ui-settings-models'), 'utf8'),
       readFile('node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js', 'utf8')
     ])
-    expect(patch).toContain('ONBOARDING_PROVIDERS')
-    expect(patch).toContain('openrouter')
-    expect(patch).toContain('接入模型提供方')
+    // The settings add-provider surface keeps its real provider grid …
     expect(patch).toContain('dshProviderGrid')
     expect(patch).toContain('aria-pressed')
     expect(installed).toContain('className: "dshProviderCard"')
@@ -39,5 +37,15 @@ describe('desktop provider onboarding patch', () => {
     expect(installed).toContain('SETTINGS_PROVIDER_PRIORITY')
     expect(installed.indexOf('"deepseek-official"')).toBeLessThan(installed.indexOf('"openai"'))
     expect(installed).toContain('left.entry.displayName.localeCompare(right.entry.displayName)')
+    // … but the first-run dialog no longer advertises a provider chooser it
+    // cannot render: the ONBOARDING_PROVIDERS list and the multi-provider
+    // copy were dead code (setSelectedProvider had no call sites). The dialog
+    // is back to configuring the default DeepSeek provider it actually shows.
+    expect(patch).not.toContain('ONBOARDING_PROVIDERS')
+    expect(patch).not.toContain('Connect a model provider')
+    expect(patch).not.toContain('接入模型提供方')
+    expect(installed).not.toContain('Mainstream catalog routes exposed during first-run setup')
+    expect(installed).toContain('onboardingDescription: "配置 DeepSeek 官方模型，即可开始使用。"')
+    expect(installed).toContain('onboardingSave: "保存并继续"')
   })
 })
