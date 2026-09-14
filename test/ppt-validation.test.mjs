@@ -22,7 +22,7 @@ afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true,
 afterEach(async () => { for (const dir of cleanups.splice(0)) await rm(dir, { recursive: true, force: true }) })
 
 async function fixture({ broken = true, malformed = false } = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'ppt-validation-'))
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'ppt-validation-')))
   cleanups.push(root)
   const workspace = path.join(root, 'workspace')
   const project = path.join(workspace, 'deck')
@@ -63,6 +63,96 @@ async function fixture({ broken = true, malformed = false } = {}) {
 }
 
 describe('PPT validation authoring loop', () => {
+  it.each([
+    ['plain', String.raw`水是供应链中\n最被低估的\n宏观变量`],
+    ['single-quoted', String.raw`'水是供应链中\n最被低估的\n宏观变量'`],
+    ['double-escaped', String.raw`"水是供应链中\\n最被低估的\\n宏观变量"`],
+    ['block-literal', '|-\n        ' + String.raw`水是供应链中\n最被低估的\n宏观变量`],
+  ])('blocks literal newline residue in %s YAML through tools and CLI', async (_name, value) => {
+    const f = await fixture({ broken: false })
+    const file = path.join(f.project, 'pages/1.page')
+    const source = `elements:\n  - elementId: title\n    elementType: text\n    bounds: [48, 80, 864, 240]\n    content:\n      fontSize: 40\n      text: ${value}\n`
+    await writeFile(file, source)
+    const checked = await f.run('pptd_check', { project_path: 'deck' })
+    expect(checked.value.status).toBe('needs_revision')
+    expect(checked.value.issues.filter(i => i.code === 'text-escaped-newline')).toEqual([expect.objectContaining({ code: 'text-escaped-newline', severity: 'error', page: 1, file: 'pages/1.page', elementId: 'title' })])
+    const issue = checked.value.issues.find(i => i.code === 'text-escaped-newline')
+    expect((await f.run('pptd_read_file', issue.readArgs)).value.content).toBe(source)
+    const blocked = await f.run('pptd_render', { project_path: 'deck', output_file: 'escaped.pptx' })
+    expect(blocked.value.status).toBe('needs_revision')
+    expect(await readdir(f.workspace)).toEqual(['deck'])
+    const cliCheck = spawnSync(process.execPath, [cli, 'check', f.project, '--json'], { encoding: 'utf8', timeout: 10_000 })
+    expect(cliCheck.status).toBe(1)
+    expect(JSON.parse(cliCheck.stdout).issues.some(i => i.code === 'text-escaped-newline')).toBe(true)
+    const cliRender = spawnSync(process.execPath, [cli, 'render', f.project, '-o', path.join(f.workspace, 'cli-escaped.pptx'), '--json'], { encoding: 'utf8', timeout: 10_000 })
+    expect(cliRender.status).toBe(1)
+    expect(JSON.parse(cliRender.stdout).status).toBe('needs_revision')
+    expect(await readFile(file, 'utf8')).toBe(source)
+  }, 30_000)
+
+  it.each([
+    ['double-quoted', String.raw`"水是供应链中\n最被低估的\n宏观变量"`],
+    ['block-newlines', '|-\n        水是供应链中\n        最被低估的\n        宏观变量'],
+    ['html-breaks', '"水是供应链中<br/>最被低估的<br/>宏观变量"'],
+  ])('exports authored line breaks from %s without literal residue', async (_name, value) => {
+    const f = await fixture({ broken: false })
+    await writeFile(path.join(f.project, 'pages/1.page'), `elements:\n  - elementId: title\n    elementType: text\n    bounds: [48, 80, 864, 240]\n    content:\n      fontSize: 40\n      text: ${value}\n`)
+    const rendered = await f.run('pptd_render', { project_path: 'deck', output_file: 'multiline.pptx' })
+    expect(rendered.value.status).toBe('exported')
+    const xml = new TextDecoder().decode(unzipSync(await readFile(path.join(f.workspace, rendered.value.outputPath)))['ppt/slides/slide1.xml'])
+    expect(xml).not.toContain(String.raw`\n`)
+    for (const line of ['水是供应链中', '最被低估的', '宏观变量']) expect(xml).toContain(`<a:t>${line}</a:t>`)
+  })
+
+  it('checks rich text and table cells while preserving explicit literal escapes and imported text', async () => {
+    const f = await fixture({ broken: false })
+    const file = path.join(f.project, 'pages/1.page')
+    const page = { elements: [
+      { elementId: 'code', elementType: 'text', bounds: [48, 80, 864, 160], content: { text: String.raw`<strong>示例</strong>：print("a\nb")；C:\new\report`, fontSize: 20 } },
+      { elementId: 'table', elementType: 'table', bounds: [48, 300, 864, 100], columnWidths: [1], rowHeights: [1], rows: [[{ text: String.raw`A\r\nB` }]] },
+    ] }
+    await writeFile(file, yaml.dump(page))
+    let checked = await f.run('pptd_check', { project_path: 'deck' })
+    expect(checked.value.issues.filter(i => i.code === 'text-escaped-newline').map(i => i.elementId)).toEqual(['code', 'table'])
+    for (const content of [page.elements[0].content, page.elements[1].rows[0][0]]) content.literalEscapes = true
+    await writeFile(file, yaml.dump(page))
+    const rendered = await f.run('pptd_render', { project_path: 'deck', output_file: 'literal.pptx' })
+    expect(rendered.value.status).toBe('exported')
+    const outputPath = path.join(f.workspace, rendered.value.outputPath)
+    const xml = new TextDecoder().decode(unzipSync(await readFile(outputPath))['ppt/slides/slide1.xml'])
+    expect(xml).toContain(String.raw`\n`)
+    const importedDir = path.join(f.workspace, 'imported')
+    const imported = spawnSync(process.execPath, [cli, 'convert', outputPath, '-o', importedDir, '--json'], { encoding: 'utf8', timeout: 10_000 })
+    expect(imported.status, imported.stdout + imported.stderr).toBe(0)
+    const importCheck = spawnSync(process.execPath, [cli, 'check', importedDir, '--json'], { encoding: 'utf8', timeout: 10_000 })
+    expect(JSON.parse(importCheck.stdout).issues.filter(i => i.code === 'text-escaped-newline')).toEqual([])
+    const hostImport = await f.run('pptd_import', { pptx_path: rendered.value.outputPath, output_directory: 'host-imported' })
+    expect((await f.run('pptd_check', { project_path: hostImport.value.projectPath })).value.issues.filter(i => i.code === 'text-escaped-newline')).toEqual([])
+    page.elements[0].content.literalEscapes = 'true'
+    await writeFile(file, yaml.dump(page))
+    checked = await f.run('pptd_check', { project_path: 'deck' })
+    expect(checked.value.issues.some(i => i.code === 'text-literal-escapes')).toBe(true)
+  }, 30_000)
+
+  it('checks only visible rich text for newline residue', async () => {
+    const f = await fixture({ broken: false })
+    const file = path.join(f.project, 'pages/1.page')
+    await writeFile(file, yaml.dump({ elements: [{ elementId: 'link', elementType: 'text', bounds: [48, 80, 864, 100], content: { text: String.raw`<span title="C:\new\report">Visible label</span>`, fontSize: 20 } }] }))
+    expect((await f.run('pptd_check', { project_path: 'deck' })).value.issues.filter(i => i.code === 'text-escaped-newline')).toEqual([])
+  })
+
+  it('rechecks capacity after escaped newlines become real lines', async () => {
+    const f = await fixture({ broken: false })
+    const file = path.join(f.project, 'pages/1.page')
+    const page = { elements: [{ elementId: 'title', elementType: 'text', bounds: [48, 80, 864, 50], content: { text: String.raw`第一行\n第二行\n第三行`, fontSize: 40 } }] }
+    await writeFile(file, yaml.dump(page))
+    expect((await f.run('pptd_check', { project_path: 'deck' })).value.issues.some(i => i.code === 'text-escaped-newline')).toBe(true)
+    page.elements[0].content.text = '第一行\n第二行\n第三行'
+    await writeFile(file, yaml.dump(page))
+    const checked = await f.run('pptd_check', { project_path: 'deck' })
+    expect(checked.value.issues.some(i => i.code === 'text-escaped-newline')).toBe(false)
+    expect(checked.value.issues.some(i => i.code === 'text-overflow')).toBe(true)
+  })
   it('returns all page-qualified issues normally without publishing, then exports after correction', async () => {
     const f = await fixture()
     const checked = await f.run('pptd_check', { project_path: 'deck' })
