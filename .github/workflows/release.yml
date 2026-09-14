@@ -451,12 +451,18 @@ jobs:
             }
             if (-not $desktop.HasExited) { Stop-Process -Id $desktop.Id -Force }
           }
+      - name: Archive unpacked Windows release for inner binary signing
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.prerelease_tag != ''
+        shell: pwsh
+        run: |
+          tar -czf dist/win-unpacked.tar.gz -C dist win-unpacked
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || inputs.prerelease_tag != ''
         with:
           name: windows-x64-unsigned
           path: |
             dist/dsh-desktop-windows-x64-setup.exe
+            dist/win-unpacked.tar.gz
             dist/dsh-desktop-windows-x64-setup.exe.blockmap
             dist/latest.yml
           if-no-files-found: error
@@ -522,14 +528,26 @@ jobs:
         run: |
           test -r /usr/local/lib/libeTPkcs11.dylib
           test -n "$WINDOWS_SIGNING_PIN" || { echo "::error::Missing required secret: DESKTOP_WINDOWS_SIGNING_PIN"; exit 1; }
-          installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
-          test "$installer_count" = '1'
-          installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
           pin_file="$(mktemp "$WINDOWS_SIGNING_WORK_DIR/jsign-pin.XXXXXX")"
           trap 'rm -f "$pin_file"' EXIT
           chmod 600 "$pin_file"
           printf '%s' "$WINDOWS_SIGNING_PIN" > "$pin_file"
           unset WINDOWS_SIGNING_PIN
+
+          # If unpacked tree archive was uploaded, sign inner binaries and repackage NSIS installer
+          if [ -f "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" ]; then
+            echo "Unpacking win-unpacked archive for inner binary signing..."
+            tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"
+            JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
+              node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
+            echo "Repackaging NSIS installer from signed unpacked directory..."
+            npx electron-builder --win --x64 --publish never --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"
+            rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
+          fi
+
+          installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
+          test "$installer_count" = '1'
+          installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
           java -jar "$JSIGN_JAR" \
             --storetype ETOKEN \
             --storepass "file:$pin_file" \

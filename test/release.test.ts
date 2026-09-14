@@ -469,6 +469,9 @@ describe('GitHub release contract', () => {
     expect(workflow).not.toContain('security find-generic-password')
     expect(workflow).not.toContain('WINDOWS_SIGNING_KEYCHAIN_SERVICE')
     expect(workflow).toContain('finalize-windows-release.mjs')
+    expect(workflow).toContain('sign-windows-unpacked.mjs')
+    expect(workflow).toContain('win-unpacked.tar.gz')
+    expect(workflow).toContain('--prepackaged')
     // Version comes from the pre-release input on a dispatch, else the tag ref.
     expect(workflow).toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')
     expect(workflow).toContain('pattern: macos-*')
