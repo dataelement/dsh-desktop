@@ -59,10 +59,15 @@ describe('sign-windows-unpacked', () => {
     mkdirSync(nodeBinDir, { recursive: true })
     writeFileSync(join(nodeBinDir, 'node.exe'), 'dummy node.exe')
 
-    // 3. Native addons (.node)
+    // 3. Native addons (.node) - Windows PE (MZ) should be included, non-PE skipped
     const koffiDir = join(tempDir, 'resources', 'app', 'node_modules', 'koffi', 'build', 'koffi')
     mkdirSync(koffiDir, { recursive: true })
-    writeFileSync(join(koffiDir, 'koffi.node'), 'dummy koffi addon')
+    writeFileSync(join(koffiDir, 'koffi.node'), Buffer.from([0x4d, 0x5a, 0x00, 0x01]))
+
+    const darwinDir = join(tempDir, 'resources', 'app', 'node_modules', 'node-pty', 'prebuilds', 'darwin-arm64')
+    mkdirSync(darwinDir, { recursive: true })
+    writeFileSync(join(darwinDir, 'pty.node'), Buffer.from([0xcf, 0xfa, 0xed, 0xfe])) // Mach-O magic
+
     writeFileSync(join(koffiDir, 'index.js'), 'ignore me')
 
     const binaries = await findSignableBinaries(tempDir)
@@ -71,6 +76,7 @@ describe('sign-windows-unpacked', () => {
     expect(binaries).toContain(join(tempDir, 'ffmpeg.dll'))
     expect(binaries).toContain(join(nodeBinDir, 'node.exe'))
     expect(binaries).toContain(join(koffiDir, 'koffi.node'))
+    expect(binaries).not.toContain(join(darwinDir, 'pty.node'))
     expect(binaries).toHaveLength(4)
   })
 })

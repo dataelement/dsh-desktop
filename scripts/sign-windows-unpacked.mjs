@@ -1,10 +1,28 @@
 import { execFile } from 'node:child_process'
-import { readdir, rm, stat } from 'node:fs/promises'
+import { open, readdir, rm, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Verify whether a file starts with the Windows PE 'MZ' magic bytes (0x4D, 0x5A).
+ * This prevents Jsign from failing on non-Windows prebuild binaries (e.g. darwin Mach-O or linux ELF).
+ * @param {string} filePath
+ * @returns {Promise<boolean>}
+ */
+async function isWindowsPE(filePath) {
+  try {
+    const handle = await open(filePath, 'r')
+    const buffer = Buffer.alloc(2)
+    const { bytesRead } = await handle.read(buffer, 0, 2, 0)
+    await handle.close()
+    return bytesRead === 2 && buffer[0] === 0x4d && buffer[1] === 0x5a
+  } catch {
+    return false
+  }
+}
 
 /**
  * Discover core Windows binaries inside an unpacked application directory that
@@ -55,7 +73,9 @@ export async function findSignableBinaries(unpackedDir) {
       if (entry.isDirectory()) {
         await scanNativeAddons(fullPath, depth + 1)
       } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.node')) {
-        results.add(fullPath)
+        if (await isWindowsPE(fullPath)) {
+          results.add(fullPath)
+        }
       }
     }
   }
