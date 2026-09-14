@@ -454,28 +454,47 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('https://www.dshdesktop.com/preset/')
     expect(patch).toContain('"_blank", "noopener,noreferrer"')
     expect(patch).toContain('AgentPresetSection_module_css_default.sectionActions')
-    expect(patch).toContain('.rtSEdW_sectionHead{align-items:center;gap:16px;display:flex}')
+    expect(patch).toContain('.dshPreset_sectionHead{align-items:center;gap:16px;display:flex}')
     expect(patch).toContain('justify-content:flex-end')
     expect(patch).toContain('margin-left:auto')
-    expect(patch).toContain('.rtSEdW_hiddenInput{display:none}')
+    expect(patch).toContain('.dshPreset_hiddenInput{display:none}')
   })
 
-  it('keeps the rc.1 preset page class map aligned with the CSS emitted by rc.1', async () => {
+  it('adds desktop preset classes without restating upstream\u2019s class map', async () => {
     const patch = await readFile(
       patchPath('@deepseek-ai/dsh-client-ui-agent-preset'),
       'utf8'
     )
+    const added = patch
+      .split('\n')
+      .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+      .map((line) => line.slice(1))
+      .join('\n')
 
-    // rc.1 renamed the upstream CSS-module hash to aThYWW.  The preceding
-    // version of this patch carried its old eWkxHa map forward, so the page
-    // rendered with classes that had no matching selectors at all.
-    expect(patch).not.toContain('eWkxHa_')
-    expect(patch).toContain('"section": "aThYWW_section"')
-    expect(patch).toContain('"card": "aThYWW_card"')
-    expect(patch).toContain('"dialog": "aThYWW_dialog"')
-    expect(patch).toContain('.rtSEdW_importSecurity{')
-    expect(patch).toContain('.rtSEdW_importSummary{')
-    expect(patch).toContain('.rtSEdW_importWarnings{')
+    // Earlier revisions replaced the whole stylesheet and class map with a
+    // locally rebuilt copy, so an upstream rebuild silently left the page
+    // rendering classes with no matching selectors. The patch now only
+    // appends desktop-owned rules and entries, under a prefix upstream's
+    // content-derived hashes cannot collide with.
+    const desktopEntries = [...added.matchAll(/"([A-Za-z]+)": "dshPreset_([A-Za-z]+)"/g)]
+    expect(desktopEntries.length).toBeGreaterThan(0)
+    for (const [, key, cls] of desktopEntries) {
+      expect(key).toBe(cls)
+      expect(added, key).toContain(`.dshPreset_${cls}{`)
+    }
+
+    // Every class-map entry the patch adds must be a NEW key: an entry that
+    // also appears as an unchanged context line would mean the patch is
+    // restating upstream's map, which is what used to go stale on a rebuild.
+    const context = new Set(
+      patch
+        .split('\n')
+        .filter((line) => line.startsWith(' '))
+        .flatMap((line) => [...line.matchAll(/"([A-Za-z][A-Za-z0-9-]*)": "[A-Za-z0-9_-]+_/g)].map((m) => m[1]))
+    )
+    for (const [, key] of added.matchAll(/"([A-Za-z][A-Za-z0-9-]*)": "[A-Za-z0-9_-]+_/g)) {
+      expect(context.has(key), key).toBe(false)
+    }
   })
 
   it('keeps a large mode roster searchable, grouped, compact, and connected to Awesome Presets', async () => {

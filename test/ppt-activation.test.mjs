@@ -9,7 +9,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SkillRegistry, isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
-import { SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import { PERSONA_PREFIX_SECTION, SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { apply } from 'dsh-ppt'
 
 const cleanups = []
@@ -23,7 +23,7 @@ async function fixture(existingRoot) {
   const root = existingRoot ?? await mkdtemp(path.join(os.tmpdir(), 'dsh-ppt-activation-'))
   if (!existingRoot) cleanups.push(() => rm(root, { recursive: true, force: true }))
   const ctx = new Context()
-  const prompt = ctx.plugin(SystemPrompt, { includeHarnessIdentity: false, persona: 'Default persona.' })
+  const prompt = ctx.plugin(SystemPrompt, { includeHarnessIdentity: false, personaPrefix: 'Default persona.' })
   await prompt
   cleanups.push(() => prompt.dispose())
   const skills = ctx.plugin(SkillRegistry)
@@ -34,15 +34,25 @@ async function fixture(existingRoot) {
   const plugin = ctx.plugin({
     inject: ['systemPrompt', 'skills'],
     async apply(pluginCtx) {
-      await apply({
-        inject: pluginCtx.inject.bind(pluginCtx),
+      const host = {
+        // The plugin scopes its webServer work under ctx.inject(['webServer'])
+        // (0.1.5 owns connection routes on the reading Context). This fixture
+        // has no webServer service, so run those callbacks on the same fake
+        // host — with the two members they touch — and delegate the rest.
+        effect: (run) => { run?.(); return () => {} },
+        webServer: { register: () => () => {} },
+        inject: (services, callback) =>
+          services?.includes?.('webServer')
+            ? callback?.(host)
+            : pluginCtx.inject(services, callback),
         systemPrompt: pluginCtx.systemPrompt,
         skills: pluginCtx.skills,
         on: pluginCtx.on.bind(pluginCtx),
         get: pluginCtx.get.bind(pluginCtx),
         tools: { register: (tool) => tools.push(tool) },
         connection: { rpc: { handle: (_route, handler) => { rpc = handler } } }
-      }, { root })
+      }
+      await apply(host, { root })
     }
   })
   await plugin
@@ -56,7 +66,7 @@ async function fixture(existingRoot) {
     await scope.ctx.plugin({
       inject: ['systemPrompt'],
       apply(c) {
-        c.systemPrompt.section({ name: 'deployment:persona', order: 0, text: 'My custom preset.', complete })
+        c.systemPrompt.section({ name: PERSONA_PREFIX_SECTION, order: 0, text: 'My custom preset.', complete })
       }
     })
     return instance

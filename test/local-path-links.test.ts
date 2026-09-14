@@ -39,10 +39,12 @@ describe('assistant local path links', () => {
     )
 
     expect(patch).toContain('localPathReference(value)')
-    expect(patch).toContain('paths ?? []')
     expect(patch).toContain('#L\\d+')
     expect(patch).toContain('[A-Za-z]:[\\\\/]')
-    expect(patch).toContain('owner.openFile')
+    // Upstream bails out of `forClosing` when the turn produced and presented
+    // nothing; the patch drops that guard so a mention still resolves against
+    // an empty deliverable set.
+    expect(patch).toContain('-\t\t\t\tif (paths === null && presented.length === 0) return void 0;')
   })
 
   it('resolves real local paths', async () => {
@@ -84,7 +86,7 @@ describe('assistant local path links', () => {
     for (const value of [
       './@scope/pkg',
       '/tmp/@scope/pkg/index.js',
-      'patches/@deepseek-ai+dsh-client-ui-deliverables+0.1.2-rc.1.patch',
+      'patches/@deepseek-ai+dsh-client-ui-deliverables+0.1.5-rc.2.patch',
       'node_modules/@foo/bar/lib/client.js',
     ]) {
       expect(localPathReference(value), value).toBe(value)

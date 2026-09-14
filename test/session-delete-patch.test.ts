@@ -8,47 +8,47 @@ import { describe, expect, it } from 'vitest'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
-// version tracks the patch-filename suffix; bumped per-entry as Task 5b migrates each patch to rc.1
+// version tracks the patch-filename suffix; every Harness upgrade renames all of them
 const patchedPackages = [
   {
     name: 'dsh-session-persistence',
-    version: '0.1.2-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
-    markers: ['assertDeletable(id)', 'async delete(id)', 'await this.backend.deleteStored(id)']
+    markers: ['does not support deletion', 'delete(_id, _options)', 'Permanently remove one stored Session identity']
   },
   {
     name: 'dsh-session-persistence-jsonl',
-    version: '0.1.2-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
-    markers: ['delete(id) {', 'return this.coordinator.delete(id)', 'async deleteStored(id)']
+    markers: ['async delete(id, options)', 'this.tracker.claimWrite(id)', 'this.coldLogMemo.delete(id)']
   },
   {
     name: 'dsh-workspace',
-    version: '0.1.2-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
     markers: ['forgetSession(sessionId)', 'archivedSessionIds: state.archivedSessionIds.filter']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.2-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/index.js',
     markers: ['disposeOwned(sessionId)', 'await persistence.delete(request.sessionId)', 'workspaceRegistry.forgetSession(request.sessionId)']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.2-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/client.js',
     markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'if (this.watched === sessionId) this.watched = void 0']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.2-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/typert.host.js',
     markers: ["id: '@deepseek-ai/dsh-api-session-controller#session/delete'", "method: 'delete'"]
   },
   {
     name: 'dsh-client-ui-workspace',
-    version: '0.1.2-rc.1',
+    version: '0.1.5-rc.2',
     file: 'lib/client.js',
     markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await sessions.delete(sessionId)']
   }
@@ -89,16 +89,29 @@ describe('permanent session deletion dependency patches', () => {
     const kept = SessionId('desktop-delete-kept')
     const event = [{ type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } }] as const
 
+    // 0.1.5 replaced the append/load seam with per-session handles: `create`
+    // hands back the single write handle, and `flush` is the durability
+    // barrier that materializes the artifact deletion has to find.
+    const seed = async (id: ReturnType<typeof SessionId>, createdAt: number): Promise<void> => {
+      const handle = await persistence.create({ version: SESSION_FORMAT_VERSION, id, createdAt, isSeeded: false })
+      try {
+        await handle.append(event)
+        await handle.flush()
+      } finally {
+        await handle.close()
+      }
+    }
+
     try {
-      await persistence.create({ version: SESSION_FORMAT_VERSION, id: removed, createdAt: 1, isSeeded: false })
-      await persistence.append(removed, event)
-      await persistence.create({ version: SESSION_FORMAT_VERSION, id: kept, createdAt: 2, isSeeded: false })
-      await persistence.append(kept, event)
+      await seed(removed, 1)
+      await seed(kept, 2)
 
       expect(await persistence.delete(removed)).toBe(true)
-      expect((await persistence.list()).map((header) => header.id)).toEqual([kept])
-      await expect(persistence.load(removed)).rejects.toThrow(/not found/i)
-      expect((await persistence.load(kept)).meta.id).toBe(kept)
+      expect((await persistence.list()).map((snapshot) => snapshot.header.id)).toEqual([kept])
+      expect(await persistence.stat(removed)).toBeUndefined()
+      expect((await persistence.stat(kept))?.header.id).toBe(kept)
+      // A second delete of the same id is a no-op, not a failure.
+      expect(await persistence.delete(removed)).toBe(false)
       expect(await persistence.delete(SessionId('desktop-delete-missing'))).toBe(false)
     } finally {
       await fiber.dispose()
