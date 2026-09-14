@@ -1,0 +1,11 @@
+{
+  // The layer-3 scaffold is plain Node code that the main config does not
+  // cover (it excludes `tests`), so a missing import there fails only at
+  // runtime — and only on the platform that happens to hit that line. A
+  // dropped `fileURLToPath` import shipped exactly that way: green locally,
+  // ENOENT on Windows CI.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "rootDir": "." },
+  "include": ["tests/web", "src"],
+  "exclude": ["lib", "src/client"]
+}

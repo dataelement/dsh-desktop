@@ -1,0 +1,750 @@
+/* Market section + install toast styles. Every color resolves through a
+ * --dsw-alias-* design token with the original light-mode literal as
+ * fallback. Interactive chrome (buttons, menus, dialogs, pills, inputs,
+ * disclosures) comes from @deepseek-ai/dsh-client-ui-primitives; this sheet
+ * only carries layout, cards, and the few bespoke surfaces without a
+ * primitive (progress bar, banners, tabs, swatches). */
+
+.root{height:100%;display:flex;flex-direction:column;min-width:0;color:var(--dsw-alias-label-primary,#1f2328);position:relative;container-type:inline-size}
+.head{display:flex;flex-direction:column;gap:12px;padding:4px 4px 6px}
+.title{font-size:16px;line-height:24px;font-weight:500;margin:0}
+.sub{display:flex;align-items:center;gap:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8b93a1);margin:0}
+.submitLink{font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8b93a1);text-decoration:none;white-space:nowrap}
+.submitLink:hover{color:var(--dsw-alias-brand-primary,#4f6ef7);text-decoration:underline}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb);align-items:flex-end}
+.tab{border:none;background:none;font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary,#6b7280);padding:7px 12px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.on{color:var(--dsw-alias-brand-primary,#4f6ef7);border-bottom-color:var(--dsw-alias-brand-primary,#4f6ef7);font-weight:600}
+/* Second-level tabs under "Advanced" — same button styling as .tabs so the
+   two read as one family, but no full-width bottom border of its own: that
+   border is what visually says "top-level tab row", and having two of them
+   stacked read as two unrelated tab bars rather than a parent/child pair. */
+.subTabs{display:flex;gap:2px;align-items:flex-end;margin:-4px 0 4px}
+.banner{display:flex;align-items:center;gap:8px;background:var(--dsw-alias-bg-layer-2,#fdf3e3);border:1px solid var(--dsw-alias-border-l2,#f3e3c3);border-radius:8px;padding:8px 12px;font-size:12px;margin:0}
+.bannerIcon{flex-shrink:0;color:var(--dsw-alias-label-secondary,#6b7280)}
+.bannerHint{display:inline-flex;color:var(--dsw-alias-label-tertiary,#8b93a1);cursor:help}
+/* overflow-anchor:none is load-bearing, not a tidy-up (#395 by @zhangyh-x:
+   "展开分类，滑动列表时会闪动"). Chrome anchors the scroll position to a node
+   below the viewport and silently rewrites scrollTop whenever content ABOVE
+   it changes height. The sticky header does exactly that on purpose: leaving
+   the top auto-collapses an expanded category row, which is ~120px. So the
+   first small scroll collapsed the row, Chrome moved scrollTop back by the
+   same 120px to keep the anchored card still, that put the viewport above
+   the sentinel again, the row re-expanded, and the cycle repeated for as
+   long as the user kept scrolling. Measured in Chrome at 1020x526 with the
+   row open: scrollTop 8 -> 134 -> 24 inside 30ms with the row flipping
+   146px <-> 26px each time; parking at scrollTop 20 was yanked back to 0.
+   With anchoring off, the same gesture collapses once and scrollTop stays
+   where the user put it.
+
+   Anchoring costs this list nothing to give up: every image it renders is
+   sized in CSS (.shot, .cardShot, .av), so nothing above the viewport
+   resizes on load, and the banners that can appear live outside this
+   scroller entirely. The one thing anchoring had left to compensate for was
+   the deliberate collapse — the one adjustment that must not happen. */
+.body{flex:1;overflow-y:auto;padding:12px 4px 24px;overflow-x:hidden;overflow-anchor:none}
+/* Sticky, so the search box and the category row both stay reachable while
+   the grid scrolls — they used to stick separately (only .cats did), which
+   left the search row to scroll away under .head's fixed title/tabs strip,
+   getting sliced off mid-scroll instead of disappearing cleanly. Wrapping
+   both in one sticky block makes them move (and stop) together; a second,
+   independently-offset sticky element would need its `top` hand-tuned to
+   the search row's rendered height, which drifts with locale/font/icon
+   changes — this doesn't need that number to exist at all.
+   The negative top margin used to pull it 12px up over the search row, and
+   with a background and z-index above it that covered the input's lower
+   edge — the control looked cut in half at rest, before any scrolling.
+   Only the horizontal bleed is wanted; the vertical one was collateral. */
+/* The scroller (.body) carries padding-top:12px, and a sticky child cannot
+   rise above its containing block — the parent's CONTENT box. So this row
+   stops 12px short of the scrollport and the grid scrolls through the strip
+   above it: measured on a real host as cats.top=214 against scroller.top=203.
+   Reported twice, first as "a big gap above the sticky row" and then as a
+   card clipped into it.
+   ::before paints that strip in the same background and inherits the row's
+   z-index, so the row covers what it cannot reach. Fixing it by removing the
+   scroller's padding would re-space all five tabs to repair one. */
+.stickyHead{position:sticky;top:-1px;z-index:5;background:var(--dsw-alias-bg-layer-2,#f7f8fa)}
+.stickyHead::before{content:'';position:absolute;left:0;right:0;bottom:100%;height:14px;background:inherit;pointer-events:none}
+.cats{padding:12px 4px 4px;margin:0 -4px 2px}
+.catsRow{display:flex;gap:8px;align-items:flex-start;position:relative}
+.star{font-size:11px;color:var(--dsw-alias-label-secondary,#9ca3af);flex:0 0 auto;white-space:nowrap}
+.top{position:absolute;right:18px;bottom:18px;z-index:20;display:inline-flex}
+.topBtn{width:38px;height:38px;border-radius:99px;padding:0}
+.tag{border:1px solid var(--dsw-alias-border-l3,#d9dde3);color:var(--dsw-alias-label-secondary,#6b7280);border-radius:4px;flex-shrink:0;padding:1px 6px;font-size:11px;line-height:16px}
+.okState{font-size:12px;font-weight:600;color:var(--dsw-alias-state-success-primary,#16a34a);white-space:nowrap}
+.catsWrap{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0;align-items:center}
+.catsCollapsed{max-height:62px;overflow:hidden}
+.catsToggle.catsToggle{height:26px;min-height:26px;padding:0 6px;color:var(--dsw-alias-label-secondary,#6b7280)}
+.shots{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;margin:6px 0 8px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+/* width, not just max-width — a slot with only a height reservation still
+   collapses to zero width until the image loads, so the strip snaps wider
+   the instant each one arrives instead of holding its place from the start. */
+.shot{width:220px;height:150px;flex:0 0 auto;object-fit:cover;border-radius:8px;border:1px solid var(--dsw-alias-border-default,#e5e7eb);background:var(--dsw-alias-bg-layer-2,#f3f4f6);cursor:pointer}
+.cardShots{display:flex;gap:6px;overflow-x:auto;padding:0 0 2px;margin:0 0 6px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+/* A fixed box so the strip holds its place: with width:auto the browser had
+   no aspect ratio until the bytes arrived, so each thumbnail rendered at its
+   min-width and jumped to height x natural-ratio once decoded.
+   `contain`, not `cover`: reserving the space is what fixes the jump, and
+   cropping to fill would throw away the uncropped thumbnail this strip was
+   built for. The letterbox shows through as the tile's own background. */
+.cardShot{width:132px;height:88px;flex:0 0 auto;object-fit:contain;border-radius:8px;
+          border:1px solid var(--dsw-alias-border-default,#e5e7eb);
+          background:var(--dsw-alias-bg-layer-2,#f3f4f6);cursor:pointer;display:block}
+/* Full-bleed overlay, not the Modal primitive — Modal is sized chrome
+   (title/description/footer) for making a decision, this is just an image
+   the user came to look at, no decision to make. */
+/* Above the Settings Modal it opens on top of — that Modal's own z-index
+   isn't defined in this package (its CSS module ships with the host app),
+   so this has to out-rank any plausible dialog layer, not just tie and win
+   on DOM order. */
+.lightbox{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out}
+.lightboxImg{max-width:90vw;max-height:85vh;object-fit:contain;border-radius:4px;cursor:default}
+.lightboxClose{position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:99px;border:none;background:rgba(255,255,255,.12);color:#fff;font-size:22px;line-height:1;display:grid;place-items:center;cursor:pointer}
+.lightboxClose:hover{background:rgba(255,255,255,.22)}
+.lightboxNav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:99px;border:none;background:rgba(255,255,255,.12);color:#fff;display:grid;place-items:center;cursor:pointer}
+.lightboxNav:hover{background:rgba(255,255,255,.22)}
+.lightboxPrev{left:16px}
+.lightboxNext{right:16px}
+.lightboxDots{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+.lightboxDot{width:7px;height:7px;border-radius:99px;background:rgba(255,255,255,.4);cursor:pointer}
+.lightboxDotOn{background:#fff}
+.cmd{font-size:11px;line-height:18px;background:var(--dsw-alias-bg-layer-2,#f3f4f6);border-radius:6px;padding:8px 10px;font-family:ui-monospace,Menlo,monospace;margin:8px 0 0;word-break:break-all}
+/* flex-wrap so a long warning + trailing link wraps like normal text — the
+   deprecated-plugin warning below (.depLine) is the same icon+text+link
+   shape and already gets this right; without it the trailing link is the
+   one flex item left with no room once the paragraph text wraps, and gets
+   squeezed into a vertical stack instead of dropping to its own line. */
+.warnLine{color:var(--dsw-alias-state-warn-primary,#b45309);font-weight:600;font-size:12px;line-height:18px;margin:0;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.modalNote{font-size:12px;color:var(--dsw-alias-label-tertiary,#8b93a1);line-height:18px;margin:12px 0 0;display:flex;align-items:center;gap:4px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:10px}
+/* Masonry: two independent columns, each packing its own cards tight.
+   A CSS grid cannot do this — its rows are as tall as their tallest cell, so
+   a card with screenshots left a matching hole beside a card without them,
+   and `align-items:start` turned that hole into visible dead space rather
+   than a stretched card. Column-major `column-count` would pack just as
+   well but reorders the list down one column and then the other, which
+   destroys the ranking the sort just produced. Dealing the cards
+   alternately into two flex columns keeps rank reading left-to-right,
+   top-to-bottom, and lets each column close its own gaps. */
+.masonry{display:flex;align-items:flex-start;gap:10px}
+.masonryCol{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+/* `.card` carries `align-self:start`, which under CSS grid means "do not
+   stretch VERTICALLY to match a taller row-mate". In a flex COLUMN the same
+   declaration addresses the other axis: it stops the card stretching
+   HORIZONTALLY, so its width becomes max-content and a card with a long
+   name grew to 444px inside a 273px column and covered the neighbouring
+   column's buttons. Same property, opposite meaning, silent either way.
+   Masonry needs the vertical freedom it already gets from the column stack,
+   so cards stretch to the column width here. min-width:0 is the flex
+   equivalent of the grid's `minmax(0, 1fr)`: without it a card's
+   min-content floor would push the column wide again. */
+/* Two class names, not one: `.card` sets `align-self:start` and is declared
+   later in this file, so a single-class selector here would tie on
+   specificity and lose to source order. */
+.masonry > .masonryCol > *{align-self:stretch;min-width:0}
+@media (max-width:680px){
+  /* Stacked, the cross axis is horizontal and `.masonry`'s align-items keeps
+     the column shrink-to-fit — so the single column has to claim the width
+     explicitly. Both tabs render through the same component, so this belongs
+     here rather than as an inline style on one of them. */
+  .masonry{flex-direction:column}
+  .masonryCol{width:100%}
+}
+@media (max-width:680px){
+  .grid{grid-template-columns:minmax(0,1fr)}
+}
+.swatches{display:flex;gap:0;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
+.themesGrid{margin-bottom:12px}
+.swatches i{flex:1}
+
+/* Themes are a visual choice, not a repository list. Their page therefore
+   owns a stable gallery instead of inheriting the generic masonry cards. */
+.themeToolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:0 4px 12px}
+/* border-box, not the sheet's default content-box: the primitives' Input
+   renders a span with 8px padding and a 1px border, so `width:100%` resolved
+   to the grid cell (438px) and then rendered 18px WIDER than it — straight
+   under the filter and full-screen buttons (#305 by @lcthe). The same class
+   on the Discover tab never showed it: that row is flex, and a flex item
+   shrinks to fit where a grid item does not. */
+.themeSearch{width:100%;min-width:0;box-sizing:border-box}
+.themeToolbarActions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.themeFullscreenBtn.themeFullscreenBtn{width:28px;min-width:28px;padding:0}
+.themeResultBar{display:flex;align-items:center;min-height:24px;padding:0 4px 8px;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;line-height:18px}
+.themeGallery{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:stretch;gap:10px}
+.themeCard{display:flex;flex-direction:column;min-width:0;overflow:hidden;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;background:var(--dsw-alias-bg-layer-1,#fff);transition:border-color 160ms cubic-bezier(.16,1,.3,1),box-shadow 160ms cubic-bezier(.16,1,.3,1),transform 160ms cubic-bezier(.16,1,.3,1)}
+.themeCard:hover{border-color:var(--dsw-alias-border-l3,#d9dde3);box-shadow:var(--dsw-shadow-lv1,0 4px 12px rgba(31,35,40,.08));transform:translateY(-1px)}
+.themeCover{position:relative;display:block;width:100%;aspect-ratio:16/10;overflow:hidden;padding:0;border:0;border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:0;background:var(--dsw-alias-bg-layer-2,#f3f4f6);color:var(--dsw-alias-label-secondary,#6b7280);cursor:zoom-in}
+.themeCover img{display:block;width:100%;height:100%;object-fit:contain;background:var(--dsw-alias-bg-layer-2,#f3f4f6);transition:transform 180ms cubic-bezier(.16,1,.3,1)}
+.themeCover:hover img{transform:scale(1.012)}
+.themeCover:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4f6ef7);outline-offset:-3px}
+.themeCoverEmpty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:default;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;line-height:18px}
+.themePreviewAction,.themePreviewCount{position:absolute;bottom:8px;display:inline-flex;align-items:center;height:24px;padding:0 8px;border:1px solid rgba(255,255,255,.34);border-radius:4px;background:rgba(20,24,31,.78);color:#fff;font-size:11px;line-height:16px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.themePreviewAction{right:8px;gap:4px}
+.themePreviewCount{left:8px}
+.themeCardBody{display:flex;flex:1;flex-direction:column;gap:8px;padding:12px}
+.themeCardHead{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.themeIdentity{min-width:0;flex:1}
+.themeStatus,.themeStatusMuted{flex:none;display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap}
+.themeStatus{background:var(--dsw-alias-state-success-tertiary,rgba(22,163,74,.1));color:var(--dsw-alias-state-success-primary,#15803d)}
+.themeStatusMuted{background:var(--dsw-alias-bg-layer-2,#f3f4f6);color:var(--dsw-alias-label-secondary,#6b7280)}
+.themeDescription{display:-webkit-box;min-height:36px;margin:0;overflow:hidden;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;line-height:18px;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+.themeCardFooter{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:4px}
+.themeLifecycle{min-width:0;overflow:hidden;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:11px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
+.themeActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-left:auto}
+
+/* The market usually lives inside a settings panel, so viewport media
+   queries do not describe the width available to it. Container queries do. */
+@container (max-width:900px){
+  .themeGallery{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@container (max-width:680px){
+  .themeGallery{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@container (max-width:460px){
+  .themeGallery{grid-template-columns:minmax(0,1fr)}
+}
+@container (max-width:420px){
+  .sub{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:2px 8px}
+  .sub > span:first-child{grid-column:1;grid-row:1}
+  .sub > .grow{display:none}
+  .submitLink{grid-column:1;grid-row:2}
+  .exportLogBtn{grid-column:2;grid-row:1 / span 2;flex-shrink:0}
+  .themeToolbar{grid-template-columns:minmax(0,1fr)}
+  .themeCardHead{flex-wrap:wrap}
+  .themeStatus,.themeStatusMuted{order:3}
+}
+@container (max-width:280px){
+  .themeCardFooter{align-items:flex-start;flex-direction:column}
+  .themeActions{width:100%;justify-content:flex-start;margin-left:0}
+}
+/* The host Settings dialog keeps a fixed navigation rail on phone-sized
+   viewports. Once that rail leaves less than a card's usable width, the
+   market becomes the only settings destination and keeps the host's own
+   close button in the content header. */
+@media (max-width:560px){
+  [role="dialog"]:has([data-dsh-market-root]) > nav{display:none}
+  [role="dialog"]:has([data-dsh-market-root]) > div{width:100%;min-width:0;flex:1 1 100%}
+}
+/* Explicit immersive mode: the normal Settings width remains the default,
+   while the user can opt into a Wallpaper-style multi-column gallery. */
+[role="dialog"]:has([data-dsh-market-fullscreen="true"]){position:fixed;inset:0;width:100vw;height:100vh;max-width:none;max-height:none;border-radius:0}
+@media (prefers-reduced-motion:reduce){
+  .themeCard,.themeCover img{transition:none}
+  .themeCard:hover{transform:none}
+}
+/* align-self:start so a short card doesn't stretch to match a tall
+   row-mate — CSS grid rows are equal-height by default, and a stretched
+   card with margin-top:auto on its footer used to fill that leftover
+   height as a blank band INSIDE the card, between the description and the
+   footer, reading as a layout bug rather than "this one's row-mate had a
+   longer description". Un-stretched, any leftover row height sits outside
+   the card as ordinary grid gutter instead. */
+.card{background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:12px;align-self:start}
+.row1{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.cardAction{flex-shrink:0;display:inline-flex;align-items:center}
+.installBtn.installBtn{min-width:64px}
+.av{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;font-size:9px;flex-shrink:0;object-fit:cover;background:var(--dsw-alias-bg-layer-2,#f3f4f6)}
+/* The plugin name carries the card, so it is the one thing sized up; the
+   author sits under it as a signature. Same reading order as a post
+   header — you take in who wrote it in one glance and spend the rest on
+   what it is. */
+.nm{font-weight:600;font-size:15px;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* display:block is load-bearing, not cosmetic. `.nm` clips with
+   overflow:hidden + text-overflow:ellipsis, and neither applies to an
+   INLINE box — so once the title became an <a> (it links to the repo), a
+   long name stopped ellipsizing and overflowed the card instead, landing on
+   top of the Install button and swallowing its clicks. Caught by the e2e
+   suite as "the name link intercepts pointer events". */
+.nmLink{display:block;color:inherit;text-decoration:none}
+.nmLink:hover{color:var(--dsw-alias-brand-primary,#4f6ef7);text-decoration:underline}
+/* The title has always opened the repo, but styled `color:inherit` with no
+   underline it looked like plain text, so nothing said so until the cursor
+   was already on it (#256). The GitHub mark is the standing affordance —
+   it names the destination before hover (#365). It rides the title's own
+   line rather than taking a row of its own; a second link to the same URL
+   would have cost every card ~20px of head, against the density the grid
+   was just tuned for. */
+.repoMark{color:var(--dsw-alias-label-secondary,#6b7280);flex-shrink:0;margin-left:5px;vertical-align:-1px;display:inline-block}
+.nmLink:hover .repoMark{color:var(--dsw-alias-brand-primary,#4f6ef7)}
+/* flex-wrap so a long owner name pushes the download/star counts to a
+   second line instead of squeezing the name itself toward unreadable: an
+   ellipsized span's own min-content width is 0 (overflow:hidden zeroes the
+   automatic minimum), so without `.owner`'s explicit min-width below, the
+   row never wraps — it just keeps shrinking the name past legibility while
+   the fixed-width counts stay whole. */
+.byline{display:flex;align-items:center;gap:6px;min-width:0;margin-top:2px;flex-wrap:wrap}
+/* Second line under the byline: the publish date, moved off the crowded
+   owner/downloads/stars row for visual balance (reported once downloads
+   joined stars on that line). */
+.meta{font-size:11px;color:var(--dsw-alias-label-secondary,#9ca3af);margin-top:2px}
+.metaInline{font-size:11px;color:var(--dsw-alias-label-secondary,#9ca3af)}
+/* The author name is the only variable-length part, so it is the only part
+   that shrinks; the counts stay whole because a truncated one is not a fact. */
+.owner{font-size:11px;color:var(--dsw-alias-label-secondary,#9ca3af);flex:0 1 auto;min-width:44px;
+       overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.desc{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8b93a1);margin:0}
+/* A FIXED 5-line slot (not just a cap): a one-line description reserves the
+   same 90px as a five-line one, so every card in a row starts its thumbnail
+   strip/footer at the same y — a clamp with no floor still let a short card
+   end early and a long one run to five lines, which read as the grid itself
+   being uneven (reported on a real host: several cards mid-row landing at
+   visibly different heights). The toggle in CardDesc removes this class, so
+   nothing here caps the expanded height. */
+/* A ceiling, not a fixed slot. The 90px floor existed to make CSS-grid rows
+   line up; masonry packs each column independently, so reserving five lines
+   for a one-line description now just wastes the space it was buying. */
+.descClamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.descToggle{display:flex;align-items:center;justify-content:center;width:20px;height:16px;margin-top:2px;
+            color:var(--dsw-alias-label-tertiary,#8b93a1);background:none;border:none;padding:0;cursor:pointer}
+.descToggle:hover{color:var(--dsw-alias-brand-primary,#4f6ef7)}
+.foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;row-gap:8px}
+.foot .metaInline,.foot .src{white-space:nowrap}
+.grow{flex:1}
+.titleRow{display:flex;align-items:center;gap:10px}
+/* Sits beside the heading so a screenshot of the page carries the
+   version — most reports arrive as a photo of the screen. Selectable
+   (not user-select:none) so it can also be copied into an issue. */
+.version{font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary,#8b93a1);font-variant-numeric:tabular-nums;flex-shrink:0}
+.repoLink{font-size:12px;line-height:20px;color:var(--dsw-alias-label-tertiary,#8b93a1);text-decoration:none;flex-shrink:0}
+.repoLink:hover{color:var(--dsw-alias-brand-primary,#4f6ef7)}
+/* The note row (#347). The user's own text reads as theirs — slightly
+   stronger than a catalog blurb, which is the point: it is the line they
+   wrote for themselves. The original/mine toggle stays quiet text, while
+   add/edit is a small outlined action: when both used the description's
+   tertiary text treatment, `备注` read like another word in the blurb
+   instead of something the user could press (#399). */
+.noteRow{display:flex;align-items:baseline;gap:6px;min-width:0;flex-wrap:wrap}
+.noteMine{color:var(--dsw-alias-label-primary,#1f2328)}
+.noteToggle{font:inherit;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8b93a1);background:0 0;border:none;padding:0;cursor:pointer;flex-shrink:0;white-space:nowrap}
+.noteToggle:hover{color:var(--dsw-alias-brand-primary,#4f6ef7);text-decoration:underline}
+.noteAction{display:inline-flex;align-items:center;color:var(--dsw-alias-label-primary,#1f2328);background:var(--dsw-alias-bg-layer-2,#f3f4f6);border:1px solid var(--dsw-alias-border-l3,#d9dde3);border-radius:4px;padding:0 5px;font-weight:600;text-decoration:none}
+.noteAction:hover{color:var(--dsw-alias-label-primary,#1f2328);border-color:var(--dsw-alias-brand-primary,#4f6ef7);text-decoration:none}
+.noteEdit{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;margin-top:2px}
+.noteInput{flex:1;min-width:160px}
+.descTight{min-height:0}
+.src{font-size:11px;color:var(--dsw-alias-label-secondary,#9ca3af);text-decoration:none}
+.src:hover{color:var(--dsw-alias-brand-primary,#4f6ef7)}
+.dot{margin-left:5px;vertical-align:2px}
+.act{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;flex-wrap:wrap}
+.actLive{color:var(--dsw-alias-state-success-primary,#16a34a);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.actWarn{color:var(--dsw-alias-state-warn-primary,#b45309);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.actBroken{color:var(--dsw-alias-state-error-primary,#dc2626);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+/* DisclosureRow compacted into the activation chip row. */
+.actWhy{margin-top:2px;color:var(--dsw-alias-label-secondary,#6b7280)}
+.loading{display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px;color:var(--dsw-alias-label-secondary,#9ca3af);font-size:13px}
+.spin{display:inline-flex;flex-shrink:0;color:var(--dsw-alias-brand-primary,#4f6ef7);animation:sp .8s linear infinite}
+/* Brand loading: the loose block plugs itself into the grid's empty corner
+   and springs back out. It is the mark's own story — a plugin arriving —
+   rather than a generic rotation, and it stays legible at 22px because the
+   moving part travels a full block-width against a still grid.
+   `transform-box: fill-box` makes the offsets below user units of THIS rect,
+   so they are the same (+1.28, -1.27) the static mark is drawn with. */
+.logoMark{display:inline-flex;flex-shrink:0;color:var(--dsw-alias-brand-primary,#4f6ef7)}
+.logoPlug{transform-box:fill-box;transform-origin:50% 50%;animation:dshmPlug 1.5s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes dshmPlug{
+  0%,12%{transform:rotate(9deg)}
+  45%,62%{transform:translate(-1.28px,1.27px) rotate(0)}
+  95%,100%{transform:rotate(9deg)}
+}
+/* Motion is the whole signal here, so with it suppressed the block still has
+   to say "working" — it breathes in place instead of sitting inert. */
+@media (prefers-reduced-motion: reduce){
+  .logoPlug{animation:dshmPlugFade 1.5s ease-in-out infinite}
+  .spin{animation:dshmPlugFade 1.5s ease-in-out infinite}
+}
+@keyframes dshmPlugFade{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes sp{to{transform:rotate(360deg)}}
+.progress{display:flex;align-items:center;flex-wrap:wrap;gap:9px;background:var(--dsw-alias-bg-layer-2,#f3f4f6);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:8px 12px;font-size:12px;margin:0;color:var(--dsw-alias-label-secondary,#6b7280)}
+.bar{width:100%;height:4px;border-radius:99px;background:var(--dsw-alias-border-l1,#e5e7eb);overflow:hidden}
+.barFill{height:100%;border-radius:99px;background:var(--dsw-alias-brand-primary,#4f6ef7);transition:width .6s ease}
+.barWave{width:30%;animation:dshmSlide 1.2s ease-in-out infinite}
+@keyframes dshmSlide{0%{margin-left:-30%}100%{margin-left:100%}}
+.irow .progress{margin-top:8px}
+.progress code{font-family:ui-monospace,Menlo,monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{color:var(--dsw-alias-label-secondary,#9ca3af);font-size:13px;padding:32px;text-align:center}
+.err{color:var(--dsw-alias-state-error-primary,#dc2626);font-size:12px;margin:8px 0;white-space:pre-wrap;word-break:break-all}
+/* Loader-id clash, rendered ON the card the user pressed Install on rather
+   than in the page-level .err banner: that banner is shared by a dozen
+   unrelated operations, so a failure reported there loses its connection to
+   the card that caused it as soon as a list is longer than a screen. */
+.cardBlocked{border-color:var(--dsw-alias-state-error-primary,#dc2626)}
+.conflictHead{display:flex;align-items:flex-start;gap:8px}
+.conflictIcon{flex-shrink:0;margin-top:1px;color:var(--dsw-alias-state-error-primary,#dc2626)}
+.conflictTitle{font-size:13px;font-weight:600;line-height:18px;color:var(--dsw-alias-state-error-primary,#dc2626)}
+.conflictBody{font-size:12px;line-height:19px;margin:0}
+/* One row per OWNER, not per id: the decision the user makes is which
+   plugins to uninstall, so the plugin name leads and the ids it clashes on
+   ride along as secondary evidence. */
+.roster{display:flex;flex-direction:column;gap:1px;border-radius:8px;overflow:hidden;
+        background:var(--dsw-alias-border-l2,#e5e7eb);border:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
+.rosterRow{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--dsw-alias-bg-layer-1,#fff)}
+.rosterMain{display:flex;flex-direction:column;min-width:0}
+.rosterName{font-size:12px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rosterAuthor{font-size:10.5px;color:var(--dsw-alias-label-secondary,#9ca3af);
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rosterTag{margin-left:auto;flex-shrink:0;font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:4px}
+.rosterTagKeep{color:var(--dsw-alias-state-success-primary,#16a34a);background:rgba(22,163,74,.12)}
+.rosterTagDrop{color:var(--dsw-alias-state-error-primary,#dc2626);background:rgba(220,38,38,.12)}
+/* The losing side is dimmed, so the outcome reads before any label does. */
+.rosterRowOut .rosterName{text-decoration:line-through}
+.rosterRowOut{opacity:.62}
+/* Separates the plugin being installed from the ones already there. */
+.rosterSplit{height:1px;background:var(--dsw-alias-border-l2,#e5e7eb)}
+.reassure{display:flex;align-items:center;gap:5px;font-size:11.5px;line-height:17px;
+          color:var(--dsw-alias-label-secondary,#6b7280);margin:0}
+.reassureOk{color:var(--dsw-alias-state-success-primary,#16a34a);flex-shrink:0}
+.conflictWhy{margin-top:2px;font-size:11px;line-height:17px;color:var(--dsw-alias-label-tertiary,#8b93a1);
+             font-family:ui-monospace,Menlo,monospace;overflow-wrap:anywhere}
+.conflictWhyText{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin-top:5px}
+/* The clash resolves to a choice between two outcomes, so the options carry
+   their own consequence text and the safe one is preselected. */
+.choices{display:flex;flex-direction:column;gap:7px}
+.choice{display:flex;gap:9px;align-items:flex-start;text-align:left;font:inherit;cursor:pointer;
+        padding:9px 11px;border-radius:9px;background:var(--dsw-alias-bg-layer-1,#fff);
+        border:1px solid var(--dsw-alias-border-l3,#d9dde3)}
+.choice:has(input:disabled){cursor:default;opacity:.6}
+.choiceOn{border-color:var(--dsw-alias-brand-primary,#4f6ef7);
+          background:var(--dsw-alias-bg-layer-2,#f5f7ff)}
+/* accent-color, not a redrawn control: the platform's own radio is the one
+   users recognise, and it keeps focus ring and arrow-key grouping. */
+.choiceRadio{flex-shrink:0;margin:2px 0 0;width:13px;height:13px;
+             accent-color:var(--dsw-alias-brand-primary,#4f6ef7)}
+.choiceMain{display:flex;flex-direction:column;gap:3px;min-width:0}
+.choiceTitle{font-size:12px;font-weight:600;line-height:17px}
+.choiceNote{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8b93a1)}
+.choiceSafe{color:var(--dsw-alias-state-success-primary,#16a34a)}
+
+/* --- activity entry + panel ---------------------------------------------
+   The entry sits in the tab row, so no amount of paginating, searching or
+   tab switching can take a record — or a pending decision — off screen.
+   That was the flaw of reporting an operation on the card that started it. */
+/* Status reads as the dot + tag pair the host's own plugin inventory uses,
+   so the two surfaces state the same fact the same way. Every occupant of
+   the trailing group is one pill height, which is what lets an enabled row
+   and a disabled one line up instead of drifting against each other. */
+.stateTag{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;min-height:20px;
+          border-radius:5px;padding:1px 7px;font-size:11px;line-height:16px;white-space:nowrap;
+          background:var(--dsw-alias-bg-layer-2,#f3f4f6);color:var(--dsw-alias-label-secondary,#6b7280)}
+.stateTag[data-on='true']{color:var(--dsw-alias-state-success-primary,#16a34a);
+                          background:color-mix(in srgb, var(--dsw-alias-state-success-primary,#16a34a) 10%, transparent)}
+.stateDot{width:6px;height:6px;flex:none;border-radius:999px;background:var(--dsw-alias-label-tertiary,#8b93a1)}
+.stateDot[data-on='true']{background:var(--dsw-alias-state-success-primary,#16a34a)}
+/* The update slot: a tag when there is nothing to do, a button when there is.
+   Bare text here left the slot shorter than its neighbour's button. */
+/* Shrinkable, unlike the buttons beside it: this slot holds the row's only
+   variable-length copy ("本地开发链接" / "Local dev link" is three times the
+   width of "已是最新"), and as an unshrinkable nowrap tag it pushed Uninstall
+   onto a second line (#234 by @Ztyss). The tag is the informational half of
+   the row and the buttons are the actionable half, so the tag is what gives
+   way — ellipsized, with the full text on hover. */
+.metaTag{display:inline-block;flex-shrink:1;min-width:0;max-width:100%;overflow:hidden;
+         text-overflow:ellipsis;min-height:20px;border-radius:5px;
+         padding:1px 7px;font-size:11px;line-height:18px;white-space:nowrap;
+         background:var(--dsw-alias-bg-layer-2,#f3f4f6);color:var(--dsw-alias-label-tertiary,#8b93a1)}
+.metaTagOk{color:var(--dsw-alias-state-success-primary,#16a34a);
+           background:color-mix(in srgb, var(--dsw-alias-state-success-primary,#16a34a) 10%, transparent)}
+.nameLink{color:inherit;text-decoration:none}
+/* Installed-row title only. The version is a fact the row exists to state,
+   so it never truncates; the name is the variable-length part and is the
+   only thing allowed to shrink and ellipsize (#257). Scoped to this row
+   rather than added to `.nm`, which six other surfaces share. */
+/* Wraps rather than truncates (#342, #343). A scoped package name is the
+   thing that tells two installed plugins apart — `@deepseek-ai/dsh-client-ui-…`
+   and `@dsh-external/dsh-sessi…` are both just prefixes — and an ellipsis
+   removes exactly the end that distinguishes them. Wrapping costs a line only
+   on the names long enough to need one, and the installed list is a masonry,
+   so a taller row does not push its neighbours around.
+   `anywhere` rather than `break-word`: these names have long unbroken runs
+   between the slash and the dashes, which `break-word` leaves overflowing. */
+.irowName{display:flex;align-items:baseline;gap:6px;min-width:0;overflow:visible;text-overflow:clip;flex-wrap:wrap}
+.irowNameText{min-width:0;overflow-wrap:anywhere;white-space:normal}
+.irowName>.owner{flex:0 0 auto}
+.nameLink:hover{color:var(--dsw-alias-brand-primary,#4f6ef7);text-decoration:underline}
+/* Lift the entry off the tab row's bottom rule — a pill button flush on the
+   divider reads as clipped, especially when export log sits one row above on
+   narrow viewports. */
+.opWrap{position:relative;display:inline-flex;flex-shrink:0;margin-bottom:6px}
+.opEntry{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;
+         padding:4px 10px;border-radius:7px;cursor:pointer;position:relative;white-space:nowrap;
+         color:var(--dsw-alias-label-primary,#1f2328);
+         background:var(--dsw-alias-bg-layer-1,#fff);
+         border:1px solid var(--dsw-alias-border-l3,#d9dde3)}
+/* Idle is not news: no border, no fill, nothing competing with the tabs. */
+.opEntryQuiet{border-color:transparent;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280)}
+.opEntryAlert{border-color:var(--dsw-alias-state-error-primary,#dc2626);color:var(--dsw-alias-state-error-primary,#dc2626)}
+.opDot{position:absolute;top:-3px;right:-3px;width:8px;height:8px;border-radius:99px;
+       background:var(--dsw-alias-state-error-primary,#dc2626)}
+.opPanel{position:absolute;top:calc(100% + 6px);right:0;z-index:40;width:460px;max-width:86vw;
+         max-height:70vh;overflow-y:auto;border-radius:12px;
+         background:var(--dsw-alias-bg-layer-1,#fff);
+         border:1px solid var(--dsw-alias-border-l3,#d9dde3);
+         box-shadow:0 20px 52px rgba(0,0,0,.28)}
+.opHead{display:flex;align-items:center;gap:8px;padding:9px 14px;
+        border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
+.opPanelTitle{font-size:12.5px;font-weight:600}
+.opCloseBtn.opCloseBtn{padding:0 6px;min-width:0;color:var(--dsw-alias-label-secondary,#6b7280)}
+.opAggregate{padding:9px 14px;border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb);
+             background:var(--dsw-alias-bg-layer-2,#f7f8fa)}
+.opAggregateTop{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.opAggregateHint{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#8b93a1);margin-top:4px}
+.opRow{display:flex;align-items:flex-start;gap:9px;padding:9px 14px;
+       border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
+.opRow:last-child{border-bottom:none}
+.opRowAlert{background:rgba(220,38,38,.06)}
+.opIcon{flex-shrink:0;margin-top:1px;width:14px;display:grid;place-items:center}
+.opQueuedIcon{color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px}
+.opMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.opTop{display:flex;align-items:baseline;gap:6px;min-width:0}
+.opVerb{font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280);flex-shrink:0}
+.opName{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opStatus{font-size:10.5px;line-height:16px;color:var(--dsw-alias-label-tertiary,#8b93a1);
+          overflow-wrap:anywhere}
+.opStatusBad{color:var(--dsw-alias-state-error-primary,#dc2626)}
+.opActions{flex-shrink:0;display:flex;align-items:center;gap:6px;margin-top:1px}
+.opDecision{margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:8px;
+            border-top:1px dashed var(--dsw-alias-border-l2,#e5e7eb)}
+.opDecisionFoot{display:flex;align-items:center;gap:8px}
+.conflictDetailsToggle{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:11px;
+                       cursor:pointer;padding:2px 0;border:none;background:none;
+                       color:var(--dsw-alias-label-tertiary,#8b93a1)}
+.conflictDetailsToggle:hover{color:var(--dsw-alias-label-secondary,#6b7280)}
+.opEmpty{padding:30px 14px;text-align:center;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}
+.opEmptyHint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b93a1);margin-top:4px}
+/* The card keeps a terminal marker for an install that ended without
+   installing: a card that looks untouched invites pressing Install again. */
+.cardBlockedMark{display:inline-flex;align-items:center;gap:5px;font:inherit;font-size:11px;
+                 cursor:pointer;padding:4px 9px;border-radius:7px;
+                 color:var(--dsw-alias-state-error-primary,#dc2626);
+                 background:rgba(220,38,38,.08);
+                 border:1px solid var(--dsw-alias-state-error-primary,#dc2626)}
+/* Destructive actions — uninstall, delete group, and the conflict swap.
+   Doubled selectors so these beat the primitive's own variant rules, the
+   same way .installBtn and .catsToggle do. */
+.dangerBtn.dangerBtn{color:var(--dsw-alias-state-error-primary,#dc2626);border-color:var(--dsw-alias-state-error-primary,#dc2626)}
+.dangerBtn.dangerBtn:hover:not(:disabled){background:var(--dsw-alias-state-error-primary,#dc2626);color:#fff}
+.dangerArmed.dangerArmed{background:var(--dsw-alias-state-error-primary,#dc2626);border-color:var(--dsw-alias-state-error-primary,#dc2626);color:#fff}
+.retryBtn{margin-top:4px}
+.irow{background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);
+      border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+/* Everything packs left. Pushing the trailing controls right — whether with
+   justify-content or an auto margin on the tag — made the switch's position
+   depend on whether its neighbour rendered 更新 or 已是最新, so the switch
+   sat at a different x on every row. Packed left, state and switch land at
+   the same place regardless of what follows them. */
+.irowActions{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex-wrap:wrap;min-width:0}
+/* The status tag and Uninstall travel together: nowrap so they never split
+   across lines, min-width:0 so the group can still shrink (the tag inside
+   ellipsizes) rather than forcing the whole row wider (#242). */
+.irowTrailing{display:inline-flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0}
+.irowMissing{filter:grayscale(1);opacity:.5}
+.irow>.src,.irow>.owner{white-space:nowrap;flex-shrink:0}
+.irow button{white-space:nowrap;flex-shrink:0}
+.tabSearchRow{display:flex;padding:0 4px 6px}
+.tabSearch{width:100%}
+/* Buttons sharing the row with a description must keep one line (#26, thanks @yanshuai2002) */
+.spec{font-size:11px;color:var(--dsw-alias-label-secondary,#9ca3af);font-family:ui-monospace,Menlo,monospace;overflow-wrap:anywhere;min-width:0}
+.specTag{display:inline-flex;align-items:center;height:16px;padding:0 5px;border-radius:4px;font-size:10px;font-weight:600;white-space:nowrap;flex-shrink:0}
+.specTagGit{color:#0b7285;background:rgba(18,163,196,.12)}
+.specTagFile{color:#b07d1b;background:rgba(240,180,41,.14)}
+.backupCheckList .grow{flex:1 1 70%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.backupCheckList .spec{flex:0 1 30%;max-width:30%;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.staleAction{margin-top:8px}
+.pct{font-weight:600;font-size:11px;flex-shrink:0;color:var(--dsw-alias-label-secondary,#6b7280)}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0 4px;flex-wrap:wrap}
+.pagerPages{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+.pageEllipsis{color:var(--dsw-alias-label-secondary,#9ca3af);font-size:12px;padding:0 2px}
+.pageInfo{font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280);white-space:nowrap}
+/* #60: per-plugin enable/disable switches, deprecation badges, custom groups */
+.depBadge{border:1px solid var(--dsw-alias-state-warn-primary,#b45309);color:var(--dsw-alias-state-warn-primary,#b45309);border-radius:4px;flex-shrink:0;padding:1px 6px;font-size:11px;line-height:16px;font-weight:600;white-space:nowrap;margin-left:6px}
+.deprecate{font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-primary,#b45309);background:var(--dsw-alias-bg-layer-2,#fdf3e3);border:1px solid var(--dsw-alias-border-l2,#f3e3c3);border-radius:8px;padding:8px 10px;margin:0}
+.deprecate a{color:var(--dsw-alias-state-warn-primary,#b45309);text-decoration:underline}
+.deprecate .src{margin-left:8px}
+.depLine{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.switch{position:relative;width:38px;height:22px;border-radius:99px;border:1px solid var(--dsw-alias-border-l2,#d9dde3);background:var(--dsw-alias-bg-layer-2,#e5e7eb);cursor:pointer;padding:0;flex-shrink:0;transition:background .15s ease,border-color .15s ease}
+.switchOn{background:var(--dsw-alias-state-success-primary,#16a34a);border-color:var(--dsw-alias-state-success-primary,#16a34a)}
+.switchMixed{background:var(--dsw-alias-state-warn-primary,#b45309);border-color:var(--dsw-alias-state-warn-primary,#b45309)}
+.switchKnob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:99px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s ease}
+.switchOn .switchKnob,.switchMixed .switchKnob{left:18px}
+.switch:disabled{opacity:.5;cursor:default}
+.viewBar{display:flex;gap:2px;align-items:center;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:2px;margin-bottom:12px;width:fit-content}
+.viewBtn{border:none;background:none;font:inherit;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#6b7280);padding:4px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.viewBtn:hover{color:var(--dsw-alias-brand-primary,#4f6ef7)}
+.viewOn{background:var(--dsw-alias-bg-layer-2,#eef0f4);color:var(--dsw-alias-label-primary,#1f2328);font-weight:600}
+.groupRow{background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.groupHead{display:flex;align-items:center;gap:10px;min-width:0}
+.groupName{font-weight:600;font-size:13px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.groupActions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.groupMembers{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.groupMember{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f7f8fa);font-size:12px;line-height:18px}
+.groupMember .nm{font-size:12px;flex:1;min-width:0}
+.groupAddPanel{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--dsw-alias-border-l2,#e5e7eb)}
+.groupCreate{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.inlineInput{flex:1;min-width:120px}
+.assignRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.assignSelect{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2328);border-radius:6px;padding:3px 6px;font:inherit;font-size:12px;line-height:18px}
+.groupHint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8b93a1)}
+.sectAction{margin:14px 2px 8px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#6b7280);display:flex;align-items:center;gap:8px}
+
+/* #61: profile backup & restore */
+.backupGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.backupCard{background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.backupCard h3{font-size:14px;margin:0}
+.backupCard p{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#6b7280);margin:0}
+.backupActions{display:flex;gap:8px;flex-wrap:wrap;position:relative}
+.hiddenFile{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.backupInput{width:100%;box-sizing:border-box}
+.backupCheck{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer}
+.backupWarn{color:var(--dsw-alias-state-warn-primary,#b45309)!important;font-size:12px;line-height:18px;margin:0}
+.backupMessage{grid-column:1/-1;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280)}
+.backupCheckList{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;margin:10px 0 4px;padding-right:4px}
+.backupCheckList .backupCheck{justify-content:space-between;gap:8px}
+
+/* #98: Diagnostics tab — profile composition check report.
+   The page fills the settings dialog's content height and scrolls INSIDE
+   itself (overflow-y:auto), so the outer dialog never overflows and its own
+   overflow-y:auto stays silent (no outer scrollbar). */
+.diagPage{display:flex;flex-direction:column;gap:12px;height:100%;min-height:0;overflow-y:auto}
+.diagSummary{display:flex;flex-wrap:wrap;align-items:center;gap:12px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:10px 14px;font-size:12px}
+.diagSummaryItem{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-secondary,#6b7280);white-space:nowrap}
+.diagSummaryMeta{color:var(--dsw-alias-label-tertiary,#9ca3af);font-family:ui-monospace,Menlo,monospace;font-size:11px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.diagSection{background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.diagSection h3{font-size:13px;font-weight:600;margin:0;color:var(--dsw-alias-label-primary,#1f2328)}
+.diagCount{font-size:11px;color:var(--dsw-alias-label-tertiary,#9ca3af);font-weight:400}
+.diagEmpty{color:var(--dsw-alias-label-secondary,#9ca3af);font-size:12px;padding:8px 0}
+.diagBundle{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--dsw-alias-border-l2,#f0f1f3);padding-top:8px}
+.diagBundle:first-of-type{border-top:none;padding-top:0}
+.diagRow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;line-height:18px;min-width:0}
+.diagMeta{display:flex;align-items:baseline;gap:8px;font-size:12px;min-width:0}
+.diagKey{color:var(--dsw-alias-label-tertiary,#9ca3af);font-size:11px;flex-shrink:0;min-width:64px}
+.diagVal{font-size:12px;font-weight:500;color:var(--dsw-alias-label-primary,#1f2328);font-family:ui-monospace,Menlo,monospace;overflow-wrap:anywhere;min-width:0}
+.diagIndex{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:9px;background:var(--dsw-alias-bg-layer-2,#f3f4f6);color:var(--dsw-alias-label-secondary,#6b7280);font-size:11px;font-weight:600;flex-shrink:0}
+.diagArrow{color:var(--dsw-alias-label-tertiary,#9ca3af);font-size:12px;flex-shrink:0}
+.diagBadgeOfficial{display:inline-flex;align-items:center;padding:0 8px;height:18px;border-radius:9px;background:var(--dsw-alias-brand-primary,#4f6ef7);color:#fff;font-size:11px;font-weight:600;flex-shrink:0}
+.diagBadgeCommunity{display:inline-flex;align-items:center;padding:0 8px;height:18px;border-radius:9px;background:var(--dsw-alias-bg-layer-2,#f3f4f6);color:var(--dsw-alias-label-secondary,#6b7280);font-size:11px;flex-shrink:0}
+.diagBadgeShadow{display:inline-flex;align-items:center;padding:0 8px;height:18px;border-radius:9px;background:var(--dsw-alias-state-error-primary,#dc2626);color:#fff;font-size:11px;font-weight:600;flex-shrink:0}
+.diagBadgeWarn{display:inline-flex;align-items:center;padding:0 8px;height:18px;border-radius:9px;background:var(--dsw-alias-state-warn-primary,#b45309);color:#fff;font-size:11px;font-weight:600;flex-shrink:0;white-space:nowrap}
+.diagBadgeInfo{display:inline-flex;align-items:center;padding:0 8px;height:18px;border-radius:9px;background:var(--dsw-alias-bg-layer-2,#f3f4f6);color:var(--dsw-alias-label-secondary,#6b7280);font-size:11px;flex-shrink:0;white-space:nowrap}
+.diagList{display:flex;flex-direction:column;gap:6px}
+
+/* #98 supplement: section overview line, overrides/orphans rows, drag ordering */
+.sectionOverview{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8b93a1);padding:2px 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.diagAlert{color:var(--dsw-alias-state-warn-primary,#b45309)}
+.ovRow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;line-height:18px;background:var(--dsw-alias-bg-layer-2,#f7f8fa);border-radius:8px;padding:6px 10px;min-width:0}
+.ovArrow{color:var(--dsw-alias-label-tertiary,#9ca3af);font-size:12px;flex-shrink:0}
+.ovByTag{display:inline-flex;align-items:center;padding:0 8px;height:18px;border-radius:9px;background:var(--dsw-alias-brand-primary,#4f6ef7);color:#fff;font-size:11px;font-weight:600;flex-shrink:0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ovFrom{color:var(--dsw-alias-label-secondary,#6b7280);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.orphRow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;line-height:18px;background:var(--dsw-alias-bg-layer-2,#f7f8fa);border-radius:8px;padding:6px 10px;min-width:0}
+.orphBadge{display:inline-flex;align-items:center;padding:0 8px;height:18px;border-radius:9px;background:var(--dsw-alias-state-warn-primary,#b45309);color:#fff;font-size:11px;font-weight:600;flex-shrink:0;white-space:nowrap}
+.dragHandle{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;color:var(--dsw-alias-label-tertiary,#9ca3af);cursor:grab;flex-shrink:0;user-select:none;font-size:12px;line-height:20px}
+.dragOver{outline:2px dashed var(--dsw-alias-brand-primary,#4f6ef7);outline-offset:2px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,#f0f2f8)}
+.dragging{opacity:.45;background:var(--dsw-alias-bg-layer-2,#f3f4f6)}
+
+/* #98 phase 3: collapsible snapshots & rollback panel */
+.collapseHead{display:flex;align-items:center;gap:8px;border:none;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary,#1f2328);padding:0;cursor:pointer;text-align:left;width:100%}
+.collapseIcon{display:inline-flex;flex-shrink:0;color:var(--dsw-alias-label-secondary,#6b7280)}
+.collapseTitle{flex:1;min-width:0}
+.collapseBody{display:flex;flex-direction:column;gap:10px;padding-top:10px;border-top:1px solid var(--dsw-alias-border-l2,#f0f1f3);margin-top:8px;min-width:0;overflow-wrap:anywhere}
+.orderPanel{display:flex;flex-direction:column;gap:10px;min-width:0}
+.panelNote{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#6b7280);margin:0}
+.panelActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.presetList{display:flex;flex-direction:column;gap:6px;min-width:0}
+.presetRow{display:flex;flex-direction:column;align-items:stretch;gap:6px;background:var(--dsw-alias-bg-layer-2,#f7f8fa);border-radius:8px;padding:8px 10px;font-size:12px;line-height:18px;min-width:0;max-width:100%}
+.presetName{font-weight:600;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.snapList{display:flex;flex-direction:column;gap:6px;min-width:0}
+.snapRow{display:flex;flex-direction:column;align-items:stretch;gap:8px;background:var(--dsw-alias-bg-layer-2,#f7f8fa);border-radius:8px;padding:10px 12px;font-size:12px;line-height:18px}
+.snapMeta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.snapConfirmText{font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-primary,#b45309);margin:0}
+.confirmRow{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* #98: AI-fix clipboard failure fallback — the built prompt as a selectable
+   text block, so the user can still copy it by hand. */
+.fixFallback{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+.fixFallbackText{width:100%;box-sizing:border-box;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:16px;color:var(--dsw-alias-label-primary,#1f2328);background:var(--dsw-alias-bg-layer-2,#f3f4f6);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:6px;padding:8px 10px;resize:vertical;white-space:pre-wrap;word-break:break-all}
+/* Plugin-configuration card (dsh >= rc.7). Drawn here rather than imported:
+   the section's own cards live in a package whose value import would fail
+   the client bundle-purity gate, so a card owns its appearance. Matches the
+   chrome of the built-in cards beside it. */
+/* The plugin configuration page dispatches a card and lets the plugin draw
+   it ("a plugin that ships a browser half owns its own card"). These mirror
+   the host's own PluginCard one for one — same tokens, same sizes — so the
+   market's card is indistinguishable from the rows above and below it. An
+   earlier version invented a flat, always-open box and stood out badly. */
+.setCard{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-3,#fff);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}
+.setCard:hover{border-color:var(--dsw-alias-label-dimmed,#c8ccd4)}
+.setCardOpen{background:var(--dsw-alias-bg-layer-2,#f7f8fa);border-color:var(--dsw-alias-label-dimmed,#c8ccd4)}
+.setHeader{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}
+.setHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4f6ef7);outline-offset:-2px}
+.setHeadText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}
+.setName{color:var(--dsw-alias-label-primary,#1f2328);font-size:15px;font-weight:600;line-height:1.4}
+.setDesc{color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:13px;line-height:1.5}
+.setChevron{color:var(--dsw-alias-label-tertiary,#8b93a1);flex:none;display:inline-flex;transition:transform .16s}
+.setChevronOpen{transform:rotate(180deg)}
+.setBody{border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);margin:0 16px;padding-bottom:8px}
+.setRow{display:flex;align-items:center;gap:12px;padding:12px 0}
+.setRow + .setRow{border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
+.setLabelBox{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.setLabel{font-size:13px;line-height:20px}
+.setHint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#8b93a1)}
+/* The confirm block is deliberately NOT a modal: the consequence copy has to
+   stay readable while the checkbox is being decided. */
+.setConfirm{border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);display:flex;flex-direction:column;gap:8px;padding:12px 0 4px}
+.setCheck{display:flex;align-items:center;gap:8px;font-size:12px;line-height:18px;cursor:pointer}
+.setActions{border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}
+.setDanger{color:var(--dsw-alias-state-error-primary,#dc2626)}
+/* A two-state segmented control rather than a switch: "stable / beta" is a
+   choice between two named things, and a toggle would force one of them to
+   be the unlabelled "off". */
+.setSeg{display:inline-flex;flex-shrink:0;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:2px;gap:2px}
+.setSegBtn{font:inherit;font-size:12px;line-height:18px;padding:3px 10px;border:none;border-radius:6px;background:0 0;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer}
+.setSegBtn:disabled{cursor:default;opacity:.5}
+.setSegOn{background:var(--dsw-alias-bg-layer-2,#eef0f4);color:var(--dsw-alias-label-primary,#1f2328);font-weight:600}
+.setBetaTag{margin-left:6px;padding:0 6px;border-radius:9px;font-size:11px;font-weight:600;line-height:17px;background:var(--dsw-alias-bg-module-platform,#eef0f4);color:var(--dsw-alias-label-secondary,#6b7280)}
+
+/* ---------------------------------------------------------- comments */
+/* Card footer entry point. Styled as the quiet sibling of .src, not as a
+   button: it competes with Install for attention otherwise, and Install is
+   what the card is for. */
+.commentsLink{background:none;border:0;padding:0;cursor:pointer;font-size:11px;line-height:16px;white-space:nowrap;color:var(--dsw-alias-label-secondary,#9ca3af)}
+.commentsLink:hover{color:var(--dsw-alias-brand-primary,#4f6ef7)}
+.commentsNote{font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary,#9ca3af);margin:0 0 8px}
+.commentsStatus{font-size:12px;color:var(--dsw-alias-label-secondary,#9ca3af);margin:0}
+.commentsStatus:empty{display:none}
+.commentsError{font-size:12px;color:var(--dsw-alias-label-primary,#1f2328);margin:0 0 8px}
+.commentsFail{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px 0}
+/* The iframe reports its own height once giscus has the thread. Holding room
+   until then keeps the modal from snapping open to full size a beat after the
+   reader has already started looking at it. */
+/* The host owns the dialog's width and does not let a plugin change it, so the
+   thread is fitted to that width rather than overflowing a box that clips.
+   giscus lays out fine this narrow — it is the width it uses on phones. */
+.commentsMount{width:100%;min-height:240px;max-height:56vh;overflow:auto}
+.commentsMount iframe{width:100%}
+/* Update-notes entry + dialog (#294). The entry is a text button, not a
+   Button component: it must read as content in the row's flow rather than as
+   an action competing with 更新/卸载 on the trailing edge. */
+.notesLink{display:block;background:0 0;border:none;padding:0;margin:2px 0 0;font:inherit;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;text-align:left}
+.notesLink:hover{color:var(--dsw-alias-label-primary,#1f2328)}
+.notesBody{display:flex;flex-direction:column;gap:8px;min-width:0}
+/* 弹窗内的层级：范围行弱化、区块标题小而重、正文有承载面 */
+.notesRange{display:flex;align-items:center;gap:8px;font-size:12px;line-height:18px;margin-bottom:4px}
+.notesArrow{color:var(--dsw-alias-label-tertiary,#8b93a1)}
+.notesMeta{font-size:12px;line-height:18px;letter-spacing:.02em;text-transform:uppercase;color:var(--dsw-alias-label-secondary,#6b7280);display:flex;gap:6px;flex-wrap:wrap;align-items:baseline;margin-top:12px}
+.notesPre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:20px;padding:10px 12px;background:var(--dsw-alias-bg-layer-2,#eef0f4);border-radius:8px;max-height:40vh;overflow:auto}
+.notesList{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:20px}
+/* markdown轻渲染的层级：标题、段落、行内代码 */
+.notesRendered{display:flex;flex-direction:column;gap:6px;min-width:0}
+.notesH{font-size:13px;font-weight:650;line-height:20px;margin-top:6px}
+.notesP{font-size:13px;line-height:20px}
+.notesCode{font-family:var(--dsw-alias-font-mono,ui-monospace,monospace);font-size:12px;padding:1px 5px;border-radius:5px;background:var(--dsw-alias-bg-layer-2,#eef0f4)}
+/* 列表行：日期一列弱化对齐，内容一列自适应换行 */
+.notesList{margin:0;padding:0;list-style:none;display:flex;flex-direction:column}
+.notesRow{display:flex;gap:12px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
+.notesRow:last-child{border-bottom:none}
+.notesDate{flex-shrink:0;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;font-variant-numeric:tabular-nums}
+.notesMsg{min-width:0;word-break:break-word;font-size:13px;line-height:20px}
+/* commit行：消息限高两行，短sha右对齐可点 */
+.notesMsg{min-width:0;word-break:break-word;font-size:13px;line-height:20px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.notesSha{margin-left:auto;flex-shrink:0;font-size:12px;color:var(--dsw-alias-label-secondary,#6b7280);text-decoration:none;font-variant-numeric:tabular-nums}
+.notesSha:hover{color:var(--dsw-alias-label-primary,#1f2328);text-decoration:underline}
+.notesVer{color:inherit;text-decoration:none;font-weight:600}
+.notesVer:hover{text-decoration:underline}

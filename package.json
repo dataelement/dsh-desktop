@@ -25,10 +25,12 @@
   "scripts": {
     "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "npm run build:market && electron-vite build",
+    "build:market": "tsc -p packages/dshmarket/tsconfig.json",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "loader:generate": "node scripts/generate-loader-gifs.mjs",
     "preview": "electron-vite preview",
+    "mock:enterprise": "node scripts/mock-bisheng-enterprise.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -270,10 +272,11 @@
     "@deepseek-ai/dsh-workspace": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "3.18.2",
     "dsh-desktop-client-ui": "file:packages/dsh-desktop-client-ui",
+    "dsh-desktop-enterprise": "file:packages/dsh-desktop-enterprise",
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
-    "dshmarket": "1.45.1",
+    "dshmarket": "file:packages/dshmarket",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",
     "pnpm": "10.34.5",
@@ -302,6 +305,14 @@
   "build": {
     "appId": "io.dsh.desktop",
     "productName": "DSH Desktop",
+    "protocols": [
+      {
+        "name": "DSH Desktop Enterprise Login",
+        "schemes": [
+          "dsh-desktop"
+        ]
+      }
+    ],
     "asar": false,
     "npmRebuild": false,
     "compression": "maximum",

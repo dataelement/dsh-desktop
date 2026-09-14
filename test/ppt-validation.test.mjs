@@ -22,7 +22,7 @@ afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true,
 afterEach(async () => { for (const dir of cleanups.splice(0)) await rm(dir, { recursive: true, force: true }) })
 
 async function fixture({ broken = true, malformed = false } = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'ppt-validation-'))
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'ppt-validation-')))
   cleanups.push(root)
   const workspace = path.join(root, 'workspace')
   const project = path.join(workspace, 'deck')
