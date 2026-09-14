@@ -416,7 +416,7 @@ describe('GitHub release contract', () => {
       workflow.match(
         /npm version --no-git-tag-version --allow-same-version "\$\{\{ github\.ref_name \}\}"/g
       )
-    ).toHaveLength(3)
+    ).toHaveLength(4)
   })
 
   it('signs and notarizes both macOS architectures on tag releases', async () => {
