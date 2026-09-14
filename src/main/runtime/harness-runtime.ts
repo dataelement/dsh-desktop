@@ -665,13 +665,14 @@ ${cause}`
   }
 
   /**
-   * Prefix a log line with milliseconds since this launch began. Only the file
-   * copy is stamped: `logLines` feeds recovery detection and failure-cause
+   * Prefix a log line with an ISO date and milliseconds since this launch began.
+   * Only the file copy is stamped: `logLines` feeds recovery detection and failure-cause
    * extraction, which match on the line text.
    */
   private stampLog(line: string): string {
-    if (this.launchClock === undefined) return line
-    const stamp = `+${String(Date.now() - this.launchClock).padStart(5)}ms `
+    const iso = new Date().toISOString()
+    const elapsed = this.launchClock !== undefined ? `+${String(Date.now() - this.launchClock).padStart(5)}ms ` : ''
+    const stamp = `[${iso}] ${elapsed}`
     return line.startsWith('\n') ? `\n${stamp}${line.slice(1)}` : `${stamp}${line}`
   }
 
