@@ -67,9 +67,12 @@ PPT is preinstalled, and its automatic instructions apply only to sessions where
 
 ## Phone access
 
-Choose **Connect Phone…** from the `Harness` menu and scan the pairing code. The desktop asks you to approve the connection before the phone can access sessions.
+Choose **Connect Phone…** from the `Harness` menu and scan the pairing code.
 
-Harness itself remains on a random `127.0.0.1` port. Phone access uses a separate paired bridge. It can stay on the local network or, when you choose remote access, use a temporary Cloudflare Quick Tunnel. Disconnecting the phone from the desktop invalidates the mobile session.
+- On Wi-Fi, scanning connects immediately.
+- Over the internet tunnel, the phone enters a 6-digit pairing password shown only on the computer. By default the password is temporary (5 minutes, memory only). A durable password is created only after you opt in on the Connect Phone window.
+
+Harness itself remains on a random `127.0.0.1` port. Phone access uses a separate paired bridge. Cloudflare Quick Tunnel is the usual long-lived remote path. Free Pinggy is the fallback when Cloudflare is unavailable (for example in mainland China) and expires after about 60 minutes. Disconnecting the phone from the desktop invalidates the mobile session.
 
 If Cloudflare fails to start, the app tries Pinggy. If a Cloudflare pairing link appears but your phone cannot open it, choose **Can’t open? Try another link** to switch to Pinggy.
 
@@ -94,7 +97,7 @@ open -a "DSH Desktop" --args --safe-mode
 - Webviews, untrusted in-app navigation, and unexpected permission requests are blocked.
 - External web links open in the system browser.
 - User profiles and sessions live under Electron's per-user application data directory, not inside the installed app.
-- Phone access requires a short-lived pairing token and explicit desktop approval.
+- Phone access requires a short-lived pairing token. Wi-Fi connects on scan; the internet tunnel also requires the pairing password shown on the computer.
 
 ## Platform support
 
