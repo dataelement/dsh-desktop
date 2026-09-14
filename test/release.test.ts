@@ -156,7 +156,7 @@ describe('GitHub release contract', () => {
       build: {
         artifactName: string
         extraResources: Array<{ from: string; to: string }>
-        win: { target: Array<{ target: string; arch: string[] }> }
+        win: { target: Array<{ target: string; arch: string[] }>; requestedExecutionLevel?: string }
         nsis: { artifactName: string; include: string }
         portable?: unknown
       }
@@ -210,6 +210,7 @@ describe('GitHub release contract', () => {
     )
     expect(packageJson.build.nsis.include).toBe('build/installer.nsh')
     expect(packageJson.build.win.target).toEqual([{ target: 'nsis', arch: ['x64'] }])
+    expect(packageJson.build.win.requestedExecutionLevel).toBe('asInvoker')
     expect(packageJson.build.portable).toBeUndefined()
   })
 

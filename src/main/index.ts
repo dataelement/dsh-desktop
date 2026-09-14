@@ -1105,13 +1105,31 @@ async function reportProfileConsistency(dshHome: string): Promise<void> {
     if (healed.length > 0) {
       runtime.note(`[desktop] auto-composed ${healed.length} missing bundle(s): ${healed.join(', ')}`)
     }
-    const findings = await inspectProfileConsistency(dshHome)
-    const store = await inspectStoreConsistency(dshHome)
-    if (store) findings.push(store)
-    for (const finding of findings) runtime.note(`[desktop] profile inconsistency: ${finding}`)
-  } catch {
-    // A profile that cannot be inspected is not a reason to refuse a launch.
+  } catch (error) {
+    runtime.note(
+      `[desktop] bundle healing skipped: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
   }
+
+  // Defer heavy recursive inspections of the profiles directory and package store
+  // so they run asynchronously without blocking the startup launch pipeline.
+  void Promise.all([
+    inspectProfileConsistency(dshHome),
+    inspectStoreConsistency(dshHome)
+  ])
+    .then(([findings, store]) => {
+      if (store) findings.push(store)
+      for (const finding of findings) runtime.note(`[desktop] profile inconsistency: ${finding}`)
+    })
+    .catch((error) => {
+      runtime.note(
+        `[desktop] profile consistency inspection failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    })
 }
 
 /**
@@ -1297,8 +1315,17 @@ function launchHarness(): Promise<void> {
     maintenanceAllowedRestoreId = undefined
     runtime.note('[desktop] profile maintenance done')
     await refreshMigrationRecoveryLock(dshHome)
-    await auditInstalledLaunchAgents(dshHome)
-    runtime.note('[desktop] LaunchAgent audit done')
+    void auditInstalledLaunchAgents(dshHome)
+      .then(() => {
+        runtime.note('[desktop] LaunchAgent audit done')
+      })
+      .catch((error) => {
+        runtime.note(
+          `[desktop] LaunchAgent audit failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+      })
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
     await runtime.start(launchDirectory)
 

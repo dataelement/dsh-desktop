@@ -401,6 +401,7 @@
     "win": {
       "icon": "build/icon.ico",
       "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker",
       "target": [
         {
           "target": "nsis",

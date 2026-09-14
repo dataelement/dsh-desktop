@@ -77,6 +77,12 @@
     Function .onVerifyInstDir
       ; Always pass — we create the directory in DshEnsureInstDirExists.
     FunctionEnd
+
+    ; Enable Win32 long paths (260+ char limit bypass) on Windows 10/11
+    ; to avoid ENOENT errors on deeply nested workspace or plugin paths.
+    !macro customInstall
+      WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
+    !macroend
   !endif
 !endif
 
