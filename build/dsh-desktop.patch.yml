@@ -21,6 +21,12 @@
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
 
+    # Word and Excel use the governed local Office runtime.
+    - id: dsh-office
+      name: dsh-office
+      config:
+        root: !!js dshHomePath('dsh-office')
+
     # DSH PPT owns one direct PPTD workflow and one standard Composer client.
     # The package contains no Tencent editor runtime or SlideP route.
     - id: dsh-ppt-composer

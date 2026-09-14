@@ -1,0 +1,15 @@
+# Code Mentor - Python Dependencies
+# These are optional enhancements for script functionality
+# The skill works perfectly without them!
+
+# For code analysis (analyze_code.py)
+pylint>=2.15.0
+
+# For testing (run_tests.py)
+pytest>=7.2.0
+
+# For better output formatting
+colorama>=0.4.6
+
+# Note: JavaScript testing requires Jest (install via npm)
+# npm install --save-dev jest

@@ -424,6 +424,31 @@ jobs:
               return $response.result.value
             }
 
+            function Invoke-PluginRpc([string]$channel, [string]$endpointName, [hashtable]$payload) {
+              $rpcId = [guid]::NewGuid().ToString()
+              $body = @{
+                type = 'client-request'
+                rpcId = $rpcId
+                method = $endpointName
+                payload = $payload
+              } | ConvertTo-Json -Depth 8 -Compress
+              $response = Invoke-RestMethod `
+                -Method Post `
+                -Uri "$endpoint$channel/$endpointName" `
+                -ContentType 'application/json; charset=utf-8' `
+                -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) `
+                -WebSession $harnessSession `
+                -TimeoutSec 30
+              if ($response.rpcId -ne $rpcId) { throw "Plugin RPC id mismatch for $channel/$endpointName." }
+              if (-not $response.result.ok) {
+                throw "Plugin RPC $channel/$endpointName failed: $($response.result.error.code): $($response.result.error.message)"
+              }
+              if ($response.result.value.status -ne 'ok') {
+                throw "Plugin RPC $channel/$endpointName rejected the request: $($response.result.value.error.message)"
+              }
+              return $response.result.value.data
+            }
+
             $workspacePath = Join-Path $env:RUNNER_TEMP '数据项素-工作区'
             New-Item -ItemType Directory -Force -Path $workspacePath | Out-Null
             $workspace = Invoke-HarnessRpc 'workspace/create' @{ path = $workspacePath }
@@ -431,6 +456,14 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($session.sessionId)) {
               throw 'Harness did not return a session id for the selected workspace.'
             }
+
+            $officeWord = Invoke-PluginRpc '/dsh-office' 'mode' @{ sessionId = $session.sessionId; mode = 'word' }
+            if ($officeWord.mode -ne 'word') { throw 'Packaged Office RPC did not select Word mode.' }
+            $pptSelected = Invoke-PluginRpc '/dsh-ppt' 'presentation/mode' @{ sessionId = $session.sessionId; mode = 'ppt' }
+            if ($pptSelected -ne $true) { throw 'Packaged PPT RPC did not select PPT mode.' }
+            $officePpt = Invoke-PluginRpc '/dsh-office' 'state' @{ sessionId = $session.sessionId }
+            if ($officePpt.mode -ne 'ppt') { throw 'Office and PPT RPC routes do not share the selected mode.' }
+            Write-Host 'Packaged Office and PPT RPC smoke test passed.'
 
             Start-Sleep -Seconds 20
             $stableLog = Get-Content -Raw $logPath

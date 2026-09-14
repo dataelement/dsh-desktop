@@ -7,6 +7,7 @@ import { validationSchema, validationReport, formatValidation } from "./validati
  */
 import { registerPreviewAssets } from "./preview-assets.js";
 import { previewFiles } from "./preview-manifest.js";
+import { registerHostRpcChannel } from "./host-rpc.js";
 import { definitions as DSH_PPT_TEMPLATE_DEFINITIONS, semantics as DSH_PPT_TEMPLATE_SEMANTICS } from "./catalog.js";
 import { i as renderPptdProject, n as loadPptdProject, o as recommendedTextCapacity, r as parsePptdProject, t as checkPptdProject } from "./pptd-2VqVzr_T.js";
 import z from "@deepseek-ai/schemastery";
@@ -758,7 +759,8 @@ var PptService = class {
 				state: {
 					...state,
 					selectedTemplateId: template.id,
-                    templateMigration: undefined,
+					documentMode: undefined,
+					templateMigration: undefined,
 					presentationMode: "ppt"
 				},
 				value: template,
@@ -772,7 +774,7 @@ var PptService = class {
 	}
 	selectPresentationMode(sessionId, active, actor) {
 		return this.mutate(sessionId, "select-presentation-mode", actor, (state) => {
-			const { presentationMode: _presentationMode, ...rest } = state;
+			const { presentationMode: _presentationMode, documentMode: _documentMode, ...rest } = state;
 			return {
 				state: active ? {
 					...rest,
@@ -782,6 +784,45 @@ var PptService = class {
 				summary: active ? "已进入 PPT 模式" : "已退出 PPT 模式",
 				facts: { mode: active ? "ppt" : "none" }
 			};
+		});
+	}
+	selectDocumentMode(sessionId, mode, actor) {
+		if (mode !== null && mode !== "word" && mode !== "excel") throw new PptError("invalid-request", "document mode must be word, excel or null");
+		return this.mutate(sessionId, "select-document-mode", actor, (state) => {
+			const { presentationMode: _presentationMode, documentMode: _documentMode, selectedDocumentTemplate: previousTemplate, ...rest } = state;
+			const selectedDocumentTemplate = mode === null || previousTemplate?.mode === mode ? previousTemplate : void 0;
+			return {
+				state: {
+					...rest,
+					...selectedDocumentTemplate === void 0 ? {} : { selectedDocumentTemplate },
+					...mode === null ? {} : { documentMode: mode }
+				},
+				value: true,
+				summary: mode === null ? "已恢复普通对话" : `已进入 ${mode === "word" ? "Word" : "Excel"} 模式`,
+				facts: { mode }
+			};
+		});
+	}
+	selectDocumentTemplate(sessionId, template, actor) {
+		if (template === null || typeof template !== "object") throw new PptError("invalid-request", "document template selection is required");
+		if (template.mode !== "word" && template.mode !== "excel") throw new PptError("invalid-request", "document template mode must be word or excel");
+		if (typeof template.id !== "string" || template.id.trim() === "" || template.id.length > 128) throw new PptError("invalid-request", "document template id is invalid");
+		if (typeof template.revision !== "string" || template.revision.trim() === "" || template.revision.length > 128) throw new PptError("invalid-request", "document template revision is invalid");
+		const selectedDocumentTemplate = { id: template.id, mode: template.mode, revision: template.revision };
+		return this.mutate(sessionId, "select-document-template", actor, (state) => {
+			const { presentationMode: _presentationMode, documentMode: _documentMode, ...rest } = state;
+			return {
+				state: { ...rest, documentMode: selectedDocumentTemplate.mode, selectedDocumentTemplate },
+				value: selectedDocumentTemplate,
+				summary: `已选择 ${selectedDocumentTemplate.mode === "word" ? "Word" : "Excel"} 案例 ${selectedDocumentTemplate.id}`,
+				facts: { templateId: selectedDocumentTemplate.id, revision: selectedDocumentTemplate.revision, mode: selectedDocumentTemplate.mode }
+			};
+		});
+	}
+	deselectDocumentTemplate(sessionId, actor) {
+		return this.mutate(sessionId, "deselect-document-template", actor, (state) => {
+			const { selectedDocumentTemplate: _selectedDocumentTemplate, ...next } = state;
+			return { state: next, value: true, summary: "已取消 Word / Excel 案例选择" };
 		});
 	}
 	deselectTemplate(sessionId, actor) {
@@ -1276,6 +1317,14 @@ function sessionKey(sessionId) {
 function safeName(value) {
 	return (value.normalize("NFKC").replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "presentation").slice(0, 96);
 }
+
+function persistedDocumentTemplate(value) {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return void 0;
+	if (value.mode !== "word" && value.mode !== "excel") return void 0;
+	if (typeof value.id !== "string" || value.id.trim() === "" || value.id.length > 128) return void 0;
+	if (typeof value.revision !== "string" || value.revision.trim() === "" || value.revision.length > 128) return void 0;
+	return { id: value.id, mode: value.mode, revision: value.revision };
+}
 /** Retired built-ins never re-enter the live catalog through persisted state. */
 function persistedState(value, sessionId) {
  const record = typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
@@ -1283,15 +1332,17 @@ function persistedState(value, sessionId) {
  const requested = legacySelection?.replace(/^kimi-(work|consulting)-curated-/, "dsh-$1-curated-");
  const selected = BUILT_IN_TEMPLATES.find(template => template.id === requested);
  const retired = requested !== undefined && selected === undefined;
- const fallback = BUILT_IN_TEMPLATES.find(template => template.id === "dsh-engineering-blueprint") ?? BUILT_IN_TEMPLATES[0];
- const selectedTemplateId = retired ? fallback.id : selected?.id;
- return {
+	 const fallback = BUILT_IN_TEMPLATES.find(template => template.id === "dsh-engineering-blueprint") ?? BUILT_IN_TEMPLATES[0];
+	 const selectedTemplateId = retired ? fallback.id : selected?.id;
+	 const selectedDocumentTemplate = persistedDocumentTemplate(record.selectedDocumentTemplate);
+	 return {
   sessionId, templates: BUILT_IN_TEMPLATES,
   // Preserve historical decks and generated files; they are user-owned records.
   decks: Array.isArray(record.decks) ? record.decks : [],
   activities: Array.isArray(record.activities) ? record.activities : [],
-  ...(record.presentationMode === "ppt" ? { presentationMode: "ppt" } : {}),
-  ...(selectedTemplateId === undefined ? {} : { selectedTemplateId }),
+	  ...(record.documentMode === "word" || record.documentMode === "excel" ? { documentMode: record.documentMode } : record.presentationMode === "ppt" ? { presentationMode: "ppt" } : {}),
+	  ...(selectedTemplateId === undefined ? {} : { selectedTemplateId }),
+	  ...(selectedDocumentTemplate === undefined ? {} : { selectedDocumentTemplate }),
   ...(retired ? { templateMigration: { reason: "template-retired", replacementId: fallback.id } } :
      record.templateMigration?.reason === "template-retired" ? { templateMigration: record.templateMigration } : {})
  };
@@ -3593,6 +3644,7 @@ const name = "dsh-ppt";
 /** Required host services. */
 const inject = [
 	"connection",
+	"webServer",
 	"tools",
 	"systemPrompt",
 	"skills"
@@ -3615,16 +3667,15 @@ async function apply(ctx, config) {
 		maxDecksPerSession: config.maxDecksPerSession ?? 50,
 		maxActivities: config.maxActivities ?? 200
 	}), { maxSlides: config.maxSlides ?? 40 });
-	// Harness 0.1.5 registers an RPC channel as a webServer route owned by the
-	// Context that read `connection`, and that Context must itself declare
-	// `webServer`. Registering from a scoped inject Context is upstream's own
-	// pattern; reading `ctx.connection` directly throws
-	// `cannot get property "webServer" without inject` and fails the whole tree.
-	ctx.inject(["webServer"], (webCtx) => {
-		webCtx.connection.rpc.handle("/dsh-ppt", pptRpc(service), { authority: "trusted-host" });
-		// Older loaded clients can finish their in-flight requests after upgrade.
-		webCtx.connection.rpc.handle("/kimi-ppt", pptRpc(service), { authority: "trusted-host" });
+	ctx.provide("officeModes", {
+		state: (sessionId) => service.state(sessionId),
+		select: (sessionId, mode) => service.selectDocumentMode(sessionId, mode, { kind: "user" }),
+		selectTemplate: (sessionId, template) => service.selectDocumentTemplate(sessionId, template, { kind: "user" }),
+		deselectTemplate: (sessionId) => service.deselectDocumentTemplate(sessionId, { kind: "user" })
 	});
+	registerHostRpcChannel(ctx, "/dsh-ppt", pptRpc(service));
+	// Older loaded clients can finish their in-flight requests after upgrade.
+	registerHostRpcChannel(ctx, "/kimi-ppt", pptRpc(service));
 	registerPptTools(ctx, service);
 }
 //#endregion

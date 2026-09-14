@@ -1,0 +1,94 @@
+{
+  "status": "PASS",
+  "scope": "macOS arm64 development package built from PR #424 code at 4488d73, based on main@4115a96, with bundled Office runtime",
+  "skillCount": 188,
+  "businessSkillCount": 186,
+  "toolCount": 17,
+  "businessResourceCount": 678,
+  "cataloguedResourcePackaging": "PASS",
+  "sameStyleSelection": {
+    "select": "PASS",
+    "deselect": "PASS",
+    "revisionBinding": "PASS",
+    "composerImageOnly": "PASS",
+    "pptVisualTreatment": "PASS",
+    "layoutOnlyContext": "PASS"
+  },
+  "examples": [
+    {
+      "id": "coffee-market",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": null,
+      "editRecalculation": null
+    },
+    {
+      "id": "equity-research",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": null,
+      "editRecalculation": null
+    },
+    {
+      "id": "annual-business",
+      "generatedFromReference": false,
+      "preview": "PASS",
+      "calculation": "PASS",
+      "editRecalculation": "PASS"
+    },
+    {
+      "id": "port-cargo",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": "PASS",
+      "editRecalculation": "PASS"
+    },
+    {
+      "id": "bio-assay",
+      "generatedFromReference": true,
+      "preview": "PASS",
+      "calculation": "PASS",
+      "editRecalculation": "PASS"
+    }
+  ],
+  "word": "create/edit/preview PASS",
+  "excel": "create/chart/edit/recalculate/preview PASS",
+  "runtime": "bundled Python/openpyxl and LibreOffice",
+  "packagedRpc": {
+    "status": "PASS",
+    "harnessVersion": "0.1.5-rc.2",
+    "calls": [
+      "/dsh-office/mode",
+      "/dsh-ppt/presentation/mode",
+      "/dsh-office/state"
+    ],
+    "transitions": [
+      "word",
+      "ppt"
+    ],
+    "sharedMode": "ppt"
+  },
+  "dmg": {
+    "file": "dsh-desktop-dev-mac-arm64.dmg",
+    "bytes": 359657799,
+    "sha256": "987ae442a3c74370cb8635aaeed39ed10ab99fe61c755781434f11c6bd21845f",
+    "hdiutilVerify": "PASS"
+  },
+  "zip": {
+    "file": "dsh-desktop-dev-mac-arm64.zip",
+    "bytes": 402990793,
+    "sha256": "ef72e5fc87f124b53af19fd119e1cafa8d02416db7dc45da53fbe47639879616",
+    "archiveTest": "PASS"
+  },
+  "liveModelAutonomy": "NOT_RUN",
+  "nativeOfficeSaveReopen": "NOT_RUN",
+  "nativeSameStyleUI": "NOT_RUN",
+  "governmentWritingSkill": {
+    "status": "PASS",
+    "name": "gov-doc-writing",
+    "version": "2.0.4",
+    "source": "user-provided WorkBuddy Skill package",
+    "sourceRevision": "d5106e88bb7d323f92a7f308489f993f13b83e03a997be68fa1edd0b41980542",
+    "platformComparisonSkillBundled": false
+  }
+}

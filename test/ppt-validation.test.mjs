@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto'
 import yaml from 'js-yaml'
 import { unzipSync } from 'fflate'
 import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
+import { callRpcRoute, rpcRouteFixture } from './helpers/rpc-route.mjs'
 
 let packageRoot, apply, cli
 const cleanups = []
@@ -37,19 +38,17 @@ async function fixture({ broken = true, malformed = false } = {}) {
   await writePages(broken)
   if (malformed) await writeFile(path.join(project, files[0]), 'elements: [\n')
   const tools = new Map()
-  let rpc
+  const { routes, connection, webServer } = rpcRouteFixture()
   const host = {
-    // The plugin scopes its webServer work under ctx.inject(['webServer'])
-    // (0.1.5 owns connection routes on the reading Context). Give the fake host
-    // the two members those callbacks touch so they run inertly.
     effect: (run) => { run?.(); return () => {} },
-    webServer: { register: () => () => {} },
-    inject: (services, callback) => {
-      if (services?.includes?.('webServer')) callback?.(host)
-    },
-    skills: { registerProvider() {} }, systemPrompt: { section() {} }, on() {},
+    webServer,
+	    inject: (services, callback) => {
+	      if (services?.includes?.('webServer')) callback?.(host)
+	    },
+	    provide() {},
+	    skills: { registerProvider() {} }, systemPrompt: { section() {} }, on() {},
     tools: { register: tool => tools.set(tool.name, tool) },
-    connection: { rpc: { handle: (_route, handler) => { rpc = handler } } }
+    connection
   }
   await apply(host, { root: path.join(root, 'storage') })
   const exec = { agent: { id: randomUUID(), session: { header: { cwd: workspace } } }, signal: new AbortController().signal }
@@ -59,7 +58,7 @@ async function fixture({ broken = true, malformed = false } = {}) {
     expect(validateJsonSchemaValue(tool.output.schema, value, 'value')).toEqual([])
     return { value, text: tool.output.render(args, value).map(c => c.text ?? '').join('\n') }
   }
-  return { root, workspace, project, exec, run, writePages, rpc }
+  return { root, workspace, project, exec, run, writePages, rpc: (method, payload) => callRpcRoute(routes, '/dsh-ppt', method, payload) }
 }
 
 describe('PPT validation authoring loop', () => {

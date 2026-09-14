@@ -98,6 +98,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 		const TEMPLATE_PANEL_MIN_HEIGHT_PX = 200;
 		const EMPTY_STATE = {
 			activeMode: null,
+            modeResolved: false,
 			loading: false,
 			templates: [],
 			selectedId: null,
@@ -126,6 +127,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
+                    modeResolved: true,
 					error: ""
 				}));
 			}
@@ -159,6 +161,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
+                    modeResolved: true,
 					loading: false,
 					selectedId: template.id,
                     notice: false,
@@ -169,6 +172,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
+                    modeResolved: true,
 					loading: false,
 					selectedId: null,
 					error: ""
@@ -398,8 +402,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			});
 		}
 		function selectPresentationMode(client, mode, sessionId, activeMode) {
-			mode.setMode(sessionId, activeMode);
-			client.call("presentation/mode", { mode: activeMode }).catch((reason) => {
+			mode.setLoading(sessionId, true);
+			client.call("presentation/mode", { mode: activeMode }).then(() => { mode.setLoading(sessionId, false); }).catch((reason) => {
 				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 			});
 		}
@@ -503,7 +507,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				if (!loadTemplates || state.loading || state.templates.length > 0 || state.error !== "") return;
 				mode.setLoading(sessionId, true);
 				loadTemplateState(client, t("templates.loadTimeout")).then((next) => {
-					const activeMode = mode.snapshot(sessionId).activeMode ?? (next.presentationMode === "ppt" ? "ppt" : null);
+					const current = mode.snapshot(sessionId);
+                    const activeMode = current.modeResolved ? current.activeMode : (next.presentationMode === "ppt" ? "ppt" : null);
 					mode.setTemplates(sessionId, next.templates);
 					if (activeMode === null) return;
 					mode.setMode(sessionId, activeMode);
@@ -856,6 +861,12 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				if (raw === null || typeof raw !== "object" || !("status" in raw)) throw new Error("Office PPT returned an invalid response");
 				const inner = raw;
 				if (inner.status === "error") throw new Error(inner.error.message);
+                if (["presentation/mode", "template/select", "template/deselect"].includes(endpoint)) {
+                    const snapshot = await rpc.call("/dsh-ppt", "state", { sessionId }, signal);
+                    if (!snapshot.ok || snapshot.value?.status !== "ok") throw new Error("Could not confirm the selected output format");
+                    const state = snapshot.value.data;
+                    window.dispatchEvent(new CustomEvent("dsh-document-mode-changed", { detail: { sessionId, mode: state.documentMode ?? (state.presentationMode === "ppt" ? "ppt" : null) } }));
+                }
 				return inner.data;
 			} };
 		}
@@ -875,6 +886,14 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), "dsh-ppt: dictionaries");
 			const connection = ctx.get("connection");
 			const mode = new OfficePptHeroStore();
+            ctx.effect(() => {
+                const change = event => {
+                    if (typeof event.detail?.sessionId !== "string") return;
+                    mode.setMode(event.detail.sessionId, event.detail.mode === "ppt" ? "ppt" : null);
+                };
+                window.addEventListener("dsh-document-mode-changed", change);
+                return () => window.removeEventListener("dsh-document-mode-changed", change);
+            }, "office-mode:sync");
 			return (sessionId) => ({
 				client: createOfficePptClient(connection.rpc, sessionId),
 				mode

@@ -11,6 +11,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SkillRegistry, isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
 import { PERSONA_PREFIX_SECTION, SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { apply } from 'dsh-ppt'
+import { callRpcRoute, rpcRouteFixture } from './helpers/rpc-route.mjs'
 
 const cleanups = []
 afterEach(async () => {
@@ -29,28 +30,25 @@ async function fixture(existingRoot) {
   const skills = ctx.plugin(SkillRegistry)
   await skills
   cleanups.push(() => skills.dispose())
-  let rpc
+  const { routes, connection, webServer } = rpcRouteFixture()
   const tools = []
   const plugin = ctx.plugin({
     inject: ['systemPrompt', 'skills'],
     async apply(pluginCtx) {
       const host = {
-        // The plugin scopes its webServer work under ctx.inject(['webServer'])
-        // (0.1.5 owns connection routes on the reading Context). This fixture
-        // has no webServer service, so run those callbacks on the same fake
-        // host — with the two members they touch — and delegate the rest.
         effect: (run) => { run?.(); return () => {} },
-        webServer: { register: () => () => {} },
-        inject: (services, callback) =>
-          services?.includes?.('webServer')
-            ? callback?.(host)
-            : pluginCtx.inject(services, callback),
-        systemPrompt: pluginCtx.systemPrompt,
+        webServer,
+	        inject: (services, callback) =>
+	          services?.includes?.('webServer')
+	            ? callback?.(host)
+	            : pluginCtx.inject(services, callback),
+	        provide: pluginCtx.provide.bind(pluginCtx),
+	        systemPrompt: pluginCtx.systemPrompt,
         skills: pluginCtx.skills,
         on: pluginCtx.on.bind(pluginCtx),
         get: pluginCtx.get.bind(pluginCtx),
         tools: { register: (tool) => tools.push(tool) },
-        connection: { rpc: { handle: (_route, handler) => { rpc = handler } } }
+        connection
       }
       await apply(host, { root })
     }
@@ -73,7 +71,7 @@ async function fixture(existingRoot) {
   }
 
   async function toggle(agent, active) {
-    const result = await rpc('presentation/mode', { sessionId: agent.id, mode: active ? 'ppt' : null })
+    const result = await callRpcRoute(routes, '/dsh-ppt', 'presentation/mode', { sessionId: agent.id, mode: active ? 'ppt' : null })
     expect(result.ok).toBe(true)
     expect(result.value.status).toBe('ok')
   }
@@ -90,7 +88,7 @@ async function fixture(existingRoot) {
     }
     return decision
   }
-  return { root, ctx, tools, agent, toggle, assemble, preStep, rpc: (...args) => rpc(...args) }
+  return { root, ctx, tools, agent, toggle, assemble, preStep, rpc: (method, payload) => callRpcRoute(routes, '/dsh-ppt', method, payload) }
 }
 
 function automaticMessages(agent) {
