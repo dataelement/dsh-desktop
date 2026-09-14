@@ -21,6 +21,10 @@
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
 
+    # One shared image tool for conversations and Office workflows.
+    - id: dsh-image-generation
+      name: dsh-image-generation
+
     # DSH PPT owns one direct PPTD workflow and one standard Composer client.
     # The package contains no Tencent editor runtime or SlideP route.
     - id: dsh-ppt-composer
