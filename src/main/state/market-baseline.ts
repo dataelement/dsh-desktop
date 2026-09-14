@@ -1,4 +1,4 @@
-import { lstat, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { healProfilesModuleFallback } from '@deepseek-ai/dsh-app-boot'
 import { listGenerations, readDesired, writeDesired } from 'dsh-desktop-market-installer/generations/registry'
@@ -56,7 +56,13 @@ export async function demoteMarketGeneration(
   const marketPath = join(dirname(manifestPath), 'node_modules', MARKET_PACKAGE)
 
   const owned = manifest.dsh?.desktop?.generationProjection?.plugins?.[MARKET_PACKAGE]
-  const linked = await lstat(marketPath).then((info) => info.isSymbolicLink()).catch(() => false)
+  const linked = await lstat(marketPath)
+    .then(async (info) => {
+      if (!info.isSymbolicLink()) return false
+      const target = await readlink(marketPath)
+      return target.includes('.generations')
+    })
+    .catch(() => false)
   const [desired, generations] = await Promise.all([readDesired(dshHome), listGenerations(dshHome)])
   const marketGenerations = new Set(
     generations.filter((generation) => generation.pluginName === MARKET_PACKAGE).map((generation) => generation.id)
@@ -127,11 +133,18 @@ export async function ensureMarketBaseline(
   const installed = await readInstalledPluginVersion(options.dshHome, 'dshmarket')
   // dshmarket must never be a generation (it is a core bundle the migration
   // keeps hoisted — see KEEP_IN_SHARED_TREE in generation-migration.ts). A
-  // symlinked entry forces a repair even when its version already reads as
-  // current, so a stray generation from an earlier build cannot linger.
-  const isGenerationLink = await lstat(
-    join(dirname(profilePackageJsonPath(options.dshHome)), 'node_modules', 'dshmarket')
-  ).then((info) => info.isSymbolicLink()).catch(() => false)
+  // generation link (pointing to .generations/live/…) forces a repair even
+  // when its version reads as current, so a stray generation from an earlier
+  // build cannot linger. A pnpm isolated-store symlink (pointing to .pnpm/…)
+  // is left alone: it is pnpm's normal representation in non-hoisted profiles.
+  const dshmarketPath = join(dirname(profilePackageJsonPath(options.dshHome)), 'node_modules', 'dshmarket')
+  const isGenerationLink = await lstat(dshmarketPath)
+    .then(async (info) => {
+      if (!info.isSymbolicLink()) return false
+      const target = await readlink(dshmarketPath)
+      return target.includes('.generations')
+    })
+    .catch(() => false)
   if (meetsBaseline(installed) && !isGenerationLink) return
 
   options.note?.(

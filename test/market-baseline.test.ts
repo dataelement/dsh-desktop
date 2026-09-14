@@ -70,10 +70,10 @@ describe('market baseline at normal startup', () => {
     // An earlier, buggy build left dshmarket projected as a generation link
     // instead of the real shared-tree directory it must always be.
     await rm(market, { recursive: true, force: true })
-    const generationDir = join(home, 'elsewhere-generation', 'node_modules', 'dshmarket')
-    await mkdir(generationDir, { recursive: true })
-    await writeFile(join(generationDir, 'package.json'), JSON.stringify({ name: 'dshmarket', version: VERIFIED_MARKET_BASELINE }))
-    await symlink(generationDir, market, 'junction')
+    const generationPackage = join(registryLayout(home).generations, 'live', 'dshmarket+test+aabb', 'node_modules', 'dshmarket')
+    await mkdir(generationPackage, { recursive: true })
+    await writeFile(join(generationPackage, 'package.json'), JSON.stringify({ name: 'dshmarket', version: VERIFIED_MARKET_BASELINE }))
+    await symlink(generationPackage, market, 'junction')
     expect((await lstat(market)).isSymbolicLink()).toBe(true)
 
     const upgrade = vi.fn(async () => {
@@ -87,6 +87,20 @@ describe('market baseline at normal startup', () => {
     expect((await lstat(market)).isSymbolicLink()).toBe(false)
     const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
     expect(manifest.dependencies['other-plugin']).toBe('1.0.0')
+  })
+
+  it('does not repair a pnpm isolated-store symlink pointing into .pnpm/', async () => {
+    const { home, market, options } = await fixture(VERIFIED_MARKET_BASELINE)
+    // Simulate pnpm isolated mode: node_modules/dshmarket is a symlink to .pnpm/…
+    const pnpmStoreDir = join(home, 'profiles', 'web', 'node_modules', '.pnpm', `dshmarket@${VERIFIED_MARKET_BASELINE}`, 'node_modules', 'dshmarket')
+    await mkdir(pnpmStoreDir, { recursive: true })
+    await writeFile(join(pnpmStoreDir, 'package.json'), JSON.stringify({ name: 'dshmarket', version: VERIFIED_MARKET_BASELINE }))
+    await rm(market, { recursive: true, force: true })
+    await symlink(pnpmStoreDir, market, 'junction')
+
+    const upgrade = vi.fn()
+    await ensureMarketBaseline(options, upgrade)
+    expect(upgrade).not.toHaveBeenCalled()
   })
 
   it.each(['1.45.1', '1.46.0', '2.0.0'])('does not reinstall or downgrade active %s', async (version) => {
