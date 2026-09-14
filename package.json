@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop",
-  "version": "0.1.1",
+  "version": "0.9.1-preview.sign-test",
   "description": "A cross-platform desktop shell for DeepSeek Harness.",
   "private": true,
   "type": "module",
@@ -321,7 +321,13 @@
       "node_modules/**/*",
       "package.json",
       "!**/*.map",
-      "!**/node_modules/@mistralai/mistralai/src/**"
+      "!**/node_modules/@mistralai/mistralai/src/**",
+      "!**/node_modules/caniuse-lite/**",
+      "!**/node_modules/browserslist/**",
+      "!**/node_modules/electron-to-chromium/**",
+      "!**/node_modules/update-browserslist-db/**",
+      "!**/node_modules/lodash/**",
+      "!**/node_modules/@malept/**"
     ],
     "extraResources": [
       {
