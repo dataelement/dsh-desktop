@@ -1,634 +1,18 @@
 #!/usr/bin/env node
+import { preparePreviewProject } from "./raster-preview-assets.js";
+import { resolveFontFace, resolveRunFonts } from "./font-family.js";
 import { wrapTextLines } from "./text-wrap.js";
+import { layoutRichText, scaleTextRuns } from "./rich-text-layout.js";
+import { hasSourceLayout } from "./source-layout.js";
 import { access, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
-import { RECOMMENDED_ZIP_LIMITS, buildPresentation, parseZip, serializePresentation } from "@aiden0z/pptx-renderer";
-import { JSDOM } from "jsdom";
+import { convertPptxToPptd } from "./pptx-converter.js";
 import yaml from "js-yaml";
 import sharp from "sharp";
 import PptxGenJSImport from "pptxgenjs";
 const MISPLACED_TEXT_STYLE_FIELDS = new Set(["fontFamily", "fontSize", "bold", "italic", "color", "lineHeight", "letterSpacing", "wrap", "align", "verticalAlign", "textDirection", "style"]);
-//#region src/pptd-convert.ts
-/** Bounded PPTX to PPTD v2 conversion used by the local CLI. */
-const CSS_PIXEL_TO_POINT = 72 / 96;
-function record$4(value) {
-	return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
-}
-const PRESET_COLORS = {
-	black: "000000",
-	white: "FFFFFF",
-	red: "FF0000",
-	green: "008000",
-	blue: "0000FF",
-	yellow: "FFFF00",
-	gray: "808080",
-	grey: "808080",
-	orange: "FFA500",
-	purple: "800080"
-};
-function childElement(element, localName) {
-	return element === void 0 ? void 0 : [...element.children].find((child) => child.localName === localName);
-}
-function descendantElement(element, localName) {
-	return element === void 0 ? void 0 : [...element.getElementsByTagNameNS("*", localName)][0];
-}
-function safeElement(value) {
-	return value?.element ?? void 0;
-}
-function themeForSlide(presentation, slideIndex) {
-	const layout = presentation.slideToLayout.get(slideIndex);
-	const master = layout === void 0 ? void 0 : presentation.layoutToMaster.get(layout);
-	const theme = master === void 0 ? void 0 : presentation.masterToTheme.get(master);
-	return theme === void 0 ? void 0 : presentation.themes.get(theme);
-}
-function resolvedTypeface(value, theme) {
-	if (value === void 0 || value === "") return void 0;
-	if (value.startsWith("+mj")) return theme?.majorFont.ea || theme?.majorFont.latin || "MiSans";
-	if (value.startsWith("+mn")) return theme?.minorFont.ea || theme?.minorFont.latin || "MiSans";
-	return value;
-}
-function applyLuminance(hex, colorNode) {
-	const luminanceModifier = Number(descendantElement(colorNode, "lumMod")?.getAttribute("val") ?? 1e5) / 1e5;
-	const luminanceOffset = Number(descendantElement(colorNode, "lumOff")?.getAttribute("val") ?? 0) / 1e5;
-	return [
-		0,
-		2,
-		4
-	].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).map((value) => Math.max(0, Math.min(255, Math.round(value * luminanceModifier + 255 * luminanceOffset))).toString(16).padStart(2, "0")).join("").toUpperCase();
-}
-function ooxmlColor(element, theme) {
-	if (element === void 0) return void 0;
-	const colorNode = [
-		"srgbClr",
-		"schemeClr",
-		"sysClr",
-		"prstClr"
-	].map((name) => descendantElement(element, name)).find((value) => value !== void 0);
-	if (colorNode === void 0) return void 0;
-	const name = colorNode.localName;
-	const raw = colorNode.getAttribute("val") ?? "";
-	const base = name === "srgbClr" ? raw : name === "schemeClr" ? theme?.colorScheme.get({
-		tx1: "dk1",
-		tx2: "dk2",
-		bg1: "lt1",
-		bg2: "lt2"
-	}[raw] ?? raw) : name === "sysClr" ? colorNode.getAttribute("lastClr") ?? raw : PRESET_COLORS[raw.toLowerCase()];
-	if (base === void 0 || !/^[0-9a-f]{6}$/iu.test(base)) return void 0;
-	const alpha = Number(descendantElement(colorNode, "alpha")?.getAttribute("val") ?? 1e5) / 1e5;
-	const opacity = Math.max(0, Math.min(255, Math.round(alpha * 255))).toString(16).padStart(2, "0").toUpperCase();
-	return `#${applyLuminance(base.toUpperCase(), colorNode)}${opacity === "FF" ? "" : opacity}`;
-}
-function convertedFill(value, theme) {
-	const fill = safeElement(value);
-	if (fill === void 0 || fill.localName === "noFill") return void 0;
-	if (fill.localName === "solidFill") {
-		const resolved = ooxmlColor(fill, theme);
-		return resolved === void 0 ? void 0 : {
-			type: "solid",
-			color: resolved
-		};
-	}
-	if (fill.localName === "gradFill") {
-		const stops = [...fill.getElementsByTagNameNS("*", "gs")].map((stop) => ({
-			position: Number(stop.getAttribute("pos") ?? 0) / 1e5,
-			color: ooxmlColor(stop, theme)
-		})).filter((stop) => stop.color !== void 0);
-		if (stops.length < 2) return void 0;
-		const pathNode = childElement(fill, "path");
-		const angle = Number(childElement(fill, "lin")?.getAttribute("ang") ?? 0) / 6e4;
-		return {
-			type: "gradient",
-			gradientType: pathNode === void 0 ? "linear" : "radial",
-			angle,
-			stops
-		};
-	}
-}
-function convertedBorder(value, theme) {
-	const line = safeElement(value);
-	if (line === void 0 || childElement(line, "noFill") !== void 0) return void 0;
-	const color = ooxmlColor(line, theme);
-	if (color === void 0 || color.endsWith("00")) return void 0;
-	const dashValue = childElement(line, "prstDash")?.getAttribute("val") ?? "solid";
-	return {
-		style: dashValue.includes("dot") ? "dot" : dashValue === "solid" ? "solid" : "dash",
-		width: Math.max(.1, Number(line.getAttribute("w") ?? 12700) / 12700),
-		color
-	};
-}
-function points(value) {
-	return Number((value * CSS_PIXEL_TO_POINT).toFixed(3));
-}
-function safeId(value, fallback) {
-	return (value.normalize("NFKC").replace(/[^A-Za-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || fallback).slice(0, 96);
-}
-function htmlEscape(value) {
-	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;");
-}
-function bounds(node, offsetX = 0, offsetY = 0) {
-	return [
-		points(node.position.x + offsetX),
-		points(node.position.y + offsetY),
-		points(node.size.w),
-		points(node.size.h)
-	];
-}
-function textRunStyle(properties, theme) {
-	const color = ooxmlColor(properties, theme);
-	const latin = descendantElement(properties, "latin")?.getAttribute("typeface") ?? void 0;
-	const fontFamily = resolvedTypeface((descendantElement(properties, "ea")?.getAttribute("typeface") ?? void 0) || latin, theme);
-	const fontSizeRaw = Number(properties?.getAttribute("sz"));
-	return {
-		...Number.isFinite(fontSizeRaw) && fontSizeRaw > 0 ? { fontSize: fontSizeRaw / 100 } : {},
-		...fontFamily === void 0 ? {} : { fontFamily },
-		...color === void 0 ? {} : { color },
-		...properties?.getAttribute("b") === "1" ? { bold: true } : {},
-		...properties?.getAttribute("i") === "1" ? { italic: true } : {}
-	};
-}
-function runMarkup(text, style) {
-	const declarations = [];
-	if (typeof style.color === "string") declarations.push(`color:${style.color}`);
-	if (typeof style.fontSize === "number") declarations.push(`font-size:${style.fontSize}px`);
-	if (typeof style.fontFamily === "string") declarations.push(`font-family:${style.fontFamily}`);
-	if (style.bold === true) declarations.push("font-weight:700");
-	if (style.italic === true) declarations.push("font-style:italic");
-	const escaped = htmlEscape(text).replaceAll("\n", "<br/>");
-	return declarations.length === 0 ? escaped : `<span style="${declarations.join(";")}">${escaped}</span>`;
-}
-function convertedText(node, textBody, theme) {
-	const body = safeElement(textBody?.bodyProperties);
-	const paragraphs = textBody?.paragraphs ?? [];
-	const firstParagraph = paragraphs[0];
-	const base = textRunStyle(safeElement(paragraphs.flatMap((paragraph) => paragraph.runs).find((run) => run.text.trim() !== "")?.properties), theme);
-	const paragraphAlignment = safeElement(firstParagraph?.properties)?.getAttribute("algn");
-	const horizontal = paragraphAlignment === "ctr" ? "center" : paragraphAlignment === "r" ? "right" : paragraphAlignment === "just" || paragraphAlignment === "dist" ? "justify" : "left";
-	const anchor = body?.getAttribute("anchor");
-	const vertical = anchor === "ctr" ? "middle" : anchor === "b" ? "bottom" : "top";
-	const markup = paragraphs.length === 0 ? (node.textBody?.paragraphs ?? []).map((paragraph) => `<p>${htmlEscape(paragraph.text).replaceAll("\n", "<br/>")}</p>`).join("") : paragraphs.map((paragraph) => {
-		const properties = safeElement(paragraph.properties);
-		const bullet = descendantElement(properties, "buChar")?.getAttribute("char") ?? (descendantElement(properties, "buAutoNum") === void 0 ? "" : "•");
-		const content = paragraph.runs.map((run) => runMarkup(run.text, textRunStyle(safeElement(run.properties), theme))).join("");
-		return `<p>${bullet === "" ? "" : `${htmlEscape(bullet)} `}${content}</p>`;
-	}).join("");
-	return {
-		markup,
-		content: {
-			fontFamily: typeof base.fontFamily === "string" ? base.fontFamily : theme?.minorFont.ea || theme?.minorFont.latin || "MiSans",
-			fontSize: typeof base.fontSize === "number" ? base.fontSize : 18,
-			color: typeof base.color === "string" ? base.color : "#000000",
-			align: [horizontal, vertical],
-			wrap: body?.getAttribute("wrap") !== "none",
-			text: markup
-		}
-	};
-}
-function lineElement(node, elementId, offsetX, offsetY, raw, theme) {
-	const width = Math.max(.001, points(node.size.w));
-	const height = Math.max(.001, points(node.size.h));
-	const flipHorizontal = node.flipH;
-	const flipVertical = node.flipV;
-	return {
-		elementId,
-		elementType: "line",
-		bounds: bounds(node, offsetX, offsetY),
-		viewBox: [width, height],
-		points: `${flipHorizontal ? width : 0},${flipVertical ? height : 0} ${flipHorizontal ? 0 : width},${flipVertical ? 0 : height}`,
-		border: convertedBorder(raw?.line, theme) ?? {
-			style: "solid",
-			width: 1,
-			color: "#000000"
-		},
-		...node.rotation === 0 ? {} : { rotation: node.rotation }
-	};
-}
-function shapeElements(node, elementId, offsetX, offsetY, raw, theme) {
-	if (node.presetGeometry === "line") return [lineElement(node, elementId, offsetX, offsetY, raw, theme)];
-	const fill = convertedFill(raw?.fill, theme);
-	const border = convertedBorder(raw?.line, theme);
-	const text = convertedText(node, raw?.textBody, theme);
-	const items = [];
-	if (fill !== void 0 || border !== void 0 || text.markup === "") items.push({
-		elementId: text.markup === "" ? elementId : `${elementId}-shape`,
-		elementType: "shape",
-		bounds: bounds(node, offsetX, offsetY),
-		shapeName: node.presetGeometry ?? "rect",
-		...fill === void 0 ? {} : { fill },
-		...border === void 0 ? {} : { border },
-		...node.rotation === 0 ? {} : { rotation: node.rotation },
-		...!node.flipH && !node.flipV ? {} : { flip: [node.flipH, node.flipV] }
-	});
-	if (text.markup !== "") items.push({
-		elementId: items.length === 0 ? elementId : `${elementId}-text`,
-		elementType: "text",
-		bounds: bounds(node, offsetX, offsetY),
-		...node.rotation === 0 ? {} : { rotation: node.rotation },
-		...!node.flipH && !node.flipV ? {} : { flip: [node.flipH, node.flipV] },
-		content: text.content
-	});
-	return items;
-}
-function mediaType$1(file, bytes) {
-	const extension = path.extname(file).toLowerCase();
-	if (extension === ".png" && bytes[0] === 137 && bytes[1] === 80) return "image/png";
-	if ((extension === ".jpg" || extension === ".jpeg") && bytes[0] === 255 && bytes[1] === 216) return "image/jpeg";
-	if (extension === ".gif" && Buffer.from(bytes.subarray(0, 3)).toString("ascii") === "GIF") return "image/gif";
-	if (extension === ".webp" && Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "WEBP") return "image/webp";
-	if (extension === ".svg" && Buffer.from(bytes.subarray(0, 512)).toString("utf8").includes("<svg")) return "image/svg+xml";
-}
-function normalizedRelationshipTarget(slidePath, target) {
-	if (target.startsWith("/")) return target.slice(1);
-	return path.posix.normalize(path.posix.join(path.posix.dirname(slidePath), target));
-}
-function chartValues(root, containerName) {
-	const container = root.getElementsByTagName(containerName)[0];
-	if (container === void 0) return [];
-	return [...container.getElementsByTagName("c:v")].map((node) => node.textContent ?? "");
-}
-function chartSeriesType(element) {
-	let current = element.parentElement;
-	while (current !== null) {
-		const name = current.localName;
-		if (name.endsWith("Chart")) {
-			if (name === "barChart") return "bar";
-			if (name === "lineChart") return "line";
-			if (name === "areaChart") return "area";
-			if (name === "pieChart" || name === "doughnutChart") return "pie";
-			if (name === "radarChart") return "radar";
-			if (name === "scatterChart") return "scatter";
-			if (name === "bubbleChart") return "bubble";
-		}
-		current = current.parentElement;
-	}
-}
-function chartContainer(element) {
-	let current = element.parentElement;
-	while (current !== null) {
-		if (current.localName.endsWith("Chart")) return current;
-		current = current.parentElement;
-	}
-}
-function convertedChart(node, xml, elementId, offsetX, offsetY, theme) {
-	const document = new DOMParser().parseFromString(xml, "application/xml");
-	if (document.querySelector("parsererror") !== null) return void 0;
-	const seriesNodes = [...document.getElementsByTagName("c:ser")];
-	if (seriesNodes.length === 0) return void 0;
-	const valueAxes = [...document.getElementsByTagName("c:valAx")];
-	const categoryAxis = [...document.getElementsByTagName("c:catAx")][0];
-	const categoryAxisReversed = descendantElement(categoryAxis, "orientation")?.getAttribute("val") === "maxMin";
-	const valueAxisIds = valueAxes.map((axis) => childElement(axis, "axId")?.getAttribute("val") ?? "");
-	const axisConfig = (axis) => {
-		const scaling = childElement(axis, "scaling");
-		const minimum = Number(childElement(scaling, "min")?.getAttribute("val"));
-		const maximum = Number(childElement(scaling, "max")?.getAttribute("val"));
-		const title = descendantElement(childElement(axis, "title"), "t")?.textContent?.trim();
-		return {
-			...Number.isFinite(minimum) ? { min: minimum } : {},
-			...Number.isFinite(maximum) ? { max: maximum } : {},
-			...title === void 0 || title === "" ? {} : { title }
-		};
-	};
-	const convertedAxes = valueAxes.map(axisConfig);
-	const outputSeries = [];
-	const valuesBySeries = [];
-	let categories = [];
-	for (const [index, seriesNode] of seriesNodes.entries()) {
-		const type = chartSeriesType(seriesNode);
-		if (type === void 0) return void 0;
-		const container = chartContainer(seriesNode);
-		const horizontal = type === "bar" && childElement(container, "barDir")?.getAttribute("val") === "bar";
-		const sourceCategoryValues = type === "scatter" || type === "bubble" ? chartValues(seriesNode, "c:xVal") : chartValues(seriesNode, "c:cat");
-		const categoryValues = horizontal && !categoryAxisReversed ? [...sourceCategoryValues].reverse() : sourceCategoryValues;
-		if (categoryValues.length > categories.length) categories = categoryValues;
-		const sourceValues = type === "scatter" || type === "bubble" ? chartValues(seriesNode, "c:yVal") : chartValues(seriesNode, "c:val");
-		const values = horizontal && !categoryAxisReversed ? [...sourceValues].reverse() : sourceValues;
-		valuesBySeries.push(values);
-		const name = chartValues(seriesNode, "c:tx")[0] ?? `Series ${index + 1}`;
-		const valueColumn = `series_${index + 1}`;
-		const seriesColor = ooxmlColor(childElement(seriesNode, "spPr") ?? seriesNode, theme);
-		const pointColors = [...seriesNode.getElementsByTagName("c:dPt")].map((point) => ({
-			index: Number(childElement(point, "idx")?.getAttribute("val") ?? 0),
-			color: ooxmlColor(point, theme)
-		})).filter((point) => point.color !== void 0).sort((left, right) => left.index - right.index).map((point) => point.color);
-		const dataLabels = descendantElement(container, "dLbls");
-		const showValue = descendantElement(dataLabels, "showVal")?.getAttribute("val") === "1";
-		const showPercent = descendantElement(dataLabels, "showPercent")?.getAttribute("val") === "1";
-		const grouping = childElement(container, "grouping")?.getAttribute("val");
-		const containerAxisIds = container === void 0 ? [] : [...container.children].filter((child) => child.localName === "axId").map((child) => child.getAttribute("val") ?? "");
-		const valueAxisIndex = valueAxisIds.findIndex((axisId) => containerAxisIds.includes(axisId));
-		outputSeries.push({
-			type,
-			encode: type === "pie" ? {
-				category: "category",
-				value: valueColumn
-			} : type === "radar" ? {
-				category: "category",
-				y: valueColumn
-			} : horizontal ? {
-				x: valueColumn,
-				y: "category"
-			} : {
-				x: "category",
-				y: valueColumn
-			},
-			name,
-			...pointColors.length > 0 && type === "pie" ? { fill: pointColors } : seriesColor === void 0 ? {} : type === "line" || type === "area" || type === "radar" ? { lineColor: seriesColor } : { fill: seriesColor },
-			...showValue || showPercent ? { dataLabels: {
-				show: true,
-				...showPercent ? { content: "percentage" } : {}
-			} } : {},
-			...valueAxisIndex > 0 && !horizontal ? { yAxisIndex: valueAxisIndex } : {},
-			...grouping === "stacked" ? { stack: "value" } : grouping === "percentStacked" ? { stack: "percent" } : {},
-			...type === "pie" && seriesNode.parentElement?.localName === "doughnutChart" ? { innerRadius: .5 } : {}
-		});
-	}
-	const length = Math.max(categories.length, ...valuesBySeries.map((values) => values.length));
-	const rows = Array.from({ length }, (_value, row) => [categories[row] ?? String(row + 1), ...valuesBySeries.map((values) => values[row] === void 0 || values[row] === "" ? null : Number(values[row]))]);
-	return {
-		elementId,
-		elementType: "chart",
-		bounds: bounds(node, offsetX, offsetY),
-		data: {
-			cols: ["category", ...valuesBySeries.map((_values, index) => `series_${index + 1}`)],
-			rows
-		},
-		series: outputSeries,
-		legend: outputSeries.length > 1,
-		fontFamily: "MiSans",
-		...outputSeries.some((item) => record$4(item.encode)?.y === "category") ? convertedAxes[0] === void 0 || Object.keys(convertedAxes[0]).length === 0 ? {} : { xAxis: convertedAxes[0] } : convertedAxes.length === 0 ? {} : { yAxis: convertedAxes.length === 1 ? convertedAxes[0] : convertedAxes }
-	};
-}
-function convertedTable(node, elementId, offsetX, offsetY, raw, theme) {
-	const columns = node.columns ?? [];
-	const rows = node.rows ?? [];
-	const totalWidth = columns.reduce((sum, value) => sum + value, 0) || 1;
-	const totalHeight = rows.reduce((sum, row) => sum + row.height, 0) || 1;
-	return {
-		elementId,
-		elementType: "table",
-		bounds: bounds(node, offsetX, offsetY),
-		columnWidths: columns.map((value) => Number((value / totalWidth).toFixed(6))),
-		rowHeights: rows.map((row) => Number((row.height / totalHeight).toFixed(6))),
-		rows: rows.map((row, rowIndex) => row.cells.map((cell, columnIndex) => {
-			const rawCell = raw?.rows[rowIndex]?.cells[columnIndex];
-			const properties = safeElement(rawCell?.properties);
-			const fillElement = [
-				"solidFill",
-				"gradFill",
-				"noFill"
-			].map((name) => childElement(properties, name)).find((value) => value !== void 0);
-			const lineElement = [
-				"ln",
-				"lnL",
-				"lnR",
-				"lnT",
-				"lnB"
-			].map((name) => childElement(properties, name)).find((value) => value !== void 0);
-			const text = convertedText({
-				...node,
-				textBody: {
-					paragraphs: [{
-						level: 0,
-						text: cell.text
-					}],
-					totalText: cell.text
-				}
-			}, rawCell?.textBody, theme);
-			const align = Array.isArray(text.content.align) ? text.content.align : void 0;
-			return {
-				text: cell.text,
-				...cell.gridSpan > 1 ? { colSpan: cell.gridSpan } : {},
-				...cell.rowSpan > 1 ? { rowSpan: cell.rowSpan } : {},
-				...fillElement === void 0 ? {} : { fill: convertedFill({ element: fillElement }, theme) },
-				...lineElement === void 0 ? {} : { border: convertedBorder({ element: lineElement }, theme) },
-				...typeof text.content.fontFamily === "string" ? { fontFamily: text.content.fontFamily } : {},
-				...typeof text.content.fontSize === "number" ? { fontSize: text.content.fontSize } : {},
-				...typeof text.content.color === "string" ? { color: text.content.color } : {},
-				...text.content.bold === true ? { bold: true } : {},
-				...text.content.italic === true ? { italic: true } : {},
-				...align === void 0 ? {} : { align }
-			};
-		}))
-	};
-}
-function yamlText(value) {
-	return yaml.dump(value, {
-		schema: yaml.JSON_SCHEMA,
-		noRefs: true,
-		lineWidth: -1,
-		sortKeys: false
-	});
-}
-function installDomParser() {
-	const previous = globalThis.DOMParser;
-	const window = new JSDOM("").window;
-	Object.defineProperty(globalThis, "DOMParser", {
-		configurable: true,
-		writable: true,
-		value: window.DOMParser
-	});
-	return () => {
-		window.close();
-		if (previous === void 0) Reflect.deleteProperty(globalThis, "DOMParser");
-		else Object.defineProperty(globalThis, "DOMParser", {
-			configurable: true,
-			writable: true,
-			value: previous
-		});
-	};
-}
-/** Convert one bounded PPTX package into an editable, self-contained PPTD v2 project. */
-async function convertPptxToPptd(bytes, fileName) {
-	const restoreDomParser = installDomParser();
-	try {
-		const files = await parseZip(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), RECOMMENDED_ZIP_LIMITS);
-		const presentation = buildPresentation(files);
-		const serialized = serializePresentation(presentation);
-		const diagnostics = [];
-		const pages = /* @__PURE__ */ new Map();
-		const assets = /* @__PURE__ */ new Map();
-		let sourceNodeCount = 0;
-		let outputElementCount = 0;
-		for (const slide of serialized.slides) {
-			const sourceSlide = presentation.slides[slide.index];
-			if (sourceSlide === void 0) continue;
-			const theme = themeForSlide(presentation, slide.index);
-			const output = [];
-			const convertNode = (node, offsetX = 0, offsetY = 0, rawNode) => {
-				sourceNodeCount += 1;
-				const elementId = safeId(node.name, `slide-${slide.index + 1}-node-${node.id}`);
-				if (node.nodeType === "group") {
-					diagnostics.push({
-						level: "normalized",
-						slide: slide.index + 1,
-						nodeId: node.id,
-						feature: "group",
-						message: "组合对象已展开为顺序 PPTD 元素。"
-					});
-					for (const child of node.children ?? []) convertNode(child, offsetX + node.position.x, offsetY + node.position.y);
-					return;
-				}
-				if (node.nodeType === "shape") {
-					const rawShape = rawNode?.nodeType === "shape" ? rawNode : void 0;
-					const elements = shapeElements(node, elementId, offsetX, offsetY, rawShape, theme);
-					output.push(...elements);
-					outputElementCount += elements.length;
-					if (rawShape?.customGeometry !== void 0 || descendantElement(safeElement(rawShape?.source), "effectLst") !== void 0) diagnostics.push({
-						level: "normalized",
-						slide: slide.index + 1,
-						nodeId: node.id,
-						feature: "shape-style",
-						message: "PPTX 形状保留几何、显式填充、边框和富文本；自定义几何或效果进入标准 PPTD 样式。"
-					});
-					return;
-				}
-				if (node.nodeType === "table") {
-					output.push(convertedTable(node, elementId, offsetX, offsetY, rawNode?.nodeType === "table" ? rawNode : void 0, theme));
-					outputElementCount += 1;
-					return;
-				}
-				if (node.nodeType === "chart" && node.chartPath !== void 0) {
-					const chartXml = files.charts.get(node.chartPath) ?? files.charts.get(node.chartPath.replace(/^\//u, ""));
-					const chart = chartXml === void 0 ? void 0 : convertedChart(node, chartXml, elementId, offsetX, offsetY, theme);
-					if (chart === void 0) diagnostics.push({
-						level: "unsupported",
-						slide: slide.index + 1,
-						nodeId: node.id,
-						feature: "chart",
-						message: "该 PPTX 图表没有可转换的缓存数据。"
-					});
-					else {
-						output.push(chart);
-						outputElementCount += 1;
-						diagnostics.push({
-							level: "normalized",
-							slide: slide.index + 1,
-							nodeId: node.id,
-							feature: "chart-style",
-							message: "PPTX 图表数据和类型已保留，复杂 OOXML 样式进入标准 PPTD 图表主题。"
-						});
-					}
-					return;
-				}
-				if (node.nodeType === "picture" && node.blipEmbed !== void 0) {
-					const rawPicture = rawNode?.nodeType === "picture" ? rawNode : void 0;
-					const relationship = sourceSlide.rels.get(node.blipEmbed);
-					const mediaPath = relationship === void 0 ? void 0 : normalizedRelationshipTarget(sourceSlide.slidePath, relationship.target);
-					const media = mediaPath === void 0 ? void 0 : files.media.get(mediaPath);
-					const type = mediaPath === void 0 || media === void 0 ? void 0 : mediaType$1(mediaPath, media);
-					if (mediaPath === void 0 || media === void 0 || type === void 0) {
-						diagnostics.push({
-							level: "unsupported",
-							slide: slide.index + 1,
-							nodeId: node.id,
-							feature: "picture",
-							message: "图片资源格式或关系无法转换。"
-						});
-						return;
-					}
-					const digest = createHash("sha256").update(media).digest("hex");
-					const extension = type === "image/jpeg" ? ".jpg" : type === "image/svg+xml" ? ".svg" : `.${type.slice(6)}`;
-					const assetPath = `media/${digest.slice(0, 24)}${extension}`;
-					assets.set(assetPath, {
-						path: assetPath,
-						mediaType: type,
-						bytes: media,
-						sha256: digest
-					});
-					output.push({
-						elementId,
-						elementType: "image",
-						bounds: bounds(node, offsetX, offsetY),
-						src: assetPath,
-						fit: { mode: "fill" },
-						...!node.flipH && !node.flipV ? {} : { flip: [node.flipH, node.flipV] },
-						...node.rotation === 0 ? {} : { rotation: node.rotation },
-						...rawPicture?.presetGeometry === void 0 || rawPicture.presetGeometry === "rect" ? {} : { cropShape: { shapeName: rawPicture.presetGeometry } },
-						...convertedBorder(rawPicture?.line, theme) === void 0 ? {} : { border: convertedBorder(rawPicture?.line, theme) }
-					});
-					outputElementCount += 1;
-					if (rawPicture?.crop !== void 0) diagnostics.push({
-						level: "normalized",
-						slide: slide.index + 1,
-						nodeId: node.id,
-						feature: "picture-crop",
-						message: "图片资源和边界已保留，OOXML 百分比裁剪进入 PPTD 填充模式。"
-					});
-					return;
-				}
-				diagnostics.push({
-					level: "unsupported",
-					slide: slide.index + 1,
-					nodeId: node.id,
-					feature: node.nodeType,
-					message: "该 PPTX 节点类型尚未映射到 PPTD。"
-				});
-			};
-			for (const node of slide.nodes) convertNode(node, 0, 0, sourceSlide.nodes.find((candidate) => candidate.id === node.id && candidate.nodeType === node.nodeType));
-			const pagePath = `pages/page-${slide.index + 1}.page`;
-			const backgroundContainer = safeElement(sourceSlide.background);
-			const backgroundFillElement = backgroundContainer === void 0 ? void 0 : [
-				"solidFill",
-				"gradFill",
-				"noFill"
-			].map((name) => descendantElement(backgroundContainer, name)).find((value) => value !== void 0);
-			const background = backgroundFillElement === void 0 ? void 0 : convertedFill({ element: backgroundFillElement }, theme);
-			pages.set(pagePath, yamlText({
-				pageType: slide.index === 0 ? "cover" : "content",
-				background: background ?? {
-					type: "solid",
-					color: "#FFFFFF"
-				},
-				elements: output
-			}));
-		}
-		return {
-			source: {
-				entryName: "deck.pptd",
-				manifest: yamlText({
-					version: "v2",
-					title: (serialized.slides[0]?.nodes.find((node) => node.textBody?.totalText.trim() !== "")?.textBody?.totalText.trim())?.split(/\r?\n/u)[0]?.slice(0, 160) || path.basename(fileName, path.extname(fileName)),
-					size: [points(serialized.width), points(serialized.height)],
-					theme: {
-						colors: {
-							primary: "#1F2937",
-							accent: "#2563EB",
-							text: "#111827",
-							muted: "#6B7280",
-							background: "#FFFFFF"
-						},
-						textStyles: {
-							title: {
-								fontFamily: "MiSans",
-								fontSize: 36,
-								bold: true,
-								color: "$text"
-							},
-							body: {
-								fontFamily: "MiSans",
-								fontSize: 18,
-								color: "$text"
-							}
-						}
-					},
-					pages: [...pages.keys()]
-				}),
-				pages,
-				assets
-			},
-			slideCount: serialized.slideCount,
-			sourceNodeCount,
-			outputElementCount,
-			extractedAssetCount: assets.size,
-			diagnostics
-		};
-	} finally {
-		restoreDomParser();
-	}
-}
-//#endregion
 //#region src/pptd-colors.ts
 /** Deterministic series palette used when a chart series omits an explicit color. */
 const PPTD_CHART_SERIES_PALETTE = [
@@ -801,22 +185,26 @@ function renderText$1(project, element, definitions) {
 		...typeof content.style === "string" && content.style.startsWith("$") ? record$2(themeMap$1(project, "textStyles")[content.style.slice(1)]) ?? {} : {},
 		...content
 	};
-	const fontSize = number$1(style.fontSize) ?? 18;
-	const lineHeight = number$1(style.lineHeightPx) ?? fontSize * (number$1(style.lineHeight) ?? 1.15);
 	const align = Array.isArray(style.align) ? style.align : [];
 	const anchor = align[0] === "center" ? "middle" : align[0] === "right" ? "end" : "start";
 	const startX = anchor === "middle" ? x + width / 2 : anchor === "end" ? x + width : x;
-	const lines = wrappedLines(plainText$1(string$1(content.text) ?? ""), width, fontSize, style.wrap !== false);
-	const totalHeight = Math.max(lineHeight, lines.length * lineHeight);
-	const startY = align[1] === "middle" ? y + (height - totalHeight) / 2 + fontSize : align[1] === "bottom" ? y + height - totalHeight + fontSize : y + fontSize;
-	const pair = record$2(style.fontFamily);
- const eastAsian = /[\u2e80-\u9fff\uf900-\ufaff]/u.test(string$1(content.text) ?? "");
- const ea = process.platform === "darwin" ? pair?.mac ?? pair?.ea : process.platform === "win32" ? pair?.win ?? pair?.ea : pair?.ea;
- const family = typeof style.fontFamily === "string" ? style.fontFamily : eastAsian ? string$1(ea) ?? "sans-serif" : string$1(pair?.latin) ?? "Arial";
+	const raw = string$1(content.text) ?? "";
+	const runs = /<[^>]+>/u.test(raw) ? richRuns(project, raw) : [{ text: raw, options: {} }];
+	const layout = layoutRichText(runs, style, width, height);
+	let top = align[1] === "middle" ? y + (height - layout.requiredHeight) / 2 : align[1] === "bottom" ? y + height - layout.requiredHeight : y;
+	const family = fontFace(style.fontFamily, "Arial", raw);
 	const opacity = number$1(element.opacity) ?? 1;
 	const clipId = definitions.next("text-clip");
 	definitions.definitions.push(`<clipPath id="${clipId}"><rect x="${x}" y="${y}" width="${Math.max(0, width)}" height="${Math.max(0, height)}"/></clipPath>`);
-	return `<g clip-path="url(#${clipId})"><text x="${startX}" y="${startY}" text-anchor="${anchor}" font-family="${escapeXml(family)}" font-size="${fontSize}" font-weight="${style.bold === true ? 700 : 400}" font-style="${style.italic === true ? "italic" : "normal"}" fill="${color(project, style.color)}" opacity="${opacity}"${transform(element, x, y, width, height)}>${lines.map((line, index) => `<tspan x="${startX}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`).join("")}</text></g>`;
+	const lines = layout.lines.map(line => {
+		const baseline = top + line.fontSize; top += line.height;
+		return `<text x="${startX}" y="${baseline}" text-anchor="${anchor}" font-family="${escapeXml(family)}" fill="${color(project, style.color)}">${line.runs.map(run => {
+			const options = run.options;
+			const fill = typeof options.color === "string" && /^[0-9a-f]{6}$/iu.test(options.color) ? `#${options.color}` : color(project, options.color);
+			return `<tspan font-size="${options.fontSize}" font-family="${escapeXml(fontFace(options.fontFace ?? style.fontFamily, family, run.text))}" font-weight="${options.bold ? 700 : 400}" font-style="${options.italic ? "italic" : "normal"}" fill="${fill}" letter-spacing="${number$1(options.letterSpacing) ?? 0}">${escapeXml(run.text)}</tspan>`;
+		}).join("")}</text>`;
+	}).join("");
+	return `<g clip-path="url(#${clipId})"><g opacity="${opacity}"${transform(element, x, y, width, height)}>${lines}</g></g>`;
 }
 function renderImage$1(project, element, definitions) {
 	const [x, y, width, height] = frame$1(element);
@@ -862,7 +250,7 @@ function renderTable$1(project, element) {
 				color: "#D1D5DB",
 				width: 1
 			})}/>`);
-			parts.push(`<text x="${cellX + cellWidth / 2}" y="${cellY + cellHeight / 2}" text-anchor="middle" dominant-baseline="middle" font-family="MiSans" font-size="${number$1(cell.fontSize) ?? 11}" fill="${color(project, cell.color)}">${escapeXml(plainText$1(string$1(cell.text) ?? ""))}</text>`);
+			parts.push(`<text x="${cellX + cellWidth / 2}" y="${cellY + cellHeight / 2}" text-anchor="middle" dominant-baseline="middle" font-family="${escapeXml(fontFace(cell.fontFamily, "Arial", string$1(cell.text) ?? ""))}" font-size="${number$1(cell.fontSize) ?? 11}" fill="${color(project, cell.color)}">${escapeXml(plainText$1(string$1(cell.text) ?? ""))}</text>`);
 			columnIndex += colSpan;
 		}
 	}
@@ -1046,8 +434,9 @@ function renderPptdPageSvg(project, pageIndex) {
 /** Render one PPTD page to PNG bytes through the bundled local SVG rasterizer. */
 async function renderPptdPagePng(project, pageIndex, scale = 2) {
 	if (!Number.isFinite(scale) || scale <= 0 || scale > 8) throw new Error("screenshot scale must be greater than 0 and at most 8");
-	const svg = renderPptdPageSvg(project, pageIndex);
-	const bytes = await sharp(Buffer.from(svg)).resize({ width: Math.round(project.width * scale) }).png().toBuffer();
+	const svg = renderPptdPageSvg(await preparePreviewProject(project, pageIndex, scale), pageIndex);
+	// Rasterize vectors at the requested density before the final pixel-size rounding.
+	const bytes = await sharp(Buffer.from(svg), { density: Math.max(1, Math.round(72 * scale)) }).resize({ width: Math.round(project.width * scale) }).png().toBuffer();
 	return new Uint8Array(bytes);
 }
 //#endregion
@@ -1303,6 +692,7 @@ const TEMPLATE_RELATIONSHIPS = new Set([
 const ELEMENT_BASE_FIELDS = [
 	"elementId",
 	"elementType",
+	"sourceLayout",
 	"bounds"
 ];
 const ELEMENT_FIELDS$1 = {
@@ -1800,23 +1190,10 @@ function textLayout(project, element) {
 	const bounds = tuple(element.bounds, 4);
 	const content = record$1(element.content);
 	if (bounds === void 0 || content === void 0 || typeof content.text !== "string" || plainText(content.text).trim() === "") return void 0;
-	const style = textStyle(project, content);
-	const fontSize = number(style.fontSize) ?? 18;
-	const inlineSizes = Array.from(content.text.matchAll(/font-size\s*:\s*(\d+(?:\.\d+)?)px/giu), (match) => Number(match[1]));
+	const style = { ...textStyle(project, content), ...hasSourceLayout(element) ? {} : { fit: "none" } };
 	const vertical = style.textDirection === "vertical";
-	const lineHeight = number(style.lineHeight);
-	const letterSpacing = number(style.letterSpacing);
-	const wrap = boolean(style.wrap);
-	return measureTextLayout({
-		text: plainText(content.text),
-		width: bounds[vertical ? 3 : 2] ?? 0,
-		height: bounds[vertical ? 2 : 3] ?? 0,
-		fontSize: Math.max(fontSize, ...inlineSizes),
-		bold: boolean(style.bold) === true || /<(?:b|strong)(?:\s|>)/iu.test(content.text),
-		...lineHeight === void 0 ? {} : { lineHeight },
-		...letterSpacing === void 0 ? {} : { letterSpacing },
-		...wrap === void 0 ? {} : { wrap }
-	});
+	const runs = /<[^>]+>/u.test(content.text) ? richRuns(project, content.text) : [{ text: content.text, options: {} }];
+	return layoutRichText(runs, style, bounds[vertical ? 3 : 2] ?? 0, bounds[vertical ? 2 : 3] ?? 0);
 }
 function localAssetPath(value) {
 	if (typeof value !== "string" || /^https?:\/\//iu.test(value)) return void 0;
@@ -1878,6 +1255,7 @@ function validTableGrid(element) {
 function checkElement(project, page, pageNumber, element, ids) {
 	const issues = [];
 	const context = elementContext(pageNumber, element);
+	if (element.sourceLayout !== undefined && (typeof element.sourceLayout !== "string" || !/^[a-f0-9]{64}$/.test(element.sourceLayout))) issues.push({ code: "source-layout", severity: "error", file: page.file, ...context, message: "源对象校验值应为有效的 SHA-256。" });
 	const id = string(element.elementId);
 	issues.push(...colorThemeIssues(project, element, page.file, pageNumber, id));
 	if (id === void 0 || id.trim() === "") issues.push({
@@ -1906,7 +1284,7 @@ function checkElement(project, page, pageNumber, element, ids) {
 	});
 	else if (x < 0 || y < 0 || x + width > project.width + .01 || y + height > project.height + .01) issues.push({
 		code: "out-of-bounds",
-		severity: "error",
+		severity: hasSourceLayout(element) ? "warning" : "error",
 		file: page.file,
 		...context,
 		message: "元素超出 PPTD 页面边界。"
@@ -1944,10 +1322,10 @@ function checkElement(project, page, pageNumber, element, ids) {
 		else {
 			const layout = textLayout(project, element);
 			if (layout?.overflow === true) {
-				const message = layout.horizontalOverflow ? `文本设置为不换行，但预计宽度 ${Math.ceil(layout.widestLine)}pt 超过文本框可用宽度 ${Math.floor(layout.availableLineWidth)}pt；请缩短文案或增大文本框。` : `文本预计需要 ${layout.lineCount} 行，当前文本框可容纳 ${layout.maxLineCount} 行；请缩短文案、增大文本框或拆分页面。`;
+				const message = layout.horizontalOverflow ? `文本预计宽度 ${Math.ceil(Math.max(...layout.lines.map(line => line.width)))}pt 超过文本框可用宽度 ${Math.floor(layout.availableLineWidth)}pt；请缩短文案或增大文本框。` : `文本预计需要 ${Math.ceil(layout.requiredHeight)}pt 高度，当前文本框高度为 ${Math.floor(layout.availableHeight)}pt；请缩短文案、增大文本框或拆分页面。`;
 				issues.push({
 					code: "text-overflow",
-					severity: "error",
+					severity: hasSourceLayout(element) ? "warning" : "error",
 					file: page.file,
 					...context,
 					message
@@ -2336,10 +1714,8 @@ function frame(element) {
 		h: inches(height)
 	};
 }
-function fontFace(value, fallback = "Arial") {
-	if (typeof value === "string") return value;
-	const font = record$1(value);
-	return string(font?.ea) ?? string(font?.latin) ?? fallback;
+function fontFace(value, fallback = "Arial", text = "") {
+	return resolveFontFace(value, fallback, text);
 }
 function inlineStyle(project, raw) {
 	const options = {};
@@ -2368,7 +1744,7 @@ function richRuns(project, value) {
 	for (const token of value.split(/(<[^>]+>)/gu)) {
 		if (token === "") continue;
 		if (!token.startsWith("<")) {
-			const decoded = plainText(token);
+			const decoded = token.replace(/&lt;/gu, "<").replace(/&gt;/gu, ">").replace(/&quot;/gu, "\"").replace(/&amp;/gu, "&");
 			if (decoded !== "") runs.push({
 				text: decoded,
 				options: { ...currentOptions() }
@@ -2406,7 +1782,7 @@ function richRuns(project, value) {
 			...currentOptions(),
 			...inlineStyle(project, style?.[1] ?? style?.[2])
 		};
-		if (tag === "strong") options.bold = true;
+		if (tag === "strong" || tag === "b") options.bold = true;
 		if (tag === "em") options.italic = true;
 		if (tag === "u") options.underline = { style: "sng" };
 		if (tag === "s") options.strike = "sngStrike";
@@ -2471,7 +1847,10 @@ function renderText(project, slide, element) {
 	const style = textStyle(project, content);
 	const align = Array.isArray(style.align) ? style.align : [];
 	const raw = string(content.text) ?? "";
-	const runs = /<[^>]+>/u.test(raw) ? richRuns(project, raw) : raw;
+	const sourceRuns = resolveRunFonts(/<[^>]+>/u.test(raw) ? richRuns(project, raw) : [{ text: raw, options: {} }], style.fontFamily);
+	const textBounds = tuple(element.bounds, 4) ?? [0, 0, 0, 0];
+	const scale = layoutRichText(sourceRuns, style, textBounds[2], textBounds[3]).fontScale;
+	const runs = scaleTextRuns(sourceRuns, scale);
 	const textColor = colorOptions(project, style.color).color;
 	const objectName = string(element.elementId);
 	const charSpacing = number(style.letterSpacing);
@@ -2481,8 +1860,9 @@ function renderText(project, slide, element) {
 	slide.addText(runs, {
 		...frame(element),
 		...objectName === void 0 ? {} : { objectName },
-		fontFace: fontFace(style.fontFamily, "MiSans"),
-		fontSize: number(style.fontSize) ?? 18,
+		fontFace: fontFace(style.fontFamily, "Arial", raw),
+		fontSize: (number(style.fontSize) ?? 18) * scale,
+		fit: style.fit === "shrink" ? "shrink" : "none",
 		color: textColor,
 		bold: boolean(style.bold) ?? false,
 		italic: boolean(style.italic) ?? false,
@@ -2775,7 +2155,7 @@ function renderTable(project, slide, element) {
 		const rowSpan = number(cell.rowSpan);
 		const colSpan = number(cell.colSpan);
 		const options = {
-			fontFace: fontFace(style.fontFamily, "MiSans"),
+			fontFace: fontFace(style.fontFamily, "Arial", string(cell.text) ?? ""),
 			fontSize: number(style.fontSize) ?? 10,
 			color: colorOptions(project, style.color).color,
 			bold: boolean(style.bold) ?? false,
@@ -2856,7 +2236,7 @@ function chartAxisOptions(project, element, horizontal = false) {
 	};
 }
 function renderChart(project, pptx, slide, element, foregroundColor) {
-	const data = record$1(element.data) ?? {};
+	const data = record(element.data) ?? {};
 	const columns = (Array.isArray(data.cols) ? data.cols : []).map((value) => String(value));
 	const rows = Array.isArray(data.rows) ? data.rows : [];
 	const columnIsNumeric = (column) => {
@@ -2869,11 +2249,11 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			return typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value));
 		});
 	};
-	const seriesDefaults = record$1(element.seriesDefaults) ?? {};
-	const xAxis = Array.isArray(element.xAxis) ? record$1(element.xAxis[0]) ?? {} : record$1(element.xAxis) ?? {};
-	const yAxes = Array.isArray(element.yAxis) ? element.yAxis.map(record$1).filter((item) => item !== void 0) : [record$1(element.yAxis) ?? {}];
+	const seriesDefaults = record(element.seriesDefaults) ?? {};
+	const xAxis = Array.isArray(element.xAxis) ? record(element.xAxis[0]) ?? {} : record(element.xAxis) ?? {};
+	const yAxes = Array.isArray(element.yAxis) ? element.yAxis.map(record).filter((item) => item !== void 0) : [record(element.yAxis) ?? {}];
 	const mergeSeries = (raw) => {
-		const defaults = record$1(seriesDefaults[string(raw.type) ?? ""]) ?? {};
+		const defaults = record(seriesDefaults[string(raw.type) ?? ""]) ?? {};
 		const merged = {
 			...defaults,
 			...raw
@@ -2888,8 +2268,8 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			"increaseBars",
 			"decreaseBars"
 		]) {
-			const base = record$1(defaults[key]);
-			const specific = record$1(raw[key]);
+			const base = record(defaults[key]);
+			const specific = record(raw[key]);
 			if (base !== void 0 || specific !== void 0) merged[key] = {
 				...base ?? {},
 				...specific ?? {}
@@ -2897,11 +2277,11 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 		}
 		return merged;
 	};
-	const series = (Array.isArray(element.series) ? element.series : []).map(record$1).filter((item) => item !== void 0).map(mergeSeries);
+	const series = (Array.isArray(element.series) ? element.series : []).map(record).filter((item) => item !== void 0).map(mergeSeries);
 	const types = [];
 	const mergeableGroups = /* @__PURE__ */ new Map();
 	for (const [index, item] of series.entries()) {
-		const encode = record$1(item.encode) ?? {};
+		const encode = record(item.encode) ?? {};
 		const chartTypeName = string(item.type) ?? "bar";
 		const xColumn = string(encode.x);
 		const yColumn = string(encode.y);
@@ -2911,7 +2291,7 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 		const categoryIndex = columns.indexOf(categoryColumn);
 		const valueIndex = columns.indexOf(valueColumn);
 		const selectedRows = (() => {
-			const filter = record$1(item.dataFilter);
+			const filter = record(item.dataFilter);
 			const filterColumn = string(filter?.col);
 			if (filterColumn === void 0) return rows;
 			const filterIndex = columns.indexOf(filterColumn);
@@ -2923,17 +2303,19 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
 		});
 		const values = filteredRows.map((row) => Number(row[valueIndex] ?? 0));
+		const numericXY = chartTypeName === "scatter";
+		const xValues = numericXY ? filteredRows.map((row) => Number(row[categoryIndex] ?? 0)) : void 0;
 		const type = chartTypeName === "line" ? pptx.ChartType.line : chartTypeName === "area" ? pptx.ChartType.area : chartTypeName === "scatter" ? pptx.ChartType.scatter : chartTypeName === "bubble" ? pptx.ChartType.bubble : chartTypeName === "radar" ? pptx.ChartType.radar : chartTypeName === "pie" && (number(item.innerRadius) ?? 0) > 0 ? pptx.ChartType.doughnut : chartTypeName === "pie" ? pptx.ChartType.pie : pptx.ChartType.bar;
 		const chartColors = (resolvePptdChartSeriesColors(project, chartTypeName === "line" || chartTypeName === "area" || chartTypeName === "radar" ? item.lineColor ?? item.areaColor : item.fill) ?? [PPTD_CHART_SERIES_PALETTE[index % PPTD_CHART_SERIES_PALETTE.length] ?? "#2563EB"]).map((value) => colorOptions(project, value, 1).color);
-		const labelsConfig = record$1(item.dataLabels);
+		const labelsConfig = record(item.dataLabels);
 		const showLabels = boolean(labelsConfig?.show) === true;
 		const showPercent = labelsConfig?.content === "percentage";
 		const dataLabelFontSize = number(labelsConfig?.fontSize);
 		const dataLabelColor = labelsConfig?.color === void 0 ? foregroundColor : colorOptions(project, labelsConfig.color).color;
 		const axisIndex = Math.max(0, Math.trunc(number(item.yAxisIndex) ?? 0));
 		const valueAxis = horizontal ? xAxis : yAxes[axisIndex] ?? yAxes[0] ?? {};
-		const valueAxisLabel = record$1(valueAxis.label) ?? {};
-		const valueAxisGrid = record$1(valueAxis.gridLine);
+		const valueAxisLabel = record(valueAxis.label) ?? {};
+		const valueAxisGrid = record(valueAxis.gridLine);
 		const valueAxisMin = number(valueAxis.min);
 		const valueAxisMax = number(valueAxis.max);
 		const valueAxisLabelFontSize = number(valueAxisLabel.fontSize);
@@ -2965,10 +2347,15 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			} : {},
 			...chartTypeName === "area" ? { lineSize: number(item.width) ?? 2 } : {},
 			...chartTypeName === "radar" ? { radarStyle: item.areaColor === void 0 ? "marker" : "filled" } : {},
+			...chartTypeName === "scatter" ? {
+				lineSize: number(item.width) ?? 0,
+				lineDataSymbol: item.marker === false ? "none" : record(item.marker)?.shape === "rect" ? "square" : string(record(item.marker)?.shape) ?? "circle",
+				lineDataSymbolSize: number(record(item.marker)?.size) ?? 6
+			} : {},
 			...(chartTypeName === "line" || chartTypeName === "area") && item.marker === false ? { lineDataSymbol: "none" } : {},
-			...(chartTypeName === "line" || chartTypeName === "area") && record$1(item.marker) !== void 0 ? {
-				lineDataSymbol: record$1(item.marker)?.shape === "rect" ? "square" : string(record$1(item.marker)?.shape) ?? "circle",
-				lineDataSymbolSize: number(record$1(item.marker)?.size) ?? 6
+			...(chartTypeName === "line" || chartTypeName === "area") && record(item.marker) !== void 0 ? {
+				lineDataSymbol: record(item.marker)?.shape === "rect" ? "square" : string(record(item.marker)?.shape) ?? "circle",
+				lineDataSymbolSize: number(record(item.marker)?.size) ?? 6
 			} : {},
 			...item.stack === "percent" ? { barGrouping: "percentStacked" } : item.stack === "value" || item.stack === "stream" ? { barGrouping: "stacked" } : chartTypeName === "bar" ? { barGrouping: "clustered" } : {},
 			...item.nullHandling === "gap" ? { displayBlanksAs: "gap" } : { displayBlanksAs: "span" },
@@ -2981,12 +2368,13 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			...chartTypeName === "bubble" ? { sizes: filteredRows.map((row) => Number(row[columns.indexOf(string(encode.size) ?? "")] ?? 0)) } : {}
 		};
 		const mergeable = type !== pptx.ChartType.pie && type !== pptx.ChartType.doughnut;
-		const groupKey = chartTypeName === "bar" ? `${type}:${horizontal ? "horizontal" : "vertical"}:${axisIndex}:${String(groupOptions.barGrouping)}` : `${type}:${JSON.stringify(groupOptions)}`;
+		const groupKey = chartTypeName === "bar" ? `${type}:${horizontal ? "horizontal" : "vertical"}:${axisIndex}:${String(groupOptions.barGrouping)}` : `${type}:${JSON.stringify(groupOptions)}:${JSON.stringify(xValues)}`;
 		const existing = mergeable ? mergeableGroups.get(groupKey) : void 0;
 		if (existing === void 0) {
 			const chartGroup = {
 				type,
-				data: [dataSeries],
+				// PptxGenJS consumes the first numeric series as shared X values.
+				data: numericXY ? [{ name: categoryColumn, labels: filteredLabels, values: xValues }, dataSeries] : [dataSeries],
 				options: {
 					...groupOptions,
 					chartColors
@@ -3002,10 +2390,10 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 		if (groupOptions.showPercent === true) existing.options.showPercent = true;
 		if (existing.options.dataLabelFontSize === void 0 && groupOptions.dataLabelFontSize !== void 0) existing.options.dataLabelFontSize = groupOptions.dataLabelFontSize;
 	}
-	const legend = typeof element.legend === "boolean" ? { show: element.legend } : record$1(element.legend) ?? {};
-	const font = fontFace(element.fontFamily, "MiSans");
+	const legend = typeof element.legend === "boolean" ? { show: element.legend } : record(element.legend) ?? {};
+	const font = fontFace(element.fontFamily, "Arial", JSON.stringify(types.map(group => group.data)));
 	const objectName = string(element.elementId);
-	const title = typeof element.title === "string" ? { text: element.title } : record$1(element.title) ?? {};
+	const title = typeof element.title === "string" ? { text: element.title } : record(element.title) ?? {};
 	const chartFill = solidFill(project, element.fill);
 	const chartBorder = border(project, element.border);
 	const legendFontSize = number(legend.fontSize);
@@ -3065,11 +2453,12 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 		...barGap === void 0 ? {} : { barGapWidthPct: Math.round(barGap * 100) },
 		...valAxes === void 0 ? {} : { valAxes },
 		...chartAxisOptions(project, element, series.some((item) => {
-			const encode = record$1(item.encode) ?? {};
+			const encode = record(item.encode) ?? {};
 			return string(item.type) === "bar" && columnIsNumeric(string(encode.x)) && !columnIsNumeric(string(encode.y));
 		}))
 	};
-	slide.addChart(types, common);
+	if (types.length === 1 && types[0].type === pptx.ChartType.scatter) slide.addChart(types[0].type, types[0].data, { ...common, ...types[0].options });
+	else slide.addChart(types, common);
 }
 function renderIcon(project, slide, element) {
 	const color = colorOptions(project, element.color).color;
@@ -3309,6 +2698,7 @@ const PAGE_FIELDS = new Set([
 const BASE_FIELDS = [
 	"elementId",
 	"elementType",
+	"sourceLayout",
 	"bounds"
 ];
 const ELEMENT_FIELDS = {
