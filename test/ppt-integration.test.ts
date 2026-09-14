@@ -224,7 +224,7 @@ describe('DSH PPT built-in plugin', () => {
     expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
   })
 
-  it('declares both local artifacts and mounts only the PPT composer', async () => {
+  it('keeps both local artifacts while the incompatible PPT composer is disabled', async () => {
     const manifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
     }
@@ -236,7 +236,8 @@ describe('DSH PPT built-in plugin', () => {
     expect(manifest.dependencies['dsh-ppt-composer']).toBe(
       `file:packages/ppt-bundles/${artifacts.adapter.file}`
     )
-    expect(profilePatch).toContain("name: 'dsh-ppt-composer'")
+    expect(profilePatch).not.toContain("name: 'dsh-ppt-composer'")
+    expect(profilePatch).toContain('webServer injection contract is compatible with Harness 0.1.5')
     expect(profilePatch).not.toContain('office-ppt-standard-adapter')
     expect(profilePatch).not.toContain('name: dsh-ppt')
     expect(profilePatch).not.toContain('workbuddy')

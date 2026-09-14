@@ -20,7 +20,9 @@ registerHooks({ resolve(specifier, context, next) {
   if (specifier === '@aiden0z/pptx-renderer') {
     throw new Error(${JSON.stringify(missing)});
   }
-  if (specifier === 'dsh-desktop-market-installer' || specifier === 'dsh-desktop-preset-transfer') {
+  if (specifier === 'dsh-desktop-market-installer'
+    || specifier === 'dsh-desktop-preset-transfer'
+    || specifier === 'dsh-desktop-vinabot') {
     throw new Error('Optional Desktop plugin loaded in recovery: ' + specifier);
   }
   return next(specifier, context);
@@ -55,8 +57,9 @@ registerHooks({ resolve(specifier, context, next) {
     expect(recovered.snapshot().phase, recovered.snapshot().logs.join('\n')).toBe('ready')
     expect(recovered.snapshot().authToken).toBeTruthy()
     expect((await fetch(recovered.snapshot().url!)).status).toBe(401)
-    // Recovery uses its own overlay and never edits the normal composition.
-    expect(await readFile(normalPatch, 'utf8')).toContain('name: \'dsh-ppt-composer\'')
+    // Recovery uses its own overlay and never edits the normal composition,
+    // where the incompatible PPT adapter remains intentionally unmounted.
+    expect(await readFile(normalPatch, 'utf8')).not.toContain('name: \'dsh-ppt-composer\'')
   } finally {
     await broken.stop()
     await recovered.stop()

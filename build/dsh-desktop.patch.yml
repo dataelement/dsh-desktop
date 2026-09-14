@@ -15,18 +15,21 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    # First-party VinaRouter onboarding. The Host half keeps dashboard and API
+    # credentials out of the renderer; the client half supplies the setup and
+    # settings surfaces.
+    - id: dsh-desktop-vinabot
+      name: dsh-desktop-vinabot
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
 
-    # DSH PPT owns one direct PPTD workflow and one standard Composer client.
-    # The package contains no Tencent editor runtime or SlideP route.
-    - id: dsh-ppt-composer
-      name: 'dsh-ppt-composer'
-      config:
-        root: !!js dshHomePath('kimi-ppt')
+    # Keep the bundled PPT artifacts installed but do not mount their Composer
+    # until its webServer injection contract is compatible with Harness 0.1.5.
+    # Re-enabling this entry before that fix prevents the whole profile booting.
 
 # dsh-market normally offers to restart its own Node process after mutations.
 # The desktop shell has the real lifecycle authority, so keep that behavior off

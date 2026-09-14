@@ -273,6 +273,7 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-desktop-vinabot": "file:packages/dsh-desktop-vinabot",
     "dshmarket": "1.45.1",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",

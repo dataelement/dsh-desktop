@@ -4,6 +4,7 @@ const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
 const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
 const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
+const WINDOWS_DRAG_REGION_HEIGHT = 6
 
 interface TitlebarLayoutMountOptions {
   document: Document
@@ -52,6 +53,8 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout > #root {
       height: 100% !important;
       min-height: 0 !important;
+      position: relative;
+      z-index: 1;
     }
     body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
       padding-top: 6px !important;
@@ -59,22 +62,28 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
       padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;
     }
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel]
+      [data-dockkit-strip]:has([data-dockkit-strip-chrome]) {
+      margin-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
+    }
     body.dsh-desktop-windows-titlebar-layout button,
     body.dsh-desktop-windows-titlebar-layout a,
     body.dsh-desktop-windows-titlebar-layout input,
     body.dsh-desktop-windows-titlebar-layout select,
     body.dsh-desktop-windows-titlebar-layout textarea,
     body.dsh-desktop-windows-titlebar-layout [role="button"],
+    body.dsh-desktop-windows-titlebar-layout [role="tab"],
+    body.dsh-desktop-windows-titlebar-layout [data-dockkit-strip],
     body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
       -webkit-app-region: no-drag !important;
     }
     #${DRAG_REGION_ID} {
       position: fixed;
-      z-index: 2147483644;
+      z-index: 0;
       top: 0;
       left: 0;
       right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
-      height: 36px;
+      height: ${WINDOWS_DRAG_REGION_HEIGHT}px;
       background: transparent;
       pointer-events: none;
       user-select: none;
