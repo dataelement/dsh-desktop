@@ -118,7 +118,7 @@ index 6226c83..38862c8 100644
  			* Fork a session from a completed-turn prefix of the source (same
  			* synchronous-addressability guarantee as {@link ClientSessions.create}:
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
-index 0e94dd3..a6875fa 100644
+index 0e94dd3..258c578 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 @@ -3,7 +3,7 @@ import z from "@deepseek-ai/schemastery";
@@ -264,7 +264,7 @@ index 0e94dd3..a6875fa 100644
  			} catch (error) {
  				throw new RemoteError("gateway/internal", `failed to fork session "${request.sessionId}": ${String(error)}`, {});
  			}
-@@ -985,6 +1031,118 @@ function referencedImage(events, attachmentId) {
+@@ -985,6 +1031,126 @@ function referencedImage(events, attachmentId) {
  		if (found !== void 0) return found;
  	}
  }
@@ -309,10 +309,18 @@ index 0e94dd3..a6875fa 100644
 +	const parts = String(value).split(/[/\\]/);
 +	return parts[parts.length - 1] || String(value);
 +}
++function fileNameEquals(left, right) {
++	if (left === right) return true;
++	// NTFS / Explorer treat names as case-insensitive; assistant mentions often
++	// disagree with the stored attachment casing on Windows.
++	if (process.platform === "win32") return left.toLowerCase() === right.toLowerCase();
++	return false;
++}
 +function fileNameMatches(refName, needle) {
 +	const name = String(refName ?? "");
 +	const needleBase = basenameLeaf(needle);
-+	return name === needle || basenameLeaf(name) === needle || basenameLeaf(name) === needleBase;
++	const nameBase = basenameLeaf(name);
++	return fileNameEquals(name, needle) || fileNameEquals(nameBase, needle) || fileNameEquals(nameBase, needleBase);
 +}
 +/**
 +* Collect every distinct file attachment whose display name or basename matches.
@@ -383,7 +391,7 @@ index 0e94dd3..a6875fa 100644
  function routeServed(ctx, provider) {
  	return ctx.llm.listProviders().some((entry) => entry.id === provider);
  }
-@@ -2374,6 +2532,170 @@ const SessionMediaReferences = {
+@@ -2374,6 +2540,171 @@ const SessionMediaReferences = {
  		}), "session-controller: /api/file");
  	}
  };
@@ -466,7 +474,8 @@ index 0e94dd3..a6875fa 100644
 +		await link(hostPath, aliased);
 +	} catch (error) {
 +		if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") return aliased;
-+		throw error;
++		console.warn("session-controller: image preview alias failed:", error);
++		return hostPath;
 +	}
 +	return aliased;
 +}
@@ -554,7 +563,7 @@ index 0e94dd3..a6875fa 100644
  //#endregion
  //#region lib/types/index.js
  /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
-@@ -2485,6 +2807,7 @@ let SessionController = (() => {
+@@ -2485,6 +2816,7 @@ let SessionController = (() => {
  	let _canOpenWorkspacePath_decorators;
  	let _openWorkspacePath_decorators;
  	let _rename_decorators;
@@ -562,7 +571,7 @@ index 0e94dd3..a6875fa 100644
  	let _fork_decorators;
  	let _prompt_decorators;
  	let _attachment_decorators;
-@@ -2504,6 +2827,7 @@ let SessionController = (() => {
+@@ -2504,6 +2836,7 @@ let SessionController = (() => {
  			_canOpenWorkspacePath_decorators = [Remote];
  			_openWorkspacePath_decorators = [Remote("openWorkspacePath")];
  			_rename_decorators = [Remote("rename")];
@@ -570,7 +579,7 @@ index 0e94dd3..a6875fa 100644
  			_fork_decorators = [Remote("fork")];
  			_prompt_decorators = [Remote("prompt")];
  			_attachment_decorators = [Remote("attachment")];
-@@ -2600,6 +2924,17 @@ let SessionController = (() => {
+@@ -2600,6 +2933,17 @@ let SessionController = (() => {
  				},
  				metadata: _metadata
  			}, null, _instanceExtraInitializers);
@@ -588,7 +597,7 @@ index 0e94dd3..a6875fa 100644
  			__esDecorate(this, null, _fork_decorators, {
  				kind: "method",
  				name: "fork",
-@@ -2745,9 +3080,11 @@ let SessionController = (() => {
+@@ -2745,9 +3089,11 @@ let SessionController = (() => {
  			this.canOpenPath = internals.canOpenPath ?? (() => config.nativeOpen ?? (internals.openPath !== void 0 || canOpenNativePath()));
  			ctx.plugin(SessionFileReferences);
  			ctx.plugin(SessionMediaReferences);
@@ -601,7 +610,7 @@ index 0e94dd3..a6875fa 100644
  			});
  			ctx.on("session/disposed", (session) => {
  				ctx.emit("api-session/removed", session.id);
-@@ -2903,6 +3240,10 @@ let SessionController = (() => {
+@@ -2903,6 +3249,10 @@ let SessionController = (() => {
  		rename(request) {
  			return this.commands.rename(request);
  		}

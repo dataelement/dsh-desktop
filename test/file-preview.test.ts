@@ -67,8 +67,40 @@ describe('uploaded file preview', () => {
 
     expect(chat).toContain('session.readFileHostPath({ name: path })')
     expect(chat).toContain('openResolvedHostFile(ctx, sessionId, cwd, byName.value.path)')
+    expect(chat).not.toContain('openResolvedHostFile(ctx, sessionId, cwd, byName.value.path, options)')
     expect(chat).toContain('hostPathForOpen(cwd, path)')
     expect(chat).not.toContain('openFile(attachment.file.name)')
+  })
+
+  it('matches attachment names case-insensitively on Windows only', async () => {
+    const host = await packageClient('dsh-api-session-controller', 'lib/index.js')
+    const source = host.match(
+      /function basenameLeaf\(value\) \{[\s\S]*?\nfunction fileNameMatches\(refName, needle\) \{[\s\S]*?\n\}/
+    )?.[0]
+    expect(source).toBeDefined()
+    expect(source).toContain('process.platform === "win32"')
+    expect(source).toContain('left.toLowerCase() === right.toLowerCase()')
+
+    const load = (platform: string) =>
+      new Function(
+        'process',
+        `${source}; return fileNameMatches`
+      )({ platform }) as (refName: string, needle: string) => boolean
+
+    const onWindows = load('win32')
+    const onPosix = load('darwin')
+    expect(onWindows('周报.docx', '周报.DOCX')).toBe(true)
+    expect(onWindows('README.md', 'readme.md')).toBe(true)
+    expect(onWindows('src/Main.ts', 'main.ts')).toBe(true)
+    expect(onPosix('README.md', 'readme.md')).toBe(false)
+    expect(onPosix('周报.docx', '周报.docx')).toBe(true)
+  })
+
+  it('keeps the original image path when the preview alias cannot be created', async () => {
+    const host = await packageClient('dsh-api-session-controller', 'lib/index.js')
+    expect(host).toContain('session-controller: image preview alias failed:')
+    expect(host).toContain('return hostPath')
+    expect(host).not.toContain('if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") return aliased;\n\t\tthrow error;')
   })
 
   it('records the preview patches', async () => {
@@ -86,9 +118,13 @@ describe('uploaded file preview', () => {
     expect(sessionPatch).toContain('resolveAuthorizedFileRefByName')
     expect(sessionPatch).toContain('collectReferencedImagesByName')
     expect(sessionPatch).toContain('ensureImagePreviewPath')
+    expect(sessionPatch).toContain('function fileNameEquals')
+    expect(sessionPatch).toContain('image preview alias failed')
     expect(sessionPatch).not.toContain('findStagedFilesByName')
     expect(chatPatch).toContain('openUploadedAttachment')
     expect(chatPatch).toContain('readFileHostPath({ name: path })')
+    expect(chatPatch).toContain('openResolvedHostFile(ctx, sessionId, cwd, byName.value.path)')
+    expect(chatPatch).not.toContain('openResolvedHostFile(ctx, sessionId, cwd, byName.value.path, options)')
     expect(chatPatch).toContain('openResolvedHostFile')
     expect(chatPatch).toContain('openWorkspacePath')
     expect(conversationPatch).toContain('openUploadedAttachment')
