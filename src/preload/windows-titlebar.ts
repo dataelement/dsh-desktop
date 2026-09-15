@@ -5,11 +5,6 @@ const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
 const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
 const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
-const NO_DRAG_PATCH_SELECTOR =
-  'button, a, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"], [role="dialog"], [data-dsh-no-drag], dialog, [class*="close" i], [class*="button" i]'
-// One above the drag region (2147483644), below any system notifications.
-const NO_DRAG_PATCH_Z_INDEX = '2147483645'
-
 interface TitlebarLayoutMountOptions {
   document: Document
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
@@ -21,7 +16,6 @@ export function mountWindowsTitlebarLayout(options: TitlebarLayoutMountOptions):
 
   installLayout(document)
   installDragRegion(document)
-  installNoDragPatches(document)
   trackSidebarLayout(document)
 
   document.addEventListener('pointerdown', () => {
@@ -125,18 +119,19 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout select,
     body.dsh-desktop-windows-titlebar-layout textarea,
     body.dsh-desktop-windows-titlebar-layout [role="button"],
+    body.dsh-desktop-windows-titlebar-layout [role="tab"],
+    body.dsh-desktop-windows-titlebar-layout [role="menuitem"],
     body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
       -webkit-app-region: no-drag !important;
     }
     #${DRAG_REGION_ID} {
       position: fixed;
-      z-index: 2147483644;
+      z-index: 10;
       top: 0;
       left: 0;
       right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
       height: 36px;
       background: transparent;
-      pointer-events: none;
       user-select: none;
       -webkit-app-region: drag;
     }
@@ -150,82 +145,35 @@ function installDragRegion(document: Document): void {
   dragRegion.id = DRAG_REGION_ID
   dragRegion.setAttribute('aria-hidden', 'true')
   document.body.appendChild(dragRegion)
-}
 
-/**
- * The drag region above intentionally sits on top of page content (at z-index: 2147483644),
- * so `-webkit-app-region` resolves to `drag` for the strip and CSS rules like `no-drag !important`
- * on lower layers never win against Chromium's non-client hit testing.
- *
- * Punch transparent `no-drag` holes one layer above the drag region (z-index: 2147483645)
- * for every interactive element (buttons, links, inputs, dialogs, newly opened modals/popups)
- * that intersects the titlebar strip, so that:
- * 1. The window remains full-height without an artificial 36px blank band;
- * 2. Clicks fall through (via pointer-events: none) to all interactive controls beneath;
- * 3. Any new popup or modal mounted to the DOM is immediately discovered by MutationObserver.
- */
-function installNoDragPatches(document: Document): void {
-  const patches = new Map<Element, HTMLElement>()
+  // When any modal or dialog is open, hide the drag region completely
+  // so all buttons (especially near the top 36px) are 100% clickable.
+  const modalSelector =
+    'dialog[open], [role="dialog"], [aria-modal="true"], [class*="modal" i], [class*="dialog" i]'
 
-  const sync = (): void => {
-    for (const [element, patch] of patches) {
-      if (!element.isConnected) {
-        patch.remove()
-        patches.delete(element)
-      }
-    }
-    for (const element of document.querySelectorAll<HTMLElement>(NO_DRAG_PATCH_SELECTOR)) {
-      if (element.id === DRAG_REGION_ID) continue
-      const rect = element.getBoundingClientRect()
-      if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.top >= WINDOWS_TITLEBAR_HEIGHT) {
-        const stale = patches.get(element)
-        if (stale) {
-          stale.remove()
-          patches.delete(element)
-        }
-        continue
-      }
-      const top = Math.max(rect.top, 0)
-      const height = Math.min(rect.bottom, WINDOWS_TITLEBAR_HEIGHT) - top
-      let patch = patches.get(element)
-      if (!patch) {
-        patch = document.createElement('div')
-        patch.setAttribute('aria-hidden', 'true')
-        patch.style.position = 'fixed'
-        patch.style.pointerEvents = 'none'
-        patch.style.userSelect = 'none'
-        patch.style.background = 'transparent'
-        patch.style.zIndex = NO_DRAG_PATCH_Z_INDEX
-        patch.style.setProperty('-webkit-app-region', 'no-drag')
-        document.body.appendChild(patch)
-        patches.set(element, patch)
-      }
-      patch.style.left = `${rect.left}px`
-      patch.style.top = `${top}px`
-      patch.style.width = `${rect.width}px`
-      patch.style.height = `${height}px`
-    }
-  }
-
-  let frame: number | null = null
-  const schedule = (): void => {
-    if (frame !== null) return
-    frame = window.requestAnimationFrame(() => {
-      frame = null
-      sync()
+  const updateDragRegionVisibility = (): void => {
+    const hasModal = Array.from(document.querySelectorAll<HTMLElement>(modalSelector)).some((el) => {
+      if (el.id === DRAG_REGION_ID) return false
+      const style = window.getComputedStyle(el)
+      return (
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        style.opacity !== '0' &&
+        el.offsetWidth > 0 &&
+        el.offsetHeight > 0
+      )
     })
+    dragRegion.style.display = hasModal ? 'none' : 'block'
   }
 
-  const observer = new MutationObserver(schedule)
+  const observer = new MutationObserver(() => updateDragRegionVisibility())
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['style', 'class', 'hidden']
+    attributeFilter: ['open', 'style', 'class', 'hidden', 'aria-hidden']
   })
-  window.addEventListener('resize', schedule, { passive: true })
-  window.addEventListener('scroll', schedule, { passive: true, capture: true })
-  sync()
+  updateDragRegionVisibility()
 }
 
 function trackSidebarLayout(document: Document): void {
