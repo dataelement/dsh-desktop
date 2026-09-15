@@ -100,6 +100,10 @@
       ${IfNot} ${Silent}
         ExecShell "runas" 'powershell.exe' '-NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue; Set-ItemProperty -Path \"HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem\" -Name \"LongPathsEnabled\" -Value 1 -ErrorAction SilentlyContinue"'
       ${EndIf}
+      ; CHECK_APP_RUNNING force-kills the previous process, so will-quit never
+      ; clears the session marker. Same-version overwrite would otherwise look
+      ; like an unclean-exit. Delete is a no-op when the file is absent.
+      Delete "$APPDATA\dsh-desktop\desktop-service\session.json"
     !macroend
   !endif
 !endif

@@ -242,6 +242,17 @@ describe('GitHub release contract', () => {
     expect(installer).toContain('${NSD_SetText} $DshDirectoryEdit $3')
   })
 
+  it('clears the leftover session marker during a Windows overwrite install', async () => {
+    const installer = await readFile(
+      path.join(projectRoot, 'build', 'installer.nsh'),
+      'utf8'
+    )
+    const customInstall = installer.match(/!macro customInstall[\s\S]*?!macroend/)?.[0]
+
+    expect(customInstall).toBeDefined()
+    expect(customInstall).toContain('Delete "$APPDATA\\dsh-desktop\\desktop-service\\session.json"')
+  })
+
   it('shows a packaged startup surface and pins the Electron directory picker surface', async () => {
     const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
     const splash = await readFile(path.join(projectRoot, 'build', 'splash.html'), 'utf8')
