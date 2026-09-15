@@ -80,10 +80,11 @@ Safe Mode is non-destructive: it starts an isolated official-core profile, keeps
 Harness itself stays on a random loopback port. Phone access is provided by a separate bridge:
 
 - The bridge listens on a dedicated LAN port.
-- Pairing uses a short-lived random token and desktop approval.
-- Mobile API access requires an authorized session.
+- Pairing uses a short-lived random token. Wi-Fi scanning creates a session immediately. An internet tunnel also requires a 6-digit pairing password shown only on the desktop pairing window.
+- The password is temporary (5 minutes, in memory) unless the user opts into a durable password stored in `mobile-pairing-pin.json`.
+- Mobile API access requires an authorized session. Tunnel sessions are cookie-only; LAN sessions may also match a private remote address.
 - Requests are restricted by origin, address, and connection state.
-- A temporary Cloudflare Quick Tunnel can be enabled for access outside the LAN.
+- Cloudflare Quick Tunnel is the usual remote path. Free Pinggy is the fallback when Cloudflare is unavailable and is expected to expire after about 60 minutes.
 
 The public tunnel is optional and forwards only the paired mobile surface; it does not rebind the Harness service to a public interface.
 

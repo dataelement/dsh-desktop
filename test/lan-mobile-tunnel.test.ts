@@ -363,15 +363,8 @@ describe('LanMobileBridge tunnel state and endpoints', () => {
     expect(pinggyRes.status).toBe(400)
 
     await bridge.toggleTunnel(false)
-    const reconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`)
-    const pairingId = /let id="([^"]+)"/.exec(await reconnect.text())?.[1]
-    expect(pairingId).toBeTruthy()
-    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/decide`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: pairingId, approved: true })
-    })
-    await fetch(`http://127.0.0.1:${snapshot.port}/pair/status?id=${pairingId}`)
+    const token = new URL(bridge.snapshot().pairingUrl!).searchParams.get('token')
+    await fetch(`http://127.0.0.1:${snapshot.port}/pair?token=${token}`, { redirect: 'manual' })
 
     const connectedRes = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/fallback`, {
       method: 'POST'
@@ -740,18 +733,11 @@ describe('LanMobileBridge shutdown with live connections', () => {
     const snapshot = await bridge.start()
 
     // Pair one phone through the reconnect surface to get an auth cookie.
-    const reconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`)
-    const pairingId = /let id="([^"]+)"/.exec(await reconnect.text())?.[1]
-    expect(pairingId).toBeTruthy()
-    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/decide`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: pairingId, approved: true })
+    const token = new URL(snapshot.pairingUrl!).searchParams.get('token')
+    const approved = await fetch(`http://127.0.0.1:${snapshot.port}/pair?token=${token}`, {
+      redirect: 'manual'
     })
-    const approved = await fetch(
-      `http://127.0.0.1:${snapshot.port}/pair/status?id=${pairingId}`
-    )
-    expect(await approved.clone().json()).toEqual({ approved: true })
+    expect(approved.status).toBe(302)
     const cookie = approved.headers.get('set-cookie')!.split(';', 1)[0]!
 
     void fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
