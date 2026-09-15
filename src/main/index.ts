@@ -2965,6 +2965,7 @@ async function bootstrap(): Promise<void> {
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
     assertTrustedMainWindowEvent(event)
+    desktopDiagnostics?.discardPendingPluginFailure()
     const message = typeof frontendErrorMessage === 'string' ? frontendErrorMessage : undefined
     if (message) appendRendererPluginFailureLog(message)
     const logs = [...rendererPluginFailureLogs]

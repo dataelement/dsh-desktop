@@ -20,9 +20,10 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   }
   let canSend = false
   let pendingPluginFailureEventId: string | undefined
+  let suppressPluginFailure = false
   const capture = (kind: FailureKind, message: string, eventId?: string) => {
     safe(() => service.capture(kind, message, eventId))
-    if (canSend) flush()
+    if (canSend && eventId !== pendingPluginFailureEventId) flush()
   }
   safe(() => service.beginSession())
   const fatal = (error: Error) => safe(() => service.captureFatal(error))
@@ -60,10 +61,18 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
       flush()
     },
     runtimeChanged(snapshot: RuntimeSnapshot, flushLog: () => Promise<void>, attempt = 0) {
-      if (attempt !== previousAttempt) wasReady = false
-      if (snapshot.phase === 'starting') wasReady = false
+      if (attempt !== previousAttempt) {
+        wasReady = false
+        suppressPluginFailure = false
+        pendingPluginFailureEventId = undefined
+      }
+      if (snapshot.phase === 'starting') {
+        wasReady = false
+        suppressPluginFailure = false
+      }
       if (snapshot.phase === 'ready') {
         wasReady = true
+        suppressPluginFailure = false
         if (pendingPluginFailureEventId) {
           service.discard(pendingPluginFailureEventId)
           pendingPluginFailureEventId = undefined
@@ -73,8 +82,11 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
         const kind = wasReady ? 'harness-crash' : 'startup-failure'
         // Wait for the actual Harness stream callback, not a guessed timer.
         void flushLog().catch(error => options.onError?.(error)).then(() => {
-          const eventId = randomId()
           const isPluginFailure = Boolean(snapshot.pluginFailures && snapshot.pluginFailures.length > 0)
+          if (!wasReady && isPluginFailure && suppressPluginFailure) {
+            return
+          }
+          const eventId = randomId()
           if (!wasReady && isPluginFailure) {
             pendingPluginFailureEventId = eventId
           }
@@ -85,6 +97,7 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
       previousAttempt = attempt
     },
     discardPendingPluginFailure() {
+      suppressPluginFailure = true
       if (pendingPluginFailureEventId) {
         service.discard(pendingPluginFailureEventId)
         pendingPluginFailureEventId = undefined

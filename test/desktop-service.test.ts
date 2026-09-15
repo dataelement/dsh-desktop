@@ -215,6 +215,46 @@ describe('diagnostic event integration', () => {
     diagnostics.runtimeChanged({ phase: 'ready', message: 'ready', logs: [] }, async () => {})
     expect(service.pending()).toHaveLength(0)
   })
+  it('discards pending plugin failure when frontend opens recovery, even with active sending', async () => {
+    const { service, request } = fixture()
+    request.mockResolvedValue(new Response(JSON.stringify({ accepted: true })))
+    const app = new EventEmitter()
+    const diagnostics = attachDiagnostics(app, service); disposers.push(() => diagnostics.dispose())
+    diagnostics.startSending()
+    const failedSnapshot = {
+      phase: 'failed' as const,
+      message: 'plugin error',
+      logs: [],
+      pluginFailures: [{ stage: 'import' as const, packageName: 'test-plugin', message: 'failed', chain: [] }]
+    }
+    diagnostics.runtimeChanged(failedSnapshot, async () => {})
+    await vi.waitFor(() => expect(service.pending()).toHaveLength(1))
+    expect(request).not.toHaveBeenCalled()
+    // Frontend identifies the incompatible plugin and invokes discard
+    diagnostics.discardPendingPluginFailure()
+    expect(service.pending()).toHaveLength(0)
+    expect(request).not.toHaveBeenCalled()
+  })
+  it('suppresses plugin failure report when discardPendingPluginFailure is called before log flush completes', async () => {
+    const { service, request } = fixture()
+    const app = new EventEmitter()
+    const diagnostics = attachDiagnostics(app, service); disposers.push(() => diagnostics.dispose())
+    diagnostics.startSending()
+    let finishLog!: () => void
+    const logPromise = new Promise<void>(resolve => { finishLog = resolve })
+    const failedSnapshot = {
+      phase: 'failed' as const,
+      message: 'plugin error',
+      logs: [],
+      pluginFailures: [{ stage: 'import' as const, packageName: 'test-plugin', message: 'failed', chain: [] }]
+    }
+    diagnostics.runtimeChanged(failedSnapshot, () => logPromise)
+    diagnostics.discardPendingPluginFailure()
+    finishLog()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(service.pending()).toHaveLength(0)
+    expect(request).not.toHaveBeenCalled()
+  })
 })
 
 it('waits for the actual Harness file stream before capturing its final error', async () => {
