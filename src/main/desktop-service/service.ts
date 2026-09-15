@@ -97,7 +97,7 @@ export class DesktopService {
     if (existsSync(this.marker)) {
       try {
         const old = JSON.parse(readFileSync(this.marker, 'utf8')) as { eventId: string; version: string }
-        if (uuid.test(old.eventId) && isVersion(old.version)) {
+        if (uuid.test(old.eventId) && isVersion(old.version) && old.version === this.options.version) {
           const log = tailLog(this.options.logPath)
           if (!isHealthySessionLog(log.lines)) {
             this.capture('unclean-exit', 'Previous session ended without a clean shutdown (crash, power loss or forced termination).', old.eventId, old.version)

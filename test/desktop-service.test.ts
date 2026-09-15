@@ -112,17 +112,27 @@ describe('desktop service', () => {
     request.mockImplementation(async (_url: string, init?: RequestInit) => new Response(JSON.stringify({ accepted: true, eventId: JSON.parse(String(init?.body)).eventId })))
     await Promise.all([service.flush(), service.flush()]); expect(request).toHaveBeenCalledTimes(50); expect(service.pending()).toHaveLength(0)
   })
-  it('attributes an unclean exit to the previous version and does not report clean shutdowns', () => {
+  it('reports an unclean exit only when the leftover marker belongs to this version', () => {
     const { service, options, dir } = fixture()
     service.beginSession()
     const next = new DesktopService({ ...options, version: '0.9.0' }); next.beginSession()
-    expect(queued(next, dir)[0]).toMatchObject({ version: '0.8.0', kind: 'unclean-exit' })
-    next.markCleanExit(); new DesktopService(options).beginSession(); expect(next.pending()).toHaveLength(1)
+    expect(queued(next, dir)).toEqual([])
+    next.markCleanExit(); new DesktopService(options).beginSession(); expect(next.pending()).toHaveLength(0)
+    const same = new DesktopService(options)
+    same.beginSession()
+    expect(queued(same, dir)[0]).toMatchObject({ version: '0.8.0', kind: 'unclean-exit' })
+    same.markCleanExit(); new DesktopService(options).beginSession(); expect(same.pending()).toHaveLength(1)
   })
   it('does not replace a queued fatal report with a generic unclean-exit report', () => {
     const { service, options, dir } = fixture()
     service.beginSession(); service.captureFatal(new Error('fatal'))
     new DesktopService(options).beginSession()
+    expect(queued(service, dir).map(r => r.kind)).toEqual(['main-crash'])
+  })
+  it('keeps a queued fatal report when a later version starts after an upgrade', () => {
+    const { service, options, dir } = fixture()
+    service.beginSession(); service.captureFatal(new Error('fatal'))
+    new DesktopService({ ...options, version: '0.9.0' }).beginSession()
     expect(queued(service, dir).map(r => r.kind)).toEqual(['main-crash'])
   })
   it('queries with no channel/arch and rejects invalid or downgraded policy responses', async () => {
