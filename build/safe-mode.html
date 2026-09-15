@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+      content="default-src 'none'; img-src 'self' file: data: blob:; style-src 'self' file: 'unsafe-inline'; script-src 'self' file: 'unsafe-inline'"
     />
     <title>DSH Desktop Safe Mode</title>
+    <link rel="stylesheet" href="repair-widget.css" />
     <style>
       :root {
         color-scheme: light dark;
@@ -353,5 +354,8 @@
       })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', {}))
     </script>
+    <!-- 临时屏蔽系统维修 Agent 聊天窗口
+    <script src="repair-widget.js"></script>
+    -->
   </body>
 </html>

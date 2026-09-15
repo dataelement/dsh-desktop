@@ -1,5 +1,6 @@
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
+import { RepairAgentService } from './repair-agent'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -192,6 +193,7 @@ let tray: Tray | undefined
 let runtime: HarnessRuntime
 let desktopStorageManager: DesktopStorageManager | undefined
 let mobileBridge: LanMobileBridge
+let repairAgentService: RepairAgentService | undefined
 let launchDirectory: string
 let quitting = false
 let failureRecoveryVisible = false
@@ -2841,6 +2843,36 @@ async function bootstrap(): Promise<void> {
     onConnectedChange: (connected) => broadcastMobileStatus(connected)
   })
   if (!startInSafeMode) void mobileBridge.start().catch(showUnexpectedError)
+  repairAgentService = new RepairAgentService({
+    harnessUrl: () => runtime.snapshot().url,
+    harnessAuthToken: () => runtime.snapshot().authToken,
+    ensureHarnessReady: async () => {
+      await launchSafeHarness()
+    },
+    launchDirectory,
+    locale: harnessLocale
+  })
+  ipcMain.handle('repair-agent:init', async (event) => {
+    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
+    return repairAgentService.initSession(event.sender)
+  })
+  ipcMain.handle('repair-agent:select-model', async (_event, payload: any) => {
+    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
+    return repairAgentService.selectModel(
+      payload.sessionId,
+      payload.provider,
+      payload.model,
+      payload.reasoningEffort
+    )
+  })
+  ipcMain.handle('repair-agent:send-prompt', async (_event, payload: any) => {
+    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
+    return repairAgentService.sendPrompt(payload.sessionId, payload.text, payload.images)
+  })
+  ipcMain.handle('repair-agent:cancel', async (_event, sessionId: any) => {
+    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
+    return repairAgentService.cancel(sessionId)
+  })
   ipcMain.handle('directory-picker:open', async (event) => {
     if (
       !mainWindow ||
@@ -3114,6 +3146,8 @@ if (isDaemonLaunch(process.env, process.platform)) {
       // over it unless it is destroyed explicitly before the process exits.
       if (tray && !tray.isDestroyed()) tray.destroy()
       tray = undefined
+      repairAgentService?.dispose()
+      repairAgentService = undefined
       void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
     })
   }

@@ -373,6 +373,14 @@
         "to": "safe-mode.html"
       },
       {
+        "from": "build/repair-widget.css",
+        "to": "repair-widget.css"
+      },
+      {
+        "from": "build/repair-widget.js",
+        "to": "repair-widget.js"
+      },
+      {
         "from": "build/community-wechat-qr.png",
         "to": "community-wechat-qr.png"
       },
