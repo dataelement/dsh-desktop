@@ -270,6 +270,7 @@
     "@deepseek-ai/dsh-workspace": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "3.18.2",
     "dsh-desktop-client-ui": "file:packages/dsh-desktop-client-ui",
+    "dsh-desktop-office-controls": "file:packages/dsh-desktop-office-controls",
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",

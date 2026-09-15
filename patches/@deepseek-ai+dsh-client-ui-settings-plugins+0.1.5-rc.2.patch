@@ -1,0 +1,149 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-plugins/lib/client.js
+@@ -150,7 +150,7 @@
+ 		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-settings-plugins/src/client/PluginCard.module.css.mjs
+-		const css$2 = ".YyYd_a_card{border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-bg-layer-3);border-radius:16px;list-style:none;transition:border-color .16s,background .16s}.YyYd_a_card:hover{border-color:var(--dsw-alias-label-dimmed)}.YyYd_a_cardOpen{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}.YyYd_a_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.YyYd_a_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.YyYd_a_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.YyYd_a_name{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4}.YyYd_a_description{color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.5}.YyYd_a_chevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}.YyYd_a_chevronOpen{transform:rotate(180deg)}.YyYd_a_body{border-top:.5px solid var(--dsw-alias-border-l2);margin:0 16px;padding-bottom:8px}.YyYd_a_readOnly{color:var(--dsw-alias-label-tertiary);margin:12px 0 0;font-size:12px;line-height:1.5}.YyYd_a_pending{flex:none}.YyYd_a_footer{border-top:.5px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}.YyYd_a_failed{min-width:0;color:var(--dsw-alias-label-error);flex:1;margin:0;font-size:12px;line-height:1.5}.YyYd_a_discard,.YyYd_a_save{appearance:none;font:inherit;cursor:pointer;border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.YyYd_a_discard{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.YyYd_a_discard:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}.YyYd_a_save{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.YyYd_a_discard:disabled,.YyYd_a_save:disabled{opacity:.4;cursor:default}.YyYd_a_discard:focus-visible,.YyYd_a_save:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}";
++		const css$2 = ".YyYd_a_card{border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-bg-layer-3);border-radius:16px;list-style:none;transition:border-color .16s,background .16s}.YyYd_a_card:hover{border-color:var(--dsw-alias-label-dimmed)}.YyYd_a_cardOpen{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}.YyYd_a_header{box-sizing:border-box;appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px;align-items:center;gap:12px;padding:14px 16px;display:flex}.YyYd_a_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.YyYd_a_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.YyYd_a_name{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4}.YyYd_a_description{color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.5}.YyYd_a_chevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}.YyYd_a_chevronOpen{transform:rotate(180deg)}.YyYd_a_body{border-top:.5px solid var(--dsw-alias-border-l2);margin:0 16px;padding-bottom:8px}.YyYd_a_readOnly{color:var(--dsw-alias-label-tertiary);margin:12px 0 0;font-size:12px;line-height:1.5}.YyYd_a_pending{flex:none}.YyYd_a_footer{border-top:.5px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}.YyYd_a_failed{min-width:0;color:var(--dsw-alias-label-error);flex:1;margin:0;font-size:12px;line-height:1.5}.YyYd_a_discard,.YyYd_a_save{appearance:none;font:inherit;cursor:pointer;border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.YyYd_a_discard{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.YyYd_a_discard:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}.YyYd_a_save{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.YyYd_a_discard:disabled,.YyYd_a_save:disabled{opacity:.4;cursor:default}.YyYd_a_discard:focus-visible,.YyYd_a_save:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}";
+ 		const tagId$2 = "@deepseek-ai/dsh-client-ui-settings-plugins/PluginCard.module.css";
+ 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
+ 			const tag = document.createElement("style");
+@@ -284,6 +284,46 @@
+ 			});
+ 		}
+ 		//#endregion
++		/** A plugin's immediate toggle using the configuration card chrome and DS Switch. */
++		function PluginToggleCard(props) {
++			return (0, react_jsx_runtime.jsxs)("li", {
++				className: PluginCard_module_css_default.card,
++				children: [(0, react_jsx_runtime.jsxs)("div", {
++					className: PluginCard_module_css_default.header,
++					children: [(0, react_jsx_runtime.jsxs)("span", {
++						className: PluginCard_module_css_default.headText,
++						children: [(0, react_jsx_runtime.jsx)("span", {
++							className: PluginCard_module_css_default.name,
++							children: props.title
++						}), (0, react_jsx_runtime.jsx)("span", {
++							className: PluginCard_module_css_default.description,
++							children: props.description
++						})]
++					}), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Switch, {
++						label: props.title,
++						title: props.busyLabel,
++						checked: props.checked,
++						disabled: props.disabled,
++						onChange: props.onChange
++					})]
++				}), props.error ? (0, react_jsx_runtime.jsx)("div", {
++					className: PluginCard_module_css_default.body,
++					children: (0, react_jsx_runtime.jsxs)("div", {
++						className: PluginCard_module_css_default.footer,
++						children: [(0, react_jsx_runtime.jsx)("p", {
++							className: PluginCard_module_css_default.failed,
++							role: "alert",
++							children: props.error
++						}), (0, react_jsx_runtime.jsx)("button", {
++							type: "button",
++							className: PluginCard_module_css_default.discard,
++							onClick: props.onRetry,
++							children: props.retryLabel
++						})]
++					})
++				}) : null]
++			});
++		}
+ 		//#region lib/types/client/AgentLoopCard.js
+ 		/**
+ 		* Render the agent-loop card.
+@@ -410,10 +450,10 @@
+ 		*/
+ 		function ConfigurablePluginsTab(props) {
+ 			const { t, renderSlot } = props;
+-			const { loaded, namespaces } = props.useConfigurablePlugins((snapshot) => snapshot);
+-			if (namespaces.length > 0) return (0, react_jsx_runtime.jsx)("ul", {
++			const { loaded, namespaces, controlCount } = props.useConfigurablePlugins((snapshot) => snapshot);
++			if (namespaces.length > 0 || controlCount > 0) return (0, react_jsx_runtime.jsx)("ul", {
+ 				className: PluginsSettingsSection_module_css_default.cards,
+-				children: namespaces.map((ns) => (0, react_jsx_runtime.jsx)(react.Fragment, { children: renderSlot("settings.plugin.item", {}, { entryKey: ns }) }, ns))
++				children: [renderSlot("settings.plugin.control", {}), ...namespaces.map((ns) => (0, react_jsx_runtime.jsx)(react.Fragment, { children: renderSlot("settings.plugin.item", {}, { entryKey: ns }) }, ns))]
+ 			});
+ 			return loaded ? (0, react_jsx_runtime.jsx)("p", {
+ 				className: PluginsSettingsSection_module_css_default.empty,
+@@ -1102,7 +1142,8 @@
+ 			entries;
+ 			store = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({
+ 				loaded: false,
+-				namespaces: []
++				namespaces: [],
++				controlCount: 0
+ 			});
+ 			disposed = false;
+ 			unsubscribe;
+@@ -1111,7 +1152,8 @@
+ 			* (document commits, reconnects) are what keep the served set current.
+ 			* @param entries - reads the cards currently registered into the section's slot.
+ 			*/
+-			constructor(describeFace, entries) {
++			constructor(describeFace, entries, controls) {
++				this.controls = controls;
+ 				this.describeFace = describeFace;
+ 				this.entries = entries;
+ 				this.unsubscribe = describeFace.subscribe(() => {
+@@ -1141,13 +1183,15 @@
+ 				if (this.disposed) return;
+ 				const mirrored = this.describeFace.getSnapshot();
+ 				const loaded = mirrored.view !== void 0;
++				const controlCount = this.controls().length;
+ 				const served = new Set(mirrored.view?.namespaces.map((view) => view.ns) ?? []);
+ 				const namespaces = this.entries().flatMap((entry) => entry.options.key !== void 0 && served.has(entry.options.key) ? [entry.options.key] : []);
+ 				const previous = this.store.getSnapshot();
+-				if (previous.loaded === loaded && previous.namespaces.length === namespaces.length && previous.namespaces.every((ns, index) => ns === namespaces[index])) return;
++				if (previous.loaded === loaded && previous.controlCount === controlCount && previous.namespaces.length === namespaces.length && previous.namespaces.every((ns, index) => ns === namespaces[index])) return;
+ 				this.store.set({
+ 					loaded,
+-					namespaces
++					namespaces,
++					controlCount
+ 				});
+ 			}
+ 		};
+@@ -1723,13 +1767,16 @@
+ 			ctx.effect(() => () => {
+ 				subagentModelSelection.dispose();
+ 			}, "ui-settings-plugins: subagent preference");
+-			const configurable = new ConfigurablePluginsTabController(ctx.settingsScope.describe(), () => ctx.slots.entries("settings.plugin.item"));
++			const configurable = new ConfigurablePluginsTabController(ctx.settingsScope.describe(), () => ctx.slots.entries("settings.plugin.item"), () => ctx.slots.entries("settings.plugin.control"));
+ 			ctx.effect(() => () => {
+ 				configurable.dispose();
+ 			}, "ui-settings-plugins: tab directory");
+ 			ctx.effect(() => ctx.slots.subscribe("settings.plugin.item", () => {
+ 				configurable.refresh();
+ 			}), "ui-settings-plugins: card ledger");
++			ctx.effect(() => ctx.slots.subscribe("settings.plugin.control", () => {
++				configurable.refresh();
++			}), "ui-settings-plugins: live controls ledger");
+ 			let tabsVersion = -1;
+ 			let tabsRevision = -1;
+ 			let tabs = [];
+@@ -1777,7 +1824,10 @@
+ 				label: () => t("configurableTab"),
+ 				locale: NS,
+ 				inject: () => configurable.inject(),
+-				children: { "settings.plugin.item": {
++				children: { "settings.plugin.control": {
++					kind: "list",
++					scope: "root"
++				}, "settings.plugin.item": {
+ 					kind: "keyed",
+ 					scope: "root"
+ 				} }
+@@ -1810,6 +1860,7 @@
+ 			});
+ 		}
+ 		//#endregion
++		exports.PluginToggleCard = PluginToggleCard;
+ 		exports.apply = apply;
+ 		exports.inject = inject;
+ 		return module.exports;
