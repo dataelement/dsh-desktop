@@ -1,0 +1,484 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-6-node-86-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: c52396329af07b6c742e713ae624f3320dbbbff87030ce10b0ff12568f5ab5c1
+  - elementId: slide-6-node-87-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">SAMPLE HIGHLIGHTS</span></p>
+    sourceLayout: a1314e340596eb4e852d9fe51f0accb59a6794a805ca53b444b56260efd2b069
+  - elementId: slide-6-node-88-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: 2c1509ced3a4cb59ccb49200fa61404802fd1ba07fdc55593171a2a38c589a6e
+  - elementId: slide-6-node-89-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">6</span></p>
+    sourceLayout: fff7ff3d62b7ec54853b6eb65bd000cb3ee3873c27ace9fc696a751cffca0b6f
+  - elementId: slide-6-node-90-title
+    elementType: text
+    bounds:
+      - 20
+      - 61
+      - 444
+      - 30
+    content:
+      fontFamily: Arial
+      fontSize: 19
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:19px;font-family:Arial">2026 Sample Highlights</span></p>
+    sourceLayout: b69c848528fcfc1ea2c59a3cf90cb7b644f6c8bfdd886ab2ed85ff19c77df6d7
+  - elementId: slide-6-node-91-kpi-rule-0
+    elementType: line
+    bounds:
+      - 20
+      - 95
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 7d8155cec71c16a1ddf6b33051474a73b18a82cfa6241688047107e6fe46458b
+  - elementId: slide-6-node-92-kpi-0
+    elementType: text
+    bounds:
+      - 20
+      - 103
+      - 258
+      - 64
+    content:
+      fontFamily: Arial
+      fontSize: 48
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:48px;font-family:Arial">12</span></p>
+    sourceLayout: 69f1d189e1b62cdc6677b7d185c932bd483ab38bc022e6b98aeeff6ff127be27
+  - elementId: slide-6-node-93-kpi-label-0
+    elementType: text
+    bounds:
+      - 289
+      - 111
+      - 167
+      - 46
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">active pilot sites</span></p>
+    sourceLayout: c23c4117889b40c400a26346d1e7a273e514ce96910b9e54f17216508dca390e
+  - elementId: slide-6-node-94-kpi-rule-1
+    elementType: line
+    bounds:
+      - 20
+      - 176
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 8fde65a7352cb4b2cb0f197dfaaeaf53d6168363103b133a7d7022a036978b97
+  - elementId: slide-6-node-95-kpi-1
+    elementType: text
+    bounds:
+      - 20
+      - 184
+      - 258
+      - 64
+    content:
+      fontFamily: Arial
+      fontSize: 48
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:48px;font-family:Arial">38</span></p>
+    sourceLayout: b7cf3cf91785fc3c5039a5f2bc963bd2575673ccb701c27d3bc543a0b5a63a98
+  - elementId: slide-6-node-96-kpi-label-1
+    elementType: text
+    bounds:
+      - 289
+      - 192
+      - 167
+      - 46
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">community partners</span></p>
+    sourceLayout: 3685e2130c4325c4184c4a85e38b6a5ab7ae3f587d8ceb87af62127295ffd138
+  - elementId: slide-6-node-97-kpi-rule-2
+    elementType: line
+    bounds:
+      - 20
+      - 257
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 375b395bbe46a1e8c2cb53ef35ee8ff0c999158f57cfba5005c3a013783f29a6
+  - elementId: slide-6-node-98-kpi-2
+    elementType: text
+    bounds:
+      - 20
+      - 265
+      - 258
+      - 64
+    content:
+      fontFamily: Arial
+      fontSize: 48
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:48px;font-family:Arial">640h</span></p>
+    sourceLayout: 76b80702a411bdc790009afe94cc367b7bb5ddd7db921df2a57eb4b6d153a13f
+  - elementId: slide-6-node-99-kpi-label-2
+    elementType: text
+    bounds:
+      - 289
+      - 273
+      - 167
+      - 46
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">volunteer time</span></p>
+    sourceLayout: 411d4c9504fc72870b7446ce02a18b5ced3367247ee7ee0bcbe9161c6efacafe
+  - elementId: slide-6-node-100-kpi-rule-3
+    elementType: line
+    bounds:
+      - 20
+      - 338
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 710bf13ce804977997a4e8c720cddc22d6780de8d1ee60a18a57a01ed97b99b0
+  - elementId: slide-6-node-101-kpi-3
+    elementType: text
+    bounds:
+      - 20
+      - 346
+      - 258
+      - 64
+    content:
+      fontFamily: Arial
+      fontSize: 48
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:48px;font-family:Arial">82%</span></p>
+    sourceLayout: 3fca08732384043fe646a8fd7c71866d5fb6c32d7810f7e9055b22cfdee3cbd0
+  - elementId: slide-6-node-102-kpi-label-3
+    elementType: text
+    bounds:
+      - 289
+      - 354
+      - 167
+      - 46
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">sample participation</span></p>
+    sourceLayout: aed63aad4d80cf59a7f0543c1f6b4d48a691223382bf6d862d90ed1e9de81e41
+  - elementId: slide-6-node-103-kpi-rule-4
+    elementType: line
+    bounds:
+      - 20
+      - 419
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 038810da602ad039e06e48bd4d2986c6ed01003e7dd1225d06822fb9194442c9
+  - elementId: slide-6-node-104-kpi-4
+    elementType: text
+    bounds:
+      - 20
+      - 427
+      - 258
+      - 64
+    content:
+      fontFamily: Arial
+      fontSize: 48
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:48px;font-family:Arial">3 pilots</span></p>
+    sourceLayout: f06ba41d77acea2a9d2d3bb770df9a77bfe469b05cfe4d17ee05b158e09a52a3
+  - elementId: slide-6-node-105-kpi-label-4
+    elementType: text
+    bounds:
+      - 289
+      - 435
+      - 167
+      - 46
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">ready for review</span></p>
+    sourceLayout: 75166f30f339a5daeaf1f54ae31a9ca95141c154a5eecd3b873ac33fc603d392
+  - elementId: slide-6-node-106-action-rule-0
+    elementType: line
+    bounds:
+      - 504
+      - 88
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 0a12b106371852b4ba3f7824b0ece61fdaff34ca665ed133353672ba4afdc8b8
+  - elementId: slide-6-node-107-action-0
+    elementType: text
+    bounds:
+      - 504
+      - 99
+      - 426
+      - 43
+    content:
+      fontFamily: Arial
+      fontSize: 15
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:15px;font-family:Arial">Turn a local need into a testable pilot</span></p>
+    sourceLayout: f1922b571d51f9972e65a4f3e454b8b12b59f4248775e89b4dec3e8fecada976
+  - elementId: slide-6-node-108-action-rule-1
+    elementType: line
+    bounds:
+      - 504
+      - 152
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 343a86615476f6341d7fb03d3768d7e3dcbb0d97b5bd11dd8f42694afe5cdd2d
+  - elementId: slide-6-node-109-action-1
+    elementType: text
+    bounds:
+      - 504
+      - 163
+      - 426
+      - 43
+    content:
+      fontFamily: Arial
+      fontSize: 15
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:15px;font-family:Arial">Invite partners into the design process</span></p>
+    sourceLayout: d6b5d3d804863b454c5891ca2b04e09572e1ff4c5ef6b746fee94c7dd7c6b242
+  - elementId: slide-6-node-110-action-rule-2
+    elementType: line
+    bounds:
+      - 504
+      - 216
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 199da3bc737df7044124f11448812944bf331622f825f99388518865687f21b1
+  - elementId: slide-6-node-111-action-2
+    elementType: text
+    bounds:
+      - 504
+      - 227
+      - 426
+      - 43
+    content:
+      fontFamily: Arial
+      fontSize: 15
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:15px;font-family:Arial">Measure the result in the field</span></p>
+    sourceLayout: 02a87c77b3c5ecd7cba3e15bf7f05dd7a7d11f90cb14531acdf3f5ac5a9693b3
+  - elementId: slide-6-node-112-action-rule-3
+    elementType: line
+    bounds:
+      - 504
+      - 280
+      - 438
+      - 0.1
+    viewBox:
+      - 438
+      - 0.1
+    points: 0,0 438,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: b2c2b7d36e7bd1972f234e8616fbb99e50bb10369618c0b42b085d36a2537206
+  - elementId: slide-6-node-113-action-3
+    elementType: text
+    bounds:
+      - 504
+      - 291
+      - 426
+      - 43
+    content:
+      fontFamily: Arial
+      fontSize: 15
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:15px;font-family:Arial">Share the learning and decide the next move</span></p>
+    sourceLayout: 51d9dbc83857aed20954a56abdbd4790570f13cc0cae214f711813820d1ed801
+  - elementId: slide-6-node-114-action-photo
+    elementType: image
+    bounds:
+      - 504
+      - 359
+      - 438
+      - 154
+    src: media/planting-action.jpg
+    fit:
+      mode: cover
+    sourceLayout: 682b147c961d47ce0eea55880a50438746eefc8fb3d2343a70bb4af65918d86e
+notes: '{"schema":"dsh.template-images/v1","layoutId":"impact-highlights","pageRole":"重点行动：关键成果、说明与横向照片","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[{"elementId":"slide-6-node-114-action-photo","role":"重点行动切片","contentSources":["slide-6-node-90-title","slide-6-node-107-action-0","slide-6-node-109-action-1"],"sourcePolicy":"contextual-scene","subject":"Close-up of several hands planting native seedlings together in prepared soil.","composition":"Very wide action detail; hands and seedlings centered in a narrow horizontal band; no tools cut awkwardly.","aspectRatio":"16:9","reuseGroup":"action-detail","maskElementIds":[]}],"contentPolicy":"provided-facts-or-qualitative"}'

@@ -1,0 +1,729 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-19-node-314-left-dark-panel
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 379
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#153C2E'
+    sourceLayout: 4f6c88313b13ea6994a9035ebf10ef6d745dee101050e9e111e4476dcac5ec65
+  - elementId: slide-19-node-315-title
+    elementType: text
+    bounds:
+      - 28
+      - 110
+      - 326
+      - 60
+    content:
+      fontFamily: Arial
+      fontSize: 42
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:42px;font-family:Arial">Footprint</span></p>
+    sourceLayout: d9c7f0619e7032cc43053aa26f3aabcb326143941b91a609b87eafa67dea9cb3
+  - elementId: slide-19-node-316-intro
+    elementType: text
+    bounds:
+      - 28
+      - 190
+      - 316
+      - 87
+    content:
+      fontFamily: Arial
+      fontSize: 17
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:17px;font-family:Arial">Show what the program uses, what it can change</span></p><p><span style="color:#FFFFFF;font-size:17px;font-family:Arial">and where the measurement boundary begins.</span></p>
+    sourceLayout: 21f30d54a7cb60faebe578ad7bc033124c40637d816f6c0577a8b4013e5b5b29
+  - elementId: slide-19-node-317-narrative
+    elementType: text
+    bounds:
+      - 28
+      - 299
+      - 147
+      - 204
+    content:
+      fontFamily: Arial
+      fontSize: 11.4
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11.4px;font-family:Arial">A useful baseline</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.4px;font-family:Arial">Start with a small set of measures the team can collect consistently.</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.4px;font-family:Arial">Define the unit, owner, period and exclusions before comparing results.</span></p>
+    sourceLayout: c7898d982a96e7f2ecc0a8e9a1f5ab3e8fb1c5b41aa715af0f0be1905ada33e4
+  - elementId: slide-19-node-318-narrative-detail
+    elementType: text
+    bounds:
+      - 195
+      - 299
+      - 148
+      - 204
+    content:
+      fontFamily: Arial
+      fontSize: 11.4
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11.4px;font-family:Arial">The next review</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.4px;font-family:Arial">Use the table to show direction, not certainty. Explain what changed and which assumption still needs testing.</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.4px;font-family:Arial">All values are illustrative.</span></p>
+    sourceLayout: 04ea1b01c46c8886438272595641fe54f17e836710afbad43eed148272ed71c0
+  - elementId: slide-19-node-319-table-title
+    elementType: text
+    bounds:
+      - 408
+      - 66
+      - 526
+      - 34
+    content:
+      fontFamily: Arial
+      fontSize: 21
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:21px;font-family:Arial">Illustrative Resource Ledger</span></p>
+    sourceLayout: 70324cde4272ad2f150f6f72613f30962f90fca9ae6576694bb9b8f2de83b815
+  - elementId: slide-19-node-320-footprint-table-0
+    elementType: table
+    bounds:
+      - 408
+      - 118
+      - 526
+      - 113
+    columnWidths:
+      - 0.46
+      - 0.18
+      - 0.18
+      - 0.18
+    rowHeights:
+      - 0.333333
+      - 0.333333
+      - 0.333333
+    rows:
+      - - text: Energy use
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Baseline
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Current
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Next
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+      - - text: Grid electricity
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: '100'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '78'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '62'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+      - - text: Peak demand
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: '50'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '39'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '31'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+    sourceLayout: bb944c1d84911635baeb5f8dac5cd399697543817090fed4a8404e91338dbabc
+  - elementId: slide-19-node-321-footprint-table-1
+    elementType: table
+    bounds:
+      - 408
+      - 248
+      - 526
+      - 113
+    columnWidths:
+      - 0.46
+      - 0.18
+      - 0.18
+      - 0.18
+    rowHeights:
+      - 0.333333
+      - 0.333333
+      - 0.333333
+    rows:
+      - - text: Mobility
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Baseline
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Current
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Next
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+      - - text: Solo car trips
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: '100'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '74'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '55'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+      - - text: Rail-first routes
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: '50'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '63'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '78'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+    sourceLayout: 3417a5ab4c3953dc2fcd619e8e1beb39f2202d0b492cc1a1e01bba1d8396e23a
+  - elementId: slide-19-node-322-footprint-table-2
+    elementType: table
+    bounds:
+      - 408
+      - 378
+      - 526
+      - 113
+    columnWidths:
+      - 0.46
+      - 0.18
+      - 0.18
+      - 0.18
+    rowHeights:
+      - 0.333333
+      - 0.333333
+      - 0.333333
+    rows:
+      - - text: Materials
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Baseline
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Current
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Next
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+      - - text: Single-use items
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: '100'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '58'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '35'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+      - - text: Reuse rate
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: '50'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '69'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: '82'
+          fill:
+            type: solid
+            color: '#FFFFFF'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+    sourceLayout: 252ed497e2f0c167f3c88c332d74c2681350b8d4a98e9aa4867125c450da2bd9
+  - elementId: slide-19-node-323-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#50645A'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#50645A;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 6f051093d6560f07b02f7808d4395564b32377394256164cb827ebd2c6f6ff07
+  - elementId: slide-19-node-324-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#50645A'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#50645A;font-size:6.8px;font-family:Arial">RESOURCE FOOTPRINT</span></p>
+    sourceLayout: 02ad53ed15a7832e901afece2bdc30f470809d450c3c15817c1bcb9ffd706af0
+  - elementId: slide-19-node-325-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#50645A'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#50645A;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: f09df65b0211372f3624df72fd93e8606e77d19c98d34ac30c1f2df66b44c60d
+  - elementId: slide-19-node-326-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#50645A'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#50645A;font-size:6.8px;font-family:Arial">19</span></p>
+    sourceLayout: 9b6b2ea769cea3e1a95dc8fa70ff732117eac90c61bfdaa4170e958e123cfdc1
+notes: '{"schema":"dsh.template-images/v1","layoutId":"narrative-table","pageRole":"范围与指标：引言及原生数据表","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[],"contentPolicy":"provided-facts-or-qualitative"}'

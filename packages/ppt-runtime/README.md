@@ -32,6 +32,22 @@ The legacy on-disk `kimi-ppt` directory is deliberately retained to preserve ses
 
 PPT remains preinstalled. Its automatic instructions are scoped to sessions where the user enabled the PPT button.
 
+### Personal PPT templates
+
+The chooser's **My templates** tab accepts PPTX files with the configured slide limit (40 by default). Uploads use the Host's shared transport and archive resource limits. They produce page previews and conversion diagnostics. **Save template** registers the reviewed file in the current Desktop profile; new sessions and restarts read the same library. Identical source bytes resolve to the saved template. Users can rename or remove entries; generated task projects stay available.
+
+The host stores source PPTX, editable PPTD pages, assets, previews and conversion records under `personal-templates/` inside the configured PPT data root. Drafts belong to their initiating session. Registered templates belong to this local Desktop profile, including remote connections to that profile. Account-based sharing and cross-device synchronization require a separate identity integration.
+
+`ppt_template_create_project` copies the selected personal template into a new confined workspace directory. The model then adapts that copy with the existing PPTD tools and exports through `pptd_render`. The saved source remains separate from generated task files. All conversion and copy operations use the existing bounded parser/compiler and host audit. Company template fidelity requires review of actual imported pages, particularly master elements and advanced Office objects. Product rules and evidence: [Personal PPT templates](../../docs/ppt-personal-templates.md).
+
+For runtime-only changes, `node scripts/build-ppt-runtime.mjs --reuse-previews` validates all built-in source decks and packages their existing reviewed previews. A full `npm run ppt:build` regenerates the built-in assets.
+
+### Bundled editable templates
+
+Built-in templates can also ship as complete editable PPTD projects. **Green Pulse · 绿色活力配图模板** is the first maintained example: 22 editable layouts, 17 declared image slots, 11 bindings to editable native masks and one native editable diagram. Selecting it exposes the same confined `ppt_template_create_project` flow as a personal template, while the packaged source remains read-only and reusable.
+
+Each project under `core/lib/bundled-template-projects/dsh-*` owns `template.json`, `deck.pptd`, page and asset files, plus one to three JPEG previews. `npm run ppt:bundled-projects` derives the page index, embeds the previews and writes the verified SHA-256 manifest. The normal runtime build runs this step automatically. See [Bundled editable PPT templates](../../docs/ppt-bundled-editable-templates.md) for the repeatable addition and verification flow.
+
 Validation evidence and temporary exports live under ignored `doc/ppt-remediation/`. Windows packaging and native Windows PowerPoint require their own runner/device validation.
 
 ### Layout refinement

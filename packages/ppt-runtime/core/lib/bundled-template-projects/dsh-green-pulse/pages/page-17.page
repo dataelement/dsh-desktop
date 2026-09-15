@@ -1,0 +1,182 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-17-node-260-large-photo
+    elementType: image
+    bounds:
+      - 432
+      - 97
+      - 510
+      - 421
+    src: media/bicycle-support.jpg
+    fit:
+      mode: cover
+    sourceLayout: fda4b32c25283782a65a1153f75ed7cf95b4b2af8025ba76958a681099da185f
+  - elementId: slide-17-node-261-photo-text-notch
+    elementType: shape
+    bounds:
+      - 432
+      - 97
+      - 88
+      - 335
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    sourceLayout: 5c3f3bb70190ff88c4e8ffbdfe51c0dafe3c635463e34d8a48537eb36c62da50
+  - elementId: slide-17-node-262-title
+    elementType: text
+    bounds:
+      - 20
+      - 91
+      - 474
+      - 37
+    content:
+      fontFamily: Arial
+      fontSize: 29
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:29px;font-family:Arial">Everyday Support</span></p>
+    sourceLayout: e3af646fb1fb06cdb1cb50be004333a7afa6039b6074e9196e50f35f49dced29
+  - elementId: slide-17-node-263-intro
+    elementType: text
+    bounds:
+      - 20
+      - 147
+      - 459
+      - 63
+    content:
+      fontFamily: Arial
+      fontSize: 16
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:16px;font-family:Arial">Show the practical services that make</span></p><p><span style="color:#153C2E;font-size:16px;font-family:Arial">participation easier and more durable.</span></p>
+    sourceLayout: 955f7bc892ee8640384eeb9193e6a8b8e2382be84a7fcb84f29b5b2c7358cbe7
+  - elementId: slide-17-node-264-article-0
+    elementType: text
+    bounds:
+      - 20
+      - 239
+      - 142
+      - 263
+    content:
+      fontFamily: Arial
+      fontSize: 11.6
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Remove small barriers</span></p><p></p><p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Offer equipment, guidance or a convenient service at the moment people need it.</span></p><p></p><p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Measure whether the action is used.</span></p>
+    sourceLayout: 1e31ae23233be4c947b9736fab950ea9fd0268f296ff2eece1dbc2381b2cb176
+  - elementId: slide-17-node-265-article-1
+    elementType: text
+    bounds:
+      - 181
+      - 239
+      - 142
+      - 263
+    content:
+      fontFamily: Arial
+      fontSize: 11.6
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Design for upkeep</span></p><p></p><p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Assign ownership for maintenance, replenishment and feedback before launch.</span></p><p></p><p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">A useful service stays usable.</span></p>
+    sourceLayout: 5e37a88f12af360f80e189287ca994ab17bf5955a8e238832a4eb593320772b6
+  - elementId: slide-17-node-266-article-2
+    elementType: text
+    bounds:
+      - 342
+      - 239
+      - 142
+      - 170
+    content:
+      fontFamily: Arial
+      fontSize: 11.6
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Adapt locally</span></p><p></p><p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Let each site adjust the support to its people, space and operating rhythm.</span></p><p></p><p><span style="color:#153C2E;font-size:11.6px;font-family:Arial">Preserve the shared evidence model.</span></p>
+    sourceLayout: fa5d8e31b862a4f9c03737cb50ac13f33de806e4a41fe7724f21a0754a0d1e36
+  - elementId: slide-17-node-267-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 9ae53083f4eb42b9c1fa78485f99e3f4f85529ab386f5cb125fa91ec9a529614
+  - elementId: slide-17-node-268-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">EVERYDAY SUPPORT</span></p>
+    sourceLayout: 89d996c4bbd97bc2e679335d5ce8abacb809b841cf096cd380a5fe9a36042336
+  - elementId: slide-17-node-269-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: 114e8f46bb79b3398d206bdf92ce628e8f5556783a956c8ba705555a5de76194
+  - elementId: slide-17-node-270-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">17</span></p>
+    sourceLayout: b6227d57e25650d1733c3a42f3fe6160422803b1dd69f6ff2cbbde229cf49882
+notes: '{"schema":"dsh.template-images/v1","layoutId":"stepped-photo","pageRole":"方案行动或支持体系：阶梯摄影与解释","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[{"elementId":"slide-17-node-260-large-photo","role":"方案中的具体行动","contentSources":["slide-17-node-262-title","slide-17-node-263-intro","slide-17-node-264-article-0"],"sourcePolicy":"contextual-scene","subject":"A community bicycle repair station where a volunteer helps a resident adjust a bicycle.","composition":"Four-by-three action scene; people and bicycle to the right; calm safe space on the left for the layout mask.","aspectRatio":"4:3","reuseGroup":"solution-scene","maskElementIds":["slide-17-node-261-photo-text-notch"]}],"contentPolicy":"provided-facts-or-qualitative"}'

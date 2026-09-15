@@ -1,0 +1,775 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-18-node-271-data-surface
+    elementType: shape
+    bounds:
+      - 315
+      - 0
+      - 645
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F1F5ED'
+    sourceLayout: 91eaec4ea412d9c0da95c738e2e5eab7965ff830fbd631a3077b0351fc0cbbfc
+  - elementId: slide-18-node-272-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 89839e6ee72780b1ff2a5cdef0fb6df8d0300502de74fdd830a3f33605864230
+  - elementId: slide-18-node-273-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">PARTICIPATION</span></p>
+    sourceLayout: b8fdd17bb0e0ab6702f306c83c9c10d300f52eff7914bd0ae72a745ef1c9d747
+  - elementId: slide-18-node-274-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: 059e41ba2a053d175e73ff3b351cbf934a3f64ba5f792dd2ff6cb6a1f219c792
+  - elementId: slide-18-node-275-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">18</span></p>
+    sourceLayout: 9e7d50c34b06b465a9e674e58e9ca0a8aadcd2ba8842582c22a6bd0834841cbd
+  - elementId: slide-18-node-276-people-photo
+    elementType: image
+    bounds:
+      - 18
+      - 64
+      - 280
+      - 190
+    src: media/inclusive-workshop.jpg
+    fit:
+      mode: cover
+    sourceLayout: 23d78029f8f331a377dfc0b73af5d74a453cbd121704903a73b3b06fa5ea731d
+  - elementId: slide-18-node-277-title
+    elementType: text
+    bounds:
+      - 334
+      - 64
+      - 600
+      - 34
+    content:
+      fontFamily: Arial
+      fontSize: 27
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:27px;font-family:Arial">Participation at a Glance</span></p>
+    sourceLayout: cf605f391910b85528928c9da847f4010344efc34b03870ce6adb5246d814066
+  - elementId: slide-18-node-278-intro-title
+    elementType: text
+    bounds:
+      - 18
+      - 278
+      - 280
+      - 52
+    content:
+      fontFamily: Arial
+      fontSize: 19
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:19px;font-family:Arial">Access, voice</span></p><p><span style="color:#153C2E;font-size:19px;font-family:Arial">and belonging</span></p>
+    sourceLayout: f7a7ec5d8c784782d82e3abdadf87831ed74c2b23db4dfa514b0c79fa2a0fd2e
+  - elementId: slide-18-node-279-intro
+    elementType: text
+    bounds:
+      - 18
+      - 338
+      - 133
+      - 167
+    content:
+      fontFamily: Arial
+      fontSize: 10.5
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:10.5px;font-family:Arial">Who joined</span></p><p></p><p><span style="color:#153C2E;font-size:10.5px;font-family:Arial">Use this area to explain which groups took part and whose perspective remains missing.</span></p><p></p><p><span style="color:#153C2E;font-size:10.5px;font-family:Arial">Pair every percentage with a definition.</span></p>
+    sourceLayout: c93c6028c6ec2e32293c3c32119c19fc8d4e1e68c1b503dafbefb48b4d35aefd
+  - elementId: slide-18-node-280-intro-secondary
+    elementType: text
+    bounds:
+      - 164
+      - 338
+      - 134
+      - 167
+    content:
+      fontFamily: Arial
+      fontSize: 10.5
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:10.5px;font-family:Arial">What changes next</span></p><p></p><p><span style="color:#153C2E;font-size:10.5px;font-family:Arial">Translate the participation pattern into one design change, one outreach action and one review point.</span></p><p></p><p><span style="color:#153C2E;font-size:10.5px;font-family:Arial">All values here are illustrative.</span></p>
+    sourceLayout: 8a8e8f0e48b8172f3774b41a7b66be7c05c5532cc4484e16a75d881571ca2107
+  - elementId: slide-18-node-281-age-title
+    elementType: text
+    bounds:
+      - 337
+      - 112
+      - 270
+      - 25
+    content:
+      fontFamily: Arial
+      fontSize: 15
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:15px;font-family:Arial">Program mix</span></p>
+    sourceLayout: 6bcc335d495cab0944d67e1d44d7a4c9f621c3789b73d4c019aff64d77184bde
+  - elementId: slide-18-node-282-age-rule
+    elementType: line
+    bounds:
+      - 337
+      - 139
+      - 260
+      - 0.1
+    viewBox:
+      - 260
+      - 0.1
+    points: 0,0 260,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 26224650ffe66e3088e39f6701c10506a8465d12c40f3ab3d0e06d86eba145aa
+  - elementId: slide-18-node-283-age-bubble-0
+    elementType: shape
+    bounds:
+      - 339
+      - 171
+      - 70
+      - 70
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: 8bda40201fa9529a5fd1acd90cf870f1dbf7c5de4cd89813fbbfbb1a6cb28817
+  - elementId: slide-18-node-284-age-value-0
+    elementType: text
+    bounds:
+      - 339
+      - 190.6
+      - 70
+      - 23
+    content:
+      fontFamily: Arial
+      fontSize: 18
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:18px;font-family:Arial">42%</span></p>
+    sourceLayout: c7fcef1b4fb8f42faae57ee0377809e3cc9f5af43e401c5967d0bb5ecc2d8611
+  - elementId: slide-18-node-285-age-label-0
+    elementType: text
+    bounds:
+      - 341
+      - 221.4
+      - 66
+      - 13
+    content:
+      fontFamily: Arial
+      fontSize: 7
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:7px;font-family:Arial">Neighbors</span></p>
+    sourceLayout: 1dbcd440771bdd75c8ebc23948d14cf312c57aee7332b83266546dfdda9ab335
+  - elementId: slide-18-node-286-age-bubble-1
+    elementType: shape
+    bounds:
+      - 410
+      - 149
+      - 56
+      - 56
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#C7F36B'
+    sourceLayout: 41478594bb4c3dd4077b90b1a6fa9a1eeae17f7ac35a41ca9b466e31519c16f9
+  - elementId: slide-18-node-287-age-value-1
+    elementType: text
+    bounds:
+      - 410
+      - 164.68
+      - 56
+      - 23
+    content:
+      fontFamily: Arial
+      fontSize: 18
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:18px;font-family:Arial">33%</span></p>
+    sourceLayout: f8ec5d4a43f1770a966507dbddaafbd94aec18f3439d9c5390648b3c15c09134
+  - elementId: slide-18-node-288-age-label-1
+    elementType: text
+    bounds:
+      - 412
+      - 189.32
+      - 52
+      - 13
+    content:
+      fontFamily: Arial
+      fontSize: 7
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:7px;font-family:Arial">Schools</span></p>
+    sourceLayout: 81fedeb9885a5501659d4d40f4cce35c8d38035da6861de8d8241a32ca722430
+  - elementId: slide-18-node-289-age-bubble-2
+    elementType: shape
+    bounds:
+      - 474
+      - 177
+      - 78
+      - 78
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#E8F6C9'
+    sourceLayout: bdcf882a60309d0da72d6e682603a79a3749f2960e9f899df32334ce91507c63
+  - elementId: slide-18-node-290-age-value-2
+    elementType: text
+    bounds:
+      - 474
+      - 198.84
+      - 78
+      - 23
+    content:
+      fontFamily: Arial
+      fontSize: 18
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:18px;font-family:Arial">25%</span></p>
+    sourceLayout: 2715b9362883f5a528704e9e620547e18ab199ff4b05491692303798d21698df
+  - elementId: slide-18-node-291-age-label-2
+    elementType: text
+    bounds:
+      - 476
+      - 233.16
+      - 74
+      - 13
+    content:
+      fontFamily: Arial
+      fontSize: 7
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:7px;font-family:Arial">Local teams</span></p>
+    sourceLayout: 7cd53670e309b47cfb4ebda76a70b610deb8b0ac7b994b09d2e976215594c618
+  - elementId: slide-18-node-292-identity-frame
+    elementType: shape
+    bounds:
+      - 612
+      - 115
+      - 110
+      - 146
+    shapeName: roundRect
+    fill:
+      type: solid
+      color: '#F1F5ED'
+    border:
+      style: solid
+      width: 0.5
+      color: '#6B7C73'
+    sourceLayout: 4803cde22f830003a2b605a87a4c2886aca3c009f54bf17ec327701a21814576
+  - elementId: slide-18-node-293-identity-title
+    elementType: text
+    bounds:
+      - 623
+      - 128
+      - 92
+      - 45
+    content:
+      fontFamily: Arial
+      fontSize: 15
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:15px;font-family:Arial">Repeat visits</span></p>
+    sourceLayout: ec36c86c9dd8abb6587b11cc06a40b26e129a2b87ab57a2ab0921aa254345887
+  - elementId: slide-18-node-294-identity-metric-a
+    elementType: text
+    bounds:
+      - 623
+      - 181
+      - 92
+      - 35
+    content:
+      fontFamily: Arial
+      fontSize: 24
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:24px;font-family:Arial">58%</span></p>
+    sourceLayout: 6d7146376363a11e669cd8563cfa8cf18969a47929f0c6ba00611ce0d0d7e63c
+  - elementId: slide-18-node-295-identity-metric-b
+    elementType: text
+    bounds:
+      - 623
+      - 222
+      - 92
+      - 35
+    content:
+      fontFamily: Arial
+      fontSize: 24
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:24px;font-family:Arial">71%</span></p>
+    sourceLayout: f428971926a23e7ef83ddb894863bae45625435f0de5c49ea174e7f0dfd679a2
+  - elementId: slide-18-node-296-bar-title
+    elementType: text
+    bounds:
+      - 335
+      - 286
+      - 375
+      - 28
+    content:
+      fontFamily: Arial
+      fontSize: 12
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:12px;font-family:Arial">Access channels · illustrative data</span></p>
+    sourceLayout: 02fe3d62007a96ffc6da783efec069f8798a65bb57fff3bbaf8709478e854aa9
+  - elementId: slide-18-node-297-composition-chart
+    elementType: chart
+    bounds:
+      - 332
+      - 320
+      - 387
+      - 172
+    data:
+      cols:
+        - category
+        - series_1
+        - series_2
+      rows:
+        - - A
+          - 75
+          - 54
+        - - B
+          - 11
+          - 26
+        - - C
+          - 8
+          - 5
+        - - D
+          - 12.5
+          - 7
+        - - E
+          - 0
+          - 2
+    series:
+      - type: bar
+        encode:
+          x: category
+          y: series_1
+        name: Management
+        fill: '#1C7C54'
+      - type: bar
+        encode:
+          x: category
+          y: series_2
+        name: Workforce
+        fill: '#E8F6C9'
+    legend: true
+    fontFamily: MiSans
+    yAxis:
+      min: 0
+      max: 80
+    sourceLayout: 28ee630a4add3838d8c6ee474cd5b14c129eaf0c22736caf85d4d4efbb8c4e6f
+  - elementId: slide-18-node-298-gender-chart-0
+    elementType: chart
+    bounds:
+      - 744
+      - 133
+      - 110
+      - 110
+    data:
+      cols:
+        - category
+        - series_1
+      rows:
+        - - Group A
+          - 50
+        - - Group B
+          - 50
+    series:
+      - type: pie
+        encode:
+          category: category
+          value: series_1
+        name: Board
+        fill:
+          - '#1C7C54'
+          - '#E8F6C9'
+        innerRadius: 0.5
+    legend: false
+    fontFamily: MiSans
+    yAxis: {}
+    sourceLayout: bc1c6bb88a54f4671dd09991435ff75707bd438e317b255d38e6e8f1a310b1b2
+  - elementId: slide-18-node-299-gender-label-0
+    elementType: text
+    bounds:
+      - 754
+      - 177
+      - 90
+      - 27
+    content:
+      fontFamily: Arial
+      fontSize: 9
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:9px;font-family:Arial">Events</span></p>
+    sourceLayout: 9d264e7d0794436758e68c50b2263b06d4a972ad89c5a482cd6773221e4be1ab
+  - elementId: slide-18-node-300-gender-value-0
+    elementType: text
+    bounds:
+      - 858
+      - 153
+      - 83
+      - 43
+    content:
+      fontFamily: Arial
+      fontSize: 28
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:28px;font-family:Arial">46%</span></p>
+    sourceLayout: 3eb7d535b28fe9b81198b4dcad9e1162f53388406ee3ee420dda9aed561cc690
+  - elementId: slide-18-node-301-gender-rest-0
+    elementType: text
+    bounds:
+      - 858
+      - 196
+      - 83
+      - 38
+    content:
+      fontFamily: Arial
+      fontSize: 23
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:23px;font-family:Arial">54%</span></p>
+    sourceLayout: 9bfe2059ff929a0be6458def76438ab099d843cce91834222b0e2056b6dcaee4
+  - elementId: slide-18-node-302-gender-rule-0
+    elementType: line
+    bounds:
+      - 748
+      - 252
+      - 188
+      - 0.1
+    viewBox:
+      - 188
+      - 0.1
+    points: 0,0 188,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: c16bf38408e0c3290bbba1a10d5359c63ec79e2f683fc839d438075cb384fccf
+  - elementId: slide-18-node-303-gender-chart-1
+    elementType: chart
+    bounds:
+      - 744
+      - 261
+      - 110
+      - 110
+    data:
+      cols:
+        - category
+        - series_1
+      rows:
+        - - Group A
+          - 64
+        - - Group B
+          - 36
+    series:
+      - type: pie
+        encode:
+          category: category
+          value: series_1
+        name: Management
+        fill:
+          - '#1C7C54'
+          - '#E8F6C9'
+        innerRadius: 0.5
+    legend: false
+    fontFamily: MiSans
+    yAxis: {}
+    sourceLayout: 25198cb3273ad72bf22b0bcf487aee6bbc650ecb445c7123069fc5469a42fb25
+  - elementId: slide-18-node-304-gender-label-1
+    elementType: text
+    bounds:
+      - 754
+      - 305
+      - 90
+      - 27
+    content:
+      fontFamily: Arial
+      fontSize: 9
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:9px;font-family:Arial">Online</span></p>
+    sourceLayout: 3bdcd764413e9d5c979f3b7395bbb68794c664b0a0270ede9a1803dd840878b6
+  - elementId: slide-18-node-305-gender-value-1
+    elementType: text
+    bounds:
+      - 858
+      - 281
+      - 83
+      - 43
+    content:
+      fontFamily: Arial
+      fontSize: 28
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:28px;font-family:Arial">63%</span></p>
+    sourceLayout: ca67dae1edc0c459d4f600bf87fba0713451b240e81bd7cc8b0178481ac7dc25
+  - elementId: slide-18-node-306-gender-rest-1
+    elementType: text
+    bounds:
+      - 858
+      - 324
+      - 83
+      - 38
+    content:
+      fontFamily: Arial
+      fontSize: 23
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:23px;font-family:Arial">37%</span></p>
+    sourceLayout: 870eadd4874d39644eac5a465a1bdfc41ca94803ae96337eb583205b10ad6135
+  - elementId: slide-18-node-307-gender-rule-1
+    elementType: line
+    bounds:
+      - 748
+      - 380
+      - 188
+      - 0.1
+    viewBox:
+      - 188
+      - 0.1
+    points: 0,0 188,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 10cf4de12c4cc025e32eea3b68acf44d4a685911e11e543b26adc200a193fc71
+  - elementId: slide-18-node-308-gender-chart-2
+    elementType: chart
+    bounds:
+      - 744
+      - 389
+      - 110
+      - 110
+    data:
+      cols:
+        - category
+        - series_1
+      rows:
+        - - Group A
+          - 51
+        - - Group B
+          - 49
+    series:
+      - type: pie
+        encode:
+          category: category
+          value: series_1
+        name: Employees
+        fill:
+          - '#1C7C54'
+          - '#E8F6C9'
+        innerRadius: 0.5
+    legend: false
+    fontFamily: MiSans
+    yAxis: {}
+    sourceLayout: 07edc220aee30ecc6da0c07e5ab85fc95a7b8278ae7daf0a6b461e6b50f819ad
+  - elementId: slide-18-node-309-gender-label-2
+    elementType: text
+    bounds:
+      - 754
+      - 433
+      - 90
+      - 27
+    content:
+      fontFamily: Arial
+      fontSize: 9
+      color: '#153C2E'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:9px;font-family:Arial">Partners</span></p>
+    sourceLayout: e7bec2f483c4b29105112565e00e8e3e1fd9b72b9cb9e2ce67dbea8b5b3c4c22
+  - elementId: slide-18-node-310-gender-value-2
+    elementType: text
+    bounds:
+      - 858
+      - 409
+      - 83
+      - 43
+    content:
+      fontFamily: Arial
+      fontSize: 28
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:28px;font-family:Arial">52%</span></p>
+    sourceLayout: 100f81f8bca34be0e706a2a31d2c48990bf1c27a246dccaa6cbcdd3efaf7ede9
+  - elementId: slide-18-node-311-gender-rest-2
+    elementType: text
+    bounds:
+      - 858
+      - 452
+      - 83
+      - 38
+    content:
+      fontFamily: Arial
+      fontSize: 23
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:23px;font-family:Arial">48%</span></p>
+    sourceLayout: 5002464a43b80c247ea174c22c363bc7857aa8fc2c2ab01a325ffdf949e37dc5
+  - elementId: slide-18-node-312-gender-rule-2
+    elementType: line
+    bounds:
+      - 748
+      - 508
+      - 188
+      - 0.1
+    viewBox:
+      - 188
+      - 0.1
+    points: 0,0 188,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: c29e32955754880505d4aebbb364bfba7c4356c866320eca57db50e89945311b
+  - elementId: slide-18-node-313-gender-title
+    elementType: text
+    bounds:
+      - 745
+      - 108
+      - 177
+      - 23
+    content:
+      fontFamily: Arial
+      fontSize: 15
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:15px;font-family:Arial">Channel split</span></p>
+    sourceLayout: 999b604e7e11a041cbc5d4636730fc2ee67080ccc0fef0137d062960b829e849
+notes: '{"schema":"dsh.template-images/v1","layoutId":"diversity-dashboard","pageRole":"统计概览：情境摄影与原生可编辑图表","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[{"elementId":"slide-18-node-276-people-photo","role":"人群与业务情境","contentSources":["slide-18-node-277-title","slide-18-node-278-intro-title","slide-18-node-279-intro"],"sourcePolicy":"contextual-scene","subject":"A diverse multigenerational group collaborating in an accessible community workshop.","composition":"Four-by-three group scene; authentic interaction; balanced representation; simple background.","aspectRatio":"4:3","reuseGroup":"team-scene","maskElementIds":[]}],"contentPolicy":"provided-facts-or-qualitative"}'

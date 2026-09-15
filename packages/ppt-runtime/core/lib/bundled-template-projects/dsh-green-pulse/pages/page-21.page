@@ -1,0 +1,136 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-21-node-335-portrait
+    elementType: image
+    bounds:
+      - 20
+      - 65
+      - 430
+      - 457
+    src: media/reporting-method.jpg
+    fit:
+      mode: cover
+    sourceLayout: db514d11b881de77b8c077282a9c6486969a45a590e2aa401b21e509db8f3061
+  - elementId: slide-21-node-336-title
+    elementType: text
+    bounds:
+      - 473
+      - 125
+      - 438
+      - 106
+    content:
+      fontFamily: Arial
+      fontSize: 44
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:44px;font-family:Arial">How to Use</span></p><p><span style="color:#153C2E;font-size:44px;font-family:Arial">This Template</span></p>
+    sourceLayout: db097593f99d4e11ce06f77d5ca08b723c4aef01d03781e00def50d06fb51e21
+  - elementId: slide-21-node-337-report-copy-0
+    elementType: text
+    bounds:
+      - 477
+      - 282
+      - 187
+      - 210
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">Set the boundary</span></p><p></p><p><span style="color:#153C2E;font-size:13px;font-family:Arial">Name the audience, reporting period and decisions this deck supports.</span></p><p></p><p><span style="color:#153C2E;font-size:13px;font-family:Arial">Remove any sample page that does not serve the story.</span></p>
+    sourceLayout: 94a79ccbb2a4326d359d14a0ed3449fd20dde8146d9c7b82367d3db01ebda3de
+  - elementId: slide-21-node-338-report-copy-1
+    elementType: text
+    bounds:
+      - 690
+      - 282
+      - 187
+      - 210
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">Verify the evidence</span></p><p></p><p><span style="color:#153C2E;font-size:13px;font-family:Arial">Replace every illustrative value, caption and example with an approved source.</span></p><p></p><p><span style="color:#153C2E;font-size:13px;font-family:Arial">Keep image prompts free of brands, logos and embedded text.</span></p>
+    sourceLayout: 17b8f888bd8a59c195e0648efc5f96487b8688f4ae249e439750837aa68951f8
+  - elementId: slide-21-node-339-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 44b6ca6e2f5aff4f160be9bc19cbda57ebd521d9efaaa0c4545bad73706ff6b4
+  - elementId: slide-21-node-340-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">TEMPLATE GUIDE</span></p>
+    sourceLayout: fe0ef288d79f5736ab3787985927e93105f9661fe18f749fdc9537c07aeed1ad
+  - elementId: slide-21-node-341-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: 9b319b89d77ab69622b5d53b7ed14c2fa2f4011316779a434ce75960880baa3b
+  - elementId: slide-21-node-342-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">21</span></p>
+    sourceLayout: a6f3c13d8b0812587b2f7b9a35c662a73e8bd28b3fd99c90497927a0207b9f89
+notes: '{"schema":"dsh.template-images/v1","layoutId":"about-portrait","pageRole":"报告范围或组织介绍：场景摄影与方法说明","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[{"elementId":"slide-21-node-335-portrait","role":"报告对象或组织场景","contentSources":["slide-21-node-336-title","slide-21-node-337-report-copy-0","slide-21-node-338-report-copy-1"],"sourcePolicy":"contextual-scene","subject":"A fictional sustainability analyst reviewing charts, material samples and field notes at a desk.","composition":"Square environmental portrait facing toward the right-side copy; no readable documents or screens.","aspectRatio":"1:1","reuseGroup":"organization-scene","maskElementIds":[]}],"contentPolicy":"provided-facts-or-qualitative"}'
