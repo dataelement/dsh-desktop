@@ -306,9 +306,10 @@ DockKit 的 Tab 本体还是 `div[role="tab"]`，而不是 `<button>`。只覆�
 当前产品分支采取以下组合措施：
 
 1. 将全宽透明拖拽层从 36px 缩小为窗口最顶部 6px，只保留一条不会覆盖工具栏控件的拖动带。
-2. 为 `[role="tab"]` 和 `[data-dockkit-strip]` 显式设置 `-webkit-app-region: no-drag !important`。
-3. 将应用根节点放在拖拽层之上，避免普通控件被最高层透明元素覆盖。
-4. 带 `[data-dockkit-strip-chrome]` 的右侧面板 Tab 条预留 Windows 原生标题栏按钮及应用菜单宽度，防止面板按钮与原生最小化、最大化、关闭按钮重叠。
+2. 将 `[data-slot="conversation.session.header"] > header` 自身标记为拖拽区，使会话标题栏中部空白重新可以拖动窗口；这里不再使用覆盖在控件上方的独立透明元素。
+3. 为按钮、链接、表单控件、`[role="button"]`、`[role="tab"]` 和 `[data-dockkit-strip]` 显式设置 `-webkit-app-region: no-drag !important`，从标题栏拖拽区中保留完整交互命中范围。
+4. 将应用根节点放在顶部 6px 拖拽层之上，避免普通控件被透明元素覆盖。
+5. 带 `[data-dockkit-strip-chrome]` 的右侧面板 Tab 条预留 Windows 原生标题栏按钮及应用菜单宽度，防止面板按钮与原生最小化、最大化、关闭按钮重叠。
 
 实现与回归断言分别位于：
 
@@ -337,6 +338,7 @@ npm.cmd run typecheck
 
 - [ ] 鼠标移到顶部按钮中心时立即出现正确的手型或悬停状态，而不是只有下沿、圆角可点击。
 - [ ] 文件按钮、下拉按钮和省略号按钮的整个可视区域都能点击。
+- [ ] 在会话标题栏中部没有控件的空白处按住鼠标可以拖动窗口。
 - [ ] 右侧面板 Tab 可选择、可拖动，关闭按钮可点击。
 - [ ] 双击 Tab 不会最大化或还原窗口。
 - [ ] 右侧面板的新增、分栏、全屏和收起按钮不与 Windows 原生按钮重叠。

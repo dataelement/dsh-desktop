@@ -61,6 +61,7 @@ function installLayout(document: Document): void {
     }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
       padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;
+      -webkit-app-region: drag;
     }
     body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel]
       [data-dockkit-strip]:has([data-dockkit-strip-chrome]) {

@@ -26,7 +26,7 @@ describe('Windows titlebar menu', () => {
     expect(main).toContain('Menu.setApplicationMenu(Menu.buildFromTemplate(template))')
   })
 
-  it('keeps the Windows app full-height while limiting the drag region to the top edge', async () => {
+  it('keeps the Windows app full-height while making only empty titlebar surfaces draggable', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
     const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
 
@@ -45,6 +45,8 @@ describe('Windows titlebar menu', () => {
     expect(preload).not.toContain('height: 36px')
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout > #root')
     expect(preload).toContain('z-index: 1')
+    expect(preload).toContain('[data-slot="conversation.session.header"] > header')
+    expect(preload).toContain('padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important')
     expect(preload).toContain('left: 0')
     expect(preload).toContain('z-index: 0')
     expect(preload).not.toContain('z-index: 2147483644')
@@ -52,6 +54,7 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout button')
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout [role="tab"]')
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout [data-dockkit-strip]')
+    expect(preload.match(/-webkit-app-region: drag/g)).toHaveLength(2)
     expect(preload).toContain('[data-dockkit-strip]:has([data-dockkit-strip-chrome])')
     expect(preload).toContain('margin-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px)')
     expect(preload).toContain('-webkit-app-region: no-drag !important')
