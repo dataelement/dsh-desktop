@@ -48,6 +48,54 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain("document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')")
   })
 
+  it('integrates session export into the application menu and defines titlebar safe-inset variables', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
+    const menuPreload = await readFile('src/preload/windows-menu.ts', 'utf8')
+    const sidebarPatch = await readFile(
+      'patches/@deepseek-ai+dsh-client-ui-sidebar-right+0.1.5-rc.2.patch',
+      'utf8'
+    )
+
+    // Standard CSS variable declarations for safe titlebar insets
+    expect(preload).toContain('--dsh-titlebar-safe-inset-top: 36px;')
+    expect(preload).toContain('--dsh-titlebar-safe-inset-right:')
+
+    // Sidebar right patch adopts the standard variable
+    expect(sidebarPatch).toContain('var(--dsh-titlebar-safe-inset-top, 0px)')
+
+    // Header container and row 2 action cluster (utilities & corner) below titlebar strip
+    expect(preload).toContain('[data-slot="conversation.session.header"] > header')
+    expect(preload).toContain('min-height: 76px !important;')
+    expect(preload).toContain('[data-conversation-header-corner]')
+    expect(preload).toContain('top: 38px !important;')
+    expect(preload).toContain('right: 20px !important;')
+    expect(preload).toContain('[class*="headerUtilities"]')
+    expect(preload).toContain('right: 56px !important;')
+    expect(preload).toContain('[class*="moreButton"]')
+    expect(preload).toContain('display: none !important;')
+    expect(preload).toContain('div[role="tablist"]')
+    expect(preload).toContain('padding-right: 180px !important;')
+
+    // Row 1 breadcrumb/title row reserves space to stay clear of min/max/close and menu button
+    expect(preload).toContain('[data-slot="conversation.session.header"] > header > div:first-child')
+    expect(preload).toContain('padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;')
+
+    // Right sidebar offsets below titlebar safe-inset
+    expect(preload).toContain('[data-sidebar-right-panel]')
+    expect(preload).toContain('var(--dsh-titlebar-safe-inset-top, 36px)')
+
+    // Application menu includes export-session command
+    expect(desktopMenuCommands).toContain('export-session')
+    expect(menuPreload).toContain("command: 'export-session'")
+    expect(menuPreload).toContain("zh ? '导出 Session 日志…' : 'Export Session Log…'")
+    expect(main).toContain("case 'export-session':")
+
+    // No broken CSS transform injections on display:contents slot anchors
+    expect(main).not.toContain('dsh-desktop-windows-header-shift')
+    expect(main).not.toContain('transform:translateY')
+  })
+
   it('accepts only the fixed menu command allowlist', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
 

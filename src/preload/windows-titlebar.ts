@@ -53,11 +53,65 @@ function installLayout(document: Document): void {
       height: 100% !important;
       min-height: 0 !important;
     }
+    :root {
+      --dsh-titlebar-safe-inset-top: 36px;
+      --dsh-titlebar-safe-inset-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
+    }
     body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
       padding-top: 6px !important;
     }
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel],
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel="fullscreen"],
+    body.dsh-desktop-windows-titlebar-layout [data-rightbar-col] > div,
+    body.dsh-desktop-windows-titlebar-layout [data-side="rightbar"] {
+      top: var(--dsh-titlebar-safe-inset-top, 36px) !important;
+      height: calc(100% - var(--dsh-titlebar-safe-inset-top, 36px)) !important;
+    }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
+      position: relative !important;
+      min-height: 76px !important;
+      padding-top: 6px !important;
+      padding-right: 20px !important;
+      box-sizing: border-box !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header > div:first-child {
       padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;
+      box-sizing: border-box !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div[data-conversation-header-corner],
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerCorner"] {
+      position: absolute !important;
+      top: 38px !important;
+      right: 20px !important;
+      margin: 0 !important;
+      z-index: 20 !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"] {
+      position: absolute !important;
+      top: 38px !important;
+      right: 56px !important;
+      margin: 0 !important;
+      z-index: 20 !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ [data-conversation-header-corner]:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ [class*="headerCorner"]:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ div:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:last-child {
+      right: 20px !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] button[aria-label="更多操作"],
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] button[aria-label="More actions"],
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] [class*="moreButton"] {
+      display: none !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div[role="tablist"] {
+      padding-right: 180px !important;
+      box-sizing: border-box !important;
     }
     body.dsh-desktop-windows-titlebar-layout button,
     body.dsh-desktop-windows-titlebar-layout a,
