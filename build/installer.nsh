@@ -93,10 +93,13 @@
     ; launch scan. Re-running the installer as admin adds the exclusions.
     !macro customInstall
       WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
-      ; Defender exclusion: installation directory (contains node.exe, .node, .dll, .js)
-      nsExec::ExecToLog 'powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue"'
-      ; Defender exclusion: harness data directory (plugin generations, pnpm store, compile cache)
-      nsExec::ExecToLog 'powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue"'
+      ; Direct attempt (succeeds if installer was executed as Administrator)
+      nsExec::ExecToLog 'powershell.exe -NonInteractive -NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue"'
+      ; When running non-elevated (default user install), invoke elevated PowerShell via runas to apply Defender exclusions and enable LongPaths in HKLM.
+      ; If UAC is accepted, Defender exclusion takes effect and avoids scanning 20,000+ files on first launch.
+      ${IfNot} ${Silent}
+        ExecShell "runas" 'powershell.exe' '-NonInteractive -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath \"$INSTDIR\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionPath \"$APPDATA\dsh-desktop\" -ErrorAction SilentlyContinue; Set-ItemProperty -Path \"HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem\" -Name \"LongPathsEnabled\" -Value 1 -ErrorAction SilentlyContinue"'
+      ${EndIf}
     !macroend
   !endif
 !endif

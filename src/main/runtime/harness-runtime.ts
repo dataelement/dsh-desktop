@@ -458,7 +458,7 @@ export class HarnessRuntime {
       profile
     )
     const startupTimeoutMs =
-      this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 120_000 : 45_000)
+      this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 180_000 : 45_000)
 
     this.launchClock ??= Date.now()
     this.writeLog(`[desktop] starting ${new Date().toISOString()}`)
@@ -935,7 +935,8 @@ async function waitUntilReady(
   launchToken: () => string | undefined,
   timeoutMs: number
 ): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
+  let deadline = Date.now() + timeoutMs
+  let extendedForLaunch = false
   // A probe only counts as healthy once Harness has printed its launch token,
   // and Harness prints that line after its whole plugin tree has loaded and
   // the web server is serving. The first healthy probe is therefore already
@@ -944,6 +945,12 @@ async function waitUntilReady(
   const stabilityWindowMs = 0
   let readySince: number | undefined
   while (Date.now() < deadline && isAlive()) {
+    // If Harness has already announced its endpoint (launch token emitted),
+    // grant at least 30s for the HTTP probe to answer before timing out.
+    if (!extendedForLaunch && launchToken() !== undefined) {
+      extendedForLaunch = true
+      deadline = Math.max(deadline, Date.now() + 30_000)
+    }
     try {
       const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1_000) })
       const stability = updateReadyStability(
