@@ -15,6 +15,21 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    - id: dsh-desktop-workbenches
+      name: dsh-desktop-workbenches
+      config:
+        root: !!js dshHomePath('desktop-workbenches')
+
+    # Local adapters preserve the original business workflows.
+    - id: ming-life
+      name: ming-life
+
+    - id: site-selection
+      name: dsh-site-selection
+
+    - id: media-workbench
+      name: dsh-media-workbench
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.

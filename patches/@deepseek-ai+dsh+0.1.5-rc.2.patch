@@ -1,7 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -28,6 +28,11 @@
+@@ -28,6 +28,15 @@
    },
    "license": "MIT",
    "dependencies": {
@@ -10,6 +10,10 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 +    "dsh-desktop-hmr-fallback": "0.1.0",
 +    "dsh-desktop-market-installer": "0.1.0",
 +    "dsh-desktop-preset-transfer": "0.1.0",
++    "dsh-desktop-workbenches": "0.1.0",
++    "ming-life": "1.2.0",
++    "dsh-site-selection": "1.2.0",
++    "dsh-media-workbench": "0.12.1",
      "commander": "^15.0.0",
      "js-yaml": "^4.2.0",
      "node-addon-require-builtin": "^0.1.4",

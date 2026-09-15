@@ -12,7 +12,7 @@ describe('desktop Electron directory picker', () => {
     expect(main).toContain("ipcMain.handle('directory-picker:open'")
     expect(main).toContain('event.senderFrame !== mainWindow.webContents.mainFrame')
     expect(main).toContain('dialog.showOpenDialog(mainWindow')
-    expect(main).toContain("properties: ['openDirectory']")
+    expect(main).toContain("properties: ['openDirectory', 'createDirectory']")
     expect(main).toContain("app.commandLine.appendSwitch('lang', harnessLocale() === 'zh' ? 'zh-CN' : 'en-US')")
   })
 

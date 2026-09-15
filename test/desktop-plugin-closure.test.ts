@@ -57,7 +57,7 @@ describe('desktop plugin closure', () => {
 
     for (const row of profilePatch.flatMap((entry) => entry.insert ?? [])) {
       if (typeof row.name !== 'string') continue
-      expect(manifest.dependencies[row.name]).toMatch(/^file:packages\//u)
+      expect(manifest.dependencies[row.name]).toMatch(/^file:(?:packages\/|vendor\/workbenches\/[^/]+\.tgz$)/u)
     }
   })
 })

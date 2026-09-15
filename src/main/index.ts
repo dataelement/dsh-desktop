@@ -2935,7 +2935,7 @@ async function bootstrap(): Promise<void> {
 
     const result = await dialog.showOpenDialog(mainWindow, {
       title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
-      properties: ['openDirectory']
+      properties: ['openDirectory', 'createDirectory']
     })
     return result.canceled ? null : result.filePaths[0] ?? null
   })

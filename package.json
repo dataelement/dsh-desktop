@@ -273,16 +273,20 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-desktop-workbenches": "file:packages/dsh-desktop-workbenches",
+    "dsh-media-workbench": "file:vendor/workbenches/dsh-media-workbench-0.12.1.tgz",
+    "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
+    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
+    "dsh-site-selection": "file:vendor/workbenches/dsh-site-selection-1.2.0.tgz",
     "dshmarket": "1.45.1",
     "electron-updater": "^6.8.9",
+    "ming-life": "file:vendor/workbenches/ming-life-1.2.0.tgz",
     "node": "24.9.0",
     "pnpm": "10.34.5",
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "ws": "^8.21.3",
-    "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
-    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
