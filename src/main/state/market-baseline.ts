@@ -74,8 +74,30 @@ export async function demoteMarketGeneration(
 
   // Keep the declaration: dropping it would read as "the market was
   // uninstalled" and every later repair would decline to reinstall it.
+  // If a newer version >= VERIFIED_MARKET_BASELINE was installed, preserve it
+  // rather than forcing a fallback to VERIFIED_MARKET_BASELINE.
+  let actualInstalledVersion: string | undefined
+  try {
+    actualInstalledVersion = await readInstalledPluginVersion(dshHome, MARKET_PACKAGE)
+  } catch {
+    // unreadable or missing
+  }
+  const isMeetsBaseline = (v?: string): boolean => {
+    const clean = v?.replace(/^[~^v=><\s]+/g, '')
+    return !!clean && !!parseSemver(clean) && compareSemver(clean, VERIFIED_MARKET_BASELINE) >= 0
+  }
+
+  const candidateVersion =
+    owned?.visibleVersion ??
+    (isMeetsBaseline(actualInstalledVersion) ? actualInstalledVersion : undefined) ??
+    (isMeetsBaseline(manifest.dependencies?.[MARKET_PACKAGE]) ? manifest.dependencies?.[MARKET_PACKAGE] : undefined) ??
+    (isMeetsBaseline(generations.find((g) => g.pluginName === MARKET_PACKAGE)?.version)
+      ? generations.find((g) => g.pluginName === MARKET_PACKAGE)?.version
+      : undefined) ??
+    VERIFIED_MARKET_BASELINE
+
   manifest.dependencies ??= {}
-  manifest.dependencies[MARKET_PACKAGE] = owned?.visibleVersion ?? VERIFIED_MARKET_BASELINE
+  manifest.dependencies[MARKET_PACKAGE] = candidateVersion
   if (owned !== undefined) {
     delete manifest.dsh!.desktop!.generationProjection!.plugins![MARKET_PACKAGE]
     if (Object.keys(manifest.dsh!.desktop!.generationProjection!.plugins!).length === 0) {
@@ -147,11 +169,28 @@ export async function ensureMarketBaseline(
     .catch(() => false)
   if (meetsBaseline(installed) && !isGenerationLink) return
 
+  const declaredVersion = manifest.dependencies.dshmarket
+  const declaredClean = declaredVersion?.replace(/^[~^v=><\s]+/g, '')
+  const declaredParsed = declaredClean ? parseSemver(declaredClean) : null
+  const targetVersion =
+    declaredParsed && compareSemver(declaredClean, VERIFIED_MARKET_BASELINE) > 0
+      ? declaredVersion
+      : VERIFIED_MARKET_BASELINE
+
   options.note?.(
     isGenerationLink
       ? `[market-baseline] dshmarket ${installed ?? '(unknown)'} is a generation link; reinstalling into the shared tree`
-      : `[market-baseline] upgrading dshmarket ${installed ?? '(missing)'} to ${VERIFIED_MARKET_BASELINE}`
+      : `[market-baseline] upgrading dshmarket ${installed ?? '(missing)'} to ${targetVersion}`
   )
+  // Ensure the profile directory has a valid pnpm-workspace.yaml so pnpm --workspace-root succeeds.
+  const profileDir = dirname(profilePackageJsonPath(options.dshHome))
+  const workspaceYamlPath = join(profileDir, 'pnpm-workspace.yaml')
+  try {
+    await readFile(workspaceYamlPath, 'utf8')
+  } catch {
+    await writeFile(workspaceYamlPath, 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n', 'utf8')
+  }
+
   // This normally happens inside Harness boot, which has not run yet. Ensure
   // generation peer validation sees this installation's host packages first.
   await healProfilesModuleFallback({
@@ -159,7 +198,7 @@ export async function ensureMarketBaseline(
     home: options.dshHome
   })
   await clearProfileInstallMarker(options.dshHome)
-  const result = await upgrade({ ...options, targetVersion: VERIFIED_MARKET_BASELINE })
+  const result = await upgrade({ ...options, targetVersion })
   if (!result.ok) throw new Error(result.detail ?? 'dshmarket installation failed')
 
   const actual = await readInstalledPluginVersion(options.dshHome, 'dshmarket')
