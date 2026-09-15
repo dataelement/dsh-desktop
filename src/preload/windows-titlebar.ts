@@ -1,4 +1,5 @@
 import type { IpcRenderer } from 'electron'
+import { WINDOWS_TITLEBAR_HEIGHT } from '../shared/desktop-menu'
 
 const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
@@ -47,11 +48,13 @@ function installLayout(document: Document): void {
       ${CAPTION_WIDTH_PROPERTY}: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 140px)));
       box-sizing: border-box !important;
       height: 100% !important;
-      padding-top: 0 !important;
+      padding-top: var(--dsh-titlebar-safe-inset-top, 36px) !important;
+      background-color: var(--dsw-alias-bg-base, #ffffff);
     }
     body.dsh-desktop-windows-titlebar-layout > #root {
       height: 100% !important;
       min-height: 0 !important;
+      position: relative !important;
     }
     :root {
       --dsh-titlebar-safe-inset-top: 36px;
