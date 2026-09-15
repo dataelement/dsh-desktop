@@ -3607,6 +3607,62 @@ const Config = z.object({
 	pptSkillRoot: z.string()
 });
 /** Compose storage, browser RPC, and bounded model tools. */
+function registerPptRpcRoute(webCtx, channel, rpcHandler) {
+	webCtx.effect(() => webCtx.webServer.register({
+		kind: "prefix",
+		path: channel,
+		handler: async (req, res) => {
+			if (req.method !== "POST") {
+				res.setHeader("Allow", "POST");
+				res.writeHead(405);
+				res.end();
+				return;
+			}
+			const connection = webCtx.get("connection");
+			const rejection = connection?.requestRejection?.(req);
+			if (rejection !== void 0) {
+				res.writeHead(rejection);
+				res.end(rejection === 401 ? "unauthorized" : "forbidden");
+				return;
+			}
+			const chunks = [];
+			for await (const chunk of req) chunks.push(chunk);
+			let body;
+			try {
+				body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+			} catch {
+				res.writeHead(400);
+				res.end("body is not JSON");
+				return;
+			}
+			const rawPath = new URL(req.url ?? "/", "http://localhost").pathname;
+			const endpoint = rawPath.startsWith(`${channel}/`) ? rawPath.slice(channel.length + 1) : "";
+			try {
+				const result = await rpcHandler(endpoint, body?.payload);
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({
+					type: "server-response",
+					rpcId: body?.rpcId,
+					result
+				}));
+			} catch (err) {
+				res.writeHead(500, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({
+					type: "server-response",
+					rpcId: body?.rpcId,
+					result: {
+						ok: false,
+						error: {
+							code: "internal",
+							message: err instanceof Error ? err.message : String(err)
+						}
+					}
+				}));
+			}
+		}
+	}), `dsh-ppt: ${channel} rpc route`);
+}
+
 async function apply(ctx, config) {
 	const bundledPptSkillRoot = fileURLToPath(new URL("../skills/dsh-ppt", import.meta.url));
 	registerPreviewAssets(ctx, previewFiles, path.join(bundledPptSkillRoot, "references"));
@@ -3615,17 +3671,18 @@ async function apply(ctx, config) {
 		maxDecksPerSession: config.maxDecksPerSession ?? 50,
 		maxActivities: config.maxActivities ?? 200
 	}), { maxSlides: config.maxSlides ?? 40 });
-	// Harness 0.1.5 registers an RPC channel as a webServer route owned by the
-	// Context that read `connection`, and that Context must itself declare
-	// `webServer`. Registering from a scoped inject Context is upstream's own
-	// pattern; reading `ctx.connection` directly throws
-	// `cannot get property "webServer" without inject` and fails the whole tree.
+	const rpcHandler = pptRpc(service);
 	ctx.inject(["webServer"], (webCtx) => {
-		webCtx.connection.rpc.handle("/dsh-ppt", pptRpc(service), { authority: "trusted-host" });
+		registerPptRpcRoute(webCtx, "/dsh-ppt", rpcHandler);
 		// Older loaded clients can finish their in-flight requests after upgrade.
-		webCtx.connection.rpc.handle("/kimi-ppt", pptRpc(service), { authority: "trusted-host" });
+		registerPptRpcRoute(webCtx, "/kimi-ppt", rpcHandler);
+		try {
+			webCtx.connection?.rpc?.handle?.("/dsh-ppt", rpcHandler, { authority: "trusted-host" });
+			webCtx.connection?.rpc?.handle?.("/kimi-ppt", rpcHandler, { authority: "trusted-host" });
+		} catch {}
 	});
 	registerPptTools(ctx, service);
 }
 //#endregion
 export { Config, apply, inject, name };
+
