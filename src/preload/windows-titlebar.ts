@@ -59,6 +59,11 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
       padding-top: 6px !important;
     }
+    body.dsh-desktop-windows-titlebar-layout
+      [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"]
+      > div:has([data-dsh-sidebar-brand-identity]) {
+      -webkit-app-region: drag;
+    }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
       padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;
       -webkit-app-region: drag;
@@ -76,6 +81,15 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout [role="tab"],
     body.dsh-desktop-windows-titlebar-layout [data-dockkit-strip],
     body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
+      -webkit-app-region: no-drag !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout
+      [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"]
+      > div:has([data-dsh-sidebar-brand-identity])
+      > button:has([data-dsh-sidebar-brand-identity]) {
+      -webkit-app-region: drag !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-brand-identity] {
       -webkit-app-region: no-drag !important;
     }
     #${DRAG_REGION_ID} {
