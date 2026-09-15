@@ -1,5 +1,6 @@
 /* Repair Agent Floating Widget Styles */
 .repair-widget-fab {
+  display: none !important;
   position: fixed;
   right: 24px;
   bottom: 24px;
@@ -51,6 +52,7 @@
 
 /* Chat Modal Window */
 .repair-widget-window {
+  display: none !important;
   position: fixed;
   right: 24px;
   bottom: 86px;

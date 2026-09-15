@@ -69,8 +69,8 @@
   }
 
   window.initRepairWidget = function (config) {
-    if (widgetMounted) return;
-    widgetMounted = true;
+    // 临时屏蔽系统维修 Agent 聊天窗口与 FAB 图标
+    return;
 
     const isChinese = config?.locale === 'zh' || document.documentElement.lang?.startsWith('zh');
     const defaultPrompt = config?.defaultPrompt || '';

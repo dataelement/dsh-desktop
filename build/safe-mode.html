@@ -354,23 +354,8 @@
       })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', {}))
     </script>
+    <!-- 临时屏蔽系统维修 Agent 聊天窗口
     <script src="repair-widget.js"></script>
-    <script>
-      if (typeof window.initRepairWidget === 'function') {
-        const isZh = model.locale === 'zh'
-        const pluginsStr = pluginItems.map(p => p.name + (p.statusLabel || '')).join(', ') || (isZh ? '无' : 'None')
-        const issuesCount = issueCheckboxes.length
-        const defaultPrompt = model.repairAgentPrompt || (isZh
-          ? `你是 DSH Desktop 系统维修 Agent。桌面端当前已进入【安全模式】（所有第三方插件已被停用）。\n\n当前检测到的插件状态：\n${pluginsStr}\n检测到的兼容性异常组数：${issuesCount}\n\n请按以下结构帮助我排查与修复：\n1. 故障原因分析（结合插件版本与兼容性状态）\n2. 建议的修复动作（是否优先升级插件、卸载特定插件或重置配置）\n3. 退出安全模式并恢复正常使用的步骤与回退方案。`
-          : `You are the DSH Desktop Repair Agent. The app is currently in [Safe Mode] with third-party plugins temporarily disabled.\n\nDetected plugin status:\n${pluginsStr}\nCompatibility issue groups: ${issuesCount}\n\nPlease help me diagnose and recover:\n1. Root-cause analysis based on plugin version and compatibility\n2. Recommended repair actions (upgrade plugins / remove specific plugins / reset settings)\n3. Step-by-step verification and rollback plan to return to normal mode safely.`)
-        window.initRepairWidget({
-          locale: model.locale,
-          defaultPrompt,
-          questions: model.repairAgentQuestions || (isZh
-            ? ['是否刚升级或安装了某个插件导致异常？', '是否可以一键升级兼容插件来恢复？']
-            : ['Did a recent plugin install/update cause the crash?', 'Can updating plugins resolve the compatibility issues?'])
-        })
-      }
-    </script>
+    -->
   </body>
 </html>
