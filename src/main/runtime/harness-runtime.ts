@@ -662,7 +662,9 @@ ${cause}`
   private writeLog(line: string): void {
     this.logLines.push(line)
     if (this.logLines.length > 200) this.logLines.splice(0, this.logLines.length - 200)
-    this.logStream?.write(`${this.stampLog(line)}\n`)
+    const stamped = this.stampLog(line)
+    this.logStream?.write(`${stamped}\n`)
+    console.log(stamped)
   }
 
   /**

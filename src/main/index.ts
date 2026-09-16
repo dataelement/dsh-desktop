@@ -3208,6 +3208,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
   installGpuFallbackWatch()
   const singleInstance = app.requestSingleInstanceLock()
   if (!singleInstance) {
+    console.warn('[desktop] Another instance is already running; focusing existing window and exiting.')
     app.quit()
   } else {
     // Start the login-shell capture now so it overlaps Electron's own startup
