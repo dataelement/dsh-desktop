@@ -17,6 +17,7 @@
     "skills",
     "cordis.patch.yml",
     "README.md",
+    "STATUS.md",
     "LICENSE"
   ],
   "license": "MIT",

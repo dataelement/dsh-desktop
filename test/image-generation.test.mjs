@@ -14,7 +14,7 @@ import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import sharp from 'sharp'
-import { apply, imageTool } from '../packages/dsh-image-generation/index.js'
+import { apply, CONFIGURED_IMAGE_PROMPT, IMAGE_PROMPT_SECTION, imageTool, UNCONFIGURED_IMAGE_PROMPT } from '../packages/dsh-image-generation/index.js'
 import { createSettings } from '../packages/dsh-image-generation/lib/settings.js'
 import { DEFAULTS, MODEL_CATALOG, generate, generationBody, ImageError, profile, readBounded, validateConnection } from '../packages/dsh-image-generation/lib/provider.js'
 import { normalizeImage } from '../packages/dsh-image-generation/lib/assets.js'
@@ -292,6 +292,32 @@ describe('image tool and durable Office assets', () => {
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied)).toContain('Deployment blocks image generation')
     expect(provider.calls).toHaveLength(2)
+  })
+  async function mountPlugin(fixture, routes = []) {
+    const plugin = fixture.ctx.plugin({ inject: ['settings', 'skills', 'systemPrompt', 'tools'], apply: ctx => apply({
+      ...fixture.services, settings: ctx.settings, skills: ctx.skills, systemPrompt: ctx.systemPrompt, tools: ctx.tools,
+      on: ctx.on.bind(ctx), connection: { fetch: { register: route => routes.push(route) } },
+    }) })
+    await plugin
+    cleanups.push(() => plugin.dispose())
+    return plugin
+  }
+  it('assembles an unconfigured prompt, a configured parallel prompt, and fails closed without leaking secrets', async () => {
+    const f = await fixture()
+    await mountPlugin(f)
+    const unset = await f.ctx.systemPrompt.assemble()
+    expect(unset.sections.find(section => section.name === IMAGE_PROMPT_SECTION)?.text).toBe(UNCONFIGURED_IMAGE_PROMPT)
+    const s = await server()
+    await f.settings.save(saveInput('openai', s.baseUrl))
+    const ready = await f.ctx.systemPrompt.assemble()
+    expect(ready.sections.find(section => section.name === IMAGE_PROMPT_SECTION)?.text).toBe(CONFIGURED_IMAGE_PROMPT)
+    expect(JSON.stringify(ready)).not.toContain('test-image-key')
+    vi.spyOn(f.services.credentials, 'readRecord').mockRejectedValue(new Error('secret-echo-key'))
+    const closed = await f.ctx.systemPrompt.assemble()
+    expect(closed.sections.find(section => section.name === IMAGE_PROMPT_SECTION)?.text).toBe(UNCONFIGURED_IMAGE_PROMPT)
+    expect(JSON.stringify(closed)).not.toContain('secret-echo-key')
+    expect(JSON.stringify(f.log.mock.calls)).not.toContain('secret-echo-key')
+    expect(JSON.stringify(f.log.mock.calls)).toContain('UNAVAILABLE')
   })
 })
 

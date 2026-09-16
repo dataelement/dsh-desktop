@@ -12,11 +12,14 @@ import { previewImage } from './lib/preview.js'
 export const name = 'dsh-image-generation'
 export const inject = ['settings', 'credentials', 'connection', 'tools', 'skills', 'systemPrompt', 'sandboxPolicy', 'sandbox', 'subprocess', 'sessionController']
 export const Config = z.object({})
+export const IMAGE_PROMPT_SECTION = 'tool:image-generation'
+export const UNCONFIGURED_IMAGE_PROMPT = 'Do not call image_generate. Direct the user to Settings > Plugins > Image generation. Never ask for an API key in conversation.'
+export const CONFIGURED_IMAGE_PROMPT = 'For image creation, load the generate-image Skill and call image_generate. Presentations and documents may call it in parallel for multiple visuals. Reuse its PNG workspace path in PPT and Word. The user configures this shared capability in Settings > Plugins > Image generation.'
 
 export function imageTool(ctx, settings) {
   return defineTool({
     name: 'image_generate',
-    description: 'Generate one photo, illustration or background through the configured image provider and save an Office-compatible PNG in the session workspace. Load the generate-image Skill first. Keep charts, tables and simple diagrams editable.',
+    description: 'Generate one photo, illustration or background through the configured image provider and save an Office-compatible PNG in the session workspace. Requires a saved image configuration. Load the generate-image Skill first. A presentation may call this concurrently for multiple visuals. Keep charts, tables and simple diagrams editable.',
     parameters: {
       prompt: { type: 'string', required: true, description: 'Visual subject, composition, palette, lighting, and space for document or slide text.' },
       style_context: { type: 'string', description: 'Shared brand, template and illustration style for consistency across the document.' },
@@ -87,5 +90,20 @@ export async function apply(ctx) {
   }
   ctx.skills.registerProvider(() => ({ name, list: async () => [candidate], get: async selected => selected.name === candidate.name
     ? { ...candidate, content: (await readFile(locator, 'utf8')).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/u, '').trim() } : undefined }))
-  ctx.systemPrompt.section({ name: 'tool:image-generation', order: 114, text: () => 'For image creation, load the generate-image Skill and call image_generate. Reuse its PNG workspace path in PPT and Word. The user configures this shared capability in Settings > Plugins > Image generation.' })
+  ctx.systemPrompt.section({ name: IMAGE_PROMPT_SECTION, order: 114, text: UNCONFIGURED_IMAGE_PROMPT })
+  ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+    let configured = false
+    try {
+      configured = await settings.isConfigured()
+    } catch (error) {
+      ctx.logger.info('image-generation: prompt assembly treated configuration as unset; code=%s', safeError(error).code)
+    }
+    const assembly = await next()
+    return {
+      ...assembly,
+      sections: assembly.sections.map(section => section.name === IMAGE_PROMPT_SECTION
+        ? { ...section, text: configured ? CONFIGURED_IMAGE_PROMPT : UNCONFIGURED_IMAGE_PROMPT }
+        : section),
+    }
+  })
 }

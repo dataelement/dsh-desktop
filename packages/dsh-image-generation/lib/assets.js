@@ -1,7 +1,14 @@
 import { lstat, mkdir, realpath } from 'node:fs/promises'
 import path from 'node:path'
-import sharp from 'sharp'
 import { ImageError, MAX_IMAGE_BYTES } from './provider.js'
+
+async function loadSharp() {
+  try {
+    return (await import('sharp')).default
+  } catch {
+    throw new ImageError('RUNTIME', 'The image processing runtime is unavailable.', 500)
+  }
+}
 
 export async function workspaceFor(ctx, exec) {
   const session = exec.agent?.session
@@ -34,6 +41,7 @@ export async function assetDirectory(root, create = false) {
 }
 
 export async function normalizeImage(raw) {
+  const sharp = await loadSharp()
   try {
     const image = sharp(raw, { limitInputPixels: 64_000_000, failOn: 'warning', animated: false })
     const meta = await image.metadata()

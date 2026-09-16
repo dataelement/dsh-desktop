@@ -25,6 +25,10 @@ export function createSettings(ctx, validate = validateConnection) {
       })),
     }
   }
+  async function isConfigured() {
+    const state = await read()
+    return Boolean(state.profiles[state.provider]?.key)
+  }
   async function active() {
     const state = await read()
     const spec = state.profiles[state.provider]
@@ -71,5 +75,5 @@ export function createSettings(ctx, validate = validateConnection) {
       throw safe
     }
   }
-  return { describe, active, save, models }
+  return { describe, isConfigured, active, save, models }
 }

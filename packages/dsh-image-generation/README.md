@@ -76,6 +76,6 @@ npm run typecheck
 npm test
 ```
 
-测试使用本机模拟服务和真实 Harness 凭据存储、工具执行管线，覆盖两个厂商、单请求保存、成功/失败、修订冲突、凭据隔离、PNG 落盘、取消、体积限制和目录越界。Host smoke 启动隔离实例，验证默认装载、Client 入口、鉴权、Origin 及保存结果。真实付费模型与 Office 文档视觉验收在 `docs/STATUS.md` 单独记录。
+测试使用本机模拟服务和真实 Harness 凭据存储、工具执行管线，覆盖两个厂商、单请求保存、成功/失败、修订冲突、凭据隔离、PNG 落盘、取消、体积限制和目录越界。Host smoke 启动隔离实例，验证默认装载、Client 入口、鉴权、Origin 及保存结果。真实付费模型与 Office 文档视觉验收在 `STATUS.md` 单独记录。
 
 接口参考：[OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate)、[OpenAI 模型列表](https://developers.openai.com/api/reference/resources/models/methods/list)、[火山方舟生图 API](https://www.volcengine.com/docs/82379/1541523)、[火山方舟官方运行时 SDK](https://github.com/volcengine/volcengine-python-sdk/tree/master/volcenginesdkarkruntime/resources/images)、[火山管理接口及签名鉴权](https://github.com/volcengine/volcengine-python-sdk/blob/master/volcenginesdkark/api/ark_api.py)。
