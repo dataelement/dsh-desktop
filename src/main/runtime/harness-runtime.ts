@@ -3,7 +3,7 @@ import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { dirname, join } from 'node:path'
+import { dirname, join, posix, win32 } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
@@ -288,6 +288,7 @@ export function buildHarnessSpawnOptions(
 ): SpawnOptionsWithoutStdio {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
+  const pathApi = platform === 'win32' ? win32 : posix
 
   // ELECTRON_RUN_AS_NODE must not reach the Harness process itself: the macOS
   // utility process is launched with Chromium switches (--type=utility, …)
@@ -316,6 +317,7 @@ export function buildHarnessSpawnOptions(
       // the dedicated lock-recovery runner instead (see pnpm-runner.mjs).
       npm_config_side_effects_cache: 'false',
       PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false',
+      NODE_COMPILE_CACHE: environment.NODE_COMPILE_CACHE ?? pathApi.join(dshHome, 'cache', 'compile-cache'),
       [pathKey]: resolveEnvironmentPath(environment, platform)
     },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -457,7 +459,7 @@ export class HarnessRuntime {
       profile
     )
     const startupTimeoutMs =
-      this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 120_000 : 45_000)
+      this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 180_000 : 45_000)
 
     this.launchClock ??= Date.now()
     this.writeLog(`[desktop] starting ${new Date().toISOString()}`)
@@ -684,13 +686,14 @@ export class HarnessRuntime {
   }
 
   /**
-   * Prefix a log line with milliseconds since this launch began. Only the file
-   * copy is stamped: `logLines` feeds recovery detection and failure-cause
+   * Prefix a log line with an ISO date and milliseconds since this launch began.
+   * Only the file copy is stamped: `logLines` feeds recovery detection and failure-cause
    * extraction, which match on the line text.
    */
   private stampLog(line: string): string {
-    if (this.launchClock === undefined) return line
-    const stamp = `+${String(Date.now() - this.launchClock).padStart(5)}ms `
+    const iso = new Date().toISOString()
+    const elapsed = this.launchClock !== undefined ? `+${String(Date.now() - this.launchClock).padStart(5)}ms ` : ''
+    const stamp = `[${iso}] ${elapsed}`
     return line.startsWith('\n') ? `\n${stamp}${line.slice(1)}` : `${stamp}${line}`
   }
 
@@ -963,7 +966,8 @@ async function waitUntilReady(
   launchToken: () => string | undefined,
   timeoutMs: number
 ): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
+  let deadline = Date.now() + timeoutMs
+  let extendedForLaunch = false
   // A probe only counts as healthy once Harness has printed its launch token,
   // and Harness prints that line after its whole plugin tree has loaded and
   // the web server is serving. The first healthy probe is therefore already
@@ -972,6 +976,12 @@ async function waitUntilReady(
   const stabilityWindowMs = 0
   let readySince: number | undefined
   while (Date.now() < deadline && isAlive()) {
+    // If Harness has already announced its endpoint (launch token emitted),
+    // grant at least 30s for the HTTP probe to answer before timing out.
+    if (!extendedForLaunch && launchToken() !== undefined) {
+      extendedForLaunch = true
+      deadline = Math.max(deadline, Date.now() + 30_000)
+    }
     try {
       const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1_000) })
       const stability = updateReadyStability(

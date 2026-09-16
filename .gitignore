@@ -23,3 +23,8 @@ __pycache__/
 
 # Native recovery UI smoke-test output
 /artifacts/recovery-ui/
+
+# Local-only design docs
+docs/plugin-management.zh.md
+docs/default-capabilities.zh.md
+docs/mobile-connection-latency.zh.md

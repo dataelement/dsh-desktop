@@ -66,6 +66,14 @@ describe('preload wiring for plugin error handling', () => {
     expect(preload).toContain('findBootFailureText(document)')
     expect(preload).not.toContain('document.body?.innerText')
   })
+
+  it('discards pending diagnostics plugin failure when recovery is opened', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const recoveryHandler = main.slice(main.indexOf("ipcMain.handle('harness:open-recovery'"))
+    const handlerBody = recoveryHandler.slice(0, recoveryHandler.indexOf('})'))
+
+    expect(handlerBody).toContain('desktopDiagnostics?.discardPendingPluginFailure()')
+  })
 })
 
 describe('boot failure page detection', () => {

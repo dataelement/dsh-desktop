@@ -70,10 +70,10 @@ describe('market baseline at normal startup', () => {
     // An earlier, buggy build left dshmarket projected as a generation link
     // instead of the real shared-tree directory it must always be.
     await rm(market, { recursive: true, force: true })
-    const generationDir = join(home, 'elsewhere-generation', 'node_modules', 'dshmarket')
-    await mkdir(generationDir, { recursive: true })
-    await writeFile(join(generationDir, 'package.json'), JSON.stringify({ name: 'dshmarket', version: VERIFIED_MARKET_BASELINE }))
-    await symlink(generationDir, market, 'junction')
+    const generationPackage = join(registryLayout(home).generations, 'live', 'dshmarket+test+aabb', 'node_modules', 'dshmarket')
+    await mkdir(generationPackage, { recursive: true })
+    await writeFile(join(generationPackage, 'package.json'), JSON.stringify({ name: 'dshmarket', version: VERIFIED_MARKET_BASELINE }))
+    await symlink(generationPackage, market, 'junction')
     expect((await lstat(market)).isSymbolicLink()).toBe(true)
 
     const upgrade = vi.fn(async () => {
@@ -87,6 +87,20 @@ describe('market baseline at normal startup', () => {
     expect((await lstat(market)).isSymbolicLink()).toBe(false)
     const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
     expect(manifest.dependencies['other-plugin']).toBe('1.0.0')
+  })
+
+  it('does not repair a pnpm isolated-store symlink pointing into .pnpm/', async () => {
+    const { home, market, options } = await fixture(VERIFIED_MARKET_BASELINE)
+    // Simulate pnpm isolated mode: node_modules/dshmarket is a symlink to .pnpm/…
+    const pnpmStoreDir = join(home, 'profiles', 'web', 'node_modules', '.pnpm', `dshmarket@${VERIFIED_MARKET_BASELINE}`, 'node_modules', 'dshmarket')
+    await mkdir(pnpmStoreDir, { recursive: true })
+    await writeFile(join(pnpmStoreDir, 'package.json'), JSON.stringify({ name: 'dshmarket', version: VERIFIED_MARKET_BASELINE }))
+    await rm(market, { recursive: true, force: true })
+    await symlink(pnpmStoreDir, market, 'junction')
+
+    const upgrade = vi.fn()
+    await ensureMarketBaseline(options, upgrade)
+    expect(upgrade).not.toHaveBeenCalled()
   })
 
   it.each(['1.45.1', '1.46.0', '2.0.0'])('does not reinstall or downgrade active %s', async (version) => {
@@ -201,4 +215,51 @@ describe('market baseline at normal startup', () => {
     expect(result).toMatchObject({ migration: { outcome: 'maintenance-deferred' } })
     expect(order).toEqual(['demote', 'market', 'projection'])
   })
+
+  it('preserves an upgraded market version >= 1.45.1 when demoting back to shared tree', async () => {
+    const { home, profile, market } = await fixture()
+    const generationDir = join(registryLayout(home).generations, 'dshmarket+1.47.0+cafebabe')
+    const generationPackage = join(generationDir, 'node_modules', 'dshmarket')
+    await mkdir(generationPackage, { recursive: true })
+    await writeFile(join(generationPackage, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.47.0' }))
+    await writeGenerationMeta(generationDir, { pluginName: 'dshmarket', version: '1.47.0' })
+    await writeDesired(home, ['dshmarket+1.47.0+cafebabe'])
+    await rm(market, { recursive: true, force: true })
+    await symlink(generationPackage, market, 'junction')
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    manifest.dsh.desktop = {
+      generationProjection: {
+        version: 1,
+        plugins: { dshmarket: { generationId: 'dshmarket+1.47.0+cafebabe', visibleVersion: '1.47.0', previousOverride: { present: false } } }
+      }
+    }
+    manifest.dependencies.dshmarket = '1.47.0'
+    await writeFile(join(profile, 'package.json'), JSON.stringify(manifest, undefined, 2))
+
+    expect(await demoteMarketGeneration(home)).toBe(true)
+
+    const after = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(after.dependencies.dshmarket).toBe('1.47.0')
+  })
+
+  it('upgrades to the newer declared version when declared version exceeds the baseline', async () => {
+    const { options, profile, market } = await fixture()
+    // Simulate generation link with broken/missing active version, but declared version is 1.47.0
+    await rm(market, { recursive: true, force: true })
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    manifest.dependencies.dshmarket = '1.47.0'
+    await writeFile(join(profile, 'package.json'), JSON.stringify(manifest, undefined, 2))
+
+    const upgrade = vi.fn(async ({ dshHome, targetVersion }: { dshHome: string; targetVersion: string }) => {
+      const packageDir = join(profile, 'node_modules', 'dshmarket')
+      await mkdir(packageDir, { recursive: true })
+      await writeFile(join(packageDir, 'package.json'), JSON.stringify({ name: 'dshmarket', version: targetVersion }))
+      return { ok: true }
+    })
+
+    await ensureMarketBaseline(options, upgrade)
+    expect(upgrade).toHaveBeenCalledWith(expect.objectContaining({ targetVersion: '1.47.0' }))
+    expect(await readInstalledPluginVersion(options.dshHome, 'dshmarket')).toBe('1.47.0')
+  })
 })
+

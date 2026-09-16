@@ -52,10 +52,8 @@ describe('configureRollout', () => {
 
     // 1 GET + 3 POSTs = 4 calls
     expect(calls).toHaveLength(4)
-    const listCall = calls[0]
-    expect(listCall).toBeDefined()
-    expect(listCall!.method).toBe('GET')
-    expect(listCall!.headers).toMatchObject({
+    expect(calls[0]?.method).toBe('GET')
+    expect(calls[0]?.headers).toMatchObject({
       Authorization: 'Bearer test-admin-token-12345678901234567890'
     })
 

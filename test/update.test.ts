@@ -48,6 +48,12 @@ describe('desktop update policy', () => {
     expect(prepare.indexOf('await quarantineInstalledLaunchAgentsForUpdate(dshHome)')).toBeLessThan(
       prepare.indexOf('quitting = true')
     )
+    expect(prepare.indexOf('quitting = true')).toBeLessThan(
+      prepare.indexOf('desktopDiagnostics?.markCleanExit()')
+    )
+    expect(prepare.indexOf('desktopDiagnostics?.markCleanExit()')).toBeLessThan(
+      prepare.indexOf('stopUpdateManager()')
+    )
   })
 })
 

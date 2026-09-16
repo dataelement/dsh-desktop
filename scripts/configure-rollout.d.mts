@@ -1,38 +1,24 @@
-export type SupportedPlatform = 'mac' | 'mac-intel' | 'windows'
+export const SUPPORTED_PLATFORMS: readonly string[]
+export const DEFAULT_BASE_URL: string
+export const DEFAULT_PERCENTAGE: number
 
-export interface RolloutRelease {
-  id?: string
-  version: string
-  platform: SupportedPlatform
-  percentage?: number
-  revision?: number
-  algorithm?: string
-  seed?: string
-  enabled?: boolean
-  notes?: string
-  [key: string]: unknown
-}
+export function isValidVersion(value: unknown): boolean
 
 export interface ConfigureRolloutOptions {
   version: string
   percentage?: number
   token?: string
   baseUrl?: string
-  fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>
+  fetchImpl?: (url: any, init?: any) => Promise<any>
   notes?: string
-  log?: (message: string) => void
-  warn?: (message: string) => void
+  log?: (msg: string) => void
+  warn?: (msg: string) => void
 }
 
-export interface ConfigureRolloutResult {
-  platform: SupportedPlatform
+export interface RolloutResult {
+  platform: string
   action: 'created' | 'updated' | 'updated-after-conflict'
-  data: RolloutRelease
+  data: Record<string, unknown>
 }
 
-export const SUPPORTED_PLATFORMS: SupportedPlatform[]
-export const DEFAULT_BASE_URL: string
-export const DEFAULT_PERCENTAGE: number
-
-export function isValidVersion(value: unknown): value is string
-export function configureRollout(options: ConfigureRolloutOptions): Promise<ConfigureRolloutResult[]>
+export function configureRollout(options: ConfigureRolloutOptions): Promise<RolloutResult[]>
