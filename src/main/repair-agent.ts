@@ -256,6 +256,7 @@ export class RepairAgentService {
   private activeWorkspaceId?: string
   private activeSocket?: WebSocket
   private senderWebContents?: WebContents
+  private hasSentFirstPrompt = false
 
   constructor(private readonly options: RepairAgentServiceOptions) {}
 
@@ -389,21 +390,6 @@ export class RepairAgentService {
         }
       }
 
-      // Ensure 'repair' preset exists
-      try {
-        const roster = await this.invokeHarness('agentPresets/list', {})
-        const presets = Array.isArray(roster?.presets) ? roster.presets : []
-        if (!presets.some((p: { id?: string }) => p.id === 'repair')) {
-          await this.invokeHarness('agentPresets/copy', {
-            from: 'standard',
-            id: 'repair',
-            name: isZh ? '系统维修 Agent' : 'System Repair Agent'
-          })
-        }
-      } catch (err) {
-        console.warn('[repair-agent] could not ensure repair preset', err)
-      }
-
       // Create workspace and session if not already created
       if (!this.activeSessionId) {
         const workspace = await this.invokeHarness('workspace/create', {
@@ -412,36 +398,14 @@ export class RepairAgentService {
         const workspaceId = workspace?.workspaceId ?? workspace?.workspace?.workspaceId
         this.activeWorkspaceId = workspaceId
 
+        // Use default preset so it inherits the working model route that answers in Harness
         const session = await this.invokeHarness('session/create', {
-          request: { workspaceId, agentPreset: 'repair' }
+          request: { workspaceId }
         })
         const sessionId = session?.sessionId ?? session?.session?.sessionId
         if (!sessionId) throw new Error('Harness did not return a session id')
         this.activeSessionId = sessionId
-
-        try {
-          await this.invokeHarness('agentPresets/select', {
-            agentId: sessionId,
-            agentPreset: 'repair'
-          })
-        } catch {
-          // Best effort preset selection
-        }
-
-        // Initialize session with the custom system prompt if possible
-        try {
-          await this.invokeHarness('session/prompt', {
-            request: {
-              requestId: randomUUID(),
-              sessionId,
-              mode: 'steer',
-              content: [{ type: 'text', text: `[SYSTEM CONTEXT]\n${systemRepairPrompt}` }],
-              clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-            }
-          })
-        } catch {
-          // Best effort context delivery
-        }
+        this.hasSentFirstPrompt = false
       }
 
       // Fetch model catalog
@@ -450,6 +414,29 @@ export class RepairAgentService {
         modelCatalog = await this.invokeHarness('session/modelCatalog', {})
       } catch (err) {
         console.warn('[repair-agent] could not load model catalog', err)
+      }
+
+      // Automatically select default model on the session so it can answer immediately
+      const defaultEntry =
+        modelCatalog?.current ||
+        modelCatalog?.default ||
+        (modelCatalog?.groups?.[0]?.models?.[0]
+          ? { provider: modelCatalog.groups[0].id, model: modelCatalog.groups[0].models[0].id }
+          : null)
+
+      if (this.activeSessionId && defaultEntry?.provider && defaultEntry?.model) {
+        try {
+          await this.invokeHarness('session/selectModel', {
+            request: {
+              sessionId: this.activeSessionId,
+              provider: defaultEntry.provider,
+              model: defaultEntry.model,
+              ...(defaultEntry.reasoningEffort ? { reasoningEffort: defaultEntry.reasoningEffort } : {})
+            }
+          })
+        } catch (e) {
+          console.warn('[repair-agent] auto selectModel failed', e)
+        }
       }
 
       // Connect session follow stream
@@ -567,8 +554,26 @@ export class RepairAgentService {
   ): Promise<{ ok: boolean; error?: string }> {
     try {
       const content: PromptContentPart[] = []
-      if (text && text.trim().length > 0) {
-        content.push({ type: 'text', text: text.trim() })
+      let promptText = (text || '').trim()
+      if (!this.hasSentFirstPrompt && promptText.length > 0) {
+        this.hasSentFirstPrompt = true
+        const rawLogs = this.options.readLogs?.() ?? []
+        const relevantLogs = extractRelevantCrashLogs(rawLogs)
+        const finding = analyzeCrashContext(relevantLogs, this.options.locale())
+        const systemRepairPrompt = buildSystemRepairPrompt({
+          locale: this.options.locale(),
+          platform: process.platform,
+          arch: process.arch,
+          nodeVersion: process.version,
+          desktopVersion: this.options.appVersion?.() || '0.9.0',
+          finding,
+          logsSample: relevantLogs
+        })
+        promptText = `[系统背景与诊断事实]\n${systemRepairPrompt}\n\n[用户输入]\n${promptText}`
+      }
+
+      if (promptText.length > 0) {
+        content.push({ type: 'text', text: promptText })
       }
       if (Array.isArray(images)) {
         for (const img of images) {
@@ -596,6 +601,18 @@ export class RepairAgentService {
         }
       })
       return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  public async getHistory(sessionId: string): Promise<{ ok: boolean; records?: any[]; error?: string }> {
+    try {
+      const res = await this.invokeHarness('session/history', {
+        request: { sessionId, maxMessages: 50 }
+      })
+      const records = res?.events || res?.records || res?.items || []
+      return { ok: true, records }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }

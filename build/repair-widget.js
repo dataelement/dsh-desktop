@@ -222,6 +222,34 @@
 
     let hasConfiguredModels = false;
     let watchdogTimer = null;
+    let historyPollTimer = null;
+
+    function clearHistoryPollTimer() {
+      if (historyPollTimer) {
+        clearInterval(historyPollTimer);
+        historyPollTimer = null;
+      }
+    }
+
+    function extractAssistantTextFromHistory(records) {
+      let text = '';
+      let reasoning = '';
+      for (const entry of (records || [])) {
+        const e = entry.event || entry;
+        const d = e.data || {};
+        const t = String(e.type || '').toLowerCase();
+        if (t === 'assistant/message') {
+          const content = d.message?.content || [];
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block?.type === 'text' && block.text) text = block.text;
+              if (block?.type === 'reasoning' && block.text) reasoning = block.text;
+            }
+          }
+        }
+      }
+      return { text, reasoning };
+    }
 
     function startWatchdogTimer(ms, onTimeout) {
       clearWatchdogTimer();
@@ -635,6 +663,7 @@
 
     function finishGenerating() {
       clearWatchdogTimer();
+      clearHistoryPollTimer();
       isGenerating = false;
       sendBtn.classList.remove('repair-btn-stop');
       sendBtn.title = isChinese ? '发送' : 'Send';
@@ -749,6 +778,45 @@
           );
           finishGenerating();
         });
+
+        // Dual-track: poll history as fallback to WebSocket stream
+        let pollTicks = 0;
+        clearHistoryPollTimer();
+        historyPollTimer = setInterval(async () => {
+          if (!isGenerating || !activeSessionId || !window.dshRepairAgent?.getHistory) {
+            clearHistoryPollTimer();
+            return;
+          }
+          pollTicks++;
+          if (pollTicks > 25) {
+            clearHistoryPollTimer();
+            return;
+          }
+          try {
+            const hRes = await window.dshRepairAgent.getHistory(activeSessionId);
+            if (hRes?.ok && Array.isArray(hRes.records) && hRes.records.length > 0) {
+              const parsed = extractAssistantTextFromHistory(hRes.records);
+              if (parsed.text) {
+                clearWatchdogTimer();
+                if (parsed.text.length > currentAssistantText.length) {
+                  currentAssistantText = parsed.text;
+                }
+                if (parsed.reasoning && parsed.reasoning.length > currentAssistantThinking.length) {
+                  currentAssistantThinking = parsed.reasoning;
+                }
+                updateCurrentAssistantView();
+                const lastEvent = hRes.records[hRes.records.length - 1];
+                const lastType = String(lastEvent?.event?.type || lastEvent?.type || '').toLowerCase();
+                if (lastType === 'turn/end' || lastType === 'turn-end' || lastType === 'assistant/message') {
+                  clearHistoryPollTimer();
+                  finishGenerating();
+                }
+              }
+            }
+          } catch {
+            // best effort poll
+          }
+        }, 1200);
       } catch (err) {
         console.error('[repair-widget] sendPrompt failed', err);
         const errDiv = document.createElement('div');
