@@ -72,6 +72,7 @@ import {
   resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
+import { WindowStateManager } from './state/window-state'
 import {
   isProjectedGenerationPlugin,
   prepareGenerationsForLaunch,
@@ -192,6 +193,7 @@ let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
 let desktopStorageManager: DesktopStorageManager | undefined
+let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
 let launchDirectory: string
@@ -950,9 +952,13 @@ function ensureTray(): void {
 
 function createWindow(): BrowserWindow {
   const isWindows = process.platform === 'win32'
+  windowStateManager ??= new WindowStateManager(app.getPath('userData'))
+  const initialBounds = windowStateManager.validateBounds(windowStateManager.getState())
   const window = new BrowserWindow({
-    width: 1380,
-    height: 900,
+    width: initialBounds.width,
+    height: initialBounds.height,
+    ...(initialBounds.x !== undefined ? { x: initialBounds.x } : {}),
+    ...(initialBounds.y !== undefined ? { y: initialBounds.y } : {}),
     minWidth: 900,
     minHeight: 640,
     show: false,
@@ -993,8 +999,13 @@ function createWindow(): BrowserWindow {
   } else if (isWindows) {
     window.setMenuBarVisibility(false)
   }
+  windowStateManager.track(window)
+  if (windowStateManager.getState().isMaximized) {
+    window.maximize()
+  }
   window.on('close', (event) => {
     desktopStorageManager?.flushSync()
+    windowStateManager?.flushSync()
     if (!shouldKeepRunningInBackground(process.platform, quitting)) return
     event.preventDefault()
     window.hide()
@@ -1716,13 +1727,20 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<n
       break
     case 'zoom-reset':
       contents.setZoomLevel(0)
+      windowStateManager?.setZoomLevel(0)
       break
-    case 'zoom-in':
-      contents.setZoomLevel(Math.min(3, contents.getZoomLevel() + 0.5))
+    case 'zoom-in': {
+      const zoomLevel = Math.min(3, contents.getZoomLevel() + 0.5)
+      contents.setZoomLevel(zoomLevel)
+      windowStateManager?.setZoomLevel(zoomLevel)
       break
-    case 'zoom-out':
-      contents.setZoomLevel(Math.max(-3, contents.getZoomLevel() - 0.5))
+    }
+    case 'zoom-out': {
+      const zoomLevel = Math.max(-3, contents.getZoomLevel() - 0.5)
+      contents.setZoomLevel(zoomLevel)
+      windowStateManager?.setZoomLevel(zoomLevel)
       break
+    }
     case 'toggle-fullscreen':
       window.setFullScreen(!window.isFullScreen())
       break
