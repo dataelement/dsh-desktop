@@ -2976,10 +2976,6 @@ async function bootstrap(): Promise<void> {
     if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
     return repairAgentService.cancel(sessionId)
   })
-  ipcMain.handle('repair-agent:get-history', async (_event, sessionId: any) => {
-    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
-    return repairAgentService.getHistory(sessionId)
-  })
   ipcMain.handle('repair-agent:configure-provider', async (_event, payload: any) => {
     if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
     return repairAgentService.configureProvider(payload)

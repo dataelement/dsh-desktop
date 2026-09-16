@@ -410,8 +410,6 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke('repair-agent:send-prompt', payload),
     cancel: (sessionId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('repair-agent:cancel', sessionId),
-    getHistory: (sessionId: string): Promise<{ ok: boolean; records?: any[]; error?: string }> =>
-      ipcRenderer.invoke('repair-agent:get-history', sessionId),
     configureProvider: (payload: {
       provider: string
       apiKey: string

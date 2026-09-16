@@ -606,18 +606,6 @@ export class RepairAgentService {
     }
   }
 
-  public async getHistory(sessionId: string): Promise<{ ok: boolean; records?: any[]; error?: string }> {
-    try {
-      const res = await this.invokeHarness('session/history', {
-        request: { sessionId, maxMessages: 50 }
-      })
-      const records = res?.events || res?.records || res?.items || []
-      return { ok: true, records }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
-    }
-  }
-
   public async cancel(sessionId: string): Promise<{ ok: boolean; error?: string }> {
     try {
       await this.invokeHarness('session/cancel', {
