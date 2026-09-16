@@ -714,8 +714,24 @@
       document.getElementById('show-log').addEventListener('click', () => navigate('show-log'))
       document.getElementById('quit').addEventListener('click', () => navigate('quit'))
     </script>
-    <!-- 临时屏蔽系统维修 Agent 聊天窗口
     <script src="repair-widget.js"></script>
-    -->
+    <script>
+      if (typeof window.initRepairWidget === 'function') {
+        const isZh = model.locale === 'zh'
+        const pluginsStr = (model.plugins || []).join(', ') || (isZh ? '未识别' : 'Not detected')
+        const logsStr = (model.logs || []).slice(-100).join('\n')
+        const defaultPrompt = isZh
+          ? `你是 DSH Desktop 故障修复 Agent。系统在启动时触发了异常，导致无法正常进入桌面端。\n\n检测到的异常插件：${pluginsStr}\n错误信息：${model.message || '启动异常'}\n\n最新日志（截取）：\n```\n${logsStr || '暂无日志'}\n```\n\n请按以下结构输出：\n1. 根因假设（前3个最可能的原因）\n2. 最小修复动作（禁用插件 / 升级插件 / 清除缓存 / 重建 Profile）\n3. 验证方式与建议的回退步骤。\n请给出一个能立刻执行且可逆的首选方案。`
+          : `You are the DSH Desktop repair agent. The system failed during startup.\n\nContext:\n- Inferred plugins: ${pluginsStr}\n- Message: ${model.message || 'Startup failure'}\n\nRecent logs:\n```\n${logsStr || 'No logs'}\n```\n\nPlease output:\n1. Top 3 root-cause hypotheses\n2. Minimal repair actions (disable plugin / upgrade / clear cache / rebuild profile)\n3. Verification and rollback steps.\nGive an immediate executable and reversible first action.`
+
+        window.initRepairWidget({
+          locale: model.locale,
+          defaultPrompt,
+          questions: isZh
+            ? ['是否最近刚升级或新增过某个插件？', '退出前是否修改过配置或网络代理？']
+            : ['Did you recently add or update any plugins?', 'Did network or model settings change recently?']
+        })
+      }
+    </script>
   </body>
 </html>

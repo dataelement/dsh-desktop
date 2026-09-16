@@ -2850,7 +2850,9 @@ async function bootstrap(): Promise<void> {
       await launchSafeHarness()
     },
     launchDirectory,
-    locale: harnessLocale
+    locale: harnessLocale,
+    readLogs: () => runtime.snapshot().logs,
+    appVersion: () => app.getVersion()
   })
   ipcMain.handle('repair-agent:init', async (event) => {
     if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }

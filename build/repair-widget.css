@@ -1,6 +1,5 @@
 /* Repair Agent Floating Widget Styles */
 .repair-widget-fab {
-  display: none !important;
   position: fixed;
   right: 24px;
   bottom: 24px;
@@ -52,7 +51,6 @@
 
 /* Chat Modal Window */
 .repair-widget-window {
-  display: none !important;
   position: fixed;
   right: 24px;
   bottom: 86px;
@@ -457,3 +455,54 @@
   border-color: var(--button, #18181b) !important;
   background: var(--soft, #f5f6f7) !important;
 }
+
+/* Diagnostic Finding Card & Error Banner */
+.repair-diagnostic-card {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--soft, #f4f4f5);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border-left: 3px solid var(--primary, #3b82f6);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.repair-diag-badge {
+  font-weight: 600;
+  color: var(--primary, #3b82f6);
+  margin-bottom: 4px;
+}
+.repair-diag-summary {
+  color: var(--ink, #18181b);
+  margin-bottom: 4px;
+}
+.repair-diag-action {
+  color: var(--muted, #71717a);
+}
+.repair-error-banner {
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: rgba(238, 119, 114, 0.12);
+  border: 1px solid var(--danger, #ee7772);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--danger, #ee7772);
+}
+.repair-retry-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--button, #18181b);
+  color: #fff;
+  border: 1px solid var(--strong, #4a4a50);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.repair-retry-btn:hover {
+  background: #27272a;
+}
+

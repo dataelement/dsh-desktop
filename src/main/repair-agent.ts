@@ -9,6 +9,8 @@ export interface RepairAgentServiceOptions {
   ensureHarnessReady: () => Promise<void>
   launchDirectory: string
   locale: () => 'en' | 'zh'
+  readLogs?: () => readonly string[]
+  appVersion?: () => string
 }
 
 export interface PromptImageAttachment {
@@ -23,6 +25,219 @@ export interface PromptContentPart {
   mediaType?: string
   data?: string
   name?: string
+}
+
+export interface DiagnosticFinding {
+  type: 'syntax_export_mismatch' | 'symlink_eperm' | 'overlay_yaml_corrupt' | 'startup_timeout' | 'generic'
+  summary: string
+  culprit?: string
+  suggestedAction: string
+}
+
+/**
+ * Extract relevant crash logs near the most recent launch attempt.
+ * Filters out noise and highlights critical error markers.
+ */
+export function extractRelevantCrashLogs(logs: readonly string[] = []): string[] {
+  if (!logs || logs.length === 0) return []
+
+  // Find the index of the most recent launch
+  let lastLaunchIndex = -1
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const line = logs[i]
+    if (line && (line.includes('[desktop] starting') || line.includes('[desktop] launch requested'))) {
+      lastLaunchIndex = i
+      break
+    }
+  }
+
+  const slice = lastLaunchIndex >= 0 ? logs.slice(lastLaunchIndex) : logs.slice(-80)
+  const keyMarkers = [
+    'SyntaxError',
+    'Error:',
+    'EPERM',
+    'failed to apply loader entry',
+    'does not provide an export named',
+    'YAMLException',
+    'SIGTERM',
+    'plugin failures:',
+    'waiting for Harness (',
+    'Harness could not start',
+    'Harness stopped unexpectedly',
+    'failed to prepare profile bundle'
+  ]
+
+  const extracted: string[] = []
+  for (let i = 0; i < slice.length; i++) {
+    const line = slice[i]
+    if (!line) continue
+    const isCritical = keyMarkers.some((m) => line.includes(m))
+    if (isCritical) {
+      // Include 1 previous context line if available and not already included
+      const prev = slice[i - 1]
+      if (prev && extracted[extracted.length - 1] !== prev) {
+        extracted.push(prev)
+      }
+      extracted.push(line)
+      // Include next line if available
+      const next = slice[i + 1]
+      if (next) {
+        extracted.push(next)
+        i++
+      }
+    }
+  }
+
+  // If filtered result is too sparse, fall back to the tail of the last launch slice
+  return extracted.length >= 3 ? extracted.slice(-50) : slice.slice(-30)
+}
+
+/**
+ * Fast offline diagnostic parser based on known 0.9.0 error patterns.
+ */
+export function analyzeCrashContext(
+  logs: readonly string[] = [],
+  locale: 'en' | 'zh' = 'zh'
+): DiagnosticFinding | undefined {
+  const isZh = locale === 'zh'
+  const logText = logs.join('\n')
+
+  // 1. ESM export mismatch (Top crash cause)
+  const exportMatch = logText.match(/does not provide an export named ['"]([^'"]+)['"]/)
+  const pluginMatch = logText.match(/failed to import loader entry ([^\s(]+)/) || logText.match(/loader entry ([^\s(]+)/)
+  if (exportMatch || (pluginMatch && logText.includes('SyntaxError'))) {
+    const missingExport = exportMatch ? exportMatch[1] : 'unknown export'
+    const culprit = pluginMatch ? pluginMatch[1] : 'third-party plugin'
+    return {
+      type: 'syntax_export_mismatch',
+      culprit,
+      summary: isZh
+        ? `检测到插件「${culprit}」存在底层接口断裂，因缺少导出「${missingExport}」引发 SyntaxError 闪退。`
+        : `Plugin "${culprit}" crashed due to missing export "${missingExport}".`,
+      suggestedAction: isZh
+        ? `建议在安全模式中停用或卸载插件「${culprit}」，然后重启桌面端。`
+        : `Disable or uninstall plugin "${culprit}" in Safe Mode, then restart.`
+    }
+  }
+
+  // 2. Windows Symlink EPERM
+  if (logText.includes('EPERM: operation not permitted, symlink')) {
+    return {
+      type: 'symlink_eperm',
+      summary: isZh
+        ? '检测到 Windows 跨卷软链接权限拒绝 (EPERM: symlink)。当前软件可能安装在非系统盘，且未开启 Windows 开发人员模式。'
+        : 'Windows symlink creation was denied (EPERM). App may be installed on a non-system drive without Developer Mode.',
+      suggestedAction: isZh
+        ? '建议在 Windows 系统设置中开启【开发人员模式】，或将软件重新安装至 C 盘系统默认路径。'
+        : 'Enable Developer Mode in Windows Settings, or install the app in default C: drive.'
+    }
+  }
+
+  // 3. YAML corrupt
+  if (logText.includes('failed to parse overlay') || logText.includes('YAMLException')) {
+    return {
+      type: 'overlay_yaml_corrupt',
+      summary: isZh
+        ? '检测到启动补丁配置文件 (cordis.patch.yml) 格式损坏或被截断。'
+        : 'Profile overlay configuration (cordis.patch.yml) is corrupt or truncated.',
+      suggestedAction: isZh
+        ? '建议重置或清空损坏的 patch.yml 文件。'
+        : 'Reset or clean the corrupt cordis.patch.yml file.'
+    }
+  }
+
+  // 4. Watchdog Timeout
+  if (logText.includes('waiting for Harness') && logText.includes('SIGTERM')) {
+    return {
+      type: 'startup_timeout',
+      summary: isZh
+        ? '检测到启动过程严重超时 (>60s)，被系统看门狗终止。通常由于插件在启动时执行网络大文件下载或深度全盘扫描导致。'
+        : 'Startup timed out (>60s) and was terminated by the watchdog. Often caused by heavy plugins downloading files or scanning disk.',
+      suggestedAction: isZh
+        ? '在安全模式中检查近期新增或更新的大型插件，建议先行禁用以恢复正常启动。'
+        : 'Check recently added or updated plugins in Safe Mode and disable them.'
+    }
+  }
+
+  return undefined
+}
+
+/**
+ * System prompt designed from real production 0.9.0 incident data.
+ */
+export function buildSystemRepairPrompt(options: {
+  locale: 'en' | 'zh'
+  platform: string
+  arch: string
+  nodeVersion: string
+  desktopVersion: string
+  finding?: DiagnosticFinding
+  logsSample: string[]
+}): string {
+  const isZh = options.locale === 'zh'
+  const findingText = options.finding
+    ? isZh
+      ? `【本地离线初步诊断】：${options.finding.summary}\n建议措施：${options.finding.suggestedAction}`
+      : `[Local Diagnostic Finding]: ${options.finding.summary}\nRecommended: ${options.finding.suggestedAction}`
+    : ''
+
+  const logsText = options.logsSample.length > 0
+    ? options.logsSample.join('\n')
+    : (isZh ? '暂无异常日志' : 'No logs captured')
+
+  if (isZh) {
+    return `你是 DSH Desktop 专属的系统维修诊断专家 (System Repair Agent)。
+你当前运行在轻量隔离的【安全模式 (Safe Mode)】沙箱中，正在协助用户排查桌面端启动崩溃或插件异常。
+
+### 系统物理环境与上下文：
+- 操作系统：${options.platform} (${options.arch})
+- 运行时：Node.js ${options.nodeVersion}, DSH Desktop ${options.desktopVersion}
+- 当前运行状态：安全模式 (所有第三方插件已被系统安全拦截)
+${findingText}
+
+### 最近异常启动日志（已做降噪提取）：
+\`\`\`
+${logsText}
+\`\`\`
+
+### 你的诊断知识库（覆盖 95% 以上已知故障）：
+1. 缺少导出语法错误 (SyntaxError: does not provide an export named):
+   - 根因：新版本移除了底层已废弃的导出项，存量插件直接引用导致语法解析崩退。
+   - 解决方案：明确指出引发冲突的插件名称，指导用户在安全模式列表中点击禁用或升级。
+2. Windows 跨卷软链接权限拒绝 (EPERM: operation not permitted, symlink):
+   - 根因：安装盘与数据盘不一致，且 Windows 未开启开发者模式。
+   - 解决方案：指导用户开启 Windows“开发人员模式”，或重新安装在默认系统盘。
+3. 补丁配置文件损坏 (YAMLException in cordis.patch.yml):
+   - 根因：强行关机或掉电导致配置文件被截断损坏。
+   - 解决方案：指导用户重置为干净出厂配置。
+4. 启动超时强杀 (waiting for Harness 超时后触发 SIGTERM):
+   - 根因：插件在启动主链路中下载大体积文件（如内置浏览器）或扫描大量账本。
+   - 解决方案：指导用户暂时关闭该插件以快速进入系统。
+
+### 回复规范：
+1. 结论明确直接：先说人话，直接指出是哪个插件或哪项设置引起；
+2. 步骤可立刻执行：给出在当前安全模式页面能直接操作的最小可逆动作；
+3. 保持专业沉稳，结构清晰。`
+  }
+
+  return `You are the DSH Desktop System Repair Agent.
+You are running inside the clean [Safe Mode] sandbox to help the user diagnose startup failures.
+
+### System Facts:
+- OS: ${options.platform} (${options.arch})
+- Runtime: Node.js ${options.nodeVersion}, DSH Desktop ${options.desktopVersion}
+- Status: Safe Mode (Third-party plugins isolated)
+${findingText}
+
+### Recent Error Logs:
+\`\`\`
+${logsText}
+\`\`\`
+
+### Guidelines:
+- State the root-cause plugin or configuration directly.
+- Provide immediate, executable actions that can be done right in Safe Mode.
+- Keep the response clear, calm, and structured.`
 }
 
 export class RepairAgentService {
@@ -40,15 +255,20 @@ export class RepairAgentService {
     if (token === undefined) return undefined
     const url = new URL('/', base)
     url.searchParams.set('token', token)
-    const response = await fetch(url, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(10_000)
-    })
-    const cookie = cookiePair(response.headers.getSetCookie())
-    if (cookie === undefined) return undefined
-    this.harnessCookie = { base, cookie }
-    return cookie
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000)
+      })
+      const cookie = cookiePair(response.headers.getSetCookie())
+      if (cookie === undefined) return undefined
+      this.harnessCookie = { base, cookie }
+      return cookie
+    } catch (err) {
+      console.warn('[repair-agent] harnessSession auth handshake failed', err)
+      return undefined
+    }
   }
 
   private async harnessFetch(url: URL, init: RequestInit, base: string): Promise<Response> {
@@ -57,13 +277,33 @@ export class RepairAgentService {
         ...init,
         headers: { ...init.headers, ...(cookie === undefined ? {} : { cookie }) }
       })
-    let response = await send(await this.harnessSession(base))
-    if (response.status === 401) {
-      this.harnessCookie = undefined
-      const retry = await this.harnessSession(base)
-      if (retry !== undefined) response = await send(retry)
+
+    let response: Response
+    try {
+      response = await send(await this.harnessSession(base))
+      if (response.status === 401) {
+        this.harnessCookie = undefined
+        const retry = await this.harnessSession(base)
+        if (retry !== undefined) response = await send(retry)
+      }
+      return response
+    } catch (err: any) {
+      const isConnectionRefused = err?.cause?.code === 'ECONNREFUSED' || err?.code === 'ECONNREFUSED'
+      const isTimeout = err?.cause?.code === 'ETIMEDOUT' || err?.name === 'TimeoutError'
+      const isZh = this.options.locale() === 'zh'
+      let message = err instanceof Error ? err.message : String(err)
+
+      if (isConnectionRefused) {
+        message = isZh
+          ? '安全模式核心尚未启动就绪或本地端口被阻断 (ECONNREFUSED)。请稍候片刻重试。'
+          : 'Safe mode Harness core is not ready yet (ECONNREFUSED). Please wait a moment and retry.'
+      } else if (isTimeout) {
+        message = isZh
+          ? '与安全模式核心通信超时。'
+          : 'Communication with Safe mode Harness timed out.'
+      }
+      throw new Error(message)
     }
-    return response
   }
 
   private async invokeHarness(
@@ -106,16 +346,37 @@ export class RepairAgentService {
     sessionId?: string
     workspaceId?: string
     modelCatalog?: any
+    diagnosticFinding?: DiagnosticFinding
+    systemRepairPrompt?: string
     error?: string
   }> {
     if (sender) this.senderWebContents = sender
+    const isZh = this.options.locale() === 'zh'
+    const rawLogs = this.options.readLogs?.() ?? []
+    const relevantLogs = extractRelevantCrashLogs(rawLogs)
+    const finding = analyzeCrashContext(relevantLogs, this.options.locale())
+    const systemRepairPrompt = buildSystemRepairPrompt({
+      locale: this.options.locale(),
+      platform: process.platform,
+      arch: process.arch,
+      nodeVersion: process.version,
+      desktopVersion: this.options.appVersion?.() || '0.9.0',
+      finding,
+      logsSample: relevantLogs
+    })
+
     try {
       if (!this.options.harnessUrl()) {
         await this.options.ensureHarnessReady()
       }
       const base = this.options.harnessUrl()
       if (!base) {
-        return { ok: false, error: 'Harness failed to initialize.' }
+        return {
+          ok: false,
+          diagnosticFinding: finding,
+          systemRepairPrompt,
+          error: isZh ? '安全模式核心服务未能成功拉起。' : 'Failed to initialize Safe Mode core.'
+        }
       }
 
       // Ensure 'repair' preset exists
@@ -126,7 +387,7 @@ export class RepairAgentService {
           await this.invokeHarness('agentPresets/copy', {
             from: 'standard',
             id: 'repair',
-            name: this.options.locale() === 'zh' ? '系统维修 Agent' : 'System Repair Agent'
+            name: isZh ? '系统维修 Agent' : 'System Repair Agent'
           })
         }
       } catch (err) {
@@ -156,6 +417,21 @@ export class RepairAgentService {
         } catch {
           // Best effort preset selection
         }
+
+        // Initialize session with the custom system prompt if possible
+        try {
+          await this.invokeHarness('session/prompt', {
+            request: {
+              requestId: randomUUID(),
+              sessionId,
+              mode: 'steer',
+              content: [{ type: 'text', text: `[SYSTEM CONTEXT]\n${systemRepairPrompt}` }],
+              clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            }
+          })
+        } catch {
+          // Best effort context delivery
+        }
       }
 
       // Fetch model catalog
@@ -175,11 +451,18 @@ export class RepairAgentService {
         ok: true,
         sessionId: this.activeSessionId,
         workspaceId: this.activeWorkspaceId,
-        modelCatalog
+        modelCatalog,
+        diagnosticFinding: finding,
+        systemRepairPrompt
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, error: message }
+      return {
+        ok: false,
+        diagnosticFinding: finding,
+        systemRepairPrompt,
+        error: message
+      }
     }
   }
 

@@ -69,8 +69,8 @@
   }
 
   window.initRepairWidget = function (config) {
-    // 临时屏蔽系统维修 Agent 聊天窗口与 FAB 图标
-    return;
+    if (widgetMounted) return;
+    widgetMounted = true;
 
     const isChinese = config?.locale === 'zh' || document.documentElement.lang?.startsWith('zh');
     const defaultPrompt = config?.defaultPrompt || '';
@@ -282,21 +282,67 @@
 
     // Session Initialization
     let initPromise = null;
+    function renderDiagnosticCard(finding) {
+      if (!finding || document.getElementById('repair-diagnostic-card')) return;
+      const card = document.createElement('div');
+      card.id = 'repair-diagnostic-card';
+      card.className = 'repair-diagnostic-card';
+      card.innerHTML = `
+        <div class="repair-diag-badge">🔍 ${isChinese ? '系统离线初步诊断' : 'Offline Diagnostic Finding'}</div>
+        <div class="repair-diag-summary">${escapeHtml(finding.summary)}</div>
+        <div class="repair-diag-action">💡 <strong>${isChinese ? '建议操作' : 'Recommended'}:</strong> ${escapeHtml(finding.suggestedAction)}</div>
+      `;
+      const firstMsg = messagesBox.querySelector('.repair-msg.assistant');
+      if (firstMsg) {
+        firstMsg.appendChild(card);
+      } else {
+        messagesBox.appendChild(card);
+      }
+    }
+
+    function renderErrorBanner(errorMsg) {
+      const existing = document.getElementById('repair-error-banner');
+      if (existing) existing.remove();
+
+      const banner = document.createElement('div');
+      banner.id = 'repair-error-banner';
+      banner.className = 'repair-error-banner';
+      banner.innerHTML = `
+        <div class="repair-err-text">⚠️ ${escapeHtml(errorMsg || (isChinese ? '安全模式核心服务连接异常' : 'Failed to connect to Safe Mode core'))}</div>
+        <button type="button" class="repair-retry-btn" id="repair-btn-retry">${isChinese ? '重新连接' : 'Retry'}</button>
+      `;
+      messagesBox.appendChild(banner);
+      banner.querySelector('#repair-btn-retry')?.addEventListener('click', () => {
+        banner.remove();
+        initPromise = null;
+        initSessionIfNeeded();
+      });
+      messagesBox.scrollTop = messagesBox.scrollHeight;
+    }
+
     function initSessionIfNeeded() {
       if (initPromise) return initPromise;
       if (!window.dshRepairAgent) return Promise.resolve();
 
       initPromise = window.dshRepairAgent.init().then((res) => {
+        if (res?.diagnosticFinding) {
+          renderDiagnosticCard(res.diagnosticFinding);
+        }
         if (!res || !res.ok) {
           console.warn('[repair-widget] init failed', res?.error);
+          renderErrorBanner(res?.error);
           return;
         }
+        const errBanner = document.getElementById('repair-error-banner');
+        if (errBanner) errBanner.remove();
+
         activeSessionId = res.sessionId;
         modelCatalog = res.modelCatalog;
         populateModelCatalog(modelCatalog);
         setupStreamListener();
       }).catch((err) => {
         console.error('[repair-widget] init error', err);
+        renderErrorBanner(err?.message || String(err));
       });
       return initPromise;
     }

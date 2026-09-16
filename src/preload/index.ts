@@ -391,6 +391,8 @@ contextBridge.exposeInMainWorld(
       sessionId?: string
       workspaceId?: string
       modelCatalog?: any
+      diagnosticFinding?: any
+      systemRepairPrompt?: string
       error?: string
     }> => ipcRenderer.invoke('repair-agent:init'),
     selectModel: (payload: {
