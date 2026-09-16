@@ -53,6 +53,28 @@ export function tailLog(path: string): { lines: string[]; logStatus: 'ok' | 'mis
   } catch (error) { return { lines: [], logStatus: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unreadable' } }
   finally { if (fd !== undefined) closeSync(fd) }
 }
+export function isHealthySessionLog(lines: string[]): boolean {
+  if (lines.length === 0) return false
+  const tail = lines.slice(-30)
+  const hasError = tail.some(line =>
+    /render-process-gone:\s*reason=crashed/i.test(line) ||
+    /GPU process gone:\s*reason=crashed/i.test(line) ||
+    /Harness entry failed/i.test(line) ||
+    /DSH entry failed/i.test(line) ||
+    /uncaught exception/i.test(line) ||
+    /unhandled rejection/i.test(line) ||
+    /\bfatal\b/i.test(line) ||
+    /STATUS_ACCESS_VIOLATION/i.test(line) ||
+    /\(exit code [^0]\)/i.test(line)
+  )
+  if (hasError) return false
+  return lines.some(line =>
+    line.includes('Harness is ready') ||
+    line.includes('cleared 1 stale Harness authentication cookie') ||
+    line.includes('dsh web:')
+  )
+}
+
 export class DesktopService {
   readonly installationId: string
   readonly platform: DesktopPlatform
@@ -75,7 +97,12 @@ export class DesktopService {
     if (existsSync(this.marker)) {
       try {
         const old = JSON.parse(readFileSync(this.marker, 'utf8')) as { eventId: string; version: string }
-        if (uuid.test(old.eventId) && isVersion(old.version)) this.capture('unclean-exit', 'Previous session ended without a clean shutdown (crash, power loss or forced termination).', old.eventId, old.version)
+        if (uuid.test(old.eventId) && isVersion(old.version) && old.version === this.options.version) {
+          const log = tailLog(this.options.logPath)
+          if (!isHealthySessionLog(log.lines)) {
+            this.capture('unclean-exit', 'Previous session ended without a clean shutdown (crash, power loss or forced termination).', old.eventId, old.version)
+          }
+        }
       } catch { /* A damaged marker must not prevent the next session from being tracked. */ }
     }
     this.sessionId = randomUUID()
@@ -84,13 +111,27 @@ export class DesktopService {
   markCleanExit(): void {
     try { unlinkSync(this.marker) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   }
-  capture(kind: FailureKind, message: string, eventId: string = randomUUID(), version = this.options.version): void {
+  discard(eventId: string): boolean {
+    if (!uuid.test(eventId)) return false
+    const path = join(this.outbox, `${eventId}.json`)
+    if (existsSync(path)) {
+      try {
+        unlinkSync(path)
+        return true
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+  capture(kind: FailureKind, message: string, eventId: string = randomUUID(), version = this.options.version): string {
     if (!uuid.test(eventId)) throw new Error('Invalid event ID')
     const path = join(this.outbox, `${eventId}.json`)
-    if (existsSync(path)) return
+    if (existsSync(path)) return eventId
     const files = this.pending()
     while (files.length >= 50) unlinkSync(join(this.outbox, files.shift()!))
     atomic(path, { eventId, installationId: this.installationId, version, platform: this.platform, kind, occurredAt: new Date().toISOString(), message: redact(message).slice(0, 4000), ...tailLog(this.options.logPath) })
+    return eventId
   }
   captureFatal(error: Error): void { this.capture('main-crash', error.stack ?? error.message, this.sessionId) }
   pending(): string[] {

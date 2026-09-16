@@ -156,7 +156,7 @@ describe('GitHub release contract', () => {
       build: {
         artifactName: string
         extraResources: Array<{ from: string; to: string }>
-        win: { target: Array<{ target: string; arch: string[] }> }
+        win: { target: Array<{ target: string; arch: string[] }>; requestedExecutionLevel?: string }
         nsis: { artifactName: string; include: string }
         portable?: unknown
       }
@@ -214,6 +214,7 @@ describe('GitHub release contract', () => {
     )
     expect(packageJson.build.nsis.include).toBe('build/installer.nsh')
     expect(packageJson.build.win.target).toEqual([{ target: 'nsis', arch: ['x64'] }])
+    expect(packageJson.build.win.requestedExecutionLevel).toBe('asInvoker')
     expect(packageJson.build.portable).toBeUndefined()
   })
 
@@ -239,6 +240,17 @@ describe('GitHub release contract', () => {
     expect(installer).toContain('StrCpy $3 "$0\\${APP_FILENAME}"')
     expect(installer).toContain('StrCpy $3 "$0${APP_FILENAME}"')
     expect(installer).toContain('${NSD_SetText} $DshDirectoryEdit $3')
+  })
+
+  it('clears the leftover session marker during a Windows overwrite install', async () => {
+    const installer = await readFile(
+      path.join(projectRoot, 'build', 'installer.nsh'),
+      'utf8'
+    )
+    const customInstall = installer.match(/!macro customInstall[\s\S]*?!macroend/)?.[0]
+
+    expect(customInstall).toBeDefined()
+    expect(customInstall).toContain('Delete "$APPDATA\\dsh-desktop\\desktop-service\\session.json"')
   })
 
   it('shows a packaged startup surface and pins the Electron directory picker surface', async () => {
@@ -419,7 +431,7 @@ describe('GitHub release contract', () => {
       workflow.match(
         /npm version --no-git-tag-version --allow-same-version "\$\{\{ github\.ref_name \}\}"/g
       )
-    ).toHaveLength(3)
+    ).toHaveLength(4)
   })
 
   it('signs and notarizes both macOS architectures on tag releases', async () => {
@@ -472,6 +484,9 @@ describe('GitHub release contract', () => {
     expect(workflow).not.toContain('security find-generic-password')
     expect(workflow).not.toContain('WINDOWS_SIGNING_KEYCHAIN_SERVICE')
     expect(workflow).toContain('finalize-windows-release.mjs')
+    expect(workflow).toContain('sign-windows-unpacked.mjs')
+    expect(workflow).toContain('win-unpacked.tar.gz')
+    expect(workflow).toContain('--prepackaged')
     // Version comes from the pre-release input on a dispatch, else the tag ref.
     expect(workflow).toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')
     expect(workflow).toContain('pattern: macos-*')

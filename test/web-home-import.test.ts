@@ -157,6 +157,7 @@ describe('web home import', () => {
     expect(existsSync(join(dest, 'profiles', 'web', 'package.json'))).toBe(true)
     expect(existsSync(join(dest, 'profiles', 'web', 'cordis.patch.yml'))).toBe(true)
     expect(existsSync(join(dest, 'profiles', 'web', '.npmrc'))).toBe(true)
+    expect(existsSync(join(dest, 'profiles', 'web', 'pnpm-workspace.yaml'))).toBe(true)
     expect(existsSync(join(dest, 'profiles', 'web', 'node_modules', 'demo-plugin', 'package.json'))).toBe(true)
     expect(existsSync(join(dest, 'profiles', 'web', 'node_modules', '@scope', 'extra', 'package.json'))).toBe(true)
     expect(existsSync(join(dest, 'profiles', 'web', 'node_modules', 'local-plugin', 'index.js'))).toBe(true)

@@ -451,12 +451,18 @@ jobs:
             }
             if (-not $desktop.HasExited) { Stop-Process -Id $desktop.Id -Force }
           }
+      - name: Archive unpacked Windows release for inner binary signing
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.prerelease_tag != ''
+        shell: pwsh
+        run: |
+          tar -czf dist/win-unpacked.tar.gz -C dist win-unpacked
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || inputs.prerelease_tag != ''
         with:
           name: windows-x64-unsigned
           path: |
             dist/dsh-desktop-windows-x64-setup.exe
+            dist/win-unpacked.tar.gz
             dist/dsh-desktop-windows-x64-setup.exe.blockmap
             dist/latest.yml
           if-no-files-found: error
@@ -495,6 +501,12 @@ jobs:
           java-version: '21'
       - name: Install release tooling
         run: npm ci --ignore-scripts
+      - name: Set app version from release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
+      - name: Set app version from pre-release tag
+        if: inputs.prerelease_tag != ''
+        run: npm version --no-git-tag-version --allow-same-version "${{ inputs.prerelease_tag }}"
       - name: Prepare unsigned Windows package
         run: |
           work_dir="$RUNNER_TEMP/dsh-windows-${{ github.run_id }}"
@@ -522,14 +534,54 @@ jobs:
         run: |
           test -r /usr/local/lib/libeTPkcs11.dylib
           test -n "$WINDOWS_SIGNING_PIN" || { echo "::error::Missing required secret: DESKTOP_WINDOWS_SIGNING_PIN"; exit 1; }
-          installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
-          test "$installer_count" = '1'
-          installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
           pin_file="$(mktemp "$WINDOWS_SIGNING_WORK_DIR/jsign-pin.XXXXXX")"
           trap 'rm -f "$pin_file"' EXIT
           chmod 600 "$pin_file"
           printf '%s' "$WINDOWS_SIGNING_PIN" > "$pin_file"
           unset WINDOWS_SIGNING_PIN
+
+          # If unpacked tree archive was uploaded, sign inner binaries and repackage NSIS installer
+          if [ -f "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" ]; then
+            echo "Unpacking win-unpacked archive for inner binary signing..."
+            # Keep backup of original installer in case repackaging fails on self-hosted macOS runner
+            orig_installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
+            backup_installer="$RUNNER_TEMP/orig-windows-installer-$$.exe"
+            if [ -n "$orig_installer" ] && [ -f "$orig_installer" ]; then
+              cp "$orig_installer" "$backup_installer"
+            fi
+
+            repackaged=false
+            if tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"; then
+              if JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
+                   node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"; then
+                echo "Removing previous unsigned installer before repackaging..."
+                rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
+                echo "Repackaging NSIS installer from signed unpacked directory..."
+                if npx electron-builder --win --x64 --publish never \
+                     --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
+                     --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"; then
+                  repackaged=true
+                  echo "✅ Repackaged NSIS installer successfully with signed internal binaries."
+                else
+                  echo "⚠️ Repackaging with electron-builder failed. Falling back to original installer."
+                fi
+              fi
+            fi
+
+            # Fallback if repackaging failed or produced no installer
+            current_installers="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
+            if [ "$current_installers" != '1' ] && [ -f "$backup_installer" ]; then
+              echo "Restoring original Windows installer from backup..."
+              rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe
+              cp "$backup_installer" "$orig_installer"
+            fi
+            rm -f "$backup_installer"
+            rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
+          fi
+
+          installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
+          test "$installer_count" = '1'
+          installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
           java -jar "$JSIGN_JAR" \
             --storetype ETOKEN \
             --storepass "file:$pin_file" \
