@@ -505,4 +505,133 @@
 .repair-retry-btn:hover {
   background: #27272a;
 }
+/* Config Drawer & Model Setup */
+.repair-btn-settings {
+  background: transparent;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.12));
+  color: var(--muted, #71717a);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.repair-btn-settings:hover {
+  color: var(--ink, #18181b);
+  background: var(--soft, #f4f4f5);
+  border-color: var(--strong, #4a4a50);
+}
+.repair-config-drawer {
+  position: absolute;
+  top: 50px;
+  left: 12px;
+  right: 12px;
+  z-index: 100;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.15));
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  padding: 14px;
+}
+.repair-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--ink, #18181b);
+}
+.repair-config-field {
+  margin-bottom: 10px;
+}
+.repair-config-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted, #71717a);
+  margin-bottom: 4px;
+}
+.repair-cfg-select,
+.repair-cfg-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.15));
+  background: var(--soft, #f4f4f5);
+  color: var(--ink, #18181b);
+  outline: none;
+}
+.repair-cfg-input:focus,
+.repair-cfg-select:focus {
+  border-color: var(--primary, #3b82f6);
+}
+.repair-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.repair-cfg-btn {
+  padding: 6px 16px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: none;
+  background: var(--button, #18181b);
+  color: #fff;
+  cursor: pointer;
+}
+.repair-cfg-btn:hover {
+  opacity: 0.9;
+}
+.repair-cfg-msg {
+  font-size: 11px;
+  margin-top: 6px;
+  min-height: 16px;
+}
+.repair-no-model-card {
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-left: 3px solid #eab308;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.repair-no-model-title {
+  font-weight: 600;
+  color: #ca8a04;
+  margin-bottom: 4px;
+}
+.repair-no-model-desc {
+  color: var(--ink, #18181b);
+  margin-bottom: 8px;
+}
+.repair-cfg-open-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #eab308;
+  color: #000;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+}
+.repair-cfg-open-btn:hover {
+  background: #ca8a04;
+  color: #fff;
+}
+.repair-msg-error {
+  color: var(--danger, #ee7772);
+  font-size: 11px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(238, 119, 114, 0.1);
+  border-radius: 4px;
+}
+
 

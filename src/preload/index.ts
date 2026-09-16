@@ -410,6 +410,12 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke('repair-agent:send-prompt', payload),
     cancel: (sessionId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('repair-agent:cancel', sessionId),
+    configureProvider: (payload: {
+      provider: string
+      apiKey: string
+      baseUrl?: string
+    }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('repair-agent:configure-provider', payload),
     onStream: (callback: (data: any) => void): (() => void) => {
       const listener = (_event: unknown, data: any): void => callback(data)
       ipcRenderer.on('repair-agent:stream', listener)

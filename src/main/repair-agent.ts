@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { WebContents } from 'electron'
 import WebSocket from 'ws'
+import { parse, stringify } from 'yaml'
 import { cookiePair } from './mobile/lan-mobile-bridge'
 
 export interface RepairAgentServiceOptions {
@@ -11,6 +14,13 @@ export interface RepairAgentServiceOptions {
   locale: () => 'en' | 'zh'
   readLogs?: () => readonly string[]
   appVersion?: () => string
+  dshHome?: string
+}
+
+export interface ConfigureProviderPayload {
+  provider: string
+  apiKey: string
+  baseUrl?: string
 }
 
 export interface PromptImageAttachment {
@@ -596,6 +606,59 @@ export class RepairAgentService {
       await this.invokeHarness('session/cancel', {
         request: { sessionId }
       })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  public async configureProvider(payload: ConfigureProviderPayload): Promise<{ ok: boolean; error?: string }> {
+    try {
+      if (!payload.apiKey || !payload.apiKey.trim()) {
+        return { ok: false, error: this.options.locale() === 'zh' ? 'API 密钥不能为空' : 'API Key cannot be empty' }
+      }
+      const provider = (payload.provider || 'deepseek').toLowerCase().trim()
+      const apiKey = payload.apiKey.trim()
+      const dshHome = this.options.dshHome
+      if (!dshHome) {
+        return { ok: false, error: 'DSH_HOME path is not configured' }
+      }
+
+      const credPath = join(dshHome, '.credentials.yaml')
+      let credDoc: any = { version: 1, refs: {} }
+      if (existsSync(credPath)) {
+        try {
+          const content = readFileSync(credPath, 'utf8')
+          credDoc = parse(content) || { version: 1, refs: {} }
+        } catch {
+          // recreate on corrupt
+        }
+      }
+      credDoc.version ||= 1
+      credDoc.refs ||= {}
+
+      // Key name normalization
+      const keyName = provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : provider === 'openai' ? 'OPENAI_API_KEY' : `${provider.toUpperCase()}_API_KEY`
+      credDoc.refs[keyName] = apiKey
+      writeFileSync(credPath, stringify(credDoc), 'utf8')
+
+      // Save baseUrl if specified
+      if (payload.baseUrl && payload.baseUrl.trim()) {
+        const settingsPath = join(dshHome, 'settings.yaml')
+        let settingsDoc: any = {}
+        if (existsSync(settingsPath)) {
+          try {
+            settingsDoc = parse(readFileSync(settingsPath, 'utf8')) || {}
+          } catch {
+            // recreate on corrupt
+          }
+        }
+        settingsDoc.providers ||= {}
+        settingsDoc.providers[provider] ||= {}
+        settingsDoc.providers[provider].baseUrl = payload.baseUrl.trim()
+        writeFileSync(settingsPath, stringify(settingsDoc), 'utf8')
+      }
+
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }

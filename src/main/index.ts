@@ -2952,7 +2952,8 @@ async function bootstrap(): Promise<void> {
     launchDirectory,
     locale: harnessLocale,
     readLogs: () => runtime.snapshot().logs,
-    appVersion: () => app.getVersion()
+    appVersion: () => app.getVersion(),
+    dshHome
   })
   ipcMain.handle('repair-agent:init', async (event) => {
     if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
@@ -2974,6 +2975,10 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle('repair-agent:cancel', async (_event, sessionId: any) => {
     if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
     return repairAgentService.cancel(sessionId)
+  })
+  ipcMain.handle('repair-agent:configure-provider', async (_event, payload: any) => {
+    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
+    return repairAgentService.configureProvider(payload)
   })
   ipcMain.handle('directory-picker:open', async (event) => {
     if (

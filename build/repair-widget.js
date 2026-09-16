@@ -116,7 +116,43 @@
               <path d="M4.2 6.2a.75.75 0 0 1 1.06 0L8 8.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L4.2 7.26a.75.75 0 0 1 0-1.06z"/>
             </svg>
           </div>
+          <button type="button" id="repair-btn-settings" class="repair-btn-settings" title="${isChinese ? '配置模型 API Key' : 'Configure Model API Key'}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
           <button type="button" id="repair-btn-close" class="repair-btn-close" title="${isChinese ? '收起' : 'Minimize'}">×</button>
+        </div>
+      </div>
+
+      <!-- Config Drawer -->
+      <div class="repair-config-drawer" id="repair-config-drawer" style="display:none;">
+        <div class="repair-config-header">
+          <strong>⚙️ ${isChinese ? '快捷配置模型 API Key' : 'Configure Model API Key'}</strong>
+          <button type="button" id="repair-config-close" class="repair-btn-close">×</button>
+        </div>
+        <div class="repair-config-body">
+          <div class="repair-config-field">
+            <label>${isChinese ? '模型提供商 (Provider)' : 'Provider'}:</label>
+            <select id="repair-cfg-provider" class="repair-cfg-select">
+              <option value="deepseek">DeepSeek (官方推荐)</option>
+              <option value="openai">OpenAI / 兼容接口</option>
+              <option value="siliconflow">SiliconFlow (硅基流动)</option>
+            </select>
+          </div>
+          <div class="repair-config-field">
+            <label>API Key:</label>
+            <input type="password" id="repair-cfg-key" class="repair-cfg-input" placeholder="sk-..." />
+          </div>
+          <div class="repair-config-field">
+            <label>${isChinese ? 'Base URL (可选)' : 'Base URL (Optional)'}:</label>
+            <input type="text" id="repair-cfg-url" class="repair-cfg-input" placeholder="https://api.deepseek.com" />
+          </div>
+          <div class="repair-config-actions">
+            <button type="button" id="repair-cfg-save" class="repair-cfg-btn primary">${isChinese ? '保存配置' : 'Save'}</button>
+          </div>
+          <div id="repair-cfg-msg" class="repair-cfg-msg"></div>
         </div>
       </div>
 
@@ -175,6 +211,107 @@
     const attachmentsPreview = document.getElementById('repair-attachments-preview');
     const closeBtn = document.getElementById('repair-btn-close');
     const inputBox = document.getElementById('repair-input-box');
+    const settingsBtn = document.getElementById('repair-btn-settings');
+    const configDrawer = document.getElementById('repair-config-drawer');
+    const configClose = document.getElementById('repair-config-close');
+    const cfgProvider = document.getElementById('repair-cfg-provider');
+    const cfgKey = document.getElementById('repair-cfg-key');
+    const cfgUrl = document.getElementById('repair-cfg-url');
+    const cfgSave = document.getElementById('repair-cfg-save');
+    const cfgMsg = document.getElementById('repair-cfg-msg');
+
+    let hasConfiguredModels = false;
+    let watchdogTimer = null;
+
+    function startWatchdogTimer(ms, onTimeout) {
+      clearWatchdogTimer();
+      watchdogTimer = setTimeout(onTimeout, ms);
+    }
+
+    function clearWatchdogTimer() {
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+    }
+
+    function renderAssistantError(msg) {
+      if (!currentAssistantMsgEl) return;
+      const status = currentAssistantMsgEl.querySelector('.repair-generating-status');
+      if (status) status.remove();
+      let errDiv = currentAssistantMsgEl.querySelector('.repair-msg-error');
+      if (!errDiv) {
+        errDiv = document.createElement('div');
+        errDiv.className = 'repair-msg-error';
+        currentAssistantMsgEl.appendChild(errDiv);
+      }
+      errDiv.textContent = (isChinese ? '调用失败：' : 'Error: ') + msg;
+      messagesBox.scrollTop = messagesBox.scrollHeight;
+    }
+
+    function renderNoModelCard() {
+      if (document.getElementById('repair-no-model-card')) return;
+      const card = document.createElement('div');
+      card.id = 'repair-no-model-card';
+      card.className = 'repair-no-model-card';
+      card.innerHTML = `
+        <div class="repair-no-model-title">⚠️ ${isChinese ? '未检测到可用的大模型凭证' : 'No Model Credentials Found'}</div>
+        <div class="repair-no-model-desc">${isChinese ? '系统检测到当前尚未配置可用的大模型（API Key）。维修 Agent 需要模型支持才能对话排查。' : 'No LLM API Key detected. Repair Agent requires an active model to diagnose.'}</div>
+        <button type="button" class="repair-cfg-open-btn" id="repair-btn-open-cfg">⚙️ ${isChinese ? '立即配置 API Key' : 'Configure API Key'}</button>
+      `;
+      messagesBox.appendChild(card);
+      card.querySelector('#repair-btn-open-cfg')?.addEventListener('click', () => {
+        configDrawer.style.display = 'block';
+      });
+      messagesBox.scrollTop = messagesBox.scrollHeight;
+    }
+
+    // Toggle Config Drawer
+    settingsBtn?.addEventListener('click', () => {
+      configDrawer.style.display = configDrawer.style.display === 'none' ? 'block' : 'none';
+      if (configDrawer.style.display === 'block') {
+        cfgKey.focus();
+      }
+    });
+
+    configClose?.addEventListener('click', () => {
+      configDrawer.style.display = 'none';
+    });
+
+    cfgSave?.addEventListener('click', async () => {
+      const provider = cfgProvider.value;
+      const apiKey = (cfgKey.value || '').trim();
+      const baseUrl = (cfgUrl.value || '').trim();
+      if (!apiKey) {
+        cfgMsg.style.color = 'var(--danger, #ee7772)';
+        cfgMsg.textContent = isChinese ? '请输入有效的 API Key' : 'Please enter a valid API Key';
+        return;
+      }
+      cfgSave.disabled = true;
+      cfgMsg.style.color = 'var(--primary, #3b82f6)';
+      cfgMsg.textContent = isChinese ? '正在保存凭证…' : 'Saving credentials…';
+      try {
+        if (!window.dshRepairAgent?.configureProvider) {
+          throw new Error('configureProvider API is not available');
+        }
+        const res = await window.dshRepairAgent.configureProvider({ provider, apiKey, baseUrl });
+        if (!res || !res.ok) throw new Error(res?.error || 'Save failed');
+        cfgMsg.style.color = 'var(--success, #22c55e)';
+        cfgMsg.textContent = isChinese ? '✅ 保存成功！正在重新检测可用模型…' : '✅ Saved! Refreshing models…';
+        setTimeout(() => {
+          configDrawer.style.display = 'none';
+          cfgMsg.textContent = '';
+          cfgKey.value = '';
+          initPromise = null;
+          initSessionIfNeeded();
+        }, 800);
+      } catch (err) {
+        cfgMsg.style.color = 'var(--danger, #ee7772)';
+        cfgMsg.textContent = (isChinese ? '保存失败：' : 'Failed: ') + (err.message || err);
+      } finally {
+        cfgSave.disabled = false;
+      }
+    });
 
     // Toggle Window
     fab.addEventListener('click', () => {
@@ -349,14 +486,25 @@
 
     function populateModelCatalog(catalog) {
       modelSelect.innerHTML = '';
-      if (!catalog || !Array.isArray(catalog.groups) || catalog.groups.length === 0) {
+      hasConfiguredModels = Boolean(
+        catalog &&
+        Array.isArray(catalog.groups) &&
+        catalog.groups.length > 0 &&
+        catalog.groups.some((g) => Array.isArray(g.models) && g.models.length > 0)
+      );
+
+      if (!hasConfiguredModels) {
         const opt = document.createElement('option');
         opt.value = '';
-        opt.textContent = isChinese ? '默认模型' : 'Default model';
+        opt.textContent = isChinese ? '⚠️ 未配置模型 (点击⚙️添加)' : '⚠️ No models (click ⚙️)';
         modelSelect.appendChild(opt);
         syncVisionState('', '');
+        renderNoModelCard();
         return;
       }
+
+      const noModelCard = document.getElementById('repair-no-model-card');
+      if (noModelCard) noModelCard.remove();
 
       const defaultSelection = catalog.default || catalog.current || {};
       const defaultValue = (defaultSelection.provider || '') + '::' + (defaultSelection.model || '');
@@ -419,17 +567,53 @@
       window.dshRepairAgent.onStream((frame) => {
         if (!frame) return;
         const entry = frame.event || frame;
+        const data = entry.data || {};
         const type = String(entry.type || '').toLowerCase();
 
-        if (type === 'assistant/chunk') {
-          const chunk = entry.text || '';
+        const chunkObj = data.chunk || {};
+        const chunk = chunkObj.text || chunkObj.delta || data.text || data.delta || entry.text || '';
+        const reasoning = chunkObj.reasoning || data.reasoning || data.thinking || entry.thinking || entry.reasoning || '';
+
+        if (chunk) {
+          clearWatchdogTimer();
           currentAssistantText += chunk;
           updateCurrentAssistantView();
-        } else if (type === 'thinking/chunk' || type === 'reasoning/chunk') {
-          const chunk = entry.text || '';
-          currentAssistantThinking += chunk;
+        } else if (reasoning) {
+          clearWatchdogTimer();
+          currentAssistantThinking += reasoning;
           updateCurrentAssistantView();
-        } else if (type === 'turn-end' || type === 'turn/completed' || type === 'turn/finish') {
+        }
+
+        // Detect and handle error events from stream
+        if (
+          type === 'error' ||
+          type === 'session/error' ||
+          type === 'turn/error' ||
+          type === 'agent/error' ||
+          data.error ||
+          entry.error
+        ) {
+          clearWatchdogTimer();
+          const errMsg =
+            data.message ||
+            data.error ||
+            entry.message ||
+            entry.error ||
+            (isChinese ? '模型调用失败，请检查模型 API 密钥与网络连接。' : 'Model call failed. Check credentials and network.');
+          renderAssistantError(errMsg);
+          finishGenerating();
+          return;
+        }
+
+        if (type === 'turn-end' || type === 'turn/completed' || type === 'turn/finish') {
+          clearWatchdogTimer();
+          if (!currentAssistantText && !currentAssistantThinking) {
+            renderAssistantError(
+              isChinese
+                ? '模型未返回任何回答。当前可能未配置有效的大模型 API 密钥或网络无响应。请点击右上角「⚙️」配置。'
+                : 'No response from model. API key may be missing or invalid. Click ⚙️ to configure.'
+            );
+          }
           finishGenerating();
         }
       });
@@ -450,6 +634,7 @@
     }
 
     function finishGenerating() {
+      clearWatchdogTimer();
       isGenerating = false;
       sendBtn.classList.remove('repair-btn-stop');
       sendBtn.title = isChinese ? '发送' : 'Send';
@@ -480,6 +665,17 @@
       await initSessionIfNeeded();
       if (!activeSessionId) {
         alert(isChinese ? '维修 Agent 正在启动或暂不可用，请稍候重试。' : 'Repair Agent is not ready. Please try again.');
+        return;
+      }
+
+      if (!hasConfiguredModels && (!modelSelect.value || modelSelect.value === '')) {
+        renderNoModelCard();
+        configDrawer.style.display = 'block';
+        alert(
+          isChinese
+            ? '当前未配置任何可用的大语言模型。请在上方设置面板中输入 API Key（如 DeepSeek 或 OpenAI）后重试。'
+            : 'No LLM credentials configured. Please configure an API Key in the settings drawer.'
+        );
         return;
       }
 
@@ -545,6 +741,14 @@
         if (!res || !res.ok) {
           throw new Error(res?.error || 'Failed to send prompt');
         }
+        startWatchdogTimer(30000, () => {
+          renderAssistantError(
+            isChinese
+              ? '等待模型响应超时 (30秒)。可能是模型未配置有效 API Key、Token 额度耗尽或网络不通。请点击右上角「⚙️」检查配置。'
+              : 'Model response timed out (30s). Please check model selection, credentials, and network.'
+          );
+          finishGenerating();
+        });
       } catch (err) {
         console.error('[repair-widget] sendPrompt failed', err);
         const errDiv = document.createElement('div');
