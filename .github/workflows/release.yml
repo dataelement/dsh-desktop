@@ -642,7 +642,7 @@ jobs:
             echo "Generating GitHub release note via Copilot CLI..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/github-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-terra --no-ask-user > "$out" 2>/dev/null && \
+            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > "$out" 2>/dev/null && \
                python3 .github/scripts/github_release_notes.py validate --tag "$RELEASE_TAG" --input "$out"; then
               echo "✅ AI GitHub release note generated and validated."
             else
@@ -779,7 +779,7 @@ jobs:
             echo "Generating release notes via Copilot CLI..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/feishu-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-terra --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
+            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
                python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --input .github/release-artifacts/feishu-release-notes.md; then
               echo "✅ AI release notes generated and validated."
             else
@@ -923,7 +923,7 @@ jobs:
             echo "Generating prerelease notes via Copilot CLI..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/feishu-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-terra --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
+            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
                python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --prerelease --input .github/release-artifacts/feishu-release-notes.md; then
               echo "✅ AI prerelease notes generated and validated."
             else
