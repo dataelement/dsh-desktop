@@ -15,6 +15,11 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    # Enterprise identity, token rotation, and the BiSheng model adapter are a
+    # built-in Desktop capability. Tokens remain in the shell's secure vault.
+    - id: dsh-desktop-enterprise
+      name: dsh-desktop-enterprise
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.

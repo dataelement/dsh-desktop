@@ -1,0 +1,37 @@
+{
+  "name": "dsh-desktop-enterprise",
+  "version": "0.2.0",
+  "description": "Built-in BiSheng enterprise identity and model integration for DSH Desktop.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./client": "./client.js",
+    "./contract": "./contract.js",
+    "./deep-link": {
+      "types": "./deep-link.d.ts",
+      "default": "./deep-link.js"
+    },
+    "./openai": "./openai.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-connection": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1"
+  }
+}

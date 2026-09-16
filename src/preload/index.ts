@@ -57,6 +57,33 @@ const pendingBootFailureMessages: string[] = []
 
 const BOOT_FAILURE_SETTLE_MS = 400
 const RENDERER_HEALTH_HEARTBEAT_MS = 5_000
+const enterpriseLoginListeners = new Set<(url: string) => void>()
+let pendingEnterpriseLoginUrl: string | undefined
+
+ipcRenderer.on('enterprise:login-link', (_event, url: unknown) => {
+  if (typeof url !== 'string') return
+  pendingEnterpriseLoginUrl = url
+  for (const listener of enterpriseLoginListeners) listener(url)
+})
+
+contextBridge.exposeInMainWorld(
+  'dshDesktopEnterprise',
+  Object.freeze({
+    onLoginLink: (listener: (url: string) => void): (() => void) => {
+      if (typeof listener !== 'function') {
+        throw new TypeError('Enterprise login listener must be a function.')
+      }
+      enterpriseLoginListeners.add(listener)
+      if (pendingEnterpriseLoginUrl) listener(pendingEnterpriseLoginUrl)
+      return () => enterpriseLoginListeners.delete(listener)
+    },
+    consumeLoginLink: (): string | undefined => {
+      const url = pendingEnterpriseLoginUrl
+      pendingEnterpriseLoginUrl = undefined
+      return url
+    }
+  })
+)
 
 function reportRendererHealthy(): void {
   if (rendererHealthReportInFlight || !sidebarRoot?.isConnected) return
