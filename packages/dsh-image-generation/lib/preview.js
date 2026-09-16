@@ -66,5 +66,5 @@ export async function previewImage(ctx, request) {
   } catch (error) {
     ctx.logger.info('image-generation: preview unavailable')
     return Response.json({ code: 'PREVIEW', error: 'Image preview is unavailable.' }, { status: error instanceof ImageError && error.code === 'PREVIEW' ? error.status : 404, headers: { 'Cache-Control': 'no-store' } })
-  } finally { await file?.close() }
+  } finally { try { await file?.close() } catch { /* Keep the constructed response when close fails. */ } }
 }

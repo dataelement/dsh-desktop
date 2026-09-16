@@ -4,25 +4,43 @@ import { DEFAULTS, MODEL_CATALOG, ImageError, listModels, profile, safeError, va
 const KEY = credentialKey('dsh-image-generation', 'configuration')
 const EMPTY = () => ({ revision: 0, provider: 'bytedance', profiles: {} })
 
+function described(state, writable) {
+  return {
+    revision: state.revision, provider: state.provider, writable, catalogs: MODEL_CATALOG,
+    profiles: Object.fromEntries(Object.entries(DEFAULTS).map(([provider, defaults]) => {
+      const stored = state.profiles[provider]
+      return [provider, { ...defaults, ...(stored ? profile(provider, stored) : {}), configured: Boolean(stored?.key), validation: stored?.validation ?? null }]
+    })),
+  }
+}
+
 /** Keep each validated endpoint/model/key together in one atomic host credential record. */
 export function createSettings(ctx, validate = validateConnection) {
   async function read() {
-    const record = await ctx.credentials.readRecord(KEY)
+    let record
+    try {
+      record = await ctx.credentials.readRecord(KEY)
+    } catch (error) {
+      if (error instanceof ImageError) throw error
+      throw new ImageError('LOAD_FAILED', 'The saved image configuration could not be read.', 503)
+    }
     if (!record) return EMPTY()
     if (record.kind !== 'grant' || !Number.isSafeInteger(record.payload?.revision) || !record.payload?.profiles) {
       throw new ImageError('CONFIGURATION', 'The stored image configuration needs to be saved again.', 500)
     }
     return record.payload
   }
+  async function describeWritable() {
+    try { return (await ctx.credentials.describeRecord(KEY)).writable } catch { return true }
+  }
   async function describe() {
-    const state = await read()
-    const info = await ctx.credentials.describeRecord(KEY)
-    return {
-      revision: state.revision, provider: state.provider, writable: info.writable, catalogs: MODEL_CATALOG,
-      profiles: Object.fromEntries(Object.entries(DEFAULTS).map(([provider, defaults]) => {
-        const stored = state.profiles[provider]
-        return [provider, { ...defaults, ...(stored ? profile(provider, stored) : {}), configured: Boolean(stored?.key), validation: stored?.validation ?? null }]
-      })),
+    try {
+      const state = await read()
+      return described(state, await describeWritable())
+    } catch (error) {
+      const safe = safeError(error)
+      ctx.logger.info('image-generation: settings describe failed; code=%s', safe.code)
+      throw safe
     }
   }
   async function isConfigured() {
@@ -55,7 +73,7 @@ export function createSettings(ctx, validate = validateConnection) {
   }
   async function save(input, signal) {
     const { before, spec, effectiveKey } = await prepared(input)
-    if (!(await ctx.credentials.describeRecord(KEY)).writable) throw new ImageError('READ_ONLY', 'The host credential store is read-only.', 403)
+    if (!(await describeWritable())) throw new ImageError('READ_ONLY', 'The host credential store is read-only.', 403)
     try {
       const validation = await validate(input.provider, spec, effectiveKey, { signal })
       signal?.throwIfAborted()

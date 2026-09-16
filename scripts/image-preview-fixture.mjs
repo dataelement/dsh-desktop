@@ -21,12 +21,13 @@ export async function imagePreviewFixture(home) {
   session.append('step/start', { turn: 1, step: 1 })
   session.append('user/message', createUserMessage({ content: [{ type: 'text', text: '图片预览验收：展示模拟生图结果' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
   const args = { prompt: 'Landscape preview fixture', aspect_ratio: '16:9' }
-  session.append('assistant/message', { turn: 1, step: 1, message: createAssistantMessage({ source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'tool-call', callId: 'image-fixture', name: 'image_generate', arguments: JSON.stringify(args) }] }) }, { surfaceOp: 'append' })
+  const model = { kind: 'model', provider: 'fixture', model: 'fixture' }
+  session.append('assistant/message', { turn: 1, step: 1, stream: [], message: createAssistantMessage({ source: model, content: [{ type: 'tool-call', callId: 'image-fixture', name: 'image_generate', arguments: JSON.stringify(args) }] }) }, { surfaceOp: 'append' })
   session.append('tool/call', { turn: 1, step: 1, callId: 'image-fixture', name: 'image_generate', arguments: JSON.stringify(args) })
   session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: 'image-fixture', content: [{ type: 'text', text: JSON.stringify(image) }], isError: false }) }, { surfaceOp: 'append' })
   session.append('step/end', { turn: 1, step: 1 })
   session.append('step/start', { turn: 1, step: 2 })
-  session.append('assistant/message', { turn: 1, step: 2, message: createAssistantMessage({ source: { provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: '图片已生成，点击下方缩略图可放大查看。' }] }) }, { surfaceOp: 'append' })
+  session.append('assistant/message', { turn: 1, step: 2, stream: [], message: createAssistantMessage({ source: model, content: [{ type: 'text', text: '图片已生成，点击下方缩略图可放大查看。' }] }) }, { surfaceOp: 'append' })
   session.append('step/end', { turn: 1, step: 2 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   const ctx = new Context(); const forks = []

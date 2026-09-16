@@ -10,6 +10,9 @@ window.__ModuleLoader__.load({
       apiKey: 'API Key', keyPlaceholder: '输入服务商的 API Key', savedKey: '输入新 Key 可替换',
       advanced: '高级设置', model: '模型 ID', baseUrl: 'API 地址',
       save: '保存', saving: '正在校验…', saved: '已保存，连接校验通过', loading: '正在读取配置…', reload: '重新读取配置', readOnly: '当前配置由管理员管理。',
+      setupHint: '尚未配置。选择服务商，填写 API Key 后保存，即可在对话和 PPT 中生图。',
+      configuredHint: '已保存 API Key。更换模型将沿用当前 Key；输入新 Key 可替换。',
+      LOAD_FAILED: '暂时无法确认已保存的配置状态，请点击重新读取后再修改。',
       modelSelect: '生图模型', fetchModels: '获取模型', fetchingModels: '正在获取…', customModel: '自定义模型 / 接入点', emptyModels: '此 Key 的列表未返回工具支持的生图模型，可检查权限或填写自定义模型。',
       MODEL_DISCOVERY: '当前服务商使用内置模型或自定义接入点。',
       AUTH: 'API Key 无效或已过期，请检查后重新保存。', PERMISSION: '当前 Key 无权访问，请确认模型已开通及账号已完成所需认证。',
@@ -25,6 +28,9 @@ window.__ModuleLoader__.load({
       apiKey: 'API Key', keyPlaceholder: 'Enter your provider API key', savedKey: 'Enter a new key to replace it',
       advanced: 'Advanced settings', model: 'Model ID', baseUrl: 'API URL',
       save: 'Save', saving: 'Validating…', saved: 'Saved. Connection validated.', loading: 'Loading settings…', reload: 'Reload settings', readOnly: 'These settings are managed by your administrator.',
+      setupHint: 'Not configured yet. Choose a provider, enter an API key, and save to enable image generation in chat and presentations.',
+      configuredHint: 'An API key is already saved. Changing the model reuses it; enter a new key only if you want to replace it.',
+      LOAD_FAILED: 'Could not confirm the saved settings. Reload before making changes.',
       modelSelect: 'Image model', fetchModels: 'Fetch models', fetchingModels: 'Fetching…', customModel: 'Custom model / endpoint', emptyModels: 'No supported image models were returned. Check access or enter a custom model.',
       MODEL_DISCOVERY: 'Use a built-in model or a custom endpoint for this provider.',
       AUTH: 'The API key is invalid or expired.', PERMISSION: 'Check model access and account verification.', MODEL: 'Check the model ID, inference endpoint and model access.',
@@ -55,12 +61,13 @@ window.__ModuleLoader__.load({
       .dshImageHeader:focus-visible{outline-offset:-2px}.dshImageSave:focus-visible{outline-offset:1px}
       .dshImageFetch{appearance:none;align-self:flex-start;font:inherit;font-size:13px;line-height:1.5;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:5px 14px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.dshImageFetch:disabled{opacity:.4;cursor:default}
     `
-    async function api(path, options = {}) {
-      const response = await fetch(`/api/image-generation.${path}`, { ...options, cache: 'no-store' })
-      let data
-      try { data = await response.json() } catch { throw { code: 'RESPONSE' } }
-      if (!response.ok) throw data
-      return data
+    const emptyDrafts = {
+      bytedance: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedream-4-5-251128', configured: false, validation: null, apiKey: '' },
+      openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-image-1.5', configured: false, validation: null, apiKey: '' },
+    }
+    const emptyCatalogs = {
+      openai: { source: 'builtin', canFetch: true, models: [emptyDrafts.openai.model] },
+      bytedance: { source: 'builtin', canFetch: false, models: [emptyDrafts.bytedance.model] },
     }
     function ImageSelect({ name, label, value, options, onChange, disabled }) {
       const [open, setOpen] = React.useState(false)
@@ -94,7 +101,7 @@ window.__ModuleLoader__.load({
             'aria-haspopup': 'menu', 'aria-expanded': open && !disabled, onClick: () => setOpen(previous => !previous) },
             h('span', { id: `${id}-value`, className: 'dshImageSelectValue' }, options.find(option => option.id === value)?.label || value), h(IconChevronDownOutline14)) }))
     }
-    function ImageCard({ t }) {
+    function ImageCard({ t, callApi }) {
       const [expanded, setExpanded] = React.useState(false)
       const [saved, setSaved] = React.useState(null)
       const [drafts, setDrafts] = React.useState({})
@@ -106,37 +113,63 @@ window.__ModuleLoader__.load({
       const [fetching, setFetching] = React.useState(false)
       const [catalogs, setCatalogs] = React.useState({})
       const [customModels, setCustomModels] = React.useState({})
+      const [loadFailed, setLoadFailed] = React.useState(false)
       const inFlight = React.useRef(false)
       const lifetime = React.useRef(null)
+      const lastGood = React.useRef(null)
       const id = React.useId()
+      const applySettings = result => {
+        lastGood.current = result
+        setSaved(result); setProvider(result.provider)
+        setCatalogs({}); setCustomModels(Object.fromEntries(Object.entries(result.profiles).map(([key, value]) => [key, !result.catalogs[key].models.includes(value.model)])))
+        setDrafts(Object.fromEntries(Object.entries(result.profiles).map(([key, value]) => [key, { ...value, apiKey: '' }])))
+      }
+      const seedDrafts = () => {
+        setSaved(null)
+        setCatalogs({})
+        setCustomModels({})
+        setDrafts(Object.fromEntries(Object.entries(emptyDrafts).map(([key, value]) => [key, { ...value }])))
+      }
       const load = React.useCallback(async signal => {
         setLoading(true); setError('')
-        try {
-          const result = await api('settings', { signal })
-          setSaved(result); setProvider(result.provider)
-          setCatalogs({}); setCustomModels(Object.fromEntries(Object.entries(result.profiles).map(([key, value]) => [key, !result.catalogs[key].models.includes(value.model)])))
-          setDrafts(Object.fromEntries(Object.entries(result.profiles).map(([key, value]) => [key, { ...value, apiKey: '' }])))
-        } catch (error) { if (!signal.aborted) setError(error.code || 'UNAVAILABLE') }
-        finally { if (!signal.aborted) setLoading(false) }
-      }, [])
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            applySettings(await callApi('settings', {}, signal))
+            if (!signal.aborted) {
+              setLoadFailed(false)
+              setLoading(false)
+            }
+            return
+          } catch {
+            if (signal.aborted) return
+            if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)))
+          }
+        }
+        if (signal.aborted) return
+        if (lastGood.current) applySettings(lastGood.current)
+        else seedDrafts()
+        setLoadFailed(true)
+        setError('LOAD_FAILED')
+        setLoading(false)
+      }, [callApi])
       React.useEffect(() => {
         const controller = new AbortController(); lifetime.current = controller
         void load(controller.signal)
         return () => controller.abort()
       }, [load])
       const draft = drafts[provider]
-      const catalog = catalogs[provider] || saved?.catalogs[provider]
+      const catalog = catalogs[provider] || saved?.catalogs[provider] || emptyCatalogs[provider]
+      const writable = saved?.writable !== false && Boolean(saved) && !loadFailed
       const edit = (key, value) => {
         setDrafts(previous => ({ ...previous, [provider]: { ...previous[provider], [key]: value } }))
         if (key === 'apiKey' || key === 'baseUrl') setCatalogs(previous => ({ ...previous, [provider]: undefined }))
         setStatus(''); setError('')
       }
       const fetchModels = async () => {
-        if (inFlight.current || !saved) return
+        if (inFlight.current || !saved || loadFailed) return
         inFlight.current = true; setFetching(true); setError(''); setStatus('')
         try {
-          const result = await api('models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: lifetime.current.signal,
-            body: JSON.stringify({ revision: saved.revision, provider, model: draft.model || undefined, baseUrl: draft.baseUrl, apiKey: draft.apiKey }) })
+          const result = await callApi('models', { revision: saved.revision, provider, model: draft.model || undefined, baseUrl: draft.baseUrl, apiKey: draft.apiKey }, lifetime.current.signal)
           setCatalogs(previous => ({ ...previous, [provider]: result }))
           setCustomModels(previous => ({ ...previous, [provider]: !result.models.includes(draft.model) }))
         } catch (error) { if (!lifetime.current.signal.aborted) setError(error.code || 'UNAVAILABLE') }
@@ -144,15 +177,15 @@ window.__ModuleLoader__.load({
       }
       const save = async event => {
         event.preventDefault()
-        if (inFlight.current || !saved) return
+        if (inFlight.current) return
+        if (!saved || loadFailed) { setError('LOAD_FAILED'); return }
+        const nextKey = (draft.apiKey || '').trim()
+        const reuseKey = Boolean(draft.configured || saved.profiles?.[provider]?.configured)
+        if (!nextKey && !reuseKey) { setError('KEY_REQUIRED'); return }
         inFlight.current = true; setBusy(true); setError(''); setStatus('')
         try {
-          const result = await api('save', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: lifetime.current.signal,
-            body: JSON.stringify({ revision: saved.revision, provider, model: draft.model, baseUrl: draft.baseUrl, apiKey: draft.apiKey }),
-          })
-          setSaved(result)
-          setDrafts(previous => ({ ...previous, [provider]: { ...result.profiles[provider], apiKey: '' } }))
+          const result = await callApi('save', { revision: saved.revision, provider, model: draft.model, baseUrl: draft.baseUrl, apiKey: nextKey }, lifetime.current.signal)
+          applySettings(result)
           setStatus('saved')
         } catch (error) { if (!lifetime.current.signal.aborted) setError(error.code || 'UNAVAILABLE') }
         finally { inFlight.current = false; if (!lifetime.current.signal.aborted) setBusy(false) }
@@ -165,23 +198,25 @@ window.__ModuleLoader__.load({
           h(IconChevronDownOutline14, { className: 'dshImageChevron' })),
         expanded && h('form', { id: `${id}-body`, className: 'dshImageBody', onSubmit: save, 'aria-busy': busy || fetching || loading },
           loading ? h('p', { className: 'dshImageHint' }, t('loading')) : draft && h(React.Fragment, null,
-            h('fieldset', { className: 'dshImageFields', disabled: busy || fetching || !saved.writable },
-              h(ImageSelect, { name: 'provider', label: t('provider'), value: provider, disabled: busy || fetching || !saved.writable,
+            !loadFailed && h('p', { className: 'dshImageHint' }, t(draft.configured ? 'configuredHint' : 'setupHint')),
+            h('fieldset', { className: 'dshImageFields', disabled: busy || fetching || !writable },
+              h(ImageSelect, { name: 'provider', label: t('provider'), value: provider, disabled: busy || fetching || !writable,
                 options: [{ id: 'bytedance', label: t('bytedance') }, { id: 'openai', label: t('openai') }],
                 onChange: value => { setProvider(value); setStatus(''); setError('') } }),
               field('apiKey', 'apiKey', 'password', t(draft.configured ? 'savedKey' : 'keyPlaceholder')),
-              h(ImageSelect, { name: 'model', label: t('modelSelect'), value: customModels[provider] || !catalog.models.includes(draft.model) ? '__custom__' : draft.model, disabled: busy || fetching || !saved.writable,
+              h(ImageSelect, { name: 'model', label: t('modelSelect'), value: customModels[provider] || !catalog.models.includes(draft.model) ? '__custom__' : draft.model, disabled: busy || fetching || !writable,
                 options: [...catalog.models.map(model => ({ id: model, label: model })), { id: '__custom__', label: t('customModel') }],
                 onChange: value => { const custom = value === '__custom__'; setCustomModels(previous => ({ ...previous, [provider]: custom })); if (!custom) edit('model', value) } }),
               (customModels[provider] || !catalog.models.includes(draft.model)) && field('model', 'model'),
-              catalog.canFetch && h('button', { className: 'dshImageFetch', type: 'button', disabled: !draft.apiKey.trim() && !draft.configured, onClick: fetchModels }, t(fetching ? 'fetchingModels' : 'fetchModels')),
+              catalog.canFetch && h('button', { className: 'dshImageFetch', type: 'button', disabled: !(draft.apiKey || '').trim() && !draft.configured, onClick: fetchModels }, t(fetching ? 'fetchingModels' : 'fetchModels')),
               catalog.source === 'provider' && catalog.models.length === 0 && h('p', { className: 'dshImageHint', role: 'status' }, t('emptyModels')),
               h('details', { className: 'dshImageAdvanced' }, h('summary', null, t('advanced')), field('baseUrl', 'baseUrl'))),
-            h('div', { className: 'dshImageActions' }, h('button', { className: 'dshImageSave', type: 'submit', disabled: busy || fetching || !saved.writable || !draft.model.trim() || (!draft.apiKey.trim() && !draft.configured) }, t(busy ? 'saving' : 'save')),
+            h('div', { className: 'dshImageActions' },
+              h('button', { className: 'dshImageSave', type: 'submit', disabled: busy || fetching || !writable || !(draft.model || '').trim() }, t(busy ? 'saving' : 'save')),
+              error === 'LOAD_FAILED' && h('button', { className: 'dshImageFetch', type: 'button', onClick: () => load(lifetime.current.signal) }, t('reload')),
               status && h('p', { className: 'dshImageStatus', role: 'status' }, t(status))),
-            !saved.writable && h('p', { className: 'dshImageHint' }, t('readOnly'))),
-          error && h('p', { className: 'dshImageStatus dshImageError', role: 'alert' }, t(Object.hasOwn(en, error) ? error : 'UNAVAILABLE')),
-          !loading && !saved && h('button', { className: 'dshImageSave', type: 'button', onClick: () => load(lifetime.current.signal) }, t('reload'))))
+            saved && !saved.writable && h('p', { className: 'dshImageHint' }, t('readOnly'))),
+          error && h('p', { className: 'dshImageStatus dshImageError', role: 'alert' }, t(Object.hasOwn(en, error) ? error : 'UNAVAILABLE'))))
     }
     function generatedResult(event) {
       const native = event.type === 'tool/result' && event.surfaceOp === 'append'
@@ -247,6 +282,20 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale', 'uiConversation'],
       apply(ctx) {
+        const callApi = async (endpoint, payload, signal) => {
+          const settings = endpoint === 'settings'
+          const response = await fetch(`/api/image-generation.${endpoint}`, {
+            method: settings ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', signal,
+            ...(settings ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload ?? {}) }),
+          })
+          const text = await response.text()
+          let data
+          try { data = text ? JSON.parse(text) : {} } catch {
+            throw { code: endpoint === 'settings' ? 'LOAD_FAILED' : 'UNAVAILABLE' }
+          }
+          if (!response.ok) throw data.code ? data : { code: endpoint === 'settings' ? 'LOAD_FAILED' : 'UNAVAILABLE' }
+          return data
+        }
         ctx.uiConversation.events.register(imageDefinition)
         ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
           name: 'conversation.chat.node', key: 'generated-image', locale: NS,
@@ -258,7 +307,10 @@ window.__ModuleLoader__.load({
           document.head.appendChild(style)
           return () => style.remove()
         }, 'image-generation styles')
-        ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({ name: 'settings.plugin.item', key: 'image-generation', order: -100, locale: NS }, ImageCard))
+        ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+          name: 'settings.plugin.item', key: 'image-generation', order: -100, locale: NS,
+          inject: () => ({ callApi }),
+        }, ImageCard))
       },
     }
   },

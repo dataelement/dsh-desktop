@@ -115,6 +115,26 @@ describe('image settings save and provider requests', () => {
     expect(result.find(result => result.status === 'rejected').reason.code).toBe('CONFLICT')
     expect((await f.settings.describe()).revision).toBe(1)
   })
+  it('reuses the saved key when only the image model changes', async () => {
+    const f = await fixture(); const s = await server()
+    await f.settings.save(saveInput('bytedance', s.baseUrl))
+    const result = await f.settings.save({
+      provider: 'bytedance', baseUrl: s.baseUrl, model: 'doubao-seedream-4-0-250828', apiKey: '', revision: 1,
+    })
+    expect(result.profiles.bytedance).toMatchObject({ configured: true, model: 'doubao-seedream-4-0-250828' })
+    expect((await f.settings.active()).key).toBe('test-image-key')
+    expect(s.calls.at(-1).auth).toBe('Bearer test-image-key')
+    expect(s.calls).toHaveLength(2)
+  })
+  it('keeps a saved profile when only describeRecord fails', async () => {
+    const f = await fixture(); const s = await server()
+    await f.settings.save(saveInput('bytedance', s.baseUrl))
+    vi.spyOn(f.services.credentials, 'describeRecord').mockRejectedValue(new Error('secret-echo-key'))
+    const result = await f.settings.describe()
+    expect(result.profiles.bytedance.configured).toBe(true)
+    expect(result.writable).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('secret-echo-key')
+  })
   it('requires a re-entered key for a different origin and rejects stale revisions before requests', async () => {
     const f = await fixture(); const s = await server()
     await f.settings.save(saveInput('openai', s.baseUrl))
@@ -149,6 +169,20 @@ describe('image settings save and provider requests', () => {
     setTimeout(() => controller.abort(), 10)
     await expect(pending).rejects.toMatchObject({ code: 'CANCELLED' })
     expect((await f.settings.describe()).revision).toBe(0)
+  })
+  it('describes empty defaults when no image configuration is stored', async () => {
+    const f = await fixture()
+    const result = await f.settings.describe()
+    expect(result).toMatchObject({ revision: 0, provider: 'bytedance', writable: true })
+    expect(result.profiles.bytedance.configured).toBe(false)
+    expect(result.profiles.openai.configured).toBe(false)
+  })
+  it('rejects settings reads and saves when the credential store cannot be read', async () => {
+    const f = await fixture()
+    vi.spyOn(f.services.credentials, 'readRecord').mockRejectedValue(new Error('secret-echo-key'))
+    await expect(f.settings.describe()).rejects.toMatchObject({ code: 'LOAD_FAILED', status: 503 })
+    await expect(f.settings.save(saveInput('bytedance', 'https://ark.cn-beijing.volces.com/api/v3'))).rejects.toMatchObject({ code: 'LOAD_FAILED', status: 503 })
+    expect(JSON.stringify(f.log.mock.calls)).not.toContain('secret-echo-key')
   })
   it.each(['https://user:key@example.com/v1', 'http://example.com/v1', 'https://example.com/v1?key=x'])('rejects unsafe endpoint %s', baseUrl => {
     expect(() => profile('openai', { baseUrl })).toThrow(ImageError)
@@ -269,16 +303,27 @@ describe('image tool and durable Office assets', () => {
     await expect(materialize(workspace, image.data)).rejects.toThrow()
     await expect(normalizeImage(Buffer.from('not a PNG'))).rejects.toMatchObject({ code: 'IMAGE' })
   })
-  it('registers standard routes and executes with saved configuration while honoring deployment guards', async () => {
-    const f = await fixture(); const routes = []
-    const plugin = f.ctx.plugin({ inject: ['settings', 'skills', 'systemPrompt', 'tools'], apply: ctx => apply({
-      ...f.services, settings: ctx.settings, skills: ctx.skills, systemPrompt: ctx.systemPrompt, tools: ctx.tools,
+  async function mountPlugin(fixture, routes = []) {
+    const plugin = fixture.ctx.plugin({ inject: ['settings', 'skills', 'systemPrompt', 'tools'], apply: ctx => apply({
+      ...fixture.services, settings: ctx.settings, skills: ctx.skills, systemPrompt: ctx.systemPrompt, tools: ctx.tools,
       on: ctx.on.bind(ctx), connection: { fetch: { register: route => routes.push(route) } },
     }) })
-    await plugin; cleanups.push(() => plugin.dispose())
+    await plugin
+    cleanups.push(() => plugin.dispose())
+    return plugin
+  }
+  it('registers standard routes and executes with saved configuration while honoring deployment guards', async () => {
+    const f = await fixture(); const routes = []
+    await mountPlugin(f, routes)
     expect(f.ctx.settings.describe().map(entry => entry.ns)).toContain('image-generation')
-    expect(routes.map(route => route.path)).toEqual(['/api/image-generation.settings', '/api/image-generation.save', '/api/image-generation.models', '/api/image-generation.preview'])
+    expect(routes.map(({ path, methods, requestBody }) => ({ path, methods, requestBody }))).toEqual([
+      { path: '/api/image-generation.settings', methods: ['GET'], requestBody: 'buffered' },
+      { path: '/api/image-generation.save', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/image-generation.models', methods: ['POST'], requestBody: 'buffered' },
+      { path: '/api/image-generation.preview', methods: ['GET'], requestBody: 'buffered' },
+    ])
     const response = await routes[0].fetch(new Request('http://localhost/api/image-generation.settings'))
+    expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect((await response.json()).profiles.openai.configured).toBe(false)
     const provider = await server()
@@ -293,15 +338,15 @@ describe('image tool and durable Office assets', () => {
     expect(JSON.stringify(denied)).toContain('Deployment blocks image generation')
     expect(provider.calls).toHaveLength(2)
   })
-  async function mountPlugin(fixture, routes = []) {
-    const plugin = fixture.ctx.plugin({ inject: ['settings', 'skills', 'systemPrompt', 'tools'], apply: ctx => apply({
-      ...fixture.services, settings: ctx.settings, skills: ctx.skills, systemPrompt: ctx.systemPrompt, tools: ctx.tools,
-      on: ctx.on.bind(ctx), connection: { fetch: { register: route => routes.push(route) } },
-    }) })
-    await plugin
-    cleanups.push(() => plugin.dispose())
-    return plugin
-  }
+  it('returns LOAD_FAILED from the settings route when credentials cannot be read', async () => {
+    const f = await fixture(); const routes = []
+    await mountPlugin(f, routes)
+    vi.spyOn(f.services.credentials, 'readRecord').mockRejectedValue(new Error('secret-echo-key'))
+    const response = await routes[0].fetch(new Request('http://localhost/api/image-generation.settings'))
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ code: 'LOAD_FAILED' })
+    expect(JSON.stringify(f.log.mock.calls)).not.toContain('secret-echo-key')
+  })
   it('assembles an unconfigured prompt, a configured parallel prompt, and fails closed without leaking secrets', async () => {
     const f = await fixture()
     await mountPlugin(f)
@@ -317,7 +362,7 @@ describe('image tool and durable Office assets', () => {
     expect(closed.sections.find(section => section.name === IMAGE_PROMPT_SECTION)?.text).toBe(UNCONFIGURED_IMAGE_PROMPT)
     expect(JSON.stringify(closed)).not.toContain('secret-echo-key')
     expect(JSON.stringify(f.log.mock.calls)).not.toContain('secret-echo-key')
-    expect(JSON.stringify(f.log.mock.calls)).toContain('UNAVAILABLE')
+    expect(JSON.stringify(f.log.mock.calls)).toContain('LOAD_FAILED')
   })
 })
 

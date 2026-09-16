@@ -67,21 +67,25 @@ export async function apply(ctx) {
   // failed save cannot pair an old key with a newly persisted endpoint.
   ctx.settings.register('image-generation', Config, { applies: 'live' })
   const settings = createSettings(ctx)
-  for (const [suffix, method] of [['settings', 'GET'], ['save', 'POST'], ['models', 'POST']]) {
-    ctx.connection.fetch.register({ path: `/api/image-generation.${suffix}`, methods: [method], async fetch(request) {
-      try {
-        const value = method === 'GET' ? await settings.describe() : await settings[suffix](
-          JSON.parse((await readBounded(request, 16_384, request.signal)).toString('utf8')), request.signal,
-        )
-        return Response.json(value, { headers: { 'Cache-Control': 'no-store' } })
-      } catch (error) {
-        const safe = safeError(error)
-        return Response.json({ code: safe.code, error: safe.message }, { status: safe.status, headers: { 'Cache-Control': 'no-store' } })
-      }
-    } })
+  const jsonResponse = async (run) => {
+    try {
+      return Response.json(await run(), { headers: { 'Cache-Control': 'no-store' } })
+    } catch (error) {
+      const safe = safeError(error)
+      return Response.json({ code: safe.code, error: safe.message }, { status: safe.status, headers: { 'Cache-Control': 'no-store' } })
+    }
+  }
+  const registerJson = (path, methods, fetch) => ctx.connection.fetch.register({
+    path, methods, requestBody: 'buffered', fetch,
+  })
+  registerJson('/api/image-generation.settings', ['GET'], () => jsonResponse(() => settings.describe()))
+  for (const suffix of ['save', 'models']) {
+    registerJson(`/api/image-generation.${suffix}`, ['POST'], request => jsonResponse(async () => settings[suffix](
+      JSON.parse((await readBounded(request, 16_384, request.signal)).toString('utf8')), request.signal,
+    )))
   }
   ctx.tools.register(imageTool(ctx, settings))
-  ctx.connection.fetch.register({ path: '/api/image-generation.preview', methods: ['GET'], fetch: request => previewImage(ctx, request) })
+  registerJson('/api/image-generation.preview', ['GET'], request => previewImage(ctx, request))
   const locator = new URL('./skills/generate-image/SKILL.md', import.meta.url)
   const candidate = {
     name: 'generate-image', description: 'Create reusable photos, illustrations and backgrounds for presentations, documents and other image requests with the configured image_generate tool.',
