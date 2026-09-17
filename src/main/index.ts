@@ -162,7 +162,7 @@ import {
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
 
-type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates'
+type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates'
 type WebImportAction = 'import' | 'skip'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
@@ -171,7 +171,7 @@ type SafeModeAction =
   | { type: 'backup-open'; removalId: string }
   | { type: 'backup-restore'; removalId: string }
   | { type: 'backup-delete'; removalId: string }
-  | { type: 'agent' }
+  | { type: 'agent'; prompt?: string }
   | { type: 'restart' }
   | { type: 'quit' }
 
@@ -1986,6 +1986,22 @@ async function showPluginRecovery(options?: {
       if (action === 'refresh' || action === 'check-updates') {
         applyPendingFrontendEvidence()
         continue
+      } else if (action.startsWith('agent:')) {
+        const prompt = action.slice(6)
+        if (repairAgentService) {
+          try {
+            const { sessionId } = await repairAgentService.initSession()
+            if (sessionId) {
+              repairAgentService.sendPrompt(sessionId, prompt).catch(error => {
+                console.error('[desktop] repair agent background prompt failed:', error)
+              })
+            }
+          } catch (error) {
+            console.error('[desktop] failed to init repair session:', error)
+          }
+        }
+        await launchSafeHarness()
+        break
       } else if (action === 'auto-process' || ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate)) {
         const plan = action === 'auto-process'
           ? planPluginRecovery(pluginChecks)
@@ -2461,7 +2477,22 @@ async function showSafeModeManager(initial?: {
       }
       if (action.type === 'agent') {
         const snapshot = runtime.snapshot()
-        if (snapshot.phase === 'ready' && snapshot.url) await openHarness(snapshot.url)
+        if (snapshot.phase === 'ready' && snapshot.url) {
+          if (action.prompt && repairAgentService) {
+            try {
+              const { sessionId } = await repairAgentService.initSession()
+              if (sessionId) {
+                // Send the prompt headlessly; it will write to history which the UI will pick up
+                repairAgentService.sendPrompt(sessionId, action.prompt).catch(error => {
+                  console.error('[desktop] repair agent background prompt failed:', error)
+                })
+              }
+            } catch (error) {
+              console.error('[desktop] failed to init repair session:', error)
+            }
+          }
+          await openHarness(snapshot.url)
+        }
         return
       }
       if (action.type === 'recovery-open') {
@@ -2955,31 +2986,7 @@ async function bootstrap(): Promise<void> {
     appVersion: () => app.getVersion(),
     dshHome
   })
-  ipcMain.handle('repair-agent:init', async (event) => {
-    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
-    return repairAgentService.initSession(event.sender)
-  })
-  ipcMain.handle('repair-agent:select-model', async (_event, payload: any) => {
-    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
-    return repairAgentService.selectModel(
-      payload.sessionId,
-      payload.provider,
-      payload.model,
-      payload.reasoningEffort
-    )
-  })
-  ipcMain.handle('repair-agent:send-prompt', async (_event, payload: any) => {
-    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
-    return repairAgentService.sendPrompt(payload.sessionId, payload.text, payload.images)
-  })
-  ipcMain.handle('repair-agent:cancel', async (_event, sessionId: any) => {
-    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
-    return repairAgentService.cancel(sessionId)
-  })
-  ipcMain.handle('repair-agent:configure-provider', async (_event, payload: any) => {
-    if (!repairAgentService) return { ok: false, error: 'Repair Agent service is not ready' }
-    return repairAgentService.configureProvider(payload)
-  })
+
   ipcMain.handle('directory-picker:open', async (event) => {
     if (
       !mainWindow ||
@@ -3035,10 +3042,13 @@ async function bootstrap(): Promise<void> {
     return { ok: true }
   })
   ipcMain.removeHandler('recovery:action')
-  ipcMain.handle('recovery:action', (event, action: unknown) => {
+  ipcMain.handle('recovery:action', (event, action: unknown, options?: any) => {
     assertTrustedMainWindowEvent(event)
-    if (typeof action === 'string' && (PLUGIN_RECOVERY_ACTIONS.has(action as PluginRecoveryAction) || /^(upgrade|uninstall):.+$/.test(action))) {
+    if (typeof action === 'string' && (PLUGIN_RECOVERY_ACTIONS.has(action as PluginRecoveryAction) || /^(upgrade|uninstall|agent):.+$/.test(action))) {
       resolvePluginRecoveryAction(action as PluginRecoveryAction)
+      return { ok: true }
+    } else if (action === 'agent' && options?.prompt) {
+      resolvePluginRecoveryAction(`agent:${options.prompt}` as PluginRecoveryAction)
       return { ok: true }
     }
     return { ok: false }
@@ -3112,8 +3122,11 @@ async function bootstrap(): Promise<void> {
         !await canRetryLockedPluginRestore(join(app.getPath('userData'), 'harness'), removalId)
       ) return { ok: false }
       resolveSafeModeAction({ type: action, removalId })
+    } else if (action === 'agent') {
+      const { prompt } = (typeof selection === 'object' && selection !== null ? selection : {}) as { prompt?: string }
+      resolveSafeModeAction({ type: 'agent', prompt })
     } else {
-      resolveSafeModeAction({ type: action })
+      resolveSafeModeAction({ type: action as any })
     }
     return { ok: true }
   })

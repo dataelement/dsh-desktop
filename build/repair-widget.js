@@ -137,8 +137,12 @@
             <label>${isChinese ? '模型提供商 (Provider)' : 'Provider'}:</label>
             <select id="repair-cfg-provider" class="repair-cfg-select">
               <option value="deepseek">DeepSeek (官方推荐)</option>
-              <option value="openai">OpenAI / 兼容接口</option>
+              <option value="openai">OpenAI (GPT-4o / 兼容)</option>
               <option value="siliconflow">SiliconFlow (硅基流动)</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="moonshotai-cn">Moonshot / Kimi</option>
+              <option value="zai-coding-cn">智谱 GLM (Zhipu)</option>
+              <option value="custom">自定义 (OpenAI 兼容)</option>
             </select>
           </div>
           <div class="repair-config-field">
@@ -147,7 +151,7 @@
           </div>
           <div class="repair-config-field">
             <label>${isChinese ? 'Base URL (可选)' : 'Base URL (Optional)'}:</label>
-            <input type="text" id="repair-cfg-url" class="repair-cfg-input" placeholder="https://api.deepseek.com" />
+            <input type="text" id="repair-cfg-url" class="repair-cfg-input" placeholder="默认官方接口 (https://api.deepseek.com)" />
           </div>
           <div class="repair-config-actions">
             <button type="button" id="repair-cfg-save" class="repair-cfg-btn primary">${isChinese ? '保存配置' : 'Save'}</button>
@@ -266,10 +270,64 @@
       messagesBox.scrollTop = messagesBox.scrollHeight;
     }
 
+    // Provider URL and placeholder defaults aligned with DSH system
+    const PROVIDER_DEFAULTS = {
+      deepseek: {
+        url: '',
+        urlPlaceholder: isChinese ? '默认官方接口 (https://api.deepseek.com)' : 'Default official (https://api.deepseek.com)',
+        keyPlaceholder: 'sk-...'
+      },
+      openai: {
+        url: 'https://api.openai.com/v1',
+        urlPlaceholder: 'https://api.openai.com/v1',
+        keyPlaceholder: 'sk-...'
+      },
+      siliconflow: {
+        url: 'https://api.siliconflow.cn/v1',
+        urlPlaceholder: 'https://api.siliconflow.cn/v1',
+        keyPlaceholder: 'sk-...'
+      },
+      openrouter: {
+        url: 'https://openrouter.ai/api/v1',
+        urlPlaceholder: 'https://openrouter.ai/api/v1',
+        keyPlaceholder: 'sk-or-...'
+      },
+      'moonshotai-cn': {
+        url: 'https://api.moonshot.cn/v1',
+        urlPlaceholder: 'https://api.moonshot.cn/v1',
+        keyPlaceholder: 'sk-...'
+      },
+      'zai-coding-cn': {
+        url: 'https://open.bigmodel.cn/api/paas/v4',
+        urlPlaceholder: 'https://open.bigmodel.cn/api/paas/v4',
+        keyPlaceholder: '...'
+      },
+      custom: {
+        url: '',
+        urlPlaceholder: 'https://api.example.com/v1',
+        keyPlaceholder: 'sk-...'
+      }
+    };
+
+    function syncProviderInputs() {
+      const p = cfgProvider.value;
+      const def = PROVIDER_DEFAULTS[p] || PROVIDER_DEFAULTS.custom;
+      cfgUrl.placeholder = def.urlPlaceholder;
+      cfgKey.placeholder = def.keyPlaceholder;
+      if (def.url) {
+        cfgUrl.value = def.url;
+      } else if (p === 'deepseek') {
+        cfgUrl.value = '';
+      }
+    }
+
+    cfgProvider?.addEventListener('change', syncProviderInputs);
+
     // Toggle Config Drawer
     settingsBtn?.addEventListener('click', () => {
       configDrawer.style.display = configDrawer.style.display === 'none' ? 'block' : 'none';
       if (configDrawer.style.display === 'block') {
+        syncProviderInputs();
         cfgKey.focus();
       }
     });
@@ -298,12 +356,13 @@
         if (!res || !res.ok) throw new Error(res?.error || 'Save failed');
         cfgMsg.style.color = 'var(--success, #22c55e)';
         cfgMsg.textContent = isChinese ? '✅ 保存成功！正在重新检测可用模型…' : '✅ Saved! Refreshing models…';
-        setTimeout(() => {
+        setTimeout(async () => {
           configDrawer.style.display = 'none';
           cfgMsg.textContent = '';
           cfgKey.value = '';
           initPromise = null;
-          initSessionIfNeeded();
+          activeSessionId = null;
+          await initSessionIfNeeded();
         }, 800);
       } catch (err) {
         cfgMsg.style.color = 'var(--danger, #ee7772)';
@@ -561,18 +620,118 @@
       }
     });
 
+    function updateStatusText(text) {
+      if (!currentAssistantMsgEl) return;
+      const statusSpan = currentAssistantMsgEl.querySelector('.repair-generating-status span:last-child');
+      if (statusSpan) {
+        statusSpan.textContent = text;
+      }
+    }
+
+    function resetTurnWatchdog(ms = 60000) {
+      startWatchdogTimer(ms, () => {
+        renderAssistantError(
+          isChinese
+            ? '诊断排查响应超时。可能是任务耗时过长或网络连接断开。请重试或点击右上角「⚙️」检查配置。'
+            : 'Diagnosis timed out. Operation may have taken too long or network disconnected.'
+        );
+        finishGenerating();
+      });
+    }
+
     // Stream Listener
     function setupStreamListener() {
       if (!window.dshRepairAgent?.onStream) return;
       window.dshRepairAgent.onStream((frame) => {
         if (!frame) return;
-        const entry = frame.event || frame;
-        const data = entry.data || {};
-        const type = String(entry.type || '').toLowerCase();
 
-        const chunkObj = data.chunk || {};
-        const chunk = chunkObj.text || chunkObj.delta || data.text || data.delta || entry.text || '';
-        const reasoning = chunkObj.reasoning || data.reasoning || data.thinking || entry.thinking || entry.reasoning || '';
+        // 1. Error handling (immediate notification, clears watchdog)
+        const rawType = String(frame.type || frame.event?.type || '').toLowerCase();
+        const isError =
+          rawType === 'error' ||
+          rawType === 'agent/request-error' ||
+          rawType === 'session/error' ||
+          rawType === 'turn/error' ||
+          rawType === 'agent/error' ||
+          frame.error ||
+          frame.event?.error ||
+          frame.event?.data?.error;
+
+        if (isError) {
+          clearWatchdogTimer();
+          const errObj =
+            frame.error ||
+            frame.event?.data?.error ||
+            frame.event?.error ||
+            frame.message ||
+            frame.event?.data?.message;
+          const errMsg =
+            (typeof errObj === 'object' ? (errObj.message || JSON.stringify(errObj)) : errObj) ||
+            (isChinese ? '模型调用失败，请检查模型 API 密钥与网络连接。' : 'Model call failed. Check credentials and network.');
+          renderAssistantError(errMsg);
+          finishGenerating();
+          return;
+        }
+
+        // 2. Multi-step lifecycle & tool status updates
+        if (rawType === 'step-start' || rawType === 'step/start') {
+          if (currentAssistantText && !currentAssistantText.endsWith('\n\n')) {
+            if (currentAssistantText.endsWith('\n')) currentAssistantText += '\n';
+            else currentAssistantText += '\n\n';
+          }
+          updateStatusText(isChinese ? '正在深入排查系统状态…' : 'Investigating system state…');
+          resetTurnWatchdog();
+          return;
+        }
+
+        if (rawType === 'tool-call' || rawType === 'tool/call') {
+          const toolName = frame.name || frame.event?.data?.name || 'tool';
+          updateStatusText(isChinese ? `正在执行现场取证 (${toolName})…` : `Gathering evidence (${toolName})…`);
+          resetTurnWatchdog(90000);
+          return;
+        }
+
+        if (rawType === 'tool-result' || rawType === 'tool/result') {
+          updateStatusText(isChinese ? '取证数据获取完成，正在分析研判…' : 'Evidence collected, analyzing…');
+          resetTurnWatchdog();
+          return;
+        }
+
+        if (rawType === 'step-end' || rawType === 'step/end') {
+          updateStatusText(isChinese ? '正在整合分析结论…' : 'Synthesizing diagnosis…');
+          resetTurnWatchdog();
+          return;
+        }
+
+        // 3. Extract streaming delta or reasoning (MUTUALLY EXCLUSIVE to prevent duplicate text)
+        let chunk = '';
+        let reasoning = '';
+
+        if (typeof frame.delta === 'string') {
+          chunk = frame.delta;
+        } else if (typeof frame.reasoning === 'string') {
+          reasoning = frame.reasoning;
+        } else if (frame.frame?.type === 'chunk' && frame.frame.chunk) {
+          const c = frame.frame.chunk;
+          if (c.type === 'text-delta') chunk = c.text || '';
+          else if (c.type === 'reasoning-delta') reasoning = c.text || '';
+        } else if (frame.raw?.frame?.type === 'chunk' && frame.raw.frame.chunk) {
+          const c = frame.raw.frame.chunk;
+          if (c.type === 'text-delta') chunk = c.text || '';
+          else if (c.type === 'reasoning-delta') reasoning = c.text || '';
+        } else if (frame.type === 'message' && typeof frame.text === 'string') {
+          if (!currentAssistantText) {
+            chunk = frame.text;
+          }
+        } else {
+          const entry = frame.event || frame;
+          const data = entry.data || {};
+          const chunkObj = data.chunk || {};
+          const t = chunkObj.text || chunkObj.delta || data.text || data.delta || entry.text;
+          const r = chunkObj.reasoning || data.reasoning || data.thinking || entry.thinking || entry.reasoning;
+          if (typeof t === 'string' && t) chunk = t;
+          else if (typeof r === 'string' && r) reasoning = r;
+        }
 
         if (chunk) {
           clearWatchdogTimer();
@@ -584,28 +743,15 @@
           updateCurrentAssistantView();
         }
 
-        // Detect and handle error events from stream
-        if (
-          type === 'error' ||
-          type === 'session/error' ||
-          type === 'turn/error' ||
-          type === 'agent/error' ||
-          data.error ||
-          entry.error
-        ) {
-          clearWatchdogTimer();
-          const errMsg =
-            data.message ||
-            data.error ||
-            entry.message ||
-            entry.error ||
-            (isChinese ? '模型调用失败，请检查模型 API 密钥与网络连接。' : 'Model call failed. Check credentials and network.');
-          renderAssistantError(errMsg);
-          finishGenerating();
-          return;
-        }
+        // 4. Completion / end turn handling (ONLY true turn end)
+        const isEnd =
+          rawType === 'turn-end' ||
+          rawType === 'agent/turn-end' ||
+          rawType === 'turn/end' ||
+          rawType === 'turn/completed' ||
+          rawType === 'turn/finish';
 
-        if (type === 'turn-end' || type === 'turn/completed' || type === 'turn/finish') {
+        if (isEnd) {
           clearWatchdogTimer();
           if (!currentAssistantText && !currentAssistantThinking) {
             renderAssistantError(

@@ -463,6 +463,78 @@ export class RepairAgentService {
     }
   }
 
+  private normalizeStreamValue(val: any): any {
+    if (!val || typeof val !== 'object') return val
+
+    // 1. Assistant-stream chunk / start / end
+    if (val.type === 'assistant-stream' && val.frame) {
+      const f = val.frame
+      if (f.type === 'start') {
+        return { type: 'step-start', turn: f.turn, step: f.step, raw: val }
+      }
+      if (f.type === 'chunk' && f.chunk) {
+        const c = f.chunk
+        if (c.type === 'text-delta') {
+          return { type: 'chunk', delta: c.text || '', raw: val }
+        }
+        if (c.type === 'reasoning-delta') {
+          return { type: 'chunk', reasoning: c.text || '', raw: val }
+        }
+      } else if (f.type === 'end') {
+        return { type: 'step-end', outcome: f.outcome, raw: val }
+      }
+    }
+
+    // 2. Durable event frames
+    if (val.type === 'event' && val.event) {
+      const ev = val.event
+      if (ev.type === 'agent/request-error' || ev.type === 'agent/error') {
+        const err = ev.data?.error || ev.data?.message || ev.data || 'Model request failed'
+        const message = typeof err === 'object' ? (err.message || JSON.stringify(err)) : String(err)
+        return { type: 'error', error: message, raw: val }
+      }
+      if (ev.type === 'turn/start') {
+        return { type: 'turn-start', turn: ev.data?.turn, raw: val }
+      }
+      if (ev.type === 'step/start') {
+        return { type: 'step-start', turn: ev.data?.turn, step: ev.data?.step, raw: val }
+      }
+      if (ev.type === 'step/end') {
+        return { type: 'step-end', turn: ev.data?.turn, step: ev.data?.step, raw: val }
+      }
+      if (ev.type === 'tool/call') {
+        return {
+          type: 'tool-call',
+          name: ev.data?.name || 'tool',
+          args: ev.data?.arguments,
+          turn: ev.data?.turn,
+          step: ev.data?.step,
+          raw: val
+        }
+      }
+      if (ev.type === 'tool/result') {
+        return {
+          type: 'tool-result',
+          turn: ev.data?.turn,
+          step: ev.data?.step,
+          raw: val
+        }
+      }
+      if (ev.type === 'turn/end' || ev.type === 'agent/turn-end') {
+        return { type: 'turn-end', reason: ev.data?.reason, raw: val }
+      }
+      if (ev.type === 'assistant/message') {
+        const content = ev.data?.message?.content || ev.data?.content || []
+        const text = Array.isArray(content)
+          ? content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
+          : ''
+        return { type: 'message', text, raw: val }
+      }
+    }
+
+    return val
+  }
+
   private connectStream(base: string, sessionId: string, sender: WebContents): void {
     if (this.activeSocket) {
       try {
@@ -482,7 +554,15 @@ export class RepairAgentService {
 
         const socket = new WebSocket(url, { headers: cookie ? { cookie } : {} })
         this.activeSocket = socket
-        socket.addEventListener('error', () => {})
+        socket.addEventListener('error', (err) => {
+          console.warn('[repair-agent] socket error', err)
+          if (!sender.isDestroyed()) {
+            sender.send('repair-agent:stream', {
+              type: 'error',
+              error: 'WebSocket connection error'
+            })
+          }
+        })
 
         socket.addEventListener('open', () => {
           socket.send(
@@ -492,7 +572,11 @@ export class RepairAgentService {
               endpoint: 'session/follow',
               payload: {
                 args: {
-                  request: { address: { kind: 'session', sessionId }, maxMessages: 100 }
+                  request: {
+                    address: { kind: 'session', sessionId },
+                    maxMessages: 100,
+                    assistantStream: true
+                  }
                 }
               }
             })
@@ -515,8 +599,16 @@ export class RepairAgentService {
           }
           if (typeof frame !== 'object' || frame === null || frame.streamId !== streamId) return
           if (frame.type === 'item') {
+            if (!sender.isDestroyed() && frame.value) {
+              const normalized = this.normalizeStreamValue(frame.value)
+              sender.send('repair-agent:stream', normalized)
+            }
+          } else if (frame.type === 'error') {
             if (!sender.isDestroyed()) {
-              sender.send('repair-agent:stream', frame.value)
+              sender.send('repair-agent:stream', {
+                type: 'error',
+                error: frame.error?.message || frame.error || 'Remote session stream error'
+              })
             }
           }
         })
@@ -595,7 +687,7 @@ export class RepairAgentService {
         request: {
           requestId: randomUUID(),
           sessionId,
-          mode: 'steer',
+          mode: 'queue',
           content,
           clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }
@@ -622,7 +714,7 @@ export class RepairAgentService {
       if (!payload.apiKey || !payload.apiKey.trim()) {
         return { ok: false, error: this.options.locale() === 'zh' ? 'API 密钥不能为空' : 'API Key cannot be empty' }
       }
-      const provider = (payload.provider || 'deepseek').toLowerCase().trim()
+      const rawProvider = (payload.provider || 'deepseek').trim()
       const apiKey = payload.apiKey.trim()
       const dshHome = this.options.dshHome
       if (!dshHome) {
@@ -642,27 +734,99 @@ export class RepairAgentService {
       credDoc.version ||= 1
       credDoc.refs ||= {}
 
-      // Key name normalization
-      const keyName = provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : provider === 'openai' ? 'OPENAI_API_KEY' : `${provider.toUpperCase()}_API_KEY`
+      const settingsPath = join(dshHome, 'settings.yaml')
+      let settingsDoc: any = {}
+      if (existsSync(settingsPath)) {
+        try {
+          settingsDoc = parse(readFileSync(settingsPath, 'utf8')) || {}
+        } catch {
+          // recreate on corrupt
+        }
+      }
+
+      // Route and model mapping according to DSH system standards
+      let routeId = rawProvider.toLowerCase()
+      let keyName = ''
+      let defaultModel = ''
+
+      if (routeId === 'deepseek' || routeId === 'deepseek-official') {
+        routeId = 'deepseek-official'
+        keyName = 'DEEPSEEK_API_KEY'
+        defaultModel = 'deepseek-chat'
+        if (payload.baseUrl && payload.baseUrl.trim()) {
+          settingsDoc['llm-deepseek'] ||= {}
+          settingsDoc['llm-deepseek'].baseURL = payload.baseUrl.trim()
+        }
+        settingsDoc['agent-default-model'] = {
+          provider: routeId,
+          model: defaultModel
+        }
+      } else {
+        // Third-party and OpenAI compatible providers live in llm-pi-ai
+        let baseURL = (payload.baseUrl || '').trim()
+        if (routeId === 'openai') {
+          keyName = 'OPENAI_API_KEY'
+          baseURL = baseURL || 'https://api.openai.com/v1'
+          defaultModel = 'gpt-4o'
+        } else if (routeId === 'siliconflow') {
+          keyName = 'SILICONFLOW_API_KEY'
+          baseURL = baseURL || 'https://api.siliconflow.cn/v1'
+          defaultModel = 'deepseek-ai/DeepSeek-V3'
+        } else if (routeId === 'openrouter') {
+          keyName = 'OPENROUTER_API_KEY'
+          baseURL = baseURL || 'https://openrouter.ai/api/v1'
+          defaultModel = 'deepseek/deepseek-chat'
+        } else if (routeId === 'moonshotai-cn' || routeId === 'moonshot') {
+          routeId = 'moonshotai-cn'
+          keyName = 'MOONSHOT_API_KEY'
+          baseURL = baseURL || 'https://api.moonshot.cn/v1'
+          defaultModel = 'moonshot-v1-auto'
+        } else if (routeId === 'zai-coding-cn' || routeId === 'zhipu') {
+          routeId = 'zai-coding-cn'
+          keyName = 'ZHIPU_API_KEY'
+          baseURL = baseURL || 'https://open.bigmodel.cn/api/paas/v4'
+          defaultModel = 'glm-4-flash'
+        } else {
+          // Custom route
+          routeId = routeId.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'custom'
+          keyName = `${routeId.toUpperCase().replace(/-/g, '_')}_API_KEY`
+          baseURL = baseURL || 'https://api.openai.com/v1'
+          defaultModel = 'default-model'
+        }
+
+        settingsDoc['llm-pi-ai'] ||= {}
+        settingsDoc['llm-pi-ai'].providers ||= {}
+        settingsDoc['llm-pi-ai'].providers[routeId] = {
+          apiKeyEnv: keyName,
+          api: 'openai-completions',
+          baseURL,
+          models: [
+            { id: defaultModel, name: defaultModel }
+          ]
+        }
+        settingsDoc['agent-default-model'] = {
+          provider: routeId,
+          model: defaultModel
+        }
+      }
+
+      // Persist to .credentials.yaml and settings.yaml
       credDoc.refs[keyName] = apiKey
       writeFileSync(credPath, stringify(credDoc), 'utf8')
+      writeFileSync(settingsPath, stringify(settingsDoc), 'utf8')
 
-      // Save baseUrl if specified
-      if (payload.baseUrl && payload.baseUrl.trim()) {
-        const settingsPath = join(dshHome, 'settings.yaml')
-        let settingsDoc: any = {}
-        if (existsSync(settingsPath)) {
-          try {
-            settingsDoc = parse(readFileSync(settingsPath, 'utf8')) || {}
-          } catch {
-            // recreate on corrupt
-          }
-        }
-        settingsDoc.providers ||= {}
-        settingsDoc.providers[provider] ||= {}
-        settingsDoc.providers[provider].baseUrl = payload.baseUrl.trim()
-        writeFileSync(settingsPath, stringify(settingsDoc), 'utf8')
+      // Sync to live Harness runtime if running
+      try {
+        await this.invokeHarness('credentials/set', {
+          ref: keyName,
+          value: apiKey
+        })
+      } catch {
+        // Fallback to file persistence if Harness credentials RPC rejects direct ref
       }
+
+      // Invalidate active session so next message uses new configuration
+      this.activeSessionId = undefined
 
       return { ok: true }
     } catch (err) {

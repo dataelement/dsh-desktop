@@ -413,6 +413,13 @@
       @media (prefers-reduced-motion: reduce) {
         .button { transition: none; }
       }
+      .diagnostics-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+      .diagnostics-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 12px; }
+      .diagnostics-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+      .diag-card { display: flex; flex-direction: column; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); cursor: pointer; transition: all 0.2s; color: var(--ink); }
+      .diag-card:hover { border-color: var(--muted); background: var(--surface); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+      .diag-card-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+      .diag-card-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
     </style>
   </head>
   <body>
@@ -463,6 +470,24 @@
             </div>
           </div>
         </details>
+
+        <section class="diagnostics-section">
+          <div class="diagnostics-title">🛠️ 进入 Harness 智能诊断助手</div>
+          <div class="diagnostics-cards">
+            <button class="diag-card" type="button" data-prompt="请帮我诊断最新一次的启动异常（分析最近一次崩溃或超时原因），并给出可执行的修复方案。">
+              <div class="diag-card-title">⚡ 诊断最新启动异常</div>
+              <div class="diag-card-desc">分析最近一次崩溃/超时原因</div>
+            </button>
+            <button class="diag-card" type="button" data-prompt="请帮我检测当前已安装插件的兼容性（排查可能存在的 SyntaxError 或缺失导出），并给出升级或禁用建议。">
+              <div class="diag-card-title">🧩 检测插件兼容性</div>
+              <div class="diag-card-desc">排查 SyntaxError/缺失导出</div>
+            </button>
+            <button class="diag-card" type="button" data-prompt="请帮我制定并执行最小回滚方案（重置损坏配置并回退到安全版本），以安全恢复系统。">
+              <div class="diag-card-title">🛡️ 制定最小回滚方案</div>
+              <div class="diag-card-desc">重置损坏配置并安全恢复</div>
+            </button>
+          </div>
+        </section>
       </section>
 
       <footer class="footer">
@@ -714,24 +739,29 @@
       document.getElementById('show-log').addEventListener('click', () => navigate('show-log'))
       document.getElementById('quit').addEventListener('click', () => navigate('quit'))
     </script>
-    <script src="repair-widget.js"></script>
     <script>
-      if (typeof window.initRepairWidget === 'function') {
-        const isZh = model.locale === 'zh'
-        const pluginsStr = (model.plugins || []).join(', ') || (isZh ? '未识别' : 'Not detected')
-        const logsStr = (model.logs || []).slice(-100).join('\n')
-        const defaultPrompt = isZh
-          ? `你是 DSH Desktop 故障修复 Agent。系统在启动时触发了异常，导致无法正常进入桌面端。\n\n检测到的异常插件：${pluginsStr}\n错误信息：${model.message || '启动异常'}\n\n最新日志（截取）：\n```\n${logsStr || '暂无日志'}\n```\n\n请按以下结构输出：\n1. 根因假设（前3个最可能的原因）\n2. 最小修复动作（禁用插件 / 升级插件 / 清除缓存 / 重建 Profile）\n3. 验证方式与建议的回退步骤。\n请给出一个能立刻执行且可逆的首选方案。`
-          : `You are the DSH Desktop repair agent. The system failed during startup.\n\nContext:\n- Inferred plugins: ${pluginsStr}\n- Message: ${model.message || 'Startup failure'}\n\nRecent logs:\n```\n${logsStr || 'No logs'}\n```\n\nPlease output:\n1. Top 3 root-cause hypotheses\n2. Minimal repair actions (disable plugin / upgrade / clear cache / rebuild profile)\n3. Verification and rollback steps.\nGive an immediate executable and reversible first action.`
-
-        window.initRepairWidget({
-          locale: model.locale,
-          defaultPrompt,
-          questions: isZh
-            ? ['是否最近刚升级或新增过某个插件？', '退出前是否修改过配置或网络代理？']
-            : ['Did you recently add or update any plugins?', 'Did network or model settings change recently?']
-        })
-      }
+      document.querySelectorAll('.diag-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const prompt = card.getAttribute('data-prompt');
+          const isZh = model.locale === 'zh';
+          const pluginsStr = (model.plugins || []).join(', ') || (isZh ? '未识别' : 'Not detected');
+          const logsStr = (model.logs || []).slice(-50).join('\n');
+          
+          const systemContext = isZh
+            ? `[系统背景与诊断事实]\n桌面端启动失败，进入恢复模式。\n异常插件：${pluginsStr}\n\n最新日志截取：\n```\n${logsStr || '无'}\n```\n\n用户求助：`
+            : `[System Context]\nStartup failed, entering recovery mode.\nPlugins: ${pluginsStr}\n\nLogs:\n```\n${logsStr || 'None'}\n```\n\nUser Request: `;
+            
+          const finalPrompt = systemContext + prompt;
+          card.disabled = true;
+          
+          if (window.dshRecovery && typeof window.dshRecovery.action === 'function') {
+            void window.dshRecovery.action('agent', { prompt: finalPrompt });
+          } else {
+            // Fallback if needed, but dshRecovery is exposed in preload.
+            ipcRenderer.send('plugin-recovery-action', { type: 'agent', prompt: finalPrompt });
+          }
+        });
+      });
     </script>
   </body>
 </html>

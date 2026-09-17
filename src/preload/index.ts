@@ -362,7 +362,7 @@ contextBridge.exposeInMainWorld(
 contextBridge.exposeInMainWorld(
   'dshRecovery',
   Object.freeze({
-    action: (action: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('recovery:action', action)
+    action: (action: string, options?: any): Promise<{ ok: boolean }> => ipcRenderer.invoke('recovery:action', action, options)
   })
 )
 
@@ -383,48 +383,6 @@ contextBridge.exposeInMainWorld(
   })
 )
 
-contextBridge.exposeInMainWorld(
-  'dshRepairAgent',
-  Object.freeze({
-    init: (): Promise<{
-      ok: boolean
-      sessionId?: string
-      workspaceId?: string
-      modelCatalog?: any
-      diagnosticFinding?: any
-      systemRepairPrompt?: string
-      error?: string
-    }> => ipcRenderer.invoke('repair-agent:init'),
-    selectModel: (payload: {
-      sessionId: string
-      provider: string
-      model: string
-      reasoningEffort?: string
-    }): Promise<{ ok: boolean; selected?: any; error?: string }> =>
-      ipcRenderer.invoke('repair-agent:select-model', payload),
-    sendPrompt: (payload: {
-      sessionId: string
-      text: string
-      images?: Array<{ mediaType: string; data: string; name?: string }>
-    }): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('repair-agent:send-prompt', payload),
-    cancel: (sessionId: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('repair-agent:cancel', sessionId),
-    configureProvider: (payload: {
-      provider: string
-      apiKey: string
-      baseUrl?: string
-    }): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('repair-agent:configure-provider', payload),
-    onStream: (callback: (data: any) => void): (() => void) => {
-      const listener = (_event: unknown, data: any): void => callback(data)
-      ipcRenderer.on('repair-agent:stream', listener)
-      return () => {
-        ipcRenderer.removeListener('repair-agent:stream', listener)
-      }
-    }
-  })
-)
 
 function mount(): void {
   if (document.getElementById(ROOT_ID)) return
