@@ -166,7 +166,7 @@ describe('LAN mobile page', () => {
     expect(html).toContain('This remote link expires in about {n} min')
     expect(html).toContain('id="tunnelWarn" class="tunnel-warn"')
     expect(html.indexOf('class="composer-inner"')).toBeLessThan(html.indexOf('id="tunnelWarn" class="tunnel-warn"'))
-    expect(html).toContain('.tunnel-warn{margin:4px 16px 0;padding:0;background:transparent;color:var(--muted);font-size:11px;line-height:1.3;text-align:left;white-space:nowrap')
+    expect(html).toContain('.tunnel-warn{margin:4px 16px 0;padding:0;background:transparent;color:var(--muted);font-size:11px;line-height:1.3;text-align:center;white-space:nowrap')
     expect(html).toContain('body.tunnel-warn-open{--tunnel-warn-h:18px}')
     expect(html).not.toContain('position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom))')
     expect(html).toContain("status.classList.add('error-state')")
