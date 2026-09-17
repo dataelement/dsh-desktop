@@ -22,6 +22,14 @@ describe('pairing pin store', () => {
     expect(readPairingPinState(path)).toEqual({})
   })
 
+  it('overwrites an existing pin file on a second write', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-pin-'))
+    const path = pairingPinStorePath(dir)
+    expect(writePairingPinState(path, { pin: '123456', pinConsent: true })).toBe(true)
+    expect(writePairingPinState(path, { pin: '654321', pinConsent: true })).toBe(true)
+    expect(readPairingPinState(path)).toEqual({ pin: '654321', pinConsent: true })
+  })
+
   it('treats damaged JSON as no consent and no pin', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-pin-'))
     const path = join(dir, 'mobile-pairing-pin.json')

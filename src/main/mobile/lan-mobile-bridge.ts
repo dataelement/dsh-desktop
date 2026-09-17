@@ -690,7 +690,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       this.verifyTrustedOrigin(request)
       if (!this.server || !this.port) return this.text(response, 503, 'Bridge unavailable.')
       // The token is consumed once a phone pairs, and expires after five
@@ -729,12 +729,12 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop/status') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       return this.json(response, 200, { connected: this.sessions.size > 0 })
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop/tunnel/status') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       const snapshot = this.snapshot()
       const qrSvg = snapshot.pairingUrl
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
@@ -743,7 +743,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/fallback') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
@@ -774,7 +774,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/pin/consent') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       this.verifySameOrigin(request)
       let consent = false
       try {
@@ -812,7 +812,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/pin/reset') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       this.verifySameOrigin(request)
       if (this.storedPinState().pinConsent !== true) {
         return this.json(response, 400, { ok: false, error: 'A durable pairing password is not enabled.' })
@@ -833,7 +833,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/toggle') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
@@ -877,7 +877,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
       this.verifySameOrigin(request)
       for (const [token, session] of this.sessions) this.suspendedSessions.set(token, session)
       this.sessions.clear()
@@ -1089,6 +1089,18 @@ export class LanMobileBridge {
       if (oldest) this.suspendedSessions.delete(oldest)
     }
     this.suspendedSessions.set(token, { token, remoteAddress })
+  }
+
+  private rejectUnlessDesktop(
+    transportAddress: string,
+    connectionMode: MobileConnectionMode,
+    response: ServerResponse
+  ): boolean {
+    // Tunnel ingress also lands on 127.0.0.1. Socket loopback alone would
+    // publish the PIN on the public URL; require LAN mode as well.
+    if (isLoopbackAddress(transportAddress) && connectionMode === 'lan') return false
+    this.text(response, 403, 'Desktop only.')
+    return true
   }
 
   private verifySameOrigin(request: IncomingMessage): void {

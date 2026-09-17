@@ -1180,6 +1180,39 @@ describe('LAN vs tunnel pairing authorization', () => {
     )
   })
 
+  it('does not expose the pairing pin on desktop routes from a tunnel request', async () => {
+    const store = memoryPinStore({ pin: '246810', pinConsent: true })
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    armFakeTunnel(bridge)
+
+    const localStatus = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    expect(localStatus.status).toBe(200)
+    expect(await localStatus.json()).toMatchObject({ pairingPin: '246810' })
+
+    const spoofedHeaders = {
+      host: 'active-mobile.trycloudflare.com',
+      'cf-connecting-ip': '127.0.0.1',
+      'cf-ray': 'test-ray',
+      'x-forwarded-for': '127.0.0.1'
+    }
+    const desktop = await fetch(`http://127.0.0.1:${snapshot.port}/desktop`, {
+      headers: spoofedHeaders
+    })
+    expect(desktop.status).toBe(403)
+    expect(await desktop.text()).not.toContain('246810')
+
+    const tunnelStatus = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: spoofedHeaders
+    })
+    expect(tunnelStatus.status).toBe(403)
+    expect(await tunnelStatus.text()).not.toContain('246810')
+  })
+
   it('requires a PIN on the tunnel and ignores a sibling device on the same public IP', async () => {
     const store = memoryPinStore({ pin: '246810', pinConsent: true })
     const bridge = new LanMobileBridge({
