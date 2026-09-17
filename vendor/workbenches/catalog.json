@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "workbenches": [
+    {
+      "id": "ming-life",
+      "package": "ming-life",
+      "version": "1.2.0",
+      "artifact": "ming-life-1.2.0.tgz",
+      "sha256": "3c45180cc24534cf54496a9f613a7657d15f98d7a114cc1b02fc167b6edb077e",
+      "source": {
+        "repository": "https://github.com/dataelement/dsh-ming-life",
+        "commit": "401371cb7e99e4227a871a741d7c47825b2b6aa5",
+        "branch": "feat/workbench-original-adapter",
+        "publication": "local-only"
+      }
+    },
+    {
+      "id": "site-selection",
+      "package": "dsh-site-selection",
+      "version": "1.2.0",
+      "artifact": "dsh-site-selection-1.2.0.tgz",
+      "sha256": "10a6b751f5363574b254b793d9962f9e8f8f0a427afacd924d9c4c566f0d3be9",
+      "source": {
+        "repository": "https://github.com/dataelement/dsh-site-selection",
+        "commit": "e73809b7f7bc85ce9e061f0df9e8e5f15cbe4632",
+        "branch": "feat/workbench-original-adapter",
+        "publication": "local-only"
+      }
+    },
+    {
+      "id": "media-workbench",
+      "package": "dsh-media-workbench",
+      "version": "0.12.1",
+      "artifact": "dsh-media-workbench-0.12.1.tgz",
+      "sha256": "135e2067a32259b04bad82d94f4b52068f4e132eab47a3a237745faf562fe75c",
+      "source": {
+        "repository": "https://github.com/cinderzhan/dsh-media-workbench",
+        "commit": "ed70cdaeb05ea8f5cce6a5f00686454d9381ddef",
+        "branch": "feat/workbench-market-adapter",
+        "publication": "local-only"
+      }
+    }
+  ]
+}
