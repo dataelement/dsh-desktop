@@ -15,6 +15,7 @@ window.__ModuleLoader__.load({
     const zh = {
       nav: '账号与企业', title: '企业账号', platform: '毕昇平台地址',
       login: '在浏览器中登录', loggingIn: '等待浏览器授权…',
+      vision: '视觉', visionHint: '企业已开启图片输入', usageLabel: '已用 / 额度（Token）',
       ticket: '一次性登录码', submitTicket: '完成登录',
       refresh: '刷新', logout: '退出登录', models: '可用模型', noModels: '当前账号没有可用模型。',
       usageUnavailable: '用量暂不可用',
@@ -29,6 +30,7 @@ window.__ModuleLoader__.load({
     const en = {
       nav: 'Account & Enterprise', title: 'Enterprise account', platform: 'BiSheng platform URL',
       login: 'Sign in in browser', loggingIn: 'Waiting for browser authorization…',
+      vision: 'Vision', visionHint: 'Image input enabled by your enterprise', usageLabel: 'Used / limit (tokens)',
       ticket: 'One-time code', submitTicket: 'Complete sign-in',
       refresh: 'Refresh', logout: 'Sign out', models: 'Available models', noModels: 'No models are assigned to this account.',
       usageUnavailable: 'Usage unavailable',
@@ -46,16 +48,16 @@ window.__ModuleLoader__.load({
       const style = document.createElement('style')
       style.id = 'dsh-desktop-enterprise-style'
       style.textContent = `
-        .dshEnterprise{max-width:780px;color:var(--ds-text-primary,#202124)}
-        .dshEnterprise h2{margin:0 0 8px;font-size:22px}.dshEnterprise h3{margin:0 0 8px;font-size:15px}
+        .dshEnterprise{max-width:720px;color:var(--dsw-alias-label-primary,#202124)}
+        .dshEnterprise h2{margin:0 0 8px;font-size:16px;font-weight:500;line-height:24px}.dshEnterprise h3{margin:0 0 8px;font-size:14px;font-weight:500;line-height:22px}
         .dshEnterpriseHint{color:var(--ds-text-secondary,#6d7178);line-height:1.55}
         .dshEnterpriseLabel{display:grid;gap:7px;font-size:13px;font-weight:650}.dshEnterpriseInput{box-sizing:border-box;width:100%;height:38px;padding:0 11px;border:1px solid var(--ds-border,#ccd0d5);border-radius:9px;color:inherit;background:transparent;font:inherit}
         .dshEnterpriseActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.dshEnterpriseButton{min-height:36px;padding:7px 13px;border:1px solid var(--ds-border,#ccd0d5);border-radius:9px;color:inherit;background:var(--ds-bg-primary,#fff);cursor:pointer;font:inherit;font-weight:650}.dshEnterpriseButton.login{border-color:var(--ds-border,#ccd0d5);color:var(--ds-text-primary,#202124);background:transparent}.dshEnterpriseButton.primary{border-color:#2468f2;color:#fff;background:#2468f2}.dshEnterpriseButton.danger{color:#b42318}.dshEnterpriseButton:disabled,.dshEnterpriseIconButton:disabled{opacity:.5;cursor:default}
         .dshEnterpriseIdentity{display:flex;align-items:center;gap:8px;min-height:22px;font-size:13px;font-weight:650}.dshEnterpriseDot{width:8px;height:8px;border-radius:50%;background:#17a673;box-shadow:0 0 0 0 #17a67355;animation:dshEnterprisePulse 2.4s ease-in-out infinite}@keyframes dshEnterprisePulse{0%,100%{box-shadow:0 0 0 0 #17a67355}50%{box-shadow:0 0 0 5px #17a67300}}
         .dshEnterpriseSectionHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}.dshEnterpriseSectionHeader h3{margin:0}.dshEnterpriseIconButton{display:inline-flex;width:28px;height:28px;align-items:center;justify-content:center;padding:0;border:1px solid var(--ds-border,#ccd0d5);border-radius:8px;color:var(--ds-text-secondary,#6d7178);background:transparent;cursor:pointer;font:18px/1 system-ui}.dshEnterpriseIconButton:hover{color:inherit;background:var(--ds-bg-secondary,#f0f2f5)}
-        .dshEnterpriseModels{display:grid;gap:7px;margin:8px 0 0;padding:0;list-style:none}.dshEnterpriseModels li{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 10px;border-radius:9px;background:var(--ds-bg-secondary,#f0f2f5);font-size:12px}.dshEnterpriseModelUsage{color:var(--ds-text-secondary,#6d7178);white-space:nowrap}.dshEnterpriseModelUsagePercent{display:none}.dshEnterpriseModels li:hover .dshEnterpriseModelUsageValue{display:none}.dshEnterpriseModels li:hover .dshEnterpriseModelUsagePercent{display:inline}.dshEnterpriseModels.paused{opacity:.5}
+        .dshEnterpriseModels{display:grid;gap:8px;margin:12px 0 0;padding:0;list-style:none}.dshEnterpriseModels li{box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;min-height:60px;padding:12px 14px;border:.5px solid var(--dsw-alias-border-l4,#e0e1e5);border-radius:16px;font-size:14px;line-height:22px}.dshEnterpriseModelIdentity{display:flex;align-items:center;gap:8px;flex:1 1 180px;min-width:0}.dshEnterpriseModelName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.dshEnterpriseModelVision{display:inline-flex;align-items:center;gap:4px;flex:none;color:var(--dsw-alias-label-tertiary,#81858c);font-size:12px;line-height:18px;white-space:nowrap}.dshEnterpriseModelVision svg{flex:none}.dshEnterpriseModelUsage{margin-left:auto;text-align:right;color:var(--dsw-alias-label-tertiary,#81858c);font-size:13px;line-height:20px;font-variant-numeric:tabular-nums;white-space:nowrap}.dshEnterpriseModelUsagePercent{display:none}.dshEnterpriseModels li:hover .dshEnterpriseModelUsageValue{display:none}.dshEnterpriseModels li:hover .dshEnterpriseModelUsagePercent{display:inline}.dshEnterpriseModels.paused{opacity:.5}
         .dshEnterpriseManual{margin-top:18px}.dshEnterpriseError{margin-top:12px;padding:10px 12px;border-radius:9px;color:#b42318;background:#fef3f2;font-size:13px;line-height:1.45}.dshEnterpriseConfirm{margin-top:18px;padding:18px;border:1px solid #8fb2ff;border-radius:14px;background:#edf4ff}.dshEnterpriseConfirm strong{display:block;margin:12px 0 4px;overflow-wrap:anywhere}
-        @media(prefers-reduced-motion:reduce){.dshEnterpriseDot{animation:none}}body[data-ds-dark-theme] .dshEnterprise{color:#f2f3f5}body[data-ds-dark-theme] .dshEnterpriseInput,body[data-ds-dark-theme] .dshEnterpriseButton{color:#f2f3f5;background:#1f2024;border-color:#50535c}body[data-ds-dark-theme] .dshEnterpriseIconButton{border-color:#50535c;color:#c7c9ce}body[data-ds-dark-theme] .dshEnterpriseIconButton:hover,body[data-ds-dark-theme] .dshEnterpriseModels li{background:#35373d}body[data-ds-dark-theme] .dshEnterpriseError{color:#ffb4ab;background:#421b1b}body[data-ds-dark-theme] .dshEnterpriseConfirm{background:#17294a;border-color:#4779d8}`
+        @media(prefers-reduced-motion:reduce){.dshEnterpriseDot{animation:none}}body[data-ds-dark-theme] .dshEnterprise{color:#f2f3f5}body[data-ds-dark-theme] .dshEnterpriseInput,body[data-ds-dark-theme] .dshEnterpriseButton{color:#f2f3f5;background:#1f2024;border-color:#50535c}body[data-ds-dark-theme] .dshEnterpriseIconButton{border-color:#50535c;color:#c7c9ce}body[data-ds-dark-theme] .dshEnterpriseIconButton:hover{background:#35373d}body[data-ds-dark-theme] .dshEnterpriseError{color:#ffb4ab;background:#421b1b}body[data-ds-dark-theme] .dshEnterpriseConfirm{background:#17294a;border-color:#4779d8}`
       document.head.appendChild(style)
     }
 
@@ -71,11 +73,19 @@ window.__ModuleLoader__.load({
       return payload
     }
 
-    function usageText(usage, t) {
+    function tokenAmount(value, language) {
+      const zhLocale = String(language || '').toLowerCase().startsWith('zh')
+      if (!zhLocale) return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(value)
+      if (value === 0) return '0'
+      if (value < 100) return '<0.01万'
+      return `${new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value / 10_000)}万`
+    }
+
+    function usageText(usage, language, t) {
       if (!usage || usage.source === 'unavailable' || usage.quota_state === 'unavailable') return t('usageUnavailable')
       if (usage.limit === 0) return t('limitZero')
       if (usage.used === null || usage.limit === null) return t('usageUnavailable')
-      return `${usage.used.toLocaleString()} / ${usage.limit.toLocaleString()}`
+      return `${tokenAmount(usage.used, language)} / ${tokenAmount(usage.limit, language)}`
     }
 
     function readLastBase() {
@@ -111,7 +121,7 @@ window.__ModuleLoader__.load({
 
     function modelUsagePercentage(usage, language, t) {
       if (!usage || typeof usage.used !== 'number' || typeof usage.limit !== 'number' || usage.limit <= 0) {
-        return usageText(usage, t)
+        return usageText(usage, language, t)
       }
       const zhLocale = String(language || '').toLowerCase().startsWith('zh')
       const percentage = Math.min(100, Math.max(0, usage.used / usage.limit * 100))
@@ -213,11 +223,17 @@ window.__ModuleLoader__.load({
             ? h('ul', { className: `dshEnterpriseModels${state.modelsAvailable ? '' : ' paused'}` },
               ...models.map((model) => {
                 const usage = state.modelUsage?.[model.id]
-                const value = usageText(usage, t)
+                const value = usageText(usage, language, t)
                 const percentage = modelUsagePercentage(usage, language, t)
-                return h('li', { key: model.id, title: `${value} · ${percentage}` },
-                  h('span', null, model.display_name),
-                  h('span', { className: 'dshEnterpriseModelUsage' },
+                return h('li', { key: model.id, title: `${t('usageLabel')}: ${value} · ${percentage}` },
+                  h('span', { className: 'dshEnterpriseModelIdentity' },
+                    h('span', { className: 'dshEnterpriseModelName', title: model.display_name }, model.display_name),
+                    model.capabilities?.vision === true ? h('span', { className: 'dshEnterpriseModelVision', title: t('visionHint') },
+                      h('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+                        h('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z' }),
+                        h('circle', { cx: 12, cy: 12, r: 3 })),
+                      t('vision')) : null),
+                  h('span', { className: 'dshEnterpriseModelUsage', 'aria-label': `${t('usageLabel')}: ${value} · ${percentage}` },
                     h('span', { className: 'dshEnterpriseModelUsageValue' }, value),
                     h('span', { className: 'dshEnterpriseModelUsagePercent', 'aria-hidden': 'true' }, percentage)))
               }))
