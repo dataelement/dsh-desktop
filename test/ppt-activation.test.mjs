@@ -199,18 +199,20 @@ describe('PPT instructions follow the session composer button', () => {
 
 
 describe('PPT catalog migration', () => {
-  it('refreshes the previous authoring snapshot with the validation workflow', async () => {
+  it.each(['DSH-PPT-AUTHORING-20260906-V2', 'DSH-PPT-AUTHORING-20260907-V3'])('refreshes %s with the current validation workflow', async (marker) => {
     const f = await fixture()
     const agent = await f.agent()
     await f.toggle(agent, true)
     agent.session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'DSH-PPT-AUTHORING-20260906-V2 old workflow' }],
-      source: { kind: 'plugin', plugin: 'dsh-ppt-skill', form: 'snapshot', sections: [{ name: 'dsh-ppt', text: 'DSH-PPT-AUTHORING-20260906-V2 old workflow' }] }
+      content: [{ type: 'text', text: `${marker} old workflow` }],
+      source: { kind: 'plugin', plugin: 'dsh-ppt-skill', form: 'snapshot', sections: [{ name: 'dsh-ppt', text: `${marker} old workflow` }] }
     }), { surfaceOp: 'append' })
     await f.preStep(agent)
     const messages = automaticMessages(agent).filter(m => m.source.plugin === 'dsh-ppt-skill')
     expect(messages).toHaveLength(1)
     expect(JSON.stringify(messages)).toContain('pptd_check')
+    expect(JSON.stringify(messages)).toContain('literalEscapes')
+    expect(JSON.stringify(messages)).toContain('text-escaped-newline')
     expect(JSON.stringify(messages)).not.toContain('old workflow')
   })
 
@@ -225,7 +227,7 @@ describe('PPT catalog migration', () => {
     await f.preStep(agent)
     const messages = automaticMessages(agent).filter(m => m.source.plugin === 'dsh-ppt-skill')
     expect(messages).toHaveLength(1)
-    expect(JSON.stringify(messages)).toContain('DSH-PPT-AUTHORING-20260907-V3')
+    expect(JSON.stringify(messages)).toContain('DSH-PPT-AUTHORING-20260910-V4')
     expect(JSON.stringify(messages)).not.toContain('Withdrawn template instructions')
   })
 
