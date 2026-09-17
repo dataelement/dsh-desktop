@@ -12,7 +12,7 @@ DSH Desktop 是 Electron 宿主，复用 Harness runtime 和 Web UI。保持这�
 
 | 目录 | 职责 / 专项规则 |
 | --- | --- |
-| `src/main/` | 原生能力、运行时编排、Profile、更新和手机桥接；见该目录 `AGENTS.md` |
+| `src/main/` | 原生能力、运行时编排、Profile、更新、手机桥接和企业登录；见该目录 `AGENTS.md` |
 | `src/preload/` | 窄 IPC 桥和桌面 UI 接缝；见该目录 `AGENTS.md` |
 | `src/shared/` | 跨进程数据契约和纯逻辑；不得依赖 main/preload、Electron 或 Node 特权 API |
 | `packages/` | 宿主插件、运行时包和第三方分发包；见该目录 `AGENTS.md` |

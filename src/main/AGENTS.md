@@ -5,7 +5,7 @@
 ## 模块边界
 
 - `index.ts` 负责应用生命周期和组装；新的业务规则放入对应模块，避免继续堆叠 IPC handler、HTML 或文件操作实现。
-- `runtime/` 管 Harness 子进程；`state/` 管 Profile 和恢复；`update/` 管更新状态；`mobile/` 管配对和桥接。模块不得反向导入 `index.ts`。
+- `runtime/` 管 Harness 子进程；`state/` 管 Profile 和恢复；`update/` 管更新状态；`mobile/` 管配对和桥接；`enterprise/` 管企业登录、凭据和模型网关。模块不得反向导入 `index.ts`。
 - 可测试的决策与 Electron/文件系统副作用分离；共享协议放 `src/shared/`，不要让 preload 导入 main 实现。
 
 ## IPC 与安全

@@ -22,8 +22,8 @@ DSH Desktop 的主要工程问题来自 Electron 特权边界、Harness 子进�
 
 - 不采用统一 600 行上限；按独立职责、状态和清理流程决定拆分，避免为行数打散生命周期。
 - 不强制纯 TS/TSX；`src/` 保持 strict TS，插件及运行时入口保留当前 JS/MJS 加载方式。
-- 不引入 SPA 的目录层级、HTTP/store 框架、路由别名、组件库或主题 token。IPC 和插件请求各自约束，不强行抽成同一种服务层。
-- 不引入三语要求、全局禁中文或英文注释硬门禁；文案跟随当前界面的中英文机制，词典和展示逻辑分离。
+- 不引入 SPA 的目录层级、HTTP/store 框架、路由别名或组件库。不自建第三套主题 token：Harness 内插件只复用 `--dsw-alias-*`，独立恢复页用自有语义变量。IPC 和插件请求各自约束，不强行抽成同一种服务层。
+- 不引入三语要求、全局禁中文或英文注释硬门禁；插件文案走 `ctx.locale`，中英文 key 同批维护，词典和展示逻辑分离。
 - 不沿用其他浏览器环境的磨砂效果禁令；围绕流式会话、长期驻留、隐藏窗口和目标机器的实测成本约束性能。
 - 不复制专用 skill、固定审批阶段或全套历史豁免机制；先看本仓库实际问题规模，再选最小可用工具方案。
 
@@ -35,11 +35,12 @@ DSH Desktop 的主要工程问题来自 Electron 特权边界、Harness 子进�
 - 根 `tsconfig.json` 已启用 strict 和 `noUncheckedIndexedAccess`。`tsconfig.node.json` 未包含插件 JS、脚本及 HTML 内嵌代码。
 - `package.json` 有 test/typecheck/build，无 lint/format 检查脚本。当前 release workflow 有原生平台测试、类型检查和打包流程；没有独立的 lint 门禁。
 - 桌面 UI 同时存在 Harness loader 插件、preload DOM 注入和独立 HTML。不能用一套 SPA 检查配置假设所有文件拥有相同 globals、模块格式和主题环境。
+- `packages/dsh-desktop-enterprise` 与 `src/main/enterprise/` 已是完整企业登录面，但主题用 `--ds-*`、文案用 `navigator.language` 内联 `copy`。规范将其标为待迁移存量，不在本次整改代码。
 - `docs/development.md` 的固定 Harness 版本描述与当前依赖不一致；因此规范引用配置作为事实源，不在每份 AGENTS 中复制版本号。
 
 ## 规则分层
 
-根 `AGENTS.md` 放项目定位、目录导航、通用编码和交付要求。main 放进程/权限/数据生命周期；preload 放桥接和 DOM；packages 放模块加载、UI 插件与 generation；patches 放上游补丁维护；build 放独立页面和打包输入。
+根 `AGENTS.md` 放项目定位、目录导航、通用编码和交付要求。main 放进程/权限/数据生命周期（含 `enterprise/`）；preload 放桥接、slot 与 DOM 注入判定；packages 放模块加载、UI 插件、主题/locale 硬约束、编译型包与 generation；patches 放上游补丁维护；build 放独立页面和打包输入。
 
 本说明解释取舍和后续工具计划，不复制具体硬规则。暂不增加独立 constitution：当前模块规模下多一份重复法律文件更易漂移。若未来根规范显著膨胀，再抽取稳定架构原则并仅保留链接。
 

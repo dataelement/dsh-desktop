@@ -6,8 +6,8 @@
 
 - 修改 HTML、运行时入口或资源时检查 `package.json` 的 `build.extraResources` / files 及对应测试，确认安装包真实携带并加载了目标文件。
 - 启动、恢复、Safe Mode 页面必须在 Harness Web UI 不可用时仍可展示；不依赖远程 CDN、网络字体或业务前端启动完成。
-- 独立页面使用自身明确的语义 CSS 变量及主题 fallback，不能假设 Harness 的 `--dsw-*` 已注入。不要跨页面复制一套逐渐分叉的大型 UI 框架。
-- 中文/英文同批维护；按钮具备键盘可达、焦点及 pending/error 反馈。不可信错误内容必须转义或以 `textContent` 展示。
+- 独立页面只使用自身定义的语义 CSS 变量及主题 fallback，不引用 Harness 的 `--dsw-*`（该变量在 Web UI 不可用时不保证注入）。中英文与深浅主题在页面内自洽。不要跨页面复制一套逐渐分叉的大型 UI 框架。
+- 中文/英文 key 必须同批维护，缺一即视为未完成；按钮具备键盘可达、焦点及 pending/error 反馈。不可信错误内容必须转义或以 `textContent` 展示。状态切换不能只改颜色，需配文案或 `aria-live`。
 - 不放宽 CSP、安全配置或给独立页面添加通用 Node/IPC 能力来解决加载问题。
 - 修改生成资源先查找 `scripts/` 中的生成器并从源重新生成；不要只改会被下次构建覆盖的产物。
 - 运行时 `.mjs` 入口保留 Node/Electron 及目标平台兼容性。Windows 隐藏控制台、进程退出和路径行为不能仅靠 macOS 测试宣称通过。
