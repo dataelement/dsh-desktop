@@ -1,7 +1,8 @@
 import { execFile, execFileSync, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
+import { parse as parseYaml } from 'yaml'
 import { createServer } from 'node:net'
 import { dirname, join, posix, win32 } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -473,6 +474,8 @@ export class HarnessRuntime {
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
     this.writeLog(`[desktop] profile ${profile}`)
     this.writeLog(`[desktop] patch ${patchPath}`)
+    
+    await this.checkAgentPresets(this.options.dshHome)
     if (!usedPreferredPort) {
       this.writeLog(
         `[desktop] preferred endpoint http://127.0.0.1:${preferredPort} is unavailable; using a temporary port`
@@ -672,6 +675,36 @@ ${cause}`
       }
     }
     this.writeLog(line)
+  }
+
+  private async checkAgentPresets(dshHome: string): Promise<void> {
+    try {
+      const presetsDir = join(dshHome, '.agent-presets')
+      const entries = await readdir(presetsDir, { withFileTypes: true }).catch(() => [])
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        for (const fileName of ['agent.config.yml', 'agent.cordis.yml', 'preset.yml']) {
+          const filePath = join(presetsDir, entry.name, fileName)
+          try {
+            const content = await readFile(filePath, 'utf8')
+            parseYaml(content) // throw if invalid YAML
+            
+            // Validate common schema errors, e.g., 'type: prefix' instead of 'text'
+            // or misnamed fields that could cause the Harness LLM adapter to crash.
+            const contentStr = content.toLowerCase()
+            if (contentStr.includes('type: prefix') || contentStr.includes('type: "prefix"')) {
+              this.writeLog(`[desktop] WARNING: Preset ${entry.name}/${fileName} contains an invalid message 'type: prefix'. It should usually be 'type: text'.`)
+            }
+          } catch (err: any) {
+            if (err.code !== 'ENOENT') {
+              this.writeLog(`[desktop] ERROR: Failed to parse preset ${entry.name}/${fileName}: ${err.message}`)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // safe to ignore
+    }
   }
 
   private writeLog(line: string): void {
