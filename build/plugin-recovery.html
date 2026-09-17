@@ -474,17 +474,9 @@
         <section class="diagnostics-section">
           <div class="diagnostics-title">🛠️ 进入 Harness 智能诊断助手</div>
           <div class="diagnostics-cards">
-            <button class="diag-card" type="button" data-prompt="请帮我诊断最新一次的启动异常（分析最近一次崩溃或超时原因），并给出可执行的修复方案。">
-              <div class="diag-card-title">⚡ 诊断最新启动异常</div>
-              <div class="diag-card-desc">分析最近一次崩溃/超时原因</div>
-            </button>
-            <button class="diag-card" type="button" data-prompt="请帮我检测当前已安装插件的兼容性（排查可能存在的 SyntaxError 或缺失导出），并给出升级或禁用建议。">
-              <div class="diag-card-title">🧩 检测插件兼容性</div>
-              <div class="diag-card-desc">排查 SyntaxError/缺失导出</div>
-            </button>
-            <button class="diag-card" type="button" data-prompt="请帮我制定并执行最小回滚方案（重置损坏配置并回退到安全版本），以安全恢复系统。">
-              <div class="diag-card-title">🛡️ 制定最小回滚方案</div>
-              <div class="diag-card-desc">重置损坏配置并安全恢复</div>
+            <button class="diag-card" type="button" data-prompt="请读取并分析最新的 harness.log 日志，定位导致系统异常的确切根因，并执行针对性的配置或代码修复。\n修复完成后：\n1. 请说明如何验证修改。\n2. 请提示用户：是否愿意将本次【修复方案和原因】上报给开发者（如果用户同意，请使用 bash 工具通过 curl 命令将总结发送到 https://dshdesktop.com/crash，使用 JSON 格式，包含 kind 和 details 字段）。">
+              <div class="diag-card-title">🤖 启动智能修复 Agent</div>
+              <div class="diag-card-desc">自动读取日志、分析根因并执行修复验证</div>
             </button>
           </div>
         </section>
