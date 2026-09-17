@@ -1,0 +1,181 @@
+pageType: comparison
+background:
+  type: solid
+  color: $paper
+notes: |
+  平台、独立站和本地履约不是互斥选项。平台适合低成本验证需求，独立站沉淀客户资产，本地履约兑现交付和售后体验。企业应按市场成熟度组合三者。
+elements:
+  - elementId: channel-cyan-rail
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 10
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: $cyan
+    border:
+      color: $cyan
+      width: 0
+  - elementId: channel-title-rule
+    elementType: line
+    bounds:
+      - 46
+      - 118
+      - 868
+      - 1
+    viewBox:
+      - 868
+      - 1
+    points: 0,0 868,0
+    border:
+      color: $rule
+      width: 0.9
+  - elementId: channel-table
+    elementType: table
+    bounds:
+      - 46
+      - 166
+      - 868
+      - 268
+    style: $operating-matrix
+    columnWidths:
+      - 0.19
+      - 0.27
+      - 0.27
+      - 0.27
+    rowHeights:
+      - 0.16
+      - 0.14
+      - 0.14
+      - 0.14
+      - 0.14
+      - 0.14
+      - 0.14
+    rows:
+      - - text: Dimension
+        - text: Platform
+        - text: Own store
+        - text: Local fulfillment
+      - - text: Entry speed
+        - text: Fast demand signals
+        - text: Requires content and campaigns
+        - text: Requires demand and facilities
+      - - text: Customer assets
+        - text: Platform controlled
+        - text: Owned data and relationships
+        - text: Additional service touchpoints
+      - - text: Delivery
+        - text: Platform dependent
+        - text: Merchant network dependent
+        - text: Local delivery and returns
+      - - text: Fixed cost
+        - text: Low
+        - text: Medium
+        - text: High; inventory ahead
+      - - text: Main risk
+        - text: Policy, fees and traffic
+        - text: Acquisition and conversion
+        - text: Stock, cash and compliance
+      - - text: Management goal
+        - text: Validate demand
+        - text: Build repeat business
+        - text: Deliver a lasting experience
+  - elementId: channel-kicker
+    elementType: text
+    bounds:
+      - 46
+      - 24
+      - 520
+      - 16
+    content:
+      text: CHANNEL PORTFOLIO / CONTROL VS. COMMITMENT
+      fontFamily: &ref_0
+        latin: Arial
+        ea: Noto Sans CJK SC
+        mac: PingFang SC
+        win: Microsoft YaHei
+      fontSize: 8
+      bold: true
+      letterSpacing: 1.05
+      color: $muted
+  - elementId: channel-title
+    elementType: text
+    bounds:
+      - 46
+      - 52
+      - 850
+      - 42
+    content:
+      style: $title
+      text: Combine channels and fulfillment
+  - elementId: channel-lead
+    elementType: text
+    bounds:
+      - 46
+      - 132
+      - 868
+      - 24
+    content:
+      text: Platforms offer speed; owned channels build customer assets; fulfillment improves reliability.
+      fontFamily: *ref_0
+      fontSize: 11
+      bold: true
+      color: $ink
+  - elementId: channel-decision-band
+    elementType: shape
+    bounds:
+      - 46
+      - 454
+      - 868
+      - 34
+    shapeName: rect
+    fill:
+      type: solid
+      color: $cyan
+    border:
+      color: $cyan
+      width: 0
+  - elementId: channel-decision
+    elementType: text
+    bounds:
+      - 62
+      - 462
+      - 836
+      - 20
+    content:
+      text: Validate on platforms, then move repeat customers and key SKUs to owned channels and local delivery.
+      fontFamily: *ref_0
+      fontSize: 11.5
+      bold: true
+      color: $ink
+  - elementId: channel-source
+    elementType: text
+    bounds:
+      - 46
+      - 506
+      - 790
+      - 14
+    content:
+      text: 'Management framework: traffic, customers, fulfillment, stock and compliance.'
+      fontFamily: *ref_0
+      fontSize: 7.6
+      color: $muted
+  - elementId: channel-page
+    elementType: text
+    bounds:
+      - 868
+      - 506
+      - 46
+      - 14
+    content:
+      text: 16—07
+      fontFamily: *ref_0
+      fontSize: 8
+      bold: true
+      color: $ink
+      align:
+        - right
+        - bottom

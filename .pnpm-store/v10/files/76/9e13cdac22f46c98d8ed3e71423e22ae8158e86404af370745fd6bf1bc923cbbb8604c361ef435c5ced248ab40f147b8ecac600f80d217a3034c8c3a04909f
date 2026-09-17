@@ -1,0 +1,401 @@
+import { expect, expectTypeOf, test } from "vitest";
+
+import * as z from "zod/v4";
+
+test("number factory checks", () => {
+  const schema = z.number({ checks: [z.gte(1), z.lte(3)] as const });
+  const chained = z.number().min(1).max(3);
+  expectTypeOf<z.output<typeof schema>>().toEqualTypeOf<number>();
+  for (const value of [0, 1, 3, 4, Number.NaN, "2", undefined]) {
+    expect(z.validate(schema, value)).toBe(z.validate(chained, value));
+    expect(schema.safeParse(value)).toEqual(chained.safeParse(value));
+  }
+  expect(z.toJSONSchema(schema)).toEqual(z.toJSONSchema(chained));
+  expect(schema.minValue).toBe(1);
+  expect(schema.maxValue).toBe(3);
+  expect(z.coerce.number({ checks: [z.gte(1)] }).parse("2")).toBe(2);
+  const overwritten = z.number({ checks: [z.overwrite<number>((value) => value + 1), z.gte(2)] });
+  expect(overwritten.parse(1)).toBe(2);
+  expect(z.validate(overwritten, 0)).toBe(false);
+  // @ts-expect-error length checks cannot validate numbers
+  z.number({ checks: [z.minLength(1)] });
+});
+
+test("number factory checks snapshot caller arrays", () => {
+  for (const factory of [z.number, z.coerce.number]) {
+    const checks = [z.gte(1)];
+    const schema = factory({ checks });
+    let reads = 0;
+    factory({
+      get checks() {
+        if (++reads > 1) throw new Error("checks read twice");
+        return checks;
+      },
+    });
+    expect(reads).toBe(1);
+    const before = z.toJSONSchema(schema);
+    checks.push(z.gte(10));
+    expect(z.validate(schema, 3)).toBe(true);
+    expect(z.validate(z.compile(schema), 3)).toBe(true);
+    expect(z.toJSONSchema(schema)).toEqual(before);
+  }
+});
+
+test("z.number() basic validation", () => {
+  const schema = z.number();
+  expect(schema.parse(1234)).toEqual(1234);
+});
+
+test("NaN validation", () => {
+  const schema = z.number();
+  expect(() => schema.parse(Number.NaN)).toThrow();
+});
+
+test("Infinity validation", () => {
+  const schema = z.number();
+  expect(schema.safeParse(Number.POSITIVE_INFINITY)).toMatchInlineSnapshot(`
+    {
+      "error": [ZodError: [
+      {
+        "expected": "number",
+        "code": "invalid_type",
+        "received": "Infinity",
+        "path": [],
+        "message": "Invalid input: expected number, received Infinity"
+      }
+    ]],
+      "success": false,
+    }
+  `);
+  expect(schema.safeParse(Number.NEGATIVE_INFINITY)).toMatchInlineSnapshot(`
+    {
+      "error": [ZodError: [
+      {
+        "expected": "number",
+        "code": "invalid_type",
+        "received": "-Infinity",
+        "path": [],
+        "message": "Invalid input: expected number, received -Infinity"
+      }
+    ]],
+      "success": false,
+    }
+  `);
+});
+
+test(".gt() validation", () => {
+  const schema = z.number().gt(0).gt(5);
+  expect(schema.parse(6)).toEqual(6);
+  expect(() => schema.parse(5)).toThrow();
+});
+
+test(".gte() validation", () => {
+  const schema = z.number().gt(0).gte(1).gte(5);
+  expect(schema.parse(5)).toEqual(5);
+  expect(() => schema.parse(4)).toThrow();
+});
+
+test(".min() validation", () => {
+  const schema = z.number().min(0).min(5);
+  expect(schema.parse(5)).toEqual(5);
+  expect(() => schema.parse(4)).toThrow();
+});
+
+test(".lt() validation", () => {
+  const schema = z.number().lte(10).lt(5);
+  expect(schema.parse(4)).toEqual(4);
+  expect(() => schema.parse(5)).toThrow();
+});
+
+test(".lte() validation", () => {
+  const schema = z.number().lte(10).lte(5);
+  expect(schema.parse(5)).toEqual(5);
+  expect(() => schema.parse(6)).toThrow();
+});
+
+test(".max() validation", () => {
+  const schema = z.number().max(10).max(5);
+  expect(schema.parse(5)).toEqual(5);
+  expect(() => schema.parse(6)).toThrow();
+});
+
+test(".int() validation", () => {
+  const schema = z.number().int();
+  expect(schema.parse(4)).toEqual(4);
+  expect(() => schema.parse(3.14)).toThrow();
+});
+
+test(".positive() validation", () => {
+  const schema = z.number().positive();
+  expect(schema.parse(1)).toEqual(1);
+  expect(() => schema.parse(0)).toThrow();
+  expect(() => schema.parse(-1)).toThrow();
+});
+
+test(".negative() validation", () => {
+  const schema = z.number().negative();
+  expect(schema.parse(-1)).toEqual(-1);
+  expect(() => schema.parse(0)).toThrow();
+  expect(() => schema.parse(1)).toThrow();
+});
+
+test(".nonpositive() validation", () => {
+  const schema = z.number().nonpositive();
+  expect(schema.parse(0)).toEqual(0);
+  expect(schema.parse(-1)).toEqual(-1);
+  expect(() => schema.parse(1)).toThrow();
+});
+
+test(".nonnegative() validation", () => {
+  const schema = z.number().nonnegative();
+  expect(schema.parse(0)).toEqual(0);
+  expect(schema.parse(1)).toEqual(1);
+  expect(() => schema.parse(-1)).toThrow();
+});
+
+test("multipleOf", () => {
+  const numbers = {
+    number3: 5.123,
+    number6: 5.123456,
+    number7: 5.1234567,
+    number8: 5.12345678,
+  };
+
+  const schemas = {
+    schema6: z.number().multipleOf(0.000001),
+    schema7: z.number().multipleOf(0.0000001),
+  };
+
+  expect(() => schemas.schema6.parse(numbers.number3)).not.toThrow();
+  expect(() => schemas.schema6.parse(numbers.number6)).not.toThrow();
+  expect(() => schemas.schema6.parse(numbers.number7)).toThrow();
+  expect(() => schemas.schema6.parse(numbers.number8)).toThrow();
+  expect(() => schemas.schema7.parse(numbers.number3)).not.toThrow();
+  expect(() => schemas.schema7.parse(numbers.number6)).not.toThrow();
+  expect(() => schemas.schema7.parse(numbers.number7)).not.toThrow();
+  expect(() => schemas.schema7.parse(numbers.number8)).toThrow();
+});
+
+test(".multipleOf() accepts exact decimal multiples", () => {
+  // 2.03 === 29 * 0.07, but the quotient lands 2 ULP below 29, so the old tolerance rejected it while the neighbouring multiples 1.96 and 2.10 passed.
+  const schema = z.number().multipleOf(0.07);
+  expect(schema.safeParse(2.03).success).toBe(true);
+  expect(schema.safeParse(4.06).success).toBe(true);
+  expect(schema.safeParse(8.54).success).toBe(true);
+  // genuine non-multiples must still be rejected
+  expect(schema.safeParse(2.04).success).toBe(false);
+});
+
+test(".multipleOf() with positive divisor", () => {
+  const schema = z.number().multipleOf(5);
+  expect(schema.parse(15)).toEqual(15);
+  expect(schema.parse(-15)).toEqual(-15);
+  expect(() => schema.parse(7.5)).toThrow();
+  expect(() => schema.parse(-7.5)).toThrow();
+});
+
+test(".multipleOf() with negative divisor", () => {
+  const schema = z.number().multipleOf(-5);
+  expect(schema.parse(-15)).toEqual(-15);
+  expect(schema.parse(15)).toEqual(15);
+  expect(() => schema.parse(-7.5)).toThrow();
+  expect(() => schema.parse(7.5)).toThrow();
+});
+
+test(".multipleOf() with scientific notation (multi-digit exponents)", () => {
+  // Regression test for https://github.com/colinhacks/zod/pull/5687 — the regex was using \d? which only matches single-digit exponents
+  const schema = z.number().multipleOf(1e-10);
+
+  // These should all pass - they are valid multiples of 1e-10
+  expect(schema.parse(1e-10)).toEqual(1e-10);
+  expect(schema.parse(5e-10)).toEqual(5e-10);
+  expect(schema.parse(1e-9)).toEqual(1e-9); // 10 * 1e-10
+
+  // Test with 1e-15 (exponent = 15, two digits)
+  const schema15 = z.number().multipleOf(1e-15);
+  expect(schema15.parse(1e-15)).toEqual(1e-15);
+  expect(schema15.parse(3e-15)).toEqual(3e-15);
+});
+
+test(".multipleOf() with small floats / scientific notation (#5792)", () => {
+  const schema = z.number().multipleOf(1e-7);
+
+  // Valid multiples (integer * 1e-7)
+  expect(schema.safeParse(0).success).toBe(true);
+  expect(schema.safeParse(1e-7).success).toBe(true);
+  expect(schema.safeParse(2e-7).success).toBe(true);
+  expect(schema.safeParse(3e-7).success).toBe(true);
+
+  // Invalid — 2.5 and 1.5 are not integers
+  expect(schema.safeParse(2.5e-7).success).toBe(false);
+  expect(schema.safeParse(1.5e-7).success).toBe(false);
+});
+
+test(".step() validation", () => {
+  const schemaPointOne = z.number().step(0.1);
+  const schemaPointZeroZeroZeroOne = z.number().step(0.0001);
+  const schemaSixPointFour = z.number().step(6.4);
+
+  expect(schemaPointOne.parse(6)).toEqual(6);
+  expect(schemaPointOne.parse(6.1)).toEqual(6.1);
+  expect(schemaSixPointFour.parse(12.8)).toEqual(12.8);
+  expect(schemaPointZeroZeroZeroOne.parse(3.01)).toEqual(3.01);
+  expect(() => schemaPointOne.parse(6.11)).toThrow();
+  expect(() => schemaPointOne.parse(6.1000000001)).toThrow();
+  expect(() => schemaSixPointFour.parse(6.41)).toThrow();
+});
+
+test(".finite() validation", () => {
+  const schema = z.number().finite();
+  expect(schema.parse(123)).toEqual(123);
+  expect(schema.safeParse(Number.POSITIVE_INFINITY)).toMatchInlineSnapshot(`
+    {
+      "error": [ZodError: [
+      {
+        "expected": "number",
+        "code": "invalid_type",
+        "received": "Infinity",
+        "path": [],
+        "message": "Invalid input: expected number, received Infinity"
+      }
+    ]],
+      "success": false,
+    }
+  `);
+  expect(schema.safeParse(Number.NEGATIVE_INFINITY)).toMatchInlineSnapshot(`
+    {
+      "error": [ZodError: [
+      {
+        "expected": "number",
+        "code": "invalid_type",
+        "received": "-Infinity",
+        "path": [],
+        "message": "Invalid input: expected number, received -Infinity"
+      }
+    ]],
+      "success": false,
+    }
+  `);
+});
+
+test(".safe() validation", () => {
+  const schema = z.number().safe();
+  expect(schema.parse(Number.MIN_SAFE_INTEGER)).toEqual(Number.MIN_SAFE_INTEGER);
+  expect(schema.parse(Number.MAX_SAFE_INTEGER)).toEqual(Number.MAX_SAFE_INTEGER);
+  expect(() => schema.parse(Number.MIN_SAFE_INTEGER - 1)).toThrow();
+  expect(() => schema.parse(Number.MAX_SAFE_INTEGER + 1)).toThrow();
+});
+
+test("min value getters", () => {
+  expect(z.number().minValue).toBeNull;
+  expect(z.number().lt(5).minValue).toBeNull;
+  expect(z.number().lte(5).minValue).toBeNull;
+  expect(z.number().max(5).minValue).toBeNull;
+  expect(z.number().negative().minValue).toBeNull;
+  expect(z.number().nonpositive().minValue).toBeNull;
+  expect(z.number().int().minValue).toBeNull;
+  expect(z.number().multipleOf(5).minValue).toBeNull;
+  expect(z.number().finite().minValue).toBeNull;
+  expect(z.number().gt(5).minValue).toEqual(5);
+  expect(z.number().gte(5).minValue).toEqual(5);
+  expect(z.number().min(5).minValue).toEqual(5);
+  expect(z.number().min(5).min(10).minValue).toEqual(10);
+  expect(z.number().positive().minValue).toEqual(0);
+  expect(z.number().nonnegative().minValue).toEqual(0);
+  expect(z.number().safe().minValue).toEqual(Number.MIN_SAFE_INTEGER);
+});
+
+test("max value getters", () => {
+  expect(z.number().maxValue).toBeNull;
+  expect(z.number().gt(5).maxValue).toBeNull;
+  expect(z.number().gte(5).maxValue).toBeNull;
+  expect(z.number().min(5).maxValue).toBeNull;
+  expect(z.number().positive().maxValue).toBeNull;
+  expect(z.number().nonnegative().maxValue).toBeNull;
+  expect(z.number().int().minValue).toBeNull;
+  expect(z.number().multipleOf(5).minValue).toBeNull;
+  expect(z.number().finite().minValue).toBeNull;
+  expect(z.number().lt(5).maxValue).toEqual(5);
+  expect(z.number().lte(5).maxValue).toEqual(5);
+  expect(z.number().max(5).maxValue).toEqual(5);
+  expect(z.number().max(5).max(1).maxValue).toEqual(1);
+  expect(z.number().negative().maxValue).toEqual(0);
+  expect(z.number().nonpositive().maxValue).toEqual(0);
+  expect(z.number().safe().maxValue).toEqual(Number.MAX_SAFE_INTEGER);
+});
+
+test("int getter", () => {
+  expect(z.number().isInt).toEqual(false);
+  expect(z.number().int().isInt).toEqual(true);
+  expect(z.number().safe().isInt).toEqual(true);
+  expect(z.number().multipleOf(5).isInt).toEqual(true);
+});
+
+/** In Zod 4, number schemas don't accept infinite values. */
+test("finite getter", () => {
+  expect(z.number().isFinite).toEqual(true);
+});
+
+test("string format methods", () => {
+  const a = z.int32().min(5);
+  expect(a.parse(6)).toEqual(6);
+  expect(() => a.parse(1)).toThrow();
+});
+
+test("negative zero edge case", () => {
+  const schema = z.number();
+  const negativeZero = -0;
+  const positiveZero = 0;
+
+  // Both -0 and 0 should be valid (parse succeeds)
+  expect(schema.safeParse(negativeZero).success).toBe(true);
+  expect(schema.safeParse(positiveZero).success).toBe(true);
+  // Note: -0 is normalized to 0 after parsing
+  expect(schema.parse(negativeZero) === 0).toBe(true);
+  expect(schema.parse(positiveZero)).toEqual(0);
+
+  // With positive() constraint, both should be invalid (0 is not positive)
+  const positiveSchema = z.number().positive();
+  expect(() => positiveSchema.parse(negativeZero)).toThrow();
+  expect(() => positiveSchema.parse(positiveZero)).toThrow();
+
+  // With nonnegative(), both should be valid (0 is non-negative)
+  const nonnegativeSchema = z.number().nonnegative();
+  expect(nonnegativeSchema.safeParse(negativeZero).success).toBe(true);
+  expect(nonnegativeSchema.safeParse(positiveZero).success).toBe(true);
+  expect(nonnegativeSchema.parse(negativeZero) === 0).toBe(true);
+  expect(nonnegativeSchema.parse(positiveZero)).toEqual(0);
+});
+
+test("error customization", () => {
+  z.number().gte(5, { error: (iss) => "Min: " + iss.minimum.valueOf() });
+  z.number().lte(5, { error: (iss) => "Max: " + iss.maximum.valueOf() });
+});
+
+test("number formats are distinct at the type level", () => {
+  expectTypeOf(z.int()._zod.def.format).toEqualTypeOf<"safeint">();
+  expectTypeOf(z.int32()._zod.def.format).toEqualTypeOf<"int32">();
+  expectTypeOf(z.uint32()._zod.def.format).toEqualTypeOf<"uint32">();
+  expectTypeOf(z.float32()._zod.def.format).toEqualTypeOf<"float32">();
+  expectTypeOf(z.float64()._zod.def.format).toEqualTypeOf<"float64">();
+
+  z.int() satisfies z.ZodNumberFormat;
+  z.int() satisfies z.ZodNumber;
+
+  // @ts-expect-error a float32 schema is not a ZodInt
+  z.float32() satisfies z.ZodInt;
+  // @ts-expect-error a uint32 schema is not a ZodInt32
+  z.uint32() satisfies z.ZodInt32;
+
+  // the point of the distinction: dispatching on the schema type in a conditional type
+  type Sql<T> = T extends z.ZodUInt32
+    ? "BIGINT"
+    : T extends z.ZodInt32
+      ? "INTEGER"
+      : T extends z.ZodFloat32
+        ? "REAL"
+        : never;
+  expectTypeOf<Sql<z.ZodUInt32>>().toEqualTypeOf<"BIGINT">();
+  expectTypeOf<Sql<z.ZodInt32>>().toEqualTypeOf<"INTEGER">();
+  expectTypeOf<Sql<z.ZodFloat32>>().toEqualTypeOf<"REAL">();
+});

@@ -1,0 +1,73 @@
+{
+  "name": "@deepseek-ai/dsh-api-gateway",
+  "description": "Typert Remote Host dispatcher and Client API endpoint",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/api/gateway"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-typert-registry",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.21.0",
+    "@deepseek-ai/dsh-timeout": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-deque": "^0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-typert-registry": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-util-crypto": "^0.1.5-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-brand": "^0.1.5-rc.2"
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  }
+}

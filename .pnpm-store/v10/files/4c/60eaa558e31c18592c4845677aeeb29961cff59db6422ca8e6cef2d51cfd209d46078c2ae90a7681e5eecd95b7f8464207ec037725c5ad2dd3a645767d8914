@@ -1,0 +1,46 @@
+{
+  "name": "@deepseek-ai/dsh-host-directory-picker-native",
+  "description": "Native-OS-chooser backend of the directory-picker seam for the DeepSeek Harness web GUI host",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/host/directory-picker-native"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./worker": {
+      "types": "./lib/types/win32-dialog-worker.d.ts",
+      "default": "./lib/worker.cjs"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/worker.cjs",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "koffi": "^3.1.0",
+    "@deepseek-ai/dsh-host-directory-picker": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-native-command": "^0.1.5-rc.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "@deepseek-ai/cordis": "^4.0.2"
+  }
+}

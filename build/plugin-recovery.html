@@ -740,6 +740,10 @@
       document.getElementById('quit').addEventListener('click', () => navigate('quit'))
     </script>
     <script>
+      if (model.plugins && model.plugins.length > 0) {
+        const diagSection = document.querySelector('.diagnostics-section');
+        if (diagSection) diagSection.style.display = 'none';
+      }
       document.querySelectorAll('.diag-card').forEach(card => {
         card.addEventListener('click', () => {
           const prompt = card.getAttribute('data-prompt');

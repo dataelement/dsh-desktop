@@ -1,0 +1,74 @@
+{
+  "name": "@deepseek-ai/dsh-client-ui-settings-general",
+  "description": "Settings ownerless-copy and product onboarding plugin: the General section, shell trigger/header chrome content, settings dictionaries, and the versioned welcome notice",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-settings-general"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
+    "clsx": "^2.0.0",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-settings": "^0.1.5-rc.2"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  }
+}

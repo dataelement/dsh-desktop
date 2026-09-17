@@ -1,0 +1,8 @@
+/** Locale bundles for the plugin configuration section and its plugin cards. */
+/** Locale keys these surfaces render. */
+export type PluginsSettingsLocaleKey = 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty' | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse' | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber' | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint' | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint' | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint' | 'webSearchTitle' | 'webSearchDescription' | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset' | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint' | 'subagentModelSelectionTitle' | 'subagentModelSelectionDescription' | 'subagentModelSelectionToggle' | 'subagentModelSelectionChoose' | 'subagentModelSelectionAllowed' | 'subagentModelSelectionLoading' | 'subagentModelSelectionLoadFailed' | 'subagentModelSelectionRetry' | 'subagentModelSelectionPartial' | 'subagentModelSelectionUnavailable' | 'subagentModelSelectionUnavailableGroup' | 'subagentModelSelectionEmpty' | 'subagentModelSelectionRequired' | 'subagentModelSelectionConflict' | 'subagentModelSelectionOff';
+/** English copy. */
+export declare const en: Record<PluginsSettingsLocaleKey, string>;
+/** Simplified Chinese copy. */
+export declare const zh: Record<PluginsSettingsLocaleKey, string>;
+//# sourceMappingURL=locales.d.ts.map

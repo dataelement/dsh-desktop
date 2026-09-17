@@ -1,0 +1,47 @@
+{
+  "name": "@deepseek-ai/dsh-sandbox-windows-acl",
+  "description": "Windows ACL write-restriction sandbox backend (restricted-token spawn with capability-SID write allowlist) for the DeepSeek Harness sandbox seam",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/sandbox/sandbox-windows-acl"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./runner": {
+      "types": "./lib/types/runner.d.ts",
+      "default": "./lib/runner.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/runner.js",
+    "lib/types-*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "dependencies": {
+    "koffi": "^3.1.0",
+    "@deepseek-ai/dsh-win32-process": "^0.1.5-rc.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-pwsh-local": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-sandbox-local": "^0.1.5-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2"
+  }
+}

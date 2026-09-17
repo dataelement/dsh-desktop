@@ -1,0 +1,82 @@
+{
+  "name": "@deepseek-ai/dsh-session-log-export",
+  "description": "Web Session-log export command and shared download dialog",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/session-query/session-log-export"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "@deepseek-ai/dsh-session-format": "^0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/dsh-brand": "^0.1.5-rc.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.5-rc.2"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.3",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-attachment": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-commands": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-commands": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session-query": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.2"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-commands",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  }
+}

@@ -285,7 +285,8 @@ export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
   platform: NodeJS.Platform = process.platform,
-  environment: NodeJS.ProcessEnv = process.env
+  environment: NodeJS.ProcessEnv = process.env,
+  profile: string = 'web'
 ): SpawnOptionsWithoutStdio {
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -318,6 +319,7 @@ export function buildHarnessSpawnOptions(
       // the dedicated lock-recovery runner instead (see pnpm-runner.mjs).
       npm_config_side_effects_cache: 'false',
       PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false',
+      ...(profile === 'desktop-safe-mode' && { PNPM_CONFIG_NODE_LINKER: 'hoisted', npm_config_node_linker: 'hoisted' }),
       NODE_COMPILE_CACHE: environment.NODE_COMPILE_CACHE ?? pathApi.join(dshHome, 'cache', 'compile-cache'),
       [pathKey]: resolveEnvironmentPath(environment, platform)
     },
@@ -489,7 +491,8 @@ export class HarnessRuntime {
           launchDirectory,
           this.options.dshHome,
           process.platform,
-          shellEnvironment
+          shellEnvironment,
+          profile
         )
       )
     } catch (error) {

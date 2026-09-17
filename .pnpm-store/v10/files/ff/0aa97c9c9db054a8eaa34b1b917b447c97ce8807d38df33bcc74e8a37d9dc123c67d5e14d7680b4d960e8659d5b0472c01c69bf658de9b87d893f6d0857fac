@@ -1,0 +1,66 @@
+{
+  "name": "@deepseek-ai/dsh-compaction-basic",
+  "description": "Token-meter-driven compaction policy and LLM summarization backend for the DeepSeek Harness",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/compaction/compaction-basic"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-commands": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-compaction": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-token-meter": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-util-values": "^0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/cordis-plugin-include": "^1.0.7",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.3",
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-agent-loop": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-commands": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-compaction": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-agent-loop-testkit": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session-projection": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-token-meter": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm-retry": "^0.1.5-rc.2"
+  }
+}

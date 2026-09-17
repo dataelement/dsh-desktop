@@ -1,0 +1,103 @@
+{
+  "name": "@deepseek-ai/dsh-client-ui-conversation",
+  "description": "Target-neutral Conversation assembly, shell, composer, queue, and view navigation",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-conversation"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-file-upload",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
+    "@lexical/headless": "^0.49.0",
+    "react-dom": "^18.2.0",
+    "@types/react-dom": "~18.3.0",
+    "zod": "^4.4.3",
+    "lexical": "^0.49.0",
+    "clsx": "^2.0.0",
+    "@lexical/utils": "^0.49.0",
+    "@lexical/text": "^0.49.0",
+    "@lexical/plain-text": "^0.49.0",
+    "@lexical/history": "^0.49.0",
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-api-workspace-controller": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-attachment": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-brand": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-file-upload": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-store": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-test-runtime": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-commands": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm-retry": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-permission-presets": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-plan-mode": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-goal": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-token-meter": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-todo": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-util-crypto": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-workspace": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-util-workspace-path": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-settings": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.5-rc.2"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  }
+}

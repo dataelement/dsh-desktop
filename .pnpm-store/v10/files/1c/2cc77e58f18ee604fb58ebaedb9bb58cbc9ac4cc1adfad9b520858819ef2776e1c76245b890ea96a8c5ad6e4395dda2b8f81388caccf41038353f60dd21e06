@@ -1,0 +1,107 @@
+.indicator {
+  flex: none;
+  display: inline-grid;
+  grid-template-columns: 14px max-content;
+  align-items: center;
+  column-gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  transition: background-color 160ms ease-out, color 160ms ease-out;
+}
+
+.warning {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+  cursor: pointer;
+}
+
+.warning:active {
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-state-warn-tertiary),
+    var(--dsw-alias-state-warn-primary) 10%
+  );
+}
+
+.warning:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-warn-label);
+  outline-offset: 2px;
+}
+
+.success {
+  background: var(--dsw-alias-state-success-tertiary);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+}
+
+.label {
+  display: grid;
+  text-align: left;
+}
+
+.stateLabel,
+.hoverLabel,
+.sizeLabel {
+  grid-area: 1 / 1;
+}
+
+.sizeLabel {
+  visibility: hidden;
+}
+
+.warning:is(:hover, :focus-visible) .stateLabel {
+  visibility: hidden;
+}
+
+.hoverLabel {
+  visibility: hidden;
+}
+
+.warning:is(:hover, :focus-visible) .hoverLabel {
+  visibility: visible;
+}
+
+.dots {
+  display: inline-block;
+  width: 1.5em;
+  text-align: left;
+}
+
+.secondDot {
+  animation: reveal-second-dot 1.5s step-end infinite;
+}
+
+.thirdDot {
+  animation: reveal-third-dot 1.5s step-end infinite;
+}
+
+@keyframes reveal-second-dot {
+  0%, 33.32% { opacity: 0; }
+  33.33%, 100% { opacity: 1; }
+}
+
+@keyframes reveal-third-dot {
+  0%, 66.65% { opacity: 0; }
+  66.66%, 100% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .secondDot,
+  .thirdDot {
+    animation: none;
+  }
+}

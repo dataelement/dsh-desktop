@@ -1,0 +1,43 @@
+{
+  "name": "node-addon-require-builtin",
+  "version": "0.1.6",
+  "type": "commonjs",
+  "description": "Node-API addon with runtime probing for internal access (unrestricted require-builtin variant).",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "import": "./lib/index.js",
+      "require": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "README.md",
+    "lib/",
+    "!lib/.tsbuildinfo",
+    "!lib/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "node-addon-native-custom-loader": "0.1.6"
+  },
+  "optionalDependencies": {
+    "node-addon-require-builtin-darwin-arm64": "0.1.6",
+    "node-addon-require-builtin-darwin-x64": "0.1.6",
+    "node-addon-require-builtin-linux-arm64-gnu": "0.1.6",
+    "node-addon-require-builtin-linux-x64-gnu": "0.1.6",
+    "node-addon-require-builtin-win32-arm64-msvc": "0.1.6",
+    "node-addon-require-builtin-win32-x64-msvc": "0.1.6",
+    "node-addon-require-builtin-win32-ia32-msvc": "0.1.6"
+  },
+  "scripts": {
+    "build:js": "tsc -b"
+  }
+}

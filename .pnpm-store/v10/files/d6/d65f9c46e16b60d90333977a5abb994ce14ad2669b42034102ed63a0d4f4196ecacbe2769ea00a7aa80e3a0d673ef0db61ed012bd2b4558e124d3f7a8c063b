@@ -1,0 +1,8 @@
+# Legacy on-disk directory retained to preserve existing user projects.
+# Installable DSH PPTD bundle. The feature remains outside the
+# shipped Web roster until a profile explicitly adds this package.
+- insert:
+    - id: dsh-ppt
+      name: 'dsh-ppt'
+      config:
+        root: !!js dshHomePath('kimi-ppt')

@@ -1,0 +1,80 @@
+{
+  "name": "@electron/get",
+  "version": "5.1.0",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "description": "Utility for downloading artifacts from different versions of Electron",
+  "repository": "https://github.com/electron/get",
+  "author": "Samuel Attard",
+  "license": "MIT",
+  "publishConfig": {
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:docs": "typedoc",
+    "lint": "oxfmt --check . && oxlint",
+    "lint:fix": "oxfmt --write . && oxlint --fix",
+    "prepare": "husky",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run --coverage",
+    "test:nonetwork": "npm run lint && vitest run --coverage --testPathIgnorePatterns network.spec"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "debug": "^4.1.1",
+    "env-paths": "^3.0.0",
+    "graceful-fs": "^4.2.11",
+    "progress": "^2.0.3",
+    "semver": "^7.6.3",
+    "sumchecker": "^3.0.1"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "^22.0.0",
+    "@types/debug": "^4.1.4",
+    "@types/graceful-fs": "^4.1.9",
+    "@types/node": "~22.12.0",
+    "@types/progress": "^2.0.3",
+    "@types/semver": "^7.5.8",
+    "@vitest/coverage-v8": "^4.1.2",
+    "esbuild-plugin-file-path-extensions": "^2.1.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "oxfmt": "^0.44.0",
+    "oxlint": "^1.59.0",
+    "oxlint-tsgolint": "^0.20.0",
+    "typedoc": "~0.28.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  },
+  "lint-staged": {
+    "*.{js,ts}": [
+      "oxfmt --write",
+      "oxlint --fix"
+    ],
+    "*.{json}": [
+      "oxfmt --write"
+    ]
+  },
+  "keywords": [
+    "electron",
+    "download",
+    "prebuild",
+    "get",
+    "artifact",
+    "release"
+  ],
+  "optionalDependencies": {
+    "undici": "^7.24.4"
+  },
+  "resolutions": {
+    "fsevents": "npm:@electron/fsevents@2.3.3-fork"
+  },
+  "packageManager": "yarn@4.10.3+sha512.c38cafb5c7bb273f3926d04e55e1d8c9dfa7d9c3ea1f36a4868fa028b9e5f72298f0b7f401ad5eb921749eb012eb1c3bb74bf7503df3ee43fd600d14a018266f"
+}

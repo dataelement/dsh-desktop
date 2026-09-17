@@ -1,0 +1,45 @@
+{
+  "name": "@deepseek-ai/dsh-agent-tool-presentation",
+  "description": "Agent-plane presentation selector: composes one agent's tools as PTC mode, native, or both",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/core/agent-tool-presentation"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-agent": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-code-runtime": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-scope": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-session": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2"
+  }
+}

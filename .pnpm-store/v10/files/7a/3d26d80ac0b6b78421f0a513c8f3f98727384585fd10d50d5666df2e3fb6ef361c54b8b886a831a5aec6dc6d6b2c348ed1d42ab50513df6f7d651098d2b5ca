@@ -1,0 +1,3 @@
+/** Client-safe dynamic Cordis vocabulary re-exported through the Remote assembly. */
+export type { ApprovalRequestId, CordisDynamicPackageId, CordisDynamicPluginId, CordisDynamicPluginRunId, CordisDynamicRunMode, DynamicCordisInventoryRow, DynamicCordisPackage, DynamicCordisRequestResolved, DynamicCordisRetracted, DynamicCordisRunRequest, } from '@deepseek-ai/dsh-api-remotes/client';
+//# sourceMappingURL=events.d.ts.map

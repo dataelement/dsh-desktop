@@ -1,0 +1,178 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.NsisUpdater = void 0;
+const builder_util_runtime_1 = require("builder-util-runtime");
+const path = require("path");
+const BaseUpdater_1 = require("./BaseUpdater");
+const FileWithEmbeddedBlockMapDifferentialDownloader_1 = require("./differentialDownloader/FileWithEmbeddedBlockMapDifferentialDownloader");
+const types_1 = require("./types");
+const Provider_1 = require("./providers/Provider");
+const fs_extra_1 = require("fs-extra");
+const windowsExecutableCodeSignatureVerifier_1 = require("./windowsExecutableCodeSignatureVerifier");
+const url_1 = require("url");
+class NsisUpdater extends BaseUpdater_1.BaseUpdater {
+    constructor(options, app) {
+        super(options, app);
+        this._verifyUpdateCodeSignature = (publisherNames, unescapedTempUpdateFile) => (0, windowsExecutableCodeSignatureVerifier_1.verifySignature)(publisherNames, unescapedTempUpdateFile, this._logger);
+    }
+    /**
+     * The verifyUpdateCodeSignature. You can pass [win-verify-signature](https://github.com/beyondkmp/win-verify-trust) or another custom verify function: ` (publisherName: string[], path: string) => Promise<string | null>`.
+     * The default verify function uses [windowsExecutableCodeSignatureVerifier](https://github.com/electron-userland/electron-builder/blob/master/packages/electron-updater/src/windowsExecutableCodeSignatureVerifier.ts)
+     */
+    get verifyUpdateCodeSignature() {
+        return this._verifyUpdateCodeSignature;
+    }
+    set verifyUpdateCodeSignature(value) {
+        if (value) {
+            this._verifyUpdateCodeSignature = value;
+        }
+    }
+    /*** @private */
+    doDownloadUpdate(downloadUpdateOptions) {
+        const provider = downloadUpdateOptions.updateInfoAndProvider.provider;
+        const fileInfo = (0, Provider_1.findFile)(provider.resolveFiles(downloadUpdateOptions.updateInfoAndProvider.info), "exe");
+        return this.executeDownload({
+            fileExtension: "exe",
+            downloadUpdateOptions,
+            fileInfo,
+            task: async (destinationFile, downloadOptions, packageFile, removeTempDirIfAny) => {
+                const packageInfo = fileInfo.packageInfo;
+                const isWebInstaller = packageInfo != null && packageFile != null;
+                if (isWebInstaller && downloadUpdateOptions.disableWebInstaller) {
+                    throw (0, builder_util_runtime_1.newError)(`Unable to download new version ${downloadUpdateOptions.updateInfoAndProvider.info.version}. Web Installers are disabled`, "ERR_UPDATER_WEB_INSTALLER_DISABLED");
+                }
+                if (!isWebInstaller && !downloadUpdateOptions.disableWebInstaller) {
+                    this._logger.warn("disableWebInstaller is set to false, you should set it to true if you do not plan on using a web installer. This will default to true in a future version.");
+                }
+                if (isWebInstaller ||
+                    downloadUpdateOptions.disableDifferentialDownload ||
+                    (await this.differentialDownloadInstaller(fileInfo, downloadUpdateOptions, destinationFile, provider, builder_util_runtime_1.CURRENT_APP_INSTALLER_FILE_NAME))) {
+                    await this.httpExecutor.download(fileInfo.url, destinationFile, downloadOptions);
+                }
+                const signatureVerificationStatus = await this.verifySignature(destinationFile);
+                if (signatureVerificationStatus != null) {
+                    await removeTempDirIfAny();
+                    // noinspection ThrowInsideFinallyBlockJS
+                    throw (0, builder_util_runtime_1.newError)(`New version ${downloadUpdateOptions.updateInfoAndProvider.info.version} is not signed by the application owner: ${signatureVerificationStatus}`, "ERR_UPDATER_INVALID_SIGNATURE");
+                }
+                if (isWebInstaller) {
+                    if (await this.differentialDownloadWebPackage(downloadUpdateOptions, packageInfo, packageFile, provider)) {
+                        try {
+                            await this.httpExecutor.download(new url_1.URL(packageInfo.path), packageFile, {
+                                headers: downloadUpdateOptions.requestHeaders,
+                                cancellationToken: downloadUpdateOptions.cancellationToken,
+                                sha512: packageInfo.sha512,
+                            });
+                        }
+                        catch (e) {
+                            try {
+                                await (0, fs_extra_1.unlink)(packageFile);
+                            }
+                            catch (_ignored) {
+                                // ignore
+                            }
+                            throw e;
+                        }
+                    }
+                }
+            },
+        });
+    }
+    // $certificateInfo = (Get-AuthenticodeSignature 'xxx\yyy.exe'
+    // | where {$_.Status.Equals([System.Management.Automation.SignatureStatus]::Valid) -and $_.SignerCertificate.Subject.Contains("CN=siemens.com")})
+    // | Out-String ; if ($certificateInfo) { exit 0 } else { exit 1 }
+    async verifySignature(tempUpdateFile) {
+        let publisherName;
+        try {
+            publisherName = (await this.configOnDisk.value).publisherName;
+            if (publisherName == null) {
+                return null;
+            }
+        }
+        catch (e) {
+            if (e.code === "ENOENT") {
+                // no app-update.yml
+                return null;
+            }
+            throw e;
+        }
+        return await this._verifyUpdateCodeSignature(Array.isArray(publisherName) ? publisherName : [publisherName], tempUpdateFile);
+    }
+    doInstall(options) {
+        const installerPath = this.installerPath;
+        if (installerPath == null) {
+            this.dispatchError(new Error("No update filepath provided, can't quit and install"));
+            return false;
+        }
+        const args = ["--updated"];
+        if (options.isSilent) {
+            args.push("/S");
+        }
+        if (options.isForceRunAfter) {
+            args.push("--force-run");
+        }
+        if (this.installDirectory) {
+            // maybe check if folder exists
+            args.push(`/D=${this.installDirectory}`);
+        }
+        const packagePath = this.downloadedUpdateHelper == null ? null : this.downloadedUpdateHelper.packageFile;
+        if (packagePath != null) {
+            // only = form is supported
+            args.push(`--package-file=${packagePath}`);
+        }
+        const callUsingElevation = () => {
+            this.spawnLog(path.join(process.resourcesPath, "elevate.exe"), [installerPath].concat(args)).catch(e => this.dispatchError(e));
+        };
+        if (options.isAdminRightsRequired) {
+            this._logger.info("isAdminRightsRequired is set to true, run installer using elevate.exe");
+            callUsingElevation();
+            return true;
+        }
+        this.spawnLog(installerPath, args).catch((e) => {
+            // https://github.com/electron-userland/electron-builder/issues/1129
+            // Node 8 sends errors: https://nodejs.org/dist/latest-v8.x/docs/api/errors.html#errors_common_system_errors
+            const errorCode = e.code;
+            this._logger.info(`Cannot run installer: error code: ${errorCode}, error message: "${e.message}", will be executed again using elevate if EACCES, and will try to use electron.shell.openItem if ENOENT`);
+            if (errorCode === "UNKNOWN" || errorCode === "EACCES") {
+                callUsingElevation();
+            }
+            else if (errorCode === "ENOENT") {
+                require("electron")
+                    .shell.openPath(installerPath)
+                    .catch((err) => this.dispatchError(err));
+            }
+            else {
+                this.dispatchError(e);
+            }
+        });
+        return true;
+    }
+    async differentialDownloadWebPackage(downloadUpdateOptions, packageInfo, packagePath, provider) {
+        if (packageInfo.blockMapSize == null) {
+            return true;
+        }
+        try {
+            const downloadOptions = {
+                newUrl: new url_1.URL(packageInfo.path),
+                oldFile: path.join(this.downloadedUpdateHelper.cacheDir, builder_util_runtime_1.CURRENT_APP_PACKAGE_FILE_NAME),
+                logger: this._logger,
+                newFile: packagePath,
+                requestHeaders: this.requestHeaders,
+                isUseMultipleRangeRequest: provider.isUseMultipleRangeRequest,
+                cancellationToken: downloadUpdateOptions.cancellationToken,
+            };
+            if (this.listenerCount(types_1.DOWNLOAD_PROGRESS) > 0) {
+                downloadOptions.onProgress = it => this.emit(types_1.DOWNLOAD_PROGRESS, it);
+            }
+            await new FileWithEmbeddedBlockMapDifferentialDownloader_1.FileWithEmbeddedBlockMapDifferentialDownloader(packageInfo, this.httpExecutor, downloadOptions).download();
+        }
+        catch (e) {
+            this._logger.error(`Cannot download differentially, fallback to full download: ${e.stack || e}`);
+            // during test (developer machine mac or linux) we must throw error
+            return process.platform === "win32";
+        }
+        return false;
+    }
+}
+exports.NsisUpdater = NsisUpdater;
+//# sourceMappingURL=NsisUpdater.js.map

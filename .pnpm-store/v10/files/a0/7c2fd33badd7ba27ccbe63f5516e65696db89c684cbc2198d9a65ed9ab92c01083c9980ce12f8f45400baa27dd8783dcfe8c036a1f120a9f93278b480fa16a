@@ -1,0 +1,39 @@
+{
+  "name": "ipaddr.js",
+  "description": "A library for manipulating IPv4 and IPv6 addresses in JavaScript.",
+  "type": "commonjs",
+  "version": "2.5.0",
+  "author": "whitequark <whitequark@whitequark.org>",
+  "directories": {
+    "lib": "./lib"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0"
+  },
+  "scripts": {
+    "lint": "npx eslint lib",
+    "lintfix": "npx eslint --fix lib test",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
+  },
+  "files": [
+    "lib"
+  ],
+  "keywords": [
+    "ip",
+    "ipv4",
+    "ipv6"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whitequark/ipaddr.js.git"
+  },
+  "main": "./lib/ipaddr.js",
+  "engines": {
+    "node": ">= 10"
+  },
+  "license": "MIT",
+  "types": "./lib/ipaddr.d.ts"
+}

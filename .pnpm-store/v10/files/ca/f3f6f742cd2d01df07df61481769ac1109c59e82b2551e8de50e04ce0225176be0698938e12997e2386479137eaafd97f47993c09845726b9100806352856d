@@ -1,0 +1,55 @@
+{
+  "name": "@deepseek-ai/dsh-subprocess-local",
+  "description": "Local-subprocess implementation of the DeepSeek Harness subprocess seam",
+  "version": "0.1.5-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/subprocess/subprocess-local"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./runner": {
+      "types": "./lib/types/bin.d.ts",
+      "default": "./lib/runner.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/runner.js",
+    "lib/runner-*.js",
+    "scripts/ensure-spawn-helper.mjs",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-subprocess": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-timeout": "^0.1.5-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "dependencies": {
+    "koffi": "^3.1.0",
+    "node-pty": "1.2.0-beta.15",
+    "@deepseek-ai/dsh-win32-process": "^0.1.5-rc.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-loader-smoke": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-subprocess": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-timeout": "^0.1.5-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "scripts": {
+    "postinstall": "node scripts/ensure-spawn-helper.mjs"
+  }
+}

@@ -1,0 +1,1 @@
+{"version":3,"file":"version.js","sourceRoot":"","sources":["../src/version.ts"],"names":[],"mappings":";;;AAAa,QAAA,eAAe,GAAG,SAAS,CAAA","sourcesContent":["export const PACKAGE_VERSION = \"26.15.3\"\n"]}

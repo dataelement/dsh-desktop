@@ -1,0 +1,86 @@
+{
+  "name": "@peculiar/webcrypto",
+  "version": "1.7.1",
+  "description": "A WebCrypto Polyfill for NodeJS",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PeculiarVentures/webcrypto"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./build/webcrypto.es.js",
+      "require": "./build/webcrypto.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "build/**/*.{ts,js}",
+    "index.d.ts",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "main": "build/webcrypto.js",
+  "module": "build/webcrypto.es.js",
+  "react-native": "build/webcrypto.es.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest --coverage",
+    "build": "rollup -c",
+    "clear": "rimraf build/*",
+    "rebuild": "npm run clear && npm run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint",
+    "lint:fix": "eslint --fix"
+  },
+  "keywords": [
+    "webcrypto",
+    "crypto",
+    "sha",
+    "rsa",
+    "ec",
+    "aes",
+    "des",
+    "hmac",
+    "pbkdf2",
+    "eddsa",
+    "x25519",
+    "ed25519",
+    "x448",
+    "ed448",
+    "shake128",
+    "shake256"
+  ],
+  "author": "PeculiarVentures",
+  "contributors": [
+    "Miroshin Stepan<microshine@mail.ru>"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/PeculiarVentures/webcrypto/issues"
+  },
+  "homepage": "https://github.com/PeculiarVentures/webcrypto#readme",
+  "devDependencies": {
+    "@peculiar/eslint-config-base": "^0.2.9",
+    "@peculiar/webcrypto-test": "^2.0.0",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@types/node": "^25.6.0",
+    "@vitest/coverage-v8": "^4.1.5",
+    "rimraf": "^6.1.3",
+    "rollup": "^4.60.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "@peculiar/asn1-schema": "^2.7.0",
+    "@peculiar/json-schema": "^1.1.12",
+    "@peculiar/utils": "^2.0.2",
+    "tslib": "^2.8.1",
+    "webcrypto-core": "^1.9.2"
+  },
+  "engines": {
+    "node": ">=14.18.0"
+  }
+}

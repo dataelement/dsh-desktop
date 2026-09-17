@@ -1,0 +1,7 @@
+# Legacy on-disk directory retained to preserve existing user projects.
+# Standard Composer adapter for the DSH PPTD route.
+- insert:
+    - id: dsh-ppt-composer
+      name: 'dsh-ppt-composer'
+      config:
+        root: !!js dshHomePath('kimi-ppt')

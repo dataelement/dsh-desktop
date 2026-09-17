@@ -1,0 +1,66 @@
+{
+  "name": "node-pty",
+  "description": "Fork pseudoterminals in Node.JS",
+  "author": {
+    "name": "Microsoft Corporation"
+  },
+  "version": "1.2.0-beta.15",
+  "license": "MIT",
+  "main": "./lib/index.js",
+  "types": "./typings/node-pty.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/microsoft/node-pty.git"
+  },
+  "files": [
+    "binding.gyp",
+    "lib/**/*.js",
+    "!lib/**/*.test.js",
+    "scripts/post-install.js",
+    "scripts/prebuild.js",
+    "src/**/*.{cc,h}",
+    "prebuilds/",
+    "third_party/",
+    "typings/"
+  ],
+  "homepage": "https://github.com/microsoft/node-pty",
+  "bugs": {
+    "url": "https://github.com/microsoft/node-pty/issues"
+  },
+  "keywords": [
+    "pty",
+    "tty",
+    "terminal",
+    "pseudoterminal",
+    "forkpty",
+    "openpty"
+  ],
+  "scripts": {
+    "build": "tsc -b ./src/tsconfig.json",
+    "watch": "tsc -b -w ./src/tsconfig.json",
+    "lint": "eslint src/",
+    "install": "node scripts/prebuild.js || node-gyp rebuild",
+    "postinstall": "node scripts/post-install.js",
+    "compileCommands": "node scripts/gen-compile-commands.js",
+    "test": "cross-env NODE_ENV=test mocha -R spec --exit lib/*.test.js",
+    "posttest": "npm run lint",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "node-addon-api": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/mocha": "^7.0.2",
+    "@types/node": "12",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "cross-env": "^5.1.4",
+    "eslint": "^10.4.0",
+    "globals": "^14.0.0",
+    "mocha": "10",
+    "node-gyp": "^11.4.2",
+    "ps-list": "^6.0.0",
+    "typescript": "^5.0.0"
+  }
+}

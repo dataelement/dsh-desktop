@@ -1,0 +1,69 @@
+{
+  "name": "@electron-internal/extract-zip",
+  "version": "1.0.5",
+  "description": "Fast, safe, native zip extraction for Node.js. Drop-in replacement for extract-zip.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "binding.js",
+    "binding.d.ts",
+    "index.*.node"
+  ],
+  "napi": {
+    "binaryName": "index",
+    "packageName": "@electron-internal/extract-zip",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "universal-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl",
+      "i686-unknown-linux-gnu",
+      "armv7-unknown-linux-gnueabihf"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release --esm --output-dir . --js binding.js --dts binding.d.ts && node scripts/strip-binding-fallbacks.js",
+    "build:debug": "napi build --platform --esm --output-dir . --js binding.js --dts binding.d.ts && node scripts/strip-binding-fallbacks.js",
+    "universal": "napi universalize --output-dir .",
+    "test": "node --test test/*.test.js",
+    "bench": "node bench/bench.js",
+    "bench:electron": "node bench/electron.js",
+    "prepublishOnly": "node scripts/check-prebuilds.js"
+  },
+  "keywords": [
+    "zip",
+    "unzip",
+    "extract",
+    "native",
+    "fast"
+  ],
+  "license": "BSD-2-Clause",
+  "packageManager": "yarn@4.10.3+sha512.c38cafb5c7bb273f3926d04e55e1d8c9dfa7d9c3ea1f36a4868fa028b9e5f72298f0b7f401ad5eb921749eb012eb1c3bb74bf7503df3ee43fd600d14a018266f",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
+  },
+  "repository": {
+    "url": "https://github.com/electron/extract-zip"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "patch:@napi-rs/cli@npm%3A3.6.2#~/.yarn/patches/@napi-rs-cli-npm-3.6.2-b710c59d43.patch",
+    "extract-zip": "2.0.1",
+    "yazl": "3.3.1"
+  }
+}

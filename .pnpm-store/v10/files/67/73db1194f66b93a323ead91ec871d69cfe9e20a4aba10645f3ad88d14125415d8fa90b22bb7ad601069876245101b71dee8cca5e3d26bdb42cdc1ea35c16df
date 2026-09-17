@@ -1,0 +1,73 @@
+{
+    "name": "koffi",
+    "version": "3.3.0",
+    "description": "Fast and easy-to-use dynamic C FFI (foreign function interface) for Node.js",
+    "keywords": [
+        "foreign",
+        "function",
+        "interface",
+        "ffi",
+        "binding",
+        "c",
+        "napi"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Koromix/koffi"
+    },
+    "homepage": "https://koffi.dev/",
+    "author": {
+        "name": "Niels Martignène",
+        "email": "niels.martignene@protonmail.com",
+        "url": "https://koromix.dev/"
+    },
+    "scripts": {
+        "install": "node ./cnoke.cjs -P . -D src/koffi --prebuild --release"
+    },
+    "license": "MIT",
+    "cnoke": {
+        "api": "../../vendor/node-api-headers",
+        "output": "build/koffi/{{ toolchain }}",
+        "node": 16,
+        "napi": 8
+    },
+    "funding": "https://liberapay.com/Koromix",
+    "optionalDependencies": {
+        "@koromix/koffi-linux-arm": "3.3.0",
+        "@koromix/koffi-linux-arm64": "3.3.0",
+        "@koromix/koffi-linux-ia32": "3.3.0",
+        "@koromix/koffi-linux-x64": "3.3.0",
+        "@koromix/koffi-linux-riscv64": "3.3.0",
+        "@koromix/koffi-freebsd-ia32": "3.3.0",
+        "@koromix/koffi-freebsd-x64": "3.3.0",
+        "@koromix/koffi-freebsd-arm64": "3.3.0",
+        "@koromix/koffi-openbsd-ia32": "3.3.0",
+        "@koromix/koffi-openbsd-x64": "3.3.0",
+        "@koromix/koffi-win32-ia32": "3.3.0",
+        "@koromix/koffi-win32-x64": "3.3.0",
+        "@koromix/koffi-win32-arm64": "3.3.0",
+        "@koromix/koffi-darwin-x64": "3.3.0",
+        "@koromix/koffi-darwin-arm64": "3.3.0",
+        "@koromix/koffi-linux-loong64": "3.3.0",
+        "@koromix/koffi-android-arm64": "3.3.0",
+        "@koromix/koffi-android-x64": "3.3.0",
+        "@koromix/koffi-linux-ppc64": "3.3.0",
+        "@koromix/koffi-openbsd-arm64": "3.3.0"
+    },
+    "type": "module",
+    "main": "./index.cjs",
+    "module": "./index.js",
+    "exports": {
+        ".": {
+            "import": "./index.js",
+            "require": "./index.cjs",
+            "types": "./index.d.ts"
+        },
+        "./indirect": {
+            "import": "./indirect.js",
+            "require": "./indirect.cjs",
+            "types": "./index.d.ts"
+        }
+    },
+    "types": "./index.d.ts"
+}

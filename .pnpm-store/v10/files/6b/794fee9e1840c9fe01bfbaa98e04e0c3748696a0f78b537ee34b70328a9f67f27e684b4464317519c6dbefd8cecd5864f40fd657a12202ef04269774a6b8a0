@@ -1,0 +1,11 @@
+import type { AnyMessage } from "./jsonrpc.js";
+export declare const HEADER_CONNECTION_ID = "Acp-Connection-Id";
+export declare const HEADER_SESSION_ID = "Acp-Session-Id";
+export declare const EVENT_STREAM_MIME_TYPE = "text/event-stream";
+export declare const JSON_MIME_TYPE = "application/json";
+export declare function methodRequiresSessionHeader(method: string): boolean;
+export declare function sessionIdFromParams(params: unknown): string | undefined;
+export declare function sessionIdFromMessageParams(message: AnyMessage): string | undefined;
+export declare function sessionIdFromResponseResult(message: AnyMessage): string | undefined;
+export declare function isInitializeRequest(msg: AnyMessage): boolean;
+export declare function messageIdKey(id: string | number | null | undefined): string | undefined;

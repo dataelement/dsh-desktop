@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.generateExecutableWithSign = exports.Resource = exports.Format = exports.Data = exports.version = exports.NtExecutableResource = exports.NtExecutable = void 0;
+var pe_library_1 = require("pe-library");
+Object.defineProperty(exports, "NtExecutable", { enumerable: true, get: function () { return pe_library_1.NtExecutable; } });
+Object.defineProperty(exports, "NtExecutableResource", { enumerable: true, get: function () { return pe_library_1.NtExecutableResource; } });
+Object.defineProperty(exports, "Format", { enumerable: true, get: function () { return pe_library_1.Format; } });
+var version_js_1 = require("./version.js");
+exports.version = version_js_1.default;
+var Data = require("./data/index.js");
+exports.Data = Data;
+var Resource = require("./resource/index.js");
+exports.Resource = Resource;
+var index_js_1 = require("./sign/index.js");
+Object.defineProperty(exports, "generateExecutableWithSign", { enumerable: true, get: function () { return index_js_1.generateExecutableWithSign; } });

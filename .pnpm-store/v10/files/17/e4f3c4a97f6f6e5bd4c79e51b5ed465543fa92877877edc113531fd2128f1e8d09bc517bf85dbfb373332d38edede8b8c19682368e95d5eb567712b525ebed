@@ -1,0 +1,39 @@
+{
+  "name": "@vscode/ripgrep",
+  "version": "1.18.0",
+  "description": "A module for using ripgrep in a Node project",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib/",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/microsoft/vscode-ripgrep"
+  },
+  "author": "Rob Lourens",
+  "license": "MIT",
+  "optionalDependencies": {
+    "@vscode/ripgrep-darwin-x64": "1.18.0",
+    "@vscode/ripgrep-darwin-arm64": "1.18.0",
+    "@vscode/ripgrep-win32-x64": "1.18.0",
+    "@vscode/ripgrep-win32-arm64": "1.18.0",
+    "@vscode/ripgrep-win32-ia32": "1.18.0",
+    "@vscode/ripgrep-linux-x64": "1.18.0",
+    "@vscode/ripgrep-linux-arm64": "1.18.0",
+    "@vscode/ripgrep-linux-arm": "1.18.0",
+    "@vscode/ripgrep-linux-ppc64": "1.18.0",
+    "@vscode/ripgrep-linux-riscv64": "1.18.0",
+    "@vscode/ripgrep-linux-s390x": "1.18.0",
+    "@vscode/ripgrep-linux-ia32": "1.18.0"
+  }
+}

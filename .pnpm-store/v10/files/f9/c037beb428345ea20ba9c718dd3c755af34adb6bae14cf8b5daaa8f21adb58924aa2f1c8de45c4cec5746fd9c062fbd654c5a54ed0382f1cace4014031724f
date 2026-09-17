@@ -1,0 +1,1 @@
+{"version":3,"file":"bedrock-provider.d.ts","sourceRoot":"","sources":["../src/bedrock-provider.ts"],"names":[],"mappings":"AAEA,eAAO,MAAM,qBAAqB;;;CAGjC,CAAC","sourcesContent":["import { stream, streamSimple } from \"./api/bedrock-converse-stream.ts\";\n\nexport const bedrockProviderModule = {\n\tstream,\n\tstreamSimple,\n};\n"]}

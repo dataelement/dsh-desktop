@@ -491,7 +491,7 @@ export class RepairAgentService {
       // Create workspace and session if not already created
       if (!this.activeSessionId) {
         const workspace = await this.invokeHarness('workspace/create', {
-          request: { path: this.options.launchDirectory }
+          request: { path: this.options.launchDirectory, title: '🛠️ Harness 智能诊断系统' }
         })
         const workspaceId = workspace?.workspaceId ?? workspace?.workspace?.workspaceId
         this.activeWorkspaceId = workspaceId

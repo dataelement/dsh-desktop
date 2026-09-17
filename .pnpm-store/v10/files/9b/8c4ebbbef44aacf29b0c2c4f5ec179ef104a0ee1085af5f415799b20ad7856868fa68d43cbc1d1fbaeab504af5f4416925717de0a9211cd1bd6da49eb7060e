@@ -1,0 +1,86 @@
+{
+  "name": "@electron/rebuild",
+  "version": "4.2.0",
+  "description": "Electron supporting package to rebuild native node modules against the currently installed electron",
+  "type": "module",
+  "exports": "./lib/main.js",
+  "typings": "lib/main.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:docs": "typedoc src/main.ts",
+    "coverage": "yarn prewarm-headers && yarn spec --coverage",
+    "watch": "tsc -w",
+    "prepare": "husky && yarn build",
+    "lint": "oxlint && oxfmt --check",
+    "spec": "tsc && vitest run",
+    "test": "yarn prewarm-headers && yarn lint && yarn spec",
+    "prewarm-headers": "node-gyp install --ensure"
+  },
+  "bin": {
+    "electron-rebuild": "lib/cli.js"
+  },
+  "files": [
+    "lib"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/electron/rebuild.git"
+  },
+  "keywords": [
+    "electron"
+  ],
+  "authors": [
+    "Ani Betts <anais@anaisbetts.org>",
+    "Electron Community"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/electron/rebuild/issues"
+  },
+  "homepage": "https://github.com/electron/rebuild",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "provenance": true
+  },
+  "dependencies": {
+    "@malept/cross-spawn-promise": "^2.0.0",
+    "debug": "^4.1.1",
+    "node-abi": "^4.2.0",
+    "node-api-version": "^0.2.1",
+    "node-gyp": "^12.2.0",
+    "read-binary-file-arch": "^1.0.6"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "^22.0.0",
+    "@types/debug": "^4.1.5",
+    "@types/node": "~22.10.7",
+    "@types/node-abi": "^3.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "electron": "^39.8.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "oxfmt": "^0.42.0",
+    "oxlint": "^1.57.0",
+    "oxlint-tsgolint": "^0.18.1",
+    "typedoc": "~0.28.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "oxlint --fix",
+      "oxfmt --write"
+    ]
+  },
+  "resolutions": {
+    "@typescript-eslint/typescript-estree/minimatch": "^9.0.7"
+  },
+  "packageManager": "yarn@4.10.3+sha512.c38cafb5c7bb273f3926d04e55e1d8c9dfa7d9c3ea1f36a4868fa028b9e5f72298f0b7f401ad5eb921749eb012eb1c3bb74bf7503df3ee43fd600d14a018266f",
+  "dependenciesMeta": {
+    "electron": {
+      "built": true
+    }
+  }
+}

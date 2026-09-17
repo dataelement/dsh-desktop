@@ -1,0 +1,44 @@
+{
+  "slug": "editorial-forest",
+  "name": "Editorial Forest",
+  "tagline": "Forest green, dusty pink, and warm cream meet Source Serif 4 in a quiet, intentional quarterly-review deck.",
+  "mood": [
+    "editorial",
+    "quiet",
+    "considered",
+    "warm",
+    "intentional"
+  ],
+  "occasion": [
+    "quarterly review",
+    "internal readout",
+    "studio update",
+    "creative agency deck",
+    "research recap"
+  ],
+  "tone": [
+    "literary",
+    "thoughtful",
+    "warm",
+    "low-pressure"
+  ],
+  "formality": "medium",
+  "density": "medium",
+  "palette": {
+    "forest_green": "#2e4a2a",
+    "pink": "#e89cb1",
+    "cream": "#efe7d4",
+    "ink": "#1a1a17",
+    "description": "deep forest green, dusty pink, and warm cream paper; quiet tri-tone that pairs a saturated dark with two soft accents"
+  },
+  "typography": {
+    "serif": "Source Serif 4",
+    "mono": "JetBrains Mono",
+    "style": "humanist editorial serif with a technical mono for kickers and labels; restrained typographic hierarchy"
+  },
+  "scheme": "mixed",
+  "best_for": "Anything that should feel like a considered editorial — quarterly reviews, internal readouts, studio updates, creative-agency presentations. Equally good for any deck that wants to feel warm and unhurried rather than corporate, including research recaps, book or program announcements, and team retrospectives.",
+  "avoid_for": "Contexts that need to feel urgent, punchy, or sales-driven — the palette and rhythm are intentionally quiet.",
+  "slide_count": 8,
+  "navigation": "deck-stage runtime (arrow keys, space, PgUp/PgDn, Home/End)"
+}

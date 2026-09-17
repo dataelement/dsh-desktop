@@ -1,0 +1,35 @@
+{
+  "name": "electron",
+  "version": "43.4.0",
+  "repository": "https://github.com/electron/electron",
+  "description": "Build cross platform desktop apps with JavaScript, HTML, and CSS",
+  "license": "MIT",
+  "author": "Electron Community",
+  "keywords": [
+    "electron"
+  ],
+  "main": "index.js",
+  "types": "electron.d.ts",
+  "bin": {
+    "electron": "cli.js",
+    "install-electron": "install.js"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "abi_version",
+    "checksums.json",
+    "cli.js",
+    "electron.d.ts",
+    "index.js",
+    "install.js"
+  ],
+  "engines": {
+    "node": ">= 22.12.0"
+  },
+  "dependencies": {
+    "@electron-internal/extract-zip": "^1.0.1",
+    "@electron/get": "^5.0.0",
+    "@types/node": "^24.9.0"
+  }
+}

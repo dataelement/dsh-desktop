@@ -1,0 +1,74 @@
+{
+  "name": "@electron/universal",
+  "version": "2.0.3",
+  "description": "Utility for creating Universal macOS applications from two x64 and arm64 Electron applications",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "license": "MIT",
+  "keywords": [
+    "electron",
+    "apple silicon",
+    "universal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/electron/universal.git"
+  },
+  "engines": {
+    "node": ">=16.4"
+  },
+  "files": [
+    "dist/*",
+    "entry-asar/*",
+    "!entry-asar/**/*.ts",
+    "README.md"
+  ],
+  "author": "Samuel Attard",
+  "publishConfig": {
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && tsc -p tsconfig.entry-asar.json",
+    "build:docs": "npx typedoc",
+    "lint": "prettier --check \"{src,entry-asar,test}/**/*.ts\" \"*.ts\"",
+    "prettier:write": "prettier --write \"{src,entry-asar,test}/**/*.ts\" \"*.ts\"",
+    "prepublishOnly": "npm run build",
+    "test": "jest",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@electron/get": "^3.0.0",
+    "@types/cross-zip": "^4.0.1",
+    "@types/debug": "^4.1.10",
+    "@types/fs-extra": "^11.0.3",
+    "@types/jest": "^29.5.7",
+    "@types/minimatch": "^5.1.2",
+    "@types/node": "^20.8.10",
+    "@types/plist": "^3.0.4",
+    "cross-zip": "^4.0.0",
+    "husky": "^8.0.3",
+    "jest": "^29.7.0",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.0.3",
+    "ts-jest": "^29.1.1",
+    "typedoc": "~0.25.13",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@electron/asar": "^3.3.1",
+    "@malept/cross-spawn-promise": "^2.0.0",
+    "debug": "^4.3.1",
+    "dir-compare": "^4.2.0",
+    "fs-extra": "^11.1.1",
+    "minimatch": "^9.0.3",
+    "plist": "^3.1.0"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "prettier --write"
+    ]
+  },
+  "resolutions": {
+    "jackspeak": "2.1.1"
+  }
+}

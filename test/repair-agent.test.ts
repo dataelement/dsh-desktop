@@ -13,10 +13,10 @@ describe('RepairAgentService', () => {
   it('extracts relevant crash logs and diagnoses export mismatch correctly', () => {
     const logs = [
       '[desktop] launch requested',
-      'info: loading cordis plugins',
-      'file:///app/plugin-a.js:10 SyntaxError: The requested module \'lib\' does not provide an export named \'missingFn\'',
-      'failed to import loader entry plugin-a',
-      'Error: startup aborted'
+      '[stderr] info: loading cordis plugins',
+      '[stderr] file:///app/plugin-a.js:10 SyntaxError: The requested module \'lib\' does not provide an export named \'missingFn\'',
+      '[stderr] failed to import loader entry plugin-a (plugin-a)',
+      '[stderr] Error: startup aborted'
     ]
     const extracted = extractRelevantCrashLogs(logs)
     expect(extracted.length).toBeGreaterThan(0)
