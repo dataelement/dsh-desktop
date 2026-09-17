@@ -2859,7 +2859,9 @@ async function showMobilePairing(): Promise<void> {
     mobileWindow = undefined
   })
   if (!snapshot.desktopUrl) return
-  await mobileWindow.loadURL(snapshot.desktopUrl)
+  const desktopUrl = mobileBridge.createDesktopUrl()
+  if (!desktopUrl) return
+  await mobileWindow.loadURL(desktopUrl)
   mobileWindow.show()
   mobileWindow.focus()
 }

@@ -195,9 +195,17 @@ export class LanMobileBridge {
   private muxTask?: Promise<void>
   private readonly sessionStreamAborts = new Set<AbortController>()
   private lastConnected = false
+  private readonly desktopSessionToken = randomBytes(32).toString('base64url')
+  private desktopBootstrapToken?: string
 
   constructor(private readonly options: LanMobileBridgeOptions) {
     this.now = options.now ?? Date.now
+  }
+
+  createDesktopUrl(): string | undefined {
+    if (!this.server || !this.port) return undefined
+    this.desktopBootstrapToken = randomBytes(32).toString('base64url')
+    return `http://127.0.0.1:${this.port}/desktop?k=${this.desktopBootstrapToken}`
   }
 
   async start(): Promise<LanMobileBridgeSnapshot> {
@@ -235,6 +243,7 @@ export class LanMobileBridge {
     this.port = undefined
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
+    this.desktopBootstrapToken = undefined
     // Wait for an in-flight launch so the tunnel it spawns is stopped below
     // instead of outliving the bridge (and the app).
     if (this.tunnelLaunch) {
@@ -690,7 +699,11 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (url.searchParams.has('k')) {
+        this.consumeDesktopBootstrap(url.searchParams.get('k'), transportAddress, response)
+        return
+      }
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifyTrustedOrigin(request)
       if (!this.server || !this.port) return this.text(response, 503, 'Bridge unavailable.')
       // The token is consumed once a phone pairs, and expires after five
@@ -729,12 +742,12 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop/status') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       return this.json(response, 200, { connected: this.sessions.size > 0 })
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop/tunnel/status') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       const snapshot = this.snapshot()
       const qrSvg = snapshot.pairingUrl
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
@@ -743,7 +756,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/fallback') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
@@ -774,7 +787,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/pin/consent') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       let consent = false
       try {
@@ -812,7 +825,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/pin/reset') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       if (this.storedPinState().pinConsent !== true) {
         return this.json(response, 400, { ok: false, error: 'A durable pairing password is not enabled.' })
@@ -833,7 +846,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/toggle') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
@@ -877,7 +890,7 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {
-      if (this.rejectUnlessDesktop(transportAddress, connectionMode, response)) return
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       for (const [token, session] of this.sessions) this.suspendedSessions.set(token, session)
       this.sessions.clear()
@@ -975,7 +988,7 @@ export class LanMobileBridge {
     }
 
     if (!this.authorized(request, remoteAddress, connectionMode)) {
-      this.rememberMobileContext(request, remoteAddress)
+      this.rememberMobileContext(request, remoteAddress, connectionMode)
       if (!this.authorized(request, remoteAddress, connectionMode)) {
         if (request.method === 'GET' && url.pathname === '/') {
           const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
@@ -1069,11 +1082,15 @@ export class LanMobileBridge {
   }
 
   private mobileToken(request: IncomingMessage): string | undefined {
-    const cookie = request.headers.cookie ?? ''
-    return /(?:^|;\s*)dsh_mobile=([^;]+)/.exec(cookie)?.[1]
+    return this.cookieValue(request, 'dsh_mobile')
   }
 
-  private rememberMobileContext(request: IncomingMessage, remoteAddress: string): void {
+  private rememberMobileContext(
+    request: IncomingMessage,
+    remoteAddress: string,
+    connectionMode: MobileConnectionMode
+  ): void {
+    if (connectionMode === 'tunnel') return
     const token = this.mobileToken(request)
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return
     const sameDeviceIsActive = [...this.sessions.values()].some(
@@ -1092,15 +1109,49 @@ export class LanMobileBridge {
   }
 
   private rejectUnlessDesktop(
+    request: IncomingMessage,
     transportAddress: string,
-    connectionMode: MobileConnectionMode,
     response: ServerResponse
   ): boolean {
-    // Tunnel ingress also lands on 127.0.0.1. Socket loopback alone would
-    // publish the PIN on the public URL; require LAN mode as well.
-    if (isLoopbackAddress(transportAddress) && connectionMode === 'lan') return false
+    if (isLoopbackAddress(transportAddress) && this.hasDesktopSession(request)) return false
     this.text(response, 403, 'Desktop only.')
     return true
+  }
+
+  private consumeDesktopBootstrap(
+    candidate: string | null,
+    transportAddress: string,
+    response: ServerResponse
+  ): boolean {
+    const expected = this.desktopBootstrapToken
+    if (
+      !isLoopbackAddress(transportAddress) ||
+      !candidate ||
+      !expected ||
+      !this.pinsEqual(candidate, expected)
+    ) {
+      this.text(response, 403, 'Desktop only.')
+      return false
+    }
+    this.desktopBootstrapToken = undefined
+    response.setHeader(
+      'set-cookie',
+      `dsh_desktop=${this.desktopSessionToken}; HttpOnly; SameSite=Strict; Path=/`
+    )
+    response.statusCode = 303
+    response.setHeader('location', '/desktop')
+    response.end()
+    return true
+  }
+
+  private hasDesktopSession(request: IncomingMessage): boolean {
+    const token = this.cookieValue(request, 'dsh_desktop')
+    return Boolean(token && this.pinsEqual(token, this.desktopSessionToken))
+  }
+
+  private cookieValue(request: IncomingMessage, name: string): string | undefined {
+    const cookie = request.headers.cookie ?? ''
+    return new RegExp(`(?:^|;\\s*)${name}=([^;]+)`).exec(cookie)?.[1]
   }
 
   private verifySameOrigin(request: IncomingMessage): void {

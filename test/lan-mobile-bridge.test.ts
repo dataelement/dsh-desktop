@@ -80,8 +80,10 @@ describe('LAN mobile bridge pairing surface', () => {
     })
     bridges.push(bridge)
     const snapshot = await bridge.start()
-    expect(snapshot.desktopUrl).toBeTruthy()
-    const response = await fetch(snapshot.desktopUrl!)
+    expect(snapshot.desktopUrl).toBe(`http://127.0.0.1:${snapshot.port}/desktop`)
+    expect(snapshot.desktopUrl).not.toContain('k=')
+    const cookie = await authorizeDesktop(bridge)
+    const response = await fetch(snapshot.desktopUrl!, { headers: { cookie } })
     expect(response.status).toBe(200)
     expect(await response.text()).toContain('Connect a mobile device')
   })
@@ -137,7 +139,10 @@ describe('LAN mobile bridge pairing surface', () => {
       redirectUrl: 'https://active-mobile.trycloudflare.com/reconnect'
     })
 
-    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    const desktopCookie = await authorizeDesktop(bridge)
+    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie: desktopCookie }
+    })
     const tunnelReconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`, {
       headers: {
         host: 'active-mobile.trycloudflare.com',
@@ -192,9 +197,10 @@ describe('LAN mobile bridge pairing surface', () => {
       }
     })
 
+    const desktopCookie = await authorizeDesktop(bridge)
     const disconnected = await fetch(
       `http://127.0.0.1:${snapshot.port}/desktop/disconnect`,
-      { method: 'POST' }
+      { method: 'POST', headers: { cookie: desktopCookie } }
     )
     expect(disconnected.status).toBe(200)
     expect(bridge.snapshot().tunnelActive).toBe(true)
@@ -347,15 +353,20 @@ describe('LAN mobile bridge pairing surface', () => {
     })
     expect(stillAuthorized.status).toBe(200)
 
-    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/status`)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/status`, {
+      headers: { cookie: desktopCookie }
+    })
     expect(await status.json()).toEqual({ connected: true })
-    const managementPage = await fetch(`http://127.0.0.1:${snapshot.port}/desktop`)
+    const managementPage = await fetch(`http://127.0.0.1:${snapshot.port}/desktop`, {
+      headers: { cookie: desktopCookie }
+    })
     expect(await managementPage.text()).toContain('Manage phone connection')
     const blockedModeSwitch = await fetch(
       `http://127.0.0.1:${snapshot.port}/desktop/tunnel/toggle`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { cookie: desktopCookie, 'content-type': 'application/json' },
         body: JSON.stringify({ enable: true })
       }
     )
@@ -382,7 +393,10 @@ describe('LAN mobile bridge pairing surface', () => {
     })
     expect(blocked.status).toBe(403)
 
-    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/disconnect`, { method: 'POST' })
+    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
     const disconnected = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
       method: 'POST',
       headers: { cookie, 'content-type': 'application/json' },
@@ -917,6 +931,18 @@ describe('LAN mobile bridge user questions', () => {
   })
 })
 
+async function authorizeDesktop(bridge: LanMobileBridge): Promise<string> {
+  const url = bridge.createDesktopUrl()
+  expect(url).toBeTruthy()
+  const bootstrap = await fetch(url!, { redirect: 'manual' })
+  expect(bootstrap.status).toBe(303)
+  expect(bootstrap.headers.get('location')).toBe('/desktop')
+  const setCookie = bootstrap.headers.get('set-cookie') ?? ''
+  expect(setCookie).toContain('HttpOnly')
+  expect(setCookie).toContain('SameSite=Strict')
+  return setCookie.split(';', 1)[0]!
+}
+
 async function pairBridge(bridge: LanMobileBridge): Promise<{ port: number; cookie: string }> {
   const snapshot = await bridge.start()
   const token = new URL(snapshot.pairingUrl!).searchParams.get('token')
@@ -1004,14 +1030,21 @@ describe('snapshot keeps tunnel state after the pairing token is consumed', () =
       }
     })
 
-    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie: desktopCookie }
+    })
     const statusJson = await status.json()
     expect(statusJson.active).toBe(true)
     expect(statusJson.url).toBe('https://post-pair.trycloudflare.com')
 
     const toggle = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/toggle`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${snapshot.port}` },
+      headers: {
+        cookie: desktopCookie,
+        'content-type': 'application/json',
+        origin: `http://127.0.0.1:${snapshot.port}`
+      },
       body: JSON.stringify({ enable: true })
     })
     expect(toggle.status).toBe(200)
@@ -1029,13 +1062,14 @@ describe('snapshot keeps tunnel state after the pairing token is consumed', () =
     })
     bridges.push(bridge)
     const snapshot = await bridge.start()
-    const before = await fetch(snapshot.desktopUrl!)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const before = await fetch(snapshot.desktopUrl!, { headers: { cookie: desktopCookie } })
     expect(before.status).toBe(200)
 
     const token = new URL(snapshot.pairingUrl!).searchParams.get('token')
     await fetch(`http://127.0.0.1:${snapshot.port}/pair?token=${token}`, { redirect: 'manual' })
 
-    const afterApproval = await fetch(snapshot.desktopUrl!)
+    const afterApproval = await fetch(snapshot.desktopUrl!, { headers: { cookie: desktopCookie } })
     expect(afterApproval.status).toBe(200)
     const html = await afterApproval.text()
     expect(html).toContain('/pair?token=')
@@ -1043,7 +1077,7 @@ describe('snapshot keeps tunnel state after the pairing token is consumed', () =
     // Let the (rotated) token expire: the desktop page must rotate again
     // instead of rendering a dead QR code.
     now += 5 * 60 * 1000 + 1
-    const afterExpiry = await fetch(snapshot.desktopUrl!)
+    const afterExpiry = await fetch(snapshot.desktopUrl!, { headers: { cookie: desktopCookie } })
     expect(afterExpiry.status).toBe(200)
     const fresh = await bridge.snapshot()
     expect(fresh.pairingUrl).toBeTruthy()
@@ -1067,7 +1101,8 @@ describe('pairing token boundary and desktop origin hardening', () => {
     expect(atBoundary.pairingUrl).toBeTruthy()
     expect(atBoundary.expiresAt).toBe(now)
     // /desktop must not rotate at exactly the expiry instant.
-    const page = await fetch(snapshot.desktopUrl!)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const page = await fetch(snapshot.desktopUrl!, { headers: { cookie: desktopCookie } })
     expect(page.status).toBe(200)
     const rotated = bridge.snapshot()
     expect(rotated.pairingUrl).toBe(tokenBefore)
@@ -1082,24 +1117,25 @@ describe('pairing token boundary and desktop origin hardening', () => {
     const base = `http://127.0.0.1:${snapshot.port}`
     const origin = `http://127.0.0.1:${snapshot.port}`
 
+    const desktopCookie = await authorizeDesktop(bridge)
     const crossSiteGet = await fetch(`${base}/desktop`, {
-      headers: { 'sec-fetch-site': 'cross-site' }
+      headers: { cookie: desktopCookie, 'sec-fetch-site': 'cross-site' }
     })
     expect(crossSiteGet.status).toBe(500)
     expect(await crossSiteGet.text()).toContain('Cross-site request rejected')
 
     const crossOriginPost = await fetch(`${base}/desktop/disconnect`, {
       method: 'POST',
-      headers: { origin: 'https://evil.example.com' }
+      headers: { cookie: desktopCookie, origin: 'https://evil.example.com' }
     })
     expect(crossOriginPost.status).toBe(500)
 
     // Same-origin and no-header requests keep working (local tooling, tests).
     const sameOrigin = await fetch(`${base}/desktop`, {
-      headers: { 'sec-fetch-site': 'same-origin', origin }
+      headers: { cookie: desktopCookie, 'sec-fetch-site': 'same-origin', origin }
     })
     expect(sameOrigin.status).toBe(200)
-    const noHeaders = await fetch(`${base}/desktop`)
+    const noHeaders = await fetch(`${base}/desktop`, { headers: { cookie: desktopCookie } })
     expect(noHeaders.status).toBe(200)
   })
 })
@@ -1190,7 +1226,10 @@ describe('LAN vs tunnel pairing authorization', () => {
     const snapshot = await bridge.start()
     armFakeTunnel(bridge)
 
-    const localStatus = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const localStatus = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie: desktopCookie }
+    })
     expect(localStatus.status).toBe(200)
     expect(await localStatus.json()).toMatchObject({ pairingPin: '246810' })
 
@@ -1305,7 +1344,10 @@ describe('LAN vs tunnel pairing authorization', () => {
     bridges.push(bridge)
     const snapshot = await bridge.start()
     armFakeTunnel(bridge)
-    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie: desktopCookie }
+    })
     const created = (await status.json()) as { pairingPin: string }
     expect(created.pairingPin).toMatch(/^\d{6}$/)
     now += 5 * 60 * 1000 + 1
@@ -1360,8 +1402,10 @@ describe('LAN vs tunnel pairing authorization', () => {
         body: JSON.stringify({ pin: '654321' })
       })
     ).headers.get('set-cookie')!.split(';', 1)[0]!
+    const desktopCookie = await authorizeDesktop(bridge)
     const reset = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/pin/reset`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { cookie: desktopCookie }
     })
     const body = (await reset.json()) as { ok: boolean; pairingPin: string }
     expect(body.ok).toBe(true)
@@ -1412,18 +1456,113 @@ describe('LAN vs tunnel pairing authorization', () => {
     armed.emitClose()
     expect(bridge.snapshot().tunnelActive).toBe(false)
     expect(bridge.snapshot().connected).toBe(false)
-    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie: desktopCookie }
+    })
     expect(await status.json()).toMatchObject({
       unexpectedlyClosed: true,
       provider: 'cloudflare'
     })
     const toggled = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/toggle`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { cookie: desktopCookie, 'content-type': 'application/json' },
       body: JSON.stringify({ enable: true })
     })
     expect(toggled.status).toBe(200)
     expect(await toggled.json()).toMatchObject({ active: true, unexpectedlyClosed: false })
     expect(events.at(-1)).toBe(false)
+  })
+
+  it('does not promote a fabricated cookie over a tunnel even when the IP already has a session', async () => {
+    const store = memoryPinStore({ pin: '246810', pinConsent: true })
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    armFakeTunnel(bridge)
+    const headers = {
+      host: 'active-mobile.trycloudflare.com',
+      'cf-connecting-ip': '203.0.113.40',
+      'cf-ray': 'test-ray'
+    }
+    const verified = await fetch(`http://127.0.0.1:${snapshot.port}/pair/verify`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ pin: '246810' })
+    })
+    expect(verified.status).toBe(200)
+    const fabricated = 'A'.repeat(43)
+    const sibling = await fetch(`http://127.0.0.1:${snapshot.port}/api/status`, {
+      headers: { ...headers, cookie: `dsh_mobile=${fabricated}` }
+    })
+    expect(sibling.status).toBe(401)
+  })
+
+  it('keeps /desktop closed without a desktop session even if Host claims loopback', async () => {
+    const store = memoryPinStore({ pin: '246810', pinConsent: true })
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    const open = await fetch(`http://127.0.0.1:${snapshot.port}/desktop`)
+    expect(open.status).toBe(403)
+    expect(await open.text()).not.toContain('246810')
+
+    const pinggySpoof = await fetch(`http://127.0.0.1:${snapshot.port}/desktop`, {
+      headers: {
+        host: '127.0.0.1',
+        'x-forwarded-for': '203.0.113.50'
+      }
+    })
+    expect(pinggySpoof.status).toBe(403)
+    expect(await pinggySpoof.text()).not.toContain('246810')
+  })
+
+  it('exchanges a one-time desktop bootstrap token for a session cookie', async () => {
+    const store = memoryPinStore({ pin: '246810', pinConsent: true })
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    armFakeTunnel(bridge)
+    const bootstrapUrl = bridge.createDesktopUrl()
+    expect(bootstrapUrl).toContain('/desktop?k=')
+    expect(snapshot.desktopUrl).not.toContain('k=')
+
+    const bootstrap = await fetch(bootstrapUrl!, { redirect: 'manual' })
+    expect(bootstrap.status).toBe(303)
+    expect(bootstrap.headers.get('location')).toBe('/desktop')
+    const setCookie = bootstrap.headers.get('set-cookie') ?? ''
+    expect(setCookie).toContain('dsh_desktop=')
+    expect(setCookie).toContain('HttpOnly')
+    expect(setCookie).toContain('SameSite=Strict')
+    const cookie = setCookie.split(';', 1)[0]!
+
+    const replay = await fetch(bootstrapUrl!, { redirect: 'manual' })
+    expect(replay.status).toBe(403)
+
+    const page = await fetch(`http://127.0.0.1:${snapshot.port}/desktop`, {
+      headers: { cookie }
+    })
+    expect(page.status).toBe(200)
+
+    const status = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie }
+    })
+    expect(status.status).toBe(200)
+    expect(await status.json()).toMatchObject({ pairingPin: '246810' })
+
+    const fabricated = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie: `dsh_desktop=${'B'.repeat(43)}` }
+    })
+    expect(fabricated.status).toBe(403)
+    expect(await fabricated.text()).not.toContain('246810')
   })
 })
