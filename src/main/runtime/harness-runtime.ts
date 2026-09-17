@@ -8,6 +8,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../../shared/plugin-startup-failure'
+import { removeStaleWriterLocks } from './stale-writer-locks'
 
 export interface HarnessRuntimeOptions {
   dshEntryPath: string
@@ -387,6 +388,7 @@ export class HarnessRuntime {
   private launchClock?: number
   private readonly logLines: string[] = []
   private pluginFailures: PluginStartupFailure[] = []
+  private failureReason?: RuntimeSnapshot['failureReason']
   private logDecoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
   private readonly logRemainders: Record<'stdout' | 'stderr', string> = {
     stdout: '',
@@ -403,6 +405,7 @@ export class HarnessRuntime {
       url: this.url,
       authToken: this.launchToken,
       pluginFailures: structuredClone(this.pluginFailures),
+      failureReason: this.failureReason,
       logs: [...this.logLines]
     }
   }
@@ -446,6 +449,9 @@ export class HarnessRuntime {
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })
     this.logStream ??= createWriteStream(this.options.logPath, { flags: 'a' })
+    for (const lock of await removeStaleWriterLocks(this.options.dshHome)) {
+      this.writeLog(`[desktop] removed stale writer lock ${lock}`)
+    }
 
     const preferredPort = this.options.preferredPort ?? DEFAULT_HARNESS_PORT
     const { port, usedPreferredPort } = await reserveLoopbackPort(preferredPort)
@@ -559,7 +565,8 @@ ${cause}`
       await this.stopChild(child)
       this.setState(
         'failed',
-        `Harness did not become ready within ${Math.round(startupTimeoutMs / 1000)} seconds.`
+        `Harness did not become ready within ${Math.round(startupTimeoutMs / 1000)} seconds.`,
+        'startup-timeout'
       )
       return
     }
@@ -599,9 +606,14 @@ ${cause}`
     if (!exited && child.exitCode === null) child.kill('SIGKILL')
   }
 
-  private setState(phase: RuntimePhase, message: string): void {
+  private setState(
+    phase: RuntimePhase,
+    message: string,
+    failureReason?: RuntimeSnapshot['failureReason']
+  ): void {
     this.phase = phase
     this.message = message
+    this.failureReason = failureReason
     this.options.onChanged(this.snapshot())
   }
 
@@ -693,7 +705,7 @@ ${cause}`
   }
 }
 
-function latestHarnessAttemptLogs(logLines: readonly string[]): readonly string[] {
+export function latestHarnessAttemptLogs(logLines: readonly string[]): readonly string[] {
   for (let index = logLines.length - 1; index >= 0; index -= 1) {
     if (logLines[index]?.trimStart().startsWith('[desktop] starting ')) {
       return logLines.slice(index + 1)

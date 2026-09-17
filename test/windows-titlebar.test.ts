@@ -170,6 +170,14 @@ describe('Windows titlebar menu', () => {
     expect(main).toContain('void showAbout(mainWindow).catch(showUnexpectedError)')
   })
 
+  it('recovers the menu view from a lost renderer instead of leaving it dead', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+
+    expect(main).toContain("menuView.webContents.on('render-process-gone', (_event, details) => {")
+    expect(main).toContain("if (['clean-exit', 'killed'].includes(details.reason)) return")
+    expect(main).toContain('[desktop] windows menu view render-process-gone:')
+  })
+
   it('synchronizes the native controls with Harness light and dark themes', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
     const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')

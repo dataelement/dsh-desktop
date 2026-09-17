@@ -74,6 +74,16 @@ describe('preload wiring for plugin error handling', () => {
 
     expect(handlerBody).toContain('desktopDiagnostics?.discardPendingPluginFailure()')
   })
+
+  it('discards pending diagnostics when Harness startup failure identifies a plugin', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const loop = main.slice(main.indexOf('const detection = await detectPluginRecovery('))
+    const afterDetection = loop.slice(0, loop.indexOf('waitForPluginRecoveryAction('))
+
+    expect(afterDetection).toContain(
+      'if (detection.plugins.length > 0) desktopDiagnostics?.discardPendingPluginFailure()'
+    )
+  })
 })
 
 describe('boot failure page detection', () => {

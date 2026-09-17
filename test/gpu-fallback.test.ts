@@ -49,6 +49,19 @@ describe('gpu loss classification', () => {
     expect(isGpuLossFatal('oom')).toBe(true)
   })
 
+  it('ignores a TDR device-loss exit as Chromium recovering on its own', () => {
+    expect(isGpuLossFatal('crashed', 34)).toBe(false)
+  })
+
+  it('still treats other crashed exit codes as evidence', () => {
+    expect(isGpuLossFatal('crashed', 1)).toBe(true)
+    expect(isGpuLossFatal('crashed')).toBe(true)
+  })
+
+  it('does not exempt exit code 34 under a non-crashed reason', () => {
+    expect(isGpuLossFatal('abnormal-exit', 34)).toBe(true)
+  })
+
   it('recognizes the signed Windows renderer exceptions from the field report', () => {
     expect(
       isRendererGpuFallbackCandidate({

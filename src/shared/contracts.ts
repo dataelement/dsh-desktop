@@ -16,6 +16,8 @@ export interface RuntimeSnapshot {
   /** Per-process launch token; only `GET /?token=` exchanges it for a session cookie. */
   authToken?: string
   pluginFailures?: PluginStartupFailure[]
+  /** Desktop-owned failure classification; Harness-reported causes stay in `message`/`pluginFailures`. */
+  failureReason?: 'startup-timeout'
 }
 
 export type UpdatePhase =

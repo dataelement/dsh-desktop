@@ -5,6 +5,13 @@ import type { WebContents } from 'electron'
 import WebSocket from 'ws'
 import { parse, stringify } from 'yaml'
 import { cookiePair } from './mobile/lan-mobile-bridge'
+import {
+  extractDshEntryFailureCause,
+  extractOffendingPlugins,
+  latestHarnessAttemptLogs
+} from './runtime/harness-runtime'
+import type { RuntimeSnapshot } from '../shared/contracts'
+import { parsePluginStartupFailures, type PluginStartupFailure } from '../shared/plugin-startup-failure'
 
 export interface RepairAgentServiceOptions {
   harnessUrl: () => string | undefined
@@ -13,6 +20,8 @@ export interface RepairAgentServiceOptions {
   launchDirectory: string
   locale: () => 'en' | 'zh'
   readLogs?: () => readonly string[]
+  /** Evidence of the last failed normal launch; Safe Mode replaces the live runtime logs. */
+  crashEvidence?: () => CrashEvidence | undefined
   appVersion?: () => string
   dshHome?: string
 }
@@ -38,10 +47,26 @@ export interface PromptContentPart {
 }
 
 export interface DiagnosticFinding {
-  type: 'syntax_export_mismatch' | 'symlink_eperm' | 'overlay_yaml_corrupt' | 'startup_timeout' | 'generic'
+  type:
+    | 'syntax_export_mismatch'
+    | 'plugin_load_failure'
+    | 'symlink_eperm'
+    | 'overlay_yaml_corrupt'
+    | 'startup_timeout'
+    | 'generic'
   summary: string
   culprit?: string
   suggestedAction: string
+}
+
+/** What the failed normal launch left behind, captured before Safe Mode starts its own Harness. */
+export interface CrashEvidence {
+  logs: readonly string[]
+  message?: string
+  failureReason?: RuntimeSnapshot['failureReason']
+  pluginFailures?: readonly PluginStartupFailure[]
+  /** Removable plugins plugin recovery already resolved against the profile. */
+  plugins?: readonly string[]
 }
 
 /**
@@ -103,30 +128,62 @@ export function extractRelevantCrashLogs(logs: readonly string[] = []): string[]
 }
 
 /**
- * Fast offline diagnostic parser based on known 0.9.0 error patterns.
+ * Offline diagnosis for the Repair Agent.
+ *
+ * Plugin attribution is ordered by evidence strength and shares its sources
+ * with plugin recovery, so the agent never names a different culprit than the
+ * recovery page: the loader's own provenance report first, then the plugins
+ * recovery already resolved against the profile, and only then the loader
+ * error text (Harness builds that predate the provenance report). Desktop-owned
+ * failures such as the startup watchdog come from the runtime snapshot.
  */
 export function analyzeCrashContext(
   logs: readonly string[] = [],
-  locale: 'en' | 'zh' = 'zh'
+  locale: 'en' | 'zh' = 'zh',
+  evidence: Omit<CrashEvidence, 'logs'> = {}
 ): DiagnosticFinding | undefined {
   const isZh = locale === 'zh'
   const logText = logs.join('\n')
 
-  // 1. ESM export mismatch (Top crash cause)
-  const exportMatch = logText.match(/does not provide an export named ['"]([^'"]+)['"]/)
-  const pluginMatch = logText.match(/failed to import loader entry ([^\s(]+)/) || logText.match(/loader entry ([^\s(]+)/)
-  if (exportMatch || (pluginMatch && logText.includes('SyntaxError'))) {
-    const missingExport = exportMatch ? exportMatch[1] : 'unknown export'
-    const culprit = pluginMatch ? pluginMatch[1] : 'third-party plugin'
+  // 1. Plugin tree failed to load (the largest startup-failure class)
+  const reported = evidence.pluginFailures?.length ? evidence.pluginFailures : pluginFailuresFromLogs(logs)
+  const culprits = evidence.plugins?.length
+    ? [...evidence.plugins]
+    : reported.length
+      // Explicit provenance is authoritative: an unknown or protected owner
+      // must not be replaced by a log-derived suspect.
+      ? [...new Set(reported.flatMap((failure) => failure.owner ? [failure.owner.packageName] : []))]
+      : extractOffendingPlugins(logs)
+  const loaderMessage = reported[0]?.message ?? extractDshEntryFailureCause(logs)
+  const missingExport = (reported.map((failure) => failure.message).join('\n') || logText)
+    .match(/does not provide an export named ['"]([^'"]+)['"]/)?.[1]
+  if (reported.length > 0 || culprits.length > 0 || missingExport) {
+    const culprit = culprits.join(', ') || undefined
+    const named = culprit ? (isZh ? `插件「${culprit}」` : `Plugin "${culprit}"`) : (isZh ? '某个插件' : 'A plugin')
+    const action = culprit
+      ? isZh
+        ? `建议在安全模式中停用、升级或卸载${named}，然后重启桌面端。`
+        : `Disable, upgrade, or uninstall ${culprit} in Safe Mode, then restart.`
+      : isZh
+        ? '加载器未能归属到可卸载的第三方插件，建议在安全模式中逐个停用近期新增或更新的插件后重启。'
+        : 'The loader could not attribute this to a removable third-party plugin. Disable recently added or updated plugins one at a time in Safe Mode, then restart.'
+    if (missingExport) {
+      return {
+        type: 'syntax_export_mismatch',
+        culprit,
+        summary: isZh
+          ? `检测到${named}与当前桌面端内核接口不兼容：它引用的导出「${missingExport}」已不存在，导致插件树加载失败。`
+          : `${named} is incompatible with the current runtime: it imports "${missingExport}", which no longer exists, so the plugin tree failed to load.`,
+        suggestedAction: action
+      }
+    }
     return {
-      type: 'syntax_export_mismatch',
+      type: 'plugin_load_failure',
       culprit,
       summary: isZh
-        ? `检测到插件「${culprit}」存在底层接口断裂，因缺少导出「${missingExport}」引发 SyntaxError 闪退。`
-        : `Plugin "${culprit}" crashed due to missing export "${missingExport}".`,
-      suggestedAction: isZh
-        ? `建议在安全模式中停用或卸载插件「${culprit}」，然后重启桌面端。`
-        : `Disable or uninstall plugin "${culprit}" in Safe Mode, then restart.`
+        ? `检测到${named}加载失败，导致插件树无法启动${loaderMessage ? `：${truncate(loaderMessage)}` : '。'}`
+        : `${named} failed to load, so the plugin tree could not start${loaderMessage ? `: ${truncate(loaderMessage)}` : '.'}`,
+      suggestedAction: action
     }
   }
 
@@ -156,20 +213,57 @@ export function analyzeCrashContext(
     }
   }
 
-  // 4. Watchdog Timeout
-  if (logText.includes('waiting for Harness') && logText.includes('SIGTERM')) {
+  // 4. Watchdog Timeout. Without a runtime snapshot, a SIGTERM after progress
+  // lines only means a timeout when the entry did not already reject: a fast
+  // entry failure is also stopped with SIGTERM once "waiting for Harness" ran.
+  const timedOut = evidence.failureReason === 'startup-timeout' || (
+    evidence.failureReason === undefined && evidence.message === undefined &&
+    logText.includes('waiting for Harness') && logText.includes('SIGTERM') &&
+    !extractDshEntryFailureCause(logs)
+  )
+  if (timedOut) {
     return {
       type: 'startup_timeout',
       summary: isZh
-        ? '检测到启动过程严重超时 (>60s)，被系统看门狗终止。通常由于插件在启动时执行网络大文件下载或深度全盘扫描导致。'
-        : 'Startup timed out (>60s) and was terminated by the watchdog. Often caused by heavy plugins downloading files or scanning disk.',
+        ? '检测到启动过程严重超时，被系统看门狗终止。通常由于插件在启动时执行网络大文件下载或深度全盘扫描导致。'
+        : 'Startup timed out and was terminated by the watchdog. Often caused by heavy plugins downloading files or scanning disk.',
       suggestedAction: isZh
         ? '在安全模式中检查近期新增或更新的大型插件，建议先行禁用以恢复正常启动。'
         : 'Check recently added or updated plugins in Safe Mode and disable them.'
     }
   }
 
+  // 5. Known failure without a matching rule: hand the agent the real message.
+  // Heuristic stderr scraping is left out: without a captured failure these
+  // logs may belong to a healthy Safe Mode Harness.
+  const cause = evidence.message ?? extractDshEntryFailureCause(logs)
+  if (cause) {
+    return {
+      type: 'generic',
+      summary: isZh
+        ? `未匹配到已知故障模式，启动失败原因：${truncate(cause)}`
+        : `No known failure pattern matched. Startup failure: ${truncate(cause)}`,
+      suggestedAction: isZh
+        ? '请结合下方日志分析根因；如涉及插件，优先在安全模式中停用近期变更的插件。'
+        : 'Analyze the logs below; if a plugin is involved, disable recently changed plugins in Safe Mode first.'
+    }
+  }
+
   return undefined
+}
+
+function pluginFailuresFromLogs(logs: readonly string[]): PluginStartupFailure[] {
+  const failures: PluginStartupFailure[] = []
+  for (const line of latestHarnessAttemptLogs(logs)) {
+    if (!line.startsWith('[stderr] ')) continue
+    failures.push(...(parsePluginStartupFailures(line.slice(9)) ?? []))
+  }
+  return failures
+}
+
+function truncate(text: string, limit = 300): string {
+  const firstLine = text.trim().split(/\r?\n/)[0] ?? ''
+  return firstLine.length > limit ? `${firstLine.slice(0, limit)}…` : firstLine
 }
 
 /**
@@ -211,9 +305,10 @@ ${logsText}
 \`\`\`
 
 ### 你的诊断知识库（覆盖 95% 以上已知故障）：
-1. 缺少导出语法错误 (SyntaxError: does not provide an export named):
-   - 根因：新版本移除了底层已废弃的导出项，存量插件直接引用导致语法解析崩退。
-   - 解决方案：明确指出引发冲突的插件名称，指导用户在安全模式列表中点击禁用或升级。
+0. 若上方给出了【本地离线初步诊断】且点名了插件，该插件名来自加载器的归属信息或恢复流程的解析结果，以它为准，不要根据堆栈另行猜测。
+1. 插件加载失败 (plugin tree failed to load / failed to apply|import loader entry <入口> (<插件包名>))：
+   - 根因：括号内的包名才是插件；外层的 include (cordis:include) 只是包装入口，不是元凶。若同时出现 does not provide an export named，说明插件引用了新版本已移除的导出。
+   - 解决方案：明确指出插件包名，指导用户在安全模式列表中禁用、升级或卸载该插件。
 2. Windows 跨卷软链接权限拒绝 (EPERM: operation not permitted, symlink):
    - 根因：安装盘与数据盘不一致，且 Windows 未开启开发者模式。
    - 解决方案：指导用户开启 Windows“开发人员模式”，或重新安装在默认系统盘。
@@ -245,6 +340,8 @@ ${logsText}
 \`\`\`
 
 ### Guidelines:
+- If the Local Diagnostic Finding names a plugin, it comes from loader provenance or plugin recovery; treat it as authoritative rather than re-deriving it from stack traces.
+- In "failed to apply/import loader entry <entry> (<package>)", the parenthesized package is the plugin; the outer include (cordis:include) wrapper is never the culprit.
 - State the root-cause plugin or configuration directly.
 - Provide immediate, executable actions that can be done right in Safe Mode.
 - Keep the response clear, calm, and structured.`
@@ -363,9 +460,10 @@ export class RepairAgentService {
   }> {
     if (sender) this.senderWebContents = sender
     const isZh = this.options.locale() === 'zh'
-    const rawLogs = this.options.readLogs?.() ?? []
+    const evidence = this.options.crashEvidence?.()
+    const rawLogs = evidence?.logs ?? this.options.readLogs?.() ?? []
     const relevantLogs = extractRelevantCrashLogs(rawLogs)
-    const finding = analyzeCrashContext(relevantLogs, this.options.locale())
+    const finding = analyzeCrashContext(rawLogs, this.options.locale(), evidence)
     const systemRepairPrompt = buildSystemRepairPrompt({
       locale: this.options.locale(),
       platform: process.platform,

@@ -1,6 +1,6 @@
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
-import { RepairAgentService } from './repair-agent'
+import { RepairAgentService, type CrashEvidence } from './repair-agent'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -197,6 +197,8 @@ let desktopStorageManager: DesktopStorageManager | undefined
 let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
+/** The last failed normal launch, kept for the Repair Agent after Safe Mode replaces the runtime logs. */
+let lastCrashEvidence: CrashEvidence | undefined
 let launchDirectory: string
 let quitting = false
 let failureRecoveryVisible = false
@@ -505,6 +507,23 @@ function attachWindowsMenuView(window: BrowserWindow): void {
     if (!menuView.webContents.isDestroyed()) {
       menuView.webContents.send('desktop-titlebar:theme-changed', windowsMenuDark)
     }
+  })
+  // This view is not the main window webContents, so it sits outside
+  // installMainWindowRendererRecovery's reload/GPU-fallback path — without
+  // its own recovery a lost renderer here just leaves a dead, invisible menu
+  // until the user restarts the whole app.
+  menuView.webContents.on('render-process-gone', (_event, details) => {
+    if (['clean-exit', 'killed'].includes(details.reason)) return
+    runtime?.note(
+      `[desktop] windows menu view render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`
+    )
+    if (menuView.webContents.isDestroyed()) return
+    void loadDesktopResource(menuView.webContents, desktopResourcePath('windows-menu.html'), {
+      query: {
+        locale: harnessLocale(),
+        theme: windowsMenuDark ? 'dark' : 'light'
+      }
+    }).catch(showUnexpectedError)
   })
   window.contentView.addChildView(menuView)
   updateWindowsMenuViewBounds(window)
@@ -826,7 +845,16 @@ function installGpuFallbackWatch(): void {
     if (gpuFallbackRelaunching || quitting) return
     // Chromium tears the GPU process down on shutdown and Electron reports it
     // here like any other loss; degrading on that would degrade everyone.
-    if (!isGpuLossFatal(details.reason)) return
+    // A device-loss exit (TDR) is Chromium recovering on its own, not evidence
+    // of a broken sandbox, so it is logged but excluded from the same check.
+    if (!isGpuLossFatal(details.reason, details.exitCode)) {
+      if (details.reason === 'crashed' && details.exitCode === 34) {
+        runtime?.note(
+          `[desktop] GPU process device-loss self-recovery: reason=${details.reason} exitCode=${details.exitCode}`
+        )
+      }
+      return
+    }
     respondToGpuFallbackSignal(
       `GPU process gone: reason=${details.reason} exitCode=${details.exitCode}`
     )
@@ -1938,6 +1966,17 @@ async function showPluginRecovery(options?: {
       })
       detection.plugins = evidence.targets(detection.plugins, removedPlugins)
       appendPluginRecoveryDetectionLog(detection.plugins)
+      if (!safeModeVisible) {
+        lastCrashEvidence = {
+          logs: detection.logs,
+          message: message || snapshot.message,
+          failureReason: followRendererLogs ? undefined : snapshot.failureReason,
+          pluginFailures: followRendererLogs ? undefined : snapshot.pluginFailures,
+          plugins: detection.plugins
+        }
+      }
+      // A failure attributed to a user-installed plugin is handed to the user, not reported.
+      if (detection.plugins.length > 0) desktopDiagnostics?.discardPendingPluginFailure()
       waitForRendererEvidence = false
       if (applyPendingFrontendEvidence()) continue
 
@@ -2947,6 +2986,15 @@ async function bootstrap(): Promise<void> {
         : spawn(executablePath, args, options),
     onChanged: (snapshot) => {
       desktopDiagnostics?.runtimeChanged(snapshot, () => runtime.flushLog(), runtime.launchAttemptId)
+      if (!safeModeVisible && snapshot.phase === 'ready') lastCrashEvidence = undefined
+      if (!safeModeVisible && snapshot.phase === 'failed') {
+        lastCrashEvidence = {
+          logs: snapshot.logs,
+          message: snapshot.message,
+          failureReason: snapshot.failureReason,
+          pluginFailures: snapshot.pluginFailures
+        }
+      }
       if (snapshot.phase === 'ready' && snapshot.url) {
         void openHarness(snapshot.url).catch(showUnexpectedError)
       } else if (snapshot.phase === 'failed') {
@@ -2983,6 +3031,7 @@ async function bootstrap(): Promise<void> {
     launchDirectory,
     locale: harnessLocale,
     readLogs: () => runtime.snapshot().logs,
+    crashEvidence: () => lastCrashEvidence,
     appVersion: () => app.getVersion(),
     dshHome
   })
