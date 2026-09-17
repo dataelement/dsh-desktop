@@ -506,6 +506,23 @@ function attachWindowsMenuView(window: BrowserWindow): void {
       menuView.webContents.send('desktop-titlebar:theme-changed', windowsMenuDark)
     }
   })
+  // This view is not the main window webContents, so it sits outside
+  // installMainWindowRendererRecovery's reload/GPU-fallback path — without
+  // its own recovery a lost renderer here just leaves a dead, invisible menu
+  // until the user restarts the whole app.
+  menuView.webContents.on('render-process-gone', (_event, details) => {
+    if (['clean-exit', 'killed'].includes(details.reason)) return
+    runtime?.note(
+      `[desktop] windows menu view render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`
+    )
+    if (menuView.webContents.isDestroyed()) return
+    void loadDesktopResource(menuView.webContents, desktopResourcePath('windows-menu.html'), {
+      query: {
+        locale: harnessLocale(),
+        theme: windowsMenuDark ? 'dark' : 'light'
+      }
+    }).catch(showUnexpectedError)
+  })
   window.contentView.addChildView(menuView)
   updateWindowsMenuViewBounds(window)
 
@@ -826,7 +843,16 @@ function installGpuFallbackWatch(): void {
     if (gpuFallbackRelaunching || quitting) return
     // Chromium tears the GPU process down on shutdown and Electron reports it
     // here like any other loss; degrading on that would degrade everyone.
-    if (!isGpuLossFatal(details.reason)) return
+    // A device-loss exit (TDR) is Chromium recovering on its own, not evidence
+    // of a broken sandbox, so it is logged but excluded from the same check.
+    if (!isGpuLossFatal(details.reason, details.exitCode)) {
+      if (details.reason === 'crashed' && details.exitCode === 34) {
+        runtime?.note(
+          `[desktop] GPU process device-loss self-recovery: reason=${details.reason} exitCode=${details.exitCode}`
+        )
+      }
+      return
+    }
     respondToGpuFallbackSignal(
       `GPU process gone: reason=${details.reason} exitCode=${details.exitCode}`
     )
