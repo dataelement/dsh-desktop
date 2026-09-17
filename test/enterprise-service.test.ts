@@ -1,0 +1,239 @@
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { createEnterpriseFetch, type EnterpriseFetch } from '../src/main/enterprise/platform-fetch'
+import { EnterpriseService } from '../src/main/enterprise/enterprise-service'
+import {
+  ENTERPRISE_VAULT_FILENAME,
+  type SafeStorageCryptoAdapter,
+  SecureEnterpriseCredentialVault
+} from '../src/main/enterprise/secure-credential-vault'
+import { createMockEnterpriseServer } from '../scripts/mock-bisheng-enterprise.mjs'
+
+const cleanups: Array<() => Promise<void>> = []
+
+afterEach(async () => {
+  while (cleanups.length > 0) await cleanups.pop()?.()
+})
+
+function memorySafeStorage(): SafeStorageCryptoAdapter {
+  return {
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => 'keychain',
+    encryptString: (plainText) => Buffer.from(plainText, 'utf8'),
+    decryptString: (encrypted) => Buffer.from(encrypted as Buffer).toString('utf8')
+  }
+}
+
+async function createService(fetchImpl: EnterpriseFetch = createEnterpriseFetch(globalThis.fetch)) {
+  const directory = await mkdtemp(join(tmpdir(), 'enterprise-service-'))
+  const vault = new SecureEnterpriseCredentialVault(join(directory, ENTERPRISE_VAULT_FILENAME), memorySafeStorage())
+  const notes: string[] = []
+  const service = new EnterpriseService({
+    vault,
+    fetchImpl,
+    allowInsecureLoopback: true,
+    note: (entry) => notes.push(entry.event)
+  })
+  await service.restore()
+  cleanups.push(async () => service.stop())
+  return { service, vault, notes }
+}
+
+async function completeBrowserLogin(origin: string, authorizationUrl: string) {
+  const authId = new URL(authorizationUrl).searchParams.get('auth_id')
+  const browserResponse = await fetch(`${origin}/__mock/authorize`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      auth_id: authId ?? '',
+      email: 'alice@demo.bisheng.local',
+      password: 'WorkBuddy123!',
+      decision: 'allow'
+    })
+  })
+  const html = await browserResponse.text()
+  const callbackLiteral = /location\.replace\((".*?")\)/u.exec(html)?.[1]
+  expect(callbackLiteral).toBeTruthy()
+  const callback = new URL(JSON.parse(callbackLiteral!))
+  expect(callback.searchParams.get('identity_ticket')).toMatch(/^ticket_/u)
+  expect(await fetch(callback).then((response) => response.status)).toBe(200)
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error('Timed out waiting for enterprise service.')
+}
+
+describe('enterprise service login loop', () => {
+  it('completes PKCE login, refreshes once, and logs out without exposing tokens', async () => {
+    const platform = createMockEnterpriseServer({ port: 0 })
+    const origin = await platform.listen()
+    cleanups.push(async () => platform.close())
+    const { service, notes } = await createService()
+
+    const started = await service.startLogin(origin)
+    expect(started.authorizationUrl).toContain(origin)
+    expect(service.snapshot().phase).toBe('authorizing')
+    await completeBrowserLogin(origin, started.authorizationUrl)
+    await waitFor(() => {
+      const snapshot = service.snapshot()
+      return snapshot.phase === 'connected'
+        && snapshot.modelsAvailable === true
+        && typeof snapshot.modelUsage?.['bisheng:42']?.used === 'number'
+    })
+    const connected = service.snapshot()
+    expect(connected.connected).toBe(true)
+    expect(connected.user?.username).toBe('alice')
+    expect(connected.modelsAvailable).toBe(true)
+    expect(connected.modelUsage?.['bisheng:42']?.used).toEqual(expect.any(Number))
+    expect(connected.modelUsage?.['bisheng:42']?.limit).toBeGreaterThan(0)
+    expect(JSON.stringify(connected)).not.toMatch(/access_token|refresh_token|identity_ticket/u)
+    expect(notes).toContain('login_committed')
+
+    const first = service.refresh()
+    const second = service.refresh()
+    const [a, b] = await Promise.all([first, second])
+    expect(a.revision).toBe(b.revision)
+    expect(a.connected).toBe(true)
+    expect(notes).toContain('refresh_committed')
+
+    const loggedOut = await service.logout()
+    expect(loggedOut.connected).toBe(false)
+    expect(loggedOut.phase).toBe('idle')
+    expect(notes).toContain('logout_committed')
+    expect(notes.join(' ')).not.toMatch(/access_token|refresh_token|identity_ticket|code_verifier|ticket_/u)
+  })
+
+  it('keeps the session when refresh hits a transient network error', async () => {
+    const platform = createMockEnterpriseServer({ port: 0 })
+    const origin = await platform.listen()
+    cleanups.push(async () => platform.close())
+    let failRefresh = false
+    const fetchImpl: EnterpriseFetch = async (input, init) => {
+      if (failRefresh && String(input).includes('/api/dsh/token') && String(init?.body).includes('refresh_token')) {
+        throw new TypeError('fetch failed')
+      }
+      return globalThis.fetch(input, init)
+    }
+    const { service } = await createService(createEnterpriseFetch(fetchImpl))
+    const started = await service.startLogin(origin)
+    await completeBrowserLogin(origin, started.authorizationUrl)
+    await waitFor(() => {
+      const snapshot = service.snapshot()
+      return snapshot.phase === 'connected' && snapshot.modelsAvailable === true
+    })
+    failRefresh = true
+    const degraded = await service.refresh()
+    expect(degraded.phase).toBe('degraded')
+    expect(degraded.connected).toBe(true)
+    expect(degraded.base).toBe(origin)
+  })
+
+  it('clears the session for an invalid refresh token', async () => {
+    const platform = createMockEnterpriseServer({ port: 0 })
+    const origin = await platform.listen()
+    cleanups.push(async () => platform.close())
+    let rejectRefresh = false
+    const fetchImpl: EnterpriseFetch = async (input, init) => {
+      if (rejectRefresh && String(input).includes('/api/dsh/token') && String(init?.body).includes('refresh_token')) {
+        return new Response(JSON.stringify({
+          error: { message: 'Refresh token is invalid.', type: 'authentication_error', code: 'invalid_refresh_token' }
+        }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      return globalThis.fetch(input, init)
+    }
+    const { service } = await createService(createEnterpriseFetch(fetchImpl))
+    const started = await service.startLogin(origin)
+    await completeBrowserLogin(origin, started.authorizationUrl)
+    await waitFor(() => {
+      const snapshot = service.snapshot()
+      return snapshot.phase === 'connected' && snapshot.modelsAvailable === true
+    })
+    rejectRefresh = true
+    const cleared = await service.refresh()
+    expect(cleared.connected).toBe(false)
+    expect(cleared.phase).toBe('idle')
+    expect(cleared.models).toEqual([])
+  })
+
+  it('still logs out locally when remote revoke fails', async () => {
+    const platform = createMockEnterpriseServer({ port: 0 })
+    const origin = await platform.listen()
+    cleanups.push(async () => platform.close())
+    const fetchImpl: EnterpriseFetch = async (input, init) => {
+      if (String(input).includes('/api/dsh/logout')) {
+        return new Response(JSON.stringify({
+          error: { message: 'upstream unavailable', code: 'server_error' }
+        }), { status: 503, headers: { 'content-type': 'application/json' } })
+      }
+      return globalThis.fetch(input, init)
+    }
+    const { service, notes } = await createService(createEnterpriseFetch(fetchImpl))
+    const started = await service.startLogin(origin)
+    await completeBrowserLogin(origin, started.authorizationUrl)
+    await waitFor(() => {
+      const snapshot = service.snapshot()
+      return snapshot.phase === 'connected' && snapshot.modelsAvailable === true
+    })
+    const loggedOut = await service.logout()
+    expect(loggedOut.phase).toBe('idle')
+    expect(loggedOut.connected).toBe(false)
+    expect(notes).toContain('logout_remote_failed')
+    expect(notes).toContain('logout_committed')
+  })
+
+  it('inspects intranet HTTP but refuses to start login without confirmation', async () => {
+    const { service } = await createService()
+    await expect(service.inspectBase('http://192.168.106.119:30006')).resolves.toEqual({
+      base: 'http://192.168.106.119:30006',
+      insecurePrivateHttp: true
+    })
+    await expect(service.startLogin('http://192.168.106.119:30006')).rejects.toMatchObject({
+      message: 'HTTP intranet addresses require explicit confirmation.',
+      status: 400
+    })
+  })
+
+  it('completes login from a pasted one-time code without the loopback callback', async () => {
+    const platform = createMockEnterpriseServer({ port: 0 })
+    const origin = await platform.listen()
+    cleanups.push(async () => platform.close())
+    const { service } = await createService()
+
+    const started = await service.startLogin(origin)
+    expect(service.snapshot().loginExpiresAt).toBeTruthy()
+    await expect(service.submitManualTicket('')).rejects.toMatchObject({ status: 400 })
+
+    const authId = new URL(started.authorizationUrl).searchParams.get('auth_id')
+    const browserResponse = await fetch(`${origin}/__mock/authorize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        auth_id: authId ?? '',
+        email: 'alice@demo.bisheng.local',
+        password: 'WorkBuddy123!',
+        decision: 'allow'
+      })
+    })
+    const html = await browserResponse.text()
+    const callbackLiteral = /location\.replace\((".*?")\)/u.exec(html)?.[1]
+    expect(callbackLiteral).toBeTruthy()
+    const ticket = new URL(JSON.parse(callbackLiteral!)).searchParams.get('identity_ticket')
+    expect(ticket).toMatch(/^ticket_/u)
+
+    const connected = await service.submitManualTicket(ticket!)
+    expect(connected.connected).toBe(true)
+    expect(connected.user?.username).toBe('alice')
+    expect(connected.loginExpiresAt).toBeUndefined()
+    expect(JSON.stringify(connected)).not.toMatch(/access_token|refresh_token|identity_ticket|ticket_/u)
+  })
+})
