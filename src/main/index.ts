@@ -1,6 +1,6 @@
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
-import { RepairAgentService } from './repair-agent'
+import { RepairAgentService, type CrashEvidence } from './repair-agent'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -197,6 +197,8 @@ let desktopStorageManager: DesktopStorageManager | undefined
 let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
+/** The last failed normal launch, kept for the Repair Agent after Safe Mode replaces the runtime logs. */
+let lastCrashEvidence: CrashEvidence | undefined
 let launchDirectory: string
 let quitting = false
 let failureRecoveryVisible = false
@@ -1964,6 +1966,17 @@ async function showPluginRecovery(options?: {
       })
       detection.plugins = evidence.targets(detection.plugins, removedPlugins)
       appendPluginRecoveryDetectionLog(detection.plugins)
+      if (!safeModeVisible) {
+        lastCrashEvidence = {
+          logs: detection.logs,
+          message: message || snapshot.message,
+          failureReason: followRendererLogs ? undefined : snapshot.failureReason,
+          pluginFailures: followRendererLogs ? undefined : snapshot.pluginFailures,
+          plugins: detection.plugins
+        }
+      }
+      // A failure attributed to a user-installed plugin is handed to the user, not reported.
+      if (detection.plugins.length > 0) desktopDiagnostics?.discardPendingPluginFailure()
       waitForRendererEvidence = false
       if (applyPendingFrontendEvidence()) continue
 
@@ -2942,6 +2955,15 @@ async function bootstrap(): Promise<void> {
         : spawn(executablePath, args, options),
     onChanged: (snapshot) => {
       desktopDiagnostics?.runtimeChanged(snapshot, () => runtime.flushLog(), runtime.launchAttemptId)
+      if (!safeModeVisible && snapshot.phase === 'ready') lastCrashEvidence = undefined
+      if (!safeModeVisible && snapshot.phase === 'failed') {
+        lastCrashEvidence = {
+          logs: snapshot.logs,
+          message: snapshot.message,
+          failureReason: snapshot.failureReason,
+          pluginFailures: snapshot.pluginFailures
+        }
+      }
       if (snapshot.phase === 'ready' && snapshot.url) {
         void openHarness(snapshot.url).catch(showUnexpectedError)
       } else if (snapshot.phase === 'failed') {
@@ -2978,6 +3000,7 @@ async function bootstrap(): Promise<void> {
     launchDirectory,
     locale: harnessLocale,
     readLogs: () => runtime.snapshot().logs,
+    crashEvidence: () => lastCrashEvidence,
     appVersion: () => app.getVersion(),
     dshHome
   })
