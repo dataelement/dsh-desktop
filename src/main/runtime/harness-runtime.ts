@@ -25,6 +25,8 @@ export interface HarnessRuntimeOptions {
   ): HarnessChildProcess
   preferredPort?: number
   startupTimeoutMs?: number
+  /** Mirror log lines to the console (development builds only). */
+  echoLogs?: boolean
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
@@ -686,7 +688,7 @@ ${cause}`
     if (this.logLines.length > 200) this.logLines.splice(0, this.logLines.length - 200)
     const stamped = this.stampLog(line)
     this.logStream?.write(`${stamped}\n`)
-    console.log(stamped)
+    if (this.options.echoLogs) console.log(stamped)
   }
 
   /**

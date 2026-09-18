@@ -2982,6 +2982,8 @@ async function bootstrap(): Promise<void> {
   })
   createWindow()
   runtime = new HarnessRuntime({
+    // A packaged app's stdout may be a closed pipe; only mirror logs in development.
+    echoLogs: !app.isPackaged,
     dshEntryPath: dshEntryPath(),
     nodeExecutablePath: bundledNodePath(),
     nodeEntryPath: harnessNodeEntryPath(),
