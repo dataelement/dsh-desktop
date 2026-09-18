@@ -208,6 +208,8 @@ let webImportActionResolver: ((action: WebImportAction) => void) | undefined
 let mainWindowNavigationVersion = 0
 let rendererPluginFailureLogs: string[] = []
 let pluginRecoveryRemovedPlugins: string[] = []
+/** Plugins a deferred migration has not moved yet; their legacy copies may be manifest-only. */
+let migrationPendingPlugins = new Set<string>()
 let pluginRecoveryResetTimer: ReturnType<typeof setTimeout> | undefined
 let pendingFrontendPluginRecovery = false
 let pendingFrontendPluginRecoveryMessage: string | undefined
@@ -1448,6 +1450,11 @@ function launchHarness(): Promise<void> {
       }),
       reportProfileConsistency: () => reportProfileConsistency(dshHome)
     })
+    migrationPendingPlugins = new Set(
+      maintenance.outcome === 'normal-profile' && maintenance.migration.outcome === 'deferred-failure'
+        ? maintenance.migration.pendingPlugins ?? []
+        : []
+    )
     if (maintenance.outcome === 'safe-recovery') {
       await enterMigrationSafeRecovery(
         dshHome,
@@ -1965,6 +1972,13 @@ async function showPluginRecovery(options?: {
         timeoutMs: waitForRendererEvidence ? PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS : 0
       })
       detection.plugins = evidence.targets(detection.plugins, removedPlugins)
+      // A plugin the deferred migration has not installed yet is not broken; removing
+      // it would delete a working plugin because of an install-time failure.
+      const pendingMigration = detection.plugins.filter((plugin) => migrationPendingPlugins.has(plugin))
+      if (pendingMigration.length > 0) {
+        runtime.note(`[desktop] plugin recovery: not blaming plugins still pending migration: ${pendingMigration.join(', ')}`)
+        detection.plugins = detection.plugins.filter((plugin) => !migrationPendingPlugins.has(plugin))
+      }
       appendPluginRecoveryDetectionLog(detection.plugins)
       if (!safeModeVisible) {
         lastCrashEvidence = {
