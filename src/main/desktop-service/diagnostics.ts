@@ -23,7 +23,8 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   let suppressPluginFailure = false
   const capture = (kind: FailureKind, message: string, eventId?: string) => {
     safe(() => service.capture(kind, message, eventId))
-    if (canSend && eventId !== pendingPluginFailureEventId) flush()
+    // A plugin-attributed startup failure waits: recovery may still discard it.
+    if (canSend && (eventId === undefined || eventId !== pendingPluginFailureEventId)) flush()
   }
   safe(() => service.beginSession())
   const fatal = (error: Error) => safe(() => service.captureFatal(error))

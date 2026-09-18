@@ -235,6 +235,17 @@ describe('diagnostic event integration', () => {
     expect(service.pending()).toHaveLength(0)
     expect(request).not.toHaveBeenCalled()
   })
+  it('sends a crash without an event id right away while sending is active', async () => {
+    const { service, request } = fixture()
+    request.mockResolvedValue(new Response(JSON.stringify({ accepted: true })))
+    const app = new EventEmitter()
+    const diagnostics = attachDiagnostics(app, service); disposers.push(() => diagnostics.dispose())
+    diagnostics.startSending()
+    // Let the empty drain started by startSending settle first.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    app.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 1 })
+    await vi.waitFor(() => expect(request).toHaveBeenCalled())
+  })
   it('suppresses plugin failure report when discardPendingPluginFailure is called before log flush completes', async () => {
     const { service, request } = fixture()
     const app = new EventEmitter()
