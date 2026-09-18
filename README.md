@@ -123,6 +123,8 @@ Before submitting a change, run `npm test`, `npm run typecheck`, and `npm run bu
 
 [dsh-market](https://github.com/dsh-market/dsh-market) is the community plugin market for DeepSeek Harness. Browse and search plugins, preview screenshots, install or update packages, enable or disable plugins, and switch themes from the Harness interface.
 
+[dsh-native-macos](https://github.com/DanielW203/dsh-native-macos) is an unofficial native SwiftUI macOS client for DeepSeek Harness: it keeps several runtime releases installed side by side, runs an 8-item self-test against the runtime that just started after each upgrade and rolls back once if a blocking check fails, and includes safe-mode recovery plus a built-in WeChat/phone remote channel.
+
 ## License
 
 DSH Desktop is open source under the [MIT License](LICENSE).
