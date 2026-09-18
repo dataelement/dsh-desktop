@@ -28,3 +28,6 @@ __pycache__/
 docs/plugin-management.zh.md
 docs/default-capabilities.zh.md
 docs/mobile-connection-latency.zh.md
+
+# Local pnpm content store
+/.pnpm-store/
