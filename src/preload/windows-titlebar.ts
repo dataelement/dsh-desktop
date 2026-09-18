@@ -126,7 +126,12 @@ function installLayout(document: Document): void {
     }
     #${DRAG_REGION_ID} {
       position: fixed;
-      z-index: 10;
+      /* An app-region marker, not a target: keep it behind the app content, or
+         it wins the hit test for the very points its own "no-drag" opt-outs
+         exempt and the clicks never reach the controls underneath. Window
+         dragging is unaffected -- that comes from the app-region rectangle,
+         not from hit testing. */
+      z-index: -1;
       top: 0;
       left: 0;
       right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
@@ -144,7 +149,21 @@ function installDragRegion(document: Document): void {
   const dragRegion = document.createElement('div')
   dragRegion.id = DRAG_REGION_ID
   dragRegion.setAttribute('aria-hidden', 'true')
-  document.body.appendChild(dragRegion)
+  // Mount the strip AHEAD of the app root, never appended after it.
+  //
+  // Electron resolves overlapping app-region rectangles in tree order: every
+  // `drag` rectangle is added and every `no-drag` rectangle is subtracted as
+  // the tree is walked. A strip appended after the app root is therefore
+  // applied after every `no-drag` opt-out that came before it -- including this
+  // shell's own rule for `button / a / input / [role="button"] / [role="tab"] /
+  // [role="menuitem"] / [data-dsh-no-drag]` -- and swallows them. A point
+  // inside the strip then resolves as a caption point, the renderer never sees
+  // a mouse event, and a control that lives there (the conversation header's
+  // action row: the agent-preset chip plus every plugin entry registered next
+  // to it) looks right and never receives a click. Ahead of the app root the
+  // opt-outs that follow do subtract, which is what the `no-drag` rule above
+  // exists for.
+  document.body.insertBefore(dragRegion, document.body.firstChild)
 
   // When any modal or dialog is open, hide the drag region completely
   // so all buttons (especially near the top 36px) are 100% clickable.

@@ -180,4 +180,25 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain("attributeFilter: ['data-ds-dark-theme', 'class', 'style']")
     expect(preload).toContain("ipcRenderer.invoke('desktop-titlebar:set-theme', isDark)")
   })
+
+  it('mounts the drag strip ahead of the app root and behind the content it covers', async () => {
+    const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
+    const ruleStart = preload.indexOf('#${DRAG_REGION_ID} {')
+    const rule = preload.slice(ruleStart, preload.indexOf('\n    }', ruleStart))
+
+    // Electron resolves app-region rectangles in tree order, so the drag
+    // rectangle has to be mounted before the `no-drag` opt-outs it must yield
+    // to: appended after the app root it wins over every one of them and the
+    // controls drawn inside the strip never receive a click.
+    expect(preload).toContain('document.body.insertBefore(dragRegion, document.body.firstChild)')
+    expect(preload).not.toContain('document.body.appendChild(dragRegion)')
+
+    // The marker also stays out of the hit-test path it covers, so an exempted
+    // point reaches the control underneath, while dragging keeps coming from
+    // the app-region rectangle itself.
+    expect(ruleStart).toBeGreaterThan(-1)
+    expect(rule).toContain('position: fixed;')
+    expect(rule).toContain('z-index: -1;')
+    expect(rule).toContain('-webkit-app-region: drag;')
+  })
 })
