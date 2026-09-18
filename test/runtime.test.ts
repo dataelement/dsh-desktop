@@ -605,6 +605,28 @@ describe('navigation trust boundary', () => {
       canGrantWindowPermission('clipboard-sanitized-write', 'file:///tmp/app.html', true)
     ).toBe(false)
   })
+
+  it('only grants notifications from the trusted main frame', () => {
+    expect(
+      canGrantWindowPermission('notifications', 'http://127.0.0.1:43127/session', true)
+    ).toBe(true)
+    expect(
+      canGrantWindowPermission('notifications', 'http://localhost:43127/session', true)
+    ).toBe(true)
+    expect(
+      canGrantWindowPermission('notifications', 'http://127.0.0.1:43127/session', false)
+    ).toBe(false)
+    expect(
+      canGrantWindowPermission('notifications', 'https://example.com/session', true)
+    ).toBe(false)
+    expect(
+      canGrantWindowPermission('notifications', 'https://127.0.0.1:43127/session', true)
+    ).toBe(false)
+    expect(canGrantWindowPermission('notifications', 'file:///tmp/app.html', true)).toBe(
+      false
+    )
+    expect(canGrantWindowPermission('notifications', undefined, true)).toBe(false)
+  })
 })
 
 describe('Harness window activation', () => {
