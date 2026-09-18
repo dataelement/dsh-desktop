@@ -288,7 +288,11 @@ export function buildHarnessSpawnOptions(
   environment: NodeJS.ProcessEnv = process.env,
   profile: string = 'web'
 ): SpawnOptionsWithoutStdio {
-  const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
+  const {
+    ELECTRON_RUN_AS_NODE: _runAsNode,
+    DSH_DESKTOP_HOST_RESOLVED: _hostResolved,
+    ...parentEnvironment
+  } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
   const pathApi = platform === 'win32' ? win32 : posix
 
@@ -319,7 +323,10 @@ export function buildHarnessSpawnOptions(
       // the dedicated lock-recovery runner instead (see pnpm-runner.mjs).
       npm_config_side_effects_cache: 'false',
       PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false',
-      ...(profile === 'desktop-safe-mode' && { PNPM_CONFIG_NODE_LINKER: 'hoisted', npm_config_node_linker: 'hoisted' }),
+      // Safe Mode loads only installation-owned bundles, so the patched Harness
+      // resolves them from its own installation and never touches the shared
+      // `profiles/node_modules` fallback, whose junctions Windows can refuse.
+      ...(profile === SAFE_MODE_PROFILE && { DSH_DESKTOP_HOST_RESOLVED: '1' }),
       NODE_COMPILE_CACHE: environment.NODE_COMPILE_CACHE ?? pathApi.join(dshHome, 'cache', 'compile-cache'),
       [pathKey]: resolveEnvironmentPath(environment, platform)
     },

@@ -22,6 +22,7 @@ import {
 } from '../src/main/runtime/harness-runtime'
 import { canGrantWindowPermission, isTrustedAppUrl } from '../src/main/security-policy'
 import { buildDisclaimedUtilityProcessSpec } from '../src/main/runtime/disclaimed-utility-process'
+import { SAFE_MODE_PROFILE } from '../src/main/state/safe-mode-profile'
 import {
   clearStaleHarnessAuthCookies,
   desktopHarnessUrl,
@@ -161,6 +162,21 @@ describe('Harness launch contract', () => {
       }
     })
     expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+  })
+
+  it('asks the patched Harness to resolve Safe Mode plugins from its installation only', () => {
+    // Safe Mode must not depend on the shared profiles/node_modules fallback:
+    // Windows can refuse to recreate its junctions (EPERM) for minutes.
+    const safe = buildHarnessSpawnOptions('/launch-root', '/harness', 'win32', { Path: 'p' }, SAFE_MODE_PROFILE)
+    expect(safe.env).toMatchObject({ DSH_DESKTOP_HOST_RESOLVED: '1' })
+    expect(safe.env).not.toHaveProperty('PNPM_CONFIG_NODE_LINKER')
+
+    // A normal profile keeps the fallback, even if the flag leaked into the parent environment.
+    const web = buildHarnessSpawnOptions('/launch-root', '/harness', 'win32', {
+      Path: 'p',
+      DSH_DESKTOP_HOST_RESOLVED: '1'
+    }, 'web')
+    expect(web.env).not.toHaveProperty('DSH_DESKTOP_HOST_RESOLVED')
   })
 
   it('does not detach the Harness on macOS or Linux', () => {
