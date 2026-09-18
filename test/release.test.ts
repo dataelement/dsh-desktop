@@ -423,6 +423,8 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain("Invoke-HarnessRpc 'session/create'")
     expect(workflow).toContain('Harness process exited after workspace and session creation.')
     expect(workflow).toContain('prerelease_tag:')
+    expect(workflow).toContain('signed_version:')
+    expect(workflow).toContain('mode:')
     expect(workflow).toContain('--prerelease')
     expect(workflow).toContain('name: windows-x64-dev')
     expect(workflow).toContain('dist-dev/dsh-desktop-dev-windows-x64-setup.exe')
@@ -487,8 +489,9 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('sign-windows-unpacked.mjs')
     expect(workflow).toContain('win-unpacked.tar.gz')
     expect(workflow).toContain('--prepackaged')
-    // Version comes from the pre-release input on a dispatch, else the tag ref.
-    expect(workflow).toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')
+    expect(workflow).toContain('version="${PRERELEASE_TAG#v}"')
+    expect(workflow).toContain('version="${SIGNED_VERSION#v}"')
+    expect(workflow).not.toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')
     expect(workflow).toContain('pattern: macos-*')
     expect(workflow).toMatch(
       /publish:[\s\S]*?needs\.sign-windows\.result == 'success'[\s\S]*?- sign-windows/
@@ -530,10 +533,40 @@ describe('prerelease parity workflow', () => {
 
   it('gates signing and both publish jobs so prerelease and release never overlap', async () => {
     const yml = await load()
+    const windowsIf = yml.slice(
+      yml.indexOf('\n  windows-x64:'),
+      yml.indexOf('runs-on: windows-2022')
+    )
+    const signWindows = yml.slice(
+      yml.indexOf('\n  sign-windows:'),
+      yml.indexOf('\n  publish:')
+    )
+    const publishJob = yml.slice(
+      yml.indexOf('\n  publish:'),
+      yml.indexOf('\n  publish-prerelease:')
+    )
+    const publishPrerelease = yml.slice(yml.indexOf('\n  publish-prerelease:'))
+
     expect(yml).toContain('publish-prerelease:')
-    expect(yml).toMatch(/publish:[\s\S]*inputs\.prerelease_tag == ''/)
-    expect(yml).toMatch(/publish-prerelease:[\s\S]*inputs\.prerelease_tag != ''/)
-    expect(yml).toMatch(/sign-windows:[\s\S]*inputs\.prerelease_tag != ''/)
+    expect(yml).toContain('  - development')
+    expect(yml).toContain('  - signed')
+    expect(yml).toContain('  - prerelease')
+    expect(yml).toContain('validate-dispatch:')
+    expect(yml).toContain('signed mode requires signed_version')
+    expect(windowsIf).toContain("inputs.target == 'all' || inputs.target == 'windows'")
+    expect(windowsIf).not.toContain('prerelease_tag')
+    expect(signWindows).toContain("inputs.mode == 'signed'")
+    expect(signWindows).toContain("inputs.mode == 'prerelease'")
+    expect(publishJob).toContain("startsWith(github.ref, 'refs/tags/v')")
+    expect(publishJob).toContain("inputs.prerelease_tag == ''")
+    expect(publishPrerelease).toContain("inputs.mode == 'prerelease'")
+    expect(publishPrerelease).toContain("inputs.target == 'all'")
+    expect(publishPrerelease).toContain("inputs.prerelease_tag != ''")
+    expect(
+      yml.match(
+        /npm version --no-git-tag-version --allow-same-version "\$\{\{ inputs\.signed_version \}\}"/g
+      )
+    ).toHaveLength(4)
   })
 
   it('mirrors a prerelease to an isolated ModelScope directory', async () => {
