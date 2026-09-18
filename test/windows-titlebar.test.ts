@@ -42,11 +42,14 @@ describe('Windows titlebar menu', () => {
     expect(preload).toContain('-webkit-app-region: drag')
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout > #root')
     expect(preload).toContain('left: 0')
+    expect(preload).toContain('pointer-events: none')
     expect(preload).toContain('body.dsh-desktop-windows-titlebar-layout button')
     expect(preload).toContain('-webkit-app-region: no-drag !important')
     expect(preload).toContain("document.documentElement.style.setProperty(SIDEBAR_WIDTH_PROPERTY, '0px')")
     expect(preload).toContain('modalSelector')
     expect(preload).toContain('updateDragRegionVisibility')
+    expect(preload).toContain('requestAnimationFrame(')
+    expect(preload).not.toContain('[class*="modal" i]')
   })
 
   it('integrates session export into the application menu and defines titlebar safe-inset variables', async () => {
