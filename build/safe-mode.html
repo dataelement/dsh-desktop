@@ -86,6 +86,8 @@
       .plugin-upgrade-btn { margin-right:14px; min-height:28px; padding:4px 10px; border:1px solid var(--success); border-radius:8px; color:var(--success); background:transparent; cursor:pointer; font-size:11px; font-weight:650; white-space:nowrap; flex:0 0 auto; }
       .plugin-upgrade-btn:hover { background:rgba(38,122,74,.09); }
       .plugin-upgrade-btn[disabled] { opacity:.55; cursor:wait; }
+      .plugin-enable-btn { border-color:var(--line); color:var(--ink); }
+      .plugin-enable-btn:hover { background:var(--soft, var(--surface-soft, #f5f6f7)); }
       .plugin-status.success { color:var(--success); }
       .plugin-version { margin-left:4px; color:var(--muted); font-size:11px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
       .footer { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 16px; padding: 0 28px 18px; }
@@ -316,7 +318,28 @@
         }
         const action = document.createElement('span'); action.className = 'plugin-action'; action.textContent = String(plugin.actionLabel || '')
         copy.append(title, action)
-        label.append(checkbox, copy); item.appendChild(label)
+        // An already disabled plugin is not selectable for disabling again.
+        if (plugin.disabled === true) label.append(copy)
+        else label.append(checkbox, copy)
+        item.appendChild(label)
+
+        if (plugin.enableButtonLabel) {
+          const enableBtn = document.createElement('button')
+          enableBtn.type = 'button'
+          enableBtn.className = 'plugin-upgrade-btn plugin-enable-btn'
+          enableBtn.textContent = String(plugin.enableButtonLabel)
+          enableBtn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            enableBtn.disabled = true
+            enableBtn.textContent = model.enableBusyLabel || (model.locale === 'zh' ? '正在启用…' : 'Enabling…')
+            apply.disabled = true
+            if (upgradeAll) upgradeAll.disabled = true
+            restart.disabled = true
+            agent.disabled = true
+            void window.dshSafeMode.action('enable', { plugins: [plugin.name] })
+          })
+          item.appendChild(enableBtn)
+        }
 
         if (plugin.upgradeButtonLabel) {
           const upgradeBtn = document.createElement('button')
@@ -336,7 +359,8 @@
           item.appendChild(upgradeBtn)
         }
 
-        list.appendChild(item); pluginCheckboxes.push(checkbox)
+        list.appendChild(item)
+        if (plugin.disabled !== true) pluginCheckboxes.push(checkbox)
       }
       const allCheckboxes = [...issueCheckboxes, ...pluginCheckboxes]
       if (allCheckboxes.length === 0) empty.classList.add('visible')

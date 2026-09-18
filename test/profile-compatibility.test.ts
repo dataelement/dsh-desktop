@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { disableProfilePlugin } from '../src/main/state/plugin-disable'
 import {
-  disableProfilePlugins,
   inspectProfileCompatibility,
   quarantineProfileCorePackages,
   quarantineProfileWorkspaces
@@ -191,21 +191,16 @@ describe('profile compatibility recovery', () => {
     expect(findings[0]?.detail).toContain('compatibility fallback')
   })
 
-  it('disables an incompatible plugin without deleting its dependency or files', async () => {
-    const disabled = await disableProfilePlugins(dshHome, ['dsh-dream-skin'], fixedNow)
+  it('stops inspecting a plugin once it is disabled, without deleting its dependency or files', async () => {
+    expect(await disableProfilePlugin(dshHome, 'dsh-dream-skin')).toEqual({ ok: true, rows: [] })
 
-    expect(disabled).toEqual(['dsh-dream-skin'])
+    const result = await inspectProfileCompatibility(dshHome, bundled)
+    expect(result.activePlugins).toEqual([])
+    expect(result.issues.filter((issue) => issue.target === 'dsh-dream-skin')).toEqual([])
     const updated = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
     expect(updated.dependencies['dsh-dream-skin']).toBe('^0.4.14')
-    expect(updated.dsh.profile.bundles).not.toContain('dsh-dream-skin')
+    expect(updated.dsh.profile.bundles).toContain('dsh-dream-skin')
     expect(existsSync(join(profile, 'node_modules', 'dsh-dream-skin'))).toBe(true)
-    expect(existsSync(join(
-      dshHome,
-      'recovery',
-      'compatibility',
-      '2026-08-28T08-00-00-000Z',
-      'package.json'
-    ))).toBe(true)
   })
 
   it('quarantines an incompatible workspace and preserves its source', async () => {

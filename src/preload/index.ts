@@ -256,15 +256,15 @@ async function mountSafeModeBanner(): Promise<void> {
     const description = document.createElement('span')
     description.className = 'description'
     description.textContent = safeModeLocale === 'zh'
-      ? '已暂时停用所有第三方插件，可卸载有问题的插件后重启。'
-      : 'All third-party plugins are temporarily disabled. Remove a problematic plugin, then restart.'
+      ? '已暂时停用所有第三方插件，可停用有问题的插件后重启。'
+      : 'All third-party plugins are temporarily disabled. Disable a problematic plugin, then restart.'
     copy.append(label, description)
     const actions = document.createElement('span')
     actions.className = 'actions'
     const manage = document.createElement('button')
     manage.type = 'button'
-    manage.textContent = safeModeLocale === 'zh' ? '卸载插件' : 'Remove plugins'
-    manage.setAttribute('aria-label', safeModeLocale === 'zh' ? '卸载第三方插件' : 'Remove third-party plugins')
+    manage.textContent = safeModeLocale === 'zh' ? '管理插件' : 'Manage plugins'
+    manage.setAttribute('aria-label', safeModeLocale === 'zh' ? '停用或启用第三方插件' : 'Disable or re-enable third-party plugins')
     manage.addEventListener('click', () => {
       void ipcRenderer.invoke('safe-mode:manage')
     })

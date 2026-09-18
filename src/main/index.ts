@@ -40,7 +40,12 @@ import {
 } from './state/profile-install-marker'
 import { healProfileBundles, inspectProfileConsistency } from './state/profile-consistency'
 import {
-  disableProfilePlugins,
+  disableProfilePlugin,
+  enableProfilePlugin,
+  forgetMarketDisable,
+  listDisabledProfilePlugins
+} from './state/plugin-disable'
+import {
   inspectProfileCompatibility,
   quarantineProfileCorePackages,
   quarantineProfileWorkspaces,
@@ -167,6 +172,7 @@ type WebImportAction = 'import' | 'skip'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
   | { type: 'upgrade'; plugins: string[] }
+  | { type: 'enable'; plugins: string[] }
   | { type: 'recovery-open' }
   | { type: 'backup-open'; removalId: string }
   | { type: 'backup-restore'; removalId: string }
@@ -2232,6 +2238,7 @@ async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
 
 async function waitForSafeModeAction(options: {
   plugins: readonly string[]
+  disabledPlugins: readonly string[]
   suspectedPlugins: readonly string[]
   issues: readonly ProfileCompatibilityIssue[]
   healthReports?: readonly PluginHealthReport[]
@@ -2256,6 +2263,7 @@ async function waitForSafeModeAction(options: {
   const model = buildSafeModeViewModel({
     locale: harnessLocale(),
     plugins: options.plugins,
+    disabledPlugins: options.disabledPlugins,
     suspectedPlugins: options.suspectedPlugins,
     issues: options.issues,
     healthReports: options.healthReports,
@@ -2290,11 +2298,38 @@ async function waitForSafeModeAction(options: {
   return actionPromise
 }
 
-async function removeSafeModePlugin(
+/**
+ * Switch a plugin off from Safe Mode, the way the plugin market's own toggle
+ * does, so it can be re-enabled without reinstalling. Plugin recovery keeps
+ * the backed-up removal instead: a package that is itself broken (an
+ * unreadable bundle patch, a missing link, dependencies shadowing the core)
+ * still fails before the patch layer's disable applies.
+ *
+ * A disable-carrier cannot be switched off on its own (see
+ * disableProfilePlugin), so it keeps the removal too. `pending` is only ever
+ * set on that fallback.
+ */
+async function disableSafeModePlugin(
   dshHome: string,
   pluginName: string
-): Promise<PluginRemovalResult> {
-  return removeProfilePluginCompletely(dshHome, pluginName, 'safe-mode')
+): Promise<{ disabled: boolean; pending?: boolean; detail?: string }> {
+  const logPrefix = 'safe-mode'
+  runtime.note(`[${logPrefix}] disabling ${pluginName} in the web profile`)
+  const result = await disableProfilePlugin(dshHome, pluginName)
+  if (result.ok) {
+    runtime.note(
+      `[${logPrefix}] disabled ${pluginName}` +
+      (result.rows.length > 0 ? `; patch rows off: ${result.rows.join(', ')}` : ' in the market state (no bundle rows)')
+    )
+    return { disabled: true }
+  }
+  if (result.reason === 'carrier') {
+    runtime.note(`[${logPrefix}] ${result.detail}; removing it with a restorable backup instead`)
+    const removal = await removeProfilePluginCompletely(dshHome, pluginName, logPrefix)
+    return { disabled: removal.disabled, pending: removal.pending, detail: removal.failures[0] }
+  }
+  runtime.note(`[${logPrefix}] could not disable ${pluginName}: ${result.detail}`)
+  return { disabled: false, detail: result.detail }
 }
 
 async function repairSafeModeCompatibilityIssues(
@@ -2309,7 +2344,10 @@ async function repairSafeModeCompatibilityIssues(
 
   if (pluginIssues.length > 0) {
     const targets = [...new Set(pluginIssues.map((issue) => issue.target))]
-    const disabled = await disableProfilePlugins(dshHome, targets)
+    const disabled: string[] = []
+    for (const target of targets) {
+      if ((await disableSafeModePlugin(dshHome, target)).disabled) disabled.push(target)
+    }
     repaired.push(...pluginIssues.filter((issue) => disabled.includes(issue.target)).map((issue) => issue.id))
     failed.push(...pluginIssues.filter((issue) => !disabled.includes(issue.target)).map((issue) => issue.id))
   }
@@ -2406,6 +2444,11 @@ async function removeProfilePluginCompletely(
   for (const failure of result.failures) {
     runtime.note(`[${logPrefix}] ${pluginName} remains disabled; cleanup pending: ${failure}`)
   }
+  if (result.disabled) {
+    await forgetMarketDisable(dshHome, pluginName).catch((error: unknown) => {
+      runtime.note(`[${logPrefix}] could not clear the market disable entry for ${pluginName}: ${String(error)}`)
+    })
+  }
   return result
 }
 
@@ -2484,6 +2527,7 @@ async function showSafeModeManager(initial?: {
         noticeTone ??= 'error'
       }
       const installed = [...new Set([...active, ...pendingRemovals])]
+      const profileDisabled = recoveryLocked ? [] : await listDisabledProfilePlugins(dshHome, active)
       let healthReports: PluginHealthReport[] | undefined
       if (installed.length > 0 && !recoveryLocked) {
         try {
@@ -2517,6 +2561,7 @@ async function showSafeModeManager(initial?: {
       const backupRestoreLocked = recoveryLocked || !removalLedgerReadable
       const action = await waitForSafeModeAction({
         plugins: installed,
+        disabledPlugins: profileDisabled,
         suspectedPlugins: safeModeSuspectedPlugins,
         issues: compatibility.issues,
         healthReports,
@@ -2742,12 +2787,33 @@ async function showSafeModeManager(initial?: {
         continue
       }
 
+      if (action.type === 'enable') {
+        const targets = [...new Set(action.plugins)].filter((plugin) => profileDisabled.includes(plugin))
+        const failedPlugins: string[] = []
+        for (const plugin of targets) {
+          const result = await enableProfilePlugin(dshHome, plugin)
+          runtime.note(`[safe-mode] ${result.ok ? 're-enabled' : 'could not re-enable'} ${plugin}${result.detail ? `: ${result.detail}` : ''}`)
+          if (!result.ok) failedPlugins.push(plugin)
+        }
+        notice = failedPlugins.length === 0
+          ? isChinese
+            ? `已重新启用 ${targets.length} 个插件，退出安全模式后生效。`
+            : `Re-enabled ${targets.length} plugin${targets.length === 1 ? '' : 's'}; they load after you exit Safe Mode.`
+          : isChinese
+            ? `以下插件未能重新启用：${failedPlugins.join('、')}`
+            : `These plugins could not be re-enabled: ${failedPlugins.join(', ')}`
+        noticeTone = failedPlugins.length === 0 ? 'success' : 'error'
+        continue
+      }
+
       const issueById = new Map(compatibility.issues.map((issue) => [issue.id, issue]))
       const selectedIssues = [...new Set(action.issues)]
         .map((id) => issueById.get(id))
         .filter((issue): issue is ProfileCompatibilityIssue => issue !== undefined && issue.resolution !== 'inspect-only')
       const installedSet = new Set(installed)
-      const selectedPlugins = [...new Set(action.plugins)].filter((plugin) => installedSet.has(plugin))
+      const selectedPlugins = [...new Set(action.plugins)].filter(
+        (plugin) => installedSet.has(plugin) && !profileDisabled.includes(plugin)
+      )
       if (selectedIssues.length === 0 && selectedPlugins.length === 0) {
         notice = isChinese ? '请选择要处理的插件或遗留项。' : 'Select at least one plugin or leftover to process.'
         noticeTone = 'error'
@@ -2772,24 +2838,24 @@ async function showSafeModeManager(initial?: {
       const failedPlugins: string[] = []
       const pendingPlugins: string[] = []
       for (const plugin of selectedPlugins) {
-        const removal = await removeSafeModePlugin(dshHome, plugin)
-        if (!removal.disabled) failedPlugins.push(plugin)
-        else if (removal.pending) pendingPlugins.push(plugin)
+        const result = await disableSafeModePlugin(dshHome, plugin)
+        if (!result.disabled) failedPlugins.push(plugin)
+        else if (result.pending) pendingPlugins.push(plugin)
       }
       const disabledPlugins = new Set(selectedPlugins.filter((plugin) => !failedPlugins.includes(plugin)))
       safeModeSuspectedPlugins = safeModeSuspectedPlugins.filter((plugin) => !disabledPlugins.has(plugin))
       const failed = repairFailures + failedPlugins.length
       notice = pendingPlugins.length > 0
         ? isChinese
-          ? `已禁用 ${pendingPlugins.length} 个插件；Profile 依赖清理待重试。插件不会在后续启动中重新启用。`
+          ? `已停用 ${pendingPlugins.length} 个插件；Profile 依赖清理待重试。插件不会在后续启动中重新启用。`
           : `Disabled ${pendingPlugins.length} plugin${pendingPlugins.length === 1 ? '' : 's'}; profile dependency cleanup is pending. They will stay disabled on later launches.`
         : failed === 0
           ? isChinese
-            ? `处理完成：修复 ${repaired} 项，卸载 ${selectedPlugins.length} 个插件。`
-            : `Completed: ${repaired} repair${repaired === 1 ? '' : 's'} and ${selectedPlugins.length} plugin removal${selectedPlugins.length === 1 ? '' : 's'}.`
+            ? `处理完成：修复 ${repaired} 项，停用 ${selectedPlugins.length} 个插件。`
+            : `Completed: ${repaired} repair${repaired === 1 ? '' : 's'} and ${selectedPlugins.length} plugin${selectedPlugins.length === 1 ? '' : 's'} disabled.`
           : isChinese
-            ? `已修复 ${repaired} 项、卸载 ${selectedPlugins.length - failedPlugins.length} 个插件；${failed} 项未能处理。`
-            : `Completed ${repaired} repairs and removed ${selectedPlugins.length - failedPlugins.length} plugins; ${failed} items could not be processed.`
+            ? `已修复 ${repaired} 项、停用 ${selectedPlugins.length - failedPlugins.length} 个插件；${failed} 项未能处理。`
+            : `Completed ${repaired} repairs and disabled ${selectedPlugins.length - failedPlugins.length} plugins; ${failed} items could not be processed.`
       noticeTone = failed === 0 && pendingPlugins.length === 0 ? 'success' : 'error'
     }
   } finally {
@@ -3143,6 +3209,7 @@ async function bootstrap(): Promise<void> {
       (
         action !== 'apply' &&
         action !== 'upgrade' &&
+        action !== 'enable' &&
         action !== 'recovery-open' &&
         action !== 'backup-open' &&
         action !== 'backup-restore' &&
@@ -3156,7 +3223,7 @@ async function bootstrap(): Promise<void> {
     }
     await refreshMigrationRecoveryLock(join(app.getPath('userData'), 'harness'))
     if (
-      (action === 'apply' || action === 'upgrade' || action === 'backup-delete') && profileRecoveryLocked()
+      (action === 'apply' || action === 'upgrade' || action === 'enable' || action === 'backup-delete') && profileRecoveryLocked()
     ) return { ok: false }
     if (action === 'apply') {
       if (typeof selection !== 'object' || selection === null) return { ok: false }
@@ -3170,7 +3237,7 @@ async function bootstrap(): Promise<void> {
         return { ok: false }
       }
       resolveSafeModeAction({ type: 'apply', plugins, issues })
-    } else if (action === 'upgrade') {
+    } else if (action === 'upgrade' || action === 'enable') {
       if (typeof selection !== 'object' || selection === null) return { ok: false }
       const { plugins } = selection as { plugins?: unknown }
       if (
@@ -3179,7 +3246,7 @@ async function bootstrap(): Promise<void> {
       ) {
         return { ok: false }
       }
-      resolveSafeModeAction({ type: 'upgrade', plugins })
+      resolveSafeModeAction({ type: action, plugins })
     } else if (
       action === 'backup-open' ||
       action === 'backup-restore' ||
