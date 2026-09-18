@@ -75,6 +75,21 @@ describe('preload wiring for plugin error handling', () => {
     expect(handlerBody).toContain('desktopDiagnostics?.discardPendingPluginFailure()')
   })
 
+  it('never offers removal of plugins a deferred migration has not installed yet', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const maintenance = main.slice(main.indexOf('const maintenance = await runProfileStartupMaintenance('))
+    expect(maintenance.slice(0, maintenance.indexOf("if (maintenance.outcome === 'safe-recovery')"))).toContain(
+      'maintenance.migration.pendingPlugins'
+    )
+
+    const loop = main.slice(main.indexOf('const detection = await detectPluginRecovery('))
+    const beforeAction = loop.slice(0, loop.indexOf('waitForPluginRecoveryAction('))
+    const filter = beforeAction.indexOf('!migrationPendingPlugins.has(plugin)')
+    expect(filter).toBeGreaterThan(-1)
+    expect(filter).toBeLessThan(beforeAction.indexOf('appendPluginRecoveryDetectionLog(detection.plugins)'))
+    expect(filter).toBeLessThan(beforeAction.indexOf('discardPendingPluginFailure()'))
+  })
+
   it('discards pending diagnostics when Harness startup failure identifies a plugin', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
     const loop = main.slice(main.indexOf('const detection = await detectPluginRecovery('))

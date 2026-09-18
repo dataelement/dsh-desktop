@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -119,6 +119,49 @@ describe('web home import', () => {
     await writeSkipDecision(skipped, webHome)
     expect(await shouldOfferWebHomeImport(skipped, webHome)).toBe(false)
     expect((await readImportDecision(skipped))?.decision).toBe('skipped')
+  })
+
+  it('treats a desktop home with credentials, plugins or generations as used', async () => {
+    const webHome = await createWebHome()
+
+    const credentials = join(await createRoot('dsh-desktop-credentials-'), 'harness')
+    await mkdir(credentials, { recursive: true })
+    await writeFile(join(credentials, '.credentials.yaml'), 'version: 1\n')
+    expect(await shouldOfferWebHomeImport(credentials, webHome)).toBe(false)
+
+    const plugins = join(await createRoot('dsh-desktop-plugins-'), 'harness')
+    await mkdir(join(plugins, 'profiles', 'web'), { recursive: true })
+    await writeFile(
+      join(plugins, 'profiles', 'web', 'package.json'),
+      JSON.stringify({ dependencies: { dshmarket: '1.0.0', 'dsh-plugin-demo': '^1.0.0' } })
+    )
+    expect(await shouldOfferWebHomeImport(plugins, webHome)).toBe(false)
+
+    const generations = join(await createRoot('dsh-desktop-generations-'), 'harness')
+    await mkdir(join(generations, 'profiles', '.generations', 'live', 'demo+1.0.0'), { recursive: true })
+    expect(await shouldOfferWebHomeImport(generations, webHome)).toBe(false)
+
+    const coreOnly = join(await createRoot('dsh-desktop-core-'), 'harness')
+    await mkdir(join(coreOnly, 'profiles', 'web'), { recursive: true })
+    await writeFile(
+      join(coreOnly, 'profiles', 'web', 'package.json'),
+      JSON.stringify({ dependencies: { dshmarket: '1.0.0' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } })
+    )
+    expect(await shouldOfferWebHomeImport(coreOnly, webHome)).toBe(true)
+  })
+
+  it('replaces an unused desktop home without leaving the old tree behind', async () => {
+    const webHome = await createWebHome()
+    const parent = await createRoot('dsh-desktop-replace-')
+    const dest = join(parent, 'harness')
+    await mkdir(join(dest, 'logs'), { recursive: true })
+    await writeFile(join(dest, 'logs', 'old.log'), 'old\n')
+
+    await importWebHome({ source: webHome, dest })
+
+    expect(existsSync(join(dest, 'logs', 'old.log'))).toBe(false)
+    expect(existsSync(join(dest, 'settings.yaml'))).toBe(true)
+    expect((await readdir(parent)).sort()).toEqual(['harness'])
   })
 
   it('copies the allowlist and leaves the executable tree behind', async () => {
