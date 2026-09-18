@@ -13,6 +13,7 @@ import { convertPptxToPptd } from "./pptx-converter.js";
 import yaml from "js-yaml";
 import sharp from "sharp";
 import PptxGenJSImport from "pptxgenjs";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 const MISPLACED_TEXT_STYLE_FIELDS = new Set(["fontFamily", "fontSize", "bold", "italic", "color", "lineHeight", "letterSpacing", "wrap", "align", "verticalAlign", "textDirection", "style"]);
 //#region src/pptd-colors.ts
 /** Deterministic series palette used when a chart series omits an explicit color. */
@@ -2306,7 +2307,7 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			const value = row[categoryIndex];
 			return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
 		});
-		const values = filteredRows.map((row) => Number(row[valueIndex] ?? 0));
+		const values = filteredRows.map((row) => Number(row[valueIndex] ?? 0)).map((value) => value === 0 ? "0" : value);
 		const numericXY = chartTypeName === "scatter";
 		const xValues = numericXY ? filteredRows.map((row) => Number(row[categoryIndex] ?? 0)) : void 0;
 		const type = chartTypeName === "line" ? pptx.ChartType.line : chartTypeName === "area" ? pptx.ChartType.area : chartTypeName === "scatter" ? pptx.ChartType.scatter : chartTypeName === "bubble" ? pptx.ChartType.bubble : chartTypeName === "radar" ? pptx.ChartType.radar : chartTypeName === "pie" && (number(item.innerRadius) ?? 0) > 0 ? pptx.ChartType.doughnut : chartTypeName === "pie" ? pptx.ChartType.pie : pptx.ChartType.bar;
@@ -2461,7 +2462,7 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			return string(item.type) === "bar" && columnIsNumeric(string(encode.x)) && !columnIsNumeric(string(encode.y));
 		}))
 	};
-	if (types.length === 1 && types[0].type === pptx.ChartType.scatter) slide.addChart(types[0].type, types[0].data, { ...common, ...types[0].options });
+	if (types.length === 1) slide.addChart(types[0].type, types[0].data, { ...common, ...types[0].options });
 	else slide.addChart(types, common);
 }
 function renderIcon(project, slide, element) {
@@ -2509,6 +2510,35 @@ function renderElement(project, pptx, slide, element, foregroundColor) {
 		return;
 	}
 }
+function normalizeSingleLevelChartCategories(xml) {
+	return xml.replace(/<c:multiLvlStrRef>([\s\S]*?)<\/c:multiLvlStrRef>/gu, (reference, body) => {
+		const formula = body.match(/<c:f>[\s\S]*?<\/c:f>/u)?.[0];
+		const cache = body.match(/<c:multiLvlStrCache>([\s\S]*?)<\/c:multiLvlStrCache>/u)?.[1];
+		const pointCount = cache?.match(/<c:ptCount\b[^>]*\/>/u)?.[0];
+		const levels = cache === void 0 ? [] : [...cache.matchAll(/<c:lvl>([\s\S]*?)<\/c:lvl>/gu)];
+		if (formula === void 0 || pointCount === void 0 || levels.length !== 1) return reference;
+		return `<c:strRef>${formula}<c:strCache>${pointCount}${levels[0][1]}</c:strCache></c:strRef>`;
+	});
+}
+function normalizePptxPackage(bytes) {
+	const entries = unzipSync(bytes);
+	const contentTypesEntry = entries["[Content_Types].xml"];
+	if (contentTypesEntry === void 0) throw new Error("Rendered PPTX is missing [Content_Types].xml");
+	const contentTypes = strFromU8(contentTypesEntry);
+	const normalized = contentTypes.replace(/<Override\b[^>]*\bPartName="([^"]+)"[^>]*\/>/gu, (override, partName) => entries[partName.replace(/^\/+/, "")] === void 0 ? "" : override);
+	let changed = normalized !== contentTypes;
+	if (changed) entries["[Content_Types].xml"] = strToU8(normalized);
+	for (const [name, entry] of Object.entries(entries)) {
+		if (!/^ppt\/charts\/chart\d+\.xml$/u.test(name)) continue;
+		const chart = strFromU8(entry);
+		const normalizedChart = normalizeSingleLevelChartCategories(chart);
+		if (normalizedChart === chart) continue;
+		entries[name] = strToU8(normalizedChart);
+		changed = true;
+	}
+	if (!changed) return bytes;
+	return zipSync(entries, { level: 6 });
+}
 /** Render one checked PPTD AST to editable native PowerPoint objects. */
 async function renderPptdProject(project) {
 	const check = checkPptdProject(project);
@@ -2548,7 +2578,7 @@ async function renderPptdProject(project) {
 		compression: true
 	});
 	return {
-		bytes: new Uint8Array(output),
+		bytes: normalizePptxPackage(new Uint8Array(output)),
 		nativeObjectCount: check.nativeObjectCount,
 		check
 	};

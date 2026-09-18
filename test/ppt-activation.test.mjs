@@ -228,6 +228,9 @@ describe('PPT catalog migration', () => {
     const messages = automaticMessages(agent).filter(m => m.source.plugin === 'dsh-ppt-skill')
     expect(messages).toHaveLength(1)
     expect(JSON.stringify(messages)).toContain('DSH-PPT-AUTHORING-20260910-V4')
+    expect(JSON.stringify(messages)).toContain('带可编辑工程的内置模板')
+    expect(JSON.stringify(messages)).toContain('image_generate')
+    expect(JSON.stringify(messages)).not.toContain('IMAGE-TEMPLATES-V1')
     expect(JSON.stringify(messages)).not.toContain('Withdrawn template instructions')
   })
 
@@ -241,7 +244,8 @@ describe('PPT catalog migration', () => {
     await mkdir(path.join(dir, 'outputs'))
     await writeFile(path.join(dir, 'outputs/user.pptx'), 'unchanged user output')
     const state = (await f.rpc('state', { sessionId })).value.data
-    expect(state.templates).toHaveLength(16)
+    expect(state.templates).toHaveLength(17)
+    expect(state.templates.find(t => t.id === 'dsh-green-pulse')).toMatchObject({ origin: 'built-in', slideCount: 22 })
     expect(state.templates.map(t => t.id)).not.toContain('kimi-business-curated-vitality-blue')
     expect(state.selectedTemplateId).toBe('dsh-engineering-blueprint')
     expect(state.templateMigration.reason).toBe('template-retired')
@@ -268,7 +272,7 @@ describe('PPT identity compatibility', () => {
     expect(state.selectedTemplateId).toBe('dsh-work-curated-modular-logistics-system')
     expect(state.presentationMode).toBe('ppt')
     expect(state.templateMigration).toBeUndefined()
-    expect(state.templates).toHaveLength(16)
+    expect(state.templates).toHaveLength(17)
   })
 
   it('clears legacy automatic prompts while preserving user-authored references when PPT is off', async () => {

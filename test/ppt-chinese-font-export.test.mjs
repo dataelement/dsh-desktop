@@ -32,3 +32,37 @@ it('exports Chinese inline runs and table cells with a real East Asian font', as
   expect(runs.find(run => run.includes('2026'))).toContain('<a:latin typeface="Arial"');
   expect(runs.find(run => run.includes('明确选择宋体'))).toContain('<a:ea typeface="Songti SC"');
 }, 30000);
+
+it('lists only content-type overrides backed by generated package parts', async () => {
+  const source = {
+    entryName: 'deck.pptd',
+    manifest: yaml.dump({ version: 'v2', title: 'Content Types', size: [1280, 720], pages: ['one.page', 'two.page'] }),
+    pages: new Map([
+      ['one.page', yaml.dump({ elements: [] })],
+      ['two.page', yaml.dump({ elements: [{
+        elementId: 'bar',
+        elementType: 'chart',
+        bounds: [50, 50, 600, 400],
+        data: { cols: ['category', 'value'], rows: [['A', 3], ['B', 0]] },
+        series: [{ type: 'bar', name: 'Value', encode: { x: 'category', y: 'value' } }],
+        legend: false,
+      }] })],
+    ]),
+    assets: new Map(),
+  };
+  const output = await renderPptdProject(parsePptdProject(source));
+  const entries = unzipSync(output.bytes);
+  const contentTypes = strFromU8(entries['[Content_Types].xml']);
+  const partNames = [...contentTypes.matchAll(/<Override\b[^>]*\bPartName="([^"]+)"[^>]*\/>/gu)]
+    .map((match) => match[1].replace(/^\/+/, ''));
+
+  expect(partNames).toContain('ppt/slideMasters/slideMaster1.xml');
+  expect(partNames).not.toContain('ppt/slideMasters/slideMaster2.xml');
+  expect(partNames.every((partName) => entries[partName] !== undefined)).toBe(true);
+  const chart = strFromU8(entries['ppt/charts/chart1.xml']);
+  expect(chart).toContain('<c:strRef>');
+  expect(chart).not.toContain('<c:multiLvlStrRef>');
+  const workbook = unzipSync(entries['ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx']);
+  const worksheet = strFromU8(workbook['xl/worksheets/sheet1.xml']);
+  expect(worksheet).toContain('<c r="B3"><v>0</v></c>');
+}, 30000);

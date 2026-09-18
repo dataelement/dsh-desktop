@@ -1,0 +1,281 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-5-node-69-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 66c1efe47f647b070887624fc9817102d5156bc4578286c894acf4dc872fb78b
+  - elementId: slide-5-node-70-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">PEOPLE &amp; PLACES</span></p>
+    sourceLayout: 8d35ca4742f62a550cba69ce9098c52c8edcca4caf0116bf1b1cf0a09a7aa7eb
+  - elementId: slide-5-node-71-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: dcca33b37f9780f21417c808dcb74789a5a77e5f5cc72abb56c3c208da39ddc7
+  - elementId: slide-5-node-72-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">5</span></p>
+    sourceLayout: 05cfb8f2ac94f485f5122b3b38fd8e2faf5b0177fe6c62f0851d9c13ff5f285b
+  - elementId: slide-5-node-73-people-photo
+    elementType: image
+    bounds:
+      - 20
+      - 54
+      - 442
+      - 468
+    src: media/studio-team.jpg
+    fit:
+      mode: cover
+    sourceLayout: 0046968682ab068dbb7bbc39bff7376d50829bda19f28a5b4863cde699ad4226
+  - elementId: slide-5-node-74-scorecard
+    elementType: shape
+    bounds:
+      - 482
+      - 54
+      - 461
+      - 406
+    shapeName: roundRect
+    fill:
+      type: solid
+      color: '#153C2E'
+    sourceLayout: cead59c183b6b253950457ef968876525c7787b4dd8c1c0cdef85d4a8836f5d5
+  - elementId: slide-5-node-75-title
+    elementType: text
+    bounds:
+      - 502
+      - 74
+      - 410
+      - 28
+    content:
+      fontFamily: Arial
+      fontSize: 17
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:17px;font-family:Arial">People in Motion</span></p>
+    sourceLayout: b701049307874e35d1b5c3dbbe78287aa5969c063cda42b4f3d9e821085484a8
+  - elementId: slide-5-node-76-people-rule-0
+    elementType: line
+    bounds:
+      - 502
+      - 107
+      - 421
+      - 0.1
+    viewBox:
+      - 421
+      - 0.1
+    points: 0,0 421,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 8db35307602bcdfbfc1da8866e439a7d7daae95cf8f5ddbcfc61f33ed6109587
+  - elementId: slide-5-node-77-people-value-0
+    elementType: text
+    bounds:
+      - 502
+      - 116
+      - 197
+      - 75
+    content:
+      fontFamily: Arial
+      fontSize: 59
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:59px;font-family:Arial">24</span></p>
+    sourceLayout: 934cd14b1be4c72b4c3bd95bf6ee3e1a8f68bc8d2cf343489d530c7505ef75ac
+  - elementId: slide-5-node-78-people-label-0
+    elementType: text
+    bounds:
+      - 713
+      - 128
+      - 208
+      - 58
+    content:
+      fontFamily: Arial
+      fontSize: 18
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:18px;font-family:Arial">pilot team</span></p><p><span style="color:#FFFFFF;font-size:18px;font-family:Arial">four disciplines</span></p>
+    sourceLayout: dac7c57f418a800113a3f3a77814d5708dfc009a4df7055298883bf8ade58da6
+  - elementId: slide-5-node-79-people-rule-1
+    elementType: line
+    bounds:
+      - 502
+      - 208
+      - 421
+      - 0.1
+    viewBox:
+      - 421
+      - 0.1
+    points: 0,0 421,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 5e5beb27a24005083dec1defc0b7653f87eabd2bf5e8f30e3138bbc9e384f467
+  - elementId: slide-5-node-80-people-value-1
+    elementType: text
+    bounds:
+      - 502
+      - 217
+      - 197
+      - 75
+    content:
+      fontFamily: Arial
+      fontSize: 59
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:59px;font-family:Arial">8</span></p>
+    sourceLayout: fa1b34d42abe6c931d71378f772a61ad45bffb896ee7eaaad1d369ca314c4c43
+  - elementId: slide-5-node-81-people-label-1
+    elementType: text
+    bounds:
+      - 713
+      - 229
+      - 208
+      - 58
+    content:
+      fontFamily: Arial
+      fontSize: 18
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:18px;font-family:Arial">local partners</span></p><p><span style="color:#FFFFFF;font-size:18px;font-family:Arial">pilot network</span></p>
+    sourceLayout: eac1fc8ea7588e385e8a23103849f37681f3cc3149106156376b68d524453904
+  - elementId: slide-5-node-82-award-title
+    elementType: text
+    bounds:
+      - 502
+      - 323
+      - 414
+      - 30
+    content:
+      fontFamily: Arial
+      fontSize: 17
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:17px;font-family:Arial">Signals of Progress</span></p>
+    sourceLayout: 278b60622c0cd19544ac01f9c2ab04a690786643c85bff6ad8fe5fd86859834d
+  - elementId: slide-5-node-83-award-rule
+    elementType: line
+    bounds:
+      - 502
+      - 355
+      - 421
+      - 0.1
+    viewBox:
+      - 421
+      - 0.1
+    points: 0,0 421,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 9876336b6756e225a867d62786ab15b5a1d8bfece5f3f0d2315a19ebf7157829
+  - elementId: slide-5-node-84-awards-left
+    elementType: text
+    bounds:
+      - 502
+      - 375
+      - 198
+      - 65
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-family:Arial">Prototype completed,</span></p><p><span style="color:#FFFFFF;font-size:13px;font-family:Arial">field feedback collected.</span></p>
+    sourceLayout: c3c1aac60ec1a2a8ebd9c4d7e56c7cdb3ac7233ec7bd915552bf28a03d302d1c
+  - elementId: slide-5-node-85-awards-right
+    elementType: text
+    bounds:
+      - 720
+      - 375
+      - 198
+      - 65
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-family:Arial">Add verified milestones,</span></p><p><span style="color:#FFFFFF;font-size:13px;font-family:Arial">awards or recognition.</span></p>
+    sourceLayout: 95d199c1aff8036d2c9ea282e46bf2a66566341bbc0a5881ec620022de295969
+notes: '{"schema":"dsh.template-images/v1","layoutId":"photo-scorecard","pageRole":"团队或用户概览：现场照片与数据面板","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[{"elementId":"slide-5-node-73-people-photo","role":"团队或用户工作现场","contentSources":["slide-5-node-75-title","slide-5-node-78-people-label-0","slide-5-node-81-people-label-1"],"sourcePolicy":"contextual-scene","subject":"A diverse team collaborating around physical prototypes and planting samples in a warm, plant-filled studio.","composition":"Square candid mid-shot; people and hands centered; tools visible; uncluttered edges.","aspectRatio":"1:1","reuseGroup":"team-scene","maskElementIds":[]}],"contentPolicy":"provided-facts-or-qualitative"}'

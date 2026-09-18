@@ -1,0 +1,463 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-4-node-40-green-half
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 480
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: 132249daf3bc9f7251c146f9e6cb61f578133f1e2618714ea3526ebbd58c072a
+  - elementId: slide-4-node-41-feature-photo
+    elementType: image
+    bounds:
+      - 18
+      - 54
+      - 434
+      - 469
+    src: media/clean-energy-hub.jpg
+    fit:
+      mode: cover
+    sourceLayout: b961aef6a3e0bd95781349d9cee57f5eba3d3a37497e39cadc48c223ef10003c
+  - elementId: slide-4-node-42-image-mask-top-left
+    elementType: shape
+    bounds:
+      - 18
+      - 54
+      - 245
+      - 60
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: fbb10c8ff25f928225418388af7ab6e6be24a6186e1e920feea855cbdd0ce0cc
+  - elementId: slide-4-node-43-image-mask-mid-left
+    elementType: shape
+    bounds:
+      - 18
+      - 114
+      - 201
+      - 38
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: 8968762b0cee4f44bf23a31b898503c5724be2e698bcd14f5f5dddb96f54c899
+  - elementId: slide-4-node-44-image-mask-bottom-right
+    elementType: shape
+    bounds:
+      - 298
+      - 445
+      - 155
+      - 79
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: df7d4130de2c990f830c1993c11d7a0daa5c3ca3ac8ddd9c4279b8fe0cc92fe4
+  - elementId: slide-4-node-45-year-block
+    elementType: shape
+    bounds:
+      - 299
+      - 448
+      - 180
+      - 92
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: 31bd638547ad111740f69d278e7f43c86a6933e4c1e55fb8db1d5d164a53de6c
+  - elementId: slide-4-node-46-title
+    elementType: text
+    bounds:
+      - 19
+      - 58
+      - 260
+      - 114
+    content:
+      fontFamily: Arial
+      fontSize: 43
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:43px;font-family:Arial">Program</span></p><p><span style="color:#153C2E;font-size:43px;font-family:Arial">Snapshot</span></p>
+    sourceLayout: 30695457695b06ae4735da4ec52702c40973291d014cf0858702954365608da1
+  - elementId: slide-4-node-47-year
+    elementType: text
+    bounds:
+      - 321
+      - 461
+      - 141
+      - 64
+    content:
+      fontFamily: Arial
+      fontSize: 49
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:49px;font-family:Arial">2026</span></p>
+    sourceLayout: 4cea36ba724eda5dbf4bc844a1eafb02cadc677509fce68811dfa9a02cb5fc25
+  - elementId: slide-4-node-48-metric-section
+    elementType: text
+    bounds:
+      - 500
+      - 59
+      - 431
+      - 25
+    content:
+      fontFamily: Arial
+      fontSize: 16
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:16px;font-family:Arial">ILLUSTRATIVE</span></p>
+    sourceLayout: 79e2c6f6ddcb3ccbd50a5d6f2e11577409eeab6e7d90ff670e38f7b57962bec4
+  - elementId: slide-4-node-49-metric-rule-0
+    elementType: line
+    bounds:
+      - 500
+      - 83
+      - 442
+      - 0.1
+    viewBox:
+      - 442
+      - 0.1
+    points: 0,0 442,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 5ad83aeb00275a8bdf7ed3bf660fc5602fdeebf6f54caeaa29740a7d3792b246
+  - elementId: slide-4-node-50-metric-value-0
+    elementType: text
+    bounds:
+      - 500
+      - 91
+      - 298
+      - 72
+    content:
+      fontFamily: Arial
+      fontSize: 56
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:56px;font-family:Arial">12</span></p>
+    sourceLayout: 8829680ffdb7d25ddb57f16662fae39411bf9fd72f70d8476ed088a7554d4e85
+  - elementId: slide-4-node-51-metric-label-0
+    elementType: text
+    bounds:
+      - 804
+      - 98
+      - 137
+      - 54
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">active pilot sites</span></p>
+    sourceLayout: 672d55884530568029802b03e2a6580ad4f80b1e7cd4c2f1af38e6cac8072113
+  - elementId: slide-4-node-52-metric-rule-1
+    elementType: line
+    bounds:
+      - 500
+      - 165
+      - 442
+      - 0.1
+    viewBox:
+      - 442
+      - 0.1
+    points: 0,0 442,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: f4e054d09bdee2db42d7e34376bebe9cae3b593450ef0460898336d2513b0816
+  - elementId: slide-4-node-53-metric-value-1
+    elementType: text
+    bounds:
+      - 500
+      - 173
+      - 298
+      - 72
+    content:
+      fontFamily: Arial
+      fontSize: 56
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:56px;font-family:Arial">38</span></p>
+    sourceLayout: f4af1abe23420c7a2397250e5c4e544eb6bf7d3cc1c7d5e9ae39abe937ed6f40
+  - elementId: slide-4-node-54-metric-label-1
+    elementType: text
+    bounds:
+      - 804
+      - 180
+      - 137
+      - 54
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">community partners</span></p>
+    sourceLayout: b61e902c7efc5cda908fca8dc6e30ac118aac65ad05db5b9ee1e901d2d38485a
+  - elementId: slide-4-node-55-metric-rule-2
+    elementType: line
+    bounds:
+      - 500
+      - 247
+      - 442
+      - 0.1
+    viewBox:
+      - 442
+      - 0.1
+    points: 0,0 442,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: aec95744a6f4e3094bccae1ba217c48383acdc22943251c5bd76bb4138185a77
+  - elementId: slide-4-node-56-metric-value-2
+    elementType: text
+    bounds:
+      - 500
+      - 255
+      - 298
+      - 72
+    content:
+      fontFamily: Arial
+      fontSize: 56
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:56px;font-family:Arial">640h</span></p>
+    sourceLayout: 53e9ce29e1484765bd57b01bad1df52f4e667e27ecca2590000c712ab40a4e05
+  - elementId: slide-4-node-57-metric-label-2
+    elementType: text
+    bounds:
+      - 804
+      - 262
+      - 137
+      - 54
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">volunteer time</span></p>
+    sourceLayout: 9ab9b15a016e16a866aa4f06a75d19327a1e5931428be9238b5413217c831852
+  - elementId: slide-4-node-58-metric-rule-3
+    elementType: line
+    bounds:
+      - 500
+      - 329
+      - 442
+      - 0.1
+    viewBox:
+      - 442
+      - 0.1
+    points: 0,0 442,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 953403e9f4e9642e458623c0135d79bd28eaf869575cafb92825db9e60f9f915
+  - elementId: slide-4-node-59-metric-value-3
+    elementType: text
+    bounds:
+      - 500
+      - 337
+      - 298
+      - 72
+    content:
+      fontFamily: Arial
+      fontSize: 56
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:56px;font-family:Arial">7</span></p>
+    sourceLayout: ca66bc12d2c4ddc8258dda9b3536d67748d9873a557702639f0aa7f64ffa360e
+  - elementId: slide-4-node-60-metric-label-3
+    elementType: text
+    bounds:
+      - 804
+      - 344
+      - 137
+      - 54
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">learning sessions</span></p>
+    sourceLayout: 6d628a41121f30c089d05f169520f27be3569b5bc004bf55235448be8db97799
+  - elementId: slide-4-node-61-metric-rule-4
+    elementType: line
+    bounds:
+      - 500
+      - 411
+      - 442
+      - 0.1
+    viewBox:
+      - 442
+      - 0.1
+    points: 0,0 442,0.1
+    border:
+      style: solid
+      width: 0.5
+      color: '#8A9A91'
+    sourceLayout: 17890fa62ef33ca92f1460eab83ed6afd2408d559d854a1c030aa1c04671a5f9
+  - elementId: slide-4-node-62-metric-value-4
+    elementType: text
+    bounds:
+      - 500
+      - 419
+      - 298
+      - 72
+    content:
+      fontFamily: Arial
+      fontSize: 56
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:56px;font-family:Arial">3</span></p>
+    sourceLayout: 08e5ea322bab40bbffa0c52c14d63c9a43759309b72f7190df8d498b62eb7510
+  - elementId: slide-4-node-63-metric-label-4
+    elementType: text
+    bounds:
+      - 804
+      - 426
+      - 137
+      - 54
+    content:
+      fontFamily: Arial
+      fontSize: 13
+      color: '#153C2E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#153C2E;font-size:13px;font-family:Arial">prototype programs</span></p>
+    sourceLayout: 65cce38915369590bbf7c8c549975d3f21597dfb2187bd747aa89d85d72f4313
+  - elementId: slide-4-node-64-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 68161b72ef916b9f83dd29baf807dba7a7ee1e8298d762e51723488059c82599
+  - elementId: slide-4-node-65-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">PROGRAM SNAPSHOT</span></p>
+    sourceLayout: 707bb59b0ecc03cbec5345ae4098d25434bed7590e167fb78cd1b1739ba6ad15
+  - elementId: slide-4-node-66-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: 92316c5cdc7099be2081f7bfcf1d5cc3197e37f629bb1c4a397fe362ebf83925
+  - elementId: slide-4-node-67-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">4</span></p>
+    sourceLayout: 01df256c351c67703a4c0f14cbc860c6696d49489f08c6b727560480e94324c7
+  - elementId: slide-4-node-68-source-note
+    elementType: text
+    bounds:
+      - 500
+      - 511
+      - 427
+      - 16
+    content:
+      fontFamily: Arial
+      fontSize: 7
+      color: '#6B7C73'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#6B7C73;font-size:7px;font-family:Arial">Illustrative values for layout preview. Replace them with verified figures and sources.</span></p>
+    sourceLayout: 67e206083d8ad114e12af4c9badfd5e1439db9914fb835da6751bb9c13f4bab5
+notes: '{"schema":"dsh.template-images/v1","layoutId":"split-metrics","pageRole":"价值或指标概览：业务场景与五项信息","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[{"elementId":"slide-4-node-41-feature-photo","role":"业务价值场景","contentSources":["slide-4-node-46-title","slide-4-node-51-metric-label-0","slide-4-node-54-metric-label-1"],"sourcePolicy":"contextual-scene","subject":"A small solar-powered community hub with gardens and people using the shared outdoor space.","composition":"Square architectural scene with activity to the right, open sky and planting at upper left, clear safe margins.","aspectRatio":"1:1","reuseGroup":"value-scene","maskElementIds":["slide-4-node-42-image-mask-top-left","slide-4-node-43-image-mask-mid-left","slide-4-node-44-image-mask-bottom-right"]}],"contentPolicy":"provided-facts-or-qualitative"}'

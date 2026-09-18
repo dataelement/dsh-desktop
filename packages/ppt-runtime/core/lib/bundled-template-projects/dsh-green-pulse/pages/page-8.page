@@ -1,0 +1,374 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-8-node-128-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 748f2a2ac18c82e2aa61b83643e89cc4d6013253645c1386d403cdd929f2030e
+  - elementId: slide-8-node-129-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">PROGRAM STRATEGY</span></p>
+    sourceLayout: 207231b3e2e42a58e4a349c6a161ce960d21f5be5f0f7ee8f8f97e3ec27f6cb2
+  - elementId: slide-8-node-130-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: a7ed7e0ff73ce167b9fc19e44b5fe9d48aeeada5db87879e4de5554832969e4a
+  - elementId: slide-8-node-131-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">8</span></p>
+    sourceLayout: 5ad9a41688fcd60928b6f62416070076b377fc1064a7d660c1f4386859a42bcf
+  - elementId: slide-8-node-132-strategy-background
+    elementType: shape
+    bounds:
+      - 18
+      - 50
+      - 924
+      - 472
+    shapeName: roundRect
+    fill:
+      type: solid
+      color: '#153C2E'
+    sourceLayout: dd3832e89453651a78b73e17b266e6e44248f6ecf48f7d28e8000da972e786ac
+  - elementId: slide-8-node-133-title
+    elementType: text
+    bounds:
+      - 32
+      - 94
+      - 371
+      - 129
+    content:
+      fontFamily: Arial
+      fontSize: 38
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:38px;font-family:Arial">How Green Pulse</span></p><p><span style="color:#FFFFFF;font-size:38px;font-family:Arial">Works</span></p>
+    sourceLayout: 4c7705f239161b6aafdcf5cdd9d6e28c71246a40c97bead51c03de8f59c932b0
+  - elementId: slide-8-node-134-intro-a
+    elementType: text
+    bounds:
+      - 32
+      - 338
+      - 166
+      - 155
+    content:
+      fontFamily: Arial
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-family:Arial">A practical direction</span></p><p></p><p><span style="color:#FFFFFF;font-size:11px;font-family:Arial">Green Pulse turns broad sustainability goals into local experiments that people can see, use and improve.</span></p><p></p><p><span style="color:#FFFFFF;font-size:11px;font-family:Arial">Each program begins with a real need and a clear owner.</span></p>
+    sourceLayout: 34ed4bcd7808455d5d0d8346ee42ed6bc4beb90d5c3beab60a38846766982fd4
+  - elementId: slide-8-node-135-intro-b
+    elementType: text
+    bounds:
+      - 215
+      - 338
+      - 165
+      - 155
+    content:
+      fontFamily: Arial
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-family:Arial">From idea to evidence</span></p><p></p><p><span style="color:#FFFFFF;font-size:11px;font-family:Arial">Teams build a small pilot, invite feedback and record the result before deciding whether to repeat, revise or stop.</span></p><p></p><p><span style="color:#FFFFFF;font-size:11px;font-family:Arial">The reporting rhythm follows the work.</span></p>
+    sourceLayout: 3c1ed636074ab92ec63ea83daced63da04f771c7380f75ab952cdfbcc6f8b033
+  - elementId: slide-8-node-136-strategy-table
+    elementType: table
+    bounds:
+      - 410
+      - 91
+      - 491
+      - 397
+    columnWidths:
+      - 0.28
+      - 0.4
+      - 0.32
+    rowHeights:
+      - 0.2
+      - 0.2
+      - 0.2
+      - 0.2
+      - 0.2
+    rows:
+      - - text: Focus
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Practical goal
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+        - text: Working commitment
+          fill:
+            type: solid
+            color: '#1C7C54'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#153C2E'
+          align:
+            - center
+            - top
+      - - text: Local energy
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: |-
+            Lower avoidable demand
+            Build shared habits
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: Design with users
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+      - - text: Healthy places
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: |-
+            Improve water and shade
+            Strengthen access
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: Learn in the field
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+      - - text: Inclusive teams
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: |-
+            Share skills
+            Open participation
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: Make space to contribute
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+      - - text: Responsible growth
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: |-
+            Track impact
+            Publish evidence
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+        - text: Review and improve
+          fill:
+            type: solid
+            color: '#153C2E'
+          border:
+            style: solid
+            width: 0.35
+            color: '#9AAC9F'
+          fontFamily: Arial
+          fontSize: 10.5
+          color: '#FFFFFF'
+          align:
+            - center
+            - top
+    sourceLayout: 8ec5b5c694f93ea674ca4beac6e6c99598f46204ee6ff458da1365f11e438a18
+notes: '{"schema":"dsh.template-images/v1","layoutId":"strategy-matrix","pageRole":"策略矩阵：目标、举措、责任与成效","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[],"contentPolicy":"provided-facts-or-qualitative"}'

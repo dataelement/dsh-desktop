@@ -1,0 +1,211 @@
+pageType: content
+background:
+  type: solid
+  color: '#1C7C54'
+elements:
+  - elementId: slide-7-node-115-report-label
+    elementType: text
+    bounds:
+      - 19
+      - 17
+      - 140
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">GREEN PULSE · FIELD NOTES</span></p>
+    sourceLayout: 87a67864a7fbd831360d896141cbce2d13efbedcc1e49cfd589750c77523156d
+  - elementId: slide-7-node-116-section-label
+    elementType: text
+    bounds:
+      - 174
+      - 17
+      - 400
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">FIELD STORY</span></p>
+    sourceLayout: 234509170f00bdd25de50b48665cefdf263052963600e23c34087ac6a137b84c
+  - elementId: slide-7-node-117-contents-label
+    elementType: text
+    bounds:
+      - 791
+      - 17
+      - 135
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">CONTENTS</span></p>
+    sourceLayout: ae392e1335faef226d4d4c5d10afb254aab08c316cee8bc957f45b36f941bca9
+  - elementId: slide-7-node-118-page-number
+    elementType: text
+    bounds:
+      - 929
+      - 17
+      - 17
+      - 12
+    content:
+      fontFamily: Arial
+      fontSize: 6.8
+      color: '#607068'
+      align:
+        - right
+        - top
+      wrap: true
+      text: <p><span style="color:#607068;font-size:6.8px;font-family:Arial">7</span></p>
+    sourceLayout: 02f6e17a4020d3a19550f39e3e39352a94c1a00f53388be6cd71afddc9189a26
+  - elementId: slide-7-node-119-quote-mark
+    elementType: text
+    bounds:
+      - 21
+      - 56
+      - 48
+      - 50
+    content:
+      fontFamily: Arial
+      fontSize: 40
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:40px;font-family:Arial">“</span></p>
+    sourceLayout: 4e2beba23c4fcadad66a5703abf45319049ebe5a27eabbbf22586f444aa3cf2b
+  - elementId: slide-7-node-120-quote
+    elementType: text
+    bounds:
+      - 20
+      - 107
+      - 416
+      - 155
+    content:
+      fontFamily: Arial
+      fontSize: 34
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:34px;font-family:Arial">Small choices,</span></p><p><span style="color:#FFFFFF;font-size:34px;font-family:Arial">shared often, grow</span></p><p><span style="color:#FFFFFF;font-size:34px;font-family:Arial">greener places.</span></p>
+    sourceLayout: 0102df4bbb78d66957f5d25a64d0a4ea9b1b962601188ff7603dc02d77c454e9
+  - elementId: slide-7-node-121-person-photo
+    elementType: image
+    bounds:
+      - 121
+      - 264
+      - 298
+      - 258
+    src: media/community-story.jpg
+    fit:
+      mode: cover
+    sourceLayout: de481477a45fb97f5dde5b35faca6192f06b5afec299d243d4681263c93ee321
+  - elementId: slide-7-node-122-image-mask-top-left
+    elementType: shape
+    bounds:
+      - 121
+      - 264
+      - 113
+      - 50
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: c82d7e7b970bb4deb4c63c8f92a85374923cca23308f2339d202f768681f3823
+  - elementId: slide-7-node-123-image-mask-bottom-left
+    elementType: shape
+    bounds:
+      - 121
+      - 495
+      - 142
+      - 27
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1C7C54'
+    sourceLayout: 24d9bc68d09ecfdbeec91dc95b2141b4623d0c10f7a3efcdabe0749902e58fc3
+  - elementId: slide-7-node-124-person-name
+    elementType: text
+    bounds:
+      - 21
+      - 499
+      - 235
+      - 34
+    content:
+      fontFamily: Arial
+      fontSize: 18
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:18px;font-family:Arial;font-weight:700">Jordan Lee · sample</span></p>
+    sourceLayout: a3e940599f2a1ddd2da75d57c480601570a6800cdd602f2ee171fb9c0398b8d6
+  - elementId: slide-7-node-125-story-column-0
+    elementType: text
+    bounds:
+      - 488
+      - 180
+      - 135
+      - 319
+    content:
+      fontFamily: Arial
+      fontSize: 11.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">Starting with the block</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">A small group mapped one everyday obstacle: a shared courtyard that was hot, underused and difficult to maintain.</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">The story is fictional and demonstrates the layout.</span></p>'
+    sourceLayout: ae837f912999e2767f98a3334270701874aa29e70a35de3f69944d495060305d
+  - elementId: slide-7-node-126-story-column-1
+    elementType: text
+    bounds:
+      - 641
+      - 180
+      - 135
+      - 319
+    content:
+      fontFamily: Arial
+      fontSize: 11.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">Testing one change</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">Residents and volunteers built a shade-and-planting trial, then observed how people used the space across two weeks.</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">Replace this copy with an approved case study.</span></p>
+    sourceLayout: 507840bf3c42bd04b085ecaf6ec58f62321e3d5ba3be8682740569982317187d
+  - elementId: slide-7-node-127-story-column-2
+    elementType: text
+    bounds:
+      - 794
+      - 180
+      - 135
+      - 319
+    content:
+      fontFamily: Arial
+      fontSize: 11.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">Learning in public</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">The team shared what worked, what failed and what would change before the next round.</span></p><p></p><p><span style="color:#FFFFFF;font-size:11.5px;font-family:Arial">Use evidence that readers can verify.</span></p>
+    sourceLayout: c4dcb5c50f4f22f3f1b5ef06af2372f2698e1b41bac28b4f90e4ec3e0c6e8d78
+notes: '{"schema":"dsh.template-images/v1","layoutId":"spotlight-quote","pageRole":"真实人物故事：引语、肖像与三栏说明","style":{"medium":"纪实感自然摄影，呈现真实世界中的社区协作、绿色空间和具体行动；人物均为虚构示例。","palette":"森林绿 #1C7C54、深松绿 #153C2E、浅青绿 #B7E4C7、淡柠檬绿 #C7F36B，搭配自然木色与柔和中性色。","lighting":"柔和自然日光，中等反差，主体清晰，背景安静，肤色自然。","tone":"扎实、开放、有生命力；画面强调人与场所的真实关系。","textTreatment":"图像内不生成文字、数字、品牌、标志或水印；全部标题、数据和标注由 PowerPoint 原生元素承载。","continuity":"全稿保持纪实摄影质感、自然色温与社区可持续主题；同一拼贴使用一致场景和互补视角。"},"slots":[{"elementId":"slide-7-node-121-person-photo","role":"故事主人公肖像","contentSources":["slide-7-node-124-person-name","slide-7-node-120-quote","slide-7-node-125-story-column-0"],"sourcePolicy":"contextual-scene","subject":"A fictional Black male community coordinator outdoors beside a neighborhood garden, warm and thoughtful.","composition":"Environmental portrait; face at center-right; generous calm space on the left; natural expression; no logos or text.","aspectRatio":"4:3","reuseGroup":"story-person","maskElementIds":["slide-7-node-122-image-mask-top-left","slide-7-node-123-image-mask-bottom-left"]}],"contentPolicy":"provided-facts-or-qualitative"}'

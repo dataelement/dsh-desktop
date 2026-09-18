@@ -8,6 +8,7 @@ import { supplementResources, isSafeSvg, sanitizeOoXml, sanitizePptxFiles } from
 import { flattenPptxGroups } from "./pptx-groups.js";
 import { emfToSvg } from "./emf-image.js";
 import { markSourceLayout } from "./source-layout.js";
+import { readPptxImageContracts, remapImageContract } from "./template-image-contract.js";
 //#region lib/types/pptd-convert.js
 /** Bounded PPTX to PPTD v2 conversion used by the local CLI. */
 const CSS_PIXEL_TO_POINT = 72 / 96;
@@ -453,6 +454,7 @@ async function convertPptxWithDomParser(bytes, fileName) {
 	try {
 		const files = sanitizePptxFiles(supplementResources(await parseZip(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), RECOMMENDED_ZIP_LIMITS), bytes));
 		const diagnostics = [];
+		const imageContracts = readPptxImageContracts(bytes);
         for (const [slidePath, xml] of files.slides) {
             const flattened = flattenPptxGroups(xml);
             files.slides.set(slidePath, flattened.xml);
@@ -469,10 +471,12 @@ async function convertPptxWithDomParser(bytes, fileName) {
 			if (sourceSlide === void 0) continue;
 			const theme = themeForSlide(presentation, slide.index);
 			const output = [];
+			const elementNames = new Map();
 			const convertNode = (node, offsetX = 0, offsetY = 0, rawNode) => {
 				sourceNodeCount += 1;
 				// Display names can repeat or collapse after normalization; source traversal owns identity.
 				const elementId = `slide-${slide.index + 1}-node-${sourceNodeCount}-${safeId(node.name, node.nodeType)}`;
+				if (node.name) elementNames.set(node.name, [...(elementNames.get(node.name) ?? []), elementId]);
 				if (node.nodeType === "group") {
 					diagnostics.push({
 						level: "normalized",
@@ -594,13 +598,19 @@ async function convertPptxWithDomParser(bytes, fileName) {
 				"noFill"
 			].map((name) => descendantElement(backgroundContainer, name)).find((value) => value !== void 0);
 			const background = backgroundFillElement === void 0 ? void 0 : convertedFill({ element: backgroundFillElement }, theme);
+			const imageNotes = imageContracts.has(sourceSlide.slidePath) ? remapImageContract(imageContracts.get(sourceSlide.slidePath), elementNames, output) : void 0;
+			if (imageNotes) for (const slot of JSON.parse(imageNotes).slots) {
+				const image = output.find(element => element.elementId === slot.elementId);
+				if (image) image.fit = { mode: slot.sourcePolicy === "native-graphic" ? "contain" : "cover" };
+			}
 			pages.set(pagePath, yamlText({
 				pageType: slide.index === 0 ? "cover" : "content",
 				background: background ?? {
 					type: "solid",
 					color: "#FFFFFF"
 				},
-				elements: output.map(markSourceLayout)
+				elements: output.map(markSourceLayout),
+				...imageNotes ? { notes: imageNotes } : {}
 			}));
 		}
 		return {
