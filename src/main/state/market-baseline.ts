@@ -169,12 +169,12 @@ export async function ensureMarketBaseline(
     .catch(() => false)
   if (meetsBaseline(installed) && !isGenerationLink) return
 
-  const declaredVersion = manifest.dependencies.dshmarket
-  const declaredClean = declaredVersion?.replace(/^[~^v=><\s]+/g, '')
-  const declaredParsed = declaredClean ? parseSemver(declaredClean) : null
+  // The installer pins and verifies an exact version, so a declared range
+  // (`^0.5.0`) is reduced to the version it names.
+  const declaredClean = manifest.dependencies.dshmarket.replace(/^[~^v=><\s]+/g, '')
   const targetVersion =
-    declaredParsed && compareSemver(declaredClean, VERIFIED_MARKET_BASELINE) > 0
-      ? declaredVersion
+    parseSemver(declaredClean) && compareSemver(declaredClean, VERIFIED_MARKET_BASELINE) > 0
+      ? declaredClean
       : VERIFIED_MARKET_BASELINE
 
   options.note?.(

@@ -261,5 +261,23 @@ describe('market baseline at normal startup', () => {
     expect(upgrade).toHaveBeenCalledWith(expect.objectContaining({ targetVersion: '1.47.0' }))
     expect(await readInstalledPluginVersion(options.dshHome, 'dshmarket')).toBe('1.47.0')
   })
+
+  it('pins the version a declared range names, since the installer verifies an exact version', async () => {
+    const { options, profile, market } = await fixture()
+    await rm(market, { recursive: true, force: true })
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    manifest.dependencies.dshmarket = '^1.47.0'
+    await writeFile(join(profile, 'package.json'), JSON.stringify(manifest, undefined, 2))
+
+    const upgrade = vi.fn(async ({ targetVersion }: { dshHome: string; targetVersion: string }) => {
+      const packageDir = join(profile, 'node_modules', 'dshmarket')
+      await mkdir(packageDir, { recursive: true })
+      await writeFile(join(packageDir, 'package.json'), JSON.stringify({ name: 'dshmarket', version: targetVersion }))
+      return { ok: true }
+    })
+
+    await ensureMarketBaseline(options, upgrade)
+    expect(upgrade).toHaveBeenCalledWith(expect.objectContaining({ targetVersion: '1.47.0' }))
+  })
 })
 
