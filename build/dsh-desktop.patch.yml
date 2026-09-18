@@ -1,3 +1,10 @@
+# Harness's runtime warnings and errors live only in an in-memory logger ring,
+# and session activation failures only reach the client. Bridge both to
+# stderr so harness.log keeps them. First, so it hears as much as it can.
+- insert:
+    - id: dsh-desktop-log-bridge
+      name: dsh-desktop-log-bridge
+
 # Keep the stock directory-picker (auto) row active: the native backend
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
 # plugins reading the seam) work unmodified. The client surface keeps its

@@ -717,13 +717,24 @@ ${cause}`
   }
 }
 
+/**
+ * Runtime logger output bridged by `dsh-desktop-log-bridge`. It is kept in
+ * harness.log for people and the Repair Agent, but it is not launch evidence:
+ * a warning logged while running must not become recovery's failure cause or
+ * the plugin it blames.
+ */
+const BRIDGED_LOG_PREFIX = '[stderr] [harness-log] '
+
+/** The latest launch attempt's log lines, without bridged runtime logger output. */
 export function latestHarnessAttemptLogs(logLines: readonly string[]): readonly string[] {
+  let start = 0
   for (let index = logLines.length - 1; index >= 0; index -= 1) {
     if (logLines[index]?.trimStart().startsWith('[desktop] starting ')) {
-      return logLines.slice(index + 1)
+      start = index + 1
+      break
     }
   }
-  return logLines
+  return logLines.slice(start).filter((line) => !line.startsWith(BRIDGED_LOG_PREFIX))
 }
 
 export function extractFailureCause(logLines: readonly string[]): string | undefined {

@@ -11,6 +11,7 @@ import {
   extractFailureCause,
   extractOffendingPlugin,
   extractOffendingPlugins,
+  latestHarnessAttemptLogs,
   extractPluginFailureReferences,
   extractSlotConflictName,
   formatExitCode,
@@ -352,6 +353,19 @@ describe('shell environment resolution', () => {
 })
 
 describe('harness failure cause extraction', () => {
+  it('never takes bridged runtime logger output as launch evidence', () => {
+    const logs = [
+      '[desktop] starting 2026-09-18T00:00:00.000Z',
+      '[stderr] Error: Harness could not bind its port',
+      '[stderr] [harness-log] error loader: failed to apply loader entry include:x (dsh-innocent)',
+      '[stderr] [harness-log]   at somewhere',
+      '[stderr] [harness-log] session-error s1: agent-presets: preset "code" not found'
+    ]
+    expect(latestHarnessAttemptLogs(logs)).toEqual(['[stderr] Error: Harness could not bind its port'])
+    expect(extractFailureCause(logs)).toBe('Error: Harness could not bind its port')
+    expect(extractOffendingPlugins(logs)).toEqual([])
+  })
+
   it('extracts the DSH entry failure message from stderr', () => {
     const logs = [
       '[stderr] [harness-node] DSH entry failed: Error: dsh: plugin tree failed to load',
