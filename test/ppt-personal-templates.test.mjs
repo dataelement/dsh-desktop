@@ -10,14 +10,14 @@ import PptxGenJS from 'pptxgenjs';
 import sharp from 'sharp';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools';
-import { MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES } from '../packages/ppt-runtime/core/lib/personal-templates.js';
 
-let apply, packageRoot;
+let apply, packageRoot, MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES;
 const cleanups = [];
 beforeAll(async () => {
   packageRoot = await mkdtemp(path.resolve('node_modules/.ppt-personal-'));
   execFileSync('tar', ['-xzf', 'packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz', '-C', packageRoot, '--strip-components=1']);
   ({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))));
+  ({ MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
 });
 afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true, force: true }); });
 afterEach(async () => { for (const root of cleanups.splice(0)) await rm(root, { recursive: true, force: true }); });
