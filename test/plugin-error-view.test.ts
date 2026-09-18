@@ -75,7 +75,7 @@ describe('preload wiring for plugin error handling', () => {
     expect(handlerBody).toContain('desktopDiagnostics?.discardPendingPluginFailure()')
   })
 
-  it('never offers removal of plugins a deferred migration has not installed yet', async () => {
+  it('never offers removal of plugins a deferred migration left manifest-only', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
     const maintenance = main.slice(main.indexOf('const maintenance = await runProfileStartupMaintenance('))
     expect(maintenance.slice(0, maintenance.indexOf("if (maintenance.outcome === 'safe-recovery')"))).toContain(
@@ -84,8 +84,10 @@ describe('preload wiring for plugin error handling', () => {
 
     const loop = main.slice(main.indexOf('const detection = await detectPluginRecovery('))
     const beforeAction = loop.slice(0, loop.indexOf('waitForPluginRecoveryAction('))
-    const filter = beforeAction.indexOf('!migrationPendingPlugins.has(plugin)')
+    const filter = beforeAction.indexOf('!pendingMigration.includes(plugin)')
     expect(filter).toBeGreaterThan(-1)
+    // Only a plugin with no installed legacy copy is exempt from blame.
+    expect(beforeAction).toContain('migrationPendingPlugins.has(plugin) && await readInstalledPluginVersion(dshHome, plugin) === undefined')
     expect(filter).toBeLessThan(beforeAction.indexOf('appendPluginRecoveryDetectionLog(detection.plugins)'))
     expect(filter).toBeLessThan(beforeAction.indexOf('discardPendingPluginFailure()'))
   })

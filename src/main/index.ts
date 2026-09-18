@@ -1972,12 +1972,18 @@ async function showPluginRecovery(options?: {
         timeoutMs: waitForRendererEvidence ? PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS : 0
       })
       detection.plugins = evidence.targets(detection.plugins, removedPlugins)
-      // A plugin the deferred migration has not installed yet is not broken; removing
-      // it would delete a working plugin because of an install-time failure.
-      const pendingMigration = detection.plugins.filter((plugin) => migrationPendingPlugins.has(plugin))
+      // A plugin the deferred migration left manifest-only is not broken; removing
+      // it would delete a working plugin because of an install-time failure. A
+      // pending plugin whose legacy copy is installed can still be the culprit.
+      const pendingMigration: string[] = []
+      for (const plugin of detection.plugins) {
+        if (migrationPendingPlugins.has(plugin) && await readInstalledPluginVersion(dshHome, plugin) === undefined) {
+          pendingMigration.push(plugin)
+        }
+      }
       if (pendingMigration.length > 0) {
         runtime.note(`[desktop] plugin recovery: not blaming plugins still pending migration: ${pendingMigration.join(', ')}`)
-        detection.plugins = detection.plugins.filter((plugin) => !migrationPendingPlugins.has(plugin))
+        detection.plugins = detection.plugins.filter((plugin) => !pendingMigration.includes(plugin))
       }
       appendPluginRecoveryDetectionLog(detection.plugins)
       if (!safeModeVisible) {
