@@ -1,10 +1,7 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { parse } from 'yaml'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   analyzeCrashContext,
+  buildSystemRepairPrompt,
   extractRelevantCrashLogs,
   RepairAgentService
 } from '../src/main/repair-agent'
@@ -27,201 +24,159 @@ describe('RepairAgentService', () => {
     expect(finding?.culprit).toBe('plugin-a')
   })
 
-  it('configures providers adhering to DSH system standards (llm-deepseek vs llm-pi-ai)', async () => {
-    const testDir = await mkdtemp(join(tmpdir(), 'dsh-repair-agent-test-'))
-    try {
-      const service = new RepairAgentService({
-        harnessUrl: () => undefined,
-        harnessAuthToken: () => undefined,
-        ensureHarnessReady: async () => {},
-        launchDirectory: testDir,
-        locale: () => 'zh',
-        dshHome: testDir
-      })
-
-      // 1. DeepSeek official
-      const dsRes = await service.configureProvider({
-        provider: 'deepseek',
-        apiKey: 'sk-deepseek-test',
-        baseUrl: 'https://api.deepseek.com'
-      })
-      expect(dsRes.ok).toBe(true)
-
-      const creds1 = parse(await readFile(join(testDir, '.credentials.yaml'), 'utf8'))
-      expect(creds1.refs.DEEPSEEK_API_KEY).toBe('sk-deepseek-test')
-
-      const settings1 = parse(await readFile(join(testDir, 'settings.yaml'), 'utf8'))
-      expect(settings1['agent-default-model']).toEqual({
-        provider: 'deepseek-official',
-        model: 'deepseek-chat'
-      })
-
-      // 2. OpenAI / compatible third-party provider (llm-pi-ai)
-      const oaRes = await service.configureProvider({
-        provider: 'openai',
-        apiKey: 'sk-openai-test'
-      })
-      expect(oaRes.ok).toBe(true)
-
-      const creds2 = parse(await readFile(join(testDir, '.credentials.yaml'), 'utf8'))
-      expect(creds2.refs.OPENAI_API_KEY).toBe('sk-openai-test')
-
-      const settings2 = parse(await readFile(join(testDir, 'settings.yaml'), 'utf8'))
-      expect(settings2['llm-pi-ai'].providers.openai).toBeDefined()
-      expect(settings2['llm-pi-ai'].providers.openai.apiKeyEnv).toBe('OPENAI_API_KEY')
-      expect(settings2['llm-pi-ai'].providers.openai.api).toBe('openai-completions')
-      expect(settings2['agent-default-model']).toEqual({
-        provider: 'openai',
-        model: 'gpt-4o'
-      })
-
-      // 3. Custom provider route (SiliconFlow / custom)
-      const sfRes = await service.configureProvider({
-        provider: 'siliconflow',
-        apiKey: 'sk-sf-test'
-      })
-      expect(sfRes.ok).toBe(true)
-
-      const creds3 = parse(await readFile(join(testDir, '.credentials.yaml'), 'utf8'))
-      expect(creds3.refs.SILICONFLOW_API_KEY).toBe('sk-sf-test')
-
-      const settings3 = parse(await readFile(join(testDir, 'settings.yaml'), 'utf8'))
-      expect(settings3['llm-pi-ai'].providers.siliconflow.baseURL).toBe('https://api.siliconflow.cn/v1')
-      expect(settings3['agent-default-model']).toEqual({
-        provider: 'siliconflow',
-        model: 'deepseek-ai/DeepSeek-V3'
-      })
-    } finally {
-      await rm(testDir, { recursive: true, force: true })
-    }
-  })
-
-  it('normalizes stream frames for assistant-stream, turn-end, and agent/request-error', () => {
+  it('builds the first prompt from the failed launch, not from Safe Mode logs', async () => {
+    const prompts: string[] = []
+    const workspacePaths: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: URL | string, init?: RequestInit) => {
+      const target = new URL(String(url))
+      if (target.pathname === '/') {
+        return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+      }
+      const endpoint = target.pathname.replace('/api/', '')
+      if (endpoint === 'session/prompt') {
+        const body = JSON.parse(String(init?.body))
+        prompts.push(body.payload.args.request.content[0].text)
+      }
+      if (endpoint === 'workspace/create') {
+        workspacePaths.push(JSON.parse(String(init?.body)).payload.args.request.path)
+      }
+      const value = endpoint === 'workspace/create'
+        ? { workspaceId: 'w1' }
+        : endpoint === 'session/create'
+          ? { sessionId: 's1' }
+          : {}
+      return Response.json({ result: { ok: true, value } })
+    }))
     const service = new RepairAgentService({
-      harnessUrl: () => undefined,
-      harnessAuthToken: () => undefined,
+      harnessUrl: () => 'http://127.0.0.1:1',
+      harnessAuthToken: () => 'token-1',
       ensureHarnessReady: async () => {},
-      launchDirectory: '/tmp',
-      locale: () => 'zh'
-    })
-    const normalize = (service as any).normalizeStreamValue.bind(service)
-
-    // 1. Text chunk
-    const textFrame = {
-      type: 'assistant-stream',
-      frame: {
-        type: 'chunk',
-        chunk: { type: 'text-delta', text: 'Hello from LLM' }
-      }
-    }
-    expect(normalize(textFrame)).toEqual({
-      type: 'chunk',
-      delta: 'Hello from LLM',
-      raw: textFrame
+      workspaceDirectory: '/data/harness',
+      harnessLogPath: '/logs/harness.log',
+      locale: () => 'en',
+      crashEvidence: () => ({ logs: ['[desktop] starting web'], plugins: ['broken-plugin'] })
     })
 
-    // 2. Reasoning chunk
-    const reasoningFrame = {
-      type: 'assistant-stream',
-      frame: {
-        type: 'chunk',
-        chunk: { type: 'reasoning-delta', text: 'Thinking step' }
-      }
-    }
-    expect(normalize(reasoningFrame)).toEqual({
-      type: 'chunk',
-      reasoning: 'Thinking step',
-      raw: reasoningFrame
-    })
+    const session = await service.initSession()
+    expect(session).toMatchObject({ ok: true, sessionId: 's1' })
+    expect(session.diagnosticFinding?.culprit).toBe('broken-plugin')
+    expect(workspacePaths).toEqual(['/data/harness'])
 
-    // 3. Step start marker
-    const startFrame = {
-      type: 'assistant-stream',
-      frame: {
-        type: 'start',
-        turn: 1,
-        step: 1
-      }
-    }
-    expect(normalize(startFrame)).toEqual({
-      type: 'step-start',
-      turn: 1,
-      step: 1,
-      raw: startFrame
-    })
-
-    // 4. Step end marker (attempt ends, not turn end)
-    const endFrame = {
-      type: 'assistant-stream',
-      frame: {
-        type: 'end',
-        outcome: { kind: 'committed' }
-      }
-    }
-    expect(normalize(endFrame)).toEqual({
-      type: 'step-end',
-      outcome: { kind: 'committed' },
-      raw: endFrame
-    })
-
-    // 5. Tool call event
-    const toolCallEvent = {
-      type: 'event',
-      event: {
-        type: 'tool/call',
-        data: { turn: 1, step: 1, name: 'fs_read', arguments: '{"path":"/app"}' }
-      }
-    }
-    expect(normalize(toolCallEvent)).toEqual({
-      type: 'tool-call',
-      name: 'fs_read',
-      args: '{"path":"/app"}',
-      turn: 1,
-      step: 1,
-      raw: toolCallEvent
-    })
-
-    // 6. Tool result event
-    const toolResultEvent = {
-      type: 'event',
-      event: {
-        type: 'tool/result',
-        data: { turn: 1, step: 1 }
-      }
-    }
-    expect(normalize(toolResultEvent)).toEqual({
-      type: 'tool-result',
-      turn: 1,
-      step: 1,
-      raw: toolResultEvent
-    })
-
-    // 7. True turn end event
-    const turnEndEvent = {
-      type: 'event',
-      event: {
-        type: 'turn/end',
-        data: { turn: 1, reason: 'completed' }
-      }
-    }
-    expect(normalize(turnEndEvent)).toEqual({
-      type: 'turn-end',
-      reason: 'completed',
-      raw: turnEndEvent
-    })
-
-    // 8. Request error event
-    const errEvent = {
-      type: 'event',
-      event: {
-        type: 'agent/request-error',
-        data: { error: { message: 'Invalid API Key' } }
-      }
-    }
-    expect(normalize(errEvent)).toEqual({
-      type: 'error',
-      error: 'Invalid API Key',
-      raw: errEvent
-    })
+    expect(await service.sendPrompt('s1', 'help')).toEqual({ ok: true })
+    expect(await service.sendPrompt('s1', 'again')).toEqual({ ok: true })
+    expect(prompts[0]).toContain('broken-plugin')
+    expect(prompts[0]).not.toContain('safe mode ready')
+    expect(prompts[0]).toContain("Harness home (this session's workspace): `/data/harness`")
+    expect(prompts[0]).toContain('Full startup log: `/logs/harness.log`')
+    expect(prompts[0]).toMatch(/\[User Request\]\nhelp$/)
+    expect(prompts[1]).toBe('again')
   })
+
+  it('opens a new, briefed session for every card click in the same Harness', async () => {
+    let created = 0
+    const prompts: Array<{ sessionId: string; text: string }> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: URL | string, init?: RequestInit) => {
+      const target = new URL(String(url))
+      if (target.pathname === '/') {
+        return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+      }
+      const endpoint = target.pathname.replace('/api/', '')
+      if (endpoint === 'session/prompt') {
+        const request = JSON.parse(String(init?.body)).payload.args.request
+        prompts.push({ sessionId: request.sessionId, text: request.content[0].text })
+      }
+      const value = endpoint === 'session/create' ? { sessionId: `s${++created}` } : { workspaceId: 'w1' }
+      return Response.json({ result: { ok: true, value } })
+    }))
+    const service = new RepairAgentService({
+      harnessUrl: () => 'http://127.0.0.1:1',
+      harnessAuthToken: () => 'token-1',
+      ensureHarnessReady: async () => {},
+      workspaceDirectory: '/data/harness',
+      locale: () => 'en'
+    })
+
+    const first = await service.initSession({ fresh: true })
+    await service.sendPrompt(first.sessionId!, 'diagnose')
+    const second = await service.initSession({ fresh: true })
+    await service.sendPrompt(second.sessionId!, 'diagnose')
+    await service.sendPrompt(first.sessionId!, 'follow up')
+
+    expect([first.sessionId, second.sessionId]).toEqual(['s1', 's2'])
+    expect(prompts.map((prompt) => prompt.sessionId)).toEqual(['s1', 's2', 's1'])
+    expect(prompts[0]!.text).toContain('[System Context]')
+    expect(prompts[1]!.text).toContain('[System Context]')
+    expect(prompts[2]!.text).toBe('follow up')
+  })
+
+  it('starts a new session after the Harness process changes', async () => {
+    let created = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: URL | string) => {
+      const target = new URL(String(url))
+      if (target.pathname === '/') {
+        return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+      }
+      const endpoint = target.pathname.replace('/api/', '')
+      const value = endpoint === 'session/create' ? { sessionId: `s${++created}` } : { workspaceId: 'w1' }
+      return Response.json({ result: { ok: true, value } })
+    }))
+    let token = 'token-1'
+    const service = new RepairAgentService({
+      harnessUrl: () => 'http://127.0.0.1:1',
+      harnessAuthToken: () => token,
+      ensureHarnessReady: async () => {},
+      workspaceDirectory: '/data/harness',
+      locale: () => 'en'
+    })
+    expect((await service.initSession()).sessionId).toBe('s1')
+    expect((await service.initSession()).sessionId).toBe('s1')
+    token = 'token-2'
+    expect((await service.initSession()).sessionId).toBe('s2')
+  })
+})
+
+describe('repair system prompt', () => {
+  const base = {
+    platform: 'darwin',
+    arch: 'arm64',
+    nodeVersion: 'v24',
+    desktopVersion: '0.9.1',
+    workspaceDirectory: '/data/harness',
+    harnessLogPath: '/logs/harness.log',
+    shippedPresetsDirectory: '/app/presets',
+    logsSample: ['[stderr] boom']
+  }
+
+  it('gives both languages the same playbooks, from one source', () => {
+    const zh = buildSystemRepairPrompt({ ...base, locale: 'zh' })
+    const en = buildSystemRepairPrompt({ ...base, locale: 'en' })
+    const count = (text: string): number => (text.match(/^\d+\. \*\*/gm) ?? []).length
+    expect(count(zh)).toBe(7)
+    expect(count(en)).toBe(count(zh))
+    expect(zh).toContain('preset "code" not found')
+    expect(en).toContain('preset "code" not found')
+    expect(zh).toContain('failed to mount')
+    expect(en).toContain('failed to mount')
+  })
+
+  it('separates the normal profile it repairs from the Safe Mode profile it runs in', () => {
+    const zh = buildSystemRepairPrompt({ ...base, locale: 'zh' })
+    expect(zh).toContain('**正常启动的 profile（诊断和修复的对象）**：`/data/harness/profiles/web`')
+    expect(zh).toContain('**安全模式 profile**：`/data/harness/profiles/desktop-safe-mode`')
+    expect(zh).toContain('`/app/presets/ptc` 整个目录复制为 `/data/harness/.agent-presets/code`')
+    expect(zh).toContain('不要建议开启开发者模式或重装到 C 盘')
+  })
+
+  it('sends the agent to the log instead of pasting it, and says when no failure was captured', () => {
+    const captured = buildSystemRepairPrompt({ ...base, locale: 'en', logsSample: Array.from({ length: 40 }, (_, i) => `line ${i}`) })
+    expect(captured).toContain('line 39')
+    expect(captured).not.toContain('line 19\n')
+    const voluntary = buildSystemRepairPrompt({ ...base, locale: 'en', crashCaptured: false })
+    expect(voluntary).toContain('No failed normal launch was captured')
+    expect(voluntary).not.toContain('[stderr] boom')
+  })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })

@@ -203,6 +203,10 @@ let desktopStorageManager: DesktopStorageManager | undefined
 let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
+/** A repair prompt from the Recovery page, started by the Safe Mode page load. */
+let pendingRepairPrompt: string | undefined
+/** Desktop storage key the Harness UI restores its selected session from. */
+const HARNESS_CURRENT_SESSION_KEY = 'dsh.sessions.current'
 /** The last failed normal launch, kept for the Repair Agent after Safe Mode replaces the runtime logs. */
 let lastCrashEvidence: CrashEvidence | undefined
 let launchDirectory: string
@@ -1117,9 +1121,14 @@ async function openHarness(
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const rendererUrl = desktopHarnessUrl(url, process.platform, runtime.snapshot().authToken)
   if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
+    // Taken before the first await: the Recovery page's fallback below runs
+    // as soon as the Safe Mode launch resolves, and must see it gone.
+    const repairPrompt = safeModeVisible ? takePendingRepairPrompt() : undefined
     const navigationVersion = ++mainWindowNavigationVersion
     rendererPluginFailureLogs = []
     window.webContents.stop()
+    // Open the repair session before the page loads, so the UI lands on it.
+    if (repairPrompt !== undefined) await startRepairAgentPrompt(repairPrompt)
     await clearStaleLoopbackHttpCache(
       window.webContents.session,
       join(app.getPath('userData'), 'http-cache-origin'),
@@ -1537,6 +1546,45 @@ function launchSafeHarness(): Promise<void> {
     harnessLaunchOperation = undefined
   })
   return harnessLaunchOperation
+}
+
+/**
+ * Open a Repair Agent session in the running Safe Mode Harness, queue the
+ * prompt, and make it the session the Harness UI shows. The UI restores its
+ * current session from desktop storage when the page loads, so a page that
+ * is already open has to reload to follow (see reloadHarnessWindow). The
+ * prompt runs in the background; its history reaches the UI on its own, so
+ * only setup failures are awaited here.
+ * @returns whether a session was opened.
+ */
+async function startRepairAgentPrompt(prompt: string): Promise<boolean> {
+  if (!repairAgentService || !safeModeVisible || runtime.snapshot().phase !== 'ready') return false
+  const service = repairAgentService
+  const session = await service.initSession({ fresh: true })
+  if (!session.ok || !session.sessionId) {
+    runtime.note(`[desktop] repair agent: session unavailable: ${session.error ?? 'unknown error'}`)
+    return false
+  }
+  desktopStorageManager?.setItem(HARNESS_CURRENT_SESSION_KEY, JSON.stringify({ sessionId: session.sessionId }))
+  runtime.note(`[desktop] repair agent: session ${session.sessionId} opened`)
+  void service.sendPrompt(session.sessionId, prompt).then((result) => {
+    if (!result.ok) runtime.note(`[desktop] repair agent: prompt failed: ${result.error ?? 'unknown error'}`)
+  })
+  return true
+}
+
+/** Hand the Recovery page's repair prompt to the Safe Mode page load, exactly once. */
+function takePendingRepairPrompt(): string | undefined {
+  const prompt = pendingRepairPrompt
+  pendingRepairPrompt = undefined
+  return prompt
+}
+
+/** Reload an open Harness page so it picks up a changed current session. */
+function reloadHarnessWindow(): void {
+  const url = runtime.snapshot().url
+  if (!url || !mainWindow || mainWindow.isDestroyed()) return
+  if (!shouldLoadHarnessUrl(mainWindow.webContents.getURL(), url)) mainWindow.webContents.reload()
 }
 
 function restartHarness(): Promise<void> {
@@ -2052,20 +2100,14 @@ async function showPluginRecovery(options?: {
         applyPendingFrontendEvidence()
         continue
       } else if (action.startsWith('agent:')) {
-        const prompt = action.slice(6)
-        if (repairAgentService) {
-          try {
-            const { sessionId } = await repairAgentService.initSession()
-            if (sessionId) {
-              repairAgentService.sendPrompt(sessionId, prompt).catch(error => {
-                console.error('[desktop] repair agent background prompt failed:', error)
-              })
-            }
-          } catch (error) {
-            console.error('[desktop] failed to init repair session:', error)
-          }
-        }
+        // Start Safe Mode first: the agent session must live in the Safe Mode
+        // Harness, not in the failed normal one that is about to be stopped.
+        // Its page load opens the session (see openHarness); should the page
+        // somehow not load, open it here and reload whatever is shown.
+        pendingRepairPrompt = action.slice('agent:'.length)
         await launchSafeHarness()
+        const repairPrompt = takePendingRepairPrompt()
+        if (repairPrompt !== undefined && await startRepairAgentPrompt(repairPrompt)) reloadHarnessWindow()
         break
       } else if (action === 'auto-process' || ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate)) {
         const plan = action === 'auto-process'
@@ -2582,19 +2624,9 @@ async function showSafeModeManager(initial?: {
       if (action.type === 'agent') {
         const snapshot = runtime.snapshot()
         if (snapshot.phase === 'ready' && snapshot.url) {
-          if (action.prompt && repairAgentService) {
-            try {
-              const { sessionId } = await repairAgentService.initSession()
-              if (sessionId) {
-                // Send the prompt headlessly; it will write to history which the UI will pick up
-                repairAgentService.sendPrompt(sessionId, action.prompt).catch(error => {
-                  console.error('[desktop] repair agent background prompt failed:', error)
-                })
-              }
-            } catch (error) {
-              console.error('[desktop] failed to init repair session:', error)
-            }
-          }
+          // The Harness page is already open behind the manager: reload it
+          // onto the repair session.
+          if (action.prompt && await startRepairAgentPrompt(action.prompt)) reloadHarnessWindow()
           await openHarness(snapshot.url)
         }
         return
@@ -3116,12 +3148,12 @@ async function bootstrap(): Promise<void> {
     ensureHarnessReady: async () => {
       await launchSafeHarness()
     },
-    launchDirectory,
+    workspaceDirectory: join(app.getPath('userData'), 'harness'),
+    harnessLogPath: join(app.getPath('logs'), 'harness.log'),
+    shippedPresetsDirectory: join(app.getAppPath(), 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'presets'),
     locale: harnessLocale,
-    readLogs: () => runtime.snapshot().logs,
     crashEvidence: () => lastCrashEvidence,
-    appVersion: () => app.getVersion(),
-    dshHome
+    appVersion: () => app.getVersion()
   })
 
   ipcMain.handle('directory-picker:open', async (event) => {
