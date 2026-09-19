@@ -2,7 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { WindowStateManager, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT } from '../src/main/state/window-state'
+import {
+  cascadeWindowBounds,
+  WindowStateManager,
+  DEFAULT_WINDOW_WIDTH,
+  DEFAULT_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  MIN_WINDOW_HEIGHT,
+  SECONDARY_WINDOW_CASCADE_STEP,
+  SECONDARY_WINDOW_CASCADE_STEPS
+} from '../src/main/state/window-state'
 
 describe('WindowStateManager', () => {
   let tempDir: string
@@ -60,5 +69,24 @@ describe('WindowStateManager', () => {
     })
     expect(bounds.width).toBe(MIN_WINDOW_WIDTH)
     expect(bounds.height).toBe(MIN_WINDOW_HEIGHT)
+  })
+
+  it('cascades extra windows instead of stacking them exactly', () => {
+    const bounds = { x: 100, y: 200, width: 1200, height: 800 }
+
+    expect(cascadeWindowBounds(bounds, 1)).toEqual({
+      ...bounds,
+      x: 100 + SECONDARY_WINDOW_CASCADE_STEP,
+      y: 200 + SECONDARY_WINDOW_CASCADE_STEP
+    })
+    expect(cascadeWindowBounds(bounds, SECONDARY_WINDOW_CASCADE_STEPS + 1)).toEqual({
+      ...bounds,
+      x: 100 + SECONDARY_WINDOW_CASCADE_STEP,
+      y: 200 + SECONDARY_WINDOW_CASCADE_STEP
+    })
+  })
+
+  it('leaves placement to the platform when saved coordinates are absent', () => {
+    expect(cascadeWindowBounds({ width: 1200, height: 800 }, 1)).toBeUndefined()
   })
 })

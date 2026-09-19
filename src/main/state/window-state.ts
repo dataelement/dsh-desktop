@@ -15,10 +15,30 @@ export const DEFAULT_WINDOW_WIDTH = 1380
 export const DEFAULT_WINDOW_HEIGHT = 900
 export const MIN_WINDOW_WIDTH = 900
 export const MIN_WINDOW_HEIGHT = 640
+export const SECONDARY_WINDOW_CASCADE_STEP = 28
+export const SECONDARY_WINDOW_CASCADE_STEPS = 6
+
+/**
+ * Offset the bounds of an extra Harness window so it does not land exactly on
+ * the one it was opened from. An identical stacked window reads as "nothing
+ * happened", which is the very impression the single-window desktop gave.
+ * `step` counts the extra windows opened this run, so repeated opens walk
+ * across the screen instead of piling up on one spot.
+ */
+export function cascadeWindowBounds(
+  bounds: { x?: number; y?: number; width: number; height: number },
+  step: number
+): { x: number; y: number; width: number; height: number } | undefined {
+  if (bounds.x === undefined || bounds.y === undefined) return undefined
+  const offset =
+    (((step - 1) % SECONDARY_WINDOW_CASCADE_STEPS) + 1) * SECONDARY_WINDOW_CASCADE_STEP
+  return { x: bounds.x + offset, y: bounds.y + offset, width: bounds.width, height: bounds.height }
+}
 
 export class WindowStateManager {
   private state: WindowState
   private readonly filePath: string
+  private readonly trackedWindows = new WeakSet<BrowserWindow>()
   private saveTimer?: NodeJS.Timeout
 
   constructor(storageDir: string) {
@@ -82,6 +102,8 @@ export class WindowStateManager {
   }
 
   public track(window: BrowserWindow): void {
+    if (this.trackedWindows.has(window)) return
+    this.trackedWindows.add(window)
     const updateState = (): void => {
       if (window.isDestroyed()) return
       const isMaximized = window.isMaximized()
@@ -121,8 +143,28 @@ export class WindowStateManager {
       }
     })
 
+    // A surviving secondary may be promoted after the original primary has
+    // already closed. Capture its current bounds immediately instead of
+    // waiting for the user to move or resize it again.
+    updateState()
+
     window.once('close', () => {
       this.flushSync()
+    })
+  }
+
+  /**
+   * Give an extra Harness window the persisted zoom without letting it own the
+   * saved window state. Only one set of bounds is stored, so a second window
+   * that reported its own size and position would move the window the user
+   * gets back on the next launch.
+   */
+  public applyPersistedZoom(window: BrowserWindow): void {
+    window.webContents.on('did-finish-load', () => {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) return
+      if (typeof this.state.zoomLevel === 'number' && this.state.zoomLevel !== 0) {
+        window.webContents.setZoomLevel(this.state.zoomLevel)
+      }
     })
   }
 
