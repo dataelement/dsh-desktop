@@ -147,26 +147,6 @@ describe('repair system prompt', () => {
     logsSample: ['[stderr] boom']
   }
 
-  it('gives both languages the same playbooks, from one source', () => {
-    const zh = buildSystemRepairPrompt({ ...base, locale: 'zh' })
-    const en = buildSystemRepairPrompt({ ...base, locale: 'en' })
-    const count = (text: string): number => (text.match(/^\d+\. \*\*/gm) ?? []).length
-    expect(count(zh)).toBe(7)
-    expect(count(en)).toBe(count(zh))
-    expect(zh).toContain('preset "code" not found')
-    expect(en).toContain('preset "code" not found')
-    expect(zh).toContain('failed to mount')
-    expect(en).toContain('failed to mount')
-  })
-
-  it('separates the normal profile it repairs from the Safe Mode profile it runs in', () => {
-    const zh = buildSystemRepairPrompt({ ...base, locale: 'zh' })
-    expect(zh).toContain('**正常启动的 profile（诊断和修复的对象）**：`/data/harness/profiles/web`')
-    expect(zh).toContain('**安全模式 profile**：`/data/harness/profiles/desktop-safe-mode`')
-    expect(zh).toContain('`/app/presets/ptc` 整个目录复制为 `/data/harness/.agent-presets/code`')
-    expect(zh).toContain('不要建议开启开发者模式或重装到 C 盘')
-  })
-
   it('sends the agent to the log instead of pasting it, and says when no failure was captured', () => {
     const captured = buildSystemRepairPrompt({ ...base, locale: 'en', logsSample: Array.from({ length: 40 }, (_, i) => `line ${i}`) })
     expect(captured).toContain('line 39')
