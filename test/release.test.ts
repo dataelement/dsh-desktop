@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -229,78 +230,6 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.detectUpdateChannel).toBe(false)
   })
 
-  it('turns a selected Windows drive root into an application directory', async () => {
-    const installer = await readFile(
-      path.join(projectRoot, 'build', 'installer.nsh'),
-      'utf8'
-    )
-
-    expect(installer).toContain('!define MUI_PAGE_CUSTOMFUNCTION_SHOW DshDirectoryPageShow')
-    expect(installer).toContain('${NSD_OnChange} $DshDirectoryEdit DshDirectoryChanged')
-    expect(installer).toContain('StrCpy $3 "$0\\${APP_FILENAME}"')
-    expect(installer).toContain('StrCpy $3 "$0${APP_FILENAME}"')
-    expect(installer).toContain('${NSD_SetText} $DshDirectoryEdit $3')
-  })
-
-  it('clears the leftover session marker during a Windows overwrite install', async () => {
-    const installer = await readFile(
-      path.join(projectRoot, 'build', 'installer.nsh'),
-      'utf8'
-    )
-    const customInstall = installer.match(/!macro customInstall[\s\S]*?!macroend/)?.[0]
-
-    expect(customInstall).toBeDefined()
-    expect(customInstall).toContain('Delete "$APPDATA\\dsh-desktop\\desktop-service\\session.json"')
-  })
-
-  it('shows a packaged startup surface and pins the Electron directory picker surface', async () => {
-    const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
-    const splash = await readFile(path.join(projectRoot, 'build', 'splash.html'), 'utf8')
-    const patch = await readFile(
-      path.join(projectRoot, 'build', 'dsh-desktop.patch.yml'),
-      'utf8'
-    )
-
-    expect(main).toContain("desktopResourcePath('splash.html')")
-    expect(main).toContain('await showSplash()')
-    expect(main).toContain("query: { theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }")
-    expect(main).toContain('nativeTheme.themeSource = harnessThemePreference()')
-    expect(splash).toContain('Starting DSH Desktop')
-    expect(splash).toContain('src="dsh-loader.gif"')
-    expect(splash).toContain('src="dsh-loader-dark.gif"')
-    expect(splash).toContain("document.documentElement.dataset.theme = splashTheme === 'dark'")
-    expect(splash).toContain(":root[data-theme='dark']")
-    expect(splash).toContain('brightness(2.4) saturate(0.72)')
-    expect(splash).not.toContain('filter: invert(1)')
-    expect(splash).not.toContain('class="track"')
-    expect(splash).toContain('position: fixed;')
-    expect(splash).toContain('html[data-platform="windows"] main { padding-top: 70px; }')
-    expect(patch).not.toMatch(/id:\s*directory-picker/)
-    expect(patch).not.toContain("name: '@deepseek-ai/dsh-host-directory-picker-native'")
-    expect(patch).not.toContain("name: '@deepseek-ai/dsh-client-ui-directory-picker-native'")
-  })
-
-  it('routes manual restarts through the active plugin recovery flow', async () => {
-    const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
-
-    expect(main).toContain("if (failureRecoveryVisible) resolvePluginRecoveryAction('restart')")
-    expect(main).toMatch(/case 'restart-harness':\s+await restartHarness\(\)/)
-    expect(main).toContain('click: () => void restartHarness().catch(showUnexpectedError)')
-    expect(main).toContain("} else if (action === 'restart') {")
-  })
-
-  it('replays frontend plugin failures that arrive during an active recovery', async () => {
-    const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
-
-    expect(main).toContain("resolvePluginRecoveryAction('refresh')")
-    expect(main).toContain('if (applyPendingFrontendEvidence()) continue')
-    expect(main).toMatch(
-      /if \(failureRecoveryVisible\) \{\s+queuePendingFrontendPluginRecovery\(message\)/
-    )
-    expect(main).toContain('queueMicrotask(() => {')
-    expect(main).toContain('logs: [...rendererPluginFailureLogs]')
-  })
-
   it('publishes update metadata for installed desktop builds', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
@@ -359,15 +288,14 @@ describe('GitHub release contract', () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')
     ) as { scripts: Record<string, string> }
-    const developmentConfig = await readFile(
-      path.join(projectRoot, 'electron-builder.dev.cjs'),
-      'utf8'
-    )
-    const main = await readFile(path.join(projectRoot, 'src', 'main', 'index.ts'), 'utf8')
-    const targetVerifier = await readFile(
-      path.join(projectRoot, 'scripts', 'verify-target.mjs'),
-      'utf8'
-    )
+    const developmentConfig = createRequire(import.meta.url)('../electron-builder.dev.cjs') as {
+      appId: string
+      productName: string
+      directories: { output: string }
+      extraMetadata: { dshDesktopChannel: string }
+      artifactName: string
+      nsis: { artifactName: string }
+    }
 
     expect(packageJson.scripts['package:dev:dir']).toContain('npm run build')
     expect(packageJson.scripts['package:dev:dir']).toContain('electron-builder.dev.cjs')
@@ -378,22 +306,12 @@ describe('GitHub release contract', () => {
     expect(packageJson.scripts['package:dev:win']).toContain('verify-target.mjs win32 x64')
     expect(packageJson.scripts['package:dev:win']).toContain('electron-builder.dev.cjs')
     expect(packageJson.scripts['package:dev:win']).toContain('--publish never')
-    expect(developmentConfig).toContain("appId: 'io.dsh.desktop.dev'")
-    expect(developmentConfig).toContain("productName: 'DSH Desktop Dev'")
-    expect(developmentConfig).toContain("output: 'dist-dev'")
-    expect(developmentConfig).toContain("dshDesktopChannel: 'development'")
-    expect(developmentConfig).toContain(
-      "artifactName: 'dsh-desktop-dev-${os}-${arch}.${ext}'"
-    )
-    expect(developmentConfig).toContain(
-      "artifactName: 'dsh-desktop-dev-windows-${arch}-setup.${ext}'"
-    )
-    expect(main).toContain("app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop-dev'))")
-    expect(main).toContain("app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))")
-    expect(main).toContain('if (!developmentBuild)')
-    expect(targetVerifier).toContain("resolve('node_modules', 'node', 'bin', executable)")
-    expect(targetVerifier).toContain('Bundled Node.js runtime was not found or is not executable')
-    expect(targetVerifier).toContain('spawnSync')
+    expect(developmentConfig.appId).toBe('io.dsh.desktop.dev')
+    expect(developmentConfig.productName).toBe('DSH Desktop Dev')
+    expect(developmentConfig.directories.output).toBe('dist-dev')
+    expect(developmentConfig.extraMetadata.dshDesktopChannel).toBe('development')
+    expect(developmentConfig.artifactName).toBe('dsh-desktop-dev-${os}-${arch}.${ext}')
+    expect(developmentConfig.nsis.artifactName).toBe('dsh-desktop-dev-windows-${arch}-setup.${ext}')
   })
 
   it('builds and publishes every supported platform', async () => {

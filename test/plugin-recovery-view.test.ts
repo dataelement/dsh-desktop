@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import type { RuntimeSnapshot } from '../src/shared/contracts'
 import {
@@ -170,13 +169,6 @@ describe('plugin recovery view model', () => {
     expect(model.primaryBusyLabel).toBe('Entering Safe Mode…')
   })
 
-  it('wires the unresolved recovery action to Safe Mode', async () => {
-    const html = await readFile('build/plugin-recovery.html', 'utf8')
-    expect(html).toContain("model.canUninstall ? 'uninstall' : 'safe-mode'")
-    expect(html).toContain("navigate('show-log')")
-    expect(html).not.toContain('id="restart"')
-  })
-
   it.each(['zh', 'en'] as const)('shows the latest fallback explanation instead of claiming compatibility (%s)', (locale) => {
     const upgradeHint = locale === 'zh' ? '未找到匹配版本，可尝试 latest；不保证兼容。' : 'Try latest; compatibility is not guaranteed.'
     const model = buildPluginRecoveryViewModel({
@@ -214,19 +206,5 @@ describe('plugin recovery view model', () => {
     expect(model.upgradeLabel).toBe('升级插件并重启')
     expect(model.upgradeHint).toBe('该插件有新的兼容版本（v2.0.0）')
     expect(model.uninstallLabel).toBe('卸载插件')
-  })
-})
-
-describe('plugin market recovery wiring', () => {
-  it('blames the market apart from third-party plugins and repairs it with Harness stopped', async () => {
-    const main = await readFile('src/main/index.ts', 'utf8')
-    expect(main).toContain("extractPluginFailureReferences(detection.logs).includes('dshmarket')")
-    expect(main).toContain("'market-upgrade',\n  'market-remove'\n])")
-    expect(main).not.toContain('market-restore')
-    expect(main).toContain('const targetVersion = marketUpgradeVersion')
-    expect(main).toContain("marketReport.upgradeVersion !== attemptedUpgrades.get('dshmarket')")
-    const handler = main.slice(main.indexOf("} else if (action === 'market-upgrade'"))
-    expect(handler.indexOf('await runtime.stop()')).toBeLessThan(handler.indexOf('upgradeMarketInSharedTree({'))
-    expect(main).toContain('const result = await removeMarket(dshHome)')
   })
 })

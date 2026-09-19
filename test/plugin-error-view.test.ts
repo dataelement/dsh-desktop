@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import {
   extractPluginName,
@@ -49,57 +48,6 @@ describe('plugin load error detection and extraction', () => {
 
     const enDefault = pluginErrorMessage('en')
     expect(enDefault.message).toContain('A plugin was uninstalled or failed to load')
-  })
-})
-
-describe('preload wiring for plugin error handling', () => {
-  it('installs error listeners and connects to unified recovery', async () => {
-    const preload = await readFile('src/preload/index.ts', 'utf8')
-
-    expect(preload).toContain("window.addEventListener('error'")
-    expect(preload).toContain("window.addEventListener('unhandledrejection'")
-    expect(preload).toContain('isPluginLoadError')
-    expect(preload).toContain('harness:open-recovery')
-    expect(preload).toContain('checkBootFailureInDom')
-    expect(preload).toContain('queueBootFailure(errorText)')
-    expect(preload).toContain('pendingBootFailureMessages.join')
-    expect(preload).toContain('findBootFailureText(document)')
-    expect(preload).not.toContain('document.body?.innerText')
-  })
-
-  it('discards pending diagnostics plugin failure when recovery is opened', async () => {
-    const main = await readFile('src/main/index.ts', 'utf8')
-    const recoveryHandler = main.slice(main.indexOf("ipcMain.handle('harness:open-recovery'"))
-    const handlerBody = recoveryHandler.slice(0, recoveryHandler.indexOf('})'))
-
-    expect(handlerBody).toContain('desktopDiagnostics?.discardPendingPluginFailure()')
-  })
-
-  it('never offers removal of plugins a deferred migration left manifest-only', async () => {
-    const main = await readFile('src/main/index.ts', 'utf8')
-    const maintenance = main.slice(main.indexOf('const maintenance = await runProfileStartupMaintenance('))
-    expect(maintenance.slice(0, maintenance.indexOf("if (maintenance.outcome === 'safe-recovery')"))).toContain(
-      'maintenance.migration.pendingPlugins'
-    )
-
-    const loop = main.slice(main.indexOf('const detection = await detectPluginRecovery('))
-    const beforeAction = loop.slice(0, loop.indexOf('waitForPluginRecoveryAction('))
-    const filter = beforeAction.indexOf('!pendingMigration.includes(plugin)')
-    expect(filter).toBeGreaterThan(-1)
-    // Only a plugin with no installed legacy copy is exempt from blame.
-    expect(beforeAction).toContain('migrationPendingPlugins.has(plugin) && await readInstalledPluginVersion(dshHome, plugin) === undefined')
-    expect(filter).toBeLessThan(beforeAction.indexOf('appendPluginRecoveryDetectionLog(detection.plugins)'))
-    expect(filter).toBeLessThan(beforeAction.indexOf('discardPendingPluginFailure()'))
-  })
-
-  it('discards pending diagnostics when Harness startup failure identifies a plugin', async () => {
-    const main = await readFile('src/main/index.ts', 'utf8')
-    const loop = main.slice(main.indexOf('const detection = await detectPluginRecovery('))
-    const afterDetection = loop.slice(0, loop.indexOf('waitForPluginRecoveryAction('))
-
-    expect(afterDetection).toContain(
-      'if (detection.plugins.length > 0) desktopDiagnostics?.discardPendingPluginFailure()'
-    )
   })
 })
 

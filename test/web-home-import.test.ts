@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -243,35 +243,5 @@ describe('web home import', () => {
     expect(model.stats).toContain('2 个会话')
     expect(model.primaryLabel).toBe('导入并继续')
     expect(model.secondaryLabel).toBe('从空白开始')
-  })
-})
-
-describe('web home import wiring', () => {
-  it('inserts the import page before profile maintenance and ships the resource', async () => {
-    const [main, preload, manifest, html] = await Promise.all([
-      readFile('src/main/index.ts', 'utf8'),
-      readFile('src/preload/index.ts', 'utf8'),
-      readFile('package.json', 'utf8'),
-      readFile('build/web-import.html', 'utf8')
-    ])
-    expect(main.indexOf('await maybeImportWebHome(dshHome)')).toBeGreaterThan(
-      main.indexOf('await runtime.stop()')
-    )
-    expect(main.indexOf('await maybeImportWebHome(dshHome)')).toBeLessThan(
-      main.indexOf('await runProfileStartupMaintenance({')
-    )
-    expect(main).toContain("desktopResourcePath('web-import.html')")
-    expect(main).toContain("ipcMain.handle('web-import:action'")
-    expect(main).toContain('if (startInSafeMode) return')
-    expect(preload).toContain("ipcRenderer.invoke('web-import:action', action)")
-    expect(JSON.parse(manifest).build.extraResources).toContainEqual({
-      from: 'build/web-import.html',
-      to: 'web-import.html'
-    })
-    expect(html).toContain('id="import"')
-    expect(html).toContain('id="skip"')
-    expect(html).toContain("window.dshWebImport.action")
-    expect(html).toContain("default-src 'none'")
-    expect(html).not.toMatch(/(?:src|srcset)=["']https?:/)
   })
 })

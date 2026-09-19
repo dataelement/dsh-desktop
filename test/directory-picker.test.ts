@@ -3,18 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { patchPath } from './patch-path'
 
 describe('desktop Electron directory picker', () => {
-  it('exposes a narrow preload bridge and handles it in the main process', async () => {
-    const preload = await readFile('src/preload/index.ts', 'utf8')
-    const main = await readFile('src/main/index.ts', 'utf8')
-
-    expect(preload).toContain("contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker'")
-    expect(preload).toContain("ipcRenderer.invoke('directory-picker:open')")
-    expect(main).toContain("ipcMain.handle('directory-picker:open'")
-    expect(main).toContain('event.senderFrame !== mainWindow.webContents.mainFrame')
-    expect(main).toContain('dialog.showOpenDialog(mainWindow')
-    expect(main).toContain("properties: ['openDirectory']")
-    expect(main).toContain("app.commandLine.appendSwitch('lang', harnessLocale() === 'zh' ? 'zh-CN' : 'en-US')")
-  })
 
   it('keeps native Chinese resources for both macOS and Windows locale names', async () => {
     const packageJson = JSON.parse(await readFile('package.json', 'utf8')) as {

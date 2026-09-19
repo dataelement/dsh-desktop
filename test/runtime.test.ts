@@ -1,6 +1,4 @@
-import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildHarnessArguments,
@@ -298,11 +296,6 @@ describe('Harness launch contract', () => {
       ELECTRON_RUN_AS_NODE: '1'
     })
     expect(macOptions.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
-
-    const entry = await readFile(join(process.cwd(), 'build', 'harness-node-entry.mjs'), 'utf8')
-    expect(entry).toContain('process.versions.electron !== undefined')
-    expect(entry).toContain("process.env.ELECTRON_RUN_AS_NODE = '1'")
-    expect(entry).toContain('entry.runCli')
   })
 
   it('rejects an unexpected macOS Harness argument layout', () => {

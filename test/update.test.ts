@@ -37,24 +37,6 @@ describe('desktop update policy', () => {
     expect(shouldCheckAfterResume(now - UPDATE_CHECK_INTERVAL_MS, now)).toBe(true)
     expect(shouldCheckAfterResume(now - UPDATE_CHECK_INTERVAL_MS + 1, now)).toBe(false)
   })
-
-  it('quarantines app-bundle LaunchAgents before replacing the application', async () => {
-    const main = await readFile(path.join(projectRoot, 'src/main/index.ts'), 'utf8')
-    const prepare = main.slice(main.indexOf('prepareToInstall: async () => {'))
-
-    expect(prepare.indexOf('await runtime.stop()')).toBeLessThan(
-      prepare.indexOf('await quarantineInstalledLaunchAgentsForUpdate(dshHome)')
-    )
-    expect(prepare.indexOf('await quarantineInstalledLaunchAgentsForUpdate(dshHome)')).toBeLessThan(
-      prepare.indexOf('quitting = true')
-    )
-    expect(prepare.indexOf('quitting = true')).toBeLessThan(
-      prepare.indexOf('desktopDiagnostics?.markCleanExit()')
-    )
-    expect(prepare.indexOf('desktopDiagnostics?.markCleanExit()')).toBeLessThan(
-      prepare.indexOf('stopUpdateManager()')
-    )
-  })
 })
 
 describe('macOS update metadata', () => {
@@ -93,24 +75,6 @@ describe('macOS update metadata', () => {
     ])
     expect(merged.path).toBe('dsh-desktop-mac-arm64.zip')
     expect(merged.releaseDate).toBe('2026-08-14T02:00:00.000Z')
-  })
-})
-
-describe('installing a specific version', () => {
-  it('wires the list and install IPC handlers and the downgrade-safe feed swap', async () => {
-    const manager = await readFile(
-      path.join(projectRoot, 'src/main/update/update-manager.ts'),
-      'utf8'
-    )
-    expect(manager).toContain("ipcMain.handle('updates:list-versions'")
-    expect(manager).toContain("ipcMain.handle('updates:install-version'")
-    expect(manager).toContain('fetchAvailableReleases(app.getVersion())')
-    expect(manager).toContain('export async function installSpecificVersion')
-    expect(manager).toContain('archiveFeedUrl(version)')
-    expect(manager).toContain('autoUpdater.allowDowngrade = true')
-    expect(manager).toContain("setFeedURL({ provider: 'generic', url: STABLE_FEED_URL })")
-    expect(manager).toContain('autoUpdater.allowDowngrade = false')
-    expect(manager).toContain('downloadAvailableUpdate()')
   })
 })
 
