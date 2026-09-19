@@ -707,8 +707,6 @@
           actions.appendChild(button)
         }
         addMarketAction('market-upgrade', market.upgradeLabel, 'plugin-upgrade-btn')
-        // As the only culprit, restoring is the primary button below.
-        if (!model.marketPrimary) addMarketAction('market-restore', market.restoreLabel, 'plugin-upgrade-btn plugin-remove-btn')
         addMarketAction('market-remove', market.removeLabel, 'plugin-upgrade-btn plugin-remove-btn')
         item.append(mark, name, hint, actions)
         pluginList.appendChild(item)
@@ -732,7 +730,20 @@
       } else if (model.autoProcessLabel) {
         setText('primary', model.autoProcessLabel)
       } else if (model.marketPrimary) {
+        // Same buttons as a lone third-party plugin: upgrade first, removal beside it.
         setText('primary', model.primaryLabel)
+        if (model.marketCheck.upgradeLabel) {
+          setText('secondary', model.locale === 'zh' ? '卸载插件' : 'Uninstall plugin')
+          secondary.hidden = false
+          secondary.addEventListener('click', () => {
+            secondary.disabled = true
+            primary.disabled = true
+            if (safeModeBtn) safeModeBtn.disabled = true
+            document.querySelectorAll('.plugin-upgrade-btn').forEach((btn) => { btn.disabled = true })
+            secondary.textContent = model.locale === 'zh' ? '正在卸载…' : 'Removing…'
+            navigate('market-remove')
+          })
+        }
       } else if (model.upgradeCandidate) {
         setText('primary', model.upgradeLabel)
         setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '卸载插件' : 'Uninstall plugin'))
@@ -762,7 +773,7 @@
           navigate('auto-process')
         } else if (model.marketPrimary) {
           primary.textContent = model.primaryBusyLabel
-          navigate('market-restore')
+          navigate(model.marketCheck.upgradeLabel ? 'market-upgrade' : 'market-remove')
         } else if (model.upgradeCandidate) {
           primary.textContent = model.upgradeBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
           navigate('upgrade')

@@ -16,38 +16,39 @@ function failedSnapshot(logs: string[] = []): RuntimeSnapshot {
 }
 
 describe('plugin recovery view model', () => {
-  it('turns a startup blocked only by the market into a market repair, not a dead end', () => {
+  it('treats a market that alone blocks startup like a lone plugin with an upgrade', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'zh',
-      market: { installedVersion: '1.48.0', verifiedVersion: '1.45.1', upgradeVersion: '1.49.0' }
+      market: { installedVersion: '1.48.0', upgradeVersion: '1.49.0' }
     })
     expect(model.canUninstall).toBe(false)
     expect(model.marketPrimary).toBe(true)
     expect(model.heading).toBe('插件市场导致启动失败')
-    expect(model.primaryLabel).toBe('恢复到已验证版本 v1.45.1 并重启')
-    expect(model.marketCheck).toMatchObject({
+    expect(model.primaryLabel).toBe('升级插件并重启')
+    expect(model.marketCheck).toEqual({
       name: 'dshmarket', installedVersion: '1.48.0',
-      upgradeLabel: '升级至 v1.49.0', restoreLabel: '恢复到已验证版本 v1.45.1', removeLabel: '卸载此插件'
+      hint: expect.stringContaining('可升级到兼容的新版本，或卸载插件市场'),
+      upgradeLabel: '升级至 v1.49.0', removeLabel: '卸载此插件'
     })
     expect(model.plugins).toEqual([])
   })
-  it('reinstalls the verified market when that is the version that failed', () => {
+  it('removes a market with no compatible upgrade, as it would a lone plugin', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'en',
-      market: { installedVersion: '1.45.1', verifiedVersion: '1.45.1' }
+      market: { installedVersion: '1.48.0' }
     })
-    expect(model.marketCheck?.restoreLabel).toBe('Reinstall verified v1.45.1')
     expect(model.marketCheck?.upgradeLabel).toBeUndefined()
-    expect(model.primaryLabel).toBe('Reinstall verified v1.45.1 and restart')
+    expect(model.primaryLabel).toBe('Remove this plugin and continue')
+    expect(model.primaryBusyLabel).toBe('Removing and checking again…')
   })
   it('keeps third-party removal as the primary action when the market is not the only culprit', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: ['a'], removedPlugins: [], locale: 'zh',
-      market: { installedVersion: '1.48.0', verifiedVersion: '1.45.1' }
+      market: { installedVersion: '1.48.0', upgradeVersion: '1.49.0' }
     })
     expect(model.marketPrimary).toBe(false)
     expect(model.primaryLabel).toBe('卸载此插件并继续检测')
-    expect(model.marketCheck?.restoreLabel).toBe('恢复到已验证版本 v1.45.1')
+    expect(model.marketCheck?.upgradeLabel).toBe('升级至 v1.49.0')
   })
   it('leaves the page unchanged when the market is not blamed', () => {
     const model = buildPluginRecoveryViewModel({
@@ -220,8 +221,9 @@ describe('plugin market recovery wiring', () => {
   it('blames the market apart from third-party plugins and repairs it with Harness stopped', async () => {
     const main = await readFile('src/main/index.ts', 'utf8')
     expect(main).toContain("extractPluginFailureReferences(detection.logs).includes('dshmarket')")
-    expect(main).toContain("'market-upgrade',\n  'market-restore',\n  'market-remove'")
-    expect(main).toContain("const targetVersion = action === 'market-upgrade' ? marketUpgradeVersion : VERIFIED_MARKET_BASELINE")
+    expect(main).toContain("'market-upgrade',\n  'market-remove'\n])")
+    expect(main).not.toContain('market-restore')
+    expect(main).toContain('const targetVersion = marketUpgradeVersion')
     expect(main).toContain("marketReport.upgradeVersion !== attemptedUpgrades.get('dshmarket')")
     const handler = main.slice(main.indexOf("} else if (action === 'market-upgrade'"))
     expect(handler.indexOf('await runtime.stop()')).toBeLessThan(handler.indexOf('upgradeMarketInSharedTree({'))

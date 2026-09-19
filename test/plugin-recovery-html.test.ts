@@ -31,17 +31,17 @@ describe('plugin recovery page', () => {
 
   it('offers the market its own repair actions without naming a version', () => {
     expect(html).toContain('const market = model.marketCheck')
-    expect(html).toContain("if (!model.marketPrimary) addMarketAction('market-restore'")
-    expect(html).toContain("navigate('market-restore')")
+    expect(html).toContain("navigate(model.marketCheck.upgradeLabel ? 'market-upgrade' : 'market-remove')")
+    expect(html).toContain("navigate('market-remove')")
     expect(html).toContain('!model.canUninstall && !model.upgradeCandidate && !model.marketPrimary')
     expect(html).not.toMatch(/navigate\(`market-/)
   })
 
   it('renders the market row exactly like a third-party plugin row', () => {
-    // Name only, green upgrade, neutral everything else, no extra confirmation.
+    // Name only, green upgrade, neutral removal, no extra confirmation.
     expect(html).toContain('name.textContent = String(market.name)')
     expect(html).toContain("addMarketAction('market-upgrade', market.upgradeLabel, 'plugin-upgrade-btn')")
-    expect(html).toContain("addMarketAction('market-restore', market.restoreLabel, 'plugin-upgrade-btn plugin-remove-btn')")
+    expect(html).not.toContain('market-restore')
     expect(html).toContain("addMarketAction('market-remove', market.removeLabel, 'plugin-upgrade-btn plugin-remove-btn')")
     expect(html).not.toContain('removeConfirm')
   })

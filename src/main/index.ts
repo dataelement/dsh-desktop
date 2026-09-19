@@ -37,8 +37,7 @@ import {
 import {
   demoteMarketGeneration,
   ensureMarketBaseline,
-  readProfileMarket,
-  VERIFIED_MARKET_BASELINE
+  readProfileMarket
 } from './state/market-baseline'
 import {
   clearProfileInstallMarker,
@@ -173,7 +172,7 @@ import {
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
 
-type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates' | 'market-upgrade' | 'market-restore' | 'market-remove'
+type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates' | 'market-upgrade' | 'market-remove'
 type WebImportAction = 'import' | 'skip'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
@@ -197,7 +196,6 @@ const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
   'restart',
   'safe-mode',
   'market-upgrade',
-  'market-restore',
   'market-remove'
 ])
 
@@ -2132,7 +2130,6 @@ async function showPluginRecovery(options?: {
           ? {
               market: {
                 ...market,
-                verifiedVersion: VERIFIED_MARKET_BASELINE,
                 ...(marketUpgradeVersion ? { upgradeVersion: marketUpgradeVersion } : {})
               }
             }
@@ -2150,11 +2147,11 @@ async function showPluginRecovery(options?: {
       if (action === 'refresh' || action === 'check-updates') {
         applyPendingFrontendEvidence()
         continue
-      } else if (action === 'market-upgrade' || action === 'market-restore' || action === 'market-remove') {
+      } else if (action === 'market-upgrade' || action === 'market-remove') {
         if (!market) continue
         // The version comes from this pass's own check, never from the page.
-        const targetVersion = action === 'market-upgrade' ? marketUpgradeVersion : VERIFIED_MARKET_BASELINE
-        if (action !== 'market-remove' && !targetVersion) {
+        const targetVersion = marketUpgradeVersion
+        if (action === 'market-upgrade' && !targetVersion) {
           notice = isChinese ? '插件市场没有可升级的兼容版本。' : 'No compatible plugin market upgrade is available.'
           continue
         }
@@ -2178,7 +2175,7 @@ async function showPluginRecovery(options?: {
             : `The plugin market could not be changed: ${result.detail ?? 'unknown error'}. Retry, choose another option, or enter Safe Mode.`
           continue
         }
-        if (action !== 'market-remove') attemptedUpgrades.set('dshmarket', targetVersion!)
+        if (action === 'market-upgrade') attemptedUpgrades.set('dshmarket', targetVersion!)
         await launchWithFreshEvidence()
         if (applyPendingFrontendEvidence()) continue
         if (runtime.snapshot().phase === 'ready') {
