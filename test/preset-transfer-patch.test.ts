@@ -508,7 +508,9 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('RECENT_PRESETS_KEY')
     expect(patch).toContain('option.trust === "system"')
     expect(patch).toContain('option.trust === "user"')
-    expect(patch).toContain('text-overflow:ellipsis')
+    expect(patch).toContain(
+      '.cubgiG_itemName{color:var(--dsw-alias-label-primary);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-size:13px;font-weight:500;line-height:19px}'
+    )
     expect(patch).toContain('IconSearchOutline16')
     expect(patch).toContain('IconSparkle16')
     expect(patch).toContain('selectedItem')
@@ -519,6 +521,40 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('footer: [{')
     expect(patch).toContain('id: AWESOME_PRESETS_ID')
     expect(patch).toContain('browseAwesomePresets: "浏览 Awesome Presets…"')
+  })
+
+  it('keeps the description to one line and makes the tail reachable on hover', async () => {
+    const patch = await readFile(
+      patchPath('@deepseek-ai/dsh-client-ui-agent-preset'),
+      'utf8'
+    )
+
+    // Rows stay one ellipsised line each. An earlier revision also left the
+    // ellipsised tail unreachable: nothing rendered a title, and the picker is
+    // the only surface that prints a mode's own summary. The row keeps its
+    // single line; the tooltip is what recovers the text.
+    expect(patch).toContain('title: text.description ?? t("noDescription")')
+    expect(patch).toContain(
+      '.cubgiG_itemDesc{color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-size:12px;line-height:17px}'
+    )
+    // No row clamps past one line — `cardDesc` in the section stylesheet owns
+    // the only multi-line clamp in this patch — and the menu cap stays at the
+    // height one-line rows were measured against.
+    expect(patch).not.toContain('-webkit-line-clamp:2')
+    expect(patch).toContain('max-height:min(360px')
+
+    // Upstream makes `.itemLabel` the flex child that absorbs the row's spare
+    // width, and the trailing check follows whatever width that child ends up
+    // with — so the label has to hug the row it labels, otherwise the check
+    // floats off into the leftover space instead of sitting beside the text.
+    expect(patch).toContain(
+      '[role=menu]:has(.cubgiG_searchShell)>[role=presentation]:first-child [role=menuitem]>span{flex:0 1 auto;min-width:0}'
+    )
+    // The row keeps its fixed 336px but may not exceed the label slot, so a
+    // menu capped by `max-width: calc(100vw - 24px)` cannot overflow it.
+    expect(patch).toContain(
+      '.cubgiG_item{box-sizing:border-box;flex-direction:column;gap:1px;width:336px;max-width:100%;min-width:0;'
+    )
   })
 
   it('keeps the loopback API discoverable by an explicitly requested online Skill', async () => {
