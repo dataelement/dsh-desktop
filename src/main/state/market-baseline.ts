@@ -243,3 +243,27 @@ export async function ensureMarketBaseline(
   options.note?.(`[market-baseline] verified active dshmarket ${actual}`)
   await noteShadowedMarket(installAnchor, profileDir, options.note)
 }
+
+/**
+ * The market Safe Mode can act on: the one the normal profile declares and
+ * boots. A market the user removed stays out of view, like it stays out of
+ * `ensureMarketBaseline`.
+ * @returns undefined when the profile does not declare the market.
+ */
+export async function readProfileMarket(
+  dshHome: string
+): Promise<{ installedVersion?: string } | undefined> {
+  let raw: string
+  try {
+    raw = await readFile(profilePackageJsonPath(dshHome), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+  const manifest = JSON.parse(raw) as MarketManifest
+  if (!manifest.dependencies?.[MARKET_PACKAGE] || !manifest.dsh?.profile?.bundles?.includes(MARKET_PACKAGE)) {
+    return undefined
+  }
+  const installedVersion = await readInstalledPluginVersion(dshHome, MARKET_PACKAGE)
+  return installedVersion !== undefined ? { installedVersion } : {}
+}

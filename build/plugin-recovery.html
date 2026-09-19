@@ -583,7 +583,7 @@
       const safeModeBtn = document.getElementById('safe-mode')
       if (safeModeBtn) {
         // The primary action already enters Safe Mode when no repair is available.
-        safeModeBtn.hidden = !model.canUninstall && !model.upgradeCandidate
+        safeModeBtn.hidden = !model.canUninstall && !model.upgradeCandidate && !model.marketPrimary
         safeModeBtn.textContent = model.safeModeLabel || (model.locale === 'zh' ? '进入安全模式' : 'Enter Safe Mode')
         safeModeBtn.addEventListener('click', () => {
           safeModeBtn.disabled = true
@@ -675,6 +675,45 @@
         }
       }
 
+      // The market is a core bundle with its own repair, never the plugin
+      // removal path; every action here names no version — main picks it.
+      const market = model.marketCheck
+      if (market) {
+        pluginList.classList.add('visible')
+        const item = document.createElement('li')
+        const mark = document.createElement('span')
+        mark.className = 'plugin-mark'
+        mark.setAttribute('aria-hidden', 'true')
+        mark.textContent = '!'
+        const name = document.createElement('span')
+        name.className = 'plugin-name'
+        name.textContent = market.installedVersion ? `${market.name} v${market.installedVersion}` : String(market.name)
+        const hint = document.createElement('span')
+        hint.className = 'plugin-check-hint'
+        hint.textContent = String(market.hint || '')
+        const actions = document.createElement('div')
+        actions.className = 'plugin-check-actions'
+        const addMarketAction = (action, label, className, confirmText) => {
+          if (!label) return
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.className = className
+          button.textContent = String(label)
+          button.addEventListener('click', () => {
+            if (confirmText && !window.confirm(String(confirmText))) return
+            document.querySelectorAll('button').forEach((control) => { control.disabled = true })
+            navigate(action)
+          })
+          actions.appendChild(button)
+        }
+        addMarketAction('market-upgrade', market.upgradeLabel, 'plugin-upgrade-btn')
+        // As the only culprit, restoring is the primary button below.
+        if (!model.marketPrimary) addMarketAction('market-restore', market.restoreLabel, 'plugin-upgrade-btn')
+        addMarketAction('market-remove', market.removeLabel, 'plugin-upgrade-btn plugin-remove-btn', market.removeConfirm)
+        item.append(mark, name, hint, actions)
+        pluginList.appendChild(item)
+      }
+
       const navigate = (action) => {
         if (window.dshRecovery && typeof window.dshRecovery.action === 'function') {
           void window.dshRecovery.action(action)
@@ -692,6 +731,8 @@
         setText('primary', model.retryCheckLabel)
       } else if (model.autoProcessLabel) {
         setText('primary', model.autoProcessLabel)
+      } else if (model.marketPrimary) {
+        setText('primary', model.primaryLabel)
       } else if (model.upgradeCandidate) {
         setText('primary', model.upgradeLabel)
         setText('secondary', model.uninstallLabel || (model.locale === 'zh' ? '卸载插件' : 'Uninstall plugin'))
@@ -719,6 +760,9 @@
         } else if (model.autoProcessLabel) {
           primary.textContent = model.locale === 'zh' ? '正在自动处理…' : 'Recovering plugins…'
           navigate('auto-process')
+        } else if (model.marketPrimary) {
+          primary.textContent = model.primaryBusyLabel
+          navigate('market-restore')
         } else if (model.upgradeCandidate) {
           primary.textContent = model.upgradeBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
           navigate('upgrade')

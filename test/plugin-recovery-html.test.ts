@@ -28,4 +28,14 @@ describe('plugin recovery page', () => {
     expect(html).toContain('该插件有新的兼容版本（${versionStr}）')
     expect(html).toContain("'卸载插件' : 'Uninstall plugin'")
   })
+
+  it('offers the market its own repair actions without naming a version', () => {
+    expect(html).toContain('const market = model.marketCheck')
+    expect(html).toContain("addMarketAction('market-upgrade', market.upgradeLabel, 'plugin-upgrade-btn')")
+    expect(html).toContain("if (!model.marketPrimary) addMarketAction('market-restore'")
+    expect(html).toContain("addMarketAction('market-remove', market.removeLabel, 'plugin-upgrade-btn plugin-remove-btn', market.removeConfirm)")
+    expect(html).toContain("navigate('market-restore')")
+    expect(html).toContain('!model.canUninstall && !model.upgradeCandidate && !model.marketPrimary')
+    expect(html).not.toMatch(/navigate\(`market-/)
+  })
 })

@@ -25,6 +25,7 @@ import { clearStaleLoopbackHttpCache } from './cache-maintenance'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
+  extractPluginFailureReferences,
   HarnessRuntime,
   prewarmShellEnvironment
 } from './runtime/harness-runtime'
@@ -33,7 +34,12 @@ import {
   installProfileDependenciesWithDsh,
   removeProfilePluginWithDsh
 } from './runtime/profile-plugin-command'
-import { demoteMarketGeneration, ensureMarketBaseline } from './state/market-baseline'
+import {
+  demoteMarketGeneration,
+  ensureMarketBaseline,
+  readProfileMarket,
+  VERIFIED_MARKET_BASELINE
+} from './state/market-baseline'
 import {
   clearProfileInstallMarker,
   markProfileInstallComplete
@@ -158,7 +164,7 @@ import {
   type PluginHealthReport,
   type PluginUpgradeCandidate
 } from './state/plugin-market-check'
-import { upgradePluginToGeneration } from './state/plugin-upgrade'
+import { upgradeMarketInSharedTree, upgradePluginToGeneration } from './state/plugin-upgrade'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { windowsMenuViewBounds } from './windows-menu-view'
 import { shouldKeepRunningInBackground } from './close-to-tray'
@@ -167,7 +173,7 @@ import {
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
 
-type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates'
+type PluginRecoveryAction = `upgrade:${string}` | `uninstall:${string}` | `agent:${string}` | 'uninstall' | 'upgrade' | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates' | 'market-upgrade' | 'market-restore' | 'market-remove'
 type WebImportAction = 'import' | 'skip'
 type SafeModeAction =
   | { type: 'apply'; plugins: string[]; issues: string[] }
@@ -189,7 +195,10 @@ const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
   'show-log',
   'quit',
   'restart',
-  'safe-mode'
+  'safe-mode',
+  'market-upgrade',
+  'market-restore',
+  'market-remove'
 ])
 
 let mainWindow: BrowserWindow | undefined
@@ -1610,6 +1619,30 @@ async function disableMarketGeneration(
 }
 
 /**
+ * Remove the plugin market from the normal profile. Harness must be stopped.
+ * @returns the removal outcome; `detail` explains a failure.
+ */
+async function removeMarket(dshHome: string): Promise<{ ok: boolean; detail?: string }> {
+  // Ask BEFORE removing: once the pointer is gone the question cannot be
+  // answered any more, and a generation whose disable failed must not be
+  // reported as an uninstall that worked.
+  const projected = await isProjectedGenerationPlugin(dshHome, 'dshmarket')
+  return projected
+    ? disableMarketGeneration(dshHome)
+    : removeProfilePluginWithDsh(
+      {
+        dshHome,
+        dshEntryPath: dshEntryPath(),
+        nodeExecutablePath: bundledNodePath(),
+        pnpmEntryPath: bundledPnpmEntryPath(),
+        pnpmRunnerPath: bundledPnpmRunnerPath()
+      },
+      'dshmarket',
+      true
+    )
+}
+
+/**
  * Remove the plugin market, in whichever form this profile installed it.
  *
  * A generation install is projected from `desired`, NOT owned by the profile
@@ -1629,23 +1662,7 @@ async function uninstallMarketAndRestart(): Promise<{ ok: boolean }> {
   const dshHome = join(app.getPath('userData'), 'harness')
   await showSplash()
   await runtime.stop()
-  // Ask BEFORE removing: once the pointer is gone the question cannot be
-  // answered any more, and a generation whose disable failed must not be
-  // reported as an uninstall that worked.
-  const projected = await isProjectedGenerationPlugin(dshHome, 'dshmarket')
-  const result = projected
-    ? await disableMarketGeneration(dshHome)
-    : await removeProfilePluginWithDsh(
-      {
-        dshHome,
-        dshEntryPath: dshEntryPath(),
-        nodeExecutablePath: bundledNodePath(),
-        pnpmEntryPath: bundledPnpmEntryPath(),
-        pnpmRunnerPath: bundledPnpmRunnerPath()
-      },
-      'dshmarket',
-      true
-    )
+  const result = await removeMarket(dshHome)
   await launchHarness()
   if (!result.ok) {
     throw new Error(result.detail ?? 'Plugin market removal failed.')
@@ -1933,6 +1950,7 @@ async function waitForPluginRecoveryAction(options: {
   notice?: string
   upgradeCandidate?: PluginUpgradeCandidate
   pluginChecks?: PluginRecoveryCheck[]
+  market?: Parameters<typeof buildPluginRecoveryViewModel>[0]['market']
 }): Promise<PluginRecoveryAction> {
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const state = buildPluginRecoveryViewModel({
@@ -2075,6 +2093,30 @@ async function showPluginRecovery(options?: {
       })
       let upgradeCandidate = detection.plugins.length === 1 ? pluginChecks[0]?.upgradeCandidate : undefined
 
+      // dshmarket is a core bundle, so it never reaches `detection.plugins`
+      // (the removal path refuses core bundles). Blame it separately; left
+      // out, a broken market sends every launch back here with no remedy.
+      const marketBlamed = extractPluginFailureReferences(detection.logs).includes('dshmarket') ||
+        (!followRendererLogs && snapshot.pluginFailures?.some((failure) => failure.owner?.packageName === 'dshmarket') === true)
+      const market = marketBlamed
+        ? await readProfileMarket(dshHome).catch((error: unknown) => {
+          runtime.note(`[plugin-recovery] could not read the plugin market: ${String(error)}`)
+          return undefined
+        })
+        : undefined
+      const marketReport = market
+        ? await evaluatePluginMarketCompatibility({
+          packageName: 'dshmarket', installedVersion: market.installedVersion, currentRuntimeVersion: runtimeVersion,
+          hasLocalIssue: true, locale: harnessLocale(),
+          fetchFn: (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
+        }).catch(() => undefined)
+        : undefined
+      // Like a plugin upgrade, a market release already tried here is not offered again.
+      const marketUpgradeVersion = marketReport?.upgradeReady &&
+        marketReport.upgradeVersion !== attemptedUpgrades.get('dshmarket')
+        ? marketReport.upgradeVersion
+        : undefined
+
       const action = await waitForPluginRecoveryAction({
         snapshot: {
           ...snapshot,
@@ -2085,7 +2127,16 @@ async function showPluginRecovery(options?: {
         removedPlugins,
         notice,
         upgradeCandidate,
-        pluginChecks
+        pluginChecks,
+        ...(market
+          ? {
+              market: {
+                ...market,
+                verifiedVersion: VERIFIED_MARKET_BASELINE,
+                ...(marketUpgradeVersion ? { upgradeVersion: marketUpgradeVersion } : {})
+              }
+            }
+          : {})
       })
       notice = undefined
       const target = selectPluginRecoveryTarget(action, detection.plugins)
@@ -2098,6 +2149,42 @@ async function showPluginRecovery(options?: {
 
       if (action === 'refresh' || action === 'check-updates') {
         applyPendingFrontendEvidence()
+        continue
+      } else if (action === 'market-upgrade' || action === 'market-restore' || action === 'market-remove') {
+        if (!market) continue
+        // The version comes from this pass's own check, never from the page.
+        const targetVersion = action === 'market-upgrade' ? marketUpgradeVersion : VERIFIED_MARKET_BASELINE
+        if (action !== 'market-remove' && !targetVersion) {
+          notice = isChinese ? '插件市场没有可升级的兼容版本。' : 'No compatible plugin market upgrade is available.'
+          continue
+        }
+        // The shared-tree installer needs every Harness stopped.
+        await runtime.stop()
+        const result = await (action === 'market-remove'
+          ? removeMarket(dshHome)
+          : upgradeMarketInSharedTree({
+            dshHome,
+            dshEntryPath: dshEntryPath(),
+            targetVersion: targetVersion!,
+            nodeExecutablePath: bundledNodePath(),
+            pnpmEntryPath: bundledPnpmEntryPath(),
+            pnpmRunnerPath: bundledPnpmRunnerPath(),
+            note: (line) => runtime.note(line)
+          })).catch((error: unknown) => ({ ok: false, detail: error instanceof Error ? error.message : String(error) }))
+        runtime.note(`[plugin-recovery] ${action} ${result.ok ? 'succeeded' : 'failed'}${result.detail ? `: ${result.detail}` : ''}`)
+        if (!result.ok) {
+          notice = isChinese
+            ? `插件市场处理失败：${result.detail ?? '未知错误'}。可重试、选择其他方式或进入安全模式。`
+            : `The plugin market could not be changed: ${result.detail ?? 'unknown error'}. Retry, choose another option, or enter Safe Mode.`
+          continue
+        }
+        if (action !== 'market-remove') attemptedUpgrades.set('dshmarket', targetVersion!)
+        await launchWithFreshEvidence()
+        if (applyPendingFrontendEvidence()) continue
+        if (runtime.snapshot().phase === 'ready') {
+          schedulePluginRecoverySessionReset()
+          return
+        }
         continue
       } else if (action.startsWith('agent:')) {
         // Start Safe Mode first: the agent session must live in the Safe Mode

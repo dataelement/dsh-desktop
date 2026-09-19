@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { demoteMarketGeneration, ensureMarketBaseline, VERIFIED_MARKET_BASELINE } from '../src/main/state/market-baseline'
+import { demoteMarketGeneration, ensureMarketBaseline, readProfileMarket, VERIFIED_MARKET_BASELINE } from '../src/main/state/market-baseline'
 import { runProfileStartupMaintenance, type ProfileStartupMaintenanceDeps } from '../src/main/state/profile-startup-maintenance'
 import { readInstalledPluginVersion } from '../src/main/state/plugin-market-check'
 import { readDesired, registryLayout, writeDesired, writeGenerationMeta } from 'dsh-desktop-market-installer/generations/registry'
@@ -304,3 +304,24 @@ describe('market baseline at normal startup', () => {
   })
 })
 
+describe('the market Safe Mode can act on', () => {
+  it('reads the declared market and its installed version', async () => {
+    const { home } = await fixture('1.48.0')
+    expect(await readProfileMarket(home)).toEqual({ installedVersion: '1.48.0' })
+  })
+
+  it('still offers a declared market whose package is missing', async () => {
+    const { home, market } = await fixture()
+    await rm(market, { recursive: true, force: true })
+    expect(await readProfileMarket(home)).toEqual({})
+  })
+
+  it('leaves a removed market out of view', async () => {
+    const { home, profile } = await fixture()
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dependencies: { 'other-plugin': '1.0.0' },
+      dsh: { profile: { bundles: ['other-plugin'] } }
+    }))
+    expect(await readProfileMarket(home)).toBeUndefined()
+  })
+})
