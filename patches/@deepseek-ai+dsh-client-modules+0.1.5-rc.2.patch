@@ -79,3 +79,45 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js b/node_mo
  		}
  		return this.nearestPackage(moduleUrl, expectedPackageName);
  	}
+diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js b/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js
+--- a/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js
+@@ -225,6 +225,14 @@
+ 				};
+ 				for (const registration of pending) target.load(registration);
+ 			}
++			/** Refresh Host-advertised arrivals while preserving materialized modules and their state. */
++			updateGraph(wire) {
++				const manifest = parseBootManifest(wire);
++				this.graphRows.clear();
++				for (const row of manifest.modules) this.graphRows.set(row.id, { ...row, initialUrl: row.url });
++				this.manifest = manifest;
++				return manifest;
++			}
+ 			/** Register one bundle factory, rejecting a script that executes twice without invalidation. */
+ 			register(registration) {
+ 				const id = stripClientSuffix(registration.id);
+diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/manifest.d.ts b/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/manifest.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/manifest.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/manifest.d.ts
+@@ -210,6 +210,8 @@
+     version: 'client';
+     /** Parsed Host boot graph shared with the web entry after module-system creation. */
+     manifest: BootManifest;
++    /** Refresh Host-advertised bundle arrivals, retaining loaded module state. */
++    updateGraph(wire: unknown): BootManifest;
+     /** Materialized-module registry: id → record. The governance-side read API for entry exports. */
+     loadCache: Map<string, ClientModuleRecord>;
+     /**
+diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/system.d.ts b/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/system.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/system.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-modules/lib/types/client/system.d.ts
+@@ -26,6 +26,8 @@
+      * @param options - Parsed graph, platform seed, bootstrap module, registration facade, and transport.
+      */
+     constructor(options: ClientModuleSystemOptions);
++    /** Refresh Host-advertised bundle arrivals, retaining loaded module state. */
++    updateGraph(wire: unknown): import('./manifest.ts').BootManifest;
+     /** Register one bundle factory, rejecting a script that executes twice without invalidation. */
+     private register;
+     /** Load one graph row so its factory is registered (idempotent per in-flight arrival). */
