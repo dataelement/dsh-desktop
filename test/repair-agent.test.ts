@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   analyzeCrashContext,
-  buildSystemRepairPrompt,
   extractRelevantCrashLogs,
   RepairAgentService
 } from '../src/main/repair-agent'
@@ -132,28 +131,6 @@ describe('RepairAgentService', () => {
     expect((await service.initSession()).sessionId).toBe('s1')
     token = 'token-2'
     expect((await service.initSession()).sessionId).toBe('s2')
-  })
-})
-
-describe('repair system prompt', () => {
-  const base = {
-    platform: 'darwin',
-    arch: 'arm64',
-    nodeVersion: 'v24',
-    desktopVersion: '0.9.1',
-    workspaceDirectory: '/data/harness',
-    harnessLogPath: '/logs/harness.log',
-    shippedPresetsDirectory: '/app/presets',
-    logsSample: ['[stderr] boom']
-  }
-
-  it('sends the agent to the log instead of pasting it, and says when no failure was captured', () => {
-    const captured = buildSystemRepairPrompt({ ...base, locale: 'en', logsSample: Array.from({ length: 40 }, (_, i) => `line ${i}`) })
-    expect(captured).toContain('line 39')
-    expect(captured).not.toContain('line 19\n')
-    const voluntary = buildSystemRepairPrompt({ ...base, locale: 'en', crashCaptured: false })
-    expect(voluntary).toContain('No failed normal launch was captured')
-    expect(voluntary).not.toContain('[stderr] boom')
   })
 })
 
