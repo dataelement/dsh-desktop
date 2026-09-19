@@ -54,8 +54,10 @@ registerHooks({ resolve(specifier, context, next) {
 
     await recovered.start(home, SAFE_MODE_PROFILE)
     expect(recovered.snapshot().phase, recovered.snapshot().logs.join('\n')).toBe('ready')
-    // The runtime logger bridge is composed into recovery too.
-    expect(recovered.snapshot().logs).toContain(`[stderr] ${BRIDGE_READY_LINE}`)
+    // The runtime logger bridge is composed into recovery too. It announces
+    // itself on stdout; a clean boot bridges no runtime warning or error.
+    expect(recovered.snapshot().logs).toContain(`[stdout] ${BRIDGE_READY_LINE}`)
+    expect(recovered.snapshot().logs.filter((line) => line.startsWith('[stderr] [harness-log]'))).toEqual([])
     expect(recovered.snapshot().authToken).toBeTruthy()
     expect((await fetch(recovered.snapshot().url!)).status).toBe(401)
     // Recovery uses its own overlay and never edits the normal composition.

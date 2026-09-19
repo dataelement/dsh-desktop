@@ -371,6 +371,10 @@
         "to": "dsh-desktop.patch.yml"
       },
       {
+        "from": "build/dsh-desktop-market.patch.yml",
+        "to": "dsh-desktop-market.patch.yml"
+      },
+      {
         "from": "build/dsh-desktop-safe.patch.yml",
         "to": "dsh-desktop-safe.patch.yml"
       },

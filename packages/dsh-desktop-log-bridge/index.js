@@ -100,6 +100,7 @@ export function apply(ctx) {
     emit(bridgeLines('session-error', String(sessionId), error))
   })
   // One line per launch: a log without it predates the bridge, so the
-  // absence of runtime errors there proves nothing.
-  process.stderr.write(`${BRIDGE_READY_LINE}\n`)
+  // absence of runtime errors there proves nothing. It is a notice, not a
+  // problem, so it goes to stdout; stderr carries only warnings and errors.
+  process.stdout.write(`${BRIDGE_READY_LINE}\n`)
 }

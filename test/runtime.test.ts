@@ -1,4 +1,7 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   buildHarnessArguments,
@@ -10,6 +13,7 @@ import {
   extractOffendingPlugin,
   extractOffendingPlugins,
   latestHarnessAttemptLogs,
+  profileBootsMarket,
   extractPluginFailureReferences,
   extractSlotConflictName,
   formatExitCode,
@@ -114,6 +118,40 @@ describe('Harness launch contract', () => {
       '--port',
       '43127'
     ])
+  })
+
+  it('passes every overlay in order, each behind its own --patch', () => {
+    expect(buildHarnessArguments(43127, ['/app/dsh-desktop.patch.yml', '/app/dsh-desktop-market.patch.yml'])).toEqual([
+      'web',
+      '--patch',
+      '/app/dsh-desktop.patch.yml',
+      '--patch',
+      '/app/dsh-desktop-market.patch.yml',
+      '--no-open',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '43127'
+    ])
+  })
+
+  it('applies the market overlay only to a profile that boots the market', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-market-patch-'))
+    try {
+      const profile = async (name: string, manifest: unknown): Promise<string> => {
+        const profileDirectory = join(dir, name)
+        await mkdir(profileDirectory, { recursive: true })
+        if (manifest !== undefined) await writeFile(join(profileDirectory, 'package.json'), JSON.stringify(manifest))
+        return profileDirectory
+      }
+      expect(await profileBootsMarket(await profile('with', { dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dshmarket'] } } }))).toBe(true)
+      // Installed but no longer booted, never installed, or no manifest at all.
+      expect(await profileBootsMarket(await profile('declared', { dependencies: { dshmarket: '1.48.0' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))).toBe(false)
+      expect(await profileBootsMarket(await profile('without', { dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))).toBe(false)
+      expect(await profileBootsMarket(await profile('missing', undefined))).toBe(false)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('boots an isolated profile while preserving the web server arguments', () => {

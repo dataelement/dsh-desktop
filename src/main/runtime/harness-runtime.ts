@@ -1,7 +1,7 @@
 import { execFile, execFileSync, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join, posix, win32 } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -16,6 +16,8 @@ export interface HarnessRuntimeOptions {
   nodeEntryPath: string
   dshPatchPath: string
   dshSafePatchPath: string
+  /** Overlay for dshmarket's entry, passed only when the profile declares the market. */
+  dshMarketPatchPath?: string
   dshHome: string
   logPath: string
   launchProcess(
@@ -236,12 +238,13 @@ export function extractLaunchToken(line: string): string | undefined {
 
 export function buildHarnessArguments(
   port: number,
-  patchPath?: string,
+  patchPaths?: string | readonly string[],
   profile = 'web'
 ): string[] {
+  const patches = typeof patchPaths === 'string' ? [patchPaths] : patchPaths ?? []
   return [
     ...(profile === 'web' ? ['web'] : ['--profile', profile]),
-    ...(patchPath ? ['--patch', patchPath] : []),
+    ...patches.flatMap((patchPath) => ['--patch', patchPath]),
     // The desktop window is the only intended surface. Without this, Harness
     // hands the same loopback URL to the system browser on every launch.
     '--no-open',
@@ -342,15 +345,33 @@ export function buildNodeArguments(
   nodeEntryPath: string,
   dshEntryPath: string,
   port: number,
-  patchPath?: string,
+  patchPaths?: string | readonly string[],
   profile = 'web'
 ): string[] {
   return [
     '--expose-internals',
     nodeEntryPath,
     dshEntryPath,
-    ...buildHarnessArguments(port, patchPath, profile)
+    ...buildHarnessArguments(port, patchPaths, profile)
   ]
+}
+
+/**
+ * Whether a profile boots dshmarket, so its patch row has an entry to modify.
+ * A row whose entry is absent makes the loader warn on every launch.
+ * @param profileDirectory - the profile's package directory.
+ * @returns true when `dsh.profile.bundles` lists dshmarket.
+ */
+export async function profileBootsMarket(profileDirectory: string): Promise<boolean> {
+  try {
+    const manifest = JSON.parse(await readFile(join(profileDirectory, 'package.json'), 'utf8')) as {
+      dsh?: { profile?: { bundles?: unknown } }
+    }
+    const bundles = manifest.dsh?.profile?.bundles
+    return Array.isArray(bundles) && bundles.includes('dshmarket')
+  } catch {
+    return false
+  }
 }
 
 export function updateReadyStability(
@@ -456,6 +477,13 @@ export class HarnessRuntime {
       this.setState('failed', `DSH Desktop patch was not found: ${patchPath}`)
       return
     }
+    const marketPatchPath = this.options.dshMarketPatchPath
+    const patchPaths = profile !== SAFE_MODE_PROFILE &&
+      marketPatchPath !== undefined &&
+      existsSync(marketPatchPath) &&
+      await profileBootsMarket(join(this.options.dshHome, 'profiles', profile))
+      ? [patchPath, marketPatchPath]
+      : [patchPath]
 
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })
@@ -471,7 +499,7 @@ export class HarnessRuntime {
       this.options.nodeEntryPath,
       this.options.dshEntryPath,
       port,
-      patchPath,
+      patchPaths,
       profile
     )
     const startupTimeoutMs =
@@ -481,7 +509,7 @@ export class HarnessRuntime {
     this.writeLog(`[desktop] starting ${new Date().toISOString()}`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
     this.writeLog(`[desktop] profile ${profile}`)
-    this.writeLog(`[desktop] patch ${patchPath}`)
+    for (const path of patchPaths) this.writeLog(`[desktop] patch ${path}`)
     if (!usedPreferredPort) {
       this.writeLog(
         `[desktop] preferred endpoint http://127.0.0.1:${preferredPort} is unavailable; using a temporary port`

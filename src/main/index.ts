@@ -3177,6 +3177,7 @@ async function bootstrap(): Promise<void> {
     nodeEntryPath: harnessNodeEntryPath(),
     dshPatchPath: desktopResourcePath('dsh-desktop.patch.yml'),
     dshSafePatchPath: desktopResourcePath('dsh-desktop-safe.patch.yml'),
+    dshMarketPatchPath: desktopResourcePath('dsh-desktop-market.patch.yml'),
     dshHome: join(app.getPath('userData'), 'harness'),
     logPath: join(app.getPath('logs'), 'harness.log'),
     // Keep the Harness origin stable across launches. These ports are separate

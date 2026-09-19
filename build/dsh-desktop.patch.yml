@@ -35,15 +35,6 @@
       config:
         root: !!js dshHomePath('kimi-ppt')
 
-# dsh-market normally offers to restart its own Node process after mutations.
-# The desktop shell has the real lifecycle authority, so keep that behavior off
-# whenever the optional plugin is present in the composed profile.
-- id: dsh-market
-  inject: [desktopProfiles]
-  config:
-    profile: web
-    allowRestart: false
-
 # Harness creates the full Cordis HMR service after boot when no `hmr` service
 # exists, and that service throws without Node's internal module loader —
 # which a packaged Electron app cannot provide, so every signed macOS launch

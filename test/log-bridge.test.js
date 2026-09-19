@@ -7,17 +7,22 @@ import { patchPath } from './patch-path'
 
 const { BRIDGE_READY_LINE, bridgeLines, createLimitedWriter } = bridge
 
-/** Run the bridge in a real Cordis context, collecting what it writes to stderr. */
+/** Run the bridge in a real Cordis context, collecting what it writes to stderr and stdout. */
 async function bridged(before) {
-  const written = []
-  vi.spyOn(process.stderr, 'write').mockImplementation((text) => {
-    written.push(String(text))
-    return true
-  })
+  const capture = (stream) => {
+    const written = []
+    vi.spyOn(stream, 'write').mockImplementation((text) => {
+      written.push(String(text))
+      return true
+    })
+    return () => written.join('').split('\n').filter(Boolean)
+  }
+  const lines = capture(process.stderr)
+  const notices = capture(process.stdout)
   const ctx = new Context()
   before?.(ctx)
   await ctx.plugin(bridge)
-  return { ctx, lines: () => written.join('').split('\n').filter(Boolean) }
+  return { ctx, lines, notices }
 }
 
 afterEach(() => {
@@ -31,8 +36,7 @@ describe('desktop log bridge', () => {
     ctx.logger('noise').info('routine')
     ctx.logger('session-controller').error(new Error('boom\n    at somewhere'))
 
-    expect(lines().slice(0, 4)).toEqual([
-      BRIDGE_READY_LINE,
+    expect(lines().slice(0, 3)).toEqual([
       '[harness-log] warn agent-presets: preset "mine" failed to mount: expected string but got 1',
       '[harness-log] error session-controller: Error: boom',
       '[harness-log]       at somewhere'
@@ -47,7 +51,13 @@ describe('desktop log bridge', () => {
       ctx.logger('early').error('before the bridge')
       ctx.logger('early').warn('filtered out of the ring by the default level')
     })
-    expect(lines()).toEqual(['[harness-log] error early: before the bridge', BRIDGE_READY_LINE])
+    expect(lines()).toEqual(['[harness-log] error early: before the bridge'])
+  })
+
+  it('announces itself on stdout, keeping stderr for warnings and errors', async () => {
+    const { lines, notices } = await bridged()
+    expect(notices()).toEqual([BRIDGE_READY_LINE])
+    expect(lines()).toEqual([])
   })
 
   it('records session activation failures, which never reach the logger', async () => {
