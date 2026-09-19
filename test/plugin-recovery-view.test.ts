@@ -27,7 +27,7 @@ describe('plugin recovery view model', () => {
     expect(model.primaryLabel).toBe('恢复到已验证版本 v1.45.1 并重启')
     expect(model.marketCheck).toMatchObject({
       name: 'dshmarket', installedVersion: '1.48.0',
-      upgradeLabel: '升级至 v1.49.0', restoreLabel: '恢复到已验证版本 v1.45.1', removeLabel: '卸载插件市场'
+      upgradeLabel: '升级至 v1.49.0', restoreLabel: '恢复到已验证版本 v1.45.1', removeLabel: '卸载此插件'
     })
     expect(model.plugins).toEqual([])
   })

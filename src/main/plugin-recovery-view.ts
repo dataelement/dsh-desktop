@@ -25,7 +25,6 @@ export interface PluginRecoveryMarketCheck {
   /** Installing the verified version may move up, down, or reinstall in place. */
   restoreLabel: string
   removeLabel: string
-  removeConfirm: string
 }
 
 export interface PluginRecoveryViewModel {
@@ -321,9 +320,7 @@ function buildMarketCheck(
     restoreLabel: installedVersion === verifiedVersion
       ? zh ? `重新安装已验证版本 v${verifiedVersion}` : `Reinstall verified v${verifiedVersion}`
       : zh ? `恢复到已验证版本 v${verifiedVersion}` : `Restore verified v${verifiedVersion}`,
-    removeLabel: zh ? '卸载插件市场' : 'Remove plugin market',
-    removeConfirm: zh
-      ? '卸载插件市场？已安装的社区插件会保留，之后可在设置中重新安装插件市场。'
-      : 'Remove the plugin market? Installed community plugins are kept, and you can reinstall the market from Settings later.'
+    // Worded like a third-party plugin's removal on this page.
+    removeLabel: zh ? '卸载此插件' : 'Remove this plugin'
   }
 }

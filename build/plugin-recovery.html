@@ -687,20 +687,20 @@
         mark.textContent = '!'
         const name = document.createElement('span')
         name.className = 'plugin-name'
-        name.textContent = market.installedVersion ? `${market.name} v${market.installedVersion}` : String(market.name)
+        name.textContent = String(market.name)
         const hint = document.createElement('span')
         hint.className = 'plugin-check-hint'
         hint.textContent = String(market.hint || '')
         const actions = document.createElement('div')
         actions.className = 'plugin-check-actions'
-        const addMarketAction = (action, label, className, confirmText) => {
+        // Same row, buttons, and styles as a third-party plugin's check above.
+        const addMarketAction = (action, label, className) => {
           if (!label) return
           const button = document.createElement('button')
           button.type = 'button'
           button.className = className
           button.textContent = String(label)
           button.addEventListener('click', () => {
-            if (confirmText && !window.confirm(String(confirmText))) return
             document.querySelectorAll('button').forEach((control) => { control.disabled = true })
             navigate(action)
           })
@@ -708,8 +708,8 @@
         }
         addMarketAction('market-upgrade', market.upgradeLabel, 'plugin-upgrade-btn')
         // As the only culprit, restoring is the primary button below.
-        if (!model.marketPrimary) addMarketAction('market-restore', market.restoreLabel, 'plugin-upgrade-btn')
-        addMarketAction('market-remove', market.removeLabel, 'plugin-upgrade-btn plugin-remove-btn', market.removeConfirm)
+        if (!model.marketPrimary) addMarketAction('market-restore', market.restoreLabel, 'plugin-upgrade-btn plugin-remove-btn')
+        addMarketAction('market-remove', market.removeLabel, 'plugin-upgrade-btn plugin-remove-btn')
         item.append(mark, name, hint, actions)
         pluginList.appendChild(item)
       }
