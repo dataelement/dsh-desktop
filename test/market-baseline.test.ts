@@ -40,9 +40,32 @@ function startup(ensure: () => Promise<void>): ProfileStartupMaintenanceDeps {
 }
 
 describe('market baseline at normal startup', () => {
-  it('keeps the baseline aligned with the bundled market', async () => {
+  it('keeps the baseline aligned with the market the tests run against', async () => {
     const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(VERIFIED_MARKET_BASELINE).toBe(pkg.dependencies.dshmarket)
+    expect(VERIFIED_MARKET_BASELINE).toBe(pkg.devDependencies.dshmarket)
+  })
+
+  it('never ships dshmarket in the app, where it would shadow the profile copy', async () => {
+    // Harness resolves bundles from its installation before the profile, so a
+    // packaged dshmarket would silently win over every market upgrade.
+    const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+    expect(pkg.dependencies.dshmarket).toBeUndefined()
+  })
+
+  it('reports when the installation shadows the profile market', async () => {
+    // This checkout's node_modules still holds dshmarket as a devDependency.
+    const { options } = await fixture('1.48.0')
+    const lines: string[] = []
+    await ensureMarketBaseline({ ...options, note: (line) => lines.push(line) }, vi.fn())
+    expect(lines).toEqual([expect.stringContaining(`shadowed by ${VERIFIED_MARKET_BASELINE}`)])
+  })
+
+  it('stays quiet when Harness loads the profile market', async () => {
+    const { home, options } = await fixture('1.48.0')
+    const lines: string[] = []
+    const dshEntryPath = join(home, 'app', 'lib', 'bin.js')
+    await ensureMarketBaseline({ ...options, dshEntryPath, note: (line) => lines.push(line) }, vi.fn())
+    expect(lines).toEqual([])
   })
 
   it('upgrades an already-migrated Profile in the shared tree, never as a generation', async () => {
