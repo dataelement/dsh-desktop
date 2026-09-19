@@ -1,1 +1,0 @@
-{"version":3,"file":"packageDependencies.js","sourceRoot":"","sources":["../../src/util/packageDependencies.ts"],"names":[],"mappings":"","sourcesContent":["export interface NodeModuleInfo {\n  readonly name: string\n  readonly version: string\n  readonly dir: string\n  readonly dependencies?: Array<NodeModuleInfo>\n}\n"]}
