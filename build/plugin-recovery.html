@@ -412,13 +412,6 @@
       @media (prefers-reduced-motion: reduce) {
         .button { transition: none; }
       }
-      .diagnostics-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
-      .diagnostics-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 12px; }
-      .diagnostics-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-      .diag-card { display: flex; flex-direction: column; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); cursor: pointer; transition: all 0.2s; color: var(--ink); }
-      .diag-card:hover { border-color: var(--muted); background: var(--surface); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-      .diag-card-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-      .diag-card-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
     </style>
   </head>
   <body>
@@ -447,6 +440,7 @@
 
         <div class="decision-row">
           <div class="actions">
+            <button class="button" id="repair-agent" type="button" hidden></button>
             <button class="button" id="safe-mode" type="button"></button>
             <button class="button" id="secondary" type="button" hidden></button>
             <button class="button primary" id="primary" type="button"></button>
@@ -469,16 +463,6 @@
             </div>
           </div>
         </details>
-
-        <section class="diagnostics-section">
-          <div class="diagnostics-title">🛠️ 进入 Harness 智能诊断助手</div>
-          <div class="diagnostics-cards">
-            <button class="diag-card" type="button">
-              <div class="diag-card-title">🤖 启动智能修复 Agent</div>
-              <div class="diag-card-desc">自动读取日志、分析根因并给出修复建议</div>
-            </button>
-          </div>
-        </section>
       </section>
 
       <footer class="footer">
@@ -786,20 +770,19 @@
       document.getElementById('quit').addEventListener('click', () => navigate('quit'))
     </script>
     <script>
-      if (model.plugins && model.plugins.length > 0) {
-        const diagSection = document.querySelector('.diagnostics-section')
-        if (diagSection) diagSection.style.display = 'none'
-      }
       // Only the request is sent: the main process prepends the offline
       // diagnosis and the failed launch's logs to the first turn.
       const repairAgentPrompt = model.locale === 'zh'
         ? '请结合诊断事实和 harness.log，定位导致启动失败的确切根因。先说明结论和建议的最小可逆操作，在我明确确认之前不要修改任何文件或配置。'
         : 'Using the diagnostic facts and harness.log, find the exact root cause of the startup failure. Explain the conclusion and the smallest reversible fix first, and do not change any file or setting until I explicitly confirm.'
-      document.querySelectorAll('.diag-card').forEach(card => {
-        card.addEventListener('click', () => {
-          card.disabled = true
-          void window.dshRecovery.action('agent', { prompt: repairAgentPrompt })
-        })
+      // Beside the Safe Mode button, and only when no culprit was identified:
+      // a named plugin or market has its own repair above.
+      const repairAgent = document.getElementById('repair-agent')
+      repairAgent.hidden = (model.plugins?.length ?? 0) > 0 || Boolean(model.marketCheck)
+      repairAgent.textContent = model.locale === 'zh' ? '智能修复 Agent' : 'Repair agent'
+      repairAgent.addEventListener('click', () => {
+        document.querySelectorAll('button').forEach((control) => { control.disabled = true })
+        void window.dshRecovery.action('agent', { prompt: repairAgentPrompt })
       })
     </script>
   </body>
