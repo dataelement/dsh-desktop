@@ -109,13 +109,9 @@
       @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; } }
       @media (max-height: 680px) { body { padding: 16px; } .shell { max-height: calc(100vh - 32px); } .header { padding-block: 12px; } .content { padding: 16px 24px; } .summary { font-size: 13px; margin-bottom: 6px; } .list-card { margin-top: 10px; } .actions { margin-top: 14px; } }
       @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } .footer { padding-inline:20px; } }
-      .diagnostics-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
-      .diagnostics-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 12px; }
-      .diagnostics-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-      .diag-card { display: flex; flex-direction: column; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft, var(--surface-soft, #f5f6f7)); cursor: pointer; transition: all 0.2s; color: var(--ink); }
-      .diag-card:hover { border-color: var(--muted); background: var(--surface); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-      .diag-card-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-      .diag-card-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+      .agent-link { flex-shrink: 0; align-self: flex-start; margin: -6px 0 0; padding: 0; border: 0; color: var(--ink); background: transparent; cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--strong); }
+      .agent-link:hover { text-decoration-color: currentColor; }
+      .agent-link[disabled] { opacity: .55; cursor: default; }
     </style>
   </head>
   <body>
@@ -128,6 +124,7 @@
         <p class="notice" id="notice" role="alert"></p>
         <h1 id="heading"></h1>
         <p class="summary" id="summary"></p>
+        <button class="agent-link" id="repair-agent" type="button"></button>
         <section class="list-card" aria-labelledby="selection-hint">
           <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
           <ul class="plugins" id="items"></ul>
@@ -140,16 +137,6 @@
           <button class="button" id="apply" type="button" disabled></button>
           <button class="button primary" id="restart" type="button"></button>
         </div>
-
-        <section class="diagnostics-section">
-          <div class="diagnostics-title">🛠️ 进入 Harness 智能诊断助手</div>
-          <div class="diagnostics-cards">
-            <button class="diag-card" type="button">
-              <div class="diag-card-title">🤖 启动智能修复 Agent</div>
-              <div class="diag-card-desc">自动读取日志、分析根因并给出修复建议</div>
-            </button>
-          </div>
-        </section>
       </section>
       <footer class="footer">
         <aside class="community" aria-labelledby="community-label">
@@ -400,13 +387,16 @@
       const repairAgentPrompt = model.locale === 'zh'
         ? '请结合诊断事实和 harness.log，定位导致启动失败的确切根因。先说明结论和建议的最小可逆操作，在我明确确认之前不要修改任何文件或配置。'
         : 'Using the diagnostic facts and harness.log, find the exact root cause of the startup failure. Explain the conclusion and the smallest reversible fix first, and do not change any file or setting until I explicitly confirm.'
-      document.querySelectorAll('.diag-card').forEach(card => {
-        card.addEventListener('click', () => {
-          card.disabled = true
-          const agentBtn = document.getElementById('agent')
-          if (agentBtn) agentBtn.disabled = true
-          void window.dshSafeMode.action('agent', { prompt: repairAgentPrompt })
-        })
+      // One line under the summary: the list below must stay fully visible.
+      const repairAgent = document.getElementById('repair-agent')
+      repairAgent.textContent = model.locale === 'zh'
+        ? '不确定是哪个插件？让智能修复 Agent 分析日志 →'
+        : 'Not sure which plugin? Let the repair agent read the log →'
+      repairAgent.addEventListener('click', () => {
+        repairAgent.disabled = true
+        const agentBtn = document.getElementById('agent')
+        if (agentBtn) agentBtn.disabled = true
+        void window.dshSafeMode.action('agent', { prompt: repairAgentPrompt })
       })
     </script>
   </body>
