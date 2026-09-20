@@ -40,23 +40,25 @@ function startup(ensure: () => Promise<void>): ProfileStartupMaintenanceDeps {
 }
 
 describe('market baseline at normal startup', () => {
-  it('keeps the baseline aligned with the market the tests run against', async () => {
-    const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(VERIFIED_MARKET_BASELINE).toBe(pkg.devDependencies.dshmarket)
-  })
-
-  it('never ships dshmarket in the app, where it would shadow the profile copy', async () => {
+  it('never ships dshmarket in the app or dev dependencies, where it would shadow the profile copy', async () => {
     // Harness resolves bundles from its installation before the profile, so a
     // packaged dshmarket would silently win over every market upgrade.
     const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(pkg.dependencies.dshmarket).toBeUndefined()
+    expect(pkg.dependencies?.dshmarket).toBeUndefined()
+    expect(pkg.devDependencies?.dshmarket).toBeUndefined()
   })
 
   it('reports when the installation shadows the profile market', async () => {
-    // This checkout's node_modules still holds dshmarket as a devDependency.
     const { options } = await fixture('1.48.0')
+    const fakeApp = await mkdtemp(join(tmpdir(), 'dsh-shadowed-app-'))
+    homes.push(fakeApp)
+    const fakeMarket = join(fakeApp, 'node_modules', 'dshmarket')
+    await mkdir(fakeMarket, { recursive: true })
+    await writeFile(join(fakeMarket, 'package.json'), JSON.stringify({ name: 'dshmarket', version: VERIFIED_MARKET_BASELINE }))
+    await writeFile(join(fakeApp, 'package.json'), JSON.stringify({ name: 'fake-dsh' }))
+    const dshEntryPath = join(fakeApp, 'lib', 'bin.js')
     const lines: string[] = []
-    await ensureMarketBaseline({ ...options, note: (line) => lines.push(line) }, vi.fn())
+    await ensureMarketBaseline({ ...options, dshEntryPath, note: (line) => lines.push(line) }, vi.fn())
     expect(lines).toEqual([expect.stringContaining(`shadowed by ${VERIFIED_MARKET_BASELINE}`)])
   })
 
