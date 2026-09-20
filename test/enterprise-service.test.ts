@@ -1,9 +1,9 @@
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createEnterpriseFetch, type EnterpriseFetch } from '../src/main/enterprise/platform-fetch'
-import { EnterpriseService } from '../src/main/enterprise/enterprise-service'
+import { EnterpriseService, type EnterpriseServiceOptions } from '../src/main/enterprise/enterprise-service'
 import {
   ENTERPRISE_VAULT_FILENAME,
   type SafeStorageCryptoAdapter,
@@ -26,11 +26,15 @@ function memorySafeStorage(): SafeStorageCryptoAdapter {
   }
 }
 
-async function createService(fetchImpl: EnterpriseFetch = createEnterpriseFetch(globalThis.fetch)) {
+async function createService(
+  fetchImpl: EnterpriseFetch = createEnterpriseFetch(globalThis.fetch),
+  options: Pick<EnterpriseServiceOptions, 'desktopVersion' | 'activateDesktop'> = {}
+) {
   const directory = await mkdtemp(join(tmpdir(), 'enterprise-service-'))
   const vault = new SecureEnterpriseCredentialVault(join(directory, ENTERPRISE_VAULT_FILENAME), memorySafeStorage())
   const notes: string[] = []
   const service = new EnterpriseService({
+    ...options,
     vault,
     fetchImpl,
     allowInsecureLoopback: true,
@@ -71,6 +75,59 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 }
 
 describe('enterprise service login loop', () => {
+  it.each([false, true])('reports the app version and commits login even when activation fails: %s', async (failActivation) => {
+    const platform = createMockEnterpriseServer({ port: 0 })
+    const origin = await platform.listen()
+    cleanups.push(async () => platform.close())
+    const requests: Record<string, unknown>[] = []
+    const fetchImpl: EnterpriseFetch = async (input, init) => {
+      if (String(input).endsWith('/api/dsh/authorizations')) requests.push(JSON.parse(String(init?.body)))
+      return globalThis.fetch(input, init)
+    }
+    const activateDesktop = vi.fn(() => {
+      expect(service.snapshot().phase).toBe('connected')
+      if (failActivation) throw new Error('window unavailable')
+    })
+    const { service, notes } = await createService(createEnterpriseFetch(fetchImpl), {
+      desktopVersion: '0.1.1-beta.2+build.7', activateDesktop
+    })
+    const started = await service.startLogin(origin)
+    expect(requests[0]).toMatchObject({ client_version: '0.1.1-beta.2+build.7', device_name: 'DSH Desktop' })
+    expect(activateDesktop).not.toHaveBeenCalled()
+    await completeBrowserLogin(origin, started.authorizationUrl)
+    await waitFor(() => activateDesktop.mock.calls.length === 1)
+    expect(service.snapshot().phase).toBe('connected')
+    expect(notes).toContain('login_committed')
+    expect(notes.includes('desktop_activation_failed')).toBe(failActivation)
+    expect(notes).not.toContain('login_failed')
+    const sessions = platform.state.sessions as Map<string, { clientVersion: string }>
+    expect([...sessions.values()][0]?.clientVersion).toBe('0.1.1-beta.2+build.7')
+    await service.refresh()
+    expect(activateDesktop).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits an unavailable version and does not activate Desktop when token exchange fails', async () => {
+    const platform = createMockEnterpriseServer({ port: 0 })
+    const origin = await platform.listen()
+    cleanups.push(async () => platform.close())
+    const requests: Record<string, unknown>[] = []
+    const fetchImpl: EnterpriseFetch = async (input, init) => {
+      if (String(input).endsWith('/api/dsh/authorizations')) requests.push(JSON.parse(String(init?.body)))
+      if (String(input).endsWith('/api/dsh/token')) {
+        return Response.json({ error: { message: 'Invalid ticket', code: 'invalid_ticket' } }, { status: 401 })
+      }
+      return globalThis.fetch(input, init)
+    }
+    const activateDesktop = vi.fn()
+    const { service, notes } = await createService(createEnterpriseFetch(fetchImpl), { activateDesktop })
+    const started = await service.startLogin(origin)
+    expect(requests[0]).not.toHaveProperty('client_version')
+    await completeBrowserLogin(origin, started.authorizationUrl)
+    await waitFor(() => notes.includes('login_failed'))
+    expect(service.snapshot().connected).toBe(false)
+    expect(activateDesktop).not.toHaveBeenCalled()
+  })
+
   it('completes PKCE login, refreshes once, and logs out without exposing tokens', async () => {
     const platform = createMockEnterpriseServer({ port: 0 })
     const origin = await platform.listen()

@@ -237,12 +237,12 @@ export function createMockEnterpriseServer(options = {}) {
 
       if (request.method === 'POST' && url.pathname === '/api/dsh/authorizations') {
         const body = await readJson(request)
-        if (!exactFields(body, ['client_id', 'redirect_uri', 'code_challenge', 'code_challenge_method', 'state'], ['device_name']) || body.client_id !== CLIENT_ID || body.code_challenge_method !== 'S256' || !validCallback(body.redirect_uri) || !/^[A-Za-z0-9_-]{43}$/u.test(body.code_challenge) || !/^[A-Za-z0-9_-]{43}$/u.test(body.state)) {
+        if (!exactFields(body, ['client_id', 'redirect_uri', 'code_challenge', 'code_challenge_method', 'state'], ['device_name', 'client_version']) || body.client_version != null && (typeof body.client_version !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u.test(body.client_version)) || body.client_id !== CLIENT_ID || body.code_challenge_method !== 'S256' || !validCallback(body.redirect_uri) || !/^[A-Za-z0-9_-]{43}$/u.test(body.code_challenge) || !/^[A-Za-z0-9_-]{43}$/u.test(body.state)) {
           return sendError(response, 400, 'invalid_authorization_request', 'Authorization request is invalid.', 'invalid_request_error', id)
         }
         const authId = opaque('auth_')
         state.authorizations.set(authId, {
-          id: authId, redirectUri: body.redirect_uri, challenge: body.code_challenge,
+          id: authId, redirectUri: body.redirect_uri, challenge: body.code_challenge, clientVersion: body.client_version ?? null,
           state: body.state, expiresAt: Date.now() + AUTH_TTL_MS, consumed: false
         })
         const authorize = new URL('/desktop-login', state.origin)
@@ -287,7 +287,7 @@ export function createMockEnterpriseServer(options = {}) {
           }
           ticket.consumed = true
           const user = state.users.get(ticket.userId)
-          const session = { id: opaque('session_'), userId: user.id, expiresAt: Date.now() + REFRESH_TTL_SECONDS * 1000, revoked: false }
+          const session = { id: opaque('session_'), userId: user.id, clientVersion: auth.clientVersion, expiresAt: Date.now() + REFRESH_TTL_SECONDS * 1000, revoked: false }
           const models = new Map(user.models.map((model) => [model, INITIAL_MODEL_USAGE[model] ?? 0]))
           const total = [...models.values()].reduce((sum, value) => sum + value, 0)
           state.sessions.set(session.id, session)
