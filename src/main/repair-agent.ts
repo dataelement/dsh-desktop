@@ -27,12 +27,12 @@ export interface RepairAgentServiceOptions {
 
 export interface DiagnosticFinding {
   type:
-    | 'syntax_export_mismatch'
-    | 'plugin_load_failure'
-    | 'symlink_eperm'
-    | 'overlay_yaml_corrupt'
-    | 'startup_timeout'
-    | 'generic'
+  | 'syntax_export_mismatch'
+  | 'plugin_load_failure'
+  | 'symlink_eperm'
+  | 'overlay_yaml_corrupt'
+  | 'startup_timeout'
+  | 'generic'
   summary: string
   culprit?: string
   suggestedAction: string
@@ -564,7 +564,7 @@ export class RepairAgentService {
   /** Sessions whose first turn already carried the diagnosis. */
   private readonly briefedSessions = new Set<string>()
 
-  constructor(private readonly options: RepairAgentServiceOptions) {}
+  constructor(private readonly options: RepairAgentServiceOptions) { }
 
   private async harnessSession(base: string): Promise<string | undefined> {
     if (this.harnessCookie?.base === base) return this.harnessCookie.cookie
@@ -801,7 +801,7 @@ export class RepairAgentService {
           ? '当前模型未配置'
           : 'Current model is not configured',
         detail: isZh
-          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并对话后再进入维修'
+          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并完成对话后再进入维修'
           : 'The Repair Agent relies on the default model. Please fix its configuration or switch to another working model and send a message before entering repair.'
       }
     }
@@ -821,7 +821,7 @@ export class RepairAgentService {
           ? `当前模型 ${defaultModel} 不可用`
           : `Current model ${defaultModel} is unavailable`,
         detail: isZh
-          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并对话后再进入维修'
+          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并完成对话后再进入维修'
           : 'The Repair Agent relies on the default model. Please fix its configuration or switch to another working model and send a message before entering repair.'
       }
     }
