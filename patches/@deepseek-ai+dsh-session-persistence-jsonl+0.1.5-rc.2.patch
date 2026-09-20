@@ -1,7 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+index 48a1455..f09585e 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
-@@ -2412,6 +2412,51 @@
+@@ -2412,6 +2412,51 @@ var JsonlSessionPersistence = class extends SessionPersistence {
  		return this.tracker.flushAll();
  	}
  	/**
@@ -53,7 +54,20 @@ diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.j
  	* Observe one stored session without reading its event log.
  	* @param id - the stored session to observe.
  	* @param options - optional cancellation.
+@@ -2872,7 +2917,10 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 					header = await this.readGenerationHeader(selected, void 0, signal);
+ 				} catch (error) {
+ 					if (error instanceof SessionFormatUnsupportedError) continue;
+-					throw error;
++					signal?.throwIfAborted();
++					// One unreadable log must not make every other session (and the workspace) unlistable.
++					this.ctx.logger.warn(`${this.name}: skipped unreadable session log ${selected.sourcePath}: ${error instanceof Error ? error.message : String(error)}`);
++					continue;
+ 				}
+ 				if (header === void 0) continue;
+ 				if (ids.has(header.id)) throw new Error(`duplicate JSONL session id "${header.id}" appears in multiple project directories`);
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
+index 1863388..ba60b3a 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
 @@ -7,7 +7,7 @@
@@ -65,7 +79,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/i
  import { JsonlSessionHandle } from './storage.ts';
  import { SessionWriteLease } from './lease.ts';
  import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session';
-@@ -103,6 +103,15 @@
+@@ -103,6 +103,15 @@ declare class JsonlSessionPersistence extends SessionPersistence {
       * @returns resolution once every write handle active at the call has flushed.
       */
      flush(): Promise<void>;

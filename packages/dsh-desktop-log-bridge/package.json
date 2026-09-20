@@ -1,0 +1,20 @@
+{
+  "name": "dsh-desktop-log-bridge",
+  "version": "0.1.0",
+  "description": "Writes Harness runtime warnings, errors and session activation failures to stderr for the desktop's harness.log.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "types": "./index.d.ts"
+}

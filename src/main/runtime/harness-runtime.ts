@@ -1,13 +1,14 @@
 import { execFile, execFileSync, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { dirname, join, posix, win32 } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../../shared/plugin-startup-failure'
+import { removeStaleWriterLocks } from './stale-writer-locks'
 
 export interface HarnessRuntimeOptions {
   dshEntryPath: string
@@ -15,6 +16,8 @@ export interface HarnessRuntimeOptions {
   nodeEntryPath: string
   dshPatchPath: string
   dshSafePatchPath: string
+  /** Overlay for dshmarket's entry, passed only when the profile declares the market. */
+  dshMarketPatchPath?: string
   dshHome: string
   logPath: string
   launchProcess(
@@ -25,6 +28,8 @@ export interface HarnessRuntimeOptions {
   preferredPort?: number
   startupTimeoutMs?: number
   extraEnvironment?: NodeJS.ProcessEnv | (() => NodeJS.ProcessEnv)
+  /** Mirror log lines to the console (development builds only). */
+  echoLogs?: boolean
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
@@ -234,12 +239,13 @@ export function extractLaunchToken(line: string): string | undefined {
 
 export function buildHarnessArguments(
   port: number,
-  patchPath?: string,
+  patchPaths?: string | readonly string[],
   profile = 'web'
 ): string[] {
+  const patches = typeof patchPaths === 'string' ? [patchPaths] : patchPaths ?? []
   return [
     ...(profile === 'web' ? ['web'] : ['--profile', profile]),
-    ...(patchPath ? ['--patch', patchPath] : []),
+    ...patches.flatMap((patchPath) => ['--patch', patchPath]),
     // The desktop window is the only intended surface. Without this, Harness
     // hands the same loopback URL to the system browser on every launch.
     '--no-open',
@@ -292,9 +298,14 @@ export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
   platform: NodeJS.Platform = process.platform,
-  environment: NodeJS.ProcessEnv = process.env
+  environment: NodeJS.ProcessEnv = process.env,
+  profile: string = 'web'
 ): SpawnOptionsWithoutStdio {
-  const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnvironment } = environment
+  const {
+    ELECTRON_RUN_AS_NODE: _runAsNode,
+    DSH_DESKTOP_HOST_RESOLVED: _hostResolved,
+    ...parentEnvironment
+  } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
   const pathApi = platform === 'win32' ? win32 : posix
 
@@ -325,6 +336,10 @@ export function buildHarnessSpawnOptions(
       // the dedicated lock-recovery runner instead (see pnpm-runner.mjs).
       npm_config_side_effects_cache: 'false',
       PNPM_CONFIG_SIDE_EFFECTS_CACHE: 'false',
+      // Safe Mode loads only installation-owned bundles, so the patched Harness
+      // resolves them from its own installation and never touches the shared
+      // `profiles/node_modules` fallback, whose junctions Windows can refuse.
+      ...(profile === SAFE_MODE_PROFILE && { DSH_DESKTOP_HOST_RESOLVED: '1' }),
       NODE_COMPILE_CACHE: environment.NODE_COMPILE_CACHE ?? pathApi.join(dshHome, 'cache', 'compile-cache'),
       [pathKey]: resolveEnvironmentPath(environment, platform)
     },
@@ -338,15 +353,33 @@ export function buildNodeArguments(
   nodeEntryPath: string,
   dshEntryPath: string,
   port: number,
-  patchPath?: string,
+  patchPaths?: string | readonly string[],
   profile = 'web'
 ): string[] {
   return [
     '--expose-internals',
     nodeEntryPath,
     dshEntryPath,
-    ...buildHarnessArguments(port, patchPath, profile)
+    ...buildHarnessArguments(port, patchPaths, profile)
   ]
+}
+
+/**
+ * Whether a profile boots dshmarket, so its patch row has an entry to modify.
+ * A row whose entry is absent makes the loader warn on every launch.
+ * @param profileDirectory - the profile's package directory.
+ * @returns true when `dsh.profile.bundles` lists dshmarket.
+ */
+export async function profileBootsMarket(profileDirectory: string): Promise<boolean> {
+  try {
+    const manifest = JSON.parse(await readFile(join(profileDirectory, 'package.json'), 'utf8')) as {
+      dsh?: { profile?: { bundles?: unknown } }
+    }
+    const bundles = manifest.dsh?.profile?.bundles
+    return Array.isArray(bundles) && bundles.includes('dshmarket')
+  } catch {
+    return false
+  }
 }
 
 export function updateReadyStability(
@@ -395,6 +428,7 @@ export class HarnessRuntime {
   private launchClock?: number
   private readonly logLines: string[] = []
   private pluginFailures: PluginStartupFailure[] = []
+  private failureReason?: RuntimeSnapshot['failureReason']
   private logDecoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
   private readonly logRemainders: Record<'stdout' | 'stderr', string> = {
     stdout: '',
@@ -411,6 +445,7 @@ export class HarnessRuntime {
       url: this.url,
       authToken: this.launchToken,
       pluginFailures: structuredClone(this.pluginFailures),
+      failureReason: this.failureReason,
       logs: [...this.logLines]
     }
   }
@@ -450,10 +485,20 @@ export class HarnessRuntime {
       this.setState('failed', `DSH Desktop patch was not found: ${patchPath}`)
       return
     }
+    const marketPatchPath = this.options.dshMarketPatchPath
+    const patchPaths = profile !== SAFE_MODE_PROFILE &&
+      marketPatchPath !== undefined &&
+      existsSync(marketPatchPath) &&
+      await profileBootsMarket(join(this.options.dshHome, 'profiles', profile))
+      ? [patchPath, marketPatchPath]
+      : [patchPath]
 
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })
     this.logStream ??= createWriteStream(this.options.logPath, { flags: 'a' })
+    for (const lock of await removeStaleWriterLocks(this.options.dshHome)) {
+      this.writeLog(`[desktop] removed stale writer lock ${lock}`)
+    }
 
     const preferredPort = this.options.preferredPort ?? DEFAULT_HARNESS_PORT
     const { port, usedPreferredPort } = await reserveLoopbackPort(preferredPort)
@@ -462,7 +507,7 @@ export class HarnessRuntime {
       this.options.nodeEntryPath,
       this.options.dshEntryPath,
       port,
-      patchPath,
+      patchPaths,
       profile
     )
     const startupTimeoutMs =
@@ -472,7 +517,7 @@ export class HarnessRuntime {
     this.writeLog(`[desktop] starting ${new Date().toISOString()}`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
     this.writeLog(`[desktop] profile ${profile}`)
-    this.writeLog(`[desktop] patch ${patchPath}`)
+    for (const path of patchPaths) this.writeLog(`[desktop] patch ${path}`)
     if (!usedPreferredPort) {
       this.writeLog(
         `[desktop] preferred endpoint http://127.0.0.1:${preferredPort} is unavailable; using a temporary port`
@@ -494,7 +539,8 @@ export class HarnessRuntime {
           {
             ...shellEnvironment,
             ...resolveExtraEnvironment(this.options.extraEnvironment)
-          }
+          },
+          profile
         )
       )
     } catch (error) {
@@ -570,7 +616,8 @@ ${cause}`
       await this.stopChild(child)
       this.setState(
         'failed',
-        `Harness did not become ready within ${Math.round(startupTimeoutMs / 1000)} seconds.`
+        `Harness did not become ready within ${Math.round(startupTimeoutMs / 1000)} seconds.`,
+        'startup-timeout'
       )
       return
     }
@@ -610,9 +657,14 @@ ${cause}`
     if (!exited && child.exitCode === null) child.kill('SIGKILL')
   }
 
-  private setState(phase: RuntimePhase, message: string): void {
+  private setState(
+    phase: RuntimePhase,
+    message: string,
+    failureReason?: RuntimeSnapshot['failureReason']
+  ): void {
     this.phase = phase
     this.message = message
+    this.failureReason = failureReason
     this.options.onChanged(this.snapshot())
   }
 
@@ -673,7 +725,9 @@ ${cause}`
   private writeLog(line: string): void {
     this.logLines.push(line)
     if (this.logLines.length > 200) this.logLines.splice(0, this.logLines.length - 200)
-    this.logStream?.write(`${this.stampLog(line)}\n`)
+    const stamped = this.stampLog(line)
+    this.logStream?.write(`${stamped}\n`)
+    if (this.options.echoLogs) console.log(stamped)
   }
 
   /**
@@ -702,13 +756,24 @@ ${cause}`
   }
 }
 
-function latestHarnessAttemptLogs(logLines: readonly string[]): readonly string[] {
+/**
+ * Runtime logger output bridged by `dsh-desktop-log-bridge`. It is kept in
+ * harness.log for people and the Repair Agent, but it is not launch evidence:
+ * a warning logged while running must not become recovery's failure cause or
+ * the plugin it blames.
+ */
+const BRIDGED_LOG_PREFIX = '[stderr] [harness-log] '
+
+/** The latest launch attempt's log lines, without bridged runtime logger output. */
+export function latestHarnessAttemptLogs(logLines: readonly string[]): readonly string[] {
+  let start = 0
   for (let index = logLines.length - 1; index >= 0; index -= 1) {
     if (logLines[index]?.trimStart().startsWith('[desktop] starting ')) {
-      return logLines.slice(index + 1)
+      start = index + 1
+      break
     }
   }
-  return logLines
+  return logLines.slice(start).filter((line) => !line.startsWith(BRIDGED_LOG_PREFIX))
 }
 
 export function extractFailureCause(logLines: readonly string[]): string | undefined {

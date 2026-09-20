@@ -1,6 +1,6 @@
-import { lstat, readFile, readlink, rm, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { healProfilesModuleFallback } from '@deepseek-ai/dsh-app-boot'
+import { healProfilesModuleFallback, resolveBundleDir } from '@deepseek-ai/dsh-app-boot'
 import { listGenerations, readDesired, writeDesired } from 'dsh-desktop-market-installer/generations/registry'
 import { compareSemver, parseSemver, readInstalledPluginVersion } from './plugin-market-check'
 import { profilePackageJsonPath } from './plugin-recovery'
@@ -131,6 +131,37 @@ export async function demoteMarketGeneration(
   return true
 }
 
+/**
+ * Warn when Harness would load a different dshmarket than the profile's.
+ *
+ * Harness resolves every profile bundle from its own installation before the
+ * profile (`resolveBundleDir`), so a dshmarket shipped next to dsh would win
+ * over the copy the market installs and upgrades — and the profile version
+ * everything here reads would no longer be the one that runs. Packaged builds
+ * do not ship it; a development checkout still has it as a devDependency.
+ */
+async function noteShadowedMarket(
+  installAnchor: string,
+  profileDir: string,
+  note?: (line: string) => void
+): Promise<void> {
+  let effective: string
+  let profileCopy: string
+  try {
+    effective = await realpath(resolveBundleDir('dsh-desktop', MARKET_PACKAGE, installAnchor, profileDir))
+    profileCopy = await realpath(join(profileDir, 'node_modules', MARKET_PACKAGE))
+  } catch {
+    return
+  }
+  if (effective === profileCopy) return
+  const version = await readFile(join(effective, 'package.json'), 'utf8')
+    .then((raw) => (JSON.parse(raw) as { version?: string }).version)
+    .catch(() => undefined)
+  note?.(
+    `[market-baseline] dshmarket in the profile is shadowed by ${version ?? '(unknown)'} at ${effective}; Harness loads that copy instead`
+  )
+}
+
 /** Run only after startup recovery gates and generation projection, with Harness stopped. */
 export async function ensureMarketBaseline(
   options: Omit<MarketSharedTreeUpgradeOptions, 'targetVersion'>,
@@ -167,14 +198,19 @@ export async function ensureMarketBaseline(
       return target.includes('.generations')
     })
     .catch(() => false)
-  if (meetsBaseline(installed) && !isGenerationLink) return
+  const profileDir = dirname(profilePackageJsonPath(options.dshHome))
+  const installAnchor = join(dirname(options.dshEntryPath), '..', 'package.json')
+  if (meetsBaseline(installed) && !isGenerationLink) {
+    await noteShadowedMarket(installAnchor, profileDir, options.note)
+    return
+  }
 
-  const declaredVersion = manifest.dependencies.dshmarket
-  const declaredClean = declaredVersion?.replace(/^[~^v=><\s]+/g, '')
-  const declaredParsed = declaredClean ? parseSemver(declaredClean) : null
+  // The installer pins and verifies an exact version, so a declared range
+  // (`^0.5.0`) is reduced to the version it names.
+  const declaredClean = manifest.dependencies.dshmarket.replace(/^[~^v=><\s]+/g, '')
   const targetVersion =
-    declaredParsed && compareSemver(declaredClean, VERIFIED_MARKET_BASELINE) > 0
-      ? declaredVersion
+    parseSemver(declaredClean) && compareSemver(declaredClean, VERIFIED_MARKET_BASELINE) > 0
+      ? declaredClean
       : VERIFIED_MARKET_BASELINE
 
   options.note?.(
@@ -183,7 +219,6 @@ export async function ensureMarketBaseline(
       : `[market-baseline] upgrading dshmarket ${installed ?? '(missing)'} to ${targetVersion}`
   )
   // Ensure the profile directory has a valid pnpm-workspace.yaml so pnpm --workspace-root succeeds.
-  const profileDir = dirname(profilePackageJsonPath(options.dshHome))
   const workspaceYamlPath = join(profileDir, 'pnpm-workspace.yaml')
   try {
     await readFile(workspaceYamlPath, 'utf8')
@@ -194,7 +229,7 @@ export async function ensureMarketBaseline(
   // This normally happens inside Harness boot, which has not run yet. Ensure
   // generation peer validation sees this installation's host packages first.
   await healProfilesModuleFallback({
-    installAnchor: join(dirname(options.dshEntryPath), '..', 'package.json'),
+    installAnchor,
     home: options.dshHome
   })
   await clearProfileInstallMarker(options.dshHome)
@@ -206,4 +241,29 @@ export async function ensureMarketBaseline(
     throw new Error(`dshmarket installation reported success, but the active version is ${actual ?? 'missing'}; requires >=${VERIFIED_MARKET_BASELINE}`)
   }
   options.note?.(`[market-baseline] verified active dshmarket ${actual}`)
+  await noteShadowedMarket(installAnchor, profileDir, options.note)
+}
+
+/**
+ * The market Safe Mode can act on: the one the normal profile declares and
+ * boots. A market the user removed stays out of view, like it stays out of
+ * `ensureMarketBaseline`.
+ * @returns undefined when the profile does not declare the market.
+ */
+export async function readProfileMarket(
+  dshHome: string
+): Promise<{ installedVersion?: string } | undefined> {
+  let raw: string
+  try {
+    raw = await readFile(profilePackageJsonPath(dshHome), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+  const manifest = JSON.parse(raw) as MarketManifest
+  if (!manifest.dependencies?.[MARKET_PACKAGE] || !manifest.dsh?.profile?.bundles?.includes(MARKET_PACKAGE)) {
+    return undefined
+  }
+  const installedVersion = await readInstalledPluginVersion(dshHome, MARKET_PACKAGE)
+  return installedVersion !== undefined ? { installedVersion } : {}
 }

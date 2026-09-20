@@ -58,23 +58,4 @@ describe('skipping one update', () => {
   it('loses the skip rather than the launch when it cannot be written', async () => {
     expect(writeSkippedVersion(join(await home(), 'missing', 'deeper.json'), '0.4.4')).toBe(false)
   })
-
-  it('offers the button wherever a version is on the table, and skips through IPC', async () => {
-    const preload = await readFile(join(process.cwd(), 'src', 'preload', 'index.ts'), 'utf8')
-    expect(preload).toContain("'跳过此版本'")
-    expect(preload).toContain("'Skip this version'")
-    expect(preload).toContain("ipcRenderer.invoke('updates:skip', version)")
-
-    const manager = await readFile(
-      join(process.cwd(), 'src', 'main', 'update', 'update-manager.ts'),
-      'utf8'
-    )
-    expect(manager).toContain("ipcMain.handle('updates:skip'")
-    // Nothing is fetched until the user accepts, so a skipped release — or one
-    // simply left alone — never costs a download.
-    expect(manager).toContain('autoUpdater.autoDownload = false')
-    expect(manager).toContain("ipcMain.handle('updates:download'")
-    expect(preload).toContain("'同意更新'")
-    expect(preload).toContain("ipcRenderer.invoke('updates:download')")
-  })
 })

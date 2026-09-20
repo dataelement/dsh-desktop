@@ -39,7 +39,7 @@ DSH Desktop 把本地 DeepSeek Harness 封装为可安装的桌面应用。它�
 <p align="center">
   使用微信扫描下方二维码，加入 DSH Desktop 微信交流群。<br />
   <img src="docs/images/wechat-group-20260815.png" width="220" alt="DSH Desktop 微信群二维码" /><br />
-  也可以加入 <a href="https://discord.gg/he2gAKCpj">DSH Desktop Discord 社区</a>。
+  也可以加入 <a href="https://discord.gg/7Xgf3qe3Qp">DSH Desktop Discord 社区</a>。
 </p>
 
 ## DSH Desktop 带来了什么

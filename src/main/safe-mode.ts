@@ -29,6 +29,9 @@ export interface SafeModePluginViewModel {
   actionLabel: string
   incompatible: boolean
   suspected: boolean
+  /** Already switched off in the normal profile; offered for re-enabling, not selection. */
+  disabled: boolean
+  enableButtonLabel?: string
   healthStatus?: PluginHealthStatus
   healthLabel?: string
   installedVersion?: string
@@ -84,6 +87,7 @@ export interface SafeModeViewModel {
   upgradeAllLabel?: string
   upgradeAllBusyLabel?: string
   upgradeReadyCount: number
+  enableBusyLabel: string
 }
 
 export function shouldStartInSafeMode(argv: readonly string[]): boolean {
@@ -93,6 +97,7 @@ export function shouldStartInSafeMode(argv: readonly string[]): boolean {
 export function buildSafeModeViewModel(options: {
   locale: SafeModeLocale
   plugins: readonly string[]
+  disabledPlugins?: readonly string[]
   suspectedPlugins?: readonly string[]
   issues?: readonly ProfileCompatibilityIssue[]
   healthReports?: readonly PluginHealthReport[]
@@ -161,6 +166,7 @@ export function buildSafeModeViewModel(options: {
   const pluginIssues = issues.filter((issue) => issue.resolution === 'disable-plugin')
   const incompatiblePlugins = new Set(pluginIssues.map((issue) => issue.target))
   const suspectedPlugins = new Set(options.suspectedPlugins ?? [])
+  const disabledPlugins = new Set(options.disabledPlugins ?? [])
   const plugins = [...new Set([
     ...options.plugins,
     ...incompatiblePlugins,
@@ -172,8 +178,10 @@ export function buildSafeModeViewModel(options: {
   const pluginItems = plugins.map((name): SafeModePluginViewModel => {
     const incompatible = incompatiblePlugins.has(name)
     const suspected = suspectedPlugins.has(name)
+    const disabled = disabledPlugins.has(name)
     const report = healthReportByPlugin.get(name)
     const labels = [
+      ...(disabled ? [options.locale === 'zh' ? '已停用' : 'disabled'] : []),
       ...(suspected
         ? [options.locale === 'zh' ? '本次启动日志推断' : 'inferred from this startup log']
         : []),
@@ -205,9 +213,13 @@ export function buildSafeModeViewModel(options: {
           : `(${labels.join(', ')})`
         : undefined,
       statusTone,
-      actionLabel: options.locale === 'zh' ? '卸载插件' : 'Remove plugin',
+      actionLabel: disabled
+        ? options.locale === 'zh' ? '已停用，退出安全模式后也不会加载' : 'Stays off after you exit Safe Mode'
+        : options.locale === 'zh' ? '停用插件（不删除）' : 'Disable plugin (nothing is deleted)',
       incompatible,
       suspected,
+      disabled,
+      ...(disabled ? { enableButtonLabel: options.locale === 'zh' ? '重新启用' : 'Re-enable' } : {}),
       ...(report?.healthStatus !== undefined ? { healthStatus: report.healthStatus } : {}),
       ...(report?.healthLabel !== undefined ? { healthLabel: report.healthLabel } : {}),
       ...(report?.installedVersion !== undefined ? { installedVersion: report.installedVersion } : {}),
@@ -324,7 +336,7 @@ export function buildSafeModeViewModel(options: {
       brand: 'DSH Desktop',
       badge: '安全模式',
       heading: '',
-      summary: '部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可尝试卸载近期安装的插件后重启。',
+      summary: '部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可停用近期安装的插件后重启；停用的插件可随时重新启用。',
       plugins,
       pluginItems,
       issueGroups,
@@ -337,11 +349,11 @@ export function buildSafeModeViewModel(options: {
         : '备份不会按启动次数自动删除。你可以打开目录检查；只有正常模式稳定启动后，才允许逐份永久清理。',
       recoveryLocked: options.recoveryLocked === true,
       recoveryOpenLabel: '打开恢复材料目录',
-      emptyMessage: '当前 Profile 中没有可卸载的第三方插件。',
-      selectionHint: '选择要卸载的插件',
-      safetyNote: '工作区、会话、模型配置和未选中的插件不会被删除。',
-      applyLabel: '卸载所选插件',
-      applyBusyLabel: '正在卸载…',
+      emptyMessage: '当前 Profile 中没有第三方插件。',
+      selectionHint: '选择要停用的插件',
+      safetyNote: '停用不会删除任何内容：插件、工作区、会话和模型配置都会保留，可在这里或插件市场中重新启用。',
+      applyLabel: '停用所选插件',
+      applyBusyLabel: '正在停用…',
       selectAllLabel: '全选',
       agentLabel: '关闭',
       agentBusyLabel: '正在关闭…',
@@ -357,7 +369,8 @@ export function buildSafeModeViewModel(options: {
         ? `一键升级 ${upgradeReadyCount} 个有更新的插件`
         : undefined,
       upgradeAllBusyLabel: '正在批量升级…',
-      upgradeReadyCount
+      upgradeReadyCount,
+      enableBusyLabel: '正在启用…'
     }
   }
 
@@ -366,7 +379,7 @@ export function buildSafeModeViewModel(options: {
     brand: 'DSH Desktop',
     badge: 'Safe Mode',
     heading: '',
-    summary: 'Some third-party plugins may cause startup problems. Safe Mode temporarily disables all of them while the Agent remains available; the plugins are not deleted. Remove a recently installed plugin, then restart to try again.',
+    summary: 'Some third-party plugins may cause startup problems. Safe Mode temporarily disables all of them while the Agent remains available; the plugins are not deleted. Disable a recently installed plugin, then restart to try again; disabled plugins can be re-enabled at any time.',
     plugins,
     pluginItems,
     issueGroups,
@@ -379,11 +392,11 @@ export function buildSafeModeViewModel(options: {
       : 'Backups are never deleted by launch count. Inspect them first; permanent per-backup cleanup is enabled only after a stable normal boot.',
     recoveryLocked: options.recoveryLocked === true,
     recoveryOpenLabel: 'Open recovery material folder',
-    emptyMessage: 'There are no removable third-party plugins in this profile.',
-    selectionHint: 'Select plugins to remove',
-    safetyNote: 'Workspaces, sessions, model settings, and unselected plugins will not be removed.',
-    applyLabel: 'Remove selected plugins',
-    applyBusyLabel: 'Removing…',
+    emptyMessage: 'There are no third-party plugins in this profile.',
+    selectionHint: 'Select plugins to disable',
+    safetyNote: 'Disabling deletes nothing: plugins, workspaces, sessions, and model settings are kept, and you can re-enable them here or in the plugin market.',
+    applyLabel: 'Disable selected plugins',
+    applyBusyLabel: 'Disabling…',
     selectAllLabel: 'Select all',
     agentLabel: 'Close',
     agentBusyLabel: 'Closing…',
@@ -399,6 +412,7 @@ export function buildSafeModeViewModel(options: {
       ? `Upgrade ${upgradeReadyCount} plugin${upgradeReadyCount === 1 ? '' : 's'} with updates`
       : undefined,
     upgradeAllBusyLabel: 'Upgrading plugins…',
-    upgradeReadyCount
+    upgradeReadyCount,
+    enableBusyLabel: 'Enabling…'
   }
 }

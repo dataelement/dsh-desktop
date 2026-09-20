@@ -40,7 +40,7 @@ Installed builds check for updates shortly after startup and every six hours. Wh
 <p align="center">
   Scan the QR code below with WeChat to join the DSH Desktop community group.<br />
   <img src="docs/images/wechat-group-20260815.png" width="220" alt="DSH Desktop WeChat group QR code" /><br />
-  Prefer Discord? <a href="https://discord.gg/he2gAKCpj">Join the DSH Desktop Discord community</a>.
+  Prefer Discord? <a href="https://discord.gg/7Xgf3qe3Qp">Join the DSH Desktop Discord community</a>.
 </p>
 
 ## What DSH Desktop adds
