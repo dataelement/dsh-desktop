@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
 import { setupDesktopStoragePersistence } from './desktop-storage'
 import {
@@ -146,6 +146,19 @@ function runDomSync(): void {
 
 contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker', {
   pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
+})
+
+/**
+ * Real path of a `File` the user dropped on the window. Chromium deliberately
+ * hides filesystem paths from page scripts, so the desktop-only "drop a folder
+ * to open it as a workspace" flow resolves the path here and hands the page a
+ * plain string. This grants no new read capability: it only names a file the
+ * page already holds a `File` handle for, and a JS-constructed `File` yields an
+ * empty string. Everything privileged (creating the workspace) still runs
+ * through the Harness client service, not this bridge.
+ */
+contextBridge.exposeInMainWorld('dshDesktopFiles', {
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file)
 })
 
 /**
