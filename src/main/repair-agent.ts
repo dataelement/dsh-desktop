@@ -38,6 +38,15 @@ export interface DiagnosticFinding {
   suggestedAction: string
 }
 
+export interface ModelAvailabilityResult {
+  ok: boolean
+  code?: 'no_keys' | 'default_model_unavailable' | 'harness_not_ready'
+  message?: string
+  detail?: string
+  defaultProvider?: string
+  defaultModel?: string
+}
+
 /** What the failed normal launch left behind, captured before Safe Mode starts its own Harness. */
 export interface CrashEvidence {
   logs: readonly string[]
@@ -734,6 +743,99 @@ export class RepairAgentService {
         error: err instanceof Error ? err.message : String(err)
       }
     }
+  }
+
+  /**
+   * Check whether an LLM model is available to run the Repair Agent.
+   * Identifies:
+   * 1. 'no_keys': No usable model providers or API keys configured.
+   * 2. 'default_model_unavailable': The default model for new sessions is unroutable, failed, or missing.
+   */
+  public async checkModelAvailability(): Promise<ModelAvailabilityResult> {
+    const isZh = this.options.locale() === 'zh'
+    let modelCatalog: any
+    try {
+      if (!this.options.harnessUrl()) {
+        await this.options.ensureHarnessReady()
+      }
+      modelCatalog = await this.invokeHarness('session/modelCatalog', {})
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'harness_not_ready',
+        message: isZh ? '安全模式核心服务尚未就绪。' : 'Safe mode core is not ready yet.',
+        detail: err instanceof Error ? err.message : String(err)
+      }
+    }
+
+    const routableProviders: string[] = Array.isArray(modelCatalog?.routableProviders)
+      ? modelCatalog.routableProviders
+      : []
+    const groups: any[] = Array.isArray(modelCatalog?.groups) ? modelCatalog.groups : []
+    const failures: any[] = Array.isArray(modelCatalog?.failures) ? modelCatalog.failures : []
+
+    // 1. 没有可用的 Key（没有任何已配置且可路由的 Provider，或者既无可用模型组也无具体提供商报错）
+    if (routableProviders.length === 0 || (groups.length === 0 && failures.length === 0)) {
+      return {
+        ok: false,
+        code: 'no_keys',
+        message: isZh
+          ? '未检测到可用的模型或 API Key。'
+          : 'No usable model or API Key detected.',
+        detail: isZh
+          ? '智能维修需要大模型协助分析日志并定位根因。请确保配置了可用的模型提供商与 API Key，在保证模型可用的前提下再进入维修。'
+          : 'The Repair Agent requires an LLM to analyze logs and diagnose issues. Please ensure at least one model provider with a valid API Key is configured before entering repair.'
+      }
+    }
+
+    // 2. 检查新建会话的默认模型是否可用
+    const defaultSelection = modelCatalog?.default || modelCatalog?.current
+    const defaultProvider = defaultSelection?.provider || groups[0]?.id || failures[0]?.id
+    const defaultModel = defaultSelection?.model || groups[0]?.models?.[0]?.id || 'default'
+
+    if (!defaultProvider || !defaultModel) {
+      return {
+        ok: false,
+        code: 'default_model_unavailable',
+        message: isZh
+          ? '新建会话的默认模型未配置。'
+          : 'The default model for new sessions is not configured.',
+        detail: isZh
+          ? '智能维修依赖默认模型创建会话。请先在设置中选择可用的默认模型后再进入维修。'
+          : 'The Repair Agent relies on the default model to create sessions. Please select a valid default model in Settings before entering repair.'
+      }
+    }
+
+    const isRoutable = routableProviders.includes(defaultProvider)
+    const providerFailure = failures.find((f: any) => f?.id === defaultProvider)
+    const group = groups.find((g: any) => g?.id === defaultProvider)
+    const modelExists = group?.models?.some((m: any) => m?.id === defaultModel)
+
+    if (!isRoutable || providerFailure || !group || !modelExists) {
+      const providerName = group?.name || providerFailure?.name || defaultProvider
+      const failureDetail = providerFailure?.message
+        ? `（${providerFailure.message}）`
+        : !isRoutable
+          ? isZh ? '（该模型提供商未配置有效 API Key 或不可路由）' : ' (API Key not configured or unroutable)'
+          : !modelExists
+            ? isZh ? '（该模型在当前提供商中不存在）' : ' (Model not found in provider)'
+            : ''
+
+      return {
+        ok: false,
+        code: 'default_model_unavailable',
+        defaultProvider,
+        defaultModel,
+        message: isZh
+          ? `新建会话的默认模型「${defaultModel}」当前不可用。`
+          : `The default model "${defaultModel}" for new sessions is currently unavailable.`,
+        detail: isZh
+          ? `提供商「${providerName}」异常${failureDetail}。智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型后再进入维修。`
+          : `Provider "${providerName}" issue${failureDetail}. The Repair Agent relies on the default model. Please fix its configuration or switch to another model before entering repair.`
+      }
+    }
+
+    return { ok: true, defaultProvider, defaultModel }
   }
 
   /** Select the catalog's current model so the session can answer immediately. */

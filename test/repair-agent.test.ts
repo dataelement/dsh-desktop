@@ -132,6 +132,144 @@ describe('RepairAgentService', () => {
     token = 'token-2'
     expect((await service.initSession()).sessionId).toBe('s2')
   })
+
+  describe('checkModelAvailability', () => {
+    it('identifies no_keys when routableProviders is empty', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (url: URL | string) => {
+        const target = new URL(String(url))
+        if (target.pathname === '/') {
+          return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+        }
+        return Response.json({
+          result: {
+            ok: true,
+            value: {
+              default: { provider: 'deepseek', model: 'deepseek-chat' },
+              routableProviders: [],
+              groups: [],
+              failures: []
+            }
+          }
+        })
+      }))
+
+      const service = new RepairAgentService({
+        harnessUrl: () => 'http://127.0.0.1:1',
+        harnessAuthToken: () => 'token-1',
+        ensureHarnessReady: async () => {},
+        workspaceDirectory: '/data/harness',
+        locale: () => 'zh'
+      })
+
+      const res = await service.checkModelAvailability()
+      expect(res.ok).toBe(false)
+      expect(res.code).toBe('no_keys')
+      expect(res.message).toContain('未检测到可用的模型或 API Key')
+    })
+
+    it('identifies default_model_unavailable when default provider is not routable', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (url: URL | string) => {
+        const target = new URL(String(url))
+        if (target.pathname === '/') {
+          return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+        }
+        return Response.json({
+          result: {
+            ok: true,
+            value: {
+              default: { provider: 'openai', model: 'gpt-4o' },
+              routableProviders: ['deepseek'],
+              groups: [
+                { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] }
+              ],
+              failures: []
+            }
+          }
+        })
+      }))
+
+      const service = new RepairAgentService({
+        harnessUrl: () => 'http://127.0.0.1:1',
+        harnessAuthToken: () => 'token-1',
+        ensureHarnessReady: async () => {},
+        workspaceDirectory: '/data/harness',
+        locale: () => 'zh'
+      })
+
+      const res = await service.checkModelAvailability()
+      expect(res.ok).toBe(false)
+      expect(res.code).toBe('default_model_unavailable')
+      expect(res.message).toContain('gpt-4o')
+    })
+
+    it('identifies default_model_unavailable when default provider has failure', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (url: URL | string) => {
+        const target = new URL(String(url))
+        if (target.pathname === '/') {
+          return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+        }
+        return Response.json({
+          result: {
+            ok: true,
+            value: {
+              default: { provider: 'deepseek', model: 'deepseek-chat' },
+              routableProviders: ['deepseek'],
+              groups: [],
+              failures: [{ id: 'deepseek', name: 'DeepSeek', message: 'API key expired' }]
+            }
+          }
+        })
+      }))
+
+      const service = new RepairAgentService({
+        harnessUrl: () => 'http://127.0.0.1:1',
+        harnessAuthToken: () => 'token-1',
+        ensureHarnessReady: async () => {},
+        workspaceDirectory: '/data/harness',
+        locale: () => 'zh'
+      })
+
+      const res = await service.checkModelAvailability()
+      expect(res.ok).toBe(false)
+      expect(res.code).toBe('default_model_unavailable')
+      expect(res.detail).toContain('API key expired')
+    })
+
+    it('returns ok: true when default model is routable and exists in provider group', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (url: URL | string) => {
+        const target = new URL(String(url))
+        if (target.pathname === '/') {
+          return new Response(null, { status: 302, headers: { 'set-cookie': 'sid=1; Path=/' } })
+        }
+        return Response.json({
+          result: {
+            ok: true,
+            value: {
+              default: { provider: 'deepseek', model: 'deepseek-chat' },
+              routableProviders: ['deepseek'],
+              groups: [
+                { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] }
+              ],
+              failures: []
+            }
+          }
+        })
+      }))
+
+      const service = new RepairAgentService({
+        harnessUrl: () => 'http://127.0.0.1:1',
+        harnessAuthToken: () => 'token-1',
+        ensureHarnessReady: async () => {},
+        workspaceDirectory: '/data/harness',
+        locale: () => 'zh'
+      })
+
+      const res = await service.checkModelAvailability()
+      expect(res.ok).toBe(true)
+      expect(res.defaultModel).toBe('deepseek-chat')
+      expect(res.defaultProvider).toBe('deepseek')
+    })
+  })
 })
 
 afterEach(() => {

@@ -1583,6 +1583,12 @@ async function startRepairAgentPrompt(
     }
   }
   const service = repairAgentService
+  const availability = await service.checkModelAvailability()
+  if (!availability.ok) {
+    const errorMsg = availability.message ?? (harnessLocale() === 'zh' ? '当前模型不可用' : 'Model unavailable')
+    runtime.note(`[desktop] repair agent: model unavailable: ${errorMsg}`)
+    return { ok: false, error: errorMsg }
+  }
   const session = await service.initSession({ fresh: true })
   if (!session.ok || !session.sessionId) {
     const error = session.error ?? 'unknown error'
@@ -2227,6 +2233,30 @@ async function showPluginRecovery(options?: {
         pendingRepairPrompt = action.slice('agent:'.length)
         repairAgentLaunchError = undefined
         await launchSafeHarness()
+        if (repairAgentService) {
+          const availability = await repairAgentService.checkModelAvailability()
+          if (!availability.ok) {
+            takePendingRepairPrompt()
+            const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+            const dialogOptions: MessageBoxOptions = {
+              type: 'warning',
+              title: isChinese ? '无法进入智能维修' : 'Cannot Enter Repair Agent',
+              message: availability.message ?? (isChinese ? '当前模型不可用' : 'Model unavailable'),
+              detail: availability.detail,
+              buttons: [isChinese ? '我知道了' : 'OK'],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true
+            }
+            if (owner) {
+              await dialog.showMessageBox(owner, dialogOptions)
+            } else {
+              await dialog.showMessageBox(dialogOptions)
+            }
+            void showSafeModeManager({ notice: availability.message, noticeTone: 'error' }).catch(showUnexpectedError)
+            break
+          }
+        }
         const repairPrompt = takePendingRepairPrompt()
         if (repairPrompt !== undefined) {
           const started = await startRepairAgentPrompt(repairPrompt)
@@ -2768,6 +2798,30 @@ async function showSafeModeManager(initial?: {
             )
             noticeTone = 'error'
             continue
+          }
+          if (repairAgentService) {
+            const availability = await repairAgentService.checkModelAvailability()
+            if (!availability.ok) {
+              const owner = safeModeManager?.parent
+              const dialogOptions: MessageBoxOptions = {
+                type: 'warning',
+                title: isChinese ? '无法进入智能维修' : 'Cannot Enter Repair Agent',
+                message: availability.message ?? (isChinese ? '当前模型不可用' : 'Model unavailable'),
+                detail: availability.detail,
+                buttons: [isChinese ? '我知道了' : 'OK'],
+                defaultId: 0,
+                cancelId: 0,
+                noLink: true
+              }
+              if (owner && !owner.isDestroyed()) {
+                await dialog.showMessageBox(owner, dialogOptions)
+              } else {
+                await dialog.showMessageBox(dialogOptions)
+              }
+              notice = availability.message
+              noticeTone = 'error'
+              continue
+            }
           }
           const started = await startRepairAgentPrompt(action.prompt)
           if (!started.ok) {
