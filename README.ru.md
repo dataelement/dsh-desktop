@@ -40,7 +40,7 @@ DSH Desktop превращает локальный DeepSeek Harness в уста
 <p align="center">
   Отсканируйте QR-код ниже в WeChat, чтобы присоединиться к группе DSH Desktop.<br />
   <img src="docs/images/wechat-group-20260815.png" width="220" alt="QR-код группы DSH Desktop в WeChat" /><br />
-  Также можно присоединиться к <a href="https://discord.gg/he2gAKCpj">сообществу DSH Desktop в Discord</a>.
+  Также можно присоединиться к <a href="https://discord.gg/7Xgf3qe3Qp">сообществу DSH Desktop в Discord</a>.
 </p>
 
 ## Что добавляет DSH Desktop
