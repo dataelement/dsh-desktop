@@ -199,7 +199,8 @@ describe('RepairAgentService', () => {
       const res = await service.checkModelAvailability()
       expect(res.ok).toBe(false)
       expect(res.code).toBe('default_model_unavailable')
-      expect(res.message).toContain('gpt-4o')
+      expect(res.message).toBe('当前模型 gpt-4o 不可用')
+      expect(res.detail).toBe('智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并对话后再进入维修')
     })
 
     it('identifies default_model_unavailable when default provider has failure', async () => {
@@ -232,7 +233,8 @@ describe('RepairAgentService', () => {
       const res = await service.checkModelAvailability()
       expect(res.ok).toBe(false)
       expect(res.code).toBe('default_model_unavailable')
-      expect(res.detail).toContain('API key expired')
+      expect(res.message).toBe('当前模型 deepseek-chat 不可用')
+      expect(res.detail).toBe('智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并对话后再进入维修')
     })
 
     it('returns ok: true when default model is routable and exists in provider group', async () => {

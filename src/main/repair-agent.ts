@@ -798,11 +798,11 @@ export class RepairAgentService {
         ok: false,
         code: 'default_model_unavailable',
         message: isZh
-          ? '新建会话的默认模型未配置。'
-          : 'The default model for new sessions is not configured.',
+          ? '当前模型未配置'
+          : 'Current model is not configured',
         detail: isZh
-          ? '智能维修依赖默认模型创建会话。请先在设置中选择可用的默认模型后再进入维修。'
-          : 'The Repair Agent relies on the default model to create sessions. Please select a valid default model in Settings before entering repair.'
+          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并对话后再进入维修'
+          : 'The Repair Agent relies on the default model. Please fix its configuration or switch to another working model and send a message before entering repair.'
       }
     }
 
@@ -812,26 +812,17 @@ export class RepairAgentService {
     const modelExists = group?.models?.some((m: any) => m?.id === defaultModel)
 
     if (!isRoutable || providerFailure || !group || !modelExists) {
-      const providerName = group?.name || providerFailure?.name || defaultProvider
-      const failureDetail = providerFailure?.message
-        ? `（${providerFailure.message}）`
-        : !isRoutable
-          ? isZh ? '（该模型提供商未配置有效 API Key 或不可路由）' : ' (API Key not configured or unroutable)'
-          : !modelExists
-            ? isZh ? '（该模型在当前提供商中不存在）' : ' (Model not found in provider)'
-            : ''
-
       return {
         ok: false,
         code: 'default_model_unavailable',
         defaultProvider,
         defaultModel,
         message: isZh
-          ? `新建会话的默认模型「${defaultModel}」当前不可用。`
-          : `The default model "${defaultModel}" for new sessions is currently unavailable.`,
+          ? `当前模型 ${defaultModel} 不可用`
+          : `Current model ${defaultModel} is unavailable`,
         detail: isZh
-          ? `提供商「${providerName}」异常${failureDetail}。智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型后再进入维修。`
-          : `Provider "${providerName}" issue${failureDetail}. The Repair Agent relies on the default model. Please fix its configuration or switch to another model before entering repair.`
+          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并对话后再进入维修'
+          : 'The Repair Agent relies on the default model. Please fix its configuration or switch to another working model and send a message before entering repair.'
       }
     }
 
