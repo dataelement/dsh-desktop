@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { chmod, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join } from 'node:path'
+import { stripEnterpriseEnvironment } from '../enterprise/enterprise-env'
 import { resolveEnvironmentPath } from './harness-runtime'
 
 const PROFILE = 'web'
@@ -163,7 +164,7 @@ export function buildProfilePluginCommandEnvironment(
   shimDirectory: string,
   nodeExecutablePath: string
 ): NodeJS.ProcessEnv {
-  const result = { ...environment }
+  const result = stripEnterpriseEnvironment(environment)
   delete result.ELECTRON_RUN_AS_NODE
 
   // The spread above keeps only the casing the OS block actually stores —

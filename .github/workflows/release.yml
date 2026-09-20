@@ -8,6 +8,7 @@ on:
     branches:
       - main
       - V0.9.1
+      - feat/bisheng-gateway-auth
   workflow_dispatch:
     inputs:
       target:

@@ -194,4 +194,21 @@ describe('buildProfilePluginCommandEnvironment', () => {
       expect(result.PATH).not.toContain(userPath)
     }
   })
+
+  it('strips enterprise broker capability from install and command children', () => {
+    const result = buildProfilePluginCommandEnvironment(
+      {
+        PATH: '/usr/bin',
+        DSH_DESKTOP_ENTERPRISE_BROKER_URL: 'http://127.0.0.1:9',
+        DSH_DESKTOP_ENTERPRISE_BROKER_CAPABILITY: 'secret-capability',
+        DSH_DESKTOP_ENTERPRISE_ALLOW_INSECURE_LOOPBACK: '1'
+      },
+      '/shim',
+      '/bundled/node'
+    )
+    expect(result.DSH_DESKTOP_ENTERPRISE_BROKER_URL).toBeUndefined()
+    expect(result.DSH_DESKTOP_ENTERPRISE_BROKER_CAPABILITY).toBeUndefined()
+    expect(result.DSH_DESKTOP_ENTERPRISE_ALLOW_INSECURE_LOOPBACK).toBeUndefined()
+    expect(result.PATH).toContain('/usr/bin')
+  })
 })

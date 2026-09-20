@@ -391,7 +391,15 @@ index 0e94dd3..258c578 100644
  function routeServed(ctx, provider) {
  	return ctx.llm.listProviders().some((entry) => entry.id === provider);
  }
-@@ -2374,6 +2540,171 @@ const SessionMediaReferences = {
+@@ -2028,6 +2194,7 @@ async function buildModelCatalog(ctx, defaultSelection = ctx.agentDefaultModel.c
+ 	}));
+ 	return {
+ 		default: { ...defaultSelection },
++		fallback: ctx.agentDefaultModel.fallbackSelection?.("bisheng-enterprise"),
+ 		routableProviders: providers.map((provider) => provider.id),
+ 		groups: catalog.flatMap((item) => item.kind === "group" ? [item.group] : []).filter((group) => group.models.length > 0),
+ 		failures: catalog.flatMap((item) => item.kind === "failure" ? [item.failure] : [])
+@@ -2374,6 +2541,171 @@ const SessionMediaReferences = {
  		}), "session-controller: /api/file");
  	}
  };
@@ -563,7 +571,7 @@ index 0e94dd3..258c578 100644
  //#endregion
  //#region lib/types/index.js
  /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
-@@ -2485,6 +2816,7 @@ let SessionController = (() => {
+@@ -2485,6 +2817,7 @@ let SessionController = (() => {
  	let _canOpenWorkspacePath_decorators;
  	let _openWorkspacePath_decorators;
  	let _rename_decorators;
@@ -571,7 +579,7 @@ index 0e94dd3..258c578 100644
  	let _fork_decorators;
  	let _prompt_decorators;
  	let _attachment_decorators;
-@@ -2504,6 +2836,7 @@ let SessionController = (() => {
+@@ -2504,6 +2837,7 @@ let SessionController = (() => {
  			_canOpenWorkspacePath_decorators = [Remote];
  			_openWorkspacePath_decorators = [Remote("openWorkspacePath")];
  			_rename_decorators = [Remote("rename")];
@@ -579,7 +587,7 @@ index 0e94dd3..258c578 100644
  			_fork_decorators = [Remote("fork")];
  			_prompt_decorators = [Remote("prompt")];
  			_attachment_decorators = [Remote("attachment")];
-@@ -2600,6 +2933,17 @@ let SessionController = (() => {
+@@ -2600,6 +2934,17 @@ let SessionController = (() => {
  				},
  				metadata: _metadata
  			}, null, _instanceExtraInitializers);
@@ -597,7 +605,7 @@ index 0e94dd3..258c578 100644
  			__esDecorate(this, null, _fork_decorators, {
  				kind: "method",
  				name: "fork",
-@@ -2745,9 +3089,11 @@ let SessionController = (() => {
+@@ -2745,9 +3090,11 @@ let SessionController = (() => {
  			this.canOpenPath = internals.canOpenPath ?? (() => config.nativeOpen ?? (internals.openPath !== void 0 || canOpenNativePath()));
  			ctx.plugin(SessionFileReferences);
  			ctx.plugin(SessionMediaReferences);
@@ -610,7 +618,7 @@ index 0e94dd3..258c578 100644
  			});
  			ctx.on("session/disposed", (session) => {
  				ctx.emit("api-session/removed", session.id);
-@@ -2903,6 +3249,10 @@ let SessionController = (() => {
+@@ -2903,6 +3250,10 @@ let SessionController = (() => {
  		rename(request) {
  			return this.commands.rename(request);
  		}
@@ -638,7 +646,19 @@ index f619491..e3a2704 100644
  const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = z.object({
    'address': z.union([z.object({
    'kind': z.literal("session").readonly(),
-@@ -815,6 +821,31 @@ export const TYPERT = {
+@@ -510,6 +516,11 @@ const _deepseek_ai_dsh_api_session_controller_session_modelCatalog_result$schema
+   'model': z.string().readonly(),
+   'reasoningEffort': z.string().readonly().optional(),
+ }).readonly(),
++  'fallback': z.object({
++  'provider': z.string().readonly(),
++  'model': z.string().readonly(),
++  'reasoningEffort': z.string().readonly().optional(),
++}).readonly().optional(),
+   'routableProviders': z.array(z.string()).readonly(),
+   'groups': z.array(z.object({
+   'id': z.string().readonly(),
+@@ -815,6 +826,31 @@ export const TYPERT = {
        },
        sourceLocation: {"file":"packages/api/session-controller/src/index.ts","line":410,"column":3},
      },
@@ -670,7 +690,7 @@ index f619491..e3a2704 100644
      {
        id: '@deepseek-ai/dsh-api-session-controller#session/create',
        service: 'sessionController',
-@@ -1226,6 +1257,13 @@ export const TYPERT = {
+@@ -1226,6 +1262,13 @@ export const TYPERT = {
              "summary": "Rename one Session after explicitly resuming it.",
              "jsDoc": "/**\n * Rename one Session after explicitly resuming it.\n * @param request - Session identity and proposed title.\n * @returns the accepted title and durable event sequence.\n */"
            },
@@ -684,7 +704,16 @@ index f619491..e3a2704 100644
            {
              "kind": "method",
              "name": "fork",
-@@ -1704,6 +1742,14 @@ export const TYPERT = {
+@@ -1554,7 +1597,7 @@ export const TYPERT = {
+           },
+           {
+             "name": "ModelCatalog",
+-            "declaration": "export interface ModelCatalog {\n    readonly default: ModelSelection;\n    readonly routableProviders: readonly string[];\n    readonly groups: readonly ModelProviderGroup[];\n    readonly failures: readonly ModelCatalogFailure[];\n}"
++            "declaration": "export interface ModelCatalog {\n    readonly default: ModelSelection;\n    readonly fallback?: ModelSelection;\n    readonly routableProviders: readonly string[];\n    readonly groups: readonly ModelProviderGroup[];\n    readonly failures: readonly ModelCatalogFailure[];\n}"
+           },
+           {
+             "name": "ModelCatalogFailure",
+@@ -1704,6 +1747,14 @@ export const TYPERT = {
              "name": "SessionCreateValue",
              "declaration": "export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}"
            },
@@ -745,7 +774,19 @@ index 4009608..7fc3096 100644
  const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = z.object({
    'address': z.union([z.object({
    'kind': z.literal("session").readonly(),
-@@ -812,6 +818,31 @@ export const TYPERT_REMOTE = {
+@@ -510,6 +516,11 @@ const _deepseek_ai_dsh_api_session_controller_session_modelCatalog_result$schema
+   'model': z.string().readonly(),
+   'reasoningEffort': z.string().readonly().optional(),
+ }).readonly(),
++  'fallback': z.object({
++  'provider': z.string().readonly(),
++  'model': z.string().readonly(),
++  'reasoningEffort': z.string().readonly().optional(),
++}).readonly().optional(),
+   'routableProviders': z.array(z.string()).readonly(),
+   'groups': z.array(z.object({
+   'id': z.string().readonly(),
+@@ -812,6 +823,31 @@ export const TYPERT_REMOTE = {
        },
        sourceLocation: {"file":"packages/api/session-controller/src/index.ts","line":410,"column":3},
      },
@@ -1177,7 +1218,16 @@ diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/type
 index b468dba..cc60213 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/types.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/types.d.ts
-@@ -279,6 +279,14 @@ export interface SessionRenameValue {
+@@ -126,6 +126,8 @@ export interface ModelCatalogFailure {
+ /** Host-generation model catalog and the default used by unconfigured Sessions. */
+ export interface ModelCatalog {
+     readonly default: ModelSelection;
++    /** Last non-enterprise preference offered for an expired enterprise selection. */
++    readonly fallback?: ModelSelection;
+     /** Provider routes currently able to serve a request, including empty catalogs. */
+     readonly routableProviders: readonly string[];
+     readonly groups: readonly ModelProviderGroup[];
+@@ -279,6 +281,14 @@ export interface SessionRenameValue {
      readonly title: string;
      readonly seq: number;
  }
@@ -1192,3 +1242,15 @@ index b468dba..cc60213 100644
  /** Session fork request. */
  export interface SessionForkRequest {
      readonly sessionId: SessionId;
+diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/catalog.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/catalog.js
+index ab6a99b..ebb7918 100644
+--- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/catalog.js
++++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/catalog.js
+@@ -49,6 +49,7 @@ export async function buildModelCatalog(ctx, defaultSelection = ctx.agentDefault
+     }));
+     return {
+         default: { ...defaultSelection },
++        fallback: ctx.agentDefaultModel.fallbackSelection?.("bisheng-enterprise"),
+         routableProviders: providers.map(provider => provider.id),
+         groups: catalog.flatMap(item => item.kind === 'group' ? [item.group] : [])
+             .filter(group => group.models.length > 0),
