@@ -8,7 +8,7 @@
 npm run mock:enterprise
 ```
 
-Mock 仅监听 `127.0.0.1:17860`。使用 DSH Desktop Dev 包，在「设置 → 账号与企业」填写：
+Mock 仅监听 `127.0.0.1:17860`。使用 DSH Desktop Dev 包，在「设置 → 企业账号」填写：
 
 ```text
 http://127.0.0.1:17860
