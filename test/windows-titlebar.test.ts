@@ -15,6 +15,7 @@ import {
 describe('Windows titlebar menu', () => {
 
   it('accepts only the fixed menu command allowlist', () => {
+    expect(desktopMenuCommands).toContain('new-window')
     expect(desktopMenuCommands).toContain('connect-phone')
     expect(desktopMenuCommands).toContain('safe-mode')
     expect(desktopMenuCommands).toContain('check-for-updates')

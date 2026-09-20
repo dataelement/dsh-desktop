@@ -76,6 +76,7 @@ import {
   serializeGpuFallbackState
 } from './gpu-fallback'
 import { secureWindow } from './security'
+import { AppWindowRegistry } from './app-window-registry'
 import { SafeModeOverlay } from './safe-mode-overlay'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
@@ -83,7 +84,7 @@ import {
   resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
-import { WindowStateManager } from './state/window-state'
+import { cascadeWindowBounds, WindowStateManager } from './state/window-state'
 import {
   isProjectedGenerationPlugin,
   prepareGenerationsForLaunch,
@@ -200,9 +201,29 @@ const PLUGIN_RECOVERY_ACTIONS = new Set<PluginRecoveryAction>([
 ])
 
 let mainWindow: BrowserWindow | undefined
-let windowsMenuView: WebContentsView | undefined
-let windowsMenuOpen = false
-let windowsMenuDark = false
+/**
+ * Every window this process created and hardened. Privileged IPC is gated on
+ * membership here instead of on being the one primary window, which is what
+ * lets the user open several Harness windows without each new one being
+ * rejected as an untrusted stranger. `mainWindow` mirrors the primary window
+ * so the app-level entry points (tray, `activate`, About, splash) keep acting
+ * on exactly one window.
+ */
+const appWindows = new AppWindowRegistry<BrowserWindow>({
+  onPrimaryChange: (window) => {
+    mainWindow = window
+    if (window && windowStateManager) windowStateManager.track(window)
+  }
+})
+/** Windows application menu chrome: one overlay view per Windows window. */
+interface WindowsMenuChrome {
+  view: WebContentsView
+  open: boolean
+  dark: boolean
+}
+const windowsMenuChrome = new Map<number, WindowsMenuChrome>()
+/** Extra Harness windows opened this run; used to cascade their placement. */
+let secondaryWindowsOpened = 0
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
@@ -479,31 +500,66 @@ function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOption
 function applyWindowChromeTheme(window: BrowserWindow, isDark: boolean): void {
   if (window.isDestroyed()) return
   window.setBackgroundColor(isDark ? '#141416' : '#ffffff')
-  if (process.platform === 'win32') {
-    windowsMenuDark = isDark
-    window.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
-    if (windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
-      windowsMenuView.webContents.send('desktop-titlebar:theme-changed', isDark)
-    }
+  if (process.platform !== 'win32') return
+  window.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
+  const chrome = windowsMenuChrome.get(window.id)
+  if (!chrome) return
+  chrome.dark = isDark
+  if (!chrome.view.webContents.isDestroyed()) {
+    chrome.view.webContents.send('desktop-titlebar:theme-changed', isDark)
   }
 }
 
 function updateWindowsMenuViewBounds(window: BrowserWindow): void {
-  if (!windowsMenuView || windowsMenuView.webContents.isDestroyed() || window.isDestroyed()) return
+  const chrome = windowsMenuChrome.get(window.id)
+  if (!chrome || chrome.view.webContents.isDestroyed() || window.isDestroyed()) return
   const contentSize = window.getContentSize()
   const width = contentSize[0] ?? 0
   const height = contentSize[1] ?? 0
-  windowsMenuView.setBounds(
-    windowsMenuViewBounds({ width, height }, windowsMenuOpen, window.isFullScreen())
+  chrome.view.setBounds(
+    windowsMenuViewBounds({ width, height }, chrome.open, window.isFullScreen())
   )
 }
 
 function setWindowsMenuOpen(window: BrowserWindow, open: boolean, notifyRenderer = false): void {
-  windowsMenuOpen = open
+  const chrome = windowsMenuChrome.get(window.id)
+  if (!chrome) return
+  chrome.open = open
   updateWindowsMenuViewBounds(window)
-  if (notifyRenderer && windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
-    windowsMenuView.webContents.send('desktop-titlebar:close-menu')
+  if (notifyRenderer && !chrome.view.webContents.isDestroyed()) {
+    chrome.view.webContents.send('desktop-titlebar:close-menu')
   }
+}
+
+function closeWindowsMenuChrome(window: BrowserWindow): void {
+  const chrome = windowsMenuChrome.get(window.id)
+  if (!chrome) return
+  windowsMenuChrome.delete(window.id)
+  if (!chrome.view.webContents.isDestroyed()) chrome.view.webContents.close()
+}
+
+function isWindowsMenuSender(event: IpcMainInvokeEvent): boolean {
+  for (const chrome of windowsMenuChrome.values()) {
+    const contents = chrome.view.webContents
+    if (contents.isDestroyed()) continue
+    if (event.sender === contents && event.senderFrame === contents.mainFrame) return true
+  }
+  return false
+}
+
+/**
+ * The window a desktop-menu request is about. The Windows application menu is
+ * a separate view rather than a renderer, so its requests are attributed to
+ * the window that owns that view: zoom, reload and Developer Tools must act on
+ * the window the menu was opened from, not on whichever one came first.
+ */
+function menuTargetWindow(sender: unknown): BrowserWindow | undefined {
+  const direct = appWindows.findWindowBySender(sender)
+  if (direct) return direct
+  for (const [windowId, chrome] of windowsMenuChrome) {
+    if (chrome.view.webContents === sender) return appWindows.findWindowById(windowId)
+  }
+  return undefined
 }
 
 function attachWindowsMenuView(window: BrowserWindow): void {
@@ -516,18 +572,21 @@ function attachWindowsMenuView(window: BrowserWindow): void {
       webSecurity: true
     }
   })
-  windowsMenuView = menuView
-  windowsMenuOpen = false
-  windowsMenuDark = nativeTheme.shouldUseDarkColors
+  const chrome: WindowsMenuChrome = {
+    view: menuView,
+    open: false,
+    dark: nativeTheme.shouldUseDarkColors
+  }
+  windowsMenuChrome.set(window.id, chrome)
   menuView.setBackgroundColor('#00000000')
   menuView.webContents.setZoomFactor(1)
   menuView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   menuView.webContents.on('did-finish-load', () => {
     if (!menuView.webContents.isDestroyed()) {
-      menuView.webContents.send('desktop-titlebar:theme-changed', windowsMenuDark)
+      menuView.webContents.send('desktop-titlebar:theme-changed', chrome.dark)
     }
   })
-  // This view is not the main window webContents, so it sits outside
+  // This view is not the window's own webContents, so it sits outside
   // installMainWindowRendererRecovery's reload/GPU-fallback path — without
   // its own recovery a lost renderer here just leaves a dead, invisible menu
   // until the user restarts the whole app.
@@ -540,7 +599,7 @@ function attachWindowsMenuView(window: BrowserWindow): void {
     void loadDesktopResource(menuView.webContents, desktopResourcePath('windows-menu.html'), {
       query: {
         locale: harnessLocale(),
-        theme: windowsMenuDark ? 'dark' : 'light'
+        theme: chrome.dark ? 'dark' : 'light'
       }
     }).catch(showUnexpectedError)
   })
@@ -556,7 +615,7 @@ function attachWindowsMenuView(window: BrowserWindow): void {
   void loadDesktopResource(menuView.webContents, desktopResourcePath('windows-menu.html'), {
     query: {
       locale: harnessLocale(),
-      theme: windowsMenuDark ? 'dark' : 'light'
+      theme: chrome.dark ? 'dark' : 'light'
     }
   }).catch(showUnexpectedError)
 }
@@ -1011,6 +1070,25 @@ function restoreMainWindow(): void {
   }
 }
 
+function closeAdditionalHarnessWindows(): void {
+  for (const window of appWindows.all()) {
+    if (appWindows.isPrimary(window) || window.isDestroyed()) continue
+    window.destroy()
+  }
+}
+
+/**
+ * A Harness runtime transition invalidates every renderer's origin, token and
+ * Profile assumptions. Keep the primary for splash/recovery, but close every
+ * extra view before stopping the shared runtime so no stale normal/Safe Mode
+ * page survives the transition.
+ */
+async function stopHarnessForTransition(): Promise<void> {
+  closeAdditionalHarnessWindows()
+  clearProfileBootConfirmation()
+  await runtime.stop()
+}
+
 function ensureTray(): void {
   if (process.platform !== 'win32' || tray) return
 
@@ -1027,10 +1105,17 @@ function ensureTray(): void {
   tray.on('click', restoreMainWindow)
 }
 
-function createWindow(): BrowserWindow {
+function createWindow(options: { primary?: boolean } = {}): BrowserWindow {
+  const isPrimary = options.primary === true || !mainWindow || mainWindow.isDestroyed()
   const isWindows = process.platform === 'win32'
   windowStateManager ??= new WindowStateManager(app.getPath('userData'))
-  const initialBounds = windowStateManager.validateBounds(windowStateManager.getState())
+  const savedBounds = windowStateManager.validateBounds(windowStateManager.getState())
+  const cascadedBounds = isPrimary
+    ? undefined
+    : cascadeWindowBounds(savedBounds, ++secondaryWindowsOpened)
+  const initialBounds = cascadedBounds
+    ? windowStateManager.validateBounds(cascadedBounds)
+    : savedBounds
   const window = new BrowserWindow({
     width: initialBounds.width,
     height: initialBounds.height,
@@ -1059,6 +1144,7 @@ function createWindow(): BrowserWindow {
       webSecurity: true
     }
   })
+  appWindows.register(window, { primary: isPrimary })
   if (process.platform === 'darwin') {
     window.setWindowButtonVisibility(true)
     // Match the sidebar inset at the current zoom, with a 2px optical correction
@@ -1076,12 +1162,15 @@ function createWindow(): BrowserWindow {
   } else if (isWindows) {
     window.setMenuBarVisibility(false)
   }
-  windowStateManager.track(window)
-  if (windowStateManager.getState().isMaximized) {
-    window.maximize()
+  if (isPrimary) {
+    windowStateManager.track(window)
+    if (windowStateManager.getState().isMaximized) window.maximize()
+  } else {
+    windowStateManager.applyPersistedZoom(window)
   }
   window.on('close', (event) => {
     desktopStorageManager?.flushSync()
+    if (!appWindows.isPrimary(window)) return
     windowStateManager?.flushSync()
     if (!shouldKeepRunningInBackground(process.platform, quitting)) return
     event.preventDefault()
@@ -1106,66 +1195,72 @@ function createWindow(): BrowserWindow {
   installContextMenu(window, harnessLocale)
   installMainWindowRendererRecovery(window)
   window.on('closed', () => {
-    if (mainWindow === window) mainWindow = undefined
-    if (windowsMenuView && !windowsMenuView.webContents.isDestroyed()) {
-      windowsMenuView.webContents.close()
-    }
-    windowsMenuView = undefined
-    windowsMenuOpen = false
+    const wasPrimary = appWindows.isPrimary(window)
+    appWindows.unregister(window)
+    closeWindowsMenuChrome(window)
+    if (!wasPrimary) return
     resolvePluginRecoveryAction('quit')
     resolveWebImportAction('skip')
     resolveSafeModeAction({ type: 'quit' })
   })
-  mainWindow = window
   if (isWindows) attachWindowsMenuView(window)
   return window
 }
 
-async function openHarness(
-  url: string,
-  focusIntent: WindowFocusIntent = 'automatic'
-): Promise<void> {
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+async function loadHarnessWindow(options: {
+  window: BrowserWindow
+  url: string
+  focusIntent: WindowFocusIntent
+  isCurrent: () => boolean
+  takeRepairPrompt?: boolean
+}): Promise<void> {
+  const { window, url, focusIntent, isCurrent } = options
+  if (window.isDestroyed()) return
   const rendererUrl = desktopHarnessUrl(url, process.platform, runtime.snapshot().authToken)
   if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
-    // Taken before the first await: the Recovery page's fallback below runs
-    // as soon as the Safe Mode launch resolves, and must see it gone.
-    const repairPrompt = safeModeVisible ? takePendingRepairPrompt() : undefined
-    const navigationVersion = ++mainWindowNavigationVersion
-    rendererPluginFailureLogs = []
+    // Only the primary window prepares shared runtime state. Repeating cache
+    // and stale-cookie cleanup while other Harness pages are live can disrupt
+    // those pages, and opening another view must not erase recovery evidence.
+    const prepareRuntime = options.takeRepairPrompt === true
+    const repairPrompt = prepareRuntime && safeModeVisible
+      ? takePendingRepairPrompt()
+      : undefined
+    if (prepareRuntime) rendererPluginFailureLogs = []
     window.webContents.stop()
     // Open the repair session before the page loads, so the UI lands on it.
     if (repairPrompt !== undefined) await startRepairAgentPrompt(repairPrompt)
-    await clearStaleLoopbackHttpCache(
-      window.webContents.session,
-      join(app.getPath('userData'), 'http-cache-origin'),
-      new URL(url).origin,
-      (line) => runtime.note(line)
-    )
-    const clearedCookies = await clearStaleHarnessAuthCookies(
-      window.webContents.session.cookies,
-      rendererUrl,
-      runtime.snapshot().authToken
-    ).catch((error) => {
-      runtime.note(
-        `[desktop] stale Harness cookie cleanup failed: ${error instanceof Error ? error.message : String(error)
-        }`
+    if (prepareRuntime) {
+      await clearStaleLoopbackHttpCache(
+        window.webContents.session,
+        join(app.getPath('userData'), 'http-cache-origin'),
+        new URL(url).origin,
+        (line) => runtime.note(line)
       )
-      return 0
-    })
-    if (clearedCookies > 0) {
-      runtime.note(`[desktop] cleared ${clearedCookies} stale Harness authentication cookie(s)`)
+      const clearedCookies = await clearStaleHarnessAuthCookies(
+        window.webContents.session.cookies,
+        rendererUrl,
+        runtime.snapshot().authToken
+      ).catch((error) => {
+        runtime.note(
+          `[desktop] stale Harness cookie cleanup failed: ${error instanceof Error ? error.message : String(error)
+          }`
+        )
+        return 0
+      })
+      if (clearedCookies > 0) {
+        runtime.note(`[desktop] cleared ${clearedCookies} stale Harness authentication cookie(s)`)
+      }
     }
     try {
       await window.loadURL(rendererUrl)
     } catch (error) {
-      if (navigationVersion !== mainWindowNavigationVersion) return
+      if (!isCurrent()) return
       if (isAbortedNavigationError(error)) return
       const snapshot = runtime.snapshot()
       if (snapshot.phase !== 'ready' || snapshot.url !== url) return
       throw error
     }
-    if (navigationVersion !== mainWindowNavigationVersion) return
+    if (!isCurrent()) return
   }
   markHarnessRendered()
   if (runtime.snapshot().url !== url || window.isDestroyed()) return
@@ -1176,6 +1271,48 @@ async function openHarness(
     () => app.isActive(),
     focusIntent
   )
+}
+
+async function openHarness(
+  url: string,
+  focusIntent: WindowFocusIntent = 'automatic'
+): Promise<void> {
+  const window = mainWindow && !mainWindow.isDestroyed()
+    ? mainWindow
+    : createWindow({ primary: true })
+  const navigationVersion = ++mainWindowNavigationVersion
+  await loadHarnessWindow({
+    window,
+    url,
+    focusIntent,
+    isCurrent: () => navigationVersion === mainWindowNavigationVersion,
+    takeRepairPrompt: true
+  })
+}
+
+/**
+ * Open another view onto the existing Harness runtime. A second window shares
+ * the loopback server and Profile, but its renderer can navigate and select a
+ * session independently from the primary window.
+ */
+async function openAdditionalHarnessWindow(): Promise<void> {
+  const snapshot = runtime?.snapshot()
+  if (snapshot?.phase !== 'ready' || !snapshot.url) {
+    restoreMainWindow()
+    return
+  }
+  const window = createWindow()
+  try {
+    await loadHarnessWindow({
+      window,
+      url: snapshot.url,
+      focusIntent: 'user',
+      isCurrent: () => !window.isDestroyed()
+    })
+  } catch (error) {
+    if (!window.isDestroyed()) window.destroy()
+    throw error
+  }
 }
 
 async function maybeImportWebHome(dshHome: string): Promise<void> {
@@ -1220,7 +1357,7 @@ async function showWebHomeImport(
   preview: Awaited<ReturnType<typeof previewWebHome>>,
   notice?: string
 ): Promise<WebImportAction> {
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow({ primary: true })
   const state = buildWebImportViewModel({
     locale: harnessLocale(),
     preview,
@@ -1250,7 +1387,7 @@ async function showWebHomeImport(
 
 async function showSplash(): Promise<void> {
   clearProfileBootConfirmation()
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow({ primary: true })
   const navigationVersion = ++mainWindowNavigationVersion
   window.webContents.stop()
   await loadDesktopResource(window, desktopResourcePath('splash.html'), {
@@ -1395,7 +1532,7 @@ async function enterMigrationSafeRecovery(
   maintenanceAllowedRestoreId = allowedRestoreId
   await refreshMigrationRecoveryLock(dshHome)
   runtime.note(`[desktop] Profile recovery requires Safe Mode: ${reason}`)
-  await runtime.stop()
+  await stopHarnessForTransition()
   await ensureSafeModeProfile(dshHome)
   runtime.note('[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
   await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
@@ -1422,7 +1559,7 @@ function launchHarness(): Promise<void> {
     // Migration and generation projection only hold on a stopped Harness, and
     // a restart still has the previous one running: start() stops it, but that
     // is after maintenance. Stopping here owns that mutation window.
-    await runtime.stop()
+    await stopHarnessForTransition()
     runtime.note('[desktop] previous Harness stopped; starting profile maintenance')
     await maybeImportWebHome(dshHome)
     const maintenance = await runProfileStartupMaintenance({
@@ -1541,7 +1678,7 @@ function launchSafeHarness(): Promise<void> {
     const dshHome = join(app.getPath('userData'), 'harness')
     await refreshMigrationRecoveryLock(dshHome)
     await showSplash()
-    await runtime.stop()
+    await stopHarnessForTransition()
     await ensureSafeModeProfile(dshHome)
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
@@ -1659,7 +1796,7 @@ async function removeMarket(dshHome: string): Promise<{ ok: boolean; detail?: st
 async function uninstallMarketAndRestart(): Promise<{ ok: boolean }> {
   const dshHome = join(app.getPath('userData'), 'harness')
   await showSplash()
-  await runtime.stop()
+  await stopHarnessForTransition()
   const result = await removeMarket(dshHome)
   await launchHarness()
   if (!result.ok) {
@@ -1683,9 +1820,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
-    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-      throw new Error('Harness restart is only available from the DSH Desktop window.')
-    }
+    assertTrustedAppWindowEvent(event)
     if (runtime.snapshot().phase !== 'ready') {
       throw new Error('Harness is not ready to restart.')
     }
@@ -1696,7 +1831,7 @@ function registerHarnessHandlers(): void {
 
   ipcMain.removeHandler('market:uninstall')
   ipcMain.handle('market:uninstall', async (event) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (runtime.snapshot().phase !== 'ready') {
       throw new Error('Harness is not ready to uninstall the plugin market.')
     }
@@ -1709,14 +1844,16 @@ function registerHarnessHandlers(): void {
     if (!isDesktopMenuCommand(command)) {
       throw new Error('Unknown DSH Desktop menu command.')
     }
-    const zoomFactor = await executeDesktopMenuCommand(command)
+    const window = menuTargetWindow(event.sender)
+    if (!window) throw new Error('No DSH Desktop window owns this application menu.')
+    const zoomFactor = await executeDesktopMenuCommand(command, window)
     return zoomFactor === undefined ? { ok: true } : { ok: true, zoomFactor }
   })
 
   ipcMain.removeHandler('desktop-menu:get-zoom-factor')
   ipcMain.handle('desktop-menu:get-zoom-factor', (event) => {
     assertTrustedDesktopMenuEvent(event)
-    return { zoomFactor: mainWindow?.webContents.getZoomFactor() ?? 1 }
+    return { zoomFactor: menuTargetWindow(event.sender)?.webContents.getZoomFactor() ?? 1 }
   })
 
   ipcMain.removeHandler('desktop-titlebar:set-menu-open')
@@ -1725,32 +1862,33 @@ function registerHarnessHandlers(): void {
     if (typeof open !== 'boolean') {
       throw new Error('The application menu state must be a boolean.')
     }
-    if (mainWindow && !mainWindow.isDestroyed()) setWindowsMenuOpen(mainWindow, open)
+    const window = menuTargetWindow(event.sender)
+    if (window) setWindowsMenuOpen(window, open)
     return { ok: true }
   })
 
   ipcMain.removeHandler('desktop-titlebar:close-menu')
   ipcMain.handle('desktop-titlebar:close-menu', (event) => {
-    assertTrustedMainWindowEvent(event)
-    if (mainWindow && !mainWindow.isDestroyed()) setWindowsMenuOpen(mainWindow, false, true)
+    assertTrustedAppWindowEvent(event)
+    const window = appWindows.findWindowBySender(event.sender)
+    if (window) setWindowsMenuOpen(window, false, true)
     return { ok: true }
   })
 
   ipcMain.removeHandler('desktop-titlebar:set-theme')
   ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (typeof isDark !== 'boolean') {
       throw new Error('The DSH Desktop titlebar theme must be a boolean.')
     }
-    if (process.platform === 'win32' && mainWindow) {
-      applyWindowChromeTheme(mainWindow, isDark)
-    }
+    const window = appWindows.findWindowBySender(event.sender)
+    if (process.platform === 'win32' && window) applyWindowChromeTheme(window, isDark)
     return { ok: true }
   })
 
   ipcMain.removeHandler('desktop:about-info')
   ipcMain.handle('desktop:about-info', (event) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     const locale = harnessLocale()
     return {
       desktopVersion: app.getVersion(),
@@ -1762,40 +1900,20 @@ function registerHarnessHandlers(): void {
 }
 
 function assertTrustedDesktopMenuEvent(event: IpcMainInvokeEvent): void {
-  const fromMainWindow =
-    mainWindow &&
-    !mainWindow.isDestroyed() &&
-    event.sender === mainWindow.webContents &&
-    event.senderFrame === mainWindow.webContents.mainFrame
-  const fromWindowsMenu =
-    windowsMenuView &&
-    !windowsMenuView.webContents.isDestroyed() &&
-    event.sender === windowsMenuView.webContents &&
-    event.senderFrame === windowsMenuView.webContents.mainFrame
-  if (!fromMainWindow && !fromWindowsMenu) {
+  if (!appWindows.isTrustedFrameEvent(event) && !isWindowsMenuSender(event)) {
     throw new Error('This action is only available from the DSH Desktop window.')
   }
 }
 
 function assertTrustedWindowsMenuEvent(event: IpcMainInvokeEvent): void {
-  if (
-    !windowsMenuView ||
-    windowsMenuView.webContents.isDestroyed() ||
-    event.sender !== windowsMenuView.webContents ||
-    event.senderFrame !== windowsMenuView.webContents.mainFrame
-  ) {
+  if (!isWindowsMenuSender(event)) {
     throw new Error('This action is only available from the Windows application menu.')
   }
 }
 
-function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
-  if (
-    !mainWindow ||
-    mainWindow.isDestroyed() ||
-    event.sender !== mainWindow.webContents ||
-    event.senderFrame !== mainWindow.webContents.mainFrame
-  ) {
-    throw new Error('This action is only available from the main DSH Desktop window.')
+function assertTrustedAppWindowEvent(event: IpcMainInvokeEvent): void {
+  if (!appWindows.isTrustedFrameEvent(event)) {
+    throw new Error('This action is only available from a DSH Desktop window.')
   }
 }
 
@@ -1845,12 +1963,17 @@ async function showAbout(window: BrowserWindow): Promise<void> {
   if (result.response === 0) await checkForUpdates(true)
 }
 
-async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<number | undefined> {
-  const window = mainWindow
-  if (!window || window.isDestroyed()) return
+async function executeDesktopMenuCommand(
+  command: DesktopMenuCommand,
+  window: BrowserWindow
+): Promise<number | undefined> {
+  if (window.isDestroyed()) return
   const contents = window.webContents
 
   switch (command) {
+    case 'new-window':
+      await openAdditionalHarnessWindow()
+      break
     case 'connect-phone':
       await showMobilePairing()
       break
@@ -1913,18 +2036,18 @@ async function executeDesktopMenuCommand(command: DesktopMenuCommand): Promise<n
       break
     case 'zoom-reset':
       contents.setZoomLevel(0)
-      windowStateManager?.setZoomLevel(0)
+      if (appWindows.isPrimary(window)) windowStateManager?.setZoomLevel(0)
       break
     case 'zoom-in': {
       const zoomLevel = Math.min(3, contents.getZoomLevel() + 0.5)
       contents.setZoomLevel(zoomLevel)
-      windowStateManager?.setZoomLevel(zoomLevel)
+      if (appWindows.isPrimary(window)) windowStateManager?.setZoomLevel(zoomLevel)
       break
     }
     case 'zoom-out': {
       const zoomLevel = Math.max(-3, contents.getZoomLevel() - 0.5)
       contents.setZoomLevel(zoomLevel)
-      windowStateManager?.setZoomLevel(zoomLevel)
+      if (appWindows.isPrimary(window)) windowStateManager?.setZoomLevel(zoomLevel)
       break
     }
     case 'toggle-fullscreen':
@@ -1950,7 +2073,7 @@ async function waitForPluginRecoveryAction(options: {
   pluginChecks?: PluginRecoveryCheck[]
   market?: Parameters<typeof buildPluginRecoveryViewModel>[0]['market']
 }): Promise<PluginRecoveryAction> {
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow({ primary: true })
   const state = buildPluginRecoveryViewModel({
     ...options,
     locale: harnessLocale()
@@ -2156,7 +2279,7 @@ async function showPluginRecovery(options?: {
           continue
         }
         // The shared-tree installer needs every Harness stopped.
-        await runtime.stop()
+        await stopHarnessForTransition()
         const result = await (action === 'market-remove'
           ? removeMarket(dshHome)
           : upgradeMarketInSharedTree({
@@ -2201,7 +2324,7 @@ async function showPluginRecovery(options?: {
           notice = isChinese ? '尚未确定处理方案，请重试检查或逐项处理。' : 'No recovery actions are confirmed yet. Retry the check or handle plugins individually.'
           continue
         }
-        await runtime.stop()
+        await stopHarnessForTransition()
         const processed = await runPluginRecoveryPlan(plan, {
           upgrade: candidate => upgradePluginToGeneration({
             dshHome, pluginName: candidate.packageName, targetVersion: candidate.targetVersion,
@@ -2261,7 +2384,7 @@ async function showPluginRecovery(options?: {
         // The normal web Harness may still have the failing plugin imported.
         // macOS permits renaming an open directory, but Windows does not; stop
         // the process before quarantine so both platforms use the same path.
-        await runtime.stop()
+        await stopHarnessForTransition()
         const failedPlugins: string[] = []
         const pendingPlugins: string[] = []
         for (const plugin of removalTargets) {
@@ -2375,7 +2498,7 @@ async function waitForSafeModeAction(options: {
   notice?: string
   noticeTone?: 'success' | 'error'
 }): Promise<SafeModeAction> {
-  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow({ primary: true })
   const window = safeModeManager && !safeModeManager.isDestroyed()
     ? safeModeManager
     : (() => {
@@ -3079,7 +3202,19 @@ function installMenu(): void {
         { role: 'togglefullscreen' }
       ]
     },
-    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'close' }] }
+    {
+      label: 'Window',
+      submenu: [
+        {
+          label: isChinese ? '新建窗口' : 'New Window',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => void openAdditionalHarnessWindow().catch(showUnexpectedError)
+        },
+        { type: 'separator' },
+        { role: 'minimize' },
+        { role: 'close' }
+      ]
+    }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
   if (process.platform === 'win32' && mainWindow && !mainWindow.isDestroyed()) {
@@ -3168,7 +3303,7 @@ async function bootstrap(): Promise<void> {
       console.warn(`[desktop-storage] error during ${context}:`, error)
     }
   })
-  createWindow()
+  createWindow({ primary: true })
   runtime = new HarnessRuntime({
     // A packaged app's stdout may be a closed pipe; only mirror logs in development.
     echoLogs: !app.isPackaged,
@@ -3242,16 +3377,11 @@ async function bootstrap(): Promise<void> {
   })
 
   ipcMain.handle('directory-picker:open', async (event) => {
-    if (
-      !mainWindow ||
-      mainWindow.isDestroyed() ||
-      event.sender !== mainWindow.webContents ||
-      event.senderFrame !== mainWindow.webContents.mainFrame
-    ) {
-      throw new Error('Directory picker requests are only allowed from the main Harness window')
-    }
+    assertTrustedAppWindowEvent(event)
+    const window = appWindows.findWindowBySender(event.sender)
+    if (!window) throw new Error('Directory picker requests require a DSH Desktop window.')
 
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(window, {
       title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
       properties: ['openDirectory']
     })
@@ -3263,7 +3393,7 @@ async function bootstrap(): Promise<void> {
     shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
   })
   ipcMain.handle('harness:open-in-finder', async (event, path?: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (typeof path !== 'string' || path.length === 0) {
       throw new Error('A directory path is required.')
     }
@@ -3273,7 +3403,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('harness:renderer-healthy')
   ipcMain.handle('harness:renderer-healthy', (event) => {
-    assertTrustedMainWindowEvent(event)
+    if (!appWindows.isPrimaryFrameEvent(event)) return { ok: false }
     if (safeModeVisible || failureRecoveryVisible || runtime.snapshot().phase !== 'ready') {
       return { ok: false }
     }
@@ -3282,7 +3412,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     desktopDiagnostics?.discardPendingPluginFailure()
     const message = typeof frontendErrorMessage === 'string' ? frontendErrorMessage : undefined
     if (message) appendRendererPluginFailureLog(message)
@@ -3297,7 +3427,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('recovery:action')
   ipcMain.handle('recovery:action', (event, action: unknown, options?: any) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (typeof action === 'string' && (PLUGIN_RECOVERY_ACTIONS.has(action as PluginRecoveryAction) || /^(upgrade|uninstall|agent):.+$/.test(action))) {
       resolvePluginRecoveryAction(action as PluginRecoveryAction)
       return { ok: true }
@@ -3309,7 +3439,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('web-import:action')
   ipcMain.handle('web-import:action', (event, action: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (!isWebImportPage(event.sender.getURL())) return { ok: false }
     if (action === 'import' || action === 'skip') {
       resolveWebImportAction(action)
@@ -3387,19 +3517,19 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('safe-mode:status')
   ipcMain.handle('safe-mode:status', (event) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     return { active: safeModeVisible, locale: harnessLocale() }
   })
   ipcMain.removeHandler('safe-mode:manage')
   ipcMain.handle('safe-mode:manage', (event) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (!safeModeVisible) return { ok: false }
     void showSafeModeManager().catch(showUnexpectedError)
     return { ok: true }
   })
   ipcMain.removeHandler('safe-mode:exit')
   ipcMain.handle('safe-mode:exit', async (event) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (!safeModeVisible) return { ok: false }
     const dshHome = join(app.getPath('userData'), 'harness')
     if (await refreshMigrationRecoveryLock(dshHome)) {
@@ -3432,7 +3562,7 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.removeHandler('harness:reset-plugins')
   ipcMain.handle('harness:reset-plugins', async (event, pluginName?: unknown) => {
-    assertTrustedMainWindowEvent(event)
+    assertTrustedAppWindowEvent(event)
     if (pluginName !== undefined && typeof pluginName !== 'string') {
       throw new Error('The failing plugin name must be a string.')
     }
@@ -3450,7 +3580,7 @@ async function bootstrap(): Promise<void> {
   if (!developmentBuild) {
     startUpdateManager({
       prepareToInstall: async () => {
-        await runtime.stop()
+        await stopHarnessForTransition()
         const dshHome = join(app.getPath('userData'), 'harness')
         await quarantineInstalledLaunchAgentsForUpdate(dshHome)
         quitting = true
@@ -3490,10 +3620,12 @@ if (isDaemonLaunch(process.env, process.platform)) {
         void showSafeMode().catch(showUnexpectedError)
         return
       }
-      const snapshot = runtime?.snapshot()
-      if (snapshot?.phase === 'ready' && snapshot.url) {
-        void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
+      const window = mainWindow
+      if (window && !window.isDestroyed() && (!window.isVisible() || window.isMinimized())) {
+        restoreMainWindow()
+        return
       }
+      void openAdditionalHarnessWindow().catch(showUnexpectedError)
     })
     app.whenReady().then(bootstrap).catch((error: unknown) => {
       desktopDiagnostics?.startupFailed(error)
