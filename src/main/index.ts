@@ -2497,7 +2497,10 @@ async function disableSafeModePlugin(
     )
     return { disabled: true }
   }
-  if (result.reason === 'carrier') {
+  // A carrier cannot be switched off on its own, and a broken bundle has no
+  // row to switch off at all. Both would otherwise leave the next launch
+  // composing the same profile, so they fall back to a restorable removal.
+  if (result.reason === 'carrier' || result.reason === 'broken-package') {
     runtime.note(`[${logPrefix}] ${result.detail}; removing it with a restorable backup instead`)
     const removal = await removeProfilePluginCompletely(dshHome, pluginName, logPrefix)
     return { disabled: removal.disabled, pending: removal.pending, detail: removal.failures[0] }
