@@ -20,6 +20,10 @@
       "types": "./generations/projection.d.ts",
       "default": "./generations/projection.mjs"
     },
+    "./generations/package-backend": {
+      "types": "./generations/package-backend.d.ts",
+      "default": "./generations/package-backend.mjs"
+    },
     "./market-registry": {
       "types": "./market-registry.d.ts",
       "default": "./market-registry.mjs"

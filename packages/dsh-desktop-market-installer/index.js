@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { PassThrough } from 'node:stream'
 
 import { installGeneration } from './generations/installer.mjs'
+import { createGenerationPackageBackend } from './generations/package-backend.mjs'
 import {
   publishInstalledGeneration,
   publishGenerationManifest
@@ -821,8 +822,16 @@ export async function apply(ctx) {
   const binDirectory = await ensurePnpmShim(home)
   const desktopProfiles = createDesktopProfilesService(home)
   const desktopPnpm = createDesktopPnpmService({ binDirectory })
+  const profileBundlePackageBackend = createGenerationPackageBackend({
+    dshHome: home,
+    nodeExecutablePath: process.execPath,
+    pnpmEntryPath: resolvePnpmEntry()
+  })
   ctx.provide('desktopProfiles', desktopProfiles)
   ctx.provide('desktopPnpm', desktopPnpm)
+  // Optional Harness Plugin Manager seam: mutations stage and publish immutable
+  // generations rather than writing into the running profile.
+  ctx.provide('profileBundlePackageBackend', profileBundlePackageBackend)
   ctx.effect(() => () => desktopPnpm.dispose(), 'dsh-desktop-market-installer: desktop pnpm')
 
   const runProfileCommand = async (args, action) => {

@@ -10,6 +10,7 @@ DSH Desktop 已从最新 `main` 基线迁移到 `@deepseek-ai/dsh@0.1.6-alpha.2`
 - 适配 Typert codec 的惰性 `create()` API，以及 Profile 初始化不再携带 `patchReload` 的新签名。
 - 保留上游新的 HostResolvedRootInclude/Profile resolution 行为，不再恢复已被上游替代的旧解析实现。
 - Electron 固定为 `43.0.0`；alpha.2 使用的 `node-addon-require-builtin@0.1.6` 尚不支持 Electron `43.4.0` 的 Node/V8 runtime fingerprint。
+- Plugin Manager 的安装/删除通过可选的 `profileBundlePackageBackend` 接缝转入 Desktop generation：安装在 staging 校验并 peer 验证后发布 immutable generation，失败/非 bundle 时回滚 `desired.json` 与 Profile projection；删除只撤销 desired/projection，旧 generation 留待冷启动回收。普通 Harness Profile 仍使用上游 pnpm 路径。
 
 ## 可重放与验证
 

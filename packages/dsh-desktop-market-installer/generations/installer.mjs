@@ -235,7 +235,9 @@ export async function installGeneration(options) {
   const { dshHome, pluginSpec, onTrace } = options
   const trace = (line) => onTrace?.(`generation-install: ${line}`)
   const layout = await ensureRegistryDirectories(dshHome)
-  const pluginName = options.expectedPluginName ?? (pluginSpec.replace(/@[^@/]+$/u, '') || pluginSpec)
+  // Known registry/path names make staging provenance readable; generic git and
+  // tarball specs are resolved to their actual direct dependency after pnpm runs.
+  let pluginName = options.expectedPluginName ?? (pluginSpec.replace(/@[^@/]+$/u, '') || pluginSpec)
 
   const stagingDir = join(layout.staging, randomUUID())
   await mkdir(stagingDir, { recursive: true })
@@ -312,6 +314,16 @@ export async function installGeneration(options) {
       return { ok: false, detail: diagnosticLine(output) ?? `pnpm exited ${code}` }
     }
     trace(`installed in ${Date.now() - started}ms`)
+
+    const stagingManifest = JSON.parse(await readFile(join(stagingDir, 'package.json'), 'utf8'))
+    const directDependencies = Object.keys(stagingManifest.dependencies ?? {})
+    if (directDependencies.length === 1 && directDependencies[0] !== undefined) {
+      pluginName = directDependencies[0]
+    }
+    if (options.expectedPluginName !== undefined && pluginName !== options.expectedPluginName) {
+      await cleanupStaging()
+      return { ok: false, detail: `pnpm installed ${pluginName}, expected ${options.expectedPluginName}` }
+    }
 
     const installedManifestPath = join(stagingDir, 'node_modules', pluginName, 'package.json')
     if (!existsSync(installedManifestPath)) {
