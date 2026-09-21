@@ -102,6 +102,8 @@ export interface EnterpriseServiceNote {
 }
 
 export interface EnterpriseServiceOptions {
+  desktopVersion?: string
+  activateDesktop?: () => Promise<void> | void
   vault: SecureEnterpriseCredentialVault
   fetchImpl: EnterpriseFetch
   allowInsecureLoopback: boolean
@@ -275,7 +277,8 @@ export class EnterpriseService {
                 code_challenge: pkce.codeChallenge,
                 code_challenge_method: 'S256',
                 state: pkce.state,
-                device_name: 'DSH Desktop'
+                device_name: 'DSH Desktop',
+                ...(this.options.desktopVersion ? { client_version: this.options.desktopVersion } : {})
               }
             })
           ).body,
@@ -439,6 +442,12 @@ export class EnterpriseService {
       await this.commitSession(token as EnterpriseCredentialSession, expectedEpoch)
       await this.syncCatalog(expectedEpoch, { includeUsage: true })
       this.note('login_committed', { originHash: hashEnterpriseOrigin(pending.base) })
+      try {
+        await this.options.activateDesktop?.()
+      } catch {
+        // A window activation failure must not invalidate a committed login.
+        this.note('desktop_activation_failed')
+      }
     } catch (error) {
       if (this.epoch !== expectedEpoch) return
       this.rememberRequest(error)

@@ -79,6 +79,7 @@ import {
 } from './gpu-fallback'
 import { secureWindow } from './security'
 import { startEnterpriseDesktop, type EnterpriseDesktopRuntime } from './enterprise/enterprise-desktop'
+import { migrateLegacyEnterpriseSettings } from './enterprise/legacy-settings-migration'
 import {
   allowInsecureEnterpriseLoopback,
   enterpriseLoginFromArgv,
@@ -1530,6 +1531,18 @@ function launchHarness(): Promise<void> {
     maintenanceAllowedRestoreId = undefined
     runtime.note('[desktop] profile maintenance done')
     await refreshMigrationRecoveryLock(dshHome)
+    try {
+      const legacyEnterprise = await migrateLegacyEnterpriseSettings(dshHome)
+      if (legacyEnterprise.changed) {
+        runtime.note(`[enterprise] retired legacy settings: ${legacyEnterprise.removed.join(', ')}`)
+      }
+    } catch (error) {
+      runtime.note(
+        `[enterprise] legacy settings migration failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
     void auditInstalledLaunchAgents(dshHome)
       .then(() => {
         runtime.note('[desktop] LaunchAgent audit done')
@@ -3374,6 +3387,13 @@ async function bootstrap(): Promise<void> {
   })
   try {
     enterpriseDesktop = await startEnterpriseDesktop({
+      desktopVersion: app.getVersion(),
+      activateDesktop: async () => {
+        const snapshot = runtime.snapshot()
+        if (snapshot.phase === 'ready' && snapshot.url) {
+          await openHarness(snapshot.url, 'user')
+        }
+      },
       userDataPath: app.getPath('userData'),
       safeStorage,
       fetchImpl: createElectronEnterpriseFetch(net.fetch.bind(net)),

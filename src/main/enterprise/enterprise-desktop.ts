@@ -19,6 +19,8 @@ export interface EnterpriseDesktopRuntime {
 }
 
 export async function startEnterpriseDesktop(options: {
+  desktopVersion?: string
+  activateDesktop?: () => Promise<void> | void
   userDataPath: string
   safeStorage: SafeStorageCryptoAdapter
   fetchImpl: EnterpriseFetch
@@ -30,6 +32,8 @@ export async function startEnterpriseDesktop(options: {
     options.safeStorage
   )
   const service = new EnterpriseService({
+    desktopVersion: options.desktopVersion,
+    activateDesktop: options.activateDesktop,
     vault,
     fetchImpl: options.fetchImpl,
     allowInsecureLoopback: options.allowInsecureLoopback,
