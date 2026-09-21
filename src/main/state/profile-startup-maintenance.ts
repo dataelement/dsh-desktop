@@ -29,10 +29,12 @@ export interface ProfileStartupMaintenanceDeps {
  * The single fail-closed owner of startup Profile mutations.
  *
  * A recovery-required journal short-circuits every mutator. A deferred
- * migration launches the byte-for-byte legacy Profile without projection,
- * prune, or repair after the failure. Startup never performs destructive
- * package repair or declaration pruning; it only reports inconsistencies for
- * an explicit recovery flow to handle later.
+ * migration keeps the legacy installation without projection,
+ * prune, or repair after the failure. Startup leaves destructive package
+ * repair to the explicit recovery flow.
+ * Bundle reconciliation still runs: missing installed layers are added and
+ * duplicate PPT layers owned by the Desktop composer are removed from the
+ * manifest only. Package files, user patches and plugin data remain intact.
  * The market's verified baseline is the targeted exception: dshmarket is a
  * core bundle, never a generation, and the app cannot boot without a working
  * one — so it is demoted out of any generation and brought to the baseline in
