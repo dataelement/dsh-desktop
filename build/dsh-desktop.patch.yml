@@ -1,3 +1,10 @@
+# Harness's runtime warnings and errors live only in an in-memory logger ring,
+# and session activation failures only reach the client. Bridge both to
+# stderr so harness.log keeps them. First, so it hears as much as it can.
+- insert:
+    - id: dsh-desktop-log-bridge
+      name: dsh-desktop-log-bridge
+
 # Keep the stock directory-picker (auto) row active: the native backend
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
 # plugins reading the seam) work unmodified. The client surface keeps its
@@ -27,15 +34,6 @@
       name: 'dsh-ppt-composer'
       config:
         root: !!js dshHomePath('kimi-ppt')
-
-# dsh-market normally offers to restart its own Node process after mutations.
-# The desktop shell has the real lifecycle authority, so keep that behavior off
-# whenever the optional plugin is present in the composed profile.
-- id: dsh-market
-  inject: [desktopProfiles]
-  config:
-    profile: web
-    allowRestart: false
 
 # Harness creates the full Cordis HMR service after boot when no `hmr` service
 # exists, and that service throws without Node's internal module loader —

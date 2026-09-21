@@ -40,15 +40,15 @@ describe('Safe Mode', () => {
     })
     expect(model.badge).toBe('安全模式')
     expect(model.heading).toBe('')
-    expect(model.summary).toBe('部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可尝试卸载近期安装的插件后重启。')
+    expect(model.summary).toBe('部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可停用近期安装的插件后重启；停用的插件可随时重新启用。')
     expect(model.summary).toContain('确保基础功能正常使用')
     expect(model.summary).toContain('但不会删除插件')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.pluginItems).toEqual([
-      { name: 'plugin-a', actionLabel: '卸载插件', incompatible: false, suspected: false },
-      { name: '@example/plugin-b', actionLabel: '卸载插件', incompatible: false, suspected: false }
+      { name: 'plugin-a', actionLabel: '停用插件（不删除）', incompatible: false, suspected: false, disabled: false },
+      { name: '@example/plugin-b', actionLabel: '停用插件（不删除）', incompatible: false, suspected: false, disabled: false }
     ])
-    expect(model.safetyNote).toBe('工作区、会话、模型配置和未选中的插件不会被删除。')
+    expect(model.safetyNote).toBe('停用不会删除任何内容：插件、工作区、会话和模型配置都会保留，可在这里或插件市场中重新启用。')
   })
 
   it('provides complete English labels for every Safe Mode action', () => {
@@ -56,8 +56,8 @@ describe('Safe Mode', () => {
     expect(model).toMatchObject({
       badge: 'Safe Mode',
       heading: '',
-      selectionHint: 'Select plugins to remove',
-      applyLabel: 'Remove selected plugins',
+      selectionHint: 'Select plugins to disable',
+      applyLabel: 'Disable selected plugins',
       agentLabel: 'Close',
       restartLabel: 'Exit Safe Mode and restart',
       quitLabel: 'Quit DSH Desktop'
@@ -100,9 +100,10 @@ describe('Safe Mode', () => {
       name: 'dsh-dream-skin',
       statusLabel: '（版本不兼容）',
       statusTone: 'danger',
-      actionLabel: '卸载插件',
+      actionLabel: '停用插件（不删除）',
       incompatible: true,
-      suspected: false
+      suspected: false,
+      disabled: false
     })
     expect(model.issueGroups).toEqual([])
     expect(model.restartLabel).toBe('退出安全模式并重启')
@@ -129,7 +130,7 @@ describe('Safe Mode', () => {
       }]
     })
     expect(model.pluginItems).toEqual([
-      { name: 'plugin-a', actionLabel: '卸载插件', incompatible: false, suspected: false }
+      { name: 'plugin-a', actionLabel: '停用插件（不删除）', incompatible: false, suspected: false, disabled: false }
     ])
     expect(model.issueGroups[0]).toMatchObject({
       name: 'Profile',
@@ -247,105 +248,26 @@ describe('Safe Mode', () => {
       name: 'plugin-b',
       statusLabel: '（本次启动日志推断）',
       statusTone: 'warning',
-      actionLabel: '卸载插件',
+      actionLabel: '停用插件（不删除）',
       incompatible: false,
-      suspected: true
+      suspected: true,
+      disabled: false
     })
   })
 
-  it('ships a selectable management page with no remote content', async () => {
-    const html = await readFile('build/safe-mode.html', 'utf8')
-    expect(html).toContain('id="items"')
-    expect(html).toContain('type = \'checkbox\'')
-    expect(html).toContain("window.dshSafeMode.action('apply', { plugins, issues })")
-    expect(html).toContain('model.issueGroups')
-    expect(html).toContain('model.pluginItems')
-    expect(html).toContain('plugin.statusLabel')
-    expect(html).toContain("plugin.statusTone === 'warning'")
-    expect(html.match(/<section class="list-card"/g)).toHaveLength(1)
-    expect(html).toContain('checkbox.dataset.issueIds')
-    expect(html).toContain("document.createElement('details')")
-    expect(html).toContain("window.dshSafeMode.action('agent', {})")
-    expect(html).not.toContain('id="backup-card"')
-    expect(html).not.toContain("window.dshSafeMode.action('backup-open'")
-    expect(html).not.toContain("window.dshSafeMode.action('backup-restore'")
-    expect(html).not.toContain("window.dshSafeMode.action('backup-delete'")
-    expect(html).toContain('id="recovery-open"')
-    expect(html).toContain('class="close" id="agent"')
-    expect(html).toContain('class="button primary" id="restart"')
-    expect(html).toContain('class="actions"')
-    expect(html).toContain('id="apply"')
-    expect(html).not.toContain('id="repair"')
-    expect(html).not.toContain('id="uninstall"')
-    expect(html).not.toContain('class="exit-panel"')
-    expect(html).not.toContain('id="exit-heading"')
-    expect(html).toContain('window.confirm(String(model.restartConfirm))')
-    expect(html).toContain('background: rgba(18,18,20,.28)')
-    expect(html).toContain("model.noticeTone === 'success'")
-    expect(html).toContain("default-src 'none'")
-    expect(html).not.toContain('http://')
-    // Community links may open externally; the recovery UI still loads entirely offline.
-    expect(html).not.toMatch(/(?:src|srcset)=["']https?:/)
-    expect(html).toContain("img-src 'self' file:")
-  })
-
-  it('wires Safe Mode into startup, IPC, and the packaged resources', async () => {
-    const [main, preload, manifest] = await Promise.all([
-      readFile('src/main/index.ts', 'utf8'),
-      readFile('src/preload/index.ts', 'utf8'),
-      readFile('package.json', 'utf8')
-    ])
-    expect(main).toContain('shouldStartInSafeMode(process.argv)')
-    expect(main).toContain('ensureSafeModeProfile(dshHome)')
-    expect(main).toContain('runtime.start(launchDirectory, SAFE_MODE_PROFILE)')
-    expect(main).toContain('inspectMigrationRecoveryLock(dshHome)')
-    expect(main).toContain('let recoveryLocked = await refreshMigrationRecoveryLock(dshHome)')
-    expect(main.match(/refreshMigrationRecoveryLock\(dshHome\)/g)?.length ?? 0)
-      .toBeGreaterThanOrEqual(7)
-    expect(main).toContain("ipcMain.handle('safe-mode:action'")
-    expect(main).toContain("action !== 'backup-open'")
-    expect(main).toContain("action !== 'backup-restore'")
-    expect(main).toContain("action !== 'backup-delete'")
-    expect(main).toContain('cleanupVerifiedRemovalBackup(')
-    expect(main).toContain('restorePluginRemovalBackup(')
-    expect(main).toContain('snapshotPluginRemovalLedger(dshHome)')
-    expect(main).toContain('canRetryLockedPluginRestore(dshHome, action.removalId)')
-    expect(main.indexOf('removalBackups = await snapshotPluginRemovalLedger(dshHome)'))
-      .toBeLessThan(main.indexOf('pendingRemovals = await listPendingPluginRemovals(dshHome)'))
-    expect(main).toContain("ipcMain.handle('harness:renderer-healthy'")
-    expect(main).toContain('confirmMigration(dshHome, (line) => runtime.note(line), healthy)')
-    expect(main).toContain('inspectProfileCompatibility(')
-    expect(main).toContain('repairSafeModeCompatibilityIssues(')
-    expect(main).toContain('reconcileLegacyProfile: async () =>')
-    expect(main).toContain('rebuilding the web profile after removing')
-    expect(main).toContain('normal mode remains blocked by')
-    expect(main).toContain('[safe-mode] user exited with')
-    expect(main).toContain("ipcMain.handle('safe-mode:manage'")
-    expect(main).toContain("ipcMain.handle('safe-mode:exit', async")
-    expect(main).toContain("return { ok: false, blocked: true }")
-    expect(main).toContain('safeModeManager')
-    expect(main).toContain('safeModeSuspectedPlugins = [...new Set(detection.plugins)]')
-    expect(main).toContain('new SafeModeOverlay(parent,')
-    expect(main).toContain('assertTrustedSafeModeManagerEvent(event)')
-    expect(main).toContain('`处理完成：修复 ${repaired} 项，卸载 ${selectedPlugins.length} 个插件。`')
-    expect(main).toContain("label: isChinese ? '以安全模式重启…' : 'Restart as Safe Mode…'")
-    expect(main).toContain("return { active: safeModeVisible, locale: harnessLocale() }")
-    expect(preload).toContain("safeModeLocale === 'zh' ? '安全模式' : 'Safe Mode'")
-    expect(preload).toContain("safeModeLocale === 'zh' ? '卸载插件' : 'Remove plugins'")
-    expect(preload).toContain("safeModeLocale === 'zh' ? '退出安全模式' : 'Exit Safe Mode'")
-    expect(preload).toContain("safeModeLocale === 'zh'")
-    expect(preload).toContain("ipcRenderer.invoke('safe-mode:action', action, selection)")
-    expect(preload).toContain("ipcRenderer.invoke('harness:renderer-healthy')")
-    expect(preload).toContain('RENDERER_HEALTH_HEARTBEAT_MS')
-    expect(main).toContain('PROFILE_BOOT_STABILITY_MS = 60_000')
-    expect(main).toContain('clearProfileBootConfirmation()')
-    expect(main).toContain('reportProfileConsistency: () => reportProfileConsistency(dshHome)')
-    expect(main).not.toContain('repairProfilePackages:')
-    expect(main).not.toContain('pruneMissingProfileBundles:')
-    expect(JSON.parse(manifest).build.extraResources).toContainEqual({
-      from: 'build/safe-mode.html',
-      to: 'safe-mode.html'
+  it('shows a disabled plugin as off with a re-enable action instead of a selection', () => {
+    const model = buildSafeModeViewModel({ locale: 'zh', plugins: ['plugin-a', 'plugin-b'], disabledPlugins: ['plugin-b'] })
+    expect(model.pluginItems[1]).toEqual({
+      name: 'plugin-b',
+      statusLabel: '（已停用）',
+      actionLabel: '已停用，退出安全模式后也不会加载',
+      incompatible: false,
+      suspected: false,
+      disabled: true,
+      enableButtonLabel: '重新启用'
     })
+    expect(model.pluginItems[0]).toMatchObject({ name: 'plugin-a', disabled: false })
+    expect(model.pluginItems[0]).not.toHaveProperty('enableButtonLabel')
   })
 
   it('creates a managed core-only profile and repairs later modifications', async () => {

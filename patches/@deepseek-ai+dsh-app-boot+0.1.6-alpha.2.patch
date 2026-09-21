@@ -1,0 +1,129 @@
+diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+index 0ce935f..cbf78cf 100644
+--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
+@@ -430,14 +430,28 @@ function ensureSymlink(link, target) {
+ 		}
+ 		if (stat !== void 0) {
+ 			if (symlinkPointsTo(link, target)) return;
+-			unlinkSync(link);
++			try {
++				unlinkSync(link);
++			} catch (unlinkError) {
++				if (process.platform === "win32") rmSync(link, { recursive: true, force: true });
++				else throw unlinkError;
++			}
+ 		}
+ 	}
+ 	try {
+ 		symlinkSync(target, link, "junction");
+ 	} catch (error) {
+ 		/* v8 ignore next 4 */
+-		if (error.code !== "EEXIST" || !lstatSync(link).isSymbolicLink() || !symlinkPointsTo(link, target)) throw error;
++		if (error.code !== "EEXIST" || !lstatSync(link).isSymbolicLink() || !symlinkPointsTo(link, target)) {
++			if (process.platform === "win32") {
++				try {
++					rmSync(link, { recursive: true, force: true });
++					symlinkSync(target, link, "junction");
++					return;
++				} catch { /* ignore */ }
++			}
++			throw error;
++		}
+ 	}
+ }
+ /** Add one profile-owned fallback link without replacing a pnpm-managed entry. */
+@@ -913,18 +927,41 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
+ * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
+ * @returns the resolved bundle layers and optional user patch layer.
+ */
++// Preserve provenance through structuredClone and patch composition. Only loader
++// rows are tagged; plugin config is never inspected or included in failure reports.
++function annotatePluginPatches(patches, owner) {
++	const entry = (row) => {
++		row.__dshPluginOwner = owner;
++		if (row.group && Array.isArray(row.config)) row.config.forEach(entry);
++	};
++	for (const patch of patches) {
++		if (Array.isArray(patch.insert)) patch.insert.forEach(entry);
++		else entry(patch);
++	}
++	return patches;
++}
+ function loadProfileDirectory(binName, dir, installAnchor, options = {}) {
+ 	const layers = (readProfileManifest(binName, dir).dsh?.profile?.bundles ?? []).map((packageName) => {
+-		const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir);
+-		const declared = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).dsh?.bundle?.patch;
+-		if (declared === void 0) throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`);
+-		const patchPath = join(packageDir, declared);
+-		return {
+-			packageName,
+-			packageDir,
+-			patchPath,
+-			patches: loadOverlayPatches(binName, patchPath)
+-		};
++		const owner = { packageName };
++		try {
++			const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir);
++			owner.packageDir = packageDir;
++			const packageManifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
++			owner.version = packageManifest.version;
++			const declared = packageManifest.dsh?.bundle?.patch;
++			if (declared === void 0) throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`);
++			const patchPath = join(packageDir, declared);
++			return {
++				packageName,
++				packageDir,
++				patchPath,
++				patches: annotatePluginPatches(loadOverlayPatches(binName, patchPath), owner)
++			};
++		} catch (cause) {
++			const error = new Error(`failed to prepare profile bundle ${packageName}`, { cause });
++			error.dshPluginFailure = { stage: "prepare", packageName, owner, chain: [], message: cause instanceof Error ? cause.message : String(cause) };
++			throw error;
++		}
+ 	});
+ 	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
+ 	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
+@@ -2503,7 +2540,10 @@ var StartupError = class extends Error {
+ 	* @param entries - inactive plugin metadata and original failure values.
+ 	*/
+ 	constructor(message, entries) {
+-		const failures = entries.flatMap(({ outcome }) => outcome.kind === "failed" ? [outcome.error] : []);
++		const failures = entries.flatMap(({ outcome, failure }) => {
++			const original = outcome.kind === "failed" ? [outcome.error] : [];
++			return failure === void 0 ? original : [...original, failure];
++		});
+ 		super(message, failures.length > 0 ? { cause: new AggregateError(failures, "Plugin activation failures") } : void 0);
+ 		this.entries = entries;
+ 		Object.defineProperties(this, {
+@@ -2641,13 +2681,14 @@ function startupDiagnostic(binName, failures, required) {
+ */
+ async function auditStartupEntries(ctx, binName, warn = (line) => void process.stderr.write(line)) {
+ 	const failures = await inactiveEntries(ctx);
+-	const required = new Set(failures.filter(({ entry }) => entry === bootstrapIncludes.get(ctx) || requiredStartupEntryIds.has(entry.options.id)).map(({ entry }) => entry));
++	const required = new Set(failures.map(({ entry }) => entry));
+ 	if (required.size > 0) throw new StartupError(startupDiagnostic(binName, failures, required), failures.map(({ entry, outcome }) => ({
+ 		id: entry.options.id,
+ 		module: entry.options.name,
+ 		required: required.has(entry),
+ 		fiberState: entry.fiber?.state,
+-		outcome
++		outcome,
++		failure: entry._failure("activate", outcome.kind === "failed" ? outcome.error : new Error(`pending (waiting for ${outcome.missing.length === 1 ? "service" : "services"}: ${outcome.missing.join(", ") || "unknown"})`))
+ 	})));
+ 	if (failures.length > 0) warn(activationDiagnostic(binName, failures));
+ }
+@@ -2719,7 +2760,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
+ 		await auditStartupEntries(ctx, binName);
+ 		return ctx;
+ 	} catch (cause) {
+-		await ctx.fiber.dispose();
++		try {
++			await ctx.fiber.dispose();
++		} catch (cleanupError) {
++			cause = new AggregateError([cause, cleanupError], "plugin boot and cleanup failed");
++		}
+ 		if (cause instanceof StartupError) {
+ 			cause.startup = {
+ 				configurationPath: absoluteConfigPath,

@@ -559,6 +559,8 @@ export type MigrationOutcome =
       outcome: 'deferred-failure'
       reason: string
       profileState: 'legacy-intact' | 'recovery-required'
+      /** Community plugins still waiting to move; the legacy profile may only hold their manifests. */
+      pendingPlugins?: string[]
     }
 
 export type MigrationRecoveryOutcome =
@@ -572,10 +574,16 @@ function noop(): MigrationOutcome {
 
 function deferred(
   reason: string,
-  profileState: 'legacy-intact' | 'recovery-required' = 'legacy-intact'
+  profileState: 'legacy-intact' | 'recovery-required' = 'legacy-intact',
+  pendingPlugins?: string[]
 ): MigrationOutcome {
-  return { outcome: 'deferred-failure', reason, profileState }
+  return pendingPlugins?.length
+    ? { outcome: 'deferred-failure', reason, profileState, pendingPlugins }
+    : { outcome: 'deferred-failure', reason, profileState }
 }
+
+/** Filesystem refusals that clear on their own (security scans, delete-pending entries). */
+const TRANSIENT_FILESYSTEM_ERROR = /\b(?:EPERM|EBUSY|EACCES)\b/
 
 function migrated(): MigrationOutcome {
   return { outcome: 'migrated' }
@@ -632,15 +640,15 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
     const fingerprint = await migrationInputFingerprint(dshHome, plugins)
     if (await readDeferredFingerprint(dshHome) === fingerprint) {
       note('[desktop] migration deferred: this exact profile already failed preflight')
-      return deferred(reason)
+      return deferred(reason, 'legacy-intact', plugins)
     }
     note(`[desktop] migration deferred before staging: ${reason}`)
     await writeDeferred(dshHome, fingerprint, reason).catch(() => undefined)
-    return deferred(reason)
+    return deferred(reason, 'legacy-intact', plugins)
   }
   if (await readDeferredFingerprint(dshHome) === plan.fingerprint) {
     note('[desktop] migration deferred: this exact profile already failed preflight')
-    return deferred('previously failed preflight for this exact fingerprint')
+    return deferred('previously failed preflight for this exact fingerprint', 'legacy-intact', plugins)
   }
 
   note(`[desktop] migration: moving ${plugins.length} plugin(s) to generations: ${plugins.join(', ')}`)
@@ -653,7 +661,7 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
     }`
     note(`[desktop] migration deferred before staging: ${reason}`)
     await writeDeferred(dshHome, plan.fingerprint, reason).catch(() => undefined)
-    return deferred(reason)
+    return deferred(reason, 'legacy-intact', plugins)
   }
   try {
     const generationIds: string[] = []
@@ -723,18 +731,22 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
         snapshotError instanceof Error ? snapshotError.message : String(snapshotError)
       }`
       note(`[desktop] migration recovery required: ${combined}`)
-      return deferred(combined, 'recovery-required')
+      return deferred(combined, 'recovery-required', plugins)
     }
     if (snapshot !== undefined) {
       const rollback = await rollBackMigration(dshHome, note, reason)
       if (rollback.outcome === 'recovery-required') {
         const combined = `${reason}; ${rollback.reason}`
         await writeDeferred(dshHome, plan.fingerprint, combined).catch(() => undefined)
-        return deferred(combined, 'recovery-required')
+        return deferred(combined, 'recovery-required', plugins)
       }
     }
-    await writeDeferred(dshHome, plan.fingerprint, reason).catch(() => undefined)
-    return deferred(reason)
+    // A transient refusal must not freeze this exact profile for hours: its
+    // plugins are only manifests until the move succeeds, so retry next launch.
+    if (!TRANSIENT_FILESYSTEM_ERROR.test(reason)) {
+      await writeDeferred(dshHome, plan.fingerprint, reason).catch(() => undefined)
+    }
+    return deferred(reason, 'legacy-intact', plugins)
   }
 }
 
@@ -972,7 +984,9 @@ export async function rollBackMigration(
         const plugins = await communityPlugins(dshHome)
         state.fingerprint = await migrationInputFingerprint(dshHome, plugins)
       }
-      await writeDeferred(dshHome, state.fingerprint, failureReason)
+      if (!TRANSIENT_FILESYSTEM_ERROR.test(failureReason)) {
+        await writeDeferred(dshHome, state.fingerprint, failureReason)
+      }
       state.phase = 'rollback-cleanup'
       await writeSnapshotState(dshHome, state)
     } catch (error) {

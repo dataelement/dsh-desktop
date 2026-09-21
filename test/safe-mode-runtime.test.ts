@@ -6,6 +6,9 @@ import { pathToFileURL } from 'node:url'
 import { it, expect } from 'vitest'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/state/safe-mode-profile'
+import { BRIDGE_READY_LINE } from '../packages/dsh-desktop-log-bridge/index.js'
+import { resolveTestNodeExecutable } from './node-executable'
+const TEST_NODE_EXECUTABLE = resolveTestNodeExecutable()
 
 it('boots recovery when a PPT dependency is missing without loading optional Desktop plugins', async () => {
   const root = resolve(import.meta.dirname, '..')
@@ -29,7 +32,7 @@ registerHooks({ resolve(specifier, context, next) {
   const makeRuntime = (dshSafePatchPath: string, logName: string) => new HarnessRuntime({
     dshEntryPath: join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
     nodeEntryPath: join(root, 'build/harness-node-entry.mjs'),
-    nodeExecutablePath: process.execPath,
+    nodeExecutablePath: TEST_NODE_EXECUTABLE,
     dshPatchPath: normalPatch,
     dshSafePatchPath,
     dshHome: home,
@@ -48,11 +51,15 @@ registerHooks({ resolve(specifier, context, next) {
     await ensureSafeModeProfile(home)
     await broken.start(home, SAFE_MODE_PROFILE)
     expect(broken.snapshot().phase).toBe('failed')
-    expect(broken.snapshot().message, broken.snapshot().logs.join('\n')).toContain(missing)
+    expect(broken.snapshot().logs.join('\n')).toContain(missing)
     await broken.stop()
 
     await recovered.start(home, SAFE_MODE_PROFILE)
     expect(recovered.snapshot().phase, recovered.snapshot().logs.join('\n')).toBe('ready')
+    // The runtime logger bridge is composed into recovery too. It announces
+    // itself on stdout; a clean boot bridges no runtime warning or error.
+    expect(recovered.snapshot().logs).toContain(`[stdout] ${BRIDGE_READY_LINE}`)
+    expect(recovered.snapshot().logs.filter((line) => line.startsWith('[stderr] [harness-log]'))).toEqual([])
     expect(recovered.snapshot().authToken).toBeTruthy()
     expect((await fetch(recovered.snapshot().url!)).status).toBe(401)
     // Recovery uses its own overlay and never edits the normal composition.

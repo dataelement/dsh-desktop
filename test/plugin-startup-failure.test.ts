@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { detectPluginRecovery } from '../src/main/plugin-recovery-detection'
 import { parsePluginStartupFailures, PLUGIN_FAILURE_PREFIX } from '../src/shared/plugin-startup-failure'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
+import { resolveTestNodeExecutable } from './node-executable'
+const TEST_NODE_EXECUTABLE = resolveTestNodeExecutable()
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
@@ -49,7 +51,7 @@ async function fixture(sources: string[]) {
 }
 
 function run(entry: string) {
-  const result = spawnSync(process.execPath, [resolve('build/harness-node-entry.mjs'), entry], {
+  const result = spawnSync(TEST_NODE_EXECUTABLE, [resolve('build/harness-node-entry.mjs'), entry], {
     encoding: 'utf8', timeout: 15_000
   })
   expect(result.error).toBeUndefined()
@@ -111,7 +113,7 @@ describe('structured startup failures through the real bundled loader', () => {
 
   it('reports the same provenance through the production DSH CLI entry', async () => {
     const { home, names } = await fixture(['export default function() { throw new TypeError("startup API mismatch"); }'])
-    const result = spawnSync(process.execPath, [
+    const result = spawnSync(TEST_NODE_EXECUTABLE, [
       resolve('build/harness-node-entry.mjs'), resolve('node_modules/@deepseek-ai/dsh/lib/bin.js'),
       '--profile', 'web'
     ], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, DSH_HOME: home } })
@@ -149,7 +151,7 @@ describe('structured startup failures through the real bundled loader', () => {
 
   it('keeps successful bundle loading unchanged', async () => {
     const { entry } = await fixture(['export default function() {}'])
-    const result = spawnSync(process.execPath, [resolve('build/harness-node-entry.mjs'), entry], {
+    const result = spawnSync(TEST_NODE_EXECUTABLE, [resolve('build/harness-node-entry.mjs'), entry], {
       encoding: 'utf8', timeout: 5_000
     })
     expect(result.status, result.stderr).toBe(0)
@@ -181,7 +183,7 @@ describe('structured startup failures through the real bundled loader', () => {
     const runtime = new HarnessRuntime({
       dshEntryPath: entry,
       nodeEntryPath: resolve('build/harness-node-entry.mjs'),
-      nodeExecutablePath: process.execPath,
+      nodeExecutablePath: TEST_NODE_EXECUTABLE,
       dshPatchPath: entry,
       dshSafePatchPath: entry,
       dshHome: home,

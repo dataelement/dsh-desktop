@@ -1,0 +1,80 @@
+diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
+index 1817f98..b40ea1a 100644
+--- a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
+@@ -454,6 +454,26 @@ var WorkspaceRegistry = class extends Service {
+ 			});
+ 		});
+ 	}
++	/** Remove a permanently deleted Session from Workspace and archive state. */
++	forgetSession(sessionId) {
++		return this.enqueueOperation(async () => {
++			for (const [workspaceId, record] of this.requireTable().entries()) {
++				if (!record.sessionIds.includes(sessionId)) continue;
++				const entity = this.entities.get(workspaceId);
++				if (entity === void 0) throw new Error(`cannot forget session '${sessionId}': workspace '${workspaceId}' is not published`);
++				await entity.detachSession(sessionId);
++				break;
++			}
++			const state = this.requireState();
++			if (state.archivedSessionIds.includes(sessionId)) await this.setState({
++				...state,
++				archivedSessionIds: state.archivedSessionIds.filter((id) => id !== sessionId)
++			});
++			this.headers.delete(sessionId);
++			this.sessionPaths.delete(sessionId);
++			this.invalidSessionPaths.delete(sessionId);
++		});
++	}
+ 	/**
+ 	* Unarchive one session durably by dropping it from the registry-global
+ 	* archive set; the accounting slot was never touched, so the session
+diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
+index fcd0e0b..78bc042 100644
+--- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
+@@ -122,6 +122,8 @@ export declare class WorkspaceRegistry extends Service {
+      * @returns resolution after durability.
+      */
+     archiveSession(sessionId: SessionId): Promise<void>;
++    /** Remove a permanently deleted Session from Workspace and archive state. */
++    forgetSession(sessionId: SessionId): Promise<void>;
+     /**
+      * Unarchive one session durably by dropping it from the registry-global
+      * archive set; the accounting slot was never touched, so the session
+diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
+index bda6c50..654c41e 100644
+--- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
++++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
+@@ -213,6 +213,31 @@ export class WorkspaceRegistry extends Service {
+             await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] });
+         });
+     }
++    /** Remove a permanently deleted Session from Workspace and archive state. */
++    forgetSession(sessionId) {
++        return this.enqueueOperation(async () => {
++            for (const [workspaceId, record] of this.requireTable().entries()) {
++                if (!record.sessionIds.includes(sessionId))
++                    continue;
++                const entity = this.entities.get(workspaceId);
++                if (entity === undefined) {
++                    throw new Error(`cannot forget session '${sessionId}': workspace '${workspaceId}' is not published`);
++                }
++                await entity.detachSession(sessionId);
++                break;
++            }
++            const state = this.requireState();
++            if (state.archivedSessionIds.includes(sessionId)) {
++                await this.setState({
++                    ...state,
++                    archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
++                });
++            }
++            this.headers.delete(sessionId);
++            this.sessionPaths.delete(sessionId);
++            this.invalidSessionPaths.delete(sessionId);
++        });
++    }
+     /**
+      * Unarchive one session durably by dropping it from the registry-global
+      * archive set; the accounting slot was never touched, so the session

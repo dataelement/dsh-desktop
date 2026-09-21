@@ -10,7 +10,7 @@ import {
   writeDesired
 } from 'dsh-desktop-market-installer/generations/registry'
 import { resolveMarketRegistry } from 'dsh-desktop-market-installer/market-registry'
-import { lstat, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { installProfileDependenciesWithDsh } from '../runtime/profile-plugin-command'
 
@@ -166,7 +166,9 @@ export async function upgradeMarketInSharedTree(
         throw error
       })
       if (entry?.isSymbolicLink()) {
-        note?.(`[plugin-upgrade] dropping the ${MARKET_PACKAGE} generation link before reinstalling`)
+        const target = await readlink(marketPath)
+        const isGenLink = target.includes('.generations')
+        note?.(`[plugin-upgrade] dropping the ${MARKET_PACKAGE} ${isGenLink ? 'generation' : 'store'} link before reinstalling`)
         // Remove only the pointer. The generation directory it targets is
         // left alone, so nothing that already loaded it is disturbed.
         await rm(marketPath, { force: true })
@@ -187,7 +189,10 @@ export async function upgradeMarketInSharedTree(
       // A zero exit code can be a CLI no-op. Verify the public Profile path
       // before retiring any generation ownership or reporting success.
       const installed = JSON.parse(await readFile(join(marketPath, 'package.json'), 'utf8')) as { version?: string }
-      if (installed.version !== targetVersion || (await lstat(marketPath)).isSymbolicLink()) {
+      const afterEntry = await lstat(marketPath)
+      const afterIsGenerationLink = afterEntry.isSymbolicLink() &&
+        (await readlink(marketPath)).includes('.generations')
+      if (installed.version !== targetVersion || afterIsGenerationLink) {
         throw new Error(`Market install expected a shared directory at ${targetVersion}, found ${installed.version ?? 'missing'} or a link`)
       }
 

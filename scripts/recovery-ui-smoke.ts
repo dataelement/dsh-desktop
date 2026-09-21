@@ -123,7 +123,10 @@ async function main(): Promise<void> {
         const actions = await contents.executeJavaScript(`Array.from(document.querySelectorAll('.actions button')).filter(b => b.getBoundingClientRect().height > 0).map(b => b.textContent)`)
         const safeModeLabel = locale === 'zh' ? '进入安全模式' : 'Enter Safe Mode'
         assert.equal(actions.filter((label: string) => label === safeModeLabel).length, 1)
-        if (scenario === 'unidentified-plugin') assert.deepEqual(actions, [safeModeLabel])
+        // With no culprit to repair, the agent sits beside Safe Mode; otherwise it stays out of the way.
+        const agentLabel = locale === 'zh' ? '智能修复 Agent' : 'Repair agent'
+        if (scenario === 'unidentified-plugin') assert.deepEqual(actions, [agentLabel, safeModeLabel])
+        else assert.equal(actions.includes(agentLabel), false)
       }
       const prefix = `${scenario}-${locale}-${theme}-${width}`
       await capture(contents, join(output, `${prefix}.png`))
@@ -141,7 +144,7 @@ async function main(): Promise<void> {
       await contents.executeJavaScript("document.getElementById('community-discord').click()")
       await delay(60)
       assert.equal(contents.getURL(), before)
-      assert.deepEqual(external.splice(0), ['https://discord.gg/he2gAKCpj'])
+      assert.deepEqual(external.splice(0), ['https://discord.gg/7Xgf3qe3Qp'])
       if (scenario === 'unidentified-plugin') {
         const action = await contents.executeJavaScript(`(() => {
           let action;

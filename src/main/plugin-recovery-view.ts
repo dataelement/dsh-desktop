@@ -10,6 +10,20 @@ export interface PluginRecoveryUpgradeCandidate {
   upgradeHint?: string
 }
 
+/**
+ * The plugin market is a core bundle, so it never joins `plugins` (whose
+ * removal path refuses core bundles). When the failed launch names it, the
+ * page shows it as one more plugin row: upgrade it or remove it.
+ */
+export interface PluginRecoveryMarketCheck {
+  name: string
+  installedVersion?: string
+  hint: string
+  /** Offered only when the market check found a compatible release not yet tried. */
+  upgradeLabel?: string
+  removeLabel: string
+}
+
 export interface PluginRecoveryViewModel {
   locale: PluginRecoveryLocale
   brand: string
@@ -27,6 +41,9 @@ export interface PluginRecoveryViewModel {
   primaryBusyLabel: string
   upgradeCandidate?: PluginRecoveryUpgradeCandidate
   pluginChecks?: PluginRecoveryCheck[]
+  marketCheck?: PluginRecoveryMarketCheck
+  /** The market is the only culprit: the primary button upgrades it, or removes it. */
+  marketPrimary: boolean
   retryCheckLabel?: string
   autoProcessLabel?: string
   upgradeLabel?: string
@@ -165,6 +182,11 @@ export function buildPluginRecoveryViewModel(options: {
   notice?: string
   upgradeCandidate?: PluginRecoveryUpgradeCandidate
   pluginChecks?: PluginRecoveryCheck[]
+  market?: {
+    installedVersion?: string
+    upgradeVersion?: string
+    hint?: string
+  }
 }): PluginRecoveryViewModel {
   const { snapshot, locale, notice, upgradeCandidate } = options
   const pluginPackages = [...new Set(options.plugins)]
@@ -176,6 +198,9 @@ export function buildPluginRecoveryViewModel(options: {
   const plan = planPluginRecovery(options.pluginChecks ?? [])
   const hasActions = plan.upgrades.length + plan.removals.length > 0
   const retryCheck = (options.pluginChecks?.length ?? 0) > 0 && !hasActions
+  const marketCheck = options.market ? buildMarketCheck(locale, options.market) : undefined
+  const marketPrimary = marketCheck !== undefined && !canUninstall
+  const marketUpgrade = marketCheck?.upgradeLabel !== undefined
 
   if (locale === 'zh') {
     return {
@@ -184,8 +209,8 @@ export function buildPluginRecoveryViewModel(options: {
       badge: '启动修复',
       heading: canUninstall
         ? multiple ? `发现 ${plugins.length} 个导致启动失败的插件` : '发现导致启动失败的插件'
-        : 'Harness 暂时无法启动',
-      summary: canUninstall
+        : marketPrimary ? '插件市场导致启动失败' : 'Harness 暂时无法启动',
+      summary: canUninstall || marketPrimary
         ? ''
         : '暂时无法定位到具体插件。你可以进入安全模式，停用所有第三方插件并继续使用 Agent。',
       reasonTitle: description.title,
@@ -199,11 +224,15 @@ export function buildPluginRecoveryViewModel(options: {
       safetyNote: '工作区、会话、模型配置和其他插件不会被删除。',
       primaryLabel: canUninstall
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
-        : '进入安全模式',
-      primaryBusyLabel: canUninstall ? '正在处理并重新检测…' : '正在进入安全模式…',
+        : marketPrimary ? marketUpgrade ? '升级插件并重启' : '卸载此插件并继续检测' : '进入安全模式',
+      primaryBusyLabel: canUninstall || (marketPrimary && !marketUpgrade)
+        ? '正在处理并重新检测…'
+        : marketPrimary ? '正在升级…' : '正在进入安全模式…',
       autoProcessLabel: hasActions ? `一键自动处理（升级 ${plan.upgrades.length}，卸载 ${plan.removals.length}）` : undefined,
       retryCheckLabel: retryCheck ? '重新检查更新' : undefined,
       pluginChecks: options.pluginChecks,
+      ...(marketCheck ? { marketCheck } : {}),
+      marketPrimary,
       upgradeCandidate,
       upgradeLabel: upgradeCandidate
         ? '升级插件并重启'
@@ -231,8 +260,8 @@ export function buildPluginRecoveryViewModel(options: {
     badge: 'Startup recovery',
     heading: canUninstall
       ? multiple ? `${plugins.length} plugins are preventing startup` : 'A plugin is preventing startup'
-      : 'Harness could not start',
-    summary: canUninstall
+      : marketPrimary ? 'The plugin market is preventing startup' : 'Harness could not start',
+    summary: canUninstall || marketPrimary
       ? ''
       : 'No specific plugin could be identified. Enter Safe Mode to disable all third-party plugins and keep using the Agent.',
     reasonTitle: description.title,
@@ -246,11 +275,15 @@ export function buildPluginRecoveryViewModel(options: {
     safetyNote: 'Your workspaces, sessions, model settings, and other plugins will not be removed.',
     primaryLabel: canUninstall
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
-      : 'Enter Safe Mode',
-    primaryBusyLabel: canUninstall ? 'Removing and checking again…' : 'Entering Safe Mode…',
+      : marketPrimary ? marketUpgrade ? 'Upgrade plugin and restart' : 'Remove this plugin and continue' : 'Enter Safe Mode',
+    primaryBusyLabel: canUninstall || (marketPrimary && !marketUpgrade)
+      ? 'Removing and checking again…'
+      : marketPrimary ? 'Upgrading…' : 'Entering Safe Mode…',
     autoProcessLabel: hasActions ? `Auto-recover (${plan.upgrades.length} upgrades, ${plan.removals.length} removals)` : undefined,
     retryCheckLabel: retryCheck ? 'Retry update checks' : undefined,
     pluginChecks: options.pluginChecks,
+    ...(marketCheck ? { marketCheck } : {}),
+    marketPrimary,
     upgradeCandidate,
     upgradeLabel: upgradeCandidate
       ? 'Upgrade plugin and restart'
@@ -269,5 +302,23 @@ export function buildPluginRecoveryViewModel(options: {
     quitLabel: 'Quit DSH Desktop',
     safeModeLabel: 'Enter Safe Mode',
     canUninstall
+  }
+}
+
+function buildMarketCheck(
+  locale: PluginRecoveryLocale,
+  market: NonNullable<Parameters<typeof buildPluginRecoveryViewModel>[0]['market']>
+): PluginRecoveryMarketCheck {
+  const zh = locale === 'zh'
+  const { installedVersion, upgradeVersion } = market
+  return {
+    name: 'dshmarket',
+    ...(installedVersion !== undefined ? { installedVersion } : {}),
+    hint: market.hint ?? (zh
+      ? '启动日志显示插件市场加载失败。可升级到兼容的新版本，或卸载插件市场；已安装的社区插件都会保留。'
+      : 'The startup log shows the plugin market failed to load. Upgrade to a compatible release or remove the market; installed community plugins are kept.'),
+    ...(upgradeVersion ? { upgradeLabel: zh ? `升级至 v${upgradeVersion}` : `Upgrade to v${upgradeVersion}` } : {}),
+    // Worded like a third-party plugin's removal on this page.
+    removeLabel: zh ? '卸载此插件' : 'Remove this plugin'
   }
 }

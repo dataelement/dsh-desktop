@@ -1,0 +1,13 @@
+# Applied only to a profile that declares dshmarket (see HarnessRuntime.start).
+# A patch row whose entry is absent makes the loader warn on every launch, and
+# the market is optional, so this row cannot live in dsh-desktop.patch.yml.
+#
+# dsh-market normally offers to restart its own Node process after mutations.
+# The desktop shell has the real lifecycle authority, so keep that behavior off.
+# `inject` also holds the market back until the desktop's `desktopProfiles`
+# service exists, which is how it knows it runs under the desktop.
+- id: dsh-market
+  inject: [desktopProfiles]
+  config:
+    profile: web
+    allowRestart: false

@@ -62,13 +62,15 @@ describe('github_release_notes validate', () => {
     await expect(run(['validate', '--tag', 'v9.9.9', '--input', file])).resolves.toBeDefined()
   })
 
-  it('rejects a wrong title prefix, a stray H2, a link, and an empty file', async () => {
+  it('rejects a wrong title prefix, a stray H2, a link, an empty file, and shell-only notes', async () => {
     const dir = await work()
     const cases: Record<string, string> = {
       'bad-title.md': VALID.replace('# DSH Desktop v9.9.9 — 测试主题', '# Something else'),
       'stray-h2.md': `${VALID}\n## 内部重构\n\n- x\n`,
       'link.md': VALID.replace('一条面向用户的改进。', '见 https://github.com/x/y/pull/1'),
-      'empty.md': ''
+      'empty.md': '',
+      'title-only-shell.md': '# DSH Desktop v9.9.9 — 版本更新\n',
+      'no-h2.md': '# DSH Desktop v9.9.9 — 测试主题\n\n- 仅有正文无分类标题\n'
     }
     for (const [name, body] of Object.entries(cases)) {
       const file = path.join(dir, name)

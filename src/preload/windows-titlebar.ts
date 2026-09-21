@@ -1,10 +1,10 @@
 import type { IpcRenderer } from 'electron'
+import { WINDOWS_TITLEBAR_HEIGHT } from '../shared/desktop-menu'
 
 const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
 const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
 const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
-
 interface TitlebarLayoutMountOptions {
   document: Document
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
@@ -53,11 +53,65 @@ function installLayout(document: Document): void {
       height: 100% !important;
       min-height: 0 !important;
     }
+    :root {
+      --dsh-titlebar-safe-inset-top: 36px;
+      --dsh-titlebar-safe-inset-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
+    }
     body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
       padding-top: 6px !important;
     }
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel],
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel="fullscreen"],
+    body.dsh-desktop-windows-titlebar-layout [data-rightbar-col] > div,
+    body.dsh-desktop-windows-titlebar-layout [data-side="rightbar"] {
+      top: var(--dsh-titlebar-safe-inset-top, 36px) !important;
+      height: calc(100% - var(--dsh-titlebar-safe-inset-top, 36px)) !important;
+    }
     body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
+      position: relative !important;
+      min-height: 76px !important;
+      padding-top: 6px !important;
+      padding-right: 20px !important;
+      box-sizing: border-box !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header > div:first-child {
       padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;
+      box-sizing: border-box !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div[data-conversation-header-corner],
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerCorner"] {
+      position: absolute !important;
+      top: 38px !important;
+      right: 20px !important;
+      margin: 0 !important;
+      z-index: 20 !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"] {
+      position: absolute !important;
+      top: 38px !important;
+      right: 56px !important;
+      margin: 0 !important;
+      z-index: 20 !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ [data-conversation-header-corner]:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ [class*="headerCorner"]:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:has(+ div:empty),
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header [class*="headerUtilities"]:last-child {
+      right: 20px !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] button[aria-label="更多操作"],
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] button[aria-label="More actions"],
+    body.dsh-desktop-windows-titlebar-layout [class*="headerUtilities"] [class*="moreButton"] {
+      display: none !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header div[role="tablist"] {
+      padding-right: 180px !important;
+      box-sizing: border-box !important;
     }
     body.dsh-desktop-windows-titlebar-layout button,
     body.dsh-desktop-windows-titlebar-layout a,
@@ -65,12 +119,14 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout select,
     body.dsh-desktop-windows-titlebar-layout textarea,
     body.dsh-desktop-windows-titlebar-layout [role="button"],
+    body.dsh-desktop-windows-titlebar-layout [role="tab"],
+    body.dsh-desktop-windows-titlebar-layout [role="menuitem"],
     body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
       -webkit-app-region: no-drag !important;
     }
     #${DRAG_REGION_ID} {
       position: fixed;
-      z-index: 2147483644;
+      z-index: 10;
       top: 0;
       left: 0;
       right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
@@ -90,6 +146,42 @@ function installDragRegion(document: Document): void {
   dragRegion.id = DRAG_REGION_ID
   dragRegion.setAttribute('aria-hidden', 'true')
   document.body.appendChild(dragRegion)
+
+  // The native drag region still wins over a modal's buttons in the top
+  // 36px, so hide it while a real dialog is open. Only semantic dialog
+  // markers count: class-name guesses match permanent elements and would
+  // hide the region for good.
+  const modalSelector = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+
+  const updateDragRegionVisibility = (): void => {
+    const hasModal = Array.from(document.querySelectorAll<HTMLElement>(modalSelector)).some((el) => {
+      if (el.offsetWidth === 0 || el.offsetHeight === 0) return false
+      const style = window.getComputedStyle(el)
+      return style.visibility !== 'hidden' && style.opacity !== '0'
+    })
+    const display = hasModal ? 'none' : 'block'
+    if (dragRegion.style.display !== display) dragRegion.style.display = display
+  }
+
+  // Streaming output mutates the DOM continuously; check at most once a frame.
+  let scheduled = false
+  const scheduleUpdate = (): void => {
+    if (scheduled) return
+    scheduled = true
+    requestAnimationFrame(() => {
+      scheduled = false
+      updateDragRegionVisibility()
+    })
+  }
+
+  const observer = new MutationObserver(scheduleUpdate)
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['open', 'style', 'class', 'hidden', 'aria-hidden', 'aria-modal', 'role']
+  })
+  updateDragRegionVisibility()
 }
 
 function trackSidebarLayout(document: Document): void {

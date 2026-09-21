@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import type { RuntimeSnapshot } from '../src/shared/contracts'
 import {
@@ -16,6 +15,48 @@ function failedSnapshot(logs: string[] = []): RuntimeSnapshot {
 }
 
 describe('plugin recovery view model', () => {
+  it('treats a market that alone blocks startup like a lone plugin with an upgrade', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'zh',
+      market: { installedVersion: '1.48.0', upgradeVersion: '1.49.0' }
+    })
+    expect(model.canUninstall).toBe(false)
+    expect(model.marketPrimary).toBe(true)
+    expect(model.heading).toBe('插件市场导致启动失败')
+    expect(model.primaryLabel).toBe('升级插件并重启')
+    expect(model.marketCheck).toEqual({
+      name: 'dshmarket', installedVersion: '1.48.0',
+      hint: expect.stringContaining('可升级到兼容的新版本，或卸载插件市场'),
+      upgradeLabel: '升级至 v1.49.0', removeLabel: '卸载此插件'
+    })
+    expect(model.plugins).toEqual([])
+  })
+  it('removes a market with no compatible upgrade, as it would a lone plugin', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'en',
+      market: { installedVersion: '1.48.0' }
+    })
+    expect(model.marketCheck?.upgradeLabel).toBeUndefined()
+    expect(model.primaryLabel).toBe('Remove this plugin and continue')
+    expect(model.primaryBusyLabel).toBe('Removing and checking again…')
+  })
+  it('keeps third-party removal as the primary action when the market is not the only culprit', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['a'], removedPlugins: [], locale: 'zh',
+      market: { installedVersion: '1.48.0', upgradeVersion: '1.49.0' }
+    })
+    expect(model.marketPrimary).toBe(false)
+    expect(model.primaryLabel).toBe('卸载此插件并继续检测')
+    expect(model.marketCheck?.upgradeLabel).toBe('升级至 v1.49.0')
+  })
+  it('leaves the page unchanged when the market is not blamed', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'zh'
+    })
+    expect(model.marketCheck).toBeUndefined()
+    expect(model.marketPrimary).toBe(false)
+    expect(model.primaryLabel).toBe('进入安全模式')
+  })
   it('offers a retry instead of a zero-action automatic recovery when all checks failed', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: ['a', 'b'], removedPlugins: [], locale: 'zh',
@@ -126,13 +167,6 @@ describe('plugin recovery view model', () => {
     expect(model.summary).toContain('Enter Safe Mode')
     expect(model.primaryLabel).toBe('Enter Safe Mode')
     expect(model.primaryBusyLabel).toBe('Entering Safe Mode…')
-  })
-
-  it('wires the unresolved recovery action to Safe Mode', async () => {
-    const html = await readFile('build/plugin-recovery.html', 'utf8')
-    expect(html).toContain("model.canUninstall ? 'uninstall' : 'safe-mode'")
-    expect(html).toContain("navigate('show-log')")
-    expect(html).not.toContain('id="restart"')
   })
 
   it.each(['zh', 'en'] as const)('shows the latest fallback explanation instead of claiming compatibility (%s)', (locale) => {

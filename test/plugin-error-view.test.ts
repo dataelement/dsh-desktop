@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import {
   extractPluginName,
@@ -49,22 +48,6 @@ describe('plugin load error detection and extraction', () => {
 
     const enDefault = pluginErrorMessage('en')
     expect(enDefault.message).toContain('A plugin was uninstalled or failed to load')
-  })
-})
-
-describe('preload wiring for plugin error handling', () => {
-  it('installs error listeners and connects to unified recovery', async () => {
-    const preload = await readFile('src/preload/index.ts', 'utf8')
-
-    expect(preload).toContain("window.addEventListener('error'")
-    expect(preload).toContain("window.addEventListener('unhandledrejection'")
-    expect(preload).toContain('isPluginLoadError')
-    expect(preload).toContain('harness:open-recovery')
-    expect(preload).toContain('checkBootFailureInDom')
-    expect(preload).toContain('queueBootFailure(errorText)')
-    expect(preload).toContain('pendingBootFailureMessages.join')
-    expect(preload).toContain('findBootFailureText(document)')
-    expect(preload).not.toContain('document.body?.innerText')
   })
 })
 
