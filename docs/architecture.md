@@ -103,3 +103,5 @@ Update metadata and artifacts are produced by the native release workflow. macOS
 ## Desktop customization boundary
 
 Most of the product UI remains upstream Harness. DSH Desktop adds native host surfaces through Electron Main and preload code, uses Harness extension slots where available, and tracks unavoidable upstream package changes as reproducible `patch-package` files. This keeps the desktop layer reviewable while making upstream upgrades an explicit compatibility exercise.
+
+Safe Mode preset discovery and mounting also consume the explicit host anchor through the `dsh-agent-presets@0.1.5-rc.2` patch. Its own filesystem health check and `PresetTree` importer bypass the root loader import hook, so both must use the same installation base; without the Desktop anchor they retain upstream context-relative behavior. Remove this patch when upstream supports a host resolution anchor for both paths. The recovery subprocess regression creates a default-preset session through the real authenticated RPC with `profiles/node_modules` absent, catching the 24-unresolvable-plugins failure beyond frontend readiness.

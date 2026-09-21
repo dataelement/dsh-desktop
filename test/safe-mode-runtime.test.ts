@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -78,6 +78,17 @@ registerHooks({ resolve(specifier, context, next) {
     const registrations: { id: string }[] = []
     runInNewContext(await response.text(), { window: { __ModuleLoader__: { load: (registration: { id: string }) => registrations.push(registration) } } })
     expect(registrations.map((registration) => registration.id)).toContain('@deepseek-ai/dsh-client-modules')
+    // A ready backend and frontend are insufficient: creating an agent also
+    // resolves and mounts the shipped preset, without shared module links.
+    await expect(lstat(join(home, 'profiles', 'node_modules'))).rejects.toMatchObject({ code: 'ENOENT' })
+    const created = await fetch(new URL('/api/session/create', url), {
+      method: 'POST',
+      headers: { Cookie: cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'safe-mode-session', method: 'session/create', payload: { args: { request: {} } } })
+    })
+    const envelope = await created.json()
+    expect(envelope.result?.ok, JSON.stringify(envelope)).toBe(true)
+    expect(envelope.result?.value?.sessionId).toBeTruthy()
     // Recovery uses its own overlay and never edits the normal composition.
     expect(await readFile(normalPatch, 'utf8')).toContain('name: \'dsh-ppt-composer\'')
   } finally {
