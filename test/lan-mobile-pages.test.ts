@@ -7,6 +7,15 @@ import {
 } from '../src/main/mobile/lan-mobile-pages'
 
 describe('LAN mobile page', () => {
+  it('allows zoom, visible keyboard focus and accessible touch targets', () => {
+    const html = renderMobilePage({ locale: 'en' })
+    expect(html).not.toContain('maximum-scale=1')
+    expect(html).toContain('button:focus-visible')
+    expect(html).toContain('@media(pointer:coarse)')
+    expect(html).toContain('min-height:44px')
+    expect(html).toContain('input,textarea,select{font-size:16px}')
+    expect(html).toContain('@media(prefers-reduced-motion:reduce)')
+  })
   it('emits parseable browser JavaScript', () => {
     const html = renderMobilePage({ locale: 'zh' })
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]!)
@@ -113,7 +122,7 @@ describe('LAN mobile page', () => {
     expect(html).toContain("chunk.type==='text-delta'")
     expect(html).toContain("block?.type==='text'")
     expect(html).toContain('font-size:16px')
-    expect(html).toContain('maximum-scale=1')
+    expect(html).not.toContain('maximum-scale=1')
     expect(html).toContain('rel="apple-touch-icon" href="/app-icon"')
     expect(html).toContain('apple-mobile-web-app-capable')
     expect(html).toContain("chunk.type!=='reasoning-delta'")

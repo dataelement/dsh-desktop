@@ -51,8 +51,11 @@ export const CLOUDFLARED_ASSETS: Record<string, CloudflareAssetSpec> = {
 }
 
 export function extractTryCloudflareUrl(text: string): string | null {
-  const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/i)
-  return match && match[0].toLowerCase() !== 'https://api.trycloudflare.com' ? match[0] : null
+  const matches = text.matchAll(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com(?=$|[\s|"'<>])/gi)
+  for (const match of matches) {
+    if (match[0].toLowerCase() !== 'https://api.trycloudflare.com') return match[0]
+  }
+  return null
 }
 
 export async function findCloudflaredOnPath(): Promise<string | null> {
@@ -275,61 +278,53 @@ export async function startCloudflareQuickTunnel(options: {
   const { port, binaryPath, timeoutMs = 30_000, log } = options
 
   return new Promise((resolvePromise, rejectPromise) => {
-    let resolved = false
+    let settled = false
     const child = spawn(binaryPath, ['tunnel', '--url', `http://127.0.0.1:${port}`], {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     })
 
-    const timeoutTimer = setTimeout(() => {
-      if (!resolved) {
-        cleanup()
-        rejectPromise(new Error(`Cloudflare Quick Tunnel timed out after ${timeoutMs / 1000}s`))
-      }
-    }, timeoutMs)
-
-    let capturedUrl: string | null = null
-
-    const handleOutput = (chunk: Buffer | string) => {
-      const text = chunk.toString()
-      const extracted = extractTryCloudflareUrl(text)
-      if (extracted && !capturedUrl) {
-        capturedUrl = extracted
-        log?.(`[cloudflared] Tunnel online: ${capturedUrl}`)
-        resolved = true
-        clearTimeout(timeoutTimer)
-        resolvePromise({
-          provider: 'cloudflare',
-          url: capturedUrl,
-          process: child,
-          stop: async () => {
-            cleanup()
-          }
-        })
-      }
-    }
-
-    child.stdout?.on('data', handleOutput)
-    child.stderr?.on('data', handleOutput)
-
-    child.once('error', (err) => {
-      if (!resolved) {
-        clearTimeout(timeoutTimer)
-        rejectPromise(err)
-      }
-    })
-
-    child.once('close', (code, signal) => {
-      if (!resolved) {
-        clearTimeout(timeoutTimer)
-        rejectPromise(new Error(`cloudflared exited unexpectedly with code ${code}, signal ${signal}`))
-      }
-    })
-
     const cleanup = () => {
-      try {
-        terminateChildProcess(child)
-      } catch {}
+      terminateChildProcess(child)
     }
+    const detachOutput = () => {
+      child.stdout?.removeListener('data', stdoutOutput)
+      child.stderr?.removeListener('data', stderrOutput)
+    }
+    const fail = (error: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutTimer)
+      detachOutput()
+      cleanup()
+      rejectPromise(error)
+    }
+    const timeoutTimer = setTimeout(() => {
+      fail(new Error(`Cloudflare Quick Tunnel timed out after ${timeoutMs / 1000}s`))
+    }, timeoutMs)
+    // Pipes may split a URL anywhere. Keep each stream separate and bounded;
+    // joining stdout and stderr can fabricate a URL that neither emitted.
+    const outputReader = () => {
+      let output = ''
+      return (chunk: Buffer | string) => {
+        if (settled) return
+        output = (output + chunk.toString()).slice(-16_384)
+        const url = extractTryCloudflareUrl(output)
+        if (!url) return
+        settled = true
+        clearTimeout(timeoutTimer)
+        detachOutput()
+        log?.(`[cloudflared] Tunnel online: ${url}`)
+        resolvePromise({ provider: 'cloudflare', url, process: child, stop: async () => cleanup() })
+      }
+    }
+    const stdoutOutput = outputReader()
+    const stderrOutput = outputReader()
+    child.stdout?.on('data', stdoutOutput)
+    child.stderr?.on('data', stderrOutput)
+    child.once('error', fail)
+    child.once('close', (code, signal) => {
+      fail(new Error(`cloudflared exited unexpectedly with code ${code}, signal ${signal}`))
+    })
   })
 }
