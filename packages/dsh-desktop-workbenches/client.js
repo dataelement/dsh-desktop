@@ -67,6 +67,7 @@ window.__ModuleLoader__.load({
         this.sessionRequests = new Map()
         this.navigation = 0
         this.suppressSelection = false
+        this.internalSessionOpen = null
         this.lastSession = undefined
         this.publish()
       }
@@ -76,8 +77,16 @@ window.__ModuleLoader__.load({
         const matched = new Set()
         const providers = [...this.catalog.values()]
         const remote = this.remoteCatalog.map((item) => {
-          const provider = providers.find(candidate => typeof candidate.repository === 'string'
-            && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
+          const install = this.installs[item.id]
+          const provider = providers.find(candidate =>
+            (typeof candidate.repository === 'string'
+              && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
+            // Older catalog packages may not include workbench.json or expose
+            // repository in their runtime descriptor. Only associate that
+            // narrow legacy shape when its plugin name is exactly the runtime
+            // workbench ID recorded by Desktop's installation boundary.
+            || (install && !install.workbenchId && install.pluginName === candidate.id)
+          )
           if (provider) matched.add(provider.id)
           return {
             ...item,
@@ -99,6 +108,20 @@ window.__ModuleLoader__.load({
           if (!matched.has(provider.id)) remote.push({ ...provider, catalogId: provider.id, installed: true })
         }
         return remote
+      }
+      reconcileMarketInstalls() {
+        if (!this.ready || this.blocked || this.disposed) return
+        const additions = this.marketCatalog().filter((entry) => {
+          const install = this.installs[entry.catalogId]
+          return entry.installed && install && !this.state.added.includes(entry.id)
+        })
+        if (!additions.length) return
+        this.run(this.commit((state) => {
+          for (const entry of additions) {
+            if (!state.added.includes(entry.id)) state.added.push(entry.id)
+            if (!state.pinned.includes(entry.id)) state.pinned.push(entry.id)
+          }
+        }))
       }
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
@@ -215,6 +238,7 @@ window.__ModuleLoader__.load({
           this.ready = true
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
           this.publish()
+          this.reconcileMarketInstalls()
           const active = this.state.active
           if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
           else this.selectionChanged()
@@ -263,6 +287,7 @@ window.__ModuleLoader__.load({
           layout: { businessSide: layout.businessSide || 'right', businessWidth: layout.businessWidth ?? 0.36 }, Component }
         this.catalog.set(entry.id, entry)
         this.publish()
+        this.reconcileMarketInstalls()
         return () => {
           if (this.catalog.get(entry.id) !== entry) return
           this.catalog.delete(entry.id)
@@ -291,8 +316,7 @@ window.__ModuleLoader__.load({
         const listed = this.ctx.sessions.list.getSnapshot().byId
         this.suppressSelection = true
         try {
-          if (target && listed[target] && this.state.sessionBindings[target] === id) this.ctx.sessions.open(target)
-          else this.ctx.sessions.clear()
+          if (target && listed[target] && this.state.sessionBindings[target] === id) this.openSession(target)
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
@@ -308,7 +332,6 @@ window.__ModuleLoader__.load({
         if (this.disposed || signal.aborted || ticket !== this.navigation) return
         this.suppressSelection = true
         try {
-          this.ctx.sessions.clear()
           this.lastSession = null
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
@@ -317,6 +340,11 @@ window.__ModuleLoader__.load({
         this.marketOpen = true
         this.publish()
         this.ctx.layout.selectPanel(PANEL)
+      }
+      openSession(sessionId) {
+        this.internalSessionOpen = sessionId
+        try { this.ctx.uiWorkspace.openSession(sessionId) }
+        finally { this.internalSessionOpen = null }
       }
       toggle(id) {
         return this.state.active === id ? this.leave() : this.open(id)
@@ -395,7 +423,7 @@ window.__ModuleLoader__.load({
         if (this.disposed || signal.aborted || ticket !== this.navigation || this.state.active !== active) return sessionId
         this.suppressSelection = true
         try {
-          this.ctx.sessions.open(sessionId)
+          this.openSession(sessionId)
           this.lastSession = sessionId
           this.ctx.layout.selectPanel(null)
         } finally { this.suppressSelection = false }
@@ -429,7 +457,7 @@ window.__ModuleLoader__.load({
           })
           if (!this.disposed && !signal.aborted && ticket === this.navigation && this.state.active === workbenchId) {
             this.suppressSelection = true
-            try { this.ctx.sessions.open(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
+            try { this.openSession(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
             finally { this.suppressSelection = false }
           }
           return sessionId
@@ -469,7 +497,7 @@ window.__ModuleLoader__.load({
         })
         if (this.disposed || signal.aborted || ticket !== this.navigation) return sessionId
         this.suppressSelection = true
-        try { this.ctx.sessions.open(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
+        try { this.openSession(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
         finally { this.suppressSelection = false }
         return sessionId
       }
@@ -1144,7 +1172,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const id = entry?.id
       const customFrame = entry?.customFrame === true
       const conversationMount = h(ConversationMount, { container: conversationContainer })
-      const hasCurrentSession = sessions.current != null
+      const hasCurrentSession = !!(entry && sessions.current != null && state.sessionBindings[sessions.current] === entry.id)
       const disabled = !ready || pending > 0 || service.blocked
       const chosen = workspaces.items.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
       return h('div', { className: 'dshWb dshWbFrame' }, h(Notice, { service }),
@@ -1183,6 +1211,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       ctx.slots.inject('desktop.workbench.frame', () => ctx.slots.register({ name: 'desktop.workbench.frame', inject: () => ({ service }) }, Frame))
       ctx.effect(() => ctx.sessions.list.subscribe(() => service.selectionChanged()), 'workbenches: session navigation')
       ctx.effect(() => ctx.uiWorkspace.registerSessionOpener((sessionId, source = 'explicit-session') => {
+        if (service.internalSessionOpen === sessionId) return false
         if (source === 'workspace' && service.routeWorkspaceSession(sessionId)) return true
         const id = service.state.sessionBindings[sessionId]
         if (!service.ready || !id || !service.state.added.includes(id) || !service.catalog.has(id)) return false

@@ -59,7 +59,10 @@ async function fixture(initial = emptyState()) {
       selectPanel: vi.fn(),
       beginNavigation: vi.fn(() => { navigation.abort(); navigation = new AbortController(); return navigation.signal })
     },
-    uiWorkspace: { pickDirectory: vi.fn(async () => '/chosen/new-project') },
+    uiWorkspace: {
+      pickDirectory: vi.fn(async () => '/chosen/new-project'),
+      openSession: vi.fn((id) => ctx.sessions.open(id))
+    },
     workspaces: {
       list: { getSnapshot: () => ({ items: projects }) },
       create: vi.fn(async ({ path }) => {
@@ -142,6 +145,26 @@ describe('desktop workbench client navigation', () => {
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'owner/remote')).toMatchObject({
       id: 'runtime-id', title: '远程工作台', installed: true
     })
+    service.dispose()
+  })
+
+  it('reconciles a legacy market install when its runtime ID is the installed plugin name', async () => {
+    const { service, saved } = await fixture()
+    service.remoteCatalog = [{
+      id: 'owner/legacy', owner: 'owner', url: 'https://github.com/owner/legacy', name: '旧版工作台',
+      categoryName: '其他', description: { zh: '旧包未提供 workbench.json' }, screenshots: []
+    }]
+    service.installs = {
+      'owner/legacy': { catalogId: 'owner/legacy', pluginName: 'legacy-workbench', workbenchId: null, version: '1.0.0' }
+    }
+
+    service.register({ id: 'legacy-workbench', title: '旧版工作台' }, () => null)
+    await service.queue
+
+    const entry = service.getSnapshot().catalog.find(item => item.catalogId === 'owner/legacy')
+    expect(entry).toMatchObject({ id: 'legacy-workbench', catalogId: 'owner/legacy', installed: true })
+    expect(saved().state.added).toEqual(['legacy-workbench'])
+    expect(saved().state.pinned).toEqual(['legacy-workbench'])
     service.dispose()
   })
 
@@ -673,7 +696,7 @@ describe('desktop workbench client navigation', () => {
     expect(ctx.sessions.clear).not.toHaveBeenCalled()
     await service.open('writer')
     expect(saved().state.pinned).toEqual(['writer'])
-    expect(ctx.sessions.clear).toHaveBeenCalledOnce()
+    expect(ctx.sessions.clear).not.toHaveBeenCalled()
     const session = await service.newSession('project-1')
     await service.leave()
     await service.open('writer')
@@ -688,14 +711,25 @@ describe('desktop workbench client navigation', () => {
     ctx.sessions.clear.mockClear()
 
     await service.home('writer')
-    expect(ctx.sessions.clear).toHaveBeenCalledOnce()
-    expect(list.current).toBe(null)
+    expect(ctx.sessions.clear).not.toHaveBeenCalled()
+    expect(list.current).toBe('writer-1')
     expect(saved().state.active).toBe('writer')
     expect(saved().state.recentSessions.writer).toBe('writer-1')
     expect(ctx.sessions.stop).not.toHaveBeenCalled()
 
     await service.open('writer')
     expect(ctx.sessions.open).toHaveBeenLastCalledWith('writer-1')
+  })
+
+  it('uses uiWorkspace navigation when the current sessions service has no open or clear methods', async () => {
+    const { service, ctx, list } = await fixture(boundState())
+    ctx.uiWorkspace.openSession.mockImplementation((id) => { list.current = id; service.selectionChanged() })
+    delete ctx.sessions.open
+    delete ctx.sessions.clear
+
+    await expect(service.open('writer')).resolves.toBeUndefined()
+    expect(ctx.uiWorkspace.openSession).toHaveBeenLastCalledWith('writer-1')
+    await expect(service.home('writer')).resolves.toBeUndefined()
   })
 
   it('preserves sidebar order on repeated add and restores added entries after reload', async () => {
