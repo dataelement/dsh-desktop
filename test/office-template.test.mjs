@@ -6,15 +6,18 @@ import { registerOfficeTools } from '../packages/dsh-office/lib/tools.js'
 import { sha256 } from '../packages/dsh-office/lib/workspace.js'
 import { parseZip, LIMITS } from '../packages/dsh-office/lib/zip.js'
 import { inspectOffice } from '../packages/dsh-office/lib/inspect.js'
-import { listOfficeTemplates, officeTemplatePreview } from '../packages/dsh-office/lib/templates.js'
+import { Context } from '@deepseek-ai/cordis'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
+import { listOfficeTemplates, officeTemplate, officeTemplatePreview } from '../packages/dsh-office/lib/templates.js'
 
 const roots = []
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
-async function fixture(mode = 'workspace-write', selectedDocumentTemplate) {
+async function fixture(mode = 'workspace-write', selectedTemplate) {
   const root = await mkdtemp(path.join(tmpdir(), 'word-template-')); roots.push(root)
   const tools = new Map()
-  registerOfficeTools({ tools: { register: tool => tools.set(tool.name, tool) }, get: () => ({ resolve: () => ({ mode }) }),
-    ...(selectedDocumentTemplate ? { officeModes: { state: async () => ({ selectedDocumentTemplate }) } } : {}) }, { root: path.join(root, 'audit') })
+  const fs = new LocalFileSystem(new Context(), { cwd: root, diffBasisMaxBytes: 10 * 1024 * 1024 })
+  registerOfficeTools({ tools: { register: tool => tools.set(tool.name, tool) }, fs, sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: root }) },
+    sessionProjections: { stateOf: () => ({ mode: selectedTemplate?.mode ?? null, selectedTemplate: selectedTemplate ?? null }) } }, { root: path.join(root, 'audit') })
   return { root, call: id => tools.get('office_template').execute({ template_id: id }, {
     name: 'office_template', callId: 'template-test', signal: new AbortController().signal, agent: { id: 'test', session: { id: 'test', header: { cwd: root } } }
   }) }
@@ -60,7 +63,7 @@ it('enforces policy and canonical workspace paths before writing template resour
 })
 
 it('enforces the reviewed example as the authoritative Office recipe', async () => {
-  const selected = { id: 'coffee-market', mode: 'word', revision: '20260911.6' }
+  const selected = { id: 'coffee-market', mode: 'word', revision: officeTemplate('coffee-market').revision }
   const f = await fixture('workspace-write', selected)
   await expect(f.call('equity-research')).rejects.toThrow('selected Office example coffee-market')
   expect((await f.call('coffee-market')).templateId).toBe('coffee-market')

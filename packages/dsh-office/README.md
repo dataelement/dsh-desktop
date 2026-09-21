@@ -16,11 +16,11 @@ The normal Desktop profile registers two focused Skills, `dsh-word` and `dsh-exc
 | Templates | `office_template` loads a reviewed example and its authoring inputs |
 | Preview and delivery | Use the built-in Office document preview for final visual review; deliver final DOCX/XLSX/PDF files with the base `present` tool |
 
-Word, Excel and PPT buttons appear above the blank-session input, immediately to the right of the agent preset and workspace. The formats share one serialized, audited session state: selecting Word/Excel closes PPT mode, selecting PPT or a PPT template clears Word/Excel, and clicking the selected format returns to ordinary conversation. The selected mode automatically loads its corresponding Skill at the start of a task. Ordinary conversation can also discover `dsh-word` and `dsh-excel`.
+Word and Excel buttons appear above the blank-session input, immediately to the right of the agent preset and workspace. Each session records its own current Word/Excel choice; clicking the selected format returns to ordinary conversation. The selected mode contributes its corresponding Skill through dynamic model context. Ordinary conversation can also discover `dsh-word` and `dsh-excel`.
 
 Word and Excel example cards open a read-only preview. The preview footer's “做同款” action persists the reviewed example for the active session. The composer shows only its small, tilted preview image, matching the PPT selection treatment; the remove control appears on hover or keyboard focus. At the next model step the Host injects the exact template id and revision and requires `office_template` before authoring. The example supplies layout, visual language and structure; all content comes from the current task.
 
-The Desktop's `dsh-ppt` Host supplies the `officeModes` service. Both format RPC routes and the model's Skill selection use this persisted state. The browser's change event refreshes display state after successful Host operations. `docs/STATUS.md` records separate automated, native interface and live-model acceptance results.
+The `dsh-office` Host owns Word/Excel mode and reviewed-template selection as whole-value `office/mode` events in each Harness session. A `sessionProjections` unit derives the current state, `/dsh-office` is registered through Connection RPC, and `systemPrompt.context` supplies the current foundation/template guidance without rewriting conversation history. The browser's change event refreshes display state after successful Host operations.
 
 ## Execution and publication
 
@@ -30,11 +30,11 @@ Author scripts receive a private temporary job containing declared input copies.
 
 The Host checks a regular output file, package bounds, XML and relationships before publishing under a new name. Original files and conflicting output names are preserved. Word retains unrelated parts byte-for-byte. Excel calculation retains original styles, named ranges, drawings, conditions and formulas while replacing computed caches. Chart cache gaps are reported for preview/open-time refresh.
 
-This is the functional development boundary. Production G3 resource quotas, immutable images and bounded task filesystems remain separate requirements in the root project's docs/ACCEPTANCE.md.
+This is the functional development boundary. Production resource quotas, immutable images and bounded task filesystems remain separate deployment acceptance requirements.
 
 ## Runtime setup
 
-Node/docx are in the Desktop dependency closure. Apple Silicon development builds can also embed Python/openpyxl and LibreOffice under Contents/Resources/office-runtime. Engine discovery follows the running application, so moving the app preserves the runtime paths. Python uses -B to preserve the signed app resources. Windows x64 packages embed Python/openpyxl, LibreOffice and `office-sandbox.exe` in `resources/office-runtime`. See [Windows build and acceptance](../../docs/office-acceptance/windows-handoff.md). Operator configuration accepts `node`, `python`, `libreOffice`, `bwrap`, `runtimeRoot`, `windowsSandbox`, and `fontDirectories` (absolute directories). The required `root` is the Host audit/state root configured by the Desktop profile.
+Node/docx are in the Desktop dependency closure. Apple Silicon development builds can also embed Python/openpyxl and LibreOffice under Contents/Resources/office-runtime. Engine discovery follows the running application, so moving the app preserves the runtime paths. Python uses -B to preserve the signed app resources. Windows x64 packages embed Python/openpyxl, LibreOffice and `office-sandbox.exe` in `resources/office-runtime`. Operator configuration accepts `node`, `python`, `libreOffice`, `bwrap`, `runtimeRoot`, `windowsSandbox`, and `fontDirectories` (absolute directories). The required `root` is the Host audit/state root configured by the Desktop profile.
 
 Create a dedicated Python environment:
 
@@ -58,7 +58,7 @@ The staging recipe checks architecture, pins openpyxl/et_xmlfile, retains their 
 
 ## Verification and limits
 
-[STATUS.md](../../docs/STATUS.md) records current evidence. Set DSH_OFFICE_TEST_PYTHON, DSH_OFFICE_TEST_LIBREOFFICE and DSH_OFFICE_TEST_OUTPUT to absolute runtime/output paths, then run:
+Set DSH_OFFICE_TEST_PYTHON, DSH_OFFICE_TEST_LIBREOFFICE and DSH_OFFICE_TEST_OUTPUT to absolute runtime/output paths, then run:
 
 ```sh
 node_modules/node/bin/node node_modules/vitest/vitest.mjs run test/office-native-runtime.test.mjs
@@ -68,4 +68,4 @@ Without engine variables the native test reports skipped. Pure package/edit/poli
 
 Word local edits target ordinary single-line paragraph text and existing styles. Selected fields, revisions and drawings require dedicated editors. Excel local edits target existing cells and scalar formulas; shared/array formulas, new ranges and external data have explicit separate contracts. Stored caches, fresh calculation, visual review and native Office acceptance are distinct results.
 
-Linux runtime, complete external-file fidelity, live-model completion, native Word/Excel/WPS save-reopen and full production sandbox quotas retain separate acceptance gates. Windows CI requires real engine and isolation checks and verifies the moved application package. Manual Windows acceptance is tracked in the handoff document.
+Linux runtime, complete external-file fidelity, live-model completion, native Word/Excel/WPS save-reopen and full production sandbox quotas retain separate acceptance gates. Windows CI requires real engine and isolation checks and verifies the moved application package. Native Word/Excel/WPS save-reopen remains a manual Windows acceptance gate.

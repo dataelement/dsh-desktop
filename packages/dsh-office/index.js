@@ -9,7 +9,7 @@ import { registerOfficeModes } from './lib/modes.js'
 const stripFrontmatter = content => content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/u, '').trim()
 
 export const name = 'dsh-office'
-export const inject = ['tools', 'skills', 'sandboxPolicy', 'connection', 'webServer', 'officeModes']
+export const inject = ['tools', 'skills', 'fs', 'sandboxPolicy', 'connection', 'sessions', 'sessionProjections', 'systemPrompt']
 export const Config = z.object({ root: z.string().required(), node: z.string(), python: z.string(), libreOffice: z.string(), bwrap: z.string(), runtimeRoot: z.string(), windowsSandbox: z.string(), fontDirectories: z.array(z.string()) })
 
 export function apply(ctx, config) {

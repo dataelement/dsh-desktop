@@ -13,7 +13,12 @@ window.__ModuleLoader__ = { load: definition => { plugin = definition.factory(()
 new Function(await readFile(path.resolve('packages/dsh-office/client.js'), 'utf8'))()
 const templates = JSON.parse(await readFile(path.resolve('packages/dsh-office/templates/catalog.json'), 'utf8')).map(item => ({ ...item, title: item.id, mode: item.mode ?? 'word', thumbnail: 'data:image/webp;base64,YQ==' }))
 let root, container
-afterEach(async () => { if (root) await act(() => root.unmount()); container?.remove(); root = null })
+afterEach(async () => {
+  if (root) await act(() => root.unmount())
+  container?.remove()
+  document.getElementById('dsh-office-client-styles')?.remove()
+  root = null
+})
 async function fixture() {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
   const store = new plugin.ModeStore(), calls = [], waits = new Map(), failures = new Set()
@@ -39,6 +44,46 @@ async function fixture() {
   }, async switchSession() { sessionId = 'b'; store.update('b', { mode:'word',templates,loading:false }); await act(render) },
   hold(endpoint) { let release; waits.set(endpoint, new Promise(r => release = r)); return async () => { await act(async () => { waits.delete(endpoint); release() }) } } }
 }
+it('registers current slot and locale APIs and reference-counts injected styles', () => {
+  const effects = [], registrations = [], dictionaries = []
+  const t = key => 'translated:' + key
+  const ctx = {
+    effect(factory) {
+      const dispose = factory()
+      if (typeof dispose === 'function') effects.push(dispose)
+    },
+    locale: {
+      register(namespace, copy) { dictionaries.push({ namespace, copy }); return () => {} },
+      bind(namespace) { expect(namespace).toBe('dsh-office'); return t }
+    },
+    slots: {
+      inject(_name, factory) { return factory() },
+      register(options, component) { registrations.push({ options, component }); return () => {} }
+    },
+    get(service) { expect(service).toBe('connection'); return { rpc: {} } }
+  }
+
+  plugin.apply(ctx)
+  plugin.apply(ctx)
+
+  const styles = document.querySelectorAll('[data-plugin-css="dsh-office"]')
+  expect(styles).toHaveLength(1)
+  expect(styles[0].dataset.pluginRefs).toBe('2')
+  expect(styles[0].textContent).not.toMatch(/#[0-9a-f]{3,8}/i)
+  expect(styles[0].textContent).toContain('var(--dsw-alias-bg-mask-1)')
+  expect(dictionaries).toHaveLength(2)
+  expect(dictionaries[0].copy).toHaveProperty('zh')
+  expect(dictionaries[0].copy).toHaveProperty('en')
+  expect(registrations).toHaveLength(6)
+  expect(registrations.every(({ options }) => !('locale' in options))).toBe(true)
+  expect(registrations.every(({ options }) => options.inject('session').t === t)).toBe(true)
+
+  effects[1]()
+  expect(document.getElementById('dsh-office-client-styles')).not.toBeNull()
+  effects[3]()
+  expect(document.getElementById('dsh-office-client-styles')).toBeNull()
+})
+
 it('selects an example only from the full preview and exposes the reference in the composer', async () => {
   const f = await fixture()
   expect(container.querySelectorAll('.wbo-template-card')).toHaveLength(3)

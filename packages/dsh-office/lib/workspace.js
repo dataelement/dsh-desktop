@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { appendFile, link, lstat, mkdir, open, readFile, realpath, rename, unlink } from 'node:fs/promises'
+import { appendFile, link, mkdir, open, rename, unlink } from 'node:fs/promises'
 import path from 'node:path'
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
@@ -13,68 +13,71 @@ export async function withLock(key, fn) {
   try { return await fn() } finally { release(); if (locks.get(key) === current) locks.delete(key) }
 }
 
-export function workspaceRoot(exec) {
-  const root = exec.agent?.session?.header?.cwd
-  if (!root || !path.isAbsolute(root)) throw new Error('Office tools require an active local workspace')
-  return root
-}
-
-export async function workspacePath(root, relative, createParents = false) {
+function requireWorkspaceRelative(relative) {
   if (typeof relative !== 'string' || !relative || relative.includes('\\') || relative.includes('\0') || path.isAbsolute(relative) || /^[A-Za-z]:/u.test(relative)) throw new Error('Use a workspace-relative path')
+  if (relative.split('/').some(segment => !segment || segment === '.' || segment === '..')) throw new Error('Use a canonical path inside the active workspace')
+}
+
+async function rejectSymlinkTraversal(fs, relative, cwd, signal) {
   const segments = relative.split('/')
-  if (segments.some((segment) => !segment || segment === '.' || segment === '..')) throw new Error('Use a canonical path inside the active workspace')
-  let current = await realpath(root)
-  for (let i = 0; i < segments.length; i++) {
-    current = path.join(current, segments[i])
-    let info
-    try { info = await lstat(current) } catch (error) { if (error.code !== 'ENOENT') throw error }
-    if (info?.isSymbolicLink()) throw new Error('Office paths must use regular files and directories')
-    if (i < segments.length - 1) {
-      if (!info && createParents) await mkdir(current, { mode: 0o700 }).catch((error) => { if (error.code !== 'EEXIST') throw error })
-      if (!(await lstat(current)).isDirectory()) throw new Error('Office parent path must be a directory')
-    } else if (info && !info.isFile()) throw new Error('Office target must be a regular file')
+  for (let index = 0; index < segments.length; index++) {
+    signal?.throwIfAborted()
+    const candidate = segments.slice(0, index + 1).join('/')
+    const info = await fs.lstat(candidate, { cwd }, signal)
+    if (!info) break
+    if (info.type === 'symlink') throw new Error('Office paths must use regular files and directories')
+    if (index < segments.length - 1 && info.type !== 'directory') throw new Error('Office parent path must be a directory')
+    if (index === segments.length - 1 && info.type !== 'file') throw new Error('Office target must be a regular file')
   }
-  return current
 }
 
-export async function boundedRead(file, maximum) {
-  const handle = await open(file, 'r')
-  try {
-    const metadata = await handle.stat()
-    if (!metadata.isFile() || metadata.size > maximum) throw new Error(`Office input must be a regular file up to ${maximum} bytes`)
-    let buffer = Buffer.alloc(Math.min(maximum + 1, metadata.size + 1))
-    let length = 0
-    while (length <= maximum) {
-      if (length === buffer.length) {
-        const grown = Buffer.alloc(Math.min(maximum + 1, Math.max(buffer.length * 2, 1)))
-        buffer.copy(grown); buffer = grown
-      }
-      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null)
-      if (!bytesRead) break
-      length += bytesRead
-    }
-    if (length > maximum) throw new Error('Office input grew beyond the read limit')
-    return buffer.subarray(0, length)
-  } finally { await handle.close() }
+export async function resolveWorkspaceFile(fs, policy, relative, signal) {
+  requireWorkspaceRelative(relative)
+  const root = await fs.resolve(policy.workspaceRoot, { signal })
+  await rejectSymlinkTraversal(fs, relative, policy.workspaceRoot, signal)
+  const target = await fs.resolve(relative, { cwd: policy.workspaceRoot, signal })
+  if (!fs.contains(root, target)) throw new Error('Use a path inside the active workspace')
+  return target
 }
 
-export async function writeRevision(target, bytes, expectedRevision) {
-  let prior
-  try { prior = await boundedRead(target, 2 * 1024 * 1024) } catch (error) { if (error.code !== 'ENOENT') throw error }
-  if (prior === undefined ? expectedRevision !== null : sha256(prior) !== expectedRevision) throw new Error('Revision conflict: read the current project and use its SHA-256; use null for a new file')
-  return atomicWrite(target, bytes, prior !== undefined)
+export async function resolveRegularFile(fs, file, cwd, signal) {
+  const root = await fs.resolve(cwd, { signal })
+  const relative = path.relative(cwd, file).split(path.sep).join('/')
+  requireWorkspaceRelative(relative)
+  await rejectSymlinkTraversal(fs, relative, cwd, signal)
+  const target = await fs.resolve(relative, { cwd, signal })
+  if (!fs.contains(root, target)) throw new Error('Office path escaped its isolated job')
+  return target
 }
 
-export async function atomicWrite(target, bytes, replace = false) {
-  const temporary = path.join(path.dirname(target), `.office-${randomUUID()}.tmp`)
+export async function readBytes(fs, target, maximum, signal) {
+  return Buffer.from(await fs.readBytes(target, signal, maximum))
+}
+
+/**
+ * Publish Office binary bytes atomically at a target already resolved and fenced
+ * by ctx.fs. Harness ctx.fs intentionally writes UTF-8 text only, so this is the
+ * sole native filesystem boundary retained by the Office package.
+ */
+export async function writeBinaryAtomic(fs, target, bytes, { replace = false, signal } = {}) {
+  signal?.throwIfAborted()
+  const destination = fs.processPath(target)
+  await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 })
+  const temporary = path.join(path.dirname(destination), `.office-${randomUUID()}.tmp`)
   const handle = await open(temporary, 'wx', 0o600)
-  try { await handle.writeFile(bytes); await handle.sync() } catch (error) {
-    await handle.close(); await unlink(temporary).catch(() => undefined); throw error
+  try {
+    await handle.writeFile(bytes)
+    await handle.sync()
+    signal?.throwIfAborted()
+  } catch (error) {
+    await handle.close()
+    await unlink(temporary).catch(() => undefined)
+    throw error
   }
   await handle.close()
   try {
-    if (replace) await rename(temporary, target)
-    else await link(temporary, target)
+    if (replace) await rename(temporary, destination)
+    else await link(temporary, destination)
   } finally { await unlink(temporary).catch(() => undefined) }
 }
 

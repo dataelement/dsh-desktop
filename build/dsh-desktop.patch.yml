@@ -35,6 +35,13 @@
       config:
         root: !!js dshHomePath('kimi-ppt')
 
+    # Word and Excel authoring keeps its own mode state, templates and audit log.
+    # PDF preview remains owned by Harness's built-in document preview service.
+    - id: dsh-office
+      name: dsh-office
+      config:
+        root: !!js dshHomePath('office')
+
 # Harness creates the full Cordis HMR service after boot when no `hmr` service
 # exists, and that service throws without Node's internal module loader —
 # which a packaged Electron app cannot provide, so every signed macOS launch

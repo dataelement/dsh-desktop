@@ -31,3 +31,6 @@ docs/mobile-connection-latency.zh.md
 
 # Local pnpm content store
 /.pnpm-store/
+
+# Platform Office runtime staging output
+/.office-runtime/

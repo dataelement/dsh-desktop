@@ -400,6 +400,12 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
         run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
       - run: npm ci
+      - name: Stage verified Windows Office runtime
+        shell: pwsh
+        run: |
+          $runtime = Join-Path $env:RUNNER_TEMP 'dsh-office-runtime'
+          npm run office:stage:win -- -OutputRoot $runtime
+          "DSH_OFFICE_BUNDLE_ROOT=$runtime" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
@@ -419,6 +425,22 @@ jobs:
       - name: Build isolated Windows development package
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         run: npm run package:dev:win
+      - name: Verify packaged Word and Excel workflows
+        shell: pwsh
+        env:
+          OFFICE_APP: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && 'dist\win-unpacked' || 'dist-dev\win-unpacked' }}
+        run: |
+          $app = (Resolve-Path $env:OFFICE_APP).Path
+          $parent = Join-Path $PWD 'artifacts'
+          $output = Join-Path $parent 'office-package'
+          New-Item -ItemType Directory -Force -Path $parent | Out-Null
+          node scripts/verify-office-package.mjs --app $app --output $output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-office-package
+          path: artifacts/office-package/**
+          if-no-files-found: warn
       - name: Smoke test packaged Windows Harness
         if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         shell: pwsh

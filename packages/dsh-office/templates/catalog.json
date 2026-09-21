@@ -6,7 +6,7 @@
     "mode": "word",
     "sampleFile": "example.docx",
     "pages": 7,
-    "revision": "20260911.6",
+    "revision": "20260911.7",
     "category": "市场调研",
     "authoringFile": "reference.mjs",
     "inputs": [
@@ -17,7 +17,7 @@
       "inputs/coffee-chart-4.png"
     ],
     "files": {
-      "design.md": "26d1b1a6f5eb6a735d2bb9aa081548062098963b49fa8e4a483eb49a14e8949f",
+      "design.md": "da2d9177741d7081c57e36365474c7e8d6fa1695271a3d10bb4e0a4bc6039cc7",
       "example.docx": "8cd61c57b0be98534ec361e7a4dfb38486ddc1547ac8c05426fc4f32680e958a",
       "inputs/coffee-chart-1.png": "0fee82901ad2c57bdf947cdf1cc5371c2b3a46ace8a337f221043fab1fed6433",
       "inputs/coffee-chart-2.png": "dbe65e6ae3744f88e0d3575d260d7649586b69ad84815a5ce815be3b83df6495",
@@ -71,12 +71,11 @@
     "mode": "word",
     "sampleFile": "example.docx",
     "pages": 4,
-    "revision": "20260914.2",
+    "revision": "20260914.3",
     "category": "公文写作",
-    "businessSkill": "gov-doc-writing",
     "inputs": [],
     "files": {
-      "design.md": "cb39614c4b1005e8e8724f4d4d27773ca1752d762c3c9cf3b3f7fe64695b99f8",
+      "design.md": "3a3a69876af70acbb52a1c5e9b0fe700e90c8d936d0d2c1702c53217d633f33c",
       "example.docx": "c763f627f09e543505b4cfaea34487a0b8cd724b549e4762633153da61ddf961",
       "pages/1.webp": "ede77abf7b4bc4d4cabf7c0568317fc1209b15bca72156640b5c9d98de04e093",
       "pages/2.webp": "fcbcecefcaf89b286c5ccbdebc558d15b05e66ad4a653bb3a47222c290174c6a",
@@ -286,7 +285,7 @@
     "mode": "excel",
     "sampleFile": "example.xlsx",
     "pages": 5,
-    "revision": "20260911.6",
+    "revision": "20260911.7",
     "category": "物流分析",
     "authoringFile": "reference.py",
     "inputs": [
@@ -294,7 +293,7 @@
     ],
     "files": {
       "checks.json": "9177a4a25d874aed39c0ebf06fb0c8bebba843bd0c9015e7574991fc4fd9b2be",
-      "design.md": "6af4ee11e3fc968f6715f872bf7d4061129d4cbb09c4a0876ca042c573178ba0",
+      "design.md": "c7ba6712b888089a6dc700b935079ba3bfe00dc20eaf39e7d6266aa62082fac5",
       "example.xlsx": "da9fd95dba329b1b216427acb309f1877939e9bf4ab56ac769c1d5874ad4d8fb",
       "inputs/port.json": "b6804ce9a740a1a6e428430d42026031cfd1f010271ea0234ecb507ca377fef4",
       "pages/1.webp": "f40ad17108536be9e0558503d1153a3d696cb7ff161365a5f798abb357616d6c",
@@ -374,7 +373,7 @@
     "mode": "excel",
     "sampleFile": "example.xlsx",
     "pages": 4,
-    "revision": "20260911.6",
+    "revision": "20260911.7",
     "category": "实验数据",
     "authoringFile": "reference.py",
     "inputs": [
@@ -382,7 +381,7 @@
     ],
     "files": {
       "checks.json": "afefc7658be06bedde904e2875ad3c892bdae4cc52279b245056fde8141e8700",
-      "design.md": "3efb883d344360904b9e176cde7f88638b763a707383cf48e42159e817518d41",
+      "design.md": "f4eda5c67f630b1e3f9017d1f132d07c90424b610904f1d1ea46534b858bfec3",
       "example.xlsx": "f5d11a58196cae1a970e7dfb45f5c9eb10893720fb8a2a26de81a338fd000b5f",
       "inputs/bio.json": "291009243a2d17c0f6b4b29bca6f0b496d8a90141d711bb0b3fe05883d3dcea6",
       "pages/1.webp": "938f6746c0685d7e0bcdfcdfd21600b23def407f3989f8f128e53757e85f3e37",

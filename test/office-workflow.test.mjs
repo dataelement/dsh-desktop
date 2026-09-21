@@ -11,6 +11,7 @@ import { apply } from '../packages/dsh-office/index.js'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 
 const word = () => readFileSync(new URL('../packages/dsh-office/templates/coffee-market/example.docx', import.meta.url))
 const excel = () => readFileSync(new URL('../packages/dsh-office/templates/bio-assay/example.xlsx', import.meta.url))
@@ -23,7 +24,8 @@ async function harness(mode = 'workspace-write') {
   const root = await mkdtemp(path.join(tmpdir(), 'office-test-'))
   const auditRoot = await mkdtemp(path.join(tmpdir(), 'office-audit-'))
   const tools = new Map()
-  const ctx = { tools: { register(t) { tools.set(t.name, t) } }, get: () => ({ resolve: () => ({ mode, workspaceRoot: root }) }) }
+  const fs = new LocalFileSystem(new Context(), { cwd: root, diffBasisMaxBytes: 10 * 1024 * 1024 })
+  const ctx = { tools: { register(t) { tools.set(t.name, t) } }, fs, sandboxPolicy: { resolve: () => ({ mode, workspaceRoot: root }) } }
   registerOfficeTools(ctx, { root: auditRoot })
   return {
     root, auditRoot,
@@ -96,7 +98,8 @@ describe('Office governed workspace workflow', () => {
     const ctx = new Context()
     new SystemPrompt(ctx, {})
     new ToolRuntime(ctx)
-    registerOfficeTools({ tools: ctx.tools, get: () => ({ resolve: () => ({ mode: 'workspace-write' }) }) }, { root: path.join(root, 'audit') })
+    const fs = new LocalFileSystem(ctx, { cwd: root, diffBasisMaxBytes: 10 * 1024 * 1024 })
+    registerOfficeTools({ tools: ctx.tools, fs, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) } }, { root: path.join(root, 'audit') })
     const exec = { name: 'office_inspect', arguments: { file_path: 'sample.docx' }, agent: { id: 'agent', session: { id: 'session', header: { cwd: root } } }, callId: 'registry-call', signal: new AbortController().signal }
     const allow = await ctx.tools.execute(exec)
     expect(allow.isError).toBe(false)
@@ -124,8 +127,10 @@ describe('Office governed workspace workflow', () => {
   })
   it('registers only the discoverable Word and Excel foundation skills', async () => {
     let provider
-    const host = { tools: { register() {} }, skills: { registerProvider(factory) { provider = factory() } }, connection: { requestRejection() {} },
-      webServer: { register() { return () => {} } }, effect(run) { run(); return () => {} }, on() {} }
+    const host = { tools: { register() {} }, skills: { registerProvider(factory) { provider = factory() } },
+      connection: { rpc: { handle() { return async () => {} } } }, sessions: { get() {} },
+      sessionProjections: { register() {}, stateOf() {} }, systemPrompt: { context() {} },
+      effect(run) { run(); return () => {} } }
     apply(host, { root: '/tmp/office-test' })
     const skills = await provider.list()
     expect(skills.map(s => s.name)).toEqual(['dsh-word', 'dsh-excel'])

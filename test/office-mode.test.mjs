@@ -1,182 +1,129 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { SkillRegistry } from '@deepseek-ai/dsh-skill'
-import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { agentEvents } from '@deepseek-ai/dsh-agent'
-import { createScope } from '@deepseek-ai/dsh-scope'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import * as ppt from 'dsh-ppt'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
+import { SessionId, SessionStore } from '@deepseek-ai/dsh-session'
+import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import { SystemPrompt, renderContextSnapshot } from '@deepseek-ai/dsh-system-prompt'
 import * as office from '../packages/dsh-office/index.js'
-import { callRpcRoute, rpcRouteFixture } from './helpers/rpc-route.mjs'
 
 const cleanup = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
-async function fixture(existingRoot) {
-  const root = existingRoot ?? await mkdtemp(path.join(os.tmpdir(), 'office-modes-'))
-  if (!existingRoot) cleanup.push(() => rm(root, { recursive: true, force: true }))
-  const ctx = new Context(), registered = new Set()
-  const { routes, connection, webServer } = rpcRouteFixture()
-  ctx.provide('connection', connection)
-  ctx.provide('webServer', webServer)
-  ctx.provide('tools', { register(tool) { registered.add(tool.name) } })
-  ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) })
-  for (const [plugin, config] of [[SystemPrompt, { includeHarnessIdentity: false }], [SkillRegistry, undefined],
-    [ppt, { root: path.join(root, 'composer') }], [office, { root: path.join(root, 'office') }]]) {
-    const fork = ctx.plugin(plugin, config); await fork; cleanup.push(() => fork.dispose())
-  }
-  const call = async (channel, endpoint, payload) => {
-    const response = await callRpcRoute(routes, channel, endpoint, payload)
-    expect(response.ok).toBe(true); expect(response.value.status).toBe('ok')
-    return response.value.data
-  }
-  async function agent(id = randomUUID()) {
-    const agent = { id, session: Session.create(SessionId(id)) }
-    const scope = createScope(ctx, agent); agent.ctx = scope.ctx; cleanup.push(() => scope.dispose())
-    return agent
-  }
-  async function preStep(agent) {
-    const decision = await agentEvents(ctx, agent).waterfall('agent/pre-step', { turn: 1, step: 1, messages: [], signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))
-    for (const message of decision.messages ?? []) agent.session.append('user/message', message, { surfaceOp: 'append' })
-    return decision
-  }
-  return { root, ctx, registered, call, agent, preStep, routes }
-}
-const activeSkills = agent => agent.session.deriveMessages().flatMap(message => message.source?.kind === 'plugin' && message.source.form === 'snapshot'
-  ? message.source.sections.map(section => section.name).filter(name => ['dsh-word', 'dsh-excel', 'dsh-ppt'].includes(name)) : [])
 
-it('activates both real plugins and atomically persists one document format per session', async () => {
-  const f = await fixture(), sessionId = 'same-session'
-  expect(f.registered.has('office_build')).toBe(true); expect(f.registered.has('pptd_render')).toBe(true)
-  for (const mode of ['word', 'excel']) {
-    expect((await f.call('/dsh-office', 'mode', { sessionId, mode })).mode).toBe(mode)
-    const state = await f.call('/dsh-ppt', 'state', { sessionId })
-    expect(state.documentMode).toBe(mode); expect(state.presentationMode).toBeUndefined()
+async function fixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'office-modes-'))
+  cleanup.push(() => rm(root, { recursive: true, force: true }))
+  const ctx = new Context()
+  new LocalFileSystem(ctx, { cwd: root, diffBasisMaxBytes: 10 * 1024 * 1024 })
+  const handlers = new Map()
+  const registered = new Set()
+  ctx.provide('connection', { rpc: { handle(channel, handler) {
+    if (handlers.has(channel)) throw new Error(`duplicate channel ${channel}`)
+    handlers.set(channel, handler)
+    return async () => { handlers.delete(channel) }
+  } } })
+  ctx.provide('tools', { register(tool) { registered.add(tool.name) } })
+  ctx.provide('skills', { registerProvider() {} })
+  ctx.provide('sandboxPolicy', { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) })
+  for (const plugin of [SessionProjectionRegistry, SessionStore, SystemPrompt]) {
+    const fork = ctx.plugin(plugin, plugin === SystemPrompt ? { includeHarnessIdentity: false } : undefined)
+    await fork
+    cleanup.push(() => fork.dispose())
   }
-  await f.call('/dsh-ppt', 'presentation/mode', { sessionId, mode: 'ppt' })
-  expect((await f.call('/dsh-office', 'state', { sessionId })).mode).toBe('ppt')
-  await f.call('/dsh-office', 'mode', { sessionId, mode: 'word' })
-  const restored = await fixture(f.root)
-  expect((await restored.call('/dsh-office', 'state', { sessionId })).mode).toBe('word')
-  expect((await restored.call('/dsh-office', 'state', { sessionId: 'different' })).mode).toBeNull()
-  const directories = await readdir(path.join(f.root, 'composer/sessions'))
-  const state = JSON.parse(await readFile(path.join(f.root, 'composer/sessions', directories[0], 'state.json'), 'utf8'))
-  expect(state.activities.some(activity => activity.operation === 'select-document-mode')).toBe(true)
+  const fork = ctx.plugin(office, { root: path.join(root, 'audit') })
+  await fork
+  cleanup.push(() => fork.dispose())
+
+  const createSession = (id) => ctx.sessions.create(SessionId(id), { meta: { cwd: root } })
+  const call = async (endpoint, payload) => {
+    const response = await handlers.get('/dsh-office')(endpoint, payload, new AbortController().signal)
+    expect(response.ok).toBe(true)
+    return response.value
+  }
+  const callOk = async (endpoint, payload) => {
+    const response = await call(endpoint, payload)
+    expect(response.status).toBe('ok')
+    return response.data
+  }
+  const context = async session => {
+    const agent = { id: session.id, session }
+    return renderContextSnapshot(await ctx.systemPrompt.assemble({ scope: agent, agent }))
+  }
+  return { root, ctx, handlers, registered, fork, createSession, call, callOk, context }
+}
+
+it('owns independent Word and Excel state as whole-value session events', async () => {
+  const f = await fixture()
+  const first = f.createSession('first')
+  const second = f.createSession('second')
+  expect((await f.callOk('state', { sessionId: first.id })).mode).toBeNull()
+  await f.callOk('mode', { sessionId: first.id, mode: 'word' })
+  await f.callOk('template/select', { sessionId: first.id, templateId: 'coffee-market' })
+  await f.callOk('mode', { sessionId: second.id, mode: 'excel' })
+
+  expect(f.ctx.sessionProjections.stateOf(first, 'office')).toEqual({
+    mode: 'word', selectedTemplate: { id: 'coffee-market', mode: 'word', revision: '20260911.7' }
+  })
+  expect(f.ctx.sessionProjections.stateOf(second, 'office')).toEqual({ mode: 'excel', selectedTemplate: null })
+  expect(first.snapshotEvents().filter(event => event.type === 'office/mode').map(event => event.data)).toEqual([
+    { mode: 'word', selectedTemplate: null },
+    { mode: 'word', selectedTemplate: { id: 'coffee-market', mode: 'word', revision: '20260911.7' } }
+  ])
+
+  const restored = f.ctx.sessions.fork(first, undefined, SessionId('restored'))
+  expect(f.ctx.sessionProjections.stateOf(restored, 'office')).toEqual(f.ctx.sessionProjections.stateOf(first, 'office'))
+  expect((await f.call('state', { sessionId: 'missing' })).status).toBe('error')
 })
 
-it('serves bounded previews and persists a reviewed Word or Excel example selection', async () => {
-  const f = await fixture(), sessionId = 'word-preview-session'
-  await f.call('/dsh-office', 'mode', { sessionId, mode: 'word' })
-  const state = await f.call('/dsh-office', 'state', { sessionId })
+it('keeps the client RPC response and template preview contracts', async () => {
+  const f = await fixture()
+  const session = f.createSession('templates')
+  await f.callOk('mode', { sessionId: session.id, mode: 'word' })
+  const state = await f.callOk('state', { sessionId: session.id })
   expect(state.templates.filter(item => item.mode === 'word')).toHaveLength(3)
   expect(state.templates.filter(item => item.mode === 'excel').map(item => item.pages)).toEqual([20, 5, 4])
   expect(state.templates.every(item => item.thumbnail.startsWith('data:image/webp;base64,') && item.pageAspectRatio > 0)).toBe(true)
-  const before = await f.ctx.officeModes.state(sessionId)
-  const preview = await f.call('/dsh-office', 'template/preview', { sessionId, templateId: 'equity-research', page: 12 })
+
+  const before = f.ctx.sessionProjections.stateOf(session, 'office')
+  const preview = await f.callOk('template/preview', { sessionId: session.id, templateId: 'equity-research', page: 12 })
   expect(preview.image.startsWith('data:image/webp;base64,')).toBe(true)
-  expect(await f.ctx.officeModes.state(sessionId)).toEqual(before)
-  for (const payload of [{ templateId: '../design.md', page: 1 }, { templateId: 'equity-research', page: 13 }, { templateId: 'ai-office', page: 0 }, { templateId: 'ai-office', page: '1' }]) {
-    expect((await callRpcRoute(f.routes, '/dsh-office', 'template/preview', { sessionId, ...payload })).value.status).toBe('error')
-  }
-  expect((await callRpcRoute(f.routes, '/dsh-office', 'template/select', { sessionId, templateId: 'annual-business' })).value.status).toBe('error')
-  const selected = await f.call('/dsh-office', 'template/select', { sessionId, templateId: 'equity-research' })
-  expect(selected.selectedTemplateId).toBe('equity-research')
-  expect((await f.ctx.officeModes.state(sessionId)).selectedDocumentTemplate).toEqual({ id: 'equity-research', mode: 'word', revision: '20260911.5' })
-  const restored = await fixture(f.root)
-  expect((await restored.call('/dsh-office', 'state', { sessionId })).selectedTemplateId).toBe('equity-research')
-  expect((await f.call('/dsh-office', 'template/deselect', { sessionId })).selectedTemplateId).toBeUndefined()
+  expect(f.ctx.sessionProjections.stateOf(session, 'office')).toBe(before)
+  expect((await f.call('template/preview', { sessionId: session.id, templateId: 'equity-research', page: 13 })).status).toBe('error')
+  expect((await f.call('template/select', { sessionId: session.id, templateId: 'annual-business' })).status).toBe('error')
+
+  const selected = await f.callOk('template/select', { sessionId: session.id, templateId: 'equity-research' })
+  expect(selected).toMatchObject({ mode: 'word', selectedTemplateId: 'equity-research', selectedTemplateRevision: '20260911.5' })
+  expect((await f.callOk('template/deselect', { sessionId: session.id })).selectedTemplateId).toBeUndefined()
 })
 
-it('retires legacy Word selections and automatic template instructions while preserving the foundation and user text', async () => {
-  const f = await fixture(), agent = await f.agent()
-  await f.call('/dsh-office', 'mode', { sessionId: agent.id, mode: 'word' })
-  const [folder] = await readdir(path.join(f.root, 'composer/sessions'))
-  const file = path.join(f.root, 'composer/sessions', folder, 'state.json')
-  const persisted = JSON.parse(await readFile(file, 'utf8'))
-  await writeFile(file, JSON.stringify({ ...persisted, selectedWordTemplateId: 'campaign-launch' }))
-  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Keep my draft.' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
-  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Legacy automatic template guide' }], source: {
-    kind: 'plugin', plugin: 'dsh-office-composer', form: 'snapshot', sections: [{ name: 'dsh-word', text: 'Legacy Word' }, { name: 'word-template:campaign-launch@20260910.1', text: 'Legacy automatic template guide' }]
-  } }), { surfaceOp: 'append' })
-  await f.preStep(agent); await f.preStep(agent)
-  const snapshots = agent.session.deriveMessages().filter(m => m.source?.plugin === 'dsh-office-composer')
-  expect(snapshots).toHaveLength(1)
-  expect(snapshots[0].source.sections.map(s => s.name)).toEqual(['dsh-word'])
-  expect(await f.ctx.officeModes.state(agent.id)).not.toHaveProperty('selectedWordTemplateId')
-  expect(agent.session.deriveMessages().some(m => m.content.some(p => p.text === 'Keep my draft.'))).toBe(true)
-  expect(agent.session.deriveMessages().some(m => m.content.some(p => p.text.includes('Legacy automatic template guide')))).toBe(false)
+it('renders current mode and reviewed template through dynamic system-prompt context', async () => {
+  const f = await fixture()
+  const session = f.createSession('prompt')
+  expect(await f.context(session)).toBe('')
+
+  await f.callOk('mode', { sessionId: session.id, mode: 'word' })
+  await f.callOk('template/select', { sessionId: session.id, templateId: 'government-notice' })
+  const word = await f.context(session)
+  expect(word).toContain('当前会话输出格式：Word (.docx)')
+  expect(word).toContain('<skill_content name="dsh-word">')
+  expect(word).toContain('office_template(template_id="government-notice")')
+
+  await f.callOk('mode', { sessionId: session.id, mode: 'excel' })
+  const excel = await f.context(session)
+  expect(excel).toContain('当前会话输出格式：Excel (.xlsx)')
+  expect(excel).toContain('<skill_content name="dsh-excel">')
+  expect(excel).not.toContain('government-notice')
+  expect(session.deriveMessages()).toEqual([])
+
+  await f.callOk('mode', { sessionId: session.id, mode: null })
+  expect(await f.context(session)).toBe('')
 })
 
-it('coordinates template selection, concurrent requests and return to ordinary conversation through the same state owner', async () => {
-  const f = await fixture(), sessionId = 'concurrent'
-  await Promise.all([
-    f.call('/dsh-office', 'mode', { sessionId, mode: 'word' }),
-    f.call('/dsh-ppt', 'presentation/mode', { sessionId, mode: 'ppt' }),
-    f.call('/dsh-office', 'mode', { sessionId, mode: 'excel' })
-  ])
-  const state = await f.call('/dsh-ppt', 'state', { sessionId })
-  expect([state.documentMode, state.presentationMode].filter(Boolean)).toHaveLength(1)
-  await f.call('/dsh-ppt', 'template/select', { sessionId, mode: 'ppt', templateId: state.templates[0].id })
-  expect((await f.call('/dsh-office', 'state', { sessionId })).mode).toBe('ppt')
-  await f.call('/dsh-office', 'mode', { sessionId, mode: null })
-  const cleared = await f.call('/dsh-ppt', 'state', { sessionId })
-  expect(cleared.presentationMode).toBeUndefined(); expect(cleared.documentMode).toBeUndefined()
-  expect(cleared.selectedTemplateId).toBe(state.templates[0].id)
-})
-
-it('loads the selected Word/Excel skill and retires automatic instructions when changing formats', async () => {
-  const f = await fixture(), agent = await f.agent()
-  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'User source remains available.' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
-  await f.call('/dsh-office', 'mode', { sessionId: agent.id, mode: 'word' })
-  await f.call('/dsh-office', 'template/select', { sessionId: agent.id, templateId: 'coffee-market' })
-  await f.preStep(agent); await f.preStep(agent)
-  expect(activeSkills(agent)).toEqual(['dsh-word'])
-  const wordSnapshot = agent.session.deriveMessages().find(message => message.source?.plugin === 'dsh-office-composer')
-  expect(wordSnapshot.source.sections.map(section => section.name)).toEqual(['dsh-word', 'office-template:coffee-market@20260911.6'])
-  expect(wordSnapshot.content[0].text).toContain('先调用 office_template(template_id="coffee-market")')
-  expect(wordSnapshot.content[0].text).toContain('参考范围：仅参考案例的版式、视觉语言、章节或工作表结构')
-  await f.call('/dsh-office', 'template/select', { sessionId: agent.id, templateId: 'government-notice' })
-  await f.preStep(agent)
-  const noticeSnapshot = agent.session.deriveMessages().find(message => message.source?.plugin === 'dsh-office-composer')
-  expect(noticeSnapshot.source.sections.map(section => section.name)).toEqual(['dsh-word', 'office-template:government-notice@20260914.2'])
-  await f.call('/dsh-office', 'mode', { sessionId: agent.id, mode: 'excel' })
-  await f.preStep(agent); await f.preStep(agent)
-  expect(activeSkills(agent)).toEqual(['dsh-excel'])
-  const excelSnapshot = agent.session.deriveMessages().find(message => message.source?.plugin === 'dsh-office-composer')
-  expect(excelSnapshot.source.sections.map(section => section.name)).toEqual(['dsh-excel'])
-  await f.call('/dsh-ppt', 'presentation/mode', { sessionId: agent.id, mode: 'ppt' })
-  await f.preStep(agent)
-  expect(activeSkills(agent)).toEqual(['dsh-ppt'])
-  await f.call('/dsh-office', 'mode', { sessionId: agent.id, mode: null })
-  await f.preStep(agent)
-  expect(activeSkills(agent)).toEqual([])
-  expect(agent.session.deriveMessages().some(message => message.content.some(part => part.text === 'User source remains available.'))).toBe(true)
-})
-
-it('refreshes a same-mode foundation snapshot after an application Skill update', async () => {
-  const f = await fixture(), agent = await f.agent()
-  await f.call('/dsh-office', 'mode', { sessionId: agent.id, mode: 'word' })
-  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'Previous foundation instructions' }], source: {
-    kind: 'plugin', plugin: 'dsh-office-composer', form: 'snapshot', sections: [{ name: 'dsh-word', text: 'Previous foundation instructions' }]
-  } }), { surfaceOp: 'append' })
-  await f.preStep(agent); await f.preStep(agent)
-  const snapshots = agent.session.deriveMessages().filter(message => message.source?.plugin === 'dsh-office-composer')
-  expect(snapshots).toHaveLength(1)
-  expect(snapshots[0].source.sections[0].text).toContain('office_skill_read')
-  expect(snapshots[0].source.sections[0].text).not.toContain('Previous foundation instructions')
-})
-
-it('migrates prior product-named foundation context and preserves explicit user messages', async () => {
-  const f = await fixture(), agent = await f.agent()
-  await f.call('/dsh-office', 'mode', { sessionId:agent.id, mode:'excel' })
-  agent.session.append('user/message', createUserMessage({ content:[{ type:'text', text:'My original request' }], source:{ kind:'user' } }), { surfaceOp:'append' })
-  agent.session.append('user/message', createUserMessage({ content:[{ type:'text', text:'Old automatic foundation' }], source:{ kind:'plugin', plugin:'workbuddy-office-composer', form:'snapshot', sections:[{ name:'workbuddy-excel', text:'Old automatic foundation' }] } }), { surfaceOp:'append' })
-  await f.preStep(agent); await f.preStep(agent)
-  expect(activeSkills(agent)).toEqual(['dsh-excel'])
-  expect(agent.session.deriveMessages().filter(m=>m.source?.plugin==='workbuddy-office-composer')).toEqual([])
-  expect(agent.session.deriveMessages().some(m=>m.content.some(p=>p.text==='My original request'))).toBe(true)
+it('binds the RPC disposer to the Office Cordis lifecycle', async () => {
+  const f = await fixture()
+  expect(f.handlers.has('/dsh-office')).toBe(true)
+  await f.fork.dispose()
+  expect(f.handlers.has('/dsh-office')).toBe(false)
 })

@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:dir": "npm run build && electron-builder --dir",
+    "package:dir": "npm run build && electron-builder --dir --config electron-builder.office.cjs",
     "package:dev:dir": "npm run build && electron-builder --dir --config electron-builder.dev.cjs",
     "package:dev:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.dev.cjs",
     "package:dev:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never --config electron-builder.dev.cjs",
@@ -40,7 +40,8 @@
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never",
+    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never --config electron-builder.office.cjs",
+    "office:stage:win": "pwsh -NoProfile -File scripts/stage-office-runtime-windows.ps1",
     "ppt:build": "node scripts/generate-zara-ppt-templates.mjs && node scripts/localize-ppt-templates.mjs && node scripts/enrich-ppt-templates.mjs && node scripts/build-ppt-runtime.mjs"
   },
   "dependencies": {
@@ -270,6 +271,7 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-log-bridge": "file:packages/dsh-desktop-log-bridge",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
+    "dsh-office": "file:packages/dsh-office",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",

@@ -1,7 +1,8 @@
 const packageJson = require('./package.json')
+const officeBuild = require('./electron-builder.office.cjs')
 
 module.exports = {
-  ...packageJson.build,
+  ...officeBuild,
   appId: 'io.dsh.desktop.dev',
   productName: 'DSH Desktop Dev',
   directories: {

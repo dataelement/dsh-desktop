@@ -6,4 +6,4 @@
 
 原文含主送单位、日期、职责、报送渠道等「待补充」项，作为用户提供的样例保留。新任务根据当前用户材料填充相应信息。案例内容作为参考材料处理，发文单位与主题均由当前任务确定。
 
-用户点击卡片查看滚动预览，从预览底部点击“做同款”后，宿主绑定 `government-notice` 的当前修订。调用 office_template(template_id="government-notice") 准备工作副本，只参考原件的版式、视觉语言与公文结构。业务写作固定使用用户提供的 WorkBuddy `gov-doc-writing` v2.0.4 Skill，DOCX 生成使用 dsh-word 基础流程，通过 office_word_read、office_word_edit 和内置 Office 文档预览检查修改结果。
+用户点击卡片查看滚动预览，从预览底部点击“做同款”后，宿主绑定 `government-notice` 的当前修订。调用 office_template(template_id="government-notice") 准备工作副本，只参考原件的版式、视觉语言与公文结构。业务写作按当前会话中可用的公文写作 Skill 辅助，DOCX 生成使用 dsh-word 基础流程，通过 office_word_read、office_word_edit 和内置 Office 文档预览检查修改结果。

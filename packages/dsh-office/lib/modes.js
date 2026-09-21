@@ -1,15 +1,39 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { renderSkillContent } from '@deepseek-ai/dsh-skill'
+import { z } from 'zod'
 import { listOfficeTemplates, officeTemplate, officeTemplatePreview } from './templates.js'
-import { registerHostRpcChannel } from './host-rpc.js'
 
-const PLUGIN = 'dsh-office-composer'
-const CONTEXT_SOURCES = new Set([PLUGIN, 'workbuddy-office-composer'])
-export const selectedMode = state => state.documentMode ?? (state.presentationMode === 'ppt' ? 'ppt' : null)
+const EMPTY_OFFICE_STATE = Object.freeze({ mode: null, selectedTemplate: null })
+const officeTemplateSelectionSchema = z.object({
+  id: z.string(),
+  mode: z.enum(['word', 'excel']),
+  revision: z.string()
+})
+const officeStateSchema = z.object({
+  mode: z.enum(['word', 'excel']).nullable(),
+  selectedTemplate: officeTemplateSelectionSchema.nullable()
+})
+
+const stripFrontmatter = content => content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/u, '').trim()
+const bundledSkills = Object.fromEntries(['word', 'excel'].map(mode => {
+  const name = `dsh-${mode}`
+  const resourceBase = new URL(`../skills/${name}/`, import.meta.url)
+  return [mode, renderSkillContent({
+    name,
+    provider: 'dsh-office',
+    resourceBase: { kind: 'directory', path: fileURLToPath(resourceBase) },
+    content: stripFrontmatter(readFileSync(new URL('SKILL.md', resourceBase), 'utf8'))
+  })]
+}))
+
+export function officeState(ctx, session) {
+  return ctx.sessionProjections.stateOf(session, 'office') ?? EMPTY_OFFICE_STATE
+}
 
 function selectedOfficeTemplate(state) {
-  const selection = state.selectedDocumentTemplate
-  if (!selection || selection.mode !== selectedMode(state)) return null
+  const selection = state.selectedTemplate
+  if (!selection || selection.mode !== state.mode) return null
   try {
     const template = officeTemplate(selection.id)
     return (template.mode ?? 'word') === selection.mode && template.revision === selection.revision ? template : null
@@ -31,81 +55,70 @@ function selectedTemplateContext(template) {
     `selected_template_mode: ${mode}`,
     `selected_template_category: ${template.category}`,
     `selected_template_description: ${template.description}`,
-    ...(template.businessSkill ? [`required_business_skill: ${template.businessSkill}`, `业务方法：调用 skill(name="${template.businessSkill}") 加载当前案例指定的业务 Skill。`] : []),
     `执行要求：开始制作前先调用 office_template(template_id="${template.id}")。${route}`,
     '参考范围：仅参考案例的版式、视觉语言、章节或工作表结构。使用当前用户材料填写全部内容，并执行对应检查与预览。'
   ].join('\n')
 }
 
-const matches = (source, names) => source?.form === 'snapshot' && source.sections.length === names.length && source.sections.every((section, i) => section.name === names[i])
+function contextForState(state) {
+  if (state.mode !== 'word' && state.mode !== 'excel') return ''
+  const template = selectedOfficeTemplate(state)
+  return [
+    `当前会话输出格式：${state.mode === 'word' ? 'Word (.docx)' : 'Excel (.xlsx)'}。该选择来自应用界面。按以下 Skill 使用受治理的 Office 工具完成创建、修改、检查和交付。\n\n${bundledSkills[state.mode]}`,
+    ...(template ? [selectedTemplateContext(template)] : [])
+  ].join('\n\n')
+}
 
-function clearPreviousContext(agent, names, sections) {
-  const session = agent.session
-  for (const seq of [...session.surface.nodes]) {
-    const event = session.eventAt(seq)
-    const source = event?.data?.source
-    if (event?.type !== 'user/message' || source?.kind !== 'plugin' || !CONTEXT_SOURCES.has(source.plugin) || source.form !== 'snapshot') continue
-    if (source.plugin === PLUGIN && matches(source, names) && (!sections || source.sections.every((section, i) => section.text === sections[i].text))) continue
-    session.append('user/message', createUserMessage({ content: [{ type: 'text', text: '输出格式已按当前会话选择更新。' }],
-      source: { kind: 'plugin', plugin: 'dsh-office-context-updated' } }), { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] })
-  }
+function appendState(session, state) {
+  session.append('office/mode', state)
 }
 
 export function registerOfficeModes(ctx) {
-  const modes = ctx.officeModes
+  ctx.sessionProjections.register({
+    key: 'office',
+    stateVersion: 1,
+    stateSchema: officeStateSchema,
+    init: () => EMPTY_OFFICE_STATE,
+    apply: (state, event) => event.type === 'office/mode' ? event.data : state
+  })
+
+  ctx.systemPrompt.context({
+    name: 'office:mode',
+    order: 125,
+    text: context => context.agent ? contextForState(officeState(ctx, context.agent.session)) : ''
+  })
+
   const handle = async (endpoint, payload) => {
     try {
       const sessionId = payload?.sessionId
       if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 512) throw new Error('Choose an active session')
+      const session = ctx.sessions.get(sessionId)
+      if (!session) throw new Error('Choose an active session')
+      const current = officeState(ctx, session)
       if (endpoint === 'mode') {
         if (![null, 'word', 'excel'].includes(payload.mode)) throw new Error('Choose Word, Excel or ordinary conversation')
-        await modes.select(sessionId, payload.mode)
+        appendState(session, {
+          mode: payload.mode,
+          selectedTemplate: current.selectedTemplate?.mode === payload.mode ? current.selectedTemplate : null
+        })
       } else if (endpoint === 'template/select') {
         const template = officeTemplate(payload.templateId)
-        const state = await modes.state(sessionId)
         const mode = template.mode ?? 'word'
-        if (selectedMode(state) !== mode) throw new Error('Choose the matching Word or Excel format before using this example')
-        await modes.selectTemplate(sessionId, { id: template.id, mode, revision: template.revision })
+        if (current.mode !== mode) throw new Error('Choose the matching Word or Excel format before using this example')
+        appendState(session, { mode, selectedTemplate: { id: template.id, mode, revision: template.revision } })
       } else if (endpoint === 'template/deselect') {
-        await modes.deselectTemplate(sessionId)
+        appendState(session, { mode: current.mode, selectedTemplate: null })
       } else if (endpoint === 'template/preview') {
         return { ok: true, value: { status: 'ok', data: await officeTemplatePreview(payload.templateId, payload.page) } }
       } else if (endpoint !== 'state') throw new Error('Unknown Office mode operation')
-      const state = await modes.state(sessionId)
+      const state = officeState(ctx, session)
       const templates = await listOfficeTemplates()
       const selected = selectedOfficeTemplate(state)
-      return { ok: true, value: { status: 'ok', data: { sessionId, mode: selectedMode(state), templates,
+      return { ok: true, value: { status: 'ok', data: { sessionId, mode: state.mode, templates,
         ...(selected ? { selectedTemplateId: selected.id, selectedTemplateRevision: selected.revision } : {}) } } }
     } catch (error) {
-      return { ok: true, value: { status: 'error', error: { code: 'invalid-request', message: error.message } } }
+      return { ok: true, value: { status: 'error', error: { code: 'invalid-request', message: error instanceof Error ? error.message : String(error) } } }
     }
   }
-  registerHostRpcChannel(ctx, '/dsh-office', handle)
-  ctx.on('agent/pre-step', async ({ agent, step, signal }, next) => {
-    const decision = await next()
-    if (decision.kind === 'reject' || signal.aborted) return decision
-    const state = await modes.state(agent.id), mode = selectedMode(state)
-    const template = selectedOfficeTemplate(state)
-    const names = (mode === 'word' || mode === 'excel') ? [`dsh-${mode}`, ...(template ? [`office-template:${template.id}@${template.revision}`] : [])] : []
-    if (step !== 1 || (mode !== 'word' && mode !== 'excel')) {
-      clearPreviousContext(agent, names)
-      return decision
-    }
-    const name = `dsh-${mode}`
-    const skill = await ctx.skills.get(name, { cwd: agent.session.header.cwd, signal, scope: agent })
-    if (!skill) throw new Error(`The selected output format requires ${name}`)
-    signal.throwIfAborted()
-    const sections = [
-      { name, text: `当前会话输出格式：${mode === 'word' ? 'Word (.docx)' : 'Excel (.xlsx)'}。该选择来自应用界面。按以下 Skill 使用受治理的 Office 工具完成创建、修改、检查和交付。\n\n${renderSkillContent(skill)}` },
-      ...(template ? [{ name: `office-template:${template.id}@${template.revision}`, text: selectedTemplateContext(template) }] : [])
-    ]
-    clearPreviousContext(agent, names, sections)
-    const active = agent.session.deriveMessages().some(message => message.role === 'user' && message.source?.kind === 'plugin'
-      && message.source.plugin === PLUGIN && matches(message.source, names))
-    if (active) return decision
-
-    const text = sections.map(section => section.text).join('\n\n')
-    return { kind: 'enter', messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: PLUGIN, form: 'snapshot', sections } })] }
-  }, { prepend: true })
+  ctx.effect(() => ctx.connection.rpc.handle('/dsh-office', handle), 'dsh-office: rpc channel')
 }

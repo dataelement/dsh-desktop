@@ -45,7 +45,7 @@ index 8de3fa2..b950ce7 100644
  		return {
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -105,7 +105,13 @@
+@@ -105,7 +105,14 @@
      "@deepseek-ai/dsh-http-proxy": "^0.1.6-alpha.2",
      "@deepseek-ai/dsh-mcp-resources": "^0.1.6-alpha.2",
      "@deepseek-ai/dsh-plugin-manager": "^0.1.6-alpha.2",
@@ -55,6 +55,7 @@ index 8de3fa2..b950ce7 100644
 +    "dsh-desktop-client-ui": "0.1.0",
 +    "dsh-desktop-hmr-fallback": "0.1.0",
 +    "dsh-desktop-log-bridge": "0.1.0",
++    "dsh-office": "0.2.0",
 +    "dsh-desktop-market-installer": "0.1.0",
 +    "dsh-desktop-preset-transfer": "0.1.0"
    },

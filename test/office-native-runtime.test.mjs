@@ -5,6 +5,8 @@ import path from 'node:path'
 import { registerOfficeTools } from '../packages/dsh-office/lib/tools.js'
 import { parseZip } from '../packages/dsh-office/lib/zip.js'
 import { sha256 } from '../packages/dsh-office/lib/workspace.js'
+import { Context } from '@deepseek-ai/cordis'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 
 const enabled = Boolean(process.env.DSH_OFFICE_TEST_PYTHON && process.env.DSH_OFFICE_TEST_LIBREOFFICE)
 if (process.env.DSH_OFFICE_REQUIRE_NATIVE === '1' && !enabled) throw new Error('Office native gate requires bundled Python and LibreOffice')
@@ -16,7 +18,8 @@ describe.skipIf(!enabled)('Office real isolated authoring and calculation', () =
     const base = process.env.DSH_OFFICE_TEST_OUTPUT || tmpdir()
     await mkdir(base, { recursive: true }); root = await mkdtemp(path.join(base, 'verified-'))
     const tools = new Map()
-    registerOfficeTools({ tools: { register(tool) { tools.set(tool.name, tool) } }, get: () => ({ resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) }) }, {
+    const fs = new LocalFileSystem(new Context(), { cwd: root, diffBasisMaxBytes: 10 * 1024 * 1024 })
+    registerOfficeTools({ tools: { register(tool) { tools.set(tool.name, tool) } }, fs, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) } }, {
       root: path.join(root, 'audit'), python: process.env.DSH_OFFICE_TEST_PYTHON, libreOffice: process.env.DSH_OFFICE_TEST_LIBREOFFICE, runtimeRoot: process.env.DSH_OFFICE_BUNDLE_ROOT
     })
     call = (name, args) => tools.get(name).execute(args, { name, callId: `real-${name}`, signal: controller.signal, agent: { id: 'office-native-test', session: { id: 'test', header: { cwd: root } } } })

@@ -4,7 +4,7 @@ import { constants } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { boundedRead } from './workspace.js'
+import { readBytes, resolveRegularFile } from './workspace.js'
 
 const PYTHON_VERSION = '3.1.5'
 export const MAX_LOG_BYTES = 128 * 1024
@@ -279,7 +279,9 @@ export async function convertWithLibreOffice({ bytes, extension, format, config,
     // Windows VCL controls and the Kit calls share their creating thread.
     // unipoll keeps Calc loading on that thread; calculation uses the CPU.
     const execution = await runIsolated(libreOfficeConversionArgv(runtime, { profile, input, outputDir, format }), { job, readRoots: [...runtime.loReadRoots, ...grantedFonts], bwrap: runtime.bwrap, windowsSandbox: runtime.windowsSandbox, signal, env: { FONTCONFIG_FILE: fontConfig, FONTCONFIG_PATH: job, ...(process.platform === 'win32' ? { SAL_DISABLE_OPENCL: '1', SAL_LOK_OPTIONS: 'unipoll' } : {}) } })
-    const output = await boundedRead(path.join(outputDir, `input.${format.split(':')[0]}`), format === 'pdf' ? 64 * 1024 * 1024 : 16 * 1024 * 1024)
+    const outputFile = path.join(outputDir, `input.${format.split(':')[0]}`)
+    const outputTarget = await resolveRegularFile(config.fs, outputFile, job, signal)
+    const output = await readBytes(config.fs, outputTarget, format === 'pdf' ? 64 * 1024 * 1024 : 16 * 1024 * 1024, signal)
     return { bytes: output, execution }
   })
 }

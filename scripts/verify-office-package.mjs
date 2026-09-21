@@ -1,11 +1,9 @@
-// Exercise the installed dependency closure and bundled engines, with an isolated
-// test workspace policy. Full Desktop/model and native Office acceptance are separate.
+// Exercise the installed dsh-office dependency closure in a fresh bundled-Node
+// worker. Desktop/model, native Microsoft Office and built-in PDF preview acceptance are separate.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { Readable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
@@ -16,192 +14,198 @@ const resources = path.join(values.app, windows ? 'resources' : 'Contents/Resour
 const node = path.join(resources, 'app/node_modules/node/bin', windows ? 'node.exe' : 'node')
 if (!values.worker) {
   execFileSync(node, [fileURLToPath(import.meta.url), '--worker', '--app', values.app, '--output', values.output], {
-    stdio: 'inherit', timeout: 600000, env: windows ? { SystemRoot: process.env.SystemRoot, WINDIR: process.env.SystemRoot, PATH: path.join(process.env.SystemRoot, 'System32'), LANG: 'en_US.UTF-8' } : { PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' }
+    stdio: 'inherit',
+    timeout: 600000,
+    env: windows
+      ? { SystemRoot: process.env.SystemRoot, WINDIR: process.env.SystemRoot, PATH: path.join(process.env.SystemRoot, 'System32'), LANG: 'en_US.UTF-8' }
+      : { PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' }
   })
 } else {
-  const packageRoot = path.join(resources, 'app/node_modules/dsh-office')
+  const appModules = path.join(resources, 'app/node_modules')
+  const packageRoot = path.join(appModules, 'dsh-office')
+  const packaged = name => import(pathToFileURL(path.join(appModules, name, 'lib/index.js')).href)
   const load = relative => import(pathToFileURL(path.join(packageRoot, relative)).href)
-  const { apply } = await load('index.js')
-  const { resolveRuntime } = await load('lib/runtime.js')
-  const { parseZip } = await load('lib/zip.js')
-  const config = { root: path.join(values.output, 'audit') }
-  await mkdir(values.output) // unique evidence directory; preserve prior results
-  const tools = new Map(); let provider
-  const packaged = name => import(pathToFileURL(path.join(resources, 'app/node_modules', name, 'lib/index.js')).href)
-  const { Context } = await packaged('@deepseek-ai/cordis')
-  const { SystemPrompt } = await packaged('@deepseek-ai/dsh-system-prompt')
-  const { ToolRuntime } = await packaged('@deepseek-ai/dsh-tools')
-  const toolContext = new Context()
-  new SystemPrompt(toolContext, {})
-  new ToolRuntime(toolContext)
-  const services = {}, routes = new Map()
-  const connection = { requestRejection() {} }
-  const webServer = { register(route) { routes.set(route.path, route); return () => routes.delete(route.path) } }
-  const rpc = async (channel, method, payload) => {
-    const rpcId = randomUUID()
-    const request = Readable.from([Buffer.from(JSON.stringify({ type: 'client-request', rpcId, method, payload }))])
-    Object.assign(request, { method: 'POST', url: `${channel}/${method}`, headers: { 'content-type': 'application/json' } })
-    const response = await new Promise((resolve, reject) => {
-      let status
-      const res = { writeHead(value) { status = value }, end(value) { resolve({ status, body: Buffer.from(value ?? '').toString('utf8') }) } }
-      Promise.resolve(routes.get(channel).handler(request, res)).catch(reject)
-    })
-    assert.equal(response.status, 200, `${channel}/${method} returned HTTP ${response.status}`)
-    const body = JSON.parse(response.body)
-    assert.equal(body.rpcId, rpcId)
-    return body.result
-  }
-  const ppt = await import(pathToFileURL(path.join(resources, 'app/node_modules/dsh-ppt/lib/index.js')).href)
-  const pptHost = {
-    provide: (name, value) => { services[name] = value },
-    effect(run) { run(); return () => {} },
-    inject(names, activate) { if (names.includes('webServer')) return activate(pptHost) },
-    webServer,
-    get(name) { return this[name] }, on() {}, systemPrompt: { section() {} }, skills: { registerProvider() {} }, tools: { register() {} }, connection
-  }
-  await ppt.apply(pptHost, { root: path.join(values.output, 'composer-state') })
-  const officeHost = { tools: { register(tool) { tools.set(tool.name, tool); toolContext.tools.register(tool) } }, skills: { registerProvider(factory) { provider = factory() } },
-    connection, officeModes: services.officeModes, on() {}, effect(run) { run(); return () => {} }, webServer,
-    inject(names, activate) { if (names.includes('webServer')) return activate(officeHost) },
-    get: () => ({ resolve: () => ({ mode: 'workspace-write', workspaceRoot: values.output }) }) }
-  apply(officeHost, config)
-  const sessionId = 'packaged-office-test'
-  for (const mode of ['word', 'excel', null]) {
-    const response = await rpc('/dsh-office', 'mode', { sessionId, mode })
-    assert.equal(response.value.data.mode, mode)
-  }
-  await rpc('/dsh-ppt', 'presentation/mode', { sessionId, mode: 'ppt' })
-  assert.equal((await rpc('/dsh-office', 'state', { sessionId })).value.data.mode, 'ppt')
-  await rpc('/dsh-office', 'mode', { sessionId, mode: 'word' })
-  assert.equal((await services.officeModes.state(sessionId)).presentationMode, undefined)
-  const hostManifest = JSON.parse(await readFile(path.join(resources, 'app/node_modules/@deepseek-ai/dsh/package.json'), 'utf8'))
-  assert.equal(hostManifest.dependencies['dsh-office'], '0.2.0')
-  assert.equal(hostManifest.dependencies['dsh-workbuddy-office'], undefined)
+  await mkdir(values.output) // The caller must provide a new evidence directory.
+
   const manifest = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'))
+  assert.equal(manifest.version, '0.2.0')
+  assert.deepEqual(Object.keys(manifest.dependencies).sort(), ['@xmldom/xmldom', 'docx', 'fflate', 'saxes'])
+  const requiredPeers = [
+    '@deepseek-ai/cordis', '@deepseek-ai/dsh-tools', '@deepseek-ai/dsh-fs', '@deepseek-ai/dsh-skill',
+    '@deepseek-ai/dsh-sandbox-policy', '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-session',
+    '@deepseek-ai/dsh-session-projection', '@deepseek-ai/dsh-system-prompt'
+  ]
+  for (const dependency of requiredPeers) assert.ok(manifest.peerDependencies[dependency], `missing packaged peer ${dependency}`)
+  for (const dependency of Object.keys(manifest.dependencies)) {
+    const dependencyManifest = JSON.parse(await readFile(path.join(appModules, dependency, 'package.json'), 'utf8'))
+    assert.ok(dependencyManifest.name === dependency, `packaged dependency mismatch for ${dependency}`)
+  }
+
+  const hostManifest = JSON.parse(await readFile(path.join(appModules, '@deepseek-ai/dsh/package.json'), 'utf8'))
+  assert.equal(hostManifest.version, '0.1.6-alpha.2')
+  assert.equal(hostManifest.dependencies['dsh-office'], '0.2.0')
   assert.equal(manifest.exports['./client'], './client.js')
   assert.equal(manifest.dsh.client.platform, 'web')
-  assert.ok((await readFile(path.join(packageRoot, 'client.js'), 'utf8')).includes('data-office-mode'))
-  assert.equal(tools.size, 17)
-  const skills = await provider.list()
-  assert.equal(skills.length, 188)
-  assert.equal(new Set(skills.map(s => s.name)).size, 188)
-  assert.deepEqual(skills.slice(0, 2).map(s => s.name), ['dsh-word', 'dsh-excel'])
-  for (const skill of skills) assert.ok((await provider.get(skill)).content.length > 100)
+  const clientSource = await readFile(path.join(packageRoot, 'client.js'), 'utf8')
+  assert.ok(clientSource.includes('data-office-mode'))
+
+  const { Context } = await packaged('@deepseek-ai/cordis')
+  const { ToolRuntime } = await packaged('@deepseek-ai/dsh-tools')
+  const { SkillRegistry } = await packaged('@deepseek-ai/dsh-skill')
+  const { default: LocalFileSystem } = await packaged('@deepseek-ai/dsh-fs-local')
+  const { SessionId, SessionStore } = await packaged('@deepseek-ai/dsh-session')
+  const { SessionProjectionRegistry } = await packaged('@deepseek-ai/dsh-session-projection')
+  const { SystemPrompt, renderContextSnapshot } = await packaged('@deepseek-ai/dsh-system-prompt')
+  const office = await load('index.js')
+  const { resolveRuntime } = await load('lib/runtime.js')
+  const { parseZip } = await load('lib/zip.js')
+
+  const ctx = new Context()
+  const handlers = new Map()
+  ctx.provide('connection', { rpc: { handle(channel, handler) {
+    assert.ok(!handlers.has(channel), `duplicate RPC channel ${channel}`)
+    handlers.set(channel, handler)
+    return async () => { handlers.delete(channel) }
+  } } })
+  ctx.provide('sandboxPolicy', { resolve: ({ session }) => {
+    assert.ok(session?.id, 'sandbox policy receives the active session')
+    return { mode: 'workspace-write', workspaceRoot: values.output }
+  } })
+  new SystemPrompt(ctx, { includeHarnessIdentity: false })
+  new ToolRuntime(ctx)
+  new SkillRegistry(ctx)
+  new LocalFileSystem(ctx, { cwd: values.output, diffBasisMaxBytes: 10 * 1024 * 1024 })
+  new SessionProjectionRegistry(ctx)
+  new SessionStore(ctx)
+  const officeFork = ctx.plugin(office, { root: path.join(values.output, 'audit') })
+  await officeFork
+
+  const expectedTools = ['office_build', 'office_excel_edit', 'office_inspect', 'office_recalculate', 'office_template', 'office_word_edit', 'office_word_read']
+  const registeredTools = ctx.tools.wireSchemas().schemas.map(schema => schema.name).filter(name => name.startsWith('office_')).sort()
+  assert.deepEqual(registeredTools, expectedTools)
+
+  const skills = await ctx.skills.list({ cwd: values.output })
+  assert.deepEqual(skills.map(skill => skill.name), ['dsh-excel', 'dsh-word'])
+  const skillEvidence = []
+  for (const summary of skills) {
+    const skill = await ctx.skills.get(summary.name, { cwd: values.output })
+    assert.ok(skill.content.includes('office_build'))
+    assert.ok(skill.content.includes('expected_revision'))
+    skillEvidence.push({ name: skill.name, provider: skill.provider, contentBytes: Buffer.byteLength(skill.content), resourceBase: skill.resourceBase.kind })
+  }
+
+  const session = ctx.sessions.create(SessionId('packaged-office-test'), { meta: { cwd: values.output } })
+  const agent = { id: 'packaged-office-test', session }
+  const rpc = async (method, payload = {}) => {
+    const response = await handlers.get('/dsh-office')(method, payload, new AbortController().signal)
+    assert.equal(response.ok, true, `RPC ${method} transport failure`)
+    assert.equal(response.value.status, 'ok', `RPC ${method}: ${JSON.stringify(response.value)}`)
+    return response.value.data
+  }
+  const wordState = await rpc('mode', { sessionId: session.id, mode: 'word' })
+  assert.equal(wordState.mode, 'word')
+  const selected = await rpc('template/select', { sessionId: session.id, templateId: 'government-notice' })
+  assert.equal(selected.selectedTemplateId, 'government-notice')
+  const wordPrompt = renderContextSnapshot(await ctx.systemPrompt.assemble({ scope: agent, agent }))
+  assert.ok(wordPrompt.includes('当前会话输出格式：Word (.docx)'))
+  assert.ok(wordPrompt.includes('<skill_content name="dsh-word">'))
+  assert.ok(wordPrompt.includes('office_template(template_id="government-notice")'))
+  await rpc('mode', { sessionId: session.id, mode: 'excel' })
+  const excelPrompt = renderContextSnapshot(await ctx.systemPrompt.assemble({ scope: agent, agent }))
+  assert.ok(excelPrompt.includes('当前会话输出格式：Excel (.xlsx)'))
+  assert.ok(excelPrompt.includes('<skill_content name="dsh-excel">'))
+  assert.equal(ctx.sessionProjections.stateOf(session, 'office').mode, 'excel')
+
+  let callSequence = 0
   const call = async (name, args = {}) => {
-    const result = await toolContext.tools.execute({ name, arguments: args, callId: `package-${name}`, signal: new AbortController().signal,
-      agent: { id: 'packaged-office-test', session: { id: 'packaged-office-test', header: { cwd: values.output } } } })
+    const result = await ctx.tools.execute({
+      name, arguments: args, callId: `package-${++callSequence}-${name}`, signal: new AbortController().signal, agent
+    })
     assert.equal(result.isError, false, `${name}: ${JSON.stringify(result)}`)
     return result.value
   }
-  const runtime = await resolveRuntime(config)
-  const { businessSkills } = await load('lib/business-skills.js')
-  let resourceCount = 0
-  for (const skill of skills.slice(2)) {
-    const details = await call('office_skill_read', { name: skill.name })
-    for (const file of details.files) {
-      await businessSkills.resource(skill.name, file.file)
-      resourceCount++
-    }
-  }
-  assert.equal(resourceCount, 678)
-  const businessSamples = []
-  for (const name of ['research-writer', 'weighted-scoring', 'theme-factory', 'gov-doc-writing']) {
-    businessSamples.push(await call('office_skill_prepare', { name }))
-  }
-  const scoringReference = await call('office_skill_read', { name: 'weighted-scoring', file: 'scripts/decision_matrix.py' })
-  assert.ok(scoringReference.content.includes('def '))
-  const exampleResults = []
-  const exampleCatalog = (await rpc('/dsh-office', 'state', { sessionId })).value.data.templates
-  assert.equal(exampleCatalog.filter(t => t.mode === 'word').length, 3)
-  assert.equal(exampleCatalog.filter(t => t.mode === 'excel').length, 3)
-  const reviewed = exampleCatalog.find(template => template.mode === 'word')
-  const selectedTemplate = await rpc('/dsh-office', 'template/select', { sessionId, templateId: reviewed.id })
-  assert.equal(selectedTemplate.value.data.selectedTemplateId, reviewed.id)
-  assert.equal(selectedTemplate.value.data.selectedTemplateRevision, reviewed.revision)
-  const deselectedTemplate = await rpc('/dsh-office', 'template/deselect', { sessionId })
-  assert.equal(deselectedTemplate.value.data.selectedTemplateId, undefined)
-  const templateSelection = { templateId: reviewed.id, revision: reviewed.revision, select: 'PASS', deselect: 'PASS' }
-  for (const { id: templateId } of exampleCatalog) {
-    const selected = await rpc('/dsh-office', 'state', { sessionId })
-    assert.equal(selected.value.data.selectedTemplateId, undefined)
+  const summarizeArtifact = result => ({ status: result.status, path: result.path, sha256: result.sha256, engine: result.engine, confinement: result.confinement })
+  const preparedTemplates = []
+  for (const templateId of ['government-notice', 'annual-business']) {
     const prepared = await call('office_template', { template_id: templateId })
     assert.equal(prepared.templateId, templateId)
-    assert.ok(prepared.inputs.length >= 2)
-    const galleryPreview = await rpc('/dsh-office', 'template/preview', { sessionId, templateId, page: selected.value.data.templates.find(t => t.id === templateId).pages })
-    assert.ok(galleryPreview.value.data.image.startsWith('data:image/webp;base64,'))
-    let source = { path: prepared.example, sha256: prepared.sha256 }
-    if (prepared.authoring) {
-      const extension = prepared.mode === 'excel' ? 'xlsx' : 'docx'
-      source = await call('office_build', { ...prepared.authoring, output_file: `${templateId}-from-reference.${extension}` })
-    }
-    if (prepared.mode === 'word') {
-      if (prepared.authoring) {
-        const preview = await call('office_preview', { file_path: source.path, expected_revision: source.sha256, output_file: `${templateId}-generated.pdf` })
-        assert.equal(preview.rendering, 'PASS')
-        exampleResults.push({ templateId, source, preview })
-      }
-      continue
-    }
-    const checks = templateId === 'annual-business'
-      ? [{ sheet:'经营总览', cell:'B8', expected:1404.708375, tolerance:1e-7 }, { sheet:'经营总览', cell:'C98', expected:0 }]
-      : JSON.parse(await readFile(path.join(values.output, prepared.path, 'checks.json'), 'utf8'))
-    const result = await call('office_recalculate', { file_path:source.path, expected_revision:source.sha256, output_file:`${templateId}-checked.xlsx`, checks })
-    assert.equal(result.calculation, 'PASS'); assert.deepEqual(result.chartWarnings, [])
-    let edit = { sheet:'经营总览', cell:'D104', value:2.191868 }
-    let changedChecks = [{ sheet:'经营总览', cell:'C98', expected:0 }]
-    if (templateId === 'port-cargo' || templateId === 'bio-assay') {
-      const data = JSON.parse(await readFile(path.join(values.output, prepared.authoring.inputs[0].file_path), 'utf8'))
-      const mean = values => values.reduce((a,b)=>a+b,0) / values.length
-      if (templateId === 'port-cargo') {
-        edit = { sheet:'作业明细', cell:'G8', value:data.records[0][6]+1000 }
-        changedChecks = [{ sheet:'港口总览', cell:'B6', expected:(data.records.reduce((s,r)=>s+r[6],0)+1000)/10000, tolerance:1e-6 },
-          { sheet:'日度汇总', cell:'D8', expected:data.records.slice(0,6).reduce((s,r)=>s+r[6],0)+1000, tolerance:1e-6 }]
-      } else {
-        edit = { sheet:'原始读数', cell:'F24', value:data.wells[16][5]+1000 }
-        const plate = data.wells.filter(w=>w[0]==='P1')
-        const blank = mean(plate.filter(w=>w[2]==='空白').map(w=>w[5])), control = mean(plate.filter(w=>w[2]==='溶剂对照').map(w=>w[5]))
-        const values = plate.filter(w=>w[3]===0.01).map(w=>w[5]); values[0]+=1000
-        changedChecks = [{ sheet:'剂量响应', cell:'B8', expected:(mean(values)-blank)/(control-blank), tolerance:1e-6 }, { sheet:'实验总览', cell:'B6', expected:288 }]
-      }
-    }
-    const edited = await call('office_excel_edit', { file_path:result.path, expected_revision:result.sha256, output_file:`${templateId}-edited.xlsx`, operations:[edit] })
-    const changed = await call('office_recalculate', { file_path:edited.path, expected_revision:edited.sha256, output_file:`${templateId}-rechecked.xlsx`, checks:changedChecks })
-    assert.equal(changed.calculation, 'PASS'); assert.deepEqual(changed.chartWarnings, [])
-    const preview = await call('office_preview', { file_path:result.path, expected_revision:result.sha256, output_file:`${templateId}-generated.pdf` })
-    assert.equal(preview.rendering, 'PASS')
-    exampleResults.push({ templateId, source, result, edited, changed, preview })
+    assert.ok(prepared.example && prepared.sha256 && prepared.guide)
+    const inspection = await call('office_inspect', { file_path: prepared.example, max_items: 5 })
+    preparedTemplates.push({ templateId, mode: prepared.mode, revision: prepared.revision, example: prepared.example, sha256: prepared.sha256, kind: inspection.kind, itemCount: inspection.kind === 'word' ? inspection.blockCount : inspection.totalCells })
   }
 
-  for (const engine of [runtime.python, runtime.libreOffice]) assert.ok(engine.startsWith(path.join(resources, 'office-runtime') + path.sep), 'Use the bundled engines')
-  if (process.platform === 'win32') {
-    for (const engine of [runtime.windowsSandbox, runtime.windowsConverter]) assert.ok(engine.startsWith(path.join(resources, 'office-runtime') + path.sep), 'Use the bundled Windows workers')
+  const wordSource = `import { writeFile } from 'node:fs/promises'
+const { Document, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, Packer } = docx
+const p = text => new Paragraph({ children: [new TextRun({ text, font: { ascii: 'Arial', eastAsia: 'Microsoft YaHei' }, size: 22 })] })
+const document = new Document({ sections: [{ children: [
+  new Paragraph({ text: '采购执行简报', heading: HeadingLevel.TITLE }),
+  p('本轮采购预算为 760 元。'),
+  new Table({ rows: [['材料', '数量'], ['材料 A', '3']].map(row => new TableRow({ children: row.map(text => new TableCell({ children: [p(text)] })) })) })
+] }] })
+await writeFile(office.output, await Packer.toBuffer(document))`
+  const wordBuilt = await call('office_build', { language: 'javascript', source: wordSource, output_file: 'word-built.docx' })
+  const wordRead = await call('office_word_read', { file_path: wordBuilt.path, max_items: 50 })
+  const budgetParagraph = wordRead.paragraphs.find(paragraph => paragraph.text.includes('760'))
+  assert.ok(budgetParagraph)
+  const wordEdited = await call('office_word_edit', {
+    file_path: wordBuilt.path, expected_revision: wordBuilt.sha256, output_file: 'word-edited.docx',
+    operations: [{ paragraph_id: budgetParagraph.id, type: 'replace_text', find: '760', replace: '880' }]
+  })
+  const wordInspection = await call('office_inspect', { file_path: wordEdited.path, max_items: 50 })
+  assert.equal(wordInspection.kind, 'word')
+  assert.ok(wordInspection.blocks.some(block => block.text?.includes('880')))
+
+  const excelSource = `from openpyxl import Workbook
+from openpyxl.chart import BarChart, Reference
+wb = Workbook(); ws = wb.active; ws.title = '采购'
+ws.append(['材料', '数量', '单价', '金额'])
+ws.append(['材料 A', 3, 120, '=B2*C2'])
+ws.append(['材料 B', 5, 80, '=B3*C3'])
+ws.append(['总计', None, None, '=SUM(D2:D3)'])
+chart = BarChart(); chart.add_data(Reference(ws, min_col=4, min_row=1, max_row=3), titles_from_data=True); ws.add_chart(chart, 'F2')
+wb.save(office['output'])`
+  const excelBuilt = await call('office_build', { language: 'python', source: excelSource, output_file: 'excel-built.xlsx' })
+  const excelEdited = await call('office_excel_edit', {
+    file_path: excelBuilt.path, expected_revision: excelBuilt.sha256, output_file: 'excel-edited.xlsx',
+    operations: [{ sheet: '采购', cell: 'B2', value: 4 }]
+  })
+  const excelCalculated = await call('office_recalculate', {
+    file_path: excelEdited.path, expected_revision: excelEdited.sha256, output_file: 'excel-calculated.xlsx',
+    checks: [{ sheet: '采购', cell: 'D2', expected: 480 }, { sheet: '采购', cell: 'D4', expected: 880 }]
+  })
+  assert.equal(excelCalculated.calculation, 'PASS')
+  assert.deepEqual(excelCalculated.chartWarnings, [])
+  const excelInspection = await call('office_inspect', { file_path: excelCalculated.path, max_items: 50 })
+  assert.equal(excelInspection.kind, 'excel')
+  assert.equal(excelInspection.formulas.missingCache, 0)
+  assert.ok(excelInspection.sheets[0].cells.some(cell => cell.ref === 'D4' && cell.value === 880))
+  const parts = parseZip(await readFile(path.join(values.output, excelCalculated.path))).parts
+  assert.equal([...parts.keys()].filter(name => /^xl\/charts\/chart\d+\.xml$/u.test(name)).length, 1)
+
+  const runtime = await resolveRuntime({ root: path.join(values.output, 'audit') })
+  const runtimeRoot = path.join(resources, 'office-runtime')
+  for (const engine of [runtime.python, runtime.libreOffice]) assert.ok(engine?.startsWith(runtimeRoot + path.sep), 'Use bundled Python and LibreOffice')
+  assert.ok(runtime.node === process.execPath)
+  assert.ok(runtime.docx.startsWith(appModules + path.sep))
+  if (windows) for (const engine of [runtime.windowsSandbox, runtime.windowsConverter]) assert.ok(engine?.startsWith(runtimeRoot + path.sep), 'Use bundled Windows workers')
+
+  const auditLines = (await readFile(path.join(values.output, 'audit/audit.ndjson'), 'utf8')).trim().split(/\r?\n/u)
+  assert.ok(auditLines.length <= 40, 'verification audit evidence must remain bounded')
+  const evidence = {
+    status: 'PASS', harnessVersion: hostManifest.version, officeVersion: manifest.version, worker: process.execPath,
+    services: ['tools', 'skills', 'fs-local', 'sandbox-policy', 'sessions', 'session-projections', 'system-prompt', 'connection-rpc'],
+    tools: registeredTools, skills: skillEvidence,
+    rpc: { channel: '/dsh-office', mode: 'PASS', templateSelection: 'PASS' },
+    systemPrompt: { word: 'PASS', excel: 'PASS' }, sessionProjection: 'PASS',
+    templates: preparedTemplates,
+    word: { build: summarizeArtifact(wordBuilt), edit: summarizeArtifact(wordEdited), inspect: { status: wordInspection.status, kind: wordInspection.kind, itemCount: wordInspection.blockCount } },
+    excel: { build: summarizeArtifact(excelBuilt), edit: summarizeArtifact(excelEdited), recalculate: summarizeArtifact(excelCalculated), inspect: { status: excelInspection.status, kind: excelInspection.kind, itemCount: excelInspection.totalCells, missingFormulaCaches: excelInspection.formulas.missingCache }, charts: 1 },
+    runtime: { platform: runtime.platform, sandbox: runtime.sandbox, node: runtime.node, python: runtime.python, openpyxl: runtime.openpyxl, libreOffice: runtime.libreOffice },
+    auditEntries: auditLines.length,
+    limitations: { desktopModelAcceptance: 'NOT_RUN', microsoftOfficeAcceptance: 'NOT_RUN', pdfPreview: 'NOT_RUN_BUILT_IN_COVERAGE_NOT_DUPLICATED' }
   }
-  assert.ok(runtime.pythonReadRoots.every(p => p.startsWith(path.join(resources, 'office-runtime/python') + path.sep) || p === path.join(resources, 'office-runtime/python')))
-  const readiness = await call('office_runtime')
-  assert.equal(readiness.status, 'ready')
-  const word = await call('office_build', { language: 'javascript', output_file: '本地测试.docx', source: `import {writeFile} from 'node:fs/promises';
-const document = new docx.Document({sections:[{children:[new docx.Paragraph({text:'Word 本地测试',heading:docx.HeadingLevel.TITLE}),new docx.Paragraph('采购预算为 760 元。')]}]});
-await writeFile(office.output,await docx.Packer.toBuffer(document));` })
-  const originalWord = await call('office_word_read', { file_path: word.path })
-  const paragraph = originalWord.paragraphs.find(p => p.text.includes('760'))
-  const editedWord = await call('office_word_edit', { file_path: word.path, expected_revision: word.sha256, output_file: '本地测试调整.docx',
-    operations: [{ paragraph_id: paragraph.id, type: 'replace_text', find: '760', replace: '880' }] })
-  assert.ok((await call('office_word_read', { file_path: editedWord.path })).paragraphs.some(p => p.text.includes('880')))
-  const wordPreview = await call('office_preview', { file_path: editedWord.path, expected_revision: editedWord.sha256, output_file: 'Word预览.pdf' })
-  assert.equal(wordPreview.rendering, 'PASS')
-  const reference = await call('office_reference', { topic: 'excel-create' })
-  const source = reference.content.match(/```python\r?\n([\s\S]*?)```/u)[1]
-  const excel = await call('office_build', { language: 'python', source, output_file: '采购.xlsx' })
-  const editedExcel = await call('office_excel_edit', { file_path: excel.path, expected_revision: excel.sha256, output_file: '采购调整.xlsx', operations: [{ sheet: '采购', cell: 'B2', value: 4 }] })
-  const calculated = await call('office_recalculate', { file_path: editedExcel.path, expected_revision: editedExcel.sha256, output_file: '采购已核对.xlsx', checks: [{ sheet: '采购', cell: 'D2', expected: 480 }, { sheet: '采购', cell: 'D4', expected: 880 }] })
-  assert.equal(calculated.calculation, 'PASS'); assert.equal(calculated.computedCount, 3); assert.deepEqual(calculated.chartWarnings, [])
-  const parts = parseZip(await readFile(path.join(values.output, calculated.path))).parts
-  assert.equal([...parts.keys()].filter(p => /^xl\/charts\/chart\d+\.xml$/u.test(p)).length, 1)
-  const excelPreview = await call('office_preview', { file_path: calculated.path, expected_revision: calculated.sha256, output_file: 'Excel预览.pdf' })
-  assert.equal(excelPreview.rendering, 'PASS')
-  const evidence = { status: 'PASS', app: values.app, node: process.execPath, skills: skills.map(s => s.name), tools: [...tools.keys()], runtime, readiness,
-    businessSkillCount: 186, resourceCount, businessSamples, templateSelection, exampleResults,
-    word, editedWord, wordPreview, excel, editedExcel, calculated, excelPreview, desktopModelAcceptance: 'NOT_RUN', nativeOfficeAcceptance: 'NOT_RUN' }
-  await writeFile(path.join(values.output, 'verification.json'), JSON.stringify(evidence, null, 2) + '\n')
-  console.log(JSON.stringify({ status: 'PASS', output: values.output, skillCount: skills.length, toolCount: tools.size, word: 'generate/edit/preview PASS', excel: 'generate/chart/edit/recalculate/preview PASS', runtime: 'bundled' }))
+  const serialized = JSON.stringify(evidence, null, 2) + '\n'
+  assert.ok(Buffer.byteLength(serialized) < 32 * 1024, 'verification.json must remain below 32 KiB')
+  await writeFile(path.join(values.output, 'verification.json'), serialized)
+  console.log(JSON.stringify({ status: 'PASS', output: values.output, skills: skills.length, tools: registeredTools.length, templates: preparedTemplates.length, word: 'build/edit/inspect PASS', excel: 'build/edit/recalculate/inspect PASS', pdfPreview: 'NOT_RUN' }))
 }
