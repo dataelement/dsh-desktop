@@ -15,6 +15,11 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    - id: dsh-desktop-office-controls
+      name: dsh-desktop-office-controls
+      config:
+        root: !!js dshHomePath('desktop-office')
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.

@@ -1,0 +1,32 @@
+{
+  "name": "dsh-desktop-office-controls",
+  "version": "0.1.0",
+  "description": "One built-in Office switch for Desktop PPT, Word and Excel plugins.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-modules",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-modules": "0.1.5-rc.2"
+  },
+  "license": "MIT"
+}
