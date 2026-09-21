@@ -1,7 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
+index f827d97..02793e9 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-@@ -468,7 +468,7 @@
+@@ -958,7 +958,7 @@ window.__ModuleLoader__.load({
  		*/
  		function producedFileMentions(paths, openFile, label) {
  			return { resolve(value) {
@@ -10,11 +11,10 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js 
  				if (path === void 0) return void 0;
  				return {
  					open: () => {
-@@ -478,6 +478,28 @@
- 					title: path
+@@ -969,6 +969,28 @@ window.__ModuleLoader__.load({
  				};
  			} };
-+		}
+ 		}
 +		/**
 +		* Resolve Codex-style local path references that were not produced by a tool
 +		* in the current turn. Keep bare identifiers inert: without a slash, an
@@ -36,14 +36,15 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js 
 +			if (/[\\/]/.test(path) || /[\\/]$/.test(path)) return path;
 +			if (/^[^\\/]+\.[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(path)) return path;
 +			return void 0;
- 		}
- 		/** The single produced path whose basename is exactly `value`, else undefined. */
++		}
+ 		/** The single supplied path whose basename is exactly `value`, else undefined. */
  		function onlyPathWithBasename(paths, value) {
-@@ -956,7 +978,6 @@
- 			ctx.provide("chatFileMentions", { forClosing(owner, sessionId) {
+ 			const matches = paths.filter((path) => basename(path) === value);
+@@ -2158,7 +2180,6 @@ window.__ModuleLoader__.load({
+ 			ctx.provide("chatFileMentions", { forClosing(owner) {
  				const paths = selectProducedFiles(owner);
  				const presented = presentedForClosing(owner);
 -				if (paths === null && presented.length === 0) return void 0;
- 				const deliveries = new Map(presented.map((file) => [file.path, file]));
- 				return producedFileMentions([...new Set([...paths ?? [], ...deliveries.keys()])], (path) => {
- 					const file = deliveries.get(path);
+ 				return producedFileMentions([...new Set([...paths ?? [], ...presented.map((file) => file.path)])], owner.openFile, (path) => t("presented.previewButton", { name: path }));
+ 			} });
+ 		}

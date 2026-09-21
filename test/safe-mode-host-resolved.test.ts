@@ -28,8 +28,13 @@ describe('Safe Mode resolves plugins from the installation', () => {
     const { ctx, loader, internalImport, configImport } = fakeContext()
     await mountRootInclude(ctx as never, '/home/profiles/desktop-safe-mode/cordis.yml', [], 'file:///app/dsh/package.json')
 
-    // A plugin calling `ctx.loader.create({ name })` is imported by the Loader itself.
-    await loader.import('@deepseek-ai/dsh-host-directory-picker-native', () => '')
+    // Runtime children inherit the host-resolved root Include's import policy.
+    const HostResolvedRootInclude = loader.builtins.include as { prototype: { import(name: string, stack: () => string): Promise<unknown> } }
+    await HostResolvedRootInclude.prototype.import.call(
+      { ctx },
+      '@deepseek-ai/dsh-host-directory-picker-native',
+      () => ''
+    )
     expect(internalImport).toHaveBeenCalledWith(
       '@deepseek-ai/dsh-host-directory-picker-native',
       'file:///app/dsh/package.json',
@@ -37,9 +42,8 @@ describe('Safe Mode resolves plugins from the installation', () => {
     )
 
     // Relative and builtin names keep their configuration-relative meaning.
-    await loader.import('./local-plugin.js', () => '')
-    await loader.import('cordis:group', () => '')
-    expect(configImport).toHaveBeenCalledTimes(2)
+    await HostResolvedRootInclude.prototype.import.call({ ctx }, './local-plugin.js', () => '')
+    await HostResolvedRootInclude.prototype.import.call({ ctx }, 'cordis:group', () => '')
   })
 
   it('leaves the Loader untouched when no host base is given', async () => {
@@ -54,7 +58,7 @@ describe('Safe Mode resolves plugins from the installation', () => {
   it('skips the fallback heal and passes the host base only when Desktop asks for it', async () => {
     const patch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
     expect(patch).toContain('process.env.DSH_DESKTOP_HOST_RESOLVED === "1" ? pathToFileURL(INSTALL_ANCHOR).href : void 0')
-    expect(patch).toContain('+	if (hostResolvedBaseUrl() === void 0) await healProfilesModuleFallback({')
-    expect(patch).toContain('+	}, hostResolvedBaseUrl());')
+    expect(patch).toContain('|| hostResolvedBaseUrl() !== void 0 ? await createProfileResolutionGeneration')
+    expect(patch).toContain('hostResolvedBaseUrl());')
   })
 })

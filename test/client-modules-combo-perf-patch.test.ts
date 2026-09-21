@@ -88,10 +88,10 @@ describe('client module combo build', () => {
     )
     // compose() goes through the memo instead of rebuilding every record.
     expect(bundle).toContain(
-      'for (const record of this.table.values()) {\n\t\t\tconst artifact = recordCombo(record);'
+      'for (const record of this.table.values()) {\n\t\t\tconst artifact = recordCombo(record, this.readSourceMap);'
     )
     expect(bundle).not.toContain(
-      'for (const record of this.table.values()) {\n\t\t\tconst artifact = buildCombo([record], record.entry.rev);'
+      'for (const record of this.table.values()) {\n\t\t\tconst artifact = buildCombo([record], this.readSourceMap, record.entry.rev);'
     )
 
     const start = bundle.indexOf('const recordComboCache')
@@ -100,23 +100,24 @@ describe('client module combo build', () => {
     const { recordCombo } = new Function(
       'buildCombo',
       `${bundle.slice(start, end)}\nreturn { recordCombo }`
-    )((_records: unknown[], rev: string) => {
+    )((_records: unknown[], _sourceMapOf: unknown, rev: string) => {
       builds += 1
       return { rev, script: `build-${builds}` }
-    }) as { recordCombo: (record: { entry: { rev: string } }) => { rev: string; script: string } }
+    }) as { recordCombo: (record: { entry: { rev: string } }, sourceMapOf: () => undefined) => { rev: string; script: string } }
 
     const record = { entry: { rev: 'r1' } }
-    const first = recordCombo(record)
-    expect(recordCombo(record)).toBe(first)
+    const sourceMapOf = () => undefined
+    const first = recordCombo(record, sourceMapOf)
+    expect(recordCombo(record, sourceMapOf)).toBe(first)
     expect(builds).toBe(1)
 
     // rebuilt() mutates the record in place and assigns a new content rev.
     record.entry = { rev: 'r2' }
-    expect(recordCombo(record).rev).toBe('r2')
+    expect(recordCombo(record, sourceMapOf).rev).toBe('r2')
     expect(builds).toBe(2)
 
     // A replaced record (new source) is a new object and never shares a slot.
-    recordCombo({ entry: { rev: 'r2' } })
+    recordCombo({ entry: { rev: 'r2' } }, sourceMapOf)
     expect(builds).toBe(3)
   })
 })

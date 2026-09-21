@@ -51,7 +51,7 @@ describe('web home import', () => {
     const plugins = options?.plugins ?? { 'demo-plugin': { version: '1.2.3' } }
     const dependencies: Record<string, string> = {
       dshmarket: '^1.0.0',
-      '@deepseek-ai/dsh-base': '0.1.5-rc.2'
+      '@deepseek-ai/dsh-base': '0.1.6-alpha.2'
     }
     const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
     for (const [name, plugin] of Object.entries(plugins)) {

@@ -1,12 +1,11 @@
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
+index 1817f98..b40ea1a 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
-@@ -452,6 +452,26 @@
- 				...state,
- 				archivedSessionIds: [...state.archivedSessionIds, sessionId]
+@@ -454,6 +454,26 @@ var WorkspaceRegistry = class extends Service {
  			});
-+		});
-+	}
+ 		});
+ 	}
 +	/** Remove a permanently deleted Session from Workspace and archive state. */
 +	forgetSession(sessionId) {
 +		return this.enqueueOperation(async () => {
@@ -25,25 +24,29 @@ diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js b/node_modules
 +			this.headers.delete(sessionId);
 +			this.sessionPaths.delete(sessionId);
 +			this.invalidSessionPaths.delete(sessionId);
- 		});
- 	}
++		});
++	}
  	/**
+ 	* Unarchive one session durably by dropping it from the registry-global
+ 	* archive set; the accounting slot was never touched, so the session
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
+index fcd0e0b..78bc042 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
-@@ -122,6 +122,8 @@
+@@ -122,6 +122,8 @@ export declare class WorkspaceRegistry extends Service {
       * @returns resolution after durability.
       */
      archiveSession(sessionId: SessionId): Promise<void>;
 +    /** Remove a permanently deleted Session from Workspace and archive state. */
 +    forgetSession(sessionId: SessionId): Promise<void>;
      /**
-      * Whether a session is live, header-indexed, or present in a fresh
-      * persistence listing. Only a definite miss returns false — a failing
+      * Unarchive one session durably by dropping it from the registry-global
+      * archive set; the accounting slot was never touched, so the session
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
+index bda6c50..654c41e 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
-@@ -213,6 +213,31 @@
+@@ -213,6 +213,31 @@ export class WorkspaceRegistry extends Service {
              await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] });
          });
      }
@@ -73,5 +76,5 @@ diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js b/node_m
 +        });
 +    }
      /**
-      * Whether a session is live, header-indexed, or present in a fresh
-      * persistence listing. Only a definite miss returns false — a failing
+      * Unarchive one session durably by dropping it from the registry-global
+      * archive set; the accounting slot was never touched, so the session

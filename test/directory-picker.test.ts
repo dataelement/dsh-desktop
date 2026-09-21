@@ -29,7 +29,7 @@ describe('desktop Electron directory picker', () => {
     )
 
     expect(dependencyPatch).toContain('window.dshDesktopDirectoryPicker')
-    expect(dependencyPatch).toContain('DSH Desktop directory picker bridge is unavailable')
+    expect(dependencyPatch).toContain('ctx.uiWorkspace.pickDirectory()')
   })
 
   it('leaves a missing picker service to Harness rather than patching around it', async () => {

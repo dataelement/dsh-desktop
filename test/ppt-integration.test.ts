@@ -175,7 +175,7 @@ describe('DSH PPT built-in plugin', () => {
     const owner = client.indexOf('extensionZone: zone')
     const input = client.indexOf('className: clsx(InputBar_module_css_default.card', owner)
     const catalog = client.indexOf(
-      'extensionZone !== void 0 ? renderSlot("conversation.composer.dock", extensionZone) : null',
+      'variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null',
       input
     )
 
@@ -216,11 +216,11 @@ describe('DSH PPT built-in plugin', () => {
     ), 'utf8')
     const promptRow = client.indexOf('className: InputBar_module_css_default.promptRow')
     const accessory = client.indexOf('className: InputBar_module_css_default.accessory', promptRow)
-    const scroll = client.indexOf('ref: scrollRef', promptRow)
+    const editor = client.indexOf('(0, react_jsx_runtime.jsx)(DraftEditor, {', promptRow)
 
     expect(promptRow).toBeGreaterThan(-1)
     expect(accessory).toBeGreaterThan(promptRow)
-    expect(scroll).toBeGreaterThan(accessory)
+    expect(editor).toBeGreaterThan(accessory)
     expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
   })
 
