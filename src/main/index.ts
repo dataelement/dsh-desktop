@@ -44,7 +44,7 @@ import {
   clearProfileInstallMarker,
   markProfileInstallComplete
 } from './state/profile-install-marker'
-import { healProfileBundles, inspectProfileConsistency } from './state/profile-consistency'
+import { healProfileBundles, HOST_COMPOSED_PPT_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
 import {
   disableProfilePlugin,
   enableProfilePlugin,
@@ -1303,17 +1303,18 @@ async function showSplash(): Promise<void> {
 }
 
 /**
- * Name what the profile contradicts about itself without changing it. A
- * dangling declaration does not throw — it leaves a service waiting on a
- * provider that never arrives — so without this the profile reads as a slow
- * start and the fault is found by reading logs for an afternoon. Reporting
- * only: startup never repairs or prunes the normal Profile automatically.
+ * Reconcile bundle declarations, including the PPT layers already owned by
+ * Desktop, then report remaining inconsistencies. This never removes package
+ * files, user patch rows or plugin data, and runs while Harness is stopped.
  */
 async function reportProfileConsistency(dshHome: string): Promise<void> {
   try {
-    const healed = await healProfileBundles(dshHome)
-    if (healed.length > 0) {
-      runtime.note(`[desktop] auto-composed ${healed.length} missing bundle(s): ${healed.join(', ')}`)
+    const healed = await healProfileBundles(dshHome, HOST_COMPOSED_PPT_BUNDLES)
+    if (healed.removed.length > 0) {
+      runtime.note(`[desktop] removed duplicate host-composed PPT bundle layer(s): ${healed.removed.join(', ')}; packages and user patches kept`)
+    }
+    if (healed.added.length > 0) {
+      runtime.note(`[desktop] auto-composed ${healed.added.length} missing bundle(s): ${healed.added.join(', ')}`)
     }
   } catch (error) {
     runtime.note(
@@ -1326,7 +1327,7 @@ async function reportProfileConsistency(dshHome: string): Promise<void> {
   // Defer heavy recursive inspections of the profiles directory and package store
   // so they run asynchronously without blocking the startup launch pipeline.
   void Promise.all([
-    inspectProfileConsistency(dshHome),
+    inspectProfileConsistency(dshHome, HOST_COMPOSED_PPT_BUNDLES),
     inspectStoreConsistency(dshHome)
   ])
     .then(([findings, store]) => {
