@@ -127,7 +127,7 @@ describe('DSH Desktop enterprise package', () => {
     expect(client).toContain("refresh: '刷新'")
     expect(client).toContain("learnMore: '了解企业版'")
     expect(client).toContain("learnMore: 'Learn about Enterprise'")
-    expect(client).toContain("const LEARN_MORE_URL = 'https://bisheng.ai/'")
+    expect(client).toContain("const LEARN_MORE_URL = 'https://dshdesktop.com/enterprise/#deployment'")
     expect(client).toContain("className: 'dshEnterpriseLearnMoreShell'")
     expect(client).toContain("className: 'dshEnterpriseLearnMore'")
     expect(client).toContain("window.open(LEARN_MORE_URL, '_blank', 'noopener,noreferrer')")
