@@ -14,6 +14,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 const DECISION_FILE = '.web-import-decision.json'
 const IMPORT_TMP_SUFFIX = '.import-tmp'
+const IMPORT_DISCARD_SUFFIX = '.import-discarded'
 
 /** Packages that stay in the shared tree — never treated as community plugins. */
 const KEEP_IN_SHARED_TREE = new Set([
@@ -93,6 +94,11 @@ export async function desktopHomeIsUnused(desktopHome: string): Promise<boolean>
   if (await readImportDecision(desktopHome)) return false
   if (await isFile(join(desktopHome, 'settings.yaml'))) return false
   if (await directoryHasEntries(join(desktopHome, 'sessions'))) return false
+  // A desktop that predates the import (e.g. 0.9.0-rc1) may hold credentials or
+  // plugins without settings or sessions; replacing it would lose them.
+  if (await isFile(join(desktopHome, '.credentials.yaml'))) return false
+  if (await directoryHasEntries(join(desktopHome, 'profiles', '.generations'))) return false
+  if ((await communityPluginNames(desktopHome)).length > 0) return false
   return true
 }
 
@@ -313,10 +319,22 @@ async function replaceUnusedDest(dest: string, tmp: string): Promise<void> {
   if (!(await desktopHomeIsUnused(dest))) {
     throw new Error('desktop home became used while copying')
   }
-  if (existsSync(dest)) {
-    await rm(dest, { recursive: true, force: true })
+  if (!existsSync(dest)) {
+    await rename(tmp, dest)
+    return
   }
-  await rename(tmp, dest)
+  // Move the old tree aside before deleting it: entries another process still
+  // holds open stay delete-pending on Windows, and creating links at the same
+  // path afterwards fails with EPERM.
+  const discarded = `${resolve(dest)}${IMPORT_DISCARD_SUFFIX}-${Date.now()}`
+  await rename(dest, discarded)
+  try {
+    await rename(tmp, dest)
+  } catch (error) {
+    await rename(discarded, dest).catch(() => undefined)
+    throw error
+  }
+  await rm(discarded, { recursive: true, force: true }).catch(() => undefined)
 }
 
 async function countWorkspaceEntries(storagesDir: string): Promise<number> {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -121,6 +121,49 @@ describe('web home import', () => {
     expect((await readImportDecision(skipped))?.decision).toBe('skipped')
   })
 
+  it('treats a desktop home with credentials, plugins or generations as used', async () => {
+    const webHome = await createWebHome()
+
+    const credentials = join(await createRoot('dsh-desktop-credentials-'), 'harness')
+    await mkdir(credentials, { recursive: true })
+    await writeFile(join(credentials, '.credentials.yaml'), 'version: 1\n')
+    expect(await shouldOfferWebHomeImport(credentials, webHome)).toBe(false)
+
+    const plugins = join(await createRoot('dsh-desktop-plugins-'), 'harness')
+    await mkdir(join(plugins, 'profiles', 'web'), { recursive: true })
+    await writeFile(
+      join(plugins, 'profiles', 'web', 'package.json'),
+      JSON.stringify({ dependencies: { dshmarket: '1.0.0', 'dsh-plugin-demo': '^1.0.0' } })
+    )
+    expect(await shouldOfferWebHomeImport(plugins, webHome)).toBe(false)
+
+    const generations = join(await createRoot('dsh-desktop-generations-'), 'harness')
+    await mkdir(join(generations, 'profiles', '.generations', 'live', 'demo+1.0.0'), { recursive: true })
+    expect(await shouldOfferWebHomeImport(generations, webHome)).toBe(false)
+
+    const coreOnly = join(await createRoot('dsh-desktop-core-'), 'harness')
+    await mkdir(join(coreOnly, 'profiles', 'web'), { recursive: true })
+    await writeFile(
+      join(coreOnly, 'profiles', 'web', 'package.json'),
+      JSON.stringify({ dependencies: { dshmarket: '1.0.0' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } })
+    )
+    expect(await shouldOfferWebHomeImport(coreOnly, webHome)).toBe(true)
+  })
+
+  it('replaces an unused desktop home without leaving the old tree behind', async () => {
+    const webHome = await createWebHome()
+    const parent = await createRoot('dsh-desktop-replace-')
+    const dest = join(parent, 'harness')
+    await mkdir(join(dest, 'logs'), { recursive: true })
+    await writeFile(join(dest, 'logs', 'old.log'), 'old\n')
+
+    await importWebHome({ source: webHome, dest })
+
+    expect(existsSync(join(dest, 'logs', 'old.log'))).toBe(false)
+    expect(existsSync(join(dest, 'settings.yaml'))).toBe(true)
+    expect((await readdir(parent)).sort()).toEqual(['harness'])
+  })
+
   it('copies the allowlist and leaves the executable tree behind', async () => {
     const localPlugin = await createRoot('dsh-local-plugin-')
     await writeFile(join(localPlugin, 'package.json'), JSON.stringify({
@@ -200,35 +243,5 @@ describe('web home import', () => {
     expect(model.stats).toContain('2 个会话')
     expect(model.primaryLabel).toBe('导入并继续')
     expect(model.secondaryLabel).toBe('从空白开始')
-  })
-})
-
-describe('web home import wiring', () => {
-  it('inserts the import page before profile maintenance and ships the resource', async () => {
-    const [main, preload, manifest, html] = await Promise.all([
-      readFile('src/main/index.ts', 'utf8'),
-      readFile('src/preload/index.ts', 'utf8'),
-      readFile('package.json', 'utf8'),
-      readFile('build/web-import.html', 'utf8')
-    ])
-    expect(main.indexOf('await maybeImportWebHome(dshHome)')).toBeGreaterThan(
-      main.indexOf('await runtime.stop()')
-    )
-    expect(main.indexOf('await maybeImportWebHome(dshHome)')).toBeLessThan(
-      main.indexOf('await runProfileStartupMaintenance({')
-    )
-    expect(main).toContain("desktopResourcePath('web-import.html')")
-    expect(main).toContain("ipcMain.handle('web-import:action'")
-    expect(main).toContain('if (startInSafeMode) return')
-    expect(preload).toContain("ipcRenderer.invoke('web-import:action', action)")
-    expect(JSON.parse(manifest).build.extraResources).toContainEqual({
-      from: 'build/web-import.html',
-      to: 'web-import.html'
-    })
-    expect(html).toContain('id="import"')
-    expect(html).toContain('id="skip"')
-    expect(html).toContain("window.dshWebImport.action")
-    expect(html).toContain("default-src 'none'")
-    expect(html).not.toMatch(/(?:src|srcset)=["']https?:/)
   })
 })

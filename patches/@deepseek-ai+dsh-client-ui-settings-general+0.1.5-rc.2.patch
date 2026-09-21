@@ -1,8 +1,18 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-index 3ff0ed7..07f1b17 100644
+index 3ff0ed7..3df9210 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-@@ -195,6 +195,16 @@ window.__ModuleLoader__.load({
+@@ -31,7 +31,8 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-general";
+ 			tag.dataset.pluginCss = tagId$3;
+-			tag.textContent = css$3;
++			// Keep every settings section reachable when the menu exceeds the panel height.
++			tag.textContent = css$3 + "\n.VOzbGW_nav{min-height:0;overflow-y:auto;padding-bottom:22px}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var SettingsRoot_module_css_default = {
+@@ -195,6 +196,16 @@ window.__ModuleLoader__.load({
  				setActiveId(id);
  				setOpen(true);
  			}, []);

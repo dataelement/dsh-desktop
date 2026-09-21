@@ -274,9 +274,9 @@
     "dsh-desktop-client-ui": "file:packages/dsh-desktop-client-ui",
     "dsh-desktop-enterprise": "file:packages/dsh-desktop-enterprise",
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
+    "dsh-desktop-log-bridge": "file:packages/dsh-desktop-log-bridge",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
-    "dshmarket": "1.45.1",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",
     "pnpm": "10.34.5",
@@ -382,6 +382,10 @@
         "to": "dsh-desktop.patch.yml"
       },
       {
+        "from": "build/dsh-desktop-market.patch.yml",
+        "to": "dsh-desktop-market.patch.yml"
+      },
+      {
         "from": "build/dsh-desktop-safe.patch.yml",
         "to": "dsh-desktop-safe.patch.yml"
       },
@@ -409,6 +413,7 @@
         "from": "build/safe-mode.html",
         "to": "safe-mode.html"
       },
+
       {
         "from": "build/community-wechat-qr.png",
         "to": "community-wechat-qr.png"

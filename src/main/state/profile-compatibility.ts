@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { existsSync, realpathSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
+import { listDisabledProfilePlugins } from './plugin-disable'
 import { isThirdPartyPackageName, profilePackageJsonPath } from './plugin-recovery'
 
 /**
@@ -262,9 +263,13 @@ export async function inspectProfileCompatibility(
 
   const dependencies = profileManifest.dependencies ?? {}
   const bundles = new Set(profileManifest.dsh?.profile?.bundles ?? [])
-  const activePlugins = Object.keys(dependencies).filter(
+  const composedPlugins = Object.keys(dependencies).filter(
     (name) => bundles.has(name) && isThirdPartyPackageName(name)
   )
+  // A plugin switched off in the patch layer or the market never loads, so
+  // nothing it references can block startup.
+  const disabledPlugins = new Set(await listDisabledProfilePlugins(dshHome, composedPlugins))
+  const activePlugins = composedPlugins.filter((name) => !disabledPlugins.has(name))
   const profileNodeModules = join(profileDirectory, 'node_modules')
   const profilePackages = await installedPackageNames(profileNodeModules)
   const profilePackageSet = new Set(profilePackages)
@@ -455,35 +460,6 @@ async function backupManifest(profileDirectory: string, recoveryDirectory: strin
       // Optional files are backed up when present.
     }
   }
-}
-
-/** Disable bundles without deleting their package, configuration, or data. */
-export async function disableProfilePlugins(
-  dshHome: string,
-  pluginNames: readonly string[],
-  now = new Date()
-): Promise<string[]> {
-  const manifestPath = profilePackageJsonPath(dshHome)
-  const profileDirectory = dirname(manifestPath)
-  const manifest = await readManifest(manifestPath)
-  if (manifest === undefined) return []
-  const selected = new Set(pluginNames)
-  const bundles = manifest.dsh?.profile?.bundles ?? []
-  const disabled = bundles.filter((name) => selected.has(name))
-  if (disabled.length === 0) return []
-
-  const recoveryDirectory = join(
-    dshHome,
-    'recovery',
-    'compatibility',
-    recoveryStamp(now)
-  )
-  await backupManifest(profileDirectory, recoveryDirectory)
-  manifest.dsh ??= {}
-  manifest.dsh.profile ??= {}
-  manifest.dsh.profile.bundles = bundles.filter((name) => !selected.has(name))
-  await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
-  return disabled
 }
 
 /** Move incompatible local workspaces aside; never delete their source or data. */

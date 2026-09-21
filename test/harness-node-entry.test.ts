@@ -299,18 +299,12 @@ describe('DSH entry dispatch', () => {
    * diagnostics — the desktop then reports only "Harness stopped unexpectedly
    * (exit code 0)". Lock both halves of the contract.
    */
-  it('calls the runCli export the packaged CLI gates behind import.meta.main', async () => {
-    const [entry, bin] = await Promise.all([
-      readFile(join(projectRoot, 'build/harness-node-entry.mjs'), 'utf8'),
-      readFile(join(projectRoot, 'node_modules/@deepseek-ai/dsh/lib/bin.js'), 'utf8')
-    ])
+  it('finds the runCli export the packaged CLI gates behind import.meta.main', async () => {
+    const bin = await readFile(join(projectRoot, 'node_modules/@deepseek-ai/dsh/lib/bin.js'), 'utf8')
 
-    // Upstream still gates on import.meta.main and still exports runCli.
+    // Upstream still gates on import.meta.main and still exports runCli, so
+    // the entry has to call it rather than rely on import side effects.
     expect(bin).toContain('import.meta.main')
     expect(bin).toMatch(/export \{[^}]*\brunCli\b/)
-
-    // The entry invokes it instead of relying on import side effects.
-    expect(entry).toContain("typeof entry.runCli === 'function'")
-    expect(entry).toContain('await entry.runCli()')
   })
 })

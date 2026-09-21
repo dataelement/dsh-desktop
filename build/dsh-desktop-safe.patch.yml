@@ -1,3 +1,10 @@
+# Harness's runtime warnings and errors live only in an in-memory logger ring,
+# and session activation failures only reach the client. Bridge both to
+# stderr so harness.log keeps them. First, so it hears as much as it can.
+- insert:
+    - id: dsh-desktop-log-bridge
+      name: dsh-desktop-log-bridge
+
 # Recovery composition: keep only Desktop branding and the runtime adapter
 # required by packaged Electron. Do not import the normal Desktop patch here:
 # PPT, market installation and preset transfer must not block safe-mode boot.

@@ -15,6 +15,7 @@
         --canvas: #f7f7f8; --surface: #fff; --soft: #f5f6f7; --ink: #18181b;
         --muted: #71717a; --line: #e4e4e7; --strong: #d4d4d8;
         --button: #18181b; --button-ink: #fff; --danger: #c33b38; --warning: #a45b00; --success: #267a4a;
+        --accent: #2468f2;
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
@@ -85,6 +86,8 @@
       .plugin-upgrade-btn { margin-right:14px; min-height:28px; padding:4px 10px; border:1px solid var(--success); border-radius:8px; color:var(--success); background:transparent; cursor:pointer; font-size:11px; font-weight:650; white-space:nowrap; flex:0 0 auto; }
       .plugin-upgrade-btn:hover { background:rgba(38,122,74,.09); }
       .plugin-upgrade-btn[disabled] { opacity:.55; cursor:wait; }
+      .plugin-enable-btn { border-color:var(--line); color:var(--ink); }
+      .plugin-enable-btn:hover { background:var(--soft, var(--surface-soft, #f5f6f7)); }
       .plugin-status.success { color:var(--success); }
       .plugin-version { margin-left:4px; color:var(--muted); font-size:11px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
       .footer { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 16px; padding: 0 28px 18px; }
@@ -103,10 +106,13 @@
       .wechat-popover p { margin: 10px 0 0; line-height: 1.5; }
       .footer > #quit { margin-left: auto; flex-shrink: 0; }
       .quit { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
-      :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; }
-      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; } }
+      :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; --accent:#5b96f7; }
+      @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; --accent:#5b96f7; } }
       @media (max-height: 680px) { body { padding: 16px; } .shell { max-height: calc(100vh - 32px); } .header { padding-block: 12px; } .content { padding: 16px 24px; } .summary { font-size: 13px; margin-bottom: 6px; } .list-card { margin-top: 10px; } .actions { margin-top: 14px; } }
       @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } .footer { padding-inline:20px; } }
+      .agent-link { flex-shrink: 0; align-self: flex-start; margin: -6px 0 0; padding: 0; border: 0; color: var(--accent); background: transparent; cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: currentColor; }
+      .agent-link:hover { opacity: .85; }
+      .agent-link[disabled] { opacity: .55; cursor: default; }
     </style>
   </head>
   <body>
@@ -119,6 +125,7 @@
         <p class="notice" id="notice" role="alert"></p>
         <h1 id="heading"></h1>
         <p class="summary" id="summary"></p>
+        <button class="agent-link" id="repair-agent" type="button"></button>
         <section class="list-card" aria-labelledby="selection-hint">
           <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
           <ul class="plugins" id="items"></ul>
@@ -145,7 +152,7 @@
               </svg>
               <span id="community-wechat-label"></span>
             </button>
-            <a id="community-discord" href="https://discord.gg/he2gAKCpj" target="_blank" rel="noopener noreferrer">
+            <a id="community-discord" href="https://discord.gg/7Xgf3qe3Qp" target="_blank" rel="noopener noreferrer">
               <span>Discord</span>
               <svg class="external-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 12 12 4M5 4h7v7" />
@@ -298,7 +305,28 @@
         }
         const action = document.createElement('span'); action.className = 'plugin-action'; action.textContent = String(plugin.actionLabel || '')
         copy.append(title, action)
-        label.append(checkbox, copy); item.appendChild(label)
+        // An already disabled plugin is not selectable for disabling again.
+        if (plugin.disabled === true) label.append(copy)
+        else label.append(checkbox, copy)
+        item.appendChild(label)
+
+        if (plugin.enableButtonLabel) {
+          const enableBtn = document.createElement('button')
+          enableBtn.type = 'button'
+          enableBtn.className = 'plugin-upgrade-btn plugin-enable-btn'
+          enableBtn.textContent = String(plugin.enableButtonLabel)
+          enableBtn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            enableBtn.disabled = true
+            enableBtn.textContent = model.enableBusyLabel || (model.locale === 'zh' ? '正在启用…' : 'Enabling…')
+            apply.disabled = true
+            if (upgradeAll) upgradeAll.disabled = true
+            restart.disabled = true
+            agent.disabled = true
+            void window.dshSafeMode.action('enable', { plugins: [plugin.name] })
+          })
+          item.appendChild(enableBtn)
+        }
 
         if (plugin.upgradeButtonLabel) {
           const upgradeBtn = document.createElement('button')
@@ -318,7 +346,8 @@
           item.appendChild(upgradeBtn)
         }
 
-        list.appendChild(item); pluginCheckboxes.push(checkbox)
+        list.appendChild(item)
+        if (plugin.disabled !== true) pluginCheckboxes.push(checkbox)
       }
       const allCheckboxes = [...issueCheckboxes, ...pluginCheckboxes]
       if (allCheckboxes.length === 0) empty.classList.add('visible')
@@ -352,6 +381,24 @@
         restart.disabled = true; restart.textContent = model.restartBusyLabel; apply.disabled = true; agent.disabled = true; if (upgradeAll) upgradeAll.disabled = true; void window.dshSafeMode.action('restart', {})
       })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', {}))
+    </script>
+    <script>
+      // Only the request is sent: the main process prepends the offline
+      // diagnosis and the failed launch's logs to the first turn.
+      const repairAgentPrompt = model.locale === 'zh'
+        ? '请结合诊断事实和 harness.log，定位导致启动失败的确切根因。先说明结论和建议的最小可逆操作，在我明确确认之前不要修改任何文件或配置。'
+        : 'Using the diagnostic facts and harness.log, find the exact root cause of the startup failure. Explain the conclusion and the smallest reversible fix first, and do not change any file or setting until I explicitly confirm.'
+      // One line under the summary: the list below must stay fully visible.
+      const repairAgent = document.getElementById('repair-agent')
+      repairAgent.textContent = model.locale === 'zh'
+        ? '不确定是哪个插件？让智能修复 Agent 分析日志 →'
+        : 'Not sure which plugin? Let the repair agent read the log →'
+      repairAgent.addEventListener('click', () => {
+        repairAgent.disabled = true
+        const agentBtn = document.getElementById('agent')
+        if (agentBtn) agentBtn.disabled = true
+        void window.dshSafeMode.action('agent', { prompt: repairAgentPrompt })
+      })
     </script>
   </body>
 </html>
