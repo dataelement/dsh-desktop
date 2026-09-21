@@ -1,57 +1,57 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { lstat, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
-import { gunzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { patchPath, projectRoot } from './patch-path'
 
-const artifacts = JSON.parse(await readFile(path.join(projectRoot, 'packages/ppt-runtime/artifacts.json'), 'utf8')) as Record<'core' | 'adapter', { file: string; sha256: string }>
+type PackageName = 'core' | 'adapter'
+const packageNames: Record<PackageName, string> = { core: 'dsh-ppt', adapter: 'dsh-ppt-composer' }
 
-async function artifact(name: keyof typeof artifacts): Promise<Buffer> {
-  return readFile(path.join(projectRoot, 'packages', 'ppt-bundles', artifacts[name].file))
-}
-
-function tarEntries(archive: Buffer): Map<string, Buffer> {
-  const tar = gunzipSync(archive)
+async function artifact(name: PackageName): Promise<Map<string, Buffer>> {
+  const root = path.join(projectRoot, '.build', 'ppt-runtime', 'packages', packageNames[name])
   const entries = new Map<string, Buffer>()
-  let offset = 0
-  while (offset + 512 <= tar.length) {
-    const header = tar.subarray(offset, offset + 512)
-    const name = header.subarray(0, 100).toString('utf8').replace(/\0.*$/u, '')
-    if (name.length === 0) break
-    const prefix = header.subarray(345, 500).toString('utf8').replace(/\0.*$/u, '')
-    const sizeText = header.subarray(124, 136).toString('ascii').replace(/\0.*$/u, '').trim()
-    const size = Number.parseInt(sizeText || '0', 8)
-    const contentOffset = offset + 512
-    const fullName = prefix.length === 0 ? name : `${prefix}/${name}`
-    entries.set(fullName, tar.subarray(contentOffset, contentOffset + size))
-    offset = contentOffset + Math.ceil(size / 512) * 512
+  async function visit(directory: string, relative = ''): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const child = path.join(directory, entry.name)
+      const childRelative = path.posix.join(relative, entry.name)
+      if (entry.isDirectory()) await visit(child, childRelative)
+      else if (entry.isFile()) entries.set(`package/${childRelative}`, await readFile(child))
+    }
   }
+  await visit(root)
   return entries
 }
 
-describe('DSH PPT built-in plugin', () => {
-  it('pins the reviewed plugin artifacts byte-for-byte', async () => {
-    const lock = JSON.parse(await readFile(path.join(projectRoot, 'package-lock.json'), 'utf8')) as {
-      packages: Record<string, { integrity?: string }>
-    }
-    const packagePaths = {
-      core: 'node_modules/dsh-ppt',
-      adapter: 'node_modules/dsh-ppt-composer'
-    } as const
+function artifactText(entries: Map<string, Buffer>): string {
+  return Buffer.concat([...entries.values()]).toString('utf8')
+}
 
-    for (const name of Object.keys(artifacts) as (keyof typeof artifacts)[]) {
-      const archive = await artifact(name)
-      expect(createHash('sha256').update(archive).digest('hex')).toBe(artifacts[name].sha256)
-      expect(lock.packages[packagePaths[name]]?.integrity).toBe(
-        `sha512-${createHash('sha512').update(archive).digest('base64')}`
+describe('DSH PPT built-in plugin', () => {
+  it('builds local source packages into staged and installed distributions', async () => {
+    const lock = JSON.parse(await readFile(path.join(projectRoot, 'package-lock.json'), 'utf8')) as {
+      packages: Record<string, { resolved?: string; link?: boolean }>
+    }
+    const sources: Record<PackageName, string> = {
+      core: 'packages/ppt-runtime/core',
+      adapter: 'packages/ppt-runtime/adapter'
+    }
+
+    for (const name of Object.keys(packageNames) as PackageName[]) {
+      const packageName = packageNames[name]
+      expect(lock.packages[`node_modules/${packageName}`]).toMatchObject({
+        resolved: sources[name], link: true
+      })
+      expect((await lstat(path.join(projectRoot, 'node_modules', packageName))).isSymbolicLink()).toBe(false)
+      const staged = await artifact(name)
+      expect(await readFile(path.join(projectRoot, 'node_modules', packageName, 'lib/client.js'))).toEqual(
+        staged.get('package/lib/client.js')
       )
     }
   })
 
   it('ships one PPT composer surface and excludes the Tencent route', async () => {
-    const core = gunzipSync(await artifact('core')).toString('utf8')
-    const adapter = gunzipSync(await artifact('adapter')).toString('utf8')
+    const core = artifactText(await artifact('core'))
+    const adapter = artifactText(await artifact('adapter'))
     const excluded = /\b(?:tencent|slidep|editor_sdk)\b|workbuddy[- ]runtime|\bppt_(?:create|render|write_page)\b/iu
 
     expect(core).toContain('dsh-ppt')
@@ -64,15 +64,16 @@ describe('DSH PPT built-in plugin', () => {
   })
 
   it('ships every JavaScript chunk imported by the Host entry', async () => {
-    const archive = gunzipSync(await artifact('core')).toString('utf8')
-    const chunk = /from "\.\/(pptd-[A-Za-z0-9_-]+\.js)"/u.exec(archive)?.[1]
+    const entries = await artifact('core')
+    const host = entries.get('package/lib/index.js')?.toString('utf8') ?? ''
+    const chunk = /from "\.\/(pptd-[A-Za-z0-9_-]+\.js)"/u.exec(host)?.[1]
 
     expect(chunk).toBeDefined()
-    expect(archive).toContain(`package/lib/${chunk}`)
+    expect(entries.has(`package/lib/${chunk}`)).toBe(true)
   })
 
   it('exposes geometry-derived text capacity to the PPT authoring workflow', async () => {
-    const entries = tarEntries(await artifact('core'))
+    const entries = await artifact('core')
     const protocol = entries.get('package/lib/types/protocol.d.ts')?.toString('utf8') ?? ''
     const host = entries.get('package/lib/index.js')?.toString('utf8') ?? ''
     const skill = entries.get('package/skills/dsh-ppt/SKILL.md')?.toString('utf8') ?? ''
@@ -85,7 +86,7 @@ describe('DSH PPT built-in plugin', () => {
   })
 
   it('blocks overflowing text before rendering and preserves the authored font size', async () => {
-    const entries = tarEntries(await artifact('core'))
+    const entries = await artifact('core')
     const chunkName = [...entries.keys()].find(name => /^package\/lib\/pptd-[A-Za-z0-9_-]+\.js$/u.test(name))
     const renderer = chunkName === undefined ? '' : entries.get(chunkName)?.toString('utf8') ?? ''
     const renderTextStart = renderer.indexOf('function renderText(')
@@ -101,7 +102,7 @@ describe('DSH PPT built-in plugin', () => {
   })
 
   it('ships sixteen maintained templates, English previews and Chinese sources', async () => {
-    const entries = tarEntries(await artifact('core'))
+    const entries = await artifact('core')
     const designs = [...entries.keys()].filter(name => /^package\/skills\/dsh-ppt\/references\/[^/]+\/[^/]+\/design\.md$/u.test(name))
     const expected = [
       ['work/curated-modular-logistics-system', 12],
@@ -130,7 +131,7 @@ describe('DSH PPT built-in plugin', () => {
   it('excludes withdrawn bytes and shares build-listed local preview assets without embedded copies', async () => {
     const excluded = JSON.parse(await readFile(path.join(projectRoot, 'packages/ppt-runtime/excluded-assets.json'), 'utf8')) as { file: string; sha256: string }[]
     const denied = new Set(excluded.map(item => item.sha256))
-    const core = tarEntries(await artifact('core'))
+    const core = await artifact('core')
     const allowed = new Set([...core].filter(([name]) => name.endsWith('.jpg')).map(([, bytes]) => createHash('sha256').update(bytes).digest('hex')))
     expect(allowed.size).toBe(192)
     const manifestSource = core.get('package/lib/preview-manifest.js')!.toString()
@@ -142,7 +143,7 @@ describe('DSH PPT built-in plugin', () => {
     }
     expect(core.get('package/lib/index.js')!.toString()).toContain('registerPreviewAssets(ctx, previewFiles')
     for (const name of ['core', 'adapter'] as const) {
-      const entries = tarEntries(await artifact(name))
+      const entries = await artifact(name)
       for (const [file, bytes] of entries) {
         expect(denied.has(createHash('sha256').update(bytes).digest('hex')), file).toBe(false)
         expect(excluded.some(item => file === `package/${item.file}`), file).toBe(false)
@@ -224,18 +225,14 @@ describe('DSH PPT built-in plugin', () => {
     expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
   })
 
-  it('declares both local artifacts and mounts only the PPT composer', async () => {
+  it('declares both local source packages and mounts only the PPT composer', async () => {
     const manifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
     }
     const profilePatch = await readFile(path.join(projectRoot, 'build', 'dsh-desktop.patch.yml'), 'utf8')
 
-    expect(manifest.dependencies['dsh-ppt']).toBe(
-      `file:packages/ppt-bundles/${artifacts.core.file}`
-    )
-    expect(manifest.dependencies['dsh-ppt-composer']).toBe(
-      `file:packages/ppt-bundles/${artifacts.adapter.file}`
-    )
+    expect(manifest.dependencies['dsh-ppt']).toBe('file:packages/ppt-runtime/core')
+    expect(manifest.dependencies['dsh-ppt-composer']).toBe('file:packages/ppt-runtime/adapter')
     expect(profilePatch).toContain("name: 'dsh-ppt-composer'")
     expect(profilePatch).not.toContain('office-ppt-standard-adapter')
     expect(profilePatch).not.toContain('name: dsh-ppt')
