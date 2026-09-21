@@ -24,9 +24,9 @@ window.__ModuleLoader__.load({
       limitZero: '额度为 0，模型调用已停用',
       secureUnavailable: '系统安全存储不可用，企业登录已停用。',
       confirmTitle: '确认毕昇平台', confirmLead: '确认后会停用当前企业模型连接，并在该平台新建一次 PKCE 登录。',
-      insecureTitle: '确认使用内网 HTTP',
-      insecureLead: '该地址是内网明文 HTTP。登录票据和令牌会在局域网上明文传输，仅在你信任的企业内网继续。',
-      confirm: '确认并登录', insecureConfirm: '我了解风险，继续登录', cancel: '取消', requestId: '请求 ID',
+      insecureTitle: '确保服务地址可信',
+      insecureLead: '登录信息会明文传输，确保以下服务地址由可信来源提供。',
+      confirm: '确认并登录', insecureConfirm: '确认为可信来源', cancel: '取消', requestId: '请求 ID',
       seatRevoked: '席位已撤销'
     }
     const en = {
@@ -40,9 +40,9 @@ window.__ModuleLoader__.load({
       limitZero: 'Limit is 0; model calls are disabled',
       secureUnavailable: 'Operating-system secure storage is unavailable. Enterprise sign-in is disabled.',
       confirmTitle: 'Confirm BiSheng platform', confirmLead: 'Continuing pauses the current enterprise connection and starts a new PKCE login at this platform.',
-      insecureTitle: 'Confirm intranet HTTP',
-      insecureLead: 'This address is cleartext HTTP on a private network. Login tickets and tokens will travel unencrypted on the LAN. Continue only on a network you trust.',
-      confirm: 'Confirm and sign in', insecureConfirm: 'I understand, continue', cancel: 'Cancel', requestId: 'Request ID',
+      insecureTitle: 'Make sure the service URL is trusted',
+      insecureLead: 'Sign-in details will be sent in cleartext. Make sure the following service URL comes from a trusted source.',
+      confirm: 'Confirm and sign in', insecureConfirm: 'Confirm as a trusted source', cancel: 'Cancel', requestId: 'Request ID',
       seatRevoked: 'Seat revoked'
     }
 
