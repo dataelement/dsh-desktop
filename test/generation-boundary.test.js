@@ -1,7 +1,16 @@
-import { readInstalledVersion } from '../node_modules/dshmarket/lib/profile.js'
 import { suspendGenerationProjectionForPnpm } from '../packages/dsh-desktop-market-installer/pnpm-runner.mjs'
 import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, open, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
+
+function readInstalledVersion(_profile, name, explicitDir) {
+  try {
+    const manifest = JSON.parse(readFileSync(join(explicitDir, 'node_modules', name, 'package.json'), 'utf8'))
+    return manifest.version ?? null
+  } catch {
+    return null
+  }
+}
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'

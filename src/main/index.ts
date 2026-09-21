@@ -212,6 +212,8 @@ let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
 /** A repair prompt from the Recovery page, started by the Safe Mode page load. */
 let pendingRepairPrompt: string | undefined
+/** Why the last Repair Agent session could not open, until it is shown once. */
+let repairAgentLaunchError: string | undefined
 /** Desktop storage key the Harness UI restores its selected session from. */
 const HARNESS_CURRENT_SESSION_KEY = 'dsh.sessions.current'
 /** The last failed normal launch, kept for the Repair Agent after Safe Mode replaces the runtime logs. */
@@ -1135,7 +1137,10 @@ async function openHarness(
     rendererPluginFailureLogs = []
     window.webContents.stop()
     // Open the repair session before the page loads, so the UI lands on it.
-    if (repairPrompt !== undefined) await startRepairAgentPrompt(repairPrompt)
+    if (repairPrompt !== undefined) {
+      const started = await startRepairAgentPrompt(repairPrompt)
+      repairAgentLaunchError = started.ok ? undefined : started.error
+    }
     await clearStaleLoopbackHttpCache(
       window.webContents.session,
       join(app.getPath('userData'), 'http-cache-origin'),
@@ -1562,22 +1567,59 @@ function launchSafeHarness(): Promise<void> {
  * is already open has to reload to follow (see reloadHarnessWindow). The
  * prompt runs in the background; its history reaches the UI on its own, so
  * only setup failures are awaited here.
- * @returns whether a session was opened.
+ * @returns whether a session was opened, and why it could not be when it
+ * was not: every caller shows that reason, because a failure here is
+ * otherwise invisible to the user who clicked.
  */
-async function startRepairAgentPrompt(prompt: string): Promise<boolean> {
-  if (!repairAgentService || !safeModeVisible || runtime.snapshot().phase !== 'ready') return false
+async function startRepairAgentPrompt(
+  prompt: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!repairAgentService || !safeModeVisible || runtime.snapshot().phase !== 'ready') {
+    return {
+      ok: false,
+      error: harnessLocale() === 'zh'
+        ? '安全模式核心服务尚未就绪。'
+        : 'The Safe Mode core is not ready yet.'
+    }
+  }
   const service = repairAgentService
+  const availability = await service.checkModelAvailability()
+  if (!availability.ok) {
+    const errorMsg = availability.message ?? (harnessLocale() === 'zh' ? '当前模型不可用' : 'Model unavailable')
+    runtime.note(`[desktop] repair agent: model unavailable: ${errorMsg}`)
+    return { ok: false, error: errorMsg }
+  }
   const session = await service.initSession({ fresh: true })
   if (!session.ok || !session.sessionId) {
-    runtime.note(`[desktop] repair agent: session unavailable: ${session.error ?? 'unknown error'}`)
-    return false
+    const error = session.error ?? 'unknown error'
+    runtime.note(`[desktop] repair agent: session unavailable: ${error}`)
+    return { ok: false, error }
   }
   desktopStorageManager?.setItem(HARNESS_CURRENT_SESSION_KEY, JSON.stringify({ sessionId: session.sessionId }))
   runtime.note(`[desktop] repair agent: session ${session.sessionId} opened`)
   void service.sendPrompt(session.sessionId, prompt).then((result) => {
     if (!result.ok) runtime.note(`[desktop] repair agent: prompt failed: ${result.error ?? 'unknown error'}`)
   })
-  return true
+  return { ok: true }
+}
+
+/**
+ * The one-line notice a page shows when the Repair Agent could not start.
+ * Harness reports a mount failure as a multi-line block with a stack; the
+ * first two lines carry the cause, and the rest would push the plugin list
+ * off the Safe Mode page.
+ */
+function repairAgentFailureNotice(error: string | undefined): string {
+  const detail = (error ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 2)
+    .join(' ')
+    .slice(0, 240)
+  return harnessLocale() === 'zh'
+    ? `无法打开智能修复 Agent 会话${detail ? `：${detail}` : '。'}`
+    : `The repair agent session could not be opened${detail ? `: ${detail}` : '.'}`
 }
 
 /** Hand the Recovery page's repair prompt to the Safe Mode page load, exactly once. */
@@ -2189,9 +2231,45 @@ async function showPluginRecovery(options?: {
         // Its page load opens the session (see openHarness); should the page
         // somehow not load, open it here and reload whatever is shown.
         pendingRepairPrompt = action.slice('agent:'.length)
+        repairAgentLaunchError = undefined
         await launchSafeHarness()
+        if (repairAgentService) {
+          const availability = await repairAgentService.checkModelAvailability()
+          if (!availability.ok) {
+            takePendingRepairPrompt()
+            const owner = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+            const dialogOptions: MessageBoxOptions = {
+              type: 'warning',
+              title: isChinese ? '无法进入智能维修' : 'Cannot Enter Repair Agent',
+              message: availability.message ?? (isChinese ? '当前模型不可用' : 'Model unavailable'),
+              detail: availability.detail,
+              buttons: [isChinese ? '我知道了' : 'OK'],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true
+            }
+            if (owner) {
+              await dialog.showMessageBox(owner, dialogOptions)
+            } else {
+              await dialog.showMessageBox(dialogOptions)
+            }
+            void showSafeModeManager({ notice: availability.message, noticeTone: 'error' }).catch(showUnexpectedError)
+            break
+          }
+        }
         const repairPrompt = takePendingRepairPrompt()
-        if (repairPrompt !== undefined && await startRepairAgentPrompt(repairPrompt)) reloadHarnessWindow()
+        if (repairPrompt !== undefined) {
+          const started = await startRepairAgentPrompt(repairPrompt)
+          if (started.ok) reloadHarnessWindow()
+          else repairAgentLaunchError = started.error
+        }
+        // Recovery hands the window to Safe Mode either way; a session that
+        // could not open is only visible if the manager says so.
+        if (repairAgentLaunchError !== undefined) {
+          const repairNotice = repairAgentFailureNotice(repairAgentLaunchError)
+          repairAgentLaunchError = undefined
+          void showSafeModeManager({ notice: repairNotice, noticeTone: 'error' }).catch(showUnexpectedError)
+        }
         break
       } else if (action === 'auto-process' || ((action === 'upgrade' || target?.type === 'upgrade') && upgradeCandidate)) {
         const plan = action === 'auto-process'
@@ -2449,7 +2527,10 @@ async function disableSafeModePlugin(
     )
     return { disabled: true }
   }
-  if (result.reason === 'carrier') {
+  // A carrier cannot be switched off on its own, and a broken bundle has no
+  // row to switch off at all. Both would otherwise leave the next launch
+  // composing the same profile, so they fall back to a restorable removal.
+  if (result.reason === 'carrier' || result.reason === 'broken-package') {
     runtime.note(`[${logPrefix}] ${result.detail}; removing it with a restorable backup instead`)
     const removal = await removeProfilePluginCompletely(dshHome, pluginName, logPrefix)
     return { disabled: removal.disabled, pending: removal.pending, detail: removal.failures[0] }
@@ -2707,12 +2788,54 @@ async function showSafeModeManager(initial?: {
       }
       if (action.type === 'agent') {
         const snapshot = runtime.snapshot()
-        if (snapshot.phase === 'ready' && snapshot.url) {
+        // A prompt means the user asked for a repair session. Closing the
+        // manager on a failure would leave the click with no visible effect
+        // at all, so the manager stays open and reports why.
+        if (action.prompt !== undefined) {
+          if (snapshot.phase !== 'ready' || !snapshot.url) {
+            notice = repairAgentFailureNotice(
+              isChinese ? '安全模式核心服务尚未就绪。' : 'The Safe Mode core is not ready yet.'
+            )
+            noticeTone = 'error'
+            continue
+          }
+          if (repairAgentService) {
+            const availability = await repairAgentService.checkModelAvailability()
+            if (!availability.ok) {
+              const owner = safeModeManager?.parent
+              const dialogOptions: MessageBoxOptions = {
+                type: 'warning',
+                title: isChinese ? '无法进入智能维修' : 'Cannot Enter Repair Agent',
+                message: availability.message ?? (isChinese ? '当前模型不可用' : 'Model unavailable'),
+                detail: availability.detail,
+                buttons: [isChinese ? '我知道了' : 'OK'],
+                defaultId: 0,
+                cancelId: 0,
+                noLink: true
+              }
+              if (owner && !owner.isDestroyed()) {
+                await dialog.showMessageBox(owner, dialogOptions)
+              } else {
+                await dialog.showMessageBox(dialogOptions)
+              }
+              notice = availability.message
+              noticeTone = 'error'
+              continue
+            }
+          }
+          const started = await startRepairAgentPrompt(action.prompt)
+          if (!started.ok) {
+            notice = repairAgentFailureNotice(started.error)
+            noticeTone = 'error'
+            continue
+          }
           // The Harness page is already open behind the manager: reload it
           // onto the repair session.
-          if (action.prompt && await startRepairAgentPrompt(action.prompt)) reloadHarnessWindow()
+          reloadHarnessWindow()
           await openHarness(snapshot.url)
+          return
         }
+        if (snapshot.phase === 'ready' && snapshot.url) await openHarness(snapshot.url)
         return
       }
       if (action.type === 'recovery-open') {

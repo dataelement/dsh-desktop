@@ -58,6 +58,15 @@ describe('profile plugin disable', () => {
   const patchPath = join(profile, 'cordis.patch.yml')
   const statePath = join(profile, '.dsh-market', 'state.json')
 
+  /** The profile manifest, whose `dsh.profile.bundles` decides what the loader prepares. */
+  async function writeProfileManifest(bundles: string[] = []): Promise<void> {
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      dependencies: {},
+      ...(bundles.length === 0 ? {} : { dsh: { profile: { bundles } } })
+    }))
+  }
+
   async function plugin(name: string, patch?: string): Promise<void> {
     const directory = join(profile, 'node_modules', name)
     await mkdir(directory, { recursive: true })
@@ -71,7 +80,7 @@ describe('profile plugin disable', () => {
 
   beforeEach(async () => {
     await mkdir(join(profile, '.dsh-market'), { recursive: true })
-    await writeFile(join(profile, 'package.json'), JSON.stringify({ name: 'dsh-profile-web', dependencies: {} }))
+    await writeProfileManifest()
     await writeFile(patchPath, `${TEMPLATE.replace('[]\n', '')}- id: mcp-coaligne\n  disabled: false\n`)
     await writeFile(statePath, JSON.stringify({ disabled: ['@dhicoc/dsh-reverse-skill'], region: 'china', regionAuto: true }))
     await plugin('dsh-proxy-routing', "- insert:\n    - id: proxy-routing\n      name: 'dsh-proxy-routing'\n")
@@ -107,6 +116,29 @@ describe('profile plugin disable', () => {
     const before = await readFile(patchPath, 'utf8')
     expect(await disableProfilePlugin(dshHome, 'dsh-client-only')).toEqual({ ok: true, rows: [] })
     expect(await readFile(patchPath, 'utf8')).toBe(before)
+    expect(await listDisabledProfilePlugins(dshHome, ['dsh-client-only'])).toEqual(['dsh-client-only'])
+  })
+
+  it('refuses a bundle whose package yields no loader row, instead of reporting a disable that does nothing', async () => {
+    // The loader prepares every listed bundle before any user layer applies,
+    // so an unreadable package patch cannot be switched off — writing only the
+    // market state would report success and still fail the next launch.
+    await writeProfileManifest(['dsh-broken-bundle'])
+    await plugin('dsh-broken-bundle', '- insert:\n    - id: broken\n      name: dsh-broken-bundle\n')
+    await rm(join(profile, 'node_modules', 'dsh-broken-bundle', 'cordis.patch.yml'))
+    const before = await readFile(patchPath, 'utf8')
+
+    expect(await disableProfilePlugin(dshHome, 'dsh-broken-bundle')).toMatchObject({
+      ok: false,
+      reason: 'broken-package'
+    })
+    expect(await readFile(patchPath, 'utf8')).toBe(before)
+    expect(await listDisabledProfilePlugins(dshHome, ['dsh-broken-bundle'])).toEqual([])
+  })
+
+  it('still switches a client-only plugin off through the market state when the profile lists bundles', async () => {
+    await writeProfileManifest(['dsh-proxy-routing'])
+    expect(await disableProfilePlugin(dshHome, 'dsh-client-only')).toEqual({ ok: true, rows: [] })
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-client-only'])).toEqual(['dsh-client-only'])
   })
 

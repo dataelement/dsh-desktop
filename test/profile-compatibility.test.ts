@@ -42,10 +42,17 @@ describe('profile compatibility recovery', () => {
       name: '@deepseek-ai/dsh-client-runtime',
       version: '0.1.0-rc.8'
     })
+    // A bundle the profile lists: the loader prepares it from the patch its
+    // manifest declares, so the fixture carries both.
     await manifest(join(profile, 'node_modules', 'dsh-dream-skin'), {
       name: 'dsh-dream-skin',
-      version: '0.4.14'
+      version: '0.4.14',
+      dsh: { bundle: { patch: './cordis.patch.yml' } }
     })
+    await writeFile(
+      join(profile, 'node_modules', 'dsh-dream-skin', 'cordis.patch.yml'),
+      '- insert:\n    - id: dream-skin\n      name: dsh-dream-skin\n'
+    )
     await mkdir(join(profile, 'node_modules', 'dsh-dream-skin', 'lib'), { recursive: true })
     await writeFile(
       join(profile, 'node_modules', 'dsh-dream-skin', 'lib', 'client.js'),
@@ -192,7 +199,10 @@ describe('profile compatibility recovery', () => {
   })
 
   it('stops inspecting a plugin once it is disabled, without deleting its dependency or files', async () => {
-    expect(await disableProfilePlugin(dshHome, 'dsh-dream-skin')).toEqual({ ok: true, rows: [] })
+    expect(await disableProfilePlugin(dshHome, 'dsh-dream-skin')).toEqual({
+      ok: true,
+      rows: ['dream-skin']
+    })
 
     const result = await inspectProfileCompatibility(dshHome, bundled)
     expect(result.activePlugins).toEqual([])

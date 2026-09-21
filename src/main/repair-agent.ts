@@ -27,15 +27,24 @@ export interface RepairAgentServiceOptions {
 
 export interface DiagnosticFinding {
   type:
-    | 'syntax_export_mismatch'
-    | 'plugin_load_failure'
-    | 'symlink_eperm'
-    | 'overlay_yaml_corrupt'
-    | 'startup_timeout'
-    | 'generic'
+  | 'syntax_export_mismatch'
+  | 'plugin_load_failure'
+  | 'symlink_eperm'
+  | 'overlay_yaml_corrupt'
+  | 'startup_timeout'
+  | 'generic'
   summary: string
   culprit?: string
   suggestedAction: string
+}
+
+export interface ModelAvailabilityResult {
+  ok: boolean
+  code?: 'no_keys' | 'default_model_unavailable' | 'harness_not_ready'
+  message?: string
+  detail?: string
+  defaultProvider?: string
+  defaultModel?: string
 }
 
 /** What the failed normal launch left behind, captured before Safe Mode starts its own Harness. */
@@ -271,71 +280,76 @@ interface RepairPlaybook {
  * Failure classes collected from real incidents, with the fix path for each.
  * One bilingual source, so the Chinese and English prompts cannot drift apart.
  */
-function repairPlaybooks(paths: RepairPaths): RepairPlaybook[] {
-  const shipped = paths.shippedPresets ?? '<内置 preset 目录 / shipped preset folder>'
+function repairPlaybooks(): RepairPlaybook[] {
+  // Paths stay in the Directories section above: repeating absolute Windows
+  // paths in every entry is what made this block unreadable.
   return [
     {
       title: { zh: '插件加载失败', en: 'Plugin failed to load' },
       symptom: {
-        zh: '`plugin tree failed to load`、`failed to apply|import loader entry <入口> (<包名>)`，或 `does not provide an export named`。',
-        en: '`plugin tree failed to load`, `failed to apply|import loader entry <entry> (<package>)`, or `does not provide an export named`.'
+        zh: '`plugin tree failed to load`、`failed to apply|import loader entry <行id> (<包名>)`，或 `does not provide an export named`。',
+        en: '`plugin tree failed to load`, `failed to apply|import loader entry <row id> (<package>)`, or `does not provide an export named`.'
       },
       cause: {
-        zh: '括号里的包名才是插件；外层 `cordis:include` 只是包装入口。`does not provide an export named` 表示插件引用了新版 Harness 已移除的导出。',
-        en: 'The parenthesized package is the plugin; the outer `cordis:include` is only the wrapper. `does not provide an export named` means the plugin imports an export the current Harness removed.'
+        zh: '括号里的包名才是插件，外层 `cordis:include` 只是包装；`does not provide an export named` 是它引用了新版已移除的导出。',
+        en: 'The parenthesized package is the plugin; the outer `cordis:include` is a wrapper. `does not provide an export named` means it imports an export this Harness removed.'
       },
       fix: {
-        zh: '在安全模式列表里勾选该插件 →「停用所选插件」（不删除，可随时重新启用），有兼容新版时优先「升级」，然后退出安全模式重启验证。',
-        en: 'In the Safe Mode list, select the plugin → "Disable selected plugins" (nothing is deleted; it can be re-enabled), or "Upgrade" when a compatible release exists; then exit Safe Mode and restart.'
+        zh: '自己停用它（见下），再请用户重启验证。市场有兼容新版时改为让用户点「升级」。',
+        en: 'Disable it yourself (below), then have the user restart. If the market has a compatible release, have them click "Upgrade" instead.'
       }
     },
     {
-      title: { zh: '插件包不完整或损坏', en: 'Plugin package incomplete or broken' },
+      title: { zh: '插件包损坏', en: 'Plugin package broken' },
       symptom: {
-        zh: '`node_modules/<包名>/` 下的 `cordis.patch.yml` 或入口文件报 `ENOENT`，或包自带的 patch 解析失败。',
-        en: '`ENOENT` for `cordis.patch.yml` or the entry file under `node_modules/<package>/`, or the package\'s own patch fails to parse.'
+        zh: '包目录下的 `cordis.patch.yml` 或入口文件 `ENOENT`，或包自带 patch 解析失败。',
+        en: '`ENOENT` for the package\'s `cordis.patch.yml` or entry file, or its own patch fails to parse.'
       },
       cause: {
-        zh: '安装中断导致盘上的包不完整。加载器在应用用户 patch 层之前就要读包自带的 patch，所以**停用对这类问题无效**。',
-        en: 'An interrupted install left the package incomplete. The loader reads the package\'s own patch before the user patch layer applies, so **disabling does not help here**.'
+        zh: '安装中断。加载器在用户 patch 层之前就读包自带的 patch，所以普通停用拿不到可关的加载行。',
+        en: 'An interrupted install. The loader reads the package\'s own patch before the user patch layer, so an ordinary disable has no row to switch off.'
       },
       fix: {
-        zh: '卸载后重装。让用户退出安全模式，在自动出现的「启动修复」页卸载该插件（带备份），再到插件市场重新安装。',
-        en: 'It must be removed and reinstalled: have the user exit Safe Mode, remove the plugin on the Startup Recovery page that appears (it is backed up), then reinstall it from the plugin market.'
+        zh: '先分清坏在哪一层：\`node_modules/<包名>\` 多是指向安装包的链接，每次启动都会重建，只是链接丢了或指错就让用户直接重启，别动它。顺着链接看真身：真身里缺 package.json 或它声明的 patch，才是安装中断，重建链接救不了——这时在安全模式列表里勾选它 →「停用所选插件」，桌面端会自动改成带备份的移除（安全模式界面里可还原），再请用户重启验证；要继续用就去插件市场重装。',
+        en: 'First tell which layer is broken: \`node_modules/<package>\` is usually a link into the install, rebuilt on every launch, so a merely missing or wrong link just needs a restart — leave it alone. Follow the link to the real package: only a missing package.json or declared patch THERE is an interrupted install that relinking cannot fix. Then select it in the Safe Mode list → "Disable selected plugins"; Desktop falls back to a removal with a restorable backup (restore it from the Safe Mode UI). Have the user restart, and reinstall from the market to keep using it.'
+      },
+      avoid: {
+        zh: '**不要自己删包目录**，也不要教用户删。界面卸载是一条带恢复日志的事务：备份材料、清理插件注册的组件、撤销安装记录里的 generation 指针。手删只去掉文件，安装记录还在，下次启动会按它重新投影，用户还丢了可撤销的备份。',
+        en: '**Never delete the package folder yourself**, and do not tell the user to. The UI removal is a journaled transaction: it backs the material up, cleans the components the plugin registered, and revokes the generation pointer in the install records. Deleting files only removes the files — the install record still points at it, the next launch projects it back, and the user loses the recoverable backup.'
       }
     },
     {
       title: { zh: 'Windows 模块回退目录 EPERM', en: 'Windows EPERM in the module fallback folder' },
       symptom: {
-        zh: '`EPERM: operation not permitted, symlink`，路径在 `profiles\\node_modules\\...`，栈里有 `ensureSymlink` / `healProfilesModuleFallbackLocked`。',
-        en: '`EPERM: operation not permitted, symlink` under `profiles\\node_modules\\...`, with `ensureSymlink` / `healProfilesModuleFallbackLocked` in the stack.'
+        zh: '`EPERM: operation not permitted, symlink`，路径在 `profiles\\node_modules\\`，栈里有 `ensureSymlink` / `healProfilesModuleFallbackLocked`。',
+        en: '`EPERM: operation not permitted, symlink` under `profiles\\node_modules\\`, with `ensureSymlink` / `healProfilesModuleFallbackLocked` in the stack.'
       },
       cause: {
-        zh: 'Harness 升级后要重建模块回退链接，旧链接被其他 DSH 进程或杀毒软件占用，替换失败。与安装盘、开发者模式无关。',
-        en: 'After a Harness upgrade the module fallback links are rebuilt; an old link held by another DSH process or antivirus cannot be replaced. It is unrelated to the install drive or Developer Mode.'
+        zh: '升级后重建回退链接，旧链接被其他 DSH 进程或杀软占用。与安装盘、开发者模式无关。',
+        en: 'An upgrade rebuilds the fallback links and an old one is held by another DSH process or antivirus. Unrelated to the install drive or Developer Mode.'
       },
       fix: {
-        zh: '让用户完全退出所有 DSH 窗口和后台进程（任务管理器里确认），必要时暂时放行杀毒软件对该目录的扫描，然后重新启动。仍失败就把日志原文反馈给开发团队。',
-        en: 'Have the user quit every DSH window and background process (check Task Manager), temporarily exempt that folder from antivirus scanning if needed, then start again. If it still fails, report the log lines to the developers.'
+        zh: '先自愈：安全模式不用 `profiles\\node_modules`，删掉报错指到的那一项（junction 用 `Remove-Item -Recurse -Force`），下次启动重建。删除同样 EPERM 说明占用还在，请用户退干净所有 DSH 进程（任务管理器确认）、必要时临时放行杀软，再重启。',
+        en: 'Self-heal first: Safe Mode does not use `profiles\\node_modules`, so delete the entry the error names (`Remove-Item -Recurse -Force` for a junction) and the next launch rebuilds it. If that delete is EPERM too, the holder is still alive: have the user quit every DSH process (Task Manager), exempt the folder from antivirus if needed, and restart.'
       },
       avoid: {
-        zh: '不要建议开启开发者模式或重装到 C 盘。',
-        en: 'Do not suggest Developer Mode or reinstalling on the C: drive.'
+        zh: '不要建议开发者模式或重装到 C 盘，不要删整个 `profiles\\node_modules`。',
+        en: 'No Developer Mode, no reinstall on C:, and never delete the whole `profiles\\node_modules`.'
       }
     },
     {
       title: { zh: '用户 patch 层损坏', en: 'User patch layer corrupt' },
       symptom: {
-        zh: `\`YAMLException\` 或 \`failed to parse overlay\`，指向 \`${paths.normalProfile}/cordis.patch.yml\`。`,
-        en: `\`YAMLException\` or \`failed to parse overlay\` pointing at \`${paths.normalProfile}/cordis.patch.yml\`.`
+        zh: '`YAMLException` 或 `failed to parse overlay`，指向正常 profile 的 `cordis.patch.yml`。',
+        en: '`YAMLException` or `failed to parse overlay` pointing at the normal profile\'s `cordis.patch.yml`.'
       },
       cause: {
-        zh: '强制关机或掉电把文件截断，或手工编辑出错。',
-        en: 'A forced shutdown truncated the file, or a hand edit broke it.'
+        zh: '强制关机截断了文件，或手工编辑出错。',
+        en: 'A forced shutdown truncated it, or a hand edit broke it.'
       },
       fix: {
-        zh: '先备份，再修正 YAML。它必须是顶层列表；无法修复时只保留能解析的条目，全都不行就改成只有一行 `[]`。',
-        en: 'Back it up, then repair the YAML. It must be a top-level list; keep only the entries that parse, or reduce it to a single `[]` line.'
+        zh: '自己修：备份后改成能解析的顶层列表，只留解析得了的条目，全不行就写一行 `[]`。',
+        en: 'Fix it yourself: back it up, keep only the entries that parse as a top-level list, or reduce it to a single `[]`.'
       }
     },
     {
@@ -346,48 +360,29 @@ function repairPlaybooks(paths: RepairPaths): RepairPlaybook[] {
       },
       cause: {
         zh: '某个插件在启动主链路里下载大文件或扫描大量数据。',
-        en: 'A plugin downloads large files or scans a lot of data on the startup path.'
+        en: 'A plugin downloads or scans heavily on the startup path.'
       },
       fix: {
-        zh: '按日志里最后活动的插件判断，在安全模式里停用它后重启。',
-        en: 'Find the last plugin active in the log, disable it in Safe Mode, and restart.'
+        zh: '找日志里最后活动的插件，自己停用它，再请用户重启。',
+        en: 'Find the last plugin active in the log, disable it yourself, then have the user restart.'
       }
     },
     {
-      title: { zh: '历史会话 preset「code」找不到（已改名为 ptc）', en: 'Old sessions cannot find preset "code" (renamed to ptc)' },
+      title: { zh: '自建 preset 挂不上', en: 'A user preset fails to mount' },
       symptom: {
-        zh: `打开旧会话或新建会话报 \`agent-presets: preset "code" not found (available: ...)\`。日志里是 \`[harness-log] session-error <会话id>: agent-presets: preset "code" not found\`；新建会话失败只显示在界面上。日志里找不到时，按下面第 2 步查文件：\`${paths.settings}\` 的默认 preset 是 \`code\`，或者有会话记录的 preset 是 \`code\`，而内置和自建 preset 里都没有 \`code\`，即可确认。`,
-        en: `Opening an old session or creating one fails with \`agent-presets: preset "code" not found (available: ...)\`. The log shows \`[harness-log] session-error <session id>: agent-presets: preset "code" not found\`; a failed new session only shows in the UI. Without a log line, confirm from files (step 2 below): the default in \`${paths.settings}\` or a session's recorded preset is \`code\`, and neither shipped nor user presets contain \`code\`.`
+        zh: '`agent-presets: preset "<id>" failed to mount: ...`，后跟 `missing required value` / `expected … but got …` / `names no plugin` / `not valid YAML`，通常带键路径。坏的是默认 preset 时，所有会话都建不出来。',
+        en: '`agent-presets: preset "<id>" failed to mount: ...` with `missing required value` / `expected … but got …` / `names no plugin` / `not valid YAML`, usually naming the key. If the broken one is the default, no session can be created at all.'
       },
       cause: {
-        zh: `旧版的 \`code\` preset 已改名为 \`ptc\`。旧会话记录的 preset 仍是 \`code\`；\`${paths.settings}\` 里 \`agent-presets\` 的 \`default\` 也可能还是 \`code\`。`,
-        en: `The old \`code\` preset was renamed \`ptc\`. Old sessions still record \`code\`, and \`default\` under \`agent-presets\` in \`${paths.settings}\` may still say \`code\`.`
+        zh: '`.agent-presets/<id>/agent.cordis.yml` 是从旧版内置 preset 复制的，升级后配置键改了名或类型。',
+        en: '`.agent-presets/<id>/agent.cordis.yml` was copied from an older shipped preset and an upgrade renamed a key or changed its type.'
       },
       fix: {
-        zh: `1) 备份后把 \`${paths.settings}\` 中 \`agent-presets\` 的 \`default: code\` 改为 \`default: ptc\`。2) 查受影响的会话：在 \`${paths.sessionIndex}\` 的 json 里找 \`record.rows.agentPreset.val\` 为 \`code\` 的文件。3) 有旧会话要继续用时，把 \`${shipped}/ptc\` 整个目录复制为 \`${paths.userPresets}/code\`，并把其中 \`preset.yml\` 的 \`name\` 改为「PTC 模式（旧会话兼容）」。这样旧会话按原名解析到相同的组合。`,
-        en: `1) Back up \`${paths.settings}\` and change \`default: code\` under \`agent-presets\` to \`default: ptc\`. 2) Find affected sessions: json files in \`${paths.sessionIndex}\` whose \`record.rows.agentPreset.val\` is \`code\`. 3) If old sessions must keep working, copy the whole \`${shipped}/ptc\` folder to \`${paths.userPresets}/code\` and set \`name\` in its \`preset.yml\` to "PTC mode (legacy sessions)", so they resolve to the same composition under their old id.`
+        zh: '以内置同源那份为基准，备份后只改报错指到的键，改完确认 YAML 能解析。',
+        en: 'Use the shipped original as the baseline, back up, change only the key the error names, and confirm the YAML parses.'
       },
       avoid: {
-        zh: '不要解压或改写 `sessions` 下的 `session.v3.jsonl.zstd`，它是追加写的会话日志。',
-        en: 'Never decompress or rewrite `session.v3.jsonl.zstd` under `sessions`; it is an append-only session log.'
-      }
-    },
-    {
-      title: { zh: '自建 preset 的 schema 报错', en: 'Schema error in a user preset' },
-      symptom: {
-        zh: '`agent-presets: preset "<id>" failed to mount: ...`，原因里是 `expected … but got …`、`missing required value`、`names no plugin` 或 `not valid YAML`，通常带出错的键路径。日志里以 `[harness-log]` 开头；日志里没有时，请用户从界面复制报错，或者逐个检查自建 preset 的 `agent.cordis.yml` 能否解析。',
-        en: '`agent-presets: preset "<id>" failed to mount: ...` with `expected … but got …`, `missing required value`, `names no plugin`, or `not valid YAML`, usually naming the key path. In the log it starts with `[harness-log]`; without it, ask the user to copy the error from the UI, or check that each user preset\'s `agent.cordis.yml` parses.'
-      },
-      cause: {
-        zh: `\`${paths.userPresets}/<id>/agent.cordis.yml\` 多半是从旧版内置 preset 复制来的；Harness 升级后插件配置的键改名或类型变化。`,
-        en: `\`${paths.userPresets}/<id>/agent.cordis.yml\` was usually copied from an older shipped preset; a Harness upgrade renamed a plugin config key or changed its type.`
-      },
-      fix: {
-        zh: `找出它的来源（通常是 \`${shipped}\` 下的 \`standard\` 或 \`ptc\`），以当前内置版本为基准比对，只改报错指到的键（改名、改类型或补必填项）。先备份原文件，改完确认 YAML 能解析。`,
-        en: `Find what it was copied from (usually \`standard\` or \`ptc\` under \`${shipped}\`), compare against the current shipped version, and change only the keys the error names (rename, retype, or add the required value). Back up first and confirm the YAML parses afterwards.`
-      },
-      avoid: {
-        zh: '不要删除整个 preset 目录，也不要修改内置 preset。',
+        zh: '不要删整个 preset 目录，也不要改内置 preset。',
         en: 'Do not delete the preset folder or edit a shipped preset.'
       }
     }
@@ -432,20 +427,23 @@ export function buildSystemRepairPrompt(options: {
   const log = paths.log ?? 'harness.log'
   const excerpt = options.logsSample.slice(-20)
 
+  // No match is not worth a line: an empty diagnosis reads as a finding and
+  // invites the model to produce one.
   const finding = options.finding
     ? zh
       ? `**离线初步诊断**：${options.finding.summary}\n建议：${options.finding.suggestedAction}`
       : `**Offline diagnosis**: ${options.finding.summary}\nSuggested: ${options.finding.suggestedAction}`
-    : zh ? '**离线初步诊断**：未匹配到已知故障。' : '**Offline diagnosis**: no known failure matched.'
+    : ''
   const evidence = options.crashCaptured === false
     ? zh
-      ? '本次没有捕获到失败的正常启动：用户可能是主动进入安全模式。先问清用户遇到的具体现象，再去日志里找对应时间段。'
-      : 'No failed normal launch was captured: the user may have entered Safe Mode on purpose. Ask what they saw first, then find that time in the log.'
+      ? '本次没有捕获到失败的正常启动，用户可能是主动进来的。'
+      : 'No failed normal launch was captured; the user may have come here on purpose.'
     : excerpt.length > 0
       ? `${zh ? '失败启动的关键日志摘录（仅作线索，结论以日志原文为准）' : 'Key lines from the failed launch (a lead only; conclude from the log itself)'}:\n\`\`\`\n${excerpt.join('\n')}\n\`\`\``
       : zh ? '未能从失败启动中抽出关键日志行，请直接读日志。' : 'No key lines could be extracted from the failed launch; read the log directly.'
+  const context = [finding, evidence].filter((line) => line.length > 0).join('\n')
 
-  const playbooks = repairPlaybooks(paths).map((playbook, index) => [
+  const playbooks = repairPlaybooks().map((playbook, index) => [
     `${index + 1}. **${t(playbook.title)}**`,
     `   - ${zh ? '特征' : 'Symptom'}：${t(playbook.symptom)}`,
     `   - ${zh ? '原因' : 'Cause'}：${t(playbook.cause)}`,
@@ -463,11 +461,9 @@ export function buildSystemRepairPrompt(options: {
 ## 目录（先分清再动手）
 - Harness 数据目录（当前会话的工作区）：\`${paths.home}\`
 - **正常启动的 profile（诊断和修复的对象）**：\`${paths.normalProfile}\`
-  - \`package.json\`：\`dsh.profile.bundles\` 是启用的插件列表，由插件安装记录在每次启动时重新生成，不要手改。
-  - \`cordis.patch.yml\`：用户 patch 层。停用插件就是在这里给它的加载行写 \`- id: <行id>\` 和 \`  disabled: true\`。
-  - \`.dsh-market/state.json\`：插件市场状态，\`disabled\` 是已停用插件列表。
-  - \`node_modules/<包名>\`：插件包，多数是指向插件安装目录的链接。
-- **安全模式 profile**：\`${paths.safeProfile}\`。你当前就运行在这里，它由桌面端每次重建。不要修改它，也不要把这里的现象当成正常启动的问题。
+  - \`cordis.patch.yml\` 用户 patch 层；\`.dsh-market/state.json\` 市场状态（\`disabled\` 是已停用列表）；\`node_modules/<包名>\` 插件包，多数是链接。
+  - \`package.json\` 的 \`dsh.profile.bundles\` 每次启动按安装记录重建，不要手改。
+- 安全模式 profile：\`${paths.safeProfile}\`。你跑在这里，桌面端每次重建，不用看也不要改。
 - 全局设置：\`${paths.settings}\`；自建 preset：\`${paths.userPresets}/<id>/\`${paths.shippedPresets ? `；内置 preset（只读，作比对基准）：\`${paths.shippedPresets}\`` : ''}
 - 会话日志：\`${join(paths.home, 'sessions')}\`（zstd 压缩的追加日志，禁止改写）；会话摘要：\`${paths.sessionIndex}\`
 - 恢复备份：\`${join(paths.home, 'recovery')}\`
@@ -475,25 +471,37 @@ export function buildSystemRepairPrompt(options: {
 ## 日志
 - 完整启动日志：\`${log}\`。它跨多次启动追加写入，末尾通常是安全模式自己的启动。
 - 读法：不要整份读入。用 grep/tail 找最后一个 \`[desktop] launch requested (safe mode)\` 之前、最近一次 \`[desktop] launch requested (web profile)\` 开始的那一段，那才是失败的正常启动。
-- \`[harness-log]\` 开头的行是 Harness 运行期的警告和错误，\`[harness-log] session-error\` 是会话打开失败。某次启动里如果没有 \`[harness-log] info dsh-desktop-log-bridge\` 这一行，说明那时还不记录运行期错误，那段日志里没有错误不代表没出错。
-${finding}
-${evidence}
+- \`[harness-log]\` 开头的是 Harness 运行期的警告和错误，\`[harness-log] session-error\` 是会话打开失败。
+${context}
 
 ## 已知问题与处理路径
 0. 如果离线诊断点名了插件，这个名字来自加载器的归属信息或启动修复的解析结果，以它为准，不要根据堆栈另行猜测。
 ${playbooks}
 
+**以上都对不上时**：以日志为准自己推断，别硬往清单上靠。桌面端的行为可以直接查源码：https://github.com/dataelement/dsh-desktop（\`src/main/\` 是主进程，\`build/*.html\` 是启动修复页和安全模式页）；取不到就直说，按日志继续。
+
 ## 工作方式
 - 先读证据再下结论：结论必须引用日志原文或文件内容。
-- 修改任何文件前，先说明要改哪个文件、改什么、怎么回滚，等用户明确确认。改之前在同目录备份为 \`<原文件名>.bak-<时间>\`。
+- 用户可能并没有遇到故障，只是主动进安全模式看看，这本身不是异常。日志和文件都正常时，不要硬套上面的已知问题，也不要为了给出结论而编造故障。
+- **能自己修的就自己修**，不要把可以直接改文件完成的事推给用户去点界面。说明要改哪个文件、改什么、怎么回滚，用户确认后你执行，改前在同目录备份为 \`<原文件名>.bak-<时间>\`。
 - 只改正常 profile 和上面列出的用户数据。不改安全模式 profile、内置 preset、会话日志，也不改 \`node_modules\` 里的包内容。
-- 插件的停用、升级、卸载用界面完成：安全模式里「停用所选插件」（可重新启用）、「升级」；包损坏的插件要在启动修复页卸载，或者到插件市场卸载。
+- 只有插件的**升级**和**重装**必须让用户走界面（安全模式的「升级」、插件市场）。
 - 处理完请用户「退出安全模式并重启」验证。
+
+### 停用一个插件
+改正常 profile 下的两个文件，缺一个界面状态就对不上：
+1. \`cordis.patch.yml\`（顶层列表，没有就新建）追加它的加载行 id —— 日志 \`failed to apply loader entry <行id> (<包名>)\` 括号前面那个：
+   \`\`\`yaml
+   - id: <行id>
+     disabled: true
+   \`\`\`
+2. \`.dsh-market/state.json\` 的 \`disabled\` 数组加入该包名。
 
 ## 回复规范
 1. 先用一两句话说结论：是哪个插件、哪个文件或哪项设置导致的。
 2. 再给当前就能执行的最小可逆操作，按步骤写。
-3. 找不到确切原因时直说，并告诉用户还需要哪些信息。`
+3. 找不到确切原因时直说，并告诉用户还需要哪些信息。
+4. 查完日志确实没有异常时，直接告诉用户「这次没有发现异常」，说明你查了哪几段日志、依据是什么，然后请用户描述遇到的现象：什么时候出现、当时在做什么操作、界面上看到了什么。拿到现象再回到日志里定位对应的时间段。`
   }
 
   return `You are the DSH Desktop Repair Agent, running in Safe Mode to help the user diagnose startup failures, plugin problems, and broken sessions.
@@ -505,11 +513,9 @@ ${playbooks}
 ## Directories (tell them apart before acting)
 - Harness home (this session's workspace): \`${paths.home}\`
 - **Normal profile (what you diagnose and repair)**: \`${paths.normalProfile}\`
-  - \`package.json\`: \`dsh.profile.bundles\` lists enabled plugins. It is regenerated from the plugin install records on every launch; do not edit it by hand.
-  - \`cordis.patch.yml\`: the user patch layer. Disabling a plugin writes \`- id: <row id>\` and \`  disabled: true\` for its loader rows here.
-  - \`.dsh-market/state.json\`: plugin market state; \`disabled\` lists disabled plugins.
-  - \`node_modules/<package>\`: plugin packages, mostly links into the plugin install folders.
-- **Safe Mode profile**: \`${paths.safeProfile}\`. You are running here, and Desktop rebuilds it on every Safe Mode launch. Do not edit it, and do not mistake what you see here for the normal launch's problem.
+  - \`cordis.patch.yml\` the user patch layer; \`.dsh-market/state.json\` market state (\`disabled\` lists disabled plugins); \`node_modules/<package>\` the plugin packages, mostly links.
+  - \`dsh.profile.bundles\` in \`package.json\` is rebuilt from the install records on every launch; never edit it.
+- Safe Mode profile: \`${paths.safeProfile}\`. You run here; Desktop rebuilds it every time. Nothing to look at, and nothing to change.
 - Global settings: \`${paths.settings}\`; user presets: \`${paths.userPresets}/<id>/\`${paths.shippedPresets ? `; shipped presets (read-only baseline): \`${paths.shippedPresets}\`` : ''}
 - Session logs: \`${join(paths.home, 'sessions')}\` (zstd-compressed, append-only; never rewrite); session summaries: \`${paths.sessionIndex}\`
 - Recovery backups: \`${join(paths.home, 'recovery')}\`
@@ -517,25 +523,37 @@ ${playbooks}
 ## Logs
 - Full startup log: \`${log}\`. It accumulates across launches; its tail is usually Safe Mode's own launch.
 - Do not read it whole. Use grep/tail to find the most recent \`[desktop] launch requested (web profile)\` before the last \`[desktop] launch requested (safe mode)\`; that section is the failed normal launch.
-- Lines starting \`[harness-log]\` are Harness runtime warnings and errors; \`[harness-log] session-error\` is a session that failed to open. A launch without the \`[harness-log] info dsh-desktop-log-bridge\` line predates this recording, so a quiet log there proves nothing.
-${finding}
-${evidence}
+- Lines starting \`[harness-log]\` are Harness runtime warnings and errors; \`[harness-log] session-error\` is a session that failed to open.
+${context}
 
 ## Known failures and fixes
 0. If the offline diagnosis names a plugin, that name comes from loader provenance or startup recovery; treat it as authoritative instead of re-deriving it from stack traces.
 ${playbooks}
 
+**When none of these match**: reason from the log instead of forcing a match. Desktop's behaviour can be read at the source: https://github.com/dataelement/dsh-desktop (\`src/main/\` is the main process; \`build/*.html\` are the Startup Recovery and Safe Mode pages). Say so and carry on from the log if you cannot reach it.
+
 ## How to work
 - Read the evidence before concluding, and quote the log line or file content your conclusion rests on.
-- Before changing any file, say which file, what change, and how to roll back, and wait for the user's explicit confirmation. Back the file up first as \`<name>.bak-<time>\` in the same folder.
+- The user may have no failure at all and simply entered Safe Mode to look around; that is not itself a problem. When the logs and files are clean, do not force a match against the known failures above, and never invent one to have something to report.
+- **Fix what you can fix yourself.** Do not send the user clicking through the UI for something you can do by editing a file. Say which file, what change, and how to roll back; once they confirm, do it, backing the file up first as \`<name>.bak-<time>\` in the same folder.
 - Change only the normal profile and the user data listed above. Never edit the Safe Mode profile, shipped presets, session logs, or package contents under \`node_modules\`.
-- Disable, upgrade, or remove plugins through the UI: "Disable selected plugins" (re-enable any time) and "Upgrade" in Safe Mode; a broken package is removed on the Startup Recovery page or in the plugin market.
+- Only **upgrading** and **reinstalling** a plugin must go through the UI (Safe Mode's "Upgrade", or the plugin market).
 - When done, ask the user to "Exit Safe Mode and restart" to verify.
+
+### Disabling a plugin
+Two files in the normal profile; skip one and the UI state disagrees:
+1. In \`cordis.patch.yml\` (a top-level list; create it if missing) append its loader row id — the one before the parentheses in \`failed to apply loader entry <row id> (<package>)\`:
+   \`\`\`yaml
+   - id: <row id>
+     disabled: true
+   \`\`\`
+2. Add the package name to the \`disabled\` array in \`.dsh-market/state.json\`.
 
 ## Reply style
 1. Lead with a one- or two-sentence conclusion: which plugin, file, or setting caused it.
 2. Then give the smallest reversible steps they can take now.
-3. If you cannot find the exact cause, say so and ask for what you still need.`
+3. If you cannot find the exact cause, say so and ask for what you still need.
+4. If the logs really are clean, say plainly that nothing looks wrong this time, name the log sections you checked and what they show, then ask the user to describe what they ran into: when it happened, what they were doing, and what they saw on screen. Take that back to the log and find the matching time range.`
 }
 
 export class RepairAgentService {
@@ -546,7 +564,7 @@ export class RepairAgentService {
   /** Sessions whose first turn already carried the diagnosis. */
   private readonly briefedSessions = new Set<string>()
 
-  constructor(private readonly options: RepairAgentServiceOptions) {}
+  constructor(private readonly options: RepairAgentServiceOptions) { }
 
   private async harnessSession(base: string): Promise<string | undefined> {
     if (this.harnessCookie?.base === base) return this.harnessCookie.cookie
@@ -725,6 +743,90 @@ export class RepairAgentService {
         error: err instanceof Error ? err.message : String(err)
       }
     }
+  }
+
+  /**
+   * Check whether an LLM model is available to run the Repair Agent.
+   * Identifies:
+   * 1. 'no_keys': No usable model providers or API keys configured.
+   * 2. 'default_model_unavailable': The default model for new sessions is unroutable, failed, or missing.
+   */
+  public async checkModelAvailability(): Promise<ModelAvailabilityResult> {
+    const isZh = this.options.locale() === 'zh'
+    let modelCatalog: any
+    try {
+      if (!this.options.harnessUrl()) {
+        await this.options.ensureHarnessReady()
+      }
+      modelCatalog = await this.invokeHarness('session/modelCatalog', {})
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'harness_not_ready',
+        message: isZh ? '安全模式核心服务尚未就绪。' : 'Safe mode core is not ready yet.',
+        detail: err instanceof Error ? err.message : String(err)
+      }
+    }
+
+    const routableProviders: string[] = Array.isArray(modelCatalog?.routableProviders)
+      ? modelCatalog.routableProviders
+      : []
+    const groups: any[] = Array.isArray(modelCatalog?.groups) ? modelCatalog.groups : []
+    const failures: any[] = Array.isArray(modelCatalog?.failures) ? modelCatalog.failures : []
+
+    // 1. 没有可用的 Key（没有任何已配置且可路由的 Provider，或者既无可用模型组也无具体提供商报错）
+    if (routableProviders.length === 0 || (groups.length === 0 && failures.length === 0)) {
+      return {
+        ok: false,
+        code: 'no_keys',
+        message: isZh
+          ? '未检测到可用的模型或 API Key。'
+          : 'No usable model or API Key detected.',
+        detail: isZh
+          ? '智能维修需要大模型协助分析日志并定位根因。请确保配置了可用的模型提供商与 API Key，在保证模型可用的前提下再进入维修。'
+          : 'The Repair Agent requires an LLM to analyze logs and diagnose issues. Please ensure at least one model provider with a valid API Key is configured before entering repair.'
+      }
+    }
+
+    // 2. 检查新建会话的默认模型是否可用
+    const defaultSelection = modelCatalog?.default || modelCatalog?.current
+    const defaultProvider = defaultSelection?.provider || groups[0]?.id || failures[0]?.id
+    const defaultModel = defaultSelection?.model || groups[0]?.models?.[0]?.id || 'default'
+
+    if (!defaultProvider || !defaultModel) {
+      return {
+        ok: false,
+        code: 'default_model_unavailable',
+        message: isZh
+          ? '当前模型未配置'
+          : 'Current model is not configured',
+        detail: isZh
+          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并完成对话后再进入维修'
+          : 'The Repair Agent relies on the default model. Please fix its configuration or switch to another working model and send a message before entering repair.'
+      }
+    }
+
+    const isRoutable = routableProviders.includes(defaultProvider)
+    const providerFailure = failures.find((f: any) => f?.id === defaultProvider)
+    const group = groups.find((g: any) => g?.id === defaultProvider)
+    const modelExists = group?.models?.some((m: any) => m?.id === defaultModel)
+
+    if (!isRoutable || providerFailure || !group || !modelExists) {
+      return {
+        ok: false,
+        code: 'default_model_unavailable',
+        defaultProvider,
+        defaultModel,
+        message: isZh
+          ? `当前模型 ${defaultModel} 不可用`
+          : `Current model ${defaultModel} is unavailable`,
+        detail: isZh
+          ? '智能维修依赖默认模型，请先修复该模型配置或切换为其他可用模型并完成对话后再进入维修'
+          : 'The Repair Agent relies on the default model. Please fix its configuration or switch to another working model and send a message before entering repair.'
+      }
+    }
+
+    return { ok: true, defaultProvider, defaultModel }
   }
 
   /** Select the catalog's current model so the session can answer immediately. */

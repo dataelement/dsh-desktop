@@ -40,7 +40,7 @@ Las versiones instaladas comprueban actualizaciones poco después del inicio y c
 <p align="center">
   Escanea el siguiente código QR con WeChat para unirte al grupo de DSH Desktop.<br />
   <img src="docs/images/wechat-group-20260815.png" width="220" alt="Código QR del grupo de DSH Desktop en WeChat" /><br />
-  También puedes unirte a la <a href="https://discord.gg/he2gAKCpj">comunidad de DSH Desktop en Discord</a>.
+  También puedes unirte a la <a href="https://discord.gg/7Xgf3qe3Qp">comunidad de DSH Desktop en Discord</a>.
 </p>
 
 ## Qué añade DSH Desktop

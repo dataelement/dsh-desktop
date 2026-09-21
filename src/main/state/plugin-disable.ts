@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { isSeq, parse, parseDocument } from 'yaml'
 import { bundleEntryIds } from './patch-layer'
-import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recovery'
+import { isThirdPartyPackageName, profileCordisPatchPath, profilePackageJsonPath } from './plugin-recovery'
 
 /**
  * Disable a profile plugin the way dsh-market's own toggle does, so recovery
@@ -35,7 +35,7 @@ const ROW_ID = /^[A-Za-z0-9_.-]+$/
 export type PluginDisableResult =
   | { ok: true; rows: string[] }
   | { ok: false; reason: 'carrier'; foreignDisables: string[]; detail: string }
-  | { ok: false; reason: 'patch-layer' | 'market-state'; detail: string }
+  | { ok: false; reason: 'broken-package' | 'patch-layer' | 'market-state'; detail: string }
 
 interface PluginPatchRows {
   /** Loader rows the package inserts — the ones a disable targets. */
@@ -239,6 +239,28 @@ function message(error: unknown): string {
 }
 
 /**
+ * The bundles the loader composes on the next launch. A package listed here
+ * is one the loader will prepare — it reads the package manifest and the
+ * patch it declares before any user layer applies — so a listed bundle that
+ * yields no loader row is broken on disk, not a plugin without rows.
+ */
+async function profileBundleNames(dshHome: string): Promise<Set<string>> {
+  try {
+    const manifest = JSON.parse(await readFile(profilePackageJsonPath(dshHome), 'utf8')) as {
+      dsh?: { profile?: { bundles?: unknown } }
+    }
+    const bundles = manifest.dsh?.profile?.bundles
+    return new Set(
+      Array.isArray(bundles) ? bundles.filter((name): name is string => typeof name === 'string') : []
+    )
+  } catch {
+    // Without a readable manifest nothing can be claimed about the bundles;
+    // the caller's existing paths still apply.
+    return new Set()
+  }
+}
+
+/**
  * Switch a plugin off in the normal web profile without deleting anything.
  * Its package, generation, configuration and data all stay; switching it
  * back on in the market (or Safe Mode) restores it.
@@ -252,6 +274,24 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
       reason: 'carrier',
       foreignDisables,
       detail: `${pluginName} disables ${foreignDisables.join(', ')}; switching it off alone would leave those disabled with nothing replacing them`
+    }
+  }
+
+  // A client-only plugin has no loader rows and is switched off in the market
+  // state alone. A package the profile lists as a BUNDLE is different: the
+  // loader prepares it on every launch, so no readable row means its manifest
+  // or its declared patch is unreadable. Writing only the market state there
+  // reports success while the next launch composes — and fails on — the same
+  // broken bundle, so say so and let the caller remove it with a backup.
+  if (
+    inserted.length === 0 &&
+    isThirdPartyPackageName(pluginName) &&
+    (await profileBundleNames(dshHome)).has(pluginName)
+  ) {
+    return {
+      ok: false,
+      reason: 'broken-package',
+      detail: `${pluginName} is listed in dsh.profile.bundles but no loader row could be read from its package; the patch layer has nothing to switch off`
     }
   }
 
