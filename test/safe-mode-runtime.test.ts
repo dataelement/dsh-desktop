@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { runInNewContext } from 'node:vm'
 import { it, expect } from 'vitest'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/state/safe-mode-profile'
@@ -60,6 +61,23 @@ registerHooks({ resolve(specifier, context, next) {
     expect(recovered.snapshot().logs.filter((line) => line.startsWith('[stderr] [harness-log]'))).toEqual([])
     expect(recovered.snapshot().authToken).toBeTruthy()
     expect((await fetch(recovered.snapshot().url!)).status).toBe(401)
+    // Backend readiness is insufficient: recovery must discover and serve the
+    // client bootstrap without profiles/node_modules having been repaired.
+    const url = recovered.snapshot().url
+    const token = recovered.snapshot().authToken
+    if (!url || !token) throw new Error('Recovery endpoint was not announced')
+    const login = await fetch(`${url}/?token=${encodeURIComponent(token)}`, { redirect: 'manual' })
+    const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ')
+    const html = await (await fetch(url, { headers: { Cookie: cookie } })).text()
+    const scriptUrls = [...html.matchAll(/<script[^>]+src="([^"]+)"/gu)].map((match) => match[1])
+    const bootstrap = scriptUrls.find((src) => src?.includes('/plugins/??@deepseek-ai/dsh-client-modules/client.js'))
+    expect(bootstrap, 'Recovery HTML must preload the client module system').toBeDefined()
+    if (!bootstrap) throw new Error('Missing recovery bootstrap')
+    const response = await fetch(new URL(bootstrap.replaceAll('&amp;', '&'), url), { headers: { Cookie: cookie } })
+    expect(response.status).toBe(200)
+    const registrations: { id: string }[] = []
+    runInNewContext(await response.text(), { window: { __ModuleLoader__: { load: (registration: { id: string }) => registrations.push(registration) } } })
+    expect(registrations.map((registration) => registration.id)).toContain('@deepseek-ai/dsh-client-modules')
     // Recovery uses its own overlay and never edits the normal composition.
     expect(await readFile(normalPatch, 'utf8')).toContain('name: \'dsh-ppt-composer\'')
   } finally {

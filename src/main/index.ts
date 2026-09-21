@@ -45,6 +45,7 @@ import {
   markProfileInstallComplete
 } from './state/profile-install-marker'
 import { healProfileBundles, HOST_COMPOSED_PPT_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
+import { inspectProfileBootInputs } from './state/profile-boot-preflight'
 import {
   disableProfilePlugin,
   enableProfilePlugin,
@@ -1430,22 +1431,29 @@ async function canRetryLockedPluginRestore(dshHome: string, removalId: string): 
 async function enterMigrationSafeRecovery(
   dshHome: string,
   reason: string,
-  allowedRestoreId?: string
+  allowedRestoreId?: string,
+  repairable = false
 ): Promise<void> {
   if (failureRecoveryVisible) resolvePluginRecoveryAction('safe-mode')
   safeModeVisible = true
-  maintenanceRecoveryLocked = true
+  maintenanceRecoveryLocked = !repairable
   maintenanceAllowedRestoreId = allowedRestoreId
   await refreshMigrationRecoveryLock(dshHome)
   runtime.note(`[desktop] Profile recovery requires Safe Mode: ${reason}`)
   await runtime.stop()
   await ensureSafeModeProfile(dshHome)
-  runtime.note('[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
+  runtime.note(repairable
+    ? '[desktop] safe mode: normal Profile startup failed preflight; plugin repair remains available'
+    : '[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
   await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
-  if (runtime.snapshot().phase !== 'ready') return
-
-  void mobileBridge.start().catch(showUnexpectedError)
-  const notice = harnessLocale() === 'zh'
+  if (runtime.snapshot().phase === 'ready') void mobileBridge.start().catch(showUnexpectedError)
+  // The native manager remains usable even if shared settings prevent the
+  // recovery Harness from starting; it does not depend on its Web UI.
+  const notice = repairable
+    ? (harnessLocale() === 'zh'
+        ? `正常 Profile 启动检查未通过，已进入安全模式。可以在此修复插件后重试。${reason}`
+        : `Normal Profile startup checks failed. Safe Mode is available to repair plugins and retry. ${reason}`)
+    : harnessLocale() === 'zh'
     ? `正常 Profile 恢复尚未完成，已停止所有自动修复并进入安全模式。恢复材料仍保留。${reason}`
     : `Normal Profile recovery is incomplete. Automatic maintenance is blocked and recovery material is preserved. ${reason}`
   queueMicrotask(() => {
@@ -1513,7 +1521,8 @@ function launchHarness(): Promise<void> {
         pnpmRunnerPath: bundledPnpmRunnerPath(),
         note: (line) => runtime.note(line)
       }),
-      reportProfileConsistency: () => reportProfileConsistency(dshHome)
+      reportProfileConsistency: () => reportProfileConsistency(dshHome),
+      inspectProfileBootInputs: () => inspectProfileBootInputs(dshHome, dshEntryPath())
     })
     migrationPendingPlugins = new Set(
       maintenance.outcome === 'normal-profile' && maintenance.migration.outcome === 'deferred-failure'
@@ -1524,7 +1533,8 @@ function launchHarness(): Promise<void> {
       await enterMigrationSafeRecovery(
         dshHome,
         maintenance.reason,
-        maintenance.allowedRestoreId
+        maintenance.allowedRestoreId,
+        maintenance.repairable
       )
       return
     }
@@ -3008,10 +3018,13 @@ async function showSafeModeManager(initial?: {
           )
         }
         await launchHarness()
-        if (await refreshMigrationRecoveryLock(dshHome)) {
+        const recoveryLocked = await refreshMigrationRecoveryLock(dshHome)
+        if (safeModeVisible || recoveryLocked) {
+          // launchHarness may re-enter repairable Safe Mode. Its queued manager
+          // is suppressed while this one is open, so keep this action loop alive.
           notice = isChinese
-            ? 'Profile 恢复事务仍未完成。已继续保留恢复材料和安全模式；请按提示重试。'
-            : 'The Profile recovery transaction is still incomplete. Recovery material and Safe Mode remain active; follow the prompt and retry.'
+            ? '正常 Profile 仍未恢复，已继续保留安全模式。请检查启动日志并修复后重试。'
+            : 'The normal Profile is still unavailable. Safe Mode remains active; check the startup log, repair and retry.'
           noticeTone = 'error'
           continue
         }

@@ -75,6 +75,12 @@ When a plugin prevents startup or frontend rendering, the recovery path collects
 
 Safe Mode is non-destructive: it starts an isolated official-core profile, keeps the Agent and user data available, and allows the user to remove selected third-party plugins before returning to the normal profile.
 
+After interrupted migration/restore gates, startup establishes the enabled market's compatible shared-tree baseline before migrating ordinary plugins. A deferred migration therefore cannot skip this baseline. Market installation keeps `.desktop-market-install-pending.json` until pnpm succeeds and the active package is verified; a partial install forces a retry even when its package version already looks current. The marker preserves the first pre-install manifest for diagnosis. Restoring that manifest on failure is not a rollback of the entire dependency tree.
+
+For reused or deferred legacy trees, startup reads bundle manifests and YAML layers through Harness's own profile loader before launching. Invalid inputs enter Safe Mode with plugin repair controls enabled. An incomplete migration/restore transaction still locks those controls; a newly rebuilt tree retains the existing real-launch/rollback verification. This preflight does not execute plugin code or prove successful activation. The native recovery manager is also opened if the recovery Harness fails, since shared settings can still affect both profiles.
+
+Safe Mode uses the installation anchor for both host plugin imports and client bundle discovery, without requiring `profiles/node_modules`. The paired `dsh-app-boot` / `dsh-client-modules` patches target Harness `0.1.5-rc.2`: `mountRootInclude` publishes the explicit host anchor on the loader using `Symbol.for("dsh.desktop.host-module-base-url")`, and client discovery consumes it for bare package names only. Configuration-relative paths and ordinary profiles keep their existing resolution. This small loader handoff is needed because the published client registry otherwise re-resolves from the Profile tree; remove both hunks when upstream propagates an equivalent resolution anchor. Regression coverage includes the actual recovery subprocess's authenticated HTML and executable bootstrap, plus path-resolution behavior tests.
+
 ## Mobile access boundary
 
 Harness itself stays on a random loopback port. Phone access is provided by a separate bridge:
