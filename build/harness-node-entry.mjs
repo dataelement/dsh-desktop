@@ -1,6 +1,7 @@
 import childProcess from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
 import { pathToFileURL } from 'node:url'
+import { registerHostModuleFallback } from './host-module-fallback.mjs'
 import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs'
 
 // On macOS Harness runs inside an Electron utility process (TCC responsibility
@@ -83,6 +84,7 @@ if (!dshEntryPath) {
   process.stdout.write(`[harness-node] loading=${dshEntryPath}\n`)
   process.argv = [process.execPath, dshEntryPath, ...dshArguments]
   try {
+    registerHostModuleFallback(dshEntryPath)
     // Harness 0.1.5 gates its CLI behind `if (import.meta.main)` and exports
     // `runCli`. This file imports the entry rather than being it, so that guard
     // is false here and a plain import would load the module, run nothing, and
