@@ -61,12 +61,10 @@ describe('shared local PPT preview assets', () => {
     expect(response.status).toBe(405);
     expect(response.headers.get('allow')).toBe('GET, HEAD');
   });
-  it('registers only when HTTP is available and disposes its route with the plugin', () => {
-    let activate, route, disposed = false;
-    registerPreviewAssets({ inject(names, callback) { expect(names).toEqual(['webServer']); activate = callback; } }, {}, dir);
-    expect(route).toBeUndefined();
+  it('registers with the owning web server and disposes its route with the plugin', () => {
+    let route, disposed = false;
     let dispose;
-    activate({ effect(register) { dispose = register(); }, webServer: { register(value) { route = value; return () => { disposed = true; }; } } });
+    registerPreviewAssets({ effect(register) { dispose = register(); }, webServer: { register(value) { route = value; return () => { disposed = true; }; } } }, {}, dir);
     expect(route.path).toBe('/dsh-ppt/previews');
     dispose();
     expect(disposed).toBe(true);

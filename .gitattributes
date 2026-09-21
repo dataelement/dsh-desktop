@@ -4,3 +4,8 @@ patches/*.patch whitespace=-space-before-tab
 
 # Preserve pinned third-party inputs byte-for-byte, including upstream whitespace.
 packages/ppt-runtime/upstream/** -whitespace
+
+# Office templates and reviewed business Skill resources are revision-bound by
+# byte hash. Keep their repository bytes identical on every checkout platform.
+packages/dsh-office/templates/** -text
+packages/dsh-office/business-skills/source/** -text

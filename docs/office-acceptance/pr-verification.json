@@ -1,0 +1,47 @@
+{
+  "pullRequest": 424,
+  "base": "main@4115a96",
+  "dependencyInstall": "PASS: current lockfile preserved; all 22 patches applied, including the latest pi-ai session-header patch",
+  "typecheck": "PASS",
+  "build": "PASS",
+  "fullRegression": {
+    "status": "PASS",
+    "files": 110,
+    "tests": 971,
+    "skippedFiles": 1,
+    "skippedTests": 3,
+    "nativeRuntimeEnabled": true
+  },
+  "windowsCI": {
+    "status": "PASS",
+    "run": 34838517299,
+    "job": 103957809481,
+    "commit": "18626bc6b96e0194866fe63e72c3c16afc83d955",
+    "files": 109,
+    "tests": 969,
+    "skippedFiles": 2,
+    "skippedTests": 5,
+    "checks": [
+      "typecheck",
+      "build",
+      "recovery UI at three Windows display scales",
+      "isolated Windows development package",
+      "packaged Windows Harness smoke"
+    ],
+    "shutdownRegression": "PASS: startup-failure cleanup released the child process and log handle before temporary-directory removal"
+  },
+  "packageVerification": "PASS: image-only PPT-style composer reference; layout-only template context; exact WorkBuddy gov-doc-writing v2.0.4 binding; 188 Skills, 678 business resources, 17 tools, packaged Office workflows and real packaged Host RPC mode transitions",
+  "productionAcceptance": "macOS development isolation; Windows authoring confinement, native Office save-reopen and live model autonomy require separate evidence",
+  "codeCommit": "4488d73a0f954d593c1c21f962a44b79b438565c",
+  "latestTargetedRegression": {
+    "status": "PASS",
+    "files": 4,
+    "tests": 23,
+    "scope": "image-only composer reference, layout-only model context, exact government Skill binding and template preparation"
+  },
+  "latestCodeWindowsCI": {
+    "status": "PASS",
+    "run": 34838517299,
+    "commit": "18626bc6b96e0194866fe63e72c3c16afc83d955"
+  }
+}

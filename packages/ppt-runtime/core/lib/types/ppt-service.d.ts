@@ -1,7 +1,7 @@
 /** Application service for the independent DSH PPTD route. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import { type PptdProject } from './pptd.ts';
-import { type OfficeDeck, type OfficePptState, type OfficeTemplate, type OfficeTemplatePageReference } from './protocol.ts';
+import { type OfficeDeck, type OfficeDocumentTemplateSelection, type OfficePptState, type OfficeTemplate, type OfficeTemplatePageReference } from './protocol.ts';
 import { PptStore } from './ppt-store.ts';
 /** Host-side limits for direct PPTD rendering. */
 export interface PptLimits {
@@ -26,6 +26,9 @@ export declare class PptService {
     templatePages(sessionId: SessionId, templateId: string, slideNumbers?: readonly number[]): Promise<readonly OfficeTemplatePageReference[]>;
     selectTemplate(sessionId: SessionId, templateId: string, actor: PptActor): Promise<OfficeTemplate>;
     selectPresentationMode(sessionId: SessionId, active: boolean, actor: PptActor): Promise<boolean>;
+    selectDocumentMode(sessionId: SessionId, mode: 'word' | 'excel' | null, actor: PptActor): Promise<boolean>;
+    selectDocumentTemplate(sessionId: SessionId, template: OfficeDocumentTemplateSelection, actor: PptActor): Promise<OfficeDocumentTemplateSelection>;
+    deselectDocumentTemplate(sessionId: SessionId, actor: PptActor): Promise<boolean>;
     deselectTemplate(sessionId: SessionId, actor: PptActor): Promise<boolean>;
     createPptdDeck(sessionId: SessionId, project: PptdProject, requestedFileName: string, workspaceRoot: string, actor: PptActor, signal: AbortSignal): Promise<OfficeDeck>;
     private mutate;

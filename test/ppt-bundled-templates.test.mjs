@@ -26,6 +26,7 @@ async function fixture() {
   const tools = new Map();
   let rpc;
   const host = {
+    provide(name, value) { this[name] = value; },
     effect(run) { run?.(); return () => {}; },
     webServer: { register() { return () => {}; } },
     inject(services, callback) { if (services?.includes?.('webServer')) callback?.(host); },

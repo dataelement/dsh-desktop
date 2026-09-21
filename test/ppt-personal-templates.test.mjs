@@ -34,6 +34,7 @@ async function fixture(existingRoot) {
     requestRejection: req => req.headers.authorization === 'Bearer test-session' ? undefined : 401
   };
   const host = {
+    provide(name, value) { this[name] = value; },
     effect(run) { run(); return () => {}; },
     webServer: { register(route) { routes.set(route.path, route); return () => routes.delete(route.path); } },
     get(name) { if (name === 'connection') return connection; throw new Error(`Unexpected service: ${name}`); },

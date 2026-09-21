@@ -7,6 +7,7 @@ const name = "dsh-ppt-composer";
 /** Host services required by the shared Office PPT implementation. */
 const inject = [
 	"connection",
+	"webServer",
 	"tools",
 	"systemPrompt",
 	"skills"

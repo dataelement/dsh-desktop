@@ -1,12 +1,12 @@
 {
   "core": {
     "file": "dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
-    "sha256": "01c2697d24cf5d754bceb5fbc74132bab05d6f5d8649b5878fc3790bb159206e",
-    "integrity": "sha512-zLtQordkjtSdgiEsH/OevcqQrkkcp3ph/uYpfJoufZary4WQb227vUCA7jPy/uTDoe/kbdqnhFkC8X3+J8gQFw=="
+    "sha256": "d45e136edd31f197f9127c0c28c9325dbf7d3c76dbbb5e218f3a84586b2948d0",
+    "integrity": "sha512-LjpAn7CkQREbjJyKaNSybtKKtbkQ0Y35ow9bjPLeq3miaAeuRXajF8BM0AmPQ9v+UI3D7pbcTlPXaIIfGVrn/g=="
   },
   "adapter": {
     "file": "dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
-    "sha256": "8b36df1389e71ecb2a5d3aca701ee5aeb0989acb5d716a72b7dc64c8ef936b20",
-    "integrity": "sha512-bOZn4/9jR8PBx1wx8PrLpFq/wONtaUqyKZvO7nM1FlUKN8Ecb+u/D1wHDePJqB0boJBP0M3uGhx8vB9A8rTP4w=="
+    "sha256": "c105413beeb3843837dd83cd935a5a5ba1a75663ca77be0647e0672f5268d06d",
+    "integrity": "sha512-hhTrAm3KiROIY1YvpUi2G/+J5XcwYop+DepHW/AZdGGdC8hd2R5TFsizrv9FCgRE7oHh/xdZheitPmAOSm3e/A=="
   }
 }

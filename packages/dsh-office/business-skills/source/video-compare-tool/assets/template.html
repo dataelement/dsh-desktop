@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频质量对比分析</title>
+    <link rel="stylesheet" href="https://unpkg.com/img-comparison-slider@8/dist/styles.css">
+    <script defer src="https://unpkg.com/img-comparison-slider@8/dist/index.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .analysis-section {
+            padding: 30px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1200px) {
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .metric-card h3 {
+            color: #667eea;
+            font-size: 14px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+            line-height: 1.3;
+            word-break: keep-all;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .metric-value.multiline {
+            white-space: normal;
+            font-size: 20px;
+            line-height: 1.4;
+            overflow: visible;
+        }
+
+        .metric-subtitle {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .comparison-section {
+            margin-top: 30px;
+        }
+
+        .comparison-container {
+            width: 100%;
+            background: #000;
+            border-radius: 15px;
+            overflow: auto;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            position: relative;
+            max-height: 900px;
+        }
+
+        img-comparison-slider {
+            width: auto;
+            max-width: none;
+            --divider-width: 3px;
+            --divider-color: #ffffff;
+            --default-handle-opacity: 1;
+            --default-handle-width: 50px;
+            transition: all 0.3s ease;
+        }
+
+        img-comparison-slider img {
+            width: auto;
+            object-fit: contain;
+            display: block;
+            transition: height 0.3s ease;
+        }
+
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: white;
+            padding: 12px 20px;
+            border-radius: 50px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin: 0 auto 20px;
+            max-width: fit-content;
+        }
+
+        .zoom-btn {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            background: #f5f7fa;
+            color: #667eea;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .zoom-btn:hover {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .zoom-btn:active {
+            transform: scale(0.95);
+        }
+
+        .zoom-btn.reset {
+            width: auto;
+            padding: 0 16px;
+            border-radius: 18px;
+            font-size: 13px;
+        }
+
+        #zoomSlider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 180px;
+            height: 6px;
+            border-radius: 3px;
+            background: #e9ecef;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        #zoomSlider:hover {
+            background: #dee2e6;
+        }
+
+        #zoomSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.4);
+            transition: all 0.2s;
+        }
+
+        #zoomSlider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.6);
+        }
+
+        #zoomSlider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.4);
+            transition: all 0.2s;
+        }
+
+        #zoomSlider::-moz-range-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.6);
+        }
+
+        #zoomLevel {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+            min-width: 48px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .labels {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+
+        .label {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            flex: 1;
+            text-align: center;
+        }
+
+        .frame-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .frame-btn {
+            padding: 10px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s ease;
+            min-width: 60px;
+        }
+
+        .frame-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .frame-btn.active {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+
+        .mode-btn {
+            padding: 12px 24px;
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .mode-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .side-by-side-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            background: #000;
+            border-radius: 15px;
+            padding: 20px;
+        }
+
+        .side-by-side-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .side-by-side-item .image-container {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .side-by-side-item img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            background: #000;
+            border-radius: 15px;
+            padding: 20px;
+        }
+
+        .grid-item {
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+
+        .grid-item img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .grid-item-label {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 5px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .grid-item-time {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background: rgba(102, 126, 234, 0.9);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .quality-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .indicator-bar {
+            flex: 1;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .indicator-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #1dd1a1);
+            transition: width 0.5s ease;
+        }
+
+        .indicator-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .findings {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin-top: 30px;
+            border-radius: 10px;
+        }
+
+        .findings h3 {
+            color: #856404;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .findings ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .findings li {
+            color: #856404;
+            margin-bottom: 10px;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .findings li::before {
+            content: '⚠️';
+            position: absolute;
+            left: 0;
+        }
+
+        .good-news {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+        }
+
+        .good-news h3 {
+            color: #155724;
+        }
+
+        .good-news li {
+            color: #155724;
+        }
+
+        .good-news li::before {
+            content: '✅';
+        }
+
+        @media (max-width: 768px) {
+            .side-by-side-container {
+                grid-template-columns: 1fr;
+            }
+
+            .grid-container {
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                padding: 10px;
+            }
+
+            .view-mode-selector {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 微信视频号质量分析报告</h1>
+            <p>原始视频 vs 微信视频号下载视频对比</p>
+        </div>
+
+        <div class="analysis-section">
+            <h2 style="margin-bottom: 20px; color: #333;">📈 视频参数对比</h2>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3>视频编码</h3>
+                    <div class="metric-value">HEVC → H264</div>
+                    <div class="metric-subtitle">微信重新编码</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>分辨率</h3>
+                    <div class="metric-value">1080×1920</div>
+                    <div class="metric-subtitle">保持不变</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>帧率</h3>
+                    <div class="metric-value">30 FPS</div>
+                    <div class="metric-subtitle">保持不变</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>时长</h3>
+                    <div class="metric-value">105.37 秒</div>
+                    <div class="metric-subtitle">几乎相同</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>视频码率</h3>
+                    <div class="metric-value multiline">6.89 → 6.91<br>Mbps</div>
+                    <div class="metric-subtitle">+0.3%</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>文件大小</h3>
+                    <div class="metric-value multiline">89 → 89.3<br>MB</div>
+                    <div class="metric-subtitle">+0.3 MB</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>画质保留</h3>
+                    <div class="metric-value">87.3%</div>
+                    <div class="metric-subtitle">SSIM</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>PSNR</h3>
+                    <div class="metric-value">23.37 dB</div>
+                    <div class="metric-subtitle">偏低</div>
+                </div>
+            </div>
+
+            <h2 style="margin-top: 40px; margin-bottom: 20px; color: #333;">🔬 画质详细分析</h2>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3>亮度通道 Y</h3>
+                    <div class="metric-value">21.72 dB</div>
+                    <div class="metric-subtitle">PSNR / SSIM: 0.831</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>色度通道 U</h3>
+                    <div class="metric-value">33.18 dB</div>
+                    <div class="metric-subtitle">PSNR / SSIM: 0.953</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>色度通道 V</h3>
+                    <div class="metric-value">36.68 dB</div>
+                    <div class="metric-subtitle">PSNR / SSIM: 0.962</div>
+                </div>
+
+                <div class="metric-card">
+                    <h3>质量评价</h3>
+                    <div class="metric-value multiline">细节损失<br>色彩保留好</div>
+                    <div class="metric-subtitle">有损压缩</div>
+                </div>
+            </div>
+
+            <h2 style="margin-top: 40px; margin-bottom: 20px; color: #333;">🖼️ 帧对比</h2>
+
+            <div class="view-mode-selector" style="margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button class="mode-btn active" data-mode="slider">🔀 滑块对比</button>
+                <button class="mode-btn" data-mode="sidebyside">📊 并排对比</button>
+                <button class="mode-btn" data-mode="grid">🎬 网格对比</button>
+            </div>
+
+            <div class="frame-selector">
+                <button class="frame-btn active" data-frame="1">0秒</button>
+                <button class="frame-btn" data-frame="2">5秒</button>
+                <button class="frame-btn" data-frame="3">10秒</button>
+                <button class="frame-btn" data-frame="4">15秒</button>
+                <button class="frame-btn" data-frame="5">20秒</button>
+                <button class="frame-btn" data-frame="6">25秒</button>
+                <button class="frame-btn" data-frame="7">30秒</button>
+                <button class="frame-btn" data-frame="8">35秒</button>
+                <button class="frame-btn" data-frame="9">40秒</button>
+                <button class="frame-btn" data-frame="10">45秒</button>
+                <button class="frame-btn" data-frame="11">50秒</button>
+                <button class="frame-btn" data-frame="12">55秒</button>
+                <button class="frame-btn" data-frame="13">60秒</button>
+                <button class="frame-btn" data-frame="14">65秒</button>
+                <button class="frame-btn" data-frame="15">70秒</button>
+                <button class="frame-btn" data-frame="16">75秒</button>
+                <button class="frame-btn" data-frame="17">80秒</button>
+                <button class="frame-btn" data-frame="18">85秒</button>
+                <button class="frame-btn" data-frame="19">90秒</button>
+                <button class="frame-btn" data-frame="20">95秒</button>
+                <button class="frame-btn" data-frame="21">100秒</button>
+                <button class="frame-btn" data-frame="22">105秒</button>
+            </div>
+
+            <!-- 滑块对比模式 -->
+            <div class="comparison-section" id="sliderMode">
+                <div class="labels">
+                    <span class="label">🎬 原始视频 (HEVC)</span>
+                    <span class="label">📱 微信视频号 (H264)</span>
+                </div>
+
+                <!-- 缩放控制 -->
+                <div class="zoom-controls">
+                    <button class="zoom-btn" id="zoomOut" title="缩小">−</button>
+                    <input type="range" id="zoomSlider" min="50" max="200" value="100" step="10" title="拖动缩放">
+                    <button class="zoom-btn" id="zoomIn" title="放大">+</button>
+                    <span id="zoomLevel">100%</span>
+                    <button class="zoom-btn reset" id="zoomReset" title="重置缩放">重置</button>
+                </div>
+
+                <div class="comparison-container" id="sliderContainer">
+                    <img-comparison-slider id="comparisonSlider">
+                        <img slot="first" id="originalImage" src="original/frame_001.png" alt="原始视频" style="height: 800px;" />
+                        <img slot="second" id="wechatImage" src="wechat/frame_001.png" alt="微信视频" style="height: 800px;" />
+                    </img-comparison-slider>
+                </div>
+            </div>
+
+            <!-- 并排对比模式 -->
+            <div class="comparison-section" id="sideBySideMode" style="display: none;">
+                <div class="side-by-side-container">
+                    <div class="side-by-side-item">
+                        <div class="label" style="margin-bottom: 10px;">🎬 原始视频 (HEVC)</div>
+                        <div class="image-container">
+                            <img id="originalImageSBS" src="original/frame_001.png" alt="原始视频" />
+                        </div>
+                    </div>
+                    <div class="side-by-side-item">
+                        <div class="label" style="margin-bottom: 10px;">📱 微信视频号 (H264)</div>
+                        <div class="image-container">
+                            <img id="wechatImageSBS" src="wechat/frame_001.png" alt="微信视频" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 网格对比模式 -->
+            <div class="comparison-section" id="gridMode" style="display: none;">
+                <div class="labels">
+                    <span class="label">🎬 原始视频 (HEVC)</span>
+                    <span class="label">📱 微信视频号 (H264)</span>
+                </div>
+                <div class="grid-container" id="gridContainer">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <div class="findings">
+                <h3>⚠️ 发现的问题</h3>
+                <ul>
+                    <li><strong>编码转换损失</strong>: HEVC → H264 转码导致质量下降，尤其是亮度通道</li>
+                    <li><strong>PSNR 偏低</strong>: 23.37 dB 表示存在明显的压缩伪影和细节损失</li>
+                    <li><strong>亮度细节受损</strong>: Y 通道 PSNR 仅 21.72 dB，细节模糊化明显</li>
+                    <li><strong>压缩算法不同</strong>: 微信使用了更激进的压缩策略</li>
+                </ul>
+            </div>
+
+            <div class="findings good-news">
+                <h3>✅ 保留较好的方面</h3>
+                <ul>
+                    <li><strong>分辨率不变</strong>: 依然保持 1080×1920 的原始分辨率</li>
+                    <li><strong>色彩保留好</strong>: 色度通道 PSNR > 33 dB，色彩还原度较高</li>
+                    <li><strong>结构相似度高</strong>: SSIM 0.873 说明整体结构和内容保持良好</li>
+                    <li><strong>码率基本不变</strong>: 从 6.89 → 6.91 Mbps，带宽消耗相近</li>
+                </ul>
+            </div>
+
+            <div style="margin-top: 30px; padding: 20px; background: #e7f3ff; border-radius: 10px;">
+                <h3 style="color: #0066cc; margin-bottom: 15px;">💡 技术解释</h3>
+                <p style="color: #004080; line-height: 1.8; margin-bottom: 10px;">
+                    <strong>为什么感觉模糊？</strong><br>
+                    主要原因是微信视频号将你的 HEVC（H.265）视频重新编码为 H264（H.265 压缩效率更高）。
+                    虽然码率几乎相同，但 H264 在相同码率下的画质不如 HEVC，导致细节损失。
+                </p>
+                <p style="color: #004080; line-height: 1.8; margin-bottom: 10px;">
+                    <strong>PSNR 和 SSIM 含义：</strong><br>
+                    • PSNR > 30 dB: 优秀<br>
+                    • 20-30 dB: 有损压缩，可见损失<br>
+                    • SSIM > 0.9: 几乎无损<br>
+                    • 0.8-0.9: 轻微损失<br>
+                    你的视频 PSNR=23.37, SSIM=0.873，属于典型的有损压缩。
+                </p>
+                <p style="color: #004080; line-height: 1.8;">
+                    <strong>建议：</strong><br>
+                    如果希望保持更好的画质，可以尝试上传前降低原始视频的码率（如 4-5 Mbps），
+                    这样微信重新编码时损失会更小。或者直接上传 H264 编码的视频。
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 生成22帧的数据
+        const frames = {};
+        for (let i = 1; i <= 22; i++) {
+            const paddedNum = String(i).padStart(3, '0');
+            frames[i] = {
+                original: `original/frame_${paddedNum}.png`,
+                wechat: `wechat/frame_${paddedNum}.png`,
+                time: (i - 1) * 5
+            };
+        }
+
+        // 滑块模式的图片元素（在缩放功能中使用）
+        const originalImg = document.getElementById('originalImage');
+        const wechatImg = document.getElementById('wechatImage');
+
+        // 并排模式的图片元素
+        const originalImgSBS = document.getElementById('originalImageSBS');
+        const wechatImgSBS = document.getElementById('wechatImageSBS');
+
+        let currentMode = 'slider';
+        let currentFrame = 1;
+        let currentZoom = 100;
+        const BASE_HEIGHT = 800; // 基础高度
+
+        // 模式切换
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const mode = btn.dataset.mode;
+                currentMode = mode;
+
+                // 更新按钮状态
+                document.querySelectorAll('.mode-btn').forEach(b => {
+                    b.classList.remove('active');
+                });
+                btn.classList.add('active');
+
+                // 切换显示模式
+                document.getElementById('sliderMode').style.display = mode === 'slider' ? 'block' : 'none';
+                document.getElementById('sideBySideMode').style.display = mode === 'sidebyside' ? 'block' : 'none';
+                document.getElementById('gridMode').style.display = mode === 'grid' ? 'block' : 'none';
+
+                // 如果是网格模式，生成网格
+                if (mode === 'grid') {
+                    generateGrid();
+                } else if (mode === 'sidebyside') {
+                    // 切换到并排模式时同步当前帧
+                    originalImgSBS.src = frames[currentFrame].original;
+                    wechatImgSBS.src = frames[currentFrame].wechat;
+                }
+            });
+        });
+
+        // 帧选择器
+        document.querySelectorAll('.frame-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const frameNum = parseInt(btn.dataset.frame);
+                currentFrame = frameNum;
+
+                // 更新图片
+                if (currentMode === 'slider') {
+                    originalImg.src = frames[frameNum].original;
+                    wechatImg.src = frames[frameNum].wechat;
+                    // 保持当前缩放级别
+                    const newHeight = BASE_HEIGHT * (currentZoom / 100);
+                    originalImg.style.height = newHeight + 'px';
+                    wechatImg.style.height = newHeight + 'px';
+                } else if (currentMode === 'sidebyside') {
+                    originalImgSBS.src = frames[frameNum].original;
+                    wechatImgSBS.src = frames[frameNum].wechat;
+                }
+
+                // 更新按钮状态
+                document.querySelectorAll('.frame-btn').forEach(b => {
+                    b.classList.remove('active');
+                });
+                btn.classList.add('active');
+            });
+        });
+
+        // 缩放功能 - 直接改变图片高度，不使用 transform
+        const zoomSlider = document.getElementById('zoomSlider');
+        const zoomLevel = document.getElementById('zoomLevel');
+        const zoomIn = document.getElementById('zoomIn');
+        const zoomOut = document.getElementById('zoomOut');
+        const zoomReset = document.getElementById('zoomReset');
+
+        function updateZoom(zoom) {
+            currentZoom = Math.max(50, Math.min(200, zoom));
+            const newHeight = BASE_HEIGHT * (currentZoom / 100);
+
+            // 直接改变图片高度
+            originalImg.style.height = newHeight + 'px';
+            wechatImg.style.height = newHeight + 'px';
+
+            zoomSlider.value = currentZoom;
+            zoomLevel.textContent = currentZoom + '%';
+        }
+
+        zoomSlider.addEventListener('input', (e) => {
+            updateZoom(parseInt(e.target.value));
+        });
+
+        zoomIn.addEventListener('click', () => {
+            updateZoom(currentZoom + 10);
+        });
+
+        zoomOut.addEventListener('click', () => {
+            updateZoom(currentZoom - 10);
+        });
+
+        zoomReset.addEventListener('click', () => {
+            updateZoom(100);
+        });
+
+        // 鼠标滚轮缩放（按住 Ctrl/Cmd）
+        const sliderContainer = document.getElementById('sliderContainer');
+        sliderContainer.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -10 : 10;
+                updateZoom(currentZoom + delta);
+            }
+        }, { passive: false });
+
+        // 生成网格视图 - 使用安全的 DOM 方法
+        function generateGrid() {
+            const gridContainer = document.getElementById('gridContainer');
+
+            // 清空容器
+            while (gridContainer.firstChild) {
+                gridContainer.removeChild(gridContainer.firstChild);
+            }
+
+            // 选择关键帧：0, 15, 30, 45, 60, 75, 90, 105秒
+            const keyFrames = [1, 4, 7, 10, 13, 16, 19, 22];
+
+            keyFrames.forEach(frameNum => {
+                // 原始视频
+                const originalItem = document.createElement('div');
+                originalItem.className = 'grid-item';
+
+                const originalImg = document.createElement('img');
+                originalImg.src = frames[frameNum].original;
+                originalImg.alt = '原始 ' + frames[frameNum].time + '秒';
+
+                const originalLabel = document.createElement('div');
+                originalLabel.className = 'grid-item-label';
+                originalLabel.textContent = '🎬 HEVC';
+
+                const originalTime = document.createElement('div');
+                originalTime.className = 'grid-item-time';
+                originalTime.textContent = frames[frameNum].time + '秒';
+
+                originalItem.appendChild(originalImg);
+                originalItem.appendChild(originalLabel);
+                originalItem.appendChild(originalTime);
+                gridContainer.appendChild(originalItem);
+
+                // 微信视频
+                const wechatItem = document.createElement('div');
+                wechatItem.className = 'grid-item';
+
+                const wechatImg = document.createElement('img');
+                wechatImg.src = frames[frameNum].wechat;
+                wechatImg.alt = '微信 ' + frames[frameNum].time + '秒';
+
+                const wechatLabel = document.createElement('div');
+                wechatLabel.className = 'grid-item-label';
+                wechatLabel.textContent = '📱 H264';
+
+                const wechatTime = document.createElement('div');
+                wechatTime.className = 'grid-item-time';
+                wechatTime.textContent = frames[frameNum].time + '秒';
+
+                wechatItem.appendChild(wechatImg);
+                wechatItem.appendChild(wechatLabel);
+                wechatItem.appendChild(wechatTime);
+                gridContainer.appendChild(wechatItem);
+            });
+        }
+    </script>
+</body>
+</html>

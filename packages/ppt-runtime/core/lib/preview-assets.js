@@ -47,13 +47,11 @@ export function createPreviewHandler(files, referenceRoot) {
   };
 }
 
-/** Optional HTTP integration keeps the PPT core usable in non-browser hosts. */
+/** Register the immutable preview allowlist with the owning Host plugin. */
 export function registerPreviewAssets(ctx, files, referenceRoot) {
-  ctx.inject(['webServer'], webCtx => {
-    webCtx.effect(() => webCtx.webServer.register({
-      kind: 'prefix',
-      path: previewRoute,
-      handler: createPreviewHandler(files, referenceRoot)
-    }), 'dsh-ppt: shared template previews');
-  });
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'prefix',
+    path: previewRoute,
+    handler: createPreviewHandler(files, referenceRoot)
+  }), 'dsh-ppt: shared template previews');
 }

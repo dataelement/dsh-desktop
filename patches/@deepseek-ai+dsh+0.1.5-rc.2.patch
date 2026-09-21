@@ -1,10 +1,11 @@
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -28,6 +28,12 @@
+@@ -28,6 +28,13 @@
    },
    "license": "MIT",
    "dependencies": {
++    "dsh-office": "0.2.0",
 +    "dsh-image-generation": "0.1.0",
 +    "dsh-ppt-composer": "0.1.1-rc.2",
 +    "dsh-desktop-client-ui": "0.1.0",

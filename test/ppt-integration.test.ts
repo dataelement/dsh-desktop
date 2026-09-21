@@ -77,8 +77,8 @@ describe('DSH PPT built-in plugin', () => {
     const host = entries.get('package/lib/index.js')?.toString('utf8') ?? ''
     const skill = entries.get('package/skills/dsh-ppt/SKILL.md')?.toString('utf8') ?? ''
 
-    expect(host).toContain('ctx.inject(["webServer"]')
-    expect(host).toMatch(/"webServer"/)
+    expect(host).toContain('registerPptRpcRoute(webCtx, "/dsh-ppt"')
+    expect(host).toMatch(/const inject = \[[\s\S]*"webServer"/)
     expect(protocol).toContain('readonly textCapacity?: number')
     expect(host).toContain('textCapacity: zone.textCapacity ?? geometricTextCapacity(zone, fontSize)')
     expect(skill).toContain('每个文本区的 `textCapacity` 是该区域的最大建议字符数')

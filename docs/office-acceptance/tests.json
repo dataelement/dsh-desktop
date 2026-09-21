@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "files": [
+    "office-business-skills.test.mjs",
+    "office-mode.test.mjs",
+    "office-template.test.mjs",
+    "office-template-ui.test.mjs",
+    "ppt-activation.test.mjs",
+    "ppt-validation.test.mjs"
+  ],
+  "testFiles": 6,
+  "tests": 41,
+  "nativeSameStyleReview": "NOT_RUN"
+}

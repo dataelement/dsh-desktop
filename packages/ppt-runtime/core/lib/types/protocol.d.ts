@@ -408,7 +408,7 @@ export type OfficeWorkflowSpec = {
 /** User- or agent-initiated mutation recorded for inspection. */
 export interface OfficeActivity {
     readonly id: OfficeActivityId;
-    readonly operation: 'create' | 'select-template' | 'select-presentation-mode' | 'deselect-template';
+    readonly operation: 'create' | 'select-template' | 'select-presentation-mode' | 'select-document-mode' | 'select-document-template' | 'deselect-document-template' | 'deselect-template';
     readonly actor: 'user' | 'agent';
     readonly status: 'completed' | 'failed';
     readonly startedAt: string;
@@ -458,12 +458,20 @@ export interface OfficeDeckPreview {
         readonly bullets: readonly string[];
     }[];
 }
+export interface OfficeDocumentTemplateSelection {
+    readonly id: string;
+    readonly mode: 'word' | 'excel';
+    readonly revision: string;
+}
 /** Session-local state rendered by the PPT view. */
 export interface OfficePptState {
     readonly sessionId: SessionId;
     readonly templates: readonly OfficeTemplate[];
     /** Active composer workflow. It is model context, never visible draft text. */
     readonly presentationMode?: OfficePresentationMode;
+    readonly documentMode?: 'word' | 'excel';
+    /** Word or Excel case selected after the user reviews its full preview. */
+    readonly selectedDocumentTemplate?: OfficeDocumentTemplateSelection;
     /** Template selected by the resident composer. The model tool uses it when template_id is omitted. */
     readonly selectedTemplateId?: OfficeTemplateId;
     readonly templateMigration?: { readonly reason: 'template-retired' | 'personal-template-deleted'; readonly replacementId?: OfficeTemplateId };

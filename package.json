@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package:dir": "npm run build && electron-builder --dir",
+    "package:dir": "npm run build && electron-builder --dir --config electron-builder.office.cjs",
     "package:dev:dir": "npm run build && electron-builder --dir --config electron-builder.dev.cjs",
     "package:dev:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.dev.cjs",
     "package:dev:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never --config electron-builder.dev.cjs",
@@ -40,9 +40,10 @@
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never",
+    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never --config electron-builder.office.cjs",
     "ppt:build": "node scripts/generate-zara-ppt-templates.mjs && node scripts/localize-ppt-templates.mjs && node scripts/enrich-ppt-templates.mjs && node scripts/build-ppt-runtime.mjs",
-    "ppt:bundled-projects": "node scripts/build-bundled-ppt-projects.mjs"
+    "ppt:bundled-projects": "node scripts/build-bundled-ppt-projects.mjs",
+    "office:stage:win": "pwsh -NoProfile -File scripts/stage-office-runtime-windows.ps1"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.2",
@@ -274,6 +275,10 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-image-generation": "file:packages/dsh-image-generation",
+    "dsh-office": "file:packages/dsh-office",
+    "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
+    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
     "dshmarket": "1.45.1",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",
@@ -281,10 +286,7 @@
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "ws": "^8.21.3",
-    "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
-    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
-    "dsh-image-generation": "file:packages/dsh-image-generation"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
@@ -402,6 +404,13 @@
       {
         "from": "build/community-wechat-qr.png",
         "to": "community-wechat-qr.png"
+      },
+      {
+        "from": "packages/dsh-office/business-skills/source",
+        "to": "app/node_modules/dsh-office/business-skills/source",
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "build/windows-menu.html",

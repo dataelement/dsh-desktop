@@ -327,7 +327,21 @@ jobs:
         if: inputs.prerelease_tag != ''
         run: npm version --no-git-tag-version --allow-same-version "${{ inputs.prerelease_tag }}"
       - run: npm ci
-      - run: npm test
+      - name: Stage pinned Windows Office engines and AppContainer runner
+        shell: pwsh
+        run: |
+          $runtime = Join-Path $env:RUNNER_TEMP 'dsh-office-runtime'
+          ./scripts/stage-office-runtime-windows.ps1 -OutputRoot $runtime
+          "DSH_OFFICE_BUNDLE_ROOT=$runtime" >> $env:GITHUB_ENV
+          "DSH_OFFICE_TEST_PYTHON=$(Join-Path $runtime 'python/python.exe')" >> $env:GITHUB_ENV
+          "DSH_OFFICE_TEST_LIBREOFFICE=$(Join-Path $runtime 'libreoffice/program/soffice.com')" >> $env:GITHUB_ENV
+          "DSH_OFFICE_TEST_OUTPUT=$(Join-Path $env:GITHUB_WORKSPACE 'artifacts/office-windows/native')" >> $env:GITHUB_ENV
+          "DSH_OFFICE_REQUIRE_NATIVE=1" >> $env:GITHUB_ENV
+      - name: Verify Windows Office engine startup
+        run: node scripts/verify-office-windows-startup.mjs
+      - name: Verify Windows Office execution and isolation
+        run: npm test -- test/office-native-runtime.test.mjs test/office-windows-native.test.mjs test/office-windows.test.mjs
+      - run: npm test -- --exclude test/office-native-runtime.test.mjs --exclude test/office-windows-native.test.mjs
       - run: npm run typecheck
       - run: npm run build
       - name: Check recovery UI on native Windows at three display scales
@@ -358,7 +372,7 @@ jobs:
           # Run outside the checkout: otherwise Node can silently resolve a
           # missing packaged dependency from the repository's node_modules.
           $sourceExecutable = Get-Item $env:SMOKE_EXE
-          $isolatedApp = Join-Path $env:RUNNER_TEMP ('DSH packaged smoke ' + [guid]::NewGuid().ToString())
+          $isolatedApp = Join-Path $env:RUNNER_TEMP ('DSH packaged smoke 中文 ' + [guid]::NewGuid().ToString())
           New-Item -ItemType Directory -Path $isolatedApp | Out-Null
           Copy-Item -Path (Join-Path $sourceExecutable.Directory.FullName '*') -Destination $isolatedApp -Recurse
           $executable = Join-Path $isolatedApp $sourceExecutable.Name
@@ -425,6 +439,31 @@ jobs:
               return $response.result.value
             }
 
+            function Invoke-PluginRpc([string]$channel, [string]$endpointName, [hashtable]$payload) {
+              $rpcId = [guid]::NewGuid().ToString()
+              $body = @{
+                type = 'client-request'
+                rpcId = $rpcId
+                method = $endpointName
+                payload = $payload
+              } | ConvertTo-Json -Depth 8 -Compress
+              $response = Invoke-RestMethod `
+                -Method Post `
+                -Uri "$endpoint$channel/$endpointName" `
+                -ContentType 'application/json; charset=utf-8' `
+                -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) `
+                -WebSession $harnessSession `
+                -TimeoutSec 30
+              if ($response.rpcId -ne $rpcId) { throw "Plugin RPC id mismatch for $channel/$endpointName." }
+              if (-not $response.result.ok) {
+                throw "Plugin RPC $channel/$endpointName failed: $($response.result.error.code): $($response.result.error.message)"
+              }
+              if ($response.result.value.status -ne 'ok') {
+                throw "Plugin RPC $channel/$endpointName rejected the request: $($response.result.value.error.message)"
+              }
+              return $response.result.value.data
+            }
+
             $workspacePath = Join-Path $env:RUNNER_TEMP '数据项素-工作区'
             New-Item -ItemType Directory -Force -Path $workspacePath | Out-Null
             $workspace = Invoke-HarnessRpc 'workspace/create' @{ path = $workspacePath }
@@ -432,6 +471,14 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($session.sessionId)) {
               throw 'Harness did not return a session id for the selected workspace.'
             }
+
+            $officeWord = Invoke-PluginRpc '/dsh-office' 'mode' @{ sessionId = $session.sessionId; mode = 'word' }
+            if ($officeWord.mode -ne 'word') { throw 'Packaged Office RPC did not select Word mode.' }
+            $pptSelected = Invoke-PluginRpc '/dsh-ppt' 'presentation/mode' @{ sessionId = $session.sessionId; mode = 'ppt' }
+            if ($pptSelected -ne $true) { throw 'Packaged PPT RPC did not select PPT mode.' }
+            $officePpt = Invoke-PluginRpc '/dsh-office' 'state' @{ sessionId = $session.sessionId }
+            if ($officePpt.mode -ne 'ppt') { throw 'Office and PPT RPC routes do not share the selected mode.' }
+            Write-Host 'Packaged Office and PPT RPC smoke test passed.'
 
             Start-Sleep -Seconds 20
             $stableLog = Get-Content -Raw $logPath
@@ -445,6 +492,10 @@ jobs:
               throw "DSH Desktop Dev exited after workspace and session creation (exit code $($desktop.ExitCode))."
             }
             Write-Host 'Packaged Windows Harness smoke test passed.'
+            # Use the moved package and its bundled engines; keep generated Office evidence.
+            New-Item -ItemType Directory -Force -Path 'artifacts/office-windows' | Out-Null
+            node scripts/verify-office-package.mjs --app $isolatedApp --output (Join-Path $env:GITHUB_WORKSPACE 'artifacts/office-windows/packaged')
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows Word/Excel execution failed.' }
           } finally {
             if (Test-Path $logPath) {
               Write-Host '--- harness.log ---'
@@ -457,6 +508,12 @@ jobs:
         shell: pwsh
         run: |
           tar -czf dist/win-unpacked.tar.gz -C dist win-unpacked
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-office-evidence
+          path: artifacts/office-windows/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || inputs.prerelease_tag != ''
         with:

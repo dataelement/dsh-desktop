@@ -373,6 +373,7 @@ export function isHarnessStartupProbeHealthy(
 
 export class HarnessRuntime {
   private child?: HarnessChildProcess
+  private readonly stoppingChildren = new Set<Promise<void>>()
   private logStream?: WriteStream
   private phase: RuntimePhase = 'idle'
   private message = 'Harness is not running.'
@@ -514,10 +515,7 @@ export class HarnessRuntime {
       this.launchToken = undefined
       this.writeLog('[desktop] Harness entry failed during startup; stopping immediately')
       this.setState('failed', `Harness could not start.\n${cause}`)
-      void this.stopChild(child).catch((error) => {
-        const detail = error instanceof Error ? error.message : String(error)
-        this.writeLog(`[desktop] failed to stop rejected Harness launch: ${detail}`)
-      })
+      this.stopDetachedChild(child)
     })
     child.once('spawn', () => this.writeLog('[desktop] Bundled Node.js Harness process started'))
     child.once('error', (error) => {
@@ -536,8 +534,7 @@ export class HarnessRuntime {
       this.setState(
         'failed',
         cause
-          ? `Harness stopped unexpectedly (${detail}).
-${cause}`
+          ? `Harness stopped unexpectedly (${detail}).\n${cause}`
           : `Harness stopped unexpectedly (${detail}).`
       )
     })
@@ -569,10 +566,26 @@ ${cause}`
     this.setState('ready', 'Harness is ready.')
   }
 
+  private stopDetachedChild(child: HarnessChildProcess): void {
+    const stopping = this.stopChild(child).catch((error) => {
+      const detail = error instanceof Error ? error.message : String(error)
+      this.writeLog(`[desktop] failed to stop rejected Harness launch: ${detail}`)
+    })
+    this.stoppingChildren.add(stopping)
+    void stopping.finally(() => this.stoppingChildren.delete(stopping))
+  }
+
+  private async waitForStoppingChildren(): Promise<void> {
+    while (this.stoppingChildren.size > 0) {
+      await Promise.all(this.stoppingChildren)
+    }
+  }
+
   async stop(): Promise<void> {
     const child = this.child
     if (!child) {
-      this.closeLog()
+      await this.waitForStoppingChildren()
+      await this.closeLog()
       if (this.phase !== 'failed') this.setState('idle', 'Harness is not running.')
       return
     }
@@ -580,7 +593,8 @@ ${cause}`
     this.setState('stopping', 'Stopping Harness…')
     this.child = undefined
     await this.stopChild(child)
-    this.closeLog()
+    await this.waitForStoppingChildren()
+    await this.closeLog()
     this.url = undefined
     this.launchToken = undefined
     this.setState('idle', 'Harness is not running.')
@@ -596,7 +610,13 @@ ${cause}`
       exitPromise,
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4_000))
     ])
-    if (!exited && child.exitCode === null) child.kill('SIGKILL')
+    if (!exited && child.exitCode === null) {
+      child.kill('SIGKILL')
+      await Promise.race([
+        exitPromise,
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4_000))
+      ])
+    }
   }
 
   private setState(phase: RuntimePhase, message: string): void {
@@ -685,9 +705,20 @@ ${cause}`
     })
   }
 
-  private closeLog(): void {
-    this.logStream?.end()
+  private async closeLog(): Promise<void> {
+    const stream = this.logStream
     this.logStream = undefined
+    if (!stream || stream.closed) return
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        stream.off('close', done)
+        stream.off('error', done)
+        resolve()
+      }
+      stream.once('close', done)
+      stream.once('error', done)
+      stream.end()
+    })
   }
 }
 
