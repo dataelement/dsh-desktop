@@ -54,7 +54,7 @@ index 5ccbae5..7cff1c2 100644
  			* Fork a Session from a completed-turn prefix of the source and publish
  			* the child in the catalog before resolving.
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
-index ce165c0..8f4f771 100644
+index ce165c0..4036a8f 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 @@ -177,11 +177,15 @@ var ApiSessionAgentController = class {
@@ -141,7 +141,7 @@ index ce165c0..8f4f771 100644
  	}
  	agentOptions() {
  		const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
-@@ -654,6 +673,32 @@ var SessionCommandController = class {
+@@ -654,6 +673,34 @@ var SessionCommandController = class {
  			throw new RemoteError("gateway/internal", `failed to rename session "${request.sessionId}": ${String(error)}`, {});
  		}
  	}
@@ -162,8 +162,10 @@ index ce165c0..8f4f771 100644
 +		try {
 +			await this.agents.disposeOwned(request.sessionId);
 +			if (this.ctx.agents.get(request.sessionId) !== void 0 || this.ctx.sessions.get(request.sessionId) !== void 0) throw new RemoteError("session/agent-busy", `session "${request.sessionId}" is still active`, { reason: "the live Agent is owned by another capability" });
-+			if (!await persistence.delete(request.sessionId)) throw new RemoteError("session/not-found", `session "${request.sessionId}" not found`, { sessionId: request.sessionId });
++			// Remove idempotent Workspace metadata before the irreversible persistence commit.
++			// Otherwise a cleanup failure leaves a retry unable to reach the ghost metadata.
 +			await this.ctx.workspaceRegistry.forgetSession(request.sessionId);
++			if (!await persistence.delete(request.sessionId)) throw new RemoteError("session/not-found", `session "${request.sessionId}" not found`, { sessionId: request.sessionId });
 +			if (!hadLiveSession) this.ctx.emit("api-session/removed", request.sessionId);
 +			return { deleted: true };
 +		} catch (error) {
@@ -174,7 +176,7 @@ index ce165c0..8f4f771 100644
  	/**
  	* Create a new ordinary Session from one completed-turn prefix.
  	* @param request - source Session and optional event anchor.
-@@ -694,7 +739,7 @@ var SessionCommandController = class {
+@@ -694,7 +741,7 @@ var SessionCommandController = class {
  			const composition = await this.agents.composeAgent(this.agents.presetForObservation(source));
  			try {
  				const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
@@ -183,7 +185,7 @@ index ce165c0..8f4f771 100644
  					sessionId: childId,
  					seed: source.events.slice(0, cut),
  					inheritedEventCount: cut,
-@@ -710,6 +755,7 @@ var SessionCommandController = class {
+@@ -710,6 +757,7 @@ var SessionCommandController = class {
  					},
  					setup: composition.setup
  				});
@@ -191,7 +193,7 @@ index ce165c0..8f4f771 100644
  			} catch (error) {
  				throw new RemoteError("gateway/internal", `failed to fork session "${request.sessionId}": ${String(error)}`, {});
  			}
-@@ -2454,6 +2500,7 @@ let SessionController = (() => {
+@@ -2454,6 +2502,7 @@ let SessionController = (() => {
  	let _canOpenWorkspacePath_decorators;
  	let _openWorkspacePath_decorators;
  	let _rename_decorators;
@@ -199,7 +201,7 @@ index ce165c0..8f4f771 100644
  	let _fork_decorators;
  	let _prompt_decorators;
  	let _attachment_decorators;
-@@ -2473,6 +2520,7 @@ let SessionController = (() => {
+@@ -2473,6 +2522,7 @@ let SessionController = (() => {
  			_canOpenWorkspacePath_decorators = [Remote];
  			_openWorkspacePath_decorators = [Remote("openWorkspacePath")];
  			_rename_decorators = [Remote("rename")];
@@ -207,7 +209,7 @@ index ce165c0..8f4f771 100644
  			_fork_decorators = [Remote("fork")];
  			_prompt_decorators = [Remote("prompt")];
  			_attachment_decorators = [Remote("attachment")];
-@@ -2569,6 +2617,17 @@ let SessionController = (() => {
+@@ -2569,6 +2619,17 @@ let SessionController = (() => {
  				},
  				metadata: _metadata
  			}, null, _instanceExtraInitializers);
@@ -225,7 +227,7 @@ index ce165c0..8f4f771 100644
  			__esDecorate(this, null, _fork_decorators, {
  				kind: "method",
  				name: "fork",
-@@ -2716,7 +2775,8 @@ let SessionController = (() => {
+@@ -2716,7 +2777,8 @@ let SessionController = (() => {
  			ctx.plugin(SessionMediaReferences);
  			ctx.plugin(SessionSkillCatalog);
  			ctx.on("session/created", (session) => {
@@ -235,7 +237,7 @@ index ce165c0..8f4f771 100644
  			});
  			ctx.on("session/disposed", (session) => {
  				ctx.emit("api-session/removed", session.id);
-@@ -2872,6 +2932,10 @@ let SessionController = (() => {
+@@ -2872,6 +2934,10 @@ let SessionController = (() => {
  		rename(request) {
  			return this.commands.rename(request);
  		}

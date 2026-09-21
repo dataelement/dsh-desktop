@@ -49,6 +49,17 @@ describe('DSH PPT built-in plugin', () => {
     }
   })
 
+  it('ships alpha.2-compatible Harness peer ranges in both archives', async () => {
+    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2'
+    const core = JSON.parse(tarEntries(await artifact('core')).get('package/package.json')!.toString('utf8'))
+    const adapter = JSON.parse(tarEntries(await artifact('adapter')).get('package/package.json')!.toString('utf8'))
+
+    for (const [name, range] of Object.entries(core.peerDependencies as Record<string, string>)) {
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe(expected)
+    }
+    expect(adapter.peerDependencies['@deepseek-ai/dsh-invariants']).toBe(expected)
+  })
+
   it('ships one PPT composer surface and excludes the Tencent route', async () => {
     const core = gunzipSync(await artifact('core')).toString('utf8')
     const adapter = gunzipSync(await artifact('adapter')).toString('utf8')
