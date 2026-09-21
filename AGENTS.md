@@ -45,6 +45,8 @@ DSH Desktop 是 Electron 宿主，复用 Harness runtime 和 Web UI。保持这�
 
 ## 4. 验证与交付
 
+提交范围、PR 描述、跨仓库职责和安装来源证据遵循 [PR 提交与评审](docs/pull-requests.md)。
+
 以下命令均在仓库根目录运行：
 
 ```bash

@@ -99,6 +99,8 @@ Formal release artifacts are built, signed, and published by the tag workflow. A
 
 ## Contribution hygiene
 
+Follow [PR submission and review](pull-requests.md) and use the repository PR template. Keep host changes, standalone workbench changes, and Awesome catalog submissions scoped to their owning repositories.
+
 - Never include real API keys in issues, logs, screenshots, fixtures, or test data.
 - Preserve unrelated worktree changes.
 - Keep temporary research, local reports, and internal working documents under the ignored `doc/` directory.
