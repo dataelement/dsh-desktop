@@ -14,6 +14,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  safeStorage,
   shell,
   Tray,
   utilityProcess,
@@ -77,6 +78,16 @@ import {
   serializeGpuFallbackState
 } from './gpu-fallback'
 import { secureWindow } from './security'
+import { startEnterpriseDesktop, type EnterpriseDesktopRuntime } from './enterprise/enterprise-desktop'
+import { migrateLegacyEnterpriseSettings } from './enterprise/legacy-settings-migration'
+import {
+  allowInsecureEnterpriseLoopback,
+  enterpriseLoginFromArgv,
+  parseEnterpriseLoginLink,
+  registerEnterpriseLoginProtocol,
+  sameHarnessOrigin
+} from './enterprise/login-link'
+import { createElectronEnterpriseFetch } from './enterprise/platform-fetch'
 import { SafeModeOverlay } from './safe-mode-overlay'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
@@ -207,6 +218,7 @@ let windowsMenuDark = false
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
+let enterpriseDesktop: EnterpriseDesktopRuntime | undefined
 let desktopStorageManager: DesktopStorageManager | undefined
 let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
@@ -263,6 +275,29 @@ let harnessRendered = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
+let pendingEnterpriseLoginUrl: string | undefined
+
+function deliverPendingEnterpriseLogin(): void {
+  if (!pendingEnterpriseLoginUrl || !mainWindow || mainWindow.isDestroyed()) return
+  const snapshot = runtime?.snapshot()
+  if (!sameHarnessOrigin(mainWindow.webContents.getURL(), snapshot?.url)) return
+  mainWindow.webContents.send('enterprise:login-link', pendingEnterpriseLoginUrl)
+  pendingEnterpriseLoginUrl = undefined
+}
+
+async function acceptEnterpriseLoginLink(value: string): Promise<boolean> {
+  try {
+    const parsed = await parseEnterpriseLoginLink(value)
+    pendingEnterpriseLoginUrl = parsed.url
+  } catch (error) {
+    console.warn(
+      `[enterprise] rejected login link: ${error instanceof Error ? error.message : 'invalid link'}`
+    )
+    return false
+  }
+  deliverPendingEnterpriseLogin()
+  return true
+}
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -1182,6 +1217,7 @@ async function openHarness(
     () => app.isActive(),
     focusIntent
   )
+  deliverPendingEnterpriseLogin()
 }
 
 async function maybeImportWebHome(dshHome: string): Promise<void> {
@@ -1495,6 +1531,18 @@ function launchHarness(): Promise<void> {
     maintenanceAllowedRestoreId = undefined
     runtime.note('[desktop] profile maintenance done')
     await refreshMigrationRecoveryLock(dshHome)
+    try {
+      const legacyEnterprise = await migrateLegacyEnterpriseSettings(dshHome)
+      if (legacyEnterprise.changed) {
+        runtime.note(`[enterprise] retired legacy settings: ${legacyEnterprise.removed.join(', ')}`)
+      }
+    } catch (error) {
+      runtime.note(
+        `[enterprise] legacy settings migration failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
     void auditInstalledLaunchAgents(dshHome)
       .then(() => {
         runtime.note('[desktop] LaunchAgent audit done')
@@ -3309,6 +3357,10 @@ async function bootstrap(): Promise<void> {
     // Keep the Harness origin stable across launches. These ports are separate
     // from the production/development mobile bridge ports (43127/43128).
     preferredPort: DEFAULT_HARNESS_PORT + (developmentBuild ? 1 : 0),
+    extraEnvironment: () => {
+      enterpriseDesktop?.rotateCapability()
+      return enterpriseDesktop?.harnessEnvironment() ?? {}
+    },
     launchProcess: (executablePath, args, options) =>
       process.platform === 'darwin'
         ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
@@ -3333,6 +3385,25 @@ async function bootstrap(): Promise<void> {
       }
     }
   })
+  try {
+    enterpriseDesktop = await startEnterpriseDesktop({
+      desktopVersion: app.getVersion(),
+      activateDesktop: async () => {
+        const snapshot = runtime.snapshot()
+        if (snapshot.phase === 'ready' && snapshot.url) {
+          await openHarness(snapshot.url, 'user')
+        }
+      },
+      userDataPath: app.getPath('userData'),
+      safeStorage,
+      fetchImpl: createElectronEnterpriseFetch(net.fetch.bind(net)),
+      allowInsecureLoopback: allowInsecureEnterpriseLoopback(),
+      note: (line) => runtime.note(line)
+    })
+  } catch {
+    runtime.note('[enterprise] start_failed')
+    enterpriseDesktop = undefined
+  }
   registerHarnessHandlers()
   mobileBridge = new LanMobileBridge({
     harnessUrl: () => runtime.snapshot().url,
@@ -3577,7 +3648,7 @@ async function bootstrap(): Promise<void> {
   if (!developmentBuild) {
     startUpdateManager({
       prepareToInstall: async () => {
-        await runtime.stop()
+        await Promise.all([runtime.stop(), enterpriseDesktop?.stop()])
         const dshHome = join(app.getPath('userData'), 'harness')
         await quarantineInstalledLaunchAgentsForUpdate(dshHome)
         quitting = true
@@ -3601,6 +3672,15 @@ if (isDaemonLaunch(process.env, process.platform)) {
   configureApplicationLocale()
   configureGpuFallback()
   installGpuFallbackWatch()
+  registerEnterpriseLoginProtocol()
+  void enterpriseLoginFromArgv(process.argv).then((link) => {
+    if (link) pendingEnterpriseLoginUrl = link.url
+    deliverPendingEnterpriseLogin()
+  }).catch(() => undefined)
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    void acceptEnterpriseLoginLink(url)
+  })
   const singleInstance = app.requestSingleInstanceLock()
   if (!singleInstance) {
     console.warn('[desktop] Another instance is already running; focusing existing window and exiting.')
@@ -3613,6 +3693,9 @@ if (isDaemonLaunch(process.env, process.platform)) {
     initializeDesktopService()
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
+      void enterpriseLoginFromArgv(argv).then((link) => {
+        if (link) void acceptEnterpriseLoginLink(link.url)
+      }).catch(() => undefined)
       if (shouldStartInSafeMode(argv)) {
         void showSafeMode().catch(showUnexpectedError)
         return
@@ -3656,7 +3739,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
       tray = undefined
       repairAgentService?.dispose()
       repairAgentService = undefined
-      void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
+      void Promise.all([runtime.stop(), mobileBridge?.stop(), enterpriseDesktop?.stop()]).finally(() => app.quit())
     })
   }
 }

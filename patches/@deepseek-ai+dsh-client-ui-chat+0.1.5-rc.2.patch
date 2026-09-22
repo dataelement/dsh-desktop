@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index 306645f..50e44ad 100644
+index 306645f..2ddd4e5 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 @@ -66,6 +66,22 @@ window.__ModuleLoader__.load({
@@ -42,7 +42,40 @@ index 306645f..50e44ad 100644
  			"fileContent": "Sixlwa_fileContent",
  			"fileIcon": "Sixlwa_fileIcon",
  			"fileMeta": "Sixlwa_fileMeta",
-@@ -1124,7 +1141,10 @@ window.__ModuleLoader__.load({
+@@ -854,6 +871,7 @@ window.__ModuleLoader__.load({
+ 				source,
+ 				t
+ 			});
++			const modelChanged = form === "notice" && asRecord$1(source)?.["plugin"] === "model-selection" && summary !== null;
+ 			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.DisclosureRow, {
+ 				className: ContextInjectionRow_module_css_default.root,
+ 				icon: provenance.role === "recall" ? (0, react_jsx_runtime.jsx)("span", {
+@@ -861,8 +879,13 @@ window.__ModuleLoader__.load({
+ 					children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.ReferenceIcon, { kind: "session" })
+ 				}) : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconContextInjectionOutline16, { size: 14 }),
+ 				chevronClassName: ContextInjectionRow_module_css_default.chevron,
+-				title: t(provenance.role === "recall" ? "message.contextRecall" : "message.contextInjection"),
+-				collapsedContent: provenance.label === null ? void 0 : (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
++				title: t(modelChanged ? "message.modelChanged" : provenance.role === "recall" ? "message.contextRecall" : "message.contextInjection"),
++				collapsedContent: modelChanged ? (0, react_jsx_runtime.jsx)("span", {
++					className: ContextInjectionRow_module_css_default.summary,
++					"data-context-summary": true,
++					title: summary,
++					children: summary
++				}) : provenance.label === null ? void 0 : (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+ 					(0, react_jsx_runtime.jsx)("span", {
+ 						className: ContextInjectionRow_module_css_default.sep,
+ 						"aria-hidden": true
+@@ -892,7 +915,7 @@ window.__ModuleLoader__.load({
+ 					className: ContextInjectionRow_module_css_default.body,
+ 					"data-context-injection-body": true,
+ 					"data-context-form": rendered ?? void 0,
+-					children: body
++					children: modelChanged ? t("message.modelChangedDetails") : body
+ 				})
+ 			});
+ 		}
+@@ -1124,7 +1147,10 @@ window.__ModuleLoader__.load({
  			return Math.max(1, Math.ceil(milliseconds / 1e3));
  		}
  		function failureMessage(message, code, t) {
@@ -54,7 +87,7 @@ index 306645f..50e44ad 100644
  		}
  		function ModelRetryItem({ node, active, t }) {
  			const deadline = (0, react.useMemo)(() => Date.now() + node.delayMs, [node.delayMs, node.seq]);
-@@ -1230,7 +1250,7 @@ window.__ModuleLoader__.load({
+@@ -1230,7 +1256,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Right-aligned bubble shared by user and steering rows. */
@@ -63,7 +96,7 @@ index 306645f..50e44ad 100644
  			const { text, attachments: contentAttachments, rest } = contentParts(content);
  			const attachments = previewAttachments ?? contentAttachments;
  			const compactImages = attachments.length > 1;
-@@ -1250,9 +1270,13 @@ window.__ModuleLoader__.load({
+@@ -1250,9 +1276,13 @@ window.__ModuleLoader__.load({
  								images: [attachment.image],
  								align: "end",
  								compact: compactImages
@@ -79,7 +112,7 @@ index 306645f..50e44ad 100644
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
  									path: attachment.file.name,
  									className: MessageItem_module_css_default.fileIcon
-@@ -1312,7 +1336,7 @@ window.__ModuleLoader__.load({
+@@ -1312,7 +1342,7 @@ window.__ModuleLoader__.load({
  		* @param props - the session snapshot's pending submission and render seats.
  		* @returns the echoed user bubble.
  		*/
@@ -88,7 +121,7 @@ index 306645f..50e44ad 100644
  			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
  				content: (0, react.useMemo)(() => submission.text === "" ? [] : [{
  					type: "text",
-@@ -1331,6 +1355,7 @@ window.__ModuleLoader__.load({
+@@ -1331,6 +1361,7 @@ window.__ModuleLoader__.load({
  					file: attachment.value
  				}), [submission.attachments]),
  				renderMessageImages,
@@ -96,7 +129,7 @@ index 306645f..50e44ad 100644
  				pending: submission.placement === "steering",
  				echo: true,
  				t,
-@@ -1344,11 +1369,12 @@ window.__ModuleLoader__.load({
+@@ -1344,11 +1375,12 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** User and admitted-steering keyed Chat renderer. */
@@ -110,7 +143,7 @@ index 306645f..50e44ad 100644
  				...data.referenceLabels === void 0 ? {} : { referenceLabels: data.referenceLabels },
  				...data.skillNames === void 0 ? {} : { skillNames: data.skillNames },
  				t,
-@@ -1541,7 +1567,7 @@ window.__ModuleLoader__.load({
+@@ -1541,7 +1573,7 @@ window.__ModuleLoader__.load({
  			return location?.kind === "turn" || location?.kind === "step" ? location.turn.turn : void 0;
  		}
  		/** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
@@ -119,7 +152,7 @@ index 306645f..50e44ad 100644
  			const node = useChatNode(nodeKey);
  			const routedNode = node;
  			const turn = turnOf(routedNode);
-@@ -1577,6 +1603,7 @@ window.__ModuleLoader__.load({
+@@ -1577,6 +1609,7 @@ window.__ModuleLoader__.load({
  			const owner = (0, react.useMemo)(() => node === void 0 ? null : {
  				cwd,
  				openFile,
@@ -127,7 +160,7 @@ index 306645f..50e44ad 100644
  				inspectCall,
  				forkAt,
  				loadImage,
-@@ -1587,6 +1614,7 @@ window.__ModuleLoader__.load({
+@@ -1587,6 +1620,7 @@ window.__ModuleLoader__.load({
  				node,
  				cwd,
  				openFile,
@@ -135,7 +168,7 @@ index 306645f..50e44ad 100644
  				inspectCall,
  				forkAt,
  				loadImage,
-@@ -2069,7 +2097,7 @@ window.__ModuleLoader__.load({
+@@ -2069,7 +2103,7 @@ window.__ModuleLoader__.load({
  		* The chat view slot entry: pure component over the composed props; each
  		* ordered business Node crosses the keyed renderer seat.
  		*/
@@ -144,7 +177,7 @@ index 306645f..50e44ad 100644
  			const order = useChat((s) => s.order);
  			const nodeStore = useChat((s) => s.nodes);
  			const turnNavigationItems = useChat((s) => s.navigation.items());
-@@ -2106,6 +2134,23 @@ window.__ModuleLoader__.load({
+@@ -2106,6 +2140,23 @@ window.__ModuleLoader__.load({
  					setFileOpenBusy(false);
  				});
  			}, [openFile, t]);
@@ -168,7 +201,7 @@ index 306645f..50e44ad 100644
  			const closeFileOpenError = (0, react.useCallback)(() => {
  				fileOpenRequest.current += 1;
  				setFileOpenError(null);
-@@ -2542,6 +2587,7 @@ window.__ModuleLoader__.load({
+@@ -2542,6 +2593,7 @@ window.__ModuleLoader__.load({
  									actions,
  									cwd,
  									openFile: requestOpenFile,
@@ -176,7 +209,7 @@ index 306645f..50e44ad 100644
  									inspectCall,
  									forkAt,
  									loadImage,
-@@ -2562,6 +2608,7 @@ window.__ModuleLoader__.load({
+@@ -2562,6 +2614,7 @@ window.__ModuleLoader__.load({
  								visibleSubmissions.map((submission) => (0, react_jsx_runtime.jsx)(PendingSubmissionBubble, {
  									submission,
  									renderMessageImages,
@@ -184,7 +217,16 @@ index 306645f..50e44ad 100644
  									t
  								}, submission.requestId))
  							]
-@@ -2694,6 +2741,8 @@ window.__ModuleLoader__.load({
+@@ -2653,6 +2706,8 @@ window.__ModuleLoader__.load({
+ 			"message.systemPrompt": "系统提示词",
+ 			"message.systemPromptUpdate": "系统提示词更新",
+ 			"message.contextInjection": "上下文注入",
++			"message.modelChanged": "已切换模型",
++			"message.modelChangedDetails": "后续回复将使用切换后的模型，之前的回复保持原样。",
+ 			"message.contextRecall": "跨会话召回",
+ 			"message.referenceSummary": "引用会话 · {labels}",
+ 			"message.referenceSeparator": "、",
+@@ -2694,6 +2749,8 @@ window.__ModuleLoader__.load({
  			"message.retry.delay": "重试延迟：",
  			"message.retry.failure": "失败原因：",
  			"message.failure.auth": "API 密钥无效",
@@ -193,7 +235,16 @@ index 306645f..50e44ad 100644
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -2800,6 +2849,8 @@ window.__ModuleLoader__.load({
+@@ -2759,6 +2816,8 @@ window.__ModuleLoader__.load({
+ 			"message.systemPrompt": "System prompt",
+ 			"message.systemPromptUpdate": "System prompt update",
+ 			"message.contextInjection": "Context injection",
++			"message.modelChanged": "Model changed",
++			"message.modelChangedDetails": "Future replies will use the selected model. Earlier replies remain unchanged.",
+ 			"message.contextRecall": "Session recall",
+ 			"message.referenceSummary": "Referenced session · {labels}",
+ 			"message.referenceSeparator": ", ",
+@@ -2800,6 +2859,8 @@ window.__ModuleLoader__.load({
  			"message.retry.delay": "Retry delay: ",
  			"message.retry.failure": "Failure reason: ",
  			"message.failure.auth": "API key is invalid",
@@ -202,7 +253,7 @@ index 306645f..50e44ad 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -8239,7 +8290,8 @@ window.__ModuleLoader__.load({
+@@ -8239,7 +8300,8 @@ window.__ModuleLoader__.load({
  			"settingsScope",
  			"remote",
  			"remote.session",
@@ -212,7 +263,7 @@ index 306645f..50e44ad 100644
  		];
  		/**
  		* Mount all Chat-owned contributions.
-@@ -8273,6 +8325,14 @@ window.__ModuleLoader__.load({
+@@ -8273,6 +8335,14 @@ window.__ModuleLoader__.load({
  			const chatStore = createChatStore();
  			const chatScrollPositions = /* @__PURE__ */ new Map();
  			const transcriptView = new TranscriptViewPolicy(ctx.settingsScope.bind({ namespace: CHAT_SETTINGS_NAMESPACE }));
@@ -227,7 +278,7 @@ index 306645f..50e44ad 100644
  			ctx.slots.inject("settings.general.item", () => ctx.slots.register({
  				name: "settings.general.item",
  				id: "transcript-view",
-@@ -8318,10 +8378,17 @@ window.__ModuleLoader__.load({
+@@ -8318,10 +8388,17 @@ window.__ModuleLoader__.load({
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
  								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;

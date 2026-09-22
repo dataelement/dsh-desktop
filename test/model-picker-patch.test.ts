@@ -48,6 +48,13 @@ describe('DSH Desktop available-model picker', () => {
     expect(patch).not.toContain('const allCandidatesPicked =')
     expect(patch).not.toContain('fetchSelectAll: "Select all"')
   })
+
+  it('aligns the models section title with the plugins heading style', async () => {
+    const client = await readFile(settingsModelsClient, 'utf8')
+    expect(client).toContain(
+      '.zGbnIq_title{color:var(--dsw-alias-label-primary);margin:0;font-size:18px;font-weight:600}'
+    )
+  })
 })
 
 describe('DSH Desktop model image-input declarations', () => {

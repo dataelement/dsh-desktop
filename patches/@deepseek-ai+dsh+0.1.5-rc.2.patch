@@ -47,13 +47,14 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 index c85bb90..021a861 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -28,6 +28,13 @@
+@@ -28,6 +28,14 @@
    },
    "license": "MIT",
    "dependencies": {
 +    "dsh-image-generation": "0.1.0",
 +    "dsh-ppt-composer": "0.1.1-rc.2",
 +    "dsh-desktop-client-ui": "0.1.0",
++    "dsh-desktop-enterprise": "0.2.0",
 +    "dsh-desktop-hmr-fallback": "0.1.0",
 +    "dsh-desktop-log-bridge": "0.1.0",
 +    "dsh-desktop-market-installer": "0.1.0",
