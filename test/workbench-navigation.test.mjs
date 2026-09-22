@@ -16,7 +16,7 @@ if ([classStart, classEnd, recentStart, recentEnd].some(index => index < 0)) thr
 const UiWorkspaceService = vm.runInNewContext(`(() => {
   ${source.slice(recentStart, recentEnd)}
   return (${source.slice(classStart, classEnd).trim().replace(/;$/, '')})
-})()`, { _deepseek_ai_cordis: { Service: class {} }, AbortController, AbortSignal, console })
+})()`, { _deepseek_ai_cordis: { Service: class {} }, AbortController, AbortSignal, console, setTimeout, clearTimeout })
 let apply, Workbenches
 vm.runInNewContext(workbenchSource, {
   window: { __ModuleLoader__: { load({ factory }) {
@@ -66,6 +66,13 @@ function fixture() {
     }),
     // The real controller has no selection: uiWorkspace retains the main view
     // and the list projects that retention onto the summary.
+    retainInfo: id => ({
+      getSnapshot: () => {
+        const retainedBy = sessionState.byId[id]?.retainedBy ?? {}
+        return { referenceCount: Object.values(retainedBy).reduce((sum, count) => sum + count, 0), retainedBy }
+      },
+      subscribe
+    }),
     retain: vi.fn((target, { source }) => {
       const id = typeof target === 'string' ? target : target.parentSessionId
       if (!sessionState.byId[id]) throw new Error(`Session not projected before retain: ${id}`)
@@ -73,6 +80,7 @@ function fixture() {
         const summary = sessionState.byId[id]
         const retainedBy = { ...summary.retainedBy, [source]: (summary.retainedBy?.[source] ?? 0) + delta }
         sessionState.byId[id] = { ...summary, retainedBy }
+        for (const listener of listeners) listener()
       }
       count(1)
       return { sessionId: id, release: vi.fn(() => count(-1)) }
@@ -373,19 +381,44 @@ describe('native Workspace navigation with workbench routing', () => {
     dispose()
   })
 
-  it('clears the main view after deleting the current session', async () => {
+  it('waits for selected-session consumers to release before permanent deletion', async () => {
     const { service: uiWorkspace, sessionState } = fixture()
     const current = 'doomed'
     sessionState.ids.push(current)
     sessionState.byId[current] = { id: current, sessionId: current, cwd: '/project' }
-    uiWorkspace.sessions.delete = vi.fn(async () => {})
     uiWorkspace.openSession(current)
-    expect(mainViewOf(sessionState)).toBe(current)
+    const conversation = uiWorkspace.sessions.retain(current, { source: 'conversation' })
+    uiWorkspace.sessions.delete = vi.fn(async () => {
+      expect(uiWorkspace.sessions.retainInfo(current).getSnapshot().referenceCount).toBe(0)
+      expect(uiWorkspace.selection.getSnapshot()).toEqual({})
+    })
+    setTimeout(() => conversation.release(), 0)
 
     await uiWorkspace.deleteSession(current)
 
     expect(uiWorkspace.sessions.delete).toHaveBeenCalledWith(current)
     expect(mainViewOf(sessionState)).toBeUndefined()
     expect(uiWorkspace.selection.getSnapshot()).toEqual({})
+  })
+
+  it('does not steal later panel navigation when permanent deletion fails', async () => {
+    const { service: uiWorkspace, sessionState } = fixture()
+    const current = 'retained'
+    const failure = new Error('session is still busy')
+    let rejectDelete
+    sessionState.ids.push(current)
+    sessionState.byId[current] = { id: current, sessionId: current, cwd: '/project' }
+    uiWorkspace.sessions.delete = vi.fn(() => new Promise((_resolve, reject) => { rejectDelete = reject }))
+    uiWorkspace.openSession(current)
+
+    const deleting = uiWorkspace.deleteSession(current)
+    await vi.waitFor(() => expect(uiWorkspace.sessions.delete).toHaveBeenCalledWith(current))
+    uiWorkspace.ctx.layout.selectPanel('desktop-workbenches')
+    rejectDelete(failure)
+    await expect(deleting).rejects.toBe(failure)
+
+    expect(mainViewOf(sessionState)).toBeUndefined()
+    expect(uiWorkspace.selection.getSnapshot()).toEqual({})
+    expect(uiWorkspace.ctx.layout.selectPanel).toHaveBeenLastCalledWith('desktop-workbenches')
   })
 })

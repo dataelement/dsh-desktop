@@ -715,6 +715,32 @@ export function createDesktopPnpmService(options) {
     return track(handle, signal)
   }
 
+  /**
+   * Remove one workbench installed through the isolated-generation boundary.
+   * Missing desired generations are already uninstalled, so stale market
+   * records can be cleared without handing an absent dependency to pnpm.
+   */
+  const removeWorkbenchGeneration = (pluginName, invokingDir, signal) => {
+    validatePluginOperation(['remove', pluginName], invokingDir)
+    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
+    if (active) throw new Error('Another desktop pnpm operation is already running.')
+
+    const handle = asHandle(async ({ write, isCancelled }) =>
+      withRegistryLock(home, async () => {
+        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+        const disabled = await disableGeneration(home, pluginName)
+        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+        const published = await publishGenerationManifest(home, MARKET_PROFILE, { syncBundles: true })
+        write(disabled
+          ? `staged for next restart: ${published.plugins.join(', ')}`
+          : `already absent from the next restart: ${pluginName}`)
+        return { exitCode: 0 }
+      })
+    )
+    return track(handle, signal)
+  }
+
   const runPlugin = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
     if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
@@ -791,6 +817,7 @@ export function createDesktopPnpmService(options) {
     runPlugin,
     runExternalMarketPluginInstall,
     installWorkbenchGeneration,
+    removeWorkbenchGeneration,
     async dispose() {
       closed = true
       const operation = active

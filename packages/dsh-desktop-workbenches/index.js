@@ -209,7 +209,7 @@ export function apply(ctx, config) {
           const install = (await marketInstalls.read())[id]
           if (!install) throw new MarketInstallError('This workbench was not installed from the workbench market.', 404)
           let handle
-          try { handle = ctx.desktopPnpm.runPlugin(['remove', install.pluginName], config.root) }
+          try { handle = ctx.desktopPnpm.removeWorkbenchGeneration(install.pluginName, config.root) }
           catch (error) { throw new MarketInstallError(error instanceof Error ? error.message : String(error), 409) }
           await awaitHandle(handle)
           await marketInstalls.forget(id)

@@ -290,6 +290,32 @@ describe('desktop plugin market installer', () => {
     expect(() => service.runPlugin(['install'], root)).toThrow('has been disposed')
   })
 
+
+  it('treats a missing workbench generation as already uninstalled', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-workbench-remove-missing-'))
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(join(home, 'profiles', '.generations'), { recursive: true })
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(home, 'profiles', '.generations', 'desired.json'), '[]\n')
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true, dependencies: { dshmarket: '1.31.1' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dshmarket'] } }
+    }))
+    const service = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'),
+      dshEntryPath: join(home, 'unused-dsh-entry.mjs'),
+      executablePath: process.execPath,
+      home
+    })
+
+    const handle = service.removeWorkbenchGeneration('ming-life', join(home, 'desktop-workbenches'))
+    let output = ''
+    handle.stdout.on('data', chunk => { output += chunk.toString('utf8') })
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    expect(output).toContain('already absent from the next restart: ming-life')
+    await service.dispose()
+  })
+
   it('rejects a package operation that was already aborted', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-desktop-pnpm-abort-'))
     const controller = new AbortController()

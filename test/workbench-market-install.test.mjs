@@ -160,14 +160,14 @@ describe('workbench market install routes', () => {
     expect(await call('/api/desktop-workbenches/market-install', { id: KEY })).toEqual({ status: 409, body: { error: 'Another desktop pnpm operation is already running.' } })
   })
 
-  it('uninstalls only workbenches this market installed, then forgets them', async () => {
-    const runPlugin = vi.fn(() => handle())
-    const { call, root } = await host({ installWorkbenchGeneration: () => handle(), runPlugin })
+  it('idempotently removes the recorded generation, then forgets the market install', async () => {
+    const removeWorkbenchGeneration = vi.fn(() => handle())
+    const { call, root } = await host({ installWorkbenchGeneration: () => handle(), removeWorkbenchGeneration })
     expect((await call('/api/desktop-workbenches/market-uninstall', { id: KEY })).status).toBe(404)
     await call('/api/desktop-workbenches/market-install', { id: KEY })
     const result = await call('/api/desktop-workbenches/market-uninstall', { id: KEY })
     expect(result).toEqual({ status: 200, body: { restartRequired: true } })
-    expect(runPlugin).toHaveBeenCalledWith(['remove', 'project-helper'], root)
+    expect(removeWorkbenchGeneration).toHaveBeenCalledWith('project-helper', root)
     expect((await call('/api/desktop-workbenches/market-installs')).body.installs).toEqual({})
   })
 

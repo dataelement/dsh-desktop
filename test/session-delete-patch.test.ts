@@ -38,7 +38,7 @@ const patchedPackages = [
     name: 'dsh-api-session-controller',
     version: '0.1.6-alpha.2',
     file: 'lib/client.js',
-    markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'uiWorkspace, which releases its main view after this resolves']
+    markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'uiWorkspace, which releases its main view before calling this method']
   },
   {
     name: 'dsh-api-session-controller',
@@ -50,7 +50,7 @@ const patchedPackages = [
     name: 'dsh-client-ui-workspace',
     version: '0.1.6-alpha.2',
     file: 'lib/client.js',
-    markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await uiWorkspace.deleteSession(sessionId)', 'if (this.mainReference?.sessionId === sessionId) this.clearMain()']
+    markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await uiWorkspace.deleteSession(sessionId)', 'if (wasMain) {', 'const retention = this.sessions.retainInfo(sessionId)', 'timer = setTimeout(finish, 250)']
   }
 ] as const
 
@@ -67,6 +67,18 @@ describe('permanent session deletion dependency patches', () => {
     }
   })
 
+  it('migrates unavailable persisted presets to standard mode', async () => {
+    const source = await readFile(
+      path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-api-session-controller', 'lib', 'index.js'),
+      'utf8'
+    )
+
+    expect(source).toContain('error.code !== "agent-preset/not-found"')
+    expect(source).toContain('resolved = await presets.resolve("standard")')
+    expect(source).toContain('agent.session.append("agent-preset/selected", { agentPreset: composition.agentPreset })')
+    expect(source).toContain('migrated session "${sessionId}" from unavailable preset')
+  })
+
   it('routes flat-list deletion through the same confirmation dialog as grouped mode', async () => {
     const ui = await readFile(
       path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-workspace', 'lib', 'client.js'),
@@ -79,6 +91,7 @@ describe('permanent session deletion dependency patches', () => {
     const flatBranch = ui.slice(flatBranchStart, treeBranchStart)
     expect(flatBranch).toContain('onSessionDelete,')
     expect(flatBranch).not.toContain('onSessionDelete: deleteSession')
+    expect(ui).not.toContain('scheduleFrame(resolve)')
   })
 
   it('states the destructive retention boundary in both locales', async () => {
