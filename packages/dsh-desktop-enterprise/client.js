@@ -903,7 +903,7 @@ window.__ModuleLoader__.load({
           state?.requestId ? h('span', null, ` · ${t('requestId')}: ${state.requestId}`) : null)
         : null
 
-      const confirmationPanel = confirmation
+      const confirmationPanel = confirmation && !connected
         ? h('div', { className: 'dshEnterpriseConfirm', role: 'dialog', 'aria-modal': 'true' },
           h('h3', null, confirmation.insecurePrivateHttp ? t('insecureTitle') : t('confirmTitle')),
           h('p', { className: 'dshEnterpriseHint' }, confirmation.insecurePrivateHttp ? t('insecureLead') : t('confirmLead')),

@@ -79,3 +79,17 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-modules/lib/index.js b/node_mo
  		}
  		return this.nearestPackage(moduleUrl, expectedPackageName);
  	}
+@@ -799,7 +833,12 @@ var ClientModuleRegistry = class extends Service {
+ 	}
+ 	resolveSource(entry) {
+ 		const loaderName = entry.options.name;
+-		const baseUrl = entry.parent.tree.ctx.baseUrl;
++		// Closed Desktop recovery profiles import bare plugins from the host.
++		// Re-resolving them from the config tree would silently omit their client
++		// bundles when the shared Profile fallback is missing or damaged.
++		const hostBaseUrl = this.ctx.loader?.[Symbol.for("dsh.desktop.host-module-base-url")];
++		const pathLike = loaderName.startsWith(".") || loaderName.startsWith("file:") || loaderName.startsWith("cordis:") || isAbsolute(loaderName);
++		const baseUrl = typeof hostBaseUrl === "string" && !pathLike ? hostBaseUrl : entry.parent.tree.ctx.baseUrl;
+ 		if (baseUrl === void 0) throw new Error(`client-modules: loader entry ${loaderName} has no resolution base URL`);
+ 		const resolved = this.resolveMeta(loaderName, baseUrl);
+ 		if (resolved === null) return void 0;
