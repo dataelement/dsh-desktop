@@ -1,3 +1,13 @@
+# Bisheng Work
+
+基于 [DSH Desktop](https://github.com/dataelement/dsh-desktop) 的私有工作平台，面向个人、团队及企业场景，在上游桌面宿主基础上开发非开源扩展。
+
+本仓库是独立的私有仓库，保留上游 Git 历史。初始化基线为上游 `main` 的 `a23788a7817b4f3980e3c4aa96ed48e24e653e74`。协作与同步方式见 [私有仓库开发说明](docs/bisheng-work.md)。
+
+当前仅完成仓库初始化，应用品牌、数据目录、协议和更新地址仍沿用上游。**以下下载、发布及产品介绍均属于上游 DSH Desktop，不代表 Bisheng Work 已发布。** 上游及第三方代码保留各自许可；新增非开源功能应明确其授权范围，不应默认沿用下方 MIT 标识。
+
+---
+
 <h1 align="center">
   <img src="docs/images/readme-logo-black-v020.png" width="64" alt="DSH Desktop logo" valign="middle" />
   DSH Desktop
