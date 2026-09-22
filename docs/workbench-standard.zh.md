@@ -128,6 +128,7 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       ctx.effect(() => ctx.desktopWorkbenches.register({
         title: '我的工作台',
+        repository: 'https://github.com/owner/repository',
         description: '说明它解决什么问题'
       }, BusinessPanel))
     }
@@ -137,7 +138,7 @@ window.__ModuleLoader__.load({
 ```
 
 - `require` 只能拿到共享基线（React、Cordis 等）、已加载的插件和 `dsh.client.external` 中列出的模块。其他依赖要在构建时打进客户端文件。
-- `register()` **必须**提供 `title` 和业务组件，**不得**提供 `id`。Desktop 识别调用它的客户端包，再通过市场条目的 `distribution.name` 或安装记录自动解析唯一的 `owner/repository` 身份；找不到或匹配到多个市场条目时不会暴露该 provider。
+- `register()` **必须**提供 `title` 和业务组件，**不得**提供 `id`。投稿前本地开发应提供 `repository`（规范的 GitHub 仓库 URL），Desktop 直接生成 `owner/repository`；上架后还会用市场条目的 `distribution.name` 或安装记录核对调用方客户端包，多个来源不一致时不会暴露该 provider。
 - 可选注册字段：`description`、`panelTitle`、`icon`、`audience`、`requirements`、`layout`（`businessSide` 为 `left` 或 `right`，`businessWidth` 在 0.25–0.7 之间）、`customFrame`（布尔值，见第 4 节）、`initialization`。
 - 注册返回的函数用于注销，要交给 `ctx.effect` 管理。
 

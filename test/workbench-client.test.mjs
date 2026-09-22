@@ -178,6 +178,29 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('derives an unlisted local provider identity from its GitHub repository', async () => {
+    const { service, ctx } = await fixture()
+    ctx.fiber.name = 'local-package'
+    service.register({ title: 'Local workbench', repository: 'https://github.com/Owner/Local-Workbench.git' }, () => null)
+    expect(service.getSnapshot().catalog).toContainEqual(expect.objectContaining({
+      id: 'owner/local-workbench', catalogId: 'owner/local-workbench', sourcePackage: 'local-package', installed: true
+    }))
+    service.dispose()
+  })
+
+  it('does not expose a provider when its repository disagrees with the market', async () => {
+    const { service, ctx } = await fixture()
+    service.remoteCatalog = [{
+      id: 'owner/listed', owner: 'owner', url: 'https://github.com/owner/listed', name: 'Listed',
+      categoryName: '其他', description: { zh: 'Listed' }, screenshots: [], distribution: { name: 'local-package' }
+    }]
+    ctx.fiber.name = 'local-package'
+    service.register({ title: 'Wrong', repository: 'https://github.com/owner/other' }, () => null)
+    expect(service.catalog.size).toBe(0)
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'owner/listed')).toMatchObject({ installed: false })
+    service.dispose()
+  })
+
   it('reconciles a market install through its caller package identity', async () => {
     const { service, ctx, saved } = await fixture()
     service.remoteCatalog = [{

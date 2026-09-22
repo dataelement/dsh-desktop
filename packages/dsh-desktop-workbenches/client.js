@@ -107,10 +107,18 @@ window.__ModuleLoader__.load({
         if (typeof source !== 'string' || !source || source === 'dsh-desktop-workbenches') throw new Error('Workbench registration must come from a client package.')
         return source
       }
-      identityForSource(source) {
+      repositoryIdentity(repository) {
+        if (repository === undefined) return null
+        if (typeof repository !== 'string') throw new Error('Workbench repository must be a GitHub URL.')
+        const match = repository.match(/^https:\/\/github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?\/?$/i)
+        if (!match) throw new Error('Workbench repository must be a GitHub URL.')
+        return `${match[1]}/${match[2]}`.toLowerCase()
+      }
+      identityForSource(source, repository) {
         const installed = Object.entries(this.installs).filter(([, install]) => install?.pluginName === source).map(([id]) => id)
         const listed = this.remoteCatalog.filter(entry => entry.distribution?.name === source).map(entry => entry.id)
-        const identities = [...new Set([...installed, ...listed])]
+        const declared = this.repositoryIdentity(repository)
+        const identities = [...new Set([...installed, ...listed, ...(declared ? [declared] : [])])]
         if (identities.length !== 1) throw new Error(identities.length ? `Client package ${source} matches multiple workbenches.` : `Client package ${source} is not attributed to a market repository.`)
         return identities[0]
       }
@@ -119,7 +127,7 @@ window.__ModuleLoader__.load({
         const catalog = new Map()
         for (const [source, provider] of this.providers) {
           let id
-          try { id = this.identityForSource(source) } catch { continue }
+          try { id = this.identityForSource(source, provider.repository) } catch { continue }
           if (catalog.has(id)) throw new Error(`Duplicate workbench provider: ${id}`)
           catalog.set(id, { ...provider, id, sourcePackage: source })
         }
@@ -285,6 +293,7 @@ window.__ModuleLoader__.load({
       }
       register(descriptor, Component) {
         if (!descriptor || Object.hasOwn(descriptor, 'id') || !descriptor.title || typeof Component !== 'function') throw new Error('Invalid workbench registration')
+        this.repositoryIdentity(descriptor.repository)
         const source = this.sourcePackage()
         if (this.providers.has(source)) throw new Error(`Duplicate workbench provider: ${source}`)
         if (descriptor.customFrame !== undefined && typeof descriptor.customFrame !== 'boolean') throw new Error('Invalid custom frame flag')
@@ -308,11 +317,13 @@ window.__ModuleLoader__.load({
         }
       }
       isActive() {
-        const id = this.identityForSource(this.sourcePackage())
+        const source = this.sourcePackage()
+        const id = this.identityForSource(source, this.providers.get(source)?.repository)
         return this.state.active === id && this.state.added.includes(id)
       }
       ownsSession(sessionId) {
-        return this.state.sessionBindings[sessionId] === this.identityForSource(this.sourcePackage())
+        const source = this.sourcePackage()
+        return this.state.sessionBindings[sessionId] === this.identityForSource(source, this.providers.get(source)?.repository)
       }
       add(id) {
         if (!this.catalog.has(id)) return Promise.reject(new Error('工作台当前不可用。'))
@@ -459,7 +470,8 @@ window.__ModuleLoader__.load({
       }
       // Providers keep their own project/profile flows; Desktop owns session identity.
       ensureSession({ folder, sessionId: savedSessionId } = {}) {
-        const id = this.identityForSource(this.sourcePackage())
+        const source = this.sourcePackage()
+        const id = this.identityForSource(source, this.providers.get(source)?.repository)
         if (!this.ready || this.blocked || this.disposed || this.state.active !== id || !this.state.added.includes(id) || !this.catalog.has(id)) return Promise.reject(new Error('请先打开可用的工作台。'))
         const key = JSON.stringify([id, folder, savedSessionId || null])
         if (this.sessionRequests.has(key)) return this.sessionRequests.get(key)
