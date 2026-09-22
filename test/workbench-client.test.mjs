@@ -75,7 +75,7 @@ async function fixture(initial = emptyState()) {
   const request = vi.fn(async (url, options = {}) => {
     if (url === '/api/desktop-workbenches/catalog') return Response.json({
       stale: false,
-      catalog: { schemaVersion: 3, kind: 'catalog', categories: [], workbenches: [] }
+      catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
     })
     if (options.method !== 'POST') return Response.json(stored)
     const payload = JSON.parse(options.body)
@@ -118,7 +118,7 @@ describe('desktop workbench client navigation', () => {
     const { service, request } = await fixture()
     request.mockImplementation(async (url, options = {}) => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({ stale: false, catalog: {
-        schemaVersion: 3, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容' } }],
+        schemaVersion: 2, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容' } }],
         workbenches: [{ id: 'owner/remote', workbenchId: 'remote-workbench', owner: 'owner', repository: 'remote', url: 'https://github.com/owner/remote',
           name: '远程工作台', category: 'content', description: { zh: '中文简介', en: 'English description' },
           version: '1.0.0', license: 'MIT', distribution: { type: 'github-source', version: '1.0.0' },
@@ -606,7 +606,7 @@ describe('desktop workbench client navigation', () => {
     let BrowserWorkbenches
     const reply = vi.fn(async (url, options = {}) => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({
-        stale: false, catalog: { schemaVersion: 3, kind: 'catalog', categories: [], workbenches: [] }
+        stale: false, catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
       })
       if (url === '/api/desktop-workbenches/submissions') return Response.json({ submissions: [] })
       const state = options.method === 'POST' ? JSON.parse(options.body).state : emptyState()

@@ -18,7 +18,7 @@ const httpsUrl = value => {
 function fail(message) { throw new CatalogError(message) }
 
 export function validatePublishedCatalog(value) {
-  if (!object(value) || value.schemaVersion !== 3 || value.kind !== 'catalog') fail('Unsupported workbench catalog.')
+  if (!object(value) || value.schemaVersion !== 2 || value.kind !== 'catalog') fail('Unsupported workbench catalog.')
   if (!Array.isArray(value.categories) || !Array.isArray(value.workbenches)) fail('Invalid workbench catalog.')
 
   const categories = new Map()

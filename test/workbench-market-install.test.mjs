@@ -98,7 +98,7 @@ describe('workbench market install targets', () => {
 describe('workbench market install routes', () => {
   const sha = 'a'.repeat(64)
   const index = {
-    schemaVersion: 3, kind: 'catalog', categories: [{ id: 'other', name: { zh: '其他' } }],
+    schemaVersion: 2, kind: 'catalog', categories: [{ id: 'other', name: { zh: '其他' } }],
     workbenches: [{
       id: 'o/project-helper', workbenchId: 'helper-runtime', owner: 'o', repository: 'project-helper', url: 'https://github.com/o/project-helper', name: '项目助手', category: 'other',
       description: { zh: '整理资料。', en: 'Notes.' }, version: '1.2.0', sourceCommit: commit, license: 'MIT',

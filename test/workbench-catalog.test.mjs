@@ -3,7 +3,7 @@ import { DEFAULT_CATALOG_URL, createCatalogReader, validatePublishedCatalog } fr
 
 function catalog() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 2,
     kind: 'catalog',
     categories: [{ id: 'productivity', name: { zh: '效率' } }],
     workbenches: [{
@@ -22,7 +22,7 @@ describe('Awesome workbench published catalog', () => {
     expect(DEFAULT_CATALOG_URL).toBe('https://market.dshdesktop.com/index.json')
   })
 
-  it('accepts the published v3 repository and runtime identities', () => {
+  it('accepts the published v2 repository and runtime identities', () => {
     const value = validatePublishedCatalog(catalog())
     expect(value.workbenches[0]).toMatchObject({ id: 'owner/repository', workbenchId: 'project-helper', url: 'https://github.com/owner/repository' })
   })
