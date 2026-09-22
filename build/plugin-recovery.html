@@ -29,27 +29,24 @@
 
       * { box-sizing: border-box; }
       html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; }
+      /* The page fills the window; the 46px strip keeps the header clear of the
+         hidden title bar's window controls. */
       body {
         min-height: 100vh;
-        display: grid;
-        place-items: center;
+        display: block;
         overflow: auto;
-        padding: 40px 24px;
+        padding: 46px 0 0;
         color: var(--ink);
-        background: var(--canvas);
+        background: var(--surface);
       }
 
       button { font: inherit; }
       .shell {
         display: flex;
         flex-direction: column;
-        width: min(700px, 100%);
-        max-height: calc(100vh - 80px);
-        border: 1px solid var(--line);
-        border-radius: 20px;
-        overflow: hidden;
+        width: 100%;
+        min-height: calc(100vh - 46px);
         background: var(--surface);
-        box-shadow: var(--shadow);
       }
       .header {
         flex-shrink: 0;
@@ -62,7 +59,7 @@
       .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
       .brand img { width: 28px; height: 28px; border-radius: 8px; }
       .brand-name { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
-      .content { min-height: 0; overflow: auto; padding: 30px 32px 22px; }
+      .content { flex: 1 1 auto; min-height: 0; padding: 30px 32px 22px; }
       .progress, .notice {
         display: none;
         margin: 0 0 18px;
@@ -369,8 +366,6 @@
       .wechat-popover p { margin: 10px 0 0; line-height: 1.5; }
       .footer > #quit { margin-left: auto; flex-shrink: 0; }
       @media (max-width: 620px) {
-        body { display: block; padding: 46px 0 0; background: var(--surface); }
-        .shell { width: 100%; min-height: calc(100vh - 46px); max-height: none; border: 0; border-radius: 0; box-shadow: none; }
         .header { padding-inline: 20px; }
         .content { padding: 24px 20px 16px; }
         .decision-row { flex-direction: column; align-items: stretch; }
