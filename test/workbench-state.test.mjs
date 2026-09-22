@@ -12,8 +12,10 @@ async function fixture() {
   roots.push(root)
   return { root, store: createStateStore(root) }
 }
-const populated = () => ({ ...emptyState(), added: ['writer', 'research'], pinned: ['writer', 'research'], active: 'writer',
-  favorites: ['writer'], sessionBindings: { 'session-1': 'writer' }, recentSessions: { writer: 'session-1' }, notes: { writer: 'An unsaved business draft' } })
+const WRITER = 'example/writer'
+const RESEARCH = 'example/research'
+const populated = () => ({ ...emptyState(), added: [WRITER, RESEARCH], pinned: [WRITER, RESEARCH], active: WRITER,
+  favorites: [WRITER], sessionBindings: { 'session-1': WRITER }, recentSessions: { [WRITER]: 'session-1' }, notes: { [WRITER]: 'An unsaved business draft' } })
 
 describe('desktop workbench state', () => {
   it('provides detached ownership snapshots from the same persisted state, failing closed on corruption', async () => {
@@ -25,12 +27,12 @@ describe('desktop workbench state', () => {
     } }, connection: { fetch: { register() {} } } }, { root })
     await store.write({ revision: 0, state: populated() })
     const snapshot = await ownership.read()
-    expect(snapshot).toEqual({ revision: 1, sessionBindings: { 'session-1': 'writer' }, added: ['writer', 'research'] })
+    expect(snapshot).toEqual({ revision: 1, sessionBindings: { 'session-1': WRITER }, added: [WRITER, RESEARCH] })
     snapshot.added.length = 0
     snapshot.sessionBindings['session-1'] = 'huaxue'
-    expect((await ownership.read()).sessionBindings['session-1']).toBe('writer')
-    await store.write({ revision: 1, state: { ...populated(), added: ['research'], pinned: ['research'], active: null } })
-    expect((await ownership.read()).added).toEqual(['research'])
+    expect((await ownership.read()).sessionBindings['session-1']).toBe(WRITER)
+    await store.write({ revision: 1, state: { ...populated(), added: [RESEARCH], pinned: [RESEARCH], active: null } })
+    expect((await ownership.read()).added).toEqual([RESEARCH])
     await writeFile(join(root, 'state.json'), '{broken')
     await expect(ownership.read()).rejects.toThrow()
   })
@@ -41,35 +43,28 @@ describe('desktop workbench state', () => {
     const saved = await store.write({ revision: 0, state })
     expect(await createStateStore(root).read()).toEqual(saved)
     expect(await readdir(root)).toEqual(['state.json'])
-    state.notes.writer = 'mutated caller'
-    saved.state.notes.writer = 'mutated response'
-    expect((await store.read()).state.notes.writer).toBe('An unsaved business draft')
-  })
-
-  it('migrates legacy v1 state without favorites while preserving its revision and data', async () => {
-    const { root, store } = await fixture()
-    const { favorites, ...legacyState } = populated()
-    await writeFile(join(root, 'state.json'), JSON.stringify({ revision: 7, state: legacyState }))
-    expect(await store.read()).toEqual({ revision: 7, state: { ...legacyState, favorites: [] } })
+    state.notes[WRITER] = 'mutated caller'
+    saved.state.notes[WRITER] = 'mutated response'
+    expect((await store.read()).state.notes[WRITER]).toBe('An unsaved business draft')
   })
 
   it('persists adding and removing favorites independently of installed workbenches', async () => {
     const { root, store } = await fixture()
-    const initial = { ...populated(), favorites: ['writer', 'catalog-only'] }
+    const initial = { ...populated(), favorites: [WRITER, 'example/catalog-only'] }
     await store.write({ revision: 0, state: initial })
-    expect((await createStateStore(root).read()).state.favorites).toEqual(['writer', 'catalog-only'])
+    expect((await createStateStore(root).read()).state.favorites).toEqual([WRITER, 'example/catalog-only'])
 
-    const updated = { ...initial, favorites: ['research'] }
+    const updated = { ...initial, favorites: [RESEARCH] }
     await store.write({ revision: 1, state: updated })
-    expect((await createStateStore(root).read()).state.favorites).toEqual(['research'])
+    expect((await createStateStore(root).read()).state.favorites).toEqual([RESEARCH])
     expect((await store.read()).state.sessionBindings).toEqual(initial.sessionBindings)
     expect((await store.read()).state.notes).toEqual(initial.notes)
   })
 
-  it('accepts Awesome repository identities only in favorites', async () => {
+  it('uses Awesome repository identities for every workbench reference', async () => {
     const { store } = await fixture()
     await expect(store.write({ revision: 0, state: { ...emptyState(), favorites: ['owner/repository'] } })).resolves.toHaveProperty('revision', 1)
-    await expect(store.write({ revision: 1, state: { ...emptyState(), added: ['owner/repository'] } })).rejects.toThrow('Invalid added workbench IDs')
+    await expect(store.write({ revision: 1, state: { ...emptyState(), added: ['owner/repository'] } })).resolves.toHaveProperty('revision', 2)
   })
 
   it('rejects a concurrent stale write without losing the winning write', async () => {
@@ -88,27 +83,27 @@ describe('desktop workbench state', () => {
     const { root, store } = await fixture()
     await writeFile(join(root, 'project.md'), 'Original user material')
     await store.write({ revision: 0, state: populated() })
-    const state = { ...populated(), added: ['research'], pinned: ['research'], active: null }
+    const state = { ...populated(), added: [RESEARCH], pinned: [RESEARCH], active: null }
     await store.write({ revision: 1, state })
-    expect((await store.read()).state.sessionBindings['session-1']).toBe('writer')
-    expect((await store.read()).state.notes.writer).toBe('An unsaved business draft')
+    expect((await store.read()).state.sessionBindings['session-1']).toBe(WRITER)
+    expect((await store.read()).state.notes[WRITER]).toBe('An unsaved business draft')
     expect(await readFile(join(root, 'project.md'), 'utf8')).toBe('Original user material')
     await expect(store.write({ revision: 2, state: { ...state, sessionBindings: {} } })).rejects.toHaveProperty('status', 400)
     await expect(store.write({ revision: 2, state: { ...state, notes: {} } })).rejects.toHaveProperty('status', 400)
   })
 
   it.each([
-    { added: ['writer', 'writer'] },
-    { favorites: ['writer', 'writer'] },
+    { added: [WRITER, WRITER] },
+    { favorites: [WRITER, WRITER] },
     { favorites: ['../unsafe'] },
-    { favorites: 'writer' },
-    { pinned: ['missing'] },
-    { active: 'missing' },
+    { favorites: WRITER },
+    { pinned: ['example/missing'] },
+    { active: 'example/missing' },
     { version: 2 },
     { added: ['../unsafe'] },
     { notes: JSON.parse('{"__proto__":"bad"}') },
-    { recentSessions: { writer: 'unbound-session' } },
-    { notes: { writer: 42 } }
+    { recentSessions: { [WRITER]: 'unbound-session' } },
+    { notes: { [WRITER]: 42 } }
   ])('rejects malformed state %j without writing it', async (patch) => {
     const { root, store } = await fixture()
     await expect(store.write({ revision: 0, state: { ...populated(), ...patch } })).rejects.toHaveProperty('status', 400)

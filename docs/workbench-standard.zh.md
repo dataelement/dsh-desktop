@@ -33,7 +33,7 @@ AI 从项目读取名称、作者、版本、说明和测试命令，只询问�
 
 - **一个 npm 包**：有 `name`、`version`，可以从本地目录或 `.tgz` 文件安装，上架后也可以从 npm 或 GitHub 安装。
 - **一个 DSH 插件（bundle）**：`package.json` 声明 `dsh.bundle.patch`，由 `cordis.patch.yml` 把服务端入口插入 Harness 的插件树。
-- **一个 Desktop 工作台**：客户端通过 `desktopWorkbenches.register()` 注册业务面板。`package.json` 是安装契约，市场条目的 `workbenchId` 是运行时身份契约。
+- **一个 Desktop 工作台**：客户端通过 `desktopWorkbenches.register()` 注册业务面板。Desktop 根据客户端包名和市场分发记录，自动绑定到仓库身份。
 
 同一个工作台有三个标识，职责不同，不能混用：
 
@@ -41,9 +41,9 @@ AI 从项目读取名称、作者、版本、说明和测试命令，只询问�
 |---|---|---|
 | npm 包名 | `package.json` 的 `name` | 安装、依赖解析、`cordis.patch.yml` 的 `name:` |
 | 插件条目 id | `cordis.patch.yml` 中 `insert` 行的 `id` | Harness 插件树中定位这一行 |
-| 工作台 id | `register({ id })`（与市场条目的 `workbenchId` 一致） | 侧边栏入口、会话归属；确定后**必须**保持稳定（会话归属依赖它） |
+| 市场工作台 id | 市场根据仓库地址生成的 `owner/repository` | 市场卡片、侧边栏入口和会话归属；作者无需填写 |
 
-工作台 id 的格式为 `^[a-z][a-z0-9-]{0,79}$`。
+市场工作台 id 使用小写的 GitHub `owner/repository` 格式。仓库是工作台的唯一身份，改名或转移仓库会产生新的工作台。
 
 ## 3. 包格式
 
@@ -127,7 +127,6 @@ window.__ModuleLoader__.load({
     function BusinessPanel({ service, entry }) { /* 业务面板 */ }
     function apply(ctx) {
       ctx.effect(() => ctx.desktopWorkbenches.register({
-        id: 'my-workbench',
         title: '我的工作台',
         description: '说明它解决什么问题'
       }, BusinessPanel))
@@ -138,13 +137,13 @@ window.__ModuleLoader__.load({
 ```
 
 - `require` 只能拿到共享基线（React、Cordis 等）、已加载的插件和 `dsh.client.external` 中列出的模块。其他依赖要在构建时打进客户端文件。
-- `register()` **必须**提供 `id`、`title` 和业务组件；重复 id 会被拒绝。Desktop 以注册的 `id` 识别工作台。
+- `register()` **必须**提供 `title` 和业务组件，**不得**提供 `id`。Desktop 识别调用它的客户端包，再通过市场条目的 `distribution.name` 或安装记录自动解析唯一的 `owner/repository` 身份；找不到或匹配到多个市场条目时不会暴露该 provider。
 - 可选注册字段：`description`、`panelTitle`、`icon`、`audience`、`requirements`、`layout`（`businessSide` 为 `left` 或 `right`，`businessWidth` 在 0.25–0.7 之间）、`customFrame`（布尔值，见第 4 节）、`initialization`。
 - 注册返回的函数用于注销，要交给 `ctx.effect` 管理。
 
-### 3.6 市场 `workbenchId`
+### 3.6 市场工作台 id
 
-`workbench.json` 不再是工作台协议的一部分。市场上架条目必须声明 `workbenchId`，它与 `register({ id })` 完全一致。Desktop 在安装前记录这个 ID，用于冲突检查、左侧自动加入及重启后与 runtime provider 合并；不得以 npm 包名、展示名称或仓库标识推导它。
+`workbench.json` 和自定义 `workbenchId` 都不是工作台协议的一部分。市场从条目的 GitHub 仓库地址直接生成 `owner/repository`，Desktop 安装时记录该市场 id 与实际客户端包名，重启后用这条关系合并运行时 provider，并自动加入左侧。作者只需保证市场分发的包名与 `window.__ModuleLoader__.load({ id })` 对应。
 
 包格式的自动检查由工作台市场仓库负责（上架时才需要）。本地开发时，按本节和第 8 节的清单自查即可。
 
@@ -203,7 +202,7 @@ window.__ModuleLoader__.load({
 
 - [ ] `package.json` 声明 `dsh.bundle.patch`，`dsh.client.platform` 为 `web`，`dsh.client.inject` 包含 `dsh-desktop-workbenches`，`exports` 含 `"."` 和 `"./client"`。
 - [ ] `cordis.patch.yml` 的 `name` 是包名；服务端 `Config`（如有）是 Schemastery schema。
-- [ ] `package.json` 的 `version` 是完整 SemVer；市场条目的 `workbenchId` 与注册 id 一致。
+- [ ] `package.json` 的 `version` 是完整 SemVer；客户端不声明工作台 id，市场仓库地址正确且分发包名与客户端模块一致。
 - [ ] `pnpm pack` 打出的包能在本机安装，包里含客户端入口和 `cordis.patch.yml`。
 
 **安装与运行**

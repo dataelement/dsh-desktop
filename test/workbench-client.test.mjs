@@ -3,7 +3,9 @@ import vm from 'node:vm'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { emptyState, validateState } from '../packages/dsh-desktop-workbenches/state.mjs'
+import { emptyState } from '../packages/dsh-desktop-workbenches/state.mjs'
+
+const Service = { tracker: Symbol('service-tracker') }
 
 const code = await readFile(new URL('../packages/dsh-desktop-workbenches/client.js', import.meta.url), 'utf8')
 let apply, Workbenches, Market, submissionAgentPrompt, developmentWorkbenchAgentPrompt, submissionWorkbenchAgentPrompt, copySubmissionPrompt
@@ -11,6 +13,7 @@ vm.runInNewContext(code, {
   window: { __ModuleLoader__: { load({ factory }) {
     const client = factory((name) => {
       if (name === 'react') return { createElement() {}, Component: class {} }
+      if (name === '@deepseek-ai/cordis') return { Service }
       throw new Error(`Unexpected module ${name}`)
     })
     apply = client.apply
@@ -32,6 +35,17 @@ function deferred() {
   return { promise, resolve }
 }
 
+function registerProvider(service, ctx, id, descriptor = {}, Component = () => null) {
+  const source = `package-${id}`
+  if (!service.remoteCatalog.some(entry => entry.id === id)) service.remoteCatalog.push({
+    id, owner: 'test', repository: id, url: `https://github.com/test/${id}`, name: descriptor.title || id,
+    categoryName: '其他', description: { zh: descriptor.title || id }, screenshots: [], version: '1.0.0', distribution: { name: source }
+  })
+  else service.remoteCatalog = service.remoteCatalog.map(entry => entry.id === id ? { ...entry, distribution: { ...entry.distribution, name: source } } : entry)
+  ctx.fiber.name = source
+  return service.register(descriptor, Component)
+}
+
 async function fixture(initial = emptyState()) {
   let stored = { revision: 0, state: structuredClone(initial) }
   const list = { current: null, ids: ['old', 'writer-1', 'writer-2', 'research-1'], byId: {} }
@@ -41,6 +55,7 @@ async function fixture(initial = emptyState()) {
   let navigation = new AbortController()
   let service
   const ctx = {
+    fiber: { name: 'fixture' },
     sessions: {
       list: { getSnapshot: () => list },
       refresh: vi.fn(async () => {}),
@@ -75,19 +90,24 @@ async function fixture(initial = emptyState()) {
   const request = vi.fn(async (url, options = {}) => {
     if (url === '/api/desktop-workbenches/catalog') return Response.json({
       stale: false,
-      catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
+      catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [
+        { id: 'writer', owner: 'test', repository: 'writer', url: 'https://github.com/test/writer', name: 'Writer', category: 'other', description: { zh: 'Writer' }, screenshots: [], version: '1.0.0', distribution: { name: 'writer' } },
+        { id: 'research', owner: 'test', repository: 'research', url: 'https://github.com/test/research', name: 'Research', category: 'other', description: { zh: 'Research' }, screenshots: [], version: '1.0.0', distribution: { name: 'research' } }
+      ] }
     })
     if (options.method !== 'POST') return Response.json(stored)
     const payload = JSON.parse(options.body)
     if (payload.revision !== stored.revision) return Response.json({ error: 'Conflict' }, { status: 409 })
     try {
-      stored = { revision: stored.revision + 1, state: validateState(payload.state, stored.state, payload.migrations) }
+      stored = { revision: stored.revision + 1, state: structuredClone(payload.state) }
       return Response.json(stored)
     } catch (error) { return Response.json({ error: error.message }, { status: error.status || 500 }) }
   })
   service = new Workbenches(ctx, request)
-  service.register({ id: 'writer', title: 'Writer' }, () => null)
-  service.register({ id: 'research', title: 'Research' }, () => null)
+  ctx.fiber.name = 'writer'
+  service.register({ title: 'Writer' }, () => null)
+  ctx.fiber.name = 'research'
+  service.register({ title: 'Research' }, () => null)
   await service.load()
   return {
     service, ctx, request, list,
@@ -119,9 +139,9 @@ describe('desktop workbench client navigation', () => {
     request.mockImplementation(async (url, options = {}) => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({ stale: false, catalog: {
         schemaVersion: 2, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容' } }],
-        workbenches: [{ id: 'owner/remote', workbenchId: 'remote-workbench', owner: 'owner', repository: 'remote', url: 'https://github.com/owner/remote',
+        workbenches: [{ id: 'owner/remote', owner: 'owner', repository: 'remote', url: 'https://github.com/owner/remote',
           name: '远程工作台', category: 'content', description: { zh: '中文简介', en: 'English description' },
-          version: '1.0.0', license: 'MIT', distribution: { type: 'github-source', version: '1.0.0' },
+          version: '1.0.0', license: 'MIT', distribution: { type: 'github-source', name: 'remote-package', version: '1.0.0' },
           screenshots: [{ url: 'https://raw.githubusercontent.com/owner/remote/main/shot.png' }] }]
       } })
       if (options.method !== 'POST') return Response.json({ revision: 0, state: emptyState() })
@@ -135,98 +155,45 @@ describe('desktop workbench client navigation', () => {
     await expect(service.add('owner/remote')).rejects.toThrow('工作台当前不可用')
   })
 
-  it('associates an installed provider only through its canonical repository URL', async () => {
-    const { service } = await fixture()
+  it('associates a provider through its caller package and repository catalog identity', async () => {
+    const { service, ctx } = await fixture()
     service.remoteCatalog = [{
       id: 'owner/remote', owner: 'owner', url: 'https://github.com/owner/remote', name: '远程工作台',
-      categoryName: '内容', description: { zh: '中文简介', en: 'English description' }, screenshots: []
+      categoryName: '内容', description: { zh: '中文简介', en: 'English description' }, screenshots: [], distribution: { name: 'remote-package' }
     }]
-    service.register({ id: 'runtime-id', title: '本地标题', repository: 'https://github.com/owner/remote/' }, () => null)
+    ctx.fiber.name = 'remote-package'
+    service.register({ title: '本地标题' }, () => null)
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'owner/remote')).toMatchObject({
-      id: 'runtime-id', title: '远程工作台', installed: true
+      id: 'owner/remote', title: '远程工作台', installed: true
     })
     service.dispose()
   })
 
-  it('reconciles a market install through its declared runtime ID when no repository descriptor exists', async () => {
-    const { service, saved } = await fixture()
+  it('reconciles a market install through its caller package identity', async () => {
+    const { service, ctx, saved } = await fixture()
     service.remoteCatalog = [{
-      id: 'owner/legacy', workbenchId: 'legacy-workbench', owner: 'owner', url: 'https://github.com/owner/legacy', name: '旧版工作台',
-      categoryName: '其他', description: { zh: '市场声明运行时 ID' }, screenshots: []
+      id: 'owner/workbench', owner: 'owner', url: 'https://github.com/owner/workbench', name: '工作台',
+      categoryName: '其他', description: { zh: '市场声明仓库身份' }, screenshots: [], distribution: { name: 'workbench-package' }
     }]
     service.installs = {
-      'owner/legacy': { catalogId: 'owner/legacy', pluginName: 'legacy-workbench', workbenchId: 'legacy-workbench', version: '1.0.0' }
+      'owner/workbench': { catalogId: 'owner/workbench', pluginName: 'workbench-package', version: '1.0.0' }
     }
 
-    service.register({ id: 'legacy-workbench', title: '旧版工作台' }, () => null)
+    ctx.fiber.name = 'workbench-package'
+    service.register({ title: '工作台' }, () => null)
     await service.queue
 
-    const entry = service.getSnapshot().catalog.find(item => item.catalogId === 'owner/legacy')
-    expect(entry).toMatchObject({ id: 'legacy-workbench', catalogId: 'owner/legacy', installed: true })
-    expect(saved().state.added).toEqual(['legacy-workbench'])
-    expect(saved().state.pinned).toEqual(['legacy-workbench'])
-    service.dispose()
-  })
-
-  it('migrates a registered market workbench from its legacy ID without losing sessions or notes', async () => {
-    const initial = { ...emptyState(), added: ['legacy-workbench'], pinned: ['legacy-workbench'], active: 'legacy-workbench',
-      sessionBindings: { old: 'legacy-workbench' }, recentSessions: { 'legacy-workbench': 'old' }, notes: { 'legacy-workbench': '旧笔记' } }
-    const { service, saved, request } = await fixture(initial)
-    service.remoteCatalog = [{ id: 'owner/workbench', workbenchId: 'wb-owner-workbench', legacyWorkbenchIds: ['legacy-workbench'],
-      owner: 'owner', url: 'https://github.com/owner/workbench', name: '工作台', categoryName: '其他', description: { zh: '迁移' }, screenshots: [] }]
-    service.register({ id: 'wb-owner-workbench', title: '工作台' }, () => null)
-    await service.queue
-    expect(request).toHaveBeenCalledWith('/api/desktop-workbenches/state/migrate', expect.any(Object))
-    expect(saved().state).toMatchObject({ added: ['wb-owner-workbench'], pinned: ['wb-owner-workbench'], active: 'wb-owner-workbench',
-      sessionBindings: { old: 'wb-owner-workbench' }, recentSessions: { 'wb-owner-workbench': 'old' }, notes: { 'wb-owner-workbench': '旧笔记' } })
-    service.dispose()
-  })
-
-  it('hides retired IDs from old-state cards, counts and sidebar while retaining other unavailable providers', async () => {
-    const ids = ['research-notebook', 'writer', 'writing-notebook', 'missing-provider']
-    const initial = {
-      ...emptyState(), added: ids, pinned: ids,
-      notes: { 'research-notebook': '研究资料', 'writing-notebook': '创作草稿' },
-      sessionBindings: { old: 'research-notebook' }, recentSessions: { 'research-notebook': 'old' }
-    }
-    const { service, saved } = await fixture(initial)
-    let client, Sidebar
-    vm.runInNewContext(code, {
-      window: { __ModuleLoader__: { load({ factory }) {
-        client = factory(() => ({ ...React,
-          useState: (value) => React.useState(value === 'market' ? 'mine' : value),
-          useSyncExternalStore: (_subscribe, snapshot) => snapshot()
-        }))
-      } } }
-    })
-    client.apply({
-      effect: () => {},
-      slots: {
-        inject: (_name, callback) => callback(),
-        register: (descriptor, Component) => { if (descriptor.name === 'sidebar.footer.action') Sidebar = Component }
-      }
-    })
-    const market = renderToStaticMarkup(React.createElement(client.Market, { service }))
-    const sidebar = renderToStaticMarkup(React.createElement(Sidebar, { service, wide: true }))
-    for (const html of [market, sidebar]) {
-      expect(html).not.toContain('research-notebook')
-      expect(html).not.toContain('writing-notebook')
-      expect(html).toContain('missing-provider')
-      expect(html).toContain('Writer')
-    }
-    expect(market).toContain('已安装的工作台 (2)')
-    expect(market).toContain('提供此工作台的插件当前未加载。')
-    expect(sidebar).toContain('missing-provider（不可用）')
-    expect(sidebar).toMatch(/aria-label="Writer向上移动" disabled=""/)
-    expect(sidebar).toMatch(/aria-label="missing-provider（不可用）向下移动" disabled=""/)
-    expect(service.state).toEqual(initial)
-    expect(saved().state).toEqual(initial)
+    const entry = service.getSnapshot().catalog.find(item => item.catalogId === 'owner/workbench')
+    expect(entry).toMatchObject({ id: 'owner/workbench', catalogId: 'owner/workbench', installed: true })
+    expect(saved().state.added).toEqual(['owner/workbench'])
+    expect(saved().state.pinned).toEqual(['owner/workbench'])
     service.dispose()
   })
 
   it('does not register the retired notebook templates when the plugin is applied', () => {
     let service
     const ctx = {
+      fiber: { name: 'external-package' },
       reflect: { provide: (name, value) => { if (name === 'desktopWorkbenches') service = value } },
       effect: (callback, label) => {
         // Exercise registration effects without mounting DOM styles or starting network I/O.
@@ -239,8 +206,9 @@ describe('desktop workbench client navigation', () => {
     apply(ctx)
     expect(service).toBeInstanceOf(Workbenches)
     expect(service.getSnapshot().catalog).toEqual([])
-    service.register({ id: 'external-workbench', title: 'External workbench' }, () => null)
-    expect(service.getSnapshot().catalog.map(entry => entry.id)).toEqual(['external-workbench'])
+    service.remoteCatalog = [{ id: 'owner/external-workbench', owner: 'owner', repository: 'external-workbench', url: 'https://github.com/owner/external-workbench', name: 'External workbench', categoryName: '其他', description: { zh: 'External workbench' }, screenshots: [], distribution: { name: 'external-package' } }]
+    service.register({ title: 'External workbench' }, () => null)
+    expect(service.getSnapshot().catalog.map(entry => entry.id)).toEqual(['owner/external-workbench'])
     service.dispose()
   })
 
@@ -441,11 +409,11 @@ describe('desktop workbench client navigation', () => {
       useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}]
     }
     vm.runInNewContext(code, { document: { createElement: () => ({ style: {} }) }, window: { __ModuleLoader__: { load({ factory }) {
-      Frame = factory((name) => name === 'react-dom' ? { createPortal: (node) => ({ children: [node] }) } : react).Frame
+      Frame = factory((name) => name === 'react-dom' ? { createPortal: (node) => ({ children: [node] }) } : name === '@deepseek-ai/cordis' ? { Service } : react).Frame
     } } } })
     const { service, ctx, list } = await fixture()
     const Business = () => 'Business UI'
-    service.register({ id: 'standalone', title: 'Standalone', layout: { businessSide: 'left', businessWidth: 0.65 } }, Business)
+    registerProvider(service, ctx, 'standalone', { title: 'Standalone', layout: { businessSide: 'left', businessWidth: 0.65 } }, Business)
     ctx.workspaces.list.getSnapshot().items.splice(0)
     list.ids.splice(0)
     list.byId = {}
@@ -474,7 +442,8 @@ describe('desktop workbench client navigation', () => {
   it('creates and binds a provider business folder session without a manual picker', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    const id = await service.ensureSession({ workbenchId: 'writer', folder: '/business/profile' })
+    ctx.fiber.name = 'writer'
+    const id = await service.ensureSession({ folder: '/business/profile' })
     expect(ctx.workspaces.create).toHaveBeenCalledWith({ path: '/business/profile' })
     expect(ctx.uiWorkspace.pickDirectory).not.toHaveBeenCalled()
     expect(service.state.sessionBindings[id]).toBe('writer')
@@ -484,8 +453,9 @@ describe('desktop workbench client navigation', () => {
   it('restores an owned saved session or adopts a real unowned session without changing its workspace', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    expect(await service.ensureSession({ workbenchId: 'writer', sessionId: 'writer-2', folder: '/other' })).toBe('writer-2')
-    expect(await service.ensureSession({ workbenchId: 'writer', sessionId: 'old', folder: '/other' })).toBe('old')
+    ctx.fiber.name = 'writer'
+    expect(await service.ensureSession({ sessionId: 'writer-2', folder: '/other' })).toBe('writer-2')
+    expect(await service.ensureSession({ sessionId: 'old', folder: '/other' })).toBe('old')
     expect(service.state.sessionBindings.old).toBe('writer')
     expect(service.workspaceFor('old').workspaceId).toBe('project-1')
     expect(ctx.workspaces.create).not.toHaveBeenCalled()
@@ -495,9 +465,10 @@ describe('desktop workbench client navigation', () => {
   it('rejects conflicting ownership and recreates a deleted saved session', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    await expect(service.ensureSession({ workbenchId: 'writer', sessionId: 'research-1', folder: '/business' })).rejects.toThrow('不能重新绑定')
+    ctx.fiber.name = 'writer'
+    await expect(service.ensureSession({ sessionId: 'research-1', folder: '/business' })).rejects.toThrow('不能重新绑定')
     expect(ctx.sessions.create).not.toHaveBeenCalled()
-    const id = await service.ensureSession({ workbenchId: 'writer', sessionId: 'deleted', folder: '/business' })
+    const id = await service.ensureSession({ sessionId: 'deleted', folder: '/business' })
     expect(id).not.toBe('deleted')
     expect(service.state.sessionBindings[id]).toBe('writer')
   })
@@ -505,9 +476,10 @@ describe('desktop workbench client navigation', () => {
   it('deduplicates provider creation and retains original ownership without stealing focus after a switch', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
+    ctx.fiber.name = 'writer'
     const refresh = deferred()
     ctx.sessions.refresh.mockReturnValueOnce(refresh.promise)
-    const args = { workbenchId: 'writer', folder: '/business' }
+    const args = { folder: '/business' }
     const first = service.ensureSession(args)
     expect(service.ensureSession(args)).toBe(first)
     await service.open('research')
@@ -522,10 +494,12 @@ describe('desktop workbench client navigation', () => {
   it('rejects inactive providers and aborts removed providers before creating a session', async () => {
     const { service, ctx } = await fixture(boundState())
     await service.open('writer')
-    await expect(service.ensureSession({ workbenchId: 'research', folder: '/business' })).rejects.toThrow('请先打开')
+    ctx.fiber.name = 'research'
+    await expect(service.ensureSession({ folder: '/business' })).rejects.toThrow('请先打开')
     const refresh = deferred()
     ctx.sessions.refresh.mockReturnValueOnce(refresh.promise)
-    const pending = service.ensureSession({ workbenchId: 'writer', folder: '/business' })
+    ctx.fiber.name = 'writer'
+    const pending = service.ensureSession({ folder: '/business' })
     await service.remove('writer')
     refresh.resolve()
     await expect(pending).rejects.toThrow('已移除')
@@ -570,7 +544,7 @@ describe('desktop workbench client navigation', () => {
     try {
       let Frame
       vm.runInNewContext(code, { document: dom.window.document, window: { __ModuleLoader__: { load({ factory }) {
-        Frame = factory(name => name === 'react-dom' ? ReactDOM : React).Frame
+      Frame = factory(name => name === 'react-dom' ? ReactDOM : name === '@deepseek-ai/cordis' ? { Service } : React).Frame
       } } } })
       const { service, ctx } = await fixture(boundState())
       const snapshot = ctx.workspaces.list.getSnapshot()
@@ -578,7 +552,7 @@ describe('desktop workbench client navigation', () => {
       ctx.workspaces.list.subscribe = () => () => {}
       ctx.sessions.list.subscribe = () => () => {}
       function Dock({ conversation }) { return React.createElement('section', { 'data-test-dock': true }, conversation) }
-      service.register({ id: 'dock', title: 'Dock', customFrame: true }, Dock)
+      registerProvider(service, ctx, 'dock', { title: 'Dock', customFrame: true }, Dock)
       await service.add('dock')
       await service.open('writer')
       let mounts = 0
@@ -620,7 +594,9 @@ describe('desktop workbench client navigation', () => {
     let BrowserWorkbenches
     const reply = vi.fn(async (url, options = {}) => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({
-        stale: false, catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
+        stale: false, catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [
+          { id: 'example/writer', name: 'Writer', category: 'writing', owner: 'example', url: 'https://github.com/example/writer', version: '1.0.0', description: { zh: '' }, screenshots: [], distribution: { type: 'npm', name: 'writer' } }
+        ] }
       })
       if (url === '/api/desktop-workbenches/submissions') return Response.json({ submissions: [] })
       const state = options.method === 'POST' ? JSON.parse(options.body).state : emptyState()
@@ -638,7 +614,7 @@ describe('desktop workbench client navigation', () => {
     `, {
       fetchReply: reply,
       window: { __ModuleLoader__: { load({ factory }) {
-        BrowserWorkbenches = factory(() => ({ createElement() {}, Component: class {} })).Workbenches
+        BrowserWorkbenches = factory(name => name === '@deepseek-ai/cordis' ? { Service } : { createElement() {}, Component: class {} }).Workbenches
       } } }
     })
     const { ctx } = await fixture()
@@ -646,12 +622,13 @@ describe('desktop workbench client navigation', () => {
     await service.load()
     expect(service.ready).toBe(true)
     expect(service.error).toBe('')
-    service.register({ id: 'writer', title: 'Writer' }, () => null)
-    await service.add('writer')
+    ctx.fiber.name = 'writer'
+    service.register({ title: 'Writer' }, () => null)
+    await service.add('example/writer')
     // state, catalog and market installs on load, then one state write.
     expect(reply).toHaveBeenCalledTimes(4)
     expect(service.revision).toBe(1)
-    expect(service.state.added).toEqual(['writer'])
+    expect(service.state.added).toEqual(['example/writer'])
   })
 
   it('renders Frame with native stores whose snapshot and subscribe methods require their receiver', async () => {
@@ -668,9 +645,9 @@ describe('desktop workbench client navigation', () => {
         return getSnapshot()
       }
     }
-    vm.runInNewContext(code, { document: { createElement: () => ({ style: {} }) }, window: { __ModuleLoader__: { load({ factory }) { Frame = factory((name) => name === 'react-dom' ? { createPortal: (node) => ({ children: [node] }) } : React).Frame } } } })
+    vm.runInNewContext(code, { document: { createElement: () => ({ style: {} }) }, window: { __ModuleLoader__: { load({ factory }) { Frame = factory((name) => name === 'react-dom' ? { createPortal: (node) => ({ children: [node] }) } : name === '@deepseek-ai/cordis' ? { Service } : React).Frame } } } })
     const { service, ctx } = await fixture(boundState())
-    service.register({ id: 'dock', title: 'Dock', customFrame: true }, () => null)
+    registerProvider(service, ctx, 'dock', { title: 'Dock', customFrame: true })
     await service.add('dock')
     await service.open('dock')
     const sessionSnapshot = ctx.sessions.list.getSnapshot()
@@ -844,7 +821,7 @@ describe('desktop workbench client navigation', () => {
   })
 
   it('persists sidebar order across a controller reload', async () => {
-    const { service, saved } = await fixture(boundState())
+    const { service, ctx, saved } = await fixture(boundState())
     await service.open('writer')
     await service.open('research')
     await service.reorder('research', 'writer')
@@ -949,7 +926,7 @@ describe('desktop workbench client navigation', () => {
 
   it('keeps unsaved business notes across switching and debounces the latest edit', async () => {
     vi.useFakeTimers()
-    const { service, saved } = await fixture(boundState())
+    const { service, ctx, saved } = await fixture(boundState())
     await service.open('writer')
     service.editNote('writer', 'First draft')
     await vi.advanceTimersByTimeAsync(200)
@@ -1006,7 +983,7 @@ describe('desktop workbench client navigation', () => {
 
   it('flushes pending notes when the controller is disposed', async () => {
     vi.useFakeTimers()
-    const { service, saved } = await fixture(boundState())
+    const { service, ctx, saved } = await fixture(boundState())
     service.editNote('writer', 'Last edit before closing')
     service.dispose()
     await service.queue
@@ -1038,12 +1015,12 @@ describe('desktop workbench client navigation', () => {
   })
 
   it('still closes an explicitly left or unloaded workbench', async () => {
-    const { service, saved } = await fixture(boundState())
+    const { service, ctx, saved } = await fixture(boundState())
     await service.open('writer')
     await service.leave()
     expect(saved().state.active).toBeNull()
 
-    const unregister = service.register({ id: 'temporary', title: 'Temporary' }, () => null)
+    const unregister = registerProvider(service, ctx, 'temporary', { title: 'Temporary' })
     await service.add('temporary')
     await service.open('temporary')
     unregister()
@@ -1054,12 +1031,12 @@ describe('desktop workbench client navigation', () => {
 
 describe('workbench business layout contract', () => {
   it('accepts a wide left business panel while keeping host geometry bounded', async () => {
-    const { service } = await fixture()
-    service.register({ id: 'map', title: 'Map', embedded: true, layout: { businessSide: 'left', businessWidth: 0.65 } }, () => null)
+    const { service, ctx } = await fixture()
+    registerProvider(service, ctx, 'map', { title: 'Map', embedded: true, layout: { businessSide: 'left', businessWidth: 0.65 } })
     expect(service.catalog.get('map').layout).toEqual({ businessSide: 'left', businessWidth: 0.65 })
     expect(service.catalog.get('writer').layout).toEqual({ businessSide: 'right', businessWidth: 0.36 })
-    expect(() => service.register({ id: 'bad', title: 'Bad', layout: { businessWidth: 1 } }, () => null)).toThrow(/width/)
-    expect(() => service.register({ id: 'bad', title: 'Bad', layout: { businessSide: 'overlay' } }, () => null)).toThrow(/side/)
+    expect(() => registerProvider(service, ctx, 'bad-width', { title: 'Bad', layout: { businessWidth: 1 } })).toThrow(/width/)
+    expect(() => registerProvider(service, ctx, 'bad-side', { title: 'Bad', layout: { businessSide: 'overlay' } })).toThrow(/side/)
   })
 })
 
@@ -1071,8 +1048,8 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
   it('does not embed provider-specific market screenshots in Desktop', async () => {
-    const { service } = await fixture()
-    service.register({ id: 'ming-life', title: '玄学人生工作台' }, () => null)
+    const { service, ctx } = await fixture()
+    registerProvider(service, ctx, 'ming-life', { title: '玄学人生工作台' })
     expect(service.catalog.get('ming-life').screenshot).toBe('')
     expect(fullSource).not.toContain('data:image/jpeg;base64,')
     service.dispose()
@@ -1184,8 +1161,8 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
 
-  const listed = (patch = {}) => ({ id: 'o/helper', workbenchId: 'helper', owner: 'o', repository: 'helper', url: 'https://github.com/o/helper', name: 'Helper', categoryName: '效率',
-    description: { zh: '整理资料。' }, screenshots: [], version: '1.0.0', distribution: { type: 'npm', version: '1.0.0' }, ...patch })
+  const listed = (patch = {}) => ({ id: 'o/helper', owner: 'o', repository: 'helper', url: 'https://github.com/o/helper', name: 'Helper', categoryName: '效率',
+    description: { zh: '整理资料。' }, screenshots: [], version: '1.0.0', distribution: { type: 'npm', name: 'helper', version: '1.0.0' }, ...patch })
   function withMarket(service, routes) {
     const original = service.request
     const calls = []
@@ -1196,52 +1173,53 @@ describe('workbench market screenshot and metadata display', () => {
     return calls
   }
 
-  it('installs a market entry, pins it when its runtime ID is known, and asks for a restart', async () => {
+  it('installs a market entry, pins its repository identity, and asks for a restart', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]
-    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', workbenchId: 'helper', version: '1.0.0' }, restartRequired: true }) })
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true }) })
     await service.installFromMarket('o/helper')
     expect(calls).toEqual(['/api/desktop-workbenches/market-install'])
-    expect(service.getSnapshot()).toMatchObject({ installing: null, restartNeeded: true, installs: { 'o/helper': { workbenchId: 'helper' } } })
-    expect(saved().state.added).toEqual(['helper'])
+    expect(service.getSnapshot()).toMatchObject({ installing: null, restartNeeded: true, installs: { 'o/helper': { pluginName: 'helper' } } })
+    expect(saved().state.added).toEqual(['o/helper'])
     // Until the provider loads, the card stays a market entry awaiting restart.
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: false })
   })
 
-  it('merges the installed provider through the declared runtime ID even without a repository descriptor', async () => {
-    const { service, saved } = await fixture()
+  it('merges the installed provider through its caller package identity', async () => {
+    const { service, ctx, saved } = await fixture()
     service.remoteCatalog = [listed()]
-    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', workbenchId: 'helper', version: '1.0.0' }, restartRequired: true }) })
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true }) })
     await service.installFromMarket('o/helper')
-    expect(saved().state.added).toEqual(['helper'])
-    service.register({ id: 'helper', title: 'Helper' }, () => null)
-    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ id: 'helper', installed: true, listedVersion: '1.0.0' })
-    expect(service.marketInstallFor('helper')).toBe('o/helper')
+    expect(saved().state.added).toEqual(['o/helper'])
+    ctx.fiber.name = 'helper'
+    service.register({ title: 'Helper' }, () => null)
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ id: 'o/helper', installed: true, listedVersion: '1.0.0' })
+    expect(service.marketInstallFor('o/helper')).toBe('o/helper')
   })
 
-  it('rolls back an install whose runtime ID shadows a loaded workbench, and refuses entries not in the market', async () => {
+  it('rejects malformed install records and entries not in the market', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]
     const calls = withMarket(service, {
-      '/api/desktop-workbenches/market-install': () => Response.json({ install: { workbenchId: 'writer', version: '1.0.0' }, restartRequired: true }),
-      '/api/desktop-workbenches/market-uninstall': () => Response.json({ restartRequired: true })
+      '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'other/helper', pluginName: 'helper', version: '1.0.0' }, restartRequired: true })
     })
-    await expect(service.installFromMarket('o/helper')).rejects.toThrow('与本机已有的工作台相同')
-    expect(calls).toEqual(['/api/desktop-workbenches/market-install', '/api/desktop-workbenches/market-uninstall'])
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('安装记录无效')
+    expect(calls).toEqual(['/api/desktop-workbenches/market-install'])
     expect(service.getSnapshot().installs).toEqual({})
     expect(saved().state.added).toEqual([])
     await expect(service.installFromMarket('o/gone')).rejects.toThrow('已不在工作台市场')
   })
 
   it('uninstalls the market package of a removed workbench but only unpins others', async () => {
-    const { service, saved } = await fixture({ ...emptyState(), added: ['writer', 'helper'], pinned: ['writer', 'helper'] })
+    const { service, ctx, saved } = await fixture({ ...emptyState(), added: ['writer', 'o/helper'], pinned: ['writer', 'o/helper'] })
     service.remoteCatalog = [listed()]
-    service.register({ id: 'helper', title: 'Helper', repository: 'https://github.com/o/helper/' }, () => null)
-    service.installs = { 'o/helper': { workbenchId: 'helper', version: '1.0.0' } }
+    ctx.fiber.name = 'helper'
+    service.register({ title: 'Helper' }, () => null)
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
     const calls = withMarket(service, { '/api/desktop-workbenches/market-uninstall': (options) => Response.json({ restartRequired: true, got: JSON.parse(options.body) }) })
     await service.removeWorkbench('writer')
     expect(calls).toEqual([])
-    await service.removeWorkbench('helper')
+    await service.removeWorkbench('o/helper')
     expect(calls).toEqual(['/api/desktop-workbenches/market-uninstall'])
     expect(service.getSnapshot()).toMatchObject({ installs: {}, restartNeeded: true })
     expect(saved().state.added).toEqual([])

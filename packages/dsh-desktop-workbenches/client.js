@@ -2,11 +2,11 @@ window.__ModuleLoader__.load({
   id: 'dsh-desktop-workbenches',
   factory: (require) => {
     const React = require('react')
+    const { Service } = require('@deepseek-ai/cordis')
     const h = React.createElement
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
     const WRITE_API = '/api/desktop-workbenches/state/write'
-    const MIGRATE_API = '/api/desktop-workbenches/state/migrate'
     const CATALOG_API = '/api/desktop-workbenches/catalog'
     const MARKET_INSTALLS_API = '/api/desktop-workbenches/market-installs'
     const SUBMISSION_STATUS_API = '/api/desktop-workbenches/submission-status'
@@ -34,14 +34,12 @@ window.__ModuleLoader__.load({
       set(value) { this.enabled = !!value; try { window.localStorage.setItem(WORKBENCH_PREF, String(this.enabled)) } catch {} ; for (const listener of this.listeners) listener() }
     }
     const EMPTY = () => ({ version: 1, added: [], pinned: [], favorites: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {} })
-    // Hide retired built-ins only in navigation; never migrate or erase saved data.
-    const visibleWorkbench = (id) => id !== 'research-notebook' && id !== 'writing-notebook'
-
     // This controller owns navigation and local state only. It never terminates
     // agents, changes a running session's preset, or registers global tools.
     class Workbenches {
       constructor(ctx, request = (...args) => fetch(...args)) {
         this.ctx = ctx
+        Object.defineProperty(this, Service.tracker, { value: { property: 'ctx' } })
         this.request = request
         this.state = EMPTY()
         this.revision = 0
@@ -53,6 +51,7 @@ window.__ModuleLoader__.load({
         this.disposed = false
         this.listeners = new Set()
         this.catalog = new Map()
+        this.providers = new Map()
         this.remoteCatalog = []
         this.catalogError = ''
         this.catalogStale = false
@@ -78,14 +77,7 @@ window.__ModuleLoader__.load({
         const matched = new Set()
         const providers = [...this.catalog.values()]
         const remote = this.remoteCatalog.map((item) => {
-          const install = this.installs[item.id]
-          const provider = providers.find(candidate =>
-            (typeof candidate.repository === 'string'
-              && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
-            // A market installation also has a stable runtime identity. This
-            // covers packages that do not expose their repository descriptor.
-            || (install && item.workbenchId === candidate.id)
-          )
+          const provider = this.catalog.get(item.id)
           if (provider) matched.add(provider.id)
           return {
             ...item,
@@ -108,6 +100,32 @@ window.__ModuleLoader__.load({
         }
         return remote
       }
+      sourcePackage() {
+        const source = this.ctx.fiber?.name
+        if (typeof source !== 'string' || !source || source === 'dsh-desktop-workbenches') throw new Error('Workbench registration must come from a client package.')
+        return source
+      }
+      identityForSource(source) {
+        const installed = Object.entries(this.installs).filter(([, install]) => install?.pluginName === source).map(([id]) => id)
+        const listed = this.remoteCatalog.filter(entry => entry.distribution?.name === source).map(entry => entry.id)
+        const identities = [...new Set([...installed, ...listed])]
+        if (identities.length !== 1) throw new Error(identities.length ? `Client package ${source} matches multiple workbenches.` : `Client package ${source} is not attributed to a market repository.`)
+        return identities[0]
+      }
+      rebuildProviders() {
+        const previous = this.catalog
+        const catalog = new Map()
+        for (const [source, provider] of this.providers) {
+          let id
+          try { id = this.identityForSource(source) } catch { continue }
+          if (catalog.has(id)) throw new Error(`Duplicate workbench provider: ${id}`)
+          catalog.set(id, { ...provider, id, sourcePackage: source })
+        }
+        this.catalog = catalog
+        for (const [id] of previous) {
+          if (!catalog.has(id) && this.state.active === id) this.state = { ...this.state, active: null }
+        }
+      }
       reconcileMarketInstalls() {
         if (!this.ready || this.blocked || this.disposed) return
         const additions = this.marketCatalog().filter((entry) => {
@@ -121,35 +139,6 @@ window.__ModuleLoader__.load({
             if (!state.pinned.includes(entry.id)) state.pinned.push(entry.id)
           }
         }))
-      }
-      migrateLegacyWorkbenchIds() {
-        if (!this.ready || this.blocked || this.disposed) return
-        const migrations = {}
-        for (const entry of this.remoteCatalog) {
-          if (!this.catalog.has(entry.workbenchId)) continue
-          for (const legacy of entry.legacyWorkbenchIds || []) {
-            if (legacy !== entry.workbenchId && (this.state.added.includes(legacy) || this.state.active === legacy
-              || Object.values(this.state.sessionBindings).includes(legacy) || Object.hasOwn(this.state.notes, legacy))) {
-              migrations[legacy] = entry.workbenchId
-            }
-          }
-        }
-        if (!Object.keys(migrations).length) return
-        this.run(this.commit((state) => {
-          const replace = id => migrations[id] || id
-          state.added = [...new Set(state.added.map(replace))]
-          state.pinned = [...new Set(state.pinned.map(replace))]
-          state.active = state.active === null ? null : replace(state.active)
-          for (const [session, owner] of Object.entries(state.sessionBindings)) state.sessionBindings[session] = replace(owner)
-          for (const [legacy, current] of Object.entries(migrations)) {
-            if (state.recentSessions[legacy] && !state.recentSessions[current]) state.recentSessions[current] = state.recentSessions[legacy]
-            delete state.recentSessions[legacy]
-            if (Object.hasOwn(state.notes, legacy)) {
-              state.notes[current] = state.notes[current] ? `${state.notes[current]}\n\n${state.notes[legacy]}` : state.notes[legacy]
-              delete state.notes[legacy]
-            }
-          }
-        }, migrations))
       }
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
@@ -202,20 +191,13 @@ window.__ModuleLoader__.load({
       // Install and update are the same operation: Awesome names the one version to install.
       async installFromMarket(catalogId) {
         if (!this.remoteCatalog.some((entry) => entry.id === catalogId)) throw new Error('这个工作台已不在工作台市场中。')
-        const previous = this.installs[catalogId]
         const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId)
-        const workbenchId = data.install?.workbenchId
-        if (typeof workbenchId !== 'string') throw new Error('市场条目缺少有效的工作台 ID。')
-        if (!previous && workbenchId && this.catalog.has(workbenchId)) {
-          // A workbench with this ID is already loaded from elsewhere; never shadow it.
-          await this.marketPackage('/api/desktop-workbenches/market-uninstall', catalogId).catch(() => {})
-          throw new Error(`这个工作台的 ID「${workbenchId}」与本机已有的工作台相同，已撤销安装。`)
-        }
+        if (data.install?.catalogId !== catalogId || typeof data.install?.pluginName !== 'string') throw new Error('市场安装记录无效。')
         this.installs = { ...this.installs, [catalogId]: data.install }
         this.publish()
         return this.commit((state) => {
-          if (!state.added.includes(workbenchId)) state.added.push(workbenchId)
-          if (!state.pinned.includes(workbenchId)) state.pinned.push(workbenchId)
+          if (!state.added.includes(catalogId)) state.added.push(catalogId)
+          if (!state.pinned.includes(catalogId)) state.pinned.push(catalogId)
         })
       }
       async uninstallFromMarket(catalogId) {
@@ -225,11 +207,8 @@ window.__ModuleLoader__.load({
         this.publish()
       }
       // The market install behind a runtime workbench, found through its registered repository.
-      marketInstallFor(workbenchId) {
-        const entry = this.marketCatalog().find((item) => item.id === workbenchId && item.catalogId !== workbenchId)
-        if (entry && this.installs[entry.catalogId]) return entry.catalogId
-        const recorded = Object.entries(this.installs).find(([, install]) => install?.workbenchId === workbenchId)
-        return recorded ? recorded[0] : null
+      marketInstallFor(id) {
+        return this.installs[id] ? id : null
       }
       async removeWorkbench(id) {
         // Market installs also remove the package; sessions, files and notes stay.
@@ -260,11 +239,11 @@ window.__ModuleLoader__.load({
             this.catalogError = ''
             this.catalogStale = catalog.stale
           }
+          this.rebuildProviders()
           this.blocked = false
           this.ready = true
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
           this.publish()
-          this.migrateLegacyWorkbenchIds()
           this.reconcileMarketInstalls()
           const active = this.state.active
           if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
@@ -279,7 +258,7 @@ window.__ModuleLoader__.load({
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         return data
       }
-      commit(change, migrations) {
+      commit(change) {
         if (!this.ready || this.blocked || this.disposed) return Promise.reject(new Error('工作台更改尚未保存，请先重新加载。'))
         const next = JSON.parse(JSON.stringify(this.state))
         try { change(next) } catch (error) { return Promise.reject(error) }
@@ -288,9 +267,9 @@ window.__ModuleLoader__.load({
         this.publish()
         const task = this.queue.then(async () => {
           if (this.blocked) throw new Error('工作台更改尚未保存，请先重新加载。')
-          const response = await this.request(migrations ? MIGRATE_API : WRITE_API, {
+          const response = await this.request(WRITE_API, {
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ revision: this.revision, state: next, ...(migrations ? { migrations } : {}) })
+            body: JSON.stringify({ revision: this.revision, state: next })
           })
           const data = await response.json()
           if (!response.ok) throw new Error(response.status === 409 ? '工作台已在其他窗口更新，请重新加载后再操作。' : data.error || `HTTP ${response.status}`)
@@ -301,8 +280,9 @@ window.__ModuleLoader__.load({
         return task
       }
       register(descriptor, Component) {
-        if (!descriptor || !/^[a-z][a-z0-9-]{0,79}$/.test(descriptor.id) || !descriptor.title || typeof Component !== 'function') throw new Error('Invalid workbench registration')
-        if (this.catalog.has(descriptor.id)) throw new Error(`Duplicate workbench: ${descriptor.id}`)
+        if (!descriptor || Object.hasOwn(descriptor, 'id') || !descriptor.title || typeof Component !== 'function') throw new Error('Invalid workbench registration')
+        const source = this.sourcePackage()
+        if (this.providers.has(source)) throw new Error(`Duplicate workbench provider: ${source}`)
         if (descriptor.customFrame !== undefined && typeof descriptor.customFrame !== 'boolean') throw new Error('Invalid custom frame flag')
         const layout = descriptor.layout || {}
         if (layout.businessSide !== undefined && !['left', 'right'].includes(layout.businessSide)) throw new Error('Invalid workbench business side')
@@ -312,17 +292,23 @@ window.__ModuleLoader__.load({
           screenshot: descriptor.screenshot || '',
           screenshotPosition: descriptor.screenshotPosition || 'center',
           layout: { businessSide: layout.businessSide || 'right', businessWidth: layout.businessWidth ?? 0.36 }, Component }
-        this.catalog.set(entry.id, entry)
+        this.providers.set(source, entry)
+        this.rebuildProviders()
         this.publish()
-        this.migrateLegacyWorkbenchIds()
         this.reconcileMarketInstalls()
         return () => {
-          if (this.catalog.get(entry.id) !== entry) return
-          this.catalog.delete(entry.id)
-          // Unloading the provider cannot erase its sessions or user's notes.
-          if (this.state.active === entry.id) this.state = { ...this.state, active: null }
+          if (this.providers.get(source) !== entry) return
+          this.providers.delete(source)
+          this.rebuildProviders()
           this.publish()
         }
+      }
+      isActive() {
+        const id = this.identityForSource(this.sourcePackage())
+        return this.state.active === id && this.state.added.includes(id)
+      }
+      ownsSession(sessionId) {
+        return this.state.sessionBindings[sessionId] === this.identityForSource(this.sourcePackage())
       }
       add(id) {
         if (!this.catalog.has(id)) return Promise.reject(new Error('工作台当前不可用。'))
@@ -458,32 +444,33 @@ window.__ModuleLoader__.load({
         return sessionId
       }
       // Providers keep their own project/profile flows; Desktop owns session identity.
-      ensureSession({ workbenchId, folder, sessionId: savedSessionId } = {}) {
-        if (!this.ready || this.blocked || this.disposed || this.state.active !== workbenchId || !this.state.added.includes(workbenchId) || !this.catalog.has(workbenchId)) return Promise.reject(new Error('请先打开可用的工作台。'))
-        const key = JSON.stringify([workbenchId, folder, savedSessionId || null])
+      ensureSession({ folder, sessionId: savedSessionId } = {}) {
+        const id = this.identityForSource(this.sourcePackage())
+        if (!this.ready || this.blocked || this.disposed || this.state.active !== id || !this.state.added.includes(id) || !this.catalog.has(id)) return Promise.reject(new Error('请先打开可用的工作台。'))
+        const key = JSON.stringify([id, folder, savedSessionId || null])
         if (this.sessionRequests.has(key)) return this.sessionRequests.get(key)
         const ticket = ++this.navigation
         const signal = this.ctx.layout.beginNavigation()
         const request = (async () => {
           await this.ctx.sessions.refresh()
-          if (this.disposed || !this.state.added.includes(workbenchId) || !this.catalog.has(workbenchId)) throw new Error('工作台已移除或不可用。')
+          if (this.disposed || !this.state.added.includes(id) || !this.catalog.has(id)) throw new Error('工作台已移除或不可用。')
           let sessionId = savedSessionId && this.ctx.sessions.list.getSnapshot().byId[savedSessionId] ? savedSessionId : null
           if (sessionId) {
             const owner = this.state.sessionBindings[sessionId]
-            if (owner && owner !== workbenchId) throw new Error('此会话已属于另一个工作台，不能重新绑定。')
+            if (owner && owner !== id) throw new Error('此会话已属于另一个工作台，不能重新绑定。')
           } else {
             if (typeof folder !== 'string' || !folder.trim()) throw new Error('创建会话需要业务项目文件夹。')
             const workspace = await this.ctx.workspaces.create({ path: folder })
-            if (this.disposed || !this.state.added.includes(workbenchId) || !this.catalog.has(workbenchId)) throw new Error('工作台已移除或不可用。')
+            if (this.disposed || !this.state.added.includes(id) || !this.catalog.has(id)) throw new Error('工作台已移除或不可用。')
             sessionId = await this.ctx.sessions.create({ workspaceId: workspace.workspaceId })
           }
-          if (this.disposed || !this.state.added.includes(workbenchId) || !this.catalog.has(workbenchId)) throw new Error('工作台已移除或不可用。')
+          if (this.disposed || !this.state.added.includes(id) || !this.catalog.has(id)) throw new Error('工作台已移除或不可用。')
           await this.commit((state) => {
-            if (state.sessionBindings[sessionId] && state.sessionBindings[sessionId] !== workbenchId) throw new Error('不能改变已有会话的工作台归属。')
-            state.sessionBindings[sessionId] = workbenchId
-            state.recentSessions[workbenchId] = sessionId
+            if (state.sessionBindings[sessionId] && state.sessionBindings[sessionId] !== id) throw new Error('不能改变已有会话的工作台归属。')
+            state.sessionBindings[sessionId] = id
+            state.recentSessions[id] = sessionId
           })
-          if (!this.disposed && !signal.aborted && ticket === this.navigation && this.state.active === workbenchId) {
+          if (!this.disposed && !signal.aborted && ticket === this.navigation && this.state.active === id) {
             this.suppressSelection = true
             try { this.openSession(sessionId); this.lastSession = sessionId; this.ctx.layout.selectPanel(null) }
             finally { this.suppressSelection = false }
@@ -712,7 +699,7 @@ window.__ModuleLoader__.load({
         try { window.localStorage.setItem('dsh-workbench-sidebar-mode', next) } catch { /* Preferences remain usable when storage is unavailable. */ }
       }
       const iconMode = wide && mode === 'icons'
-      const pinned = state.pinned.filter(visibleWorkbench)
+      const pinned = state.pinned
       const disabled = !ready || pending > 0 || service.blocked
       return h('nav', { className: 'dshWb dshWbNav', 'data-mode': iconMode ? 'icons' : 'list', 'data-wide': !!wide, 'aria-label': '工作台' },
         h('div', { className: 'dshWbNavHeader' },
@@ -1050,14 +1037,14 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const developmentPrompt = developmentWorkbenchAgentPrompt()
       const submissionPrompt = submissionWorkbenchAgentPrompt()
       const disabled = !ready || pending > 0 || service.blocked
-      const added = state.added.filter(visibleWorkbench)
-      const favorites = (state.favorites || []).filter(visibleWorkbench)
+      const added = state.added
+      const favorites = state.favorites || []
       const unavailableEntry = (id) => ({ id, title: id, category: '其他', unavailable: true, description: '提供此工作台的插件当前未加载。' })
       const allEntries = tab === 'mine'
         ? added.map((id) => catalog.find((entry) => entry.id === id) || unavailableEntry(id))
         : tab === 'favorites'
           ? favorites.map((id) => catalog.find((entry) => entry.catalogId === id || entry.id === id) || unavailableEntry(id))
-          : tab === 'market' ? [...catalog].filter((entry) => visibleWorkbench(entry.id)) : []
+          : tab === 'market' ? [...catalog] : []
       const categories = ['全部', ...new Set(allEntries.map((entry) => entry.category || '其他'))]
       const query = search.toLowerCase().trim()
       const entries = allEntries.filter((entry) => (category === '全部' || (entry.category || '其他') === category) && `${entry.title || ''} ${entry.description || ''} ${entry.author || ''} ${entry.category || ''}`.toLowerCase().includes(query))
