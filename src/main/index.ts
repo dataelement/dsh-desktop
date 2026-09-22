@@ -111,6 +111,7 @@ import {
   recoverInterruptedMigration,
   rollBackMigration
 } from './state/generation-migration'
+import { migrateUserPresetPersonaPrefixes } from './state/persona-prefix-migration'
 import { runProfileStartupMaintenance } from './state/profile-startup-maintenance'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
 import {
@@ -1432,6 +1433,17 @@ async function canRetryLockedPluginRestore(dshHome: string, removalId: string): 
   }
 }
 
+/** User presets are outside the profile journal, so this runs on every start path. */
+async function migratePersonaPrefixesBeforeStart(dshHome: string): Promise<void> {
+  try {
+    await migrateUserPresetPersonaPrefixes(dshHome, (line) => runtime.note(line))
+  } catch (error) {
+    runtime.note(
+      `[desktop] persona prefix migration failed: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
 async function enterMigrationSafeRecovery(
   dshHome: string,
   reason: string,
@@ -1455,6 +1467,7 @@ async function enterMigrationSafeRecovery(
   runtime.note(repairable
     ? '[desktop] safe mode: normal Profile startup failed preflight; plugin repair remains available'
     : '[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
+  await migratePersonaPrefixesBeforeStart(dshHome)
   await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
   if (runtime.snapshot().phase === 'ready') void mobileBridge.start().catch(showUnexpectedError)
   // The native manager remains usable even if shared settings prevent the
@@ -1582,6 +1595,7 @@ function launchHarness(): Promise<void> {
         )
       })
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
+    await migratePersonaPrefixesBeforeStart(dshHome)
     await runtime.start(launchDirectory)
 
     // A failed launch must not rewrite the user's enabled plugin set. Recovery
@@ -1626,6 +1640,7 @@ function launchSafeHarness(): Promise<void> {
     await ensureSafeModeProfile(dshHome)
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
+    await migratePersonaPrefixesBeforeStart(dshHome)
     await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
     if (runtime.snapshot().phase === 'ready') {
       void mobileBridge.start().catch(showUnexpectedError)
