@@ -229,8 +229,10 @@ describe('migration failure paths (issue #250)', () => {
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: () => migrateProfileToGenerations(migrationDeps),
       ensureMarketBaseline: async () => undefined,
+      marketUsableWithoutBaseline: async () => false,
       reportProfileConsistency: report,
-      inspectProfileBootInputs: async () => undefined
+      inspectProfileBootInputs: async () => undefined,
+      pruneUnresolvableBundles: async () => []
     })
     return { run, prepareStore, enforce, prepare, report }
   }
@@ -473,8 +475,10 @@ describe('migration failure paths (issue #250)', () => {
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: migrate,
       ensureMarketBaseline: async () => undefined,
+      marketUsableWithoutBaseline: async () => false,
       reportProfileConsistency: report,
-      inspectProfileBootInputs: async () => undefined
+      inspectProfileBootInputs: async () => undefined,
+      pruneUnresolvableBundles: async () => []
     })
 
     expect(result).toMatchObject({
@@ -504,8 +508,10 @@ describe('migration failure paths (issue #250)', () => {
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
       ensureMarketBaseline: async () => undefined,
+      marketUsableWithoutBaseline: async () => false,
       reportProfileConsistency: report,
-      inspectProfileBootInputs: async () => undefined
+      inspectProfileBootInputs: async () => undefined,
+      pruneUnresolvableBundles: async () => []
     })
 
     expect(result).toMatchObject({ outcome: 'safe-recovery' })
@@ -534,8 +540,10 @@ describe('migration failure paths (issue #250)', () => {
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
       ensureMarketBaseline: async () => undefined,
+      marketUsableWithoutBaseline: async () => false,
       reportProfileConsistency: report,
-      inspectProfileBootInputs: async () => undefined
+      inspectProfileBootInputs: async () => undefined,
+      pruneUnresolvableBundles: async () => []
     })
 
     expect(result).toMatchObject({ outcome: 'safe-recovery' })
@@ -560,8 +568,10 @@ describe('migration failure paths (issue #250)', () => {
       shouldDeferProfileMaintenance: async () => false,
       migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
       ensureMarketBaseline: async () => undefined,
+      marketUsableWithoutBaseline: async () => false,
       reportProfileConsistency: report,
-      inspectProfileBootInputs: async () => undefined
+      inspectProfileBootInputs: async () => undefined,
+      pruneUnresolvableBundles: async () => []
     })
 
     expect(result).toMatchObject({ outcome: 'safe-recovery' })
