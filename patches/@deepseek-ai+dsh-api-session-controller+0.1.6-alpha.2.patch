@@ -279,7 +279,6 @@ index ce165c0e71..3cd9a2d679 100644
  		/**
  		* Fork one cold-readable completed-turn prefix into a new Session.
  		* @param request - source Session and optional event anchor.
-
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
 index 091d414..1d8bceb 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
