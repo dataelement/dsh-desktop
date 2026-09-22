@@ -162,6 +162,31 @@ async function noteShadowedMarket(
   )
 }
 
+/**
+ * Whether the market already in the profile can carry this boot on its own.
+ *
+ * A baseline install that fails is common in the field — pnpm reports 404s,
+ * fetch failures and EPERM from restricted or offline networks — and that must
+ * not cost the user their normal Profile when the market they already have
+ * still loads. Only a market that is absent, unreadable or still owned by a
+ * generation blocks startup. The pending marker survives either way, so the
+ * repair is retried on the next launch.
+ */
+export async function marketUsableWithoutBaseline(dshHome: string): Promise<boolean> {
+  const profileDir = dirname(profilePackageJsonPath(dshHome))
+  const marketPath = join(profileDir, 'node_modules', MARKET_PACKAGE)
+  try {
+    const info = await lstat(marketPath)
+    // A generation link is re-linked by projection on every launch, so a market
+    // left in that shape is exactly the boot loop the baseline exists to break.
+    if (info.isSymbolicLink() && (await readlink(marketPath)).includes('.generations')) return false
+  } catch {
+    return false
+  }
+  const version = await readInstalledPluginVersion(dshHome, MARKET_PACKAGE)
+  return !!version && !!parseSemver(version)
+}
+
 /** Run only after startup recovery gates, before generation migration/projection, with Harness stopped. */
 export async function ensureMarketBaseline(
   options: Omit<MarketSharedTreeUpgradeOptions, 'targetVersion'>,
@@ -200,7 +225,7 @@ export async function ensureMarketBaseline(
     .catch(() => false)
   const profileDir = dirname(profilePackageJsonPath(options.dshHome))
   const installAnchor = join(dirname(options.dshEntryPath), '..', 'package.json')
-  if (meetsBaseline(installed) && !isGenerationLink && !await hasPendingMarketInstall(options.dshHome)) {
+  if (meetsBaseline(installed) && !isGenerationLink && !await hasPendingMarketInstall(options.dshHome, options.note)) {
     await noteShadowedMarket(installAnchor, profileDir, options.note)
     return
   }

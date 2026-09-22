@@ -89,13 +89,20 @@ export function marketInstallPendingPath(dshHome: string): string {
   return join(dshHome, 'profiles', 'web', '.desktop-market-install-pending.json')
 }
 
-export async function hasPendingMarketInstall(dshHome: string): Promise<boolean> {
+export async function hasPendingMarketInstall(
+  dshHome: string,
+  note?: (line: string) => void
+): Promise<boolean> {
   try {
     await lstat(marketInstallPendingPath(dshHome))
     return true
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') return false
+    // An unreadable marker is not a reason to stop booting: the installed
+    // version check still forces a repair when the tree is actually broken.
+    note?.(`[plugin-upgrade] market install marker unreadable (${code ?? 'unknown'}); relying on the installed version check`)
+    return false
   }
 }
 
