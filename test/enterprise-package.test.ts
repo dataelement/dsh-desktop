@@ -88,6 +88,7 @@ describe('DSH Desktop enterprise package', () => {
     expect(client).toContain('bridge.consumeLoginLink?.()')
     expect(client).toContain('void inspectDeepLink(url)')
     expect(client).toContain('id: ENTERPRISE_SECTION_ID')
+    expect(client).toContain('confirmation && !connected')
   })
 
   it('keeps sign-in focused and shows model usage with hover percentages', async () => {
