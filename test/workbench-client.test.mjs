@@ -222,6 +222,24 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
+  it('uses the market version for a listed provider and keeps local provider versions', async () => {
+    const { service, ctx } = await fixture()
+    service.remoteCatalog = [{
+      id: 'owner/workbench', owner: 'owner', url: 'https://github.com/owner/workbench', name: '工作台', version: '1.2.0',
+      categoryName: '其他', description: { zh: '市场版本' }, screenshots: [], distribution: { name: 'workbench-package' }
+    }]
+    ctx.fiber.name = 'workbench-package'
+    service.register({ title: '工作台', version: '0.1.1' }, () => null)
+    expect(service.getSnapshot().catalog.find(item => item.catalogId === 'owner/workbench')).toMatchObject({
+      version: '1.2.0', listedVersion: '1.2.0'
+    })
+
+    ctx.fiber.name = 'local-package'
+    service.register({ title: '本地工作台', repository: 'https://github.com/owner/local', version: '0.3.0' }, () => null)
+    expect(service.getSnapshot().catalog.find(item => item.catalogId === 'owner/local')).toMatchObject({ version: '0.3.0' })
+    service.dispose()
+  })
+
   it('does not register the retired notebook templates when the plugin is applied', () => {
     let service
     const ctx = {

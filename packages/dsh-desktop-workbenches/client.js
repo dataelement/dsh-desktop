@@ -86,7 +86,10 @@ window.__ModuleLoader__.load({
             ...(provider || {}),
             id: provider?.id || item.id,
             catalogId: item.id,
-            // The listed version; a loaded provider may report its own.
+            // Market metadata owns the displayed and update versions. Runtime
+            // descriptors can be older than the installed package after a
+            // tag-driven release and must not override the catalog.
+            version: item.version,
             listedVersion: item.version,
             title: item.name,
             category: item.categoryName,
