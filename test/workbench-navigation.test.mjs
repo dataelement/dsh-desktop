@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 
+const Service = { tracker: Symbol('service-tracker') }
+
 // Execute the installed Workspace service so these tests cover the patched
 // navigation behavior while keeping Cordis boot and the renderer out of scope.
 const source = await readFile(new URL('../node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js', import.meta.url), 'utf8')
@@ -20,6 +22,7 @@ vm.runInNewContext(workbenchSource, {
   window: { __ModuleLoader__: { load({ factory }) {
     const client = factory((name) => {
       if (name === 'react') return { createElement() {}, Component: class {} }
+      if (name === '@deepseek-ai/cordis') return { Service }
       throw new Error(`Unexpected module ${name}`)
     })
     apply = client.apply
@@ -86,6 +89,7 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
   const cleanups = []
   const ctx = {
     sessions: { ...uiWorkspace.sessions, refresh: vi.fn(async () => {}) },
+    fiber: { name: 'dsh-media-workbench' },
     workspaces: uiWorkspace.workspaces,
     layout: uiWorkspace.ctx.layout,
     uiWorkspace,
@@ -102,8 +106,13 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
     revision: options.method === 'POST' ? ++revision : revision,
     state: options.body ? JSON.parse(options.body).state : controller.state
   }))
-  controller.register({ id: 'media-workbench', title: 'Media Workbench' }, () => null)
-  controller.register({ id: 'huaxue', title: 'Huaxue' }, () => null)
+  controller.remoteCatalog = [
+    { id: 'media-workbench', distribution: { name: 'dsh-media-workbench' }, description: { zh: '' }, screenshots: [] },
+    { id: 'huaxue', distribution: { name: 'huaxue' }, description: { zh: '' }, screenshots: [] }
+  ]
+  controller.register({ title: 'Media Workbench' }, () => null)
+  ctx.fiber.name = 'huaxue'
+  controller.register({ title: 'Huaxue' }, () => null)
   controller.state = {
     version: 1,
     added: ['media-workbench', 'huaxue'],
@@ -189,10 +198,11 @@ describe('native Workspace navigation with workbench routing', () => {
     sessionState.ids.push('old-recent')
     sessionState.byId['old-recent'] = { id: 'old-recent', sessionId: 'old-recent', cwd: '/project', displayTitle: 'Old recent' }
     workspaceState.items[0].sessionIds.push('old-recent')
-    const ctx = { sessions: { ...uiWorkspace.sessions, refresh: vi.fn(async () => {}) }, workspaces: uiWorkspace.workspaces, layout: uiWorkspace.ctx.layout, uiWorkspace }
+    const ctx = { fiber: { name: workbenchId }, sessions: { ...uiWorkspace.sessions, refresh: vi.fn(async () => {}) }, workspaces: uiWorkspace.workspaces, layout: uiWorkspace.ctx.layout, uiWorkspace }
     const request = vi.fn(async () => Response.json({ revision: 2, state: controller.state }))
     const controller = new Workbenches(ctx, request)
-    controller.register({ id: workbenchId, title: workbenchId }, () => null)
+    controller.remoteCatalog = [{ id: workbenchId, distribution: { name: workbenchId }, description: { zh: '' }, screenshots: [] }]
+    controller.register({ title: workbenchId }, () => null)
     controller.state = {
       version: 1,
       added: [workbenchId],
@@ -249,6 +259,7 @@ describe('native Workspace navigation with workbench routing', () => {
     workspaceState.items[0].sessionIds.push(removedSession)
 
     const ctx = {
+      fiber: { name: 'writer' },
       sessions: {
         ...uiWorkspace.sessions,
         refresh: vi.fn(async () => {})
@@ -259,7 +270,8 @@ describe('native Workspace navigation with workbench routing', () => {
     }
     const request = vi.fn(async () => Response.json({ revision: 1, state: controller.state }))
     const controller = new Workbenches(ctx, request)
-    controller.register({ id: 'writer', title: 'Writer' }, () => null)
+    controller.remoteCatalog = [{ id: 'writer', distribution: { name: 'writer' }, description: { zh: '' }, screenshots: [] }]
+    controller.register({ title: 'Writer' }, () => null)
     controller.state = {
       version: 1,
       added: ['writer'],

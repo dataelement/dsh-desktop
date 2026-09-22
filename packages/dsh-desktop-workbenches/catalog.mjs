@@ -9,7 +9,6 @@ export class CatalogError extends Error {
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const text = value => typeof value === 'string' && value.trim() !== ''
-const workbenchId = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(value)
 const httpsUrl = value => {
   if (!text(value)) return false
   try { return new URL(value).protocol === 'https:' } catch { return false }
@@ -30,10 +29,8 @@ export function validatePublishedCatalog(value) {
   }
 
   const ids = new Set()
-  const workbenchIds = new Set()
-  const legacyWorkbenchIds = new Set()
   for (const entry of value.workbenches) {
-    if (!object(entry) || !text(entry.id) || ids.has(entry.id) || !workbenchId(entry.workbenchId) || workbenchIds.has(entry.workbenchId) || !text(entry.owner) || !text(entry.repository)
+    if (!object(entry) || !text(entry.id) || ids.has(entry.id) || !text(entry.owner) || !text(entry.repository)
       || !httpsUrl(entry.url) || !text(entry.name) || !categories.has(entry.category)
       || !object(entry.description) || !text(entry.description.zh) || !text(entry.description.en)
       || !text(entry.version) || !text(entry.license) || !object(entry.distribution)
@@ -41,11 +38,6 @@ export function validatePublishedCatalog(value) {
       || !text(entry.distribution.version) || entry.distribution.version !== entry.version
       || !Array.isArray(entry.screenshots) || entry.screenshots.length < 1) {
       fail('Invalid workbench catalog entry.')
-    }
-    if (entry.legacyWorkbenchIds !== undefined && (!Array.isArray(entry.legacyWorkbenchIds) || !entry.legacyWorkbenchIds.length
-      || !entry.legacyWorkbenchIds.every(workbenchId) || new Set(entry.legacyWorkbenchIds).size !== entry.legacyWorkbenchIds.length
-      || entry.legacyWorkbenchIds.includes(entry.workbenchId) || entry.legacyWorkbenchIds.some(id => legacyWorkbenchIds.has(id) || workbenchIds.has(id)))) {
-      fail('Invalid workbench catalog legacy identities.')
     }
     const repositoryId = `${entry.owner}/${entry.repository}`.toLowerCase()
     if (entry.id !== repositoryId || entry.url.toLowerCase() !== `https://github.com/${repositoryId}`) fail('Invalid workbench catalog identity.')
@@ -55,8 +47,6 @@ export function validatePublishedCatalog(value) {
       fail('Invalid workbench catalog screenshot.')
     }
     ids.add(entry.id)
-    workbenchIds.add(entry.workbenchId)
-    for (const id of entry.legacyWorkbenchIds || []) legacyWorkbenchIds.add(id)
   }
   return structuredClone(value)
 }

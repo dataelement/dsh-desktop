@@ -110,23 +110,6 @@ export function apply(ctx, config) {
     }
   })
   ctx.connection.fetch.register({
-    path: '/api/desktop-workbenches/state/migrate',
-    methods: ['POST'],
-    requestBody: 'buffered',
-    async fetch(request) {
-      try {
-        const payload = await readPayload(request)
-        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !payload.migrations || typeof payload.migrations !== 'object' || Array.isArray(payload.migrations)) throw new StateError('A workbench ID migration is required.')
-        const allowed = new Map()
-        for (const entry of (await readCatalog()).catalog.workbenches) {
-          for (const legacy of entry.legacyWorkbenchIds || []) allowed.set(legacy, entry.workbenchId)
-        }
-        if (!Object.entries(payload.migrations).length || !Object.entries(payload.migrations).every(([from, to]) => allowed.get(from) === to)) throw new StateError('This workbench ID migration is not authorized by the market.', 403)
-        return Response.json(await store.migrate({ revision: payload.revision, state: payload.state }, payload.migrations), { headers: { 'cache-control': 'no-store' } })
-      } catch (error) { return stateFailure(error) }
-    }
-  })
-  ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/submission-status',
     methods: ['GET'],
     requestBody: 'buffered',
@@ -186,18 +169,7 @@ export function apply(ctx, config) {
             } catch (error) { throw new MarketInstallError(error instanceof Error ? error.message : String(error), 409) }
             await awaitHandle(handle)
           } finally { await target.cleanup() }
-          // The catalog owns the stable runtime ID. This makes attribution
-          // independent of package-local manifests and available immediately.
-          const workbenchId = entry.workbenchId
-          try {
-            const clash = Object.entries(await marketInstalls.read()).find(([key, value]) => key !== id && value.workbenchId === workbenchId)
-            if (clash) throw new MarketInstallError(`This package registers workbench ID "${workbenchId}", which ${clash[0]} already uses.`, 409)
-          } catch (error) {
-            // Never leave a package enabled that Desktop cannot attribute.
-            await awaitHandle(ctx.desktopPnpm.runPlugin(['remove', target.expectedPluginName], config.root)).catch(() => {})
-            throw error
-          }
-          const install = { catalogId: entry.id, workbenchId, pluginName: target.expectedPluginName, version: entry.version, source: entry.distribution.type, installedAt: new Date().toISOString() }
+          const install = { catalogId: entry.id, pluginName: target.expectedPluginName, version: entry.version, source: entry.distribution.type, installedAt: new Date().toISOString() }
           await marketInstalls.record(id, install)
           return Response.json({ install, restartRequired: true }, { headers: { 'cache-control': 'no-store' } })
         } catch (error) { return installFailure(error, 'Could not install the workbench.') }

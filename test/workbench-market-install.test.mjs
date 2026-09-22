@@ -100,7 +100,7 @@ describe('workbench market install routes', () => {
   const index = {
     schemaVersion: 2, kind: 'catalog', categories: [{ id: 'other', name: { zh: '其他' } }],
     workbenches: [{
-      id: 'o/project-helper', workbenchId: 'helper-runtime', owner: 'o', repository: 'project-helper', url: 'https://github.com/o/project-helper', name: '项目助手', category: 'other',
+      id: 'o/project-helper', owner: 'o', repository: 'project-helper', url: 'https://github.com/o/project-helper', name: '项目助手', category: 'other',
       description: { zh: '整理资料。', en: 'Notes.' }, version: '1.2.0', sourceCommit: commit, license: 'MIT',
       distribution: { type: 'npm', name: 'project-helper', version: '1.2.0', url: 'https://registry.npmjs.org/project-helper/-/project-helper-1.2.0.tgz', integrity: 'sha512-abc', sha256: sha, bytes: 10 },
       screenshots: [{ url: 'https://raw.githubusercontent.com/o/project-helper/main/a.png', alt: 'a', width: 1, height: 1, bytes: 1, sha256: sha }], probe: { status: 'ok' }
@@ -141,7 +141,7 @@ describe('workbench market install routes', () => {
     const { call, root } = await host({ installWorkbenchGeneration, runPlugin: vi.fn() })
     const result = await call('/api/desktop-workbenches/market-install', { id: KEY })
     expect(result.status).toBe(200)
-    expect(result.body).toMatchObject({ restartRequired: true, install: { catalogId: 'o/project-helper', workbenchId: 'helper-runtime', pluginName: 'project-helper', version: '1.2.0', source: 'npm' } })
+    expect(result.body).toMatchObject({ restartRequired: true, install: { catalogId: 'o/project-helper', pluginName: 'project-helper', version: '1.2.0', source: 'npm' } })
     expect(installWorkbenchGeneration).toHaveBeenCalledWith({ pluginSpec: 'project-helper@1.2.0', expectedPluginName: 'project-helper', expectedVersion: '1.2.0', npmIntegrity: 'sha512-abc' }, root)
     expect(Object.keys((await call('/api/desktop-workbenches/market-installs')).body.installs)).toEqual([KEY])
   })
@@ -171,12 +171,12 @@ describe('workbench market install routes', () => {
     expect((await call('/api/desktop-workbenches/market-installs')).body.installs).toEqual({})
   })
 
-  it('records the catalog workbench ID without reading package-local metadata', async () => {
+  it('records the catalog repository identity without package-local workbench metadata', async () => {
     const runPlugin = vi.fn(() => handle())
     const { call } = await host({ installWorkbenchGeneration: () => handle(), runPlugin })
     const result = await call('/api/desktop-workbenches/market-install', { id: KEY })
     expect(result.status).toBe(200)
-    expect(result.body.install).toMatchObject({ catalogId: 'o/project-helper', workbenchId: 'helper-runtime', pluginName: 'project-helper' })
+    expect(result.body.install).toMatchObject({ catalogId: 'o/project-helper', pluginName: 'project-helper' })
     expect(runPlugin).not.toHaveBeenCalled()
   })
 })
