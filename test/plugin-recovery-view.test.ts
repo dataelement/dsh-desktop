@@ -57,6 +57,31 @@ describe('plugin recovery view model', () => {
     expect(model.marketPrimary).toBe(false)
     expect(model.primaryLabel).toBe('进入安全模式')
   })
+  it('explains Safe Mode instead of plugin removal when nothing can be repaired', () => {
+    const zh = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'zh'
+    })
+    expect(zh.safeModeOnly).toBe(true)
+    expect(zh.safetyNote).toBe('安全模式不会删除或修改任何内容，随时可以退出。')
+    const en = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'en'
+    })
+    expect(en.safeModeOnly).toBe(true)
+    expect(en.safetyNote).toBe('Safe Mode does not delete or change anything, and you can exit at any time.')
+  })
+  it('keeps the removal note whenever a plugin or the market can be repaired', () => {
+    const plugin = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['a'], removedPlugins: [], locale: 'zh'
+    })
+    expect(plugin.safeModeOnly).toBe(false)
+    expect(plugin.safetyNote).toBe('工作区、会话、模型配置和其他插件不会被删除。')
+    const market = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'en',
+      market: { installedVersion: '1.48.0' }
+    })
+    expect(market.safeModeOnly).toBe(false)
+    expect(market.safetyNote).toBe('Your workspaces, sessions, model settings, and other plugins will not be removed.')
+  })
   it('offers a retry instead of a zero-action automatic recovery when all checks failed', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: ['a', 'b'], removedPlugins: [], locale: 'zh',

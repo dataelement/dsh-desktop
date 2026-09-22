@@ -182,10 +182,25 @@
 
       .decision-row {
         display: flex;
-        align-items: flex-end;
-        flex-direction: column;
+        align-items: flex-start;
+        justify-content: space-between;
         gap: 12px;
         margin-top: 22px;
+      }
+      .decision-aside { display: flex; flex: 0 0 auto; }
+      .decision-main {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 12px;
+        min-width: 0;
+      }
+      .decision-row.safe-mode-only { justify-content: center; }
+      .decision-row.safe-mode-only .decision-aside { display: none; }
+      .decision-row.safe-mode-only .decision-main {
+        flex-direction: row-reverse;
+        align-items: center;
+        gap: 16px;
       }
       .actions {
         display: flex;
@@ -358,7 +373,9 @@
         .shell { width: 100%; min-height: calc(100vh - 46px); max-height: none; border: 0; border-radius: 0; box-shadow: none; }
         .header { padding-inline: 20px; }
         .content { padding: 24px 20px 16px; }
-        .decision-row { align-items: stretch; }
+        .decision-row { flex-direction: column; align-items: stretch; }
+        .decision-row.safe-mode-only .decision-main { flex-direction: column-reverse; align-items: stretch; }
+        .decision-aside, .decision-main { align-items: stretch; }
         .actions { align-items: stretch; flex-direction: column-reverse; }
         .button { width: 100%; }
         .footer { padding-inline: 20px; }
@@ -426,17 +443,21 @@
           <ul class="plugins" id="plugins"></ul>
         </section>
 
-        <div class="decision-row">
-          <div class="actions">
-            <button class="button" id="repair-agent" type="button" hidden></button>
+        <div class="decision-row" id="decision-row">
+          <div class="decision-aside">
             <button class="button" id="safe-mode" type="button"></button>
-            <button class="button" id="secondary" type="button" hidden></button>
-            <button class="button primary" id="primary" type="button"></button>
           </div>
-          <p class="safety">
-            <span class="safety-icon" aria-hidden="true">✓</span>
-            <span id="safety-note"></span>
-          </p>
+          <div class="decision-main">
+            <div class="actions">
+              <button class="button" id="repair-agent" type="button" hidden></button>
+              <button class="button" id="secondary" type="button" hidden></button>
+              <button class="button primary" id="primary" type="button"></button>
+            </div>
+            <p class="safety">
+              <span class="safety-icon" aria-hidden="true">✓</span>
+              <span id="safety-note"></span>
+            </p>
+          </div>
         </div>
 
         <details class="advanced">
@@ -551,10 +572,14 @@
       document.getElementById('community-discord').title = model.locale === 'zh'
         ? '在浏览器中打开 Discord 社区'
         : 'Open our Discord community in your browser'
+      // No plugin to repair: the primary action itself enters Safe Mode, so the
+      // row collapses to that button and its note, centered together.
+      const safeModeOnly = model.safeModeOnly ?? (!model.canUninstall && !model.upgradeCandidate && !model.marketPrimary)
+      document.getElementById('decision-row').classList.toggle('safe-mode-only', safeModeOnly)
       const safeModeBtn = document.getElementById('safe-mode')
       if (safeModeBtn) {
         // The primary action already enters Safe Mode when no repair is available.
-        safeModeBtn.hidden = !model.canUninstall && !model.upgradeCandidate && !model.marketPrimary
+        safeModeBtn.hidden = safeModeOnly
         safeModeBtn.textContent = model.safeModeLabel || (model.locale === 'zh' ? '进入安全模式' : 'Enter Safe Mode')
         safeModeBtn.addEventListener('click', () => {
           safeModeBtn.disabled = true
