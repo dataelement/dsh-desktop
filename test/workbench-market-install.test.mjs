@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -98,9 +98,9 @@ describe('workbench market install targets', () => {
 describe('workbench market install routes', () => {
   const sha = 'a'.repeat(64)
   const index = {
-    schemaVersion: 2, kind: 'catalog', categories: [{ id: 'other', name: { zh: '其他' } }],
+    schemaVersion: 3, kind: 'catalog', categories: [{ id: 'other', name: { zh: '其他' } }],
     workbenches: [{
-      id: 'o/project-helper', owner: 'o', repository: 'project-helper', url: 'https://github.com/o/project-helper', name: '项目助手', category: 'other',
+      id: 'o/project-helper', workbenchId: 'helper-runtime', owner: 'o', repository: 'project-helper', url: 'https://github.com/o/project-helper', name: '项目助手', category: 'other',
       description: { zh: '整理资料。', en: 'Notes.' }, version: '1.2.0', sourceCommit: commit, license: 'MIT',
       distribution: { type: 'npm', name: 'project-helper', version: '1.2.0', url: 'https://registry.npmjs.org/project-helper/-/project-helper-1.2.0.tgz', integrity: 'sha512-abc', sha256: sha, bytes: 10 },
       screenshots: [{ url: 'https://raw.githubusercontent.com/o/project-helper/main/a.png', alt: 'a', width: 1, height: 1, bytes: 1, sha256: sha }], probe: { status: 'ok' }
@@ -113,12 +113,6 @@ describe('workbench market install routes', () => {
     return { stdout, stderr, done, cancel() {} }
   }
   const KEY = 'o/project-helper'
-  // What a successful install leaves in the web profile: the package's workbench.json.
-  async function installedPackage(home, id = 'project-helper') {
-    const dir = join(home, 'profiles', 'web', 'node_modules', 'project-helper')
-    await mkdir(dir, { recursive: true })
-    await writeFile(join(dir, 'workbench.json'), JSON.stringify({ schemaVersion: 1, id }))
-  }
   async function host(desktopPnpm) {
     const home = await tempRoot()
     const root = join(home, 'desktop-workbenches')
@@ -144,8 +138,7 @@ describe('workbench market install routes', () => {
 
   it('installs the index entry, records it, and asks for a restart', async () => {
     const installWorkbenchGeneration = vi.fn(() => handle())
-    const { call, root, home } = await host({ installWorkbenchGeneration, runPlugin: vi.fn() })
-    await installedPackage(home, 'helper-runtime')
+    const { call, root } = await host({ installWorkbenchGeneration, runPlugin: vi.fn() })
     const result = await call('/api/desktop-workbenches/market-install', { id: KEY })
     expect(result.status).toBe(200)
     expect(result.body).toMatchObject({ restartRequired: true, install: { catalogId: 'o/project-helper', workbenchId: 'helper-runtime', pluginName: 'project-helper', version: '1.2.0', source: 'npm' } })
@@ -169,8 +162,7 @@ describe('workbench market install routes', () => {
 
   it('uninstalls only workbenches this market installed, then forgets them', async () => {
     const runPlugin = vi.fn(() => handle())
-    const { call, root, home } = await host({ installWorkbenchGeneration: () => handle(), runPlugin })
-    await installedPackage(home)
+    const { call, root } = await host({ installWorkbenchGeneration: () => handle(), runPlugin })
     expect((await call('/api/desktop-workbenches/market-uninstall', { id: KEY })).status).toBe(404)
     await call('/api/desktop-workbenches/market-install', { id: KEY })
     const result = await call('/api/desktop-workbenches/market-uninstall', { id: KEY })
@@ -179,23 +171,12 @@ describe('workbench market install routes', () => {
     expect((await call('/api/desktop-workbenches/market-installs')).body.installs).toEqual({})
   })
 
-  it('records an install without workbench.json, whose ID is known only after the plugin registers', async () => {
+  it('records the catalog workbench ID without reading package-local metadata', async () => {
     const runPlugin = vi.fn(() => handle())
     const { call } = await host({ installWorkbenchGeneration: () => handle(), runPlugin })
     const result = await call('/api/desktop-workbenches/market-install', { id: KEY })
     expect(result.status).toBe(200)
-    expect(result.body.install).toMatchObject({ catalogId: 'o/project-helper', workbenchId: null, pluginName: 'project-helper' })
+    expect(result.body.install).toMatchObject({ catalogId: 'o/project-helper', workbenchId: 'helper-runtime', pluginName: 'project-helper' })
     expect(runPlugin).not.toHaveBeenCalled()
-  })
-
-  it('removes a package whose workbench.json declares an invalid ID instead of recording it', async () => {
-    const runPlugin = vi.fn(() => handle())
-    const { call, root, home } = await host({ installWorkbenchGeneration: () => handle(), runPlugin })
-    await installedPackage(home, 'Not An ID')
-    const result = await call('/api/desktop-workbenches/market-install', { id: KEY })
-    expect(result.status).toBe(502)
-    expect(result.body.error).toMatch(/invalid workbench ID/)
-    expect(runPlugin).toHaveBeenCalledWith(['remove', 'project-helper'], root)
-    expect((await call('/api/desktop-workbenches/market-installs')).body.installs).toEqual({})
   })
 })

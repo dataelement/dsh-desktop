@@ -3,11 +3,11 @@ import { DEFAULT_CATALOG_URL, createCatalogReader, validatePublishedCatalog } fr
 
 function catalog() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     kind: 'catalog',
     categories: [{ id: 'productivity', name: { zh: '效率' } }],
     workbenches: [{
-      id: 'owner/repository', owner: 'owner', repository: 'repository', url: 'https://github.com/owner/repository',
+      id: 'owner/repository', workbenchId: 'project-helper', owner: 'owner', repository: 'repository', url: 'https://github.com/owner/repository',
       name: '项目助手', category: 'productivity', description: { zh: '整理项目资料。', en: 'Organize project materials.' },
       version: '1.0.0', sourceCommit: 'a'.repeat(40), license: 'MIT',
       distribution: { type: 'github-source', url: 'https://github.com/owner/repository', commit: 'a'.repeat(40), version: '1.0.0' },
@@ -22,9 +22,9 @@ describe('Awesome workbench published catalog', () => {
     expect(DEFAULT_CATALOG_URL).toBe('https://market.dshdesktop.com/index.json')
   })
 
-  it('accepts the published v2 repository identity', () => {
+  it('accepts the published v3 repository and runtime identities', () => {
     const value = validatePublishedCatalog(catalog())
-    expect(value.workbenches[0]).toMatchObject({ id: 'owner/repository', url: 'https://github.com/owner/repository' })
+    expect(value.workbenches[0]).toMatchObject({ id: 'owner/repository', workbenchId: 'project-helper', url: 'https://github.com/owner/repository' })
   })
 
   it('rejects unsupported schemas and repository identity mismatches', () => {
@@ -32,6 +32,12 @@ describe('Awesome workbench published catalog', () => {
     const mismatch = catalog()
     mismatch.workbenches[0].id = 'other/repository'
     expect(() => validatePublishedCatalog(mismatch)).toThrow('identity')
+    const missingRuntimeId = catalog()
+    delete missingRuntimeId.workbenches[0].workbenchId
+    expect(() => validatePublishedCatalog(missingRuntimeId)).toThrow('Invalid workbench catalog entry')
+    const duplicateRuntimeId = catalog()
+    duplicateRuntimeId.workbenches.push({ ...duplicateRuntimeId.workbenches[0], id: 'owner/another-repository', repository: 'another-repository', url: 'https://github.com/owner/another-repository' })
+    expect(() => validatePublishedCatalog(duplicateRuntimeId)).toThrow('Invalid workbench catalog entry')
   })
 
   it('caches successful reads and serves the last good catalog after a refresh failure', async () => {

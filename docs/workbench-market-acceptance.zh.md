@@ -42,7 +42,7 @@ Markdown 原文（供 Agent 读取）：https://dshdesktop.com/workbench/docs/ma
 工作台市场的额外要求：
 
 - v1 只支持**仓库根目录放一个工作台**，暂不支持 monorepo 子目录。
-- `package.json` 是安装契约：完整 SemVer 版本、指回本仓库的 `repository`、`dsh.bundle.patch`、包含 `dsh-desktop-workbenches` 的 `dsh.client.inject`，以及真实存在的 `exports["./client"]`。`workbench.json` 可选。工作台注册的 id 上架后**必须**保持稳定。
+- `package.json` 是安装契约：完整 SemVer 版本、指回本仓库的 `repository`、`dsh.bundle.patch`、包含 `dsh-desktop-workbenches` 的 `dsh.client.inject`，以及真实存在的 `exports["./client"]`。市场条目的 `workbenchId` 必须与工作台注册 id 一致，并在上架后保持稳定。
 
 ## 4. 包与安装来源
 

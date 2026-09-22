@@ -81,11 +81,9 @@ window.__ModuleLoader__.load({
           const provider = providers.find(candidate =>
             (typeof candidate.repository === 'string'
               && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
-            // Older catalog packages may not include workbench.json or expose
-            // repository in their runtime descriptor. Only associate that
-            // narrow legacy shape when its plugin name is exactly the runtime
-            // workbench ID recorded by Desktop's installation boundary.
-            || (install && !install.workbenchId && install.pluginName === candidate.id)
+            // A market installation also has a stable runtime identity. This
+            // covers packages that do not expose their repository descriptor.
+            || (install && install.workbenchId === candidate.id)
           )
           if (provider) matched.add(provider.id)
           return {
@@ -177,6 +175,7 @@ window.__ModuleLoader__.load({
         const previous = this.installs[catalogId]
         const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId)
         const workbenchId = data.install?.workbenchId
+        if (typeof workbenchId !== 'string') throw new Error('市场条目缺少有效的工作台 ID。')
         if (!previous && workbenchId && this.catalog.has(workbenchId)) {
           // A workbench with this ID is already loaded from elsewhere; never shadow it.
           await this.marketPackage('/api/desktop-workbenches/market-uninstall', catalogId).catch(() => {})
@@ -184,9 +183,6 @@ window.__ModuleLoader__.load({
         }
         this.installs = { ...this.installs, [catalogId]: data.install }
         this.publish()
-        // Without workbench.json the runtime ID is only known after the provider
-        // registers, so there is nothing to pin until then.
-        if (!workbenchId) return
         return this.commit((state) => {
           if (!state.added.includes(workbenchId)) state.added.push(workbenchId)
           if (!state.pinned.includes(workbenchId)) state.pinned.push(workbenchId)
@@ -946,7 +942,7 @@ window.__ModuleLoader__.load({
     function developmentWorkbenchAgentPrompt() {
       return `请帮我制作一个 DSH Desktop 工作台，只在本机开发和使用，不需要上传或投稿。你可以使用自己的开发流程，DSH 不控制开发过程。
 
-${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口；workbench.json 可选），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
 
 完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。然后按规范第 8 节“本地自测清单”逐项检查，确认它出现在「已安装的工作台」和左侧入口，并实际打开使用。
 

@@ -1,6 +1,6 @@
 import Schema from '@deepseek-ai/schemastery'
 import { CatalogError, createCatalogReader } from './catalog.mjs'
-import { awaitHandle, createMarketInstallStore, MarketInstallError, readInstalledWorkbenchId, resolveInstallTarget } from './market-install.mjs'
+import { awaitHandle, createMarketInstallStore, MarketInstallError, resolveInstallTarget } from './market-install.mjs'
 import { readSubmissionStatus, SubmissionStatusError } from './submission-status.mjs'
 import { createStateStore, MAX_STATE_BYTES, StateError } from './state.mjs'
 import { readFile } from 'node:fs/promises'
@@ -38,8 +38,6 @@ export function apply(ctx, config) {
   const store = createStateStore(config.root)
   const readCatalog = createCatalogReader()
   const marketInstalls = createMarketInstallStore(config.root)
-  // config.root is <DSH home>/desktop-workbenches; packages land in the web profile.
-  const webProfile = join(dirname(config.root), 'profiles', 'web')
   // Providers must use the same persisted ownership as Desktop, never a second
   // settings namespace that could accidentally authorize an ordinary session.
   ctx.effect(() => ctx.reflect.provide('desktopWorkbenchOwnership', {
@@ -172,12 +170,11 @@ export function apply(ctx, config) {
             } catch (error) { throw new MarketInstallError(error instanceof Error ? error.message : String(error), 409) }
             await awaitHandle(handle)
           } finally { await target.cleanup() }
-          // The runtime ID is known once the provider registers; an optional
-          // workbench.json lets the sidebar entry appear right away.
-          let workbenchId
+          // The catalog owns the stable runtime ID. This makes attribution
+          // independent of package-local manifests and available immediately.
+          const workbenchId = entry.workbenchId
           try {
-            workbenchId = await readInstalledWorkbenchId(webProfile, target.expectedPluginName)
-            const clash = workbenchId && Object.entries(await marketInstalls.read()).find(([key, value]) => key !== id && value.workbenchId === workbenchId)
+            const clash = Object.entries(await marketInstalls.read()).find(([key, value]) => key !== id && value.workbenchId === workbenchId)
             if (clash) throw new MarketInstallError(`This package registers workbench ID "${workbenchId}", which ${clash[0]} already uses.`, 409)
           } catch (error) {
             // Never leave a package enabled that Desktop cannot attribute.

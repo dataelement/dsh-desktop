@@ -134,25 +134,6 @@ export async function resolveInstallTarget(entry, { fetchImpl = fetch, temporary
   fail(`Installing from ${distribution.type} is not supported by this Desktop version.`, 502)
 }
 
-/**
- * The runtime workbench ID an installed package declares in an optional
- * workbench.json, or null when it has none. Index schema 2 does not list the
- * ID and workbench.json is optional: without it, the ID is only known once the
- * plugin registers after a restart.
- */
-export async function readInstalledWorkbenchId(profileDir, pluginName) {
-  let text
-  try { text = await readFile(join(profileDir, 'node_modules', pluginName, 'workbench.json'), 'utf8') }
-  catch (error) {
-    if (error?.code === 'ENOENT') return null
-    fail('The installed package could not be read.', 502)
-  }
-  let manifest
-  try { manifest = JSON.parse(text) } catch { fail('workbench.json in the installed package is not valid JSON.', 502) }
-  if (typeof manifest?.id !== 'string' || !/^[a-z][a-z0-9-]{0,79}$/.test(manifest.id)) fail('The installed package declares an invalid workbench ID.', 502)
-  return manifest.id
-}
-
 /** Which workbenches this market installed, keyed by workbench ID. Separate from state.json on purpose. */
 export function createMarketInstallStore(root) {
   const path = join(root, INSTALLS_FILE)

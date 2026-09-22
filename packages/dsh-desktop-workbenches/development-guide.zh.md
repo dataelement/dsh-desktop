@@ -33,7 +33,7 @@ AI 从项目读取名称、作者、版本、说明和测试命令，只询问�
 
 - **一个 npm 包**：有 `name`、`version`，可以从本地目录或 `.tgz` 文件安装，上架后也可以从 npm 或 GitHub 安装。
 - **一个 DSH 插件（bundle）**：`package.json` 声明 `dsh.bundle.patch`，由 `cordis.patch.yml` 把服务端入口插入 Harness 的插件树。
-- **一个 Desktop 工作台**：客户端通过 `desktopWorkbenches.register()` 注册业务面板。`package.json` 就是工作台的安装契约；`workbench.json` 可选。
+- **一个 Desktop 工作台**：客户端通过 `desktopWorkbenches.register()` 注册业务面板。`package.json` 是安装契约，市场条目的 `workbenchId` 是运行时身份契约。
 
 同一个工作台有三个标识，职责不同，不能混用：
 
@@ -41,7 +41,7 @@ AI 从项目读取名称、作者、版本、说明和测试命令，只询问�
 |---|---|---|
 | npm 包名 | `package.json` 的 `name` | 安装、依赖解析、`cordis.patch.yml` 的 `name:` |
 | 插件条目 id | `cordis.patch.yml` 中 `insert` 行的 `id` | Harness 插件树中定位这一行 |
-| 工作台 id | `register({ id })`（有 `workbench.json` 时与其 `id` 一致） | 侧边栏入口、会话归属；确定后**必须**保持稳定（会话归属依赖它） |
+| 工作台 id | `register({ id })`（与市场条目的 `workbenchId` 一致） | 侧边栏入口、会话归属；确定后**必须**保持稳定（会话归属依赖它） |
 
 工作台 id 的格式为 `^[a-z][a-z0-9-]{0,79}$`。
 
@@ -54,7 +54,6 @@ AI 从项目读取名称、作者、版本、说明和测试命令，只询问�
 ```text
 package.json          # npm 与 DSH 插件声明
 cordis.patch.yml      # 把服务端入口插入插件树
-workbench.json        # 可选：工作台描述文件
 dsh/index.js          # 服务端入口（exports["."]）
 lib/client.js         # 已构建的客户端入口（exports["./client"]）
 README.md  LICENSE
@@ -64,7 +63,7 @@ README.md  LICENSE
 
 | 字段 | 级别 | 要求 |
 |---|---|---|
-| `name`、`version` | 必须 | 普通 npm 字段，`version` 为完整 SemVer（如 `1.2.0`）；有 `workbench.json` 时两者版本必须一致 |
+| `name`、`version` | 必须 | 普通 npm 字段，`version` 为完整 SemVer（如 `1.2.0`） |
 | `"type": "module"` | 建议 | 所有官方示例都使用 ES 模块 |
 | `main` 与 `exports["."]` | 必须 | 指向服务端入口，`cordis.patch.yml` 导入的就是它 |
 | `dsh.bundle.patch` | 必须 | 例如 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`，路径相对包根目录。没有它，包只会被当作普通依赖安装，不会激活任何插件层 |
@@ -73,7 +72,7 @@ README.md  LICENSE
 | `exports["./client"]` | 必须 | 声明了 `dsh.client` 就必须导出已构建的客户端文件，否则启动时报错 |
 | `dsh.client.external` | 可选 | 客户端需要 `require` 共享基线以外的模块（包括子路径）时列出；不能列自己 |
 | `exports["./package.json"]`、`exports["./cordis.patch.yml"]` | 建议 | 与官方包保持一致 |
-| `files` | 建议 | 必须把 `cordis.patch.yml`、服务端入口和构建产物（以及 `workbench.json`，如有）都包含进去 |
+| `files` | 建议 | 必须把 `cordis.patch.yml`、服务端入口和构建产物包含进去 |
 | `peerDependencies` | 建议 | 官方 `@deepseek-ai/*` 包（如 `@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-connection`）写在 `peerDependencies`，不要写在 `dependencies`，避免装进第二份宿主代码。版本范围要显式包含预发布分支，例如 `">=0.1.5-rc.2 <0.2.0-0"`，否则预发布版的 Harness 会被排除，安装时报 `ERESOLVE` |
 | `@deepseek-ai/schemastery` | 建议 | 服务端 `Config` 使用它定义；它是运行时依赖 |
 | `license`、`author`、`description` | 建议 | 真实填写 |
@@ -143,21 +142,9 @@ window.__ModuleLoader__.load({
 - 可选注册字段：`description`、`panelTitle`、`icon`、`audience`、`requirements`、`layout`（`businessSide` 为 `left` 或 `right`，`businessWidth` 在 0.25–0.7 之间）、`customFrame`（布尔值，见第 4 节）、`initialization`。
 - 注册返回的函数用于注销，要交给 `ctx.effect` 管理。
 
-### 3.6 workbench.json（可选）
+### 3.6 市场 `workbenchId`
 
-安装和上架都以 `package.json` 为准，`workbench.json` 不是必须的。提供它的好处是：Desktop 从市场安装后立刻就能知道工作台 id，直接加入侧边栏；没有它时，要等重启、工作台注册后才能识别。
-
-如果提供，放在包根目录，`schemaVersion` 为 1，并满足：
-
-| 字段 | 要求 |
-|---|---|
-| `schemaVersion` | `1` |
-| `id` | 工作台 id，与 `register({ id })` 一致 |
-| `title`、`description` | 非空 |
-| `version` | 与 `package.json` 的 `version` 一致 |
-| `entry` | 包内已存在的客户端文件，如 `./lib/client.js`，不能越出包目录 |
-| `capabilities`、`initialization`、`layout`、`permissions`、`author` | 可选；`permissions` 建议用平实的话说明访问范围和数据位置 |
-| `screenshots` | 可选，1–5 张包内图片。本地开发不需要截图 |
+`workbench.json` 不再是工作台协议的一部分。市场上架条目必须声明 `workbenchId`，它与 `register({ id })` 完全一致。Desktop 在安装前记录这个 ID，用于冲突检查、左侧自动加入及重启后与 runtime provider 合并；不得以 npm 包名、展示名称或仓库标识推导它。
 
 包格式的自动检查由工作台市场仓库负责（上架时才需要）。本地开发时，按本节和第 8 节的清单自查即可。
 
@@ -216,7 +203,7 @@ window.__ModuleLoader__.load({
 
 - [ ] `package.json` 声明 `dsh.bundle.patch`，`dsh.client.platform` 为 `web`，`dsh.client.inject` 包含 `dsh-desktop-workbenches`，`exports` 含 `"."` 和 `"./client"`。
 - [ ] `cordis.patch.yml` 的 `name` 是包名；服务端 `Config`（如有）是 Schemastery schema。
-- [ ] `package.json` 的 `version` 是完整 SemVer；如有 `workbench.json`，其 `version` 与 `package.json` 一致、`id` 与注册 id 一致。
+- [ ] `package.json` 的 `version` 是完整 SemVer；市场条目的 `workbenchId` 与注册 id 一致。
 - [ ] `pnpm pack` 打出的包能在本机安装，包里含客户端入口和 `cordis.patch.yml`。
 
 **安装与运行**

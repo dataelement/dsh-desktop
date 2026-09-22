@@ -75,7 +75,7 @@ async function fixture(initial = emptyState()) {
   const request = vi.fn(async (url, options = {}) => {
     if (url === '/api/desktop-workbenches/catalog') return Response.json({
       stale: false,
-      catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
+      catalog: { schemaVersion: 3, kind: 'catalog', categories: [], workbenches: [] }
     })
     if (options.method !== 'POST') return Response.json(stored)
     const payload = JSON.parse(options.body)
@@ -118,8 +118,8 @@ describe('desktop workbench client navigation', () => {
     const { service, request } = await fixture()
     request.mockImplementation(async (url, options = {}) => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({ stale: false, catalog: {
-        schemaVersion: 2, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容' } }],
-        workbenches: [{ id: 'owner/remote', owner: 'owner', repository: 'remote', url: 'https://github.com/owner/remote',
+        schemaVersion: 3, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容' } }],
+        workbenches: [{ id: 'owner/remote', workbenchId: 'remote-workbench', owner: 'owner', repository: 'remote', url: 'https://github.com/owner/remote',
           name: '远程工作台', category: 'content', description: { zh: '中文简介', en: 'English description' },
           version: '1.0.0', license: 'MIT', distribution: { type: 'github-source', version: '1.0.0' },
           screenshots: [{ url: 'https://raw.githubusercontent.com/owner/remote/main/shot.png' }] }]
@@ -148,14 +148,14 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
-  it('reconciles a legacy market install when its runtime ID is the installed plugin name', async () => {
+  it('reconciles a market install through its declared runtime ID when no repository descriptor exists', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [{
-      id: 'owner/legacy', owner: 'owner', url: 'https://github.com/owner/legacy', name: '旧版工作台',
-      categoryName: '其他', description: { zh: '旧包未提供 workbench.json' }, screenshots: []
+      id: 'owner/legacy', workbenchId: 'legacy-workbench', owner: 'owner', url: 'https://github.com/owner/legacy', name: '旧版工作台',
+      categoryName: '其他', description: { zh: '市场声明运行时 ID' }, screenshots: []
     }]
     service.installs = {
-      'owner/legacy': { catalogId: 'owner/legacy', pluginName: 'legacy-workbench', workbenchId: null, version: '1.0.0' }
+      'owner/legacy': { catalogId: 'owner/legacy', pluginName: 'legacy-workbench', workbenchId: 'legacy-workbench', version: '1.0.0' }
     }
 
     service.register({ id: 'legacy-workbench', title: '旧版工作台' }, () => null)
@@ -294,7 +294,7 @@ describe('desktop workbench client navigation', () => {
 
   it('provides one prompt for local development and one for submission', () => {
     const development = developmentWorkbenchAgentPrompt()
-    expect(development).toContain('workbench.json')
+    expect(development).not.toContain('workbench.json')
     expect(development).toContain('scripts/check-workbench-package.mjs')
     expect(development).toContain('已安装的工作台')
     expect(development).toContain('左侧入口')
@@ -606,7 +606,7 @@ describe('desktop workbench client navigation', () => {
     let BrowserWorkbenches
     const reply = vi.fn(async (url, options = {}) => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({
-        stale: false, catalog: { schemaVersion: 2, kind: 'catalog', categories: [], workbenches: [] }
+        stale: false, catalog: { schemaVersion: 3, kind: 'catalog', categories: [], workbenches: [] }
       })
       if (url === '/api/desktop-workbenches/submissions') return Response.json({ submissions: [] })
       const state = options.method === 'POST' ? JSON.parse(options.body).state : emptyState()
@@ -1170,7 +1170,7 @@ describe('workbench market screenshot and metadata display', () => {
   })
 
 
-  const listed = (patch = {}) => ({ id: 'o/helper', owner: 'o', repository: 'helper', url: 'https://github.com/o/helper', name: 'Helper', categoryName: '效率',
+  const listed = (patch = {}) => ({ id: 'o/helper', workbenchId: 'helper', owner: 'o', repository: 'helper', url: 'https://github.com/o/helper', name: 'Helper', categoryName: '效率',
     description: { zh: '整理资料。' }, screenshots: [], version: '1.0.0', distribution: { type: 'npm', version: '1.0.0' }, ...patch })
   function withMarket(service, routes) {
     const original = service.request
@@ -1194,14 +1194,13 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: false })
   })
 
-  it('keeps an install without a runtime ID out of the sidebar until the provider registers', async () => {
+  it('merges the installed provider through the declared runtime ID even without a repository descriptor', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]
-    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', workbenchId: null, version: '1.0.0' }, restartRequired: true }) })
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ install: { catalogId: 'o/helper', workbenchId: 'helper', version: '1.0.0' }, restartRequired: true }) })
     await service.installFromMarket('o/helper')
-    expect(saved().state.added).toEqual([])
-    // After restart the provider declares its repository and the entry becomes installed.
-    service.register({ id: 'helper', title: 'Helper', repository: 'https://github.com/o/helper' }, () => null)
+    expect(saved().state.added).toEqual(['helper'])
+    service.register({ id: 'helper', title: 'Helper' }, () => null)
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ id: 'helper', installed: true, listedVersion: '1.0.0' })
     expect(service.marketInstallFor('helper')).toBe('o/helper')
   })
@@ -1224,7 +1223,7 @@ describe('workbench market screenshot and metadata display', () => {
     const { service, saved } = await fixture({ ...emptyState(), added: ['writer', 'helper'], pinned: ['writer', 'helper'] })
     service.remoteCatalog = [listed()]
     service.register({ id: 'helper', title: 'Helper', repository: 'https://github.com/o/helper/' }, () => null)
-    service.installs = { 'o/helper': { workbenchId: null, version: '1.0.0' } }
+    service.installs = { 'o/helper': { workbenchId: 'helper', version: '1.0.0' } }
     const calls = withMarket(service, { '/api/desktop-workbenches/market-uninstall': (options) => Response.json({ restartRequired: true, got: JSON.parse(options.body) }) })
     await service.removeWorkbench('writer')
     expect(calls).toEqual([])
