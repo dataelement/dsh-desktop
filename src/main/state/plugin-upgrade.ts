@@ -85,27 +85,6 @@ export async function upgradePluginToGeneration(
 
 const MARKET_PACKAGE = 'dshmarket'
 
-export function marketInstallPendingPath(dshHome: string): string {
-  return join(dshHome, 'profiles', 'web', '.desktop-market-install-pending.json')
-}
-
-export async function hasPendingMarketInstall(
-  dshHome: string,
-  note?: (line: string) => void
-): Promise<boolean> {
-  try {
-    await lstat(marketInstallPendingPath(dshHome))
-    return true
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return false
-    // An unreadable marker is not a reason to stop booting: the installed
-    // version check still forces a repair when the tree is actually broken.
-    note?.(`[plugin-upgrade] market install marker unreadable (${code ?? 'unknown'}); relying on the installed version check`)
-    return false
-  }
-}
-
 export interface MarketSharedTreeUpgradeOptions {
   dshHome: string
   dshEntryPath: string
@@ -179,15 +158,9 @@ export async function upgradeMarketInSharedTree(
       manifest.dependencies[MARKET_PACKAGE] = targetVersion
       modified = true
     }
-    // pnpm can replace packages before failing. Restoring package.json alone
-    // is not a tree rollback: preserve the first manifest and force a retry
-    // until installation and active-path verification both finish.
-    const pendingPath = marketInstallPendingPath(dshHome)
-    await writeFile(pendingPath, JSON.stringify({ targetVersion, previousManifest: before }), { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'EEXIST') throw error
-    })
+    if (modified) await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
+
     try {
-      if (modified) await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
       const entry = await lstat(marketPath).catch((error) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
         throw error
@@ -233,7 +206,6 @@ export async function upgradeMarketInSharedTree(
         await writeDesired(dshHome, desired.filter((id) => !stale.has(id)))
       }
 
-      await rm(pendingPath)
       note?.(`[plugin-upgrade] successfully upgraded ${MARKET_PACKAGE} to v${targetVersion}`)
       return { ok: true }
     } catch (error) {

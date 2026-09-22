@@ -27,7 +27,6 @@ export interface HarnessRuntimeOptions {
   ): HarnessChildProcess
   preferredPort?: number
   startupTimeoutMs?: number
-  extraEnvironment?: NodeJS.ProcessEnv | (() => NodeJS.ProcessEnv)
   /** Mirror log lines to the console (development builds only). */
   echoLogs?: boolean
   onChanged(snapshot: RuntimeSnapshot): void
@@ -287,13 +286,6 @@ export function resolveEnvironmentPath(
   return ''
 }
 
-function resolveExtraEnvironment(
-  extraEnvironment?: NodeJS.ProcessEnv | (() => NodeJS.ProcessEnv)
-): NodeJS.ProcessEnv {
-  if (!extraEnvironment) return {}
-  return typeof extraEnvironment === 'function' ? extraEnvironment() : extraEnvironment
-}
-
 export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
@@ -536,10 +528,7 @@ export class HarnessRuntime {
           launchDirectory,
           this.options.dshHome,
           process.platform,
-          {
-            ...shellEnvironment,
-            ...resolveExtraEnvironment(this.options.extraEnvironment)
-          },
+          shellEnvironment,
           profile
         )
       )

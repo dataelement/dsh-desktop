@@ -1,116 +1,7 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
-index 209a74d..5b5cb72 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
-@@ -110,6 +110,10 @@ window.__ModuleLoader__.load({
- 			generation = 0;
- 			disposed = false;
- 			resolved = false;
-+			selectionQueue = Promise.resolve();
-+			acceptedSelection;
-+			recoveryAttempt;
-+
- 			unsubscribeCatalog;
- 			unsubscribeSelection;
- 			/**
-@@ -156,12 +160,27 @@ window.__ModuleLoader__.load({
- 					s.status = "selecting";
- 					s.error = null;
- 				});
--				const result = await this.sessions.selectModel({
--					sessionId: this.sessionId,
--					provider: selection.provider,
--					model: selection.model,
--					...selection.reasoningEffort === void 0 ? {} : { reasoningEffort: selection.reasoningEffort }
-+				const operation = this.selectionQueue.then(() => {
-+					if (this.disposed || generation !== this.generation) return;
-+					return this.sessions.selectModel({
-+						sessionId: this.sessionId,
-+						provider: selection.provider,
-+						model: selection.model,
-+						...selection.reasoningEffort === void 0 ? {} : { reasoningEffort: selection.reasoningEffort }
-+					});
- 				});
-+				this.selectionQueue = operation.catch(() => {});
-+				let result;
-+				try {
-+					result = await operation;
-+				} catch (error) {
-+					if (this.disposed === false && generation === this.generation) this.store.update(state => {
-+						state.status = "error";
-+						state.error = error instanceof Error ? error.message : String(error);
-+					});
-+					throw error;
-+				}
-+				if (result === void 0) return;
- 				if (this.disposed || generation !== this.generation) {
- 					if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
- 					return;
-@@ -173,6 +192,7 @@ window.__ModuleLoader__.load({
- 					});
- 					throw new Error(`session.selectModel failed: ${result.error.code}: ${result.error.message}`);
- 				}
-+				this.acceptedSelection = { selection: result.value.selected, projection: this.projected.getSnapshot() };
- 				this.store.update((s) => {
- 					s.status = "ready";
- 					s.error = null;
-@@ -185,6 +205,8 @@ window.__ModuleLoader__.load({
- 			resetConnected() {
- 				if (this.disposed) return;
- 				++this.generation;
-+				this.acceptedSelection = void 0;
-+				this.recoveryAttempt = void 0;
- 				this.store.update((state) => {
- 					if (state.status === "selecting") state.status = "idle";
- 					state.error = null;
-@@ -222,18 +244,42 @@ window.__ModuleLoader__.load({
- 					});
- 					return;
- 				}
--				const current = projected.next ?? catalog.value.default;
-+				if (this.acceptedSelection?.projection !== this.projected.getSnapshot()) this.acceptedSelection = void 0;
-+				const current = this.acceptedSelection?.selection ?? projected.next ?? catalog.value.default;
-+				const unavailableEnterprise = current.provider === "bisheng-enterprise" && (
-+					catalog.value.routableProviders.includes(current.provider) === false ||
-+					(catalog.value.failures.some(failure => failure.id === current.provider) === false &&
-+					catalog.value.groups.some(group => group.id === current.provider && group.models.some(model => model.id === current.model)) === false)
-+				);
- 				this.resolved = true;
-+				const selecting = this.store.getSnapshot().status === "selecting";
- 				this.store.set({
--					current,
--					routable: catalog.value.routableProviders.includes(current.provider),
-+					current: unavailableEnterprise ? null : current,
-+					routable: unavailableEnterprise ? false : catalog.value.routableProviders.includes(current.provider),
- 					groups: catalog.value.groups,
- 					failures: catalog.value.failures,
--					status: this.store.getSnapshot().status === "selecting" ? "selecting" : "ready",
-+					status: selecting ? "selecting" : "ready",
- 					error: null
- 				});
-+				if (unavailableEnterprise && selecting === false && this.available() && this.recoveryAttempt !== catalog.value) {
-+					const fallback = enterpriseFallback(catalog.value);
-+					this.recoveryAttempt = catalog.value;
-+					if (fallback) this.select(fallback).catch(() => {});
-+				}
- 			}
- 		};
-+		/** Recover only through advertised, currently routed non-enterprise models. */
-+		function enterpriseFallback(catalog) {
-+			const choices = catalog.groups.filter(group => group.id !== "bisheng-enterprise" && catalog.routableProviders.includes(group.id))
-+				.flatMap(group => group.models.map(model => ({ provider: group.id, model })));
-+			for (const preferred of [catalog.fallback, catalog.default, ...choices.map(choice => ({ provider: choice.provider, model: choice.model.id }))]) {
-+				const choice = choices.find(item => item.provider === preferred?.provider && item.model.id === preferred?.model);
-+				if (choice === void 0) continue;
-+				const reasoning = choice.model.reasoning;
-+				const effort = reasoning?.efforts.some(item => item.id === preferred.reasoningEffort) ? preferred.reasoningEffort : reasoning?.defaultEffort;
-+				return { provider: choice.provider, model: choice.model.id, ...effort === void 0 ? {} : { reasoningEffort: effort } };
-+			}
-+		}
- 		function modelSelectionProjection(value) {
- 			return value === void 0 ? void 0 : value;
- 		}
-@@ -405,15 +451,71 @@ window.__ModuleLoader__.load({
+@@ -405,15 +405,71 @@
  		* store/verbs) + the standard locale seat.
  		* @returns the trigger and, while open, the two-level menu.
  		*/
@@ -182,7 +73,7 @@ index 209a74d..5b5cb72 100644
  			const menuRef = (0, react.useRef)(null);
  			const [menuPos, setMenuPos] = (0, react.useState)(null);
  			const itemRefs = (0, react.useRef)([]);
-@@ -427,6 +529,7 @@ window.__ModuleLoader__.load({
+@@ -427,6 +483,7 @@
  					...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
  				}
  			}))), [state.groups]);
@@ -190,7 +81,7 @@ index 209a74d..5b5cb72 100644
  			const currentChoice = choices[state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)];
  			const reasoning = currentChoice?.model.reasoning;
  			const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
-@@ -490,15 +593,20 @@ window.__ModuleLoader__.load({
+@@ -490,15 +547,20 @@
  				pane,
  				state
  			]);
@@ -211,7 +102,7 @@ index 209a74d..5b5cb72 100644
  				if (restoreFocus) queueMicrotask(() => {
  					triggerRef.current?.focus();
  				});
-@@ -507,12 +615,16 @@ window.__ModuleLoader__.load({
+@@ -507,12 +569,16 @@
  				const items = itemRefs.current.filter((item) => item !== null);
  				if (items.length === 0) return;
  				const active = items.findIndex((item) => item === document.activeElement);
@@ -230,7 +121,7 @@ index 209a74d..5b5cb72 100644
  					else close(true);
  					return;
  				}
-@@ -628,6 +740,7 @@ window.__ModuleLoader__.load({
+@@ -628,6 +694,7 @@
  								role: "menuitem",
  								className: ModelSelect_module_css_default.cell,
  								onClick: () => {
@@ -238,7 +129,7 @@ index 209a74d..5b5cb72 100644
  									setPane("model");
  								},
  								children: [
-@@ -662,6 +775,23 @@ window.__ModuleLoader__.load({
+@@ -662,6 +729,23 @@
  								]
  							})] }),
  							pane === "model" && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
@@ -262,7 +153,7 @@ index 209a74d..5b5cb72 100644
  								state.status === "loading" && (0, react_jsx_runtime.jsx)("div", {
  									className: ModelSelect_module_css_default.status,
  									children: t("status.loading")
-@@ -689,7 +819,7 @@ window.__ModuleLoader__.load({
+@@ -689,7 +773,7 @@
  								}, failure.id)),
  								(0, react_jsx_runtime.jsx)("div", {
  									className: clsx(ModelSelect_module_css_default.groups, "scrollable"),
@@ -271,7 +162,7 @@ index 209a74d..5b5cb72 100644
  										const headingId = `${id}-${group.id}`;
  										return (0, react_jsx_runtime.jsxs)("section", {
  											role: "group",
-@@ -733,6 +863,10 @@ window.__ModuleLoader__.load({
+@@ -733,6 +817,10 @@
  								state.status === "ready" && choices.length === 0 && (0, react_jsx_runtime.jsx)("div", {
  									className: ModelSelect_module_css_default.empty,
  									children: t("empty.models")
@@ -282,7 +173,7 @@ index 209a74d..5b5cb72 100644
  								})
  							] }),
  							pane === "effort" && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [state.error !== null && lastActionRef.current === "load" && (0, react_jsx_runtime.jsxs)("div", {
-@@ -805,12 +939,15 @@ window.__ModuleLoader__.load({
+@@ -805,12 +893,15 @@
  			"menu.aria": "模型与推理等级",
  			"menu.model": "模型",
  			"menu.effort": "推理等级",
@@ -298,7 +189,7 @@ index 209a74d..5b5cb72 100644
  			"blocked.composer": "当前模型不可用，请先选择模型",
  			"empty.efforts": "当前模型未提供推理等级。"
  		};
-@@ -828,12 +965,15 @@ window.__ModuleLoader__.load({
+@@ -828,12 +919,15 @@
  			"menu.aria": "Model and reasoning effort",
  			"menu.model": "Model",
  			"menu.effort": "Effort",
@@ -314,17 +205,3 @@ index 209a74d..5b5cb72 100644
  			"blocked.composer": "This model is unavailable — select one to continue",
  			"empty.efforts": "This model provides no reasoning effort levels."
  		};
-diff --git a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/types/client/directory.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/types/client/directory.d.ts
-index 830235b..c54cf49 100644
---- a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/types/client/directory.d.ts
-+++ b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/types/client/directory.d.ts
-@@ -43,6 +43,9 @@ export declare class ModelDirectory {
-     private generation;
-     private disposed;
-     private resolved;
-+    private selectionQueue;
-+    private acceptedSelection;
-+    private recoveryAttempt;
-     private readonly unsubscribeCatalog;
-     private readonly unsubscribeSelection;
-     /**

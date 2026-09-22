@@ -462,24 +462,16 @@ export async function evaluatePluginMarketCompatibility(options: {
         : `Plugin v${installedVersion} is already at latest (v${latestVersion}) or newer and still blocks startup. Remove this plugin and continue checking; no downgrade or reinstall will be attempted.`
     }
   }
-  const versionComparison = compareSemver(installedVersion, latestVersion)
-  const healthLabel = versionComparison === 0
-    ? (isZh ? '已是最新版' : 'Up to date')
-    : versionComparison > 0
-      ? (isZh ? '当前版本高于市场最新版' : 'Installed version is newer than market latest')
-      : (isZh ? '暂无适用于当前 DSH 的更新' : 'No update available for the current DSH')
   return {
     packageName, installedVersion, latestVersion,
-    healthStatus: 'up-to-date',
-    healthLabel,
+    healthStatus: hasLocalIssue ? 'incompatible-no-fix' : 'up-to-date',
+    healthLabel: isZh
+      ? (hasLocalIssue ? '加载异常，未找到兼容更新' : '未找到兼容更新')
+      : (hasLocalIssue ? 'Load failure; no compatible update found' : 'No compatible update found'),
     upgradeReady: false,
-    detail: versionComparison >= 0
-      ? (isZh
-          ? `当前插件 v${installedVersion}，市场最新版（latest）为 v${latestVersion}，无需更新。更新检查不代表插件加载或兼容性验证。`
-          : `Installed: v${installedVersion}; market latest: v${latestVersion}. No update needed. This update check does not verify loading or compatibility.`)
-      : (isZh
-          ? `市场最新版为 v${latestVersion}，但没有符合当前 DSH 和发布版本筛选条件的更新；这不表示已安装版本不兼容。`
-          : `Market latest is v${latestVersion}, but no update satisfies the current DSH and release filters. This does not mean the installed version is incompatible.`)
+    detail: isZh
+      ? `在已安装版本之后、latest（v${latestVersion}）以内，没有符合当前 DSH 和发布版本筛选条件的更新。`
+      : `No update after the installed version and up to latest (v${latestVersion}) satisfies the current DSH and release filters.`
   }
 }
 

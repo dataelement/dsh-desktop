@@ -29,13 +29,12 @@ describe('patch hunk counts', () => {
     expect(errors).toEqual([])
   })
 
-  it('keeps image generation, enterprise, and the log bridge in the dsh package.json patch', async () => {
+  it('keeps image generation and the log bridge in the dsh package.json patch', async () => {
     const patch = await readFile(
       path.join(projectRoot, 'patches/@deepseek-ai+dsh+0.1.5-rc.2.patch'),
       'utf8'
     )
     expect(patch).toContain('+    "dsh-image-generation": "0.1.0",')
-    expect(patch).toContain('+    "dsh-desktop-enterprise": "0.2.0",')
     expect(patch).toContain('+    "dsh-desktop-log-bridge": "0.1.0",')
   })
 
@@ -44,7 +43,7 @@ describe('patch hunk counts', () => {
       path.join(projectRoot, 'patches/@deepseek-ai+dsh+0.1.5-rc.2.patch'),
       'utf8'
     )
-    const broken = patch.replace('@@ -28,6 +28,14 @@', '@@ -28,6 +28,13 @@')
+    const broken = patch.replace('@@ -28,6 +28,13 @@', '@@ -28,6 +28,12 @@')
     expect(broken).not.toBe(patch)
     expect(() => parsePatchFile(broken)).toThrow(/hunk header integrity check failed/)
   })

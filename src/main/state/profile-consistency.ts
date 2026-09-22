@@ -1,12 +1,7 @@
-import { randomUUID } from 'node:crypto'
-import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { isMap, isSeq, parseDocument } from 'yaml'
 import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recovery'
-
-// The normal Desktop patch loads the composer, which mounts the core itself.
-// Passed explicitly: standalone Harness profiles may still load either bundle.
-export const HOST_COMPOSED_PPT_BUNDLES = ['dsh-ppt', 'dsh-ppt-composer'] as const
 
 /**
  * What the profile says about itself, checked against what is on disk.
@@ -119,10 +114,7 @@ async function undeclaredBundles(
  * Inconsistencies between the profile's declarations and its packages.
  * @returns one sentence per finding, empty when the profile is coherent.
  */
-export async function inspectProfileConsistency(
-  dshHome: string,
-  hostComposedBundles: readonly string[] = []
-): Promise<string[]> {
+export async function inspectProfileConsistency(dshHome: string): Promise<string[]> {
   const manifestPath = profilePackageJsonPath(dshHome)
   const manifest = await readManifest(manifestPath)
   if (manifest === undefined) return []
@@ -141,7 +133,7 @@ export async function inspectProfileConsistency(
   }
 
   for (const dependency of dependencies) {
-    if (bundles.includes(dependency) || hostComposedBundles.includes(dependency)) continue
+    if (bundles.includes(dependency)) continue
     const { installed, bundle } = await inspectPackage(nodeModulesPath, dependency)
     if (installed && bundle) {
       findings.push(`${dependency} is installed and declares a bundle, but is not composed`)
@@ -166,16 +158,11 @@ export async function inspectProfileConsistency(
 }
 
 /**
- * Reconcile bundle declarations before launch. Host-composed bundles remain
- * installed dependencies, but must not also load through the Profile: the
- * Desktop PPT adapter already mounts its core, whose routes and skill provider
- * cannot be registered twice. Other installed bundles retain auto-healing.
- * This does not edit user patch layers or remove packages or their data.
+ * Auto-heal uncomposed bundles: if a plugin is declared as a dependency and
+ * installed with a bundle manifest, ensure it is added to manifest.dsh.profile.bundles.
+ * Completely silent, fail-safe, and zero network overhead.
  */
-export async function healProfileBundles(
-  dshHome: string,
-  hostComposedBundles: readonly string[] = []
-): Promise<{ added: string[]; removed: string[] }> {
+export async function healProfileBundles(dshHome: string): Promise<string[]> {
   const manifestPath = profilePackageJsonPath(dshHome)
   let manifestText: string
   let manifest: ProfileManifest & { dsh?: { profile?: { bundles?: string[] }; [key: string]: unknown }; [key: string]: unknown }
@@ -183,19 +170,17 @@ export async function healProfileBundles(
     manifestText = await readFile(manifestPath, 'utf8')
     manifest = JSON.parse(manifestText)
   } catch {
-    return { added: [], removed: [] }
+    return []
   }
 
   const nodeModulesPath = join(dirname(manifestPath), 'node_modules')
-  const previousBundles = manifest.dsh?.profile?.bundles ?? []
-  const removed = previousBundles.filter((name) => hostComposedBundles.includes(name))
-  const currentBundles = previousBundles.filter((name) => !hostComposedBundles.includes(name))
+  const currentBundles = manifest.dsh?.profile?.bundles ?? []
   const bundleSet = new Set(currentBundles)
   const dependencies = Object.keys(manifest.dependencies ?? {})
   const healed: string[] = []
 
   for (const dependency of dependencies) {
-    if (bundleSet.has(dependency) || hostComposedBundles.includes(dependency)) continue
+    if (bundleSet.has(dependency)) continue
     const { installed, bundle } = await inspectPackage(nodeModulesPath, dependency)
     if (installed && bundle) {
       currentBundles.push(dependency)
@@ -204,18 +189,17 @@ export async function healProfileBundles(
     }
   }
 
-  if (healed.length > 0 || removed.length > 0) {
-    if (!manifest.dsh) manifest.dsh = {}
-    if (!manifest.dsh.profile) manifest.dsh.profile = {}
-    manifest.dsh.profile.bundles = currentBundles
-    const temporary = `${manifestPath}.${randomUUID()}.tmp`
+  if (healed.length > 0) {
     try {
-      await writeFile(temporary, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
-      await rename(temporary, manifestPath)
-    } finally {
-      await rm(temporary, { force: true })
+      if (!manifest.dsh) manifest.dsh = {}
+      if (!manifest.dsh.profile) manifest.dsh.profile = {}
+      manifest.dsh.profile.bundles = currentBundles
+      const { writeFile } = await import('node:fs/promises')
+      await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
+    } catch {
+      // Best-effort auto-healing; never crash startup if write fails
     }
   }
 
-  return { added: healed, removed }
+  return healed
 }

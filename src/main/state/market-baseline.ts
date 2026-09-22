@@ -5,7 +5,7 @@ import { listGenerations, readDesired, writeDesired } from 'dsh-desktop-market-i
 import { compareSemver, parseSemver, readInstalledPluginVersion } from './plugin-market-check'
 import { profilePackageJsonPath } from './plugin-recovery'
 import { clearProfileInstallMarker } from './profile-install-marker'
-import { hasPendingMarketInstall, upgradeMarketInSharedTree, type MarketSharedTreeUpgradeOptions } from './plugin-upgrade'
+import { upgradeMarketInSharedTree, type MarketSharedTreeUpgradeOptions } from './plugin-upgrade'
 
 export const VERIFIED_MARKET_BASELINE = '1.45.1'
 
@@ -162,32 +162,7 @@ async function noteShadowedMarket(
   )
 }
 
-/**
- * Whether the market already in the profile can carry this boot on its own.
- *
- * A baseline install that fails is common in the field — pnpm reports 404s,
- * fetch failures and EPERM from restricted or offline networks — and that must
- * not cost the user their normal Profile when the market they already have
- * still loads. Only a market that is absent, unreadable or still owned by a
- * generation blocks startup. The pending marker survives either way, so the
- * repair is retried on the next launch.
- */
-export async function marketUsableWithoutBaseline(dshHome: string): Promise<boolean> {
-  const profileDir = dirname(profilePackageJsonPath(dshHome))
-  const marketPath = join(profileDir, 'node_modules', MARKET_PACKAGE)
-  try {
-    const info = await lstat(marketPath)
-    // A generation link is re-linked by projection on every launch, so a market
-    // left in that shape is exactly the boot loop the baseline exists to break.
-    if (info.isSymbolicLink() && (await readlink(marketPath)).includes('.generations')) return false
-  } catch {
-    return false
-  }
-  const version = await readInstalledPluginVersion(dshHome, MARKET_PACKAGE)
-  return !!version && !!parseSemver(version)
-}
-
-/** Run only after startup recovery gates, before generation migration/projection, with Harness stopped. */
+/** Run only after startup recovery gates and generation projection, with Harness stopped. */
 export async function ensureMarketBaseline(
   options: Omit<MarketSharedTreeUpgradeOptions, 'targetVersion'>,
   upgrade: (options: MarketSharedTreeUpgradeOptions) => ReturnType<typeof upgradeMarketInSharedTree> = upgradeMarketInSharedTree
@@ -225,7 +200,7 @@ export async function ensureMarketBaseline(
     .catch(() => false)
   const profileDir = dirname(profilePackageJsonPath(options.dshHome))
   const installAnchor = join(dirname(options.dshEntryPath), '..', 'package.json')
-  if (meetsBaseline(installed) && !isGenerationLink && !await hasPendingMarketInstall(options.dshHome, options.note)) {
+  if (meetsBaseline(installed) && !isGenerationLink) {
     await noteShadowedMarket(installAnchor, profileDir, options.note)
     return
   }
@@ -233,11 +208,10 @@ export async function ensureMarketBaseline(
   // The installer pins and verifies an exact version, so a declared range
   // (`^0.5.0`) is reduced to the version it names.
   const declaredClean = manifest.dependencies.dshmarket.replace(/^[~^v=><\s]+/g, '')
-  // A partial install may already expose a newer version. Finish that install
-  // rather than downgrade it merely because the previous manifest was restored.
-  const targetVersion = [VERIFIED_MARKET_BASELINE, declaredClean, installed]
-    .filter((version): version is string => !!version && !!parseSemver(version))
-    .reduce((latest, version) => compareSemver(version, latest) > 0 ? version : latest, VERIFIED_MARKET_BASELINE)
+  const targetVersion =
+    parseSemver(declaredClean) && compareSemver(declaredClean, VERIFIED_MARKET_BASELINE) > 0
+      ? declaredClean
+      : VERIFIED_MARKET_BASELINE
 
   options.note?.(
     isGenerationLink

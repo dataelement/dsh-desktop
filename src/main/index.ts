@@ -14,7 +14,6 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
-  safeStorage,
   shell,
   Tray,
   utilityProcess,
@@ -38,15 +37,13 @@ import {
 import {
   demoteMarketGeneration,
   ensureMarketBaseline,
-  marketUsableWithoutBaseline,
   readProfileMarket
 } from './state/market-baseline'
 import {
   clearProfileInstallMarker,
   markProfileInstallComplete
 } from './state/profile-install-marker'
-import { healProfileBundles, HOST_COMPOSED_PPT_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
-import { inspectProfileBootInputs } from './state/profile-boot-preflight'
+import { healProfileBundles, inspectProfileConsistency } from './state/profile-consistency'
 import {
   disableProfilePlugin,
   enableProfilePlugin,
@@ -80,21 +77,10 @@ import {
   serializeGpuFallbackState
 } from './gpu-fallback'
 import { secureWindow } from './security'
-import { startEnterpriseDesktop, type EnterpriseDesktopRuntime } from './enterprise/enterprise-desktop'
-import { migrateLegacyEnterpriseSettings } from './enterprise/legacy-settings-migration'
-import {
-  allowInsecureEnterpriseLoopback,
-  enterpriseLoginFromArgv,
-  parseEnterpriseLoginLink,
-  registerEnterpriseLoginProtocol,
-  sameHarnessOrigin
-} from './enterprise/login-link'
-import { createElectronEnterpriseFetch } from './enterprise/platform-fetch'
 import { SafeModeOverlay } from './safe-mode-overlay'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
   listInstalledProfilePlugins,
-  pruneUnresolvableProfileBundles,
   resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
@@ -222,15 +208,12 @@ let windowsMenuDark = false
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
-let enterpriseDesktop: EnterpriseDesktopRuntime | undefined
 let desktopStorageManager: DesktopStorageManager | undefined
 let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
 /** A repair prompt from the Recovery page, started by the Safe Mode page load. */
 let pendingRepairPrompt: string | undefined
-/** A Safe Mode reason raised while its manager was already open. */
-let pendingSafeModeNotice: string | undefined
 /** Why the last Repair Agent session could not open, until it is shown once. */
 let repairAgentLaunchError: string | undefined
 /** Desktop storage key the Harness UI restores its selected session from. */
@@ -281,29 +264,6 @@ let harnessRendered = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
-let pendingEnterpriseLoginUrl: string | undefined
-
-function deliverPendingEnterpriseLogin(): void {
-  if (!pendingEnterpriseLoginUrl || !mainWindow || mainWindow.isDestroyed()) return
-  const snapshot = runtime?.snapshot()
-  if (!sameHarnessOrigin(mainWindow.webContents.getURL(), snapshot?.url)) return
-  mainWindow.webContents.send('enterprise:login-link', pendingEnterpriseLoginUrl)
-  pendingEnterpriseLoginUrl = undefined
-}
-
-async function acceptEnterpriseLoginLink(value: string): Promise<boolean> {
-  try {
-    const parsed = await parseEnterpriseLoginLink(value)
-    pendingEnterpriseLoginUrl = parsed.url
-  } catch (error) {
-    console.warn(
-      `[enterprise] rejected login link: ${error instanceof Error ? error.message : 'invalid link'}`
-    )
-    return false
-  }
-  deliverPendingEnterpriseLogin()
-  return true
-}
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -1223,7 +1183,6 @@ async function openHarness(
     () => app.isActive(),
     focusIntent
   )
-  deliverPendingEnterpriseLogin()
 }
 
 async function maybeImportWebHome(dshHome: string): Promise<void> {
@@ -1309,18 +1268,17 @@ async function showSplash(): Promise<void> {
 }
 
 /**
- * Reconcile bundle declarations, including the PPT layers already owned by
- * Desktop, then report remaining inconsistencies. This never removes package
- * files, user patch rows or plugin data, and runs while Harness is stopped.
+ * Name what the profile contradicts about itself without changing it. A
+ * dangling declaration does not throw — it leaves a service waiting on a
+ * provider that never arrives — so without this the profile reads as a slow
+ * start and the fault is found by reading logs for an afternoon. Reporting
+ * only: startup never repairs or prunes the normal Profile automatically.
  */
 async function reportProfileConsistency(dshHome: string): Promise<void> {
   try {
-    const healed = await healProfileBundles(dshHome, HOST_COMPOSED_PPT_BUNDLES)
-    if (healed.removed.length > 0) {
-      runtime.note(`[desktop] removed duplicate host-composed PPT bundle layer(s): ${healed.removed.join(', ')}; packages and user patches kept`)
-    }
-    if (healed.added.length > 0) {
-      runtime.note(`[desktop] auto-composed ${healed.added.length} missing bundle(s): ${healed.added.join(', ')}`)
+    const healed = await healProfileBundles(dshHome)
+    if (healed.length > 0) {
+      runtime.note(`[desktop] auto-composed ${healed.length} missing bundle(s): ${healed.join(', ')}`)
     }
   } catch (error) {
     runtime.note(
@@ -1333,7 +1291,7 @@ async function reportProfileConsistency(dshHome: string): Promise<void> {
   // Defer heavy recursive inspections of the profiles directory and package store
   // so they run asynchronously without blocking the startup launch pipeline.
   void Promise.all([
-    inspectProfileConsistency(dshHome, HOST_COMPOSED_PPT_BUNDLES),
+    inspectProfileConsistency(dshHome),
     inspectStoreConsistency(dshHome)
   ])
     .then(([findings, store]) => {
@@ -1447,41 +1405,25 @@ async function migratePersonaPrefixesBeforeStart(dshHome: string): Promise<void>
 async function enterMigrationSafeRecovery(
   dshHome: string,
   reason: string,
-  allowedRestoreId?: string,
-  repairable = false,
-  repairTarget?: string
+  allowedRestoreId?: string
 ): Promise<void> {
   if (failureRecoveryVisible) resolvePluginRecoveryAction('safe-mode')
   safeModeVisible = true
-  maintenanceRecoveryLocked = !repairable
+  maintenanceRecoveryLocked = true
   maintenanceAllowedRestoreId = allowedRestoreId
-  // Surface the bundle the preflight named in the plugin list, so the user acts
-  // on that plugin instead of reading the reason and guessing.
-  if (repairTarget !== undefined) {
-    safeModeSuspectedPlugins = [...new Set([...safeModeSuspectedPlugins, repairTarget])]
-  }
   await refreshMigrationRecoveryLock(dshHome)
   runtime.note(`[desktop] Profile recovery requires Safe Mode: ${reason}`)
   await runtime.stop()
   await ensureSafeModeProfile(dshHome)
-  runtime.note(repairable
-    ? '[desktop] safe mode: normal Profile startup failed preflight; plugin repair remains available'
-    : '[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
+  runtime.note('[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
   await migratePersonaPrefixesBeforeStart(dshHome)
   await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
-  if (runtime.snapshot().phase === 'ready') void mobileBridge.start().catch(showUnexpectedError)
-  // The native manager remains usable even if shared settings prevent the
-  // recovery Harness from starting; it does not depend on its Web UI.
-  const notice = repairable
-    ? (harnessLocale() === 'zh'
-        ? `正常 Profile 启动检查未通过，已进入安全模式。可以在此修复插件后重试。${reason}`
-        : `Normal Profile startup checks failed. Safe Mode is available to repair plugins and retry. ${reason}`)
-    : harnessLocale() === 'zh'
+  if (runtime.snapshot().phase !== 'ready') return
+
+  void mobileBridge.start().catch(showUnexpectedError)
+  const notice = harnessLocale() === 'zh'
     ? `正常 Profile 恢复尚未完成，已停止所有自动修复并进入安全模式。恢复材料仍保留。${reason}`
     : `Normal Profile recovery is incomplete. Automatic maintenance is blocked and recovery material is preserved. ${reason}`
-  // A manager already on screen suppresses the queued one below, so the reason
-  // is parked where that manager's action loop can pick it up instead.
-  pendingSafeModeNotice = notice
   queueMicrotask(() => {
     void showSafeModeManager({ notice, noticeTone: 'error' }).catch(showUnexpectedError)
   })
@@ -1547,10 +1489,7 @@ function launchHarness(): Promise<void> {
         pnpmRunnerPath: bundledPnpmRunnerPath(),
         note: (line) => runtime.note(line)
       }),
-      marketUsableWithoutBaseline: () => marketUsableWithoutBaseline(dshHome),
-      reportProfileConsistency: () => reportProfileConsistency(dshHome),
-      inspectProfileBootInputs: () => inspectProfileBootInputs(dshHome, dshEntryPath()),
-      pruneUnresolvableBundles: () => pruneUnresolvableProfileBundles(dshHome)
+      reportProfileConsistency: () => reportProfileConsistency(dshHome)
     })
     migrationPendingPlugins = new Set(
       maintenance.outcome === 'normal-profile' && maintenance.migration.outcome === 'deferred-failure'
@@ -1561,9 +1500,7 @@ function launchHarness(): Promise<void> {
       await enterMigrationSafeRecovery(
         dshHome,
         maintenance.reason,
-        maintenance.allowedRestoreId,
-        maintenance.repairable,
-        maintenance.repairTarget
+        maintenance.allowedRestoreId
       )
       return
     }
@@ -1571,18 +1508,6 @@ function launchHarness(): Promise<void> {
     maintenanceAllowedRestoreId = undefined
     runtime.note('[desktop] profile maintenance done')
     await refreshMigrationRecoveryLock(dshHome)
-    try {
-      const legacyEnterprise = await migrateLegacyEnterpriseSettings(dshHome)
-      if (legacyEnterprise.changed) {
-        runtime.note(`[enterprise] retired legacy settings: ${legacyEnterprise.removed.join(', ')}`)
-      }
-    } catch (error) {
-      runtime.note(
-        `[enterprise] legacy settings migration failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      )
-    }
     void auditInstalledLaunchAgents(dshHome)
       .then(() => {
         runtime.note('[desktop] LaunchAgent audit done')
@@ -3049,20 +2974,13 @@ async function showSafeModeManager(initial?: {
           )
         }
         await launchHarness()
-        const recoveryLocked = await refreshMigrationRecoveryLock(dshHome)
-        if (safeModeVisible || recoveryLocked) {
-          // launchHarness may re-enter repairable Safe Mode. Its queued manager
-          // is suppressed while this one is open, so keep this action loop alive
-          // and show the reason that manager would have shown.
-          const raised = pendingSafeModeNotice
-          pendingSafeModeNotice = undefined
-          notice = raised ?? (isChinese
-            ? '正常 Profile 仍未恢复，已继续保留安全模式。请检查启动日志并修复后重试。'
-            : 'The normal Profile is still unavailable. Safe Mode remains active; check the startup log, repair and retry.')
+        if (await refreshMigrationRecoveryLock(dshHome)) {
+          notice = isChinese
+            ? 'Profile 恢复事务仍未完成。已继续保留恢复材料和安全模式；请按提示重试。'
+            : 'The Profile recovery transaction is still incomplete. Recovery material and Safe Mode remain active; follow the prompt and retry.'
           noticeTone = 'error'
           continue
         }
-        pendingSafeModeNotice = undefined
         void mobileBridge.start().catch(showUnexpectedError)
         return
       }
@@ -3406,10 +3324,6 @@ async function bootstrap(): Promise<void> {
     // Keep the Harness origin stable across launches. These ports are separate
     // from the production/development mobile bridge ports (43127/43128).
     preferredPort: DEFAULT_HARNESS_PORT + (developmentBuild ? 1 : 0),
-    extraEnvironment: () => {
-      enterpriseDesktop?.rotateCapability()
-      return enterpriseDesktop?.harnessEnvironment() ?? {}
-    },
     launchProcess: (executablePath, args, options) =>
       process.platform === 'darwin'
         ? launchDisclaimedUtilityProcess(utilityProcess, args, options, {
@@ -3434,25 +3348,6 @@ async function bootstrap(): Promise<void> {
       }
     }
   })
-  try {
-    enterpriseDesktop = await startEnterpriseDesktop({
-      desktopVersion: app.getVersion(),
-      activateDesktop: async () => {
-        const snapshot = runtime.snapshot()
-        if (snapshot.phase === 'ready' && snapshot.url) {
-          await openHarness(snapshot.url, 'user')
-        }
-      },
-      userDataPath: app.getPath('userData'),
-      safeStorage,
-      fetchImpl: createElectronEnterpriseFetch(net.fetch.bind(net)),
-      allowInsecureLoopback: allowInsecureEnterpriseLoopback(),
-      note: (line) => runtime.note(line)
-    })
-  } catch {
-    runtime.note('[enterprise] start_failed')
-    enterpriseDesktop = undefined
-  }
   registerHarnessHandlers()
   mobileBridge = new LanMobileBridge({
     harnessUrl: () => runtime.snapshot().url,
@@ -3697,7 +3592,7 @@ async function bootstrap(): Promise<void> {
   if (!developmentBuild) {
     startUpdateManager({
       prepareToInstall: async () => {
-        await Promise.all([runtime.stop(), enterpriseDesktop?.stop()])
+        await runtime.stop()
         const dshHome = join(app.getPath('userData'), 'harness')
         await quarantineInstalledLaunchAgentsForUpdate(dshHome)
         quitting = true
@@ -3721,15 +3616,6 @@ if (isDaemonLaunch(process.env, process.platform)) {
   configureApplicationLocale()
   configureGpuFallback()
   installGpuFallbackWatch()
-  registerEnterpriseLoginProtocol()
-  void enterpriseLoginFromArgv(process.argv).then((link) => {
-    if (link) pendingEnterpriseLoginUrl = link.url
-    deliverPendingEnterpriseLogin()
-  }).catch(() => undefined)
-  app.on('open-url', (event, url) => {
-    event.preventDefault()
-    void acceptEnterpriseLoginLink(url)
-  })
   const singleInstance = app.requestSingleInstanceLock()
   if (!singleInstance) {
     console.warn('[desktop] Another instance is already running; focusing existing window and exiting.')
@@ -3742,9 +3628,6 @@ if (isDaemonLaunch(process.env, process.platform)) {
     initializeDesktopService()
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
-      void enterpriseLoginFromArgv(argv).then((link) => {
-        if (link) void acceptEnterpriseLoginLink(link.url)
-      }).catch(() => undefined)
       if (shouldStartInSafeMode(argv)) {
         void showSafeMode().catch(showUnexpectedError)
         return
@@ -3788,7 +3671,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
       tray = undefined
       repairAgentService?.dispose()
       repairAgentService = undefined
-      void Promise.all([runtime.stop(), mobileBridge?.stop(), enterpriseDesktop?.stop()]).finally(() => app.quit())
+      void Promise.all([runtime.stop(), mobileBridge?.stop()]).finally(() => app.quit())
     })
   }
 }
