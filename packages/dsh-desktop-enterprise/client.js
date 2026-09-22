@@ -17,6 +17,7 @@ window.__ModuleLoader__.load({
     const zh = {
       nav: '企业账号',
       title: '企业账号',
+      accountLabel: '当前账号',
       platform: '企业服务地址',
       login: '在浏览器中登录',
       loggingIn: '等待浏览器授权…',
@@ -29,6 +30,7 @@ window.__ModuleLoader__.load({
       refresh: '刷新',
       logout: '退出登录',
       models: '可用模型',
+      modelAvailable: '可用',
       noModels: '当前账号没有可用模型。',
       usageUnavailable: '用量暂不可用',
       limitZero: '额度为 0，模型调用已停用',
@@ -47,6 +49,7 @@ window.__ModuleLoader__.load({
     const en = {
       nav: 'Enterprise',
       title: 'Enterprise account',
+      accountLabel: 'Current account',
       platform: 'Enterprise service URL',
       login: 'Sign in in browser',
       loggingIn: 'Waiting for browser authorization…',
@@ -59,6 +62,7 @@ window.__ModuleLoader__.load({
       refresh: 'Refresh',
       logout: 'Sign out',
       models: 'Available models',
+      modelAvailable: 'Available',
       noModels: 'No models are assigned to this account.',
       usageUnavailable: 'Usage unavailable',
       limitZero: 'Limit is 0; model calls are disabled',
@@ -84,12 +88,12 @@ window.__ModuleLoader__.load({
       style.textContent = `
         .dshEnterprise {
           max-width: 720px;
-          color: var(--dsw-alias-label-primary, #202124);
+          color: var(--dsw-alias-label-primary);
         }
         .dshEnterpriseTitleRow {
           display: flex;
           align-items: center;
-          flex-wrap: nowrap;
+          flex-wrap: wrap;
           gap: 10px;
           margin: 0 0 8px;
         }
@@ -165,64 +169,69 @@ window.__ModuleLoader__.load({
           cursor: default;
         }
         .dshEnterpriseLearnMoreShell {
-          box-sizing: border-box;
           display: inline-flex;
-          flex: none;
-          height: 32px;
-          border: 1px solid var(--dsw-alias-border-l2);
-          border-radius: 9999px;
-          corner-shape: round;
-          background: var(--dsw-alias-bg-layer-1);
-          overflow: hidden;
         }
-        .dshEnterpriseLearnMoreShell:hover {
-          background: var(--dsw-alias-interactive-bg-hover);
-        }
-        .dshEnterpriseLearnMoreShell > .dshEnterpriseLearnMore {
-          -webkit-appearance: none;
-          appearance: none;
-          box-sizing: border-box;
+        .dshEnterpriseLearnMore,
+        .dshEnterpriseLogout {
           display: inline-flex;
           align-items: center;
-          justify-content: center;
-          height: 100%;
-          margin: 0;
-          padding: 0 14px;
+          gap: 5px;
+          min-height: 32px;
+          padding: 4px 8px;
           border: 0;
-          border-radius: 9999px;
-          corner-shape: round;
+          border-radius: 6px;
+          color: var(--dsw-alias-label-secondary);
           background: transparent;
-          color: var(--dsw-alias-label-primary);
           font: inherit;
-          font-size: 13px;
-          font-weight: 650;
-          line-height: 1;
+          font-size: 12px;
           cursor: pointer;
           white-space: nowrap;
         }
-        .dshEnterpriseLearnMoreShell > .dshEnterpriseLearnMore:focus-visible {
+        .dshEnterpriseLearnMore:hover,
+        .dshEnterpriseLogout:hover {
+          color: var(--dsw-alias-label-primary);
+          background: var(--dsw-alias-interactive-bg-hover);
+        }
+        .dshEnterpriseLogout:disabled {
+          opacity: .5;
+          cursor: default;
+        }
+        .dshEnterpriseLearnMore:focus-visible,
+        .dshEnterpriseLogout:focus-visible,
+        .dshEnterpriseIconButton:focus-visible {
           outline: 2px solid var(--dsw-alias-label-primary);
           outline-offset: 2px;
         }
         .dshEnterpriseIdentity {
           display: flex;
           align-items: center;
-          gap: 8px;
-          min-height: 22px;
-          font-size: 13px;
-          font-weight: 650;
+          gap: 12px;
+          padding: 16px 0 20px;
+          border-bottom: 1px solid color-mix(in srgb, var(--dsw-alias-border-l4) 40%, transparent);
         }
-        .dshEnterpriseDot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #17a673;
-          box-shadow: 0 0 0 0 #17a67355;
-          animation: dshEnterprisePulse 2.4s ease-in-out infinite;
+        .dshEnterpriseAvatar {
+          display: grid;
+          place-items: center;
+          flex: 0 0 38px;
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          color: var(--dsw-alias-label-secondary);
+          background: var(--dsw-alias-interactive-bg-hover);
         }
-        @keyframes dshEnterprisePulse {
-          0%, 100% { box-shadow: 0 0 0 0 #17a67355; }
-          50% { box-shadow: 0 0 0 5px #17a67300; }
+        .dshEnterpriseLogout {
+          margin-left: auto;
+        }
+        .dshEnterpriseAccount {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+          font-size: 14px;
+          overflow-wrap: anywhere;
+        }
+        .dshEnterpriseAccountLabel {
+          color: var(--dsw-alias-label-secondary);
+          font-size: 12px;
         }
         .dshEnterpriseSectionHeader {
           display: flex;
@@ -236,26 +245,25 @@ window.__ModuleLoader__.load({
         }
         .dshEnterpriseIconButton {
           display: inline-flex;
-          width: 28px;
-          height: 28px;
+          width: 32px;
+          height: 32px;
           align-items: center;
           justify-content: center;
           padding: 0;
-          border: 1px solid var(--ds-border, #ccd0d5);
-          border-radius: 8px;
-          color: var(--ds-text-secondary, #6d7178);
+          border: 0;
+          border-radius: 6px;
+          color: var(--dsw-alias-label-secondary);
           background: transparent;
           cursor: pointer;
           font: 18px/1 system-ui;
         }
         .dshEnterpriseIconButton:hover {
-          color: inherit;
-          background: var(--ds-bg-secondary, #f0f2f5);
+          color: var(--dsw-alias-label-primary);
+          background: var(--dsw-alias-interactive-bg-hover);
         }
         .dshEnterpriseModels {
           display: grid;
-          gap: 8px;
-          margin: 12px 0 0;
+          margin: 8px 0 0;
           padding: 0;
           list-style: none;
         }
@@ -265,26 +273,46 @@ window.__ModuleLoader__.load({
           flex-wrap: wrap;
           align-items: center;
           justify-content: space-between;
-          gap: 8px 14px;
-          min-height: 60px;
-          padding: 12px 14px;
-          border: .5px solid var(--dsw-alias-border-l4, #e0e1e5);
-          border-radius: 16px;
+          gap: 8px 20px;
+          min-height: 64px;
+          padding: 14px 0;
           font-size: 14px;
           line-height: 22px;
         }
         .dshEnterpriseModelIdentity {
-          display: flex;
-          align-items: center;
-          gap: 8px;
+          display: grid;
+          gap: 4px;
           flex: 1 1 180px;
           min-width: 0;
         }
+        .dshEnterpriseModelTitle {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px;
+        }
+        .dshEnterpriseModelStatus {
+          display: inline-block;
+          flex: 0 0 8px;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--dsw-alias-state-success-primary);
+        }
+        .dshEnterpriseModelDetails {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 10px;
+        }
+        .dshEnterpriseModelProvider {
+          color: var(--dsw-alias-label-secondary);
+          font-size: 12px;
+          line-height: 18px;
+        }
         .dshEnterpriseModelName {
           min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          overflow-wrap: anywhere;
           font-weight: 500;
         }
         .dshEnterpriseModelVision {
@@ -292,7 +320,7 @@ window.__ModuleLoader__.load({
           align-items: center;
           gap: 4px;
           flex: none;
-          color: var(--dsw-alias-label-tertiary, #81858c);
+          color: var(--dsw-alias-label-secondary);
           font-size: 12px;
           line-height: 18px;
           white-space: nowrap;
@@ -303,7 +331,7 @@ window.__ModuleLoader__.load({
         .dshEnterpriseModelUsage {
           margin-left: auto;
           text-align: right;
-          color: var(--dsw-alias-label-tertiary, #81858c);
+          color: var(--dsw-alias-label-secondary);
           font-size: 13px;
           line-height: 20px;
           font-variant-numeric: tabular-nums;
@@ -345,26 +373,11 @@ window.__ModuleLoader__.load({
           margin: 12px 0 4px;
           overflow-wrap: anywhere;
         }
-        @media (prefers-reduced-motion: reduce) {
-          .dshEnterpriseDot {
-            animation: none;
-          }
-        }
-        body[data-ds-dark-theme] .dshEnterprise {
-          color: #f2f3f5;
-        }
         body[data-ds-dark-theme] .dshEnterpriseInput,
         body[data-ds-dark-theme] .dshEnterpriseButton {
           color: #f2f3f5;
           background: #1f2024;
           border-color: #50535c;
-        }
-        body[data-ds-dark-theme] .dshEnterpriseIconButton {
-          border-color: #50535c;
-          color: #c7c9ce;
-        }
-        body[data-ds-dark-theme] .dshEnterpriseIconButton:hover {
-          background: #35373d;
         }
         body[data-ds-dark-theme] .dshEnterpriseError {
           color: #ffb4ab;
@@ -643,34 +656,42 @@ window.__ModuleLoader__.load({
     }
 
     function renderLearnMoreButton(t) {
-      return h('span', {
-        className: 'dshEnterpriseLearnMoreShell',
-        // Host theme sets `*,*::before,*::after { corner-shape: superellipse(1.5) }`,
-        // which turns large border-radius into soft squircle corners. Force round arcs
-        // on this control only so 9999px reads as true semicircle pill ends.
-        style: {
-          display: 'inline-flex',
-          height: 32,
-          borderRadius: 9999,
-          cornerShape: 'round',
-          overflow: 'hidden'
-        }
-      },
+      return h('span', { className: 'dshEnterpriseLearnMoreShell' },
         h('button', {
           className: 'dshEnterpriseLearnMore',
           type: 'button',
-          style: {
-            height: '100%',
-            border: 0,
-            borderRadius: 9999,
-            cornerShape: 'round',
-            background: 'transparent'
-          },
           onClick: () => window.open(LEARN_MORE_URL, '_blank', 'noopener,noreferrer')
-        }, t('learnMore')))
+        }, t('learnMore'), h('span', { 'aria-hidden': 'true' }, '↗')))
+    }
+
+    function modelDisplayParts(displayName) {
+      const separator = displayName.indexOf(' / ')
+      if (separator > 0 && displayName.slice(separator + 3).trim()) {
+        return { provider: displayName.slice(0, separator).trim(), name: displayName.slice(separator + 3).trim() }
+      }
+      return { provider: '', name: displayName }
+    }
+
+    function createAccountIcon() {
+      return h('svg', {
+        width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round',
+        'aria-hidden': 'true'
+      }, h('circle', { cx: 12, cy: 8, r: 3.5 }),
+      h('path', { d: 'M5 21v-2a7 7 0 0 1 14 0v2' }))
+    }
+
+    function isModelAvailable(state, usage) {
+      return state.modelsAvailable === true
+        && usage?.quota_state === 'available'
+        && typeof usage.used === 'number'
+        && typeof usage.limit === 'number'
+        && usage.used >= 0
+        && usage.used < usage.limit
     }
 
     function renderModelRow(model, state, language, t) {
+      const display = modelDisplayParts(model.display_name)
       const usage = state.modelUsage?.[model.id]
       const value = usageText(usage, language, t)
       const percentage = modelUsagePercentage(usage, language, t)
@@ -683,8 +704,15 @@ window.__ModuleLoader__.load({
 
       return h('li', { key: model.id, title: usageTitle },
         h('span', { className: 'dshEnterpriseModelIdentity' },
-          h('span', { className: 'dshEnterpriseModelName', title: model.display_name }, model.display_name),
-          vision),
+          h('span', { className: 'dshEnterpriseModelTitle' },
+            h('span', { className: 'dshEnterpriseModelName', title: model.display_name }, display.name),
+            isModelAvailable(state, usage) ? h('span', {
+              className: 'dshEnterpriseModelStatus', role: 'img',
+              title: t('modelAvailable'), 'aria-label': t('modelAvailable')
+            }) : null),
+          display.provider || vision ? h('span', { className: 'dshEnterpriseModelDetails' },
+            display.provider ? h('span', { className: 'dshEnterpriseModelProvider' }, display.provider) : null,
+            vision) : null),
         h('span', { className: 'dshEnterpriseModelUsage', 'aria-label': usageTitle },
           h('span', { className: 'dshEnterpriseModelUsageValue' }, value),
           h('span', { className: 'dshEnterpriseModelUsagePercent', 'aria-hidden': 'true' }, percentage)))
@@ -781,8 +809,16 @@ window.__ModuleLoader__.load({
 
       const status = connected
         ? h('div', { className: 'dshEnterpriseIdentity' },
-          h('span', { className: 'dshEnterpriseDot', 'aria-hidden': 'true' }),
-          h('span', null, userLabel))
+          h('span', { className: 'dshEnterpriseAvatar', 'aria-hidden': 'true' }, createAccountIcon()),
+          h('div', { className: 'dshEnterpriseAccount' },
+            h('span', { className: 'dshEnterpriseAccountLabel' }, t('accountLabel')),
+            h('span', null, userLabel)),
+          h('button', {
+            className: 'dshEnterpriseLogout',
+            type: 'button',
+            disabled: busy,
+            onClick: () => run(async () => setState(await api('/api/enterprise.logout', {})))
+          }, t('logout')))
         : null
 
       const accountContent = connected
@@ -800,13 +836,7 @@ window.__ModuleLoader__.load({
           models.length
             ? h('ul', { className: `dshEnterpriseModels${state.modelsAvailable ? '' : ' paused'}` },
               ...models.map((model) => renderModelRow(model, state, language, t)))
-            : h('p', { className: 'dshEnterpriseHint' }, t('noModels')),
-          h('div', { className: 'dshEnterpriseActions' },
-            h('button', {
-              className: 'dshEnterpriseButton danger',
-              disabled: busy,
-              onClick: () => run(async () => setState(await api('/api/enterprise.logout', {})))
-            }, t('logout'))))
+            : h('p', { className: 'dshEnterpriseHint' }, t('noModels')))
         : h(React.Fragment, null,
           h('label', { className: 'dshEnterpriseLabel', style: { marginTop: 16 } },
             t('platform'),

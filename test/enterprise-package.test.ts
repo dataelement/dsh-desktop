@@ -9,6 +9,31 @@ const projectRoot = path.resolve(import.meta.dirname, '..')
 const execFileAsync = promisify(execFile)
 
 describe('DSH Desktop enterprise package', () => {
+  it('separates provider labels while preserving model paths', async () => {
+    const client = await readFile(path.join(projectRoot, 'packages/dsh-desktop-enterprise/client.js'), 'utf8')
+    const body = client.match(/function modelDisplayParts\(displayName\) \{([\s\S]*?)\n    \}/)?.[1]
+    expect(body).toBeDefined()
+    const parts = new Function('displayName', body!)
+    expect(parts('阿里云百炼 / kimi/kimi-k3')).toEqual({ provider: '阿里云百炼', name: 'kimi/kimi-k3' })
+    expect(parts('volces / deepseek-v4-pro')).toEqual({ provider: 'volces', name: 'deepseek-v4-pro' })
+    expect(parts('kimi/kimi-k3')).toEqual({ provider: '', name: 'kimi/kimi-k3' })
+    expect(parts('custom / ')).toEqual({ provider: '', name: 'custom / ' })
+  })
+
+  it('marks models available when routing and their quota both allow use', async () => {
+    const client = await readFile(path.join(projectRoot, 'packages/dsh-desktop-enterprise/client.js'), 'utf8')
+    const body = client.match(/function isModelAvailable\(state, usage\) \{([\s\S]*?)\n    \}/)?.[1]
+    expect(body).toBeDefined()
+    const available = new Function('state', 'usage', body!)
+    const usage = { quota_state: 'available', used: 5, limit: 10 }
+    expect(available({ modelsAvailable: true }, usage)).toBe(true)
+    expect(available({ modelsAvailable: false }, usage)).toBe(false)
+    expect(available({ modelsAvailable: true }, undefined)).toBe(false)
+    for (const update of [{ quota_state: 'unavailable' }, { quota_state: 'exhausted' }, { limit: 0 }, { used: 10 }, { used: 11 }, { used: null }]) {
+      expect(available({ modelsAvailable: true }, { ...usage, ...update })).toBe(false)
+    }
+  })
+
   it('exports the declared Client bundle for the Harness module loader', async () => {
     const packageJson = JSON.parse(await readFile(
       path.join(projectRoot, 'packages', 'dsh-desktop-enterprise', 'package.json'),
@@ -105,7 +130,6 @@ describe('DSH Desktop enterprise package', () => {
     expect(client).toContain("const userLabel = state?.user?.display_name || state?.user?.username || state?.user?.id || '—'")
     expect(client).not.toContain('state.usage)')
     expect(client).not.toContain("h('div', { className: 'dshEnterpriseCard' }, status, accountContent, errorPanel)")
-    expect(client).toContain('@keyframes dshEnterprisePulse')
     expect(client).toContain("state.modelUsage?.[model.id]")
     expect(client).toContain('.dshEnterpriseModels li:hover .dshEnterpriseModelUsageValue {')
     expect(client).toContain('.dshEnterpriseModels li:hover .dshEnterpriseModelUsagePercent {')
@@ -136,21 +160,13 @@ describe('DSH Desktop enterprise package', () => {
     expect(client).toContain("className: 'dshEnterpriseLearnMore'")
     expect(client).toContain("window.open(LEARN_MORE_URL, '_blank', 'noopener,noreferrer')")
     expect(client).toContain('.dshEnterpriseTitleRow {')
-    expect(client).toContain('flex-wrap: nowrap;')
     expect(client).toContain('.dshEnterpriseTitleRow h2 {')
     expect(client).toContain('color: var(--dsw-alias-label-primary);')
     expect(client).toContain('font-size: 18px;')
     expect(client).toContain('font-weight: 600;')
     expect(client).toContain('.dshEnterpriseLearnMoreShell {')
-    expect(client).toContain('border: 1px solid var(--dsw-alias-border-l2);')
-    expect(client).toContain('background: var(--dsw-alias-bg-layer-1);')
     expect(client).toContain('color: var(--dsw-alias-label-primary);')
-    expect(client).toContain('.dshEnterpriseLearnMoreShell:hover {')
     expect(client).toContain('background: var(--dsw-alias-interactive-bg-hover);')
-    expect(client).toContain('border-radius: 9999px;')
-    expect(client).toContain('corner-shape: round;')
-    expect(client).toContain("borderRadius: 9999")
-    expect(client).toContain("cornerShape: 'round'")
     expect(client).not.toContain("background: '#fff'")
     expect(client).not.toContain('body[data-ds-dark-theme] .dshEnterpriseLearnMoreShell')
     expect(client).toContain('border: 1px solid var(--ds-border, #ccd0d5);')
