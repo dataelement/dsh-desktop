@@ -10,7 +10,7 @@ window.__ModuleLoader__.load({
     const LAST_BASE_KEY = 'dshDesktopEnterprise.lastBase'
     const MANUAL_FALLBACK_DELAY_MS = 8_000
     const ENTERPRISE_SECTION_ID = 'enterprise-account'
-    const LEARN_MORE_URL = 'https://dshdesktop.com/enterprise/deployment'
+    const LEARN_MORE_URL = 'https://dshdesktop.com/zh/enterprise/deployment/'
     const OPEN_SETTINGS_SECTION_EVENT = 'dsh-desktop:open-settings-section'
     const NS = 'settings.desktopEnterprise'
 
