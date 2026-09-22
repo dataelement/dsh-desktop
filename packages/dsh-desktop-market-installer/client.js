@@ -82,7 +82,7 @@ window.__ModuleLoader__.load({
 
     const css = `
       .dshDesktopMarketSection{box-sizing:border-box;max-width:720px;color:var(--dsw-alias-label-primary);display:flex;flex-direction:column;gap:16px}
-      .dshDesktopMarketTitle{margin:0;font-size:20px;font-weight:600;line-height:30px}
+      .dshDesktopMarketTitle{margin:0;color:var(--dsw-alias-label-primary);font-size:18px;font-weight:600;line-height:normal}
       .dshDesktopMarketIntro{margin:0;color:var(--dsw-alias-label-secondary);font-size:14px;line-height:22px}
       .dshDesktopMarketCard{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:18px}
       .dshDesktopMarketMark{width:46px;height:46px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);display:grid;grid-template-columns:repeat(2,10px);grid-auto-rows:10px;place-content:center;gap:4px}
