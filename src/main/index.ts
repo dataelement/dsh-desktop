@@ -77,7 +77,8 @@ import {
   serializeGpuFallbackState
 } from './gpu-fallback'
 import { secureWindow } from './security'
-import { SafeModeOverlay } from './safe-mode-overlay'
+import { SafeModeFrame } from './safe-mode-frame'
+import { desktopResourceUrl, installDesktopProtocol, registerDesktopScheme, SAFE_MODE_PAGE } from './desktop-protocol'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
   listInstalledProfilePlugins,
@@ -235,7 +236,11 @@ let pendingFrontendPluginRecovery = false
 let pendingFrontendPluginRecoveryMessage: string | undefined
 let safeModeVisible = false
 let safeModeManagerVisible = false
-let safeModeManager: SafeModeOverlay | undefined
+let safeModeManager: SafeModeFrame | undefined
+/** Distinguishes consecutive Safe Mode page loads, so an unchanged view model still reloads the frame. */
+let safeModeLoadSequence = 0
+/** An unreachable registry is not asked again for this long, so reopening the Safe Mode page stays instant. */
+const SAFE_MODE_MARKET_FAILURE_TTL_MS = 60_000
 let safeModeActionResolver: ((action: SafeModeAction) => void) | undefined
 let migrationRecoveryLocked = false
 let maintenanceRecoveryLocked = false
@@ -1842,13 +1847,15 @@ function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
   }
 }
 
+/**
+ * The Safe Mode page is framed inside the Harness page and reaches the main
+ * process through the host page's preload, which relays only messages from
+ * that frame. So a trusted event comes from the host window's main frame
+ * while the manager is up.
+ */
 function assertTrustedSafeModeManagerEvent(event: IpcMainInvokeEvent): void {
-  if (
-    !safeModeManager ||
-    safeModeManager.isDestroyed() ||
-    event.sender !== safeModeManager.webContents ||
-    event.senderFrame !== safeModeManager.webContents.mainFrame
-  ) {
+  const host = safeModeManager && !safeModeManager.isDestroyed() ? safeModeManager.parent.webContents : undefined
+  if (!host || event.sender !== host || event.senderFrame !== host.mainFrame) {
     throw new Error('This action is only available from the Safe Mode manager.')
   }
 }
@@ -2446,7 +2453,8 @@ async function waitForSafeModeAction(options: {
   disabledPlugins: readonly string[]
   suspectedPlugins: readonly string[]
   issues: readonly ProfileCompatibilityIssue[]
-  healthReports?: readonly PluginHealthReport[]
+  /** The market check runs while the page is up; its result is pushed into the page. */
+  healthCheck?: Promise<readonly PluginHealthReport[] | undefined>
   backups: Awaited<ReturnType<typeof snapshotPluginRemovalLedger>>['backups']
   recoveryLocked: boolean
   backupRestoreLocked: boolean
@@ -2458,20 +2466,20 @@ async function waitForSafeModeAction(options: {
   const window = safeModeManager && !safeModeManager.isDestroyed()
     ? safeModeManager
     : (() => {
-      const manager = new SafeModeOverlay(parent, join(import.meta.dirname, '../preload/index.cjs'), () => {
+      const manager = new SafeModeFrame(parent, () => {
         if (safeModeManager === manager) safeModeManager = undefined
         resolveSafeModeAction({ type: 'agent' })
       })
       safeModeManager = manager
       return manager
     })()
-  const model = buildSafeModeViewModel({
+  const render = (health: { healthReports?: readonly PluginHealthReport[]; healthPending?: boolean }) => buildSafeModeViewModel({
     locale: harnessLocale(),
     plugins: options.plugins,
     disabledPlugins: options.disabledPlugins,
     suspectedPlugins: options.suspectedPlugins,
     issues: options.issues,
-    healthReports: options.healthReports,
+    ...health,
     backups: options.backups,
     recoveryLocked: options.recoveryLocked,
     backupRestoreLocked: options.backupRestoreLocked,
@@ -2482,24 +2490,23 @@ async function waitForSafeModeAction(options: {
   const actionPromise = new Promise<SafeModeAction>((resolve) => {
     safeModeActionResolver = resolve
   })
-  window.webContents.stop()
-  try {
-    await loadDesktopResource(window.webContents, desktopResourcePath('safe-mode.html'), {
-      query: {
-        state: JSON.stringify(model),
-        icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
-        theme: harnessThemePreference()
-      }
-    })
-  } catch (error) {
-    safeModeActionResolver = undefined
-    throw error
-  }
   if (window.isDestroyed()) {
     return { type: 'quit' }
   }
-  window.show()
+  const seq = String(++safeModeLoadSequence)
+  window.show(desktopResourceUrl(SAFE_MODE_PAGE, {
+    state: JSON.stringify(render({ healthPending: options.healthCheck !== undefined })),
+    icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
+    theme: harnessThemePreference(),
+    seq
+  }))
   raiseWindowWithoutStealingFocus(parent, process.platform, () => app.isActive())
+  // The page is up before the market check answers; the answer refreshes the
+  // page in place, unless the page has moved on to a later load.
+  void options.healthCheck?.then((healthReports) => {
+    if (!healthReports || window.isDestroyed() || String(safeModeLoadSequence) !== seq) return
+    window.applyUpdate({ seq, model: render({ healthReports }) })
+  })
   return actionPromise
 }
 
@@ -2736,23 +2743,25 @@ async function showSafeModeManager(initial?: {
       }
       const installed = [...new Set([...active, ...pendingRemovals])]
       const profileDisabled = recoveryLocked ? [] : await listDisabledProfilePlugins(dshHome, active)
-      let healthReports: PluginHealthReport[] | undefined
+      // Not awaited: the page opens right away and shows the result when it
+      // arrives. Only an upgrade needs the result before acting.
+      let healthCheck: Promise<PluginHealthReport[] | undefined> | undefined
       if (installed.length > 0 && !recoveryLocked) {
-        try {
-          const incompatiblePluginNames = compatibility.issues
-            .filter((issue) => issue.resolution === 'disable-plugin')
-            .map((issue) => issue.target)
-          healthReports = await checkupAllProfilePlugins({
-            plugins: installed,
-            dshHome,
-            bundledNodeModulesPath: join(app.getAppPath(), 'node_modules'),
-            incompatiblePlugins: [...new Set([...safeModeSuspectedPlugins, ...incompatiblePluginNames])],
-            fetchFn: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
-            locale: harnessLocale()
-          })
-        } catch (error) {
+        const incompatiblePluginNames = compatibility.issues
+          .filter((issue) => issue.resolution === 'disable-plugin')
+          .map((issue) => issue.target)
+        healthCheck = checkupAllProfilePlugins({
+          plugins: installed,
+          dshHome,
+          bundledNodeModulesPath: join(app.getAppPath(), 'node_modules'),
+          incompatiblePlugins: [...new Set([...safeModeSuspectedPlugins, ...incompatiblePluginNames])],
+          failureTtlMs: SAFE_MODE_MARKET_FAILURE_TTL_MS,
+          fetchFn: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
+          locale: harnessLocale()
+        }).catch((error: unknown) => {
           runtime.note(`[safe-mode] plugin market health checkup failed: ${String(error)}`)
-        }
+          return undefined
+        })
       }
 
       const allowedRestoreId = recoveryLocked &&
@@ -2772,7 +2781,7 @@ async function showSafeModeManager(initial?: {
         disabledPlugins: profileDisabled,
         suspectedPlugins: safeModeSuspectedPlugins,
         issues: compatibility.issues,
-        healthReports,
+        healthCheck,
         backups: removalBackups.backups,
         recoveryLocked,
         backupRestoreLocked,
@@ -2976,7 +2985,7 @@ async function showSafeModeManager(initial?: {
           noticeTone = 'error'
           continue
         }
-        const reportsByPkg = new Map((healthReports ?? []).map((r) => [r.packageName, r]))
+        const reportsByPkg = new Map(((await healthCheck) ?? []).map((r) => [r.packageName, r]))
         const targets = action.plugins.filter((pkg) => {
           const report = reportsByPkg.get(pkg)
           return report?.upgradeReady && report.upgradeVersion
@@ -3283,6 +3292,7 @@ async function showMobilePairing(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   desktopDiagnostics?.startSending()
+  installDesktopProtocol(desktopResourcePath)
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers()
@@ -3517,6 +3527,13 @@ async function bootstrap(): Promise<void> {
     assertTrustedMainWindowEvent(event)
     return { active: safeModeVisible, locale: harnessLocale() }
   })
+  ipcMain.removeHandler('safe-mode:dismiss')
+  ipcMain.handle('safe-mode:dismiss', (event) => {
+    assertTrustedMainWindowEvent(event)
+    if (!safeModeVisible || !safeModeManagerVisible) return { ok: false }
+    resolveSafeModeAction({ type: 'agent' })
+    return { ok: true }
+  })
   ipcMain.removeHandler('safe-mode:manage')
   ipcMain.handle('safe-mode:manage', (event) => {
     assertTrustedMainWindowEvent(event)
@@ -3622,6 +3639,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
         void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
       }
     })
+    registerDesktopScheme()
     app.whenReady().then(bootstrap).catch((error: unknown) => {
       desktopDiagnostics?.startupFailed(error)
       showUnexpectedError(error)
