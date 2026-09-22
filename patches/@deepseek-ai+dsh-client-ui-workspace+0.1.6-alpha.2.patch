@@ -450,7 +450,7 @@ index 38a4474..f9e9baf 100644
  							forkSession,
  							onSessionRename,
  							onSessionArchive,
-+							onSessionDelete: deleteSession,
++							onSessionDelete,
 +							unreadSessionIds,
 +							onUnreadChange,
  							setSessionOrder: saveSessionOrder,

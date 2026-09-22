@@ -67,6 +67,20 @@ describe('permanent session deletion dependency patches', () => {
     }
   })
 
+  it('routes flat-list deletion through the same confirmation dialog as grouped mode', async () => {
+    const ui = await readFile(
+      path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-workspace', 'lib', 'client.js'),
+      'utf8'
+    )
+    const flatBranchStart = ui.indexOf('groupBy === "flat"')
+    const treeBranchStart = ui.indexOf(': (0, react_jsx_runtime.jsx)(SessionTree', flatBranchStart)
+    expect(flatBranchStart).toBeGreaterThan(-1)
+    expect(treeBranchStart).toBeGreaterThan(flatBranchStart)
+    const flatBranch = ui.slice(flatBranchStart, treeBranchStart)
+    expect(flatBranch).toContain('onSessionDelete,')
+    expect(flatBranch).not.toContain('onSessionDelete: deleteSession')
+  })
+
   it('states the destructive retention boundary in both locales', async () => {
     const ui = await readFile(
       path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-workspace', 'lib', 'client.js'),
