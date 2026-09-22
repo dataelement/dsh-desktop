@@ -31,6 +31,7 @@ export function validatePublishedCatalog(value) {
 
   const ids = new Set()
   const workbenchIds = new Set()
+  const legacyWorkbenchIds = new Set()
   for (const entry of value.workbenches) {
     if (!object(entry) || !text(entry.id) || ids.has(entry.id) || !workbenchId(entry.workbenchId) || workbenchIds.has(entry.workbenchId) || !text(entry.owner) || !text(entry.repository)
       || !httpsUrl(entry.url) || !text(entry.name) || !categories.has(entry.category)
@@ -41,6 +42,11 @@ export function validatePublishedCatalog(value) {
       || !Array.isArray(entry.screenshots) || entry.screenshots.length < 1) {
       fail('Invalid workbench catalog entry.')
     }
+    if (entry.legacyWorkbenchIds !== undefined && (!Array.isArray(entry.legacyWorkbenchIds) || !entry.legacyWorkbenchIds.length
+      || !entry.legacyWorkbenchIds.every(workbenchId) || new Set(entry.legacyWorkbenchIds).size !== entry.legacyWorkbenchIds.length
+      || entry.legacyWorkbenchIds.includes(entry.workbenchId) || entry.legacyWorkbenchIds.some(id => legacyWorkbenchIds.has(id) || workbenchIds.has(id)))) {
+      fail('Invalid workbench catalog legacy identities.')
+    }
     const repositoryId = `${entry.owner}/${entry.repository}`.toLowerCase()
     if (entry.id !== repositoryId || entry.url.toLowerCase() !== `https://github.com/${repositoryId}`) fail('Invalid workbench catalog identity.')
     if (!entry.screenshots.every(image => object(image) && httpsUrl(image.url) && text(image.alt) && /^[a-f0-9]{64}$/.test(image.sha256)
@@ -50,6 +56,7 @@ export function validatePublishedCatalog(value) {
     }
     ids.add(entry.id)
     workbenchIds.add(entry.workbenchId)
+    for (const id of entry.legacyWorkbenchIds || []) legacyWorkbenchIds.add(id)
   }
   return structuredClone(value)
 }

@@ -17,7 +17,7 @@ export function emptyState() {
   return { version: 1, added: [], pinned: [], favorites: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {} }
 }
 
-export function validateState(value, previous) {
+export function validateState(value, previous, migrations = {}) {
   if (!isObject(value) || value.version !== 1) fail('Unsupported workbench state version.')
   if (Object.keys(value).some(key => !Object.hasOwn(emptyState(), key))) fail('Unknown workbench state field.')
   for (const key of ['added', 'pinned', 'favorites']) {
@@ -38,13 +38,13 @@ export function validateState(value, previous) {
   }
   if (previous) {
     for (const [session, owner] of Object.entries(previous.sessionBindings)) {
-      if (value.sessionBindings[session] !== owner) fail('Existing session ownership cannot be changed or removed.')
+      if (value.sessionBindings[session] !== owner && value.sessionBindings[session] !== migrations[owner]) fail('Existing session ownership cannot be changed or removed.')
     }
     for (const [session, owner] of Object.entries(value.sessionBindings)) {
       if (!Object.hasOwn(previous.sessionBindings, session) && !value.added.includes(owner)) fail('New session bindings require an added workbench.')
     }
     for (const id of Object.keys(previous.notes)) {
-      if (!Object.hasOwn(value.notes, id)) fail('Removing a workbench must preserve its notes.')
+      if (!Object.hasOwn(value.notes, id) && !Object.hasOwn(value.notes, migrations[id])) fail('Removing a workbench must preserve its notes.')
     }
   }
   if (Buffer.byteLength(JSON.stringify(value)) > MAX_STATE_BYTES - 100) fail('Workbench state is too large.')
@@ -90,6 +90,25 @@ export function createStateStore(root) {
         if (payload.revision !== current.revision) throw new StateError('Workbench state changed. Reload before saving.', 409)
         if (current.revision === Number.MAX_SAFE_INTEGER) throw new StateError('Workbench state revision exhausted.', 500)
         const next = { revision: current.revision + 1, state: validateState(payload.state, current.state) }
+        await mkdir(root, { recursive: true })
+        const temporary = join(root, `.state-${randomUUID()}.tmp`)
+        try {
+          await writeFile(temporary, JSON.stringify(next), { flag: 'wx', mode: 0o600 })
+          await rename(temporary, path)
+        } finally { await rm(temporary, { force: true }) }
+        return next
+      })
+    },
+    migrate: (input, migrations) => {
+      const payload = structuredClone(input)
+      const allowed = structuredClone(migrations)
+      return queue(async () => {
+        if (!isObject(payload) || !Number.isSafeInteger(payload.revision) || payload.revision < 0) fail('A valid revision is required.')
+        if (!isObject(allowed) || !Object.entries(allowed).every(([from, to]) => validId(from) && validId(to) && from !== to)) fail('Invalid workbench ID migration.')
+        const current = await read()
+        if (payload.revision !== current.revision) throw new StateError('Workbench state changed. Reload before saving.', 409)
+        if (current.revision === Number.MAX_SAFE_INTEGER) throw new StateError('Workbench state revision exhausted.', 500)
+        const next = { revision: current.revision + 1, state: validateState(payload.state, current.state, allowed) }
         await mkdir(root, { recursive: true })
         const temporary = join(root, `.state-${randomUUID()}.tmp`)
         try {

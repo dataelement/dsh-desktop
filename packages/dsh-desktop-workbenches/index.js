@@ -80,6 +80,10 @@ export function apply(ctx, config) {
       }
     }
   })
+  const stateFailure = (error) => Response.json({ error: error instanceof StateError || error instanceof CatalogError ? error.message : 'Could not access workbench state.' }, {
+    status: error instanceof StateError || error instanceof CatalogError ? error.status : 500,
+    headers: { 'cache-control': 'no-store' }
+  })
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/state',
     methods: ['GET'],
@@ -102,12 +106,24 @@ export function apply(ctx, config) {
     async fetch(request) {
       try {
         return Response.json(await store.write(await readPayload(request)), { headers: { 'cache-control': 'no-store' } })
-      } catch (error) {
-        return Response.json({ error: error instanceof StateError ? error.message : 'Could not access workbench state.' }, {
-          status: error instanceof StateError ? error.status : 500,
-          headers: { 'cache-control': 'no-store' }
-        })
-      }
+      } catch (error) { return stateFailure(error) }
+    }
+  })
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/state/migrate',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        const payload = await readPayload(request)
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !payload.migrations || typeof payload.migrations !== 'object' || Array.isArray(payload.migrations)) throw new StateError('A workbench ID migration is required.')
+        const allowed = new Map()
+        for (const entry of (await readCatalog()).catalog.workbenches) {
+          for (const legacy of entry.legacyWorkbenchIds || []) allowed.set(legacy, entry.workbenchId)
+        }
+        if (!Object.entries(payload.migrations).length || !Object.entries(payload.migrations).every(([from, to]) => allowed.get(from) === to)) throw new StateError('This workbench ID migration is not authorized by the market.', 403)
+        return Response.json(await store.migrate({ revision: payload.revision, state: payload.state }, payload.migrations), { headers: { 'cache-control': 'no-store' } })
+      } catch (error) { return stateFailure(error) }
     }
   })
   ctx.connection.fetch.register({

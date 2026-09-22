@@ -6,6 +6,7 @@ window.__ModuleLoader__.load({
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
     const WRITE_API = '/api/desktop-workbenches/state/write'
+    const MIGRATE_API = '/api/desktop-workbenches/state/migrate'
     const CATALOG_API = '/api/desktop-workbenches/catalog'
     const MARKET_INSTALLS_API = '/api/desktop-workbenches/market-installs'
     const SUBMISSION_STATUS_API = '/api/desktop-workbenches/submission-status'
@@ -83,7 +84,7 @@ window.__ModuleLoader__.load({
               && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
             // A market installation also has a stable runtime identity. This
             // covers packages that do not expose their repository descriptor.
-            || (install && install.workbenchId === candidate.id)
+            || (install && item.workbenchId === candidate.id)
           )
           if (provider) matched.add(provider.id)
           return {
@@ -120,6 +121,35 @@ window.__ModuleLoader__.load({
             if (!state.pinned.includes(entry.id)) state.pinned.push(entry.id)
           }
         }))
+      }
+      migrateLegacyWorkbenchIds() {
+        if (!this.ready || this.blocked || this.disposed) return
+        const migrations = {}
+        for (const entry of this.remoteCatalog) {
+          if (!this.catalog.has(entry.workbenchId)) continue
+          for (const legacy of entry.legacyWorkbenchIds || []) {
+            if (legacy !== entry.workbenchId && (this.state.added.includes(legacy) || this.state.active === legacy
+              || Object.values(this.state.sessionBindings).includes(legacy) || Object.hasOwn(this.state.notes, legacy))) {
+              migrations[legacy] = entry.workbenchId
+            }
+          }
+        }
+        if (!Object.keys(migrations).length) return
+        this.run(this.commit((state) => {
+          const replace = id => migrations[id] || id
+          state.added = [...new Set(state.added.map(replace))]
+          state.pinned = [...new Set(state.pinned.map(replace))]
+          state.active = state.active === null ? null : replace(state.active)
+          for (const [session, owner] of Object.entries(state.sessionBindings)) state.sessionBindings[session] = replace(owner)
+          for (const [legacy, current] of Object.entries(migrations)) {
+            if (state.recentSessions[legacy] && !state.recentSessions[current]) state.recentSessions[current] = state.recentSessions[legacy]
+            delete state.recentSessions[legacy]
+            if (Object.hasOwn(state.notes, legacy)) {
+              state.notes[current] = state.notes[current] ? `${state.notes[current]}\n\n${state.notes[legacy]}` : state.notes[legacy]
+              delete state.notes[legacy]
+            }
+          }
+        }, migrations))
       }
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
@@ -234,6 +264,7 @@ window.__ModuleLoader__.load({
           this.ready = true
           this.lastSession = this.ctx.sessions.list.getSnapshot().current
           this.publish()
+          this.migrateLegacyWorkbenchIds()
           this.reconcileMarketInstalls()
           const active = this.state.active
           if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
@@ -248,7 +279,7 @@ window.__ModuleLoader__.load({
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         return data
       }
-      commit(change) {
+      commit(change, migrations) {
         if (!this.ready || this.blocked || this.disposed) return Promise.reject(new Error('工作台更改尚未保存，请先重新加载。'))
         const next = JSON.parse(JSON.stringify(this.state))
         try { change(next) } catch (error) { return Promise.reject(error) }
@@ -257,9 +288,9 @@ window.__ModuleLoader__.load({
         this.publish()
         const task = this.queue.then(async () => {
           if (this.blocked) throw new Error('工作台更改尚未保存，请先重新加载。')
-          const response = await this.request(WRITE_API, {
+          const response = await this.request(migrations ? MIGRATE_API : WRITE_API, {
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ revision: this.revision, state: next })
+            body: JSON.stringify({ revision: this.revision, state: next, ...(migrations ? { migrations } : {}) })
           })
           const data = await response.json()
           if (!response.ok) throw new Error(response.status === 409 ? '工作台已在其他窗口更新，请重新加载后再操作。' : data.error || `HTTP ${response.status}`)
@@ -283,6 +314,7 @@ window.__ModuleLoader__.load({
           layout: { businessSide: layout.businessSide || 'right', businessWidth: layout.businessWidth ?? 0.36 }, Component }
         this.catalog.set(entry.id, entry)
         this.publish()
+        this.migrateLegacyWorkbenchIds()
         this.reconcileMarketInstalls()
         return () => {
           if (this.catalog.get(entry.id) !== entry) return

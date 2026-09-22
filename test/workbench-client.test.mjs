@@ -81,7 +81,7 @@ async function fixture(initial = emptyState()) {
     const payload = JSON.parse(options.body)
     if (payload.revision !== stored.revision) return Response.json({ error: 'Conflict' }, { status: 409 })
     try {
-      stored = { revision: stored.revision + 1, state: validateState(payload.state, stored.state) }
+      stored = { revision: stored.revision + 1, state: validateState(payload.state, stored.state, payload.migrations) }
       return Response.json(stored)
     } catch (error) { return Response.json({ error: error.message }, { status: error.status || 500 }) }
   })
@@ -165,6 +165,20 @@ describe('desktop workbench client navigation', () => {
     expect(entry).toMatchObject({ id: 'legacy-workbench', catalogId: 'owner/legacy', installed: true })
     expect(saved().state.added).toEqual(['legacy-workbench'])
     expect(saved().state.pinned).toEqual(['legacy-workbench'])
+    service.dispose()
+  })
+
+  it('migrates a registered market workbench from its legacy ID without losing sessions or notes', async () => {
+    const initial = { ...emptyState(), added: ['legacy-workbench'], pinned: ['legacy-workbench'], active: 'legacy-workbench',
+      sessionBindings: { old: 'legacy-workbench' }, recentSessions: { 'legacy-workbench': 'old' }, notes: { 'legacy-workbench': '旧笔记' } }
+    const { service, saved, request } = await fixture(initial)
+    service.remoteCatalog = [{ id: 'owner/workbench', workbenchId: 'wb-owner-workbench', legacyWorkbenchIds: ['legacy-workbench'],
+      owner: 'owner', url: 'https://github.com/owner/workbench', name: '工作台', categoryName: '其他', description: { zh: '迁移' }, screenshots: [] }]
+    service.register({ id: 'wb-owner-workbench', title: '工作台' }, () => null)
+    await service.queue
+    expect(request).toHaveBeenCalledWith('/api/desktop-workbenches/state/migrate', expect.any(Object))
+    expect(saved().state).toMatchObject({ added: ['wb-owner-workbench'], pinned: ['wb-owner-workbench'], active: 'wb-owner-workbench',
+      sessionBindings: { old: 'wb-owner-workbench' }, recentSessions: { 'wb-owner-workbench': 'old' }, notes: { 'wb-owner-workbench': '旧笔记' } })
     service.dispose()
   })
 
