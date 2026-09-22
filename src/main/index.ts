@@ -37,6 +37,7 @@ import {
 import {
   demoteMarketGeneration,
   ensureMarketBaseline,
+  marketUsableWithoutBaseline,
   readProfileMarket
 } from './state/market-baseline'
 import {
@@ -82,6 +83,7 @@ import { SafeModeOverlay } from './safe-mode-overlay'
 import { ensureLaunchRoot } from './state/launch-root'
 import {
   listInstalledProfilePlugins,
+  pruneUnresolvableProfileBundles,
   resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
@@ -215,6 +217,8 @@ let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
 /** A repair prompt from the Recovery page, started by the Safe Mode page load. */
 let pendingRepairPrompt: string | undefined
+/** A Safe Mode reason raised while its manager was already open. */
+let pendingSafeModeNotice: string | undefined
 /** Why the last Repair Agent session could not open, until it is shown once. */
 let repairAgentLaunchError: string | undefined
 /** Desktop storage key the Harness UI restores its selected session from. */
@@ -1408,12 +1412,18 @@ async function enterMigrationSafeRecovery(
   dshHome: string,
   reason: string,
   allowedRestoreId?: string,
-  repairable = false
+  repairable = false,
+  repairTarget?: string
 ): Promise<void> {
   if (failureRecoveryVisible) resolvePluginRecoveryAction('safe-mode')
   safeModeVisible = true
   maintenanceRecoveryLocked = !repairable
   maintenanceAllowedRestoreId = allowedRestoreId
+  // Surface the bundle the preflight named in the plugin list, so the user acts
+  // on that plugin instead of reading the reason and guessing.
+  if (repairTarget !== undefined) {
+    safeModeSuspectedPlugins = [...new Set([...safeModeSuspectedPlugins, repairTarget])]
+  }
   await refreshMigrationRecoveryLock(dshHome)
   runtime.note(`[desktop] Profile recovery requires Safe Mode: ${reason}`)
   await runtime.stop()
@@ -1433,6 +1443,9 @@ async function enterMigrationSafeRecovery(
     : harnessLocale() === 'zh'
     ? `正常 Profile 恢复尚未完成，已停止所有自动修复并进入安全模式。恢复材料仍保留。${reason}`
     : `Normal Profile recovery is incomplete. Automatic maintenance is blocked and recovery material is preserved. ${reason}`
+  // A manager already on screen suppresses the queued one below, so the reason
+  // is parked where that manager's action loop can pick it up instead.
+  pendingSafeModeNotice = notice
   queueMicrotask(() => {
     void showSafeModeManager({ notice, noticeTone: 'error' }).catch(showUnexpectedError)
   })
@@ -1498,8 +1511,10 @@ function launchHarness(): Promise<void> {
         pnpmRunnerPath: bundledPnpmRunnerPath(),
         note: (line) => runtime.note(line)
       }),
+      marketUsableWithoutBaseline: () => marketUsableWithoutBaseline(dshHome),
       reportProfileConsistency: () => reportProfileConsistency(dshHome),
-      inspectProfileBootInputs: () => inspectProfileBootInputs(dshHome, dshEntryPath())
+      inspectProfileBootInputs: () => inspectProfileBootInputs(dshHome, dshEntryPath()),
+      pruneUnresolvableBundles: () => pruneUnresolvableProfileBundles(dshHome)
     })
     migrationPendingPlugins = new Set(
       maintenance.outcome === 'normal-profile' && maintenance.migration.outcome === 'deferred-failure'
@@ -1511,7 +1526,8 @@ function launchHarness(): Promise<void> {
         dshHome,
         maintenance.reason,
         maintenance.allowedRestoreId,
-        maintenance.repairable
+        maintenance.repairable,
+        maintenance.repairTarget
       )
       return
     }
@@ -2988,13 +3004,17 @@ async function showSafeModeManager(initial?: {
         const recoveryLocked = await refreshMigrationRecoveryLock(dshHome)
         if (safeModeVisible || recoveryLocked) {
           // launchHarness may re-enter repairable Safe Mode. Its queued manager
-          // is suppressed while this one is open, so keep this action loop alive.
-          notice = isChinese
+          // is suppressed while this one is open, so keep this action loop alive
+          // and show the reason that manager would have shown.
+          const raised = pendingSafeModeNotice
+          pendingSafeModeNotice = undefined
+          notice = raised ?? (isChinese
             ? '正常 Profile 仍未恢复，已继续保留安全模式。请检查启动日志并修复后重试。'
-            : 'The normal Profile is still unavailable. Safe Mode remains active; check the startup log, repair and retry.'
+            : 'The normal Profile is still unavailable. Safe Mode remains active; check the startup log, repair and retry.')
           noticeTone = 'error'
           continue
         }
+        pendingSafeModeNotice = undefined
         void mobileBridge.start().catch(showUnexpectedError)
         return
       }

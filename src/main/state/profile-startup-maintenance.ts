@@ -2,6 +2,7 @@ import type {
   MigrationOutcome,
   MigrationRecoveryOutcome
 } from './generation-migration'
+import type { ProfileBootInputProblem } from './profile-boot-preflight'
 
 export type ProfileStartupMaintenanceResult =
   | {
@@ -9,7 +10,14 @@ export type ProfileStartupMaintenanceResult =
       migration: MigrationOutcome | { outcome: 'maintenance-deferred' }
       migrationRebuiltSharedTree: boolean
     }
-  | { outcome: 'safe-recovery'; reason: string; allowedRestoreId?: string; repairable?: boolean }
+  | {
+      outcome: 'safe-recovery'
+      reason: string
+      allowedRestoreId?: string
+      repairable?: boolean
+      /** The bundle the failure named, so Safe Mode can point at it. */
+      repairTarget?: string
+    }
 
 export interface ProfileStartupMaintenanceDeps {
   note: (line: string) => void
@@ -22,8 +30,15 @@ export interface ProfileStartupMaintenanceDeps {
   shouldDeferProfileMaintenance: () => Promise<boolean>
   migrateProfileToGenerations: () => Promise<MigrationOutcome>
   ensureMarketBaseline: () => Promise<void>
+  /** Whether the market already installed can carry this boot on its own. */
+  marketUsableWithoutBaseline: () => Promise<boolean>
   reportProfileConsistency: () => Promise<void>
-  inspectProfileBootInputs: () => Promise<string | undefined>
+  inspectProfileBootInputs: () => Promise<ProfileBootInputProblem | undefined>
+  /**
+   * Remove unresolvable third-party bundle declarations before giving up on the
+   * normal Profile; resolves to the names whose declaration was removed.
+   */
+  pruneUnresolvableBundles: () => Promise<string[]>
 }
 
 /**
@@ -32,7 +47,11 @@ export interface ProfileStartupMaintenanceDeps {
  * A recovery-required journal short-circuits every mutator. A deferred
  * migration keeps the legacy installation without projection,
  * prune, or repair after the failure. Startup leaves destructive package
- * repair to the explicit recovery flow.
+ * repair to the explicit recovery flow, with one declaration-only exception:
+ * when the boot preflight fails, third-party bundles that are declared but no
+ * longer installed have their declaration dropped once and the check retried,
+ * because the Safe Mode plugin controls cannot clear that fault themselves.
+ * No package files, user patch rows or plugin data are removed.
  * Bundle reconciliation still runs: missing installed layers are added and
  * duplicate PPT layers owned by the Desktop composer are removed from the
  * manifest only. Package files, user patches and plugin data remain intact.
@@ -40,7 +59,8 @@ export interface ProfileStartupMaintenanceDeps {
  * core bundle, never a generation, and the app cannot boot without a working
  * one — so it is demoted out of any generation and brought to the baseline in
  * the shared tree ahead of projection and ahead of the removal-verification
- * gate, while Harness is stopped.
+ * gate, while Harness is stopped. A baseline that cannot be installed only
+ * blocks startup when the market already present is unusable.
  */
 export async function runProfileStartupMaintenance(
   deps: ProfileStartupMaintenanceDeps
@@ -57,19 +77,51 @@ export async function runProfileStartupMaintenance(
     }
   }
 
-  const checkBootInputs = async (): Promise<ProfileStartupMaintenanceResult | undefined> => {
-    let problem: string | undefined
+  const inspectBootInputs = async (): Promise<ProfileBootInputProblem | undefined> => {
     try {
-      problem = await deps.inspectProfileBootInputs()
+      return await deps.inspectProfileBootInputs()
     } catch (error) {
-      problem = error instanceof Error ? error.message : String(error)
+      return { message: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  const checkBootInputs = async (): Promise<ProfileStartupMaintenanceResult | undefined> => {
+    let problem = await inspectBootInputs()
     if (problem === undefined) return undefined
-    const reason = `normal Profile startup inputs are invalid: ${problem}`
+
+    // A bundle declared but no longer installed is the one startup fault the
+    // Safe Mode plugin controls cannot clear — disabling writes a patch row,
+    // while the failure comes from the manifest. Drop those declarations once
+    // and re-check, so an uninstalled plugin does not cost the normal Profile.
+    let pruned: string[] = []
+    try {
+      pruned = await deps.pruneUnresolvableBundles()
+    } catch (error) {
+      deps.note(
+        `[desktop] could not prune unresolvable bundle declarations: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
+    if (pruned.length > 0) {
+      deps.note(
+        `[desktop] removed unresolvable bundle declaration(s): ${pruned.join(', ')}; package files, user patches and plugin data kept, pnpm-lock.yaml dropped for re-resolution`
+      )
+      const remaining = await inspectBootInputs()
+      if (remaining === undefined) return undefined
+      problem = remaining
+    }
+
+    const reason = `normal Profile startup inputs are invalid: ${problem.message}`
     deps.note(`[desktop] ${reason}`)
     // An invalid bundle/config is repairable; it is not an incomplete restore
     // transaction that must lock the Safe Mode plugin controls.
-    return { outcome: 'safe-recovery', reason, repairable: true }
+    return {
+      outcome: 'safe-recovery',
+      reason,
+      repairable: true,
+      ...(problem.packageName !== undefined ? { repairTarget: problem.packageName } : {})
+    }
   }
 
   const recovery = await deps.recoverInterruptedMigration()
@@ -147,8 +199,25 @@ export async function runProfileStartupMaintenance(
   }
   const marketFailure = await establishMarketBaseline()
   if (marketFailure !== undefined) {
-    deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
-    return { outcome: 'safe-recovery', reason: marketFailure, repairable: true }
+    // An install that cannot reach the registry is common and must not cost the
+    // user their normal Profile while the market they already have still loads.
+    // The pending marker keeps the repair queued for the next launch.
+    let marketStillUsable = false
+    try {
+      marketStillUsable = await deps.marketUsableWithoutBaseline()
+    } catch (error) {
+      deps.note(
+        `[desktop] could not inspect the installed market: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
+    if (marketStillUsable) {
+      deps.note(`[desktop] market baseline deferred, keeping the installed market: ${marketFailure}`)
+    } else {
+      deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
+      return { outcome: 'safe-recovery', reason: marketFailure, repairable: true }
+    }
   }
   if (deferRemovalMaintenance) {
     // Projection is required to make a durable generation tombstone visible,

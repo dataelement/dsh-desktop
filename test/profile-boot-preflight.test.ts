@@ -36,8 +36,15 @@ describe('normal Profile boot preflight', () => {
     if (broken === 'manifest') await writeFile(join(profile, 'package.json'), '{broken')
     if (broken === 'profile-yaml') await writeFile(join(profile, 'cordis.patch.yml'), '[broken')
     if (broken === 'home-yaml') await writeFile(join(home, 'cordis.patch.yml'), '[broken')
-    expect(await check()).toEqual(expect.any(String))
-    if (broken === 'bundle' || broken === 'patch') expect(await check()).toContain('test-startup-bundle')
+    const problem = await check()
+    expect(problem?.message).toEqual(expect.any(String))
+    if (broken === 'bundle' || broken === 'patch') {
+      expect(problem?.message).toContain('test-startup-bundle')
+      // Safe Mode points at this package instead of re-parsing the message.
+      expect(problem?.packageName).toBe('test-startup-bundle')
+    } else {
+      expect(problem?.packageName).toBeUndefined()
+    }
   })
 
   it('allows Harness to initialize an absent Profile', async () => {
