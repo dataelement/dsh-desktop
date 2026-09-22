@@ -87,7 +87,8 @@ describe('github_release_notes generate-fallback', () => {
     await run(['generate-fallback', '--tag', 'v9.9.9', '--output', file])
     const body = await readFile(file, 'utf8')
     expect(body.startsWith('# DSH Desktop v9.9.9 — ')).toBe(true)
-    expect(body).toContain('## 更新内容')
+    // A fixes-only branch legitimately emits 问题修复 without 更新内容.
+    expect(body).toMatch(/^## (更新内容|问题修复)$/m)
     await expect(run(['validate', '--tag', 'v9.9.9', '--input', file])).resolves.toBeDefined()
   })
 })
