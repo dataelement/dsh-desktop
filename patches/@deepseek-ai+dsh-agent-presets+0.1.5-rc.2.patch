@@ -1,0 +1,23 @@
+diff --git a/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js b/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js
+index 5b13925..f1dcd2c 100644
+--- a/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-agent-presets/lib/index.js
+@@ -906,7 +906,8 @@ async function mountPreset(agentCtx, preset) {
+ 	if (scopeOf(agentCtx) === void 0) throw new Error(`agent-presets: refusing to mount preset "${preset.id}" into an unscoped context; its registrations would apply to every agent in the process`);
+ 	const config = { path: pathToFileURL(preset.path).href };
+ 	/* v8 ignore next -- the Loader sets `baseUrl` on the root before any scoped context derives from it */
+-	if (agentCtx.baseUrl !== void 0) harnessBase.set(config, agentCtx.baseUrl);
++	const hostBase = agentCtx.loader?.[Symbol.for("dsh.desktop.host-module-base-url")] ?? agentCtx.baseUrl;
++	if (hostBase !== void 0) harnessBase.set(config, hostBase);
+ 	pruneDisposedMounts();
+ 	const handle = agentCtx.plugin(PresetTree, config);
+ 	try {
+@@ -1294,7 +1295,7 @@ let AgentPresets = (() => {
+ 			super(ctx, "agentPresets");
+ 			this.config = config;
+ 			this.selfCtx = ctx;
+-			const { baseUrl } = ctx;
++			const baseUrl = ctx.loader?.[Symbol.for("dsh.desktop.host-module-base-url")] ?? ctx.baseUrl;
+ 			if (baseUrl === void 0) throw new Error("agent-presets: the roster needs `ctx.baseUrl` to resolve the plugins a composition names; compose it under a Loader, or set the base on the context this plugin is applied to");
+ 			this.harnessBase = baseUrl;
+ 			this.resolvedRoots = [

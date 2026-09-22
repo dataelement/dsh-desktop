@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-index 8dd94c6..bf0270d 100644
+index 8dd94c6..8a6e995 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 @@ -419,14 +419,28 @@ function ensureSymlink(link, target) {
@@ -90,7 +90,7 @@ index 8dd94c6..bf0270d 100644
  	});
  	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
  	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
-@@ -1332,6 +1369,18 @@ async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModul
+@@ -1332,6 +1369,20 @@ async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModul
  		}
  	};
  	ctx.loader.builtins.group = Group;
@@ -100,6 +100,8 @@ index 8dd94c6..bf0270d 100644
 +	// way, or they fall back to the configuration directory.
 +	if (bareModuleBaseUrl !== void 0) {
 +		const loader = ctx.loader;
++		// Client discovery must use the same anchor as the host import path.
++		loader[Symbol.for("dsh.desktop.host-module-base-url")] = bareModuleBaseUrl;
 +		const importFromConfig = loader.import.bind(loader);
 +		loader.import = (name, getOuterStack) => {
 +			if (name.startsWith(".") || name.startsWith("cordis:") || isAbsolute(name) || loader.internal === void 0) return importFromConfig(name, getOuterStack);
@@ -109,7 +111,7 @@ index 8dd94c6..bf0270d 100644
  	const rootInclude = {
  		id: "include",
  		name: "cordis:include",
-@@ -1466,6 +1515,7 @@ async function assertEntriesActivated(ctx, binName) {
+@@ -1466,6 +1517,7 @@ async function assertEntriesActivated(ctx, binName) {
  	assertEntriesLoaded(ctx, binName);
  	const failures = [];
  	const rejectionReasons = [];
@@ -117,7 +119,7 @@ index 8dd94c6..bf0270d 100644
  	for (const entry of ctx.loader.entries()) {
  		const fiber = entry.fiber;
  		if (fiber === void 0 || entry.disabled) continue;
-@@ -1476,6 +1526,7 @@ async function assertEntriesActivated(ctx, binName) {
+@@ -1476,6 +1528,7 @@ async function assertEntriesActivated(ctx, binName) {
  				await fiber.await();
  			} catch (error) {
  				rejectionReasons.push(error);
@@ -125,7 +127,7 @@ index 8dd94c6..bf0270d 100644
  				failures.push(`${entry.options.name}: ${formatActivationError(error)}`);
  			}
  			continue;
-@@ -1485,11 +1536,12 @@ async function assertEntriesActivated(ctx, binName) {
+@@ -1485,11 +1538,12 @@ async function assertEntriesActivated(ctx, binName) {
  			const subject = missing.length === 1 ? "service" : "services";
  			failures.push(`${entry.options.name}: pending (waiting for ${subject}: ${missing.join(", ") || "unknown"})`);
  		} else failures.push(`${entry.options.name}: fiber state ${String(state)}`);
@@ -139,7 +141,7 @@ index 8dd94c6..bf0270d 100644
  	}
  }
  /**
-@@ -1537,7 +1589,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
+@@ -1537,7 +1591,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
  		await assertEntriesActivated(ctx, binName);
  		return ctx;
  	} catch (cause) {

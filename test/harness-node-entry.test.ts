@@ -1,10 +1,60 @@
-import { execFileSync } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { applyWindowsHide } from '../build/windows-child-process-hide.mjs'
 import { projectRoot } from './patch-path'
+
+describe('linked Profile plugin host dependency fallback', () => {
+  it('keeps the plugin local and resolves only missing @deepseek-ai peers from the host', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-host-module-fallback-'))
+    try {
+      const host = join(root, 'host')
+      const localPlugin = join(root, 'local-plugin')
+      const profileModules = join(root, 'profile', 'node_modules')
+      const hostPeer = join(host, 'node_modules', '@deepseek-ai', 'host-peer')
+      const hostOrdinary = join(host, 'node_modules', 'ordinary-host-only')
+      await Promise.all([
+        mkdir(hostPeer, { recursive: true }),
+        mkdir(hostOrdinary, { recursive: true }),
+        mkdir(localPlugin, { recursive: true }),
+        mkdir(profileModules, { recursive: true })
+      ])
+      await Promise.all([
+        writeFile(join(hostPeer, 'package.json'), JSON.stringify({ name: '@deepseek-ai/host-peer', type: 'module', exports: './index.js' })),
+        writeFile(join(hostPeer, 'index.js'), 'export const source = "host-peer"\n'),
+        writeFile(join(hostOrdinary, 'package.json'), JSON.stringify({ name: 'ordinary-host-only', type: 'module', exports: './index.js' })),
+        writeFile(join(hostOrdinary, 'index.js'), 'export const source = "host-ordinary"\n'),
+        writeFile(join(localPlugin, 'package.json'), JSON.stringify({ name: 'linked-plugin', type: 'module', exports: './index.js' })),
+        writeFile(join(localPlugin, 'index.js'), `
+          import { source } from '@deepseek-ai/host-peer'
+          let ordinary = 'missing'
+          try { await import('ordinary-host-only'); ordinary = 'host-leaked' } catch {}
+          export const result = { source, ordinary }
+        `),
+        writeFile(join(host, 'entry.mjs'), `
+          export async function runCli() {
+            const plugin = await import(${JSON.stringify(pathToFileURL(join(profileModules, 'linked-plugin', 'index.js')).href)})
+            process.stdout.write('fixture:' + JSON.stringify(plugin.result) + '\\n')
+          }
+        `)
+      ])
+      await symlink(localPlugin, join(profileModules, 'linked-plugin'))
+
+      const result = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        join(host, 'entry.mjs')
+      ], { encoding: 'utf8' })
+
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toContain('fixture:{"source":"host-peer","ordinary":"missing"}')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('applyWindowsHide helper', () => {
   it('adds windowsHide: true when options is undefined', () => {
