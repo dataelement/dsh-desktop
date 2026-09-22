@@ -1155,17 +1155,25 @@ const updateIcon = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" 
 
 const phoneIcon = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><rect x="7" y="2.75" width="10" height="18.5" rx="2.25" stroke="currentColor" stroke-width="1.7"/><path d="M10.2 5.5h3.6M10.5 18.35h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`
 
+/**
+ * The wide-sidebar button mirrors the settings trigger next to it: the same
+ * 42px height (as a 42px square), the same 12px corner radius, and the same
+ * 2px overhang past the settings area's content edge, with a 4px gap between
+ * the two. The collapsed rail mirrors the trigger's 36px
+ * circle instead. Both trigger sizes come from Harness's settings plugin.
+ */
 const mobileButtonStyles = `
   [data-dsh-sidebar-settings] { position:relative; box-sizing:border-box; }
-  [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] [data-dsh-sidebar-settings] { padding-right:38px; }
-  #${MOBILE_BUTTON_ID} { appearance:none; position:relative; width:32px; height:32px; color:var(--dsw-alias-label-secondary,#73777f); background:transparent; border:0; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
-  [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] #${MOBILE_BUTTON_ID} { position:absolute; right:0; top:50%; transform:translateY(-50%); }
+  [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] [data-dsh-sidebar-settings] { padding-right:46px; }
+  #${MOBILE_BUTTON_ID} { appearance:none; position:relative; width:42px; height:42px; padding:0; color:var(--dsw-alias-label-secondary,#73777f); background:transparent; border:0; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+  [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] #${MOBILE_BUTTON_ID} { position:absolute; right:-2px; top:50%; transform:translateY(-50%); }
   [data-dsh-sidebar-root][data-dsh-sidebar-wide="false"] [data-dsh-sidebar-settings] { flex-direction:column; align-items:center; }
-  [data-dsh-sidebar-root][data-dsh-sidebar-wide="false"] #${MOBILE_BUTTON_ID} { flex:none; margin-top:5px; }
+  [data-dsh-sidebar-root][data-dsh-sidebar-wide="false"] #${MOBILE_BUTTON_ID} { flex:none; width:36px; height:36px; border-radius:50%; margin-top:2px; }
   #${MOBILE_BUTTON_ID}:hover { color:var(--dsw-alias-label-primary,#202124); background:var(--dsw-alias-interactive-bg-hover,rgba(32,33,36,.08)); }
   #${MOBILE_BUTTON_ID}:focus-visible { outline:2px solid #4d6bfe; outline-offset:1px; }
   #${MOBILE_BUTTON_ID}[hidden] { display:none; }
-  #${MOBILE_BUTTON_ID} > span { position:absolute; top:4px; right:4px; width:7px; height:7px; border:1.5px solid var(--dsw-specific-sidebar-fill,#fff); border-radius:50%; background:#4da66d; opacity:0; }
+  #${MOBILE_BUTTON_ID} > span { position:absolute; top:9px; right:9px; width:7px; height:7px; border:1.5px solid var(--dsw-specific-sidebar-fill,#fff); border-radius:50%; background:#4da66d; opacity:0; }
+  [data-dsh-sidebar-root][data-dsh-sidebar-wide="false"] #${MOBILE_BUTTON_ID} > span { top:6px; right:6px; }
   #${MOBILE_BUTTON_ID}.is-connected > span { opacity:1; }
 `
 
