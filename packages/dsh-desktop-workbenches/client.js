@@ -84,7 +84,9 @@ window.__ModuleLoader__.load({
               && candidate.repository.replace(/\/$/, '').toLowerCase() === item.url.toLowerCase())
             // A market installation also has a stable runtime identity. This
             // covers packages that do not expose their repository descriptor.
-            || (install && item.workbenchId === candidate.id)
+            // An install still running a release from before the namespaced
+            // ID registers one of the listed legacy IDs until it updates.
+            || (install && (item.workbenchId === candidate.id || (item.legacyWorkbenchIds || []).includes(candidate.id)))
           )
           if (provider) matched.add(provider.id)
           return {

@@ -1219,6 +1219,23 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.marketInstallFor('helper')).toBe('o/helper')
   })
 
+  it('keeps an install still running a pre-namespace release as one installed card that can update', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed({ workbenchId: 'wb-o-helper', legacyWorkbenchIds: ['helper'], version: '1.1.0' })]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', workbenchId: 'helper', version: '1.0.0' } }
+    service.register({ id: 'helper', title: 'Helper' }, () => null)
+    const cards = service.getSnapshot().catalog.filter(entry => entry.catalogId === 'o/helper' || entry.id === 'helper')
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({ id: 'helper', installed: true, listedVersion: '1.1.0' })
+  })
+
+  it('does not claim a legacy-ID provider for a listing that was never installed from the market', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed({ workbenchId: 'wb-o-helper', legacyWorkbenchIds: ['helper'] })]
+    service.register({ id: 'helper', title: 'Helper' }, () => null)
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: false })
+  })
+
   it('rolls back an install whose runtime ID shadows a loaded workbench, and refuses entries not in the market', async () => {
     const { service, saved } = await fixture()
     service.remoteCatalog = [listed()]
