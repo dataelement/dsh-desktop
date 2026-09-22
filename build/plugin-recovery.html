@@ -62,17 +62,6 @@
       .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
       .brand img { width: 28px; height: 28px; border-radius: 8px; }
       .brand-name { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        min-height: 22px;
-        padding: 2px 8px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        color: var(--muted);
-        font-size: 11px;
-        font-weight: 600;
-      }
       .content { min-height: 0; overflow: auto; padding: 30px 32px 22px; }
       .progress, .notice {
         display: none;
@@ -420,7 +409,6 @@
         <div class="brand">
           <img id="icon" alt="" />
           <span class="brand-name" id="brand"></span>
-          <span class="badge" id="badge"></span>
         </div>
       </header>
 
@@ -508,7 +496,6 @@
 
       document.getElementById('icon').src = params.get('icon') || 'icon.png'
       setText('brand', model.brand)
-      setText('badge', model.badge)
       setText('heading', model.heading)
       setText('summary', model.summary)
       setText('reason-title', model.reasonTitle)
