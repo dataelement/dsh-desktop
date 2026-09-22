@@ -5,7 +5,7 @@ import { listGenerations, readDesired, writeDesired } from 'dsh-desktop-market-i
 import { compareSemver, parseSemver, readInstalledPluginVersion } from './plugin-market-check'
 import { profilePackageJsonPath } from './plugin-recovery'
 import { clearProfileInstallMarker } from './profile-install-marker'
-import { upgradeMarketInSharedTree, type MarketSharedTreeUpgradeOptions } from './plugin-upgrade'
+import { hasPendingMarketInstall, upgradeMarketInSharedTree, type MarketSharedTreeUpgradeOptions } from './plugin-upgrade'
 
 export const VERIFIED_MARKET_BASELINE = '1.45.1'
 
@@ -162,7 +162,7 @@ async function noteShadowedMarket(
   )
 }
 
-/** Run only after startup recovery gates and generation projection, with Harness stopped. */
+/** Run only after startup recovery gates, before generation migration/projection, with Harness stopped. */
 export async function ensureMarketBaseline(
   options: Omit<MarketSharedTreeUpgradeOptions, 'targetVersion'>,
   upgrade: (options: MarketSharedTreeUpgradeOptions) => ReturnType<typeof upgradeMarketInSharedTree> = upgradeMarketInSharedTree
@@ -200,7 +200,7 @@ export async function ensureMarketBaseline(
     .catch(() => false)
   const profileDir = dirname(profilePackageJsonPath(options.dshHome))
   const installAnchor = join(dirname(options.dshEntryPath), '..', 'package.json')
-  if (meetsBaseline(installed) && !isGenerationLink) {
+  if (meetsBaseline(installed) && !isGenerationLink && !await hasPendingMarketInstall(options.dshHome)) {
     await noteShadowedMarket(installAnchor, profileDir, options.note)
     return
   }
@@ -208,10 +208,11 @@ export async function ensureMarketBaseline(
   // The installer pins and verifies an exact version, so a declared range
   // (`^0.5.0`) is reduced to the version it names.
   const declaredClean = manifest.dependencies.dshmarket.replace(/^[~^v=><\s]+/g, '')
-  const targetVersion =
-    parseSemver(declaredClean) && compareSemver(declaredClean, VERIFIED_MARKET_BASELINE) > 0
-      ? declaredClean
-      : VERIFIED_MARKET_BASELINE
+  // A partial install may already expose a newer version. Finish that install
+  // rather than downgrade it merely because the previous manifest was restored.
+  const targetVersion = [VERIFIED_MARKET_BASELINE, declaredClean, installed]
+    .filter((version): version is string => !!version && !!parseSemver(version))
+    .reduce((latest, version) => compareSemver(version, latest) > 0 ? version : latest, VERIFIED_MARKET_BASELINE)
 
   options.note?.(
     isGenerationLink

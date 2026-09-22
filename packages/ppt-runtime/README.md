@@ -28,6 +28,8 @@ After rebuilding, refresh both dependency integrity entries in `package-lock.jso
 
 The built-in profile loads one `dsh-ppt-composer` plugin. The Skill, new automatic context records, client registration and primary RPC use DSH names. Historical attribution is kept in notices and an entry-point comment.
 
+Desktop's startup bundle reconciliation removes `dsh-ppt` and `dsh-ppt-composer` from the normal Profile's extra bundle list: the Desktop patch already loads the composer, which mounts the core. This prevents duplicate preview routes and the `dsh-ppt-bundled` skill provider when a Profile also declares these packages. Dependencies, installed packages, user patch files and existing `kimi-ppt` projects are retained. Custom patch rows are not rewritten; this reconciliation handles standard bundle declarations only. Standalone Harness profiles do not opt into Desktop's bundle ownership.
+
 The legacy on-disk `kimi-ppt` directory is deliberately retained to preserve sessions, revisions and output files. `/kimi-ppt` remains an alias for in-flight older clients; legacy Skill-root config/env values and old automatic snapshots are handled explicitly. The three retained template IDs migrate to DSH IDs without losing selection; removed IDs fall back visibly. User-authored messages and historical generated decks are preserved.
 
 PPT remains preinstalled. Its automatic instructions are scoped to sessions where the user enabled the PPT button.

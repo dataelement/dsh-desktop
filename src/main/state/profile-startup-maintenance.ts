@@ -9,7 +9,7 @@ export type ProfileStartupMaintenanceResult =
       migration: MigrationOutcome | { outcome: 'maintenance-deferred' }
       migrationRebuiltSharedTree: boolean
     }
-  | { outcome: 'safe-recovery'; reason: string; allowedRestoreId?: string }
+  | { outcome: 'safe-recovery'; reason: string; allowedRestoreId?: string; repairable?: boolean }
 
 export interface ProfileStartupMaintenanceDeps {
   note: (line: string) => void
@@ -23,16 +23,19 @@ export interface ProfileStartupMaintenanceDeps {
   migrateProfileToGenerations: () => Promise<MigrationOutcome>
   ensureMarketBaseline: () => Promise<void>
   reportProfileConsistency: () => Promise<void>
+  inspectProfileBootInputs: () => Promise<string | undefined>
 }
 
 /**
  * The single fail-closed owner of startup Profile mutations.
  *
  * A recovery-required journal short-circuits every mutator. A deferred
- * migration launches the byte-for-byte legacy Profile without projection,
- * prune, or repair after the failure. Startup never performs destructive
- * package repair or declaration pruning; it only reports inconsistencies for
- * an explicit recovery flow to handle later.
+ * migration keeps the legacy installation without projection,
+ * prune, or repair after the failure. Startup leaves destructive package
+ * repair to the explicit recovery flow.
+ * Bundle reconciliation still runs: missing installed layers are added and
+ * duplicate PPT layers owned by the Desktop composer are removed from the
+ * manifest only. Package files, user patches and plugin data remain intact.
  * The market's verified baseline is the targeted exception: dshmarket is a
  * core bundle, never a generation, and the app cannot boot without a working
  * one — so it is demoted out of any generation and brought to the baseline in
@@ -52,6 +55,21 @@ export async function runProfileStartupMaintenance(
         }`
       )
     }
+  }
+
+  const checkBootInputs = async (): Promise<ProfileStartupMaintenanceResult | undefined> => {
+    let problem: string | undefined
+    try {
+      problem = await deps.inspectProfileBootInputs()
+    } catch (error) {
+      problem = error instanceof Error ? error.message : String(error)
+    }
+    if (problem === undefined) return undefined
+    const reason = `normal Profile startup inputs are invalid: ${problem}`
+    deps.note(`[desktop] ${reason}`)
+    // An invalid bundle/config is repairable; it is not an incomplete restore
+    // transaction that must lock the Safe Mode plugin controls.
+    return { outcome: 'safe-recovery', reason, repairable: true }
   }
 
   const recovery = await deps.recoverInterruptedMigration()
@@ -100,8 +118,9 @@ export async function runProfileStartupMaintenance(
    * is what marks the removal verified. Leaving it behind that gate is what
    * turned one incompatible market build into a permanent boot loop — the
    * repair needed a successful boot to be allowed, and the boot needed the
-   * repair. A frozen migration still blocks it; that path keeps the legacy
-   * profile byte-for-byte for rollback.
+   * repair. Establish the baseline before starting the migration, so its
+   * snapshot and any rollback retain the compatible market as their starting
+   * state. Interrupted recovery and incomplete restores still block all writes.
    */
   const establishMarketBaseline = async (): Promise<string | undefined> => {
     try {
@@ -126,12 +145,12 @@ export async function runProfileStartupMaintenance(
     deps.note(`[desktop] normal profile maintenance blocked: ${reason}`)
     return { outcome: 'safe-recovery', reason }
   }
+  const marketFailure = await establishMarketBaseline()
+  if (marketFailure !== undefined) {
+    deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
+    return { outcome: 'safe-recovery', reason: marketFailure, repairable: true }
+  }
   if (deferRemovalMaintenance) {
-    const marketFailure = await establishMarketBaseline()
-    if (marketFailure !== undefined) {
-      deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
-      return { outcome: 'safe-recovery', reason: marketFailure }
-    }
     // Projection is required to make a durable generation tombstone visible,
     // but migration/repair/prune remain blocked until removal is verified.
     try {
@@ -148,6 +167,8 @@ export async function runProfileStartupMaintenance(
       '[desktop] profile package maintenance deferred while plugin removal is pending verification'
     )
     await reportConsistency()
+    const invalid = await checkBootInputs()
+    if (invalid) return invalid
     return {
       outcome: 'normal-profile',
       migration: { outcome: 'maintenance-deferred' },
@@ -162,17 +183,13 @@ export async function runProfileStartupMaintenance(
       return { outcome: 'safe-recovery', reason: migration.reason }
     }
     await reportConsistency()
+    const invalid = await checkBootInputs()
+    if (invalid) return invalid
     return {
       outcome: 'normal-profile',
       migration,
       migrationRebuiltSharedTree: false
     }
-  }
-
-  const marketFailure = await establishMarketBaseline()
-  if (marketFailure !== undefined) {
-    deps.note(`[desktop] normal profile maintenance blocked: ${marketFailure}`)
-    return { outcome: 'safe-recovery', reason: marketFailure }
   }
 
   try {
@@ -186,6 +203,13 @@ export async function runProfileStartupMaintenance(
     return { outcome: 'safe-recovery', reason }
   }
   await reportConsistency()
+  // A rebuilt tree is verified by the existing real launch + rollback flow.
+  // Preflight reused trees here, where legacy-intact alone cannot prove that
+  // their bundles or patch files are readable by this installation.
+  if (migration.outcome !== 'migrated') {
+    const invalid = await checkBootInputs()
+    if (invalid) return invalid
+  }
   return {
     outcome: 'normal-profile',
     migration,

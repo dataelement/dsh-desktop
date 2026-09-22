@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
 import { mountRootInclude } from '@deepseek-ai/dsh-app-boot'
 import { describe, expect, it, vi } from 'vitest'
 import { patchPath } from './patch-path'
@@ -49,6 +50,26 @@ describe('Safe Mode resolves plugins from the installation', () => {
     expect(loader.import).toBe(original)
     await loader.import('@deepseek-ai/dsh-llm', () => '')
     expect(configImport).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['test-client-plugin', 'file:///app/dsh/package.json'],
+    ['./local.js', 'file:///profile/cordis.yml'],
+    ['file:///local/plugin.js', 'file:///profile/cordis.yml'],
+    ['/local/plugin.js', 'file:///profile/cordis.yml'],
+    ['cordis:group', 'file:///profile/cordis.yml']
+  ])('keeps client discovery aligned for %s', async (name, expectedBase) => {
+    const { ctx, loader } = fakeContext()
+    await mountRootInclude(ctx as never, '/profile/cordis.yml', [], 'file:///app/dsh/package.json')
+    // Exercise the published resolver without starting a second Cordis tree.
+    const resolveSource: unknown = Reflect.get(ClientModuleRegistry.prototype, 'resolveSource')
+    if (typeof resolveSource !== 'function') throw new Error('ClientModuleRegistry resolver changed')
+    const resolveMeta = vi.fn(() => null)
+    const entry = { options: { name }, parent: { tree: { ctx: { baseUrl: 'file:///profile/cordis.yml' } } } }
+    Reflect.apply(resolveSource, { ctx: { loader }, resolveMeta }, [entry])
+    expect(resolveMeta).toHaveBeenCalledWith(name, expectedBase)
+    Reflect.apply(resolveSource, { ctx: { loader: {} }, resolveMeta }, [entry])
+    expect(resolveMeta).toHaveBeenLastCalledWith(name, 'file:///profile/cordis.yml')
   })
 
   it('skips the fallback heal and passes the host base only when Desktop asks for it', async () => {

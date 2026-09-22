@@ -35,7 +35,7 @@ function startup(ensure: () => Promise<void>): ProfileStartupMaintenanceDeps {
     enforcePendingPluginRemovals: async () => {}, prepareGenerationsForLaunch: async () => {},
     shouldDeferProfileMaintenance: async () => false,
     migrateProfileToGenerations: async () => ({ outcome: 'no-op' }),
-    ensureMarketBaseline: ensure, reportProfileConsistency: async () => {}
+    ensureMarketBaseline: ensure, reportProfileConsistency: async () => {}, inspectProfileBootInputs: async () => undefined
   }
 }
 
@@ -213,14 +213,38 @@ describe('market baseline at normal startup', () => {
     expect(upgrade).toHaveBeenCalledTimes(1)
   })
 
-  it.each(['recovery', 'restore', 'migration'] as const)('does not upgrade during %s deferral', async (gate) => {
+  it.each(['recovery', 'restore'] as const)('does not upgrade during %s deferral', async (gate) => {
     const ensure = vi.fn(async () => {})
     const deps = startup(ensure)
     if (gate === 'recovery') deps.recoverInterruptedMigration = async () => ({ outcome: 'recovery-required', reason: 'locked' })
     if (gate === 'restore') deps.incompletePluginRestoreId = async () => 'restore-id'
-    if (gate === 'migration') deps.migrateProfileToGenerations = async () => ({ outcome: 'deferred-failure', reason: 'deferred', profileState: 'legacy-intact' })
     await runProfileStartupMaintenance(deps)
     expect(ensure).not.toHaveBeenCalled()
+  })
+
+  it('upgrades 1.31.1 before an unrelated migration fails, then checks the retained Profile', async () => {
+    const { market, options } = await fixture('1.31.1')
+    const deps = startup(() => ensureMarketBaseline(options, async ({ targetVersion }) => {
+      await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: targetVersion }))
+      return { ok: true }
+    }))
+    deps.migrateProfileToGenerations = async () => {
+      expect(await readInstalledPluginVersion(options.dshHome, 'dshmarket')).toBe(VERIFIED_MARKET_BASELINE)
+      return { outcome: 'deferred-failure', reason: 'unrelated plugin missing', profileState: 'legacy-intact' }
+    }
+    deps.prepareGenerationsForLaunch = vi.fn()
+    deps.inspectProfileBootInputs = async () => 'failed to prepare profile bundle unrelated-plugin'
+    expect(await runProfileStartupMaintenance(deps)).toMatchObject({ outcome: 'safe-recovery', repairable: true, reason: expect.stringContaining('unrelated-plugin') })
+    expect(deps.prepareGenerationsForLaunch).not.toHaveBeenCalled()
+    deps.inspectProfileBootInputs = async () => undefined
+    expect(await runProfileStartupMaintenance(deps)).toMatchObject({ outcome: 'normal-profile', migration: { outcome: 'deferred-failure' } })
+  })
+
+  it('opens repairable recovery if the market upgrade fails, without starting migration', async () => {
+    const deps = startup(async () => { throw new Error('install failed') })
+    deps.migrateProfileToGenerations = vi.fn()
+    expect(await runProfileStartupMaintenance(deps)).toMatchObject({ outcome: 'safe-recovery', repairable: true })
+    expect(deps.migrateProfileToGenerations).not.toHaveBeenCalled()
   })
 
   it('still repairs the market while a plugin removal is pending verification', async () => {
