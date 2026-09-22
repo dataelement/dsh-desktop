@@ -11,6 +11,11 @@
     <style>
       :root {
         color-scheme: light dark;
+        /* Reading column for the recovery content: fixed, not a share of the
+           window, so lines stay a readable length on wide displays and the
+           column simply collapses to the window on narrow ones. Header and
+           footer keep their full-width rules but align to the same column. */
+        --page-max: 800px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --canvas: #f7f7f8;
         --surface: #ffffff;
@@ -53,13 +58,13 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 18px 26px;
+        padding: 18px max(26px, calc((100% - var(--page-max)) / 2));
         border-bottom: 1px solid var(--line);
       }
       .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
       .brand img { width: 28px; height: 28px; border-radius: 8px; }
       .brand-name { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
-      .content { flex: 1 1 auto; min-height: 0; padding: 30px 32px 22px; }
+      .content { flex: 1 1 auto; min-height: 0; padding: 30px max(32px, calc((100% - var(--page-max)) / 2)) 22px; }
       .progress, .notice {
         display: none;
         margin: 0 0 18px;
@@ -345,7 +350,7 @@
         align-items: center;
         justify-content: flex-start;
         gap: 16px;
-        padding: 11px 26px;
+        padding: 11px max(26px, calc((100% - var(--page-max)) / 2));
         border-top: 1px solid var(--line);
         color: var(--faint);
         background: var(--surface);
