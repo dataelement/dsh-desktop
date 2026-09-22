@@ -7,6 +7,7 @@ window.__ModuleLoader__.load({
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
     const WRITE_API = '/api/desktop-workbenches/state/write'
+    const MIGRATE_API = '/api/desktop-workbenches/state/migrate'
     const CATALOG_API = '/api/desktop-workbenches/catalog'
     const MARKET_INSTALLS_API = '/api/desktop-workbenches/market-installs'
     const SUBMISSION_STATUS_API = '/api/desktop-workbenches/submission-status'
@@ -153,6 +154,35 @@ window.__ModuleLoader__.load({
           }
         }))
       }
+      migrateLegacyWorkbenchIds() {
+        if (!this.ready || this.blocked || this.disposed) return
+        const migrations = {}
+        const referenced = id => this.state.added.includes(id) || this.state.pinned.includes(id) || this.state.favorites.includes(id)
+          || this.state.active === id || Object.values(this.state.sessionBindings).includes(id)
+          || Object.hasOwn(this.state.recentSessions, id) || Object.hasOwn(this.state.notes, id)
+        for (const entry of this.remoteCatalog) {
+          for (const legacy of [entry.workbenchId, ...(entry.legacyWorkbenchIds || [])]) {
+            if (typeof legacy === 'string' && legacy !== entry.id && referenced(legacy)) migrations[legacy] = entry.id
+          }
+        }
+        if (!Object.keys(migrations).length) return
+        this.run(this.commit((state) => {
+          const replace = id => migrations[id] || id
+          state.added = [...new Set(state.added.map(replace))]
+          state.pinned = [...new Set(state.pinned.map(replace))]
+          state.favorites = [...new Set(state.favorites.map(replace))]
+          state.active = state.active === null ? null : replace(state.active)
+          for (const [session, owner] of Object.entries(state.sessionBindings)) state.sessionBindings[session] = replace(owner)
+          for (const [legacy, current] of Object.entries(migrations)) {
+            if (state.recentSessions[legacy] && !state.recentSessions[current]) state.recentSessions[current] = state.recentSessions[legacy]
+            delete state.recentSessions[legacy]
+            if (Object.hasOwn(state.notes, legacy)) {
+              state.notes[current] = state.notes[current] ? `${state.notes[current]}\n\n${state.notes[legacy]}` : state.notes[legacy]
+              delete state.notes[legacy]
+            }
+          }
+        }, migrations))
+      }
       publish() {
         this.snapshot = { state: this.state, drafts: Object.fromEntries(this.draftNotes), ready: this.ready, error: this.error,
           catalogError: this.catalogError, catalogStale: this.catalogStale, pending: this.pending, marketOpen: this.marketOpen,
@@ -259,6 +289,7 @@ window.__ModuleLoader__.load({
           this.ready = true
           this.lastSession = this.currentSession()
           this.publish()
+          this.migrateLegacyWorkbenchIds()
           this.reconcileMarketInstalls()
           const active = this.state.active
           if (active && this.catalog.has(active) && this.state.added.includes(active)) await this.open(active)
@@ -273,7 +304,7 @@ window.__ModuleLoader__.load({
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
         return data
       }
-      commit(change) {
+      commit(change, migrations) {
         if (!this.ready || this.blocked || this.disposed) return Promise.reject(new Error('工作台更改尚未保存，请先重新加载。'))
         const next = JSON.parse(JSON.stringify(this.state))
         try { change(next) } catch (error) { return Promise.reject(error) }
@@ -282,9 +313,9 @@ window.__ModuleLoader__.load({
         this.publish()
         const task = this.queue.then(async () => {
           if (this.blocked) throw new Error('工作台更改尚未保存，请先重新加载。')
-          const response = await this.request(WRITE_API, {
+          const response = await this.request(migrations ? MIGRATE_API : WRITE_API, {
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ revision: this.revision, state: next })
+            body: JSON.stringify({ revision: this.revision, state: next, ...(migrations ? { migrations } : {}) })
           })
           const data = await response.json()
           if (!response.ok) throw new Error(response.status === 409 ? '工作台已在其他窗口更新，请重新加载后再操作。' : data.error || `HTTP ${response.status}`)

@@ -11,6 +11,16 @@ export const name = 'dsh-desktop-workbenches'
 export const inject = ['connection']
 export const Config = Schema.object({ root: Schema.string().required() })
 
+export function authorizedStateMigrations(catalog) {
+  const allowed = new Map()
+  for (const entry of catalog.workbenches) {
+    for (const legacy of [entry.workbenchId, ...(entry.legacyWorkbenchIds || [])]) {
+      if (typeof legacy === 'string' && legacy !== entry.id) allowed.set(legacy, entry.id)
+    }
+  }
+  return allowed
+}
+
 async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workbench state is too large.') {
   const contentLength = Number(request.headers.get('content-length'))
   if (Number.isFinite(contentLength) && contentLength > maximum) throw new StateError(tooLarge, 413)
@@ -106,6 +116,20 @@ export function apply(ctx, config) {
     async fetch(request) {
       try {
         return Response.json(await store.write(await readPayload(request)), { headers: { 'cache-control': 'no-store' } })
+      } catch (error) { return stateFailure(error) }
+    }
+  })
+  ctx.connection.fetch.register({
+    path: '/api/desktop-workbenches/state/migrate',
+    methods: ['POST'],
+    requestBody: 'buffered',
+    async fetch(request) {
+      try {
+        const payload = await readPayload(request)
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !payload.migrations || typeof payload.migrations !== 'object' || Array.isArray(payload.migrations)) throw new StateError('A workbench ID migration is required.')
+        const allowed = authorizedStateMigrations((await readCatalog()).catalog)
+        if (!Object.entries(payload.migrations).length || !Object.entries(payload.migrations).every(([from, to]) => allowed.get(from) === to)) throw new StateError('This workbench ID migration is not authorized by the market.', 403)
+        return Response.json(await store.migrate({ revision: payload.revision, state: payload.state }, payload.migrations), { headers: { 'cache-control': 'no-store' } })
       } catch (error) { return stateFailure(error) }
     }
   })

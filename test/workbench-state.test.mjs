@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createStateStore, emptyState, MAX_STATE_BYTES } from '../packages/dsh-desktop-workbenches/state.mjs'
-import { apply } from '../packages/dsh-desktop-workbenches/index.js'
+import { apply, authorizedStateMigrations } from '../packages/dsh-desktop-workbenches/index.js'
 
 const roots = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -36,6 +36,17 @@ describe('desktop workbench state', () => {
     await writeFile(join(root, 'state.json'), '{broken')
     await expect(ownership.read()).rejects.toThrow()
   })
+  it('authorizes only published legacy identities for canonical repositories', () => {
+    const allowed = authorizedStateMigrations({ workbenches: [{
+      id: 'dataelement/dsh-ming-life', workbenchId: 'wb-dataelement-dsh-ming-life', legacyWorkbenchIds: ['ming-life']
+    }] })
+    expect([...allowed]).toEqual([
+      ['wb-dataelement-dsh-ming-life', 'dataelement/dsh-ming-life'],
+      ['ming-life', 'dataelement/dsh-ming-life']
+    ])
+    expect(allowed.has('unknown')).toBe(false)
+  })
+
   it('starts empty, atomically saves and restores state on host restart', async () => {
     const { root, store } = await fixture()
     expect(await store.read()).toEqual({ revision: 0, state: emptyState() })
@@ -46,6 +57,33 @@ describe('desktop workbench state', () => {
     state.notes[WRITER] = 'mutated caller'
     saved.state.notes[WRITER] = 'mutated response'
     expect((await store.read()).state.notes[WRITER]).toBe('An unsaved business draft')
+  })
+
+
+  it('loads and atomically migrates pre-canonical workbench identities without losing user data', async () => {
+    const { root, store } = await fixture()
+    const legacy = {
+      version: 1,
+      added: ['ming-life'],
+      pinned: ['ming-life'],
+      active: 'ming-life',
+      sessionBindings: { 'session-legacy': 'ming-life' },
+      recentSessions: { 'ming-life': 'session-legacy' },
+      notes: { 'ming-life': 'Keep this note' }
+    }
+    await writeFile(join(root, 'state.json'), JSON.stringify({ revision: 7, state: legacy }))
+    expect(await store.read()).toEqual({ revision: 7, state: { ...legacy, favorites: [] } })
+
+    const canonical = 'dataelement/dsh-ming-life'
+    const migrated = { ...legacy, favorites: [], added: [canonical], pinned: [canonical], active: canonical,
+      sessionBindings: { 'session-legacy': canonical }, recentSessions: { [canonical]: 'session-legacy' }, notes: { [canonical]: 'Keep this note' } }
+    await expect(store.migrate({ revision: 7, state: migrated }, { 'ming-life': canonical })).resolves.toMatchObject({ revision: 8 })
+    expect(await store.read()).toEqual({ revision: 8, state: migrated })
+  })
+
+  it('does not permit ordinary writes to introduce new legacy identities', async () => {
+    const { store } = await fixture()
+    await expect(store.write({ revision: 0, state: { ...emptyState(), added: ['ming-life'] } })).rejects.toThrow('repository identities')
   })
 
   it('persists adding and removing favorites independently of installed workbenches', async () => {
@@ -125,6 +163,7 @@ describe('desktop workbench state', () => {
     const catalogRoute = routes.find(value => value.path === '/api/desktop-workbenches/catalog')
     const readRoute = routes.find(value => value.path === '/api/desktop-workbenches/state')
     const writeRoute = routes.find(value => value.path === '/api/desktop-workbenches/state/write')
+    const migrateRoute = routes.find(value => value.path === '/api/desktop-workbenches/state/migrate')
     expect(catalogRoute.requestBody).toBe('buffered')
     expect(readRoute.methods).toEqual(['GET'])
     // Without buffered mode, the connection bridge creates a streaming body
@@ -132,6 +171,8 @@ describe('desktop workbench state', () => {
     expect(readRoute.requestBody).toBe('buffered')
     expect(writeRoute.methods).toEqual(['POST'])
     expect(writeRoute.requestBody).toBe('buffered')
+    expect(migrateRoute.methods).toEqual(['POST'])
+    expect(migrateRoute.requestBody).toBe('buffered')
     expect(await (await readRoute.fetch(new Request('http://localhost' + readRoute.path))).json()).toEqual({ revision: 0, state: emptyState() })
     const post = (body) => writeRoute.fetch(new Request('http://localhost' + writeRoute.path, { method: 'POST', body }))
     expect((await post('{invalid')).status).toBe(400)

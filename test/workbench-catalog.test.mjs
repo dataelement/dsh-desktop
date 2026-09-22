@@ -37,6 +37,20 @@ describe('Awesome workbench published catalog', () => {
     expect(() => validatePublishedCatalog(duplicateRepository)).toThrow('Invalid workbench catalog entry')
   })
 
+  it('validates unique legacy identities used for stored-state migration', () => {
+    const value = catalog()
+    value.workbenches[0].workbenchId = 'wb-owner-repository'
+    value.workbenches[0].legacyWorkbenchIds = ['project-helper']
+    expect(validatePublishedCatalog(value).workbenches[0]).toMatchObject({
+      workbenchId: 'wb-owner-repository', legacyWorkbenchIds: ['project-helper']
+    })
+
+    const duplicate = catalog()
+    duplicate.workbenches[0].legacyWorkbenchIds = ['project-helper']
+    duplicate.workbenches.push({ ...duplicate.workbenches[0], id: 'other/repository', owner: 'other', url: 'https://github.com/other/repository' })
+    expect(() => validatePublishedCatalog(duplicate)).toThrow('legacy identity')
+  })
+
   it('caches successful reads and serves the last good catalog after a refresh failure', async () => {
     let time = 0
     const fetch = vi.fn()

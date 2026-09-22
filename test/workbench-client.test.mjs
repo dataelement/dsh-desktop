@@ -128,6 +128,23 @@ const boundState = () => ({ ...emptyState(), added: ['writer', 'research'],
   recentSessions: { writer: 'writer-1', research: 'research-1' }, notes: { writer: 'Retained business draft' } })
 
 describe('desktop workbench client navigation', () => {
+  it('migrates legacy market identities to repository identities and preserves owned data', async () => {
+    const legacy = { ...emptyState(), added: ['ming-life'], pinned: ['ming-life'], favorites: ['ming-life'], active: 'ming-life',
+      sessionBindings: { old: 'ming-life' }, recentSessions: { 'ming-life': 'old' }, notes: { 'ming-life': 'Keep me' } }
+    const { service, request, saved } = await fixture(legacy)
+    service.remoteCatalog = [{ id: 'dataelement/dsh-ming-life', workbenchId: 'wb-dataelement-dsh-ming-life', legacyWorkbenchIds: ['ming-life'],
+      owner: 'dataelement', url: 'https://github.com/dataelement/dsh-ming-life', name: 'Ming Life', categoryName: '其他',
+      description: { zh: 'Ming Life' }, screenshots: [], version: '1.0.0', distribution: { name: 'ming-life' } }]
+
+    service.migrateLegacyWorkbenchIds()
+    await service.queue
+
+    expect(request).toHaveBeenCalledWith('/api/desktop-workbenches/state/migrate', expect.objectContaining({ method: 'POST' }))
+    expect(saved()).toEqual({ revision: 1, state: { ...legacy,
+      added: ['dataelement/dsh-ming-life'], pinned: ['dataelement/dsh-ming-life'], favorites: ['dataelement/dsh-ming-life'], active: 'dataelement/dsh-ming-life',
+      sessionBindings: { old: 'dataelement/dsh-ming-life' }, recentSessions: { 'dataelement/dsh-ming-life': 'old' }, notes: { 'dataelement/dsh-ming-life': 'Keep me' } } })
+  })
+
   it('tracks the market as the current sidebar destination and clears it when a workbench opens', async () => {
     const { service, ctx } = await fixture()
     service.showMarket()
