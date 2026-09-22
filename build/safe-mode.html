@@ -49,7 +49,8 @@
       .plugin-copy { display:flex; flex-direction:column; min-width:0; }
       .plugin-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px; }
       .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
-      .plugin-status { color:var(--danger); font-size:11px; font-weight:650; }
+      .plugin-status { color:var(--muted); font-size:11px; font-weight:650; }
+      .plugin-status.danger { color:var(--danger); }
       .plugin-status.warning { color:var(--warning); }
       .plugin-action { margin-top:4px; font-size:11px; font-weight:620; }
       .issue-group { border-top:1px solid var(--line); background:var(--surface); }
@@ -299,7 +300,8 @@
         }
         if (plugin.statusLabel) {
           const status = document.createElement('span'); status.className = 'plugin-status'; status.textContent = String(plugin.statusLabel)
-          if (plugin.statusTone === 'warning') status.classList.add('warning')
+          if (plugin.statusTone === 'danger') status.classList.add('danger')
+          else if (plugin.statusTone === 'warning') status.classList.add('warning')
           else if (plugin.statusTone === 'success') status.classList.add('success')
           title.appendChild(status)
         }

@@ -1,5 +1,9 @@
-#!/usr/bin/env node
-/** Package a prepared production dependency tree; this command performs no network or package installation. */
+/**
+ * Package a prepared production dependency tree; this command performs no network or package installation.
+ * Run it with `node scripts/pack-enterprise-plugin.mjs`. There is no shebang: Vitest evaluates this module
+ * through Vite's SSR transform, and that transform only recognizes a LF hashbang (`/^#!.*\n/`). A CRLF
+ * checkout on Windows leaves `#!` in the middle of the module, which fails to parse.
+ */
 import { createHash } from 'node:crypto'
 import { deflateRawSync } from 'node:zlib'
 import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'

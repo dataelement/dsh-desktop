@@ -675,6 +675,35 @@ export async function resetPluginProfile(
 }
 
 /**
+ * Prune unresolvable bundle declarations and report what was removed.
+ *
+ * The boot preflight fails closed on a bundle it cannot resolve, and the Safe
+ * Mode plugin controls cannot clear that on their own: disabling writes a patch
+ * row, while the failure comes from `dsh.profile.bundles`. This removes the
+ * declaration for third-party packages that are not on disk — core bundles and
+ * `@deepseek-ai/*` are never touched — so a launch is retried once before the
+ * user is sent to Safe Mode. Package files, user patch layers and plugin data
+ * are left alone; `pnpm-lock.yaml` is dropped so the next install re-resolves.
+ *
+ * @returns the bundle names whose declaration was removed, empty when none was.
+ */
+export async function pruneUnresolvableProfileBundles(dshHome: string): Promise<string[]> {
+  const manifestPath = profilePackageJsonPath(dshHome)
+  const readBundles = async (): Promise<string[]> => {
+    try {
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as ProfileManifest
+      return manifest.dsh?.profile?.bundles ?? []
+    } catch {
+      return []
+    }
+  }
+  const before = await readBundles()
+  if (!(await pruneMissingProfileBundles(dshHome))) return []
+  const after = new Set(await readBundles())
+  return before.filter((name) => !after.has(name))
+}
+
+/**
  * Automatically inspects the web profile manifest before launch.
  * If any third-party bundle listed in `dsh.profile.bundles` is missing from `node_modules`,
  * prunes it from `bundles` and `dependencies` to prevent Harness from failing with

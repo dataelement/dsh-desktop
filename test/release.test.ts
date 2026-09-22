@@ -181,6 +181,13 @@ describe('GitHub release contract', () => {
       to: 'windows-hidden-console.mjs'
     })
     expect(harnessNodeEntry).toContain("await import('./windows-hidden-console.mjs')")
+    // A top-level import: leaving this out of the package does not degrade the
+    // host peer fallback, it stops the Harness entry from loading at all.
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/host-module-fallback.mjs',
+      to: 'host-module-fallback.mjs'
+    })
+    expect(harnessNodeEntry).toContain("from './host-module-fallback.mjs'")
     expect(windowsHiddenConsole).toContain('export function createHiddenConsole')
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/windows-child-process-hide.mjs',

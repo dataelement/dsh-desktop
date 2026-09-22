@@ -1,6 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { Config } from '@deepseek-ai/dsh-persona'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
 import { apply as applyPresetTransfer } from 'dsh-desktop-preset-transfer'
@@ -244,8 +247,9 @@ describe('agent preset package transfer', () => {
           agentPreset: targetId,
           installed: true
         })
-        expect(await readFile(path.join(root, targetId, 'agent.cordis.yml'), 'utf8'))
-          .toBe(composition)
+        const installedText = await readFile(path.join(root, targetId, 'agent.cordis.yml'), 'utf8')
+        expect(installedText).toBe(composition.replace('    text:', '    prefix:'))
+        expect(installedText).toContain('Test package transfer')
       }
 
       const versionPreview = await api.agentPresets.importArchive(
@@ -396,6 +400,133 @@ describe('agent preset package transfer', () => {
         const fileStat = await stat(path.join(root, targetId, 'run.sh'))
         expect(fileStat.mode & 0o111).not.toBe(0)
       }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rewrites a legacy persona text key on install and rejects a preset with no prompt', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-persona-'))
+    const signal = new AbortController().signal
+    const api = presetTransferApi(root)
+    const prefixComposition = composition.replace('    text:', '    prefix:')
+    const packageWith = (id: string, body: string) => zipSync({
+      'manifest.json': strToU8(JSON.stringify({
+        format: 'dsh-preset',
+        version: 1,
+        id,
+        name: 'Gallery preset',
+        sourceDshVersion: '0.1.2-rc.1'
+      })),
+      'preset/agent.cordis.yml': strToU8(body)
+    })
+    try {
+      const current = await api.agentPresets.importArchive(
+        packageWith('already-prefix', prefixComposition),
+        { agentPreset: 'already-prefix', install: true },
+        signal
+      )
+      expect(current.status).toBe(200)
+      expect(await readFile(path.join(root, 'already-prefix', 'agent.cordis.yml'), 'utf8'))
+        .toBe(prefixComposition)
+
+      const missing = await api.agentPresets.importArchive(
+        packageWith('no-prompt', [
+          '- id: persona',
+          "  name: '@deepseek-ai/dsh-persona'",
+          '  config:',
+          '    suffix: only a suffix',
+          ''
+        ].join('\n')),
+        { agentPreset: 'no-prompt', install: true },
+        signal
+      )
+      expect(missing.status).toBe(400)
+      expect(await missing.json()).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('missing its prompt')
+      })
+      expect(await stat(path.join(root, 'no-prompt')).then(() => true, () => false)).toBe(false)
+
+      const mixed = await api.agentPresets.importArchive(
+        packageWith('mixed-persona', [
+          '- name: \'@deepseek-ai/dsh-persona\'',
+          '  config:',
+          '    text: usable',
+          '- name: \'@deepseek-ai/dsh-persona\'',
+          '  config:',
+          '    suffix: missing',
+          ''
+        ].join('\n')),
+        { agentPreset: 'mixed-persona', install: true },
+        signal
+      )
+      expect(mixed.status).toBe(400)
+      expect(await stat(path.join(root, 'mixed-persona')).then(() => true, () => false)).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('installs a BOM or aliased legacy persona and leaves merge keys unexpanded', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-persona-edge-'))
+    const signal = new AbortController().signal
+    const api = presetTransferApi(root)
+    const validate = Config as unknown as (value: unknown) => { prefix: string }
+    const packageWith = (id: string, body: string) => zipSync({
+      'manifest.json': strToU8(JSON.stringify({
+        format: 'dsh-preset',
+        version: 1,
+        id,
+        name: 'Gallery preset',
+        sourceDshVersion: '0.1.2-rc.1'
+      })),
+      'preset/agent.cordis.yml': strToU8(body)
+    })
+    const bom = `\uFEFF- name: '@deepseek-ai/dsh-persona'\n  config:\n    text: bom prompt\n`
+    const aliased = [
+      '- name: \'@deepseek-ai/dsh-persona\'',
+      '  config: &prompt',
+      '    text: aliased prompt',
+      '- name: \'@deepseek-ai/dsh-persona\'',
+      '  config: *prompt',
+      ''
+    ].join('\n')
+    const merged = [
+      '- name: \'@deepseek-ai/dsh-persona\'',
+      '  config:',
+      '    <<: {text: hello}',
+      '    suffix: x',
+      ''
+    ].join('\n')
+    try {
+      const bommed = await api.agentPresets.importArchive(
+        packageWith('bom-persona', bom),
+        { agentPreset: 'bom-persona', install: true },
+        signal
+      )
+      expect(bommed.status).toBe(200)
+      const bomText = await readFile(path.join(root, 'bom-persona', 'agent.cordis.yml'), 'utf8')
+      expect(bomText.charCodeAt(0)).toBe(0xfeff)
+      expect(bomText).toContain('prefix: bom prompt')
+      expect(validate({ prefix: 'bom prompt' }).prefix).toBe('bom prompt')
+
+      const alias = await api.agentPresets.importArchive(
+        packageWith('alias-persona', aliased),
+        { agentPreset: 'alias-persona', install: true },
+        signal
+      )
+      expect(alias.status).toBe(200)
+      const aliasText = await readFile(path.join(root, 'alias-persona', 'agent.cordis.yml'), 'utf8')
+      expect(aliasText).toBe(aliased.replace('    text: aliased prompt', '    prefix: aliased prompt'))
+      expect(validate({ prefix: 'aliased prompt' }).prefix).toBe('aliased prompt')
+
+      const jsYaml = createRequire(import.meta.url)('js-yaml') as {
+        load: (input: string, options: { schema: unknown }) => unknown
+      }
+      const loaded = jsYaml.load(merged, { schema: entryListSchema }) as Array<{ config?: Record<string, unknown> }>
+      expect(loaded[0]?.config).toEqual({ '<<': { text: 'hello' }, suffix: 'x' })
+      expect(loaded[0]?.config?.text).toBeUndefined()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
