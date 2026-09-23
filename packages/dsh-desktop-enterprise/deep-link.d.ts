@@ -1,5 +1,5 @@
-export declare const ENTERPRISE_LOGIN_PROTOCOL = "dsh-desktop"
-export declare const ENTERPRISE_LOGIN_DEV_PROTOCOL = "dsh-desktop-dev"
+export declare const ENTERPRISE_LOGIN_PROTOCOL = "bisheng-work"
+export declare const ENTERPRISE_LOGIN_DEV_PROTOCOL = "bisheng-work-dev"
 export interface EnterpriseLoginDeepLink {
   url: string
   serverUrl: string

@@ -31,6 +31,12 @@ import {
 
 const { autoUpdater } = electronUpdater
 const TRANSIENT_STATUS_MS = 8_000
+// BISHENG Work has no update feed of its own yet. Leaving these entry points
+// enabled would download a DSH Desktop package from dshdesktop.com and replace
+// this installation. The packaged publish URL stays unchanged until that feed
+// exists; runtime checks must not use it.
+const ONLINE_UPDATES_ENABLED = false
+const UPDATES_UNAVAILABLE_MESSAGE = 'BISHENG Work does not offer online updates yet.'
 
 let status = initialUpdateStatus(app.getVersion())
 let prepareToInstall: (() => Promise<void>) | undefined
@@ -61,7 +67,9 @@ export function registerUpdateHandlers(): void {
   ipcMain.handle('updates:install', () => installDownloadedUpdate())
   ipcMain.handle('updates:skip', (_event, version: unknown) => skipUpdate(version))
   ipcMain.handle('updates:download', () => downloadAvailableUpdate())
-  ipcMain.handle('updates:list-versions', () => fetchAvailableReleases(app.getVersion()))
+  ipcMain.handle('updates:list-versions', () =>
+    ONLINE_UPDATES_ENABLED ? fetchAvailableReleases(app.getVersion()) : []
+  )
   ipcMain.handle('updates:install-version', (_event, version: unknown) =>
     installSpecificVersion(version)
   )
@@ -102,7 +110,7 @@ export function startUpdateManager(options: { prepareToInstall: () => Promise<vo
   if (!supportsUpdates()) {
     transition({
       type: 'unsupported',
-      message: 'Updates are available in installed macOS and Windows builds.'
+      message: UPDATES_UNAVAILABLE_MESSAGE
     })
     return
   }
@@ -121,7 +129,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
     transition(
       {
         type: 'unsupported',
-        message: 'Update checks are only available in installed macOS and Windows builds.'
+        message: UPDATES_UNAVAILABLE_MESSAGE
       },
       manual
     )
@@ -329,7 +337,7 @@ function checkAfterResume(): void {
 }
 
 function supportsUpdates(): boolean {
-  return supportsAutoUpdates(app.isPackaged, process.platform)
+  return ONLINE_UPDATES_ENABLED && supportsAutoUpdates(app.isPackaged, process.platform)
 }
 
 function errorMessage(error: unknown): string {

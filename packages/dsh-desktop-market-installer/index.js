@@ -366,7 +366,7 @@ export function createDesktopProfilesService(home = dshHome()) {
     list: () => [current],
     select: async (name) => {
       if (name !== MARKET_PROFILE) {
-        throw new Error(`DSH Desktop only exposes the ${MARKET_PROFILE} profile.`)
+        throw new Error(`BISHENG Work only exposes the ${MARKET_PROFILE} profile.`)
       }
     }
   })
@@ -581,7 +581,7 @@ export function createDesktopPnpmService(options) {
    */
   const runExternalMarketPluginInstall = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (closed) throw new Error('The BISHENG Work pnpm service has been disposed.')
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
     const spec = args.slice(1).find((argument) => !argument.startsWith('-'))
@@ -656,7 +656,7 @@ export function createDesktopPnpmService(options) {
 
   const runPlugin = (args, invokingDir, signal) => {
     validatePluginOperation(args, invokingDir)
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
+    if (closed) throw new Error('The BISHENG Work pnpm service has been disposed.')
     if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
     if (active) throw new Error('Another desktop pnpm operation is already running.')
 

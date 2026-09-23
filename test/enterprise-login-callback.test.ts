@@ -44,7 +44,7 @@ describe('enterprise login callback server', () => {
       `${server.redirectUri}?auth_id=auth-good&state=state-good&identity_ticket=ticket_ok`
     )
     expect(matched.status).toBe(200)
-    await expect(matched.text()).resolves.toContain('return to DSH Desktop')
+    await expect(matched.text()).resolves.toContain('return to BISHENG Work')
     expect(accepted).toBe(1)
   })
 

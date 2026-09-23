@@ -139,8 +139,8 @@ export async function startLoginCallbackServer(options: {
     sendHtml(
       response,
       200,
-      'Return to DSH Desktop',
-      'You can close this window and return to DSH Desktop.'
+      'Return to BISHENG Work',
+      'You can close this window and return to BISHENG Work.'
     )
     finish()
     options.onAccepted({

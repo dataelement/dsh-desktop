@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
+import type { UpdateStatus } from '../shared/contracts'
 import { setupDesktopStoragePersistence } from './desktop-storage'
 import {
   isUpdateDismissed,
@@ -26,11 +26,6 @@ let dismissedVersion: string | null = null
 let dismissedTransientPhase: UpdateStatus['phase'] | null = null
 let installing = false
 let accepting = false
-let versionPickerOpen = false
-let versionPickerLoading = false
-let versionPickerError = false
-let versionPickerList: AvailableRelease[] | null = null
-let installingVersion: string | null = null
 
 const ABOUT_ROOT_ID = 'dsh-desktop-about-root'
 interface AboutInfo {
@@ -444,9 +439,6 @@ function applyStatus(status: UpdateStatus): void {
     host.dataset.updateManual = String(status.manual)
   }
   if (status.phase === 'error') installing = false
-  if (['error', 'downloading', 'downloaded', 'up-to-date'].includes(status.phase)) {
-    installingVersion = null
-  }
   if (status.phase !== 'available') accepting = false
   render()
 }
@@ -467,7 +459,7 @@ function render(): void {
   const status = currentStatus
   const card = element('aside', 'card')
   card.setAttribute('aria-live', 'polite')
-  card.setAttribute('aria-label', locale === 'zh' ? 'DSH Desktop 更新' : 'DSH Desktop update')
+  card.setAttribute('aria-label', locale === 'zh' ? 'BISHENG Work 更新' : 'BISHENG Work update')
 
   const row = element('div', 'row')
   const badge = element('span', status.phase === 'error' ? 'badge warning' : 'badge')
@@ -579,75 +571,6 @@ function skipButton(status: UpdateStatus): HTMLButtonElement {
   return skip
 }
 
-/** Compare two dotted versions; prerelease sorts below its release. Mirrors
- * `version-catalog.compareVersions` — a small duplication across the
- * main/preload boundary, kept local so the preload bundle stays standalone.
- * Keep the two implementations in lockstep, including the semver-style
- * numeric prerelease comparison below ("rc.10" > "rc.9"). */
-function comparePreloadVersions(a: string, b: string): number {
-  const parse = (value: string): [number[], string] => {
-    const [core = '', ...pre] = value.trim().split('-')
-    const nums = core.split('.').map((part) => Number.parseInt(part, 10) || 0)
-    while (nums.length < 3) nums.push(0)
-    return [nums, pre.join('-')]
-  }
-  const [an, ap] = parse(a)
-  const [bn, bp] = parse(b)
-  for (let i = 0; i < 3; i += 1) {
-    if ((an[i] ?? 0) !== (bn[i] ?? 0)) return (an[i] ?? 0) - (bn[i] ?? 0)
-  }
-  return comparePrerelease(ap, bp)
-}
-
-function comparePrerelease(left: string, right: string): number {
-  if (left === right) return 0
-  if (!left) return 1
-  if (!right) return -1
-  const l = left.split('.')
-  const r = right.split('.')
-  const length = Math.max(l.length, r.length)
-  for (let i = 0; i < length; i += 1) {
-    const x = l[i]
-    const y = r[i]
-    if (x === undefined) return -1
-    if (y === undefined) return 1
-    if (x === y) continue
-    const xn = /^\d+$/.test(x)
-    const yn = /^\d+$/.test(y)
-    if (xn && yn) {
-      const nx = x.replace(/^0+/, '') || '0'
-      const ny = y.replace(/^0+/, '') || '0'
-      if (nx.length !== ny.length) return nx.length < ny.length ? -1 : 1
-      if (nx !== ny) return nx < ny ? -1 : 1
-      continue
-    }
-    if (xn) return -1
-    if (yn) return 1
-    if (x < y) return -1
-    if (x > y) return 1
-  }
-  return 0
-}
-
-function loadVersionList(onDone?: () => void): void {
-  versionPickerLoading = true
-  versionPickerError = false
-  if (onDone) onDone()
-  void ipcRenderer
-    .invoke('updates:list-versions')
-    .then((releases: AvailableRelease[]) => {
-      versionPickerList = Array.isArray(releases) ? releases : []
-    })
-    .catch((error: unknown) => {
-      console.error('[updater] unable to list versions', error)
-      versionPickerError = true
-      versionPickerList = null
-    })
-    .finally(() => {
-      versionPickerLoading = false
-      if (onDone) onDone()
-    })
-}
 
 function mountAbout(): void {
   if (document.getElementById(ABOUT_ROOT_ID)) return
@@ -684,7 +607,6 @@ function renderAbout(): void {
   aboutHost.style.display = 'flex'
   const info = aboutInfo
   const zh = info.locale === 'zh'
-  const currentVer = info.desktopVersion
 
   let overlay = aboutShadow.querySelector('.about-overlay') as HTMLElement | null
   if (!overlay) {
@@ -692,7 +614,6 @@ function renderAbout(): void {
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) {
         aboutOpen = false
-        versionPickerOpen = false
         renderAbout()
       }
     })
@@ -702,19 +623,18 @@ function renderAbout(): void {
   const card = element('div', 'about-card')
   card.setAttribute('role', 'dialog')
   card.setAttribute('aria-modal', 'true')
-  card.setAttribute('aria-label', zh ? '关于 DSH Desktop' : 'About DSH Desktop')
+  card.setAttribute('aria-label', zh ? '关于 BISHENG Work' : 'About BISHENG Work')
 
   // Header row with Title and Close '×'
   const header = element('div', 'about-header')
   const title = element('h2', 'about-title')
-  title.textContent = zh ? '关于 DSH Desktop' : 'About DSH Desktop'
+  title.textContent = zh ? '关于 BISHENG Work' : 'About BISHENG Work'
   header.appendChild(title)
 
   const closeBtn = button('×', 'about-close')
   closeBtn.setAttribute('aria-label', zh ? '关闭' : 'Close')
   closeBtn.addEventListener('click', () => {
     aboutOpen = false
-    versionPickerOpen = false
     renderAbout()
   })
   header.appendChild(closeBtn)
@@ -723,7 +643,7 @@ function renderAbout(): void {
   // Body content matching user's screenshot
   const body = element('div', 'about-body')
   const line1 = element('p', 'about-line')
-  line1.textContent = `${zh ? 'DSH Desktop 版本： ' : 'DSH Desktop version: '}${info.desktopVersion}`
+  line1.textContent = `${zh ? 'BISHENG Work 版本： ' : 'BISHENG Work version: '}${info.desktopVersion}`
   body.appendChild(line1)
 
   const line2 = element('p', 'about-line')
@@ -731,114 +651,13 @@ function renderAbout(): void {
   body.appendChild(line2)
 
   const hint = element('p', 'about-hint')
-  hint.textContent = zh ? 'Harness 随 DSH Desktop 更新。' : 'Harness is updated with DSH Desktop.'
+  hint.textContent = zh ? 'Harness 随 BISHENG Work 更新。' : 'Harness is updated with BISHENG Work.'
   body.appendChild(hint)
   card.appendChild(body)
-
-  // Actions row: [ 选择版本 ] [ 检查更新 ] side-by-side
-  const actions = element('div', 'about-actions')
-
-  const selectVersionBtn = button(
-    zh ? '选择版本' : 'Select version',
-    versionPickerOpen ? 'btn-action active' : 'btn-action'
-  )
-  selectVersionBtn.addEventListener('click', () => {
-    versionPickerOpen = !versionPickerOpen
-    if (versionPickerOpen && versionPickerList === null && !versionPickerLoading) {
-      loadVersionList(renderAbout)
-    }
-    renderAbout()
-  })
-  actions.appendChild(selectVersionBtn)
-
-  const checkUpdatesBtn = button(zh ? '检查更新' : 'Check for updates', 'btn-action')
-  checkUpdatesBtn.addEventListener('click', () => {
-    aboutOpen = false
-    versionPickerOpen = false
-    renderAbout()
-    void ipcRenderer.invoke('updates:check').catch((error: unknown) => {
-      console.error('[updater] unable to check updates', error)
-    })
-  })
-  actions.appendChild(checkUpdatesBtn)
-  card.appendChild(actions)
-
-  // Version picker inside About dialog
-  if (versionPickerOpen) {
-    const pickerContainer = element('div', 'version-picker-container')
-    if (versionPickerLoading) {
-      const line = element('p', 'version-status-text')
-      line.textContent = zh ? '正在获取版本列表…' : 'Loading versions…'
-      pickerContainer.appendChild(line)
-    } else if (versionPickerError) {
-      const line = element('p', 'version-status-text')
-      line.textContent = zh ? '暂时无法获取版本列表' : 'Unable to load version list'
-      pickerContainer.appendChild(line)
-    } else if (versionPickerList && versionPickerList.length > 0) {
-      const newer = versionPickerList.filter(
-        (release) => comparePreloadVersions(release.version, currentVer) > 0
-      )
-      const older = versionPickerList.filter(
-        (release) => comparePreloadVersions(release.version, currentVer) < 0
-      )
-      appendAboutVersionGroup(pickerContainer, zh ? '较新版本' : 'Newer versions', newer, currentVer, zh)
-      appendAboutVersionGroup(pickerContainer, zh ? '历史版本（回退）' : 'Roll back', older, currentVer, zh)
-    } else {
-      const line = element('p', 'version-status-text')
-      line.textContent = zh ? '没有可选的其它版本' : 'No other versions available'
-      pickerContainer.appendChild(line)
-    }
-    card.appendChild(pickerContainer)
-  }
 
   overlay.replaceChildren(card)
 }
 
-function appendAboutVersionGroup(
-  container: HTMLElement,
-  heading: string,
-  releases: AvailableRelease[],
-  currentVersion: string,
-  zh: boolean
-): void {
-  if (releases.length === 0) return
-  const group = element('div', 'version-group')
-  const label = element('p', 'version-group-title')
-  label.textContent = heading
-  group.appendChild(label)
-
-  const buttonsRow = element('div', 'version-buttons')
-  for (const release of releases.slice(0, 12)) {
-    const pick = button(`v${release.version}`, 'version-tag-btn')
-    pick.disabled = installingVersion !== null
-    pick.addEventListener('click', () => {
-      selectVersionFromAbout(release, currentVersion, zh)
-    })
-    buttonsRow.appendChild(pick)
-  }
-  group.appendChild(buttonsRow)
-  container.appendChild(group)
-}
-
-function selectVersionFromAbout(release: AvailableRelease, currentVersion: string, zh: boolean): void {
-  const downgrade = comparePreloadVersions(release.version, currentVersion) < 0
-  const message = downgrade
-    ? zh
-      ? `将降级到 ${release.version}（当前 ${currentVersion}）。降级不会迁移新版本写入的数据，可能导致配置不兼容。确定继续？`
-      : `This downgrades to ${release.version} (currently ${currentVersion}). A downgrade does not migrate data written by newer versions and may be config-incompatible. Continue?`
-    : zh
-      ? `将安装 ${release.version}，确定继续？`
-      : `Install ${release.version}?`
-  if (!window.confirm(message)) return
-
-  installingVersion = release.version
-  aboutOpen = false
-  versionPickerOpen = false
-  renderAbout()
-  void ipcRenderer.invoke('updates:install-version', release.version).catch((error: unknown) => {
-    console.error('[updater] unable to install version', error)
-  })
-}
 
 function dismissCurrent(): void {
   if (!currentStatus) return
@@ -1197,14 +1016,12 @@ ipcRenderer.on('updates:status-changed', (_event, status: UpdateStatus) => {
 ipcRenderer.on('desktop:show-about', (_event, info: AboutInfo) => {
   aboutInfo = info
   aboutOpen = true
-  versionPickerOpen = false
   renderAbout()
 })
 
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && aboutOpen) {
     aboutOpen = false
-    versionPickerOpen = false
     renderAbout()
   }
 })

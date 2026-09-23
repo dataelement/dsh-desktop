@@ -116,7 +116,7 @@ describe('enterprise adapter without a Broker', () => {
   it('inspects a deep link locally and rejects login until the Broker exists', async () => {
     const routes = createPluginContext()
     const inspected = await invoke(routes, '/api/enterprise.deep-link.inspect', 'POST', {
-      url: 'dsh-desktop://login?server=https%3A%2F%2Fbisheng.example.com'
+      url: 'bisheng-work://login?server=https%3A%2F%2Fbisheng.example.com'
     })
     expect(inspected.status).toBe(200)
     await expect(inspected.json()).resolves.toEqual({ base: 'https://bisheng.example.com' })

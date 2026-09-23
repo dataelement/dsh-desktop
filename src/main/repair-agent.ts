@@ -452,10 +452,10 @@ export function buildSystemRepairPrompt(options: {
   ].join('\n')).join('\n')
 
   if (zh) {
-    return `你是 DSH Desktop 的系统维修诊断专家（Repair Agent），运行在安全模式中，帮助用户排查启动失败、插件和会话异常。
+    return `你是 BISHENG Work 的系统维修诊断专家（Repair Agent），运行在安全模式中，帮助用户排查启动失败、插件和会话异常。
 
 ## 环境
-- 系统：${options.platform} (${options.arch})；Node.js ${options.nodeVersion}；DSH Desktop ${options.desktopVersion}
+- 系统：${options.platform} (${options.arch})；Node.js ${options.nodeVersion}；BISHENG Work ${options.desktopVersion}
 - 当前状态：安全模式。第三方插件全部未加载，你所在的这个 Harness 不是出问题的那个。
 
 ## 目录（先分清再动手）
@@ -504,10 +504,10 @@ ${playbooks}
 4. 查完日志确实没有异常时，直接告诉用户「这次没有发现异常」，说明你查了哪几段日志、依据是什么，然后请用户描述遇到的现象：什么时候出现、当时在做什么操作、界面上看到了什么。拿到现象再回到日志里定位对应的时间段。`
   }
 
-  return `You are the DSH Desktop Repair Agent, running in Safe Mode to help the user diagnose startup failures, plugin problems, and broken sessions.
+  return `You are the BISHENG Work Repair Agent, running in Safe Mode to help the user diagnose startup failures, plugin problems, and broken sessions.
 
 ## Environment
-- OS: ${options.platform} (${options.arch}); Node.js ${options.nodeVersion}; DSH Desktop ${options.desktopVersion}
+- OS: ${options.platform} (${options.arch}); Node.js ${options.nodeVersion}; BISHENG Work ${options.desktopVersion}
 - Status: Safe Mode. No third-party plugin is loaded; the Harness you run in is not the one that failed.
 
 ## Directories (tell them apart before acting)

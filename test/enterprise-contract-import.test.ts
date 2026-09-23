@@ -14,8 +14,8 @@ describe('enterprise contract package export', () => {
 
   it('can dynamically import deep-link helpers from the package export', async () => {
     const deepLink = await import('dsh-desktop-enterprise/deep-link')
-    expect(deepLink.ENTERPRISE_LOGIN_PROTOCOL).toBe('dsh-desktop')
-    expect(deepLink.ENTERPRISE_LOGIN_DEV_PROTOCOL).toBe('dsh-desktop-dev')
+    expect(deepLink.ENTERPRISE_LOGIN_PROTOCOL).toBe('bisheng-work')
+    expect(deepLink.ENTERPRISE_LOGIN_DEV_PROTOCOL).toBe('bisheng-work-dev')
     expect(deepLink.normalizeEnterpriseServerUrl('https://bisheng.example.com')).toBe(
       'https://bisheng.example.com'
     )

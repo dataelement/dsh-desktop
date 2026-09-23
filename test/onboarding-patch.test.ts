@@ -32,6 +32,8 @@ describe('desktop provider onboarding patch', () => {
     expect(patch).toContain('接入模型提供方')
     expect(patch).toContain('dshProviderGrid')
     expect(patch).toContain('aria-pressed')
+    expect(installed).toContain('BISHENG Work skips the first-run provider dialog')
+    expect(installed).toContain('BISHENG Work skips the internal-testing notice')
     expect(installed).toContain('className: "dshProviderCard"')
     expect(installed).toContain('providerPickerOpen')
     expect(installed).toContain('providerSearch: "搜索提供方"')

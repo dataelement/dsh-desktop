@@ -166,7 +166,7 @@ function exactFields(body, required, optional = []) {
 
 function loginPage(origin, auth) {
   if (!auth) {
-    const link = new URL('dsh-desktop://login')
+    const link = new URL('bisheng-work://login')
     link.searchParams.set('server', origin)
     return layout('打开 DSH Desktop', `<span class="tag">固定入口</span><h1>在 DSH Desktop 中连接毕昇</h1><p>此链接只携带平台地址。客户端确认后会新建 PKCE 登录事务。</p><a class="button" href="${escapeHtml(link)}">打开 DSH Desktop</a>`)
   }

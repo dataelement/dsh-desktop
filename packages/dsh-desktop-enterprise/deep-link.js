@@ -1,5 +1,5 @@
-export const ENTERPRISE_LOGIN_PROTOCOL = 'dsh-desktop'
-export const ENTERPRISE_LOGIN_DEV_PROTOCOL = 'dsh-desktop-dev'
+export const ENTERPRISE_LOGIN_PROTOCOL = 'bisheng-work'
+export const ENTERPRISE_LOGIN_DEV_PROTOCOL = 'bisheng-work-dev'
 
 function isEnterpriseLoginProtocol(protocol) {
   return protocol === `${ENTERPRISE_LOGIN_PROTOCOL}:` || protocol === `${ENTERPRISE_LOGIN_DEV_PROTOCOL}:`

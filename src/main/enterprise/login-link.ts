@@ -1,14 +1,31 @@
+import { readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { app } from 'electron'
-import { resolve } from 'node:path'
 import { sameHarnessOrigin } from './harness-origin'
 
 export { sameHarnessOrigin }
 
-export const ENTERPRISE_LOGIN_PROTOCOL = 'dsh-desktop'
-export const ENTERPRISE_LOGIN_DEV_PROTOCOL = 'dsh-desktop-dev'
+export const ENTERPRISE_LOGIN_PROTOCOL = 'bisheng-work'
+export const ENTERPRISE_LOGIN_DEV_PROTOCOL = 'bisheng-work-dev'
+
+function packagedDevelopmentChannel(): boolean {
+  if (!app.isPackaged) return false
+  try {
+    const metadata = JSON.parse(
+      readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')
+    ) as { dshDesktopChannel?: unknown }
+    return metadata.dshDesktopChannel === 'development'
+  } catch {
+    return false
+  }
+}
 
 export function enterpriseLoginProtocol(): string {
-  return app.isPackaged ? ENTERPRISE_LOGIN_PROTOCOL : ENTERPRISE_LOGIN_DEV_PROTOCOL
+  // A packaged development build must not claim the production scheme, or it
+  // would take enterprise login links away from the installed BISHENG Work app.
+  return app.isPackaged && !packagedDevelopmentChannel()
+    ? ENTERPRISE_LOGIN_PROTOCOL
+    : ENTERPRISE_LOGIN_DEV_PROTOCOL
 }
 
 export function allowInsecureEnterpriseLoopback(): boolean {

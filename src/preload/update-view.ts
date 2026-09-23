@@ -73,8 +73,10 @@ export function updateHeadline(status: UpdateStatus, locale: UpdateLocale): Upda
       }
     case 'unsupported':
       return {
-        title: zh ? '此版本不支持自动更新' : 'Automatic updates unavailable',
-        description: zh ? '请从官网下载新版本。' : 'Download new versions from the website.'
+        title: zh ? '暂未提供在线更新' : 'Online updates are not available',
+        description: zh
+          ? 'BISHENG Work 暂未提供在线更新。'
+          : 'BISHENG Work does not offer online updates yet.'
       }
     case 'error':
       return {
@@ -109,17 +111,17 @@ export function updateMessage(status: UpdateStatus, locale: UpdateLocale): strin
     case 'available':
       return zh
         ? `发现新版本${version}，是否更新？`
-        : `DSH Desktop${version} is available. Update now?`
+        : `BISHENG Work${version} is available. Update now?`
     case 'downloading': {
       const percent = Math.round(status.percent ?? 0)
       return zh ? `正在下载更新 ${percent}%` : `Downloading update ${percent}%`
     }
     case 'downloaded':
-      return zh ? `DSH Desktop${version} 已下载完成` : `DSH Desktop${version} is ready to install`
+      return zh ? `BISHENG Work${version} 已下载完成` : `BISHENG Work${version} is ready to install`
     case 'up-to-date':
-      return zh ? 'DSH Desktop 已是最新版本' : 'DSH Desktop is up to date'
+      return zh ? 'BISHENG Work 已是最新版本' : 'BISHENG Work is up to date'
     case 'unsupported':
-      return zh ? '当前版本不支持自动更新' : 'Automatic updates are unavailable in this build'
+      return zh ? 'BISHENG Work 暂未提供在线更新。' : 'BISHENG Work does not offer online updates yet.'
     case 'error':
       return zh ? '无法检查或下载更新' : 'Unable to check for or download updates'
     case 'idle':

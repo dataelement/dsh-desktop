@@ -482,7 +482,7 @@ export class HarnessRuntime {
       ? this.options.dshSafePatchPath
       : this.options.dshPatchPath
     if (!existsSync(patchPath)) {
-      this.setState('failed', `DSH Desktop patch was not found: ${patchPath}`)
+      this.setState('failed', `BISHENG Work patch was not found: ${patchPath}`)
       return
     }
     const marketPatchPath = this.options.dshMarketPatchPath

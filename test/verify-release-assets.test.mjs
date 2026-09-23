@@ -18,15 +18,15 @@ async function writeFixture(root, name, content) {
 }
 
 async function createFixture(root) {
-  const armZip = await writeFixture(root, 'dsh-desktop-mac-arm64.zip', Buffer.from('PK-arm'))
-  const x64Zip = await writeFixture(root, 'dsh-desktop-mac-x64.zip', Buffer.from('PK-x64'))
-  const windows = await writeFixture(root, 'dsh-desktop-windows-x64-setup.exe', Buffer.from('MZ-win'))
+  const armZip = await writeFixture(root, 'bisheng-work-mac-arm64.zip', Buffer.from('PK-arm'))
+  const x64Zip = await writeFixture(root, 'bisheng-work-mac-x64.zip', Buffer.from('PK-x64'))
+  const windows = await writeFixture(root, 'bisheng-work-windows-x64-setup.exe', Buffer.from('MZ-win'))
   await Promise.all([
-    writeFile(path.join(root, 'dsh-desktop-mac-arm64.dmg'), Buffer.concat([Buffer.alloc(512), Buffer.from('koly')])),
-    writeFile(path.join(root, 'dsh-desktop-mac-x64.dmg'), Buffer.concat([Buffer.alloc(512), Buffer.from('koly')])),
-    writeFile(path.join(root, 'dsh-desktop-mac-arm64.zip.blockmap'), 'blockmap'),
-    writeFile(path.join(root, 'dsh-desktop-mac-x64.zip.blockmap'), 'blockmap'),
-    writeFile(path.join(root, 'dsh-desktop-windows-x64-setup.exe.blockmap'), 'blockmap'),
+    writeFile(path.join(root, 'bisheng-work-mac-arm64.dmg'), Buffer.concat([Buffer.alloc(512), Buffer.from('koly')])),
+    writeFile(path.join(root, 'bisheng-work-mac-x64.dmg'), Buffer.concat([Buffer.alloc(512), Buffer.from('koly')])),
+    writeFile(path.join(root, 'bisheng-work-mac-arm64.zip.blockmap'), 'blockmap'),
+    writeFile(path.join(root, 'bisheng-work-mac-x64.zip.blockmap'), 'blockmap'),
+    writeFile(path.join(root, 'bisheng-work-windows-x64-setup.exe.blockmap'), 'blockmap'),
     writeFile(path.join(root, 'latest-mac.yml'), stringify({ version: '1.2.3', files: [armZip, x64Zip] })),
     writeFile(path.join(root, 'latest.yml'), stringify({ version: '1.2.3', files: [windows] }))
   ])
@@ -57,10 +57,10 @@ describe('release asset verification', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-release-assets-'))
     try {
       await createFixture(root)
-      await rm(path.join(root, 'dsh-desktop-mac-x64.dmg'))
+      await rm(path.join(root, 'bisheng-work-mac-x64.dmg'))
       await expect(
         verifyReleaseAssets(root, '1.2.3', { minimumBytes })
-      ).rejects.toThrow('Missing required release asset: dsh-desktop-mac-x64.dmg')
+      ).rejects.toThrow('Missing required release asset: bisheng-work-mac-x64.dmg')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -70,7 +70,7 @@ describe('release asset verification', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-release-assets-'))
     try {
       await createFixture(root)
-      await writeFile(path.join(root, 'dsh-desktop-windows-x64-setup.exe'), 'not-an-exe')
+      await writeFile(path.join(root, 'bisheng-work-windows-x64-setup.exe'), 'not-an-exe')
       await expect(
         verifyReleaseAssets(root, '1.2.3', { minimumBytes })
       ).rejects.toThrow('is not a PE executable')
@@ -89,7 +89,7 @@ describe('release asset verification', () => {
           version: '1.2.3',
           files: [
             {
-              url: 'dsh-desktop-windows-x64-setup.exe',
+              url: 'bisheng-work-windows-x64-setup.exe',
               size: 6,
               sha512: 'wrong-digest'
             }

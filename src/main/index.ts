@@ -23,8 +23,8 @@ import {
   type MessageBoxOptions
 } from 'electron'
 import { clearStaleLoopbackHttpCache } from './cache-maintenance'
+import { harnessPreferredPort, mobileBridgePort } from './desktop-ports'
 import {
-  DEFAULT_HARNESS_PORT,
   extractFailureCause,
   extractPluginFailureReferences,
   HarnessRuntime,
@@ -162,14 +162,6 @@ import {
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
 import { buildPluginRecoveryViewModel } from './plugin-recovery-view'
-import { buildWebImportViewModel } from './web-import-view'
-import {
-  defaultWebHome,
-  importWebHome,
-  previewWebHome,
-  shouldOfferWebHomeImport,
-  writeSkipDecision
-} from './state/web-home-import'
 import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
 import {
   checkupAllProfilePlugins,
@@ -607,17 +599,17 @@ function attachWindowsMenuView(window: BrowserWindow): void {
 
 function configureAppIdentity(): void {
   if (developmentBuild) {
-    app.setName('DSH Desktop Dev')
-    app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop-dev'))
+    app.setName('BISHENG Work Dev')
+    app.setPath('userData', join(app.getPath('appData'), 'bisheng-work-dev'))
     return
   }
 
-  app.setName('DSH Desktop')
+  app.setName('BISHENG Work')
   // Keep the historical lowercase directory stable across product-name and
   // branding changes. Harness stores workspaces, sessions, credentials, and
   // custom presets below userData, so deriving this path from app.getName()
   // would make an ordinary upgrade look like a fresh installation.
-  app.setPath('userData', join(app.getPath('appData'), 'dsh-desktop'))
+  app.setPath('userData', join(app.getPath('appData'), 'bisheng-work'))
 }
 
 async function syncNativeTheme(window: BrowserWindow): Promise<void> {
@@ -1060,10 +1052,10 @@ function ensureTray(): void {
 
   const locale = harnessLocale()
   tray = new Tray(desktopIconPath())
-  tray.setToolTip('DSH Desktop')
+  tray.setToolTip('BISHENG Work')
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: locale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: restoreMainWindow },
+      { label: locale === 'zh' ? '显示 BISHENG Work' : 'Show BISHENG Work', click: restoreMainWindow },
       { type: 'separator' },
       { label: locale === 'zh' ? '退出' : 'Exit', click: () => app.quit() }
     ])
@@ -1226,76 +1218,6 @@ async function openHarness(
   deliverPendingEnterpriseLogin()
 }
 
-async function maybeImportWebHome(dshHome: string): Promise<void> {
-  if (startInSafeMode) return
-  const webHome = defaultWebHome()
-  if (!await shouldOfferWebHomeImport(dshHome, webHome)) return
-
-  let notice: string | undefined
-  while (!quitting) {
-    const preview = await previewWebHome(webHome)
-    const choice = await showWebHomeImport(preview, notice)
-    if (choice !== 'import') {
-      await writeSkipDecision(dshHome, webHome)
-      runtime.note('[desktop] skipped importing web Harness home')
-      return
-    }
-
-    const window = mainWindow
-    try {
-      await importWebHome({
-        source: webHome,
-        dest: dshHome,
-        onProgress: (line) => {
-          runtime.note(`[desktop] web import: ${line}`)
-          if (!window || window.isDestroyed()) return
-          void window.webContents.executeJavaScript(
-            `(() => { const node = document.getElementById('progress'); if (!node) return; node.textContent = ${JSON.stringify(line)}; node.classList.add('visible'); })()`
-          ).catch(() => undefined)
-        }
-      })
-      runtime.note('[desktop] imported web Harness home')
-      await showSplash()
-      return
-    } catch (error) {
-      notice = error instanceof Error ? error.message : String(error)
-      runtime.note(`[desktop] web import failed: ${notice}`)
-    }
-  }
-}
-
-async function showWebHomeImport(
-  preview: Awaited<ReturnType<typeof previewWebHome>>,
-  notice?: string
-): Promise<WebImportAction> {
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
-  const state = buildWebImportViewModel({
-    locale: harnessLocale(),
-    preview,
-    notice
-  })
-  const actionPromise = new Promise<WebImportAction>((resolve) => {
-    webImportActionResolver = resolve
-  })
-  const navigationVersion = ++mainWindowNavigationVersion
-  window.webContents.stop()
-  try {
-    await window.loadFile(desktopResourcePath('web-import.html'), {
-      query: {
-        state: JSON.stringify(state),
-        icon: app.isPackaged ? 'icon.png' : 'app-icon.png',
-        theme: harnessThemePreference()
-      }
-    })
-  } catch (error) {
-    webImportActionResolver = undefined
-    throw error
-  }
-  if (window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return 'skip'
-  raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
-  return actionPromise
-}
-
 async function showSplash(): Promise<void> {
   clearProfileBootConfirmation()
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
@@ -1397,7 +1319,7 @@ async function quarantineInstalledLaunchAgentsForUpdate(dshHome: string): Promis
   }
   if (result.failures.length > 0) {
     for (const failure of result.failures) runtime.note(`[desktop] pre-update launch agent: ${failure}`)
-    throw new Error('Unable to stop background services before replacing DSH Desktop.')
+    throw new Error('Unable to stop background services before replacing BISHENG Work.')
   }
 }
 
@@ -1501,7 +1423,6 @@ function launchHarness(): Promise<void> {
     // is after maintenance. Stopping here owns that mutation window.
     await runtime.stop()
     runtime.note('[desktop] previous Harness stopped; starting profile maintenance')
-    await maybeImportWebHome(dshHome)
     const maintenance = await runProfileStartupMaintenance({
       note: (line) => runtime.note(line),
       recoverInterruptedMigration: () =>
@@ -1817,7 +1738,7 @@ function registerHarnessHandlers(): void {
   ipcMain.removeHandler('harness:restart')
   ipcMain.handle('harness:restart', async (event) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
-      throw new Error('Harness restart is only available from the DSH Desktop window.')
+      throw new Error('Harness restart is only available from the BISHENG Work window.')
     }
     if (runtime.snapshot().phase !== 'ready') {
       throw new Error('Harness is not ready to restart.')
@@ -1840,7 +1761,7 @@ function registerHarnessHandlers(): void {
   ipcMain.handle('desktop-menu:execute', async (event, command: unknown) => {
     assertTrustedDesktopMenuEvent(event)
     if (!isDesktopMenuCommand(command)) {
-      throw new Error('Unknown DSH Desktop menu command.')
+      throw new Error('Unknown BISHENG Work menu command.')
     }
     const zoomFactor = await executeDesktopMenuCommand(command)
     return zoomFactor === undefined ? { ok: true } : { ok: true, zoomFactor }
@@ -1873,7 +1794,7 @@ function registerHarnessHandlers(): void {
   ipcMain.handle('desktop-titlebar:set-theme', (event, isDark: unknown) => {
     assertTrustedMainWindowEvent(event)
     if (typeof isDark !== 'boolean') {
-      throw new Error('The DSH Desktop titlebar theme must be a boolean.')
+      throw new Error('The BISHENG Work titlebar theme must be a boolean.')
     }
     if (process.platform === 'win32' && mainWindow) {
       applyWindowChromeTheme(mainWindow, isDark)
@@ -1906,7 +1827,7 @@ function assertTrustedDesktopMenuEvent(event: IpcMainInvokeEvent): void {
     event.sender === windowsMenuView.webContents &&
     event.senderFrame === windowsMenuView.webContents.mainFrame
   if (!fromMainWindow && !fromWindowsMenu) {
-    throw new Error('This action is only available from the DSH Desktop window.')
+    throw new Error('This action is only available from the BISHENG Work window.')
   }
 }
 
@@ -1928,7 +1849,7 @@ function assertTrustedMainWindowEvent(event: IpcMainInvokeEvent): void {
     event.sender !== mainWindow.webContents ||
     event.senderFrame !== mainWindow.webContents.mainFrame
   ) {
-    throw new Error('This action is only available from the main DSH Desktop window.')
+    throw new Error('This action is only available from the main BISHENG Work window.')
   }
 }
 
@@ -1963,8 +1884,8 @@ async function showAbout(window: BrowserWindow): Promise<void> {
   const checkForUpdatesLabel = locale === 'zh' ? '检查更新' : 'Check for Updates'
   const result = await dialog.showMessageBox(window, {
     type: 'info',
-    title: 'DSH Desktop',
-    message: locale === 'zh' ? '关于 DSH Desktop' : 'About DSH Desktop',
+    title: 'BISHENG Work',
+    message: locale === 'zh' ? '关于 BISHENG Work' : 'About BISHENG Work',
     detail: aboutDetail(
       app.getVersion(),
       bundledHarnessVersion(app.getAppPath()),
@@ -2114,7 +2035,7 @@ async function waitForPluginRecoveryAction(options: {
 
 function showUnexpectedError(error: unknown): void {
   const message = error instanceof Error ? error.stack ?? error.message : String(error)
-  dialog.showErrorBox('DSH Desktop encountered an error', message)
+  dialog.showErrorBox('BISHENG Work encountered an error', message)
 }
 
 async function showPluginRecovery(options?: {
@@ -3216,7 +3137,7 @@ function installMenu(): void {
           label: app.name,
           submenu: [
             {
-              label: isChinese ? '关于 DSH Desktop' : 'About DSH Desktop',
+              label: isChinese ? '关于 BISHENG Work' : 'About BISHENG Work',
               click: () => {
                 if (mainWindow && !mainWindow.isDestroyed()) {
                   void showAbout(mainWindow).catch(showUnexpectedError)
@@ -3324,7 +3245,7 @@ async function showMobilePairing(): Promise<void> {
     const options: MessageBoxOptions = {
       type: 'info',
       message: 'Harness is still starting.',
-      detail: 'Wait until DSH Desktop is ready, then connect your phone again.',
+      detail: 'Wait until BISHENG Work is ready, then connect your phone again.',
       buttons: ['OK']
     }
     await (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options))
@@ -3403,9 +3324,9 @@ async function bootstrap(): Promise<void> {
     dshMarketPatchPath: desktopResourcePath('dsh-desktop-market.patch.yml'),
     dshHome: join(app.getPath('userData'), 'harness'),
     logPath: join(app.getPath('logs'), 'harness.log'),
-    // Keep the Harness origin stable across launches. These ports are separate
-    // from the production/development mobile bridge ports (43127/43128).
-    preferredPort: DEFAULT_HARNESS_PORT + (developmentBuild ? 1 : 0),
+    // Keep the Harness origin stable across launches, on a port DSH Desktop
+    // does not use. The mobile bridge listens on a different port.
+    preferredPort: harnessPreferredPort(developmentBuild),
     extraEnvironment: () => {
       enterpriseDesktop?.rotateCapability()
       return enterpriseDesktop?.harnessEnvironment() ?? {}
@@ -3466,7 +3387,7 @@ async function bootstrap(): Promise<void> {
     cloudflaredCacheDir: join(app.getPath('userData'), 'bin'),
     forceCloudflareFailure: process.env.DSH_TUNNEL_FORCE_PINGGY === '1',
     tunnelLog: (message) => console.warn(message),
-    port: developmentBuild ? 43128 : 43127,
+    port: mobileBridgePort(developmentBuild),
     onReconnectRequested: () => {
       void showMobilePairing().catch(showUnexpectedError)
     },

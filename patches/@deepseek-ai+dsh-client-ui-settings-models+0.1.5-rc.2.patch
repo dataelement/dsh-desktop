@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index aa8ef80..103a7e7 100644
+index aa8ef80..03ccca8 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -55,7 +55,7 @@ window.__ModuleLoader__.load({
@@ -670,7 +670,7 @@ index aa8ef80..103a7e7 100644
  								},
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconPlusOutline16, { size: 14 }), t("add")]
  							}), state.namespaces.has("llm-pi-ai") && (0, react_jsx_runtime.jsxs)("button", {
-@@ -2294,35 +2615,50 @@ window.__ModuleLoader__.load({
+@@ -2294,35 +2615,59 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -698,7 +698,17 @@ index aa8ef80..103a7e7 100644
  		* @returns the onboarding modal or null when onboarding needs no intervention.
  		*/
  		function DeepSeekOnboardingDialog(props) {
- 			const { complete, controller, useModels, operations, schema, t } = props;
+-			const { complete, controller, useModels, operations, schema, t } = props;
++			const { complete } = props;
++			// BISHENG Work skips the first-run provider dialog. Models stay configurable in Settings.
++			const skipped = (0, react.useRef)(false);
++			(0, react.useEffect)(() => {
++				if (skipped.current) return;
++				skipped.current = true;
++				complete();
++			}, [complete]);
++			return null;
++			const { controller, useModels, operations, schema, t } = props;
  			const state = useModels((snapshot) => snapshot);
 -			const readiness = onboardingReadiness(state);
 +			const [selectedProvider, setSelectedProvider] = (0, react.useState)("deepseek-official");
@@ -739,7 +749,25 @@ index aa8ef80..103a7e7 100644
  			const finishCredential = (changed) => {
  				if (!changed) {
  					complete();
-@@ -2660,6 +2996,8 @@ window.__ModuleLoader__.load({
+@@ -2384,7 +2729,16 @@ window.__ModuleLoader__.load({
+ 		* @returns the welcome modal or null while the step decides not to show.
+ 		*/
+ 		function WelcomeNotice(props) {
+-			const { complete, controller, useWelcome, t } = props;
++			const { complete } = props;
++			// BISHENG Work skips the internal-testing notice.
++			const skipped = (0, react.useRef)(false);
++			(0, react.useEffect)(() => {
++				if (skipped.current) return;
++				skipped.current = true;
++				complete();
++			}, [complete]);
++			return null;
++			const { controller, useWelcome, t } = props;
+ 			const state = useWelcome((snapshot) => snapshot);
+ 			const finished = (0, react.useRef)(false);
+ 			const finish = (0, react.useCallback)(() => {
+@@ -2660,6 +3014,8 @@ window.__ModuleLoader__.load({
  			deleting: "Deleting {provider}…",
  			add: "Add provider",
  			provider: "Provider",
@@ -748,7 +776,7 @@ index aa8ef80..103a7e7 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2691,7 +3029,15 @@ window.__ModuleLoader__.load({
+@@ -2691,7 +3047,15 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "Uses the provider default",
  			maxTokens: "Max output tokens",
  			maxTokensPlaceholder: "Uses the provider default",
@@ -765,7 +793,7 @@ index aa8ef80..103a7e7 100644
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2740,10 +3086,14 @@ window.__ModuleLoader__.load({
+@@ -2740,10 +3104,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 0.1 remains in testing for Harness developers. Many areas need further improvement, and we welcome feedback from the developer community. DeepSeek Harness's core plugins and foundational APIs will continue to evolve rapidly over the coming months.\n\nWe look forward to exploring the limits of intelligence with developers around the world, building on open-source, open, reusable, and composable infrastructure. We welcome Harness developers everywhere to join the DSH plugin ecosystem.",
  			welcomeContinue: "Continue",
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
@@ -783,7 +811,7 @@ index aa8ef80..103a7e7 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -2763,6 +3113,8 @@ window.__ModuleLoader__.load({
+@@ -2763,6 +3131,8 @@ window.__ModuleLoader__.load({
  			deleting: "正在删除 {provider}…",
  			add: "添加提供方",
  			provider: "提供方",
@@ -792,7 +820,7 @@ index aa8ef80..103a7e7 100644
  			close: "关闭",
  			cancel: "取消",
  			apply: "保存",
-@@ -2794,7 +3146,15 @@ window.__ModuleLoader__.load({
+@@ -2794,7 +3164,15 @@ window.__ModuleLoader__.load({
  			contextWindowPlaceholder: "使用提供方默认值",
  			maxTokens: "最大输出 token 数",
  			maxTokensPlaceholder: "使用提供方默认值",
@@ -809,7 +837,7 @@ index aa8ef80..103a7e7 100644
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -2843,10 +3203,14 @@ window.__ModuleLoader__.load({
+@@ -2843,10 +3221,14 @@ window.__ModuleLoader__.load({
  			welcomeBody: "DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。",
  			welcomeContinue: "继续",
  			welcomeError: "暂时无法保存确认状态，请重试。",

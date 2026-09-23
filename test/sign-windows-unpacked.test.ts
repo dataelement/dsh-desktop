@@ -41,7 +41,7 @@ describe('sign-windows-unpacked', () => {
       '--tsretrywait',
       '10',
       '--name',
-      'DSH Desktop',
+      'BISHENG Work',
       '--url',
       'https://www.dshdesktop.com',
       'C:\\test\\app.exe'
