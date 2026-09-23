@@ -67,6 +67,25 @@ async function fixture(prepareError, waitForPrepare) {
   return { calls, click, upload, choose, hold(endpoint) { let release; waits.set(endpoint, new Promise(resolve => release = resolve)); return async () => { await act(async () => { waits.delete(endpoint); release(); }); }; }, failNext(endpoint, message) { failures.set(endpoint, message); }, async switchSession() { sessionId = 'session-b'; await act(async () => render()); } };
 }
 
+it('hides create, rename, and delete before a session exists', async () => {
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+  const template = { id: 'personal-1', name: 'Company', origin: 'personal' };
+  await act(async () => {
+    root.render(React.createElement(Manager, {
+      client: { async call() { throw new Error('unexpected'); } },
+      mode: {},
+      sessionId: undefined,
+      state: { templates: [template], selectedId: null, activeMode: 'ppt' },
+      choose: () => {},
+      t: key => key,
+      mutable: false
+    }));
+  });
+  expect(container.querySelector('.personal-create')).toBeNull();
+  expect(container.querySelector('.personal-actions')).toBeNull();
+  expect(container.querySelector('[data-personal-card="personal-1"]')).not.toBeNull();
+});
+
 it('previews uploads in the modal while retaining the grid, then supports editing and confirmed delete', async () => {
   const f = await fixture();
   await f.upload(new File(['source'], 'Company.pptx'));

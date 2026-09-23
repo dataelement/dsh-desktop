@@ -1,5 +1,5 @@
 /** Injected into both maintained client factories by the PPT build. */
-function PersonalTemplateManager({ client, mode, sessionId, state, choose, t }) {
+function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mutable = true }) {
   const h = react.createElement;
   const input = react.useRef(null);
   const [busy, setBusy] = react.useState(false);
@@ -171,12 +171,12 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t }) 
     error && !modalOpen && h('div', { role: 'alert', style: { color: '#b42318', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 280, overflowY: 'auto' } }, error),
     notice && h('div', { role: 'status' }, notice),
     h('div', { className: OfficePptHero_module_css_default.templateGrid, 'data-personal-template-grid': '' },
-      h('button', { type: 'button', className: 'personal-create', disabled: busy, title: t('personal.local'), onClick: () => input.current?.click() }, icon('create'), h('span', null, t('personal.create'))),
+      mutable && h('button', { type: 'button', className: 'personal-create', disabled: busy, title: t('personal.local'), onClick: () => input.current?.click() }, icon('create'), h('span', null, t('personal.create'))),
       ...templates.map(template => h('div', { key: template.id, 'data-personal-card': template.id },
       h('div', { className: 'personal-frame' },
         h(TemplateCard, { template, selected: template.id === state.selectedId, choose }),
         template.id === state.selectedId && h('div', { className: 'personal-selected', 'aria-hidden': true }, h('span', { className: 'personal-check' }, icon('check')), t('personal.selected')),
-        h('div', { className: 'personal-actions' },
+        mutable && h('div', { className: 'personal-actions' },
           h('button', { type: 'button', disabled: busy, title: t('personal.edit'), 'aria-label': t('personal.edit'), onClick: () => openEditor(template) }, icon('rename')),
           h('button', { type: 'button', disabled: busy, title: t('personal.delete'), 'aria-label': t('personal.delete'), onClick: () => { setError(''); setDeleting(template.id); setEditing(null); } }, icon('delete'))))))),
     h('dialog', { ref: dialog, className: `personal-dialog${importing ? ' personal-upload' : ''}`, 'aria-labelledby': `${dialogId}-title`, 'aria-modal': true,

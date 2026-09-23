@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 1b7f134..794d405 100644
+index 1b7f134..cecdb64 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -14650,12 +14650,13 @@ window.__ModuleLoader__.load({
@@ -33,7 +33,7 @@ index 1b7f134..794d405 100644
 +					renderSlot("conversation.hero.agentPreset", {}),
 +					(0, react_jsx_runtime.jsx)("div", {
 +						className: ConversationRoot_module_css_default.heroModeCluster,
-+						children: zone !== void 0 && renderSlot("conversation.hero.modeActions", zone)
++						children: renderSlot("conversation.hero.modeActions", zone ?? {})
 +					})
  				]
  			});
@@ -137,7 +137,7 @@ index 1b7f134..794d405 100644
  						]
  					}),
 -					variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null
-+					extensionZone !== void 0 ? renderSlot("conversation.composer.dock", extensionZone) : null
++					extensionZone !== void 0 || sessionId === void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null
  				]
  			});
  		});
@@ -148,7 +148,7 @@ index 1b7f134..794d405 100644
 +					},
 +					"conversation.hero.modeActions": {
 +						kind: "list",
-+						scope: "session"
++						scope: "session-maybe"
  					}
  				},
  				inject: (sessionId) => ({
@@ -163,6 +163,15 @@ index 1b7f134..794d405 100644
  					"conversation.input.overlay": {
  						kind: "list",
  						scope: "session"
+@@ -16743,7 +16764,7 @@ window.__ModuleLoader__.load({
+ 					},
+ 					"conversation.composer.dock": {
+ 						kind: "list",
+-						scope: "session"
++						scope: "session-maybe"
+ 					}
+ 				},
+ 				inject: (sessionId) => {
 @@ -16753,6 +16774,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
@@ -184,7 +193,7 @@ index 1b7f134..794d405 100644
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 4a1daf8..14db6ba 100644
+index 4a1daf8..acfc630 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -183,6 +183,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -194,7 +203,7 @@ index 4a1daf8..14db6ba 100644
 +        /** Product-mode controls beside the blank-session agent preset. */
 +        'conversation.hero.modeActions': {
 +            kind: 'list';
-+            scope: 'session';
++            scope: 'session-maybe';
 +            owner: InputZone;
 +        };
          /** Full-width entries above the composer card. */
@@ -213,7 +222,8 @@ index 4a1daf8..14db6ba 100644
          /** Ambient entries below the composer card. */
          'conversation.composer.dock': {
              kind: 'list';
-             scope: 'session';
+-            scope: 'session';
++            scope: 'session-maybe';
 +            owner: InputZone;
          };
          /** Compact controls at the left of the composer tool row. */

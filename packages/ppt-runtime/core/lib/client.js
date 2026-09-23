@@ -86,11 +86,16 @@ window.__ModuleLoader__.load({
 		const TEMPLATE_PREVIEW_WHEEL_LOCK_MS = 180;
 		const TEMPLATE_DOCK_BOTTOM_PX = 12;
 		const TEMPLATE_PANEL_MIN_HEIGHT_PX = 200;
+		const STAGED_MODE_KEY = "\0dsh-ppt-unbound";
+		function modeKey(sessionId) {
+			return typeof sessionId === "string" && sessionId.trim().length > 0 ? sessionId : STAGED_MODE_KEY;
+		}
 		const EMPTY_STATE = {
 			activeMode: null,
 			loading: false,
 			templates: [],
 			selectedId: null,
+			engaged: false,
             notice: false,
 			error: ""
 		};
@@ -99,21 +104,32 @@ window.__ModuleLoader__.load({
 			states = /* @__PURE__ */ new Map();
 			listeners = /* @__PURE__ */ new Map();
 			snapshot(sessionId) {
-				return this.states.get(sessionId) ?? EMPTY_STATE;
+				return this.states.get(modeKey(sessionId)) ?? EMPTY_STATE;
 			}
 			subscribe(sessionId, listener) {
-				const listeners = this.listeners.get(sessionId) ?? /* @__PURE__ */ new Set();
+				const key = modeKey(sessionId);
+				const listeners = this.listeners.get(key) ?? /* @__PURE__ */ new Set();
 				listeners.add(listener);
-				this.listeners.set(sessionId, listeners);
+				this.listeners.set(key, listeners);
 				return () => {
 					listeners.delete(listener);
-					if (listeners.size === 0) this.listeners.delete(sessionId);
+					if (listeners.size === 0) this.listeners.delete(key);
 				};
 			}
+			revision(sessionId) {
+				return this.revisions?.get(modeKey(sessionId)) ?? 0;
+			}
+			bump(sessionId) {
+				this.revisions ??= /* @__PURE__ */ new Map();
+				const key = modeKey(sessionId);
+				this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+			}
 			setMode(sessionId, activeMode) {
+				this.bump(sessionId);
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
+					engaged: true,
 					error: ""
 				}));
 			}
@@ -155,27 +171,136 @@ window.__ModuleLoader__.load({
 				}));
 			}
 			select(sessionId, template, activeMode) {
+				this.bump(sessionId);
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
 					loading: false,
 					selectedId: template.id,
+					engaged: true,
                     notice: false,
 					error: ""
 				}));
 			}
 			deselect(sessionId, activeMode) {
+				this.bump(sessionId);
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
 					loading: false,
 					selectedId: null,
+					engaged: true,
 					error: ""
 				}));
 			}
 			update(sessionId, transform) {
-				this.states.set(sessionId, transform(this.snapshot(sessionId)));
+				const key = modeKey(sessionId);
+				this.states.set(key, transform(this.states.get(key) ?? EMPTY_STATE));
+				this.notify(key);
+			}
+			notify(sessionId) {
 				for (const listener of this.listeners.get(sessionId) ?? []) listener();
+			}
+			clearStaged() {
+				if (!this.states.has(STAGED_MODE_KEY)) return;
+				this.states.delete(STAGED_MODE_KEY);
+				this.notify(STAGED_MODE_KEY);
+			}
+			adopt(sessionId, client) {
+				this.inflight ??= /* @__PURE__ */ new Map();
+				this.adopted ??= /* @__PURE__ */ new Set();
+				if (!client?.bound || typeof sessionId !== "string" || sessionId.trim().length === 0) return Promise.resolve("idle");
+				const pending = this.inflight.get(sessionId);
+				if (pending) return pending;
+				if (this.adopted.has(sessionId)) return Promise.resolve("done");
+				const staged = this.states.get(STAGED_MODE_KEY);
+				if (!staged?.engaged) {
+					this.adopted.add(sessionId);
+					return Promise.resolve("idle");
+				}
+				const work = this.applyStaged(sessionId, client, staged).finally(() => {
+					if (this.inflight.get(sessionId) === work) this.inflight.delete(sessionId);
+				});
+				this.inflight.set(sessionId, work);
+				return work;
+			}
+			async applyStaged(sessionId, client, staged) {
+				if (staged.activeMode !== "ppt") {
+					this.clearStaged();
+					this.adopted.add(sessionId);
+					return "idle";
+				}
+				this.bump(sessionId);
+				this.update(sessionId, () => ({ ...staged, loading: true, error: "" }));
+				try {
+					const remote = await client.call("state");
+					const occupied = remote?.presentationMode === "ppt" || typeof remote?.selectedTemplateId === "string";
+					if (occupied) {
+						this.clearStaged();
+						this.update(sessionId, (current) => ({
+							...current,
+							templates: Array.isArray(remote?.templates) ? remote.templates : current.templates,
+							selectedId: typeof remote?.selectedTemplateId === "string" ? remote.selectedTemplateId : null,
+							activeMode: remote?.presentationMode === "ppt" ? "ppt" : null,
+							loading: false,
+							engaged: false,
+							error: ""
+						}));
+						this.adopted.add(sessionId);
+						return "kept";
+					}
+					if (staged.selectedId) {
+						try {
+							await client.call("template/select", { templateId: staged.selectedId, mode: "ppt" });
+						} catch (reason) {
+							await client.call("presentation/mode", { mode: "ppt" });
+							this.update(sessionId, (current) => ({
+								...current,
+								activeMode: "ppt",
+								selectedId: null,
+								loading: false,
+								engaged: true,
+								error: reason instanceof Error ? reason.message : String(reason)
+							}));
+							this.clearStaged();
+							this.adopted.add(sessionId);
+							return "partial";
+						}
+					} else if (staged.activeMode === "ppt") {
+						await client.call("presentation/mode", { mode: "ppt" });
+					}
+					const next = await client.call("state");
+					this.setTemplateState(sessionId, next);
+					this.clearStaged();
+					this.adopted.add(sessionId);
+					return "applied";
+				} catch (reason) {
+					this.update(sessionId, (current) => ({
+						...current,
+						loading: false,
+						engaged: true,
+						error: reason instanceof Error ? reason.message : String(reason)
+					}));
+					this.clearStaged();
+					this.adopted.add(sessionId);
+					return "failed";
+				}
+			}
+			applyLoadedTemplates(sessionId, client, seenRevision, next, request) {
+				if (request != null && (request.client !== client || modeKey(request.sessionId) !== modeKey(sessionId))) return false;
+				if (this.revision(sessionId) !== seenRevision) return false;
+				const activeMode = this.snapshot(sessionId).activeMode ?? (next?.presentationMode === "ppt" ? "ppt" : null);
+				this.setTemplates(sessionId, next?.templates ?? []);
+				if (!client?.bound || activeMode === null) return true;
+				this.setMode(sessionId, activeMode);
+				this.setNotice(sessionId, next?.templateMigration?.reason ?? null);
+				const selected = (next?.templates ?? []).find((template) => template.id === next.selectedTemplateId && (template.supportedModes?.includes("ppt") ?? true));
+				if (selected === void 0) {
+					this.deselect(sessionId, activeMode);
+					return true;
+				}
+				this.select(sessionId, selected, activeMode);
+				return true;
 			}
 		};
 		function useMode(mode, sessionId) {
@@ -391,6 +516,10 @@ window.__ModuleLoader__.load({
 		}
 		function deselectTemplate(client, mode, sessionId, activeMode) {
 			mode.setLoading(sessionId, true);
+			if (!client.bound) {
+				mode.deselect(sessionId, activeMode);
+				return;
+			}
 			client.call("template/deselect").then(() => {
 				return client.call("presentation/mode", { mode: activeMode });
 			}).then(() => {
@@ -401,6 +530,7 @@ window.__ModuleLoader__.load({
 		}
 		function selectPresentationMode(client, mode, sessionId, activeMode) {
 			mode.setMode(sessionId, activeMode);
+			if (!client.bound) return;
 			client.call("presentation/mode", { mode: activeMode }).catch((reason) => {
 				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 			});
@@ -480,7 +610,7 @@ window.__ModuleLoader__.load({
 		}
 		/** Selected-template reference shown only while the standard Session is blank. */
 		function OfficePptStandardInputAccessory(props) {
-			if (!props.session.blank) return null;
+			if (props.session == null || !props.session.blank) return null;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OfficePptInputAccessory, { ...props });
 		}
 		/** PPT option and template chooser shared by both Composer layouts. */
@@ -491,32 +621,38 @@ window.__ModuleLoader__.load({
 			const templatePanelRef = (0, react.useRef)(null);
 			const templateViewportRef = (0, react.useRef)(null);
 			const [category, setCategory] = (0, react.useState)("all");
+			const bindingRef = (0, react.useRef)({ client, sessionId });
+			bindingRef.current = { client, sessionId };
+			const catalogRevision = mode.revision(sessionId);
 			(0, react.useEffect)(() => {
-				if (!loadTemplates || state.loading || state.templates.length > 0 || state.error !== "") return;
+				if (!loadTemplates || state.templates.length > 0 || state.error !== "") return;
+				const request = { client, sessionId };
+				const seenRevision = catalogRevision;
 				mode.setLoading(sessionId, true);
+				let active = true;
 				loadTemplateState(client, t("templates.loadTimeout")).then((next) => {
-					const activeMode = mode.snapshot(sessionId).activeMode ?? (next.presentationMode === "ppt" ? "ppt" : null);
-					mode.setTemplates(sessionId, next.templates);
-					if (activeMode === null) return;
-					mode.setMode(sessionId, activeMode);
-					mode.setNotice(sessionId, next.templateMigration?.reason ?? null);
-					const selected = next.templates.find((template) => template.id === next.selectedTemplateId && templateSupportsMode(template, "ppt"));
-					if (selected === void 0) {
-						mode.deselect(sessionId, activeMode);
-						return;
-					}
-					mode.select(sessionId, selected, activeMode);
-
+					if (!active) return;
+					const current = bindingRef.current;
+					mode.applyLoadedTemplates(current.sessionId, current.client, seenRevision, next, request);
 				}).catch((reason) => {
-					mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+					if (!active) return;
+					const current = bindingRef.current;
+					if (current.client !== request.client || modeKey(current.sessionId) !== modeKey(request.sessionId)) return;
+					if (mode.revision(request.sessionId) !== seenRevision) return;
+					mode.setError(request.sessionId, reason instanceof Error ? reason.message : String(reason));
 				});
+				return () => {
+					active = false;
+				};
+				// loading is not a dependency: setLoading would cancel this request.
+				// catalogRevision is: a mode click invalidates the response, so the effect loads again.
 			}, [
+				catalogRevision,
 				client,
 				loadTemplates,
 				mode,
 				sessionId,
 				state.error,
-				state.loading,
 				state.templates.length,
 				t
 			]);
@@ -524,6 +660,10 @@ window.__ModuleLoader__.load({
 				deselectTemplate(client, mode, sessionId, state.activeMode ?? "ppt");
 			};
 			const select = (template, activeMode = state.activeMode ?? "ppt") => {
+				if (!client.bound) {
+					mode.select(sessionId, template, activeMode);
+					return;
+				}
 				mode.setLoading(sessionId, true);
 				client.call("template/select", {
 					templateId: template.id,
@@ -639,7 +779,7 @@ window.__ModuleLoader__.load({
 						className: OfficePptHero_module_css_default.templateViewport,
 						"data-office-ppt-template-viewport": "",
 						"data-native-wheel-owner": "",
-						children: [category === "personal" && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						children: [category === "personal" && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateError,
 							role: "alert",
 							children: state.error
@@ -674,7 +814,7 @@ window.__ModuleLoader__.load({
 		}
 		/** Standard Composer chooser rendered in normal flow below the resident input card. */
 		function OfficePptStandardComposerDock(props) {
-			if (!props.session.blank) return null;
+			if (props.session != null && props.session.blank !== true) return null;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OfficePptChooser, {
 				...props,
 				placement: "fixed",
@@ -684,6 +824,10 @@ window.__ModuleLoader__.load({
 		/** PPT mode control beside the blank-session agent preset. */
 		function OfficePptStandardModeAction(props) {
             const state = useMode(props.mode, props.sessionId);
+            (0, react.useEffect)(() => {
+                if (!props.client?.bound) return;
+                props.mode.adopt(props.sessionId, props.client);
+            }, [props.client, props.mode, props.sessionId]);
             return (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [
                 (0, react_jsx_runtime.jsx)(OfficePptChooser, { ...props, placement: "trigger" }),
                 state.notice && state.activeMode !== null ? (0, react_jsx_runtime.jsx)("span", {
@@ -893,16 +1037,17 @@ window.__ModuleLoader__.load({
 		* @returns Session-bound Office PPT client.
 		*/
 		function createOfficePptClient(rpc, sessionId) {
-			return { async call(endpoint, payload = {}, signal) {
-				const outer = await rpc.call("/dsh-ppt", endpoint, {
-					sessionId,
-					...payload
-				}, signal);
+			const bound = typeof sessionId === "string" && sessionId.trim().length > 0;
+			return { bound, async call(endpoint, payload = {}, signal) {
+				const route = !bound && (endpoint === "state" || endpoint === "template/catalog") ? "template/catalog" : endpoint;
+				if (!bound && route !== "template/catalog") throw new Error("PPT session is not ready");
+				const outer = await rpc.call("/dsh-ppt", route, bound ? { sessionId, ...payload } : {}, signal);
 				if (!outer.ok) throw new Error(outer.error.message);
 				const raw = outer.value;
 				if (raw === null || typeof raw !== "object" || !("status" in raw)) throw new Error("Office PPT returned an invalid response");
 				const inner = raw;
 				if (inner.status === "error") throw new Error(inner.error.message);
+				if (!bound && endpoint === "state") return { templates: inner.data?.templates ?? [], selectedTemplateId: null, presentationMode: null };
 				return inner.data;
 			} };
 		}
