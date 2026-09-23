@@ -96,23 +96,30 @@ async function main(): Promise<void> {
       contents.focus()
       await delay(150)
       assert.equal(BrowserWindow.getAllWindows().length, 1, 'The page must not create another native window')
+      // At a fractional scale factor the viewport is a fractional number of
+      // CSS pixels (800 / 1.5 = 533.33); innerHeight rounds that down while a
+      // full-height layout's bottom edge does not, so edges are compared
+      // against the visual viewport's exact size.
       const layout = await contents.executeJavaScript(`(() => {
         const content=document.querySelector('.content'), list=document.querySelector('.plugins'), footer=document.querySelector('.footer');
-        const cr=content.getBoundingClientRect();
-        return { width:innerWidth, height:innerHeight, dpr:devicePixelRatio,
-          outerScroll:document.documentElement.scrollHeight>innerHeight || document.documentElement.scrollWidth>innerWidth,
+        const cr=content.getBoundingClientRect(), fr=footer.getBoundingClientRect();
+        const vw=visualViewport.width, vh=visualViewport.height, epsilon=0.5;
+        return { width:innerWidth, height:innerHeight, viewport:[vw,vh], dpr:devicePixelRatio,
+          outerScroll:document.documentElement.scrollHeight>vh+epsilon || document.documentElement.scrollWidth>vw+epsilon,
           contentScroll:content.scrollHeight>content.clientHeight,
           listScroll:list ? list.scrollHeight>list.clientHeight : false,
-          buttonsVisible:[...document.querySelectorAll('.actions button:not([hidden])')].filter(b=>b.getBoundingClientRect().height).every(b=>{const r=b.getBoundingClientRect();return r.top>=cr.top&&r.bottom<=cr.bottom&&r.right<=innerWidth}),
-          footerVisible:footer.getBoundingClientRect().bottom<=innerHeight,
+          buttonsVisible:[...document.querySelectorAll('.actions button:not([hidden])')].filter(b=>b.getBoundingClientRect().height).every(b=>{const r=b.getBoundingClientRect();return r.top>=cr.top-epsilon&&r.bottom<=cr.bottom+epsilon&&r.right<=vw+epsilon}),
+          footerBottom:fr.bottom,
+          footerVisible:fr.bottom<=vh+epsilon,
           wechatLabel:document.querySelector('#community-wechat').innerText }
       })()`)
-      assert.equal(layout.outerScroll, false)
-      assert.equal(layout.footerVisible, true)
+      const where = `${scenario} ${locale} ${theme} ${width}x${height} -> ${JSON.stringify(layout)}`
+      assert.equal(layout.outerScroll, false, `page must not scroll as a whole: ${where}`)
+      assert.equal(layout.footerVisible, true, `footer must end inside the viewport: ${where}`)
       if (page === 'safe-mode') {
-        assert.equal(layout.contentScroll, false)
-        assert.equal(layout.buttonsVisible, true)
-        if (width === 1280) assert.equal(layout.listScroll, false)
+        assert.equal(layout.contentScroll, false, `content must not scroll: ${where}`)
+        assert.equal(layout.buttonsVisible, true, `actions must stay inside the content: ${where}`)
+        if (width === 1280) assert.equal(layout.listScroll, false, `list must fit: ${where}`)
       }
       if (page === 'plugin-recovery') {
         const visibleLabels = (selector: string) => contents.executeJavaScript(`Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter(b => b.getBoundingClientRect().height > 0).map(b => b.textContent)`)
