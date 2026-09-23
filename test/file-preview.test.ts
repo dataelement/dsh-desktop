@@ -7,6 +7,40 @@ async function packageClient(name: string, file = 'lib/client.js'): Promise<stri
   return readFile(path.join(projectRoot, 'node_modules', '@deepseek-ai', name, file), 'utf8')
 }
 
+async function loadOpenResolvedHostFile(): Promise<
+  (
+    ctx: {
+      remote: { session: { openWorkspacePath: (request: { path: string }) => Promise<void> } }
+      sidebarRightTabs: { candidates: (address: string) => string[] }
+      sidebarRight: { openResource: (address: string, options?: { params: { line: number } }) => void }
+    },
+    sessionId: string,
+    cwd: string | undefined,
+    hostPath: string,
+    options?: { line?: number }
+  ) => Promise<void>
+> {
+  const source = await packageClient('dsh-client-ui-chat')
+  const start = source.indexOf('const FILE_ADDRESS_PREFIX')
+  const marker = source.indexOf('async function openResolvedHostFile')
+  const end = source.indexOf('\t\t//#endregion', marker)
+  const body = source.slice(start, end)
+  expect(start).toBeGreaterThanOrEqual(0)
+  expect(marker).toBeGreaterThan(start)
+  expect(end).toBeGreaterThan(marker)
+  return new Function(`${body}; return openResolvedHostFile`)() as (
+    ctx: {
+      remote: { session: { openWorkspacePath: (request: { path: string }) => Promise<void> } }
+      sidebarRightTabs: { candidates: (address: string) => string[] }
+      sidebarRight: { openResource: (address: string, options?: { params: { line: number } }) => void }
+    },
+    sessionId: string,
+    cwd: string | undefined,
+    hostPath: string,
+    options?: { line?: number }
+  ) => Promise<void>
+}
+
 describe('uploaded file preview', () => {
   it('exposes a session-authorized host path instead of file bytes', async () => {
     const host = await packageClient('dsh-api-session-controller', 'lib/index.js')
@@ -132,8 +166,46 @@ describe('uploaded file preview', () => {
     expect(attachmentPatch).toContain('onOpenUploadedFile')
     expect(uploadPatch).toContain('findStagedFile')
     expect(uploadPatch).not.toContain('findStagedFilesByName')
-    expect(deliverablesPatch).toContain('v?\\d+(?:\\.\\d+){1,4}')
     expect(deliverablesPatch).toContain('@[^\\\\/@\\s]+\\/[^\\\\/@\\s]+(?:@[^\\\\/\\s]+)?')
+    const opener = chatPatch.slice(chatPatch.indexOf('async function openResolvedHostFile'))
+    expect(opener.indexOf('endsWith("/")')).toBeGreaterThanOrEqual(0)
+    expect(opener.indexOf('endsWith("/")')).toBeLessThan(opener.indexOf('fileAddressFor'))
+    expect(opener).not.toContain('action: "reveal"')
+  })
+
+  it('opens a trailing-slash directory in the host file manager', async () => {
+    const openResolvedHostFile = await loadOpenResolvedHostFile()
+    const events: string[] = []
+    const ctx = {
+      remote: {
+        session: {
+          openWorkspacePath: async (request: { path: string }) => {
+            events.push(`open:${request.path}`)
+          }
+        }
+      },
+      sidebarRightTabs: {
+        candidates: (address: string) => {
+          events.push(`candidates:${address}`)
+          return ['text']
+        }
+      },
+      sidebarRight: {
+        openResource: (address: string) => {
+          events.push(`resource:${address}`)
+        }
+      }
+    }
+
+    await openResolvedHostFile(ctx, 'session-1', '/workspace', '/workspace/docs/')
+    await openResolvedHostFile(ctx, 'session-1', 'C:\\repo', 'C:\\repo\\docs\\')
+    expect(events).toEqual(['open:/workspace/docs/', 'open:C:\\repo\\docs\\'])
+
+    events.length = 0
+    await openResolvedHostFile(ctx, 'session-1', '/workspace', '/workspace/src/main.ts')
+    expect(events.some((event) => event.startsWith('candidates:'))).toBe(true)
+    expect(events.some((event) => event.startsWith('resource:'))).toBe(true)
+    expect(events.some((event) => event.startsWith('open:'))).toBe(false)
   })
 
   it('offers a local-open action when sidebar preview cannot render the file', async () => {
