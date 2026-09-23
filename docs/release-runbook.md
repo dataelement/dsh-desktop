@@ -18,6 +18,25 @@ Before dispatching, confirm that GitHub Actions is enabled for this repository, 
 
 For a first packaging check, dispatch `Release desktop installers` on `main` with `target=macos` and `mode=development`. This creates unsigned, isolated Dev artifacts in the workflow run and does not publish them. Signed builds additionally require the Apple signing and notarization secrets listed in the workflow. Verify both architecture artifacts and their bundled runtime before using a signed package as a release candidate.
 
+## GitHub Actions parameters for signing and publishing
+
+Add these under **Settings → Secrets and variables → Actions** for this repository. Existing secrets in CoAligne or DSH Desktop cannot be read back through GitHub and are not automatically available to Bisheng Work. The same Apple certificate and API key may be reused only if their owner confirms that this app should be signed under that Apple team.
+
+| Secret | Needed for | Value to provide |
+| --- | --- | --- |
+| `DESKTOP_CSC_LINK` | Signed macOS | Base64 PKCS#12 Developer ID Application certificate, or a supported HTTPS source |
+| `DESKTOP_CSC_KEY_PASSWORD` | Signed macOS | Password for that PKCS#12 certificate |
+| `DESKTOP_APPLE_API_KEY` | Signed macOS | Raw App Store Connect `.p8` key contents for notarization |
+| `DESKTOP_APPLE_API_KEY_ID` | Signed macOS | Key ID for the `.p8` key |
+| `DESKTOP_APPLE_API_ISSUER` | Signed macOS | App Store Connect issuer UUID |
+| `DESKTOP_APPLE_TEAM_ID` | Signed macOS | Apple Developer team ID matching the certificate and notarization key |
+| `DESKTOP_WINDOWS_SIGNING_PIN` | Signed Windows | PIN for the SafeNet UKey connected to the local runner |
+| `MODELSCOPE_TOKEN` | Full tag release or `target=all` prerelease publication | ModelScope upload token |
+
+`MODELS_TOKEN` only enables generated release notes; the workflow has a deterministic fallback. `CRASH_ADMIN_TOKEN` and `FEISHU_RELEASE_WEBHOOK` enable optional rollout and notification steps. GitHub supplies `GITHUB_TOKEN` automatically for GitHub Release publication. CoAligne's GCP parameters are not used by this workflow.
+
+For a signing-only trial, dispatch `mode=signed` with `target=macos` or `target=windows` and a non-`v` `signed_version`. The output remains a workflow artifact. A tag release requires both macOS architectures, Windows signing, and `MODELSCOPE_TOKEN` before publication can finish.
+
 ## Local Windows UKey signing runner
 
 Windows packaging and signing run as separate jobs. The GitHub-hosted Windows runner builds an unsigned NSIS installer and uploads a short-lived workflow artifact. A local macOS ARM64 runner downloads it, signs the installer with Jsign and the SafeNet UKey, regenerates the blockmap and `latest.yml`, and uploads the signed release set. The GitHub Release job cannot start unless signing succeeds.
