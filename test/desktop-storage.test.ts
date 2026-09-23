@@ -161,4 +161,35 @@ describe('DesktopStorageManager', () => {
       await removeTempDir(dir2)
     }
   })
+
+  it('adds the workspace timestamp index required by newer clients', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'dsh-storage-test-'))
+    try {
+      const legacyView = {
+        groupBy: 'workspace',
+        orderBy: 'updated',
+        groupExpansion: {},
+        sessionOrderByAccount: { account: ['session-1'] },
+        unreadSessionIds: []
+      }
+      await writeFile(join(tempDir, STORAGE_FILENAME), JSON.stringify({
+        'dsh.workspace.view.v5': JSON.stringify(legacyView)
+      }), 'utf8')
+
+      const manager = new DesktopStorageManager(tempDir)
+      expect(JSON.parse(manager.getItem('dsh.workspace.view.v5') ?? '{}')).toEqual({
+        ...legacyView,
+        sessionUpdatedAtByAccount: {}
+      })
+
+      manager.flushSync()
+      const persisted = JSON.parse(await readFile(join(tempDir, STORAGE_FILENAME), 'utf8'))
+      expect(JSON.parse(persisted['dsh.workspace.view.v5'])).toHaveProperty(
+        'sessionUpdatedAtByAccount',
+        {}
+      )
+    } finally {
+      await removeTempDir(tempDir)
+    }
+  })
 })

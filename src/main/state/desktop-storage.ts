@@ -3,6 +3,19 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 export const STORAGE_FILENAME = 'desktop-storage.json'
+const WORKSPACE_VIEW_KEY = 'dsh.workspace.view.v5'
+
+function migrateWorkspaceView(value: string): string {
+  try {
+    const view = JSON.parse(value) as unknown
+    if (!view || typeof view !== 'object' || Array.isArray(view)) return value
+    const record = view as Record<string, unknown>
+    if (record.sessionUpdatedAtByAccount !== undefined) return value
+    return JSON.stringify({ ...record, sessionUpdatedAtByAccount: {} })
+  } catch {
+    return value
+  }
+}
 
 export type DesktopStorageAction =
   | { type: 'set'; key: string; val: string }
@@ -166,11 +179,10 @@ export class DesktopStorageManager {
       const parsed = JSON.parse(raw)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         for (const [k, v] of Object.entries(parsed)) {
-          if (typeof v === 'string') {
-            this.memoryStore.set(k, v)
-          } else {
-            this.memoryStore.set(k, String(v))
-          }
+          const value = typeof v === 'string' ? v : String(v)
+          const migrated = k === WORKSPACE_VIEW_KEY ? migrateWorkspaceView(value) : value
+          this.memoryStore.set(k, migrated)
+          if (migrated !== value) this.isDirty = true
         }
       }
     } catch (error) {
