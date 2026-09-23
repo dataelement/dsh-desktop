@@ -12,6 +12,25 @@ import {
 
 describe('plugin-market-check', () => {
   beforeEach(() => clearManifestCache())
+  it('remembers a failed lookup only for the window the caller asks for', async () => {
+    const fetchFn = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    const check = (failureTtlMs?: number) => evaluatePluginMarketCompatibility({
+      packageName: 'offline-plugin',
+      installedVersion: '1.0.0',
+      currentRuntimeVersion: '0.1.5',
+      fetchFn,
+      ...(failureTtlMs !== undefined ? { failureTtlMs } : {})
+    })
+    expect((await check(60_000)).healthStatus).toBe('check-failed')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    const again = await check(60_000)
+    expect(again.healthStatus).toBe('check-failed')
+    expect(again.detail).toContain('offline')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    await check()
+    expect(fetchFn).toHaveBeenCalledTimes(4)
+  })
+
   it('parses and compares semver correctly', () => {
     expect(parseSemver('1.2.3')).toEqual({
       major: 1,

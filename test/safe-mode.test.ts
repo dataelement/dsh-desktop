@@ -14,6 +14,19 @@ describe('Safe Mode', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
   })
 
+  it('marks plugins as still being checked until the market check answers', () => {
+    const pending = buildSafeModeViewModel({ locale: 'zh', plugins: ['dsh-a', 'dsh-b'], disabledPlugins: ['dsh-b'], healthPending: true })
+    expect(pending.pluginItems[0]?.statusLabel).toBe('（正在检查更新…）')
+    expect(pending.pluginItems[1]?.statusLabel).toBe('（已停用）')
+    expect(pending.upgradeReadyCount).toBe(0)
+    const answered = buildSafeModeViewModel({
+      locale: 'zh', plugins: ['dsh-a'], healthPending: true,
+      healthReports: [{ packageName: 'dsh-a', installedVersion: '1.0.0', latestVersion: '1.1.0', healthStatus: 'upgrade-available', healthLabel: '有更新', upgradeReady: true, upgradeVersion: '1.1.0' }]
+    })
+    expect(answered.pluginItems[0]?.statusLabel).toBe('（有更新）')
+    expect(answered.pluginItems[0]?.upgradeButtonLabel).toBe('升级至 v1.1.0')
+  })
+
   it('shows static references as informational findings without blocking or selecting a repair', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh', plugins: ['dsh-dream-skin'], issues: [{

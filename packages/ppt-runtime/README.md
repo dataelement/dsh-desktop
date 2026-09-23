@@ -44,12 +44,6 @@ The host stores source PPTX, editable PPTD pages, assets, previews and conversio
 
 For runtime-only changes, `node scripts/build-ppt-runtime.mjs --reuse-previews` validates all built-in source decks and packages their existing reviewed previews. A full `npm run ppt:build` regenerates the built-in assets.
 
-### Bundled editable templates
-
-Built-in templates can also ship as complete editable PPTD projects. **Green Pulse · 绿色活力配图模板** is the first maintained example: 22 editable layouts, 17 declared image slots, 11 bindings to editable native masks and one native editable diagram. Selecting it exposes the same confined `ppt_template_create_project` flow as a personal template, while the packaged source remains read-only and reusable.
-
-Each project under `core/lib/bundled-template-projects/dsh-*` owns `template.json`, `deck.pptd`, page and asset files, plus one to three JPEG previews. `npm run ppt:bundled-projects` derives the page index, embeds the previews and writes the verified SHA-256 manifest. The normal runtime build runs this step automatically. See [Bundled editable PPT templates](../../docs/ppt-bundled-editable-templates.md) for the repeatable addition and verification flow.
-
 Validation evidence and temporary exports live under ignored `doc/ppt-remediation/`. Windows packaging and native Windows PowerPoint require their own runner/device validation.
 
 ### Layout refinement
