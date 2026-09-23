@@ -31,23 +31,42 @@ async function loadLocalPathReference(): Promise<
   )() as (value: string) => string | undefined
 }
 
+function basename(path: string): string {
+  const at = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return at === -1 ? path : path.slice(at + 1)
+}
+
+/** Mirrors `producedFileMentions`: exact path, then a unique basename, then the heuristic. */
+function resolveProducedMention(
+  paths: readonly string[],
+  value: string,
+  localPathReference: (value: string) => string | undefined
+): string | undefined {
+  const matches = paths.filter((path) => basename(path) === value)
+  const onlyBasename = matches.length === 1 ? matches[0] : undefined
+  return paths.includes(value) ? value : onlyBasename ?? localPathReference(value)
+}
+
 describe('assistant local path links', () => {
-  it('links Codex-style path references even when they are not turn deliverables', async () => {
+  it('links explicit path references even when they are not turn deliverables', async () => {
     const patch = await readFile(
       patchPath('@deepseek-ai/dsh-client-ui-deliverables'),
       'utf8'
     )
 
-    expect(patch).toContain('localPathReference(value)')
+    expect(patch).toContain(
+      'paths.includes(value) ? value : onlyPathWithBasename(paths, value) ?? localPathReference(value)'
+    )
     expect(patch).toContain('#L\\d+')
     expect(patch).toContain('[A-Za-z]:[\\\\/]')
+    expect(patch).toContain('[A-Za-z][A-Za-z0-9+.-]*:\\/\\/')
     // Upstream bails out of `forClosing` when the turn produced and presented
     // nothing; the patch drops that guard so a mention still resolves against
     // an empty deliverable set.
     expect(patch).toContain('-\t\t\t\tif (paths === null && presented.length === 0) return void 0;')
   })
 
-  it('resolves real local paths', async () => {
+  it('resolves directory paths and explicit prefixes', async () => {
     const localPathReference = await loadLocalPathReference()
 
     for (const value of [
@@ -55,66 +74,56 @@ describe('assistant local path links', () => {
       './scripts/build.mjs',
       '../sibling/file.txt',
       'C:\\Users\\me\\file.txt',
+      'C:/Users/me/file.txt',
       '/etc/hosts',
       '~/notes.md',
-      'package.json',
-      'vitest.config.ts',
       'docs/',
+      'node_modules/@foo/bar/lib/client.js',
+      '@scope/pkg@1.2.3/dist/index.js',
+      'patches/@deepseek-ai+dsh-client-ui-deliverables+0.1.5-rc.2.patch',
+      './@scope/pkg',
+      '/tmp/@scope/pkg/index.js',
     ]) {
       expect(localPathReference(value), value).toBe(value)
     }
   })
 
-  it('keeps scoped package names and email addresses inert', async () => {
+  it('keeps ordinary inline code, bare names, and URIs inert', async () => {
     const localPathReference = await loadLocalPathReference()
 
     for (const value of [
-      '@deepseek-ai/cordis',
-      '@deepseek-ai/dsh-client-ui-deliverables',
+      'console.log',
+      'process.env',
+      'JSON.parse',
+      'application/json',
+      'CI/CD',
+      'and/or',
+      '\\n',
+      '\\t',
       '@deepseek-ai/dsh@0.1.2-rc.1',
       '@foo/bar',
       '@foo/bar@1.0.0',
-      '@plugin/name',
-      '@plugin/name@2.3.4-beta.1',
       'user@example.com',
-      'first.last@sub.example.co',
-    ]) {
-      expect(localPathReference(value), value).toBeUndefined()
-    }
-  })
-
-  it('keeps bare version tokens inert', async () => {
-    const localPathReference = await loadLocalPathReference()
-
-    for (const value of [
       'v0.8.0',
-      '0.8.0',
       '1.2.3-rc.1',
-      '0.1.5-rc.1',
-      'v1.0.0-beta.2',
+      'package.json',
+      'vitest.config.ts',
+      'README',
+      'src/components',
+      'owner/repo',
+      'file:///tmp/report.txt',
+      'ftp://host/report.txt',
+      'ws://host/socket.js',
+      'git+ssh://host/repo.js',
+      'https://example.com/a.txt',
+      'data:text/plain,hi',
+      'javascript:alert(1)',
+      'dir\\file.txt',
+      'npm install',
+      'someFunction',
+      '',
+      '   ',
     ]) {
-      expect(localPathReference(value), value).toBeUndefined()
-    }
-  })
-
-  it('still resolves paths that merely contain an @ segment', async () => {
-    const localPathReference = await loadLocalPathReference()
-
-    for (const value of [
-      './@scope/pkg',
-      '/tmp/@scope/pkg/index.js',
-      'patches/@deepseek-ai+dsh-client-ui-deliverables+0.1.5-rc.2.patch',
-      'node_modules/@foo/bar/lib/client.js',
-      '@scope/pkg@1.2.3/dist/index.js',
-    ]) {
-      expect(localPathReference(value), value).toBe(value)
-    }
-  })
-
-  it('keeps bare identifiers and commands inert', async () => {
-    const localPathReference = await loadLocalPathReference()
-
-    for (const value of ['npm install', 'someFunction', '', '   ']) {
       expect(localPathReference(value), value).toBeUndefined()
     }
   })
@@ -124,5 +133,22 @@ describe('assistant local path links', () => {
 
     expect(localPathReference('src/main.ts#L42')).toBe('src/main.ts')
     expect(localPathReference('src/main.ts:42:7')).toBe('src/main.ts')
+    expect(localPathReference('~/notes.md#L10')).toBe('~/notes.md')
+  })
+
+  it('prefers a produced path or unique basename over the heuristic', async () => {
+    const localPathReference = await loadLocalPathReference()
+
+    expect(resolveProducedMention(['src/package.json'], 'package.json', localPathReference)).toBe(
+      'src/package.json'
+    )
+    expect(
+      resolveProducedMention(['src/package.json'], 'src/package.json', localPathReference)
+    ).toBe('src/package.json')
+    expect(
+      resolveProducedMention(['a/index.ts', 'b/index.ts'], 'index.ts', localPathReference)
+    ).toBeUndefined()
+    expect(resolveProducedMention([], 'console.log', localPathReference)).toBeUndefined()
+    expect(resolveProducedMention([], 'src/main.ts', localPathReference)).toBe('src/main.ts')
   })
 })

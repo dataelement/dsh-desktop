@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
-index 88a659e..99c2370 100644
+index 88a659e..d0d117b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
 @@ -468,7 +468,7 @@ window.__ModuleLoader__.load({
@@ -11,41 +11,39 @@ index 88a659e..99c2370 100644
  				if (path === void 0) return void 0;
  				return {
  					open: () => {
-@@ -479,6 +479,33 @@ window.__ModuleLoader__.load({
+@@ -479,6 +479,31 @@ window.__ModuleLoader__.load({
  				};
  			} };
  		}
 +		/**
-+		* Resolve Codex-style local path references that were not produced by a tool
-+		* in the current turn. Keep bare identifiers inert: without a slash, an
-+		* absolute-path prefix, or a conventional filename suffix, inline code is
-+		* much more likely to be a command, package, or symbol than a local path.
++		* Resolve a workspace path written as inline code when this turn did not
++		* produce it. Only explicit path shapes are links: an absolute, home,
++		* `./`, `../`, drive, or UNC prefix; a trailing-slash directory; or a
++		* slash-separated path whose final segment contains a dot.
 +		*
-+		* A leading `@` plus a single slash is a scoped package name (optionally
-+		* with `@version`), and a bare `local@domain.tld` is an email address;
-+		* both are far more common in assistant prose than files with those exact
-+		* shapes, and neither is openable. An explicit `./@scope/pkg` or a path
-+		* that continues past the package (`@scope/pkg@1.0.0/dist/index.js`)
-+		* still resolves as a path above.
++		* Bare names (`package.json`), member access (`console.log`), MIME types
++		* (`application/json`), and URI schemes stay inert. A scoped package
++		* (`@scope/name` or `@scope/name@version`) is not a path; a longer path
++		* such as `@scope/pkg/dist/index.js` still is. Produced paths and unique
++		* basenames are resolved before this helper runs.
 +		*/
 +		function localPathReference(value) {
 +			const candidate = value.trim();
-+			if (candidate === "" || /[\r\n]/.test(candidate) || /^(?:https?|data|javascript):/i.test(candidate)) return void 0;
++			// A URI scheme includes "://", so a Windows drive such as "C:/" is not one.
++			if (candidate === "" || /[\r\n]/.test(candidate) || /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|data:|javascript:)/i.test(candidate)) return void 0;
 +			const path = candidate.replace(/(?:#L\d+(?:C\d+)?|:\d+(?::\d+)?)$/, "");
 +			if (/^(?:\/|~[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path)) return path;
++			if (!path.includes("/")) return void 0;
 +			if (/^@[^\\/@\s]+\/[^\\/@\s]+(?:@[^\\/\s]+)?$/.test(path)) return void 0;
-+			if (/^[^@\s\\/]+@[^@\s\\/]+\.[A-Za-z]{2,}$/.test(path)) return void 0;
-+			// Semver / package versions (v0.8.0, 1.2.3-rc.1) look like dotted filenames
-+			// but are not openable workspace paths.
-+			if (/^v?\d+(?:\.\d+){1,4}(?:-[A-Za-z0-9._-]+)?$/i.test(path)) return void 0;
-+			if (/[\\/]/.test(path) || /[\\/]$/.test(path)) return path;
-+			if (/^[^\\/]+\.[A-Za-z0-9][A-Za-z0-9._-]{0,15}$/.test(path)) return path;
++			if (path.endsWith("/")) return path;
++			const segment = path.slice(path.lastIndexOf("/") + 1);
++			if (segment.includes(".")) return path;
 +			return void 0;
 +		}
  		/** The single produced path whose basename is exactly `value`, else undefined. */
  		function onlyPathWithBasename(paths, value) {
  			const matches = paths.filter((path) => basename(path) === value);
-@@ -956,7 +983,6 @@ window.__ModuleLoader__.load({
+@@ -956,7 +981,6 @@ window.__ModuleLoader__.load({
  			ctx.provide("chatFileMentions", { forClosing(owner, sessionId) {
  				const paths = selectProducedFiles(owner);
  				const presented = presentedForClosing(owner);
