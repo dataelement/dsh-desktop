@@ -2,7 +2,7 @@ import { app, BrowserWindow, WebContentsView, ipcMain, shell, desktopCapturer } 
 import { strict as assert } from 'node:assert'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { SafeModeOverlay } from '../src/main/safe-mode-overlay'
+import { SAFE_MODE_FRAME_CHANNEL, SAFE_MODE_FRAME_UPDATE_CHANNEL, SafeModeFrame } from '../src/main/safe-mode-frame'
 import { buildSafeModeViewModel } from '../src/main/safe-mode'
 import { buildPluginRecoveryViewModel } from '../src/main/plugin-recovery-view'
 import { windowsMenuViewBounds } from '../src/main/windows-menu-view'
@@ -55,14 +55,15 @@ async function main(): Promise<void> {
   const menu = new WebContentsView({ webPreferences: { sandbox: true } })
   menu.setBackgroundColor('#00000000')
   if (process.platform === 'win32') parent.contentView.addChildView(menu)
-  const preload = join(process.cwd(), 'out/preload/index.cjs')
   const names = ['calendar-plugin', 'search-plugin', 'notes-plugin', '@community/billing-plugin', '@community/longer-agent-memory-plugin', 'mobile-plugin']
   let closed = 0
   for (const scenario of ['safe-mode', 'plugin-recovery', 'multiple-plugins', 'market-offline', 'unidentified-plugin']) {
     const page = scenario === 'unidentified-plugin' || scenario === 'multiple-plugins' || scenario === 'market-offline' ? 'plugin-recovery' : scenario
     await parent.loadURL('data:text/html,<body style="background:%2318181b;color:%23999">DSH Desktop</body>')
-    const overlay = page === 'safe-mode' ? new SafeModeOverlay(parent, preload, () => { closed++ }) : undefined
-    const contents = overlay?.webContents ?? parent.webContents
+    // In the app the Safe Mode page is an iframe the Harness page's preload
+    // mounts over its main pane; here it fills the window, which gives the
+    // same viewport its layout must fit.
+    const contents = parent.webContents
     const rendererErrors: string[] = []
     contents.on('console-message', event => { if (event.level === 'error') rendererErrors.push(event.message) })
     for (const locale of ['zh', 'en'] as const) for (const theme of ['light', 'dark']) for (const [width, height] of [[1280,800], [900,640]]) {
@@ -92,15 +93,9 @@ async function main(): Promise<void> {
         model.upgradeAllLabel = locale === 'zh' ? '一键升级 3 个已适配插件' : 'Upgrade 3 compatible plugins'
       }
       await contents.loadFile(join(process.cwd(), 'build', `${page}.html`), { query: { state: JSON.stringify(model), theme, icon: 'app-icon.png' } })
-      overlay?.show()
       contents.focus()
       await delay(150)
-      if (overlay) {
-        const size = parent.getContentBounds()
-        assert.deepEqual(overlay.view.getBounds(), { x: 0, y: 0, width: size.width, height: size.height })
-        assert.equal(parent.contentView.children.at(-1), overlay.view)
-        assert.equal(BrowserWindow.getAllWindows().length, 1, 'The dialog must not create another native window')
-      }
+      assert.equal(BrowserWindow.getAllWindows().length, 1, 'The page must not create another native window')
       const layout = await contents.executeJavaScript(`(() => {
         const content=document.querySelector('.content'), list=document.querySelector('.plugins'), footer=document.querySelector('.footer');
         const cr=content.getBoundingClientRect();
@@ -120,9 +115,13 @@ async function main(): Promise<void> {
         if (width === 1280) assert.equal(layout.listScroll, false)
       }
       if (page === 'plugin-recovery') {
-        const actions = await contents.executeJavaScript(`Array.from(document.querySelectorAll('.actions button')).filter(b => b.getBoundingClientRect().height > 0).map(b => b.textContent)`)
+        const visibleLabels = (selector: string) => contents.executeJavaScript(`Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter(b => b.getBoundingClientRect().height > 0).map(b => b.textContent)`)
+        const actions = await visibleLabels('.actions button')
         const safeModeLabel = locale === 'zh' ? '进入安全模式' : 'Enter Safe Mode'
-        assert.equal(actions.filter((label: string) => label === safeModeLabel).length, 1)
+        // Safe Mode is offered exactly once: as its own button beside the
+        // actions when a repair is on offer, otherwise as the primary action.
+        const decision = await visibleLabels('#decision-row button')
+        assert.equal(decision.filter((label: string) => label === safeModeLabel).length, 1)
         // With no culprit to repair, the agent sits beside Safe Mode; otherwise it stays out of the way.
         const agentLabel = locale === 'zh' ? '智能修复 Agent' : 'Repair agent'
         if (scenario === 'unidentified-plugin') assert.deepEqual(actions, [agentLabel, safeModeLabel])
@@ -186,20 +185,37 @@ async function main(): Promise<void> {
       results.push({ page, scenario, locale, theme, requestedSize: [width,height], layout, popup })
     }
     assert.deepEqual(rendererErrors, [])
-    if (overlay) {
-      overlay.close(); overlay.close(); await delay(60)
-      assert.equal(closed, 1)
-      assert.equal(parent.contentView.children.includes(overlay.view), false)
-      assert.equal(overlay.webContents.isDestroyed(), true)
-    }
   }
-  // Save a native-window thumbnail as well as renderer captures where the runner supports it.
-  const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 1280, height: 800 } })
-  const source = sources.find(item => item.id === parent.getMediaSourceId())
-  if (source && !source.thumbnail.isEmpty()) writeFileSync(join(output, 'native-window.png'), source.thumbnail.toPNG())
-  const overlay = new SafeModeOverlay(parent, preload, () => { closed++ })
+  // The Safe Mode frame is driven over IPC to the host page: the URL to show,
+  // in-place model updates, and null to take the page down. Closing is
+  // idempotent and follows the parent window.
+  const sent: unknown[][] = []
+  const send = parent.webContents.send.bind(parent.webContents)
+  parent.webContents.send = (channel: string, ...args: unknown[]) => { sent.push([channel, ...args]); send(channel, ...args) }
+  const frame = new SafeModeFrame(parent, () => { closed++ })
+  const frameUrl = 'dsh-desktop://desktop/safe-mode.html?state=%7B%7D&seq=1'
+  frame.show(frameUrl)
+  frame.applyUpdate({ seq: '1', model: { seq: '1' } })
+  assert.deepEqual(sent, [[SAFE_MODE_FRAME_CHANNEL, frameUrl], [SAFE_MODE_FRAME_UPDATE_CHANNEL, { seq: '1', model: { seq: '1' } }]])
+  frame.close(); frame.close(); await delay(60)
+  assert.equal(closed, 1)
+  assert.equal(frame.isDestroyed(), true)
+  assert.deepEqual(sent.slice(2), [[SAFE_MODE_FRAME_CHANNEL, null]])
+  frame.show(frameUrl)
+  assert.equal(sent.length, 3, 'A closed frame must not show again')
+  // Save a native-window thumbnail as well as renderer captures where the
+  // runner supports it (a machine without screen-capture permission cannot).
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 1280, height: 800 } })
+    const source = sources.find(item => item.id === parent.getMediaSourceId())
+    if (source && !source.thumbnail.isEmpty()) writeFileSync(join(output, 'native-window.png'), source.thumbnail.toPNG())
+  } catch (error) {
+    console.warn(`native-window thumbnail skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const lateFrame = new SafeModeFrame(parent, () => { closed++ })
+  lateFrame.show(frameUrl)
   parent.destroy(); await delay(60)
-  assert.equal(overlay.isDestroyed(), true)
+  assert.equal(lateFrame.isDestroyed(), true)
   assert.equal(closed, 2)
   if (!menu.webContents.isDestroyed()) menu.webContents.close()
   writeFileSync(join(output, 'results.json'), JSON.stringify({ platform: process.platform, arch: process.arch, scale, results, closed }, null, 2))
