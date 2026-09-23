@@ -134,9 +134,11 @@ describe('DSH PPT built-in plugin', () => {
     const referenceImages = [...core].filter(([name]) => name.startsWith('package/skills/dsh-ppt/references/') && name.endsWith('.jpg'))
     const allowed = new Set(referenceImages.map(([, bytes]) => createHash('sha256').update(bytes).digest('hex')))
     expect(allowed.size).toBe(192)
-    expect([...core.keys()].filter(name => name.startsWith('package/lib/bundled-template-projects/') && name.includes('/previews/') && name.endsWith('.jpg')).length).toBeGreaterThan(0)
+    expect([...core.keys()].filter(name => name.startsWith('package/lib/bundled-template-projects/'))).toHaveLength(0)
+    expect([...core.keys()].join('\n')).not.toContain('dsh-green-pulse')
     expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).toContain('DSH-PPT-AUTHORING-20260910-V4')
-    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).toContain('带可编辑工程的内置模板')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).toContain('选用个人模板时')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).not.toContain('带可编辑工程的内置模板')
     const manifestSource = core.get('package/lib/preview-manifest.js')!.toString()
     const manifest = JSON.parse(/export const previewFiles = (.*);/u.exec(manifestSource)![1]!) as Record<string, string>
     expect(Object.keys(manifest)).toHaveLength(192)
