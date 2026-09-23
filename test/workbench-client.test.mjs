@@ -1262,7 +1262,10 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain("'GitHub：'")
   })
 
-  it('shows a short update action in place of 已安装 so card actions stay on one row', () => {
+  it('keeps a direct open action when an added workbench also has an update', () => {
+    expect(fullSource).toContain("state.added.includes(entry.id)\n                    ? h(React.Fragment, null,")
+    expect(fullSource).toContain("onClick: () => service.run(service.open(entry.id)) }, '打开工作台'")
+    expect(fullSource).toContain("installing === catalogId ? '更新中…' : '更新'")
     expect(fullSource).toContain("installing === catalogId ? '正在更新…' : '检测到更新')")
     expect(fullSource).toContain("title: `更新到 v${entry.listedVersion}`")
     expect(fullSource).not.toContain(": `更新到 v${entry.listedVersion}`),")
