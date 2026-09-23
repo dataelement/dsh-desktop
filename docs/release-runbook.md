@@ -10,6 +10,14 @@ The `Release desktop installers` workflow accepts a `mode` on `workflow_dispatch
 
 Official releases are still created by pushing a `v*` tag, not by filling the dispatch form. Do not put `v0.9.1` in `prerelease_tag` or `signed_version`.
 
+## Local macOS packaging runner
+
+Both macOS jobs use the same self-hosted Apple Silicon runner as CoAligne, with the `self-hosted`, `macOS`, and `ARM64` labels. They run serially when only one runner is available. The Apple Silicon job installs ARM64 Node 22. The Intel job requires Rosetta 2, installs x64 Node 22, and runs `npm ci`, tests, typecheck, and packaging under x64 Bash. Keep the two installs in separate Actions job workspaces: `verify-target` checks the executing Node and the bundled Node architecture before packaging.
+
+Before dispatching, confirm that GitHub Actions is enabled for this repository, that the organization runner group grants it access, and that the runner is online. Install Rosetta 2 on the runner once (`softwareupdate --install-rosetta --agree-to-license`) if the Intel job's preflight reports it missing. Do not install dependencies on the runner's persistent checkout by hand; each job uses `npm ci`.
+
+For a first packaging check, dispatch `Release desktop installers` on `main` with `target=macos` and `mode=development`. This creates unsigned, isolated Dev artifacts in the workflow run and does not publish them. Signed builds additionally require the Apple signing and notarization secrets listed in the workflow. Verify both architecture artifacts and their bundled runtime before using a signed package as a release candidate.
+
 ## Local Windows UKey signing runner
 
 Windows packaging and signing run as separate jobs. The GitHub-hosted Windows runner builds an unsigned NSIS installer and uploads a short-lived workflow artifact. A local macOS ARM64 runner downloads it, signs the installer with Jsign and the SafeNet UKey, regenerates the blockmap and `latest.yml`, and uploads the signed release set. The GitHub Release job cannot start unless signing succeeds.

@@ -100,7 +100,7 @@ jobs:
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -108,6 +108,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          architecture: arm64
           cache: npm
       - name: Set app version from release tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -240,15 +241,28 @@ jobs:
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'macos'))
-    runs-on: macos-15-intel
+    runs-on: [self-hosted, macOS, ARM64]
+    defaults:
+      run:
+        shell: arch -x86_64 /bin/bash --noprofile --norc -e -o pipefail {0}
     steps:
+      - name: Require Rosetta for Intel packaging
+        shell: bash
+        run: |
+          if ! arch -x86_64 /usr/bin/true; then
+            echo "::error::Rosetta 2 is required for Intel packaging on this ARM64 runner"
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          architecture: x64
           cache: npm
+      - name: Verify Intel Node runtime
+        run: test "$(node -p 'process.arch')" = x64
       - name: Set app version from release tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: npm version --no-git-tag-version --allow-same-version "${{ github.ref_name }}"
