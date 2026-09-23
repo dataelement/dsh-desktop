@@ -842,16 +842,16 @@ window.__ModuleLoader__.load({
           document.removeEventListener('keydown', closeEscape)
         }
       }, [open])
-      if (!visible || !entry) return null
+      if (!visible) return null
       const disabled = !ready || pending > 0 || service.blocked
       const pinned = state.pinned.map((id) => catalog.find((item) => item.id === id)).filter((item) => item && state.added.includes(item.id) && service.catalog.has(item.id))
       return h('div', { ref: root, className: 'dshWb dshWbDockWrap', 'data-dsh-workbench-dock': '', 'data-open': open || undefined },
-        h('button', { type: 'button', className: 'dshWbDockTrigger', 'aria-label': `切换工作台，当前为${entry.title}`, 'aria-expanded': open, 'aria-controls': 'dsh-workbench-dock-menu', onClick: () => setOpen((value) => !value) },
-          h('span', { className: 'dshWbDockCurrentIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry, size: 16 })),
-          h('span', { className: 'dshWbDockCurrentLabel' }, entry.title),
+        h('button', { type: 'button', className: 'dshWbDockTrigger', 'aria-label': entry ? `切换工作台，当前为${entry.title}` : '选择工作台', 'aria-expanded': open, 'aria-controls': 'dsh-workbench-dock-menu', onClick: () => setOpen((value) => !value) },
+          h('span', { className: 'dshWbDockCurrentIcon', 'aria-hidden': true }, entry ? h(WorkbenchIcon, { entry, size: 16 }) : h(MarketIcon, { name: 'market', size: 16 })),
+          h('span', { className: 'dshWbDockCurrentLabel' }, entry?.title || '选择工作台'),
           h('span', { className: 'dshWbDockChevron', 'aria-hidden': true }, h(MarketIcon, { name: 'chevronDown', size: 14 }))),
         open && h('nav', { id: 'dsh-workbench-dock-menu', className: 'dshWbDockMenu', 'aria-label': '切换工作台' },
-          h('div', { className: 'dshWbDockItems' }, pinned.map((item) => h('button', { key: item.id, type: 'button', className: 'dshWbDockItem', disabled, 'aria-current': item.id === entry.id ? 'page' : undefined, title: item.title, onClick: () => { setOpen(false); if (item.id !== entry.id) service.run(service.open(item.id)) } },
+          h('div', { className: 'dshWbDockItems' }, pinned.map((item) => h('button', { key: item.id, type: 'button', className: 'dshWbDockItem', disabled, 'aria-current': item.id === entry?.id ? 'page' : undefined, title: item.title, onClick: () => { setOpen(false); if (item.id !== entry?.id) service.run(service.open(item.id)) } },
             h('span', { className: 'dshWbDockItemIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry: item, size: 15 })),
             h('span', { className: 'dshWbDockItemLabel' }, item.title)))),
           h('button', { type: 'button', className: 'dshWbDockAll', onClick: () => { setOpen(false); service.showMarket() } }, '全部工作台')))
@@ -1368,7 +1368,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const disabled = !ready || pending > 0 || service.blocked
       const chosen = workspaces.items.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
       return h('div', { className: 'dshWb dshWbFrame' }, h(Notice, { service }),
-        runtimeEntry && h(WorkbenchDock, { service, entry: runtimeEntry }),
+        h(WorkbenchDock, { service, entry: runtimeEntry }),
         require('react-dom').createPortal(conversation, conversationContainer),
         ...loaded.filter((item) => item.customFrame === true).map((item) => h('div', { key: item.id, hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, null, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? conversationMount : null })))),
         h('div', { className: 'dshWbBody', hidden: customFrame, style: { '--workbench-business-width': `${(entry?.layout?.businessWidth ?? 0.36) * 100}%` } },

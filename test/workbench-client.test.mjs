@@ -722,6 +722,9 @@ describe('desktop workbench client navigation', () => {
       await React.act(async () => { ctx.uiWorkspace.openSession('old'); await service.queue })
       expect(service.state.active).toBeNull()
       expect(service.state.sessionBindings.old).toBeUndefined()
+      expect(dom.window.document.querySelector('[data-dsh-workbench-dock]')).not.toBeNull()
+      expect(dom.window.document.querySelector('.dshWbDockCurrentLabel')?.textContent).toBe('选择工作台')
+      expect(dom.window.document.querySelector('.dshWbDockTrigger')?.getAttribute('aria-label')).toBe('选择工作台')
       expect(dom.window.document.querySelector('.dshWbBusiness').hidden).toBe(true)
       expect(dom.window.document.querySelector('.dshWbConversation [contenteditable]')).toBe(input)
       expect(dom.window.document.querySelector('.dshWbInit')).toBeNull()
@@ -1218,6 +1221,8 @@ describe('workbench market screenshot and metadata display', () => {
   it('moves pinned workbench switching out of the sidebar and into the Workbench Dock', () => {
     expect(fullSource).toContain('function WorkbenchDock({ service, entry })')
     expect(fullSource).toContain("'data-dsh-workbench-dock': ''")
+    expect(fullSource).toContain("entry?.title || '选择工作台'")
+    expect(fullSource).toContain('h(WorkbenchDock, { service, entry: runtimeEntry })')
     expect(fullSource).toContain("'全部工作台'" )
     expect(fullSource).not.toContain("ctx.slots.inject('sidebar.footer.action'")
     expect(fullSource).not.toContain('dshWbNavItems')
