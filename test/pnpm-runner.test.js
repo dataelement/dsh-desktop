@@ -169,6 +169,7 @@ describe('packaged pnpm runner', () => {
           }
         }
       }))
+      await writeFile(join(profile, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'\n\nimporters:\n\n  .:\n    dependencies:\n      generation-plugin:\n        specifier: 1.0.0\n        version: 1.0.0\n      shared-plugin:\n        specifier: 2.0.0\n        version: 2.0.0\n\npackages:\n\n  generation-plugin@1.0.0:\n    resolution: {integrity: sha512-example}\n`)
 
       const isolation = await suspendGenerationProjectionForPnpm(profile)
       expect(isolation.plugins).toEqual(['generation-plugin'])
@@ -176,6 +177,10 @@ describe('packaged pnpm runner', () => {
       expect(suspended.dependencies).toEqual({ 'shared-plugin': '2.0.0' })
       expect(suspended.pnpm.overrides).toEqual({ 'shared-plugin': '2.0.1' })
       expect(suspended.dsh.desktop.generationProjection.plugins).toHaveProperty('generation-plugin')
+      const suspendedLockfile = await readFile(join(profile, 'pnpm-lock.yaml'), 'utf8')
+      expect(suspendedLockfile).not.toContain('specifier: 1.0.0')
+      expect(suspendedLockfile).toContain('shared-plugin')
+      expect(suspendedLockfile).toContain('generation-plugin@1.0.0')
 
       suspended.dependencies['new-shared-plugin'] = '3.0.0'
       await writeFile(manifestPath, JSON.stringify(suspended))
