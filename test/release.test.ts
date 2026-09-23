@@ -534,6 +534,16 @@ describe('AI-organized GitHub release body', () => {
     expect(publishJob).toContain('github-release-notes.md')
   })
 
+  it('uses an available Copilot model and keeps generation failures diagnosable', async () => {
+    const yml = await load()
+    expect(yml).toContain('RELEASE_NOTES_MODEL: gpt-5.6-terra')
+    expect(yml).not.toContain('gpt-5.6-sol')
+    expect(yml.match(/--model "\$RELEASE_NOTES_MODEL"/g)).toHaveLength(3)
+    expect(yml.match(/2>"\$error_log"/g)).toHaveLength(3)
+    expect(yml).not.toContain('2>/dev/null')
+    expect(yml.match(/sed -n '1,20\{s\/\^\/copilot: \/;p;\}'/g)).toHaveLength(3)
+  })
+
   it('still lets the prerelease job use --generate-notes', async () => {
     const yml = await load()
     const preJob = yml.slice(yml.indexOf('\n  publish-prerelease:'))

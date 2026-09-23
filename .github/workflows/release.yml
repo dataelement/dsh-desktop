@@ -40,6 +40,9 @@ on:
 permissions:
   contents: write
 
+env:
+  RELEASE_NOTES_MODEL: gpt-5.6-terra
+
 concurrency:
   group: desktop-release-${{ github.ref }}
   cancel-in-progress: false
@@ -776,16 +779,23 @@ jobs:
           set -euo pipefail
           out=.github/release-artifacts/github-release-notes.md
           if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
-            echo "Generating GitHub release note via Copilot CLI..."
+            echo "Generating GitHub release note via Copilot CLI with $RELEASE_NOTES_MODEL..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/github-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > "$out" 2>/dev/null && \
-               python3 .github/scripts/github_release_notes.py validate --tag "$RELEASE_TAG" --input "$out"; then
-              echo "✅ AI GitHub release note generated and validated."
+            error_log="$(mktemp)"
+            if copilot -p "$prompt" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user > "$out" 2>"$error_log"; then
+              if python3 .github/scripts/github_release_notes.py validate --tag "$RELEASE_TAG" --input "$out"; then
+                echo "✅ AI GitHub release note generated and validated with $RELEASE_NOTES_MODEL."
+              else
+                echo "::warning::Copilot generated a GitHub release note that failed validation; using the deterministic fallback."
+                python3 .github/scripts/github_release_notes.py generate-fallback --tag "$RELEASE_TAG" --output "$out"
+              fi
             else
-              echo "⚠️ Falling back to the deterministic GitHub release note."
+              echo "::warning::Copilot failed to generate the GitHub release note with $RELEASE_NOTES_MODEL; using the deterministic fallback."
+              sed -n '1,20{s/^/copilot: /;p;}' "$error_log"
               python3 .github/scripts/github_release_notes.py generate-fallback --tag "$RELEASE_TAG" --output "$out"
             fi
+            rm -f "$error_log"
           else
             echo "MODELS_TOKEN not set; using the deterministic GitHub release note."
             python3 .github/scripts/github_release_notes.py generate-fallback --tag "$RELEASE_TAG" --output "$out"
@@ -913,18 +923,28 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
-            echo "Generating release notes via Copilot CLI..."
+            echo "Generating release notes via Copilot CLI with $RELEASE_NOTES_MODEL..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/feishu-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
-               python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --input .github/release-artifacts/feishu-release-notes.md; then
-              echo "✅ AI release notes generated and validated."
+            out=.github/release-artifacts/feishu-release-notes.md
+            error_log="$(mktemp)"
+            if copilot -p "$prompt" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user > "$out" 2>"$error_log"; then
+              if python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --input "$out"; then
+                echo "✅ AI release notes generated and validated with $RELEASE_NOTES_MODEL."
+              else
+                echo "::warning::Copilot generated release notes that failed validation; using the deterministic fallback."
+                python3 .github/scripts/feishu_release_notes.py generate-fallback \
+                  --tag "$RELEASE_TAG" \
+                  --output "$out"
+              fi
             else
-              echo "⚠️ AI generation fell back to deterministic release note generator."
+              echo "::warning::Copilot failed to generate release notes with $RELEASE_NOTES_MODEL; using the deterministic fallback."
+              sed -n '1,20{s/^/copilot: /;p;}' "$error_log"
               python3 .github/scripts/feishu_release_notes.py generate-fallback \
                 --tag "$RELEASE_TAG" \
-                --output .github/release-artifacts/feishu-release-notes.md
+                --output "$out"
             fi
+            rm -f "$error_log"
           else
             echo "Generating release notes from git evidence..."
             python3 .github/scripts/feishu_release_notes.py generate-fallback \
@@ -1059,19 +1079,30 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${COPILOT_GITHUB_TOKEN:-}" ]; then
-            echo "Generating prerelease notes via Copilot CLI..."
+            echo "Generating prerelease notes via Copilot CLI with $RELEASE_NOTES_MODEL..."
             npm install -g @github/copilot@latest || true
             prompt="$(cat .github/release-artifacts/feishu-release-prompt.txt)"
-            if copilot -p "$prompt" -s --model gpt-5.6-sol --no-ask-user > .github/release-artifacts/feishu-release-notes.md 2>/dev/null && \
-               python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --prerelease --input .github/release-artifacts/feishu-release-notes.md; then
-              echo "✅ AI prerelease notes generated and validated."
+            out=.github/release-artifacts/feishu-release-notes.md
+            error_log="$(mktemp)"
+            if copilot -p "$prompt" -s --model "$RELEASE_NOTES_MODEL" --no-ask-user > "$out" 2>"$error_log"; then
+              if python3 .github/scripts/feishu_release_notes.py validate --tag "$RELEASE_TAG" --prerelease --input "$out"; then
+                echo "✅ AI prerelease notes generated and validated with $RELEASE_NOTES_MODEL."
+              else
+                echo "::warning::Copilot generated prerelease notes that failed validation; using the deterministic fallback."
+                python3 .github/scripts/feishu_release_notes.py generate-fallback \
+                  --tag "$RELEASE_TAG" \
+                  --prerelease \
+                  --output "$out"
+              fi
             else
-              echo "⚠️ AI generation fell back to deterministic release note generator."
+              echo "::warning::Copilot failed to generate prerelease notes with $RELEASE_NOTES_MODEL; using the deterministic fallback."
+              sed -n '1,20{s/^/copilot: /;p;}' "$error_log"
               python3 .github/scripts/feishu_release_notes.py generate-fallback \
                 --tag "$RELEASE_TAG" \
                 --prerelease \
-                --output .github/release-artifacts/feishu-release-notes.md
+                --output "$out"
             fi
+            rm -f "$error_log"
           else
             echo "Generating prerelease notes from git evidence..."
             python3 .github/scripts/feishu_release_notes.py generate-fallback \
