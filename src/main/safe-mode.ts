@@ -101,6 +101,8 @@ export function buildSafeModeViewModel(options: {
   suspectedPlugins?: readonly string[]
   issues?: readonly ProfileCompatibilityIssue[]
   healthReports?: readonly PluginHealthReport[]
+  /** The market check is still running; its result arrives as a page update. */
+  healthPending?: boolean
   backups?: readonly {
     removalId: string
     pluginName: string
@@ -191,6 +193,8 @@ export function buildSafeModeViewModel(options: {
     ]
     if (report?.healthLabel) {
       labels.push(report.healthLabel)
+    } else if (options.healthPending && !disabled) {
+      labels.push(options.locale === 'zh' ? '正在检查更新…' : 'checking for updates…')
     }
     const statusTone = incompatible
       ? 'danger'

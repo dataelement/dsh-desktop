@@ -11,6 +11,12 @@
     <style>
       :root {
         color-scheme: light dark;
+        /* Reading column for the recovery content: fixed, not a share of the
+           window, so lines stay a readable length on wide displays and the
+           column simply collapses to the window on narrow ones. Header and
+           footer keep their full-width rules but align to the same column. */
+        --page-max: 800px;
+        --details-width: 420px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --canvas: #f7f7f8;
         --surface: #ffffff;
@@ -29,62 +35,93 @@
 
       * { box-sizing: border-box; }
       html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; }
+      /* The page fills the window; the 46px strip keeps the header clear of the
+         hidden title bar's window controls. Header and footer stay put and only
+         the content between them scrolls. */
       body {
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        overflow: auto;
-        padding: 40px 24px;
+        height: 100vh;
+        display: block;
+        overflow: hidden;
+        padding: 46px 0 0;
         color: var(--ink);
-        background: var(--canvas);
+        background: var(--surface);
       }
 
       button { font: inherit; }
       .shell {
         display: flex;
         flex-direction: column;
-        width: min(700px, 100%);
-        max-height: calc(100vh - 80px);
-        border: 1px solid var(--line);
-        border-radius: 20px;
-        overflow: hidden;
+        width: 100%;
+        height: calc(100vh - 46px);
         background: var(--surface);
-        box-shadow: var(--shadow);
       }
       .header {
         flex-shrink: 0;
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 18px 26px;
-        border-bottom: 1px solid var(--line);
+        padding: 8px max(26px, calc((100% - var(--page-max)) / 2));
+        transition: padding-left 200ms ease, padding-right 200ms ease;
+      }
+      /* Both header edges track the left column while the panel is open, so
+         the brand and the quit button line up with the content beside them. */
+      .shell.details-open .header {
+        padding-left: max(20px, calc((100% - var(--details-width) - var(--page-max)) / 2));
+        padding-right: calc(var(--details-width) + max(20px, calc((100% - var(--details-width) - var(--page-max)) / 2)));
       }
       .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
       .brand img { width: 28px; height: 28px; border-radius: 8px; }
       .brand-name { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        min-height: 22px;
-        padding: 2px 8px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        color: var(--muted);
-        font-size: 11px;
-        font-weight: 600;
-      }
-      .content { min-height: 0; overflow: auto; padding: 30px 32px 22px; }
-      .progress, .notice {
+      .content { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; padding: 30px 32px 22px; }
+      /* The content column measures itself, so it stays centered in whatever
+         width is left beside the details panel. */
+      .column { display: flex; flex: 1 1 auto; flex-direction: column; width: min(100%, var(--page-max)); min-height: 0; margin-inline: auto; }
+      .column > * { flex-shrink: 0; }
+      /* The plugin card is the only thing that gives way: it shrinks to the
+         space left by the heading and the buttons and scrolls inside. */
+      .column > .conflict-card { flex: 0 1 auto; min-height: 0; overflow: auto; }
+      /* With the details panel open the reading column keeps its 800px cap
+         and stays centered, but the gutter shrinks to 20px so the narrower
+         left column gives as much of its width to the content as it can. */
+      .body-row.details-open .content { padding-inline: 20px; }
+      .notice {
         display: none;
         margin: 0 0 18px;
         padding: 11px 13px;
         border-radius: 10px;
+        color: var(--danger);
+        background: rgba(195, 59, 56, 0.08);
         font-size: 12px;
         line-height: 1.55;
       }
-      .progress { color: var(--ink); border: 1px solid var(--line); background: var(--surface-soft); }
-      .notice { color: var(--danger); background: rgba(195, 59, 56, 0.08); }
-      .progress.visible, .notice.visible { display: block; }
+      .notice.visible { display: block; }
+      /* Recovery progress sits under the heading as a caption and a thin bar:
+         handled plugins over handled plus still-failing ones. */
+      .progress {
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .progress.visible { display: flex; }
+      .progress-track {
+        display: block;
+        height: 4px;
+        border-radius: 999px;
+        background: var(--line);
+        overflow: hidden;
+      }
+      .progress-fill {
+        display: block;
+        height: 100%;
+        width: 0;
+        border-radius: inherit;
+        background: var(--ink);
+        transition: width 240ms ease;
+      }
       h1 {
         margin: 0;
         max-width: 590px;
@@ -128,7 +165,6 @@
         display: none;
         margin: 0;
         padding: 0;
-        border-top: 1px solid var(--line);
         list-style: none;
       }
       .plugins.visible { display: block; }
@@ -157,7 +193,6 @@
       }
       .plugin-check-actions { width: 100%; display: flex; justify-content: flex-end; gap: 8px; }
       .plugin-check-actions .plugin-upgrade-btn { margin-left: 0; }
-      .plugin-check-actions .plugin-remove-btn { color: var(--text); border-color: var(--line-strong); background: var(--surface); }
       .plugin-check-hint { width: 100%; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
       .plugin-name {
         min-width: 0;
@@ -193,10 +228,25 @@
 
       .decision-row {
         display: flex;
-        align-items: flex-end;
-        flex-direction: column;
+        align-items: flex-start;
+        justify-content: space-between;
         gap: 12px;
         margin-top: 22px;
+      }
+      .decision-aside { display: flex; flex: 0 0 auto; }
+      .decision-main {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 12px;
+        min-width: 0;
+      }
+      .decision-row.safe-mode-only { justify-content: center; }
+      .decision-row.safe-mode-only .decision-aside { display: none; }
+      .decision-row.safe-mode-only .decision-main {
+        flex-direction: row-reverse;
+        align-items: center;
+        gap: 16px;
       }
       .actions {
         display: flex;
@@ -278,23 +328,35 @@
           border-color: rgba(74, 222, 128, 0.45);
         }
       }
-
-      .advanced {
-        margin-top: 24px;
-        border-top: 1px solid var(--line);
+      /* Removal is the neutral choice on a plugin row: it takes the same
+         colors as the secondary buttons below, in light and dark alike. */
+      .plugin-upgrade-btn.plugin-remove-btn,
+      :root[data-theme="dark"] .plugin-upgrade-btn.plugin-remove-btn,
+      :root:not([data-theme="light"]) .plugin-upgrade-btn.plugin-remove-btn {
+        color: var(--ink);
+        border-color: var(--line-strong);
+        background: var(--surface);
       }
-      .advanced summary {
+      .plugin-upgrade-btn.plugin-remove-btn:hover,
+      :root[data-theme="dark"] .plugin-upgrade-btn.plugin-remove-btn:hover,
+      :root:not([data-theme="light"]) .plugin-upgrade-btn.plugin-remove-btn:hover {
+        border-color: var(--line-strong);
+        background: var(--surface-soft);
+      }
+
+      .heading-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .details-toggle {
+        flex: 0 0 auto;
         display: inline-flex;
         align-items: center;
-        padding: 14px 2px 0;
-        color: var(--muted);
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 630;
-        list-style: none;
+        margin-top: 4px;
       }
-      .advanced summary::-webkit-details-marker { display: none; }
-      .advanced summary::after {
+      .details-toggle::after {
         width: 6px;
         height: 6px;
         margin-left: 8px;
@@ -304,8 +366,119 @@
         transform: rotate(-45deg);
         transform-origin: center;
       }
-      .advanced[open] summary::after { transform: rotate(45deg) translateY(-1px); }
-      .advanced-body { padding: 13px 0 2px; }
+
+      /* Technical details open as a second column beside the content, between
+         header and footer. Closed, the column has no width; open, it takes a
+         fixed width and the content column shrinks to fit. */
+      .body-row {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      .details-panel {
+        display: flex;
+        flex: 0 0 0px;
+        flex-direction: column;
+        min-width: 0;
+        overflow: hidden;
+        background: var(--surface);
+        visibility: hidden;
+        transition: flex-basis 200ms ease, visibility 0s linear 200ms;
+      }
+      .details-panel.open {
+        flex-basis: var(--details-width);
+        visibility: visible;
+        transition: flex-basis 200ms ease;
+      }
+      /* Drag handle between the columns: a 24px hit area straddling the whole
+         seam; while hovered or dragged it shows a short line that fades at
+         both ends and follows the pointer's vertical position. */
+      .details-resizer {
+        position: relative;
+        z-index: 2;
+        flex: 0 0 0px;
+        width: 0;
+        cursor: col-resize;
+        outline: none;
+      }
+      .details-resizer::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -12px;
+        width: 24px;
+      }
+      .details-resizer::after {
+        content: "";
+        position: absolute;
+        top: var(--handle-y, 50%);
+        left: -1px;
+        width: 2px;
+        height: 72px;
+        border-radius: 1px;
+        transform: translateY(-50%);
+        background: linear-gradient(to bottom, transparent, var(--line-strong) 30%, var(--line-strong) 70%, transparent);
+        opacity: 0;
+        transition: opacity 120ms ease;
+      }
+      .details-resizer:hover::after,
+      .details-resizer:focus-visible::after,
+      .body-row.resizing .details-resizer::after { opacity: 1; }
+      .body-row.resizing { cursor: col-resize; user-select: none; }
+      .body-row.resizing .details-panel,
+      .shell.resizing .header { transition: none; }
+      .details-header {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-width: var(--details-width);
+        padding: 30px 20px 12px;
+      }
+      /* Same type as the page heading, and the same 30px top offset, so the
+         two titles sit on one line when the panel is open. */
+      .details-header h2 {
+        margin: 0;
+        font-size: 21px;
+        font-weight: 650;
+        line-height: 1.35;
+        letter-spacing: -0.025em;
+      }
+      .details-close {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        color: var(--muted);
+        background: transparent;
+        cursor: pointer;
+      }
+      .details-close svg { width: 14px; height: 14px; }
+      .details-close:hover { color: var(--ink); background: var(--surface-soft); }
+      .details-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .details-card {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface-soft);
+        padding: 17px 19px 6px;
+        margin-bottom: 14px;
+      }
+      /* 26px under the panel header puts the details card's top edge level
+         with the plugin card's (30px under the heading row) when no progress
+         bar sits between the heading and the plugins. */
+      .details-body {
+        flex: 1 1 auto;
+        min-width: var(--details-width);
+        min-height: 0;
+        overflow: auto;
+        padding: 26px 20px 22px;
+      }
       .meta-label {
         margin: 0 0 6px;
         color: var(--faint);
@@ -324,6 +497,7 @@
         white-space: pre-wrap;
       }
       .advanced-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .advanced-actions .plugin-upgrade-btn { margin-left: 0; }
       .text-button {
         min-height: 32px;
         padding: 5px 9px;
@@ -342,10 +516,9 @@
         flex-shrink: 0;
         flex-wrap: wrap;
         align-items: center;
-        justify-content: flex-start;
+        justify-content: center;
         gap: 16px;
-        padding: 11px 26px;
-        border-top: 1px solid var(--line);
+        padding: 11px max(26px, calc((100% - var(--page-max)) / 2));
         color: var(--faint);
         background: var(--surface);
         font-size: 11px;
@@ -356,20 +529,28 @@
       .community a:hover, .community button:hover { color: var(--ink); border-color: var(--muted); }
       .community a:focus-visible, .community button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
       .community svg { width: 15px; height: 15px; flex-shrink: 0; }
-      .community button { background: var(--soft, var(--surface-soft)); }
+      .community .brand-icon { width: 14px; height: 14px; }
+      .community button { border-color: transparent; }
+      .community button:hover { background: var(--soft, var(--surface-soft)); border-color: var(--line); }
       .community a { padding-inline: 4px; border-color: transparent; border-radius: 4px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
       .community a:hover { border-color: transparent; text-decoration-color: currentColor; }
       .community .external-icon { width: 12px; height: 12px; }
       .wechat-popover { position: fixed; inset: auto; margin: 0; width: 226px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); box-shadow: 0 8px 28px rgba(0,0,0,.16); font-size: 12px; text-align: center; }
       .wechat-popover img { display: block; width: 200px; height: 200px; background: #fff; border-radius: 6px; }
       .wechat-popover p { margin: 10px 0 0; line-height: 1.5; }
-      .footer > #quit { margin-left: auto; flex-shrink: 0; }
+      .header > #quit { margin-left: auto; flex-shrink: 0; }
       @media (max-width: 620px) {
-        body { display: block; padding: 46px 0 0; background: var(--surface); }
-        .shell { width: 100%; min-height: calc(100vh - 46px); max-height: none; border: 0; border-radius: 0; box-shadow: none; }
-        .header { padding-inline: 20px; }
+        .header, .shell.details-open .header { padding-inline: 20px; }
         .content { padding: 24px 20px 16px; }
-        .decision-row { align-items: stretch; }
+        .heading-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+        .body-row { flex-direction: column; }
+        .details-resizer { display: none !important; }
+        .details-panel { flex-basis: 0; }
+        .details-panel.open { flex-basis: auto; }
+        .details-header, .details-body { min-width: 0; }
+        .decision-row { flex-direction: column; align-items: stretch; }
+        .decision-row.safe-mode-only .decision-main { flex-direction: column-reverse; align-items: stretch; }
+        .decision-aside, .decision-main { align-items: stretch; }
         .actions { align-items: stretch; flex-direction: column-reverse; }
         .button { width: 100%; }
         .footer { padding-inline: 20px; }
@@ -411,6 +592,7 @@
 
       @media (prefers-reduced-motion: reduce) {
         .button { transition: none; }
+        .details-panel, .header { transition: none; }
       }
     </style>
   </head>
@@ -420,65 +602,89 @@
         <div class="brand">
           <img id="icon" alt="" />
           <span class="brand-name" id="brand"></span>
-          <span class="badge" id="badge"></span>
         </div>
+        <button class="text-button" id="quit" type="button"></button>
       </header>
 
+      <div class="body-row" id="body-row">
       <section class="content">
-        <p class="progress" id="progress"></p>
+       <div class="column">
         <p class="notice" id="notice" role="alert"></p>
-        <h1 id="heading"></h1>
+        <div class="heading-row">
+          <h1 id="heading"></h1>
+          <button class="text-button details-toggle" id="advanced-label" type="button"
+            aria-haspopup="dialog" aria-controls="details-drawer" aria-expanded="false"></button>
+        </div>
+        <div class="progress" id="progress">
+          <span class="progress-text" id="progress-text"></span>
+          <span class="progress-track" role="progressbar" id="progress-bar" aria-labelledby="progress-text" aria-valuemin="0" aria-valuemax="100">
+            <span class="progress-fill" id="progress-fill"></span>
+          </span>
+        </div>
         <p class="summary" id="summary"></p>
 
-        <section class="conflict-card" aria-label="Plugin recovery details">
-          <div class="reason">
-            <p class="reason-label" id="reason-title"></p>
-            <p class="reason-detail" id="reason-detail"></p>
-          </div>
+        <section class="conflict-card" id="conflict-card" aria-label="Plugin recovery details">
           <ul class="plugins" id="plugins"></ul>
         </section>
 
-        <div class="decision-row">
-          <div class="actions">
-            <button class="button" id="repair-agent" type="button" hidden></button>
+        <div class="decision-row" id="decision-row">
+          <div class="decision-aside">
             <button class="button" id="safe-mode" type="button"></button>
-            <button class="button" id="secondary" type="button" hidden></button>
-            <button class="button primary" id="primary" type="button"></button>
           </div>
-          <p class="safety">
-            <span class="safety-icon" aria-hidden="true">✓</span>
-            <span id="safety-note"></span>
-          </p>
+          <div class="decision-main">
+            <div class="actions">
+              <button class="button" id="repair-agent" type="button" hidden></button>
+              <button class="button" id="secondary" type="button" hidden></button>
+              <button class="button primary" id="primary" type="button"></button>
+            </div>
+            <p class="safety">
+              <span class="safety-icon" aria-hidden="true">✓</span>
+              <span id="safety-note"></span>
+            </p>
+          </div>
         </div>
 
-        <details class="advanced">
-          <summary id="advanced-label"></summary>
-          <div class="advanced-body">
+       </div>
+      </section>
+      <div class="details-resizer" id="details-resizer" role="separator" aria-orientation="vertical"
+        aria-controls="details-drawer" tabindex="-1" hidden></div>
+      <aside class="details-panel" id="details-drawer" role="region" aria-labelledby="drawer-title" aria-hidden="true">
+        <header class="details-header">
+          <h2 id="drawer-title"></h2>
+          <button class="details-close" id="details-close" type="button">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </header>
+        <div class="details-body">
+          <div class="details-card">
             <p class="meta-label" id="launch-directory-label"></p>
             <p class="path" id="launch-directory"></p>
             <p class="meta-label" id="error-label"></p>
             <pre class="technical" id="technical"></pre>
-            <div class="advanced-actions">
-              <button class="text-button" id="show-log" type="button"></button>
-            </div>
           </div>
-        </details>
-      </section>
+          <div class="advanced-actions">
+            <button class="plugin-upgrade-btn plugin-remove-btn" id="show-log" type="button"></button>
+          </div>
+        </div>
+      </aside>
+      </div>
 
       <footer class="footer">
         <aside class="community" aria-labelledby="community-label">
           <span id="community-label"></span>
           <span class="community-links">
             <button id="community-wechat" type="button" aria-expanded="false" aria-controls="wechat-popover">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="6" height="6" rx="1" />
-                <rect x="15" y="3" width="6" height="6" rx="1" />
-                <rect x="3" y="15" width="6" height="6" rx="1" />
-                <path d="M15 15h3v3h3v3h-6v-3m6-6v3M3 12h3m6-9v3m0 6v3m0 6v-3" />
+              <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.27-.027-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z" />
               </svg>
               <span id="community-wechat-label"></span>
             </button>
             <a id="community-discord" href="https://discord.gg/7Xgf3qe3Qp" target="_blank" rel="noopener noreferrer">
+              <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z" />
+              </svg>
               <span>Discord</span>
               <svg class="external-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 12 12 4M5 4h7v7" />
@@ -486,7 +692,6 @@
             </a>
           </span>
         </aside>
-        <button class="text-button" id="quit" type="button"></button>
       </footer>
     </main>
     <div id="wechat-popover" class="wechat-popover" popover="auto" role="region" aria-labelledby="wechat-caption">
@@ -508,13 +713,102 @@
 
       document.getElementById('icon').src = params.get('icon') || 'icon.png'
       setText('brand', model.brand)
-      setText('badge', model.badge)
       setText('heading', model.heading)
       setText('summary', model.summary)
-      setText('reason-title', model.reasonTitle)
-      setText('reason-detail', model.reasonDetail)
       setText('safety-note', model.safetyNote)
       setText('advanced-label', model.advancedLabel)
+      setText('drawer-title', model.locale === 'zh' ? '技术详情' : 'Technical details')
+      const detailsDrawer = document.getElementById('details-drawer')
+      const detailsToggle = document.getElementById('advanced-label')
+      const detailsClose = document.getElementById('details-close')
+      detailsClose.setAttribute('aria-label', model.locale === 'zh' ? '关闭技术详情' : 'Close technical details')
+      let detailsReturnFocus = null
+      const setDetailsOpen = (open) => {
+        detailsDrawer.classList.toggle('open', open)
+        document.getElementById('body-row').classList.toggle('details-open', open)
+        detailsResizer.hidden = !open
+        detailsResizer.tabIndex = open ? 0 : -1
+        if (open) detailsResizer.setAttribute('aria-valuemax', String(clampDetailsWidth(Infinity)))
+        document.querySelector('.shell').classList.toggle('details-open', open)
+        detailsDrawer.setAttribute('aria-hidden', String(!open))
+        detailsToggle.setAttribute('aria-expanded', String(open))
+        if (open) {
+          detailsReturnFocus = document.activeElement
+          detailsClose.focus()
+        } else if (detailsReturnFocus && typeof detailsReturnFocus.focus === 'function') {
+          detailsReturnFocus.focus()
+        }
+      }
+      const detailsResizer = document.getElementById('details-resizer')
+      const bodyRow = document.getElementById('body-row')
+      const shell = document.querySelector('.shell')
+      const DETAILS_MIN = 320
+      const DETAILS_CONTENT_MIN = 420
+      const DETAILS_WIDTH_KEY = 'dsh-recovery-details-width'
+      const clampDetailsWidth = (width) => {
+        const max = Math.max(DETAILS_MIN, bodyRow.clientWidth - DETAILS_CONTENT_MIN)
+        return Math.min(max, Math.max(DETAILS_MIN, Math.round(width)))
+      }
+      const currentDetailsWidth = () => parseFloat(getComputedStyle(shell).getPropertyValue('--details-width')) || 420
+      const applyDetailsWidth = (width) => {
+        const next = clampDetailsWidth(width)
+        shell.style.setProperty('--details-width', `${next}px`)
+        detailsResizer.setAttribute('aria-valuenow', String(next))
+        return next
+      }
+      try {
+        const saved = Number(localStorage.getItem(DETAILS_WIDTH_KEY))
+        if (saved > 0) applyDetailsWidth(saved)
+      } catch {
+        // Storage can be unavailable; the default width is fine.
+      }
+      const rememberDetailsWidth = (width) => {
+        try { localStorage.setItem(DETAILS_WIDTH_KEY, String(width)) } catch { /* ignore */ }
+      }
+      const HANDLE_HALF = 36
+      const followPointer = (event) => {
+        const bounds = detailsResizer.getBoundingClientRect()
+        const y = Math.min(bounds.height - HANDLE_HALF, Math.max(HANDLE_HALF, event.clientY - bounds.top))
+        detailsResizer.style.setProperty('--handle-y', `${Math.round(y)}px`)
+      }
+      detailsResizer.addEventListener('pointerenter', followPointer)
+      detailsResizer.addEventListener('pointermove', followPointer)
+      detailsResizer.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return
+        event.preventDefault()
+        const startX = event.clientX
+        const startWidth = currentDetailsWidth()
+        let width = startWidth
+        bodyRow.classList.add('resizing')
+        shell.classList.add('resizing')
+        detailsResizer.setPointerCapture(event.pointerId)
+        const move = (moveEvent) => { width = applyDetailsWidth(startWidth + (startX - moveEvent.clientX)) }
+        const stop = () => {
+          detailsResizer.removeEventListener('pointermove', move)
+          detailsResizer.removeEventListener('pointerup', stop)
+          detailsResizer.removeEventListener('pointercancel', stop)
+          bodyRow.classList.remove('resizing')
+          shell.classList.remove('resizing')
+          rememberDetailsWidth(width)
+        }
+        detailsResizer.addEventListener('pointermove', move)
+        detailsResizer.addEventListener('pointerup', stop)
+        detailsResizer.addEventListener('pointercancel', stop)
+      })
+      detailsResizer.addEventListener('keydown', (event) => {
+        const step = event.shiftKey ? 64 : 16
+        if (event.key === 'ArrowLeft') rememberDetailsWidth(applyDetailsWidth(currentDetailsWidth() + step))
+        else if (event.key === 'ArrowRight') rememberDetailsWidth(applyDetailsWidth(currentDetailsWidth() - step))
+        else return
+        event.preventDefault()
+      })
+      detailsResizer.setAttribute('aria-valuemin', String(DETAILS_MIN))
+      detailsResizer.setAttribute('aria-label', model.locale === 'zh' ? '调整技术详情面板宽度' : 'Resize the technical details panel')
+      detailsToggle.addEventListener('click', () => setDetailsOpen(!detailsDrawer.classList.contains('open')))
+      detailsClose.addEventListener('click', () => setDetailsOpen(false))
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && detailsDrawer.classList.contains('open')) setDetailsOpen(false)
+      })
       setText('launch-directory-label', model.launchDirectoryLabel)
       setText('launch-directory', model.launchDirectory || '—')
       setText('error-label', model.errorLabel)
@@ -531,7 +825,8 @@
       const positionWechat = () => {
         const anchor = wechat.getBoundingClientRect()
         const popup = wechatPopover.getBoundingClientRect()
-        const left = Math.max(12, Math.min(anchor.left, innerWidth - popup.width - 12))
+        const centered = anchor.left + anchor.width / 2 - popup.width / 2
+        const left = Math.max(12, Math.min(centered, innerWidth - popup.width - 12))
         const top = Math.max(12, Math.min(anchor.top - popup.height - 8, innerHeight - popup.height - 12))
         wechatPopover.style.left = `${left}px`
         wechatPopover.style.top = `${top}px`
@@ -564,10 +859,14 @@
       document.getElementById('community-discord').title = model.locale === 'zh'
         ? '在浏览器中打开 Discord 社区'
         : 'Open our Discord community in your browser'
+      // No plugin to repair: the primary action itself enters Safe Mode, so the
+      // row collapses to that button and its note, centered together.
+      const safeModeOnly = model.safeModeOnly ?? (!model.canUninstall && !model.upgradeCandidate && !model.marketPrimary)
+      document.getElementById('decision-row').classList.toggle('safe-mode-only', safeModeOnly)
       const safeModeBtn = document.getElementById('safe-mode')
       if (safeModeBtn) {
         // The primary action already enters Safe Mode when no repair is available.
-        safeModeBtn.hidden = !model.canUninstall && !model.upgradeCandidate && !model.marketPrimary
+        safeModeBtn.hidden = safeModeOnly
         safeModeBtn.textContent = model.safeModeLabel || (model.locale === 'zh' ? '进入安全模式' : 'Enter Safe Mode')
         safeModeBtn.addEventListener('click', () => {
           safeModeBtn.disabled = true
@@ -581,7 +880,12 @@
 
       const progress = document.getElementById('progress')
       if (model.progress) {
-        progress.textContent = model.progress
+        const handled = Array.isArray(model.removedPlugins) ? model.removedPlugins.length : 0
+        const remaining = Array.isArray(model.plugins) ? model.plugins.length : 0
+        const percent = Math.round((handled / Math.max(1, handled + remaining)) * 100)
+        setText('progress-text', model.progress)
+        document.getElementById('progress-fill').style.width = `${percent}%`
+        document.getElementById('progress-bar').setAttribute('aria-valuenow', String(percent))
         progress.classList.add('visible')
       }
       const notice = document.getElementById('notice')
@@ -590,6 +894,7 @@
         notice.classList.add('visible')
       }
 
+      const conflictCard = document.getElementById('conflict-card')
       const pluginList = document.getElementById('plugins')
       if (Array.isArray(model.plugins) && model.plugins.length > 0) {
         pluginList.classList.add('visible')
@@ -696,6 +1001,8 @@
         pluginList.appendChild(item)
       }
 
+      // Nothing listed (Safe Mode is the only option): no empty card.
+      conflictCard.hidden = !pluginList.classList.contains('visible')
       const navigate = (action) => {
         if (window.dshRecovery && typeof window.dshRecovery.action === 'function') {
           void window.dshRecovery.action(action)
