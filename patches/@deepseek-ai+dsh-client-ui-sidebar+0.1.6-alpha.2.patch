@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index ba092b4..c06ec28 100644
+index ba092b4..fc9c983 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 @@ -90,7 +90,7 @@ window.__ModuleLoader__.load({
@@ -28,7 +28,15 @@ index ba092b4..c06ec28 100644
  								"aria-hidden": "true",
  								children: [(0, react_jsx_runtime.jsx)("span", {
  									className: SidebarRoot_module_css_default.brandMark,
-@@ -366,6 +369,7 @@ window.__ModuleLoader__.load({
+@@ -322,6 +325,7 @@ window.__ModuleLoader__.load({
+ 							})
+ 						}), !darwinDesktop && toggle]
+ 					}),
++					renderSlot("sidebar.quickSwitcher", { wide, startSession }),
+ 					(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+ 						label: t("session.new.label"),
+ 						delayMs: 500,
+@@ -366,6 +370,7 @@ window.__ModuleLoader__.load({
  							className: SidebarRoot_module_css_default.footerActions,
  							children: renderSlot("sidebar.footer.action", { wide })
  						}), (0, react_jsx_runtime.jsx)("div", {
@@ -36,3 +44,52 @@ index ba092b4..c06ec28 100644
  							className: SidebarRoot_module_css_default.settingsArea,
  							children: renderSlot("sidebar.settings", { wide })
  						})]
+@@ -459,6 +464,10 @@ window.__ModuleLoader__.load({
+ 						kind: "single",
+ 						scope: "root"
+ 					},
++					"sidebar.quickSwitcher": {
++						kind: "single",
++						scope: "root"
++					},
+ 					"sidebar.panellist": {
+ 						kind: "list",
+ 						scope: "root"
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
+index 9969083..3a98300 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
+@@ -19,6 +19,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             scope: 'root';
+             owner: Record<never, never>;
+         };
++        /** Compact mode switcher rendered directly above New Session. */
++        'sidebar.quickSwitcher': {
++            kind: 'single';
++            scope: 'root';
++            owner: SidebarQuickSwitcherOwnerProps;
++        };
+         /**
+          * Brand mark rendered in the expanded brand row and collapsed rail.
+          * Declared by this package's `sidebar` entry; deployments may replace
+@@ -89,6 +95,13 @@ export interface SidebarBrandNameOwnerProps {
+     /** Marker field: the occupant owns its own content and width. */
+     children?: never;
+ }
++/** Owner share for the compact mode switcher above New Session. */
++export interface SidebarQuickSwitcherOwnerProps {
++    /** Whether the sidebar renders its expanded content. */
++    wide: boolean;
++    /** Enter the host-native New Session surface. */
++    startSession: (workspaceId?: WorkspaceId) => void;
++}
+ /** Icon presentation supplied by the global panel row. */
+ export interface SidebarPanelIconOwnerProps {
+     /** Requested square edge in pixels. */
+@@ -153,5 +166,5 @@ export type SidebarRootInjected = {
+  * render shares, this package's injected callbacks, and the standard locale
+  * seat. Panel metadata arrives through an injected observable.
+  */
+-export type SidebarRootComponentProps = PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.brand.mark' | 'sidebar.brand.name' | 'sidebar.toggle.badge' | 'sidebar.panellist' | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'> & InjectFace<SidebarRootInjected> & PropsLocale<'sidebar'>;
++export type SidebarRootComponentProps = PropsRuntime<'sidebar'> & PropsRenderSlots<'sidebar.brand.mark' | 'sidebar.brand.name' | 'sidebar.toggle.badge' | 'sidebar.quickSwitcher' | 'sidebar.panellist' | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'> & InjectFace<SidebarRootInjected> & PropsLocale<'sidebar'>;
+ //# sourceMappingURL=slots.d.ts.map

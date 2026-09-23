@@ -729,10 +729,7 @@ window.__ModuleLoader__.load({
       @keyframes dshWbFade{from{opacity:0}to{opacity:1}}@keyframes dshWbRise{from{opacity:.75;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
       .dshWbDisabledHint{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:48px 24px;text-align:center;color:var(--dsw-alias-label-secondary);gap:8px}
       .dshWbFrame{height:100%;min-height:0;display:flex;flex-direction:column;position:relative}
-      .dshWbDockWrap{position:absolute;z-index:14;top:8px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;max-width:calc(100% - 48px)}
-      .dshWbNotice+.dshWbDockWrap{top:52px}.dshWbDockTrigger{height:36px;min-width:180px;max-width:280px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 4px 14px rgba(0,0,0,.08);display:flex;align-items:center;gap:8px}
-      .dshWbDockTrigger:hover,.dshWbDockTrigger[aria-expanded=true]{background:var(--dsw-alias-bg-layer-1)}.dshWbDockCurrentIcon{display:grid;place-items:center;width:20px;height:20px;flex:none;color:var(--dsw-alias-label-primary)}.dshWbDockCurrentLabel{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;font-weight:550}.dshWbDockChevron{display:grid;place-items:center;flex:none;color:var(--dsw-alias-label-secondary);transition:transform .16s}.dshWbDockTrigger[aria-expanded=true] .dshWbDockChevron{transform:rotate(180deg)}
-      .dshWbDockMenu{display:flex;align-items:stretch;gap:4px;max-width:min(680px,calc(100vw - 64px));margin-top:6px;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 34px rgba(0,0,0,.14)}.dshWbDockItems{display:flex;align-items:center;gap:3px;min-width:0;overflow-x:auto;scrollbar-width:none}.dshWbDockItems::-webkit-scrollbar{display:none}.dshWbDockItem{display:flex;align-items:center;gap:7px;max-width:156px;height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;white-space:nowrap}.dshWbDockItem:hover,.dshWbDockItem[aria-current=page]{background:var(--dsw-alias-bg-layer-2)}.dshWbDockItemIcon{display:grid;place-items:center;width:18px;height:18px;flex:none}.dshWbDockItemLabel{overflow:hidden;text-overflow:ellipsis}.dshWbDockAll{height:34px;padding:0 10px;border:0;border-left:1px solid var(--dsw-alias-border-l2);border-radius:0 7px 7px 0;background:transparent;white-space:nowrap;color:var(--dsw-alias-label-secondary)}.dshWbDockAll:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
+      .dshWbSidebarSwitcher{display:flex;align-items:center;gap:5px;min-width:0;margin:0 0 8px;padding:0 2px;overflow-x:auto;scrollbar-width:none}.dshWbSidebarSwitcher::-webkit-scrollbar{display:none}.dshWbSidebarSwitcherItem{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary)}.dshWbSidebarSwitcherItem:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbSidebarSwitcherItem[aria-current=page]{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
       .dshWbBody{display:flex;flex:1;min-height:0;min-width:0}.dshWbConversation{container-type:inline-size;container-name:workbench-conversation;overflow:hidden;order:1;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
       .dshWbBusiness{order:2;width:var(--workbench-business-width,36%);min-width:220px;border-left:1px solid var(--dsw-alias-border-l2);overflow:auto;padding:18px;box-sizing:border-box}
       .dshWbBusiness[data-side=left]{order:0;border-left:0;border-right:1px solid var(--dsw-alias-border-l2)}
@@ -742,11 +739,11 @@ window.__ModuleLoader__.load({
       .dshWbNotice{padding:10px 14px;background:var(--dsw-alias-bg-layer-2);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
       .dshWb [hidden]{display:none!important}
       @media(hover:none){.dshWbFavorite{opacity:1;transform:none}}
-      @media(prefers-reduced-motion:reduce){.dshWbCard,.dshWbFavorite,.dshWbModal,.dshWbModalBackdrop,.dshWbDockSwitch::after,.dshWbDockChevron{animation:none;transition:none}}
+      @media(prefers-reduced-motion:reduce){.dshWbCard,.dshWbFavorite,.dshWbModal,.dshWbModalBackdrop,.dshWbDockSwitch::after{animation:none;transition:none}}
       @container workbench-market (max-width:980px){.dshWbGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
       @container workbench-market (max-width:620px){.dshWbGrid{grid-template-columns:1fr}}
       @media(max-width:900px){.dshWbMarket{padding:24px}.dshWbBusiness{min-width:180px}}
-      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbMarketHeaderActions{width:100%;justify-content:flex-start}.dshWbCreate{flex:1;justify-content:center}.dshWbDockWrap{max-width:calc(100% - 24px)}.dshWbDockMenu{max-width:calc(100vw - 32px)}.dshWbDockItemLabel{display:none}.dshWbDockItem{width:34px;padding:0;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGuideModal{height:92vh;padding:0}.dshWbGuideHeader{padding:14px 16px}.dshWbGuideBody{padding:22px 18px 32px}.dshWbGuideDocument h1{font-size:24px;line-height:33px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
+      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbMarketHeaderActions{width:100%;justify-content:flex-start}.dshWbCreate{flex:1;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGuideModal{height:92vh;padding:0}.dshWbGuideHeader{padding:14px 16px}.dshWbGuideBody{padding:22px 18px 32px}.dshWbGuideDocument h1{font-size:24px;line-height:33px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
     `
     function useWorkbench(service) { return React.useSyncExternalStore(service.subscribe, service.getSnapshot) }
     function Button({ children, primary, ...props }) { return h('button', { type: 'button', className: `dshWbBtn${primary ? ' dshWbPrimary' : ''}`, ...props }, children) }
@@ -792,6 +789,7 @@ window.__ModuleLoader__.load({
       if (name === 'plus') return h('svg', common, h('path', { d: 'M12 5v14M5 12h14' }))
       if (name === 'remove') return h('svg', common, h('path', { d: 'M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5' }))
       if (name === 'market') return h('svg', common, h('rect', { x: 3.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 3.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 3.5, y: 13.5, width: 7, height: 7, rx: 1.5 }), h('rect', { x: 13.5, y: 13.5, width: 7, height: 7, rx: 1.5 }))
+      if (name === 'native') return h('svg', common, h('circle', { cx: 12, cy: 12, r: 8.5 }), h('path', { d: 'M12 8v8M8 12h8' }))
       if (name === 'content') return h('svg', common, h('rect', { x: 3.5, y: 4, width: 17, height: 16, rx: 2 }), h('path', { d: 'M8 4v16M8 9h12M8 15h12' }))
       if (name === 'location') return h('svg', common, h('path', { d: 'M12 21s6-5.3 6-11a6 6 0 1 0-12 0c0 5.7 6 11 6 11Z' }), h('circle', { cx: 12, cy: 10, r: 2 }))
       if (name === 'life') return h('svg', common, h('circle', { cx: 12, cy: 12, r: 8.5 }), h('path', { d: 'M12 3.5c3.2 2.2 3.2 6.4 0 8.5s-3.2 6.3 0 8.5' }), h('circle', { cx: 12, cy: 7.7, r: .7, fill: 'currentColor', stroke: 'none' }), h('circle', { cx: 12, cy: 16.3, r: .7, fill: 'currentColor', stroke: 'none' }))
@@ -825,36 +823,17 @@ window.__ModuleLoader__.load({
       if (!entry) return null
       return h('span', { className: 'dshWb dshWbSessionIcon', role: 'img', title: entry.title, 'aria-label': `属于${entry.title}` }, h(WorkbenchIcon, { entry, size }))
     }
-    function WorkbenchDock({ service, entry }) {
-      const { state, catalog, ready, pending } = useWorkbench(service)
+    function WorkbenchSidebarSwitcher({ service, wide, startSession }) {
+      const { state, catalog, ready, pending, marketOpen } = useWorkbench(service)
       const visible = React.useSyncExternalStore(workbenchDockPreference.subscribe.bind(workbenchDockPreference), workbenchDockPreference.getSnapshot.bind(workbenchDockPreference))
-      const [open, setOpen] = React.useState(false)
-      const root = React.useRef(null)
-      React.useEffect(() => { setOpen(false) }, [entry?.id])
-      React.useEffect(() => {
-        if (!open) return undefined
-        const closeOutside = (event) => { if (root.current && !root.current.contains(event.target)) setOpen(false) }
-        const closeEscape = (event) => { if (event.key === 'Escape') setOpen(false) }
-        document.addEventListener('pointerdown', closeOutside)
-        document.addEventListener('keydown', closeEscape)
-        return () => {
-          document.removeEventListener('pointerdown', closeOutside)
-          document.removeEventListener('keydown', closeEscape)
-        }
-      }, [open])
-      if (!visible) return null
+      if (!visible || !wide) return null
       const disabled = !ready || pending > 0 || service.blocked
       const pinned = state.pinned.map((id) => catalog.find((item) => item.id === id)).filter((item) => item && state.added.includes(item.id) && service.catalog.has(item.id))
-      return h('div', { ref: root, className: 'dshWb dshWbDockWrap', 'data-dsh-workbench-dock': '', 'data-open': open || undefined },
-        h('button', { type: 'button', className: 'dshWbDockTrigger', 'aria-label': entry ? `切换工作台，当前为${entry.title}` : '选择工作台', 'aria-expanded': open, 'aria-controls': 'dsh-workbench-dock-menu', onClick: () => setOpen((value) => !value) },
-          h('span', { className: 'dshWbDockCurrentIcon', 'aria-hidden': true }, entry ? h(WorkbenchIcon, { entry, size: 16 }) : h(MarketIcon, { name: 'market', size: 16 })),
-          h('span', { className: 'dshWbDockCurrentLabel' }, entry?.title || '选择工作台'),
-          h('span', { className: 'dshWbDockChevron', 'aria-hidden': true }, h(MarketIcon, { name: 'chevronDown', size: 14 }))),
-        open && h('nav', { id: 'dsh-workbench-dock-menu', className: 'dshWbDockMenu', 'aria-label': '切换工作台' },
-          h('div', { className: 'dshWbDockItems' }, pinned.map((item) => h('button', { key: item.id, type: 'button', className: 'dshWbDockItem', disabled, 'aria-current': item.id === entry?.id ? 'page' : undefined, title: item.title, onClick: () => { setOpen(false); if (item.id !== entry?.id) service.run(service.open(item.id)) } },
-            h('span', { className: 'dshWbDockItemIcon', 'aria-hidden': true }, h(WorkbenchIcon, { entry: item, size: 15 })),
-            h('span', { className: 'dshWbDockItemLabel' }, item.title)))),
-          h('button', { type: 'button', className: 'dshWbDockAll', onClick: () => { setOpen(false); service.showMarket() } }, '全部工作台')))
+      return h('nav', { className: 'dshWb dshWbSidebarSwitcher', 'data-dsh-workbench-switcher': '', 'aria-label': '切换会话模式' },
+        h('button', { type: 'button', className: 'dshWbSidebarSwitcherItem', title: '原生会话', 'aria-label': '原生会话', 'aria-current': !state.active && !marketOpen ? 'page' : undefined, onClick: () => startSession() },
+          h(MarketIcon, { name: 'native', size: 16 })),
+        ...pinned.map((item) => h('button', { key: item.id, type: 'button', className: 'dshWbSidebarSwitcherItem', disabled, title: item.title, 'aria-label': item.title, 'aria-current': item.id === state.active && !marketOpen ? 'page' : undefined, onClick: () => { if (item.id !== state.active || marketOpen) service.run(service.open(item.id)) } },
+          h(WorkbenchIcon, { entry: item, size: 16 }))))
     }
     function MetaItem({ icon, label, value }) {
       return h('span', { className: 'dshWbMetaItem', title: label }, h(MarketIcon, { name: icon }), h('b', null, value), h('small', null, label))
@@ -1228,10 +1207,10 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         h('header', { className: 'dshWbMarketHeader' },
           h('div', { className: 'dshWbMarketHeaderText' },
             h('h1', null, tab === 'submit' ? '制作属于你的工作台' : '切换工作台，进入不同工作方式'),
-            h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。进入工作台后，可通过顶部 Dock 快速切换。')),
+            h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。可通过左侧快捷栏在原生会话与不同工作台之间切换。')),
           h('div', { className: 'dshWbMarketHeaderActions' },
             h('button', { type: 'button', className: 'dshWbDockSetting', role: 'switch', 'aria-checked': dockVisible, onClick: () => workbenchDockPreference.set(!dockVisible) },
-              h('span', null, '显示工作台 Dock'), h('span', { className: 'dshWbDockSwitch', 'aria-hidden': true })),
+              h('span', null, '显示工作台快捷栏'), h('span', { className: 'dshWbDockSwitch', 'aria-hidden': true })),
             h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus('') } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台'))),
         h(Notice, { service }),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
@@ -1368,7 +1347,6 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const disabled = !ready || pending > 0 || service.blocked
       const chosen = workspaces.items.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
       return h('div', { className: 'dshWb dshWbFrame' }, h(Notice, { service }),
-        h(WorkbenchDock, { service, entry: runtimeEntry }),
         require('react-dom').createPortal(conversation, conversationContainer),
         ...loaded.filter((item) => item.customFrame === true).map((item) => h('div', { key: item.id, hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, null, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? conversationMount : null })))),
         h('div', { className: 'dshWbBody', hidden: customFrame, style: { '--workbench-business-width': `${(entry?.layout?.businessWidth ?? 0.36) * 100}%` } },
@@ -1395,6 +1373,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       }, 'workbenches: styles')
       ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL, inject: () => ({ service }) }, Market))
       ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 100, label: '工作台', inject: () => ({ service }) }, WorkbenchPanelIcon))
+      ctx.slots.inject('sidebar.quickSwitcher', () => ctx.slots.register({ name: 'sidebar.quickSwitcher', inject: () => ({ service }) }, WorkbenchSidebarSwitcher))
       ctx.slots.inject('sidebar.workspaces', () => ctx.slots.inject('sidebar.session.leading', () => ctx.slots.register({ name: 'sidebar.session.leading', inject: () => ({ service }) }, SessionWorkbenchIcon)))
       function WorkbenchEnableSetting() {
         const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
