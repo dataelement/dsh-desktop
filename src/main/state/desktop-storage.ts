@@ -4,14 +4,28 @@ import { dirname, join } from 'node:path'
 
 export const STORAGE_FILENAME = 'desktop-storage.json'
 const WORKSPACE_VIEW_KEY = 'dsh.workspace.view.v5'
+const WORKSPACE_VIEW_INDEX_KEYS = [
+  'groupExpansion',
+  'sessionOrderByAccount',
+  'sessionUpdatedAtByAccount'
+] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
 
 function migrateWorkspaceView(value: string): string {
   try {
     const view = JSON.parse(value) as unknown
-    if (!view || typeof view !== 'object' || Array.isArray(view)) return value
-    const record = view as Record<string, unknown>
-    if (record.sessionUpdatedAtByAccount !== undefined) return value
-    return JSON.stringify({ ...record, sessionUpdatedAtByAccount: {} })
+    if (!isRecord(view)) return value
+    const migrated = { ...view }
+    let changed = false
+    for (const key of WORKSPACE_VIEW_INDEX_KEYS) {
+      if (isRecord(migrated[key])) continue
+      migrated[key] = {}
+      changed = true
+    }
+    return changed ? JSON.stringify(migrated) : value
   } catch {
     return value
   }

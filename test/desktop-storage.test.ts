@@ -192,4 +192,28 @@ describe('DesktopStorageManager', () => {
       await removeTempDir(tempDir)
     }
   })
+
+  it('repairs invalid workspace indexes before the client reads them', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'dsh-storage-test-'))
+    try {
+      await writeFile(join(tempDir, STORAGE_FILENAME), JSON.stringify({
+        'dsh.workspace.view.v5': JSON.stringify({
+          groupExpansion: null,
+          sessionOrderByAccount: [],
+          sessionUpdatedAtByAccount: 'invalid',
+          unreadSessionIds: ['session-1']
+        })
+      }), 'utf8')
+
+      const manager = new DesktopStorageManager(tempDir)
+      expect(JSON.parse(manager.getItem('dsh.workspace.view.v5') ?? '{}')).toEqual({
+        groupExpansion: {},
+        sessionOrderByAccount: {},
+        sessionUpdatedAtByAccount: {},
+        unreadSessionIds: ['session-1']
+      })
+    } finally {
+      await removeTempDir(tempDir)
+    }
+  })
 })
