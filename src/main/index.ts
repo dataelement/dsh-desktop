@@ -37,13 +37,15 @@ import {
 import {
   demoteMarketGeneration,
   ensureMarketBaseline,
+  marketUsableWithoutBaseline,
   readProfileMarket
 } from './state/market-baseline'
 import {
   clearProfileInstallMarker,
   markProfileInstallComplete
 } from './state/profile-install-marker'
-import { healProfileBundles, inspectProfileConsistency } from './state/profile-consistency'
+import { healProfileBundles, HOST_COMPOSED_PPT_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
+import { inspectProfileBootInputs } from './state/profile-boot-preflight'
 import {
   disableProfilePlugin,
   enableProfilePlugin,
@@ -82,6 +84,7 @@ import { desktopResourceUrl, installDesktopProtocol, registerDesktopScheme, SAFE
 import { ensureLaunchRoot } from './state/launch-root'
 import {
   listInstalledProfilePlugins,
+  pruneUnresolvableProfileBundles,
   resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
@@ -98,6 +101,7 @@ import {
   recoverInterruptedMigration,
   rollBackMigration
 } from './state/generation-migration'
+import { migrateUserPresetPersonaPrefixes } from './state/persona-prefix-migration'
 import { runProfileStartupMaintenance } from './state/profile-startup-maintenance'
 import { cleanupPluginOwnedComponents } from './state/plugin-component-cleanup'
 import {
@@ -214,6 +218,8 @@ let mobileBridge: LanMobileBridge
 let repairAgentService: RepairAgentService | undefined
 /** A repair prompt from the Recovery page, started by the Safe Mode page load. */
 let pendingRepairPrompt: string | undefined
+/** A Safe Mode reason raised while its manager was already open. */
+let pendingSafeModeNotice: string | undefined
 /** Why the last Repair Agent session could not open, until it is shown once. */
 let repairAgentLaunchError: string | undefined
 /** Desktop storage key the Harness UI restores its selected session from. */
@@ -1272,17 +1278,18 @@ async function showSplash(): Promise<void> {
 }
 
 /**
- * Name what the profile contradicts about itself without changing it. A
- * dangling declaration does not throw — it leaves a service waiting on a
- * provider that never arrives — so without this the profile reads as a slow
- * start and the fault is found by reading logs for an afternoon. Reporting
- * only: startup never repairs or prunes the normal Profile automatically.
+ * Reconcile bundle declarations, including the PPT layers already owned by
+ * Desktop, then report remaining inconsistencies. This never removes package
+ * files, user patch rows or plugin data, and runs while Harness is stopped.
  */
 async function reportProfileConsistency(dshHome: string): Promise<void> {
   try {
-    const healed = await healProfileBundles(dshHome)
-    if (healed.length > 0) {
-      runtime.note(`[desktop] auto-composed ${healed.length} missing bundle(s): ${healed.join(', ')}`)
+    const healed = await healProfileBundles(dshHome, HOST_COMPOSED_PPT_BUNDLES)
+    if (healed.removed.length > 0) {
+      runtime.note(`[desktop] removed duplicate host-composed PPT bundle layer(s): ${healed.removed.join(', ')}; packages and user patches kept`)
+    }
+    if (healed.added.length > 0) {
+      runtime.note(`[desktop] auto-composed ${healed.added.length} missing bundle(s): ${healed.added.join(', ')}`)
     }
   } catch (error) {
     runtime.note(
@@ -1295,7 +1302,7 @@ async function reportProfileConsistency(dshHome: string): Promise<void> {
   // Defer heavy recursive inspections of the profiles directory and package store
   // so they run asynchronously without blocking the startup launch pipeline.
   void Promise.all([
-    inspectProfileConsistency(dshHome),
+    inspectProfileConsistency(dshHome, HOST_COMPOSED_PPT_BUNDLES),
     inspectStoreConsistency(dshHome)
   ])
     .then(([findings, store]) => {
@@ -1395,27 +1402,55 @@ async function canRetryLockedPluginRestore(dshHome: string, removalId: string): 
   }
 }
 
+/** User presets are outside the profile journal, so this runs on every start path. */
+async function migratePersonaPrefixesBeforeStart(dshHome: string): Promise<void> {
+  try {
+    await migrateUserPresetPersonaPrefixes(dshHome, (line) => runtime.note(line))
+  } catch (error) {
+    runtime.note(
+      `[desktop] persona prefix migration failed: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
 async function enterMigrationSafeRecovery(
   dshHome: string,
   reason: string,
-  allowedRestoreId?: string
+  allowedRestoreId?: string,
+  repairable = false,
+  repairTarget?: string
 ): Promise<void> {
   if (failureRecoveryVisible) resolvePluginRecoveryAction('safe-mode')
   safeModeVisible = true
-  maintenanceRecoveryLocked = true
+  maintenanceRecoveryLocked = !repairable
   maintenanceAllowedRestoreId = allowedRestoreId
+  // Surface the bundle the preflight named in the plugin list, so the user acts
+  // on that plugin instead of reading the reason and guessing.
+  if (repairTarget !== undefined) {
+    safeModeSuspectedPlugins = [...new Set([...safeModeSuspectedPlugins, repairTarget])]
+  }
   await refreshMigrationRecoveryLock(dshHome)
   runtime.note(`[desktop] Profile recovery requires Safe Mode: ${reason}`)
   await runtime.stop()
   await ensureSafeModeProfile(dshHome)
-  runtime.note('[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
+  runtime.note(repairable
+    ? '[desktop] safe mode: normal Profile startup failed preflight; plugin repair remains available'
+    : '[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
+  await migratePersonaPrefixesBeforeStart(dshHome)
   await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
-  if (runtime.snapshot().phase !== 'ready') return
-
-  void mobileBridge.start().catch(showUnexpectedError)
-  const notice = harnessLocale() === 'zh'
+  if (runtime.snapshot().phase === 'ready') void mobileBridge.start().catch(showUnexpectedError)
+  // The native manager remains usable even if shared settings prevent the
+  // recovery Harness from starting; it does not depend on its Web UI.
+  const notice = repairable
+    ? (harnessLocale() === 'zh'
+        ? `正常 Profile 启动检查未通过，已进入安全模式。可以在此修复插件后重试。${reason}`
+        : `Normal Profile startup checks failed. Safe Mode is available to repair plugins and retry. ${reason}`)
+    : harnessLocale() === 'zh'
     ? `正常 Profile 恢复尚未完成，已停止所有自动修复并进入安全模式。恢复材料仍保留。${reason}`
     : `Normal Profile recovery is incomplete. Automatic maintenance is blocked and recovery material is preserved. ${reason}`
+  // A manager already on screen suppresses the queued one below, so the reason
+  // is parked where that manager's action loop can pick it up instead.
+  pendingSafeModeNotice = notice
   queueMicrotask(() => {
     void showSafeModeManager({ notice, noticeTone: 'error' }).catch(showUnexpectedError)
   })
@@ -1481,7 +1516,10 @@ function launchHarness(): Promise<void> {
         pnpmRunnerPath: bundledPnpmRunnerPath(),
         note: (line) => runtime.note(line)
       }),
-      reportProfileConsistency: () => reportProfileConsistency(dshHome)
+      marketUsableWithoutBaseline: () => marketUsableWithoutBaseline(dshHome),
+      reportProfileConsistency: () => reportProfileConsistency(dshHome),
+      inspectProfileBootInputs: () => inspectProfileBootInputs(dshHome, dshEntryPath()),
+      pruneUnresolvableBundles: () => pruneUnresolvableProfileBundles(dshHome)
     })
     migrationPendingPlugins = new Set(
       maintenance.outcome === 'normal-profile' && maintenance.migration.outcome === 'deferred-failure'
@@ -1492,7 +1530,9 @@ function launchHarness(): Promise<void> {
       await enterMigrationSafeRecovery(
         dshHome,
         maintenance.reason,
-        maintenance.allowedRestoreId
+        maintenance.allowedRestoreId,
+        maintenance.repairable,
+        maintenance.repairTarget
       )
       return
     }
@@ -1512,6 +1552,7 @@ function launchHarness(): Promise<void> {
         )
       })
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
+    await migratePersonaPrefixesBeforeStart(dshHome)
     await runtime.start(launchDirectory)
 
     // A failed launch must not rewrite the user's enabled plugin set. Recovery
@@ -1556,6 +1597,7 @@ function launchSafeHarness(): Promise<void> {
     await ensureSafeModeProfile(dshHome)
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
+    await migratePersonaPrefixesBeforeStart(dshHome)
     await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
     if (runtime.snapshot().phase === 'ready') {
       void mobileBridge.start().catch(showUnexpectedError)
@@ -2968,13 +3010,20 @@ async function showSafeModeManager(initial?: {
           )
         }
         await launchHarness()
-        if (await refreshMigrationRecoveryLock(dshHome)) {
-          notice = isChinese
-            ? 'Profile 恢复事务仍未完成。已继续保留恢复材料和安全模式；请按提示重试。'
-            : 'The Profile recovery transaction is still incomplete. Recovery material and Safe Mode remain active; follow the prompt and retry.'
+        const recoveryLocked = await refreshMigrationRecoveryLock(dshHome)
+        if (safeModeVisible || recoveryLocked) {
+          // launchHarness may re-enter repairable Safe Mode. Its queued manager
+          // is suppressed while this one is open, so keep this action loop alive
+          // and show the reason that manager would have shown.
+          const raised = pendingSafeModeNotice
+          pendingSafeModeNotice = undefined
+          notice = raised ?? (isChinese
+            ? '正常 Profile 仍未恢复，已继续保留安全模式。请检查启动日志并修复后重试。'
+            : 'The normal Profile is still unavailable. Safe Mode remains active; check the startup log, repair and retry.')
           noticeTone = 'error'
           continue
         }
+        pendingSafeModeNotice = undefined
         void mobileBridge.start().catch(showUnexpectedError)
         return
       }

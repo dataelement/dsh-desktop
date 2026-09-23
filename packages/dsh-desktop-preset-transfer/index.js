@@ -2,6 +2,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writ
 import { dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { Zip, ZipDeflate, strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { COMPOSITION_FILE, SETTINGS_NAMESPACE, scanRoot, writableRoot } from '@deepseek-ai/dsh-agent-presets'
+import { migratePersonaPrefix } from './persona-prefix.js'
 
 /**
  * Preset package export and import for DSH Desktop.
@@ -270,6 +271,13 @@ function createPresetArchive(ctx) {
 						}
 					}
 				}
+				const compositionPath = resolve(imported, COMPOSITION_FILE)
+				const compositionText = await readFile(compositionPath, 'utf8')
+				const migratedPersona = migratePersonaPrefix(compositionText)
+				if (migratedPersona.missingPrompt) {
+					throw new Error('Preset persona is missing its prompt. Restore the prompt before importing.')
+				}
+				if (migratedPersona.changed) await writeFile(compositionPath, migratedPersona.text)
 				// scanRoot gained a second parameter in 0.1.2-alpha.1: the base URL a
 				// composition row's package name resolves against. Without it the
 				// scan throws before it can report a broken preset, so the imported

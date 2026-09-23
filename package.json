@@ -360,6 +360,10 @@
         "to": "harness-node-entry.mjs"
       },
       {
+        "from": "build/host-module-fallback.mjs",
+        "to": "host-module-fallback.mjs"
+      },
+      {
         "from": "build/windows-hidden-console.mjs",
         "to": "windows-hidden-console.mjs"
       },
