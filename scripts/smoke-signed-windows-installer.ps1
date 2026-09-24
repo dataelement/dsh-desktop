@@ -22,11 +22,31 @@ function Assert-Signature([string]$path, [bool]$requirePublisher = $false) {
   }
 }
 
+function Invoke-Installer([string]$directory, [string]$stage) {
+  Write-Host "$stage at $directory"
+  $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$directory") -PassThru
+  $deadline = (Get-Date).AddMinutes(5)
+  while (-not $process.HasExited) {
+    if ((Get-Date) -ge $deadline) {
+      Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+      throw "$stage did not exit within five minutes."
+    }
+    $parent = Split-Path $directory -Parent
+    $leaf = Split-Path $directory -Leaf
+    $siblings = @(Get-ChildItem -LiteralPath $parent -Directory -Filter "$leaf.*-*" -ErrorAction SilentlyContinue |
+      Select-Object -ExpandProperty Name)
+    Write-Host "$stage running; directory exists=$(Test-Path $directory); siblings=$($siblings -join ', ')"
+    Start-Sleep -Seconds 15
+  }
+  Write-Host "$stage exited with $($process.ExitCode)"
+  return $process.ExitCode
+}
+
 function Install-At([string]$directory) {
   # NSIS requires /D to be the last argument. Each target is a fresh directory
   # on the runner's local volume, so this also exercises custom directory input.
-  $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$directory") -Wait -PassThru
-  if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode) at $directory" }
+  $exitCode = Invoke-Installer $directory 'Install'
+  if ($exitCode -ne 0) { throw "Installer exited with $exitCode at $directory" }
   $executable = Join-Path $directory 'DSH Desktop.exe'
   if (-not (Test-Path $executable)) { throw "Installed executable missing: $executable" }
   Assert-Signature $executable $true
@@ -121,8 +141,8 @@ Set-Content -LiteralPath $profileMarker -Value 'keep-user-data'
 # The old installation and user data must remain available afterward.
 $lock = [System.IO.File]::Open($firstExecutable, 'Open', 'Read', 'Read')
 try {
-  $blocked = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$firstDirectory") -Wait -PassThru
-  if ($blocked.ExitCode -eq 0) { throw 'Locked same-path upgrade reported success.' }
+  $blockedExitCode = Invoke-Installer $firstDirectory 'Locked upgrade'
+  if ($blockedExitCode -eq 0) { throw 'Locked same-path upgrade reported success.' }
   if (-not (Test-Path $firstExecutable)) { throw 'Locked upgrade removed the previous application.' }
   Assert-Signature $firstExecutable $true
   if (@(Get-ChildItem -Path "$firstDirectory.new-*" -ErrorAction SilentlyContinue).Count -ne 0) {
