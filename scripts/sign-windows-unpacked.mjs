@@ -118,6 +118,22 @@ async function signBinary(targetFile, config) {
   await sleep(300)
 }
 
+/** Keep a vendor's existing Authenticode signature. The installed Windows
+ * smoke verifies that each retained signature is valid. */
+async function hasExistingSignature(targetFile, jsignJar) {
+  try {
+    await execFileAsync('java', ['-jar', jsignJar, 'extract', '--format', 'DER', targetFile])
+    const signature = `${targetFile}.sig`
+    if ((await stat(signature)).size === 0) throw new Error(`Empty existing signature: ${targetFile}`)
+    await rm(signature)
+    return true
+  } catch (error) {
+    const detail = `${error.stderr ?? ''}\n${error.stdout ?? ''}\n${error.message ?? ''}`
+    if (detail.includes('No signature found in ')) return false
+    throw error
+  }
+}
+
 async function main() {
   const [unpackedDirArg] = process.argv.slice(2)
   if (!unpackedDirArg) {
@@ -139,7 +155,13 @@ async function main() {
   const targets = await findSignableBinaries(unpackedDir)
   console.log(`[sign-windows] Found ${targets.length} binary target(s) to sign.`)
 
+  let retained = 0
   for (const target of targets) {
+    if (!dryRun && await hasExistingSignature(target, jsignJar)) {
+      console.log(`[sign-windows] Retaining existing signature on ${target}`)
+      retained++
+      continue
+    }
     await signBinary(target, {
       jsignJar: jsignJar ?? 'jsign.jar',
       pinFile: pinFile ?? 'pin.txt',
@@ -148,7 +170,7 @@ async function main() {
     })
   }
 
-  console.log(`[sign-windows] Successfully signed all ${targets.length} binaries in ${unpackedDir}.`)
+  console.log(`[sign-windows] Scanned ${targets.length} PE binaries; signed ${targets.length - retained}, retained ${retained} existing signatures.`)
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
