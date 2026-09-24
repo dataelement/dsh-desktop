@@ -1,10 +1,163 @@
-import { execFileSync } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { applyWindowsHide } from '../build/windows-child-process-hide.mjs'
 import { projectRoot } from './patch-path'
+
+describe('linked Profile plugin host dependency fallback', () => {
+  it('keeps the plugin local and resolves only missing @deepseek-ai peers from the host', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-host-module-fallback-'))
+    try {
+      const host = join(root, 'host')
+      const localPlugin = join(root, 'local-plugin')
+      const profileModules = join(root, 'profile', 'node_modules')
+      const hostPeer = join(host, 'node_modules', '@deepseek-ai', 'host-peer')
+      const hostOrdinary = join(host, 'node_modules', 'ordinary-host-only')
+      await Promise.all([
+        mkdir(hostPeer, { recursive: true }),
+        mkdir(hostOrdinary, { recursive: true }),
+        mkdir(localPlugin, { recursive: true }),
+        mkdir(profileModules, { recursive: true })
+      ])
+      await Promise.all([
+        writeFile(join(hostPeer, 'package.json'), JSON.stringify({ name: '@deepseek-ai/host-peer', type: 'module', exports: './index.js' })),
+        writeFile(join(hostPeer, 'index.js'), 'export const source = "host-peer"\n'),
+        writeFile(join(hostOrdinary, 'package.json'), JSON.stringify({ name: 'ordinary-host-only', type: 'module', exports: './index.js' })),
+        writeFile(join(hostOrdinary, 'index.js'), 'export const source = "host-ordinary"\n'),
+        writeFile(join(localPlugin, 'package.json'), JSON.stringify({ name: 'linked-plugin', type: 'module', exports: './index.js' })),
+        writeFile(join(localPlugin, 'index.js'), `
+          import { source } from '@deepseek-ai/host-peer'
+          let ordinary = 'missing'
+          try { await import('ordinary-host-only'); ordinary = 'host-leaked' } catch {}
+          export const result = { source, ordinary }
+        `),
+        writeFile(join(host, 'entry.mjs'), `
+          export async function runCli() {
+            const plugin = await import(${JSON.stringify(pathToFileURL(join(profileModules, 'linked-plugin', 'index.js')).href)})
+            process.stdout.write('fixture:' + JSON.stringify(plugin.result) + '\\n')
+          }
+        `)
+      ])
+      await symlink(localPlugin, join(profileModules, 'linked-plugin'))
+
+      const result = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        join(host, 'entry.mjs')
+      ], { encoding: 'utf8' })
+
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toContain('fixture:{"source":"host-peer","ordinary":"missing"}')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // Reproduces the shape seen in production crash reports: a host package in
+  // the shared Profile tree is older than the subpath its importer needs, so
+  // resolution fails with ERR_PACKAGE_PATH_NOT_EXPORTED rather than not-found.
+  it('retries a stale host peer whose subpath the installation does export', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-host-module-subpath-'))
+    try {
+      const host = join(root, 'host')
+      const profileModules = join(root, 'profile', 'node_modules')
+      const stalePeer = join(profileModules, '@deepseek-ai', 'host-peer')
+      const hostPeer = join(host, 'node_modules', '@deepseek-ai', 'host-peer')
+      const plugin = join(profileModules, '@deepseek-ai', 'host-peer-local', 'lib')
+      await Promise.all([
+        mkdir(stalePeer, { recursive: true }),
+        mkdir(hostPeer, { recursive: true }),
+        mkdir(plugin, { recursive: true })
+      ])
+      await Promise.all([
+        // The stale copy resolves first and has no './control'.
+        writeFile(join(stalePeer, 'package.json'), JSON.stringify({
+          name: '@deepseek-ai/host-peer', type: 'module', exports: { '.': './index.js' }
+        })),
+        writeFile(join(stalePeer, 'index.js'), 'export const source = "stale"\n'),
+        writeFile(join(hostPeer, 'package.json'), JSON.stringify({
+          name: '@deepseek-ai/host-peer', type: 'module', exports: { '.': './index.js', './control': './control.js' }
+        })),
+        writeFile(join(hostPeer, 'index.js'), 'export const source = "host"\n'),
+        writeFile(join(hostPeer, 'control.js'), 'export const control = "host-control"\n'),
+        writeFile(join(plugin, '..', 'package.json'), JSON.stringify({
+          name: '@deepseek-ai/host-peer-local', type: 'module', exports: './lib/index.js'
+        })),
+        writeFile(join(plugin, 'index.js'), `
+          import { control } from '@deepseek-ai/host-peer/control'
+          import { source } from '@deepseek-ai/host-peer'
+          export const result = { control, source }
+        `),
+        writeFile(join(host, 'entry.mjs'), `
+          export async function runCli() {
+            const plugin = await import(${JSON.stringify(pathToFileURL(join(profileModules, '@deepseek-ai', 'host-peer-local', 'lib', 'index.js')).href)})
+            process.stdout.write('fixture:' + JSON.stringify(plugin.result) + '\\n')
+          }
+        `)
+      ])
+
+      const result = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        join(host, 'entry.mjs')
+      ], { encoding: 'utf8' })
+
+      expect(result.status, result.stderr).toBe(0)
+      // Only the missing subpath comes from the host; the bare specifier keeps
+      // resolving to the copy the plugin's own tree provides.
+      expect(result.stdout).toContain('fixture:{"control":"host-control","source":"stale"}')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // Crash reports lose `code` to Harness's wrapper, so `imported from <plugin>`
+  // is the only thing that still names the faulty plugin. The host retry must
+  // not overwrite it with the installation entry.
+  it('keeps the importing plugin in the failure when the host cannot help either', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-host-module-diagnostic-'))
+    try {
+      const host = join(root, 'host')
+      const localPlugin = join(root, 'local-plugin')
+      const profileModules = join(root, 'profile', 'node_modules')
+      await Promise.all([
+        mkdir(join(host, 'node_modules'), { recursive: true }),
+        mkdir(localPlugin, { recursive: true }),
+        mkdir(profileModules, { recursive: true })
+      ])
+      await Promise.all([
+        writeFile(join(localPlugin, 'package.json'), JSON.stringify({ name: 'linked-plugin', type: 'module', exports: './index.js' })),
+        writeFile(join(localPlugin, 'index.js'), "import '@deepseek-ai/nowhere-at-all'\n"),
+        writeFile(join(host, 'entry.mjs'), `
+          export async function runCli() {
+            try {
+              await import(${JSON.stringify(pathToFileURL(join(profileModules, 'linked-plugin', 'index.js')).href)})
+            } catch (error) {
+              process.stdout.write('fixture-code:' + error.code + '\\n')
+              process.stdout.write('fixture-message:' + error.message.replaceAll('\\n', ' | ') + '\\n')
+            }
+          }
+        `)
+      ])
+      await symlink(localPlugin, join(profileModules, 'linked-plugin'))
+
+      const result = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        join(host, 'entry.mjs')
+      ], { encoding: 'utf8' })
+
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout).toContain('fixture-code:ERR_MODULE_NOT_FOUND')
+      const message = result.stdout.split('fixture-message:')[1] ?? ''
+      // The plugin's own physical path, not the host entry, owns the failure.
+      expect(message).toContain(localPlugin)
+      expect(message).toContain('host fallback from')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('applyWindowsHide helper', () => {
   it('adds windowsHide: true when options is undefined', () => {

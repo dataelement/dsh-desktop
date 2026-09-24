@@ -22,11 +22,23 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    - id: dsh-desktop-workbenches
+      name: dsh-desktop-workbenches
+      config:
+        root: !!js dshHomePath('desktop-workbenches')
+
+    - id: dsh-desktop-onboarding
+      name: dsh-desktop-onboarding
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
+
+    # One shared image tool for conversations and Office workflows.
+    - id: dsh-image-generation
+      name: dsh-image-generation
 
     # DSH PPT owns one direct PPTD workflow and one standard Composer client.
     # The package contains no Tencent editor runtime or SlideP route.

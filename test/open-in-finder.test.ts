@@ -1,39 +1,43 @@
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { Script } from 'node:vm'
-import { describe, expect, it } from 'vitest'
-import { patchPath, projectRoot } from './patch-path'
+import vm from 'node:vm'
+import { describe, expect, it, vi } from 'vitest'
 
-describe('workspace Open in Finder integration', () => {
-  it('keeps the workspace UI patch on the Harness 0.1.6 package', async () => {
-    const patch = await readFile(
-      patchPath('@deepseek-ai/dsh-client-ui-workspace'),
-      'utf8'
-    )
-    const patchNames = await readdir(path.join(projectRoot, 'patches'))
+const projectRoot = path.resolve(import.meta.dirname, '..')
 
-    expect(patchNames).toContain(
-      '@deepseek-ai+dsh-client-ui-workspace+0.1.6-alpha.2.patch'
-    )
-    expect(patchNames).not.toContain(
-      '@deepseek-ai+dsh-client-ui-workspace+0.1.5-rc.1.patch'
-    )
-    expect(patch).toContain('id: "openInFinder"')
-    expect(patch).toContain('t("menu.openInFinder")')
-    expect(patch).toContain('window.dshDesktop.openInFinder(row.cwd)')
-    expect(patch).toContain('"menu.openInFinder": "在 Finder 中打开"')
-    expect(patch).toContain('"menu.openInFinder": "Open in Finder"')
-  })
-
-  it('leaves the installed workspace bundle syntactically valid', async () => {
-    const bundle = await readFile(
-      path.join(
-        projectRoot,
-        'node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js'
-      ),
-      'utf8'
-    )
-
-    expect(() => new Script(bundle)).not.toThrow()
+describe('workspace Open in file manager integration', () => {
+  it('resolves the selected session directory through the current session list', async () => {
+    const source = await readFile(path.join(projectRoot, 'packages/dsh-desktop-client-ui/client.js'), 'utf8')
+    let definition: { factory: (require: (name: string) => unknown) => { apply: (ctx: unknown) => void } } | undefined
+    const openInFinder = vi.fn(async () => undefined)
+    const window = {
+      __ModuleLoader__: { load: (value: typeof definition) => { definition = value } },
+      dshDesktop: { openInFinder }
+    }
+    vm.runInNewContext(source, { window, document: { documentElement: { lang: 'en' } } })
+    const MenuItemButton = () => null
+    const registrations: Array<{ config: { id?: string; inject?: () => Record<string, unknown> }; component: (props: Record<string, unknown>) => unknown }> = []
+    const plugin = definition!.factory((name) => {
+      if (name === 'react') return { createElement: (type: unknown, props: Record<string, unknown>, ...children: unknown[]) => ({ type, props: { ...props, children } }) }
+      if (name === '@deepseek-ai/dsh-client-ui-primitives') return { MenuItemButton }
+      throw new Error(`Unexpected dependency ${name}`)
+    })
+    plugin.apply({
+      slots: {
+        inject: (_name: string, callback: () => unknown) => callback(),
+        register: (config: (typeof registrations)[number]['config'], component: (props: Record<string, unknown>) => unknown) => {
+          registrations.push({ config, component })
+        }
+      },
+      get: (name: string) => name === 'sessions'
+        ? { list: { getSnapshot: () => ({ byId: { session1: { cwd: '/workspace/project' } } }) } }
+        : undefined
+    })
+    const folder = registrations.find(({ config }) => config.id === 'desktop-open-session-folder')!
+    const injected = folder.config.inject!()
+    const element = folder.component({ sessionId: 'session1', useMenuOpenState: () => [true, vi.fn()], ...injected }) as { type: unknown; props: { onSelect: () => void } }
+    expect(element.type).toBe(MenuItemButton)
+    element.props.onSelect()
+    await vi.waitFor(() => expect(openInFinder).toHaveBeenCalledWith('/workspace/project'))
   })
 })

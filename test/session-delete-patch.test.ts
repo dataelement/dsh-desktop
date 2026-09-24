@@ -12,45 +12,45 @@ const projectRoot = path.resolve(import.meta.dirname, '..')
 const patchedPackages = [
   {
     name: 'dsh-session-persistence',
-    version: '0.1.6-alpha.2',
+    version: '0.1.7-rc.1',
     file: 'lib/index.js',
     markers: ['does not support deletion', 'delete(_id, _options)', 'Permanently remove one stored Session identity']
   },
   {
     name: 'dsh-session-persistence-jsonl',
-    version: '0.1.6-alpha.2',
+    version: '0.1.7-rc.1',
     file: 'lib/index.js',
     markers: ['async delete(id, options)', 'this.tracker.claimWrite(id)', 'this.coldLogMemo.delete(id)']
   },
   {
     name: 'dsh-workspace',
-    version: '0.1.6-alpha.2',
+    version: '0.1.7-rc.1',
     file: 'lib/index.js',
     markers: ['forgetSession(sessionId)', 'archivedSessionIds: state.archivedSessionIds.filter']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.6-alpha.2',
+    version: '0.1.7-rc.1',
     file: 'lib/index.js',
     markers: ['disposeOwned(sessionId)', 'await persistence.delete(request.sessionId)', 'workspaceRegistry.forgetSession(request.sessionId)']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.6-alpha.2',
+    version: '0.1.7-rc.1',
     file: 'lib/client.js',
-    markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'if (this.watched === sessionId) this.watched = void 0']
+    markers: ['SessionDeleteError', 'this.remote.session.delete({ sessionId })', 'uiWorkspace, which releases its main view before calling this method']
   },
   {
     name: 'dsh-api-session-controller',
-    version: '0.1.6-alpha.2',
+    version: '0.1.7-rc.1',
     file: 'lib/typert.host.js',
     markers: ["id: '@deepseek-ai/dsh-api-session-controller#session/delete'", "method: 'delete'"]
   },
   {
     name: 'dsh-client-ui-workspace',
-    version: '0.1.6-alpha.2',
+    version: '0.1.7-rc.1',
     file: 'lib/client.js',
-    markers: ['delete.session', 'danger: true', 'Workspace files are kept', 'await sessions.delete(sessionId)']
+    markers: ['async deleteSession(sessionId)', 'this.clearMain()', 'const retention = this.sessions.retainInfo(sessionId)', 'timer = setTimeout(finish, 250)', 'await this.sessions.delete(sessionId)']
   }
 ] as const
 
@@ -67,9 +67,30 @@ describe('permanent session deletion dependency patches', () => {
     }
   })
 
-  it('states the destructive retention boundary in both locales', async () => {
+  it('migrates unavailable persisted presets to standard mode', async () => {
+    const source = await readFile(
+      path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-api-session-controller', 'lib', 'index.js'),
+      'utf8'
+    )
+
+    expect(source).toContain('error.code !== "agent-preset/not-found"')
+    expect(source).toContain('resolved = await presets.resolve("standard")')
+    expect(source).toContain('agent.session.append("agent-preset/selected", { agentPreset: composition.agentPreset })')
+    expect(source).toContain('migrated session "${sessionId}" from unavailable preset')
+  })
+
+  it('uses the same menu slot in flat and grouped session rows', async () => {
     const ui = await readFile(
       path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-workspace', 'lib', 'client.js'),
+      'utf8'
+    )
+    expect(ui).toContain('renderSlot("sidebar.workspaces.session.menu.item", {')
+    expect(ui).toContain('groupBy === "flat"')
+  })
+
+  it('states the destructive retention boundary in both locales', async () => {
+    const ui = await readFile(
+      path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'),
       'utf8'
     )
 

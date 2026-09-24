@@ -68,11 +68,13 @@ try {
     const stage = path.join(outputRoot, packageName)
     await fs.cp(path.join(root, kind), stage, {
       recursive: true,
-      filter: source => !path.basename(source).startsWith('._') && path.basename(source) !== '.DS_Store'
+      filter: source => !path.basename(source).startsWith('._') && path.basename(source) !== '.DS_Store' && path.basename(source) !== 'node_modules'
     })
     await fs.cp(path.join(root, 'upstream'), path.join(stage, 'licenses'), { recursive: true })
 
     let client = await fs.readFile(path.join(stage, 'lib/client.js'), 'utf8')
+    if (!client.includes('/* PERSONAL_TEMPLATE_MANAGER */')) throw Error('Missing personal template client marker')
+    client = client.replace('/* PERSONAL_TEMPLATE_MANAGER */', await fs.readFile(path.join(root, 'client/personal-template-manager.js'), 'utf8'))
     if (!client.includes('/* GENERATED_PPT_PREVIEWS */ {}')) throw Error('Missing preview insertion marker')
     client = client.replace('/* GENERATED_PPT_PREVIEWS */ {}', JSON.stringify(previews))
     await fs.writeFile(path.join(stage, 'lib/client.js'), client)

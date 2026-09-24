@@ -49,6 +49,29 @@ describe('DSH PPT built-in plugin', () => {
     }
   })
 
+  it('injects personal-template UI into both clients without bundling checkout dependencies', async () => {
+    for (const name of ['core', 'adapter'] as const) {
+      const entries = await artifact(name)
+      expect([...entries.keys()].some(file => file.startsWith('package/node_modules/'))).toBe(false)
+      const client = entries.get('package/lib/client.js')?.toString('utf8') ?? ''
+      expect(client).toContain('function PersonalTemplateManager(')
+      expect(client).not.toContain('/* PERSONAL_TEMPLATE_MANAGER */')
+    }
+  })
+
+  it('ships Harness 0.1.7-compatible peer ranges in both generated packages', async () => {
+    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1'
+    const core = JSON.parse((await artifact('core')).get('package/package.json')!.toString('utf8'))
+    const adapter = JSON.parse((await artifact('adapter')).get('package/package.json')!.toString('utf8'))
+    expect(core.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
+    expect(adapter.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
+
+    for (const [name, range] of Object.entries(core.peerDependencies as Record<string, string>)) {
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe(expected)
+    }
+    expect(adapter.peerDependencies['@deepseek-ai/dsh-invariants']).toBe(expected)
+  })
+
   it('ships one PPT composer surface and excludes the Tencent route', async () => {
     const core = artifactText(await artifact('core'))
     const adapter = artifactText(await artifact('adapter'))
@@ -132,8 +155,14 @@ describe('DSH PPT built-in plugin', () => {
     const excluded = JSON.parse(await readFile(path.join(projectRoot, 'packages/ppt-runtime/excluded-assets.json'), 'utf8')) as { file: string; sha256: string }[]
     const denied = new Set(excluded.map(item => item.sha256))
     const core = await artifact('core')
-    const allowed = new Set([...core].filter(([name]) => name.endsWith('.jpg')).map(([, bytes]) => createHash('sha256').update(bytes).digest('hex')))
+    const referenceImages = [...core].filter(([name]) => name.startsWith('package/skills/dsh-ppt/references/') && name.endsWith('.jpg'))
+    const allowed = new Set(referenceImages.map(([, bytes]) => createHash('sha256').update(bytes).digest('hex')))
     expect(allowed.size).toBe(192)
+    expect([...core.keys()].filter(name => name.startsWith('package/lib/bundled-template-projects/'))).toHaveLength(0)
+    expect([...core.keys()].join('\n')).not.toContain('dsh-green-pulse')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).toContain('DSH-PPT-AUTHORING-20260910-V4')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).toContain('选用个人模板时')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).not.toContain('带可编辑工程的内置模板')
     const manifestSource = core.get('package/lib/preview-manifest.js')!.toString()
     const manifest = JSON.parse(/export const previewFiles = (.*);/u.exec(manifestSource)![1]!) as Record<string, string>
     expect(Object.keys(manifest)).toHaveLength(192)
@@ -204,6 +233,17 @@ describe('DSH PPT built-in plugin', () => {
     expect(patch).toContain('button[data-selected=true]')
     expect(patch).toContain('var(--dsw-alias-state-business-primary) 10%')
     expect(patch).toContain('button:focus-visible')
+  })
+
+  it('keeps the PPT slot kind and scope aligned with their published types', async () => {
+    const root = path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-conversation', 'lib')
+    const runtime = await readFile(path.join(root, 'client.js'), 'utf8')
+    const types = await readFile(path.join(root, 'types/client/contract/slots.d.ts'), 'utf8')
+    for (const name of ['conversation.hero.modeActions', 'conversation.input.accessory']) {
+      const escaped = name.replaceAll('.', '\\.')
+      expect(runtime).toMatch(new RegExp(`"${escaped}": \\{\\s*kind: "list",\\s*scope: "session"`))
+      expect(types).toMatch(new RegExp(`'${escaped}': \\{\\s*kind: 'list';\\s*scope: 'session'`))
+    }
   })
 
   it('renders the selected template before editable prompt text', async () => {

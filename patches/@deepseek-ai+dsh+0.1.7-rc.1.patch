@@ -1,0 +1,40 @@
+--- a/node_modules/@deepseek-ai/dsh/package.json
++++ b/node_modules/@deepseek-ai/dsh/package.json
+@@ -99,7 +99,17 @@
+     "@deepseek-ai/dsh-atomic-write": "0.1.7-rc.1",
+     "@deepseek-ai/dsh-agent-preset": "0.1.7-rc.1",
+     "@deepseek-ai/dsh-plugin-manager": "0.1.7-rc.1",
+-    "@deepseek-ai/dsh-experimental-voice-input-bundle": "0.1.7-rc.1"
++    "@deepseek-ai/dsh-experimental-voice-input-bundle": "0.1.7-rc.1",
++    "@deepseek-ai/dsh-deepseek-account": "0.1.7-rc.1",
++    "dsh-ppt-composer": "0.1.1-rc.2",
++    "dsh-desktop-client-ui": "0.1.0",
++    "dsh-desktop-hmr-fallback": "0.1.0",
++    "dsh-desktop-log-bridge": "0.1.0",
++    "dsh-desktop-market-installer": "0.1.0",
++    "dsh-desktop-onboarding": "0.1.0",
++    "dsh-desktop-preset-transfer": "0.1.0",
++    "dsh-image-generation": "0.1.0",
++    "dsh-desktop-workbenches": "0.1.0"
+   },
+   "devDependencies": {
+     "@agentclientprotocol/sdk": "1.4.0",
+@@ -155,4 +165,4 @@
+     "./lib/*": "./lib/*",
+     "./package.json": "./package.json"
+   }
+-}
+\ No newline at end of file
++}
+--- a/node_modules/@deepseek-ai/dsh/lib/bin.js
++++ b/node_modules/@deepseek-ai/dsh/lib/bin.js
+@@ -223,7 +223,8 @@
+ 					version,
+ 					profile: invocation.profile
+ 				});
+-				process.exit(1);
++				process.exitCode = 1;
++				throw error;
+ 			}
+ 			break;
+ 		}

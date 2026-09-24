@@ -84,11 +84,15 @@ describe('DSH Desktop client slot occupants', () => {
     }
     plugin.apply({ slots })
 
-    expect(plugin.inject).toEqual(['slots'])
+    expect(plugin.inject).toEqual(['slots', 'remote.session', 'sessions', 'uiWorkspace'])
     expect(registrations.map(({ config }) => config.name)).toEqual([
       'sidebar.brand.mark',
       'sidebar.brand.name',
-      'conversation.hero.brand.mark'
+      'conversation.hero.brand.mark',
+      'sidebar.right.tab.document.unpreviewable',
+      'sidebar.workspaces.session.menu.item',
+      'sidebar.workspaces.session.menu.item',
+      'sidebar.workspaces.session.menu.item'
     ])
     // The mark is drawn in currentColor, so no theme stylesheet is injected.
     expect(appended).toHaveLength(0)

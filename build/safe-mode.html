@@ -10,6 +10,8 @@
     <title>DSH Desktop Safe Mode</title>
     <style>
       :root {
+        /* Same reading column as the recovery page. */
+        --page-max: 800px;
         color-scheme: light dark;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --canvas: #f7f7f8; --surface: #fff; --soft: #f5f6f7; --ink: #18181b;
@@ -20,17 +22,18 @@
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
       html, body { width: 100%; min-width: 320px; min-height: 100%; margin: 0; background: transparent; }
-      body { min-height: 100vh; display: grid; place-items: center; padding: 24px; color: var(--ink); background: rgba(18,18,20,.28); }
+      /* Fills the Harness main pane beside the sidebar. The 34px offset puts
+         the 48px header's centre line at 58px, level with the sidebar's logo
+         row; only the plugin list scrolls. */
+      body { height: 100vh; display: block; overflow: hidden; padding: 34px 0 0; color: var(--ink); background: var(--surface); }
       button { font: inherit; }
-      .shell { display: flex; flex-direction: column; width: min(860px, 100%); max-height: calc(100vh - 48px); overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: 0 22px 64px rgba(24,24,27,.2); }
-      .header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 18px 26px; border-bottom: 1px solid var(--line); }
-      .brand { display: flex; align-items: center; gap: 11px; }
-      .brand img { width: 28px; height: 28px; border-radius: 8px; }
-      .brand-name { font-size: 14px; font-weight: 650; }
-      .badge { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 600; }
-      .close { width:32px; height:32px; display:grid; place-items:center; padding:0; border:0; border-radius:9px; color:var(--muted); background:transparent; cursor:pointer; font-size:25px; font-weight:300; line-height:1; }
-      .close:hover { color:var(--ink); background:var(--soft); }
-      .content { display: flex; flex-direction: column; min-height: 0; padding: 22px 28px 20px; overflow: hidden; }
+      .shell { display: flex; flex-direction: column; width: 100%; height: calc(100vh - 34px); overflow: hidden; background: var(--surface); }
+      .header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 8px max(26px, calc((100% - var(--page-max)) / 2)); }
+      .header-actions { display: flex; align-items: center; gap: 10px; }
+      .nav { display: flex; align-items: center; gap: 10px; min-height: 32px; }
+      .nav-title { margin: 0; font-size: 14px; font-weight: 650; line-height: 1.4; }
+      .content { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; padding: 30px 32px 22px; overflow: hidden; }
+      .column { display: flex; flex: 1 1 auto; flex-direction: column; width: min(100%, var(--page-max)); min-height: 0; margin-inline: auto; }
       .summary, .notice, .safety, .actions, .list-heading, .empty { flex-shrink: 0; }
       h1:empty { display:none; }
       .summary { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.65; }
@@ -39,8 +42,10 @@
       .notice.success { color: var(--success); background: rgba(38,122,74,.09); }
       .notice.visible { display: block; }
       .list-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; margin-top:18px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
-      .list-heading { display: flex; justify-content: space-between; align-items: center; min-height: 43px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650; }
-      .select-all { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+      /* Same gap and padding as a plugin row, so the header checkbox sits over
+         the row checkboxes and the caption over the plugin names. */
+      .list-heading { display: flex; align-items: center; gap: 11px; min-height: 43px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 650; cursor: pointer; }
+      .list-heading input { width: 16px; height: 16px; margin: 0; accent-color: var(--button); }
       .plugins { min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
       .plugins li { border-top: 1px solid var(--line); background: var(--surface); }
       .plugins li:first-child { border-top: 0; }
@@ -49,9 +54,9 @@
       .plugin-copy { display:flex; flex-direction:column; min-width:0; }
       .plugin-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px; }
       .plugin-name { overflow-wrap: anywhere; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size: 13px; font-weight: 600; }
-      .plugin-status { color:var(--danger); font-size:11px; font-weight:650; }
+      .plugin-status { color:var(--muted); font-size:11px; font-weight:650; }
+      .plugin-status.danger { color:var(--danger); }
       .plugin-status.warning { color:var(--warning); }
-      .plugin-action { margin-top:4px; font-size:11px; font-weight:620; }
       .issue-group { border-top:1px solid var(--line); background:var(--surface); }
       .issue-group:first-child { border-top:0; }
       .issue { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; padding: 13px 16px 10px; cursor:pointer; }
@@ -90,44 +95,51 @@
       .plugin-enable-btn:hover { background:var(--soft, var(--surface-soft, #f5f6f7)); }
       .plugin-status.success { color:var(--success); }
       .plugin-version { margin-left:4px; color:var(--muted); font-size:11px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
-      .footer { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 16px; padding: 0 28px 18px; }
+      .footer { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: center; gap: 16px; padding: 11px max(26px, calc((100% - var(--page-max)) / 2)); }
       .community { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
       .community-links { display: flex; align-items: center; gap: 6px; }
       .community a, .community button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); text-decoration: none; white-space: nowrap; background: transparent; cursor: pointer; font: inherit; }
       .community a:hover, .community button:hover { color: var(--ink); border-color: var(--muted); }
       .community a:focus-visible, .community button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
       .community svg { width: 15px; height: 15px; flex-shrink: 0; }
-      .community button { background: var(--soft, var(--surface-soft)); }
+      .community .brand-icon { width: 14px; height: 14px; }
+      .community button { border-color: transparent; }
+      .community button:hover { background: var(--soft, var(--surface-soft)); border-color: var(--line); }
       .community a { padding-inline: 4px; border-color: transparent; border-radius: 4px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
       .community a:hover { border-color: transparent; text-decoration-color: currentColor; }
       .community .external-icon { width: 12px; height: 12px; }
       .wechat-popover { position: fixed; inset: auto; margin: 0; width: 226px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); box-shadow: 0 8px 28px rgba(0,0,0,.16); font-size: 12px; text-align: center; }
       .wechat-popover img { display: block; width: 200px; height: 200px; background: #fff; border-radius: 6px; }
       .wechat-popover p { margin: 10px 0 0; line-height: 1.5; }
-      .footer > #quit { margin-left: auto; flex-shrink: 0; }
-      .quit { border: 0; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+      .quit { min-height: 32px; padding: 5px 9px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; font-size: 12px; font-weight: 600; }
+      .quit:hover { color: var(--ink); background: var(--soft); }
       :root[data-theme="dark"] { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; --accent:#5b96f7; }
       @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --canvas:#141416; --surface:#202023; --soft:#29292d; --ink:#f2f2f4; --muted:#a5a7ad; --line:#3a3a3f; --strong:#4a4a50; --button:#f4f4f5; --button-ink:#111217; --danger:#ee7772; --success:#78d59a; --accent:#5b96f7; } }
-      @media (max-height: 680px) { body { padding: 16px; } .shell { max-height: calc(100vh - 32px); } .header { padding-block: 12px; } .content { padding: 16px 24px; } .summary { font-size: 13px; margin-bottom: 6px; } .list-card { margin-top: 10px; } .actions { margin-top: 14px; } }
-      @media (max-width: 620px) { body { display:block; padding:46px 0 0; background:var(--surface); } .shell { width:100%; min-height:calc(100vh - 46px); max-height:none; border:0; border-radius:0; box-shadow:none; } .content { max-height:none; padding:24px 20px; } .actions { flex-direction:column-reverse; } .button { width:100%; } .footer { padding-inline:20px; } }
+      @media (max-height: 680px) { .content { padding: 16px 24px; } .summary { font-size: 13px; margin-bottom: 6px; } .list-card { margin-top: 10px; } .actions { margin-top: 14px; } }
+      @media (max-width: 620px) { .header { padding-inline: 20px; } .content { padding: 24px 20px 16px; } .actions { flex-direction:column-reverse; } .button { width:100%; } .footer { padding-inline:20px; } }
       .agent-link { flex-shrink: 0; align-self: flex-start; margin: -6px 0 0; padding: 0; border: 0; color: var(--accent); background: transparent; cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: currentColor; }
       .agent-link:hover { opacity: .85; }
       .agent-link[disabled] { opacity: .55; cursor: default; }
     </style>
   </head>
   <body>
-    <main class="shell" role="dialog" aria-modal="true" aria-labelledby="badge">
+    <main class="shell" role="dialog" aria-modal="true" aria-labelledby="page-title">
       <header class="header">
-        <div class="brand"><img id="icon" alt="" /><span class="brand-name" id="brand"></span><span class="badge" id="badge"></span></div>
-        <button class="close" id="agent" type="button" aria-label="Close">×</button>
+        <div class="nav">
+          <h1 class="nav-title" id="page-title"></h1>
+        </div>
+        <div class="header-actions">
+          <button class="quit" id="quit" type="button"></button>
+        </div>
       </header>
       <section class="content">
+       <div class="column">
         <p class="notice" id="notice" role="alert"></p>
         <h1 id="heading"></h1>
         <p class="summary" id="summary"></p>
         <button class="agent-link" id="repair-agent" type="button"></button>
         <section class="list-card" aria-labelledby="selection-hint">
-          <div class="list-heading"><span id="selection-hint"></span><button class="select-all" id="select-all" type="button"></button></div>
+          <label class="list-heading"><input type="checkbox" id="select-all" /><span id="selection-hint"></span></label>
           <ul class="plugins" id="items"></ul>
           <p class="empty" id="empty"></p>
         </section>
@@ -138,21 +150,22 @@
           <button class="button" id="apply" type="button" disabled></button>
           <button class="button primary" id="restart" type="button"></button>
         </div>
+       </div>
       </section>
       <footer class="footer">
         <aside class="community" aria-labelledby="community-label">
           <span id="community-label"></span>
           <span class="community-links">
             <button id="community-wechat" type="button" aria-expanded="false" aria-controls="wechat-popover">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="6" height="6" rx="1" />
-                <rect x="15" y="3" width="6" height="6" rx="1" />
-                <rect x="3" y="15" width="6" height="6" rx="1" />
-                <path d="M15 15h3v3h3v3h-6v-3m6-6v3M3 12h3m6-9v3m0 6v3m0 6v-3" />
+              <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.27-.027-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z" />
               </svg>
               <span id="community-wechat-label"></span>
             </button>
             <a id="community-discord" href="https://discord.gg/7Xgf3qe3Qp" target="_blank" rel="noopener noreferrer">
+              <svg class="brand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z" />
+              </svg>
               <span>Discord</span>
               <svg class="external-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 12 12 4M5 4h7v7" />
@@ -160,7 +173,6 @@
             </a>
           </span>
         </aside>
-        <button class="quit" id="quit" type="button"></button>
       </footer>
     </main>
     <div id="wechat-popover" class="wechat-popover" popover="auto" role="region" aria-labelledby="wechat-caption">
@@ -168,15 +180,35 @@
       <p id="wechat-caption"></p>
     </div>
     <script>
+      // Framed inside the Harness page, the desktop bridge is not injected
+      // here; the host page's preload relays actions posted to it and posts
+      // each result back under the same id.
+      if (!window.dshSafeMode && window.parent !== window) {
+        const pending = new Map()
+        let nextId = 0
+        window.addEventListener('message', (event) => {
+          const data = event.data
+          if (event.source !== window.parent || !data || data.type !== 'dsh-safe-mode:result') return
+          const resolve = pending.get(data.id)
+          if (!resolve) return
+          pending.delete(data.id)
+          resolve(data.result && typeof data.result === 'object' ? data.result : { ok: false })
+        })
+        window.dshSafeMode = Object.freeze({
+          action: (action, selection) => new Promise((resolve) => {
+            const id = ++nextId
+            pending.set(id, resolve)
+            window.parent.postMessage({ type: 'dsh-safe-mode:action', id, action, selection }, '*')
+          })
+        })
+      }
       const params = new URLSearchParams(location.search)
       const model = JSON.parse(params.get('state') || '{}')
       document.documentElement.lang = model.locale === 'zh' ? 'zh-CN' : 'en'
       document.documentElement.dataset.theme = params.get('theme') || 'system'
       document.title = `${model.badge || 'Safe Mode'} · ${model.brand || 'DSH Desktop'}`
       const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value || '' }
-      document.getElementById('icon').src = params.get('icon') || 'icon.png'
-      setText('brand', model.brand)
-      setText('badge', model.badge)
+      setText('page-title', model.locale === 'zh' ? '管理插件' : 'Manage plugins')
       setText('heading', model.heading)
       setText('summary', model.summary)
       setText('empty', model.emptyMessage)
@@ -195,7 +227,8 @@
       const positionWechat = () => {
         const anchor = wechat.getBoundingClientRect()
         const popup = wechatPopover.getBoundingClientRect()
-        const left = Math.max(12, Math.min(anchor.left, innerWidth - popup.width - 12))
+        const centered = anchor.left + anchor.width / 2 - popup.width / 2
+        const left = Math.max(12, Math.min(centered, innerWidth - popup.width - 12))
         const top = Math.max(12, Math.min(anchor.top - popup.height - 8, innerHeight - popup.height - 12))
         wechatPopover.style.left = `${left}px`
         wechatPopover.style.top = `${top}px`
@@ -228,9 +261,8 @@
       document.getElementById('community-discord').title = model.locale === 'zh'
         ? '在浏览器中打开 Discord 社区'
         : 'Open our Discord community in your browser'
-      setText('select-all', model.selectAllLabel)
+      document.getElementById('select-all').setAttribute('aria-label', model.selectAllLabel || 'Select all')
       setText('recovery-open', model.recoveryOpenLabel)
-      document.getElementById('agent').setAttribute('aria-label', model.agentLabel || 'Close')
       const notice = document.getElementById('notice')
       if (model.notice) {
         notice.textContent = model.notice
@@ -241,7 +273,6 @@
       const apply = document.getElementById('apply')
       const upgradeAll = document.getElementById('upgrade-all')
       const recoveryOpen = document.getElementById('recovery-open')
-      const agent = document.getElementById('agent')
       const restart = document.getElementById('restart')
       if (model.recoveryLocked === true) {
         document.querySelector('.list-card').hidden = true
@@ -249,10 +280,12 @@
         apply.hidden = true
         recoveryOpen.hidden = false
       }
-      if (model.upgradeAllLabel && model.upgradeReadyCount > 0 && model.recoveryLocked !== true) {
-        upgradeAll.hidden = false
-        upgradeAll.textContent = model.upgradeAllLabel
+      const syncUpgradeAll = () => {
+        const visible = Boolean(model.upgradeAllLabel) && model.upgradeReadyCount > 0 && model.recoveryLocked !== true
+        upgradeAll.hidden = !visible
+        if (visible) upgradeAll.textContent = model.upgradeAllLabel
       }
+      syncUpgradeAll()
       const pluginCheckboxes = []
       const issueCheckboxes = []
       for (const group of Array.isArray(model.issueGroups) ? model.issueGroups : []) {
@@ -279,9 +312,49 @@
         }
         details.append(detailsSummary, findings); item.appendChild(details)
       }
-      const pluginItems = Array.isArray(model.pluginItems)
+      let pluginItems = Array.isArray(model.pluginItems)
         ? model.pluginItems
         : (Array.isArray(model.plugins) ? model.plugins : []).map((name) => ({ name }))
+      const pluginRows = new Map()
+      // Version, status and the upgrade button come from the market check,
+      // which answers after the page is up; they are rebuilt in place when
+      // its result arrives, leaving the checkbox and a busy button alone.
+      const decoratePluginRow = (row, plugin) => {
+        for (const stale of row.title.querySelectorAll('.plugin-version, .plugin-status')) stale.remove()
+        if (plugin.installedVersion) {
+          const ver = document.createElement('span')
+          ver.className = 'plugin-version'
+          ver.textContent = `v${plugin.installedVersion}`
+          row.title.appendChild(ver)
+        }
+        if (plugin.statusLabel) {
+          const status = document.createElement('span'); status.className = 'plugin-status'; status.textContent = String(plugin.statusLabel)
+          if (plugin.statusTone === 'danger') status.classList.add('danger')
+          else if (plugin.statusTone === 'warning') status.classList.add('warning')
+          else if (plugin.statusTone === 'success') status.classList.add('success')
+          row.title.appendChild(status)
+        }
+        if (row.upgradeBtn?.disabled) return
+        row.upgradeBtn?.remove()
+        row.upgradeBtn = undefined
+        if (plugin.upgradeButtonLabel) {
+          const upgradeBtn = document.createElement('button')
+          upgradeBtn.type = 'button'
+          upgradeBtn.className = 'plugin-upgrade-btn'
+          upgradeBtn.textContent = String(plugin.upgradeButtonLabel)
+          upgradeBtn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            upgradeBtn.disabled = true
+            upgradeBtn.textContent = model.locale === 'zh' ? '正在升级…' : 'Upgrading…'
+            apply.disabled = true
+            if (upgradeAll) upgradeAll.disabled = true
+            restart.disabled = true
+            void window.dshSafeMode.action('upgrade', { plugins: [plugin.name] })
+          })
+          row.item.appendChild(upgradeBtn)
+          row.upgradeBtn = upgradeBtn
+        }
+      }
       for (const plugin of pluginItems) {
         const item = document.createElement('li')
         item.className = 'plugin-item'
@@ -291,18 +364,6 @@
         const title = document.createElement('span'); title.className = 'plugin-title'
         const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.name)
         title.appendChild(name)
-        if (plugin.installedVersion) {
-          const ver = document.createElement('span')
-          ver.className = 'plugin-version'
-          ver.textContent = `v${plugin.installedVersion}`
-          title.appendChild(ver)
-        }
-        if (plugin.statusLabel) {
-          const status = document.createElement('span'); status.className = 'plugin-status'; status.textContent = String(plugin.statusLabel)
-          if (plugin.statusTone === 'warning') status.classList.add('warning')
-          else if (plugin.statusTone === 'success') status.classList.add('success')
-          title.appendChild(status)
-        }
         const action = document.createElement('span'); action.className = 'plugin-action'; action.textContent = String(plugin.actionLabel || '')
         copy.append(title, action)
         // An already disabled plugin is not selectable for disabling again.
@@ -322,45 +383,59 @@
             apply.disabled = true
             if (upgradeAll) upgradeAll.disabled = true
             restart.disabled = true
-            agent.disabled = true
             void window.dshSafeMode.action('enable', { plugins: [plugin.name] })
           })
           item.appendChild(enableBtn)
         }
 
-        if (plugin.upgradeButtonLabel) {
-          const upgradeBtn = document.createElement('button')
-          upgradeBtn.type = 'button'
-          upgradeBtn.className = 'plugin-upgrade-btn'
-          upgradeBtn.textContent = String(plugin.upgradeButtonLabel)
-          upgradeBtn.addEventListener('click', (e) => {
-            e.stopPropagation()
-            upgradeBtn.disabled = true
-            upgradeBtn.textContent = model.locale === 'zh' ? '正在升级…' : 'Upgrading…'
-            apply.disabled = true
-            if (upgradeAll) upgradeAll.disabled = true
-            restart.disabled = true
-            agent.disabled = true
-            void window.dshSafeMode.action('upgrade', { plugins: [plugin.name] })
-          })
-          item.appendChild(upgradeBtn)
-        }
+        const row = { item, title, upgradeBtn: undefined }
+        decoratePluginRow(row, plugin)
+        pluginRows.set(String(plugin.name), row)
 
         list.appendChild(item)
         if (plugin.disabled !== true) pluginCheckboxes.push(checkbox)
       }
+      // The host page hands over the market check's answer for this load.
+      window.addEventListener('message', (event) => {
+        const data = event.data
+        if (event.source !== window.parent || !data || data.type !== 'dsh-safe-mode:model') return
+        if (String(data.seq) !== String(params.get('seq') ?? '')) return
+        const next = data.model
+        if (!next || typeof next !== 'object') return
+        model.upgradeAllLabel = next.upgradeAllLabel
+        model.upgradeReadyCount = next.upgradeReadyCount
+        if (Array.isArray(next.pluginItems)) pluginItems = next.pluginItems
+        for (const plugin of pluginItems) {
+          const row = pluginRows.get(String(plugin.name))
+          if (row) decoratePluginRow(row, plugin)
+        }
+        syncUpgradeAll()
+      })
       const allCheckboxes = [...issueCheckboxes, ...pluginCheckboxes]
       if (allCheckboxes.length === 0) empty.classList.add('visible')
-      const updateSelection = () => { apply.disabled = !allCheckboxes.some((checkbox) => checkbox.checked) }
+      const selectAll = document.getElementById('select-all')
+      const updateSelection = () => {
+        const selected = allCheckboxes.filter((checkbox) => checkbox.checked).length
+        apply.disabled = selected === 0
+        selectAll.disabled = allCheckboxes.length === 0
+        selectAll.checked = allCheckboxes.length > 0 && selected === allCheckboxes.length
+        selectAll.indeterminate = selected > 0 && selected < allCheckboxes.length
+      }
       for (const checkbox of allCheckboxes) checkbox.addEventListener('change', updateSelection)
-      document.getElementById('select-all').addEventListener('click', () => { const selected = allCheckboxes.every((checkbox) => checkbox.checked); for (const checkbox of allCheckboxes) checkbox.checked = !selected; updateSelection() })
+      selectAll.addEventListener('change', () => {
+        // A partially selected list selects everything; a full one clears.
+        const everything = !allCheckboxes.every((checkbox) => checkbox.checked)
+        for (const checkbox of allCheckboxes) checkbox.checked = everything
+        updateSelection()
+      })
+      updateSelection()
       apply.addEventListener('click', () => {
         const plugins = pluginCheckboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
         const issues = issueCheckboxes.filter((checkbox) => checkbox.checked).flatMap((checkbox) => {
           try { return JSON.parse(checkbox.dataset.issueIds || '[]') } catch { return [] }
         })
         if (plugins.length === 0 && issues.length === 0) return
-        apply.disabled = true; apply.textContent = model.applyBusyLabel; agent.disabled = true; restart.disabled = true
+        apply.disabled = true; apply.textContent = model.applyBusyLabel; restart.disabled = true
         if (upgradeAll) upgradeAll.disabled = true
         void window.dshSafeMode.action('apply', { plugins, issues })
       })
@@ -371,14 +446,12 @@
         upgradeAll.textContent = model.upgradeAllBusyLabel || (model.locale === 'zh' ? '正在升级…' : 'Upgrading…')
         apply.disabled = true
         restart.disabled = true
-        agent.disabled = true
         void window.dshSafeMode.action('upgrade', { plugins: targets })
       })
       recoveryOpen.addEventListener('click', () => { recoveryOpen.disabled = true; void window.dshSafeMode.action('recovery-open', {}) })
-      agent.addEventListener('click', () => { agent.disabled = true; agent.textContent = model.agentBusyLabel; apply.disabled = true; restart.disabled = true; if (upgradeAll) upgradeAll.disabled = true; void window.dshSafeMode.action('agent', {}) })
       restart.addEventListener('click', () => {
         if (model.restartConfirm && !window.confirm(String(model.restartConfirm))) return
-        restart.disabled = true; restart.textContent = model.restartBusyLabel; apply.disabled = true; agent.disabled = true; if (upgradeAll) upgradeAll.disabled = true; void window.dshSafeMode.action('restart', {})
+        restart.disabled = true; restart.textContent = model.restartBusyLabel; apply.disabled = true; if (upgradeAll) upgradeAll.disabled = true; void window.dshSafeMode.action('restart', {})
       })
       document.getElementById('quit').addEventListener('click', () => void window.dshSafeMode.action('quit', {}))
     </script>

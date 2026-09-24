@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { mountRootInclude } from '@deepseek-ai/dsh-app-boot'
 import { describe, expect, it, vi } from 'vitest'
-import { patchPath } from './patch-path'
 
 /**
  * Safe Mode must boot even when `$DSH_HOME/profiles/node_modules` cannot be
@@ -20,7 +19,7 @@ describe('Safe Mode resolves plugins from the installation', () => {
       create: vi.fn(async () => 'include'),
       resolve: vi.fn(() => ({}))
     }
-    const ctx = { loader, get: () => loader }
+    const ctx = { loader, get: (name: string) => name === 'loader' ? loader : undefined }
     return { ctx, loader, internalImport, configImport }
   }
 
@@ -55,10 +54,10 @@ describe('Safe Mode resolves plugins from the installation', () => {
     expect(configImport).toHaveBeenCalledTimes(1)
   })
 
-  it('skips the fallback heal and passes the host base only when Desktop asks for it', async () => {
-    const patch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
-    expect(patch).toContain('process.env.DSH_DESKTOP_HOST_RESOLVED === "1" ? pathToFileURL(INSTALL_ANCHOR).href : void 0')
-    expect(patch).toContain('|| hostResolvedBaseUrl() !== void 0 ? await createProfileResolutionGeneration')
-    expect(patch).toContain('hostResolvedBaseUrl());')
+  it('uses the installation anchor in the 0.1.7 runtime resolution', async () => {
+    const boot = await readFile('node_modules/@deepseek-ai/dsh-app-boot/lib/index.js', 'utf8')
+    expect(boot).toContain('const { installAnchor, profile, home = resolveDshHome() } = options')
+    expect(boot).toContain('collectInstallationScopePackages(installAnchor')
+    expect(boot).toContain('profile === void 0 ? [] : installedProfilePackageNames')
   })
 })
