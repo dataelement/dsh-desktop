@@ -74,6 +74,13 @@ export function directoryInstallerExits(source) {
   return source.replaceAll(/^(\s*)Quit\s*$/gm, '$1!ifndef BUILD_UNINSTALLER\n$1Call dshCleanupDirectories\n$1!endif\n$1Quit')
 }
 
+export function directoryInstallUtil(source) {
+  const normalized = source.replaceAll('\r\n', '\n')
+  const unusedUninstaller = normalized.match(/^Function uninstallOldVersion\n[\s\S]*?^FunctionEnd\n/gm)
+  if (unusedUninstaller?.length !== 1) throw new Error('electron-builder uninstall utility changed')
+  return directoryInstallerExits(normalized.replace(unusedUninstaller[0], ''))
+}
+
 export async function signWindowsPeWithJsign(path) {
   const { JSIGN_JAR, JSIGN_PIN_FILE } = process.env
   if (!JSIGN_JAR && !JSIGN_PIN_FILE) return // unsigned Windows staging build
@@ -108,7 +115,8 @@ export function installWindowsDirectoryInstaller() {
     let adapted = replaceOnce(source, '!include "installSection.nsh"', `!include "${section}"`)
     for (const helper of ['allowOnlyOneInstallerInstance.nsh', 'installUtil.nsh']) {
       const path = join(directory, helper)
-      await writeFile(path, directoryInstallerExits(await readFile(join(templates, 'include', helper), 'utf8')))
+      const source = await readFile(join(templates, 'include', helper), 'utf8')
+      await writeFile(path, helper === 'installUtil.nsh' ? directoryInstallUtil(source) : directoryInstallerExits(source))
       adapted = replaceOnce(adapted, `!include "${helper}"`, `!include "${path}"`)
     }
     return `!define DSH_SEVENZIP_PATH "${tool}"\n!define DSH_SEVENZIP_LICENSE_DIR "${licenseDirectory}"\n${await compute.call(this, adapted, ...args)}`

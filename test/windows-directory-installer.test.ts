@@ -2,10 +2,11 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { assertWindowsExecutable, directoryInstallSection, directoryInstallerExits } from '../scripts/windows-directory-installer.mjs'
+import { assertWindowsExecutable, directoryInstallSection, directoryInstallerExits, directoryInstallUtil } from '../scripts/windows-directory-installer.mjs'
 
 const require = createRequire(import.meta.url)
 const template = join(dirname(require.resolve('app-builder-lib/package.json')), 'templates', 'nsis', 'installSection.nsh')
+const installUtil = join(dirname(require.resolve('app-builder-lib/package.json')), 'templates', 'nsis', 'include', 'installUtil.nsh')
 
 describe('pinned NSIS directory transaction', () => {
   it('accepts Windows PE headers and rejects host binaries', () => {
@@ -31,6 +32,8 @@ describe('pinned NSIS directory transaction', () => {
     expect(adapted).not.toContain('Call uninstallOldVersion')
     expect(adapted).not.toContain('!insertmacro installApplicationFiles\n!insertmacro registryAddInstallInfo')
     expect(directoryInstallerExits('Quit\n')).toContain('Call dshCleanupDirectories')
+    const adaptedUtil = directoryInstallUtil(await readFile(installUtil, 'utf8'))
+    expect(adaptedUtil).not.toContain('Function uninstallOldVersion')
   })
 
   it('rejects a changed electron-builder template', () => {
