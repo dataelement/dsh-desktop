@@ -307,6 +307,7 @@
     "appId": "io.dsh.desktop",
     "productName": "DSH Desktop",
     "asar": false,
+    "afterPack": "scripts/prune-windows-node.cjs",
     "npmRebuild": false,
     "compression": "maximum",
     "electronLanguages": [

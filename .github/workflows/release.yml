@@ -437,10 +437,15 @@ jobs:
           Copy-Item -Path (Join-Path $sourceExecutable.Directory.FullName '*') -Destination $isolatedApp -Recurse
           $executable = Join-Path $isolatedApp $sourceExecutable.Name
           $packagedNode = Join-Path $isolatedApp 'resources\app\node_modules\node\bin\node.exe'
-          if (-not (Test-Path $packagedNode)) { throw 'Packaged Windows node.exe is missing.' }
+          if (Test-Path $packagedNode) { throw 'Duplicate Windows node.exe remains in the package.' }
           # Exercise the actual native binding too; the best-effort fallback
           # must not hide a missing or broken packaged koffi dependency.
-          & $packagedNode --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed');" (Join-Path $isolatedApp 'resources\app\package.json') (Join-Path $isolatedApp 'resources\app\node_modules')
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          try {
+            & $executable --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed');" (Join-Path $isolatedApp 'resources\app\package.json') (Join-Path $isolatedApp 'resources\app\node_modules')
+          } finally {
+            Remove-Item Env:ELECTRON_RUN_AS_NODE
+          }
           if ($LASTEXITCODE -ne 0) { throw 'Packaged koffi native binding failed.' }
           if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
           $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru

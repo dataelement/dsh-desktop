@@ -651,8 +651,8 @@ function dshEntryPath(): string {
 }
 
 function bundledNodePath(): string {
-  const executable = process.platform === 'win32' ? 'node.exe' : 'node'
-  return join(app.getAppPath(), 'node_modules', 'node', 'bin', executable)
+  if (process.platform === 'win32') return process.execPath
+  return join(app.getAppPath(), 'node_modules', 'node', 'bin', 'node')
 }
 
 /**

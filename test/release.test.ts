@@ -156,6 +156,7 @@ describe('GitHub release contract', () => {
     ) as {
       build: {
         artifactName: string
+        afterPack?: string
         extraResources: Array<{ from: string; to: string }>
         win: { target: Array<{ target: string; arch: string[] }>; requestedExecutionLevel?: string }
         nsis: { artifactName: string; include: string }
@@ -172,6 +173,7 @@ describe('GitHub release contract', () => {
     )
 
     expect(packageJson.build.artifactName).toBe('dsh-desktop-${os}-${arch}.${ext}')
+    expect(packageJson.build.afterPack).toBe('scripts/prune-windows-node.cjs')
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/app-icon.png',
       to: 'icon.png'
@@ -421,6 +423,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('smoke-signed-windows:')
     expect(workflow).toContain('smoke-signed-windows-installer.ps1')
     expect(workflow).toContain("needs.smoke-signed-windows.result == 'success'")
+    expect(workflow).toContain("if (Test-Path $packagedNode) { throw 'Duplicate Windows node.exe remains in the package.' }")
     expect(workflow).toContain('version="${PRERELEASE_TAG#v}"')
     expect(workflow).toContain('version="${SIGNED_VERSION#v}"')
     expect(workflow).not.toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')

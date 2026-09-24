@@ -170,7 +170,7 @@ describe('Harness launch contract', () => {
     ])
   })
 
-  it('launches Harness with the bundled Node.js runtime', () => {
+  it('launches Windows Harness in detached Electron Node mode', () => {
     const options = buildHarnessSpawnOptions(
       'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\launch-root',
       'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
@@ -198,7 +198,7 @@ describe('Harness launch contract', () => {
         Path: 'windows-path'
       }
     })
-    expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+    expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
   })
 
   it('asks the patched Harness to resolve Safe Mode plugins from its installation only', () => {
@@ -247,7 +247,7 @@ describe('Harness launch contract', () => {
     for (const [, value] of pathEntries) expect(value).toBe(userPath)
   })
 
-  it('passes the internal-loader flag directly to bundled Node.js', () => {
+  it('passes the internal-loader flag to the Harness Node process', () => {
     expect(
       buildNodeArguments(
         'C:\\app\\harness-node-entry.mjs',
