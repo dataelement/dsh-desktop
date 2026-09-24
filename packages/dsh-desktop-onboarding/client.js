@@ -286,34 +286,32 @@ window.__ModuleLoader__.load({
     // ---------- composition ----------
 
     function apply(ctx) {
-      installStyles()
-      const t = ctx.locale.bind(NS)
+      ctx.inject(['slots', 'locale', 'settingsScope'], (scope) => {
+        installStyles()
+        const t = scope.locale.bind(NS)
 
-      const wizardScope = ctx.settingsScope.bind({
-        namespace: NS,
-        decode: (value) => (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {})
+        const wizardScope = scope.settingsScope.bind({
+          namespace: NS,
+          decode: (value) => (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {})
+        })
+
+        scope.locale.register(NS, { zh, en })
+
+        const controller = { scope: wizardScope }
+
+        // The stock welcome-notice / official-DeepSeek onboarding entries are
+        // removed upstream by the settings-models patch (the desktop notice owns
+        // first-run), so this notice registers under its own id — no shadowing.
+        scope.slots.inject('settings.onboarding', () => scope.slots.register({
+          name: 'settings.onboarding',
+          id: 'dsh-desktop-onboarding',
+          order: 0,
+          inject: () => ({ controller, t })
+        }, DesktopOnboardingNotice))
       })
-
-      ctx.locale.register(NS, { zh, en })
-
-      const controller = { scope: wizardScope }
-
-      // The stock welcome-notice / official-DeepSeek onboarding entries are
-      // removed upstream by the settings-models patch (the desktop notice owns
-      // first-run), so this notice registers under its own id — no shadowing.
-      ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
-        name: 'settings.onboarding',
-        id: 'dsh-desktop-onboarding',
-        order: 0,
-        inject: () => ({ controller, t })
-      }, DesktopOnboardingNotice))
     }
 
-    const inject = [
-      'slots',
-      'locale',
-      'settingsScope'
-    ]
+    const inject = []
 
     exports.apply = apply
     exports.inject = inject

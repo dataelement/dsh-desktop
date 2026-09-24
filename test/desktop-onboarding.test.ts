@@ -20,6 +20,7 @@ interface Registration {
 }
 
 interface CtxHarness {
+  inject: (deps: string[], callback: (scope: CtxHarness) => unknown) => unknown
   effect: (fn: () => unknown | (() => void)) => () => void
   locale: {
     register: (ns: string, dicts: Record<string, Record<string, string>>) => void
@@ -168,6 +169,7 @@ function createCtx(overrides: Partial<CtxHarness> = {}): { ctx: CtxHarness; regi
   }
   const noopEffect = () => () => undefined
   const ctx: CtxHarness = {
+    inject: (_deps, callback) => callback(ctx),
     effect: noopEffect,
     locale: {
       register: () => undefined,
@@ -218,7 +220,7 @@ describe('DSH Desktop onboarding wizard', () => {
     const { ctx, registrations } = createCtx()
     plugin.apply(ctx)
 
-    expect(plugin.inject).toEqual(['slots', 'locale', 'settingsScope'])
+    expect(plugin.inject).toEqual([])
     const onboardingRegistrations = registrations.filter(({ config }) => config.name === 'settings.onboarding')
     expect(onboardingRegistrations).toHaveLength(1)
     const [onboardingRegistration] = onboardingRegistrations
@@ -299,6 +301,15 @@ describe('DSH Desktop onboarding composition', () => {
     const manifest = await readFile(path.join(projectRoot, 'package.json'), 'utf8')
     const parsed = JSON.parse(manifest) as { dependencies?: Record<string, string> }
     expect(parsed.dependencies?.['dsh-desktop-onboarding']).toBe('file:packages/dsh-desktop-onboarding')
+  })
+
+  it('declares the renderer that provides its slots service as a direct client dependency', async () => {
+    const manifest = await readFile(
+      path.join(projectRoot, 'packages', 'dsh-desktop-onboarding', 'package.json'),
+      'utf8'
+    )
+    const parsed = JSON.parse(manifest) as { dsh?: { client?: { inject?: string[] } } }
+    expect(parsed.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-renderer')
   })
 
   it('is reachable from the @deepseek-ai/dsh dependency closure', async () => {

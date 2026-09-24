@@ -251,6 +251,10 @@ describe('DSH PPT built-in plugin', () => {
     expect(promptRow).toBeGreaterThan(-1)
     expect(accessory).toBeGreaterThan(promptRow)
     expect(editor).toBeGreaterThan(accessory)
+    const accessoryCssDefinition = client.indexOf('const pptAccessoryCss =')
+    const accessoryCssUse = client.indexOf('css$1 + pptAccessoryCss')
+    expect(accessoryCssDefinition).toBeGreaterThan(-1)
+    expect(accessoryCssUse).toBeGreaterThan(accessoryCssDefinition)
     expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
   })
 
