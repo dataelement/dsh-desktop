@@ -16,6 +16,8 @@ Windows packaging and signing run as separate jobs. The GitHub-hosted Windows ru
 
 The pinned Windows NSIS template stages the application in a sibling directory before closing the old app, then renames the old directory to a backup and promotes the staged directory. A failed extraction or rename restores the previous installation. The signed installer smoke also locks the old executable to verify that a failed upgrade leaves it runnable. Keep the user-selected installation directory when changing this template; the build adapter rejects unexpected upstream template changes.
 
+Runtime dependencies are unpacked beside `app.asar` because Harness, pnpm, native addons, and the standalone Windows Node process need physical paths. The macOS ARM64 test package contains a 6.2 MB `app.asar` and about 588 MB of unpacked dependencies; enabling asar alone did not reduce its 256 MB DMG. Do not remove `node.exe` from Windows yet: the pinned `node-addon-require-builtin@0.1.6` rejects Electron 43.4.0 in RunAsNode mode during Harness boot, even though the Koffi native probe passes ([Windows CI evidence](https://github.com/dataelement/dsh-desktop/actions/runs/35972303467)). Repeat the packaged Windows Harness and final signed-installer gates after a loader version explicitly supports the target Electron fingerprint before revisiting that removal.
+
 Prepare the local runner once:
 
 1. Register it with the `self-hosted`, `macOS`, and `ARM64` labels.
