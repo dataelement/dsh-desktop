@@ -49,22 +49,36 @@ function Assert-InstalledPeSignatures([string]$directory) {
   Write-Host "Verified $count installed PE signatures."
 }
 
+function Get-HarnessLogPaths {
+  @($env:APPDATA, [Environment]::GetFolderPath('ApplicationData')) |
+    Where-Object { $_ } |
+    Select-Object -Unique |
+    ForEach-Object { Join-Path $_ 'dsh-desktop\logs\harness.log' }
+}
+
 function Assert-Starts([string]$executable) {
-  $logPath = Join-Path $env:APPDATA 'dsh-desktop\logs\harness.log'
-  if (Test-Path $logPath) { Remove-Item -LiteralPath $logPath -Force }
+  $logPaths = @(Get-HarnessLogPaths)
+  $launchTime = (Get-Date).ToUniversalTime().AddSeconds(-2)
   $desktop = Start-Process -FilePath $executable -WorkingDirectory (Split-Path $executable) -PassThru
   try {
     $deadline = (Get-Date).AddMinutes(3)
     while ((Get-Date) -lt $deadline) {
       if ($desktop.HasExited) { throw "Installed app exited early: $($desktop.ExitCode)" }
-      if (Test-Path $logPath) {
-        $log = Get-Content -LiteralPath $logPath -Raw
-        $match = [regex]::Match($log, 'dsh web: (http://127\.0\.0\.1:\d+/\?token=[^\s]+)')
-        if ($match.Success) {
-          try {
-            $response = Invoke-WebRequest -UseBasicParsing -Uri $match.Groups[1].Value -TimeoutSec 3
-            if ($response.StatusCode -eq 200) { return }
-          } catch { Start-Sleep -Milliseconds 500 }
+      foreach ($logPath in $logPaths) {
+        if (Test-Path $logPath) {
+          $logFile = Get-Item -LiteralPath $logPath
+          if ($logFile.LastWriteTimeUtc -lt $launchTime) { continue }
+          $log = Get-Content -LiteralPath $logPath -Raw
+          $match = [regex]::Match($log, 'dsh web: (http://127\.0\.0\.1:\d+/\?token=[^\s]+)')
+          if ($match.Success) {
+            try {
+              $response = Invoke-WebRequest -UseBasicParsing -Uri $match.Groups[1].Value -TimeoutSec 3
+              if ($response.StatusCode -eq 200) {
+                $script:activeAppDataRoot = Split-Path (Split-Path (Split-Path $logPath -Parent) -Parent) -Parent
+                return
+              }
+            } catch { Start-Sleep -Milliseconds 500 }
+          }
         }
       }
       Start-Sleep -Milliseconds 500
@@ -77,9 +91,14 @@ function Assert-Starts([string]$executable) {
     foreach ($childId in $children) {
       Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue
     }
-    if (Test-Path $logPath) {
-      Get-Content -LiteralPath $logPath -Tail 50 |
-        ForEach-Object { $_ -replace 'token=[^\s]+', 'token=[redacted]' }
+    foreach ($logPath in $logPaths) {
+      if (Test-Path $logPath) {
+        Write-Host "Harness log found at $logPath"
+        Get-Content -LiteralPath $logPath -Tail 50 |
+          ForEach-Object { $_ -replace 'token=[^\s]+', 'token=[redacted]' }
+      } else {
+        Write-Host "No Harness log at $logPath"
+      }
     }
   }
 }
@@ -92,7 +111,7 @@ $firstExecutable = Install-At $firstDirectory
 Assert-InstalledPeSignatures $firstDirectory
 Assert-Starts $firstExecutable
 
-$profileMarker = Join-Path $env:APPDATA 'dsh-desktop\harness\signed-smoke-marker'
+$profileMarker = Join-Path $script:activeAppDataRoot 'dsh-desktop\harness\signed-smoke-marker'
 New-Item -ItemType Directory -Path (Split-Path $profileMarker) -Force | Out-Null
 Set-Content -LiteralPath $profileMarker -Value 'keep-user-data'
 
