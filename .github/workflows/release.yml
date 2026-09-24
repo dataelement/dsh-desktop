@@ -632,9 +632,6 @@ jobs:
           HTTP_PROXY: ''
           HTTPS_PROXY: ''
           ALL_PROXY: ''
-          http_proxy: ''
-          https_proxy: ''
-          all_proxy: ''
       - name: Check reused unsigned package version
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resign'
         run: |
