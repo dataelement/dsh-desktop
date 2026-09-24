@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 0856455..7fc3cd7 100644
+index 0856455..cecb7c9 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -15664,12 +15664,13 @@ window.__ModuleLoader__.load({
@@ -33,7 +33,7 @@ index 0856455..7fc3cd7 100644
 +					renderSlot("conversation.hero.agentPreset", {}),
 +					(0, react_jsx_runtime.jsx)("div", {
 +						className: ConversationRoot_module_css_default.heroModeCluster,
-+						children: zone !== void 0 && renderSlot("conversation.hero.modeActions", zone)
++						children: renderSlot("conversation.hero.modeActions", zone ?? {})
 +					})
  				]
  			});
@@ -138,6 +138,15 @@ index 0856455..7fc3cd7 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								ref: rowRef,
+@@ -17458,7 +17473,7 @@ window.__ModuleLoader__.load({
+ 					}),
+ 					(0, react_jsx_runtime.jsxs)("div", {
+ 						className: InputBar_module_css_default.dock,
+-						children: [variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null, activity ? null : (0, react_jsx_runtime.jsx)(ContextMeter, {
++						children: [extensionZone !== void 0 || sessionId === void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null, activity ? null : (0, react_jsx_runtime.jsx)(ContextMeter, {
+ 							useProjection,
+ 							t
+ 						})]
 @@ -17812,6 +17827,10 @@ window.__ModuleLoader__.load({
  					"conversation.hero.agentPreset": {
  						kind: "single",
@@ -145,7 +154,7 @@ index 0856455..7fc3cd7 100644
 +					},
 +					"conversation.hero.modeActions": {
 +						kind: "list",
-+						scope: "session"
++						scope: "session-maybe"
  					}
  				},
  				slots: {
@@ -160,6 +169,15 @@ index 0856455..7fc3cd7 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
+@@ -17961,7 +17984,7 @@ window.__ModuleLoader__.load({
+ 					},
+ 					"conversation.composer.dock": {
+ 						kind: "list",
+-						scope: "session"
++						scope: "session-maybe"
+ 					}
+ 				},
+ 				inject: (sessionId) => {
 @@ -17971,6 +17994,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
@@ -193,7 +211,7 @@ index 0856455..7fc3cd7 100644
  				yield registerConversationRoot();
  				yield registerConversationContent();
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 2f0a4cb..97fdbc6 100644
+index 2f0a4cb..d631d07 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -210,6 +210,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -203,7 +221,7 @@ index 2f0a4cb..97fdbc6 100644
 +        /** Product-mode controls beside the blank-session agent preset. */
 +        'conversation.hero.modeActions': {
 +            kind: 'list';
-+            scope: 'session';
++            scope: 'session-maybe';
 +            owner: InputZone;
 +        };
          /** Full-width entries above the composer card. */
@@ -222,7 +240,8 @@ index 2f0a4cb..97fdbc6 100644
          /** Ambient entries below the composer card. */
          'conversation.composer.dock': {
              kind: 'list';
-             scope: 'session';
+-            scope: 'session';
++            scope: 'session-maybe';
 +            owner: InputZone;
          };
          /** Compact controls at the left of the composer tool row. */

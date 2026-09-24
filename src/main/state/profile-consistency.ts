@@ -4,9 +4,9 @@ import { dirname, join } from 'node:path'
 import { isMap, isSeq, parseDocument } from 'yaml'
 import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recovery'
 
-// The normal Desktop patch loads the composer, which mounts the core itself.
-// Passed explicitly: standalone Harness profiles may still load either bundle.
-export const HOST_COMPOSED_PPT_BUNDLES = ['dsh-ppt', 'dsh-ppt-composer'] as const
+// Desktop owns these PPT layers. Image generation keeps its Profile bundle
+// declaration so a duplicate host/Profile installation enters Recovery.
+export const HOST_COMPOSED_BUNDLES = ['dsh-ppt', 'dsh-ppt-composer'] as const
 
 /**
  * What the profile says about itself, checked against what is on disk.
@@ -168,8 +168,8 @@ export async function inspectProfileConsistency(
 /**
  * Reconcile bundle declarations before launch. Host-composed bundles remain
  * installed dependencies, but must not also load through the Profile: the
- * Desktop PPT adapter already mounts its core, whose routes and skill provider
- * cannot be registered twice. Other installed bundles retain auto-healing.
+ * Desktop patch already mounts these plugins, whose services cannot be
+ * registered twice. Other installed bundles retain auto-healing.
  * This does not edit user patch layers or remove packages or their data.
  */
 export async function healProfileBundles(

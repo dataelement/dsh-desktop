@@ -45,8 +45,15 @@ import {
   clearProfileInstallMarker,
   markProfileInstallComplete
 } from './state/profile-install-marker'
-import { healProfileBundles, HOST_COMPOSED_PPT_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
+import { healProfileBundles, HOST_COMPOSED_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
 import { inspectProfileBootInputs } from './state/profile-boot-preflight'
+import {
+  BUILTIN_IMAGE_GENERATION,
+  prepareProfileBundleForHostEnable,
+  profileHasEnabledBundle,
+  readDisabledHostPlugins,
+  setHostPluginEnabled
+} from './state/host-plugin-state'
 import {
   disableProfilePlugin,
   enableProfilePlugin,
@@ -1273,15 +1280,15 @@ async function showSplash(): Promise<void> {
 }
 
 /**
- * Reconcile bundle declarations, including the PPT layers already owned by
+ * Reconcile bundle declarations, including the layers already owned by
  * Desktop, then report remaining inconsistencies. This never removes package
  * files, user patch rows or plugin data, and runs while Harness is stopped.
  */
 async function reportProfileConsistency(dshHome: string): Promise<void> {
   try {
-    const healed = await healProfileBundles(dshHome, HOST_COMPOSED_PPT_BUNDLES)
+    const healed = await healProfileBundles(dshHome, HOST_COMPOSED_BUNDLES)
     if (healed.removed.length > 0) {
-      runtime.note(`[desktop] removed duplicate host-composed PPT bundle layer(s): ${healed.removed.join(', ')}; packages and user patches kept`)
+      runtime.note(`[desktop] removed duplicate host-composed bundle layer(s): ${healed.removed.join(', ')}; packages and user patches kept`)
     }
     if (healed.added.length > 0) {
       runtime.note(`[desktop] auto-composed ${healed.added.length} missing bundle(s): ${healed.added.join(', ')}`)
@@ -1297,7 +1304,7 @@ async function reportProfileConsistency(dshHome: string): Promise<void> {
   // Defer heavy recursive inspections of the profiles directory and package store
   // so they run asynchronously without blocking the startup launch pipeline.
   void Promise.all([
-    inspectProfileConsistency(dshHome, HOST_COMPOSED_PPT_BUNDLES),
+    inspectProfileConsistency(dshHome, HOST_COMPOSED_BUNDLES),
     inspectStoreConsistency(dshHome)
   ])
     .then(([findings, store]) => {
@@ -1513,7 +1520,7 @@ function launchHarness(): Promise<void> {
       }),
       marketUsableWithoutBaseline: () => marketUsableWithoutBaseline(dshHome),
       reportProfileConsistency: () => reportProfileConsistency(dshHome),
-      inspectProfileBootInputs: () => inspectProfileBootInputs(dshHome, dshEntryPath()),
+      inspectProfileBootInputs: () => inspectProfileBootInputs(dshHome, dshEntryPath(), desktopResourcePath('dsh-desktop.patch.yml')),
       pruneUnresolvableBundles: () => pruneUnresolvableProfileBundles(dshHome)
     })
     migrationPendingPlugins = new Set(
@@ -1787,6 +1794,30 @@ function registerHarnessHandlers(): void {
       throw new Error('Harness is not ready to uninstall the plugin market.')
     }
     return uninstallMarketAndRestart()
+  })
+
+  ipcMain.removeHandler('desktop-host-plugin:status')
+  ipcMain.handle('desktop-host-plugin:status', async (event) => {
+    assertTrustedMainWindowEvent(event)
+    const dshHome = join(app.getPath('userData'), 'harness')
+    return {
+      enabled: !(await readDisabledHostPlugins(dshHome)).includes(BUILTIN_IMAGE_GENERATION),
+      marketActive: await profileHasEnabledBundle(dshHome, BUILTIN_IMAGE_GENERATION)
+    }
+  })
+
+  ipcMain.removeHandler('desktop-host-plugin:set-enabled')
+  ipcMain.handle('desktop-host-plugin:set-enabled', async (event, enabled: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (typeof enabled !== 'boolean') throw new Error('Expected an enabled state')
+    const dshHome = join(app.getPath('userData'), 'harness')
+    if (enabled) {
+      const handoff = await prepareProfileBundleForHostEnable(dshHome, BUILTIN_IMAGE_GENERATION)
+      if (!handoff.ok) return handoff
+    }
+    await setHostPluginEnabled(dshHome, BUILTIN_IMAGE_GENERATION, enabled)
+    runtime.note(`[desktop] built-in image generation ${enabled ? 'enabled' : 'disabled'}; Harness restart required`)
+    return { ok: true, enabled, restartRequired: true }
   })
 
   ipcMain.removeHandler('desktop-menu:execute')
@@ -2551,9 +2582,8 @@ async function waitForSafeModeAction(options: {
 /**
  * Switch a plugin off from Safe Mode, the way the plugin market's own toggle
  * does, so it can be re-enabled without reinstalling. Plugin recovery keeps
- * the backed-up removal instead: a package that is itself broken (an
- * unreadable bundle patch, a missing link, dependencies shadowing the core)
- * still fails before the patch layer's disable applies.
+ * the backed-up removal instead when the package itself cannot safely be
+ * disabled as a unit (for example, a disable-carrier).
  *
  * A disable-carrier cannot be switched off on its own (see
  * disableProfilePlugin), so it keeps the removal too. `pending` is only ever
@@ -2569,14 +2599,13 @@ async function disableSafeModePlugin(
   if (result.ok) {
     runtime.note(
       `[${logPrefix}] disabled ${pluginName}` +
-      (result.rows.length > 0 ? `; patch rows off: ${result.rows.join(', ')}` : ' in the market state (no bundle rows)')
+      (result.rows.length > 0 ? `; bundle rows skipped: ${result.rows.join(', ')}` : ' in the market state (no bundle rows)')
     )
     return { disabled: true }
   }
-  // A carrier cannot be switched off on its own, and a broken bundle has no
-  // row to switch off at all. Both would otherwise leave the next launch
-  // composing the same profile, so they fall back to a restorable removal.
-  if (result.reason === 'carrier' || result.reason === 'broken-package') {
+  // A carrier cannot be switched off on its own, so it falls back to a
+  // restorable removal.
+  if (result.reason === 'carrier') {
     runtime.note(`[${logPrefix}] ${result.detail}; removing it with a restorable backup instead`)
     const removal = await removeProfilePluginCompletely(dshHome, pluginName, logPrefix)
     return { disabled: removal.disabled, pending: removal.pending, detail: removal.failures[0] }
@@ -2780,16 +2809,18 @@ async function showSafeModeManager(initial?: {
         noticeTone ??= 'error'
       }
       const installed = [...new Set([...active, ...pendingRemovals])]
-      const profileDisabled = recoveryLocked ? [] : await listDisabledProfilePlugins(dshHome, active)
+      const profileDisabled = recoveryLocked ? [] : [
+        ...(await listDisabledProfilePlugins(dshHome, active))
+      ]
       // Not awaited: the page opens right away and shows the result when it
       // arrives. Only an upgrade needs the result before acting.
       let healthCheck: Promise<PluginHealthReport[] | undefined> | undefined
-      if (installed.length > 0 && !recoveryLocked) {
+      if (active.length > 0 && !recoveryLocked) {
         const incompatiblePluginNames = compatibility.issues
           .filter((issue) => issue.resolution === 'disable-plugin')
           .map((issue) => issue.target)
         healthCheck = checkupAllProfilePlugins({
-          plugins: installed,
+          plugins: active,
           dshHome,
           bundledNodeModulesPath: join(bundledRuntimeRoot(), 'node_modules'),
           incompatiblePlugins: [...new Set([...safeModeSuspectedPlugins, ...incompatiblePluginNames])],

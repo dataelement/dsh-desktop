@@ -27,6 +27,24 @@ describe('Safe Mode', () => {
     expect(answered.pluginItems[0]?.upgradeButtonLabel).toBe('升级至 v1.1.0')
   })
 
+  it('treats installed Profile plugins uniformly as Safe Mode targets', () => {
+    const model = buildSafeModeViewModel({
+      locale: 'zh', plugins: ['dsh-image-generation'],
+      suspectedPlugins: ['dsh-image-generation'], healthPending: true
+    })
+    expect(model.pluginItems[0]).toMatchObject({
+      name: 'dsh-image-generation', suspected: true,
+      statusLabel: '（本次启动日志推断，正在检查更新…）',
+      actionLabel: '停用插件（不删除）'
+    })
+    const disabled = buildSafeModeViewModel({
+      locale: 'en', plugins: ['dsh-image-generation'], disabledPlugins: ['dsh-image-generation']
+    })
+    expect(disabled.pluginItems[0]).toMatchObject({
+      disabled: true, enableButtonLabel: 'Re-enable'
+    })
+  })
+
   it('shows static references as informational findings without blocking or selecting a repair', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh', plugins: ['dsh-dream-skin'], issues: [{
@@ -53,9 +71,7 @@ describe('Safe Mode', () => {
     })
     expect(model.badge).toBe('安全模式')
     expect(model.heading).toBe('')
-    expect(model.summary).toBe('部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可停用近期安装的插件后重启；停用的插件可随时重新启用。')
-    expect(model.summary).toContain('确保基础功能正常使用')
-    expect(model.summary).toContain('但不会删除插件')
+    expect(model.summary).toBe('安全模式暂时跳过第三方插件。停用有问题的插件后重启；插件和数据都会保留。')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.pluginItems).toEqual([
       { name: 'plugin-a', actionLabel: '停用插件（不删除）', incompatible: false, suspected: false, disabled: false },
@@ -161,6 +177,19 @@ describe('Safe Mode', () => {
     })
     expect(model.notice).toBe('成功卸载 1 个插件。')
     expect(model.noticeTone).toBe('success')
+  })
+
+  it('keeps long startup diagnostics available behind a short notice in both locales', () => {
+    const cause = 'peerDependencies: ' + '@deepseek-ai/dsh-client-runtime@0.1.0-rc.8 | '.repeat(20)
+    const enNotice = `Normal Profile startup checks failed. Safe Mode is available. ${cause}`
+    const en = buildSafeModeViewModel({ locale: 'en', plugins: ['example'], notice: enNotice, noticeTone: 'error' })
+    expect(en.noticeSummary).toBe('Normal Profile startup checks failed.')
+    expect(en.notice).toBe(enNotice)
+    const zhNotice = `正常 Profile 启动检查未通过。已进入安全模式。${cause}`
+    const zh = buildSafeModeViewModel({ locale: 'zh', plugins: ['example'], notice: zhNotice, noticeTone: 'error' })
+    expect(zh.noticeSummary).toBe('正常 Profile 启动检查未通过。')
+    expect(zh.notice).toBe(zhNotice)
+    expect(buildSafeModeViewModel({ locale: 'en', plugins: [], notice: 'Short error.' }).noticeSummary).toBeUndefined()
   })
 
   it('shows every removal generation as a separate backup and blocks cleanup until a healthy boot', () => {

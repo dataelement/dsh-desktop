@@ -1,8 +1,26 @@
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-index b538729..69e9890 100644
+index b538729..98e291e 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-@@ -913,27 +913,46 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
+@@ -832,6 +832,17 @@ function readProfileManifest(binName, dir) {
+ 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${binName}: profile manifest ${path} must hold a JSON object`);
+ 	return parsed;
+ }
++// The market package switch must be read before preparing bundle manifests.
++// An unreadable state cannot authorize skipping any bundle.
++function readDisabledProfileBundles(dir) {
++	try {
++		const state = JSON.parse(readFileSync(join(dir, ".dsh-market", "state.json"), "utf8"));
++		const list = state.disabled !== void 0 ? state.disabled : state.disabledSkins;
++		return new Set(Array.isArray(list) ? list.filter((name) => typeof name === "string") : []);
++	} catch {
++		return new Set();
++	}
++}
+ /**
+ * Write a profile's manifest back (2-space JSON, trailing newline).
+ * @param dir - the profile directory.
+@@ -913,27 +924,48 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
  * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
  * @returns the successfully loaded bundle layers and optional user patch layer.
  */
@@ -20,10 +38,12 @@ index b538729..69e9890 100644
 +}
  function loadProfileDirectory(binName, dir, installAnchor, options = {}) {
  	const bundles = readProfileManifest(binName, dir).dsh?.profile?.bundles ?? [];
++	const disabled = readDisabledProfileBundles(dir);
  	const layers = [];
  	const exemptions = bundles.length === 0 ? {} : readProfileVersionExemptions(dir);
 -	for (const packageName of bundles) try {
 +	for (const packageName of bundles) {
++		if (disabled.has(packageName)) continue;
 +		const owner = { packageName };
 +		try {
  		const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir);
@@ -53,7 +73,7 @@ index b538729..69e9890 100644
  	}
  	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
  	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
-@@ -3853,7 +3872,10 @@ var StartupError = class extends Error {
+@@ -3853,7 +3885,10 @@ var StartupError = class extends Error {
  	* @param entries - inactive plugin metadata and original failure values.
  	*/
  	constructor(message, entries) {
@@ -65,7 +85,7 @@ index b538729..69e9890 100644
  		super(message, failures.length > 0 ? { cause: new AggregateError(failures, "Plugin activation failures") } : void 0);
  		this.entries = entries;
  		Object.defineProperties(this, {
-@@ -3890,7 +3912,7 @@ async function inactiveEntries(ctx) {
+@@ -3890,7 +3925,7 @@ async function inactiveEntries(ctx) {
  				entry,
  				outcome: {
  					kind: "failed",
@@ -74,7 +94,7 @@ index b538729..69e9890 100644
  				}
  			});
  			continue;
-@@ -3991,13 +4013,14 @@ function startupDiagnostic(binName, failures, required) {
+@@ -3991,13 +4026,14 @@ function startupDiagnostic(binName, failures, required) {
  */
  async function auditStartupEntries(ctx, binName, warn = (line) => void process.stderr.write(line)) {
  	const failures = await inactiveEntries(ctx);
@@ -91,7 +111,7 @@ index b538729..69e9890 100644
  	})));
  	if (failures.length > 0) warn(activationDiagnostic(binName, failures));
  }
-@@ -4069,7 +4092,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
+@@ -4069,7 +4105,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
  		await auditStartupEntries(ctx, binName);
  		return ctx;
  	} catch (cause) {

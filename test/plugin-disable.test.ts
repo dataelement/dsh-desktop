@@ -92,13 +92,10 @@ describe('profile plugin disable', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  it('switches a bundle plugin off in the patch layer and the market state, keeping everything else', async () => {
+  it('switches a bundle by package without modifying a shared row', async () => {
+    const beforePatch = await readFile(patchPath, 'utf8')
     expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true, rows: ['proxy-routing'] })
-
-    expect(parse(await readFile(patchPath, 'utf8'))).toEqual([
-      { id: 'mcp-coaligne', disabled: false },
-      { id: 'proxy-routing', disabled: true }
-    ])
+    expect(await readFile(patchPath, 'utf8')).toBe(beforePatch)
     expect(JSON.parse(await readFile(statePath, 'utf8'))).toEqual({
       disabled: ['@dhicoc/dsh-reverse-skill', 'dsh-proxy-routing'],
       region: 'china',
@@ -107,9 +104,29 @@ describe('profile plugin disable', () => {
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-proxy-routing', 'dsh-client-only'])).toEqual(['dsh-proxy-routing'])
 
     expect(await enableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true })
-    expect(parse(await readFile(patchPath, 'utf8'))).toEqual([{ id: 'mcp-coaligne', disabled: false }])
+    expect(await readFile(patchPath, 'utf8')).toBe(beforePatch)
     expect(JSON.parse(await readFile(statePath, 'utf8')).disabled).toEqual(['@dhicoc/dsh-reverse-skill'])
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-proxy-routing'])).toEqual([])
+  })
+
+  it('removes a forced enable for the disabled package without touching other rows', async () => {
+    await writeFile(patchPath, '- id: mcp-coaligne\n  disabled: false\n- id: proxy-routing\n  disabled: false\n')
+    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true, rows: ['proxy-routing'] })
+    expect(parse(await readFile(patchPath, 'utf8'))).toEqual([{ id: 'mcp-coaligne', disabled: false }])
+    expect(await listDisabledProfilePlugins(dshHome, ['dsh-proxy-routing'])).toEqual(['dsh-proxy-routing'])
+
+    // dshmarket clears its disabled flag on boot when the package still
+    // has a `disabled: false` patch row. The remaining row belongs elsewhere.
+    const userRows = parse(await readFile(patchPath, 'utf8')) as { id: string; disabled: boolean }[]
+    expect(userRows.some((row) => row.id === 'proxy-routing' && row.disabled === false)).toBe(false)
+  })
+
+  it('restores a forced enable when the market state cannot be written', async () => {
+    const layer = '- id: proxy-routing\n  disabled: false\n'
+    await writeFile(patchPath, layer)
+    await writeFile(statePath, '{ not json')
+    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toMatchObject({ ok: false, reason: 'market-state' })
+    expect(await readFile(patchPath, 'utf8')).toBe(layer)
   })
 
   it('switches a client-only plugin off through the market state alone', async () => {
@@ -119,21 +136,15 @@ describe('profile plugin disable', () => {
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-client-only'])).toEqual(['dsh-client-only'])
   })
 
-  it('refuses a bundle whose package yields no loader row, instead of reporting a disable that does nothing', async () => {
-    // The loader prepares every listed bundle before any user layer applies,
-    // so an unreadable package patch cannot be switched off — writing only the
-    // market state would report success and still fail the next launch.
+  it('can disable a listed bundle whose patch is unreadable', async () => {
     await writeProfileManifest(['dsh-broken-bundle'])
     await plugin('dsh-broken-bundle', '- insert:\n    - id: broken\n      name: dsh-broken-bundle\n')
     await rm(join(profile, 'node_modules', 'dsh-broken-bundle', 'cordis.patch.yml'))
     const before = await readFile(patchPath, 'utf8')
 
-    expect(await disableProfilePlugin(dshHome, 'dsh-broken-bundle')).toMatchObject({
-      ok: false,
-      reason: 'broken-package'
-    })
+    expect(await disableProfilePlugin(dshHome, 'dsh-broken-bundle')).toEqual({ ok: true, rows: [] })
     expect(await readFile(patchPath, 'utf8')).toBe(before)
-    expect(await listDisabledProfilePlugins(dshHome, ['dsh-broken-bundle'])).toEqual([])
+    expect(await listDisabledProfilePlugins(dshHome, ['dsh-broken-bundle'])).toEqual(['dsh-broken-bundle'])
   })
 
   it('still switches a client-only plugin off through the market state when the profile lists bundles', async () => {
@@ -164,7 +175,7 @@ describe('profile plugin disable', () => {
 
   it('never overwrites an unreadable market state', async () => {
     await writeFile(statePath, '{ not json')
-    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true, rows: ['proxy-routing'] })
+    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toMatchObject({ ok: false, reason: 'market-state' })
     expect(await disableProfilePlugin(dshHome, 'dsh-client-only')).toMatchObject({ ok: false, reason: 'market-state' })
     expect(await readFile(statePath, 'utf8')).toBe('{ not json')
   })

@@ -24,7 +24,7 @@ async function fixture(prepareError, waitForPrepare) {
   const calls = [];
   const waits = new Map(), failures = new Map();
   const image = 'data:image/png;base64,iVBORw0KGgo=';
-  const client = { async call(endpoint, payload) {
+  const client = { bound: true, async call(endpoint, payload) {
     calls.push({ endpoint, payload });
     if (waits.has(endpoint)) await waits.get(endpoint);
     if (failures.has(endpoint)) { const error = failures.get(endpoint); failures.delete(endpoint); throw new Error(error); }
@@ -66,6 +66,96 @@ async function fixture(prepareError, waitForPrepare) {
   }
   return { calls, click, upload, choose, hold(endpoint) { let release; waits.set(endpoint, new Promise(resolve => release = resolve)); return async () => { await act(async () => { waits.delete(endpoint); release(); }); }; }, failNext(endpoint, message) { failures.set(endpoint, message); }, async switchSession() { sessionId = 'session-b'; await act(async () => render()); } };
 }
+
+it('hides create, rename, and delete before a session exists', async () => {
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+  const template = { id: 'personal-1', name: 'Company', origin: 'personal' };
+  await act(async () => {
+    root.render(React.createElement(Manager, {
+      client: { async call() { throw new Error('unexpected'); } },
+      mode: {},
+      sessionId: undefined,
+      state: { templates: [template], selectedId: null, activeMode: 'ppt' },
+      choose: () => {},
+      t: key => key,
+      mutable: false
+    }));
+  });
+  expect(container.querySelector('.personal-create')).toBeNull();
+  expect(container.querySelector('.personal-actions')).toBeNull();
+  expect(container.querySelector('[data-personal-card="personal-1"]')).not.toBeNull();
+});
+
+it('keeps a staged built-in template when opening personal templates before a session exists', async () => {
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+  const builtIn = { id: 'built-in-a', name: 'Blueprint', origin: 'built-in' };
+  const personal = { id: 'personal-1', name: 'Company', origin: 'personal' };
+  const client = {
+    bound: false,
+    async call(endpoint) {
+      if (endpoint !== 'state') throw new Error(endpoint);
+      return { templates: [builtIn, personal], selectedTemplateId: null, presentationMode: null };
+    }
+  };
+  let state = { templates: [builtIn], selectedId: 'built-in-a', activeMode: 'ppt' };
+  const mode = {
+    setTemplateState() { throw new Error('unbound refresh must not apply remote selection'); },
+    setTemplates(_id, templates) {
+      state = {
+        ...state,
+        templates,
+        selectedId: templates.some(template => template.id === state.selectedId) ? state.selectedId : null
+      };
+    }
+  };
+  await act(async () => {
+    root.render(React.createElement(Manager, {
+      client, mode, sessionId: undefined, state, choose: () => {}, t: key => key, mutable: false
+    }));
+  });
+  expect(state.selectedId).toBe('built-in-a');
+  expect(state.activeMode).toBe('ppt');
+});
+
+it('keeps a staged template when an unbound catalog returns no selection', async () => {
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+  const builtIn = { id: 'built-in-a', name: 'Blueprint', origin: 'built-in' };
+  const personal = { id: 'personal-1', name: 'Company', origin: 'personal' };
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const client = {
+    bound: false,
+    async call(endpoint) {
+      if (endpoint !== 'state') throw new Error(endpoint);
+      await pending;
+      return { templates: [builtIn, personal], selectedTemplateId: null, presentationMode: null };
+    }
+  };
+  let state = { templates: [builtIn], selectedId: 'built-in-a', activeMode: 'ppt' };
+  const writes = [];
+  const mode = {
+    setTemplateState() { writes.push('setTemplateState'); },
+    setTemplates(_id, templates) {
+      writes.push('setTemplates');
+      state = {
+        ...state,
+        templates,
+        selectedId: templates.some(template => template.id === state.selectedId) ? state.selectedId : null
+      };
+    }
+  };
+  const choose = template => { state = { ...state, selectedId: template.id }; };
+  await act(async () => {
+    root.render(React.createElement(Manager, {
+      client, mode, sessionId: undefined, state, choose, t: key => key, mutable: false
+    }));
+  });
+  choose(personal);
+  await act(async () => { release(); });
+  expect(writes).toEqual(['setTemplates']);
+  expect(state.selectedId).toBe('personal-1');
+  expect(state.activeMode).toBe('ppt');
+});
 
 it('previews uploads in the modal while retaining the grid, then supports editing and confirmed delete', async () => {
   const f = await fixture();

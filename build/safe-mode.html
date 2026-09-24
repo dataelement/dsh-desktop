@@ -36,11 +36,15 @@
       .column { display: flex; flex: 1 1 auto; flex-direction: column; width: min(100%, var(--page-max)); min-height: 0; margin-inline: auto; }
       .summary, .notice, .safety, .actions, .list-heading, .empty { flex-shrink: 0; }
       h1:empty { display:none; }
-      .summary { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.65; }
-      .notice { display: none; margin: 0 0 18px; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
+      .summary { margin: 0 0 10px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+      .notice { display: none; flex-shrink: 0; max-height: min(28vh, 220px); overflow: auto; margin: 0 0 14px; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
       .notice.error { color: var(--danger); background: rgba(195,59,56,.08); }
       .notice.success { color: var(--success); background: rgba(38,122,74,.09); }
       .notice.visible { display: block; }
+      .notice-details { margin-top: 5px; }
+      .notice-details summary { width: max-content; cursor: pointer; font-weight: 650; }
+      .notice-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      .notice-full { margin: 9px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
       .list-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; margin-top:18px; border: 1px solid var(--line); border-radius: 14px; background: var(--soft); }
       /* Same gap and padding as a plugin row, so the header checkbox sits over
          the row checkboxes and the caption over the plugin names. */
@@ -134,7 +138,13 @@
       </header>
       <section class="content">
        <div class="column">
-        <p class="notice" id="notice" role="alert"></p>
+        <div class="notice" id="notice" role="alert">
+          <span id="notice-preview"></span>
+          <details class="notice-details" id="notice-details" hidden>
+            <summary id="notice-details-label"></summary>
+            <pre class="notice-full" id="notice-full"></pre>
+          </details>
+        </div>
         <h1 id="heading"></h1>
         <p class="summary" id="summary"></p>
         <button class="agent-link" id="repair-agent" type="button"></button>
@@ -265,7 +275,13 @@
       setText('recovery-open', model.recoveryOpenLabel)
       const notice = document.getElementById('notice')
       if (model.notice) {
-        notice.textContent = model.notice
+        setText('notice-preview', model.noticeSummary || model.notice)
+        if (model.noticeSummary) {
+          const details = document.getElementById('notice-details')
+          details.hidden = false
+          setText('notice-details-label', model.locale === 'zh' ? '查看详细信息' : 'View details')
+          setText('notice-full', model.notice)
+        }
         notice.classList.add('visible', model.noticeTone === 'success' ? 'success' : 'error')
       }
       const list = document.getElementById('items')
@@ -362,7 +378,7 @@
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin.name)
         const copy = document.createElement('span'); copy.className = 'plugin-copy'
         const title = document.createElement('span'); title.className = 'plugin-title'
-        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.name)
+        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.displayName || plugin.name)
         title.appendChild(name)
         copy.append(title)
         // An already disabled plugin is not selectable for disabling again.

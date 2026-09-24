@@ -56,6 +56,7 @@ describe('plugin-recovery', () => {
         dependencies: {
           '@deepseek-ai/dsh-base': '0.1.0',
           dshmarket: '1.9.0',
+          'dsh-image-generation': '1.0.0',
           'plugin-a': '1.0.0',
           '@example/plugin-b': '2.0.0',
           'transitive-only': '3.0.0'
@@ -65,6 +66,7 @@ describe('plugin-recovery', () => {
             bundles: [
               '@deepseek-ai/dsh-base',
               'dshmarket',
+              'dsh-image-generation',
               'plugin-a',
               '@example/plugin-b'
             ]
@@ -74,6 +76,7 @@ describe('plugin-recovery', () => {
     )
 
     await expect(listInstalledProfilePlugins(testDir)).resolves.toEqual([
+      'dsh-image-generation',
       'plugin-a',
       '@example/plugin-b'
     ])

@@ -736,6 +736,10 @@ var PptService = class {
 	state(sessionId) {
 		return this.store.readState(sessionId);
 	}
+	/** Built-in and saved personal templates. Does not read or create a session directory. */
+	catalog() {
+		return this.store.catalog();
+	}
 	async templatePages(sessionId, templateId, slideNumbers) {
 		const template = (await this.store.readState(sessionId)).templates.find((item) => item.id === templateId && templateSupportsMode(item, "ppt"));
 		if (template === void 0) throw new PptError("not-found", `template ${templateId} was not found`);
@@ -980,6 +984,7 @@ function pptRpc(service) {
 	return async (endpoint, payload) => {
 		try {
 			const request = payload;
+			if (endpoint === "template/catalog") return ok(await service.catalog());
 			const sessionId = sessionIdOf(payload);
 				switch (endpoint) {
 				case "template/prepare": return ok(await service.store.personalTemplates.prepare(sessionId, request.input));
@@ -1323,6 +1328,10 @@ var PptStore = class {
 	}
 	statePath(sessionId) {
 		return path.join(this.sessionDirectory(sessionId), "state.json");
+	}
+	async catalog() {
+		const personalTemplates = await this.personalTemplates?.list() ?? [];
+		return persistedState({}, "", personalTemplates);
 	}
 	async readState(sessionId) {
 		const personalTemplates = await this.personalTemplates?.list() ?? [];

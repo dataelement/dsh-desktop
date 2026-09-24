@@ -53,7 +53,7 @@ export interface ProfileStartupMaintenanceDeps {
  * because the Safe Mode plugin controls cannot clear that fault themselves.
  * No package files, user patch rows or plugin data are removed.
  * Bundle reconciliation still runs: missing installed layers are added and
- * duplicate PPT layers owned by the Desktop composer are removed from the
+ * duplicate PPT layers owned by Desktop are removed from the
  * manifest only. Package files, user patches and plugin data remain intact.
  * The market's verified baseline is the targeted exception: dshmarket is a
  * core bundle, never a generation, and the app cannot boot without a working
