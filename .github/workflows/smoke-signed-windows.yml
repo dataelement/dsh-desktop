@@ -1,0 +1,32 @@
+name: Recheck signed Windows installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      signed_run_id:
+        description: Release workflow run containing the signed windows-x64 artifact
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  smoke:
+    name: Install and upgrade signed Windows artifact
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: signed-windows
+          run-id: ${{ inputs.signed_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify signed installation and upgrade
+        shell: pwsh
+        run: |
+          ./scripts/smoke-signed-windows-installer.ps1 `
+            -Installer 'signed-windows/dsh-desktop-windows-x64-setup.exe' `
+            -PublisherName 'Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.'
