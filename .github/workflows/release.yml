@@ -465,6 +465,8 @@ jobs:
           New-Item -ItemType Directory -Path $isolatedApp | Out-Null
           Copy-Item -Path (Join-Path $sourceExecutable.Directory.FullName '*') -Destination $isolatedApp -Recurse
           $executable = Join-Path $isolatedApp $sourceExecutable.Name
+          $desktopStdout = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stdout.log'
+          $desktopStderr = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stderr.log'
           $packagedNode = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\node\bin\node.exe'
           if (-not (Test-Path $packagedNode)) { throw 'Packaged Windows node.exe is missing.' }
           # Exercise the actual native binding too; the best-effort fallback
@@ -472,7 +474,8 @@ jobs:
           & $packagedNode --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed');" (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\koffi\package.json') (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules')
           if ($LASTEXITCODE -ne 0) { throw 'Packaged koffi native binding failed.' }
           if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
-          $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru
+          $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru `
+            -RedirectStandardOutput $desktopStdout -RedirectStandardError $desktopStderr
           try {
             $deadline = (Get-Date).AddSeconds(75)
             $ready = $false
@@ -552,6 +555,14 @@ jobs:
             }
             Write-Host 'Packaged Windows Harness smoke test passed.'
           } finally {
+            foreach ($path in @($desktopStdout, $desktopStderr)) {
+              if (Test-Path $path) {
+                Write-Host "--- $path ---"
+                Get-Content $path
+              }
+            }
+            Get-CimInstance Win32_Process -Filter "name='$($sourceExecutable.Name)'" |
+              Select-Object ProcessId, ParentProcessId, CommandLine | Format-List | Out-String | Write-Host
             if (Test-Path $logPath) {
               Write-Host '--- harness.log ---'
               Get-Content $logPath
