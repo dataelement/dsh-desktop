@@ -566,10 +566,10 @@ jobs:
       JSIGN_SHA256: '602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c'
     steps:
       - uses: actions/checkout@v4
+      # The signer only installs release tooling; skip remote npm cache restore.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
