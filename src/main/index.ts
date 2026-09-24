@@ -48,6 +48,7 @@ import { healProfileBundles, HOST_COMPOSED_BUNDLES, inspectProfileConsistency } 
 import { inspectProfileBootInputs } from './state/profile-boot-preflight'
 import {
   BUILTIN_IMAGE_GENERATION,
+  prepareProfileBundleForHostEnable,
   profileHasEnabledBundle,
   readDisabledHostPlugins,
   setHostPluginEnabled
@@ -1814,8 +1815,9 @@ function registerHarnessHandlers(): void {
     assertTrustedMainWindowEvent(event)
     if (typeof enabled !== 'boolean') throw new Error('Expected an enabled state')
     const dshHome = join(app.getPath('userData'), 'harness')
-    if (enabled && await profileHasEnabledBundle(dshHome, BUILTIN_IMAGE_GENERATION)) {
-      return { ok: false, reason: 'market-active' }
+    if (enabled) {
+      const handoff = await prepareProfileBundleForHostEnable(dshHome, BUILTIN_IMAGE_GENERATION)
+      if (!handoff.ok) return handoff
     }
     await setHostPluginEnabled(dshHome, BUILTIN_IMAGE_GENERATION, enabled)
     runtime.note(`[desktop] built-in image generation ${enabled ? 'enabled' : 'disabled'}; Harness restart required`)

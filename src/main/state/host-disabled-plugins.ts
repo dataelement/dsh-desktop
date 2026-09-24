@@ -50,7 +50,7 @@ async function readIfPresent(path: string): Promise<string | undefined> {
  */
 export async function prepareHostDisabledPluginsPatch(
   dshHome: string,
-  desktopPatchPath: string
+  hostSourcePatchPath: string
 ): Promise<string | undefined> {
   let disabled: Set<string>
   try {
@@ -65,7 +65,9 @@ export async function prepareHostDisabledPluginsPatch(
     return undefined
   }
 
-  const hostRows = insertedRows(await readFile(desktopPatchPath, 'utf8'))
+  // The runtime patch rewrites package names to file URLs. Keep the source
+  // patch's package ownership while retaining the same active row IDs.
+  const hostRows = insertedRows(await readFile(hostSourcePatchPath, 'utf8'))
   const activeIds = new Set(hostRows.map((row) => row.id))
   const profileDirectory = dirname(profilePackageJsonPath(dshHome))
   let bundles: string[] = []
@@ -114,6 +116,13 @@ export async function prepareHostDisabledPluginsPatch(
   const entries: { id: string; disabled: boolean }[] = []
   for (const id of disabledBundleIds) {
     if (oldDisabledIds.has(id) && activeIds.has(id)) entries.push({ id, disabled: false })
+  }
+  // A market toggle may also disable the in-box row when both packages have
+  // the same name. Restore that row after the market bundle is skipped.
+  for (const row of hostRows) {
+    if (disabled.has(row.name) && oldDisabledIds.has(row.id) && !entries.some((entry) => entry.id === row.id)) {
+      entries.push({ id: row.id, disabled: false })
+    }
   }
   if (entries.length === 0) {
     await rm(overlayPath, { force: true })

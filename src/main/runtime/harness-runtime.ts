@@ -491,7 +491,7 @@ export class HarnessRuntime {
       ? [patchPath, marketPatchPath]
       : [patchPath]
     if (profile !== SAFE_MODE_PROFILE) {
-      const disabledPatch = await prepareHostDisabledPluginsPatch(this.options.dshHome, patchPath)
+      const disabledPatch = await prepareHostDisabledPluginsPatch(this.options.dshHome, sourcePatchPath)
       if (disabledPatch) patchPaths.push(disabledPatch)
     }
 

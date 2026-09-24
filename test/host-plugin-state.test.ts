@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { profileHasEnabledBundle, readDisabledHostPlugins, setHostPluginEnabled } from '../src/main/state/host-plugin-state'
+import { prepareProfileBundleForHostEnable, profileHasEnabledBundle, readDisabledHostPlugins, setHostPluginEnabled } from '../src/main/state/host-plugin-state'
 
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })
@@ -43,5 +43,24 @@ describe('Desktop host plugin state', () => {
     expect(await profileHasEnabledBundle(home, 'dsh-image-generation')).toBe(true)
     await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['dsh-image-generation'] }))
     expect(await profileHasEnabledBundle(home, 'dsh-image-generation')).toBe(false)
+  })
+
+  it('recognizes a market patch disable and persists the package handoff before host enable', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-host-state-'))
+    homes.push(home)
+    const profile = join(home, 'profiles', 'web')
+    const plugin = join(profile, 'node_modules', 'dsh-image-generation')
+    await mkdir(join(profile, '.dsh-market'), { recursive: true })
+    await mkdir(plugin, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['dsh-image-generation'] } } }))
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: [] }))
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+    await writeFile(join(plugin, 'cordis.patch.yml'), '- insert:\n    - id: image-gen\n      name: dsh-image-generation\n')
+    await writeFile(join(profile, 'cordis.patch.yml'), '- id: image-gen\n  disabled: true\n- id: dsh-image-generation\n  disabled: true\n')
+
+    expect(await profileHasEnabledBundle(home, 'dsh-image-generation')).toBe(false)
+    expect(await prepareProfileBundleForHostEnable(home, 'dsh-image-generation')).toEqual({ ok: true })
+    expect(JSON.parse(await readFile(join(profile, '.dsh-market', 'state.json'), 'utf8'))).toEqual({ disabled: ['dsh-image-generation'] })
+    expect(await readFile(join(profile, 'cordis.patch.yml'), 'utf8')).toContain('disabled: true')
   })
 })

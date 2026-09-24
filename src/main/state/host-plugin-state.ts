@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { readMarketDisabledPackages } from './plugin-disable'
+import { disableProfilePlugin, isProfilePluginDisabledByPatch, readMarketDisabledPackages } from './plugin-disable'
 
 const STATE_FILE = 'desktop-host-plugins.json'
 export const BUILTIN_IMAGE_GENERATION = 'dsh-image-generation'
@@ -29,7 +29,7 @@ export async function readDisabledHostPlugins(dshHome: string): Promise<string[]
 /** Enabling a host package while an active Profile bundle owns the same name
  * would make the next launch fail before the user could reach its settings.
  */
-export async function profileHasEnabledBundle(dshHome: string, name: string): Promise<boolean> {
+export async function profileContainsBundle(dshHome: string, name: string): Promise<boolean> {
   let source: string
   try {
     source = await readFile(join(dshHome, 'profiles', 'web', 'package.json'), 'utf8')
@@ -42,8 +42,23 @@ export async function profileHasEnabledBundle(dshHome: string, name: string): Pr
     throw new Error('The Profile manifest is not an object')
   }
   const profile = (manifest as { dsh?: { profile?: { bundles?: unknown } } }).dsh?.profile
-  if (!Array.isArray(profile?.bundles) || !profile.bundles.includes(name)) return false
-  return !(await readMarketDisabledPackages(dshHome)).includes(name)
+  return Array.isArray(profile?.bundles) && profile.bundles.includes(name)
+}
+
+export async function profileHasEnabledBundle(dshHome: string, name: string): Promise<boolean> {
+  if (!(await profileContainsBundle(dshHome, name))) return false
+  if ((await readMarketDisabledPackages(dshHome)).includes(name)) return false
+  return !(await isProfilePluginDisabledByPatch(dshHome, name))
+}
+
+/** Persist a market-side disable before enabling the in-box copy. A patch-row
+ * disable alone does not remove the Profile bundle's Loader ID at next boot.
+ */
+export async function prepareProfileBundleForHostEnable(dshHome: string, name: string): Promise<{ ok: boolean; reason?: string }> {
+  if (!(await profileContainsBundle(dshHome, name))) return { ok: true }
+  if (await profileHasEnabledBundle(dshHome, name)) return { ok: false, reason: 'market-active' }
+  const result = await disableProfilePlugin(dshHome, name)
+  return result.ok ? { ok: true } : { ok: false, reason: result.detail }
 }
 
 let pendingWrite: Promise<void> = Promise.resolve()

@@ -223,6 +223,31 @@ export async function readMarketDisabledPackages(dshHome: string): Promise<strin
   return (await readMarketState(dirname(profilePackageJsonPath(dshHome)))).disabled
 }
 
+/** The market also persists bundle switches in the shared patch layer. Its
+ * in-memory disable list can lag that layer when another settings surface
+ * changes the same rows, so inspect the package's own inserted rows.
+ */
+export async function isProfilePluginDisabledByPatch(dshHome: string, pluginName: string): Promise<boolean> {
+  const profileDirectory = dirname(profilePackageJsonPath(dshHome))
+  const { inserted } = await pluginPatchRows(profileDirectory, pluginName)
+  if (inserted.length === 0) return false
+  const text = await readTextIfPresent(profileCordisPatchPath(dshHome))
+  if (text === undefined) return false
+  let patches: unknown
+  try {
+    patches = parse(text)
+  } catch {
+    return false
+  }
+  if (!Array.isArray(patches)) return false
+  const disabled = new Set(patches.flatMap((row: unknown) => {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) return []
+    const { id, disabled } = row as { id?: unknown; disabled?: unknown }
+    return typeof id === 'string' && disabled === true ? [id] : []
+  }))
+  return inserted.every((id) => disabled.has(id))
+}
+
 async function setMarketDisabled(profileDirectory: string, pluginName: string, disabled: boolean): Promise<void> {
   const { state, disabled: current } = await readMarketState(profileDirectory)
   const next = disabled

@@ -6,9 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { composeEntries, loadOverlayPatches, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { prepareHostDisabledPluginsPatch } from '../src/main/state/host-disabled-plugins'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
-import { disableProfilePlugin } from '../src/main/state/plugin-disable'
 import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
-import { setHostPluginEnabled } from '../src/main/state/host-plugin-state'
+import { prepareProfileBundleForHostEnable, setHostPluginEnabled } from '../src/main/state/host-plugin-state'
 import { projectRoot } from './patch-path'
 
 const homes: string[] = []
@@ -28,6 +27,22 @@ describe('disabled Profile packages in Desktop host patch', () => {
 
     expect(await prepareHostDisabledPluginsPatch(home, hostPath)).toBeUndefined()
     await expect(readFile(stalePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('restores an active in-box row disabled by the market toggle for the same package name', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-host-disable-'))
+    homes.push(home)
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(join(profile, '.dsh-market'), { recursive: true })
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['dsh-image-generation'] }))
+    await writeFile(join(profile, 'cordis.patch.yml'), '- id: image-gen\n  disabled: true\n- id: dsh-image-generation\n  disabled: true\n')
+    const hostPath = join(home, 'desktop.patch.yml')
+    await writeFile(hostPath, '- insert:\n    - id: dsh-image-generation\n      name: dsh-image-generation\n')
+
+    const overlayPath = await prepareHostDisabledPluginsPatch(home, hostPath)
+    expect(overlayPath).toBeDefined()
+    expect(await readFile(overlayPath!, 'utf8')).toContain('- id: "dsh-image-generation"\n  disabled: false')
+    expect(await readFile(join(profile, 'cordis.patch.yml'), 'utf8')).toContain('disabled: true')
   })
 
   it('keeps the core authorization row and the in-box image tool active', async () => {
@@ -138,10 +153,16 @@ describe('disabled Profile packages in Desktop host patch', () => {
       await writeFile(manifestPath, JSON.stringify(manifest))
       await symlink(join(projectRoot, 'node_modules', 'dsh-image-generation'),
         join(profile, 'node_modules', 'dsh-image-generation'), 'junction')
-      expect(await disableProfilePlugin(home, 'dsh-image-generation')).toMatchObject({ ok: true })
+      await mkdir(join(profile, '.dsh-market'), { recursive: true })
+      await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: [] }))
+      await writeFile(join(profile, 'cordis.patch.yml'),
+        '- id: image-gen\n  disabled: true\n- id: dsh-image-generation\n  disabled: true\n')
+      expect(await prepareProfileBundleForHostEnable(home, 'dsh-image-generation')).toEqual({ ok: true })
       await runtime.start(home)
       const snapshot = runtime.snapshot()
       expect(snapshot.phase, snapshot.logs.join('\n')).toBe('ready')
+      expect(await readFile(join(home, 'desktop-disabled-plugins.patch.yml'), 'utf8'))
+        .toContain('- id: "dsh-image-generation"\n  disabled: false')
       if (!snapshot.url || !snapshot.authToken) throw new Error('Harness did not announce an authenticated endpoint')
       const login = await fetch(`${snapshot.url}/?token=${encodeURIComponent(snapshot.authToken)}`, { redirect: 'manual' })
       const headers = { Cookie: login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ') }
