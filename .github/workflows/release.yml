@@ -522,8 +522,11 @@ jobs:
 
             Start-Sleep -Seconds 20
             $stableLog = Get-Content -Raw $logPath
-            if ($stableLog -match '\[stderr\]') {
-              throw 'Harness reported stderr after workspace and session creation.'
+            $readyMarker = $stableLog.LastIndexOf('[desktop] Harness is ready')
+            if ($readyMarker -lt 0) { throw 'Harness readiness marker is missing.' }
+            $postReadyLog = $stableLog.Substring($readyMarker)
+            if ($postReadyLog -match '\[stderr\]') {
+              throw 'Harness reported stderr after becoming ready.'
             }
             if ($stableLog -match '\[node\] Harness process exited') {
               throw 'Harness process exited after workspace and session creation.'
