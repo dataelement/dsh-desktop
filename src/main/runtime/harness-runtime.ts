@@ -481,7 +481,7 @@ export class HarnessRuntime {
     await mkdir(this.options.dshHome, { recursive: true })
     const patchPath = profile === SAFE_MODE_PROFILE
       ? sourcePatchPath
-      : await prepareHostPluginSourcesPatch(this.options.dshHome, sourcePatchPath)
+      : await prepareHostPluginSourcesPatch(this.options.dshHome, sourcePatchPath, this.options.dshEntryPath)
     const marketPatchPath = this.options.dshMarketPatchPath
     const patchPaths = profile !== SAFE_MODE_PROFILE &&
       marketPatchPath !== undefined &&
