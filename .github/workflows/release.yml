@@ -436,7 +436,7 @@ jobs:
           New-Item -ItemType Directory -Path $isolatedApp | Out-Null
           Copy-Item -Path (Join-Path $sourceExecutable.Directory.FullName '*') -Destination $isolatedApp -Recurse
           $executable = Join-Path $isolatedApp $sourceExecutable.Name
-          $packagedNode = Join-Path $isolatedApp 'resources\app\node_modules\node\bin\node.exe'
+          $packagedNode = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\node\bin\node.exe'
           if (Test-Path $packagedNode) { throw 'Duplicate Windows node.exe remains in the package.' }
           # Exercise the actual native binding too; the best-effort fallback
           # must not hide a missing or broken packaged koffi dependency.
@@ -446,7 +446,7 @@ jobs:
           $nativeMarker = Join-Path $isolatedApp 'koffi-native-ok'
           $env:ELECTRON_RUN_AS_NODE = '1'
           try {
-            & $executable --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; import { writeFileSync } from 'node:fs'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); writeFileSync(process.argv[3], 'ok'); console.log('Packaged koffi native binding passed'); process.exit(0);" (Join-Path $isolatedApp 'resources\app\package.json') (Join-Path $isolatedApp 'resources\app\node_modules') $nativeMarker
+            & $executable --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; import { writeFileSync } from 'node:fs'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); writeFileSync(process.argv[3], 'ok'); console.log('Packaged koffi native binding passed'); process.exit(0);" (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\koffi\package.json') (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules') $nativeMarker
           } finally {
             Remove-Item Env:ELECTRON_RUN_AS_NODE
           }

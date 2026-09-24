@@ -11,8 +11,8 @@ const pruneWindowsNode = require('../scripts/prune-windows-node.cjs') as
 describe('Windows package Node pruning', () => {
   it('removes only the duplicate Windows node.exe after packaging', async () => {
     const root = join(tmpdir(), `dsh-prune-${process.pid}-${Date.now()}`)
-    const executable = join(root, 'resources', 'app', 'node_modules', 'node', 'bin', 'node.exe')
-    mkdirSync(join(root, 'resources', 'app', 'node_modules', 'node', 'bin'), { recursive: true })
+    const executable = join(root, 'resources', 'app.asar.unpacked', 'node_modules', 'node', 'bin', 'node.exe')
+    mkdirSync(join(root, 'resources', 'app.asar.unpacked', 'node_modules', 'node', 'bin'), { recursive: true })
     writeFileSync(executable, 'node')
     try {
       await pruneWindowsNode({ electronPlatformName: 'darwin', appOutDir: root })

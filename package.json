@@ -306,7 +306,10 @@
   "build": {
     "appId": "io.dsh.desktop",
     "productName": "DSH Desktop",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/**/*"
+    ],
     "afterPack": "scripts/prune-windows-node.cjs",
     "npmRebuild": false,
     "compression": "maximum",

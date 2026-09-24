@@ -3,7 +3,7 @@ const { join } = require('node:path')
 
 module.exports = async function pruneWindowsNode(context) {
   if (context.electronPlatformName !== 'win32') return
-  const bundledNode = join(context.appOutDir, 'resources', 'app', 'node_modules', 'node', 'bin', 'node.exe')
+  const bundledNode = join(context.appOutDir, 'resources', 'app.asar.unpacked', 'node_modules', 'node', 'bin', 'node.exe')
   await rm(bundledNode, { force: true })
   try {
     await access(bundledNode)
