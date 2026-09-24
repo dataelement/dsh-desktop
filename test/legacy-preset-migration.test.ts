@@ -95,6 +95,7 @@ it('publishes a migrated custom preset through the real Harness web registry', a
     dshSafePatchPath: overlay,
     dshHome: home,
     logPath: join(home, 'runtime.log'),
+    preferredPort: 0,
     startupTimeoutMs: 30_000,
     launchProcess: (executable, args, options) => spawn(executable, args, options),
     onChanged() {}
