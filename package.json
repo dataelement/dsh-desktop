@@ -444,7 +444,9 @@
     "win": {
       "icon": "build/icon.ico",
       "verifyUpdateCodeSignature": true,
-      "publisherName": "Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.",
+      "signtoolOptions": {
+        "publisherName": "Beijing Shuju Xiangsu Intelligence Technology Co., Ltd."
+      },
       "requestedExecutionLevel": "asInvoker",
       "target": [
         {
