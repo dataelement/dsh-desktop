@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -197,6 +197,22 @@ describe('PPT instructions follow the session composer button', () => {
   })
 })
 
+
+describe('PPT catalog without a session', () => {
+  it('returns built-in templates without creating a session directory', async () => {
+    const f = await fixture()
+    const catalog = await f.rpc('template/catalog', {})
+    expect(catalog.ok).toBe(true)
+    expect(catalog.value.status).toBe('ok')
+    expect(catalog.value.data.templates.some(template => template.origin === 'built-in')).toBe(true)
+    await expect(stat(path.join(f.root, 'sessions'))).rejects.toMatchObject({ code: 'ENOENT' })
+    const denied = await f.rpc('presentation/mode', {})
+    expect(denied.ok).toBe(true)
+    expect(denied.value.status).toBe('error')
+    expect(denied.value.error.message).toContain('sessionId')
+    await expect(stat(path.join(f.root, 'sessions'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
 
 describe('PPT catalog migration', () => {
   it.each(['DSH-PPT-AUTHORING-20260906-V2', 'DSH-PPT-AUTHORING-20260907-V3'])('refreshes %s with the current validation workflow', async (marker) => {
