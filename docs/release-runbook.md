@@ -12,6 +12,10 @@ The `Release desktop installers` workflow accepts a `mode` on `workflow_dispatch
 
 Official releases are still created by pushing a `v*` tag, not by filling the dispatch form. Do not put `v0.9.1` in `prerelease_tag` or `signed_version`.
 
+## Build layout and timing
+
+macOS uses one matrix job with native Apple Silicon and Intel runners. Both entries retain the same signing, notarization and artifact verification gates; publishing waits for the whole matrix. Each native job builds once (including PPT previews), runs Vitest against that prepared runtime, and packages the same output with an explicit native-target check. Windows also runs recovery UI checks before packaging. Local `npm test` and `package:*` commands still prepare their own inputs. Already compressed installer artifacts use `compression-level: 0` during upload to avoid redundant compression. Compare job step durations on the same target before changing installer compression or dependency contents.
+
 ## Local Windows UKey signing runner
 
 Windows packaging and signing run as separate jobs. The GitHub-hosted Windows runner builds an unsigned NSIS installer and uploads a short-lived workflow artifact. A local macOS ARM64 runner downloads it, scans every PE by content, preserves existing vendor signatures, and signs unsigned PEs with Jsign and the SafeNet UKey. It signs the NSIS extraction helper and generated uninstaller during repackaging, then signs the final installer, regenerates the blockmap and `latest.yml`, and uploads the signed release set. Any missing archive, invalid PE, signing failure or repackaging failure stops the run. A second Windows runner installs the final signed artifact into isolated directories, verifies every PE signature and Harness startup, repeats the same-path installation, and checks that Profile data survives. GitHub publication requires both signing and that installed-artifact smoke to pass.
