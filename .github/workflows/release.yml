@@ -428,7 +428,9 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
         run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
       - run: npm ci
-      - run: npm test
+      - name: Run Windows tests with progress
+        run: npm test -- --reporter=verbose
+        timeout-minutes: 15
       - name: Verify generated PPT output leaves sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - run: npm run typecheck
