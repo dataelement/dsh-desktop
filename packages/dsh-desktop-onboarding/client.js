@@ -289,10 +289,7 @@ window.__ModuleLoader__.load({
       installStyles()
       const t = ctx.locale.bind(NS)
 
-      const wizardScope = ctx.settingsScope.bind({
-        namespace: NS,
-        decode: (value) => (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {})
-      })
+      const wizardScope = ctx.configForms.get('dsh-desktop-onboarding')
 
       ctx.locale.register(NS, { zh, en })
 
@@ -312,7 +309,7 @@ window.__ModuleLoader__.load({
     const inject = [
       'slots',
       'locale',
-      'settingsScope'
+      'configForms'
     ]
 
     exports.apply = apply

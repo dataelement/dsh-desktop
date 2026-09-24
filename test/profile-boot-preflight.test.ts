@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
+import { composeEntries, loadProfileDirectory, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
 
 const homes: string[] = []
@@ -92,5 +92,52 @@ describe('normal Profile boot preflight', () => {
     await mkdir(join(profile, '.dsh-market'))
     await writeFile(join(profile, '.dsh-market', 'state.json'), '{bad json')
     expect((await check())?.packageName).toBe('test-startup-bundle')
+  })
+
+  it('disables host overlay rows that insert an off Profile package', async () => {
+    const { home, profile, check } = await fixture()
+    await writeFile(join(profile, 'cordis.patch.yml'), '- id: host-bundle-row\n  disabled: true\n')
+    await mkdir(join(profile, '.dsh-market'))
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['test-startup-bundle'] }))
+    expect(await check()).toBeUndefined()
+    const anchor = join(home, 'app', 'package.json')
+    const loaded = loadProfileDirectory('dsh-desktop', profile, anchor)
+    const context: ProfileContext = {
+      name: 'web', dir: profile, home, installAnchor: anchor,
+      patchPath: join(profile, 'cordis.patch.yml'), cwd: home,
+      startedBundles: ['test-startup-bundle'], telemetryDisabledEnv: undefined,
+      overlays: [{ insert: [{ id: 'host-bundle-row', name: 'test-startup-bundle' }] }]
+    }
+    const entries = composeEntries([readProfilePatches('dsh-desktop', context, loaded)])
+    expect(entries).toEqual([expect.objectContaining({ id: 'host-bundle-row', disabled: true })])
+  })
+
+  it('restores a core row previously disabled through a now skipped plugin with the same row id', async () => {
+    const { home, profile, bundle } = await fixture()
+    const core = join(profile, 'node_modules', 'core-bundle')
+    await mkdir(core, { recursive: true })
+    await writeFile(join(core, 'package.json'), JSON.stringify({
+      name: 'core-bundle', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } }
+    }))
+    await writeFile(join(core, 'cordis.patch.yml'), '- insert:\n    - id: authorization\n      name: core-authorization\n')
+    await writeFile(join(bundle, 'cordis.patch.yml'), '- insert:\n    - id: authorization\n      name: test-startup-bundle\n')
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dsh: { profile: { bundles: ['core-bundle', 'test-startup-bundle'] } }
+    }))
+    await writeFile(join(profile, 'cordis.patch.yml'), '- id: authorization\n  disabled: true\n')
+    await mkdir(join(profile, '.dsh-market'))
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['test-startup-bundle'] }))
+    const anchor = join(home, 'app', 'package.json')
+    const loaded = loadProfileDirectory('dsh-desktop', profile, anchor)
+    const context: ProfileContext = {
+      name: 'web', dir: profile, home, installAnchor: anchor,
+      patchPath: join(profile, 'cordis.patch.yml'), cwd: home,
+      startedBundles: ['core-bundle', 'test-startup-bundle'], telemetryDisabledEnv: undefined,
+      overlays: []
+    }
+    const entries = composeEntries([readProfilePatches('dsh-desktop', context, loaded)])
+    expect(entries).toEqual([expect.objectContaining({
+      id: 'authorization', name: 'core-authorization', disabled: false
+    })])
   })
 })

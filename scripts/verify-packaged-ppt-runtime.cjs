@@ -1,7 +1,11 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createRequire } = require('node:module')
+const { execFile } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
+const { promisify } = require('node:util')
+
+const execFileAsync = promisify(execFile)
 
 async function countFiles(root, suffix) {
   let count = 0
@@ -13,15 +17,7 @@ async function countFiles(root, suffix) {
   return count
 }
 
-module.exports = async function verifyPackagedPptRuntime(context) {
-  const product = context.packager.appInfo.productFilename
-  const candidates = [
-    path.join(context.appOutDir, 'resources', 'app'),
-    path.join(context.appOutDir, product + '.app', 'Contents', 'Resources', 'app')
-  ]
-  const appRoot = candidates.find(candidate => require('node:fs').existsSync(candidate))
-  if (!appRoot) throw new Error('Cannot locate the unpacked packaged application')
-
+async function verifyRuntime(appRoot) {
   for (const packageName of ['dsh-ppt', 'dsh-ppt-composer']) {
     const packageRoot = path.join(appRoot, 'node_modules', packageName)
     const info = await fs.lstat(packageRoot)
@@ -62,4 +58,34 @@ module.exports = async function verifyPackagedPptRuntime(context) {
   for (const relative of Object.values(previewFiles)) await fs.access(path.join(references, relative))
   const previewCount = await countFiles(references, '.jpg')
   if (previewCount !== 192) throw new Error('Packaged dsh-ppt contains ' + previewCount + ' previews; expected 192')
+}
+
+module.exports = async function verifyPackagedPptRuntime(context) {
+  const product = context.packager.appInfo.productFilename
+  const macContents = path.join(context.appOutDir, product + '.app', 'Contents')
+  const candidates = [
+    [path.join(context.appOutDir, 'resources', 'app'), null],
+    [path.join(macContents, 'Resources', 'app'), null],
+    [path.join(context.appOutDir, 'resources', 'app.asar'), path.join(context.appOutDir, product + (process.platform === 'win32' ? '.exe' : ''))],
+    [path.join(macContents, 'Resources', 'app.asar'), path.join(macContents, 'MacOS', product)]
+  ]
+  const found = candidates.find(([candidate]) => require('node:fs').existsSync(candidate))
+  if (!found) throw new Error('Cannot locate the packaged application')
+  const [appRoot, executable] = found
+  if (executable === null) return verifyRuntime(appRoot)
+  if (!require('node:fs').existsSync(executable)) throw new Error('Cannot locate the packaged Electron runtime')
+  // Electron's Node mode understands asar paths and resolves native modules
+  // through app.asar.unpacked, just as the installed Desktop does.
+  await execFileAsync(executable, [__filename, '--verify-asar', appRoot], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    timeout: 120_000,
+    maxBuffer: 1024 * 1024
+  })
+}
+
+if (require.main === module && process.argv[2] === '--verify-asar') {
+  verifyRuntime(path.resolve(process.argv[3])).catch(error => {
+    console.error(error)
+    process.exitCode = 1
+  })
 }

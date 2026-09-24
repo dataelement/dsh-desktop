@@ -1,25 +1,18 @@
 /**
  * Host half of the DSH Desktop first-run onboarding notice.
  *
- * Registers the durable `desktop-onboarding` settings namespace that the
- * browser half uses to remember the user has already seen (and acknowledged)
- * the notice. Eligibility is derived from the immutable desktop install
- * classification; releases never re-prompt existing users.
+ * Exposes the first-run notice state as this plugin entry's Config form. The
+ * browser stores the acknowledgement through the current settings service.
+ * Eligibility comes from the immutable desktop install classification.
  *
  * The browser half (`./client.js`) does all the visible work — this file only
- * exists to claim the namespace before the settings mirror reads it.
+ * exists to provide that Config before the settings mirror reads it.
  */
 import z from '@deepseek-ai/schemastery'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const DESKTOP_ONBOARDING_NAMESPACE = 'desktop-onboarding'
-const DesktopOnboardingSchema = z.object({
-  wizardVersion: z.string(),
-  eligible: z.boolean()
-})
-
-function isFirstInstallEligible() {
+export function isFirstInstallEligible() {
   const dshHome = process.env.DSH_HOME
   if (!dshHome) return false
   try {
@@ -33,12 +26,14 @@ function isFirstInstallEligible() {
   }
 }
 
+export const Config = z.object({
+  wizardVersion: z.string().default('').volatile(),
+  eligible: z.boolean().default(isFirstInstallEligible()).volatile()
+})
+
+export const inject = ['settings']
+
 export function apply(ctx) {
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.register(
-      DESKTOP_ONBOARDING_NAMESPACE,
-      DesktopOnboardingSchema,
-      { base: { eligible: isFirstInstallEligible() } }
-    )
-  })
+  // The onboarding state is internal; its Config form should not add a page.
+  ctx.effect(() => ctx.settings.configure({ auto: false }))
 }

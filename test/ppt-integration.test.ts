@@ -187,7 +187,7 @@ describe('DSH PPT built-in plugin', () => {
     }
   })
 
-  it('places the PPT action beside the agent preset and the catalog below the input', async () => {
+  it('places the PPT action beside the agent preset and renders the catalog for the hero input', async () => {
     const client = await readFile(path.join(
       projectRoot,
       'node_modules',
@@ -205,7 +205,7 @@ describe('DSH PPT built-in plugin', () => {
     const owner = client.indexOf('extensionZone: zone')
     const input = client.indexOf('className: clsx(InputBar_module_css_default.card', owner)
     const catalog = client.indexOf(
-      'variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null',
+      'extensionZone === void 0 ? null : renderSlot("conversation.composer.dock", extensionZone)',
       input
     )
 
@@ -214,6 +214,10 @@ describe('DSH PPT built-in plugin', () => {
     expect(owner).toBeGreaterThan(-1)
     expect(input).toBeGreaterThan(owner)
     expect(catalog).toBeGreaterThan(input)
+
+    const adapter = await readFile(path.join(projectRoot, 'packages', 'ppt-runtime', 'adapter', 'lib', 'client.js'), 'utf8')
+    expect(adapter).toContain('[data-slot="conversation.composer.bar"] div:has(> [data-slot="conversation.composer.dock"] [data-office-ppt-template-panel]){width:100%}')
+    expect(adapter).toContain('[data-placement="fixed"]:has([data-office-ppt-template-panel]){width:100%}')
   })
 
   it('integrates hero mode actions with the adjacent agent-preset control style', async () => {
@@ -262,7 +266,7 @@ describe('DSH PPT built-in plugin', () => {
     expect(promptRow).toBeGreaterThan(-1)
     expect(accessory).toBeGreaterThan(promptRow)
     expect(editor).toBeGreaterThan(accessory)
-    expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
+    expect(client).toContain('children: accessory ?? (extensionZone === void 0 ? null : renderSlot("conversation.input.accessory", extensionZone))')
   })
 
   it('declares both local source packages and mounts only the PPT composer', async () => {

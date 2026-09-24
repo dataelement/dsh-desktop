@@ -92,13 +92,11 @@ describe('profile plugin disable', () => {
     await rm(root, { recursive: true, force: true })
   })
 
-  it('switches a bundle plugin off in the patch layer and the market state, keeping everything else', async () => {
+  it('switches a bundle plugin off in market state without disabling shared row ids', async () => {
+    const beforePatch = await readFile(patchPath, 'utf8')
     expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true, rows: ['proxy-routing'] })
 
-    expect(parse(await readFile(patchPath, 'utf8'))).toEqual([
-      { id: 'mcp-coaligne', disabled: false },
-      { id: 'proxy-routing', disabled: true }
-    ])
+    expect(await readFile(patchPath, 'utf8')).toBe(beforePatch)
     expect(JSON.parse(await readFile(statePath, 'utf8'))).toEqual({
       disabled: ['@dhicoc/dsh-reverse-skill', 'dsh-proxy-routing'],
       region: 'china',
@@ -107,7 +105,7 @@ describe('profile plugin disable', () => {
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-proxy-routing', 'dsh-client-only'])).toEqual(['dsh-proxy-routing'])
 
     expect(await enableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true })
-    expect(parse(await readFile(patchPath, 'utf8'))).toEqual([{ id: 'mcp-coaligne', disabled: false }])
+    expect(await readFile(patchPath, 'utf8')).toBe(beforePatch)
     expect(JSON.parse(await readFile(statePath, 'utf8')).disabled).toEqual(['@dhicoc/dsh-reverse-skill'])
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-proxy-routing'])).toEqual([])
   })

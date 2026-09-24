@@ -2568,7 +2568,7 @@ async function disableSafeModePlugin(
   if (result.ok) {
     runtime.note(
       `[${logPrefix}] disabled ${pluginName}` +
-      (result.rows.length > 0 ? `; patch rows off: ${result.rows.join(', ')}` : ' in the market state (no bundle rows)')
+      (result.rows.length > 0 ? `; bundle rows skipped: ${result.rows.join(', ')}` : ' in the market state (no bundle rows)')
     )
     return { disabled: true }
   }

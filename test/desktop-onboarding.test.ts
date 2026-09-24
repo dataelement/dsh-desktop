@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import { patchPath, projectRoot } from './patch-path'
 // @ts-expect-error Local host plugins are authored as ESM JavaScript.
-import { apply as applyHost } from '../packages/dsh-desktop-onboarding/index.js'
+import { apply as applyHost, isFirstInstallEligible } from '../packages/dsh-desktop-onboarding/index.js'
 
 interface Registration {
   config: {
@@ -25,9 +25,8 @@ interface CtxHarness {
     register: (ns: string, dicts: Record<string, Record<string, string>>) => void
     bind: (ns: string) => (key: string) => string
   }
-  settingsScope: {
-    bind: (spec: { namespace: string }) => unknown
-    describe: () => unknown
+  configForms: {
+    get: (entryId: string) => unknown
   }
   remote: {
     llm: {
@@ -173,9 +172,8 @@ function createCtx(overrides: Partial<CtxHarness> = {}): { ctx: CtxHarness; regi
       register: () => undefined,
       bind: () => (key: string) => key
     },
-    settingsScope: {
-      bind: () => ({ getSnapshot: () => ({ mode: 'memory', value: {} }), subscribe: () => () => undefined, set: async () => undefined }),
-      describe: () => ({ ensure: async () => undefined, getSnapshot: () => ({ view: undefined }) })
+    configForms: {
+      get: () => ({ getSnapshot: () => ({ mode: 'memory', value: {} }), subscribe: () => () => undefined, set: async () => undefined })
     },
     remote: {
       llm: { listProviders: async () => ({ ok: true, value: [] }), listConfigurableProviders: async () => ({ ok: true, value: [] }) },
@@ -218,7 +216,7 @@ describe('DSH Desktop onboarding wizard', () => {
     const { ctx, registrations } = createCtx()
     plugin.apply(ctx)
 
-    expect(plugin.inject).toEqual(['slots', 'locale', 'settingsScope'])
+    expect(plugin.inject).toEqual(['slots', 'locale', 'configForms'])
     const onboardingRegistrations = registrations.filter(({ config }) => config.name === 'settings.onboarding')
     expect(onboardingRegistrations).toHaveLength(1)
     const [onboardingRegistration] = onboardingRegistrations
@@ -308,6 +306,15 @@ describe('DSH Desktop onboarding composition', () => {
 })
 
 describe('DSH Desktop onboarding host eligibility', () => {
+  it('uses the current settings presentation API for its internal Config form', () => {
+    const configure = vi.fn(() => () => undefined)
+    applyHost({
+      settings: { configure },
+      effect: (register: () => unknown) => register()
+    })
+    expect(configure).toHaveBeenCalledWith({ auto: false })
+  })
+
   it('publishes eligible only for a valid new-install marker', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-onboarding-host-'))
     const previous = process.env.DSH_HOME
@@ -319,18 +326,16 @@ describe('DSH Desktop onboarding host eligibility', () => {
         firstSeenVersion: '1.0.0',
         classifiedAt: '2026-09-23T00:00:00.000Z'
       }))
-      const register = vi.fn()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: true } })
+      expect(isFirstInstallEligible()).toBe(true)
+      vi.resetModules()
+      // @ts-expect-error Local host plugins are authored as ESM JavaScript.
+      const { Config } = await import('../packages/dsh-desktop-onboarding/index.js')
+      const defaults = Config({})
+      expect(defaults.eligible.get()).toBe(true)
+      expect(defaults.wizardVersion.get()).toBe('')
 
       await writeFile(path.join(root, '.desktop-install-state.json'), '{broken')
-      register.mockClear()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+      expect(isFirstInstallEligible()).toBe(false)
 
       await writeFile(path.join(root, '.desktop-install-state.json'), JSON.stringify({
         schemaVersion: 1,
@@ -338,18 +343,10 @@ describe('DSH Desktop onboarding host eligibility', () => {
         firstSeenVersion: '1.0.0',
         classifiedAt: '2026-09-23T00:00:00.000Z'
       }))
-      register.mockClear()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+      expect(isFirstInstallEligible()).toBe(false)
 
       await rm(path.join(root, '.desktop-install-state.json'))
-      register.mockClear()
-      applyHost({
-        inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({ settings: { register } })
-      })
-      expect(register.mock.calls[0]?.[2]).toEqual({ base: { eligible: false } })
+      expect(isFirstInstallEligible()).toBe(false)
     } finally {
       if (previous === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previous

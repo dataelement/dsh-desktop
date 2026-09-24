@@ -8,15 +8,13 @@ import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recover
  * Disable a profile plugin the way dsh-market's own toggle does, so recovery
  * and Safe Mode never delete a plugin to get the app starting again.
  *
- * The market persists a switched-off plugin in two places, and both are
- * written here in its exact shapes:
+ * The market persists the package switch in `.dsh-market/state.json`.
+ * Harness skips that bundle before reading its manifest or compatibility
+ * metadata, and applies the switch to host overlay rows with the same package.
  *
- *   - `.dsh-market/state.json` lists the package under `disabled`. Harness
- *     skips that bundle before reading its manifest or compatibility metadata;
- *     the market also uses this switch for client-only packages.
- *   - the user patch layer (`cordis.patch.yml`) gets `- id: <row>` +
- *     `disabled: true` for every loader row the package inserts. It remains
- *     off if a consumer composes the row independently of the bundle list.
+ * Do not write `disabled: true` by row id: another bundle may also insert a
+ * core row with that id (notably `authorization`). A package switch must not
+ * disable that other owner's service.
  *
  * The market's toggle also drops a "disable-carrier" (a bundle whose patch
  * disables a plugin it does not own) from `dsh.profile.bundles`. Desktop
@@ -251,18 +249,6 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
       reason: 'carrier',
       foreignDisables,
       detail: `${pluginName} disables ${foreignDisables.join(', ')}; switching it off alone would leave those disabled with nothing replacing them`
-    }
-  }
-
-  if (inserted.length > 0) {
-    const patchPath = profileCordisPatchPath(dshHome)
-    try {
-      const layer = await readTextIfPresent(patchPath) ?? ''
-      const result = disablePatchRows(layer, inserted)
-      if ('error' in result) return { ok: false, reason: 'patch-layer', detail: result.error }
-      if (result.changed) await writeAtomically(patchPath, result.text)
-    } catch (error) {
-      return { ok: false, reason: 'patch-layer', detail: message(error) }
     }
   }
 
