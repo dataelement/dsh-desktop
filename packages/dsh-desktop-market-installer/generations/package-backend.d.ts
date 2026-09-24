@@ -10,6 +10,7 @@ export interface ProfileBundleInstallRequest {
   kind: 'registry' | 'path' | 'git' | 'tarball'
   path?: string
   expectedName?: string
+  registry?: string
   signal?: AbortSignal
   onOutput?(text: string, stream: 'stdout' | 'stderr'): void
 }

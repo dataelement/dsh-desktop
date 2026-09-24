@@ -120,6 +120,7 @@ export function createGenerationPackageBackend(options) {
             expectedPluginName,
             sourceDirectory,
             sourceSpec,
+            registry: request.registry,
             nodeExecutablePath,
             pnpmEntryPath,
             environment,

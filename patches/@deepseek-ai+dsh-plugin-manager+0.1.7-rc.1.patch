@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
-index eab7663..8bea852 100644
+index eab7663..680d28a 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 @@ -1637,7 +1637,13 @@ let PluginManager = (() => {
@@ -39,7 +39,7 @@ index eab7663..8bea852 100644
  					for (const [index, registry] of plan.entries()) {
  						if (index > 0) await this.restoreFiles(files);
  						if (stopped()) throw new InstallCancelledError();
-@@ -1697,10 +1706,26 @@ let PluginManager = (() => {
+@@ -1697,10 +1706,27 @@ let PluginManager = (() => {
  					}
  					/* v8 ignore next -- the plan is never empty, so a run always settled */
  					if (run === void 0) throw new Error("no registry was asked");
@@ -49,6 +49,7 @@ index eab7663..8bea852 100644
 +							spec: parsed.spec,
 +							kind: parsed.kind,
 +							path: parsed.path,
++							registry: options?.registry,
 +							expectedName: parsed.name,
 +							signal: control.abort.signal,
 +							onOutput: (text, stream) => this.emitPackageOutput(requestId, text, stream, ["pnpm", "add", parsed.spec])
@@ -67,7 +68,7 @@ index eab7663..8bea852 100644
  							result.pendingBuilds = await readPendingBuilds(this.profile.dir);
  						} catch (error) {
  							this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
-@@ -1708,8 +1733,8 @@ let PluginManager = (() => {
+@@ -1708,8 +1734,8 @@ let PluginManager = (() => {
  						throw new Error(run.output);
  					}
  					const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -78,7 +79,7 @@ index eab7663..8bea852 100644
  					const target = installed[0];
  					if (installed.length !== 1 || target === void 0) throw new ManagementFailure("ambiguous-install");
  					name = target;
-@@ -1720,17 +1745,19 @@ let PluginManager = (() => {
+@@ -1720,17 +1746,19 @@ let PluginManager = (() => {
  					if (compatibility !== void 0 && !compatibility.exempted) throw new ManagementFailure("incompatible-version", [incompatiblePlugin(compatibility)]);
  					for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches("dsh", file);
  				} catch (error) {
@@ -99,7 +100,7 @@ index eab7663..8bea852 100644
  					if (options?.enabled !== false) result.warnings = await this.reload();
  				});
  			}, {
-@@ -1786,7 +1813,13 @@ let PluginManager = (() => {
+@@ -1786,7 +1814,13 @@ let PluginManager = (() => {
  					}
  					if ([...this.ctx.loader.entries()].some((entry) => entry.fiber?.uid != null && contributions.some((row) => row.id === entry.options.id && row.name === entry.options.name))) throw new ManagementFailure("bundle-in-use");
  				});
@@ -114,7 +115,7 @@ index eab7663..8bea852 100644
  				if (result.packageResult.exitCode !== 0 || result.packageResult.timedOut === true) throw new Error(result.packageResult.output);
  			}, {
  				stage: "remove",
-@@ -1831,6 +1864,17 @@ let PluginManager = (() => {
+@@ -1831,6 +1865,17 @@ let PluginManager = (() => {
  				overrides: [...new Set(patches.flatMap((item) => item.insert === void 0 && typeof item.id === "string" && !declared.has(item.id) ? [item.id] : []))]
  			};
  		}
@@ -133,7 +134,7 @@ index eab7663..8bea852 100644
  		async runPnpm(args, signal, requestId) {
  			const jobId = randomUUID();
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
-index e47ee2b..04d995e 100644
+index e47ee2b..9b38b92 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
 @@ -6,6 +6,11 @@ export type * from './types.ts';
@@ -142,7 +143,7 @@ index e47ee2b..04d995e 100644
  /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 +/** Host-owned package mutation backend for immutable Desktop generations. */
 +export interface ProfileBundlePackageBackend {
-+    install(request: { spec: string; kind: 'registry' | 'path' | 'git' | 'tarball'; path?: string; expectedName?: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; bundle?: string; replaced?: boolean; pendingBuilds?: string[]; rollback?(): Promise<void>; commit?(): void; }>;
++    install(request: { spec: string; kind: 'registry' | 'path' | 'git' | 'tarball'; path?: string; registry?: string; expectedName?: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; bundle?: string; replaced?: boolean; pendingBuilds?: string[]; rollback?(): Promise<void>; commit?(): void; }>;
 +    remove(request: { name: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; }>;
 +}
  export interface Config {

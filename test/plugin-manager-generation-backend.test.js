@@ -89,6 +89,26 @@ describe('Plugin Manager generation package backend', () => {
     expect(installed.bundle).toBe('git-plugin')
   })
 
+  it('pins the manager-selected registry in the generation staging directory', async () => {
+    const home = await freshHome()
+    let stagingRegistry
+    const populate = installer('demo-plugin', '1.0.0')
+    const backend = createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused',
+      runInstall: async staging => {
+        stagingRegistry = await readFile(join(staging, '.npmrc'), 'utf8')
+        return populate(staging)
+      }
+    })
+    const installed = await backend.install({
+      spec: 'demo-plugin@1.0.0', kind: 'registry', registry: 'https://registry.example.test'
+    })
+    expect(installed.packageResult.exitCode).toBe(0)
+    expect(stagingRegistry).toContain('registry=https://registry.example.test/')
+  })
+
   it('does not undo another package install or a newer replacement during rollback', async () => {
     const home = await freshHome()
     const makeBackend = (name, version) => createGenerationPackageBackend({
