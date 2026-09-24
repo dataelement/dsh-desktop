@@ -89,6 +89,40 @@ describe('Plugin Manager generation package backend', () => {
     expect(installed.bundle).toBe('git-plugin')
   })
 
+  it('does not undo another package install or a newer replacement during rollback', async () => {
+    const home = await freshHome()
+    const makeBackend = (name, version) => createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused',
+      runInstall: installer(name, version)
+    })
+    const first = await makeBackend('demo-plugin', '1.0.0').install({
+      spec: 'demo-plugin@1.0.0', kind: 'registry'
+    })
+    const other = await makeBackend('other-plugin', '1.0.0').install({
+      spec: 'other-plugin@1.0.0', kind: 'registry'
+    })
+    other.commit?.()
+    await first.rollback?.()
+    expect((await readDesired(home))).toHaveLength(1)
+    let manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(manifest.dependencies['demo-plugin']).toBeUndefined()
+    expect(manifest.dependencies['other-plugin']).toBe('1.0.0')
+
+    const replacement = await makeBackend('demo-plugin', '2.0.0').install({
+      spec: 'demo-plugin@2.0.0', kind: 'registry'
+    })
+    const newer = await makeBackend('demo-plugin', '3.0.0').install({
+      spec: 'demo-plugin@3.0.0', kind: 'registry'
+    })
+    newer.commit?.()
+    await replacement.rollback?.()
+    manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(manifest.dependencies['demo-plugin']).toBe('3.0.0')
+    expect(manifest.dependencies['other-plugin']).toBe('1.0.0')
+  })
+
   it('removes only desired state and leaves generation bytes for cold-start cleanup', async () => {
     const home = await freshHome()
     const backend = createGenerationPackageBackend({

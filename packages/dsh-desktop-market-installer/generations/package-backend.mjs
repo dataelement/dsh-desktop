@@ -159,8 +159,28 @@ export function createGenerationPackageBackend(options) {
           let committed = false
           const rollback = async () => {
             if (committed) return
-            await writeDesired(dshHome, beforeDesired)
-            await projectGenerations(dshHome, PROFILE)
+            await withRegistryLock(dshHome, async () => {
+              if (committed) return
+              const currentDesired = await readDesired(dshHome)
+              // A newer operation may already have replaced this package. Its
+              // pointer must win, while unrelated package changes are kept.
+              if (!currentDesired.includes(generation.id)) return
+              const previousIds = beforeDesired.filter(id =>
+                beforeGenerations.some(item => item.id === id && item.pluginName === generation.pluginName)
+              )
+              const restored = [
+                ...currentDesired.filter(id => id !== generation.id),
+                ...previousIds
+              ]
+              await writeDesired(dshHome, restored)
+              try {
+                await projectGenerations(dshHome, PROFILE)
+              } catch (error) {
+                await writeDesired(dshHome, currentDesired)
+                throw error
+              }
+              committed = true
+            })
           }
           return {
             ok: true,
