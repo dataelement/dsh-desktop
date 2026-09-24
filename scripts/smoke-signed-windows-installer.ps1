@@ -69,8 +69,10 @@ function Assert-Starts([string]$executable) {
           $logFile = Get-Item -LiteralPath $logPath
           if ($logFile.LastWriteTimeUtc -lt $launchTime) { continue }
           $log = Get-Content -LiteralPath $logPath -Raw
-          $match = [regex]::Match($log, 'dsh web: (http://127\.0\.0\.1:\d+/\?token=[^\s]+)')
-          if ($match.Success) {
+          # The log is append-only across launches; the first token belongs to a stopped server.
+          $urlMatches = [regex]::Matches($log, 'dsh web: (http://127\.0\.0\.1:\d+/\?token=[^\s]+)')
+          if ($urlMatches.Count -gt 0) {
+            $match = $urlMatches[$urlMatches.Count - 1]
             try {
               $response = Invoke-WebRequest -UseBasicParsing -Uri $match.Groups[1].Value -TimeoutSec 3
               if ($response.StatusCode -eq 200) {
