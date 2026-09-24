@@ -57,14 +57,11 @@ export function directoryInstallSection(source) {
 !macroend
 !macroundef uninstallOldVersion
 !macro uninstallOldVersion ROOT_KEY
-  !insertmacro readReg $R4 "\${ROOT_KEY}" "\${INSTALL_REGISTRY_KEY}" InstallLocation
-  \${If} $R4 == $INSTDIR
-    StrCpy $R0 0
-    ClearErrors
-  \${Else}
-    Push "\${ROOT_KEY}"
-    Call uninstallOldVersion
-  \${EndIf}
+  ; Directory promotion replaces a same-path install. A different directory is
+  ; independent: running its old uninstaller before promotion can hang or erase
+  ; the working copy before the new one is ready.
+  StrCpy $R0 0
+  ClearErrors
 !macroend`)
   result = replaceOnce(result, '!insertmacro setLinkVars', '!insertmacro setLinkVars\n!insertmacro dshStageApplication')
   result = replaceOnce(result, '!insertmacro installApplicationFiles', 'Call dshPromoteDirectories\nIfErrors 0 +3\n  SetErrorLevel 2\n  Quit')

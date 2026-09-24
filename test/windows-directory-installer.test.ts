@@ -27,6 +27,8 @@ describe('pinned NSIS directory transaction', () => {
       .toBeLessThan(adapted.indexOf('!insertmacro CHECK_APP_RUNNING'))
     expect(adapted.indexOf('Call dshPromoteDirectories'))
       .toBeLessThan(adapted.indexOf('!insertmacro registryAddInstallInfo'))
+    expect(adapted).toContain('!macroundef uninstallOldVersion')
+    expect(adapted).not.toContain('Call uninstallOldVersion')
     expect(adapted).not.toContain('!insertmacro installApplicationFiles\n!insertmacro registryAddInstallInfo')
     expect(directoryInstallerExits('Quit\n')).toContain('Call dshCleanupDirectories')
   })

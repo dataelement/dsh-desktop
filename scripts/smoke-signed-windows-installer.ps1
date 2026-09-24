@@ -163,6 +163,8 @@ if (@(Get-ChildItem -Path "$firstDirectory.old-*" -ErrorAction SilentlyContinue)
 Assert-Starts $firstExecutable
 
 $secondExecutable = Install-At $secondDirectory
+if (-not (Test-Path $firstExecutable)) { throw 'Custom-directory install removed the previous installation.' }
+Assert-Signature $firstExecutable $true
 Assert-InstalledPeSignatures $secondDirectory
 Assert-Starts $secondExecutable
 Write-Host 'Final signed installer passed first install, same-path upgrade, custom directory, signature and startup checks.'
