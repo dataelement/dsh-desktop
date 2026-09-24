@@ -426,6 +426,26 @@ describe('the market install boundary', () => {
     expect(desired[0]).toMatch(/^widget\+2\.0\.0\+/u)
   })
 
+  it('keeps an unresolved market plugin out of the active profile', async () => {
+    const home = await freshHome()
+    const installWithMissingPeer = async stagingDir => {
+      const result = await stubGenerationInstall('widget', '2.0.0')(stagingDir)
+      const manifestPath = join(stagingDir, 'node_modules/widget/package.json')
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+      manifest.peerDependencies = { 'dsh-test-missing-peer': '1.0.0' }
+      await writeFile(manifestPath, JSON.stringify(manifest))
+      return result
+    }
+    const result = await drainHandle(service(home, installWithMissingPeer).runExternalMarketPluginInstall(
+      ['add', 'widget@2.0.0'], join(home, 'profiles', 'web')
+    ))
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('generation peer validation failed')
+    expect(await readDesired(home)).toEqual([])
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web/package.json'), 'utf8'))
+    expect(manifest.dependencies.widget).toBeUndefined()
+  })
+
   it('stages an exact copy of an installed external source and records its provenance', async () => {
     const home = await freshHome()
     const source = join(home, 'legacy-source-plugin')

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 import { PassThrough } from 'node:stream'
 
-import { installGeneration } from './generations/installer.mjs'
+import { installGeneration, verifyGenerationPeers } from './generations/installer.mjs'
 import { createGenerationPackageBackend } from './generations/package-backend.mjs'
 import {
   publishInstalledGeneration,
@@ -626,6 +626,10 @@ export function createDesktopPnpmService(options) {
           runInstall: options.runGenerationInstall
         })
         if (!install.ok) return { exitCode: 1, message: install.detail ?? 'generation install failed' }
+        const peers = await verifyGenerationPeers(home, install.generation)
+        if (!peers.ok) {
+          return { exitCode: 1, message: `generation peer validation failed: ${peers.problems.join('; ')}` }
+        }
 
         // Replace any earlier generation of the same plugin, keep the rest.
         const [desired, generations] = await Promise.all([readDesired(home), listGenerations(home)])
