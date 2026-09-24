@@ -244,7 +244,7 @@ describe('GitHub release contract', () => {
       dependencies: Record<string, string>
       build: {
         publish: Array<{ provider: string; url?: string; owner?: string; repo?: string }>
-        win: { verifyUpdateCodeSignature: boolean }
+        win: { verifyUpdateCodeSignature: boolean; publisherName: string }
       }
     }
     const workflow = await readFile(
@@ -256,7 +256,8 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.publish).toEqual([
       { provider: 'generic', url: 'https://dshdesktop.com/updates/latest/' }
     ])
-    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(false)
+    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(true)
+    expect(packageJson.build.win.publisherName).toBe('Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.')
     for (const asset of [
       'latest-mac-arm64.yml',
       'latest-mac-x64.yml',
@@ -414,6 +415,12 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('sign-windows-unpacked.mjs')
     expect(workflow).toContain('win-unpacked.tar.gz')
     expect(workflow).toContain('--prepackaged')
+    expect(workflow).toContain('set -euo pipefail')
+    expect(workflow).not.toContain('Falling back to original installer')
+    expect(workflow).not.toContain('Restoring original Windows installer')
+    expect(workflow).toContain('smoke-signed-windows:')
+    expect(workflow).toContain('smoke-signed-windows-installer.ps1')
+    expect(workflow).toContain("needs.smoke-signed-windows.result == 'success'")
     expect(workflow).toContain('version="${PRERELEASE_TAG#v}"')
     expect(workflow).toContain('version="${SIGNED_VERSION#v}"')
     expect(workflow).not.toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')
@@ -421,6 +428,11 @@ describe('GitHub release contract', () => {
     expect(workflow).toMatch(
       /publish:[\s\S]*?needs\.sign-windows\.result == 'success'[\s\S]*?- sign-windows/
     )
+  })
+
+  it('does not change Windows security settings during installation', async () => {
+    const installer = await readFile(path.join(projectRoot, 'build', 'installer.nsh'), 'utf8')
+    expect(installer).not.toMatch(/Add-MpPreference|HKLM|ExecShell\s+"runas"/)
   })
 
   it('routes stable downloads through the website and previews through GitHub', async () => {

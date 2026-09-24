@@ -4,6 +4,14 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildJsignArgs, findSignableBinaries } from '../scripts/sign-windows-unpacked.mjs'
 
+function minimalPe(): Buffer {
+  const bytes = Buffer.alloc(132)
+  bytes.write('MZ', 0)
+  bytes.writeUInt32LE(128, 0x3c)
+  bytes.write('PE\0\0', 128)
+  return bytes
+}
+
 describe('sign-windows-unpacked', () => {
   let tempDir: string
 
@@ -48,21 +56,22 @@ describe('sign-windows-unpacked', () => {
     ])
   })
 
-  it('finds root executables, DLLs, packaged node.exe, and native .node addons', async () => {
-    // 1. Root executables & dlls
-    writeFileSync(join(tempDir, 'DSH Desktop.exe'), 'dummy exe')
-    writeFileSync(join(tempDir, 'ffmpeg.dll'), 'dummy dll')
+  it('finds every PE by content, including nested and extensionless binaries', async () => {
+    writeFileSync(join(tempDir, 'DSH Desktop.exe'), minimalPe())
+    writeFileSync(join(tempDir, 'ffmpeg.dll'), minimalPe())
     writeFileSync(join(tempDir, 'LICENSE.electron.txt'), 'ignore me')
 
     // 2. Bundled Node runtime
     const nodeBinDir = join(tempDir, 'resources', 'app', 'node_modules', 'node', 'bin')
     mkdirSync(nodeBinDir, { recursive: true })
-    writeFileSync(join(nodeBinDir, 'node.exe'), 'dummy node.exe')
+    writeFileSync(join(nodeBinDir, 'node.exe'), minimalPe())
 
     // 3. Native addons (.node) - Windows PE (MZ) should be included, non-PE skipped
     const koffiDir = join(tempDir, 'resources', 'app', 'node_modules', 'koffi', 'build', 'koffi')
     mkdirSync(koffiDir, { recursive: true })
-    writeFileSync(join(koffiDir, 'koffi.node'), Buffer.from([0x4d, 0x5a, 0x00, 0x01]))
+    writeFileSync(join(koffiDir, 'koffi.node'), minimalPe())
+    const helper = join(koffiDir, 'spawn-helper')
+    writeFileSync(helper, minimalPe())
 
     const darwinDir = join(tempDir, 'resources', 'app', 'node_modules', 'node-pty', 'prebuilds', 'darwin-arm64')
     mkdirSync(darwinDir, { recursive: true })
@@ -76,7 +85,14 @@ describe('sign-windows-unpacked', () => {
     expect(binaries).toContain(join(tempDir, 'ffmpeg.dll'))
     expect(binaries).toContain(join(nodeBinDir, 'node.exe'))
     expect(binaries).toContain(join(koffiDir, 'koffi.node'))
+    expect(binaries).toContain(helper)
     expect(binaries).not.toContain(join(darwinDir, 'pty.node'))
-    expect(binaries).toHaveLength(4)
+    expect(binaries).toHaveLength(5)
+  })
+
+  it('fails on damaged PE content instead of skipping it', async () => {
+    writeFileSync(join(tempDir, 'DSH Desktop.exe'), minimalPe())
+    writeFileSync(join(tempDir, 'bad.exe'), Buffer.from('MZbroken'))
+    await expect(findSignableBinaries(tempDir)).rejects.toThrow('Invalid PE header')
   })
 })
