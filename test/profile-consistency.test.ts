@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-import { healProfileBundles, HOST_COMPOSED_PPT_BUNDLES, inspectProfileConsistency } from '../src/main/state/profile-consistency'
+import { healProfileBundles, HOST_COMPOSED_BUNDLES, inspectProfileConsistency } from '../src/main/state/profile-consistency'
 import { projectRoot } from './patch-path'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -153,46 +153,50 @@ describe('profile consistency', () => {
     [],
     ['dsh-ppt'],
     ['dsh-ppt-composer'],
-    ['dsh-ppt', 'dsh-ppt-composer']
-  ])('keeps one Desktop PPT entry with existing Profile layers %j', async (...bundles: string[]) => {
+    ['dsh-image-generation'],
+    ['dsh-ppt', 'dsh-ppt-composer', 'dsh-image-generation']
+  ])('keeps image generation declared while reconciling Desktop PPT layers %j', async (...bundles: string[]) => {
     const manifest = {
-      dependencies: { 'dsh-ppt': '0.1.1-rc.2', 'dsh-ppt-composer': '0.1.1-rc.2', 'community-plugin': '1.0.0' },
+      dependencies: { 'dsh-ppt': '0.1.1-rc.2', 'dsh-ppt-composer': '0.1.1-rc.2', 'dsh-image-generation': '0.1.0', 'community-plugin': '1.0.0' },
       dsh: { profile: { bundles }, desktop: { preserved: true } }
     }
     const layer = '# Preserve custom settings, including PPT settings.\n[]\n'
     const { home, modules } = await profileHome(manifest, layer)
-    for (const name of [...HOST_COMPOSED_PPT_BUNDLES, 'community-plugin']) await install(modules, name)
+    for (const name of [...HOST_COMPOSED_BUNDLES, 'dsh-image-generation', 'community-plugin']) await install(modules, name)
     const profile = join(home, 'profiles', 'web')
     const pptData = join(home, 'kimi-ppt', 'existing-project.json')
     await mkdir(join(home, 'kimi-ppt'))
     await writeFile(pptData, '{"existing":"project"}')
 
-    expect(await healProfileBundles(home, HOST_COMPOSED_PPT_BUNDLES)).toEqual({
-      added: ['community-plugin'], removed: bundles
+    const imageDeclared = bundles.includes('dsh-image-generation')
+    const removed = bundles.filter((name) => name !== 'dsh-image-generation')
+    expect(await healProfileBundles(home, HOST_COMPOSED_BUNDLES)).toEqual({
+      added: [...(imageDeclared ? [] : ['dsh-image-generation']), 'community-plugin'], removed
     })
     const after = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
-    expect(after).toEqual({ ...manifest, dsh: { ...manifest.dsh, profile: { bundles: ['community-plugin'] } } })
-    for (const name of HOST_COMPOSED_PPT_BUNDLES) {
+    expect(after).toEqual({ ...manifest, dsh: { ...manifest.dsh, profile: { bundles: ['dsh-image-generation', 'community-plugin'] } } })
+    for (const name of HOST_COMPOSED_BUNDLES) {
       expect(JSON.parse(await readFile(join(modules, name, 'package.json'), 'utf8')).name).toBe(name)
     }
     expect(await readFile(pptData, 'utf8')).toBe('{"existing":"project"}')
     expect(await readFile(join(profile, 'cordis.patch.yml'), 'utf8')).toBe(layer)
-    await expect(inspectProfileConsistency(home, HOST_COMPOSED_PPT_BUNDLES)).resolves.toEqual([])
+    await expect(inspectProfileConsistency(home, HOST_COMPOSED_BUNDLES)).resolves.toEqual([])
 
     // Compose with the real shipped layers: installed core + composer bundles
     // used to activate the core twice (and could insert the composer twice).
-    const patches = new Map(HOST_COMPOSED_PPT_BUNDLES.map((name) => [
+    const patches = new Map([...HOST_COMPOSED_BUNDLES, 'dsh-image-generation'].map((name) => [
       name, loadOverlayPatches('test', join(projectRoot, 'node_modules', name, 'cordis.patch.yml'))
     ]))
     const desktop = loadOverlayPatches('test', join(projectRoot, 'build', 'dsh-desktop.patch.yml'))
     const entries = composeEntries([
-      ...after.dsh.profile.bundles.map((name: string) => patches.get(name as typeof HOST_COMPOSED_PPT_BUNDLES[number]) ?? []),
+      ...after.dsh.profile.bundles.map((name: string) => patches.get(name) ?? []),
       desktop
     ])
     expect(entries.filter((entry) => !entry.disabled && entry.name === 'dsh-ppt')).toHaveLength(0)
     expect(entries.filter((entry) => !entry.disabled && entry.name === 'dsh-ppt-composer')).toHaveLength(1)
+    expect(entries.filter((entry) => !entry.disabled && entry.name === 'dsh-image-generation')).toHaveLength(2)
     const once = await readFile(join(profile, 'package.json'), 'utf8')
-    await expect(healProfileBundles(home, HOST_COMPOSED_PPT_BUNDLES)).resolves.toEqual({ added: [], removed: [] })
+    await expect(healProfileBundles(home, HOST_COMPOSED_BUNDLES)).resolves.toEqual({ added: [], removed: [] })
     expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(once)
   })
 
@@ -209,7 +213,7 @@ describe('profile consistency', () => {
     const file = join(home, 'profiles', 'web', 'package.json')
     const before = await readFile(file, 'utf8')
     vi.mocked(fs.rename).mockRejectedValueOnce(new Error('replacement denied'))
-    await expect(healProfileBundles(home, HOST_COMPOSED_PPT_BUNDLES)).rejects.toThrow('replacement denied')
+    await expect(healProfileBundles(home, HOST_COMPOSED_BUNDLES)).rejects.toThrow('replacement denied')
     expect(await readFile(file, 'utf8')).toBe(before)
     expect((await fs.readdir(join(home, 'profiles', 'web'))).filter((name) => name.endsWith('.tmp'))).toEqual([])
   })

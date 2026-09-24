@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-index 8dd94c6..8a6e995 100644
+index 8dd94c6..560da81 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 @@ -419,14 +419,28 @@ function ensureSymlink(link, target) {
@@ -33,7 +33,25 @@ index 8dd94c6..8a6e995 100644
  	}
  }
  /** Resolve a link target without following the final path component. */
-@@ -830,6 +844,19 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
+@@ -755,6 +769,17 @@ function readProfileManifest(binName, dir) {
+ 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${binName}: profile manifest ${path} must hold a JSON object`);
+ 	return parsed;
+ }
++// The market package switch must be read before preparing bundle manifests.
++// An unreadable state cannot authorize skipping any bundle.
++function readDisabledProfileBundles(dir) {
++	try {
++		const state = JSON.parse(readFileSync(join(dir, ".dsh-market", "state.json"), "utf8"));
++		const list = state.disabled !== void 0 ? state.disabled : state.disabledSkins;
++		return new Set(Array.isArray(list) ? list.filter((name) => typeof name === "string") : []);
++	} catch {
++		return new Set();
++	}
++}
+ /**
+ * Write a profile's manifest back (2-space JSON, trailing newline).
+ * @param dir - the profile directory.
+@@ -830,6 +855,19 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
  	}
  	throw new Error(`${binName}: cannot resolve profile bundle ${JSON.stringify(packageName)} from the dsh installation or ${profileDir}; run 'dsh plugin --profile ${basename(profileDir)} install' if its dependency is not installed`);
  }
@@ -53,10 +71,11 @@ index 8dd94c6..8a6e995 100644
  /**
  * Load an already initialized profile directory without resolving it through
  * the shared Harness home. This is used by application-owned profiles whose
-@@ -847,16 +874,26 @@ function loadProfileDirectory(binName, dir, installAnchor, options = {}) {
+@@ -846,17 +884,28 @@ function loadProfileDirectory(binName, dir, installAnchor, options = {}) {
+ 	const rawPatchReload = manifest.dsh?.profile?.patchReload;
  	if (rawPatchReload !== void 0 && rawPatchReload !== "live" && rawPatchReload !== "startup") throw new Error(`${binName}: profile manifest ${join(dir, "package.json")} dsh.profile.patchReload must be "live" or "startup"`);
  	const patchReload = rawPatchReload ?? "live";
- 	const layers = bundles.map((packageName) => {
+-	const layers = bundles.map((packageName) => {
 -		const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir);
 -		const declared = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).dsh?.bundle?.patch;
 -		if (declared === void 0) throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`);
@@ -67,6 +86,8 @@ index 8dd94c6..8a6e995 100644
 -			patchPath,
 -			patches: loadOverlayPatches(binName, patchPath)
 -		};
++	const disabled = readDisabledProfileBundles(dir);
++	const layers = bundles.filter((packageName) => !disabled.has(packageName)).map((packageName) => {
 +		const owner = { packageName };
 +		try {
 +			const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir);
@@ -90,7 +111,7 @@ index 8dd94c6..8a6e995 100644
  	});
  	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
  	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
-@@ -1332,6 +1369,20 @@ async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModul
+@@ -1332,6 +1381,20 @@ async function mountRootInclude(ctx, absoluteConfigPath, patches = [], bareModul
  		}
  	};
  	ctx.loader.builtins.group = Group;
@@ -111,7 +132,7 @@ index 8dd94c6..8a6e995 100644
  	const rootInclude = {
  		id: "include",
  		name: "cordis:include",
-@@ -1466,6 +1517,7 @@ async function assertEntriesActivated(ctx, binName) {
+@@ -1466,6 +1529,7 @@ async function assertEntriesActivated(ctx, binName) {
  	assertEntriesLoaded(ctx, binName);
  	const failures = [];
  	const rejectionReasons = [];
@@ -119,7 +140,7 @@ index 8dd94c6..8a6e995 100644
  	for (const entry of ctx.loader.entries()) {
  		const fiber = entry.fiber;
  		if (fiber === void 0 || entry.disabled) continue;
-@@ -1476,6 +1528,7 @@ async function assertEntriesActivated(ctx, binName) {
+@@ -1476,6 +1540,7 @@ async function assertEntriesActivated(ctx, binName) {
  				await fiber.await();
  			} catch (error) {
  				rejectionReasons.push(error);
@@ -127,7 +148,7 @@ index 8dd94c6..8a6e995 100644
  				failures.push(`${entry.options.name}: ${formatActivationError(error)}`);
  			}
  			continue;
-@@ -1485,11 +1538,12 @@ async function assertEntriesActivated(ctx, binName) {
+@@ -1485,11 +1550,12 @@ async function assertEntriesActivated(ctx, binName) {
  			const subject = missing.length === 1 ? "service" : "services";
  			failures.push(`${entry.options.name}: pending (waiting for ${subject}: ${missing.join(", ") || "unknown"})`);
  		} else failures.push(`${entry.options.name}: fiber state ${String(state)}`);
@@ -141,7 +162,7 @@ index 8dd94c6..8a6e995 100644
  	}
  }
  /**
-@@ -1537,7 +1591,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
+@@ -1537,7 +1603,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
  		await assertEntriesActivated(ctx, binName);
  		return ctx;
  	} catch (cause) {

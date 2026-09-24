@@ -1,6 +1,8 @@
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { loadOverlayPatches, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
+import { bundleEntryIds } from './patch-layer'
+import { IMAGE_GENERATION_PLUGIN } from './image-generation-identity'
 
 export interface ProfileBootInputProblem {
   /** The failure chain, innermost cause last. */
@@ -21,7 +23,8 @@ export interface ProfileBootInputProblem {
  */
 export async function inspectProfileBootInputs(
   dshHome: string,
-  dshEntryPath: string
+  dshEntryPath: string,
+  desktopPatchPath?: string
 ): Promise<ProfileBootInputProblem | undefined> {
   const profile = join(dshHome, 'profiles', 'web')
   try {
@@ -32,7 +35,24 @@ export async function inspectProfileBootInputs(
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw error
     }
-    loadProfileDirectory('dsh-desktop', profile, join(dirname(dshEntryPath), '..', 'package.json'))
+    const loaded = loadProfileDirectory('dsh-desktop', profile, join(dirname(dshEntryPath), '..', 'package.json'))
+    if (desktopPatchPath !== undefined) {
+      const imageBundle = loaded.layers.find((layer) => layer.packageName === IMAGE_GENERATION_PLUGIN)
+      if (imageBundle !== undefined) {
+        const [bundlePatch, desktopPatch] = await Promise.all([
+          readFile(imageBundle.patchPath, 'utf8'), readFile(desktopPatchPath, 'utf8')
+        ])
+        if (
+          bundleEntryIds(bundlePatch).includes(IMAGE_GENERATION_PLUGIN) &&
+          bundleEntryIds(desktopPatch).includes(IMAGE_GENERATION_PLUGIN)
+        ) {
+          return {
+            message: `${IMAGE_GENERATION_PLUGIN} is enabled in both the Profile bundle and Desktop; disable it in Safe Mode before normal startup`,
+            packageName: IMAGE_GENERATION_PLUGIN
+          }
+        }
+      }
+    }
     const homePatch = join(dshHome, 'cordis.patch.yml')
     try {
       await stat(homePatch)

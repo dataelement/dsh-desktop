@@ -27,6 +27,24 @@ describe('Safe Mode', () => {
     expect(answered.pluginItems[0]?.upgradeButtonLabel).toBe('升级至 v1.1.0')
   })
 
+  it('identifies only the market image package as a Safe Mode target', () => {
+    const model = buildSafeModeViewModel({
+      locale: 'zh', plugins: ['dsh-image-generation'],
+      suspectedPlugins: ['dsh-image-generation'], healthPending: true
+    })
+    expect(model.pluginItems[0]).toMatchObject({
+      name: 'dsh-image-generation', displayName: '市场版生图工具', suspected: true,
+      statusLabel: '（市场安装，本次启动日志推断，正在检查更新…）',
+      actionLabel: '停用插件（不删除）'
+    })
+    const disabled = buildSafeModeViewModel({
+      locale: 'en', plugins: ['dsh-image-generation'], disabledPlugins: ['dsh-image-generation']
+    })
+    expect(disabled.pluginItems[0]).toMatchObject({
+      disabled: true, enableButtonLabel: 'Re-enable'
+    })
+  })
+
   it('shows static references as informational findings without blocking or selecting a repair', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh', plugins: ['dsh-dream-skin'], issues: [{

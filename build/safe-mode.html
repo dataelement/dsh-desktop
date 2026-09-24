@@ -362,7 +362,7 @@
         const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = String(plugin.name)
         const copy = document.createElement('span'); copy.className = 'plugin-copy'
         const title = document.createElement('span'); title.className = 'plugin-title'
-        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.name)
+        const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.displayName || plugin.name)
         title.appendChild(name)
         copy.append(title)
         // An already disabled plugin is not selectable for disabling again.

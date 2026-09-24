@@ -1,5 +1,6 @@
 import type { ProfileCompatibilityIssue } from './state/profile-compatibility'
 import type { PluginHealthReport, PluginHealthStatus } from './state/plugin-market-check'
+import { IMAGE_GENERATION_PLUGIN } from './state/image-generation-identity'
 
 export type SafeModeLocale = 'en' | 'zh'
 
@@ -24,6 +25,7 @@ export interface SafeModeIssueGroupViewModel {
 
 export interface SafeModePluginViewModel {
   name: string
+  displayName?: string
   statusLabel?: string
   statusTone?: 'warning' | 'danger' | 'success'
   actionLabel: string
@@ -178,11 +180,13 @@ export function buildSafeModeViewModel(options: {
     (options.healthReports ?? []).map((report) => [report.packageName, report])
   )
   const pluginItems = plugins.map((name): SafeModePluginViewModel => {
+    const marketImageGeneration = name === IMAGE_GENERATION_PLUGIN
     const incompatible = incompatiblePlugins.has(name)
     const suspected = suspectedPlugins.has(name)
     const disabled = disabledPlugins.has(name)
     const report = healthReportByPlugin.get(name)
     const labels = [
+      ...(marketImageGeneration ? [options.locale === 'zh' ? '市场安装' : 'market installation'] : []),
       ...(disabled ? [options.locale === 'zh' ? '已停用' : 'disabled'] : []),
       ...(suspected
         ? [options.locale === 'zh' ? '本次启动日志推断' : 'inferred from this startup log']
@@ -211,6 +215,7 @@ export function buildSafeModeViewModel(options: {
 
     return {
       name,
+      ...(marketImageGeneration ? { displayName: options.locale === 'zh' ? '市场版生图工具' : 'Market image generation' } : {}),
       statusLabel: labels.length > 0
         ? options.locale === 'zh'
           ? `（${labels.join('，')}）`
