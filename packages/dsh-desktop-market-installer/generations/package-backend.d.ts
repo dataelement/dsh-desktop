@@ -11,6 +11,9 @@ export interface ProfileBundleInstallRequest {
   path?: string
   expectedName?: string
   registry?: string
+  expectedVersion?: string
+  autoInstallPeers?: boolean
+  minimumReleaseAge?: number
   signal?: AbortSignal
   onOutput?(text: string, stream: 'stdout' | 'stderr'): void
 }

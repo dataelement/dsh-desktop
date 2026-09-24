@@ -81,15 +81,23 @@ export function createGenerationPackageBackend(options) {
   return Object.freeze({
     async install(request) {
       const log = await createOperationLog(dshHome)
+      let activeChild
+      const abortChild = () => activeChild?.kill('SIGKILL')
+      request.signal?.addEventListener('abort', abortChild, { once: true })
       let closed = false
+      let outputWrites = Promise.resolve()
       const finishLog = async () => {
         if (closed) return { output: '', truncated: false }
+        await outputWrites
         closed = true
         return log.close()
       }
-      const emit = async (text, stream = 'stdout') => {
-        await log.append(text)
-        request.onOutput?.(text, stream)
+      const emit = (text, stream = 'stdout') => {
+        outputWrites = outputWrites.then(async () => {
+          await log.append(text)
+          request.onOutput?.(text, stream)
+        })
+        return outputWrites
       }
 
       try {
@@ -121,10 +129,17 @@ export function createGenerationPackageBackend(options) {
             sourceDirectory,
             sourceSpec,
             registry: request.registry,
+            expectedVersion: request.expectedVersion,
+            autoInstallPeers: request.autoInstallPeers,
+            minimumReleaseAge: request.minimumReleaseAge,
             nodeExecutablePath,
             pnpmEntryPath,
             environment,
             spawnProcess,
+            registerChild: child => {
+              activeChild = child
+              if (request.signal?.aborted) abortChild()
+            },
             runInstall,
             onTrace: line => { void emit(`${line}\n`) },
             onOutput: text => { void emit(text) }
@@ -225,6 +240,8 @@ export function createGenerationPackageBackend(options) {
             logPath: log.path
           }
         }
+      } finally {
+        request.signal?.removeEventListener('abort', abortChild)
       }
     },
 

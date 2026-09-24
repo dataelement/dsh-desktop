@@ -8,10 +8,8 @@ import { fileURLToPath } from 'node:url'
 
 import { PassThrough } from 'node:stream'
 
-import { installGeneration, verifyGenerationPeers } from './generations/installer.mjs'
 import { createGenerationPackageBackend } from './generations/package-backend.mjs'
 import {
-  publishInstalledGeneration,
   publishGenerationManifest
 } from './generations/projection.mjs'
 import {
@@ -436,6 +434,14 @@ export function createDesktopPnpmService(options) {
   let closed = false
 
   const pnpmEntryPath = resolvePnpmEntry()
+  const marketGenerationBackend = createGenerationPackageBackend({
+    dshHome: home,
+    nodeExecutablePath: executablePath,
+    pnpmEntryPath,
+    environment,
+    spawnProcess,
+    runInstall: options.runGenerationInstall
+  })
 
   /**
    * A synthetic handle in the shape `runPlugin` returns, driven by an async
@@ -588,68 +594,53 @@ export function createDesktopPnpmService(options) {
     const spec = args.slice(1).find((argument) => !argument.startsWith('-'))
     if (spec === undefined) throw new Error('The install boundary needs a package spec.')
 
-    const handle = asHandle(async ({ write, isCancelled, setCancel }) =>
-      withRegistryLock(home, async () => {
-        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-        const packageName = spec.slice(0, spec.lastIndexOf('@'))
-        if (packageName === MARKET_PACKAGE) {
-          return updateSharedMarket(args, spec, invokingDir, write, isCancelled, setCancel)
-        }
-        write(`Installing ${spec} as an isolated generation…`)
-        // The market picked this exact version by reading ITS registry; the
-        // install has to fetch from the same one (#337). `args` is consulted
-        // too, so a market that names a registry outright is believed over
-        // anything inferred here.
-        const registry = await resolveMarketRegistry({
-          profileDir: profileDirectory(home),
-          args,
-          environment
-        })
-        const install = await installGeneration({
-          dshHome: home,
-          pluginSpec: spec,
-          expectedVersion: spec.slice(spec.lastIndexOf('@') + 1),
-          // Preserve the market's peer-fetch recovery policy across the
-          // Profile -> isolated generation boundary (including camelCase).
-          autoInstallPeers: args.reduce((value, arg) => {
-            const match = /^--config\.(?:autoInstallPeers|auto-install-peers)=(true|false)$/.exec(arg)
-            return match ? match[1] === 'true' : value
-          }, undefined),
-          minimumReleaseAge: args.some(arg => /^--config\.(?:minimumReleaseAge|minimum-release-age)=0$/.test(arg)) ? 0 : 1440,
-          nodeExecutablePath: executablePath,
-          pnpmEntryPath,
-          spawnProcess,
-          environment,
-          registry,
-          onTrace: write,
-          onOutput: (chunk) => write(chunk.replace(/\r?\n$/u, '')),
-          runInstall: options.runGenerationInstall
-        })
-        if (!install.ok) return { exitCode: 1, message: install.detail ?? 'generation install failed' }
-        const peers = await verifyGenerationPeers(home, install.generation)
-        if (!peers.ok) {
-          return { exitCode: 1, message: `generation peer validation failed: ${peers.problems.join('; ')}` }
-        }
-
-        // Replace any earlier generation of the same plugin, keep the rest.
-        const [desired, generations] = await Promise.all([readDesired(home), listGenerations(home)])
-        const byId = new Map(generations.map((generation) => [generation.id, generation]))
-        const kept = desired.filter((id) => {
-          const generation = byId.get(id)
-          return generation === undefined || generation.pluginName !== install.generation.pluginName
-        })
-        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-        await writeDesired(home, [...kept, install.generation.id])
-        try {
-          await publishInstalledGeneration(home, install.generation.pluginName)
-        } catch (error) {
-          await writeDesired(home, desired)
-          throw error
-        }
-        write(`installed in profile: ${install.generation.pluginName}@${install.generation.version}; activation may require restart`)
-        return { exitCode: 0 }
+    const handle = asHandle(async ({ write, isCancelled, setCancel }) => {
+      if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+      const packageName = spec.slice(0, spec.lastIndexOf('@'))
+      if (packageName === MARKET_PACKAGE) {
+        return withRegistryLock(home, () =>
+          updateSharedMarket(args, spec, invokingDir, write, isCancelled, setCancel)
+        )
+      }
+      write(`Installing ${spec} as an isolated generation…`)
+      // The market picked this exact version by reading ITS registry; the
+      // install has to fetch from the same one (#337). `args` is consulted
+      // too, so a market that names a registry outright is believed over
+      // anything inferred here.
+      const registry = await resolveMarketRegistry({
+        profileDir: profileDirectory(home),
+        args,
+        environment
       })
-    )
+      const control = new AbortController()
+      setCancel(() => control.abort())
+      const mutation = await marketGenerationBackend.install({
+        kind: 'registry',
+        spec,
+        expectedVersion: spec.slice(spec.lastIndexOf('@') + 1),
+        // Preserve the market's peer-fetch recovery policy across the
+        // Profile -> isolated generation boundary (including camelCase).
+        autoInstallPeers: args.reduce((value, arg) => {
+          const match = /^--config\.(?:autoInstallPeers|auto-install-peers)=(true|false)$/.exec(arg)
+          return match ? match[1] === 'true' : value
+        }, undefined),
+        minimumReleaseAge: args.some(arg => /^--config\.(?:minimumReleaseAge|minimum-release-age)=0$/.test(arg)) ? 0 : 1440,
+        registry,
+        signal: control.signal,
+        onOutput: chunk => write(chunk.replace(/\r?\n$/u, ''))
+      })
+      if (isCancelled()) {
+        await mutation.rollback?.()
+        return { exitCode: 1, message: 'The package operation was aborted.' }
+      }
+      if (mutation.packageResult.exitCode !== 0 || !mutation.bundle) {
+        return { exitCode: 1, message: mutation.packageResult.output || 'generation install failed' }
+      }
+      mutation.commit?.()
+      setCancel(() => {})
+      write(`published in profile: ${mutation.bundle}@${spec.slice(spec.lastIndexOf('@') + 1)}; activation may require restart`)
+      return { exitCode: 0 }
+    })
     active = handle
     signal?.addEventListener('abort', handle.cancel, { once: true })
     void handle.done.finally(() => {
