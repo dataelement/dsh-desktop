@@ -77,7 +77,7 @@ export function directoryInstallerExits(source) {
   return source.replaceAll(/^(\s*)Quit\s*$/gm, '$1!ifndef BUILD_UNINSTALLER\n$1Call dshCleanupDirectories\n$1!endif\n$1Quit')
 }
 
-async function signInstallerTool(path) {
+export async function signWindowsPeWithJsign(path) {
   const { JSIGN_JAR, JSIGN_PIN_FILE } = process.env
   if (!JSIGN_JAR && !JSIGN_PIN_FILE) return // unsigned Windows staging build
   if (!JSIGN_JAR || !JSIGN_PIN_FILE) throw new Error('Incomplete Jsign environment for installer tool')
@@ -107,7 +107,7 @@ export function installWindowsDirectoryInstaller() {
     const { executable, licenseDirectory } = await windows7zipTool()
     const tool = join(directory, '7za.exe')
     await copyFile(executable, tool)
-    await signInstallerTool(tool)
+    await signWindowsPeWithJsign(tool)
     let adapted = replaceOnce(source, '!include "installSection.nsh"', `!include "${section}"`)
     for (const helper of ['allowOnlyOneInstallerInstance.nsh', 'installUtil.nsh']) {
       const path = join(directory, helper)
