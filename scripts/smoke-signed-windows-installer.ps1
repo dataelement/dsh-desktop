@@ -13,9 +13,10 @@ New-Item -ItemType Directory -Path $env:APPDATA, $env:LOCALAPPDATA -Force | Out-
 function Assert-Signature([string]$path) {
   $signature = Get-AuthenticodeSignature -FilePath $path
   if ($signature.Status -ne 'Valid') { throw "Invalid signature on ${path}: $($signature.Status)" }
-  $subject = $signature.SignerCertificate.Subject
-  if ($subject -notlike "*CN=$PublisherName*") {
-    throw "Unexpected signer on ${path}: $subject"
+  $signerName = $signature.SignerCertificate.GetNameInfo(
+    [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+  if (-not [string]::Equals($signerName, $PublisherName, [System.StringComparison]::Ordinal)) {
+    throw "Unexpected signer on ${path}: $($signature.SignerCertificate.Subject)"
   }
 }
 
