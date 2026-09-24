@@ -34,6 +34,8 @@ describe('pinned NSIS directory transaction', () => {
     expect(directoryInstallerExits('Quit\n')).toContain('Call dshCleanupDirectories')
     const adaptedUtil = directoryInstallUtil(await readFile(installUtil, 'utf8'))
     expect(adaptedUtil).not.toContain('Function uninstallOldVersion')
+    expect(adaptedUtil).not.toContain('Function GetInQuotes')
+    expect(adaptedUtil).not.toContain('Function GetFileParent')
   })
 
   it('rejects a changed electron-builder template', () => {

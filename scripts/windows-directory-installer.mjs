@@ -75,10 +75,13 @@ export function directoryInstallerExits(source) {
 }
 
 export function directoryInstallUtil(source) {
-  const normalized = source.replaceAll('\r\n', '\n')
-  const unusedUninstaller = normalized.match(/^Function uninstallOldVersion\n[\s\S]*?^FunctionEnd\n/gm)
-  if (unusedUninstaller?.length !== 1) throw new Error('electron-builder uninstall utility changed')
-  return directoryInstallerExits(normalized.replace(unusedUninstaller[0], ''))
+  let adapted = source.replaceAll('\r\n', '\n')
+  for (const name of ['GetInQuotes', 'GetFileParent', 'uninstallOldVersion']) {
+    const unusedFunction = adapted.match(new RegExp(`^Function ${name}\\n[\\s\\S]*?^FunctionEnd\\n`, 'gm'))
+    if (unusedFunction?.length !== 1) throw new Error(`electron-builder uninstall utility changed: ${name}`)
+    adapted = adapted.replace(unusedFunction[0], '')
+  }
+  return directoryInstallerExits(adapted)
 }
 
 export async function signWindowsPeWithJsign(path) {
