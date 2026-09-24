@@ -14,6 +14,8 @@ Official releases are still created by pushing a `v*` tag, not by filling the di
 
 Windows packaging and signing run as separate jobs. The GitHub-hosted Windows runner builds an unsigned NSIS installer and uploads a short-lived workflow artifact. A local macOS ARM64 runner downloads it, signs every PE in the unpacked tree and the final installer with Jsign and the SafeNet UKey, regenerates the blockmap and `latest.yml`, and uploads the signed release set. Any missing archive, invalid PE, signing failure or repackaging failure stops the run. A second Windows runner installs the final signed artifact into isolated directories, verifies signatures and Harness startup, repeats the same-path installation, and checks that Profile data survives. GitHub publication requires both signing and that installed-artifact smoke to pass.
 
+The pinned Windows NSIS template stages the application in a sibling directory before closing the old app, then renames the old directory to a backup and promotes the staged directory. A failed extraction or rename restores the previous installation. The signed installer smoke also locks the old executable to verify that a failed upgrade leaves it runnable. Keep the user-selected installation directory when changing this template; the build adapter rejects unexpected upstream template changes.
+
 Prepare the local runner once:
 
 1. Register it with the `self-hosted`, `macOS`, and `ARM64` labels.

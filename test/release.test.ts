@@ -294,6 +294,18 @@ describe('GitHub release contract', () => {
     }
   })
 
+  it('uses the staged-directory installer for both Windows builds and signed repackaging', async () => {
+    const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+      build: { nsis: { allowToChangeInstallationDirectory: boolean } }
+    }
+    const workflow = await readFile(path.join(projectRoot, '.github', 'workflows', 'release.yml'), 'utf8')
+    expect(packageJson.scripts['package:win']).toContain('electron-builder-windows.mjs')
+    expect(packageJson.scripts['package:dev:win']).toContain('electron-builder-windows.mjs')
+    expect(packageJson.build.nsis.allowToChangeInstallationDirectory).toBe(true)
+    expect(workflow).toContain('node scripts/electron-builder-windows.mjs --win --x64 --publish never')
+  })
+
   it('packages an isolated development channel from the current workspace', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(projectRoot, 'package.json'), 'utf8')

@@ -630,7 +630,8 @@ jobs:
           JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
             node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
           rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
-          npx electron-builder --win --x64 --publish never \
+          JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
+            node scripts/electron-builder-windows.mjs --win --x64 --publish never \
             --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
             --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"
           rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"

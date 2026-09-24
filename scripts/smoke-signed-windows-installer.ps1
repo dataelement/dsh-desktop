@@ -32,7 +32,7 @@ function Install-At([string]$directory) {
 
 function Assert-InstalledPeSignatures([string]$directory) {
   $count = 0
-  foreach ($file in Get-ChildItem -LiteralPath $directory -File -Recurse) {
+  foreach ($file in Get-ChildItem -LiteralPath $directory -File -Recurse -Force) {
     $stream = [System.IO.File]::OpenRead($file.FullName)
     try {
       if ($stream.Length -lt 2 -or $stream.ReadByte() -ne 0x4d -or $stream.ReadByte() -ne 0x5a) { continue }
@@ -92,9 +92,29 @@ Assert-Starts $firstExecutable
 $profileMarker = Join-Path $env:APPDATA 'dsh-desktop\harness\signed-smoke-marker'
 New-Item -ItemType Directory -Path (Split-Path $profileMarker) -Force | Out-Null
 Set-Content -LiteralPath $profileMarker -Value 'keep-user-data'
+
+# Holding the executable without FILE_SHARE_DELETE must make promotion fail.
+# The old installation and user data must remain available afterward.
+$lock = [System.IO.File]::Open($firstExecutable, 'Open', 'Read', 'Read')
+try {
+  $blocked = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$firstDirectory") -Wait -PassThru
+  if ($blocked.ExitCode -eq 0) { throw 'Locked same-path upgrade reported success.' }
+  if (-not (Test-Path $firstExecutable)) { throw 'Locked upgrade removed the previous application.' }
+  Assert-Signature $firstExecutable
+  if (@(Get-ChildItem -Path "$firstDirectory.new-*" -ErrorAction SilentlyContinue).Count -ne 0) {
+    throw 'Locked upgrade left a staging directory.'
+  }
+} finally {
+  $lock.Dispose()
+}
+Assert-Starts $firstExecutable
+
 $firstExecutable = Install-At $firstDirectory
 if ((Get-Content -LiteralPath $profileMarker -Raw).Trim() -ne 'keep-user-data') {
   throw 'Same-path upgrade removed user profile data.'
+}
+if (@(Get-ChildItem -Path "$firstDirectory.old-*" -ErrorAction SilentlyContinue).Count -ne 0) {
+  throw 'Successful upgrade left an old application backup directory.'
 }
 Assert-Starts $firstExecutable
 
