@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 import { hostInsertedPluginNames, prepareHostPluginSourcesPatch } from '../src/main/state/host-plugin-sources'
@@ -65,7 +65,9 @@ describe('Desktop host plugin sources', () => {
     const output = await prepareHostPluginSourcesPatch(home, patchPath, anchor)
     const rows = parse(await readFile(output, 'utf8')) as { insert: { name: string }[] }[]
     const entry = rows[0]?.insert[0]?.name
-    expect(entry).toBe(pathToFileURL(await realpath(join(plugin, 'entry.js'))).href)
+    if (!entry) throw new Error('Missing resolved host plugin source')
+    // Windows may preserve an 8.3 temp path in require.resolve's result.
+    expect(await realpath(fileURLToPath(entry))).toBe(await realpath(join(plugin, 'entry.js')))
     const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(entry)})).default)`], { cwd: launchRoot })
     expect(result.stdout.trim()).toBe('installed-host')
 
