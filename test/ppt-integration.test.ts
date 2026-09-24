@@ -255,7 +255,7 @@ describe('DSH PPT built-in plugin', () => {
     const accessoryCssUse = client.indexOf('css$1 + pptAccessoryCss')
     expect(accessoryCssDefinition).toBeGreaterThan(-1)
     expect(accessoryCssUse).toBeGreaterThan(accessoryCssDefinition)
-    expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
+    expect(client).toContain('children: accessory ?? (extensionZone === void 0 ? null : renderSlot("conversation.input.accessory", extensionZone))')
   })
 
   it('declares both local artifacts and mounts only the PPT composer', async () => {
