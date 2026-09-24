@@ -1,8 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { loadOverlayPatches, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
-import { bundleEntryIds } from './patch-layer'
-import { IMAGE_GENERATION_PLUGIN } from './image-generation-identity'
+import { hostInsertedPluginNames } from './host-plugin-sources'
 
 export interface ProfileBootInputProblem {
   /** The failure chain, innermost cause last. */
@@ -37,20 +36,11 @@ export async function inspectProfileBootInputs(
     }
     const loaded = loadProfileDirectory('dsh-desktop', profile, join(dirname(dshEntryPath), '..', 'package.json'))
     if (desktopPatchPath !== undefined) {
-      const imageBundle = loaded.layers.find((layer) => layer.packageName === IMAGE_GENERATION_PLUGIN)
-      if (imageBundle !== undefined) {
-        const [bundlePatch, desktopPatch] = await Promise.all([
-          readFile(imageBundle.patchPath, 'utf8'), readFile(desktopPatchPath, 'utf8')
-        ])
-        if (
-          bundleEntryIds(bundlePatch).includes(IMAGE_GENERATION_PLUGIN) &&
-          bundleEntryIds(desktopPatch).includes(IMAGE_GENERATION_PLUGIN)
-        ) {
-          return {
-            message: `${IMAGE_GENERATION_PLUGIN} is enabled in both the Profile bundle and Desktop; disable it in Safe Mode before normal startup`,
-            packageName: IMAGE_GENERATION_PLUGIN
-          }
-        }
+      const hostNames = new Set(hostInsertedPluginNames(await readFile(desktopPatchPath, 'utf8')))
+      const duplicate = loaded.layers.find((layer) => hostNames.has(layer.packageName))
+      if (duplicate) return {
+        message: `${duplicate.packageName} is enabled in both the Profile bundle and Desktop; disable it in Safe Mode before normal startup`,
+        packageName: duplicate.packageName
       }
     }
     const homePatch = join(dshHome, 'cordis.patch.yml')

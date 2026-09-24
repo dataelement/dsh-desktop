@@ -70,25 +70,32 @@ describe('normal Profile boot preflight', () => {
     expect((await check())?.packageName).toBe('test-startup-bundle')
   })
 
-  it('sends a duplicate image generation bundle to Recovery without changing the manifest', async () => {
+  it.each(['dsh-image-generation', 'test-startup-bundle'])('sends a duplicate %s bundle to Recovery without changing the manifest', async (name) => {
     const { home, profile } = await fixture()
     const manifestPath = join(profile, 'package.json')
     const manifest = JSON.stringify({
-      dependencies: { 'dsh-image-generation': '0.1.1' },
-      dsh: { profile: { bundles: ['dsh-image-generation'] } }
+      dependencies: { [name]: '0.1.1' },
+      dsh: { profile: { bundles: [name] } }
     })
     await writeFile(manifestPath, manifest)
-    await symlink(join(projectRoot, 'node_modules', 'dsh-image-generation'),
-      join(profile, 'node_modules', 'dsh-image-generation'), 'junction')
+    if (name !== 'test-startup-bundle') {
+      await symlink(join(projectRoot, 'node_modules', name),
+        join(profile, 'node_modules', name), 'junction')
+    }
     const entry = join(home, 'app', 'lib', 'bin.js')
-    const hostPatch = join(projectRoot, 'build', 'dsh-desktop.patch.yml')
+    const hostPatch = name === 'test-startup-bundle'
+      ? join(home, 'host.patch.yml')
+      : join(projectRoot, 'build', 'dsh-desktop.patch.yml')
+    if (name === 'test-startup-bundle') {
+      await writeFile(hostPatch, '- insert:\n    - id: host-test\n      name: test-startup-bundle\n')
+    }
     expect(await inspectProfileBootInputs(home, entry, hostPatch)).toEqual({
       message: expect.stringContaining('enabled in both'),
-      packageName: 'dsh-image-generation'
+      packageName: name
     })
     expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
     await mkdir(join(profile, '.dsh-market'))
-    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['dsh-image-generation'] }))
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: [name] }))
     expect(await inspectProfileBootInputs(home, entry, hostPatch)).toBeUndefined()
     expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
   })

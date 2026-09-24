@@ -45,7 +45,6 @@ import {
   markProfileInstallComplete
 } from './state/profile-install-marker'
 import { healProfileBundles, HOST_COMPOSED_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
-import { IMAGE_GENERATION_PLUGIN } from './state/image-generation-identity'
 import { inspectProfileBootInputs } from './state/profile-boot-preflight'
 import {
   disableProfilePlugin,
@@ -2782,10 +2781,9 @@ async function showSafeModeManager(initial?: {
           : `The removal recovery ledger is unreadable. The normal Profile is locked and the original file is preserved: ${detail}`
         noticeTone ??= 'error'
       }
-      const marketImageInstalled = await readInstalledPluginVersion(dshHome, IMAGE_GENERATION_PLUGIN) !== undefined
-      const installed = [...new Set([...active, ...pendingRemovals, ...(marketImageInstalled ? [IMAGE_GENERATION_PLUGIN] : [])])]
+      const installed = [...new Set([...active, ...pendingRemovals])]
       const profileDisabled = recoveryLocked ? [] : [
-        ...(await listDisabledProfilePlugins(dshHome, [...active, ...(marketImageInstalled ? [IMAGE_GENERATION_PLUGIN] : [])]))
+        ...(await listDisabledProfilePlugins(dshHome, active))
       ]
       // Not awaited: the page opens right away and shows the result when it
       // arrives. Only an upgrade needs the result before acting.

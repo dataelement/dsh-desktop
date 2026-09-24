@@ -8,7 +8,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
 import { prepareHostDisabledPluginsPatch } from '../state/host-disabled-plugins'
-import { prepareHostImageGenerationSourcePatch } from '../state/host-image-generation-source'
+import { prepareHostPluginSourcesPatch } from '../state/host-plugin-sources'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../../shared/plugin-startup-failure'
 import { removeStaleWriterLocks } from './stale-writer-locks'
 
@@ -482,7 +482,7 @@ export class HarnessRuntime {
     await mkdir(this.options.dshHome, { recursive: true })
     const patchPath = profile === SAFE_MODE_PROFILE
       ? sourcePatchPath
-      : await prepareHostImageGenerationSourcePatch(this.options.dshHome, sourcePatchPath)
+      : await prepareHostPluginSourcesPatch(this.options.dshHome, sourcePatchPath)
     const marketPatchPath = this.options.dshMarketPatchPath
     const patchPaths = profile !== SAFE_MODE_PROFILE &&
       marketPatchPath !== undefined &&
