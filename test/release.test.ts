@@ -156,6 +156,8 @@ describe('GitHub release contract', () => {
     ) as {
       build: {
         artifactName: string
+        asar: boolean
+        asarUnpack: string[]
         afterPack?: string
         extraResources: Array<{ from: string; to: string }>
         win: { target: Array<{ target: string; arch: string[] }>; requestedExecutionLevel?: string }
@@ -173,7 +175,8 @@ describe('GitHub release contract', () => {
     )
 
     expect(packageJson.build.artifactName).toBe('dsh-desktop-${os}-${arch}.${ext}')
-    expect(packageJson.build.afterPack).toBe('scripts/prune-windows-node.cjs')
+    expect(packageJson.build.asar).toBe(true)
+    expect(packageJson.build.asarUnpack).toContain('node_modules/**/*')
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/app-icon.png',
       to: 'icon.png'
@@ -351,7 +354,6 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain("$isolatedApp = Join-Path $env:RUNNER_TEMP")
     expect(workflow).toContain('$executable = Join-Path $isolatedApp $sourceExecutable.Name')
     expect(workflow).toContain('-WorkingDirectory $isolatedApp')
-    expect(workflow).toContain("writeFileSync(process.argv[3], 'ok')")
     expect(workflow).toContain('Packaged koffi native binding failed.')
     expect(workflow).toContain("'dist-dev\\win-unpacked\\DSH Desktop Dev.exe'")
     expect(workflow).toContain('if (-not [string]::IsNullOrEmpty($log))')
@@ -436,7 +438,7 @@ describe('GitHub release contract', () => {
     expect(workflow).toContain('smoke-signed-windows:')
     expect(workflow).toContain('smoke-signed-windows-installer.ps1')
     expect(workflow).toContain("needs.smoke-signed-windows.result == 'success'")
-    expect(workflow).toContain("if (Test-Path $packagedNode) { throw 'Duplicate Windows node.exe remains in the package.' }")
+    expect(workflow).toContain("if (-not (Test-Path $packagedNode)) { throw 'Packaged Windows node.exe is missing.' }")
     expect(workflow).toContain('version="${PRERELEASE_TAG#v}"')
     expect(workflow).toContain('version="${SIGNED_VERSION#v}"')
     expect(workflow).not.toContain('version="${PRERELEASE_TAG:-${GITHUB_REF_NAME#v}}"')

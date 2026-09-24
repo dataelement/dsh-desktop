@@ -112,14 +112,14 @@ export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions
   if (process.platform === 'win32') {
     await writeFile(
       join(directory, 'pnpm.cmd'),
-      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n"${options.nodeExecutablePath}" ${command
+      `@chcp 65001 >nul\r\n@echo off\r\n"${options.nodeExecutablePath}" ${command
         .map((part) => `"${part}"`)
         .join(' ')} %*\r\n`,
       'utf8'
     )
     await writeFile(
       join(directory, 'node.cmd'),
-      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n"${options.nodeExecutablePath}" %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n"${options.nodeExecutablePath}" %*\r\n`,
       'utf8'
     )
   } else {
@@ -162,14 +162,10 @@ export function buildProfilePluginCommandEnvironment(
   environment: NodeJS.ProcessEnv,
   shimDirectory: string,
   nodeExecutablePath: string,
-  platform: NodeJS.Platform = process.platform,
-  electronExecutablePath: string | undefined = process.versions.electron ? process.execPath : undefined
+  platform: NodeJS.Platform = process.platform
 ): NodeJS.ProcessEnv {
   const result = { ...environment }
   delete result.ELECTRON_RUN_AS_NODE
-  if (platform === 'win32' && nodeExecutablePath === electronExecutablePath) {
-    result.ELECTRON_RUN_AS_NODE = '1'
-  }
 
   // The spread above keeps only the casing the OS block actually stores —
   // even for `process.env`, whose case-insensitivity does not survive a

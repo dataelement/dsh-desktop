@@ -310,7 +310,6 @@
     "asarUnpack": [
       "node_modules/**/*"
     ],
-    "afterPack": "scripts/prune-windows-node.cjs",
     "npmRebuild": false,
     "compression": "maximum",
     "electronLanguages": [

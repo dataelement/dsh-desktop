@@ -17,27 +17,25 @@ if (process.platform !== expectedPlatform || process.arch !== expectedArch) {
   process.exit(1)
 }
 
-const electronNode = expectedPlatform === 'win32'
-const runtimeExecutable = electronNode
-  ? resolve('node_modules', 'electron', 'dist', 'electron.exe')
-  : resolve('node_modules', 'node', 'bin', 'node')
+const executable = expectedPlatform === 'win32' ? 'node.exe' : 'node'
+const runtimeExecutable = resolve('node_modules', 'node', 'bin', executable)
 
 try {
   accessSync(runtimeExecutable, constants.X_OK)
 } catch {
-  console.error(`Target runtime was not found or is not executable: ${runtimeExecutable}`)
-  console.error('Reinstall dependencies with lifecycle scripts enabled.')
+  console.error(`Bundled Node.js runtime was not found or is not executable: ${runtimeExecutable}`)
+  console.error('Reinstall dependencies with lifecycle scripts enabled, or run `npm rebuild node`.')
   process.exit(1)
 }
 
 const probe = spawnSync(
   runtimeExecutable,
   ['-p', 'JSON.stringify({ platform: process.platform, arch: process.arch, version: process.versions.node })'],
-  { encoding: 'utf8', env: { ...process.env, ...(electronNode && { ELECTRON_RUN_AS_NODE: '1' }) } }
+  { encoding: 'utf8' }
 )
 
 if (probe.status !== 0) {
-  console.error(`Target Node runtime could not start: ${runtimeExecutable}`)
+  console.error(`Bundled Node.js runtime could not start: ${runtimeExecutable}`)
   if (probe.stderr) console.error(probe.stderr.trim())
   process.exit(1)
 }
@@ -52,11 +50,9 @@ try {
 
 if (runtime.platform !== expectedPlatform || runtime.arch !== expectedArch) {
   console.error(
-    `Target Node runtime must target ${expectedPlatform}/${expectedArch}; received ${runtime.platform}/${runtime.arch}.`
+    `Bundled Node.js runtime must target ${expectedPlatform}/${expectedArch}; received ${runtime.platform}/${runtime.arch}.`
   )
   process.exit(1)
 }
 
-console.log(
-  `Packaging target verified: ${process.platform}/${process.arch}; ${electronNode ? 'Electron' : 'bundled Node.js'} ${runtime.version}`
-)
+console.log(`Packaging target verified: ${process.platform}/${process.arch}; bundled Node.js ${runtime.version}`)

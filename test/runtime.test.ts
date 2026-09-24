@@ -170,7 +170,7 @@ describe('Harness launch contract', () => {
     ])
   })
 
-  it('launches Windows Harness in detached Electron Node mode', () => {
+  it('launches Windows Harness as an isolated Node process', () => {
     const options = buildHarnessSpawnOptions(
       'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\launch-root',
       'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
@@ -198,7 +198,7 @@ describe('Harness launch contract', () => {
         Path: 'windows-path'
       }
     })
-    expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
+    expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
   })
 
   it('asks the patched Harness to resolve Safe Mode plugins from its installation only', () => {

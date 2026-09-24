@@ -93,7 +93,7 @@ npm run package:win
 
 Do not invoke `electron-builder --win` from macOS or Linux for a distributable Windows package. The target verification scripts intentionally reject host/target mismatches.
 
-For local unsigned development packages, use the corresponding `package:dev:*` command. Windows packages run Harness through the Electron executable in Node mode: verify that `resources/app/node_modules/node/bin/node.exe` is absent, the packaged native-module and Harness smokes pass, and the final signed installer passes the separate installed-app smoke before handoff.
+For local unsigned development packages, use the corresponding `package:dev:*` command. Windows packages retain a bundled Node runtime because the Harness native loader does not yet support Electron 43.4.0 in Node mode. Verify that `resources/app.asar.unpacked/node_modules/node/bin/node.exe` is present, the packaged native-module and Harness smokes pass, and the final signed installer passes the separate installed-app smoke before handoff.
 
 Formal release artifacts are built, signed, and published by the tag workflow. A local build or pull-request check is not formal release evidence.
 

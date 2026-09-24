@@ -301,9 +301,9 @@ export function buildHarnessSpawnOptions(
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
   const pathApi = platform === 'win32' ? win32 : posix
 
-  // The macOS utility process cannot receive Node mode: it starts with
-  // Chromium switches that Node rejects. Windows instead starts the Electron
-  // executable as a detached Node process and needs this flag at spawn time.
+  // ELECTRON_RUN_AS_NODE must not reach the Harness process itself: the macOS
+  // utility process starts with Chromium switches that Node rejects. The
+  // Harness entry declares Node mode only for its Electron children.
   //
   // On Windows, `detached: true` puts the Harness in its own process group
   // and console. Without it, a child process that calls `os.kill(pid, 0)`
@@ -318,7 +318,6 @@ export function buildHarnessSpawnOptions(
       ...parentEnvironment,
       DSH_HOME: dshHome,
       NO_COLOR: '1',
-      ...(platform === 'win32' && { ELECTRON_RUN_AS_NODE: '1' }),
       // package-import-method/child-concurrency are left at pnpm's defaults
       // (hardlink, auto concurrency): forcing clone-or-copy made every
       // install do a full physical file copy across the profile's 150+

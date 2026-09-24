@@ -145,10 +145,6 @@ async function defaultRunInstall(options, stagingDir) {
         cwd: stagingDir,
         env: {
           ...(options.environment ?? process.env),
-          ...(process.platform === 'win32' && process.versions.electron &&
-            options.nodeExecutablePath === process.execPath
-            ? { ELECTRON_RUN_AS_NODE: '1' }
-            : {}),
           CI: 'true',
           NO_COLOR: '1',
           npm_config_side_effects_cache: 'false'
