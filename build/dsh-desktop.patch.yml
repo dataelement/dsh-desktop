@@ -7,8 +7,8 @@
 
 # Keep the stock directory-picker (auto) row active: the native backend
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
-# plugins reading the seam) work unmodified. The client surface keeps its
-# Electron-dialog bridge via the client-ui patch in patches/.
+# plugins reading the seam) work unmodified. The client surface reads the
+# upstream __DSH_DIRECTORY_PICKER__ bridge exposed by preload.
 
 # Disable the stock single-slot occupant before mounting Desktop's equivalent;
 # two occupants cannot share either brand seat. The Desktop plugin preserves

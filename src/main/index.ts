@@ -1,4 +1,5 @@
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
+import { runtimePackageRoot } from './runtime-package-root'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { RepairAgentService, type CrashEvidence } from './repair-agent'
 import { spawn } from 'node:child_process'
@@ -636,24 +637,17 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   applyWindowChromeTheme(window, isDark)
 }
 
+function bundledRuntimeRoot(): string {
+  return runtimePackageRoot(app.getAppPath(), app.isPackaged)
+}
+
 function dshEntryPath(): string {
-  if (app.isPackaged) {
-    return join(
-      process.resourcesPath,
-      'app',
-      'node_modules',
-      '@deepseek-ai',
-      'dsh',
-      'lib',
-      'bin.js'
-    )
-  }
-  return join(app.getAppPath(), 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  return join(bundledRuntimeRoot(), 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 }
 
 function bundledNodePath(): string {
   const executable = process.platform === 'win32' ? 'node.exe' : 'node'
-  return join(app.getAppPath(), 'node_modules', 'node', 'bin', executable)
+  return join(bundledRuntimeRoot(), 'node_modules', 'node', 'bin', executable)
 }
 
 /**
@@ -664,7 +658,7 @@ function bundledNodePath(): string {
  */
 function bundledPnpmRunnerPath(): string {
   return join(
-    app.getAppPath(),
+    bundledRuntimeRoot(),
     'node_modules',
     'dsh-desktop-market-installer',
     'pnpm-runner.mjs'
@@ -672,7 +666,7 @@ function bundledPnpmRunnerPath(): string {
 }
 
 function bundledPnpmEntryPath(): string {
-  const root = join(app.getAppPath(), 'node_modules', 'pnpm', 'bin')
+  const root = join(bundledRuntimeRoot(), 'node_modules', 'pnpm', 'bin')
   const candidates = [join(root, 'pnpm.cjs'), join(root, 'pnpm.mjs')]
   return candidates.find((candidate) => existsSync(candidate)) ?? join(root, 'pnpm.cjs')
 }
@@ -715,7 +709,7 @@ function desktopIconPath(): string {
 
 function dshBrandLogoPath(variant: 'light' | 'dark'): string {
   return join(
-    app.getAppPath(),
+    bundledRuntimeRoot(),
     'node_modules',
     '@deepseek-ai',
     'dsh-web-frontend',
@@ -1848,7 +1842,7 @@ function registerHarnessHandlers(): void {
     return {
       desktopVersion: app.getVersion(),
       harnessVersion:
-        bundledHarnessVersion(app.getAppPath()) ?? (locale === 'zh' ? '未知' : 'Unknown'),
+        bundledHarnessVersion(bundledRuntimeRoot()) ?? (locale === 'zh' ? '未知' : 'Unknown'),
       locale
     }
   })
@@ -1910,7 +1904,7 @@ async function showAbout(window: BrowserWindow): Promise<void> {
   const info = {
     desktopVersion: app.getVersion(),
     harnessVersion:
-      bundledHarnessVersion(app.getAppPath()) ?? (locale === 'zh' ? '未知' : 'Unknown'),
+      bundledHarnessVersion(bundledRuntimeRoot()) ?? (locale === 'zh' ? '未知' : 'Unknown'),
     locale
   }
   if (window && !window.isDestroyed() && window.webContents && !window.webContents.isDestroyed()) {
@@ -1929,7 +1923,7 @@ async function showAbout(window: BrowserWindow): Promise<void> {
     message: locale === 'zh' ? '关于 DSH Desktop' : 'About DSH Desktop',
     detail: aboutDetail(
       app.getVersion(),
-      bundledHarnessVersion(app.getAppPath()),
+      bundledHarnessVersion(bundledRuntimeRoot()),
       locale
     ),
     buttons: [checkForUpdatesLabel, locale === 'zh' ? '关闭' : 'Close'],
@@ -2133,7 +2127,7 @@ async function showPluginRecovery(options?: {
         startupFailures: followRendererLogs ? undefined : snapshot.pluginFailures,
         readLatestLogs: followRendererLogs ? () => rendererPluginFailureLogs : undefined,
         excludedPlugins: removedPlugins,
-        slotProviderNodeModulesPaths: [join(app.getAppPath(), 'node_modules')],
+        slotProviderNodeModulesPaths: [join(bundledRuntimeRoot(), 'node_modules')],
         timeoutMs: waitForRendererEvidence ? PLUGIN_RECOVERY_EVIDENCE_TIMEOUT_MS : 0
       })
       detection.plugins = evidence.targets(detection.plugins, removedPlugins)
@@ -2166,7 +2160,7 @@ async function showPluginRecovery(options?: {
       if (applyPendingFrontendEvidence()) continue
 
       const runtimeVersion =
-        (await readBundledDshVersion(join(app.getAppPath(), 'node_modules'))) || '0.1.2-alpha.1'
+        (await readBundledDshVersion(join(bundledRuntimeRoot(), 'node_modules'))) || '0.1.2-alpha.1'
       const pluginChecks = await checkBlockingPluginUpdates({
         plugins: detection.plugins,
         attemptedUpgrades,
@@ -2364,7 +2358,7 @@ async function showPluginRecovery(options?: {
 
         const compatibility = await inspectProfileCompatibility(
           dshHome,
-          join(app.getAppPath(), 'node_modules')
+          join(bundledRuntimeRoot(), 'node_modules')
         )
         evidence.inspect(compatibility.issues)
         const blockingIssues = compatibility.issues.filter((issue) => issue.severity === 'blocking')
@@ -2427,7 +2421,7 @@ async function showPluginRecovery(options?: {
         }
         const compatibility = await inspectProfileCompatibility(
           dshHome,
-          join(app.getAppPath(), 'node_modules')
+          join(bundledRuntimeRoot(), 'node_modules')
         )
         evidence.inspect(compatibility.issues)
         const blockingIssues = compatibility.issues.filter((issue) => issue.severity === 'blocking')
@@ -2688,7 +2682,7 @@ async function removeProfilePluginCompletely(
       await markProfileInstallComplete(dshHome)
       const compatibility = await inspectProfileCompatibility(
         dshHome,
-        join(app.getAppPath(), 'node_modules')
+        join(bundledRuntimeRoot(), 'node_modules')
       )
       runtime.note(
         `[${logPrefix}] rebuilt the web profile after removing ${pluginName}; ` +
@@ -2765,7 +2759,7 @@ async function showSafeModeManager(initial?: {
           pendingRemovals = await listPendingPluginRemovals(dshHome)
           compatibility = await inspectProfileCompatibility(
             dshHome,
-            join(app.getAppPath(), 'node_modules')
+            join(bundledRuntimeRoot(), 'node_modules')
           )
         }
       } catch (error) {
@@ -2795,7 +2789,7 @@ async function showSafeModeManager(initial?: {
         healthCheck = checkupAllProfilePlugins({
           plugins: installed,
           dshHome,
-          bundledNodeModulesPath: join(app.getAppPath(), 'node_modules'),
+          bundledNodeModulesPath: join(bundledRuntimeRoot(), 'node_modules'),
           incompatiblePlugins: [...new Set([...safeModeSuspectedPlugins, ...incompatiblePluginNames])],
           failureTtlMs: SAFE_MODE_MARKET_FAILURE_TTL_MS,
           fetchFn: (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
@@ -3421,7 +3415,7 @@ async function bootstrap(): Promise<void> {
     },
     workspaceDirectory: join(app.getPath('userData'), 'harness'),
     harnessLogPath: join(app.getPath('logs'), 'harness.log'),
-    shippedPresetsDirectory: join(app.getAppPath(), 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'presets'),
+    shippedPresetsDirectory: join(bundledRuntimeRoot(), 'node_modules', '@deepseek-ai', 'dsh-agent-presets', 'presets'),
     locale: harnessLocale,
     crashEvidence: () => lastCrashEvidence,
     appVersion: () => app.getVersion()
@@ -3612,7 +3606,7 @@ async function bootstrap(): Promise<void> {
     }
     const compatibility = await inspectProfileCompatibility(
       dshHome,
-      join(app.getAppPath(), 'node_modules')
+      join(bundledRuntimeRoot(), 'node_modules')
     )
     if (compatibility.issues.some((issue) => issue.severity === 'blocking')) {
       void showSafeModeManager().catch(showUnexpectedError)

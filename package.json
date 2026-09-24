@@ -36,11 +36,11 @@
     "package:dev:dir": "npm run build && electron-builder --dir --config electron-builder.dev.cjs",
     "package:dev:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never --config electron-builder.dev.cjs",
     "package:dev:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never --config electron-builder.dev.cjs",
-    "package:dev:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never --config electron-builder.dev.cjs",
+    "package:dev:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/electron-builder-windows.mjs --win --x64 --publish never --config electron-builder.dev.cjs",
     "package:mac": "npm run build && electron-builder --mac --publish never",
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never",
+    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/electron-builder-windows.mjs --win --x64 --publish never",
     "ppt:build": "node scripts/prepare-ppt-runtime.mjs",
     "pretest": "npm run ppt:build",
     "pretest:watch": "npm run ppt:build"
@@ -310,7 +310,10 @@
   "build": {
     "appId": "io.dsh.desktop",
     "productName": "DSH Desktop",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/**/*"
+    ],
     "npmRebuild": false,
     "compression": "maximum",
     "electronLanguages": [
@@ -461,7 +464,11 @@
     },
     "win": {
       "icon": "build/icon.ico",
-      "verifyUpdateCodeSignature": false,
+      "verifyUpdateCodeSignature": true,
+      "signtoolOptions": {
+        "publisherName": "Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.",
+        "signingHashAlgorithms": ["sha256"]
+      },
       "requestedExecutionLevel": "asInvoker",
       "target": [
         {

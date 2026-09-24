@@ -8,10 +8,8 @@ import { fileURLToPath } from 'node:url'
 
 import { PassThrough } from 'node:stream'
 
-import { installGeneration } from './generations/installer.mjs'
 import { createGenerationPackageBackend } from './generations/package-backend.mjs'
 import {
-  publishInstalledGeneration,
   publishGenerationManifest
 } from './generations/projection.mjs'
 import {
@@ -21,7 +19,7 @@ import {
   withRegistryLock,
   writeDesired
 } from './generations/registry.mjs'
-import { DEFAULT_NPM_REGISTRY, resolveMarketRegistry } from './market-registry.mjs'
+import { resolveMarketRegistry } from './market-registry.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
 
@@ -436,6 +434,14 @@ export function createDesktopPnpmService(options) {
   let closed = false
 
   const pnpmEntryPath = resolvePnpmEntry()
+  const marketGenerationBackend = createGenerationPackageBackend({
+    dshHome: home,
+    nodeExecutablePath: executablePath,
+    pnpmEntryPath,
+    environment,
+    spawnProcess,
+    runInstall: options.runGenerationInstall
+  })
 
   /**
    * A synthetic handle in the shape `runPlugin` returns, driven by an async
@@ -588,77 +594,53 @@ export function createDesktopPnpmService(options) {
     const spec = args.slice(1).find((argument) => !argument.startsWith('-'))
     if (spec === undefined) throw new Error('The install boundary needs a package spec.')
 
-    const handle = asHandle(async ({ write, isCancelled, setCancel }) =>
-      withRegistryLock(home, async () => {
-        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-        const packageName = spec.slice(0, spec.lastIndexOf('@'))
-        if (packageName === MARKET_PACKAGE) {
-          return updateSharedMarket(args, spec, invokingDir, write, isCancelled, setCancel)
-        }
-        write(`Installing ${spec} as an isolated generation…`)
-        // The market picked this exact version by reading ITS registry; the
-        // install has to fetch from the same one (#337). `args` is consulted
-        // too, so a market that names a registry outright is believed over
-        // anything inferred here.
-        const registry = await resolveMarketRegistry({
-          profileDir: profileDirectory(home),
-          args,
-          environment
-        })
-        return installAndEnable({
-          pluginSpec: spec,
-          expectedVersion: spec.slice(spec.lastIndexOf('@') + 1),
-          // Preserve the market's peer-fetch recovery policy across the
-          // Profile -> isolated generation boundary (including camelCase).
-          autoInstallPeers: args.reduce((value, arg) => {
-            const match = /^--config\.(?:autoInstallPeers|auto-install-peers)=(true|false)$/.exec(arg)
-            return match ? match[1] === 'true' : value
-          }, undefined),
-          minimumReleaseAge: args.some(arg => /^--config\.(?:minimumReleaseAge|minimum-release-age)=0$/.test(arg)) ? 0 : 1440,
-          registry
-        }, write, isCancelled)
+    const handle = asHandle(async ({ write, isCancelled, setCancel }) => {
+      if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
+      const packageName = spec.slice(0, spec.lastIndexOf('@'))
+      if (packageName === MARKET_PACKAGE) {
+        return withRegistryLock(home, () =>
+          updateSharedMarket(args, spec, invokingDir, write, isCancelled, setCancel)
+        )
+      }
+      write(`Installing ${spec} as an isolated generation…`)
+      // The market picked this exact version by reading ITS registry; the
+      // install has to fetch from the same one (#337). `args` is consulted
+      // too, so a market that names a registry outright is believed over
+      // anything inferred here.
+      const registry = await resolveMarketRegistry({
+        profileDir: profileDirectory(home),
+        args,
+        environment
       })
-    )
-    return track(handle, signal)
-  }
-
-  // Shared by the dshmarket boundary and the workbench market: install one
-  // immutable generation, then make it the only desired generation of its
-  // plugin. Activation still requires a restart.
-  const installAndEnable = async (installOptions, write, isCancelled) => {
-    const install = await installGeneration({
-      dshHome: home,
-      nodeExecutablePath: executablePath,
-      pnpmEntryPath,
-      spawnProcess,
-      environment,
-      onTrace: write,
-      onOutput: (chunk) => write(chunk.replace(/\r?\n$/u, '')),
-      runInstall: options.runGenerationInstall,
-      ...installOptions
+      const control = new AbortController()
+      setCancel(() => control.abort())
+      const mutation = await marketGenerationBackend.install({
+        kind: 'registry',
+        spec,
+        expectedVersion: spec.slice(spec.lastIndexOf('@') + 1),
+        // Preserve the market's peer-fetch recovery policy across the
+        // Profile -> isolated generation boundary (including camelCase).
+        autoInstallPeers: args.reduce((value, arg) => {
+          const match = /^--config\.(?:autoInstallPeers|auto-install-peers)=(true|false)$/.exec(arg)
+          return match ? match[1] === 'true' : value
+        }, undefined),
+        minimumReleaseAge: args.some(arg => /^--config\.(?:minimumReleaseAge|minimum-release-age)=0$/.test(arg)) ? 0 : 1440,
+        registry,
+        signal: control.signal,
+        onOutput: chunk => write(chunk.replace(/\r?\n$/u, ''))
+      })
+      if (isCancelled()) {
+        await mutation.rollback?.()
+        return { exitCode: 1, message: 'The package operation was aborted.' }
+      }
+      if (mutation.packageResult.exitCode !== 0 || !mutation.bundle) {
+        return { exitCode: 1, message: mutation.packageResult.output || 'generation install failed' }
+      }
+      mutation.commit?.()
+      setCancel(() => {})
+      write(`published in profile: ${mutation.bundle}@${spec.slice(spec.lastIndexOf('@') + 1)}; activation may require restart`)
+      return { exitCode: 0 }
     })
-    if (!install.ok) return { exitCode: 1, message: install.detail ?? 'generation install failed' }
-
-    // Replace any earlier generation of the same plugin, keep the rest.
-    const [desired, generations] = await Promise.all([readDesired(home), listGenerations(home)])
-    const byId = new Map(generations.map((generation) => [generation.id, generation]))
-    const kept = desired.filter((id) => {
-      const generation = byId.get(id)
-      return generation === undefined || generation.pluginName !== install.generation.pluginName
-    })
-    if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-    await writeDesired(home, [...kept, install.generation.id])
-    try {
-      await publishInstalledGeneration(home, install.generation.pluginName)
-    } catch (error) {
-      await writeDesired(home, desired)
-      throw error
-    }
-    write(`installed in profile: ${install.generation.pluginName}@${install.generation.version}; activation may require restart`)
-    return { exitCode: 0 }
-  }
-
-  const track = (handle, signal) => {
     active = handle
     signal?.addEventListener('abort', handle.cancel, { once: true })
     void handle.done.finally(() => {
@@ -666,79 +648,6 @@ export function createDesktopPnpmService(options) {
       if (active === handle) active = undefined
     })
     return handle
-  }
-
-  /**
-   * Installs a workbench chosen from the awesome-dsh-workbench index as an
-   * isolated generation. The caller resolves one exact target from the index
-   * entry: `name@version` from npm, a verified local `.tgz` (`file:`), or a
-   * commit-pinned `github:` spec. `expectedPluginName` is required because
-   * only npm specs carry the package name. npm integrity is compared with the
-   * registry the install will actually use before anything is fetched.
-   */
-  const installWorkbenchGeneration = (request, invokingDir, signal) => {
-    const { pluginSpec, expectedPluginName, expectedVersion, npmIntegrity } = request ?? {}
-    validatePluginOperation(['add', pluginSpec], invokingDir)
-    if (typeof expectedPluginName !== 'string' || !expectedPluginName || expectedPluginName === MARKET_PACKAGE) {
-      throw new Error('A workbench install needs the package name it provides.')
-    }
-    if (typeof expectedVersion !== 'string' || !expectedVersion) throw new Error('A workbench install needs an exact version.')
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
-    if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
-    if (active) throw new Error('Another desktop pnpm operation is already running.')
-    const handle = asHandle(async ({ write, isCancelled }) =>
-      withRegistryLock(home, async () => {
-        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-        const registry = await resolveMarketRegistry({ profileDir: profileDirectory(home), args: [], environment })
-        if (npmIntegrity !== undefined) {
-          const base = (registry ?? DEFAULT_NPM_REGISTRY).replace(/\/+$/u, '')
-          const response = await (options.fetchImpl ?? fetch)(`${base}/${expectedPluginName.replace('/', '%2F')}/${encodeURIComponent(expectedVersion)}`, {
-            headers: { accept: 'application/json' }, signal: AbortSignal.timeout(30_000)
-          })
-          if (!response.ok) return { exitCode: 1, message: `Registry metadata for ${expectedPluginName}@${expectedVersion} returned HTTP ${response.status}.` }
-          const published = (await response.json())?.dist?.integrity
-          if (published !== npmIntegrity) {
-            return { exitCode: 1, message: `${expectedPluginName}@${expectedVersion} does not match the integrity listed in the workbench index.` }
-          }
-        }
-        write(`Installing ${expectedPluginName}@${expectedVersion} as an isolated generation…`)
-        return installAndEnable({
-          pluginSpec,
-          expectedPluginName,
-          expectedVersion,
-          sourceSpec: pluginSpec.startsWith('file:') ? undefined : pluginSpec,
-          minimumReleaseAge: 0,
-          registry
-        }, write, isCancelled)
-      })
-    )
-    return track(handle, signal)
-  }
-
-  /**
-   * Remove one workbench installed through the isolated-generation boundary.
-   * Missing desired generations are already uninstalled, so stale market
-   * records can be cleared without handing an absent dependency to pnpm.
-   */
-  const removeWorkbenchGeneration = (pluginName, invokingDir, signal) => {
-    validatePluginOperation(['remove', pluginName], invokingDir)
-    if (closed) throw new Error('The DSH Desktop pnpm service has been disposed.')
-    if (signal?.aborted) throw signal.reason ?? new Error('The package operation was aborted.')
-    if (active) throw new Error('Another desktop pnpm operation is already running.')
-
-    const handle = asHandle(async ({ write, isCancelled }) =>
-      withRegistryLock(home, async () => {
-        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-        const disabled = await disableGeneration(home, pluginName)
-        if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
-        const published = await publishGenerationManifest(home, MARKET_PROFILE, { syncBundles: true })
-        write(disabled
-          ? `staged for next restart: ${published.plugins.join(', ')}`
-          : `already absent from the next restart: ${pluginName}`)
-        return { exitCode: 0 }
-      })
-    )
-    return track(handle, signal)
   }
 
   const runPlugin = (args, invokingDir, signal) => {
@@ -816,8 +725,6 @@ export function createDesktopPnpmService(options) {
   return Object.freeze({
     runPlugin,
     runExternalMarketPluginInstall,
-    installWorkbenchGeneration,
-    removeWorkbenchGeneration,
     async dispose() {
       closed = true
       const operation = active
@@ -917,8 +824,6 @@ export async function apply(ctx) {
   })
   ctx.provide('desktopProfiles', desktopProfiles)
   ctx.provide('desktopPnpm', desktopPnpm)
-  // Optional Harness Plugin Manager seam: mutations stage and publish immutable
-  // generations rather than writing into the running profile.
   ctx.provide('profileBundlePackageBackend', profileBundlePackageBackend)
   ctx.effect(() => () => desktopPnpm.dispose(), 'dsh-desktop-market-installer: desktop pnpm')
 

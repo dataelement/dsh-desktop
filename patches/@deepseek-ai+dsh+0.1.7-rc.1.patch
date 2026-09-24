@@ -1,3 +1,19 @@
+diff --git a/node_modules/@deepseek-ai/dsh/lib/bin.js b/node_modules/@deepseek-ai/dsh/lib/bin.js
+index 912c66e..a9e0042 100755
+--- a/node_modules/@deepseek-ai/dsh/lib/bin.js
++++ b/node_modules/@deepseek-ai/dsh/lib/bin.js
+@@ -223,7 +223,8 @@ async function runCli() {
+ 					version,
+ 					profile: invocation.profile
+ 				});
+-				process.exit(1);
++				process.exitCode = 1;
++				throw error;
+ 			}
+ 			break;
+ 		}
+diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
+index 2cf5351..d19b7f7 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
 @@ -99,7 +99,17 @@
@@ -26,15 +42,3 @@
 -}
 \ No newline at end of file
 +}
---- a/node_modules/@deepseek-ai/dsh/lib/bin.js
-+++ b/node_modules/@deepseek-ai/dsh/lib/bin.js
-@@ -223,7 +223,8 @@
- 					version,
- 					profile: invocation.profile
- 				});
--				process.exit(1);
-+				process.exitCode = 1;
-+				throw error;
- 			}
- 			break;
- 		}

@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index 580e6df..5ed4f3e 100644
+index 580e6df..5567c43 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -122,6 +122,7 @@ window.__ModuleLoader__.load({
@@ -356,7 +356,7 @@ index 580e6df..5ed4f3e 100644
  				},
  				store: viewStore,
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
-index 5ca7ad9..4f22140 100644
+index 5ca7ad9..3073fc1 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
 @@ -148,6 +148,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -381,7 +381,7 @@ index 5ca7ad9..4f22140 100644
   * Picker-private injected share. Pick semantics remain in the owner's onPick
   * callback; this callback creates only the real Host Workspace. A type alias
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
-index ade79bb..0633e4e 100644
+index ade79bb..feef33e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
 @@ -99,6 +99,7 @@ export declare const zh: {
@@ -401,7 +401,7 @@ index ade79bb..0633e4e 100644
      'hover.created': string;
      'hover.copied': string;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
-index e251cf2..1deccbc 100644
+index e251cf2..9b75368 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 @@ -4,6 +4,7 @@ import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai
@@ -485,7 +485,7 @@ index e251cf2..1deccbc 100644
      archiveSession(sessionId: SessionId, options?: {
          readonly stopActivity?: boolean;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
-index 4e20866..78dc684 100644
+index 4e20866..d4d260f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
 @@ -23,6 +23,8 @@ type WorkspaceViewState = {

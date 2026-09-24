@@ -20,20 +20,30 @@ on:
           - windows
           - macos
       mode:
-        description: development=unsigned Dev; signed=sign only; prerelease=sign and publish
+        description: development=unsigned Dev; signed=sign only; resign=sign existing unsigned artifact; prerelease=publish; smoke=check signed artifact
         required: false
         default: development
         type: choice
         options:
           - development
           - signed
+          - resign
           - prerelease
+          - smoke
       prerelease_tag:
         description: Non-v semver tag for prerelease mode (e.g. 2.1.0-rc.1)
         required: false
         type: string
       signed_version:
         description: Non-v semver used only by signed mode (e.g. 0.9.2-test.1)
+        required: false
+        type: string
+      smoke_run_id:
+        description: Release run ID containing an existing signed windows-x64 artifact (smoke mode)
+        required: false
+        type: string
+      unsigned_run_id:
+        description: Release run ID containing an existing windows-x64-unsigned artifact (resign mode)
         required: false
         type: string
 
@@ -56,6 +66,8 @@ jobs:
           TARGET: ${{ inputs.target }}
           PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
           SIGNED_VERSION: ${{ inputs.signed_version }}
+          SMOKE_RUN_ID: ${{ inputs.smoke_run_id }}
+          UNSIGNED_RUN_ID: ${{ inputs.unsigned_run_id }}
         run: |
           set -euo pipefail
           semver_re='^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
@@ -73,13 +85,23 @@ jobs:
                 echo "::notice::target=$TARGET with prerelease mode will sign only and skip GitHub/ModelScope publish"
               fi
               ;;
-            signed)
+            signed|resign)
               if [ -z "${SIGNED_VERSION:-}" ]; then
                 echo "::error::signed mode requires signed_version"
                 exit 1
               fi
               if [[ "$SIGNED_VERSION" == v* ]] || ! [[ "$SIGNED_VERSION" =~ $semver_re ]]; then
                 echo "::error::signed_version must be a non-v semver (e.g. 0.9.2-test.1)"
+                exit 1
+              fi
+              if [ "$MODE" = 'resign' ] && { [ "$TARGET" != 'windows' ] || ! [[ "$UNSIGNED_RUN_ID" =~ ^[0-9]+$ ]]; }; then
+                echo "::error::resign mode requires target=windows and a numeric unsigned_run_id"
+                exit 1
+              fi
+              ;;
+            smoke)
+              if [ "$TARGET" != 'windows' ] || ! [[ "$SMOKE_RUN_ID" =~ ^[0-9]+$ ]]; then
+                echo "::error::smoke mode requires target=windows and a numeric smoke_run_id"
                 exit 1
               fi
               ;;
@@ -385,6 +407,7 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' &&
+        inputs.mode != 'smoke' && inputs.mode != 'resign' &&
         (inputs.target == 'all' || inputs.target == 'windows'))
     runs-on: windows-2022
     steps:
@@ -442,11 +465,11 @@ jobs:
           New-Item -ItemType Directory -Path $isolatedApp | Out-Null
           Copy-Item -Path (Join-Path $sourceExecutable.Directory.FullName '*') -Destination $isolatedApp -Recurse
           $executable = Join-Path $isolatedApp $sourceExecutable.Name
-          $packagedNode = Join-Path $isolatedApp 'resources\app\node_modules\node\bin\node.exe'
+          $packagedNode = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\node\bin\node.exe'
           if (-not (Test-Path $packagedNode)) { throw 'Packaged Windows node.exe is missing.' }
           # Exercise the actual native binding too; the best-effort fallback
           # must not hide a missing or broken packaged koffi dependency.
-          & $packagedNode --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed');" (Join-Path $isolatedApp 'resources\app\package.json') (Join-Path $isolatedApp 'resources\app\node_modules')
+          & $packagedNode --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed');" (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\koffi\package.json') (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules')
           if ($LASTEXITCODE -ne 0) { throw 'Packaged koffi native binding failed.' }
           if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
           $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru
@@ -515,8 +538,11 @@ jobs:
 
             Start-Sleep -Seconds 20
             $stableLog = Get-Content -Raw $logPath
-            if ($stableLog -match '\[stderr\]') {
-              throw 'Harness reported stderr after workspace and session creation.'
+            $readyMarker = $stableLog.LastIndexOf('[desktop] Harness is ready')
+            if ($readyMarker -lt 0) { throw 'Harness readiness marker is missing.' }
+            $postReadyLog = $stableLog.Substring($readyMarker)
+            if ($postReadyLog -match '\[stderr\]') {
+              throw 'Harness reported stderr after becoming ready.'
             }
             if ($stableLog -match '\[node\] Harness process exited') {
               throw 'Harness process exited after workspace and session creation.'
@@ -560,11 +586,15 @@ jobs:
 
   sign-windows:
     name: Sign Windows package locally with UKey
-    needs: windows-x64
+    needs: [validate-dispatch, windows-x64]
+    permissions:
+      actions: read
+      contents: read
     if: >-
       always() &&
-      (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) &&
-      needs.windows-x64.result == 'success'
+      needs.validate-dispatch.result == 'success' &&
+      ((startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))) && needs.windows-x64.result == 'success' ||
+       (github.event_name == 'workflow_dispatch' && inputs.mode == 'resign' && needs.windows-x64.result == 'skipped'))
     runs-on: [self-hosted, macOS, ARM64]
     env:
       CI: 'true'
@@ -572,10 +602,10 @@ jobs:
       JSIGN_SHA256: '602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c'
     steps:
       - uses: actions/checkout@v4
+      # The signer only installs release tooling; skip remote npm cache restore.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -589,17 +619,38 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prerelease' && inputs.prerelease_tag != ''
         run: npm version --no-git-tag-version --allow-same-version "${{ inputs.prerelease_tag }}"
       - name: Set app version from signed version
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' && inputs.signed_version != ''
+        if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'resign') && inputs.signed_version != ''
         run: npm version --no-git-tag-version --allow-same-version "${{ inputs.signed_version }}"
       - name: Prepare unsigned Windows package
         run: |
           work_dir="$RUNNER_TEMP/dsh-windows-${{ github.run_id }}"
           mkdir -p "$work_dir/release"
           echo "WINDOWS_SIGNING_WORK_DIR=$work_dir" >> "$GITHUB_ENV"
+      - name: Bypass runner proxy for artifact transfer
+        run: |
+          # The runner exports lowercase proxy variables separately on macOS.
+          # A step env map cannot specify both cases in GitHub workflow YAML.
+          printf 'http_proxy=\nhttps_proxy=\nall_proxy=\nno_proxy=*\n' >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
           name: windows-x64-unsigned
           path: ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release
+          run-id: ${{ inputs.mode == 'resign' && inputs.unsigned_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          # The runner's loopback proxy transfers large artifacts at only tens
+          # of KB/s; direct GitHub access is available from this host.
+          HTTP_PROXY: ''
+          HTTPS_PROXY: ''
+          ALL_PROXY: ''
+      - name: Check reused unsigned package version
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resign'
+        run: |
+          actual_version="$(node -e 'const fs = require("node:fs"); const yaml = require("js-yaml"); console.log(yaml.load(fs.readFileSync(process.argv[1], "utf8")).version)' "$WINDOWS_SIGNING_WORK_DIR/release/latest.yml")"
+          test "$actual_version" = "${{ inputs.signed_version }}" || {
+            echo "::error::Unsigned artifact version $actual_version does not match signed_version"
+            exit 1
+          }
       - name: Download and verify Jsign
         run: |
           set -euo pipefail
@@ -616,6 +667,7 @@ jobs:
         env:
           WINDOWS_SIGNING_PIN: ${{ secrets.DESKTOP_WINDOWS_SIGNING_PIN }}
         run: |
+          set -euo pipefail
           test -r /usr/local/lib/libeTPkcs11.dylib
           test -n "$WINDOWS_SIGNING_PIN" || { echo "::error::Missing required secret: DESKTOP_WINDOWS_SIGNING_PIN"; exit 1; }
           pin_file="$(mktemp "$WINDOWS_SIGNING_WORK_DIR/jsign-pin.XXXXXX")"
@@ -624,44 +676,17 @@ jobs:
           printf '%s' "$WINDOWS_SIGNING_PIN" > "$pin_file"
           unset WINDOWS_SIGNING_PIN
 
-          # If unpacked tree archive was uploaded, sign inner binaries and repackage NSIS installer
-          if [ -f "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" ]; then
-            echo "Unpacking win-unpacked archive for inner binary signing..."
-            # Keep backup of original installer in case repackaging fails on self-hosted macOS runner
-            orig_installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
-            backup_installer="$RUNNER_TEMP/orig-windows-installer-$$.exe"
-            if [ -n "$orig_installer" ] && [ -f "$orig_installer" ]; then
-              cp "$orig_installer" "$backup_installer"
-            fi
-
-            repackaged=false
-            if tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"; then
-              if JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
-                   node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"; then
-                echo "Removing previous unsigned installer before repackaging..."
-                rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
-                echo "Repackaging NSIS installer from signed unpacked directory..."
-                if npx electron-builder --win --x64 --publish never \
-                     --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
-                     --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"; then
-                  repackaged=true
-                  echo "✅ Repackaged NSIS installer successfully with signed internal binaries."
-                else
-                  echo "⚠️ Repackaging with electron-builder failed. Falling back to original installer."
-                fi
-              fi
-            fi
-
-            # Fallback if repackaging failed or produced no installer
-            current_installers="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
-            if [ "$current_installers" != '1' ] && [ -f "$backup_installer" ]; then
-              echo "Restoring original Windows installer from backup..."
-              rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe
-              cp "$backup_installer" "$orig_installer"
-            fi
-            rm -f "$backup_installer"
-            rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
-          fi
+          # A missing archive or any failed signing/repackaging step blocks publication.
+          test -s "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
+          tar -xzf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz" -C "$WINDOWS_SIGNING_WORK_DIR/release"
+          JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
+            node scripts/sign-windows-unpacked.mjs "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked"
+          rm -f "$WINDOWS_SIGNING_WORK_DIR/release"/*.exe "$WINDOWS_SIGNING_WORK_DIR/release"/*.blockmap
+          JSIGN_JAR="$JSIGN_JAR" JSIGN_PIN_FILE="$pin_file" \
+            node scripts/electron-builder-windows.mjs --win --x64 --publish never \
+            --prepackaged "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" \
+            --config.directories.output="$WINDOWS_SIGNING_WORK_DIR/release"
+          rm -rf "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked" "$WINDOWS_SIGNING_WORK_DIR/release/win-unpacked.tar.gz"
 
           installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
           test "$installer_count" = '1'
@@ -718,6 +743,47 @@ jobs:
             *) echo "Refusing to remove unexpected signing path: $WINDOWS_SIGNING_WORK_DIR"; exit 1 ;;
           esac
 
+  smoke-signed-windows:
+    name: Smoke final signed Windows installer
+    needs: sign-windows
+    if: needs.sign-windows.result == 'success'
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: signed-windows
+      - name: Verify signed installation and upgrade
+        shell: pwsh
+        run: |
+          ./scripts/smoke-signed-windows-installer.ps1 `
+            -Installer 'signed-windows/dsh-desktop-windows-x64-setup.exe' `
+            -PublisherName 'Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.'
+
+  smoke-existing-signed-windows:
+    name: Recheck existing signed Windows installer
+    needs: validate-dispatch
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke'
+    runs-on: windows-2022
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: signed-windows
+          run-id: ${{ inputs.smoke_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify signed installation and upgrade
+        shell: pwsh
+        run: |
+          ./scripts/smoke-signed-windows-installer.ps1 `
+            -Installer 'signed-windows/dsh-desktop-windows-x64-setup.exe' `
+            -PublisherName 'Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.'
+
   publish:
     name: Publish GitHub Release
     if: >-
@@ -726,11 +792,13 @@ jobs:
       inputs.prerelease_tag == '' &&
       needs.macos-apple-silicon.result == 'success' &&
       needs.macos-intel.result == 'success' &&
-      needs.sign-windows.result == 'success'
+      needs.sign-windows.result == 'success' &&
+      needs.smoke-signed-windows.result == 'success'
     needs:
       - macos-apple-silicon
       - macos-intel
       - sign-windows
+      - smoke-signed-windows
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -964,11 +1032,13 @@ jobs:
       inputs.prerelease_tag != '' &&
       needs.macos-apple-silicon.result == 'success' &&
       needs.macos-intel.result == 'success' &&
-      needs.sign-windows.result == 'success'
+      needs.sign-windows.result == 'success' &&
+      needs.smoke-signed-windows.result == 'success'
     needs:
       - macos-apple-silicon
       - macos-intel
       - sign-windows
+      - smoke-signed-windows
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
