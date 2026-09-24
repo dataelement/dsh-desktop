@@ -8,13 +8,10 @@ import { profileCordisPatchPath, profilePackageJsonPath } from './plugin-recover
  * Disable a profile plugin the way dsh-market's own toggle does, so recovery
  * and Safe Mode never delete a plugin to get the app starting again.
  *
- * The market persists the package switch in `.dsh-market/state.json`.
- * Harness skips that bundle before reading its manifest or compatibility
- * metadata, and applies the switch to host overlay rows with the same package.
- *
- * Do not write `disabled: true` by row id: another bundle may also insert a
- * core row with that id (notably `authorization`). A package switch must not
- * disable that other owner's service.
+ * The package switch is stored in `.dsh-market/state.json`. Harness skips
+ * disabled bundles before resolving their manifests, and Desktop applies the
+ * switch to host-inserted rows. Row IDs are not package identities: another
+ * bundle can insert the same ID (notably `authorization`).
  *
  * The market's toggle also drops a "disable-carrier" (a bundle whose patch
  * disables a plugin it does not own) from `dsh.profile.bundles`. Desktop
@@ -113,20 +110,24 @@ export function disablePatchRows(
   return { text: next, changed: next !== text }
 }
 
-/**
- * Drop the `disabled: true` blocks for these rows. Removing the last entry
- * would leave a comment-only file, which dsh refuses to boot; the `[]`
- * placeholder comes back instead, as in dsh-market's enableRow.
- */
-export function enablePatchRows(text: string, rowIds: readonly string[]): { text: string; changed: boolean } {
+/** Remove exact row override blocks, restoring `[]` when only comments remain. */
+function removePatchRows(text: string, rowIds: readonly string[], disabled: boolean): { text: string; changed: boolean } {
   let next = text
-  for (const rowId of rowIds) next = next.replace(rowBlockPattern(rowId, true), '')
+  for (const rowId of rowIds) {
+    const block = rowBlockPattern(rowId, disabled)
+    while (block.test(next)) next = next.replace(block, '')
+  }
   if (next === text) return { text, changed: false }
   if (withoutComments(next) === '') {
     const revived = next.replace(/^[ \t]*#[ \t]*\[[ \t]*\][ \t]*(?:\r?\n|$)/m, '[]\n')
     next = revived !== next ? revived : next === '' || next.endsWith('\n') ? `${next}[]\n` : `${next}\n[]\n`
   }
   return { text: next, changed: true }
+}
+
+/** Drop `disabled: true` rows when a plugin is re-enabled. */
+export function enablePatchRows(text: string, rowIds: readonly string[]): { text: string; changed: boolean } {
+  return removePatchRows(text, rowIds, true)
 }
 
 /** Row ids the user patch layer switches off, scanned like dsh-market's readUserPatchState. */
@@ -222,6 +223,35 @@ async function readMarketState(profileDirectory: string): Promise<{ state: Recor
   return { state: record, disabled }
 }
 
+export async function readMarketDisabledPackages(dshHome: string): Promise<string[]> {
+  return (await readMarketState(dirname(profilePackageJsonPath(dshHome)))).disabled
+}
+
+/** The market also persists bundle switches in the shared patch layer. Its
+ * in-memory disable list can lag that layer when another settings surface
+ * changes the same rows, so inspect the package's own inserted rows.
+ */
+export async function isProfilePluginDisabledByPatch(dshHome: string, pluginName: string): Promise<boolean> {
+  const profileDirectory = dirname(profilePackageJsonPath(dshHome))
+  const { inserted } = await pluginPatchRows(profileDirectory, pluginName)
+  if (inserted.length === 0) return false
+  const text = await readTextIfPresent(profileCordisPatchPath(dshHome))
+  if (text === undefined) return false
+  let patches: unknown
+  try {
+    patches = parse(text)
+  } catch {
+    return false
+  }
+  if (!Array.isArray(patches)) return false
+  const disabled = new Set(patches.flatMap((row: unknown) => {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) return []
+    const { id, disabled } = row as { id?: unknown; disabled?: unknown }
+    return typeof id === 'string' && disabled === true ? [id] : []
+  }))
+  return inserted.every((id) => disabled.has(id))
+}
+
 async function setMarketDisabled(profileDirectory: string, pluginName: string, disabled: boolean): Promise<void> {
   const { state, disabled: current } = await readMarketState(profileDirectory)
   const next = disabled
@@ -252,15 +282,42 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
     }
   }
 
+  // The market treats a user-layer `disabled: false` for one of this package's
+  // rows as a newer enable decision and clears its persisted disabled flag on
+  // boot. Remove only those force-enable blocks; adding `disabled: true` here
+  // would also switch off a Desktop or other bundle sharing the row ID.
+  const patchPath = profileCordisPatchPath(dshHome)
+  let originalPatch: string | undefined
+  let clearedPatch: string | undefined
+  try {
+    originalPatch = await readTextIfPresent(patchPath)
+    if (originalPatch !== undefined && inserted.length > 0) {
+      const result = removePatchRows(originalPatch, inserted, false)
+      if (result.changed) {
+        await writeAtomically(patchPath, result.text)
+        clearedPatch = result.text
+      }
+    }
+  } catch (error) {
+    return { ok: false, reason: 'patch-layer', detail: message(error) }
+  }
+
   try {
     await setMarketDisabled(profileDirectory, pluginName, true)
   } catch (error) {
+    if (clearedPatch !== undefined && originalPatch !== undefined) {
+      try {
+        await writeAtomically(patchPath, originalPatch)
+      } catch (rollbackError) {
+        return { ok: false, reason: 'market-state', detail: `${message(error)}; patch rollback failed: ${message(rollbackError)}` }
+      }
+    }
     return { ok: false, reason: 'market-state', detail: message(error) }
   }
   return { ok: true, rows: inserted }
 }
 
-/** Undo disableProfilePlugin: drop the patch rows and the market's disable entry. */
+/** Undo disableProfilePlugin and legacy row blocks written by older Desktop versions. */
 export async function enableProfilePlugin(
   dshHome: string,
   pluginName: string
@@ -291,34 +348,19 @@ export async function forgetMarketDisable(dshHome: string, pluginName: string): 
 }
 
 /**
- * The given plugins that are switched off, by either the patch layer or the
- * market's list — the same two sources the market's own installed list reads.
+ * Package switches are authoritative. A row-only override has no package
+ * provenance and may belong to another active plugin.
  */
 export async function listDisabledProfilePlugins(
   dshHome: string,
   plugins: readonly string[]
 ): Promise<string[]> {
   const profileDirectory = dirname(profilePackageJsonPath(dshHome))
-  let disabledRows: Set<string>
   let marketDisabled: Set<string>
-  try {
-    disabledRows = new Set(patchLayerDisabledRows(await readTextIfPresent(profileCordisPatchPath(dshHome)) ?? ''))
-  } catch {
-    disabledRows = new Set()
-  }
   try {
     marketDisabled = new Set((await readMarketState(profileDirectory)).disabled)
   } catch {
     marketDisabled = new Set()
   }
-  const disabled: string[] = []
-  for (const plugin of plugins) {
-    if (marketDisabled.has(plugin)) {
-      disabled.push(plugin)
-      continue
-    }
-    const { inserted } = await pluginPatchRows(profileDirectory, plugin)
-    if (inserted.some((row) => disabledRows.has(row))) disabled.push(plugin)
-  }
-  return disabled
+  return plugins.filter((plugin) => marketDisabled.has(plugin))
 }

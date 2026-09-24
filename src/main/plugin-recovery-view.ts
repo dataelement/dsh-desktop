@@ -153,7 +153,7 @@ export function describePluginFailure(
         }
   }
 
-  if (/failed to import loader entry/i.test(text)) {
+  if (/failed to (?:apply|import) loader entry/i.test(text)) {
     return locale === 'zh'
       ? {
           title: '插件代码加载失败',

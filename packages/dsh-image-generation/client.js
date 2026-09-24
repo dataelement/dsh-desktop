@@ -14,6 +14,7 @@ window.__ModuleLoader__.load({
       configuredHint: '已保存 API Key。更换模型将沿用当前 Key；输入新 Key 可替换。',
       LOAD_FAILED: '暂时无法确认已保存的配置状态，请点击重新读取后再修改。',
       modelSelect: '生图模型', fetchModels: '获取模型', fetchingModels: '正在获取…', customModel: '自定义模型 / 接入点', emptyModels: '此 Key 的列表未返回工具支持的生图模型，可检查权限或填写自定义模型。',
+      builtInEnabled: '启用内置生图工具', builtInHint: '关闭后重启 Harness，内置插件将跳过加载，可以使用市场版本。', builtInRestart: '重启 Harness 使更改生效', builtInFailed: '无法更改内置插件状态，请重试。',
       MODEL_DISCOVERY: '当前服务商使用内置模型或自定义接入点。',
       AUTH: 'API Key 无效或已过期，请检查后重新保存。', PERMISSION: '当前 Key 无权访问，请确认模型已开通及账号已完成所需认证。',
       MODEL: '无法访问所选模型，请检查模型 ID、接入点或模型开通状态。', KEY_REQUIRED: '请填写 API Key；更换服务地址后需要重新填写。',
@@ -32,6 +33,7 @@ window.__ModuleLoader__.load({
       configuredHint: 'An API key is already saved. Changing the model reuses it; enter a new key only if you want to replace it.',
       LOAD_FAILED: 'Could not confirm the saved settings. Reload before making changes.',
       modelSelect: 'Image model', fetchModels: 'Fetch models', fetchingModels: 'Fetching…', customModel: 'Custom model / endpoint', emptyModels: 'No supported image models were returned. Check access or enter a custom model.',
+      builtInEnabled: 'Enable built-in image generation', builtInHint: 'Restart Harness after turning this off to skip the built-in plugin and use the market version.', builtInRestart: 'Restart Harness to apply', builtInFailed: 'Could not change the built-in plugin state. Try again.',
       MODEL_DISCOVERY: 'Use a built-in model or a custom endpoint for this provider.',
       AUTH: 'The API key is invalid or expired.', PERMISSION: 'Check model access and account verification.', MODEL: 'Check the model ID, inference endpoint and model access.',
       KEY_REQUIRED: 'Enter an API key. A new API origin requires you to enter the key again.', QUOTA: 'Check provider quota and rate limits.',
@@ -60,6 +62,7 @@ window.__ModuleLoader__.load({
       .dshImageCard :focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
       .dshImageHeader:focus-visible{outline-offset:-2px}.dshImageSave:focus-visible{outline-offset:1px}
       .dshImageFetch{appearance:none;align-self:flex-start;font:inherit;font-size:13px;line-height:1.5;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:5px 14px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}.dshImageFetch:disabled{opacity:.4;cursor:default}
+      .dshImageHostControl{border-bottom:.5px solid var(--dsw-alias-border-l2);padding:12px 0;display:flex;flex-direction:column;gap:8px}.dshImageHostControl label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary);cursor:pointer}.dshImageHostControl input{accent-color:var(--dsw-alias-brand-primary)}
     `
     const emptyDrafts = {
       bytedance: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seedream-4-5-251128', configured: false, validation: null, apiKey: '' },
@@ -114,6 +117,10 @@ window.__ModuleLoader__.load({
       const [catalogs, setCatalogs] = React.useState({})
       const [customModels, setCustomModels] = React.useState({})
       const [loadFailed, setLoadFailed] = React.useState(false)
+      const [hostEnabled, setHostEnabled] = React.useState(null)
+      const [hostPending, setHostPending] = React.useState(false)
+      const [hostBusy, setHostBusy] = React.useState(false)
+      const [hostError, setHostError] = React.useState(false)
       const inFlight = React.useRef(false)
       const lifetime = React.useRef(null)
       const lastGood = React.useRef(null)
@@ -157,6 +164,33 @@ window.__ModuleLoader__.load({
         void load(controller.signal)
         return () => controller.abort()
       }, [load])
+      React.useEffect(() => {
+        const desktop = globalThis.dshDesktop
+        if (!desktop?.getBuiltInImageGenerationStatus) return
+        let active = true
+        void desktop.getBuiltInImageGenerationStatus().then(result => {
+          if (active) setHostEnabled(result.enabled)
+        }, () => { if (active) setHostError(true) })
+        return () => { active = false }
+      }, [])
+      const toggleHost = async event => {
+        const enabled = event.target.checked
+        setHostBusy(true); setHostError(false)
+        try {
+          const result = await globalThis.dshDesktop.setBuiltInImageGenerationEnabled(enabled)
+          if (!result.ok) throw new Error(result.reason)
+          setHostEnabled(enabled); setHostPending(true)
+        } catch { setHostError(true) }
+        finally { setHostBusy(false) }
+      }
+      const restartHost = async () => {
+        setHostBusy(true); setHostError(false)
+        try {
+          const result = await globalThis.dshDesktop.restartHarness()
+          if (!result.ok) setHostError(true)
+        } catch { setHostError(true) }
+        finally { setHostBusy(false) }
+      }
       const draft = drafts[provider]
       const catalog = catalogs[provider] || saved?.catalogs[provider] || emptyCatalogs[provider]
       const writable = saved?.writable !== false && Boolean(saved) && !loadFailed
@@ -197,6 +231,11 @@ window.__ModuleLoader__.load({
           h('span', { className: 'dshImageHeading' }, h('span', { className: 'dshImageTitle' }, t('title')), h('span', { className: 'dshImageDescription' }, t('description'))),
           h(IconChevronDownOutline14, { className: 'dshImageChevron' })),
         expanded && h('form', { id: `${id}-body`, className: 'dshImageBody', onSubmit: save, 'aria-busy': busy || fetching || loading },
+          hostEnabled !== null && h('div', { className: 'dshImageHostControl' },
+            h('label', null, h('input', { type: 'checkbox', role: 'switch', checked: hostEnabled, disabled: hostBusy, onChange: toggleHost }), t('builtInEnabled')),
+            h('p', { className: 'dshImageHint' }, t('builtInHint')),
+            hostPending && h('button', { className: 'dshImageFetch', type: 'button', disabled: hostBusy, onClick: restartHost }, t('builtInRestart'))),
+          hostError && h('p', { className: 'dshImageStatus dshImageError', role: 'alert' }, t('builtInFailed')),
           loading ? h('p', { className: 'dshImageHint' }, t('loading')) : draft && h(React.Fragment, null,
             !loadFailed && h('p', { className: 'dshImageHint' }, t(draft.configured ? 'configuredHint' : 'setupHint')),
             h('fieldset', { className: 'dshImageFields', disabled: busy || fetching || !writable },

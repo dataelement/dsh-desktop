@@ -44,7 +44,8 @@ window.__ModuleLoader__.load({
       cancel: 'Cancel',
       removed: 'Plugin market uninstalled',
       removedHint: 'dsh-market has been removed. Restart Harness to finish.',
-      uninstallFailed: 'Plugin market could not be uninstalled.'
+      uninstallFailed: 'Plugin market could not be uninstalled.',
+      builtInImageTitle: 'Built-in image generation', builtInImageEnabled: 'The built-in plugin is on.', builtInImageDisabled: 'The built-in plugin is off. You can use the market version.', builtInImageEnable: 'Enable built-in plugin', builtInImageConflict: 'Disable the market version of image generation before enabling the built-in plugin.', builtInImageFailed: 'Could not read or change the built-in plugin state.', builtInImageRetry: 'Try again', builtInImageRestart: 'Restart Harness to apply', builtInImagePending: 'The built-in plugin will load after Harness restarts.'
     }
 
     const zh = {
@@ -79,7 +80,8 @@ window.__ModuleLoader__.load({
       cancel: '取消',
       removed: '插件市场已卸载',
       removedHint: 'dsh-market 已移除，请重启 Harness 完成卸载。',
-      uninstallFailed: '插件市场卸载失败。'
+      uninstallFailed: '插件市场卸载失败。',
+      builtInImageTitle: '内置生图工具', builtInImageEnabled: '内置插件已启用。', builtInImageDisabled: '内置插件已关闭，可以使用市场版本。', builtInImageEnable: '启用内置插件', builtInImageConflict: '请先停用市场版本的生图工具，再启用内置插件。', builtInImageFailed: '无法读取或更改内置插件状态。', builtInImageRetry: '重试', builtInImageRestart: '重启 Harness 使更改生效', builtInImagePending: '重启 Harness 后将加载内置插件。'
     }
 
     const css = `
@@ -113,6 +115,7 @@ window.__ModuleLoader__.load({
       .dshDesktopMarketSpinner{box-sizing:border-box;width:16px;height:16px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-label-primary);border-radius:50%;animation:dshDesktopMarketSpin .75s linear infinite}
       .dshDesktopMarketBusy{display:flex;align-items:center;gap:9px}
       .dshDesktopMarketError{color:var(--dsw-alias-state-error-primary)}
+      .dshDesktopBuiltInImage{list-style:none;border:.5px solid var(--dsw-alias-border-l4);background:var(--dsw-alias-bg-layer-3);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;color:var(--dsw-alias-label-primary)}.dshDesktopBuiltInImageTitle{font-size:15px;font-weight:600}.dshDesktopBuiltInImageHint{margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}.dshDesktopBuiltInImageLabel{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}.dshDesktopBuiltInImageLabel input{accent-color:var(--dsw-alias-brand-primary)}
       .dshDesktopMarketModalBackdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.42)}
       .dshDesktopMarketModal{box-sizing:border-box;width:min(440px,100%);padding:24px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 18px 48px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:12px}
       .dshDesktopMarketModalTitle{margin:0;font-size:18px;font-weight:600;line-height:26px}
@@ -146,6 +149,52 @@ window.__ModuleLoader__.load({
     function marketAlreadyComposed() {
       const entries = globalThis.__DSH_BOOT__?.entries
       return Array.isArray(entries) && entries.some((entry) => entry?.id === 'dshmarket')
+    }
+
+    function BuiltInImageControl({ t }) {
+      const [state, setState] = React.useState(null)
+      const [busy, setBusy] = React.useState(false)
+      const [restart, setRestart] = React.useState(false)
+      const [error, setError] = React.useState('')
+      const [retry, setRetry] = React.useState(0)
+      React.useEffect(() => {
+        const desktop = globalThis.dshDesktop
+        if (!desktop?.getBuiltInImageGenerationStatus) { setError('builtInImageFailed'); return }
+        let active = true
+        void desktop.getBuiltInImageGenerationStatus().then(result => {
+          if (active) { setState(result); setError('') }
+        }, () => { if (active) setError('builtInImageFailed') })
+        return () => { active = false }
+      }, [retry])
+      if (!state && !error) return null
+      const enable = async event => {
+        event.preventDefault()
+        setBusy(true); setError('')
+        try {
+          const result = await globalThis.dshDesktop.setBuiltInImageGenerationEnabled(true)
+          if (!result.ok) { setError(result.reason === 'market-active' ? 'builtInImageConflict' : 'builtInImageFailed'); return }
+          setState(previous => ({ ...previous, enabled: true }))
+          setRestart(true)
+        } catch { setError('builtInImageFailed') }
+        finally { setBusy(false) }
+      }
+      const restartHarness = async () => {
+        setBusy(true); setError('')
+        try {
+          const result = await globalThis.dshDesktop.restartHarness()
+          if (!result.ok) setError('builtInImageFailed')
+        } catch { setError('builtInImageFailed') }
+        finally { setBusy(false) }
+      }
+      return React.createElement('section', { className: 'dshDesktopBuiltInImage', 'data-testid': 'built-in-image-generation-control' },
+        React.createElement('span', { className: 'dshDesktopBuiltInImageTitle' }, t('builtInImageTitle')),
+        state && React.createElement('p', { className: 'dshDesktopBuiltInImageHint' }, t(restart ? 'builtInImagePending' : state.enabled ? 'builtInImageEnabled' : 'builtInImageDisabled')),
+        state?.marketActive && !restart && !state.enabled && React.createElement('p', { className: 'dshDesktopBuiltInImageHint' }, t('builtInImageConflict')),
+        state && !state.enabled && React.createElement('label', { className: 'dshDesktopBuiltInImageLabel' },
+          React.createElement('input', { type: 'checkbox', role: 'switch', checked: restart, disabled: busy || restart || state.marketActive, onChange: enable }), t('builtInImageEnable')),
+        error && React.createElement('p', { className: 'dshDesktopMarketError', role: 'alert' }, t(error)),
+        !state && error && React.createElement('button', { className: 'dshDesktopMarketButton dshDesktopMarketSecondary', type: 'button', onClick: () => { setError(''); setRetry(value => value + 1) } }, t('builtInImageRetry')),
+        restart && React.createElement('button', { className: 'dshDesktopMarketButton dshDesktopMarketSecondary', type: 'button', disabled: busy, onClick: restartHarness }, t('builtInImageRestart')))
     }
 
     async function readStatus() {
@@ -697,6 +746,14 @@ window.__ModuleLoader__.load({
         'dsh-desktop-market-installer: copy dictionaries'
       )
       const t = ctx.locale.bind(NS)
+      ctx.slots.inject('settings.plugins.tab', () =>
+        ctx.slots.register(
+          { name: 'settings.plugins.tab', id: 'desktop-host-plugins', order: 20,
+            label: () => t('builtInImageTitle'), locale: NS,
+            inject: () => ({ t }) },
+          BuiltInImageControl
+        )
+      )
       if (marketAlreadyComposed()) {
         ctx.slots.inject('settings.plugins.tab', () =>
           ctx.slots.register(

@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { composeEntries, loadProfileDirectory, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
+import { setHostPluginEnabled } from '../src/main/state/host-plugin-state'
+import { projectRoot } from './patch-path'
 
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })
@@ -139,5 +141,41 @@ describe('normal Profile boot preflight', () => {
     expect(entries).toEqual([expect.objectContaining({
       id: 'authorization', name: 'core-authorization', disabled: false
     })])
+  })
+
+  it.each(['dsh-image-generation', 'test-startup-bundle'])('sends a duplicate %s bundle to Recovery without changing the manifest', async (name) => {
+    const { home, profile } = await fixture()
+    const manifestPath = join(profile, 'package.json')
+    const manifest = JSON.stringify({
+      dependencies: { [name]: '0.1.1' },
+      dsh: { profile: { bundles: [name] } }
+    })
+    await writeFile(manifestPath, manifest)
+    if (name !== 'test-startup-bundle') {
+      await symlink(join(projectRoot, 'node_modules', name),
+        join(profile, 'node_modules', name), 'junction')
+    }
+    const entry = join(home, 'app', 'lib', 'bin.js')
+    const hostPatch = name === 'test-startup-bundle'
+      ? join(home, 'host.patch.yml')
+      : join(projectRoot, 'build', 'dsh-desktop.patch.yml')
+    if (name === 'test-startup-bundle') {
+      await writeFile(hostPatch, '- insert:\n    - id: host-test\n      name: test-startup-bundle\n')
+    } else {
+      expect(await inspectProfileBootInputs(home, entry, hostPatch)).toBeUndefined()
+      await setHostPluginEnabled(home, name, true)
+    }
+    expect(await inspectProfileBootInputs(home, entry, hostPatch)).toEqual({
+      message: expect.stringContaining('enabled in both'),
+      packageName: name
+    })
+    expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
+    await setHostPluginEnabled(home, name, false)
+    expect(await inspectProfileBootInputs(home, entry, hostPatch)).toBeUndefined()
+    await setHostPluginEnabled(home, name, true)
+    await mkdir(join(profile, '.dsh-market'))
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: [name] }))
+    expect(await inspectProfileBootInputs(home, entry, hostPatch)).toBeUndefined()
+    expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
   })
 })
