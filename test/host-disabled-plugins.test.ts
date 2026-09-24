@@ -7,6 +7,8 @@ import { composeEntries, loadOverlayPatches, loadProfileDirectory } from '@deeps
 import { prepareHostDisabledPluginsPatch } from '../src/main/state/host-disabled-plugins'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { disableProfilePlugin } from '../src/main/state/plugin-disable'
+import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
+import { setHostPluginEnabled } from '../src/main/state/host-plugin-state'
 import { projectRoot } from './patch-path'
 
 const homes: string[] = []
@@ -83,6 +85,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       onChanged() {}
     })
     try {
+      await setHostPluginEnabled(home, 'dsh-image-generation', true)
       await runtime.start(home)
       expect(runtime.snapshot().phase, runtime.snapshot().logs.join('\n')).toBe('ready')
       await runtime.stop()
@@ -121,6 +124,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       onChanged() {}
     })
     try {
+      await setHostPluginEnabled(home, 'dsh-image-generation', true)
       await runtime.start(home)
       expect(runtime.snapshot().phase, runtime.snapshot().logs.join('\n')).toBe('ready')
       await runtime.stop()
@@ -143,6 +147,54 @@ describe('disabled Profile packages in Desktop host patch', () => {
       const headers = { Cookie: login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ') }
       expect((await fetch(new URL('/api/image-generation.settings', snapshot.url), { headers })).status).toBe(200)
       expect((await readFile(manifestPath, 'utf8'))).toBe(JSON.stringify(manifest))
+    } finally {
+      await runtime.stop()
+    }
+  }, 90_000)
+
+  it('boots the market image bundle with the built-in one off by default', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-host-disable-'))
+    homes.push(home)
+    const profile = join(home, 'profiles', 'web')
+    const desktopPatchPath = join(projectRoot, 'build', 'dsh-desktop.patch.yml')
+    const entryPath = join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    const runtime = new HarnessRuntime({
+      dshEntryPath: entryPath,
+      nodeEntryPath: join(projectRoot, 'build', 'harness-node-entry.mjs'),
+      nodeExecutablePath: process.execPath,
+      dshPatchPath: desktopPatchPath,
+      dshSafePatchPath: join(projectRoot, 'build', 'dsh-desktop-safe.patch.yml'),
+      dshHome: home,
+      logPath: join(home, 'harness.log'),
+      startupTimeoutMs: 30_000,
+      launchProcess: (executable, args, options) => spawn(executable, args, options),
+      onChanged() {}
+    })
+    try {
+      await runtime.start(home)
+      expect(runtime.snapshot().phase, runtime.snapshot().logs.join('\n')).toBe('ready')
+      expect(await readFile(join(home, 'desktop-host-sources.patch.yml'), 'utf8')).not.toContain('dsh-image-generation')
+      await runtime.stop()
+      const manifestPath = join(profile, 'package.json')
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+        dependencies: Record<string, string>
+        dsh: { profile: { bundles: string[] } }
+      }
+      manifest.dependencies['dsh-image-generation'] = '0.1.1'
+      manifest.dsh.profile.bundles.push('dsh-image-generation')
+      await writeFile(manifestPath, JSON.stringify(manifest))
+      await symlink(join(projectRoot, 'node_modules', 'dsh-image-generation'),
+        join(profile, 'node_modules', 'dsh-image-generation'), 'junction')
+      expect(await inspectProfileBootInputs(home, entryPath, desktopPatchPath)).toBeUndefined()
+      await runtime.start(home)
+      const snapshot = runtime.snapshot()
+      expect(snapshot.phase, snapshot.logs.join('\n')).toBe('ready')
+      const hostPatch = await readFile(join(home, 'desktop-host-sources.patch.yml'), 'utf8')
+      expect(hostPatch).not.toContain('dsh-image-generation')
+      if (!snapshot.url || !snapshot.authToken) throw new Error('Harness did not announce an authenticated endpoint')
+      const login = await fetch(`${snapshot.url}/?token=${encodeURIComponent(snapshot.authToken)}`, { redirect: 'manual' })
+      const headers = { Cookie: login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ') }
+      expect((await fetch(new URL('/api/image-generation.settings', snapshot.url), { headers })).status).toBe(200)
     } finally {
       await runtime.stop()
     }

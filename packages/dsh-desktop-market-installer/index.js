@@ -7,6 +7,7 @@ import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { PassThrough } from 'node:stream'
+import z from '@deepseek-ai/schemastery'
 
 import { installGeneration } from './generations/installer.mjs'
 import {
@@ -35,7 +36,7 @@ const OPERATION_TIMEOUT_MS = 15 * 60 * 1000
 const MAX_LOG_BYTES = 32 * 1024
 
 export const name = 'dsh-desktop-market-installer'
-export const inject = []
+export const inject = ['settings']
 
 function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -806,6 +807,10 @@ function killProcessTree(child) {
 }
 
 export async function apply(ctx) {
+  // The configurable Plugins tab only dispatches cards for served settings
+  // namespaces. Keep this Desktop-owned control discoverable while the image
+  // generation package itself is switched off.
+  ctx.settings.register('desktop-host-plugins', z.object({}), { applies: 'restart' })
   const home = dshHome()
   const directory = profileDirectory(home)
   const manifestPath = join(directory, 'package.json')

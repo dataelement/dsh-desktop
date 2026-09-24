@@ -47,6 +47,12 @@ import {
 import { healProfileBundles, HOST_COMPOSED_BUNDLES, inspectProfileConsistency } from './state/profile-consistency'
 import { inspectProfileBootInputs } from './state/profile-boot-preflight'
 import {
+  BUILTIN_IMAGE_GENERATION,
+  profileHasEnabledBundle,
+  readDisabledHostPlugins,
+  setHostPluginEnabled
+} from './state/host-plugin-state'
+import {
   disableProfilePlugin,
   enableProfilePlugin,
   forgetMarketDisable,
@@ -1791,6 +1797,29 @@ function registerHarnessHandlers(): void {
       throw new Error('Harness is not ready to uninstall the plugin market.')
     }
     return uninstallMarketAndRestart()
+  })
+
+  ipcMain.removeHandler('desktop-host-plugin:status')
+  ipcMain.handle('desktop-host-plugin:status', async (event) => {
+    assertTrustedMainWindowEvent(event)
+    const dshHome = join(app.getPath('userData'), 'harness')
+    return {
+      enabled: !(await readDisabledHostPlugins(dshHome)).includes(BUILTIN_IMAGE_GENERATION),
+      marketActive: await profileHasEnabledBundle(dshHome, BUILTIN_IMAGE_GENERATION)
+    }
+  })
+
+  ipcMain.removeHandler('desktop-host-plugin:set-enabled')
+  ipcMain.handle('desktop-host-plugin:set-enabled', async (event, enabled: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (typeof enabled !== 'boolean') throw new Error('Expected an enabled state')
+    const dshHome = join(app.getPath('userData'), 'harness')
+    if (enabled && await profileHasEnabledBundle(dshHome, BUILTIN_IMAGE_GENERATION)) {
+      return { ok: false, reason: 'market-active' }
+    }
+    await setHostPluginEnabled(dshHome, BUILTIN_IMAGE_GENERATION, enabled)
+    runtime.note(`[desktop] built-in image generation ${enabled ? 'enabled' : 'disabled'}; Harness restart required`)
+    return { ok: true, enabled, restartRequired: true }
   })
 
   ipcMain.removeHandler('desktop-menu:execute')

@@ -2,6 +2,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { loadOverlayPatches, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { hostInsertedPluginNames } from './host-plugin-sources'
+import { readDisabledHostPlugins } from './host-plugin-state'
 
 export interface ProfileBootInputProblem {
   /** The failure chain, innermost cause last. */
@@ -36,7 +37,10 @@ export async function inspectProfileBootInputs(
     }
     const loaded = loadProfileDirectory('dsh-desktop', profile, join(dirname(dshEntryPath), '..', 'package.json'))
     if (desktopPatchPath !== undefined) {
-      const hostNames = new Set(hostInsertedPluginNames(await readFile(desktopPatchPath, 'utf8')))
+      const hostNames = new Set(hostInsertedPluginNames(
+        await readFile(desktopPatchPath, 'utf8'),
+        await readDisabledHostPlugins(dshHome)
+      ))
       const duplicate = loaded.layers.find((layer) => hostNames.has(layer.packageName))
       if (duplicate) return {
         message: `${duplicate.packageName} is enabled in both the Profile bundle and Desktop; disable it in Safe Mode before normal startup`,

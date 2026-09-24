@@ -549,6 +549,10 @@ contextBridge.exposeInMainWorld(
   'dshDesktop',
   Object.freeze({
     restartHarness: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:restart'),
+    getBuiltInImageGenerationStatus: (): Promise<{ enabled: boolean; marketActive: boolean }> =>
+      ipcRenderer.invoke('desktop-host-plugin:status'),
+    setBuiltInImageGenerationEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled?: boolean; restartRequired?: boolean; reason?: string }> =>
+      ipcRenderer.invoke('desktop-host-plugin:set-enabled', enabled),
     uninstallMarket: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('market:uninstall'),
     openInFinder: (path: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:open-in-finder', path)
   })

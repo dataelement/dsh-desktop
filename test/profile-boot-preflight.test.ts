@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
+import { setHostPluginEnabled } from '../src/main/state/host-plugin-state'
 import { projectRoot } from './patch-path'
 
 const homes: string[] = []
@@ -88,12 +89,18 @@ describe('normal Profile boot preflight', () => {
       : join(projectRoot, 'build', 'dsh-desktop.patch.yml')
     if (name === 'test-startup-bundle') {
       await writeFile(hostPatch, '- insert:\n    - id: host-test\n      name: test-startup-bundle\n')
+    } else {
+      expect(await inspectProfileBootInputs(home, entry, hostPatch)).toBeUndefined()
+      await setHostPluginEnabled(home, name, true)
     }
     expect(await inspectProfileBootInputs(home, entry, hostPatch)).toEqual({
       message: expect.stringContaining('enabled in both'),
       packageName: name
     })
     expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
+    await setHostPluginEnabled(home, name, false)
+    expect(await inspectProfileBootInputs(home, entry, hostPatch)).toBeUndefined()
+    await setHostPluginEnabled(home, name, true)
     await mkdir(join(profile, '.dsh-market'))
     await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: [name] }))
     expect(await inspectProfileBootInputs(home, entry, hostPatch)).toBeUndefined()
