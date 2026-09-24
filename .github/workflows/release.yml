@@ -620,6 +620,11 @@ jobs:
           work_dir="$RUNNER_TEMP/dsh-windows-${{ github.run_id }}"
           mkdir -p "$work_dir/release"
           echo "WINDOWS_SIGNING_WORK_DIR=$work_dir" >> "$GITHUB_ENV"
+      - name: Bypass runner proxy for artifact transfer
+        run: |
+          # The runner exports lowercase proxy variables separately on macOS.
+          # A step env map cannot specify both cases in GitHub workflow YAML.
+          printf 'http_proxy=\nhttps_proxy=\nall_proxy=\nno_proxy=*\n' >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
           name: windows-x64-unsigned
