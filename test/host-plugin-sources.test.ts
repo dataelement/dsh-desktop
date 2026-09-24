@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -21,13 +22,11 @@ describe('Desktop host plugin sources', () => {
     await mkdir(home)
     await writeFile(join(app, 'package.json'), '{"name":"test-desktop"}\n')
     const names = ['host-first', 'host-second']
-    const entries: string[] = []
     for (const name of names) {
       const directory = join(app, 'node_modules', name)
       await mkdir(directory, { recursive: true })
       await writeFile(join(directory, 'package.json'), JSON.stringify({ name, main: 'index.js' }))
       const entry = join(directory, 'index.js')
-      entries.push(entry)
       await writeFile(entry, `module.exports = '${name}'\n`)
     }
     const source = `# Keep this comment\n- insert:\n    - id: first\n      name: host-first\n    - id: second\n      name: 'host-second'\n      config:\n        path: !!js dshHomePath('data')\n- id: another\n  name: profile-plugin\n`
@@ -36,7 +35,8 @@ describe('Desktop host plugin sources', () => {
     const outputPath = await prepareHostPluginSourcesPatch(home, patchPath)
     const output = await readFile(outputPath, 'utf8')
     const rows = parse(output, { logLevel: 'silent' }) as { insert?: { name: string }[]; name?: string }[]
-    expect(rows[0]?.insert?.map(row => row.name)).toEqual(await Promise.all(entries.map(async path => pathToFileURL(await realpath(path)).href)))
+    const resolveHost = createRequire(join(app, 'package.json')).resolve
+    expect(rows[0]?.insert?.map(row => row.name)).toEqual(names.map(name => pathToFileURL(resolveHost(name)).href))
     expect(rows[1]?.name).toBe('profile-plugin')
     expect(output).toContain("path: !!js dshHomePath('data')")
     expect(output).toContain('# Keep this comment')
@@ -68,7 +68,8 @@ describe('Desktop host plugin sources', () => {
     await setHostPluginEnabled(home, 'dsh-image-generation', false)
     const output = await readFile(await prepareHostPluginSourcesPatch(home, patchPath), 'utf8')
     const rows = parse(output, { logLevel: 'silent' }) as { insert: { id: string; name: string }[] }[]
-    expect(rows[0]?.insert).toEqual([{ id: 'other', name: pathToFileURL(await realpath(join(other, 'index.js'))).href }])
+    const resolveHost = createRequire(join(app, 'package.json')).resolve
+    expect(rows[0]?.insert).toEqual([{ id: 'other', name: pathToFileURL(resolveHost('host-other')).href }])
     expect(output).not.toContain('dsh-image-generation')
     expect(hostInsertedPluginNames(await readFile(patchPath, 'utf8'), ['dsh-image-generation'])).toEqual(['host-other'])
   })

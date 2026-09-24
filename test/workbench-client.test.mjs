@@ -1187,7 +1187,7 @@ describe('workbench business layout contract', () => {
 })
 
 describe('workbench market screenshot and metadata display', () => {
-  const fullSource = code
+  const fullSource = code.replace(/\r\n/g, '\n')
   it('explains the workbench concept and the sidebar shortcut model', () => {
     expect(fullSource).toContain('切换工作台，进入不同工作方式')
     expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。可通过左侧快捷栏在原生会话与不同工作台之间切换。')

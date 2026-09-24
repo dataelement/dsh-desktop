@@ -95,6 +95,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshSafePatchPath: join(projectRoot, 'build', 'dsh-desktop-safe.patch.yml'),
       dshHome: home,
       logPath: join(home, 'harness.log'),
+      preferredPort: 0,
       startupTimeoutMs: 30_000,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
@@ -134,6 +135,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshSafePatchPath: join(projectRoot, 'build', 'dsh-desktop-safe.patch.yml'),
       dshHome: home,
       logPath: join(home, 'harness.log'),
+      preferredPort: 0,
       startupTimeoutMs: 30_000,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
@@ -188,6 +190,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshSafePatchPath: join(projectRoot, 'build', 'dsh-desktop-safe.patch.yml'),
       dshHome: home,
       logPath: join(home, 'harness.log'),
+      preferredPort: 0,
       startupTimeoutMs: 30_000,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
