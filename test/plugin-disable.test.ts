@@ -109,6 +109,26 @@ describe('profile plugin disable', () => {
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-proxy-routing'])).toEqual([])
   })
 
+  it('removes a forced enable for the disabled package without touching other rows', async () => {
+    await writeFile(patchPath, '- id: mcp-coaligne\n  disabled: false\n- id: proxy-routing\n  disabled: false\n')
+    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true, rows: ['proxy-routing'] })
+    expect(parse(await readFile(patchPath, 'utf8'))).toEqual([{ id: 'mcp-coaligne', disabled: false }])
+    expect(await listDisabledProfilePlugins(dshHome, ['dsh-proxy-routing'])).toEqual(['dsh-proxy-routing'])
+
+    // dshmarket clears its disabled flag on boot when the package still
+    // has a `disabled: false` patch row. The remaining row belongs elsewhere.
+    const userRows = parse(await readFile(patchPath, 'utf8')) as { id: string; disabled: boolean }[]
+    expect(userRows.some((row) => row.id === 'proxy-routing' && row.disabled === false)).toBe(false)
+  })
+
+  it('restores a forced enable when the market state cannot be written', async () => {
+    const layer = '- id: proxy-routing\n  disabled: false\n'
+    await writeFile(patchPath, layer)
+    await writeFile(statePath, '{ not json')
+    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toMatchObject({ ok: false, reason: 'market-state' })
+    expect(await readFile(patchPath, 'utf8')).toBe(layer)
+  })
+
   it('switches a client-only plugin off through the market state alone', async () => {
     const before = await readFile(patchPath, 'utf8')
     expect(await disableProfilePlugin(dshHome, 'dsh-client-only')).toEqual({ ok: true, rows: [] })

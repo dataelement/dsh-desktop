@@ -110,20 +110,24 @@ export function disablePatchRows(
   return { text: next, changed: next !== text }
 }
 
-/**
- * Drop the `disabled: true` blocks for these rows. Removing the last entry
- * would leave a comment-only file, which dsh refuses to boot; the `[]`
- * placeholder comes back instead, as in dsh-market's enableRow.
- */
-export function enablePatchRows(text: string, rowIds: readonly string[]): { text: string; changed: boolean } {
+/** Remove exact row override blocks, restoring `[]` when only comments remain. */
+function removePatchRows(text: string, rowIds: readonly string[], disabled: boolean): { text: string; changed: boolean } {
   let next = text
-  for (const rowId of rowIds) next = next.replace(rowBlockPattern(rowId, true), '')
+  for (const rowId of rowIds) {
+    const block = rowBlockPattern(rowId, disabled)
+    while (block.test(next)) next = next.replace(block, '')
+  }
   if (next === text) return { text, changed: false }
   if (withoutComments(next) === '') {
     const revived = next.replace(/^[ \t]*#[ \t]*\[[ \t]*\][ \t]*(?:\r?\n|$)/m, '[]\n')
     next = revived !== next ? revived : next === '' || next.endsWith('\n') ? `${next}[]\n` : `${next}\n[]\n`
   }
   return { text: next, changed: true }
+}
+
+/** Drop `disabled: true` rows when a plugin is re-enabled. */
+export function enablePatchRows(text: string, rowIds: readonly string[]): { text: string; changed: boolean } {
+  return removePatchRows(text, rowIds, true)
 }
 
 /** Row ids the user patch layer switches off, scanned like dsh-market's readUserPatchState. */
@@ -278,9 +282,36 @@ export async function disableProfilePlugin(dshHome: string, pluginName: string):
     }
   }
 
+  // The market treats a user-layer `disabled: false` for one of this package's
+  // rows as a newer enable decision and clears its persisted disabled flag on
+  // boot. Remove only those force-enable blocks; adding `disabled: true` here
+  // would also switch off a Desktop or other bundle sharing the row ID.
+  const patchPath = profileCordisPatchPath(dshHome)
+  let originalPatch: string | undefined
+  let clearedPatch: string | undefined
+  try {
+    originalPatch = await readTextIfPresent(patchPath)
+    if (originalPatch !== undefined && inserted.length > 0) {
+      const result = removePatchRows(originalPatch, inserted, false)
+      if (result.changed) {
+        await writeAtomically(patchPath, result.text)
+        clearedPatch = result.text
+      }
+    }
+  } catch (error) {
+    return { ok: false, reason: 'patch-layer', detail: message(error) }
+  }
+
   try {
     await setMarketDisabled(profileDirectory, pluginName, true)
   } catch (error) {
+    if (clearedPatch !== undefined && originalPatch !== undefined) {
+      try {
+        await writeAtomically(patchPath, originalPatch)
+      } catch (rollbackError) {
+        return { ok: false, reason: 'market-state', detail: `${message(error)}; patch rollback failed: ${message(rollbackError)}` }
+      }
+    }
     return { ok: false, reason: 'market-state', detail: message(error) }
   }
   return { ok: true, rows: inserted }
