@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({
       removed: 'Plugin market uninstalled',
       removedHint: 'dsh-market has been removed. Restart Harness to finish.',
       uninstallFailed: 'Plugin market could not be uninstalled.',
-      builtInImageTitle: 'Built-in image generation', builtInImageDisabled: 'The built-in plugin is off. You can use the market version.', builtInImageEnable: 'Enable built-in plugin', builtInImageConflict: 'Disable the market version of image generation before enabling the built-in plugin.', builtInImageFailed: 'Could not change the built-in plugin state.', builtInImageRestart: 'Restart Harness to apply', builtInImagePending: 'The built-in plugin will load after Harness restarts.'
+      builtInImageTitle: 'Built-in image generation', builtInImageDisabled: 'The built-in plugin is off. You can use the market version.', builtInImageEnable: 'Enable built-in plugin', builtInImageConflict: 'Disable the market version of image generation before enabling the built-in plugin.', builtInImageFailed: 'Could not read or change the built-in plugin state.', builtInImageRetry: 'Try again', builtInImageRestart: 'Restart Harness to apply', builtInImagePending: 'The built-in plugin will load after Harness restarts.'
     }
 
     const zh = {
@@ -81,7 +81,7 @@ window.__ModuleLoader__.load({
       removed: '插件市场已卸载',
       removedHint: 'dsh-market 已移除，请重启 Harness 完成卸载。',
       uninstallFailed: '插件市场卸载失败。',
-      builtInImageTitle: '内置生图工具', builtInImageDisabled: '内置插件已关闭，可以使用市场版本。', builtInImageEnable: '启用内置插件', builtInImageConflict: '请先停用市场版本的生图工具，再启用内置插件。', builtInImageFailed: '无法更改内置插件状态。', builtInImageRestart: '重启 Harness 使更改生效', builtInImagePending: '重启 Harness 后将加载内置插件。'
+      builtInImageTitle: '内置生图工具', builtInImageDisabled: '内置插件已关闭，可以使用市场版本。', builtInImageEnable: '启用内置插件', builtInImageConflict: '请先停用市场版本的生图工具，再启用内置插件。', builtInImageFailed: '无法读取或更改内置插件状态。', builtInImageRetry: '重试', builtInImageRestart: '重启 Harness 使更改生效', builtInImagePending: '重启 Harness 后将加载内置插件。'
     }
 
     const css = `
@@ -156,16 +156,18 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(false)
       const [restart, setRestart] = React.useState(false)
       const [error, setError] = React.useState('')
+      const [retry, setRetry] = React.useState(0)
       React.useEffect(() => {
         const desktop = globalThis.dshDesktop
-        if (!desktop?.getBuiltInImageGenerationStatus) return
+        if (!desktop?.getBuiltInImageGenerationStatus) { setError('builtInImageFailed'); return }
         let active = true
         void desktop.getBuiltInImageGenerationStatus().then(result => {
-          if (active) setState(result)
+          if (active) { setState(result); setError('') }
         }, () => { if (active) setError('builtInImageFailed') })
         return () => { active = false }
-      }, [])
-      if (!state || (state.enabled && !restart)) return null
+      }, [retry])
+      if (state?.enabled && !restart) return null
+      if (!state && !error) return null
       const enable = async event => {
         event.preventDefault()
         setBusy(true); setError('')
@@ -187,11 +189,12 @@ window.__ModuleLoader__.load({
       }
       return React.createElement('li', { className: 'dshDesktopBuiltInImage', 'data-testid': 'built-in-image-generation-control' },
         React.createElement('span', { className: 'dshDesktopBuiltInImageTitle' }, t('builtInImageTitle')),
-        React.createElement('p', { className: 'dshDesktopBuiltInImageHint' }, t(restart ? 'builtInImagePending' : 'builtInImageDisabled')),
-        state.marketActive && !restart && React.createElement('p', { className: 'dshDesktopBuiltInImageHint' }, t('builtInImageConflict')),
-        React.createElement('label', { className: 'dshDesktopBuiltInImageLabel' },
+        state && React.createElement('p', { className: 'dshDesktopBuiltInImageHint' }, t(restart ? 'builtInImagePending' : 'builtInImageDisabled')),
+        state?.marketActive && !restart && React.createElement('p', { className: 'dshDesktopBuiltInImageHint' }, t('builtInImageConflict')),
+        state && React.createElement('label', { className: 'dshDesktopBuiltInImageLabel' },
           React.createElement('input', { type: 'checkbox', role: 'switch', checked: restart, disabled: busy || restart || state.marketActive, onChange: enable }), t('builtInImageEnable')),
         error && React.createElement('p', { className: 'dshDesktopMarketError', role: 'alert' }, t(error)),
+        !state && error && React.createElement('button', { className: 'dshDesktopMarketButton dshDesktopMarketSecondary', type: 'button', onClick: () => { setError(''); setRetry(value => value + 1) } }, t('builtInImageRetry')),
         restart && React.createElement('button', { className: 'dshDesktopMarketButton dshDesktopMarketSecondary', type: 'button', disabled: busy, onClick: restartHarness }, t('builtInImageRestart')))
     }
 
