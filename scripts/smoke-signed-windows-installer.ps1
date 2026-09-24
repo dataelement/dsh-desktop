@@ -10,13 +10,15 @@ $env:APPDATA = Join-Path $root 'appdata'
 $env:LOCALAPPDATA = Join-Path $root 'localappdata'
 New-Item -ItemType Directory -Path $env:APPDATA, $env:LOCALAPPDATA -Force | Out-Null
 
-function Assert-Signature([string]$path) {
+function Assert-Signature([string]$path, [bool]$requirePublisher = $false) {
   $signature = Get-AuthenticodeSignature -FilePath $path
   if ($signature.Status -ne 'Valid') { throw "Invalid signature on ${path}: $($signature.Status)" }
-  $signerName = $signature.SignerCertificate.GetNameInfo(
-    [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
-  if (-not [string]::Equals($signerName, $PublisherName, [System.StringComparison]::Ordinal)) {
-    throw "Unexpected signer on ${path}: $($signature.SignerCertificate.Subject)"
+  if ($requirePublisher) {
+    $signerName = $signature.SignerCertificate.GetNameInfo(
+      [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+    if (-not [string]::Equals($signerName, $PublisherName, [System.StringComparison]::Ordinal)) {
+      throw "Unexpected signer on ${path}: $($signature.SignerCertificate.Subject)"
+    }
   }
 }
 
@@ -27,7 +29,7 @@ function Install-At([string]$directory) {
   if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode) at $directory" }
   $executable = Join-Path $directory 'DSH Desktop.exe'
   if (-not (Test-Path $executable)) { throw "Installed executable missing: $executable" }
-  Assert-Signature $executable
+  Assert-Signature $executable $true
   return $executable
 }
 
@@ -82,7 +84,7 @@ function Assert-Starts([string]$executable) {
   }
 }
 
-Assert-Signature $installer
+Assert-Signature $installer $true
 $firstDirectory = Join-Path $root 'install-one'
 $secondDirectory = Join-Path $root 'install-two'
 
@@ -101,7 +103,7 @@ try {
   $blocked = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$firstDirectory") -Wait -PassThru
   if ($blocked.ExitCode -eq 0) { throw 'Locked same-path upgrade reported success.' }
   if (-not (Test-Path $firstExecutable)) { throw 'Locked upgrade removed the previous application.' }
-  Assert-Signature $firstExecutable
+  Assert-Signature $firstExecutable $true
   if (@(Get-ChildItem -Path "$firstDirectory.new-*" -ErrorAction SilentlyContinue).Count -ne 0) {
     throw 'Locked upgrade left a staging directory.'
   }

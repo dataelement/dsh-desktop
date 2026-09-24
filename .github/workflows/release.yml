@@ -20,7 +20,7 @@ on:
           - windows
           - macos
       mode:
-        description: development=unsigned Dev; signed=sign only; prerelease=sign and publish
+        description: development=unsigned Dev; signed=sign only; prerelease=sign and publish; smoke=check existing signed artifact
         required: false
         default: development
         type: choice
@@ -28,12 +28,17 @@ on:
           - development
           - signed
           - prerelease
+          - smoke
       prerelease_tag:
         description: Non-v semver tag for prerelease mode (e.g. 2.1.0-rc.1)
         required: false
         type: string
       signed_version:
         description: Non-v semver used only by signed mode (e.g. 0.9.2-test.1)
+        required: false
+        type: string
+      smoke_run_id:
+        description: Release run ID containing an existing signed windows-x64 artifact (smoke mode)
         required: false
         type: string
 
@@ -56,6 +61,7 @@ jobs:
           TARGET: ${{ inputs.target }}
           PRERELEASE_TAG: ${{ inputs.prerelease_tag }}
           SIGNED_VERSION: ${{ inputs.signed_version }}
+          SMOKE_RUN_ID: ${{ inputs.smoke_run_id }}
         run: |
           set -euo pipefail
           semver_re='^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
@@ -80,6 +86,12 @@ jobs:
               fi
               if [[ "$SIGNED_VERSION" == v* ]] || ! [[ "$SIGNED_VERSION" =~ $semver_re ]]; then
                 echo "::error::signed_version must be a non-v semver (e.g. 0.9.2-test.1)"
+                exit 1
+              fi
+              ;;
+            smoke)
+              if [ "$TARGET" != 'windows' ] || ! [[ "$SMOKE_RUN_ID" =~ ^[0-9]+$ ]]; then
+                echo "::error::smoke mode requires target=windows and a numeric smoke_run_id"
                 exit 1
               fi
               ;;
@@ -381,6 +393,7 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' &&
+        inputs.mode != 'smoke' &&
         (inputs.target == 'all' || inputs.target == 'windows'))
     runs-on: windows-2022
     steps:
@@ -697,6 +710,29 @@ jobs:
         with:
           name: windows-x64
           path: signed-windows
+      - name: Verify signed installation and upgrade
+        shell: pwsh
+        run: |
+          ./scripts/smoke-signed-windows-installer.ps1 `
+            -Installer 'signed-windows/dsh-desktop-windows-x64-setup.exe' `
+            -PublisherName 'Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.'
+
+  smoke-existing-signed-windows:
+    name: Recheck existing signed Windows installer
+    needs: validate-dispatch
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'smoke'
+    runs-on: windows-2022
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: signed-windows
+          run-id: ${{ inputs.smoke_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Verify signed installation and upgrade
         shell: pwsh
         run: |
