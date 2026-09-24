@@ -10,6 +10,12 @@ The `Release desktop installers` workflow accepts a `mode` on `workflow_dispatch
 
 Official releases are still created by pushing a `v*` tag, not by filling the dispatch form. Do not put `v0.9.1` in `prerelease_tag` or `signed_version`.
 
+## 0.9.3 replacement rollout
+
+`v0.9.3` is intended for clients still below 0.9.2. The existing 0.9.2 rules remain active until the repair archives are published. The release workflow then calls `scripts/configure-rollout.mjs`, which disables the three 0.9.2 rules before enabling 0.9.3 at the normal initial 5% with `maxCurrentVersionExclusive: 0.9.2`. A failed disable stops the script before any 0.9.3 rule is enabled. Re-running it retains the current-version limit and existing bucket seed.
+
+Before tagging, deploy the backend that understands this field. Setting 0.9.2 to 0% is insufficient because allowlisted installations bypass the percentage. After the workflow cutover, verify the disabled 0.9.2 rules and enabled 0.9.3 rules via the admin API. Check each platform with a client below 0.9.2 and one on 0.9.2, including an allowlisted installation. Automatic and ordinary manual checks use the same policy; explicit version-history installs remain outside this gate.
+
 ## Local Windows UKey signing runner
 
 Windows packaging and signing run as separate jobs. The GitHub-hosted Windows runner builds an unsigned NSIS installer and uploads a short-lived workflow artifact. A local macOS ARM64 runner downloads it, signs the installer with Jsign and the SafeNet UKey, regenerates the blockmap and `latest.yml`, and uploads the signed release set. The GitHub Release job cannot start unless signing succeeds.

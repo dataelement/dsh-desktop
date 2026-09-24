@@ -3,6 +3,9 @@ import { fileURLToPath } from 'node:url'
 export const SUPPORTED_PLATFORMS = ['mac', 'mac-intel', 'windows']
 export const DEFAULT_BASE_URL = 'https://dshdesktop.com/crash'
 export const DEFAULT_PERCENTAGE = 5
+// Keep the replacement in the release workflow: old rules stay active until
+// the new archive is published, then retire before enabling the new rules.
+export const REPLACED_RELEASES = { '0.9.3': '0.9.2' }
 
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*))?(?:\+[\da-zA-Z-]+(?:\.[\da-zA-Z-]+)*)?$/
@@ -19,6 +22,7 @@ export async function configureRollout(options) {
   const {
     version,
     percentage = DEFAULT_PERCENTAGE,
+    maxCurrentVersionExclusive = process.env.ROLLOUT_MAX_CURRENT_VERSION_EXCLUSIVE ?? REPLACED_RELEASES[version],
     token = process.env.CRASH_ADMIN_TOKEN || process.env.DESKTOP_ADMIN_TOKEN,
     baseUrl = process.env.CRASH_BASE_URL || DEFAULT_BASE_URL,
     fetchImpl = globalThis.fetch,
@@ -34,6 +38,9 @@ export async function configureRollout(options) {
   const numPercentage = Number(percentage)
   if (!Number.isFinite(numPercentage) || numPercentage < 0 || numPercentage > 100) {
     throw new Error(`Invalid percentage: ${percentage}. Must be between 0 and 100.`)
+  }
+  if (maxCurrentVersionExclusive !== undefined && !isValidVersion(maxCurrentVersionExclusive)) {
+    throw new Error(`Invalid maxCurrentVersionExclusive: ${maxCurrentVersionExclusive}`)
   }
 
   if (!token || typeof token !== 'string' || token.trim().length === 0) {
@@ -65,6 +72,27 @@ export async function configureRollout(options) {
     throw new Error(`Invalid JSON response from ${cleanBaseUrl}/admin/api/releases: ${error.message}`)
   }
 
+  // Do this only after the release archive is available. A 0% rule still
+  // serves allowlisted installations; disabled rules cannot be selected.
+  const replacedVersion = REPLACED_RELEASES[version]
+  for (const platform of SUPPORTED_PLATFORMS) {
+    const old = Array.isArray(existingReleases)
+      ? existingReleases.find(r => r.version === replacedVersion && r.platform === platform && r.enabled)
+      : undefined
+    if (!old) continue
+    const { id, revision, updatedAt, ...oldRule } = old
+    const response = await fetchImpl(`${cleanBaseUrl}/admin/api/releases/${id}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ ...oldRule, revision, enabled: false }),
+      signal: AbortSignal.timeout(10_000)
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to disable replaced release ${replacedVersion} for ${platform} (${response.status})`)
+    }
+    log?.(`✅ [${platform}] Disabled replaced rollout ${replacedVersion}`)
+  }
+
   const results = []
 
   // 2. Iterate each platform and configure the rollout rule
@@ -80,6 +108,9 @@ export async function configureRollout(options) {
       percentage: numPercentage,
       algorithm: existing?.algorithm || 'sha256-installation-v1',
       seed: existing?.seed || 'desktop-v1',
+      ...(maxCurrentVersionExclusive ?? existing?.maxCurrentVersionExclusive
+        ? { maxCurrentVersionExclusive: maxCurrentVersionExclusive ?? existing?.maxCurrentVersionExclusive }
+        : {}),
       enabled: true,
       notes: notes ?? existing?.notes ?? defaultNotes
     }
@@ -136,7 +167,10 @@ export async function configureRollout(options) {
           headers,
           body: JSON.stringify({
             revision: found.revision,
-            ...releasePayload
+            ...releasePayload,
+            ...(maxCurrentVersionExclusive === undefined && found.maxCurrentVersionExclusive
+              ? { maxCurrentVersionExclusive: found.maxCurrentVersionExclusive }
+              : {})
           }),
           signal: AbortSignal.timeout(10_000)
         })
@@ -172,11 +206,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const percentage = process.argv[3] !== undefined ? Number(process.argv[3]) : DEFAULT_PERCENTAGE
 
   if (!cleanVersion) {
-    console.error('Usage: node scripts/configure-rollout.mjs <version> [percentage]')
+    console.error('Usage: node scripts/configure-rollout.mjs <version> [percentage] [max-current-version-exclusive]')
     process.exit(1)
   }
 
-  configureRollout({ version: cleanVersion, percentage })
+  configureRollout({ version: cleanVersion, percentage, maxCurrentVersionExclusive: process.argv[4] ?? process.env.ROLLOUT_MAX_CURRENT_VERSION_EXCLUSIVE })
     .then(() => {
       console.log('🎉 All desktop rollout rules configured successfully.')
     })
