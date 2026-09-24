@@ -96,6 +96,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshHome: home,
       logPath: join(home, 'harness.log'),
       startupTimeoutMs: 30_000,
+      preferredPort: 0,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
     })
@@ -135,6 +136,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshHome: home,
       logPath: join(home, 'harness.log'),
       startupTimeoutMs: 30_000,
+      preferredPort: 0,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
     })
@@ -188,6 +190,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshHome: home,
       logPath: join(home, 'harness.log'),
       startupTimeoutMs: 30_000,
+      preferredPort: 0,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
     })

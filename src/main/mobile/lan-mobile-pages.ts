@@ -8,7 +8,7 @@ export function renderMobilePage({ locale }: MobilePageOptions): string {
 <html lang="${zh ? 'zh-CN' : 'en'}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)">
   <meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -32,6 +32,9 @@ export function renderMobilePage({ locale }: MobilePageOptions): string {
     .tunnel-warn{margin:4px 16px 0;padding:0;background:transparent;color:var(--muted);font-size:11px;line-height:1.3;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
     body.tunnel-warn-open{--tunnel-warn-h:18px}
     .messages .turn-status{align-self:flex-start;flex:none;margin:3px 4px}
+    button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+    @media(pointer:coarse){button,select,input{min-height:44px}input,textarea,select{font-size:16px}.back,.icon-button,.composer .primary,.primary.cancel{min-width:44px;min-height:44px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
   </style>
 </head>
 <body><main class="shell">

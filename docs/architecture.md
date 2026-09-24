@@ -96,6 +96,10 @@ Harness itself stays on a random loopback port. Phone access is provided by a se
 
 The public tunnel is optional and forwards only the paired mobile surface; it does not rebind the Harness service to a public interface.
 
+Cloudflare startup reads bounded, independent stdout and stderr buffers so a URL split across pipe chunks is still recognized. Timeout, spawn failure, and early exit settle startup once and remove output listeners; output arriving after failure cannot announce a working tunnel. The mobile page permits browser zoom, exposes keyboard focus, enlarges controls on coarse-pointer devices, and honors reduced-motion preferences.
+
+Pinggy startup also keeps each output stream independent and bounded, rejects lookalike hostname suffixes, and releases its output listeners on either readiness or failure. Output from separate pipes cannot be joined into a pairing URL; later output cannot change a settled result.
+
 ## Updates
 
 Installed macOS and Windows builds use `electron-updater`. The app checks shortly after startup, every six hours, and after a long system resume. A newly available version is offered before download. Download begins only after user consent, and installation begins only when the user chooses to restart and install. Users can skip one version without suppressing later releases.
