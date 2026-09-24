@@ -13,6 +13,9 @@
     "./package.json": "./package.json"
   },
   "license": "MIT",
+  "dependencies": {
+    "yaml": "^2.8.3"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent-presets": "^0.1.5-rc.1",

@@ -131,8 +131,14 @@ describe('DSH PPT built-in plugin', () => {
     const excluded = JSON.parse(await readFile(path.join(projectRoot, 'packages/ppt-runtime/excluded-assets.json'), 'utf8')) as { file: string; sha256: string }[]
     const denied = new Set(excluded.map(item => item.sha256))
     const core = tarEntries(await artifact('core'))
-    const allowed = new Set([...core].filter(([name]) => name.endsWith('.jpg')).map(([, bytes]) => createHash('sha256').update(bytes).digest('hex')))
+    const referenceImages = [...core].filter(([name]) => name.startsWith('package/skills/dsh-ppt/references/') && name.endsWith('.jpg'))
+    const allowed = new Set(referenceImages.map(([, bytes]) => createHash('sha256').update(bytes).digest('hex')))
     expect(allowed.size).toBe(192)
+    expect([...core.keys()].filter(name => name.startsWith('package/lib/bundled-template-projects/'))).toHaveLength(0)
+    expect([...core.keys()].join('\n')).not.toContain('dsh-green-pulse')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).toContain('DSH-PPT-AUTHORING-20260910-V4')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).toContain('选用个人模板时')
+    expect(core.get('package/skills/dsh-ppt/SKILL.md')!.toString()).not.toContain('带可编辑工程的内置模板')
     const manifestSource = core.get('package/lib/preview-manifest.js')!.toString()
     const manifest = JSON.parse(/export const previewFiles = (.*);/u.exec(manifestSource)![1]!) as Record<string, string>
     expect(Object.keys(manifest)).toHaveLength(192)
@@ -149,7 +155,9 @@ describe('DSH PPT built-in plugin', () => {
       }
       const client = entries.get('package/lib/client.js')!.toString()
       expect(client).not.toContain('data:image/jpeg;base64,')
-      expect(Buffer.byteLength(client)).toBeLessThan(100_000)
+      // Preview JPEGs stay out of the client. The cap only leaves room for the
+      // inlined personal-template manager and unbound staging logic.
+      expect(Buffer.byteLength(client)).toBeLessThan(120_000)
       const urls = [...client.matchAll(/\/dsh-ppt\/previews\/([a-f0-9]{64})\.jpg/gu)]
       expect(urls).toHaveLength(192)
       for (const url of urls) expect(allowed.has(url[1]!)).toBe(true)
@@ -169,21 +177,25 @@ describe('DSH PPT built-in plugin', () => {
     const cluster = client.indexOf('className: ConversationRoot_module_css_default.heroModeCluster')
     const agentPreset = client.indexOf('renderSlot("conversation.hero.agentPreset", {})', cluster)
     const modeActions = client.indexOf(
-      'zone !== void 0 && renderSlot("conversation.hero.modeActions", zone)',
+      'renderSlot("conversation.hero.modeActions", zone ?? {})',
       agentPreset
     )
     const owner = client.indexOf('extensionZone: zone')
     const input = client.indexOf('className: clsx(InputBar_module_css_default.card', owner)
     const catalog = client.indexOf(
-      'extensionZone !== void 0 ? renderSlot("conversation.composer.dock", extensionZone) : null',
+      'extensionZone !== void 0 || sessionId === void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null',
       input
     )
+    const modeScope = client.slice(client.indexOf('"conversation.hero.modeActions": {'), client.indexOf('"conversation.hero.modeActions": {') + 180)
+    const dockScope = client.slice(client.indexOf('"conversation.composer.dock": {'), client.indexOf('"conversation.composer.dock": {') + 160)
 
     expect(cluster).toBeGreaterThan(-1)
     expect(modeActions).toBeGreaterThan(agentPreset)
     expect(owner).toBeGreaterThan(-1)
     expect(input).toBeGreaterThan(owner)
     expect(catalog).toBeGreaterThan(input)
+    expect(modeScope).toContain('scope: "session-maybe"')
+    expect(dockScope).toContain('scope: "session-maybe"')
   })
 
   it('integrates hero mode actions with the adjacent agent-preset control style', async () => {

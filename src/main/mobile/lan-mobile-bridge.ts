@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { networkInterfaces, tmpdir } from 'node:os'
 import type { AddressInfo } from 'node:net'
@@ -20,11 +20,17 @@ import {
   renderDesktopPairingPage,
   renderMobilePage,
   renderMobileReconnectPage,
-  renderPairingWaitPage
+  renderPairingPinPage
 } from './lan-mobile-pages'
+import type { PairingPinState, PairingPinStore } from './pairing-pin-store'
 
 const MAX_BODY_BYTES = 64 * 1024
 const PAIRING_TTL_MS = 5 * 60 * 1000
+const PIN_TTL_MS = PAIRING_TTL_MS
+const PIN_FAIL_WINDOW_MS = 10 * 60 * 1000
+const PIN_FAIL_PER_IP = 5
+const PIN_FAIL_GLOBAL = 20
+const PINGGY_TTL_MS = 60 * 60 * 1000
 const MUX_RECONNECT_MS = 500
 const MUX_RECONNECT_CAP_MS = 30_000
 
@@ -101,6 +107,7 @@ export interface LanMobileBridgeOptions {
   now?: () => number
   onReconnectRequested?: () => void
   onConnectedChange?: (connected: boolean) => void
+  pairingPinStore?: PairingPinStore
 }
 
 export interface LanMobileBridgeSnapshot {
@@ -122,15 +129,14 @@ interface MobileSession {
   remoteAddress: string
 }
 
-interface PendingPairing {
-  id: string
-  remoteAddress: string
-  mode: MobileConnectionMode
-  expiresAt: number
-  decision?: boolean
-}
-
 type MobileConnectionMode = 'lan' | 'tunnel'
+
+interface PairingPinView {
+  pin?: string
+  expired: boolean
+  consent: boolean
+  expiresAt?: number
+}
 
 interface MobileQuestionOption {
   label: string
@@ -171,8 +177,15 @@ export class LanMobileBridge {
   private tunnelLaunch?: Promise<void>
   private readonly sessions = new Map<string, MobileSession>()
   private readonly suspendedSessions = new Map<string, MobileSession>()
-  private readonly pendingPairings = new Map<string, PendingPairing>()
   private readonly pendingQuestions = new Map<string, PendingMobileQuestion>()
+  private ephemeralPin?: string
+  private ephemeralPinExpiresAt?: number
+  private readonly pinFailuresByIp = new Map<string, number[]>()
+  private pinFailuresGlobal: number[] = []
+  private tunnelExpectedStop = false
+  private lastTunnelProvider?: InternetTunnelProvider
+  private unexpectedlyClosed = false
+  private tunnelExpiresAt?: number
   /** Client generation id from the event stream's `ready` frame; results quote it. */
   private eventClientId?: string
   /** Latest `workspace/follow` baseline, standing in for the removed unary list. */
@@ -182,9 +195,17 @@ export class LanMobileBridge {
   private muxTask?: Promise<void>
   private readonly sessionStreamAborts = new Set<AbortController>()
   private lastConnected = false
+  private readonly desktopSessionToken = randomBytes(32).toString('base64url')
+  private desktopBootstrapToken?: string
 
   constructor(private readonly options: LanMobileBridgeOptions) {
     this.now = options.now ?? Date.now
+  }
+
+  createDesktopUrl(): string | undefined {
+    if (!this.server || !this.port) return undefined
+    this.desktopBootstrapToken = randomBytes(32).toString('base64url')
+    return `http://127.0.0.1:${this.port}/desktop?k=${this.desktopBootstrapToken}`
   }
 
   async start(): Promise<LanMobileBridgeSnapshot> {
@@ -222,23 +243,25 @@ export class LanMobileBridge {
     this.port = undefined
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
+    this.desktopBootstrapToken = undefined
     // Wait for an in-flight launch so the tunnel it spawns is stopped below
     // instead of outliving the bridge (and the app).
     if (this.tunnelLaunch) {
       await this.tunnelLaunch.catch(() => undefined)
       this.tunnelLaunch = undefined
     }
-    if (this.tunnelInstance) {
-      await this.tunnelInstance.stop().catch(() => undefined)
-      this.tunnelInstance = undefined
-    }
+    await this.stopCurrentTunnel()
     this.tunnelActive = false
     this.tunnelLoading = false
     this.tunnelError = undefined
     this.sessions.clear()
     this.suspendedSessions.clear()
-    this.pendingPairings.clear()
     this.pendingQuestions.clear()
+    this.ephemeralPin = undefined
+    this.ephemeralPinExpiresAt = undefined
+    this.clearPinFailures()
+    this.clearTunnelDeathFlags()
+    this.tunnelExpiresAt = undefined
     for (const abort of this.sessionStreamAborts) abort.abort()
     this.sessionStreamAborts.clear()
     this.syncConnected()
@@ -257,6 +280,9 @@ export class LanMobileBridge {
 
   async toggleTunnel(enable?: boolean): Promise<LanMobileBridgeSnapshot> {
     const targetState = enable !== undefined ? enable : !this.tunnelActive
+    if (targetState && this.sessions.size > 0 && !this.tunnelActive) {
+      throw new Error('Disconnect the phone before switching connection modes.')
+    }
     if (!targetState) {
       // Wait for an in-flight launch, then stop the tunnel it spawned:
       // otherwise the just-launched process is orphaned (or silently revives
@@ -265,13 +291,12 @@ export class LanMobileBridge {
         await this.tunnelLaunch.catch(() => undefined)
         this.tunnelLaunch = undefined
       }
-      if (this.tunnelInstance) {
-        await this.tunnelInstance.stop().catch(() => undefined)
-        this.tunnelInstance = undefined
-      }
+      await this.stopCurrentTunnel()
       this.tunnelActive = false
       this.tunnelLoading = false
       this.tunnelError = undefined
+      this.clearTunnelDeathFlags()
+      this.tunnelExpiresAt = undefined
       return this.snapshot()
     }
 
@@ -293,6 +318,8 @@ export class LanMobileBridge {
     try {
       await launch
       this.tunnelActive = true
+      this.clearTunnelDeathFlags()
+      this.armTunnelProcess(this.tunnelInstance)
     } catch (error) {
       this.tunnelActive = false
       this.tunnelError = error instanceof Error ? error.message : String(error)
@@ -320,6 +347,8 @@ export class LanMobileBridge {
     this.tunnelLaunch = launch
     try {
       await launch
+      this.clearTunnelDeathFlags()
+      this.armTunnelProcess(this.tunnelInstance)
     } catch (error) {
       this.tunnelError = error instanceof Error ? error.message : String(error)
     } finally {
@@ -420,6 +449,202 @@ export class LanMobileBridge {
     return Boolean(this.pairingToken && this.pairingExpiresAt && this.pairingExpiresAt >= this.now())
   }
 
+  private storedPinState(): PairingPinState {
+    return this.options.pairingPinStore?.load() ?? {}
+  }
+
+  private readPairingPin(): PairingPinView {
+    const stored = this.storedPinState()
+    if (stored.pinConsent === true) {
+      return { pin: stored.pin, expired: false, consent: true }
+    }
+    if (this.ephemeralPin && this.ephemeralPinExpiresAt && this.ephemeralPinExpiresAt >= this.now()) {
+      return {
+        pin: this.ephemeralPin,
+        expired: false,
+        consent: false,
+        expiresAt: this.ephemeralPinExpiresAt
+      }
+    }
+    if (this.ephemeralPin && this.ephemeralPinExpiresAt && this.ephemeralPinExpiresAt < this.now()) {
+      return { expired: true, consent: false, expiresAt: this.ephemeralPinExpiresAt }
+    }
+    return { expired: false, consent: false }
+  }
+
+  private tunnelPinAcceptsReconnect(): boolean {
+    const view = this.readPairingPin()
+    return Boolean(view.pin) && !view.expired
+  }
+
+  private generatePairingPin(): string {
+    return String(randomInt(0, 1_000_000)).padStart(6, '0')
+  }
+
+  private ensurePairingPin(): string | undefined {
+    const stored = this.storedPinState()
+    if (stored.pinConsent === true) {
+      if (stored.pin) return stored.pin
+      const pin = this.generatePairingPin()
+      if (!this.options.pairingPinStore?.save({ pin, pinConsent: true })) return undefined
+      this.ephemeralPin = undefined
+      this.ephemeralPinExpiresAt = undefined
+      return pin
+    }
+    const current = this.readPairingPin()
+    if (current.pin && !current.expired) return current.pin
+    this.ephemeralPin = this.generatePairingPin()
+    this.ephemeralPinExpiresAt = this.now() + PIN_TTL_MS
+    return this.ephemeralPin
+  }
+
+  private desktopPinFields(): {
+    pairingPin?: string
+    pinConsent: boolean
+    pinExpiresAt?: number
+  } {
+    const pin = this.tunnelActive ? this.ensurePairingPin() : undefined
+    const view = this.readPairingPin()
+    return {
+      ...(pin ? { pairingPin: pin } : {}),
+      pinConsent: view.consent,
+      ...(view.consent || !view.expiresAt ? {} : { pinExpiresAt: view.expiresAt })
+    }
+  }
+
+  private pinsEqual(left: string, right: string): boolean {
+    const a = Buffer.from(left)
+    const b = Buffer.from(right)
+    return a.length === b.length && timingSafeEqual(a, b)
+  }
+
+  private pruneFailures(stamps: number[]): number[] {
+    const cutoff = this.now() - PIN_FAIL_WINDOW_MS
+    return stamps.filter((stamp) => stamp > cutoff)
+  }
+
+  private pinRetryAfterSeconds(remoteAddress: string): number | undefined {
+    const ip = this.pruneFailures(this.pinFailuresByIp.get(remoteAddress) ?? [])
+    const global = this.pruneFailures(this.pinFailuresGlobal)
+    this.pinFailuresByIp.set(remoteAddress, ip)
+    this.pinFailuresGlobal = global
+    const limited =
+      ip.length >= PIN_FAIL_PER_IP || global.length >= PIN_FAIL_GLOBAL
+    if (!limited) return undefined
+    const oldest = Math.min(
+      ...(ip.length >= PIN_FAIL_PER_IP ? [ip[0]!] : []),
+      ...(global.length >= PIN_FAIL_GLOBAL ? [global[0]!] : [])
+    )
+    return Math.max(1, Math.ceil((oldest + PIN_FAIL_WINDOW_MS - this.now()) / 1000))
+  }
+
+  private recordPinFailure(remoteAddress: string): number {
+    const ip = this.pruneFailures(this.pinFailuresByIp.get(remoteAddress) ?? [])
+    ip.push(this.now())
+    this.pinFailuresByIp.set(remoteAddress, ip)
+    this.pinFailuresGlobal = this.pruneFailures(this.pinFailuresGlobal)
+    this.pinFailuresGlobal.push(this.now())
+    return this.pinRetryAfterSeconds(remoteAddress) ?? 1
+  }
+
+  private clearPinFailures(): void {
+    this.pinFailuresByIp.clear()
+    this.pinFailuresGlobal = []
+  }
+
+  private revokeMobileSessions(): void {
+    this.sessions.clear()
+    this.suspendedSessions.clear()
+    this.rotatePairingToken()
+    this.clearPinFailures()
+    this.syncConnected()
+  }
+
+  private issueSessionCookie(
+    request: IncomingMessage,
+    response: ServerResponse,
+    remoteAddress: string,
+    connectionMode: MobileConnectionMode
+  ): void {
+    const token = randomBytes(32).toString('base64url')
+    if (connectionMode === 'tunnel') {
+      const existing = this.mobileToken(request)
+      if (existing && this.suspendedSessions.has(existing)) {
+        const session = this.suspendedSessions.get(existing)!
+        this.sessions.set(existing, session)
+        this.suspendedSessions.delete(existing)
+      }
+    } else {
+      for (const [savedToken, session] of this.suspendedSessions) {
+        if (session.remoteAddress !== remoteAddress) continue
+        this.sessions.set(savedToken, session)
+        this.suspendedSessions.delete(savedToken)
+      }
+    }
+    this.sessions.set(token, { token, remoteAddress })
+    this.pairingToken = undefined
+    this.pairingExpiresAt = undefined
+    const secure = connectionMode === 'tunnel' ? '; Secure' : ''
+    response.setHeader(
+      'set-cookie',
+      `dsh_mobile=${token}; HttpOnly; SameSite=Strict; Path=/${secure}; Max-Age=31536000`
+    )
+  }
+
+  private async stopCurrentTunnel(): Promise<void> {
+    if (!this.tunnelInstance) return
+    this.tunnelExpectedStop = true
+    try {
+      await this.tunnelInstance.stop().catch(() => undefined)
+    } finally {
+      this.tunnelExpectedStop = false
+      this.tunnelInstance = undefined
+    }
+  }
+
+  private clearTunnelDeathFlags(): void {
+    this.unexpectedlyClosed = false
+    this.lastTunnelProvider = undefined
+  }
+
+  private armTunnelProcess(instance: InternetTunnelInstance | undefined): void {
+    if (!instance) return
+    this.tunnelExpiresAt =
+      instance.provider === 'pinggy' ? this.now() + PINGGY_TTL_MS : undefined
+    instance.process.once?.('close', () => {
+      if (this.tunnelInstance !== instance) return
+      if (this.tunnelExpectedStop) return
+      this.handleUnexpectedTunnelClose(instance)
+    })
+  }
+
+  private handleUnexpectedTunnelClose(instance: InternetTunnelInstance): void {
+    this.lastTunnelProvider = instance.provider
+    this.unexpectedlyClosed = true
+    this.tunnelActive = false
+    this.tunnelLoading = false
+    this.tunnelExpiresAt = undefined
+    this.tunnelInstance = undefined
+    this.sessions.clear()
+    this.syncConnected()
+  }
+
+  private desktopTunnelPayload(snapshot: LanMobileBridgeSnapshot, qrSvg?: string): Record<string, unknown> {
+    return {
+      active: snapshot.tunnelActive,
+      loading: snapshot.tunnelLoading,
+      url: snapshot.tunnelUrl,
+      provider: snapshot.tunnelProvider ?? this.lastTunnelProvider,
+      error: snapshot.tunnelError,
+      pairingUrl: snapshot.pairingUrl,
+      qrSvg,
+      expiresAt: snapshot.expiresAt,
+      unexpectedlyClosed: this.unexpectedlyClosed,
+      tunnelExpiresAt: this.tunnelExpiresAt,
+      ...this.desktopPinFields()
+    }
+  }
+
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader('cache-control', 'no-store')
     response.setHeader('x-content-type-options', 'nosniff')
@@ -474,7 +699,11 @@ export class LanMobileBridge {
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (url.searchParams.has('k')) {
+        this.consumeDesktopBootstrap(url.searchParams.get('k'), transportAddress, response)
+        return
+      }
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifyTrustedOrigin(request)
       if (!this.server || !this.port) return this.text(response, 503, 'Bridge unavailable.')
       // The token is consumed once a phone pairs, and expires after five
@@ -484,62 +713,50 @@ export class LanMobileBridge {
         this.rotatePairingToken()
       }
       const snapshot = this.snapshot()
-      if (!snapshot.pairingUrl || !snapshot.expiresAt) return this.text(response, 503, 'Bridge unavailable.')
-      const qrSvg = await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
+      const connected = this.sessions.size > 0
+      if (!snapshot.pairingUrl && !connected) return this.text(response, 503, 'Bridge unavailable.')
+      const qrSvg = snapshot.pairingUrl
+        ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
+        : ''
+      const pin = this.desktopPinFields()
       return this.html(
         response,
         renderDesktopPairingPage({
           qrSvg,
-          pairingUrl: snapshot.pairingUrl,
-          expiresAt: snapshot.expiresAt,
+          pairingUrl: snapshot.pairingUrl ?? '',
+          expiresAt: snapshot.expiresAt ?? this.now(),
           locale: this.locale(),
-          connected: this.sessions.size > 0,
+          connected,
           tunnelActive: snapshot.tunnelActive,
           tunnelLoading: snapshot.tunnelLoading,
-          tunnelProvider: snapshot.tunnelProvider,
+          tunnelProvider: snapshot.tunnelProvider ?? this.lastTunnelProvider,
           tunnelUrl: snapshot.tunnelUrl,
-          tunnelError: snapshot.tunnelError
+          tunnelError: snapshot.tunnelError,
+          unexpectedlyClosed: this.unexpectedlyClosed,
+          pairingPin: pin.pairingPin,
+          pinConsent: pin.pinConsent,
+          pinExpiresAt: pin.pinExpiresAt,
+          tunnelExpiresAt: this.tunnelExpiresAt
         })
       )
     }
 
-    if (request.method === 'GET' && url.pathname === '/desktop/pending') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
-      const pending = [...this.pendingPairings.values()].find(
-        (item) => item.decision === undefined && item.expiresAt >= this.now()
-      )
-      return this.json(
-        response,
-        200,
-        pending ? { id: pending.id, remoteAddress: pending.remoteAddress, mode: pending.mode } : {}
-      )
-    }
-
     if (request.method === 'GET' && url.pathname === '/desktop/status') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       return this.json(response, 200, { connected: this.sessions.size > 0 })
     }
 
     if (request.method === 'GET' && url.pathname === '/desktop/tunnel/status') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       const snapshot = this.snapshot()
       const qrSvg = snapshot.pairingUrl
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
         : undefined
-      return this.json(response, 200, {
-        active: snapshot.tunnelActive,
-        loading: snapshot.tunnelLoading,
-        url: snapshot.tunnelUrl,
-        provider: snapshot.tunnelProvider,
-        error: snapshot.tunnelError,
-        pairingUrl: snapshot.pairingUrl,
-        qrSvg,
-        expiresAt: snapshot.expiresAt
-      })
+      return this.json(response, 200, this.desktopTunnelPayload(snapshot, qrSvg))
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/fallback') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
@@ -565,19 +782,71 @@ export class LanMobileBridge {
         : undefined
       return this.json(response, 200, {
         ok: !snapshot.tunnelError,
-        active: snapshot.tunnelActive,
-        loading: snapshot.tunnelLoading,
-        url: snapshot.tunnelUrl,
-        provider: snapshot.tunnelProvider,
-        error: snapshot.tunnelError,
-        pairingUrl: snapshot.pairingUrl,
-        qrSvg,
-        expiresAt: snapshot.expiresAt
+        ...this.desktopTunnelPayload(snapshot, qrSvg)
+      })
+    }
+
+    if (request.method === 'POST' && url.pathname === '/desktop/pin/consent') {
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
+      this.verifySameOrigin(request)
+      let consent = false
+      try {
+        const parsed = JSON.parse(await readBody(request)) as { consent?: unknown }
+        consent = parsed.consent === true
+      } catch {
+        return this.json(response, 400, { ok: false, error: 'Invalid consent payload.' })
+      }
+      if (consent) {
+        const pin = this.generatePairingPin()
+        if (!this.options.pairingPinStore?.save({ pin, pinConsent: true })) {
+          return this.json(response, 500, { ok: false, error: 'Unable to save the pairing password.' })
+        }
+        this.ephemeralPin = undefined
+        this.ephemeralPinExpiresAt = undefined
+        this.clearPinFailures()
+      } else {
+        const previous = this.storedPinState()
+        if (!this.options.pairingPinStore?.save({ pinConsent: false })) {
+          return this.json(response, 500, { ok: false, error: 'Unable to save the pairing password.' })
+        }
+        if (previous.pinConsent === true) this.revokeMobileSessions()
+        this.ephemeralPin = undefined
+        this.ephemeralPinExpiresAt = undefined
+        this.ensurePairingPin()
+      }
+      const snapshot = this.snapshot()
+      const qrSvg = snapshot.pairingUrl
+        ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
+        : undefined
+      return this.json(response, 200, {
+        ok: true,
+        ...this.desktopTunnelPayload(snapshot, qrSvg)
+      })
+    }
+
+    if (request.method === 'POST' && url.pathname === '/desktop/pin/reset') {
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
+      this.verifySameOrigin(request)
+      if (this.storedPinState().pinConsent !== true) {
+        return this.json(response, 400, { ok: false, error: 'A durable pairing password is not enabled.' })
+      }
+      const pin = this.generatePairingPin()
+      if (!this.options.pairingPinStore?.save({ pin, pinConsent: true })) {
+        return this.json(response, 500, { ok: false, error: 'Unable to save the pairing password.' })
+      }
+      this.revokeMobileSessions()
+      const snapshot = this.snapshot()
+      const qrSvg = snapshot.pairingUrl
+        ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
+        : undefined
+      return this.json(response, 200, {
+        ok: true,
+        ...this.desktopTunnelPayload(snapshot, qrSvg)
       })
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/tunnel/toggle') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       if (this.sessions.size > 0) {
         return this.json(response, 409, {
@@ -601,40 +870,32 @@ export class LanMobileBridge {
           error: 'A tunnel switch is already in progress.'
         })
       }
-      const snapshot = await this.toggleTunnel(enable)
+      let snapshot: LanMobileBridgeSnapshot
+      try {
+        snapshot = await this.toggleTunnel(enable)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.includes('Disconnect the phone')) {
+          return this.json(response, 409, { ok: false, error: message })
+        }
+        throw error
+      }
       const qrSvg = snapshot.pairingUrl
         ? await QRCode.toString(snapshot.pairingUrl, { type: 'svg', margin: 1, width: 260 })
         : undefined
       return this.json(response, 200, {
         ok: !snapshot.tunnelError,
-        active: snapshot.tunnelActive,
-        loading: snapshot.tunnelLoading,
-        url: snapshot.tunnelUrl,
-        provider: snapshot.tunnelProvider,
-        error: snapshot.tunnelError,
-        pairingUrl: snapshot.pairingUrl,
-        qrSvg,
-        expiresAt: snapshot.expiresAt
+        ...this.desktopTunnelPayload(snapshot, qrSvg)
       })
     }
 
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
+      if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
       for (const [token, session] of this.sessions) this.suspendedSessions.set(token, session)
       this.sessions.clear()
-      this.pendingPairings.clear()
       this.rotatePairingToken()
-      return this.json(response, 200, { ok: true })
-    }
-
-    if (request.method === 'POST' && url.pathname === '/desktop/decide') {
-      if (!isLoopbackAddress(remoteAddress)) return this.text(response, 403, 'Desktop only.')
-      this.verifySameOrigin(request)
-      const input = JSON.parse(await readBody(request)) as { id?: unknown; approved?: unknown }
-      const pending = typeof input.id === 'string' ? this.pendingPairings.get(input.id) : undefined
-      if (!pending || typeof input.approved !== 'boolean') return this.text(response, 404, 'Pairing request not found.')
-      pending.decision = input.approved
+      this.syncConnected()
       return this.json(response, 200, { ok: true })
     }
 
@@ -647,24 +908,32 @@ export class LanMobileBridge {
     if (request.method === 'GET' && url.pathname === '/reconnect') {
       const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
       if (migrationUrl) return this.redirect(response, migrationUrl)
-      const pending = this.reconnectPairing(remoteAddress, connectionMode)
+      if (connectionMode === 'tunnel') {
+        if (this.tunnelPinAcceptsReconnect()) {
+          return this.html(response, renderPairingPinPage(this.locale()))
+        }
+        return this.html(response, renderMobileReconnectPage(this.locale(), 'tunnel', { expired: true }))
+      }
       this.options.onReconnectRequested?.()
-      return this.html(response, renderPairingWaitPage(pending.id, this.locale()))
+      return this.html(response, renderMobileReconnectPage(this.locale(), 'lan'))
     }
 
     if (request.method === 'POST' && url.pathname === '/pair/retry') {
       this.verifySameOrigin(request)
       const migrationUrl = this.tunnelMigrationUrl(new URL('/reconnect', url), connectionMode)
       if (migrationUrl) return this.json(response, 200, { redirectUrl: migrationUrl })
-      const pending = this.reconnectPairing(remoteAddress, connectionMode)
+      if (connectionMode === 'tunnel') {
+        this.options.onReconnectRequested?.()
+        return this.json(response, 200, { ok: true, pinRequired: true })
+      }
       this.options.onReconnectRequested?.()
-      return this.json(response, 200, { id: pending.id, expiresAt: pending.expiresAt })
+      return this.json(response, 200, { ok: true, rescan: true })
     }
 
     if (request.method === 'GET' && url.pathname === '/pair') {
       const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
       if (migrationUrl) return this.redirect(response, migrationUrl)
-      if (this.authorized(request, remoteAddress)) {
+      if (this.authorized(request, remoteAddress, connectionMode)) {
         response.statusCode = 302
         response.setHeader('location', '/')
         response.end()
@@ -673,46 +942,54 @@ export class LanMobileBridge {
       if (!this.validPairingToken(url.searchParams.get('token'))) {
         return this.text(response, 401, 'This pairing link is invalid or expired.')
       }
-      const id = randomUUID()
-      this.pendingPairings.set(id, {
-        id,
-        remoteAddress,
-        mode: connectionMode,
-        expiresAt: this.pairingExpiresAt!
-      })
-      return this.html(response, renderPairingWaitPage(id, this.locale()))
+      if (connectionMode === 'lan') {
+        this.issueSessionCookie(request, response, remoteAddress, 'lan')
+        response.statusCode = 302
+        response.setHeader('location', '/')
+        response.end()
+        return
+      }
+      return this.html(response, renderPairingPinPage(this.locale()))
     }
 
-    if (request.method === 'GET' && url.pathname === '/pair/status') {
-      const id = url.searchParams.get('id')
-      const pending = id ? this.pendingPairings.get(id) : undefined
-      if (!pending) return this.json(response, 200, { expired: true })
-      if (pending.expiresAt < this.now()) {
-        this.pendingPairings.delete(pending.id)
-        return this.json(response, 200, { expired: true })
+    if (request.method === 'POST' && url.pathname === '/pair/verify') {
+      this.verifySameOrigin(request)
+      if (connectionMode !== 'tunnel') {
+        return this.json(response, 400, { ok: false, error: 'PIN verification is only used for internet pairing.' })
       }
-      if (pending.decision === false) {
-        this.pendingPairings.delete(pending.id)
-        return this.json(response, 200, { denied: true })
+      const retryAfter = this.pinRetryAfterSeconds(remoteAddress)
+      if (retryAfter) {
+        response.setHeader('retry-after', String(retryAfter))
+        return this.json(response, 429, { ok: false, error: 'Too many attempts.', retryAfter })
       }
-      if (pending.decision !== true) return this.json(response, 200, { pending: true })
-      const token = randomBytes(32).toString('base64url')
-      for (const [savedToken, session] of this.suspendedSessions) {
-        if (session.remoteAddress !== pending.remoteAddress) continue
-        this.sessions.set(savedToken, session)
-        this.suspendedSessions.delete(savedToken)
+      let pin = ''
+      try {
+        const parsed = JSON.parse(await readBody(request)) as { pin?: unknown }
+        pin = typeof parsed.pin === 'string' ? parsed.pin.trim() : ''
+      } catch {
+        pin = ''
       }
-      this.sessions.set(token, { token, remoteAddress: pending.remoteAddress })
-      this.pendingPairings.delete(pending.id)
-      this.pairingToken = undefined
-      this.pairingExpiresAt = undefined
-      response.setHeader('set-cookie', `dsh_mobile=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`)
-      return this.json(response, 200, { approved: true })
+      const view = this.readPairingPin()
+      if (!view.pin || view.expired || !this.pinsEqual(pin, view.pin)) {
+        if (view.expired || !view.pin) {
+          return this.json(response, 401, { ok: false, error: 'expired', rescan: true })
+        }
+        this.recordPinFailure(remoteAddress)
+        const limited = this.pinRetryAfterSeconds(remoteAddress)
+        if (limited) {
+          response.setHeader('retry-after', String(limited))
+          return this.json(response, 429, { ok: false, error: 'Too many attempts.', retryAfter: limited })
+        }
+        return this.json(response, 401, { ok: false, error: 'Invalid pairing password.' })
+      }
+      this.clearPinFailures()
+      this.issueSessionCookie(request, response, remoteAddress, 'tunnel')
+      return this.json(response, 200, { ok: true })
     }
 
-    if (!this.authorized(request, remoteAddress)) {
-      this.rememberMobileContext(request, remoteAddress)
-      if (!this.authorized(request, remoteAddress)) {
+    if (!this.authorized(request, remoteAddress, connectionMode)) {
+      this.rememberMobileContext(request, remoteAddress, connectionMode)
+      if (!this.authorized(request, remoteAddress, connectionMode)) {
         if (request.method === 'GET' && url.pathname === '/') {
           const migrationUrl = this.tunnelMigrationUrl(url, connectionMode)
           if (migrationUrl) return this.redirect(response, migrationUrl)
@@ -722,7 +999,11 @@ export class LanMobileBridge {
       }
     }
     if (request.method === 'GET' && url.pathname === '/api/status') {
-      return this.json(response, 200, { connected: true })
+      return this.json(response, 200, {
+        connected: true,
+        tunnelProvider: this.tunnelInstance?.provider,
+        tunnelExpiresAt: this.tunnelExpiresAt
+      })
     }
     if (request.method === 'GET' && url.pathname === '/') {
       return this.html(response, renderMobilePage({ locale: this.locale() }))
@@ -789,40 +1070,27 @@ export class LanMobileBridge {
     return left.length === right.length && timingSafeEqual(left, right)
   }
 
-  private reconnectPairing(
+  private authorized(
+    request: IncomingMessage,
     remoteAddress: string,
-    mode: MobileConnectionMode
-  ): PendingPairing {
-    const current = [...this.pendingPairings.values()].find(
-      (item) =>
-        item.remoteAddress === remoteAddress &&
-        item.mode === mode &&
-        item.decision === undefined &&
-        item.expiresAt >= this.now()
-    )
-    if (current) return current
-    const pending = {
-      id: randomUUID(),
-      remoteAddress,
-      mode,
-      expiresAt: this.now() + PAIRING_TTL_MS
-    }
-    this.pendingPairings.set(pending.id, pending)
-    return pending
-  }
-
-  private authorized(request: IncomingMessage, remoteAddress: string): boolean {
+    connectionMode: MobileConnectionMode
+  ): boolean {
     const token = this.mobileToken(request)
     if (token && this.sessions.has(token)) return true
+    if (connectionMode === 'tunnel') return false
     return [...this.sessions.values()].some((session) => session.remoteAddress === remoteAddress)
   }
 
   private mobileToken(request: IncomingMessage): string | undefined {
-    const cookie = request.headers.cookie ?? ''
-    return /(?:^|;\s*)dsh_mobile=([^;]+)/.exec(cookie)?.[1]
+    return this.cookieValue(request, 'dsh_mobile')
   }
 
-  private rememberMobileContext(request: IncomingMessage, remoteAddress: string): void {
+  private rememberMobileContext(
+    request: IncomingMessage,
+    remoteAddress: string,
+    connectionMode: MobileConnectionMode
+  ): void {
+    if (connectionMode === 'tunnel') return
     const token = this.mobileToken(request)
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return
     const sameDeviceIsActive = [...this.sessions.values()].some(
@@ -838,6 +1106,52 @@ export class LanMobileBridge {
       if (oldest) this.suspendedSessions.delete(oldest)
     }
     this.suspendedSessions.set(token, { token, remoteAddress })
+  }
+
+  private rejectUnlessDesktop(
+    request: IncomingMessage,
+    transportAddress: string,
+    response: ServerResponse
+  ): boolean {
+    if (isLoopbackAddress(transportAddress) && this.hasDesktopSession(request)) return false
+    this.text(response, 403, 'Desktop only.')
+    return true
+  }
+
+  private consumeDesktopBootstrap(
+    candidate: string | null,
+    transportAddress: string,
+    response: ServerResponse
+  ): boolean {
+    const expected = this.desktopBootstrapToken
+    if (
+      !isLoopbackAddress(transportAddress) ||
+      !candidate ||
+      !expected ||
+      !this.pinsEqual(candidate, expected)
+    ) {
+      this.text(response, 403, 'Desktop only.')
+      return false
+    }
+    this.desktopBootstrapToken = undefined
+    response.setHeader(
+      'set-cookie',
+      `dsh_desktop=${this.desktopSessionToken}; HttpOnly; SameSite=Strict; Path=/`
+    )
+    response.statusCode = 303
+    response.setHeader('location', '/desktop')
+    response.end()
+    return true
+  }
+
+  private hasDesktopSession(request: IncomingMessage): boolean {
+    const token = this.cookieValue(request, 'dsh_desktop')
+    return Boolean(token && this.pinsEqual(token, this.desktopSessionToken))
+  }
+
+  private cookieValue(request: IncomingMessage, name: string): string | undefined {
+    const cookie = request.headers.cookie ?? ''
+    return new RegExp(`(?:^|;\\s*)${name}=([^;]+)`).exec(cookie)?.[1]
   }
 
   private verifySameOrigin(request: IncomingMessage): void {

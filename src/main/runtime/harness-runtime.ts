@@ -7,6 +7,8 @@ import { dirname, join, posix, win32 } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
+import { prepareHostDisabledPluginsPatch } from '../state/host-disabled-plugins'
+import { prepareHostPluginSourcesPatch } from '../state/host-plugin-sources'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../../shared/plugin-startup-failure'
 import { removeStaleWriterLocks } from './stale-writer-locks'
 
@@ -470,13 +472,17 @@ export class HarnessRuntime {
     }
     // Profile isolation alone is insufficient: --patch is applied afterwards.
     // Never reintroduce optional product plugins into the recovery profile.
-    const patchPath = profile === SAFE_MODE_PROFILE
+    const sourcePatchPath = profile === SAFE_MODE_PROFILE
       ? this.options.dshSafePatchPath
       : this.options.dshPatchPath
-    if (!existsSync(patchPath)) {
-      this.setState('failed', `DSH Desktop patch was not found: ${patchPath}`)
+    if (!existsSync(sourcePatchPath)) {
+      this.setState('failed', `DSH Desktop patch was not found: ${sourcePatchPath}`)
       return
     }
+    await mkdir(this.options.dshHome, { recursive: true })
+    const patchPath = profile === SAFE_MODE_PROFILE
+      ? sourcePatchPath
+      : await prepareHostPluginSourcesPatch(this.options.dshHome, sourcePatchPath)
     const marketPatchPath = this.options.dshMarketPatchPath
     const patchPaths = profile !== SAFE_MODE_PROFILE &&
       marketPatchPath !== undefined &&
@@ -484,6 +490,10 @@ export class HarnessRuntime {
       await profileBootsMarket(join(this.options.dshHome, 'profiles', profile))
       ? [patchPath, marketPatchPath]
       : [patchPath]
+    if (profile !== SAFE_MODE_PROFILE) {
+      const disabledPatch = await prepareHostDisabledPluginsPatch(this.options.dshHome, sourcePatchPath)
+      if (disabledPatch) patchPaths.push(disabledPatch)
+    }
 
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })

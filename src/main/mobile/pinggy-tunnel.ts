@@ -16,7 +16,7 @@ export interface PinggyTunnelInstance extends InternetTunnelInstance {
 
 export function extractPinggyUrl(text: string): string | null {
   const matches = text.matchAll(
-    /https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:pinggy(?:-free)?\.link|pinggy\.online)/gi
+    /https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:pinggy(?:-free)?\.link|pinggy\.online)(?![a-z0-9.-])/gi
   )
   for (const match of matches) return match[0]
   return null
@@ -152,6 +152,7 @@ export async function startPinggyTunnel(options: {
       if (settled) return
       settled = true
       clearTimeout(timeoutTimer)
+      detachOutput()
       cleanup()
       rejectPromise(error)
     }
@@ -165,23 +166,34 @@ export async function startPinggyTunnel(options: {
       )
     }, timeoutMs)
 
-    const handleOutput = (chunk: Buffer | string) => {
-      output = `${output}${chunk.toString()}`.slice(-16_384)
-      const capturedUrl = extractPinggyUrl(output)
-      if (!capturedUrl || settled) return
-      settled = true
-      clearTimeout(timeoutTimer)
-      log?.(`[pinggy] Tunnel online: ${capturedUrl}`)
-      resolvePromise({
-        provider: 'pinggy',
-        url: capturedUrl,
-        process: child,
-        stop: async () => cleanup()
-      })
+    const outputReader = () => {
+      let buffer = ''
+      return (chunk: Buffer | string) => {
+        if (settled) return
+        buffer = `${buffer}${chunk.toString()}`.slice(-16_384)
+        output = buffer
+        const capturedUrl = extractPinggyUrl(buffer)
+        if (!capturedUrl) return
+        settled = true
+        clearTimeout(timeoutTimer)
+        detachOutput()
+        log?.(`[pinggy] Tunnel online: ${capturedUrl}`)
+        resolvePromise({
+          provider: 'pinggy',
+          url: capturedUrl,
+          process: child,
+          stop: async () => cleanup()
+        })
+      }
     }
-
-    child.stdout?.on('data', handleOutput)
-    child.stderr?.on('data', handleOutput)
+    const stdoutOutput = outputReader()
+    const stderrOutput = outputReader()
+    const detachOutput = () => {
+      child.stdout?.removeListener('data', stdoutOutput)
+      child.stderr?.removeListener('data', stderrOutput)
+    }
+    child.stdout?.on('data', stdoutOutput)
+    child.stderr?.on('data', stderrOutput)
     child.once('error', (error) => fail(error))
     child.once('close', (code, signal) => {
       const detail = lastOutputLine(output)

@@ -32,7 +32,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js 
 +					renderSlot("conversation.hero.agentPreset", {}),
 +					(0, react_jsx_runtime.jsx)("div", {
 +						className: ConversationRoot_module_css_default.heroModeCluster,
-+						children: zone !== void 0 && renderSlot("conversation.hero.modeActions", zone)
++						children: renderSlot("conversation.hero.modeActions", zone ?? {})
 +					})
  				]
  			});
@@ -71,22 +71,28 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js 
  		* trigger instead of a parallel tree.
  		*/
 -		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, command, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
-+		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, command, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, extensionZone }) {
++		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, command, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useProjection, sessionId, variant, disabled: inert = false, blocked, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory, extensionZone, openUploadedFile }) {
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -16075,10 +16084,6 @@
+@@ -16074,10 +16083,6 @@
+ 							sessionId !== void 0 && (0, react_jsx_runtime.jsx)("div", {
  								className: InputBar_module_css_default.overlayAnchor,
  								children: renderSlot("conversation.input.overlay", {})
- 							}),
+-							}),
 -							accessory !== void 0 && (0, react_jsx_runtime.jsx)("div", {
 -								className: InputBar_module_css_default.accessory,
 -								children: accessory
--							}),
+ 							}),
  							renderSlot("conversation.input.attachments", {
  								attachments,
- 								canAcceptDrop,
-@@ -16095,13 +16100,19 @@
+@@ -16090,18 +16095,25 @@
+ 								onRetryFile: (id) => {
+ 									retryFileUpload?.(id);
+ 								},
++								onOpenUploadedFile: openUploadedFile,
+ 								dropLimits: imageLimits === void 0 ? void 0 : {
+ 									count: imageLimits.maxImagesPerMessage,
  									size: imageSizeText(imageLimits.maxImageBytes)
  								}
  							}),
@@ -113,7 +119,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js 
  										(0, react_jsx_runtime.jsx)(ComposerContentEditable, {
  											editor: workspaceTrigger ? null : editor,
  											editable,
-@@ -16123,8 +16134,9 @@
+@@ -16123,8 +16135,9 @@
  											children: placeholderText
  										}),
  										(0, react_jsx_runtime.jsx)(DecoratorPortals, { editor: workspaceTrigger ? null : editor })
@@ -125,37 +131,66 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js 
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								className: InputBar_module_css_default.row,
-@@ -16256,7 +16268,7 @@
+@@ -16256,7 +16269,7 @@
  							})
  						]
  					}),
 -					variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null
-+					extensionZone !== void 0 ? renderSlot("conversation.composer.dock", extensionZone) : null
++					extensionZone !== void 0 || sessionId === void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null
  				]
  			});
  		});
-@@ -16641,6 +16653,10 @@
+@@ -16641,6 +16654,10 @@
  					"conversation.hero.agentPreset": {
  						kind: "single",
  						scope: "root"
 +					},
 +					"conversation.hero.modeActions": {
 +						kind: "list",
-+						scope: "session"
++						scope: "session-maybe"
  					}
  				},
  				inject: (sessionId) => ({
-@@ -16720,6 +16736,10 @@
- 					"conversation.input.attachments": {
+@@ -16721,6 +16738,10 @@
  						kind: "single",
  						scope: "session-maybe"
-+					},
+ 					},
 +					"conversation.input.accessory": {
 +						kind: "list",
 +						scope: "session"
- 					},
++					},
  					"conversation.input.overlay": {
  						kind: "list",
+ 						scope: "session"
+@@ -16743,7 +16764,7 @@
+ 					},
+ 					"conversation.composer.dock": {
+ 						kind: "list",
+-						scope: "session"
++						scope: "session-maybe"
+ 					}
+ 				},
+ 				inject: (sessionId) => {
+@@ -16753,6 +16774,7 @@
+ 						removeAttachment: void 0,
+ 						resolveDraftAttachments: void 0,
+ 						retryFileUpload: void 0,
++						openUploadedFile: void 0,
+ 						toggleCommandMenu: void 0,
+ 						stop: void 0,
+ 						command: void 0,
+@@ -16787,6 +16809,11 @@
+ 						retryFileUpload: (id) => {
+ 							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
+ 						},
++						openUploadedFile: async (attachmentId) => {
++							const opener = ctx.get("openUploadedAttachment");
++							if (opener === void 0) throw new Error("ui-conversation: openUploadedAttachment is unavailable");
++							await opener.open(sessionId, attachmentId);
++						},
+ 						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
+ 							shell.dismissPopup();
+ 							const snapshot = shell.snapshot;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
@@ -166,7 +201,7 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/clie
 +        /** Product-mode controls beside the blank-session agent preset. */
 +        'conversation.hero.modeActions': {
 +            kind: 'list';
-+            scope: 'session';
++            scope: 'session-maybe';
 +            owner: InputZone;
 +        };
          /** Full-width entries above the composer card. */
@@ -185,7 +220,8 @@ diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/clie
          /** Ambient entries below the composer card. */
          'conversation.composer.dock': {
              kind: 'list';
-             scope: 'session';
+-            scope: 'session';
++            scope: 'session-maybe';
 +            owner: InputZone;
          };
          /** Compact controls at the left of the composer tool row. */

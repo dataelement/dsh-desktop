@@ -8,8 +8,23 @@ import { detectPluginRecovery } from '../src/main/plugin-recovery-detection'
 import { parsePluginStartupFailures, PLUGIN_FAILURE_PREFIX } from '../src/shared/plugin-startup-failure'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 
+const lockedDirectoryCodes = new Set(['EBUSY', 'EPERM', 'EACCES'])
+
+async function removeTempDir(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      await rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!code || !lockedDirectoryCodes.has(code) || attempt === 7) throw error
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
+    }
+  }
+}
+
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => { await Promise.all(roots.splice(0).map((root) => removeTempDir(root))) })
 
 async function fixture(sources: string[]) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-startup-failure-'))

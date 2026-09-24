@@ -9,6 +9,7 @@ import {
   listInstalledProfilePlugins,
   profilePackageJsonPath,
   pruneMissingProfileBundles,
+  pruneUnresolvableProfileBundles,
   resetPluginProfile,
   resolveProfileRecoveryPlugins,
   uninstallPluginFromProfile
@@ -55,6 +56,7 @@ describe('plugin-recovery', () => {
         dependencies: {
           '@deepseek-ai/dsh-base': '0.1.0',
           dshmarket: '1.9.0',
+          'dsh-image-generation': '1.0.0',
           'plugin-a': '1.0.0',
           '@example/plugin-b': '2.0.0',
           'transitive-only': '3.0.0'
@@ -64,6 +66,7 @@ describe('plugin-recovery', () => {
             bundles: [
               '@deepseek-ai/dsh-base',
               'dshmarket',
+              'dsh-image-generation',
               'plugin-a',
               '@example/plugin-b'
             ]
@@ -73,6 +76,7 @@ describe('plugin-recovery', () => {
     )
 
     await expect(listInstalledProfilePlugins(testDir)).resolves.toEqual([
+      'dsh-image-generation',
       'plugin-a',
       '@example/plugin-b'
     ])
@@ -891,6 +895,27 @@ describe('plugin-recovery', () => {
 
     const modified = await pruneMissingProfileBundles(testDir)
     expect(modified).toBe(false)
+  })
+
+  it('names the pruned bundles so the boot preflight retry can report them', async () => {
+    const pkgPath = profilePackageJsonPath(testDir)
+    await writeFile(
+      pkgPath,
+      JSON.stringify({
+        dependencies: { dshmarket: '1.16.0', 'dsh-uninstalled': '^1.0.0' },
+        dsh: {
+          profile: {
+            bundles: ['@deepseek-ai/dsh-base', 'dshmarket', 'dsh-uninstalled']
+          }
+        }
+      })
+    )
+
+    expect(await pruneUnresolvableProfileBundles(testDir)).toEqual(['dsh-uninstalled'])
+    const updated = JSON.parse(await readFile(pkgPath, 'utf8'))
+    // Core bundles and host packages are never candidates, installed or not.
+    expect(updated.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'dshmarket'])
+    expect(await pruneUnresolvableProfileBundles(testDir)).toEqual([])
   })
 
   it('sweeps pnpm staging and sidelined package directories before launch', () => {
