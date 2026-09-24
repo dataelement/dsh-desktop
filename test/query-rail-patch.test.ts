@@ -27,7 +27,7 @@ describe('conversation Query navigation rail', () => {
     )
 
     expect(chat).toContain('turnNavigationItems')
-    expect(chat).toContain('const [activeTurn, setActiveTurn]')
+    expect(chat).toContain('activeTurn: scroll.activeTurn')
   })
 
   it('leaves the file-access confirmation to Harness as well', async () => {
@@ -38,14 +38,14 @@ describe('conversation Query navigation rail', () => {
         projectRoot,
         'node_modules',
         '@deepseek-ai',
-        'dsh-client-ui-conversation',
+        'dsh-client-ui-permission-presets',
         'lib',
         'client.js'
       ),
       'utf8'
     )
 
-    expect(conversation).toContain('access.confirm.title')
-    expect(conversation).toContain('access.confirm.enable')
+    expect(conversation).toContain('confirm.title')
+    expect(conversation).toContain('confirm.enable')
   })
 })

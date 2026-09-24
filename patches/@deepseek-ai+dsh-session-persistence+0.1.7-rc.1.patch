@@ -1,7 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js
+index 5fa994b..6358ccd 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js
-@@ -262,6 +262,16 @@
+@@ -264,6 +264,16 @@ var SessionPersistence = class extends Service {
  	constructor(ctx) {
  		super(ctx, "sessionPersistence");
  	}
@@ -19,21 +20,22 @@ diff --git a/node_modules/@deepseek-ai/dsh-session-persistence/lib/index.js b/no
  //#endregion
  export { SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionFormatUnsupportedError, SessionHandleClosedError, SessionOwnershipLostError, SessionPersistence, SessionPersistence as default, SessionPersistenceCorruptionError, SessionPersistenceNotFoundError, SessionPersistenceRevision, SessionReadOnlyError, assertContiguous, assertStoredId, assertVersion, materializeAppendBatch, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents };
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts
+index 428feb0..e406385 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d.ts
-@@ -64,6 +64,11 @@
- /** Options for {@link SessionPersistence.stat}. */
- export interface SessionPersistenceStatOptions {
+@@ -66,6 +66,11 @@ export interface SessionPersistenceStatOptions {
      /** Optional cancellation for backend metadata reads. */
-+    readonly signal?: AbortSignal;
-+}
+     readonly signal?: AbortSignal;
+ }
 +/** Options for {@link SessionPersistence.delete}. */
 +export interface SessionPersistenceDeleteOptions {
 +    /** Optional cancellation observed before backend work starts. */
-     readonly signal?: AbortSignal;
- }
++    readonly signal?: AbortSignal;
++}
  /** Options for {@link SessionPersistence.list}. */
-@@ -153,6 +158,18 @@
+ export interface SessionPersistenceListOptions {
+     /** Optional cancellation for backend listing work. */
+@@ -155,6 +160,18 @@ export declare abstract class SessionPersistence extends Service {
       * @returns one snapshot per stored session.
       */
      abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>;
@@ -52,3 +54,4 @@ diff --git a/node_modules/@deepseek-ai/dsh-session-persistence/lib/types/index.d
  }
  export default SessionPersistence;
  //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file

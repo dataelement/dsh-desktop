@@ -88,6 +88,7 @@ import {
   resetPluginProfile
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
+import { migrateLegacyAgentPresets } from './state/legacy-preset-migration'
 import { WindowStateManager } from './state/window-state'
 import {
   isProjectedGenerationPlugin,
@@ -1553,6 +1554,7 @@ function launchHarness(): Promise<void> {
       })
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
     await migratePersonaPrefixesBeforeStart(dshHome)
+    await migrateLegacyAgentPresets(dshHome, (line) => runtime.note(line))
     await runtime.start(launchDirectory)
 
     // A failed launch must not rewrite the user's enabled plugin set. Recovery

@@ -148,7 +148,7 @@ function runDomSync(): void {
   } else checkBootFailureInDom()
 }
 
-contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker', {
+contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
   pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
 })
 

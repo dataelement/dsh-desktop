@@ -44,6 +44,13 @@ function presetTransferApi(root: string) {
       const compositionPath = path.join(root, id, 'agent.cordis.yml')
       await readFile(compositionPath)
       return { id, trust: 'user', path: compositionPath, name: id }
+    },
+    async readDocument(id: string) {
+      return {
+        agentPreset: id,
+        content: await readFile(path.join(root, id, 'agent.cordis.yml'), 'utf8'),
+        name: id
+      }
     }
   }
   applyPresetTransfer({
@@ -207,7 +214,7 @@ describe('agent preset package transfer', () => {
         format: 'dsh-preset',
         version: 1,
         id: sourceId,
-        sourceDshVersion: '0.1.2-rc.1'
+        sourceDshVersion: '0.1.7-rc.1'
       })
       expect(exportedManifest.exportedAt).toEqual(expect.any(String))
       expect(exportedManifest.dshVersion).toBeUndefined()
@@ -541,12 +548,10 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('safePresetArchivePath')
     expect(patch).toContain('PRESET_ARCHIVE_IGNORED_FILES')
     expect(patch).toContain('.DS_Store')
-    expect(patch).toContain('info.isSymbolicLink()')
-    expect(patch).toContain('files[`preset/${rel}`]')
+    expect(patch).toContain('presets.readDocument(agentPreset)')
+    expect(patch).toContain('[`preset/${COMPOSITION_FILE}`]')
     expect(patch).toContain('safe.slice("preset/".length)')
-    expect(patch).toContain('scanRoot({')
-    expect(patch).toContain('scanned.find((candidate) => candidate.id === targetId)')
-    expect(patch).not.toContain('scanned.get(targetId)')
+    expect(patch).toContain('await presets.resolve(targetId)')
     expect(patch).toContain('await rename(imported, target)')
     expect(patch).toContain('A preset named')
     expect(patch).toContain('possible-secrets')
@@ -556,8 +561,7 @@ describe('agent preset package transfer', () => {
   it('creates and resolves the writable preset root inside the structured import failure boundary', async () => {
     const patch = await presetTransferSource()
 
-    expect(patch).toContain('const root = writableRoot(presets.roots)')
-    expect(patch).not.toContain('const root = writableRoot();')
+    expect(patch).toContain('const root = legacyPresetRoot(presets)')
     expect(patch).toContain('await mkdir(root, { recursive: true })')
     expect(patch).toContain('let container;')
     expect(patch).toContain('container = await mkdtemp')
@@ -570,62 +574,27 @@ describe('agent preset package transfer', () => {
       'utf8'
     )
 
-    expect(patch).toContain('ImportDialog')
-    expect(patch).toContain('previewImport(file)')
-    expect(patch).toContain('confirmImport()')
-    expect(patch).toContain('exportPreset(id)')
-    expect(patch).toContain('IconArchiveOutline20')
-    expect(patch).toContain('IconDownloadOutline16')
+    expect(patch).toContain('const previewImport = async (file) =>')
+    expect(patch).toContain('const confirmImport = async () =>')
+    expect(patch).toContain('const exportPreset = async (id) =>')
     expect(patch).toContain('Custom presets can run tools and commands')
     expect(patch).toContain('自定义预设可以使用与 Agent 相同权限的工具和命令')
-    expect(patch).toContain('draft.conflict ? "idTaken"')
+    expect(patch).toContain('importDraft.conflict')
+    expect(patch).toContain('setImportId(event.target.value)')
     expect(patch).toContain('.dshpreset')
-    expect(patch).toContain('importPreset: "Import"')
-    expect(patch).toContain('awesomePreset: "Awesome preset"')
+    expect(patch).toContain('copy.restart')
     expect(patch).toContain('https://www.dshdesktop.com/preset/')
     expect(patch).toContain('"_blank", "noopener,noreferrer"')
-    expect(patch).toContain('AgentPresetSection_module_css_default.sectionActions')
-    expect(patch).toContain('.dshPreset_sectionHead{align-items:center;gap:16px;display:flex}')
-    expect(patch).toContain('justify-content:flex-end')
-    expect(patch).toContain('margin-left:auto')
-    expect(patch).toContain('.dshPreset_hiddenInput{display:none}')
+    expect(patch).toContain('"aria-label": `${copy.export}: ${display.name}`')
   })
 
-  it('adds desktop preset classes without restating upstream\u2019s class map', async () => {
+  it('leaves upstream preset stylesheet and class map intact', async () => {
     const patch = await readFile(
       patchPath('@deepseek-ai/dsh-client-ui-agent-preset'),
       'utf8'
     )
-    const added = patch
-      .split('\n')
-      .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-      .map((line) => line.slice(1))
-      .join('\n')
-
-    // Earlier revisions replaced the whole stylesheet and class map with a
-    // locally rebuilt copy, so an upstream rebuild silently left the page
-    // rendering classes with no matching selectors. The patch now only
-    // appends desktop-owned rules and entries, under a prefix upstream's
-    // content-derived hashes cannot collide with.
-    const desktopEntries = [...added.matchAll(/"([A-Za-z]+)": "dshPreset_([A-Za-z]+)"/g)]
-    expect(desktopEntries.length).toBeGreaterThan(0)
-    for (const [, key, cls] of desktopEntries) {
-      expect(key).toBe(cls)
-      expect(added, key).toContain(`.dshPreset_${cls}{`)
-    }
-
-    // Every class-map entry the patch adds must be a NEW key: an entry that
-    // also appears as an unchanged context line would mean the patch is
-    // restating upstream's map, which is what used to go stale on a rebuild.
-    const context = new Set(
-      patch
-        .split('\n')
-        .filter((line) => line.startsWith(' '))
-        .flatMap((line) => [...line.matchAll(/"([A-Za-z][A-Za-z0-9-]*)": "[A-Za-z0-9_-]+_/g)].map((m) => m[1]))
-    )
-    for (const [, key] of added.matchAll(/"([A-Za-z][A-Za-z0-9-]*)": "[A-Za-z0-9_-]+_/g)) {
-      expect(context.has(key), key).toBe(false)
-    }
+    expect(patch).not.toContain('AgentPresetSection_module_css_default =')
+    expect(patch).not.toContain('const css$')
   })
 
   it('keeps a large mode roster searchable, grouped, compact, and connected to Awesome Presets', async () => {
@@ -634,22 +603,10 @@ describe('agent preset package transfer', () => {
       'utf8'
     )
 
-    expect(patch).toContain('searchPresets: "Search modes…"')
-    expect(patch).toContain('recentPresets: "Recent"')
-    expect(patch).toContain('RECENT_PRESETS_KEY')
-    expect(patch).toContain('option.trust === "system"')
-    expect(patch).toContain('option.trust === "user"')
-    expect(patch).toContain('text-overflow:ellipsis')
-    expect(patch).toContain('IconSearchOutline16')
-    expect(patch).toContain('IconSparkle16')
-    expect(patch).toContain('selectedItem')
-    expect(patch).toContain(':focus-within')
-    expect(patch).toContain('[role=menu]:has(')
-    expect(patch).toContain('max-height:min(360px')
-    expect(patch).toContain('side: "bottom"')
-    expect(patch).toContain('footer: [{')
-    expect(patch).toContain('id: AWESOME_PRESETS_ID')
-    expect(patch).toContain('browseAwesomePresets: "浏览 Awesome Presets…"')
+    expect(patch).toContain('type: "search", value: search')
+    expect(patch).toContain('isBuiltInPreset(row) === builtIn')
+    expect(patch).toContain('presetDisplayText(row, t).name')
+    expect(patch).toContain('Browse Awesome Presets')
   })
 
   it('keeps the loopback API discoverable by an explicitly requested online Skill', async () => {

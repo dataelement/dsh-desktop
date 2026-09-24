@@ -6,7 +6,6 @@ import { randomUUID, createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
-import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { SkillRegistry } from '@deepseek-ai/dsh-skill'
@@ -69,7 +68,7 @@ async function server() {
 async function fixture() {
   const home = await temp(); const workspace = await temp()
   const ctx = new Context()
-  for (const [plugin, config] of [[SystemPrompt, {}], [ToolRuntime, {}], [SkillRegistry, {}], [LocalSandboxProvider, {}], [LocalSubprocessRuntime, {}], [FileSettingsProvider, { dshHome: home, watch: false }], [LocalCredentialProvider, { dshHome: home, watch: false }]]) {
+  for (const [plugin, config] of [[SystemPrompt, {}], [ToolRuntime, {}], [SkillRegistry, {}], [LocalSandboxProvider, {}], [LocalSubprocessRuntime, {}], [LocalCredentialProvider, { dshHome: home, watch: false }]]) {
     const fork = ctx.plugin(plugin, config); await fork; cleanups.push(() => fork.dispose())
   }
   const log = vi.fn(); let mode = 'workspace-write'
@@ -304,8 +303,8 @@ describe('image tool and durable Office assets', () => {
     await expect(normalizeImage(Buffer.from('not a PNG'))).rejects.toMatchObject({ code: 'IMAGE' })
   })
   async function mountPlugin(fixture, routes = []) {
-    const plugin = fixture.ctx.plugin({ inject: ['settings', 'skills', 'systemPrompt', 'tools'], apply: ctx => apply({
-      ...fixture.services, settings: ctx.settings, skills: ctx.skills, systemPrompt: ctx.systemPrompt, tools: ctx.tools,
+    const plugin = fixture.ctx.plugin({ inject: ['skills', 'systemPrompt', 'tools'], apply: ctx => apply({
+      ...fixture.services, skills: ctx.skills, systemPrompt: ctx.systemPrompt, tools: ctx.tools,
       on: ctx.on.bind(ctx), connection: { fetch: { register: route => routes.push(route) } },
     }) })
     await plugin
@@ -315,7 +314,6 @@ describe('image tool and durable Office assets', () => {
   it('registers standard routes and executes with saved configuration while honoring deployment guards', async () => {
     const f = await fixture(); const routes = []
     await mountPlugin(f, routes)
-    expect(f.ctx.settings.describe().map(entry => entry.ns)).toContain('image-generation')
     expect(routes.map(({ path, methods, requestBody }) => ({ path, methods, requestBody }))).toEqual([
       { path: '/api/image-generation.settings', methods: ['GET'], requestBody: 'buffered' },
       { path: '/api/image-generation.save', methods: ['POST'], requestBody: 'buffered' },

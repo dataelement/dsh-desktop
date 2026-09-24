@@ -49,6 +49,19 @@ describe('DSH PPT built-in plugin', () => {
     }
   })
 
+  it('ships Harness 0.1.7-compatible peer ranges in both archives', async () => {
+    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1'
+    const core = JSON.parse(tarEntries(await artifact('core')).get('package/package.json')!.toString('utf8'))
+    const adapter = JSON.parse(tarEntries(await artifact('adapter')).get('package/package.json')!.toString('utf8'))
+    expect(core.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
+    expect(adapter.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
+
+    for (const [name, range] of Object.entries(core.peerDependencies as Record<string, string>)) {
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe(expected)
+    }
+    expect(adapter.peerDependencies['@deepseek-ai/dsh-invariants']).toBe(expected)
+  })
+
   it('ships one PPT composer surface and excludes the Tencent route', async () => {
     const core = gunzipSync(await artifact('core')).toString('utf8')
     const adapter = gunzipSync(await artifact('adapter')).toString('utf8')
@@ -181,7 +194,7 @@ describe('DSH PPT built-in plugin', () => {
     const owner = client.indexOf('extensionZone: zone')
     const input = client.indexOf('className: clsx(InputBar_module_css_default.card', owner)
     const catalog = client.indexOf(
-      'extensionZone !== void 0 ? renderSlot("conversation.composer.dock", extensionZone) : null',
+      'variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null',
       input
     )
 
@@ -211,6 +224,17 @@ describe('DSH PPT built-in plugin', () => {
     expect(patch).toContain('button:focus-visible')
   })
 
+  it('keeps the PPT slot kind and scope aligned with their published types', async () => {
+    const root = path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-conversation', 'lib')
+    const runtime = await readFile(path.join(root, 'client.js'), 'utf8')
+    const types = await readFile(path.join(root, 'types/client/contract/slots.d.ts'), 'utf8')
+    for (const name of ['conversation.hero.modeActions', 'conversation.input.accessory']) {
+      const escaped = name.replaceAll('.', '\\.')
+      expect(runtime).toMatch(new RegExp(`"${escaped}": \\{\\s*kind: "list",\\s*scope: "session"`))
+      expect(types).toMatch(new RegExp(`'${escaped}': \\{\\s*kind: 'list';\\s*scope: 'session'`))
+    }
+  })
+
   it('renders the selected template before editable prompt text', async () => {
     const client = await readFile(path.join(
       projectRoot,
@@ -222,11 +246,11 @@ describe('DSH PPT built-in plugin', () => {
     ), 'utf8')
     const promptRow = client.indexOf('className: InputBar_module_css_default.promptRow')
     const accessory = client.indexOf('className: InputBar_module_css_default.accessory', promptRow)
-    const scroll = client.indexOf('ref: scrollRef', promptRow)
+    const editor = client.indexOf('(0, react_jsx_runtime.jsx)(DraftEditor, {', promptRow)
 
     expect(promptRow).toBeGreaterThan(-1)
     expect(accessory).toBeGreaterThan(promptRow)
-    expect(scroll).toBeGreaterThan(accessory)
+    expect(editor).toBeGreaterThan(accessory)
     expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
   })
 

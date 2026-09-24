@@ -20,6 +20,10 @@
       "types": "./generations/projection.d.ts",
       "default": "./generations/projection.mjs"
     },
+    "./generations/package-backend": {
+      "types": "./generations/package-backend.d.ts",
+      "default": "./generations/package-backend.mjs"
+    },
     "./market-registry": {
       "types": "./market-registry.d.ts",
       "default": "./market-registry.mjs"
@@ -39,7 +43,7 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1"
+    "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1 || ^0.1.6-alpha.1 || ^0.1.7-rc.1"
   },
   "dependencies": {
     "pnpm": "10.34.5"
