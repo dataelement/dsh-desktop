@@ -12,6 +12,15 @@ function slice(source, start, end) {
   return source.slice(from, to)
 }
 
+function normalizedStoreSource(source) {
+  return slice(source, 'const STAGED_MODE_KEY', 'function useMode')
+    .replace(/\r\n/g, '\n')
+    .replace(
+      /^([ \t]*)constructor\(\) \{\n\1[ \t]+this\.states = \/\* @__PURE__ \*\/ new Map\(\);\n\1[ \t]+this\.listeners = \/\* @__PURE__ \*\/ new Map\(\);\n\1\}/m,
+      '$1states = /* @__PURE__ */ new Map();\n$1listeners = /* @__PURE__ */ new Map();'
+    )
+}
+
 const Store = new Function(`${slice(adapter, 'const STAGED_MODE_KEY', 'function useMode')}\nreturn OfficePptHeroStore;`)()
 const createOfficePptClient = new Function(`${slice(adapter, 'function createOfficePptClient', 'const standardInject')}\nreturn createOfficePptClient;`)()
 
@@ -29,9 +38,11 @@ function client(handler) {
 
 describe('unbound PPT mode', () => {
   it('keeps the staged store implementation aligned between the two clients', () => {
-    const normalize = (source) => slice(source, 'const STAGED_MODE_KEY', 'function useMode')
-      .replace('constructor() {\n\t\t\t\tthis.states = /* @__PURE__ */ new Map();\n\t\t\t\tthis.listeners = /* @__PURE__ */ new Map();\n\t\t\t}', 'states = /* @__PURE__ */ new Map();\n\t\t\tlisteners = /* @__PURE__ */ new Map();')
-    expect(normalize(adapter)).toBe(normalize(core))
+    expect(normalizedStoreSource(adapter)).toBe(normalizedStoreSource(core))
+    const asWindowsCheckout = (source) => source.replace(/\r?\n/g, '\r\n')
+    expect(normalizedStoreSource(asWindowsCheckout(adapter))).toBe(
+      normalizedStoreSource(asWindowsCheckout(core))
+    )
   })
 
   it('selects a template locally and writes it once when a blank session appears', async () => {
