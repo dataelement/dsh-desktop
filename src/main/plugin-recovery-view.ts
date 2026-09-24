@@ -89,17 +89,6 @@ export function describePluginFailure(
   locale: PluginRecoveryLocale
 ): FailureDescription {
   const text = latestAttemptText(logs)
-  if (/failed to (?:apply|import) loader entry dsh-image-generation\b|duplicate loader entry id:\s*dsh-image-generation\b/i.test(text)) {
-    return locale === 'zh'
-      ? {
-          title: '图像生成组件启动失败',
-          detail: '若安装了同名市场插件，可在安全模式停用市场版本，再重试正常启动。Desktop 内置组件不会被停用。'
-        }
-      : {
-          title: 'Image generation failed to start',
-          detail: 'If the market plugin with the same name is installed, disable that market copy in Safe Mode and retry. The in-box component stays enabled.'
-        }
-  }
   const duplicateRoute = text.match(/duplicate prefix route ["']([^"']+)["']/i)?.[1]
 
   if (duplicateRoute) {
