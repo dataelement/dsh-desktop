@@ -7,6 +7,7 @@ The `Release desktop installers` workflow accepts a `mode` on `workflow_dispatch
 - `development` (default): unsigned Dev packages, no signing, no publish.
 - `signed`: production-identity signed packages only. Fill `signed_version` with a non-`v` semver such as `0.9.2-test.1`. Artifacts stay on the workflow run; GitHub Release, ModelScope, rollout, and Feishu do not run. These builds use the production app id and update feed, so an installed copy may later see the live `latest` channel.
 - `smoke`: recheck an existing `windows-x64` signed artifact without rebuilding or signing. Set `target=windows` and `smoke_run_id` to the source release workflow run ID. The Windows runner installs that exact artifact using the current branch's smoke script.
+- `resign`: sign an existing `windows-x64-unsigned` artifact without rerunning the Windows build. Set `target=windows`, `unsigned_run_id` to its source release run, and `signed_version` to the exact version used for that artifact. The self-hosted signer downloads it directly and the final signed Windows installer still runs the installation smoke.
 - `prerelease`: production-identity signed packages. Fill `prerelease_tag` with a non-`v` semver such as `2.1.0-rc.1`. Publish to GitHub `--prerelease` and ModelScope `releases/prerelease/` only when `target` is `all`. A single-platform prerelease signs that platform and skips publish.
 
 Official releases are still created by pushing a `v*` tag, not by filling the dispatch form. Do not put `v0.9.1` in `prerelease_tag` or `signed_version`.
