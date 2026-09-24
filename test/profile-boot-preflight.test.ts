@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
 
 const homes: string[] = []
@@ -51,5 +52,45 @@ describe('normal Profile boot preflight', () => {
     const { profile, check } = await fixture()
     await rm(profile, { recursive: true })
     expect(await check()).toBeUndefined()
+  })
+
+  it('skips a disabled incompatible bundle in both preflight and Harness, then checks it again when enabled', async () => {
+    const { profile, bundle, check } = await fixture()
+    await writeFile(join(bundle, 'package.json'), JSON.stringify({
+      name: 'test-startup-bundle', version: '1.0.0',
+      peerDependencies: { '@deepseek-ai/dsh-api': '0.0.0' },
+      dsh: { bundle: { patch: 'cordis.patch.yml' } }
+    }))
+    const anchor = join(profile, 'missing-install', 'package.json')
+    expect((await check())?.packageName).toBe('test-startup-bundle')
+    await mkdir(join(profile, '.dsh-market'))
+    const statePath = join(profile, '.dsh-market', 'state.json')
+    await writeFile(statePath, JSON.stringify({ disabled: ['test-startup-bundle'] }))
+    expect(await check()).toBeUndefined()
+    expect(loadProfileDirectory('dsh-desktop', profile, anchor).layers).toEqual([])
+    await writeFile(statePath, JSON.stringify({ disabled: [] }))
+    expect((await check())?.packageName).toBe('test-startup-bundle')
+  })
+
+  it('skips a disabled bundle whose files are missing, while still checking other active bundles', async () => {
+    const { profile, bundle, check } = await fixture()
+    await rm(bundle, { recursive: true })
+    await mkdir(join(profile, '.dsh-market'))
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({
+      disabledSkins: ['test-startup-bundle']
+    }))
+    expect(await check()).toBeUndefined()
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dsh: { profile: { bundles: ['test-startup-bundle', 'another-active-bundle'] } }
+    }))
+    expect((await check())?.packageName).toBe('another-active-bundle')
+  })
+
+  it('does not treat an unreadable market state as permission to skip checks', async () => {
+    const { profile, bundle, check } = await fixture()
+    await rm(bundle, { recursive: true })
+    await mkdir(join(profile, '.dsh-market'))
+    await writeFile(join(profile, '.dsh-market', 'state.json'), '{bad json')
+    expect((await check())?.packageName).toBe('test-startup-bundle')
   })
 })

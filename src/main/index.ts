@@ -2557,10 +2557,8 @@ async function waitForSafeModeAction(options: {
 
 /**
  * Switch a plugin off from Safe Mode, the way the plugin market's own toggle
- * does, so it can be re-enabled without reinstalling. Plugin recovery keeps
- * the backed-up removal instead: a package that is itself broken (an
- * unreadable bundle patch, a missing link, dependencies shadowing the core)
- * still fails before the patch layer's disable applies.
+ * does, so it can be re-enabled without reinstalling. The market disable
+ * state is applied before Harness reads even a broken bundle's metadata.
  *
  * A disable-carrier cannot be switched off on its own (see
  * disableProfilePlugin), so it keeps the removal too. `pending` is only ever
@@ -2580,10 +2578,9 @@ async function disableSafeModePlugin(
     )
     return { disabled: true }
   }
-  // A carrier cannot be switched off on its own, and a broken bundle has no
-  // row to switch off at all. Both would otherwise leave the next launch
-  // composing the same profile, so they fall back to a restorable removal.
-  if (result.reason === 'carrier' || result.reason === 'broken-package') {
+  // A carrier cannot be switched off on its own: its patch also disables
+  // rows owned by another bundle, so use a restorable removal.
+  if (result.reason === 'carrier') {
     runtime.note(`[${logPrefix}] ${result.detail}; removing it with a restorable backup instead`)
     const removal = await removeProfilePluginCompletely(dshHome, pluginName, logPrefix)
     return { disabled: removal.disabled, pending: removal.pending, detail: removal.failures[0] }

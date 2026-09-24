@@ -119,21 +119,15 @@ describe('profile plugin disable', () => {
     expect(await listDisabledProfilePlugins(dshHome, ['dsh-client-only'])).toEqual(['dsh-client-only'])
   })
 
-  it('refuses a bundle whose package yields no loader row, instead of reporting a disable that does nothing', async () => {
-    // The loader prepares every listed bundle before any user layer applies,
-    // so an unreadable package patch cannot be switched off — writing only the
-    // market state would report success and still fail the next launch.
+  it('disables a broken bundle through market state even when its patch yields no row', async () => {
     await writeProfileManifest(['dsh-broken-bundle'])
     await plugin('dsh-broken-bundle', '- insert:\n    - id: broken\n      name: dsh-broken-bundle\n')
     await rm(join(profile, 'node_modules', 'dsh-broken-bundle', 'cordis.patch.yml'))
     const before = await readFile(patchPath, 'utf8')
 
-    expect(await disableProfilePlugin(dshHome, 'dsh-broken-bundle')).toMatchObject({
-      ok: false,
-      reason: 'broken-package'
-    })
+    expect(await disableProfilePlugin(dshHome, 'dsh-broken-bundle')).toEqual({ ok: true, rows: [] })
     expect(await readFile(patchPath, 'utf8')).toBe(before)
-    expect(await listDisabledProfilePlugins(dshHome, ['dsh-broken-bundle'])).toEqual([])
+    expect(await listDisabledProfilePlugins(dshHome, ['dsh-broken-bundle'])).toEqual(['dsh-broken-bundle'])
   })
 
   it('still switches a client-only plugin off through the market state when the profile lists bundles', async () => {
@@ -164,7 +158,7 @@ describe('profile plugin disable', () => {
 
   it('never overwrites an unreadable market state', async () => {
     await writeFile(statePath, '{ not json')
-    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toEqual({ ok: true, rows: ['proxy-routing'] })
+    expect(await disableProfilePlugin(dshHome, 'dsh-proxy-routing')).toMatchObject({ ok: false, reason: 'market-state' })
     expect(await disableProfilePlugin(dshHome, 'dsh-client-only')).toMatchObject({ ok: false, reason: 'market-state' })
     expect(await readFile(statePath, 'utf8')).toBe('{ not json')
   })
