@@ -8,7 +8,7 @@ This guide covers local development, validation, patch maintenance, and target-n
 - npm
 - macOS on Apple Silicon or Intel, or Windows x64
 
-This baseline pins `@deepseek-ai/dsh@0.1.7-rc.1`. Windows packages bundle a target-native Node.js runtime for Harness, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
+DSH Desktop currently pins `@deepseek-ai/dsh@0.1.7-rc.1`. Windows packages bundle a target-native Node.js runtime for Harness, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
 
 ## Local setup
 
@@ -65,7 +65,7 @@ test/                     Unit and source-contract regression coverage
 
 ## Maintaining upstream patches
 
-The desktop product intentionally reuses the upstream Harness UI. Desktop-specific provider onboarding, preset transfer, model selection, workspace, branding, and layout changes are captured under `patches/` rather than stored as untracked edits in `node_modules`.
+The desktop product intentionally reuses the upstream Harness UI. Desktop-owned plugins live under `packages/`; compatibility changes to Harness modules live under reproducible `patches/`. Neither depends on untracked edits in `node_modules`.
 
 When upgrading Harness:
 
@@ -93,7 +93,7 @@ npm run package:win
 
 Do not invoke `electron-builder --win` from macOS or Linux for a distributable Windows package. The target verification scripts intentionally reject host/target mismatches.
 
-For local unsigned development packages, use the corresponding `package:dev:*` command. Windows packages retain a bundled Node runtime because the Harness native loader does not yet support Electron 43.4.0 in Node mode. Verify that `resources/app.asar.unpacked/node_modules/node/bin/node.exe` is present, the packaged native-module and Harness smokes pass, and the final signed installer passes the separate installed-app smoke before handoff.
+For local unsigned development packages, use the corresponding `package:dev:*` command. Before handing off a Windows installer, verify that `resources/app/node_modules/node/bin/node.exe` exists in `win-unpacked` and require the packaged Windows Harness smoke test to pass.
 
 Formal release artifacts are built, signed, and published by the tag workflow. A local build or pull-request check is not formal release evidence.
 

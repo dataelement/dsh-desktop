@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import yaml from 'js-yaml';
-const root = path.resolve('packages/ppt-runtime/templates');
+const root = path.resolve(process.env.DSH_PPT_TEMPLATE_OUTPUT ?? '.build/ppt-runtime/templates');
 const upstream = 'https://github.com/nexu-io/html-anything/tree/c31204544230578ac814026fecc153c6e36587ae';
 const specs = [
     { slug: 'dsh-engineering-blueprint', category: 'work', name: '工程蓝图 · Engineering Blueprint', short: 'ENGINEERING NOTES', paper: 'F0EAE0', ink: '252824', accent: 'B5392A', muted: '68665F', surface: 'E7E0D4', source: 'deck-blueprint', summary: '纸张底色、工程网格、流程盒和反馈路径；用于架构评审、技术方案及执行计划。' },

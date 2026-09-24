@@ -98,6 +98,7 @@ import {
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
 import { migrateLegacyAgentPresets } from './state/legacy-preset-migration'
 import { WindowStateManager } from './state/window-state'
+import { classifyDesktopInstall } from './state/desktop-install-state'
 import {
   isProjectedGenerationPlugin,
   prepareGenerationsForLaunch,
@@ -3466,7 +3467,7 @@ async function bootstrap(): Promise<void> {
 
     const result = await dialog.showOpenDialog(mainWindow, {
       title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
-      properties: ['openDirectory']
+      properties: ['openDirectory', 'createDirectory']
     })
     return result.canceled ? null : result.filePaths[0] ?? null
   })
@@ -3699,6 +3700,11 @@ if (isDaemonLaunch(process.env, process.platform)) {
     console.warn('[desktop] Another instance is already running; focusing existing window and exiting.')
     app.quit()
   } else {
+    classifyDesktopInstall({
+      userDataPath: app.getPath('userData'),
+      appVersion: app.getVersion(),
+      developmentBuild
+    })
     // Start the login-shell capture now so it overlaps Electron's own startup
     // and the splash instead of blocking the main process right before the
     // Harness spawn. Only the instance that will actually launch pays for it.

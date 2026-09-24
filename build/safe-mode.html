@@ -380,7 +380,8 @@
         const title = document.createElement('span'); title.className = 'plugin-title'
         const name = document.createElement('span'); name.className = 'plugin-name'; name.textContent = String(plugin.displayName || plugin.name)
         title.appendChild(name)
-        copy.append(title)
+        const action = document.createElement('span'); action.className = 'plugin-action'; action.textContent = String(plugin.actionLabel || '')
+        copy.append(title, action)
         // An already disabled plugin is not selectable for disabling again.
         if (plugin.disabled === true) label.append(copy)
         else label.append(checkbox, copy)
@@ -483,6 +484,8 @@
         : 'Not sure which plugin? Let the repair agent read the log →'
       repairAgent.addEventListener('click', () => {
         repairAgent.disabled = true
+        const agentBtn = document.getElementById('agent')
+        if (agentBtn) agentBtn.disabled = true
         void window.dshSafeMode.action('agent', { prompt: repairAgentPrompt })
       })
     </script>

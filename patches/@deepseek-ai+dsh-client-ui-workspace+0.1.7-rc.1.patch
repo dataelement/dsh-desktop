@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index 580e6df..be93163 100644
+index 580e6df..5567c43 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 @@ -122,6 +122,7 @@ window.__ModuleLoader__.load({
@@ -188,7 +188,7 @@ index 580e6df..be93163 100644
  				children: [(0, react_jsx_runtime.jsxs)("span", {
  					className: Rows_module_css_default.searchResultHeading,
  					children: [
-+
++						renderSlot("sidebar.session.leading", { sessionId: result.id, size: 14 }),
  						(0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
  							children: !result.archived && primaryStatus.state !== "idle" && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
@@ -226,7 +226,7 @@ index 580e6df..be93163 100644
  					},
  					children: [
 -						(!flat || showStatus) && (0, react_jsx_runtime.jsx)("span", {
-+
++						renderSlot("sidebar.session.leading", { sessionId: node.id, size: 14 }),
 +						(!flat || showStatus || unread) && (0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
 -							children: !row.archived && showStatus && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
@@ -344,6 +344,42 @@ index 580e6df..be93163 100644
  							startSession,
  							open: guardedOpen,
  							insertWorkspaceBefore,
+@@ -4033,6 +4121,10 @@ window.__ModuleLoader__.load({
+ 					"sidebar.workspaces.session.row.action": {
+ 						kind: "list",
+ 						scope: "root"
++					},
++					"sidebar.session.leading": {
++						kind: "single",
++						scope: "root"
+ 					}
+ 				},
+ 				store: viewStore,
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+index 5ca7ad9..3073fc1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+@@ -148,6 +148,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             scope: 'root';
+             owner: SessionRowOwnerProps;
+         };
++        'sidebar.session.leading': {
++            kind: 'single';
++            scope: 'root';
++            owner: { sessionId: SessionId; size?: number };
++        };
+     }
+ }
+ /** The two directory-flow holes; a flow package's client half registers its one component into both. */
+@@ -373,7 +378,7 @@ export type SessionArchiveConfirmProps = PropsRuntime<'shell.overlay'> & PropsLo
+ /** Props of the row toast entry in `shell.overlay`. */
+ export type RowToastProps = PropsRuntime<'shell.overlay'> & PropsLocale<'workspace'> & Omit<RowToastInjected, 'hooks'> & PropsHooks<RowToastInjected['hooks']>;
+ /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
+-export type WorkspaceBrowserProps = PropsRuntime<'sidebar.workspaces'> & PropsRenderSlots<'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action'> & PropsStore<WorkspaceViewStoreHandle> & Omit<WorkspaceBrowserInjected, 'hooks'> & PropsHooks<WorkspaceBrowserInjected['hooks']> & PropsLocale<'workspace'>;
++export type WorkspaceBrowserProps = PropsRuntime<'sidebar.workspaces'> & PropsRenderSlots<'sidebar.workspaces.directoryFlow' | 'sidebar.workspaces.session.menu.item' | 'sidebar.workspaces.session.row.action' | 'sidebar.session.leading'> & PropsStore<WorkspaceViewStoreHandle> & Omit<WorkspaceBrowserInjected, 'hooks'> & PropsHooks<WorkspaceBrowserInjected['hooks']> & PropsLocale<'workspace'>;
+ /**
+  * Picker-private injected share. Pick semantics remain in the owner's onPick
+  * callback; this callback creates only the real Host Workspace. A type alias
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
 index ade79bb..feef33e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
