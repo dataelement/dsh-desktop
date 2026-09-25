@@ -312,7 +312,8 @@
     "productName": "DSH Desktop",
     "asar": true,
     "asarUnpack": [
-      "node_modules/**/*"
+      "node_modules/**/*",
+      ".build/ppt-runtime/packages/**/*"
     ],
     "npmRebuild": false,
     "compression": "maximum",

@@ -92,7 +92,8 @@ export async function prepareHostPluginSourcesPatch(
     try {
       sourceUrl = pathToFileURL(resolveHost(name)).href
     } catch (cause) {
-      throw new Error(`Desktop host plugin source resolution failed for ${name} from ${hostModuleAnchor}`, { cause })
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`Desktop host plugin source resolution failed for ${name} from ${hostModuleAnchor}: ${detail}`, { cause })
     }
     text = text.slice(0, start) + JSON.stringify(sourceUrl) + text.slice(end)
   }

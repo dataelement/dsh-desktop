@@ -43,6 +43,8 @@ describe('PPT source build contract', () => {
     const manifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'))
     const files = manifest.build.files
     expect(manifest.build.afterPack).toBe('scripts/verify-packaged-ppt-runtime.cjs')
+    // Builder evaluates unpack globs against source paths, before files.to.
+    expect(manifest.build.asarUnpack).toContain('.build/ppt-runtime/packages/**/*')
     expect(files).toContain('!node_modules/dsh-ppt{,/**}')
     expect(files).toContain('!node_modules/dsh-ppt-composer{,/**}')
     expect(files).toContainEqual(expect.objectContaining({

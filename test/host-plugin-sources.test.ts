@@ -74,7 +74,7 @@ describe('Desktop host plugin sources', () => {
     const previous = await readFile(output, 'utf8')
     await writeFile(patchPath, '- insert:\n    - id: missing\n      name: absent-host-plugin\n')
     await expect(prepareHostPluginSourcesPatch(home, patchPath, anchor)).rejects.toMatchObject({
-      message: `Desktop host plugin source resolution failed for absent-host-plugin from ${anchor}`,
+      message: expect.stringContaining(`Desktop host plugin source resolution failed for absent-host-plugin from ${anchor}: Cannot find module`),
       cause: { code: 'MODULE_NOT_FOUND' }
     })
     expect(await readFile(output, 'utf8')).toBe(previous)

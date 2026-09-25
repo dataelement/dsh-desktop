@@ -18,6 +18,8 @@ macOS uses one matrix job with native Apple Silicon and Intel runners. Both entr
 
 Concurrency is grouped by ref and target: a Windows-only retry can run while an all-platform run finishes macOS notarization. Runs for the same ref and target remain serialized; publication still requires `target=all` (or a release tag), and the single local UKey runner serializes Windows signing.
 
+Generated PPT packages must match `asarUnpack` by their staging source paths, not just their `node_modules` destinations. The afterPack gate runs the packaged Node executable against physical runtime directories, including native imports and all template previews. Electron's ASAR-aware reads cannot substitute for this check because the Windows Harness uses standalone Node.
+
 ## Local Windows UKey signing runner
 
 Windows packaging and signing run as separate jobs. The GitHub-hosted Windows runner builds an unsigned NSIS installer and uploads a short-lived workflow artifact. A local macOS ARM64 runner downloads it, scans every PE by content, preserves existing vendor signatures, and signs unsigned PEs with Jsign and the SafeNet UKey. It signs the NSIS extraction helper and generated uninstaller during repackaging, then signs the final installer, regenerates the blockmap and `latest.yml`, and uploads the signed release set. Any missing archive, invalid PE, signing failure or repackaging failure stops the run. A second Windows runner installs the final signed artifact into isolated directories, verifies every PE signature and Harness startup, repeats the same-path installation, and checks that Profile data survives. GitHub publication requires both signing and that installed-artifact smoke to pass.
