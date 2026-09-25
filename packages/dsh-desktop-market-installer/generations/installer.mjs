@@ -281,7 +281,11 @@ export async function installGeneration(options) {
       const sourceCopy = join(stagingDir, 'source', pluginName.replace(/^@/u, '').replace(/[/\\]/gu, '+'))
       await mkdir(join(stagingDir, 'source'), { recursive: true })
       await cp(options.sourceDirectory, sourceCopy, { recursive: true, dereference: true })
-      installSpec = `file:${sourceCopy}`
+      // pnpm resolves file: specs against the staging project. On Windows an
+      // absolute `file:C:\...` is treated as a relative suffix, which produced
+      // doubled absolute paths across drives and junction spellings; the
+      // project-relative file:./ form is portable across both (#563).
+      installSpec = `file:./${relative(stagingDir, sourceCopy).replace(/\\/gu, '/')}`
     }
     trace(`installing ${options.sourceSpec ?? pluginSpec} into staging`)
     // A git subpackage can declare a pnpm version different from its workspace
@@ -560,7 +564,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
 
 /** Verify every installed package's required runtime dependency stays in an allowed closure. */
 export async function verifyGenerationPeers(dshHome, generation) {
-  const { createRequire } = await import('node:module')
+  const { createRequire, isBuiltin } = await import('node:module')
   const generationRoot = await realpath(generation.directory)
   const closure = await realpath(installationClosureDir(dshHome)).catch(
     () => installationClosureDir(dshHome)
@@ -625,6 +629,10 @@ export async function verifyGenerationPeers(dshHome, generation) {
         !Object.hasOwn(dependencies, dependency) &&
         !Object.hasOwn(optionalDependencies, dependency)
       if (optionalPeerOnly && !isHostSingleton(dependency)) continue
+      // Node builtins are not files to look up; treating their bare ids as
+      // paths produced false "resolves outside the generation and installation
+      // closure" rejections (#563).
+      if (isBuiltin(dependency)) continue
       let resolved
       try {
         resolved = requireFromPackage.resolve(dependency)
