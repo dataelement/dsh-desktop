@@ -24,7 +24,7 @@ export function imageTool(ctx, settings) {
       prompt: { type: 'string', required: true, description: 'Visual subject, composition, palette, lighting, and space for document or slide text.' },
       style_context: { type: 'string', description: 'Shared brand, template and illustration style for consistency across the document.' },
       purpose: { type: 'string', enum: ['general', 'presentation', 'document', 'web', 'marketing'] },
-      aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4'], description: 'Target composition; actual dimensions are returned. OpenAI uses its closest supported canvas.' },
+      aspect_ratio: { type: 'string', enum: ['1:1', '16:9', '9:16', '4:3', '3:4'], description: 'Target composition; actual dimensions are returned. OpenAI uses its closest supported canvas; xAI and Agnes receive the ratio directly.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: {

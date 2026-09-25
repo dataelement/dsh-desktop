@@ -60,7 +60,7 @@ async function server() {
     res.writeHead(probe ? 400 : status, { 'content-type': 'application/json' })
     res.end(JSON.stringify(probe ? { error: { code: 'MissingParameter', message: 'The request is missing a required parameter: prompt.' } } : status !== 200 ? { error: { message: 'secret-echo-key' } } : malformed ? {} : req.url.endsWith('/images/generations')
       ? { data: [{ b64_json: png.toString('base64') }] }
-      : req.url.endsWith('/models') ? { data: [{ id: 'gpt-image-2.5-flare' }, { id: DEFAULTS.openai.model }, { id: 'gpt-image-2.5-flare' }, { id: 'gpt-5' }, { id: 'dall-e-3' }, { id: 'gpt-image-1', shutdown_date: '2020-01-01' }] } : { id: DEFAULTS.openai.model }))
+      : req.url.endsWith('/models') ? { data: [{ id: 'gpt-image-2.5-flare' }, { id: DEFAULTS.openai.model }, { id: DEFAULTS.xai.model }, { id: DEFAULTS.agnes.model }, { id: 'gpt-5' }, { id: 'dall-e-3' }, { id: 'gpt-image-1', shutdown_date: '2020-01-01' }] } : { id: DEFAULTS.openai.model }))
   })
   await new Promise((resolve, reject) => { http.once('error', reject); http.listen(0, '127.0.0.1', resolve) })
   cleanups.push(() => { http.closeAllConnections(); return new Promise(resolve => http.close(resolve)) })
@@ -82,14 +82,14 @@ async function fixture() {
 const saveInput = (provider, baseUrl, revision = 0) => ({ provider, baseUrl, model: DEFAULTS[provider].model, apiKey: 'test-image-key', revision })
 
 describe('image settings save and provider requests', () => {
-  it.each(['openai', 'bytedance'])('saves %s with exactly one non-generating request and redacts credentials', async provider => {
+  it.each(['openai', 'bytedance', 'xai', 'agnes'])('saves %s with exactly one non-generating request and redacts credentials', async provider => {
     const f = await fixture(); const s = await server()
     const result = await f.settings.save(saveInput(provider, s.baseUrl))
     expect(s.calls).toHaveLength(1)
-    expect(s.calls[0]).toMatchObject({ method: provider === 'openai' ? 'GET' : 'POST', auth: 'Bearer test-image-key' })
-    if (provider === 'openai') expect(s.calls[0].url).toContain('/models')
-    else expect(s.calls[0].body).toEqual({ model: DEFAULTS.bytedance.model })
-    expect(result.profiles[provider]).toMatchObject({ configured: true, validation: provider === 'openai' ? 'model' : 'connection' })
+    expect(s.calls[0]).toMatchObject({ method: provider === 'bytedance' ? 'POST' : 'GET', auth: 'Bearer test-image-key' })
+    if (provider === 'bytedance') expect(s.calls[0].body).toEqual({ model: DEFAULTS.bytedance.model })
+    else expect(s.calls[0].url).toContain('/models')
+    expect(result.profiles[provider]).toMatchObject({ configured: true, validation: provider === 'bytedance' ? 'connection' : 'model' })
     expect(JSON.stringify(result)).not.toContain('test-image-key')
     expect(JSON.stringify(f.log.mock.calls)).not.toContain('test-image-key')
     expect((await f.settings.active()).provider).toBe(provider)
@@ -150,6 +150,20 @@ describe('image settings save and provider requests', () => {
     const cancelled = new AbortController(); cancelled.abort()
     await expect(validateConnection('openai', { baseUrl: s.baseUrl, model: DEFAULTS.openai.model }, 'key', { signal: cancelled.signal })).rejects.toMatchObject({ code: 'CANCELLED' })
   })
+  it('validates xAI and Agnes through the OpenAI-compatible model list without a generation request', async () => {
+    const s = await server()
+    expect(await validateConnection('xai', { ...profile('xai'), baseUrl: s.baseUrl }, 'key')).toBe('model')
+    expect(await validateConnection('agnes', { ...profile('agnes'), baseUrl: s.baseUrl }, 'key')).toBe('model')
+    // A custom endpoint ID may legitimately be absent from the account's list.
+    expect(await validateConnection('xai', { baseUrl: s.baseUrl, model: 'ep-custom-x' }, 'key')).toBe('connection')
+    expect(s.calls).toHaveLength(3)
+    expect(s.calls.every(call => call.method === 'GET' && call.url.endsWith('/models'))).toBe(true)
+    expect(s.calls.every(call => !call.body || !Object.hasOwn(call.body, 'prompt'))).toBe(true)
+    s.malformed()
+    await expect(validateConnection('agnes', { ...profile('agnes'), baseUrl: s.baseUrl }, 'key')).rejects.toMatchObject({ code: 'RESPONSE' })
+    s.setStatus(401)
+    await expect(validateConnection('xai', { ...profile('xai'), baseUrl: s.baseUrl }, 'key')).rejects.toMatchObject({ code: 'AUTH' })
+  })
   it('rejects redirects without forwarding a key to the redirect target', async () => {
     const source = await server(); const target = await server()
     source.redirect(target.baseUrl)
@@ -176,6 +190,8 @@ describe('image settings save and provider requests', () => {
     expect(result).toMatchObject({ revision: 0, provider: 'bytedance', writable: true })
     expect(result.profiles.bytedance.configured).toBe(false)
     expect(result.profiles.openai.configured).toBe(false)
+    expect(result.profiles.xai.configured).toBe(false)
+    expect(result.profiles.agnes.configured).toBe(false)
   })
   it('rejects settings reads and saves when the credential store cannot be read', async () => {
     const f = await fixture()
@@ -207,6 +223,8 @@ describe('image settings save and provider requests', () => {
     expect(s.calls.at(-1).auth).toBe('Bearer test-image-key')
     await expect(f.settings.models({ ...saveInput('openai', 'https://other.example/v1', 1), apiKey: '' })).rejects.toMatchObject({ code: 'KEY_REQUIRED' })
     await expect(f.settings.models(saveInput('bytedance', s.baseUrl, 1))).rejects.toMatchObject({ code: 'MODEL_DISCOVERY' })
+    await expect(f.settings.models(saveInput('xai', s.baseUrl, 1))).rejects.toMatchObject({ code: 'MODEL_DISCOVERY' })
+    await expect(f.settings.models(saveInput('agnes', s.baseUrl, 1))).rejects.toMatchObject({ code: 'MODEL_DISCOVERY' })
     expect(s.calls).toHaveLength(3)
   })
   it('maps provider canvas parameters independently and bounds streamed responses', async () => {
@@ -215,6 +233,12 @@ describe('image settings save and provider requests', () => {
     expect(generationBody('openai', profile('openai'), args)).not.toHaveProperty('response_format')
     expect(generationBody('bytedance', profile('bytedance'), args)).toMatchObject({ size: '2560x1440', response_format: 'b64_json' })
     expect(generationBody('bytedance', profile('bytedance'), args)).not.toHaveProperty('quality')
+    expect(generationBody('xai', profile('xai'), args)).toMatchObject({ n: 1, response_format: 'b64_json', aspect_ratio: '16:9' })
+    expect(generationBody('xai', profile('xai'), args)).not.toHaveProperty('size')
+    expect(generationBody('agnes', profile('agnes'), args)).toMatchObject({ size: '2K', ratio: '16:9', return_base64: true })
+    expect(generationBody('agnes', profile('agnes'), args)).not.toHaveProperty('response_format')
+    expect(() => generationBody('xai', profile('xai'), { prompt: 'A mountain', aspect_ratio: '21:9' })).toThrow(ImageError)
+    expect(() => generationBody('agnes', profile('agnes'), { prompt: 'A mountain', aspect_ratio: '21:9' })).not.toThrow()
     await expect(readBounded(new Response('too much'), 2)).rejects.toMatchObject({ code: 'TOO_LARGE' })
   })
   it.each([...MODEL_CATALOG.bytedance.models, 'ep-custom'])('generates every supported aspect ratio with the single-image contract for %s', async model => {
@@ -223,6 +247,25 @@ describe('image settings save and provider requests', () => {
       expect(await generate('bytedance', { baseUrl: s.baseUrl, model }, 'test-image-key', { prompt: 'A flower', aspect_ratio })).toEqual(s.png)
     }
     expect(s.calls).toHaveLength(5)
+  })
+  it.each(['xai', 'agnes'])('generates every supported aspect ratio for %s with its ratio contract', async provider => {
+    const s = await server()
+    const spec = { baseUrl: s.baseUrl, model: DEFAULTS[provider].model }
+    for (const aspect_ratio of ['1:1', '16:9', '9:16', '4:3', '3:4']) {
+      expect(await generate(provider, spec, 'test-image-key', { prompt: 'A flower', aspect_ratio })).toEqual(s.png)
+    }
+    expect(s.calls).toHaveLength(5)
+    expect(s.calls.every(call => call.method === 'POST' && call.url.endsWith('/images/generations'))).toBe(true)
+    const body = s.calls[0].body
+    if (provider === 'xai') {
+      expect(body).toMatchObject({ model: DEFAULTS.xai.model, aspect_ratio: '1:1', n: 1, response_format: 'b64_json' })
+      expect(body).not.toHaveProperty('size')
+      expect(body).not.toHaveProperty('watermark')
+    } else {
+      expect(body).toMatchObject({ model: DEFAULTS.agnes.model, size: '2K', ratio: '1:1', return_base64: true })
+      expect(body).not.toHaveProperty('n')
+      expect(body).not.toHaveProperty('response_format')
+    }
   })
   it('reports the rejected parameter and request ID through ToolRuntime while keeping provider echoes private', async () => {
     const f = await fixture(); const s = await server()
@@ -269,7 +312,7 @@ describe('image tool and durable Office assets', () => {
     })
     expect(writerEnvironment({ env, platform: 'darwin', versions: { node: '24.9.0' } }).ELECTRON_RUN_AS_NODE).toBeUndefined()
   })
-  it.each(['openai', 'bytedance'])('executes %s through ToolRuntime and writes a verifiable PNG', async provider => {
+  it.each(['openai', 'bytedance', 'xai', 'agnes'])('executes %s through ToolRuntime and writes a verifiable PNG', async provider => {
     const f = await fixture(); const s = await server()
     await f.settings.save(saveInput(provider, s.baseUrl))
     f.ctx.tools.register(imageTool(f.services, f.settings))
