@@ -522,18 +522,18 @@ jobs:
           # The runner exports lowercase proxy variables separately on macOS.
           # A step env map cannot specify both cases in GitHub workflow YAML.
           printf 'http_proxy=\nhttps_proxy=\nall_proxy=\nno_proxy=*\n' >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows-x64-unsigned
-          path: ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release
-          run-id: ${{ inputs.mode == 'resign' && inputs.unsigned_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download verified Windows signing inputs in parallel
         env:
-          # The runner's loopback proxy transfers large artifacts at only tens
-          # of KB/s; direct GitHub access is available from this host.
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.mode == 'resign' && inputs.unsigned_run_id || github.run_id }}
           HTTP_PROXY: ''
           HTTPS_PROXY: ''
           ALL_PROXY: ''
+        run: |
+          node scripts/download-artifact-ranges.mjs "$GITHUB_REPOSITORY" "$SOURCE_RUN_ID" \
+            windows-x64-unsigned "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
+          unzip -q "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip" -d "$WINDOWS_SIGNING_WORK_DIR/release"
+          rm "$WINDOWS_SIGNING_WORK_DIR/unsigned.zip"
       - name: Check reused unsigned package version
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resign'
         run: |
