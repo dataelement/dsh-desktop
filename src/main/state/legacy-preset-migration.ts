@@ -65,20 +65,29 @@ export async function migrateLegacyAgentPresets(dshHome: string, note: (line: st
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
     throw error
   })
-  const start = previous.indexOf(START)
-  const end = previous.indexOf(END)
+  // A fresh Profile may contain comments followed by `[]`. Appending block
+  // entries after that flow sequence creates a second YAML root document.
+  const previousDocument = parseDocument(previous)
+  const emptyFlowList = previousDocument.errors.length === 0 && isSeq(previousDocument.contents) &&
+    previousDocument.contents.items.length === 0 && previousDocument.contents.flow
+  const emptyListRange = emptyFlowList ? previousDocument.contents?.range : undefined
+  const base = emptyListRange && previous.slice(emptyListRange[0], emptyListRange[1]).trim() === '[]'
+    ? previous.slice(0, emptyListRange[0]) + previous.slice(emptyListRange[1])
+    : previous
+  const start = base.indexOf(START)
+  const end = base.indexOf(END)
   if ((start === -1) !== (end === -1) || (start !== -1 && end < start)) {
     throw new Error('legacy preset section in the web Profile patch is incomplete')
   }
   // A converted row belongs to the new Profile from now on. Preserve edits
   // made through the new editor; only append legacy IDs not yet present.
   const existingIds = new Set(
-    [...previous.matchAll(/^(?:- id:|    - id:) preset-([a-z0-9-]+)\s*$/gmu)].map((match) => match[1])
+    [...base.matchAll(/^(?:- id:|    - id:) preset-([a-z0-9-]+)\s*$/gmu)].map((match) => match[1])
   )
   const pending = sections.filter(({ id }) => !existingIds.has(id))
   if (pending.length === 0) return
-  const generated = start === -1 ? '' : previous.slice(start + START.length, end).trim()
-  const withoutGenerated = start === -1 ? previous : previous.slice(0, start) + previous.slice(end + END.length).replace(/^\r?\n/u, '')
+  const generated = start === -1 ? '' : base.slice(start + START.length, end).trim()
+  const withoutGenerated = start === -1 ? base : base.slice(0, start) + base.slice(end + END.length).replace(/^\r?\n/u, '')
   const generatedRows = [generated, ...pending.map(({ patch }) => patch.trimEnd())].filter(Boolean).join('\n\n')
   const next = `${withoutGenerated.trimEnd()}\n\n${START}\n${generatedRows}\n${END}\n`
   if (next === previous) return

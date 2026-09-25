@@ -76,6 +76,27 @@ it('updates a shipped preset row and leaves an invalid legacy preset out of the 
   expect(standard?.config?.plugins?.map((entry) => entry.id)).toEqual(['persona'])
 })
 
+it('appends a legacy preset to a fresh Profile patch with comments and an empty flow list', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-'))
+  homes.push(home)
+  const source = join(home, '.agent-presets', 'custom')
+  const profile = join(home, 'profiles', 'web')
+  await mkdir(source, { recursive: true })
+  await mkdir(profile, { recursive: true })
+  await writeFile(join(source, 'agent.cordis.yml'), '- id: persona\n  name: "@deepseek-ai/dsh-persona"\n')
+  const patchPath = join(profile, 'cordis.patch.yml')
+  await writeFile(patchPath, '# Existing Profile comment\n[]\n')
+
+  await migrateLegacyAgentPresets(home, () => {})
+  const patch = await readFile(patchPath, 'utf8')
+  expect(patch).toContain('# Existing Profile comment')
+  expect(patch).toContain('id: preset-custom')
+  expect(patch).not.toMatch(/^\[\]$/mu)
+  expect(jsYaml.load(patch, { schema: entryListSchema })).toBeInstanceOf(Array)
+  await migrateLegacyAgentPresets(home, () => {})
+  expect(await readFile(patchPath, 'utf8')).toBe(patch)
+})
+
 it('publishes a migrated custom preset through the real Harness web registry', async () => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-legacy-preset-runtime-'))
   homes.push(home)
