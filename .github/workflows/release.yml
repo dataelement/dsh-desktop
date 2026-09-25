@@ -51,7 +51,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: desktop-release-${{ github.ref }}
+  # Platform-only retries have independent artifacts and never publish.
+  group: desktop-release-${{ github.ref }}-${{ inputs.target || 'all' }}
   cancel-in-progress: false
 
 jobs:
