@@ -3,6 +3,33 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 export const STORAGE_FILENAME = 'desktop-storage.json'
+const WORKSPACE_VIEW_KEY = 'dsh.workspace.view.v5'
+const WORKSPACE_VIEW_INDEX_KEYS = [
+  'groupExpansion',
+  'sessionOrderByAccount',
+  'sessionUpdatedAtByAccount'
+] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function migrateWorkspaceView(value: string): string {
+  try {
+    const view = JSON.parse(value) as unknown
+    if (!isRecord(view)) return value
+    const migrated = { ...view }
+    let changed = false
+    for (const key of WORKSPACE_VIEW_INDEX_KEYS) {
+      if (isRecord(migrated[key])) continue
+      migrated[key] = {}
+      changed = true
+    }
+    return changed ? JSON.stringify(migrated) : value
+  } catch {
+    return value
+  }
+}
 
 export type DesktopStorageAction =
   | { type: 'set'; key: string; val: string }
@@ -166,11 +193,10 @@ export class DesktopStorageManager {
       const parsed = JSON.parse(raw)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         for (const [k, v] of Object.entries(parsed)) {
-          if (typeof v === 'string') {
-            this.memoryStore.set(k, v)
-          } else {
-            this.memoryStore.set(k, String(v))
-          }
+          const value = typeof v === 'string' ? v : String(v)
+          const migrated = k === WORKSPACE_VIEW_KEY ? migrateWorkspaceView(value) : value
+          this.memoryStore.set(k, migrated)
+          if (migrated !== value) this.isDirty = true
         }
       }
     } catch (error) {

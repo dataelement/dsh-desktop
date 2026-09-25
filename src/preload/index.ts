@@ -10,6 +10,7 @@ import {
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebarLayout } from './windows-titlebar'
+import { applySafeModeFrameLeft } from './safe-mode-frame-layout'
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
@@ -425,6 +426,11 @@ function syncSafeModeFrame(): void {
     document.documentElement.appendChild(host)
   }
   safeModeFrameHost = host
+  // The manager can be sent while the hidden Harness window is being shown.
+  // requestAnimationFrame is suspended in hidden windows, so position the
+  // first frame synchronously or it can cover the session list indefinitely.
+  layoutSidebarRoot = liveElement(layoutSidebarRoot, '[data-dsh-sidebar-root]')
+  applySafeModeFrameLeft(host, layoutSidebarRoot)
   const frame = host.firstElementChild as HTMLIFrameElement
   if (frame.src !== safeModeFrameUrl) {
     safeModeFrameLoaded = false
@@ -517,9 +523,7 @@ function positionSafeModeFrame(): void {
       layoutResizeObserver.observe(root)
       layoutObservedRoot = root
     }
-    const left = root ? Math.max(0, Math.round(root.getBoundingClientRect().right)) : 0
-    const value = `${left}px`
-    if (host.style.left !== value) host.style.left = value
+    applySafeModeFrameLeft(host, root)
   })
 }
 window.addEventListener('resize', () => positionSafeModeFrame())
