@@ -1,0 +1,606 @@
+pageType: process
+background:
+  type: solid
+  color: $paper
+notes: |
+  下一阶段的竞争能力不是单一流量、仓库或内容能力，而是一套跨职能经营系统：用需求信号选择国家和品类，用商品毛利管理供给，用内容和客户资产推动复购，用仓配售后兑现体验，再用合规和现金约束扩张节奏。
+elements:
+  - elementId: p08-top-rule
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 960
+      - 12
+    shapeName: rect
+    fill:
+      type: solid
+      color: $yellow
+    border:
+      color: $yellow
+      width: 0
+  - elementId: p08-kicker
+    elementType: text
+    bounds:
+      - 54
+      - 32
+      - 420
+      - 18
+    content:
+      style: $section
+      text: 06 / NEXT-STAGE CAPABILITIES
+  - elementId: p08-title
+    elementType: text
+    bounds:
+      - 52
+      - 58
+      - 850
+      - 42
+    content:
+      style: $pageTitle
+      text: Build a connected operating system
+  - elementId: p08-control-rail
+    elementType: shape
+    bounds:
+      - 54
+      - 128
+      - 852
+      - 40
+    shapeName: rect
+    fill:
+      type: solid
+      color: $graphite
+    border:
+      color: $graphite
+      width: 0
+  - elementId: p08-control-rail-label
+    elementType: text
+    bounds:
+      - 72
+      - 138
+      - 180
+      - 20
+    content:
+      text: CONTROL TOWER
+      fontFamily: &ref_0
+        latin: Arial
+        ea: Noto Sans CJK SC
+        mac: PingFang SC
+        win: Microsoft YaHei
+      fontSize: 11
+      color: $yellow
+      bold: true
+  - elementId: p08-control-rail-copy
+    elementType: text
+    bounds:
+      - 278
+      - 138
+      - 606
+      - 20
+    content:
+      text: 'Weekly: Demand and delivery / Monthly: P&L and cash / Quarterly: Network and organization'
+      fontFamily: *ref_0
+      fontSize: 11
+      color: $white
+      bold: true
+      align:
+        - right
+        - middle
+  - elementId: p08-card-01
+    elementType: shape
+    bounds:
+      - 54
+      - 190
+      - 154
+      - 230
+    shapeName: rect
+    fill:
+      type: solid
+      color: $surface
+    border:
+      color: $graphite
+      width: 1.2
+  - elementId: p08-card-01-tag
+    elementType: shape
+    bounds:
+      - 54
+      - 190
+      - 154
+      - 28
+    shapeName: rect
+    fill:
+      type: solid
+      color: $yellow
+    border:
+      color: $yellow
+      width: 0
+  - elementId: p08-card-01-no
+    elementType: text
+    bounds:
+      - 68
+      - 197
+      - 126
+      - 14
+    content:
+      text: MODULE 01 / SIGNAL
+      fontFamily: *ref_0
+      fontSize: 8
+      color: $graphite
+      bold: true
+  - elementId: p08-card-01-title
+    elementType: text
+    bounds:
+      - 70
+      - 238
+      - 122
+      - 40
+    content:
+      text: Demand
+      fontFamily: *ref_0
+      fontSize: 17
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-01-body
+    elementType: text
+    bounds:
+      - 70
+      - 296
+      - 122
+      - 86
+    content:
+      text: |-
+        Country × Category
+        Conversion × Retention
+        Returns × Delivery
+      fontFamily: *ref_0
+      fontSize: 11
+      color: $slate
+      lineHeight: 1.55
+      align:
+        - center
+        - middle
+  - elementId: p08-card-01-out
+    elementType: text
+    bounds:
+      - 70
+      - 390
+      - 122
+      - 16
+    content:
+      text: 'Output: Entry priority'
+      fontFamily: *ref_0
+      fontSize: 9
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-02
+    elementType: shape
+    bounds:
+      - 226
+      - 190
+      - 154
+      - 230
+    shapeName: rect
+    fill:
+      type: solid
+      color: $surface
+    border:
+      color: $graphite
+      width: 1.2
+  - elementId: p08-card-02-tag
+    elementType: shape
+    bounds:
+      - 226
+      - 190
+      - 154
+      - 28
+    shapeName: rect
+    fill:
+      type: solid
+      color: $steel
+    border:
+      color: $steel
+      width: 0
+  - elementId: p08-card-02-no
+    elementType: text
+    bounds:
+      - 240
+      - 197
+      - 126
+      - 14
+    content:
+      text: MODULE 02 / OFFER
+      fontFamily: *ref_0
+      fontSize: 8
+      color: $graphite
+      bold: true
+  - elementId: p08-card-02-title
+    elementType: text
+    bounds:
+      - 242
+      - 238
+      - 122
+      - 40
+    content:
+      text: Product margin
+      fontFamily: *ref_0
+      fontSize: 17
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-02-body
+    elementType: text
+    bounds:
+      - 242
+      - 296
+      - 122
+      - 86
+    content:
+      text: |-
+        Landed cost
+        Price band
+        Mix and replenishment
+      fontFamily: *ref_0
+      fontSize: 11
+      color: $slate
+      lineHeight: 1.55
+      align:
+        - center
+        - middle
+  - elementId: p08-card-02-out
+    elementType: text
+    bounds:
+      - 242
+      - 390
+      - 122
+      - 16
+    content:
+      text: 'Output: Viable SKU'
+      fontFamily: *ref_0
+      fontSize: 9
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-03
+    elementType: shape
+    bounds:
+      - 398
+      - 190
+      - 154
+      - 230
+    shapeName: rect
+    fill:
+      type: solid
+      color: $graphite
+    border:
+      color: $graphite
+      width: 1.2
+  - elementId: p08-card-03-tag
+    elementType: shape
+    bounds:
+      - 398
+      - 190
+      - 154
+      - 28
+    shapeName: rect
+    fill:
+      type: solid
+      color: $yellow
+    border:
+      color: $yellow
+      width: 0
+  - elementId: p08-card-03-no
+    elementType: text
+    bounds:
+      - 412
+      - 197
+      - 126
+      - 14
+    content:
+      text: MODULE 03 / CUSTOMER
+      fontFamily: *ref_0
+      fontSize: 8
+      color: $graphite
+      bold: true
+  - elementId: p08-card-03-title
+    elementType: text
+    bounds:
+      - 414
+      - 238
+      - 122
+      - 40
+    content:
+      text: Content & customers
+      fontFamily: *ref_0
+      fontSize: 17
+      color: $white
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-03-body
+    elementType: text
+    bounds:
+      - 414
+      - 296
+      - 122
+      - 86
+    content:
+      text: |-
+        Local relevance
+        Membership
+        Repeat business
+      fontFamily: *ref_0
+      fontSize: 11
+      color: $steel
+      lineHeight: 1.55
+      align:
+        - center
+        - middle
+  - elementId: p08-card-03-out
+    elementType: text
+    bounds:
+      - 414
+      - 390
+      - 122
+      - 16
+    content:
+      text: 'Output: Lifetime value'
+      fontFamily: *ref_0
+      fontSize: 9
+      color: $yellow
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-04
+    elementType: shape
+    bounds:
+      - 570
+      - 190
+      - 154
+      - 230
+    shapeName: rect
+    fill:
+      type: solid
+      color: $surface
+    border:
+      color: $graphite
+      width: 1.2
+  - elementId: p08-card-04-tag
+    elementType: shape
+    bounds:
+      - 570
+      - 190
+      - 154
+      - 28
+    shapeName: rect
+    fill:
+      type: solid
+      color: $steel
+    border:
+      color: $steel
+      width: 0
+  - elementId: p08-card-04-no
+    elementType: text
+    bounds:
+      - 584
+      - 197
+      - 126
+      - 14
+    content:
+      text: MODULE 04 / FULFILL
+      fontFamily: *ref_0
+      fontSize: 8
+      color: $graphite
+      bold: true
+  - elementId: p08-card-04-title
+    elementType: text
+    bounds:
+      - 586
+      - 238
+      - 122
+      - 40
+    content:
+      text: Fulfillment & service
+      fontFamily: *ref_0
+      fontSize: 17
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-04-body
+    elementType: text
+    bounds:
+      - 586
+      - 296
+      - 122
+      - 86
+    content:
+      text: |-
+        Availability
+        Delivery promise
+        Returns loop
+      fontFamily: *ref_0
+      fontSize: 11
+      color: $slate
+      lineHeight: 1.55
+      align:
+        - center
+        - middle
+  - elementId: p08-card-04-out
+    elementType: text
+    bounds:
+      - 586
+      - 390
+      - 122
+      - 16
+    content:
+      text: 'Output: Reliability'
+      fontFamily: *ref_0
+      fontSize: 9
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-05
+    elementType: shape
+    bounds:
+      - 742
+      - 190
+      - 164
+      - 230
+    shapeName: rect
+    fill:
+      type: solid
+      color: $surface
+    border:
+      color: $graphite
+      width: 1.2
+  - elementId: p08-card-05-tag
+    elementType: shape
+    bounds:
+      - 742
+      - 190
+      - 164
+      - 28
+    shapeName: rect
+    fill:
+      type: solid
+      color: $yellow
+    border:
+      color: $yellow
+      width: 0
+  - elementId: p08-card-05-no
+    elementType: text
+    bounds:
+      - 756
+      - 197
+      - 136
+      - 14
+    content:
+      text: MODULE 05 / CONTROL
+      fontFamily: *ref_0
+      fontSize: 8
+      color: $graphite
+      bold: true
+  - elementId: p08-card-05-title
+    elementType: text
+    bounds:
+      - 758
+      - 238
+      - 132
+      - 40
+    content:
+      text: Compliance & cash
+      fontFamily: *ref_0
+      fontSize: 17
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-card-05-body
+    elementType: text
+    bounds:
+      - 758
+      - 296
+      - 132
+      - 86
+    content:
+      text: |-
+        Tax and certification
+        Working capital
+        Audit and liability
+      fontFamily: *ref_0
+      fontSize: 11
+      color: $slate
+      lineHeight: 1.55
+      align:
+        - center
+        - middle
+  - elementId: p08-card-05-out
+    elementType: text
+    bounds:
+      - 758
+      - 390
+      - 132
+      - 16
+    content:
+      text: 'Output: Growth boundary'
+      fontFamily: *ref_0
+      fontSize: 9
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-result-band
+    elementType: shape
+    bounds:
+      - 54
+      - 442
+      - 852
+      - 48
+    shapeName: rect
+    fill:
+      type: solid
+      color: $yellow
+    border:
+      color: $graphite
+      width: 2
+  - elementId: p08-result-band-t
+    elementType: text
+    bounds:
+      - 76
+      - 453
+      - 808
+      - 26
+    content:
+      text: One decision rhythm connects teams and makes capabilities repeatable across markets.
+      fontFamily: *ref_0
+      fontSize: 14
+      color: $graphite
+      bold: true
+      align:
+        - center
+        - middle
+  - elementId: p08-footer
+    elementType: text
+    bounds:
+      - 54
+      - 506
+      - 704
+      - 14
+    content:
+      text: 'Framework: Demand → Margin → Customers → Fulfillment → Compliance and cash'
+      fontFamily: *ref_0
+      fontSize: 8
+      color: $slate
+  - elementId: p08-page
+    elementType: text
+    bounds:
+      - 882
+      - 504
+      - 28
+      - 16
+    content:
+      text: '08'
+      fontFamily: *ref_0
+      fontSize: 10
+      color: $graphite
+      bold: true
+      align:
+        - right
+        - top

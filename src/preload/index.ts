@@ -572,13 +572,6 @@ contextBridge.exposeInMainWorld(
   })
 )
 
-contextBridge.exposeInMainWorld(
-  'dshWebImport',
-  Object.freeze({
-    action: (action: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('web-import:action', action)
-  })
-)
-
 
 function mount(): void {
   if (document.getElementById(ROOT_ID)) return

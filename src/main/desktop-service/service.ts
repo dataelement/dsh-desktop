@@ -53,28 +53,6 @@ export function tailLog(path: string): { lines: string[]; logStatus: 'ok' | 'mis
   } catch (error) { return { lines: [], logStatus: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unreadable' } }
   finally { if (fd !== undefined) closeSync(fd) }
 }
-export function isHealthySessionLog(lines: string[]): boolean {
-  if (lines.length === 0) return false
-  const tail = lines.slice(-30)
-  const hasError = tail.some(line =>
-    /render-process-gone:\s*reason=crashed/i.test(line) ||
-    /GPU process gone:\s*reason=crashed/i.test(line) ||
-    /Harness entry failed/i.test(line) ||
-    /DSH entry failed/i.test(line) ||
-    /uncaught exception/i.test(line) ||
-    /unhandled rejection/i.test(line) ||
-    /\bfatal\b/i.test(line) ||
-    /STATUS_ACCESS_VIOLATION/i.test(line) ||
-    /\(exit code [^0]\)/i.test(line)
-  )
-  if (hasError) return false
-  return lines.some(line =>
-    line.includes('Harness is ready') ||
-    line.includes('cleared 1 stale Harness authentication cookie') ||
-    line.includes('dsh web:')
-  )
-}
-
 export class DesktopService {
   readonly installationId: string
   readonly platform: DesktopPlatform

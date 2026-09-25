@@ -9,8 +9,6 @@ import {
   ensureProfilePnpmShim,
   removeProfilePluginWithDsh
 } from '../src/main/runtime/profile-plugin-command'
-import { resolveTestNodeExecutable } from './node-executable'
-const TEST_NODE_EXECUTABLE = resolveTestNodeExecutable()
 
 const existingRunnerPath = join(
   __dirname,
@@ -69,7 +67,7 @@ describe('profile-plugin-command', () => {
       {
         dshHome: testDir,
         dshEntryPath,
-        nodeExecutablePath: TEST_NODE_EXECUTABLE,
+        nodeExecutablePath: process.execPath,
         pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
         environment: process.env
       },
@@ -100,7 +98,7 @@ describe('profile-plugin-command', () => {
       {
         dshHome: testDir,
         dshEntryPath,
-        nodeExecutablePath: TEST_NODE_EXECUTABLE,
+        nodeExecutablePath: process.execPath,
         pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
         environment: process.env
       },

@@ -1,0 +1,1712 @@
+{
+  "definition": {
+    "id": "dsh-work-curated-nordic-operating-report",
+    "category": "work",
+    "sourceCollection": "curated",
+    "slug": "nordic-operating-report",
+    "name": "Nordic Operating Report",
+    "variantLabel": "DSH",
+    "description": "原创北欧年度经营报告模板，适合管理层经营复盘、国际扩张、跨境履约、市场进入、能力建设与行动计划。",
+    "previewTitle": "Nordic Operating Report",
+    "previewSubtitle": "12 editable layouts",
+    "titleFontFace": "HarmonyOS Sans SC",
+    "bodyFontFace": "HarmonyOS Sans SC",
+    "palette": {
+      "background": "F3F0EA",
+      "surface": "FFFFFF",
+      "text": "0B2A3A",
+      "muted": "657882",
+      "accent": "42C7E7",
+      "secondary": "E8B8A8"
+    },
+    "referenceDirectory": "work/curated-nordic-operating-report",
+    "representativeSlides": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "referenceWidth": 1280,
+    "referenceHeight": 7272,
+    "referencePageCount": 12,
+    "previewSlides": [
+      10,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      11,
+      12
+    ],
+    "designSha256": "6d9f24f36bc6bcba30bff7596c7150843175ca725222a940805cf64de81b29cd",
+    "referenceSha256": "346e50c15beb8fe78f50e2ec5eae228e04599d2b85bf5dc5c3bb44bb696f9b55",
+    "localizedNames": {
+      "en": "Nordic Operating Report",
+      "zh": "Nordic Operating Report"
+    },
+    "previewLanguage": "en",
+    "fonts": {
+      "en": {
+        "title": "Arial",
+        "body": "Arial"
+      },
+      "zh": {
+        "title": "PingFang SC",
+        "body": "PingFang SC"
+      },
+      "fallbacks": {
+        "zh": {
+          "macOS": {
+            "title": "PingFang SC",
+            "body": "PingFang SC"
+          },
+          "Windows": {
+            "title": "Microsoft YaHei",
+            "body": "Microsoft YaHei"
+          },
+          "Linux": {
+            "title": "Noto Sans CJK SC",
+            "body": "Noto Sans CJK SC"
+          }
+        }
+      }
+    }
+  },
+  "semantics": {
+    "palette": {
+      "background": "F3F0EA",
+      "surface": "D9E8ED",
+      "text": "0B2A3A",
+      "muted": "657882",
+      "accent": "42C7E7",
+      "secondary": "002C43"
+    },
+    "source": {
+      "fileName": "nordic-operating-report-reference.jpg",
+      "sha256": "6d9f24f36bc6bcba30bff7596c7150843175ca725222a940805cf64de81b29cd",
+      "slideCount": 12,
+      "averageTextBlocks": 19,
+      "averageCharacters": 518,
+      "visualGrammar": "orange-data",
+      "recommendedDensity": "medium",
+      "designSummary": "# Nordic Operating Report · WorkBuddy Original DESIGN SYSTEM\n\nThis original 16:9 system turns management evidence into a restrained annual operating report. Warm paper, deep steel blue, mist-blue rules, pale-clay risk cues, precise grids, and direct data placement create a formal reading experience without dashboard decoration. Every visible item in the reference deck is an editable PPTD object.\n\n## Communication model\n\nUse this system for annual operating reviews, international expansion, supply-chain decisions, market-entry portfolios, capability planning, and management action decks.\n\n1. Lead each page with a management judgment rather than a neutral topic label.\n2. Place years, units, updated-statistics labels, public-data dates, and derived-calculation notes beside the evidence.\n3. Give each page one primary reading structure: a ledger, split ratio, concentration comparison, operating loop, decision matrix, capability register, or investment staircase.\n4. Use cyan for the current signal, pale clay for risk or irreversible commitment, and deep steel blue for the operating system.\n5. Retain a quiet source line and page register on analytical pages.\n\n## Visual signature\n\n- Warm paper `#F3F0EA`\n- White `#FFFFFF`\n- Deep steel blue `#002C43`\n- Ink blue `#0B2A3A`\n- Signal cyan `#42C7E7`\n- Mist blue `#D9E8ED`\n- Pale clay `#E8B8A8`\n- Muted blue gray `#657882`\n- Rule blue gray `#AFC2C9`\n\nNormal analytical pages keep warm paper or mist blue as the dominant field. Navy pages act as structural pauses for export, fulfilment, entry, and action. Cyan marks a current signal or active path. Clay marks concentration risk, reverse logistics, or increased commitment.\n\n## Typography and grid\n\n- Chinese: `HarmonyOS Sans SC`, with a compatible system CJK sans-serif fallback.\n- Latin labels and large metrics: `Arial`.\n- Canvas: PPTD v2, `960 × 540`, 16:9.\n- Default outer margin: 46–52 px, with a 10–14 px left registration rail.\n- Page titles: 31–34 px, bold, left aligned.\n- Running labels: 8–9 px uppercase Latin with modest tracking.\n- Body and evidence notes: 8.5–11.5 px with short lines and visible grouping.\n- Use square geometry, hairline rules, direct chart placement, and clear column axes. Avoid rounded-card walls, gradients, glow, soft shadows, and decorative 3D objects.\n\n## Reusable components\n\n1. **Registration rail**: one narrow left strip that identifies the report family and stabilizes page alignment.\n2. **Operating ledger**: a native chart plus a metric register and one full-width evidence strip.\n3. **Ratio field**: one uninterrupted horizontal proportion with direct labels for export/import or comparable structures.\n4. **Concentration comparison**: mirrored market bars with country labels, totals, and one explicit risk interpretation.\n5. **Operating loop**: simple native nodes connected by a line, followed by one cross-cutting control band.\n6. **Decision register**: a native table or ruled rows comparing responsibility, investment, output, and review frequency.\n7. **Commitment staircase**: progressively taller fields representing increasing local control and irreversible cost.\n\n## Charts and tables\n\n- Charts sit directly on the page field without a floating card or shadow.\n- Use navy for structural series, cyan for the current signal, mist for secondary context, and clay for risk or commitment.\n- Keep axes minimal, grid lines fine, and units visible near the chart title.\n- Tables use a navy header, paper cells, hairline borders, and no alternating decorative fill.\n- When a derived value appears, label it as calculated from disclosed customs data.\n\n## Page rhythm\n\nThe ten-page reference deck covers a thesis cover, executive operating ledger, scale trajectory, export structure, market concentration, overseas-warehouse loop, channel portfolio, capability system, market-entry staircase, and audience-specific actions. Warm analytical pages alternate with navy structural pages. The same grid and furniture recur, while the dominant visual form changes with each management question.\n\n## Prohibited treatments\n\n- Generic icon walls, stock-photo heroes, and decorative dashboards.\n- Rounded rectangles as the default grouping device.\n- Blue-purple gradients, glass effects, glow, soft shadows, and 3D charts.\n- Large decorative circles or abstract AI-generated ornaments.\n- Rasterized text, charts, tables, arrows, or process diagrams that PPTD can represent natively.\n\n## Clean-room reference\n\nThe public annual report was used only to observe broad annual-report conventions: grid discipline, thin rules, information hierarchy, direct chart placement, and compact metadata. All pages, wording, charts, and vector forms were rebuilt as original WorkBuddy artifacts. No external template file, photograph, logo, font file, wording, or proprietary brand asset is included.\n\n## Bilingual typography\n\nEnglish previews: source/. Chinese examples: source-zh/. English title/body: Arial / Arial. Chinese macOS: PingFang SC / PingFang SC; Windows: Microsoft YaHei / Microsoft YaHei; Linux: Noto Sans CJK SC / Noto Sans CJK SC. Font names only, no binaries. Use the user's requested output language, independently of the preview language. Reflow long translations; do not reduce text below readable size.\n\n## Expanded composition rules\n\nTwelve editable reference pages. The ten established industry pages are preserved; two new analytical layouts are inserted before the closing.\n\n1. Reference page 1 — Raster-indexed page 1: 4 measured visual regions across 16 occupied landmark cells; dense density; cover composition.\n2. Reference page 2 — Raster-indexed page 2: 6 measured visual regions across 15 occupied landmark cells; dense density; grid composition.\n3. Reference page 3 — Raster-indexed page 3: 5 measured visual regions across 14 occupied landmark cells; dense density; grid composition.\n4. Reference page 4 — Raster-indexed page 4: 7 measured visual regions across 16 occupied landmark cells; dense density; grid composition.\n5. Reference page 5 — Raster-indexed page 5: 6 measured visual regions across 12 occupied landmark cells; dense density; grid composition.\n6. Reference page 6 — Raster-indexed page 6: 7 measured visual regions across 15 occupied landmark cells; dense density; grid composition.\n7. Reference page 7 — Raster-indexed page 7: 7 measured visual regions across 15 occupied landmark cells; dense density; grid composition.\n8. Reference page 8 — Raster-indexed page 8: 7 measured visual regions across 12 occupied landmark cells; dense density; grid composition.\n9. Reference page 9 — Raster-indexed page 9: 10 measured visual regions across 16 occupied landmark cells; dense density; grid composition.\n10. Reconcile the benefit with the cost — Sequential contribution waterfall with an explicitly reconciled net change\n11. Sequence the work around a decision gate — Four timed workstreams and a decision gate\n12. Reference page 10 — Raster-indexed page 10: 7 measured visual regions across 16 occupied landmark cells; dense density; image-led composition.\n\nChoose a layout by the information relationship: evidence and interpretation, hierarchy, change over time, decision criteria, timed dependencies or ordered handoffs. For six or more content pages, use at least four distinct structures when the material supports them; avoid repeating the same composition on adjacent pages. Alternate detailed evidence with a simpler synthesis. A detailed page needs one dominant argument, supporting evidence and a concise interpretation. More detail must come from meaningful relationships, not extra decoration or a smaller font.\n\nKeep the parent palette and typography. Preserve its characteristic rails, paper fields, serif/sans hierarchy and light/dark rhythm. Use body text around 18–22 pt, direct chart labels around 13–16 pt, and 48 pt outer margins on 960 × 540 pt pages. Native text, shapes and connectors remain editable. Rescale the geometry or split a page before shrinking the text. Reference charts drawn with shapes have editable geometry; they do not contain an embedded chart spreadsheet.\n\nNew examples are explicitly illustrative: replace every invented value, quote and conclusion with the user's evidence. Retained sourced industry examples remain attributed in their existing notes. Never invent facts to fill a layout. Include units, common baselines, meaningful owners, measurement windows and dependencies as appropriate. English previews do not select the user's output language. Use the existing English/Chinese font pairs and platform fallbacks; reflow translated text.\n\n## Composition finish\n\nTreat an analytical slide as a small argument: a claim at the top, a dominant exhibit, and a concise readout or next decision. A second exhibit must add evidence (a reconciled breakdown, a comparison table, an exception or a test), not repeat the same headline. Do not fill every page with equally sized cards. Keep a quiet synthesis or section break between dense runs.\n\nUse a shared baseline for chart labels, aligned numeric columns and a limited set of type sizes. Distinguish a section label, headline, exhibit label, evidence text and source note by size and spacing before adding color. Keep body text readable; short exhibit labels may be smaller. Avoid single-word last lines, detached punctuation and arbitrary line breaks. Reflow Chinese and English separately.\n\nPut units, population and measurement window beside the relevant exhibit. Directly label the meaningful exception or inflection; use a subtle highlight or a short leader without crossing another label. For paired exhibits with different denominators, state both explicitly. Reconcile subtotals and deltas. Use a common quantitative scale; decorative bars must never imply a different value.\n\nEnd an evidence page with a concise interpretation, bounded recommendation or open question. A roadmap names owners and a gate; a scorecard distinguishes exceptions from measures that pass. Highlight the one decision or exception, not every cell. Adapt these devices to the parent pack: quiet serif pages, engineering schematics and bold posters should not converge on one visual style.\n\nInspect a rendered page, not just its bounding boxes: check the reading order, line endings, label collisions, chart contrast and the gap above the footer. Keep labels clear of rules and markers. Use native editable text and geometry. Fictional reference data must be replaced by verified user material or visibly marked as an example.\n",
+      "layoutPatterns": [
+        {
+          "family": "cover",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            1
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "dense",
+          "averageTextFrames": 14,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            2
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 25,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            3
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 12,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            4
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 18,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            5
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 21,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            6
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 18,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            7
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 6,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            8
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 28,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "grid",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            9
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "averageTextFrames": 16,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "data",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            10
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 30,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "process",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            11
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 19,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "image-led",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            12
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 1,
+          "density": "dense",
+          "averageTextFrames": 18,
+          "averageMediaFrames": 0
+        }
+      ],
+      "pageReferences": [
+        {
+          "slideNumber": 1,
+          "sourceTitle": "Reference page 1",
+          "family": "cover",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "dense",
+          "features": [
+            "image",
+            "statement"
+          ],
+          "recommendedRoles": [
+            "cover"
+          ],
+          "structureSummary": "Raster-indexed page 1: 4 measured visual regions across 16 occupied landmark cells; dense density; cover composition.",
+          "zones": [
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 0,
+              "width": 640,
+              "height": 360,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "shape",
+              "x": 0,
+              "y": 0,
+              "width": 1280,
+              "height": 540,
+              "shape": "rect",
+              "fill": "002C43"
+            },
+            {
+              "kind": "image",
+              "x": 960,
+              "y": 0,
+              "width": 320,
+              "height": 360,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "title",
+              "x": 0,
+              "y": 540,
+              "width": 1280,
+              "height": 180,
+              "textRole": "title"
+            }
+          ],
+          "primaryVisual": {
+            "kind": "shape",
+            "x": 0,
+            "y": 0,
+            "width": 1280,
+            "height": 540,
+            "areaRatio": 0.75
+          },
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 2,
+          "sourceTitle": "Reference page 2",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image",
+            "kpi"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 2: 6 measured visual regions across 15 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 0,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "title",
+              "x": 320,
+              "y": 0,
+              "width": 640,
+              "height": 180,
+              "textRole": "title"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 180,
+              "width": 640,
+              "height": 360,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 640,
+              "y": 180,
+              "width": 320,
+              "height": 360,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 180,
+              "width": 1280,
+              "height": 540,
+              "textRole": "text"
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 3,
+          "sourceTitle": "Reference page 3",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 3: 5 measured visual regions across 14 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 0,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "title",
+              "x": 0,
+              "y": 0,
+              "width": 1280,
+              "height": 720,
+              "textRole": "title"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 960,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 4,
+          "sourceTitle": "Reference page 4",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image",
+            "kpi"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 4: 7 measured visual regions across 16 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 0,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "title",
+              "x": 320,
+              "y": 0,
+              "width": 960,
+              "height": 180,
+              "textRole": "title"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 180,
+              "width": 640,
+              "height": 360,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "text",
+              "x": 640,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 960,
+              "y": 180,
+              "width": 320,
+              "height": 360,
+              "textRole": "text"
+            },
+            {
+              "kind": "shape",
+              "x": 320,
+              "y": 360,
+              "width": 640,
+              "height": 180,
+              "shape": "rect",
+              "fill": "42C7E6"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 540,
+              "width": 1280,
+              "height": 180,
+              "textRole": "text"
+            }
+          ],
+          "primaryVisual": {
+            "kind": "image",
+            "x": 0,
+            "y": 180,
+            "width": 640,
+            "height": 360,
+            "areaRatio": 0.25
+          },
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 5,
+          "sourceTitle": "Reference page 5",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image",
+            "kpi"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 5: 6 measured visual regions across 12 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "title",
+              "x": 0,
+              "y": 0,
+              "width": 960,
+              "height": 540,
+              "textRole": "title"
+            },
+            {
+              "kind": "text",
+              "x": 320,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 360,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 540,
+              "width": 640,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "shape",
+              "x": 640,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "shape": "rect",
+              "fill": "E8B9A9"
+            },
+            {
+              "kind": "text",
+              "x": 960,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            }
+          ],
+          "primaryVisual": {
+            "kind": "image",
+            "x": 0,
+            "y": 540,
+            "width": 640,
+            "height": 180,
+            "areaRatio": 0.125
+          },
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 6,
+          "sourceTitle": "Reference page 6",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image",
+            "kpi"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 6: 7 measured visual regions across 15 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 0,
+              "width": 640,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "title",
+              "x": 320,
+              "y": 0,
+              "width": 960,
+              "height": 540,
+              "textRole": "title"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 320,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 360,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "shape",
+              "x": 320,
+              "y": 540,
+              "width": 960,
+              "height": 180,
+              "shape": "rect",
+              "fill": "F4F1EA"
+            }
+          ],
+          "primaryVisual": {
+            "kind": "shape",
+            "x": 320,
+            "y": 540,
+            "width": 960,
+            "height": 180,
+            "areaRatio": 0.188
+          },
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 7,
+          "sourceTitle": "Reference page 7",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image",
+            "kpi"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 7: 7 measured visual regions across 15 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "title",
+              "x": 0,
+              "y": 0,
+              "width": 960,
+              "height": 180,
+              "textRole": "title"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 180,
+              "width": 640,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "text",
+              "x": 640,
+              "y": 180,
+              "width": 640,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 360,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 320,
+              "y": 360,
+              "width": 960,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 540,
+              "width": 640,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "text",
+              "x": 640,
+              "y": 540,
+              "width": 640,
+              "height": 180,
+              "textRole": "text"
+            }
+          ],
+          "primaryVisual": {
+            "kind": "image",
+            "x": 0,
+            "y": 180,
+            "width": 640,
+            "height": 180,
+            "areaRatio": 0.125
+          },
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 8,
+          "sourceTitle": "Reference page 8",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image",
+            "kpi"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 8: 7 measured visual regions across 12 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "title",
+              "x": 0,
+              "y": 0,
+              "width": 960,
+              "height": 180,
+              "textRole": "title"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "text",
+              "x": 320,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "image",
+              "x": 640,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "text",
+              "x": 960,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 360,
+              "width": 320,
+              "height": 360,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 320,
+              "y": 360,
+              "width": 640,
+              "height": 360,
+              "textRole": "text"
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 9,
+          "sourceTitle": "Reference page 9",
+          "family": "grid",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "dense",
+          "features": [
+            "image",
+            "kpi"
+          ],
+          "recommendedRoles": [
+            "grid"
+          ],
+          "structureSummary": "Raster-indexed page 9: 10 measured visual regions across 16 occupied landmark cells; dense density; grid composition.",
+          "zones": [
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 0,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "title",
+              "x": 320,
+              "y": 0,
+              "width": 960,
+              "height": 180,
+              "textRole": "title"
+            },
+            {
+              "kind": "text",
+              "x": 0,
+              "y": 180,
+              "width": 640,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "image",
+              "x": 640,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "shape",
+              "x": 960,
+              "y": 180,
+              "width": 320,
+              "height": 360,
+              "shape": "rect",
+              "fill": "E8B9A9"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 360,
+              "width": 640,
+              "height": 360,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "image",
+              "x": 640,
+              "y": 360,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "shape",
+              "x": 320,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "shape": "rect",
+              "fill": "D8E7EC"
+            },
+            {
+              "kind": "text",
+              "x": 640,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "text",
+              "x": 960,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            }
+          ],
+          "primaryVisual": {
+            "kind": "image",
+            "x": 0,
+            "y": 360,
+            "width": 640,
+            "height": 360,
+            "areaRatio": 0.25
+          },
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 10,
+          "sourceTitle": "Reconcile the benefit with the cost",
+          "family": "data",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "bridge"
+          ],
+          "recommendedRoles": [
+            "data"
+          ],
+          "structureSummary": "Sequential contribution waterfall with an explicitly reconciled net change",
+          "zones": [
+            {
+              "kind": "shape",
+              "x": 0,
+              "y": 0,
+              "width": 10.666666666666666,
+              "height": 720,
+              "shape": "rect",
+              "fill": "42C7E7"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 202.66666666666666,
+              "width": 1133.3333333333333,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 65
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 552,
+              "width": 40,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 6
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 458.6666666666667,
+              "width": 40,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 6
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 365.3333333333333,
+              "width": 40,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 6
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 272,
+              "width": 40,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 6
+            },
+            {
+              "kind": "shape",
+              "x": 128,
+              "y": 377.3333333333333,
+              "width": 80,
+              "height": 186.66666666666666,
+              "shape": "rect",
+              "fill": "F3F0EA"
+            },
+            {
+              "kind": "text",
+              "x": 114.66666666666667,
+              "y": 333.3333333333333,
+              "width": 106.66666666666667,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 104,
+              "y": 581.3333333333334,
+              "width": 132,
+              "height": 34.666666666666664,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 7
+            },
+            {
+              "kind": "shape",
+              "x": 268,
+              "y": 317.6,
+              "width": 80,
+              "height": 59.73333333333333,
+              "shape": "rect",
+              "fill": "849196"
+            },
+            {
+              "kind": "text",
+              "x": 254.66666666666666,
+              "y": 273.6,
+              "width": 106.66666666666667,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 244,
+              "y": 581.3333333333334,
+              "width": 132,
+              "height": 34.666666666666664,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 7
+            },
+            {
+              "kind": "shape",
+              "x": 408,
+              "y": 317.6,
+              "width": 80,
+              "height": 24.266666666666666,
+              "shape": "rect",
+              "fill": "455c66"
+            },
+            {
+              "kind": "text",
+              "x": 394.6666666666667,
+              "y": 273.6,
+              "width": 106.66666666666667,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 384,
+              "y": 581.3333333333334,
+              "width": 132,
+              "height": 34.666666666666664,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 7
+            },
+            {
+              "kind": "shape",
+              "x": 548,
+              "y": 341.8666666666666,
+              "width": 80,
+              "height": 13.066666666666665,
+              "shape": "rect",
+              "fill": "455c66"
+            },
+            {
+              "kind": "text",
+              "x": 534.6666666666666,
+              "y": 297.8666666666666,
+              "width": 106.66666666666667,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 524,
+              "y": 581.3333333333334,
+              "width": 132,
+              "height": 34.666666666666664,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 7
+            },
+            {
+              "kind": "shape",
+              "x": 688,
+              "y": 354.9333333333334,
+              "width": 80,
+              "height": 209.06666666666663,
+              "shape": "rect",
+              "fill": "F3F0EA"
+            },
+            {
+              "kind": "text",
+              "x": 674.6666666666666,
+              "y": 310.9333333333334,
+              "width": 106.66666666666667,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 664,
+              "y": 581.3333333333334,
+              "width": 132,
+              "height": 34.666666666666664,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 7
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 221.33333333333334,
+              "width": 310.6666666666667,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 17
+            },
+            {
+              "kind": "title",
+              "x": 905.3333333333334,
+              "y": 273.3333333333333,
+              "width": 310.6666666666667,
+              "height": 102.66666666666667,
+              "textRole": "title",
+              "fontSize": 57,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 385.3333333333333,
+              "width": 310.6666666666667,
+              "height": 53.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 24
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 458.6666666666667,
+              "width": 196,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 9
+            },
+            {
+              "kind": "text",
+              "x": 1101.3333333333333,
+              "y": 456,
+              "width": 114.66666666666667,
+              "height": 41.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 506.6666666666667,
+              "width": 196,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 9
+            },
+            {
+              "kind": "text",
+              "x": 1101.3333333333333,
+              "y": 504,
+              "width": 114.66666666666667,
+              "height": 41.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 554.6666666666666,
+              "width": 196,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 9
+            },
+            {
+              "kind": "text",
+              "x": 1101.3333333333333,
+              "y": 552,
+              "width": 114.66666666666667,
+              "height": 41.333333333333336,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 11,
+          "sourceTitle": "Sequence the work around a decision gate",
+          "family": "process",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "roadmap"
+          ],
+          "recommendedRoles": [
+            "process"
+          ],
+          "structureSummary": "Four timed workstreams and a decision gate",
+          "zones": [
+            {
+              "kind": "shape",
+              "x": 0,
+              "y": 0,
+              "width": 10.666666666666666,
+              "height": 720,
+              "shape": "rect",
+              "fill": "42C7E7"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 222.66666666666666,
+              "width": 324,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 421.3333333333333,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 617.3333333333334,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 813.3333333333334,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 1009.3333333333334,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 273.3333333333333,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 313.3333333333333,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 406.6666666666667,
+              "y": 289.3333333333333,
+              "width": 176.4,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "b4bbba"
+            },
+            {
+              "kind": "shape",
+              "x": 579.0666666666667,
+              "y": 300,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "738389"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 354.6666666666667,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 394.6666666666667,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 543.8666666666667,
+              "y": 370.6666666666667,
+              "width": 254.79999999999998,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "b4bbba"
+            },
+            {
+              "kind": "shape",
+              "x": 794.6666666666666,
+              "y": 381.3333333333333,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "738389"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 436,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 476,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 759.4666666666667,
+              "y": 452,
+              "width": 215.60000000000002,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "0B2A3A"
+            },
+            {
+              "kind": "shape",
+              "x": 971.0666666666667,
+              "y": 462.6666666666667,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "0B2A3A"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 517.3333333333334,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 557.3333333333334,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 955.4666666666666,
+              "y": 533.3333333333334,
+              "width": 235.20000000000002,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "b4bbba"
+            },
+            {
+              "kind": "shape",
+              "x": 1186.6666666666665,
+              "y": 544,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "738389"
+            },
+            {
+              "kind": "shape",
+              "x": 949.3333333333334,
+              "y": 592,
+              "width": 10.666666666666666,
+              "height": 10.666666666666666,
+              "shape": "ellipse",
+              "fill": "42C7E7"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 12,
+          "sourceTitle": "Reference page 10",
+          "family": "image-led",
+          "titlePosition": "left",
+          "bodyColumns": 1,
+          "density": "dense",
+          "features": [
+            "image"
+          ],
+          "recommendedRoles": [
+            "image-led"
+          ],
+          "structureSummary": "Raster-indexed page 10: 7 measured visual regions across 16 occupied landmark cells; dense density; image-led composition.",
+          "zones": [
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 0,
+              "width": 640,
+              "height": 540,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "title",
+              "x": 320,
+              "y": 0,
+              "width": 960,
+              "height": 540,
+              "textRole": "title"
+            },
+            {
+              "kind": "text",
+              "x": 320,
+              "y": 180,
+              "width": 320,
+              "height": 180,
+              "textRole": "text"
+            },
+            {
+              "kind": "image",
+              "x": 0,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "shape",
+              "x": 320,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "shape": "rect",
+              "fill": "F4F1EA"
+            },
+            {
+              "kind": "image",
+              "x": 640,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "backgroundFill": "D9E8ED"
+            },
+            {
+              "kind": "shape",
+              "x": 960,
+              "y": 540,
+              "width": 320,
+              "height": 180,
+              "shape": "rect",
+              "fill": "E7B8A9"
+            }
+          ],
+          "primaryVisual": {
+            "kind": "image",
+            "x": 0,
+            "y": 0,
+            "width": 640,
+            "height": 540,
+            "areaRatio": 0.375
+          },
+          "jsxReference": ""
+        }
+      ],
+      "extractedAt": "2026-08-27T00:00:00.000Z"
+    }
+  },
+  "provenance": {
+    "kind": "retained-native",
+    "commit": "de281a1ceccadb00b92df53adb106a2e87ec0b4b",
+    "evidence": "PPTD page sources, vectors, source provenance statements and PR #320"
+  }
+}

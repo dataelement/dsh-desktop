@@ -3,19 +3,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import crypto from 'node:crypto';
-const root = path.resolve(process.env.DSH_PPT_TEMPLATE_OUTPUT ?? '.build/ppt-runtime/templates');
+const root = path.resolve('packages/ppt-runtime/templates');
 const overrides = JSON.parse(await fs.readFile('scripts/ppt/english-layout-overrides.json', 'utf8'));
 const dictionary = JSON.parse(await fs.readFile('scripts/ppt/english-text.json', 'utf8'));
 Object.assign(dictionary, { '出口': 'Exports', '进口': 'Imports', '美国': 'US', '英国': 'UK', '德国': 'Germany', '日本': 'Japan', '年': 'Year', '平台': 'Platform', '独立站': 'Own store', '本地履约': 'Local fulfillment' });
-const seedRoot = path.resolve('scripts/ppt/base-templates');
-for (const entry of await fs.readdir(seedRoot, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const d = entry.name;
-        // Read immutable authored seeds, never previously generated output.
-        const seed = path.join(seedRoot, d);
-        const seedMetadata = JSON.parse(await fs.readFile(path.join(seed, 'metadata.json'), 'utf8'));
-        const dir = path.join(root, seedMetadata.definition.referenceDirectory), zh = path.join(dir, 'source-zh');
-        await fs.mkdir(dir, { recursive: true });
+for (const c of await fs.readdir(root))
+    for (const d of await fs.readdir(path.join(root, c))) {
+        if (!d.startsWith('curated-') && !['dsh-engineering-blueprint', 'dsh-course-workshop', 'dsh-editorial-notebook'].includes(d))
+            continue;
+        const dir = path.join(root, c, d), zh = path.join(dir, 'source-zh');
+        // Read immutable authored seeds, never the previously enriched output.
+        const seed = path.resolve('scripts/ppt/base-templates', d);
         for (const folder of ['source', 'source-zh']) {
             await fs.rm(path.join(dir, folder), { recursive: true, force: true });
             await fs.cp(path.join(seed, 'source-zh'), path.join(dir, folder), { recursive: true });

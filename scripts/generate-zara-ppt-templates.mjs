@@ -10,8 +10,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import yaml from 'js-yaml';
 import { createRichLayouts, richLayoutGuidance, richLayoutSlugs } from './ppt/rich-layouts.mjs';
-const sourceRoot = path.resolve('packages/ppt-runtime');
-const templateRoot = path.resolve(process.env.DSH_PPT_TEMPLATE_OUTPUT ?? '.build/ppt-runtime/templates');
+const root = path.resolve('packages/ppt-runtime');
 export const zaraSpecs = [
     ['soft-editorial', 'Soft Editorial', '柔和编辑部', 'editorial', 'F2EEDF', '2A241B', 'E1A4C2', 'D6DD63', 'E8C9B6', 'Georgia', 'Arial', 'serif'],
     ['editorial-forest', 'Editorial Forest', '森林季刊', 'work', '2E4A2A', 'EFE7D4', 'E89CB1', '3A5A36', 'E6DCC4', 'Georgia', 'Arial', 'serif'],
@@ -26,9 +25,9 @@ export const zaraSpecs = [
 ].map(([slug, name, zh, category, bg, ink, accent, surface, secondary, title, body, kind]) => ({ slug, name, zh, category, bg, ink, accent, surface, secondary, title, body, kind }));
 const ref = 'e5e204fb1f3b06290846e7dcd7aceddabeceec8c';
 for (const s of zaraSpecs) {
-    const out = path.join(templateRoot, s.category, 'dsh-' + s.slug);
+    const out = path.join(root, 'templates', s.category, 'dsh-' + s.slug);
     await fs.mkdir(out, { recursive: true });
-    const upstreamDesign = await fs.readFile(path.join(sourceRoot, 'upstream/zara/templates', s.slug, 'design.md'), 'utf8');
+    const upstreamDesign = await fs.readFile(path.join(root, 'upstream/zara/templates', s.slug, 'design.md'), 'utf8');
     const fontTokens = [...upstreamDesign.matchAll(/fontFamily: ["']?([^\n]+)/g)].map(m => m[1].split(',')[0].replace(/["']/g, '').trim());
     const fonts = { en: { title: s.title, body: s.body }, zh: { title: s.kind === 'serif' ? 'Songti SC' : 'PingFang SC', body: 'PingFang SC' }, fallbacks: { en: { title: s.kind === 'serif' ? 'Georgia' : 'Arial', body: 'Arial' }, zh: { macOS: { serif: 'Songti SC', sans: 'PingFang SC' }, Windows: { serif: 'SimSun', sans: 'Microsoft YaHei' }, Linux: { serif: 'Noto Serif CJK SC', sans: 'Noto Sans CJK SC' } } }, upstreamTitle: fontTokens[0] };
     const palette = { background: s.bg, text: s.ink, accent: s.accent, surface: s.surface, secondary: s.secondary, muted: s.secondary };

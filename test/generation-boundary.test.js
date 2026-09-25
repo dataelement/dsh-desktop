@@ -121,37 +121,6 @@ describe('the market install boundary', () => {
     expect(typeof svc.runExternalMarketPluginInstall).toBe('function')
   })
 
-  it('installs a catalog workbench through the generation backend after integrity validation', async () => {
-    const home = await freshHome()
-    const requests = []
-    const svc = createDesktopPnpmService({
-      binDirectory: join(home, '.desktop-bin'),
-      dshEntryPath: join(home, 'bin.js'),
-      executablePath: process.execPath,
-      home,
-      environment: {},
-      fetchImpl: async url => {
-        requests.push(String(url))
-        return { ok: true, json: async () => ({ dist: { integrity: 'sha512-expected' } }) }
-      },
-      runGenerationInstall: stubGenerationInstall('catalog-workbench', '1.2.3')
-    })
-    const profile = join(home, 'profiles', 'web')
-    const request = {
-      pluginSpec: 'catalog-workbench@1.2.3',
-      expectedPluginName: 'catalog-workbench',
-      expectedVersion: '1.2.3',
-      npmIntegrity: 'sha512-expected'
-    }
-    const installed = await drainHandle(svc.installWorkbenchGeneration(request, profile))
-    expect(installed.exitCode).toBe(0)
-    expect(requests).toEqual(['https://registry.npmjs.org/catalog-workbench/1.2.3'])
-    expect(readInstalledVersion('web', 'catalog-workbench', profile)).toBe('1.2.3')
-    const rejected = await drainHandle(svc.installWorkbenchGeneration({ ...request, npmIntegrity: 'sha512-wrong' }, profile))
-    expect(rejected.exitCode).toBe(1)
-    expect(rejected.stderr).toContain('does not match the integrity')
-  })
-
   it.each(['auto-install-peers', 'autoInstallPeers', 'profile'])('preserves %s on a retry through the pnpm subprocess', async key => {
     const home = await freshHome()
     if (key === 'profile') await writeFile(join(home, 'profiles', 'web', 'pnpm-workspace.yaml'),

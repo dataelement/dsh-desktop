@@ -21,7 +21,7 @@ it('uses the paired Chinese face for Chinese text and the Latin face for English
 
 describe('PPT bilingual catalog', () => {
   it('has English-only visible preview content and Chinese source examples in every pack', async () => {
-    const root = path.resolve(import.meta.dirname, '../.build/ppt-runtime/templates')
+    const root = path.resolve(import.meta.dirname, '../packages/ppt-runtime/templates')
     let count = 0
     function inspect(value, file) {
       if (!value || typeof value !== 'object') return

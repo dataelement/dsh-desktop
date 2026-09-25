@@ -1,0 +1,2989 @@
+{
+  "definition": {
+    "id": "dsh-monochrome",
+    "category": "academic",
+    "sourceCollection": "curated",
+    "slug": "dsh-monochrome",
+    "name": "Monochrome",
+    "localizedNames": {
+      "en": "Monochrome",
+      "zh": "极简研究"
+    },
+    "variantLabel": "DSH",
+    "description": "极简研究 · Monochrome",
+    "previewTitle": "Monochrome",
+    "previewSubtitle": "12 editable layouts",
+    "titleFontFace": "Helvetica Neue",
+    "bodyFontFace": "Arial",
+    "fonts": {
+      "en": {
+        "title": "Helvetica Neue",
+        "body": "Arial"
+      },
+      "zh": {
+        "title": "PingFang SC",
+        "body": "PingFang SC"
+      },
+      "fallbacks": {
+        "en": {
+          "title": "Arial",
+          "body": "Arial"
+        },
+        "zh": {
+          "macOS": {
+            "serif": "Songti SC",
+            "sans": "PingFang SC"
+          },
+          "Windows": {
+            "serif": "SimSun",
+            "sans": "Microsoft YaHei"
+          },
+          "Linux": {
+            "serif": "Noto Serif CJK SC",
+            "sans": "Noto Sans CJK SC"
+          }
+        }
+      },
+      "upstreamTitle": "Jost"
+    },
+    "previewLanguage": "en",
+    "palette": {
+      "background": "FAFADF",
+      "text": "1A1A16",
+      "accent": "1A1A16",
+      "surface": "F2F2D2",
+      "secondary": "5E5E54",
+      "muted": "5E5E54"
+    },
+    "referenceDirectory": "academic/dsh-monochrome",
+    "referenceWidth": 1280,
+    "referenceHeight": 720,
+    "referencePageCount": 12,
+    "representativeSlides": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "previewSlides": [
+      4,
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "designSha256": "5e666eb67968f37520cb9c8848691c53b185c90ab5d7be4134c382678bea7ac6"
+  },
+  "semantics": {
+    "palette": {
+      "background": "FAFADF",
+      "text": "1A1A16",
+      "accent": "1A1A16",
+      "surface": "F2F2D2",
+      "secondary": "5E5E54",
+      "muted": "5E5E54"
+    },
+    "source": {
+      "fileName": "monochrome-reference.jpg",
+      "sha256": "5e666eb67968f37520cb9c8848691c53b185c90ab5d7be4134c382678bea7ac6",
+      "slideCount": 12,
+      "averageTextBlocks": 18,
+      "averageCharacters": 315,
+      "visualGrammar": "monochrome",
+      "recommendedDensity": "medium",
+      "designSummary": "# Monochrome / 极简研究\n\nAdapted from Zara Zhang's Monochrome, commit e5e204fb1f3b06290846e7dcd7aceddabeceec8c. MIT. This native edition rebuilds twelve editable layouts; it is not an HTML import or an exact copy of every upstream slide.\n\n## Typography\n\nEnglish display: Helvetica Neue; English body: Arial. These portable Office substitutions replace the upstream display face Jost. Chinese display: PingFang SC; body: PingFang SC. On Windows use Microsoft YaHei / Microsoft YaHei; on Linux use Noto Sans CJK SC / Noto Sans CJK SC. No font binary is distributed. Keep the serif/sans distinction.\n\nEnglish previews use source/. Chinese examples use source-zh/. Preview language does not select the language of the user's output. Choose the matching fonts for the actual content; reflow longer translations instead of shrinking titles.\n\n## Layout grammar\n\n A literary editorial system rendered in black ink on cream paper. Ultra-light geometric sans (Jost at weight 200–300) carries every headline; Lora italic serif handles quote text and insight-card titles; JetBrains Mono provides the structural chrome. There are no chromatic accents — every color in the palette is a graphite or cream tone, and \"accent\" simply means \"darker ink.\" The aesthetic borrows from independent research reports, scholarly monographs, and the quietest end of contemporary editorial design — closer to a printed journal than a tech presentation.\n\n1. Cover (cover)\n2. Agenda (agenda)\n3. Insights (insights)\n4. Metrics (data)\n5. Comparison chart (data)\n6. Process (process)\n7. Before and after (comparison)\n8. Closing (closing)\n\nAll charts and diagrams are native editable vectors. Example figures are illustrative, not reported facts. Retain a 48 pt outer margin and use 16:9, 960 × 540 pt.\n\nCopyright (c) 2026 Zara Zhang. DSH adaptation 2026-09-06. See licenses/zara/LICENSE and the pinned source design specification.\n\n## Expanded composition rules\n\nTwelve editable reference pages. The cover and closing retain the parent style; ten content layouts add information structures with varied density.\n\n1. Cover — Cover\n2. Understand the moments that matter — Asymmetric argument with three supporting evidence rows\n3. Separate the record from the explanation — Interview excerpt, observation, competing explanation and next check\n4. Locate the friction along the journey — Four stages aligned across actions and independent outcome measures\n5. Trace the question to testable branches — Three-branch hypothesis tree with six testable leaves\n6. Read the trend and investigate the pause — Labeled six-point trend with common scale and a separate interpretation\n7. Choose the next move with evidence — Two-axis decision map with direct labels and a recommended next step\n8. Design the test before reading the result — One hypothesis with comparison, measure and a predeclared decision rule\n9. A small intervention, a measurable change — Intervention narrative beside paired before and after comparisons\n10. Define what independent work looks like — Three criteria across three levels of observable competence\n11. Sequence the work around a decision gate — Four timed workstreams and a decision gate\n12. Closing — Closing\n\nChoose a layout by the information relationship: evidence and interpretation, hierarchy, change over time, decision criteria, timed dependencies or ordered handoffs. For six or more content pages, use at least four distinct structures when the material supports them; avoid repeating the same composition on adjacent pages. Alternate detailed evidence with a simpler synthesis. A detailed page needs one dominant argument, supporting evidence and a concise interpretation. More detail must come from meaningful relationships, not extra decoration or a smaller font.\n\nKeep the parent palette and typography. Preserve its characteristic rails, paper fields, serif/sans hierarchy and light/dark rhythm. Use body text around 18–22 pt, direct chart labels around 13–16 pt, and 48 pt outer margins on 960 × 540 pt pages. Native text, shapes and connectors remain editable. Rescale the geometry or split a page before shrinking the text. Reference charts drawn with shapes have editable geometry; they do not contain an embedded chart spreadsheet.\n\nNew examples are explicitly illustrative: replace every invented value, quote and conclusion with the user's evidence. Retained sourced industry examples remain attributed in their existing notes. Never invent facts to fill a layout. Include units, common baselines, meaningful owners, measurement windows and dependencies as appropriate. English previews do not select the user's output language. Use the existing English/Chinese font pairs and platform fallbacks; reflow translated text.\n\n## Composition finish\n\nTreat an analytical slide as a small argument: a claim at the top, a dominant exhibit, and a concise readout or next decision. A second exhibit must add evidence (a reconciled breakdown, a comparison table, an exception or a test), not repeat the same headline. Do not fill every page with equally sized cards. Keep a quiet synthesis or section break between dense runs.\n\nUse a shared baseline for chart labels, aligned numeric columns and a limited set of type sizes. Distinguish a section label, headline, exhibit label, evidence text and source note by size and spacing before adding color. Keep body text readable; short exhibit labels may be smaller. Avoid single-word last lines, detached punctuation and arbitrary line breaks. Reflow Chinese and English separately.\n\nPut units, population and measurement window beside the relevant exhibit. Directly label the meaningful exception or inflection; use a subtle highlight or a short leader without crossing another label. For paired exhibits with different denominators, state both explicitly. Reconcile subtotals and deltas. Use a common quantitative scale; decorative bars must never imply a different value.\n\nEnd an evidence page with a concise interpretation, bounded recommendation or open question. A roadmap names owners and a gate; a scorecard distinguishes exceptions from measures that pass. Highlight the one decision or exception, not every cell. Adapt these devices to the parent pack: quiet serif pages, engineering schematics and bold posters should not converge on one visual style.\n\nInspect a rendered page, not just its bounding boxes: check the reading order, line endings, label collisions, chart contrast and the gap above the footer. Keep labels clear of rules and markers. Use native editable text and geometry. Fictional reference data must be replaced by verified user material or visibly marked as an example.\n",
+      "layoutPatterns": [
+        {
+          "family": "cover",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            1
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 1,
+          "density": "medium",
+          "averageTextFrames": 4,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "insights",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            2
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "medium",
+          "averageTextFrames": 20,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "quote",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            3
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 18,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "process",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            4
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 21,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "process",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            5
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "high",
+          "averageTextFrames": 17,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "data",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            6
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 30,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "comparison",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            7
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 26,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "comparison",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            8
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 16,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "comparison",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            9
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 13,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "table",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            10
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 22,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "process",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            11
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "averageTextFrames": 19,
+          "averageMediaFrames": 0
+        },
+        {
+          "family": "closing",
+          "slideCount": 1,
+          "sampleSlideNumbers": [
+            12
+          ],
+          "titlePosition": "left",
+          "bodyColumns": 1,
+          "density": "medium",
+          "averageTextFrames": 4,
+          "averageMediaFrames": 0
+        }
+      ],
+      "pageReferences": [
+        {
+          "slideNumber": 1,
+          "sourceTitle": "Cover",
+          "family": "cover",
+          "titlePosition": "left",
+          "bodyColumns": 1,
+          "density": "medium",
+          "features": [
+            "cover"
+          ],
+          "recommendedRoles": [
+            "cover"
+          ],
+          "structureSummary": "Cover",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 46.666666666666664,
+              "width": 1133.3333333333333,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 77
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 324,
+              "width": 1133.3333333333333,
+              "height": 237.33333333333334,
+              "textRole": "title",
+              "fontSize": 65,
+              "textCapacity": 26
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 674.6666666666666,
+              "width": 1013.3333333333334,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 84
+            },
+            {
+              "kind": "text",
+              "x": 1160,
+              "y": 670.6666666666666,
+              "width": 53.333333333333336,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 2,
+          "sourceTitle": "Understand the moments that matter",
+          "family": "insights",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "medium",
+          "features": [
+            "thesis"
+          ],
+          "recommendedRoles": [
+            "insights"
+          ],
+          "structureSummary": "Asymmetric argument with three supporting evidence rows",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 218.66666666666666,
+              "width": 464,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 26
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 276,
+              "width": 442.6666666666667,
+              "height": 236,
+              "textRole": "title",
+              "fontSize": 30,
+              "textCapacity": 55
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 560,
+              "width": 440,
+              "height": 57.333333333333336,
+              "textRole": "body",
+              "fontSize": 17,
+              "textCapacity": 38
+            },
+            {
+              "kind": "text",
+              "x": 588,
+              "y": 222.66666666666666,
+              "width": 66.66666666666667,
+              "height": 50.666666666666664,
+              "textRole": "body",
+              "fontSize": 26,
+              "textCapacity": 1
+            },
+            {
+              "kind": "text",
+              "x": 685.3333333333334,
+              "y": 226.66666666666666,
+              "width": 332,
+              "height": 42.666666666666664,
+              "textRole": "body",
+              "fontSize": 23,
+              "textCapacity": 10
+            },
+            {
+              "kind": "text",
+              "x": 1040,
+              "y": 234.66666666666666,
+              "width": 176,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 26
+            },
+            {
+              "kind": "text",
+              "x": 685.3333333333334,
+              "y": 281.3333333333333,
+              "width": 530.6666666666666,
+              "height": 62.666666666666664,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 44
+            },
+            {
+              "kind": "text",
+              "x": 588,
+              "y": 348,
+              "width": 66.66666666666667,
+              "height": 50.666666666666664,
+              "textRole": "body",
+              "fontSize": 26,
+              "textCapacity": 1
+            },
+            {
+              "kind": "text",
+              "x": 685.3333333333334,
+              "y": 352,
+              "width": 332,
+              "height": 42.666666666666664,
+              "textRole": "body",
+              "fontSize": 23,
+              "textCapacity": 10
+            },
+            {
+              "kind": "text",
+              "x": 1040,
+              "y": 360,
+              "width": 176,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 26
+            },
+            {
+              "kind": "text",
+              "x": 685.3333333333334,
+              "y": 406.6666666666667,
+              "width": 530.6666666666666,
+              "height": 62.666666666666664,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 44
+            },
+            {
+              "kind": "text",
+              "x": 588,
+              "y": 473.3333333333333,
+              "width": 66.66666666666667,
+              "height": 50.666666666666664,
+              "textRole": "body",
+              "fontSize": 26,
+              "textCapacity": 1
+            },
+            {
+              "kind": "text",
+              "x": 685.3333333333334,
+              "y": 477.3333333333333,
+              "width": 332,
+              "height": 42.666666666666664,
+              "textRole": "body",
+              "fontSize": 23,
+              "textCapacity": 10
+            },
+            {
+              "kind": "text",
+              "x": 1040,
+              "y": 485.3333333333333,
+              "width": 176,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 26
+            },
+            {
+              "kind": "text",
+              "x": 685.3333333333334,
+              "y": 532,
+              "width": 530.6666666666666,
+              "height": 62.666666666666664,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 44
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 3,
+          "sourceTitle": "Separate the record from the explanation",
+          "family": "quote",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "evidence"
+          ],
+          "recommendedRoles": [
+            "quote"
+          ],
+          "structureSummary": "Interview excerpt, observation, competing explanation and next check",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "shape",
+              "x": 64,
+              "y": 234.66666666666666,
+              "width": 369.3333333333333,
+              "height": 365.3333333333333,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 92,
+              "y": 253.33333333333334,
+              "width": 313.3333333333333,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 46
+            },
+            {
+              "kind": "text",
+              "x": 92,
+              "y": 317.3333333333333,
+              "width": 309.3333333333333,
+              "height": 173.33333333333334,
+              "textRole": "body",
+              "fontSize": 28,
+              "textCapacity": 32
+            },
+            {
+              "kind": "text",
+              "x": 92,
+              "y": 546.6666666666666,
+              "width": 312,
+              "height": 36,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 38
+            },
+            {
+              "kind": "title",
+              "x": 482.6666666666667,
+              "y": 221.33333333333334,
+              "width": 253.33333333333334,
+              "height": 90.66666666666667,
+              "textRole": "title",
+              "fontSize": 48,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 740,
+              "y": 234.66666666666666,
+              "width": 462.6666666666667,
+              "height": 64,
+              "textRole": "body",
+              "fontSize": 22,
+              "textCapacity": 15
+            },
+            {
+              "kind": "shape",
+              "x": 485.3333333333333,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "shape",
+              "x": 514.6666666666666,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "shape",
+              "x": 544,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "shape",
+              "x": 573.3333333333334,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "d2d2bb"
+            },
+            {
+              "kind": "shape",
+              "x": 602.6666666666666,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "d2d2bb"
+            },
+            {
+              "kind": "shape",
+              "x": 632,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "d2d2bb"
+            },
+            {
+              "kind": "shape",
+              "x": 661.3333333333334,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "d2d2bb"
+            },
+            {
+              "kind": "shape",
+              "x": 690.6666666666666,
+              "y": 321.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "rect",
+              "fill": "d2d2bb"
+            },
+            {
+              "kind": "text",
+              "x": 748,
+              "y": 317.3333333333333,
+              "width": 468,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 70
+            },
+            {
+              "kind": "text",
+              "x": 482.6666666666667,
+              "y": 390.6666666666667,
+              "width": 233.33333333333334,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 741.3333333333334,
+              "y": 389.3333333333333,
+              "width": 469.3333333333333,
+              "height": 62.666666666666664,
+              "textRole": "body",
+              "fontSize": 17,
+              "textCapacity": 40
+            },
+            {
+              "kind": "text",
+              "x": 482.6666666666667,
+              "y": 466.6666666666667,
+              "width": 233.33333333333334,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 741.3333333333334,
+              "y": 465.3333333333333,
+              "width": 469.3333333333333,
+              "height": 62.666666666666664,
+              "textRole": "body",
+              "fontSize": 17,
+              "textCapacity": 40
+            },
+            {
+              "kind": "text",
+              "x": 482.6666666666667,
+              "y": 542.6666666666666,
+              "width": 233.33333333333334,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 741.3333333333334,
+              "y": 541.3333333333334,
+              "width": 469.3333333333333,
+              "height": 62.666666666666664,
+              "textRole": "body",
+              "fontSize": 17,
+              "textCapacity": 40
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 4,
+          "sourceTitle": "Locate the friction along the journey",
+          "family": "process",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "journey"
+          ],
+          "recommendedRoles": [
+            "process"
+          ],
+          "structureSummary": "Four stages aligned across actions and independent outcome measures",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 250.66666666666666,
+              "width": 153.33333333333334,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 18
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 376,
+              "width": 153.33333333333334,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 18
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 501.3333333333333,
+              "width": 153.33333333333334,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 18
+            },
+            {
+              "kind": "shape",
+              "x": 244,
+              "y": 232,
+              "width": 222.66666666666666,
+              "height": 84,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 260,
+              "y": 249.33333333333334,
+              "width": 190.66666666666666,
+              "height": 58.666666666666664,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 14
+            },
+            {
+              "kind": "text",
+              "x": 244,
+              "y": 372,
+              "width": 212,
+              "height": 82.66666666666667,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 14
+            },
+            {
+              "kind": "title",
+              "x": 244,
+              "y": 490.6666666666667,
+              "width": 212,
+              "height": 73.33333333333333,
+              "textRole": "title",
+              "fontSize": 35,
+              "textCapacity": 4
+            },
+            {
+              "kind": "shape",
+              "x": 488,
+              "y": 232,
+              "width": 222.66666666666666,
+              "height": 84,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 504,
+              "y": 249.33333333333334,
+              "width": 190.66666666666666,
+              "height": 58.666666666666664,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 14
+            },
+            {
+              "kind": "text",
+              "x": 488,
+              "y": 372,
+              "width": 212,
+              "height": 82.66666666666667,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 14
+            },
+            {
+              "kind": "title",
+              "x": 488,
+              "y": 490.6666666666667,
+              "width": 212,
+              "height": 73.33333333333333,
+              "textRole": "title",
+              "fontSize": 35,
+              "textCapacity": 4
+            },
+            {
+              "kind": "shape",
+              "x": 732,
+              "y": 232,
+              "width": 222.66666666666666,
+              "height": 84,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 748,
+              "y": 249.33333333333334,
+              "width": 190.66666666666666,
+              "height": 58.666666666666664,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 14
+            },
+            {
+              "kind": "text",
+              "x": 732,
+              "y": 372,
+              "width": 212,
+              "height": 82.66666666666667,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 14
+            },
+            {
+              "kind": "title",
+              "x": 732,
+              "y": 490.6666666666667,
+              "width": 212,
+              "height": 73.33333333333333,
+              "textRole": "title",
+              "fontSize": 35,
+              "textCapacity": 4
+            },
+            {
+              "kind": "shape",
+              "x": 976,
+              "y": 232,
+              "width": 222.66666666666666,
+              "height": 84,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 992,
+              "y": 249.33333333333334,
+              "width": 190.66666666666666,
+              "height": 58.666666666666664,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 14
+            },
+            {
+              "kind": "text",
+              "x": 976,
+              "y": 372,
+              "width": 212,
+              "height": 82.66666666666667,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 14
+            },
+            {
+              "kind": "title",
+              "x": 976,
+              "y": 490.6666666666667,
+              "width": 212,
+              "height": 73.33333333333333,
+              "textRole": "title",
+              "fontSize": 35,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 5,
+          "sourceTitle": "Trace the question to testable branches",
+          "family": "process",
+          "titlePosition": "left",
+          "bodyColumns": 3,
+          "density": "high",
+          "features": [
+            "tree"
+          ],
+          "recommendedRoles": [
+            "process"
+          ],
+          "structureSummary": "Three-branch hypothesis tree with six testable leaves",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 202.66666666666666,
+              "width": 1133.3333333333333,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 65
+            },
+            {
+              "kind": "shape",
+              "x": 64,
+              "y": 362.6666666666667,
+              "width": 292,
+              "height": 140,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 80,
+              "y": 380,
+              "width": 260,
+              "height": 114.66666666666667,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 40
+            },
+            {
+              "kind": "shape",
+              "x": 466.6666666666667,
+              "y": 245.33333333333334,
+              "width": 226.66666666666666,
+              "height": 77.33333333333333,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 482.6666666666667,
+              "y": 262.6666666666667,
+              "width": 194.66666666666666,
+              "height": 52,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 8
+            },
+            {
+              "kind": "text",
+              "x": 810.6666666666666,
+              "y": 236,
+              "width": 398.6666666666667,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 16
+            },
+            {
+              "kind": "text",
+              "x": 810.6666666666666,
+              "y": 292,
+              "width": 398.6666666666667,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 16
+            },
+            {
+              "kind": "shape",
+              "x": 466.6666666666667,
+              "y": 376,
+              "width": 226.66666666666666,
+              "height": 77.33333333333333,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 482.6666666666667,
+              "y": 393.3333333333333,
+              "width": 194.66666666666666,
+              "height": 52,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 8
+            },
+            {
+              "kind": "text",
+              "x": 810.6666666666666,
+              "y": 366.6666666666667,
+              "width": 398.6666666666667,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 16
+            },
+            {
+              "kind": "text",
+              "x": 810.6666666666666,
+              "y": 422.6666666666667,
+              "width": 398.6666666666667,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 16
+            },
+            {
+              "kind": "shape",
+              "x": 466.6666666666667,
+              "y": 506.6666666666667,
+              "width": 226.66666666666666,
+              "height": 77.33333333333333,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 482.6666666666667,
+              "y": 524,
+              "width": 194.66666666666666,
+              "height": 52,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 8
+            },
+            {
+              "kind": "text",
+              "x": 810.6666666666666,
+              "y": 497.3333333333333,
+              "width": 398.6666666666667,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 16
+            },
+            {
+              "kind": "text",
+              "x": 810.6666666666666,
+              "y": 553.3333333333334,
+              "width": 398.6666666666667,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 16
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 6,
+          "sourceTitle": "Read the trend and investigate the pause",
+          "family": "data",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "trend"
+          ],
+          "recommendedRoles": [
+            "data"
+          ],
+          "structureSummary": "Labeled six-point trend with common scale and a separate interpretation",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 202.66666666666666,
+              "width": 1133.3333333333333,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 65
+            },
+            {
+              "kind": "shape",
+              "x": 437.3333333333333,
+              "y": 253.33333333333334,
+              "width": 121.33333333333333,
+              "height": 314.6666666666667,
+              "shape": "rect",
+              "fill": "e4e4cb"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 554.6666666666666,
+              "width": 40,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 2
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 480,
+              "width": 40,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 2
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 405.3333333333333,
+              "width": 40,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 2
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 330.6666666666667,
+              "width": 40,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 2
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 256,
+              "width": 40,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 2
+            },
+            {
+              "kind": "shape",
+              "x": 134.4,
+              "y": 377.06666666666666,
+              "width": 8.533333333333333,
+              "height": 8.533333333333333,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 108,
+              "y": 341.3333333333333,
+              "width": 62.666666666666664,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 117.33333333333333,
+              "y": 582.6666666666666,
+              "width": 49.333333333333336,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 3
+            },
+            {
+              "kind": "shape",
+              "x": 265.06666666666666,
+              "y": 362.13333333333327,
+              "width": 8.533333333333333,
+              "height": 8.533333333333333,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 238.66666666666666,
+              "y": 326.3999999999999,
+              "width": 62.666666666666664,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 248,
+              "y": 582.6666666666666,
+              "width": 49.333333333333336,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 3
+            },
+            {
+              "kind": "shape",
+              "x": 395.73333333333335,
+              "y": 350.93333333333334,
+              "width": 8.533333333333333,
+              "height": 8.533333333333333,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 369.3333333333333,
+              "y": 315.2,
+              "width": 62.666666666666664,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 378.6666666666667,
+              "y": 582.6666666666666,
+              "width": 49.333333333333336,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 3
+            },
+            {
+              "kind": "shape",
+              "x": 524,
+              "y": 352.2666666666667,
+              "width": 13.333333333333334,
+              "height": 13.333333333333334,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 500,
+              "y": 318.9333333333334,
+              "width": 62.666666666666664,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 509.3333333333333,
+              "y": 582.6666666666666,
+              "width": 49.333333333333336,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 3
+            },
+            {
+              "kind": "shape",
+              "x": 657.0666666666667,
+              "y": 324.8,
+              "width": 8.533333333333333,
+              "height": 8.533333333333333,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 630.6666666666666,
+              "y": 289.06666666666666,
+              "width": 62.666666666666664,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 640,
+              "y": 582.6666666666666,
+              "width": 49.333333333333336,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 3
+            },
+            {
+              "kind": "shape",
+              "x": 787.7333333333332,
+              "y": 298.6666666666667,
+              "width": 8.533333333333333,
+              "height": 8.533333333333333,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 761.3333333333334,
+              "y": 262.93333333333334,
+              "width": 62.666666666666664,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 770.6666666666666,
+              "y": 582.6666666666666,
+              "width": 49.333333333333336,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 3
+            },
+            {
+              "kind": "text",
+              "x": 365.3333333333333,
+              "y": 248,
+              "width": 206.66666666666666,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 217.33333333333334,
+              "width": 310.6666666666667,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 17
+            },
+            {
+              "kind": "title",
+              "x": 905.3333333333334,
+              "y": 269.3333333333333,
+              "width": 310.6666666666667,
+              "height": 104,
+              "textRole": "title",
+              "fontSize": 56,
+              "textCapacity": 4
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 381.3333333333333,
+              "width": 305.3333333333333,
+              "height": 73.33333333333333,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 24
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 492,
+              "width": 305.3333333333333,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 44
+            },
+            {
+              "kind": "text",
+              "x": 905.3333333333334,
+              "y": 538.6666666666666,
+              "width": 305.3333333333333,
+              "height": 66.66666666666667,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 7,
+          "sourceTitle": "Choose the next move with evidence",
+          "family": "comparison",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "matrix"
+          ],
+          "recommendedRoles": [
+            "comparison"
+          ],
+          "structureSummary": "Two-axis decision map with direct labels and a recommended next step",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 202.66666666666666,
+              "width": 1133.3333333333333,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 65
+            },
+            {
+              "kind": "shape",
+              "x": 118.66666666666667,
+              "y": 245.33333333333334,
+              "width": 662.6666666666666,
+              "height": 336,
+              "shape": "rect",
+              "fill": "f2f2d8"
+            },
+            {
+              "kind": "shape",
+              "x": 450.6666666666667,
+              "y": 245.33333333333334,
+              "width": 330.6666666666667,
+              "height": 168,
+              "shape": "rect",
+              "fill": "cdcdb7"
+            },
+            {
+              "kind": "text",
+              "x": 137.33333333333334,
+              "y": 258.6666666666667,
+              "width": 285.3333333333333,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 42
+            },
+            {
+              "kind": "text",
+              "x": 472,
+              "y": 258.6666666666667,
+              "width": 285.3333333333333,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 42
+            },
+            {
+              "kind": "text",
+              "x": 137.33333333333334,
+              "y": 545.3333333333334,
+              "width": 285.3333333333333,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 42
+            },
+            {
+              "kind": "text",
+              "x": 472,
+              "y": 545.3333333333334,
+              "width": 285.3333333333333,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 42
+            },
+            {
+              "kind": "shape",
+              "x": 236,
+              "y": 345.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "ellipse",
+              "fill": "8e8e7f"
+            },
+            {
+              "kind": "text",
+              "x": 269.3333333333333,
+              "y": 338.6666666666667,
+              "width": 50.666666666666664,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 2
+            },
+            {
+              "kind": "shape",
+              "x": 557.3333333333334,
+              "y": 322.6666666666667,
+              "width": 34.666666666666664,
+              "height": 34.666666666666664,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 598.6666666666666,
+              "y": 324,
+              "width": 50.666666666666664,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 2
+            },
+            {
+              "kind": "shape",
+              "x": 500,
+              "y": 376,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "ellipse",
+              "fill": "8e8e7f"
+            },
+            {
+              "kind": "text",
+              "x": 533.3333333333334,
+              "y": 369.3333333333333,
+              "width": 50.666666666666664,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 2
+            },
+            {
+              "kind": "shape",
+              "x": 293.3333333333333,
+              "y": 462.6666666666667,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "ellipse",
+              "fill": "8e8e7f"
+            },
+            {
+              "kind": "text",
+              "x": 326.6666666666667,
+              "y": 456,
+              "width": 50.666666666666664,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 2
+            },
+            {
+              "kind": "shape",
+              "x": 634.6666666666666,
+              "y": 473.3333333333333,
+              "width": 18.666666666666668,
+              "height": 18.666666666666668,
+              "shape": "ellipse",
+              "fill": "8e8e7f"
+            },
+            {
+              "kind": "text",
+              "x": 668,
+              "y": 466.6666666666667,
+              "width": 50.666666666666664,
+              "height": 37.333333333333336,
+              "textRole": "body",
+              "fontSize": 15,
+              "textCapacity": 2
+            },
+            {
+              "kind": "text",
+              "x": 118.66666666666667,
+              "y": 589.3333333333334,
+              "width": 317.3333333333333,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "text",
+              "x": 469.3333333333333,
+              "y": 589.3333333333334,
+              "width": 312,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "text",
+              "x": 842.6666666666666,
+              "y": 230.66666666666666,
+              "width": 373.3333333333333,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 21
+            },
+            {
+              "kind": "title",
+              "x": 842.6666666666666,
+              "y": 286.6666666666667,
+              "width": 373.3333333333333,
+              "height": 82.66666666666667,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 8
+            },
+            {
+              "kind": "text",
+              "x": 842.6666666666666,
+              "y": 414.6666666666667,
+              "width": 146.66666666666666,
+              "height": 41.333333333333336,
+              "textRole": "body",
+              "fontSize": 14,
+              "textCapacity": 14
+            },
+            {
+              "kind": "text",
+              "x": 1004,
+              "y": 414.6666666666667,
+              "width": 212,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 16,
+              "textCapacity": 9
+            },
+            {
+              "kind": "text",
+              "x": 842.6666666666666,
+              "y": 476,
+              "width": 146.66666666666666,
+              "height": 41.333333333333336,
+              "textRole": "body",
+              "fontSize": 14,
+              "textCapacity": 14
+            },
+            {
+              "kind": "text",
+              "x": 1004,
+              "y": 476,
+              "width": 212,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 16,
+              "textCapacity": 9
+            },
+            {
+              "kind": "text",
+              "x": 842.6666666666666,
+              "y": 537.3333333333334,
+              "width": 146.66666666666666,
+              "height": 41.333333333333336,
+              "textRole": "body",
+              "fontSize": 14,
+              "textCapacity": 14
+            },
+            {
+              "kind": "text",
+              "x": 1004,
+              "y": 537.3333333333334,
+              "width": 212,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 16,
+              "textCapacity": 9
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 8,
+          "sourceTitle": "Design the test before reading the result",
+          "family": "comparison",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "experiment"
+          ],
+          "recommendedRoles": [
+            "comparison"
+          ],
+          "structureSummary": "One hypothesis with comparison, measure and a predeclared decision rule",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 232,
+              "width": 366.6666666666667,
+              "height": 138.66666666666666,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 16
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 441.3333333333333,
+              "width": 370.6666666666667,
+              "height": 156,
+              "textRole": "body",
+              "fontSize": 21,
+              "textCapacity": 65
+            },
+            {
+              "kind": "text",
+              "x": 536,
+              "y": 236,
+              "width": 188,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 7
+            },
+            {
+              "kind": "text",
+              "x": 748,
+              "y": 236,
+              "width": 466.6666666666667,
+              "height": 77.33333333333333,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 38
+            },
+            {
+              "kind": "text",
+              "x": 536,
+              "y": 330.6666666666667,
+              "width": 188,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 7
+            },
+            {
+              "kind": "text",
+              "x": 748,
+              "y": 330.6666666666667,
+              "width": 466.6666666666667,
+              "height": 77.33333333333333,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 38
+            },
+            {
+              "kind": "text",
+              "x": 536,
+              "y": 425.3333333333333,
+              "width": 188,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 7
+            },
+            {
+              "kind": "text",
+              "x": 748,
+              "y": 425.3333333333333,
+              "width": 466.6666666666667,
+              "height": 77.33333333333333,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 38
+            },
+            {
+              "kind": "text",
+              "x": 536,
+              "y": 520,
+              "width": 188,
+              "height": 45.333333333333336,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 7
+            },
+            {
+              "kind": "text",
+              "x": 748,
+              "y": 520,
+              "width": 466.6666666666667,
+              "height": 77.33333333333333,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 38
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 9,
+          "sourceTitle": "A small intervention, a measurable change",
+          "family": "comparison",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "case"
+          ],
+          "recommendedRoles": [
+            "comparison"
+          ],
+          "structureSummary": "Intervention narrative beside paired before and after comparisons",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 224,
+              "width": 386.6666666666667,
+              "height": 34.666666666666664,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 24
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 289.3333333333333,
+              "width": 384,
+              "height": 161.33333333333334,
+              "textRole": "title",
+              "fontSize": 34,
+              "textCapacity": 24
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 492,
+              "width": 374.6666666666667,
+              "height": 104,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 42
+            },
+            {
+              "kind": "text",
+              "x": 552,
+              "y": 232,
+              "width": 649.3333333333334,
+              "height": 42.666666666666664,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 24
+            },
+            {
+              "kind": "shape",
+              "x": 553.3333333333334,
+              "y": 300,
+              "width": 388.8,
+              "height": 26.666666666666668,
+              "shape": "rect",
+              "fill": "b7b7a3"
+            },
+            {
+              "kind": "shape",
+              "x": 553.3333333333334,
+              "y": 340,
+              "width": 151.20000000000002,
+              "height": 26.666666666666668,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 305.3333333333333,
+              "width": 210.66666666666666,
+              "height": 60,
+              "textRole": "body",
+              "fontSize": 23,
+              "textCapacity": 6
+            },
+            {
+              "kind": "text",
+              "x": 552,
+              "y": 421.3333333333333,
+              "width": 649.3333333333334,
+              "height": 42.666666666666664,
+              "textRole": "body",
+              "fontSize": 20,
+              "textCapacity": 24
+            },
+            {
+              "kind": "shape",
+              "x": 553.3333333333334,
+              "y": 489.3333333333333,
+              "width": 198.72,
+              "height": 26.666666666666668,
+              "shape": "rect",
+              "fill": "b7b7a3"
+            },
+            {
+              "kind": "shape",
+              "x": 553.3333333333334,
+              "y": 529.3333333333334,
+              "width": 315.36,
+              "height": 26.666666666666668,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 494.6666666666667,
+              "width": 210.66666666666666,
+              "height": 60,
+              "textRole": "body",
+              "fontSize": 23,
+              "textCapacity": 6
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 10,
+          "sourceTitle": "Define what independent work looks like",
+          "family": "table",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "rubric"
+          ],
+          "recommendedRoles": [
+            "table"
+          ],
+          "structureSummary": "Three criteria across three levels of observable competence",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "shape",
+              "x": 914.6666666666666,
+              "y": 220,
+              "width": 301.3333333333333,
+              "height": 376,
+              "shape": "rect",
+              "fill": "F2F2D2"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 233.33333333333334,
+              "width": 269.3333333333333,
+              "height": 48,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 30
+            },
+            {
+              "kind": "text",
+              "x": 360,
+              "y": 233.33333333333334,
+              "width": 256,
+              "height": 48,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 28
+            },
+            {
+              "kind": "text",
+              "x": 644,
+              "y": 233.33333333333334,
+              "width": 257.3333333333333,
+              "height": 48,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 28
+            },
+            {
+              "kind": "text",
+              "x": 930.6666666666666,
+              "y": 233.33333333333334,
+              "width": 285.3333333333333,
+              "height": 48,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 32
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 322.6666666666667,
+              "width": 258.6666666666667,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 360,
+              "y": 322.6666666666667,
+              "width": 245.33333333333334,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 644,
+              "y": 322.6666666666667,
+              "width": 246.66666666666666,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 930.6666666666666,
+              "y": 322.6666666666667,
+              "width": 274.6666666666667,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 414.6666666666667,
+              "width": 258.6666666666667,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 360,
+              "y": 414.6666666666667,
+              "width": 245.33333333333334,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 644,
+              "y": 414.6666666666667,
+              "width": 246.66666666666666,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 930.6666666666666,
+              "y": 414.6666666666667,
+              "width": 274.6666666666667,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 506.6666666666667,
+              "width": 258.6666666666667,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 360,
+              "y": 506.6666666666667,
+              "width": 245.33333333333334,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 644,
+              "y": 506.6666666666667,
+              "width": 246.66666666666666,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 20
+            },
+            {
+              "kind": "text",
+              "x": 930.6666666666666,
+              "y": 506.6666666666667,
+              "width": 274.6666666666667,
+              "height": 76,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 11,
+          "sourceTitle": "Sequence the work around a decision gate",
+          "family": "process",
+          "titlePosition": "left",
+          "bodyColumns": 2,
+          "density": "high",
+          "features": [
+            "roadmap"
+          ],
+          "recommendedRoles": [
+            "process"
+          ],
+          "structureSummary": "Four timed workstreams and a decision gate",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 36,
+              "width": 886.6666666666666,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 10,
+              "textCapacity": 66
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 101.33333333333333,
+              "width": 1152,
+              "height": 85.33333333333333,
+              "textRole": "title",
+              "fontSize": 32,
+              "textCapacity": 27
+            },
+            {
+              "kind": "text",
+              "x": 1005.3333333333334,
+              "y": 61.333333333333336,
+              "width": 210.66666666666666,
+              "height": 17.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 17
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 222.66666666666666,
+              "width": 324,
+              "height": 30.666666666666668,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 22
+            },
+            {
+              "kind": "text",
+              "x": 421.3333333333333,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 617.3333333333334,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 813.3333333333334,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 1009.3333333333334,
+              "y": 221.33333333333334,
+              "width": 176,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 12,
+              "textCapacity": 11
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 273.3333333333333,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 313.3333333333333,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 406.6666666666667,
+              "y": 289.3333333333333,
+              "width": 176.4,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "bebea9"
+            },
+            {
+              "kind": "shape",
+              "x": 579.0666666666667,
+              "y": 300,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "7f7f70"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 354.6666666666667,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 394.6666666666667,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 543.8666666666667,
+              "y": 370.6666666666667,
+              "width": 254.79999999999998,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "bebea9"
+            },
+            {
+              "kind": "shape",
+              "x": 794.6666666666666,
+              "y": 381.3333333333333,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "7f7f70"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 436,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 476,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 759.4666666666667,
+              "y": 452,
+              "width": 215.60000000000002,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "shape",
+              "x": 971.0666666666667,
+              "y": 462.6666666666667,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 517.3333333333334,
+              "width": 318.6666666666667,
+              "height": 40,
+              "textRole": "body",
+              "fontSize": 18,
+              "textCapacity": 13
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 557.3333333333334,
+              "width": 318.6666666666667,
+              "height": 32,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 21
+            },
+            {
+              "kind": "shape",
+              "x": 955.4666666666666,
+              "y": 533.3333333333334,
+              "width": 235.20000000000002,
+              "height": 29.333333333333332,
+              "shape": "rect",
+              "fill": "bebea9"
+            },
+            {
+              "kind": "shape",
+              "x": 1186.6666666666665,
+              "y": 544,
+              "width": 8,
+              "height": 8,
+              "shape": "ellipse",
+              "fill": "7f7f70"
+            },
+            {
+              "kind": "shape",
+              "x": 949.3333333333334,
+              "y": 592,
+              "width": 10.666666666666666,
+              "height": 10.666666666666666,
+              "shape": "ellipse",
+              "fill": "1A1A16"
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 633.3333333333334,
+              "width": 1152,
+              "height": 33.333333333333336,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 66
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 676,
+              "width": 1044,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 87
+            },
+            {
+              "kind": "text",
+              "x": 1161.3333333333333,
+              "y": 672,
+              "width": 54.666666666666664,
+              "height": 29.333333333333332,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        },
+        {
+          "slideNumber": 12,
+          "sourceTitle": "Closing",
+          "family": "closing",
+          "titlePosition": "left",
+          "bodyColumns": 1,
+          "density": "medium",
+          "features": [
+            "closing"
+          ],
+          "recommendedRoles": [
+            "closing"
+          ],
+          "structureSummary": "Closing",
+          "zones": [
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 105.33333333333333,
+              "width": 1133.3333333333333,
+              "height": 34.666666666666664,
+              "textRole": "body",
+              "fontSize": 13,
+              "textCapacity": 65
+            },
+            {
+              "kind": "title",
+              "x": 64,
+              "y": 245.33333333333334,
+              "width": 1146.6666666666667,
+              "height": 262.6666666666667,
+              "textRole": "title",
+              "fontSize": 55,
+              "textCapacity": 45
+            },
+            {
+              "kind": "text",
+              "x": 64,
+              "y": 674.6666666666666,
+              "width": 1013.3333333333334,
+              "height": 21.333333333333332,
+              "textRole": "body",
+              "fontSize": 9,
+              "textCapacity": 84
+            },
+            {
+              "kind": "text",
+              "x": 1160,
+              "y": 670.6666666666666,
+              "width": 53.333333333333336,
+              "height": 26.666666666666668,
+              "textRole": "body",
+              "fontSize": 11,
+              "textCapacity": 3
+            }
+          ],
+          "jsxReference": ""
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "kind": "mit-adaptation",
+    "license": "MIT",
+    "upstream": "https://github.com/zarazhangrui/beautiful-html-templates/tree/e5e204fb1f3b06290846e7dcd7aceddabeceec8c/templates/monochrome",
+    "author": "Zara Zhang",
+    "adaptedBy": "DSH Desktop contributors",
+    "modified": "2026-09-06"
+  }
+}

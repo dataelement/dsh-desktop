@@ -39,8 +39,6 @@ button[data-desktop-ppt][data-selected=true] .desktop-ppt-icon{transform:transla
 button[data-desktop-ppt]:active:not(:disabled){transform:translateY(1px)}
 ._8JRpoa_heroModeCluster button[data-desktop-ppt]:active:not(:disabled){transform:translateY(1px)}
 button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-primary)!important;outline-offset:2px}
-[data-slot="conversation.composer.bar"] div:has(> [data-slot="conversation.composer.dock"] [data-office-ppt-template-panel]){width:100%}
-[data-placement="fixed"]:has([data-office-ppt-template-panel]){width:100%}
 @media(prefers-reduced-motion:reduce){button[data-desktop-ppt],._8JRpoa_heroModeCluster button[data-desktop-ppt],button[data-desktop-ppt] .desktop-ppt-icon{transition:none}}
 `;
 			document.head.appendChild(tag);

@@ -18,8 +18,6 @@ macOS uses one matrix job with native Apple Silicon and Intel runners. Both entr
 
 Concurrency is grouped by ref and target: a Windows-only retry can run while an all-platform run finishes macOS notarization. Runs for the same ref and target remain serialized; publication still requires `target=all` (or a release tag), and the single local UKey runner serializes Windows signing.
 
-Generated PPT packages must match `asarUnpack` by their staging source paths, not just their `node_modules` destinations. The afterPack gate runs the packaged Node executable against physical runtime directories, including native imports and all template previews. Electron's ASAR-aware reads cannot substitute for this check because the Windows Harness uses standalone Node.
-
 The self-hosted signer downloads artifacts in six concurrent 32 MiB ranges through `gh`, retries bounded requests, and checks the complete archive against GitHub's SHA-256 digest before extraction. A real 668,014,109-byte signing artifact downloaded and verified in 149 seconds on the signing host; the previous single stream was still incomplete after ten minutes. Throughput depends on the network. A short response, failed transfer or digest mismatch leaves an existing verified output untouched and removes temporary parts.
 
 ## Local Windows UKey signing runner

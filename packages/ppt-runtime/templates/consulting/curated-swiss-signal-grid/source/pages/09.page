@@ -1,0 +1,458 @@
+pageType: decision
+background:
+  type: solid
+  color: $paper
+elements:
+  - elementId: entry-index-field
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 52
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: $black
+    border:
+      color: $black
+      width: 0
+  - elementId: entry-red-tab
+    elementType: shape
+    bounds:
+      - 52
+      - 212
+      - 10
+      - 116
+    shapeName: rect
+    fill:
+      type: solid
+      color: $red
+    border:
+      color: $red
+      width: 0
+  - elementId: entry-rule-top
+    elementType: line
+    bounds:
+      - 80
+      - 42
+      - 808
+      - 1
+    viewBox:
+      - 808
+      - 1
+    points: 0,0 808,0
+    border:
+      color: $black
+      width: 1.2
+  - elementId: entry-matrix-q1
+    elementType: shape
+    bounds:
+      - 110
+      - 184
+      - 244
+      - 126
+    shapeName: rect
+    fill:
+      type: solid
+      color: $wash
+    border:
+      color: $grid
+      width: 0.7
+  - elementId: entry-matrix-q2
+    elementType: shape
+    bounds:
+      - 354
+      - 184
+      - 244
+      - 126
+    shapeName: rect
+    fill:
+      type: solid
+      color: $red
+    border:
+      color: $red
+      width: 0
+  - elementId: entry-matrix-q3
+    elementType: shape
+    bounds:
+      - 110
+      - 310
+      - 244
+      - 126
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF00'
+    border:
+      color: $grid
+      width: 0.7
+  - elementId: entry-matrix-q4
+    elementType: shape
+    bounds:
+      - 354
+      - 310
+      - 244
+      - 126
+    shapeName: rect
+    fill:
+      type: solid
+      color: $black
+    border:
+      color: $black
+      width: 0
+  - elementId: entry-gate-line-1
+    elementType: line
+    bounds:
+      - 658
+      - 220
+      - 230
+      - 1
+    viewBox:
+      - 230
+      - 1
+    points: 0,0 230,0
+    border:
+      color: $grid
+      width: 0.8
+  - elementId: entry-gate-line-2
+    elementType: line
+    bounds:
+      - 658
+      - 274
+      - 230
+      - 1
+    viewBox:
+      - 230
+      - 1
+    points: 0,0 230,0
+    border:
+      color: $grid
+      width: 0.8
+  - elementId: entry-gate-line-3
+    elementType: line
+    bounds:
+      - 658
+      - 328
+      - 230
+      - 1
+    viewBox:
+      - 230
+      - 1
+    points: 0,0 230,0
+    border:
+      color: $grid
+      width: 0.8
+  - elementId: entry-gate-line-4
+    elementType: line
+    bounds:
+      - 658
+      - 382
+      - 230
+      - 1
+    viewBox:
+      - 230
+      - 1
+    points: 0,0 230,0
+    border:
+      color: $grid
+      width: 0.8
+  - elementId: entry-index
+    elementType: text
+    bounds:
+      - 10
+      - 426
+      - 32
+      - 84
+    rotation: 270
+    content:
+      text: 09 / TRADE-OFF
+      fontFamily: &ref_0
+        latin: Arial
+        ea: Noto Sans CJK SC
+        mac: PingFang SC
+        win: Microsoft YaHei
+      fontSize: 8.5
+      bold: true
+      letterSpacing: 1.1
+      color: $white
+      align:
+        - center
+        - middle
+  - elementId: entry-kicker
+    elementType: text
+    bounds:
+      - 80
+      - 54
+      - 500
+      - 18
+    content:
+      text: MARKET ENTRY / POTENTIAL × CONTROL
+      fontFamily: *ref_0
+      fontSize: 9
+      bold: true
+      letterSpacing: 1.2
+      color: $red
+  - elementId: entry-title
+    elementType: text
+    bounds:
+      - 80
+      - 78
+      - 808
+      - 42
+    content:
+      style: $title
+      text: Balance market potential and operating control
+  - elementId: entry-lead
+    elementType: text
+    bounds:
+      - 80
+      - 126
+      - 808
+      - 24
+    content:
+      style: $lead
+      text: Demand is the starting point; fulfillment and compliance sustain it
+  - elementId: entry-axis-y
+    elementType: text
+    bounds:
+      - 78
+      - 236
+      - 30
+      - 170
+    rotation: 270
+    content:
+      text: 'OPERATING CONTROL: LOW → HIGH'
+      fontFamily: *ref_0
+      fontSize: 10
+      bold: true
+      color: $gray
+      align:
+        - center
+        - middle
+  - elementId: entry-axis-x
+    elementType: text
+    bounds:
+      - 254
+      - 446
+      - 200
+      - 18
+    content:
+      text: 'MARKET POTENTIAL: LOW → HIGH'
+      fontFamily: *ref_0
+      fontSize: 10
+      bold: true
+      color: $gray
+      align:
+        - center
+        - top
+  - elementId: entry-q1-title
+    elementType: text
+    bounds:
+      - 130
+      - 208
+      - 204
+      - 26
+    content:
+      text: Efficient coverage
+      fontFamily: *ref_0
+      fontSize: 18
+      bold: true
+      color: $black
+  - elementId: entry-q1-note
+    elementType: text
+    bounds:
+      - 130
+      - 248
+      - 200
+      - 42
+    content:
+      text: Serve repeat demand<br>with limited cost
+      fontFamily: *ref_0
+      fontSize: 11
+      lineHeight: 1.25
+      color: $gray
+  - elementId: entry-q2-title
+    elementType: text
+    bounds:
+      - 374
+      - 208
+      - 204
+      - 26
+    content:
+      text: Prioritize entry
+      fontFamily: *ref_0
+      fontSize: 18
+      bold: true
+      color: $white
+  - elementId: entry-q2-note
+    elementType: text
+    bounds:
+      - 374
+      - 248
+      - 200
+      - 42
+    content:
+      text: Build a local team<br>and fulfillment
+      fontFamily: *ref_0
+      fontSize: 11
+      lineHeight: 1.25
+      color: $white
+  - elementId: entry-q3-title
+    elementType: text
+    bounds:
+      - 130
+      - 334
+      - 204
+      - 26
+    content:
+      text: Defer entry
+      fontFamily: *ref_0
+      fontSize: 18
+      bold: true
+      color: $black
+  - elementId: entry-q3-note
+    elementType: text
+    bounds:
+      - 130
+      - 374
+      - 200
+      - 42
+    content:
+      text: High resource cost<br>Limited strategic need
+      fontFamily: *ref_0
+      fontSize: 11
+      lineHeight: 1.25
+      color: $gray
+  - elementId: entry-q4-title
+    elementType: text
+    bounds:
+      - 374
+      - 334
+      - 204
+      - 26
+    content:
+      text: Run a small test
+      fontFamily: *ref_0
+      fontSize: 18
+      bold: true
+      color: $white
+  - elementId: entry-q4-note
+    elementType: text
+    bounds:
+      - 374
+      - 374
+      - 200
+      - 42
+    content:
+      text: Validate demand<br>Build capabilities
+      fontFamily: *ref_0
+      fontSize: 11
+      lineHeight: 1.25
+      color: $white
+  - elementId: entry-gate-title
+    elementType: text
+    bounds:
+      - 658
+      - 174
+      - 230
+      - 28
+    content:
+      text: Four entry gates
+      fontFamily: *ref_0
+      fontSize: 19
+      bold: true
+      color: $black
+  - elementId: entry-gate-1
+    elementType: text
+    bounds:
+      - 658
+      - 226
+      - 230
+      - 32
+    content:
+      text: 01  Is demand concentrated?
+      fontFamily: *ref_0
+      fontSize: 13
+      bold: true
+      color: $black
+  - elementId: entry-gate-2
+    elementType: text
+    bounds:
+      - 658
+      - 280
+      - 230
+      - 32
+    content:
+      text: 02  Can delivery meet the promise?
+      fontFamily: *ref_0
+      fontSize: 13
+      bold: true
+      color: $black
+  - elementId: entry-gate-3
+    elementType: text
+    bounds:
+      - 658
+      - 334
+      - 230
+      - 32
+    content:
+      text: 03  Is compliance affordable?
+      fontFamily: *ref_0
+      fontSize: 13
+      bold: true
+      color: $black
+  - elementId: entry-gate-4
+    elementType: text
+    bounds:
+      - 658
+      - 388
+      - 230
+      - 32
+    content:
+      text: 04  Is the local team ready?
+      fontFamily: *ref_0
+      fontSize: 13
+      bold: true
+      color: $black
+  - elementId: entry-decision
+    elementType: text
+    bounds:
+      - 658
+      - 446
+      - 230
+      - 42
+    content:
+      text: Close capability gaps before scaling.
+      fontFamily: *ref_0
+      fontSize: 15
+      bold: true
+      color: $red
+  - elementId: entry-source
+    elementType: text
+    bounds:
+      - 80
+      - 512
+      - 720
+      - 12
+    content:
+      text: Decision framework only; this matrix does not score specific countries.
+      fontFamily: *ref_0
+      fontSize: 8.5
+      color: $gray
+  - elementId: entry-page
+    elementType: text
+    bounds:
+      - 856
+      - 510
+      - 32
+      - 12
+    content:
+      text: '09'
+      fontFamily: *ref_0
+      fontSize: 9
+      bold: true
+      color: $black
+      align:
+        - right
+        - bottom

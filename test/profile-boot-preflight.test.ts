@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { composeEntries, loadProfileDirectory, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { inspectProfileBootInputs } from '../src/main/state/profile-boot-preflight'
 import { setHostPluginEnabled } from '../src/main/state/host-plugin-state'
 import { projectRoot } from './patch-path'
@@ -56,91 +56,19 @@ describe('normal Profile boot preflight', () => {
     expect(await check()).toBeUndefined()
   })
 
-  it('skips a disabled incompatible bundle in both preflight and Harness, then checks it again when enabled', async () => {
+  it('skips a disabled incompatible or missing bundle before startup checks', async () => {
     const { profile, bundle, check } = await fixture()
-    await writeFile(join(bundle, 'package.json'), JSON.stringify({
-      name: 'test-startup-bundle', version: '1.0.0',
-      peerDependencies: { '@deepseek-ai/dsh-api': '0.0.0' },
-      dsh: { bundle: { patch: 'cordis.patch.yml' } }
-    }))
-    const anchor = join(profile, 'missing-install', 'package.json')
+    await writeFile(join(bundle, 'package.json'), '{broken')
     expect((await check())?.packageName).toBe('test-startup-bundle')
     await mkdir(join(profile, '.dsh-market'))
     const statePath = join(profile, '.dsh-market', 'state.json')
     await writeFile(statePath, JSON.stringify({ disabled: ['test-startup-bundle'] }))
     expect(await check()).toBeUndefined()
-    expect(loadProfileDirectory('dsh-desktop', profile, anchor).layers).toEqual([])
+    expect(loadProfileDirectory('dsh-desktop', profile, join(profile, 'missing-app', 'package.json')).layers).toEqual([])
+    await rm(bundle, { recursive: true })
+    expect(await check()).toBeUndefined()
     await writeFile(statePath, JSON.stringify({ disabled: [] }))
     expect((await check())?.packageName).toBe('test-startup-bundle')
-  })
-
-  it('skips a disabled bundle whose files are missing, while still checking other active bundles', async () => {
-    const { profile, bundle, check } = await fixture()
-    await rm(bundle, { recursive: true })
-    await mkdir(join(profile, '.dsh-market'))
-    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({
-      disabledSkins: ['test-startup-bundle']
-    }))
-    expect(await check()).toBeUndefined()
-    await writeFile(join(profile, 'package.json'), JSON.stringify({
-      dsh: { profile: { bundles: ['test-startup-bundle', 'another-active-bundle'] } }
-    }))
-    expect((await check())?.packageName).toBe('another-active-bundle')
-  })
-
-  it('does not treat an unreadable market state as permission to skip checks', async () => {
-    const { profile, bundle, check } = await fixture()
-    await rm(bundle, { recursive: true })
-    await mkdir(join(profile, '.dsh-market'))
-    await writeFile(join(profile, '.dsh-market', 'state.json'), '{bad json')
-    expect((await check())?.packageName).toBe('test-startup-bundle')
-  })
-
-  it('disables host overlay rows that insert an off Profile package', async () => {
-    const { home, profile, check } = await fixture()
-    await writeFile(join(profile, 'cordis.patch.yml'), '- id: host-bundle-row\n  disabled: true\n')
-    await mkdir(join(profile, '.dsh-market'))
-    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['test-startup-bundle'] }))
-    expect(await check()).toBeUndefined()
-    const anchor = join(home, 'app', 'package.json')
-    const loaded = loadProfileDirectory('dsh-desktop', profile, anchor)
-    const context: ProfileContext = {
-      name: 'web', dir: profile, home, installAnchor: anchor,
-      patchPath: join(profile, 'cordis.patch.yml'), cwd: home,
-      startedBundles: ['test-startup-bundle'], telemetryDisabledEnv: undefined,
-      overlays: [{ insert: [{ id: 'host-bundle-row', name: 'test-startup-bundle' }] }]
-    }
-    const entries = composeEntries([readProfilePatches('dsh-desktop', context, loaded)])
-    expect(entries).toEqual([expect.objectContaining({ id: 'host-bundle-row', disabled: true })])
-  })
-
-  it('restores a core row previously disabled through a now skipped plugin with the same row id', async () => {
-    const { home, profile, bundle } = await fixture()
-    const core = join(profile, 'node_modules', 'core-bundle')
-    await mkdir(core, { recursive: true })
-    await writeFile(join(core, 'package.json'), JSON.stringify({
-      name: 'core-bundle', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } }
-    }))
-    await writeFile(join(core, 'cordis.patch.yml'), '- insert:\n    - id: authorization\n      name: core-authorization\n')
-    await writeFile(join(bundle, 'cordis.patch.yml'), '- insert:\n    - id: authorization\n      name: test-startup-bundle\n')
-    await writeFile(join(profile, 'package.json'), JSON.stringify({
-      dsh: { profile: { bundles: ['core-bundle', 'test-startup-bundle'] } }
-    }))
-    await writeFile(join(profile, 'cordis.patch.yml'), '- id: authorization\n  disabled: true\n')
-    await mkdir(join(profile, '.dsh-market'))
-    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['test-startup-bundle'] }))
-    const anchor = join(home, 'app', 'package.json')
-    const loaded = loadProfileDirectory('dsh-desktop', profile, anchor)
-    const context: ProfileContext = {
-      name: 'web', dir: profile, home, installAnchor: anchor,
-      patchPath: join(profile, 'cordis.patch.yml'), cwd: home,
-      startedBundles: ['core-bundle', 'test-startup-bundle'], telemetryDisabledEnv: undefined,
-      overlays: []
-    }
-    const entries = composeEntries([readProfilePatches('dsh-desktop', context, loaded)])
-    expect(entries).toEqual([expect.objectContaining({
-      id: 'authorization', name: 'core-authorization', disabled: false
-    })])
   })
 
   it.each(['dsh-image-generation', 'test-startup-bundle'])('sends a duplicate %s bundle to Recovery without changing the manifest', async (name) => {

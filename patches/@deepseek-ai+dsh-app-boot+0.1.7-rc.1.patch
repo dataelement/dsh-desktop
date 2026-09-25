@@ -1,18 +1,26 @@
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-index b538729..fc9871d 100644
+index b538729..98e291e 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-@@ -762,7 +762,8 @@ function readOptionalProfileManifest(profile) {
- function skippedProfileBundles(profile, manifest) {
- 	const selected = manifest?.dsh?.profile?.bundles ?? [];
- 	const loaded = new Set(profile?.layers.map((layer) => layer.packageName));
--	return new Set(selected.filter((name) => !loaded.has(name)));
-+	const disabled = profile === void 0 ? new Set() : readDisabledProfileBundles(profile.dir);
-+	return new Set(selected.filter((name) => !loaded.has(name) && !disabled.has(name)));
+@@ -832,6 +832,17 @@ function readProfileManifest(binName, dir) {
+ 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${binName}: profile manifest ${path} must hold a JSON object`);
+ 	return parsed;
  }
- /** Return installed direct dependencies that Node resolves before profile fallback. */
- function installedProfilePackageNames(profile, manifest) {
-@@ -913,27 +914,76 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
++// The market package switch must be read before preparing bundle manifests.
++// An unreadable state cannot authorize skipping any bundle.
++function readDisabledProfileBundles(dir) {
++	try {
++		const state = JSON.parse(readFileSync(join(dir, ".dsh-market", "state.json"), "utf8"));
++		const list = state.disabled !== void 0 ? state.disabled : state.disabledSkins;
++		return new Set(Array.isArray(list) ? list.filter((name) => typeof name === "string") : []);
++	} catch {
++		return new Set();
++	}
++}
+ /**
+ * Write a profile's manifest back (2-space JSON, trailing newline).
+ * @param dir - the profile directory.
+@@ -913,27 +924,48 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
  * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
  * @returns the successfully loaded bundle layers and optional user patch layer.
  */
@@ -28,40 +36,12 @@ index b538729..fc9871d 100644
 +	}
 +	return patches;
 +}
-+// The market's disabled list is a profile-level switch. Read it before
-+// resolving bundles, since even an unreadable or incompatible disabled bundle
-+// must not prevent the rest of the profile from starting.
-+function readDisabledProfileBundles(dir) {
-+	const path = join(dir, ".dsh-market", "state.json");
-+	if (!existsSync(path)) return new Set();
-+	try {
-+		const state = JSON.parse(readFileSync(path, "utf8"));
-+		if (state === null || typeof state !== "object" || Array.isArray(state)) return new Set();
-+		const list = state.disabled !== void 0 ? state.disabled : state.disabledSkins;
-+		return new Set(Array.isArray(list) ? list.filter((name) => typeof name === "string") : []);
-+	} catch {
-+		// An unreadable market state cannot authorize skipping bundle checks.
-+		return new Set();
-+	}
-+}
-+function insertedProfileRows(patches) {
-+	const rows = new Map();
-+	const scan = (row) => {
-+		if (typeof row.id === "string") {
-+			if (!rows.has(row.id)) rows.set(row.id, new Set());
-+			if (typeof row.name === "string") rows.get(row.id).add(row.name);
-+		}
-+		if (row.group && Array.isArray(row.config)) row.config.forEach(scan);
-+	};
-+	for (const patch of patches) if (Array.isArray(patch.insert)) patch.insert.forEach(scan);
-+	return rows;
-+}
  function loadProfileDirectory(binName, dir, installAnchor, options = {}) {
  	const bundles = readProfileManifest(binName, dir).dsh?.profile?.bundles ?? [];
++	const disabled = readDisabledProfileBundles(dir);
  	const layers = [];
  	const exemptions = bundles.length === 0 ? {} : readProfileVersionExemptions(dir);
 -	for (const packageName of bundles) try {
-+	const disabled = readDisabledProfileBundles(dir);
 +	for (const packageName of bundles) {
 +		if (disabled.has(packageName)) continue;
 +		const owner = { packageName };
@@ -93,43 +73,7 @@ index b538729..fc9871d 100644
  	}
  	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
  	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
-@@ -1019,6 +1069,35 @@ function readProfilePatches(binName, context, initialProfile) {
- 		...loadOptionalPatches(binName, join(context.home, "cordis.patch.yml")) ?? [],
- 		...context.overlays
- 	]);
-+	// Desktop overlays can also insert an installed package by name. A Profile
-+	// disable must cover those rows as well as the package's bundle layer.
-+	const disabled = readDisabledProfileBundles(context.dir);
-+	for (const overlay of context.overlays) {
-+		for (const row of overlay.insert ?? []) {
-+			if (disabled.has(row.name) && typeof row.id === "string") patches.push({ id: row.id, disabled: true });
-+		}
-+	}
-+	// Older Desktop versions wrote user-layer row disables for a disabled
-+	// package. An id can also belong to an active bundle (authorization is one
-+	// example); restore only those shared rows after the disabled layer is gone.
-+	const activeRows = insertedProfileRows([
-+		...profile.layers.flatMap((layer) => layer.patches),
-+		...context.overlays
-+	]);
-+	const userDisabledIds = new Set(patches.filter((patch) => patch.disabled === true).map((patch) => patch.id));
-+	for (const packageName of disabled) {
-+		try {
-+			const packageDir = resolveBundleDir(binName, packageName, context.installAnchor, context.dir);
-+			const bundle = readProfileManifest(binName, packageDir).dsh?.bundle;
-+			if (bundle === void 0) continue;
-+			const rows = insertedProfileRows(bundlePatchPaths(packageDir, bundle).flatMap((path) => loadOverlayPatches(binName, path)));
-+			for (const id of rows.keys()) {
-+				if (userDisabledIds.has(id) && [...activeRows.get(id) ?? []].some((name) => name !== packageName)) patches.push({ id, disabled: false });
-+			}
-+		} catch {
-+			// An absent disabled package has no rows to recover; its bundle was skipped.
-+		}
-+	}
- 	const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv, composeEntries([patches]).some((row) => row.id === TELEMETRY_ROW_ID));
- 	if (telemetryPatch !== void 0) patches.push(telemetryPatch);
- 	return patches;
-@@ -3853,7 +3932,10 @@ var StartupError = class extends Error {
+@@ -3853,7 +3885,10 @@ var StartupError = class extends Error {
  	* @param entries - inactive plugin metadata and original failure values.
  	*/
  	constructor(message, entries) {
@@ -141,7 +85,7 @@ index b538729..fc9871d 100644
  		super(message, failures.length > 0 ? { cause: new AggregateError(failures, "Plugin activation failures") } : void 0);
  		this.entries = entries;
  		Object.defineProperties(this, {
-@@ -3890,7 +3972,7 @@ async function inactiveEntries(ctx) {
+@@ -3890,7 +3925,7 @@ async function inactiveEntries(ctx) {
  				entry,
  				outcome: {
  					kind: "failed",
@@ -150,7 +94,7 @@ index b538729..fc9871d 100644
  				}
  			});
  			continue;
-@@ -3991,13 +4073,14 @@ function startupDiagnostic(binName, failures, required) {
+@@ -3991,13 +4026,14 @@ function startupDiagnostic(binName, failures, required) {
  */
  async function auditStartupEntries(ctx, binName, warn = (line) => void process.stderr.write(line)) {
  	const failures = await inactiveEntries(ctx);
@@ -167,7 +111,7 @@ index b538729..fc9871d 100644
  	})));
  	if (failures.length > 0) warn(activationDiagnostic(binName, failures));
  }
-@@ -4069,7 +4152,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
+@@ -4069,7 +4105,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
  		await auditStartupEntries(ctx, binName);
  		return ctx;
  	} catch (cause) {

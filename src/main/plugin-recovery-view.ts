@@ -314,7 +314,6 @@ export function buildPluginRecoveryViewModel(options: {
   }
 }
 
-
 function buildMarketCheck(
   locale: PluginRecoveryLocale,
   market: NonNullable<Parameters<typeof buildPluginRecoveryViewModel>[0]['market']>
