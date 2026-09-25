@@ -543,13 +543,14 @@ jobs:
             exit 1
           }
       - name: Download and verify Jsign
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           jsign_jar="$WINDOWS_SIGNING_WORK_DIR/jsign-${JSIGN_VERSION}.jar"
-          curl --fail-with-body --location --retry 3 --retry-all-errors \
-            --connect-timeout 15 --max-time 180 \
-            --output "$jsign_jar" \
-            "https://github.com/ebourg/jsign/releases/download/${JSIGN_VERSION}/jsign-${JSIGN_VERSION}.jar"
+          gh release download "$JSIGN_VERSION" --repo ebourg/jsign \
+            --pattern "jsign-${JSIGN_VERSION}.jar" --dir "$WINDOWS_SIGNING_WORK_DIR" --clobber
           test -s "$jsign_jar"
           printf '%s  %s\n' "$JSIGN_SHA256" "$jsign_jar" | shasum -a 256 --check
           java -jar "$jsign_jar" --version
