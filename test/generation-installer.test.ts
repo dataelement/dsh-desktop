@@ -652,6 +652,66 @@ describe('the generation installer', () => {
     expect(result.problems).toContain('broken does not resolve from the generation or installation closure')
   })
 
+  it('hands pnpm a project-relative file: spec for local sources (#563)', async () => {
+    const home = await freshHome()
+    const source = join(home, 'local-source')
+    await mkdir(source, { recursive: true })
+    await writeFile(join(source, 'package.json'), JSON.stringify({ name: 'local-shape', version: '1.0.0' }))
+    const specs: string[] = []
+    const spawnProcess = (_executable: string, args: string[], spawnOptions: { cwd: string }) => {
+      specs.push(String(args[2]))
+      const listeners: Record<string, (value?: unknown) => void> = {}
+      const stream = { on: () => stream }
+      const child = {
+        stdout: stream,
+        stderr: stream,
+        once: (event: string, listener: (value?: unknown) => void) => {
+          listeners[event] = listener
+          return child
+        },
+        kill: () => undefined
+      }
+      void (async () => {
+        const pkg = join(spawnOptions.cwd, 'node_modules', 'local-shape')
+        await mkdir(pkg, { recursive: true })
+        await writeFile(join(pkg, 'package.json'), JSON.stringify({ name: 'local-shape', version: '1.0.0' }))
+        await writeFile(join(spawnOptions.cwd, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+        listeners.close?.(0)
+      })()
+      return child
+    }
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: 'file:local-source',
+      expectedPluginName: 'local-shape',
+      sourceDirectory: source,
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      spawnProcess
+    })
+    expect(result.ok).toBe(true)
+    // The absolute `file:${sourceCopy}` form is read as a relative suffix by
+    // pnpm on Windows and produced doubled absolute paths across drives and
+    // junction spellings; the spec must stay project-relative and portable.
+    expect(specs).toEqual(['file:./source/local-shape'])
+  })
+
+  it('skips Node builtin dependencies instead of resolving them as files (#563)', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'builtin-deps')
+    const modules = join(directory, 'node_modules')
+    for (const [name, fields] of Object.entries({
+      'root-plugin': { dependencies: { 'node:fs': '*', 'node:crypto': '*', ordinary: '*' } },
+      ordinary: { main: 'index.js' }
+    })) {
+      await mkdir(join(modules, name), { recursive: true })
+      await writeFile(join(modules, name, 'package.json'), JSON.stringify({ name, ...fields }))
+    }
+    await writeFile(join(modules, 'ordinary', 'index.js'), 'module.exports = {}')
+    const generation = { id: 'builtin-deps', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect(await verifyGenerationPeers(home, generation)).toEqual({ ok: true, problems: [] })
+  })
+
   it('fails validation when a required ordinary dependency is missing', async () => {
     const home = await freshHome()
     const directory = join(home, 'profiles', '.generations', 'live', 'missing-dependency')
