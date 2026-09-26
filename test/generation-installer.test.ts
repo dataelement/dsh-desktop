@@ -670,6 +670,35 @@ describe('the generation installer', () => {
     )
   })
 
+  it('validates CLI-only host peers by their executable while retaining closure checks', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'cli-peer')
+    const plugin = join(directory, 'node_modules', 'root-plugin')
+    const host = join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh')
+    await mkdir(plugin, { recursive: true })
+    await mkdir(join(host, 'lib'), { recursive: true })
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin',
+      peerDependencies: { '@deepseek-ai/dsh': '>=0.1.7-rc.2' } }))
+    await writeFile(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh',
+      version: '0.1.7-rc.2', type: 'module', bin: { dsh: 'lib/bin.js' } }))
+    const entry = join(host, 'lib', 'bin.js')
+    await writeFile(entry, 'throw new Error("validation must not execute the CLI")')
+    const generation = { id: 'cli-peer', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect(await verifyGenerationPeers(home, generation, { dshEntryPath: entry })).toEqual({ ok: true, problems: [] })
+    await rm(entry)
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    await mkdir(entry)
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    await rm(entry, { recursive: true })
+    await writeFile(entry, '')
+    await writeFile(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh',
+      main: 'missing.js', bin: { dsh: 'lib/bin.js' } }))
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    await writeFile(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', bin: '../escape.js' }))
+    await writeFile(join(host, '..', 'escape.js'), '')
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+  })
+
   it('does not accept a broken root entry merely because its package manifest exists', async () => {
     const home = await freshHome()
     const directory = join(home, 'profiles', '.generations', 'live', 'broken-entry')

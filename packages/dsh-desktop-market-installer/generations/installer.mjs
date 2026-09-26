@@ -523,8 +523,18 @@ function importExportTarget(value) {
 }
 
 async function resolveNonRootPackage(requireFromPackage, dependency) {
-  for (const modules of requireFromPackage.resolve.paths(dependency) ?? []) {
-    const file = join(modules, dependency, 'package.json')
+  // Harness intercepts package resolution, but resolve.paths() still exposes
+  // legacy filesystem links. Ask the active resolver for the manifest first.
+  let selectedManifest
+  try {
+    selectedManifest = requireFromPackage.resolve(`${dependency}/package.json`)
+  } catch {
+    // Packages with exports may hide their manifest; keep the bounded lookup.
+  }
+  const files = selectedManifest ? [selectedManifest]
+    : (requireFromPackage.resolve.paths(dependency) ?? []).map(modules => join(modules, dependency, 'package.json'))
+  for (const file of files) {
+    const packageDirectory = file.slice(0, -'package.json'.length)
     let manifest
     try {
       manifest = JSON.parse(await readFile(file, 'utf8'))
@@ -538,8 +548,22 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       Object.hasOwn(exported, '.') ? exported['.'] : exported
     const importTarget = importExportTarget(rootExport)
     if (typeof importTarget === 'string' && importTarget.startsWith('./')) {
-      const entry = join(modules, dependency, importTarget)
+      const entry = join(packageDirectory, importTarget)
       if (existsSync(entry)) return entry
+    }
+    // CLI-only packages (including @deepseek-ai/dsh) have no importable root.
+    // Validate an actual executable target; a manifest alone is not enough.
+    // Do not let a bin hide a broken library main/exports entry.
+    if (!manifest.main && manifest.exports === undefined && manifest.bin) {
+      const targets = typeof manifest.bin === 'string' ? [manifest.bin]
+        : typeof manifest.bin === 'object' ? Object.values(manifest.bin) : []
+      const root = packageDirectory
+      for (const target of targets) {
+        if (typeof target !== 'string' || isAbsolute(target)) continue
+        const entry = join(root, target)
+        if (!isInsideDirectory(root, entry)) continue
+        if ((await lstat(entry).catch(() => undefined))?.isFile()) return entry
+      }
     }
     const declarationOnly = typeof (manifest.types ?? manifest.typings) === 'string' &&
       !manifest.main && !hasRuntimeExport(manifest.exports)
@@ -547,7 +571,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       !Array.isArray(manifest.exports) && !Object.hasOwn(manifest.exports, '.') &&
       Object.keys(manifest.exports).some((key) => key.startsWith('./'))
     if (declarationOnly) {
-      const declaration = join(modules, dependency, manifest.types ?? manifest.typings)
+      const declaration = join(packageDirectory, manifest.types ?? manifest.typings)
       return existsSync(declaration) ? declaration : undefined
     }
     // Some SDKs publish a root export without shipping its target, while their
@@ -559,7 +583,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
         if (!subpath.startsWith('./') || subpath.includes('*')) continue
         const selected = importExportTarget(target)
         if (typeof selected !== 'string' || !selected.startsWith('./') || selected.includes('*')) continue
-        const entry = join(modules, dependency, selected)
+        const entry = join(packageDirectory, selected)
         if (existsSync(entry)) return entry
       }
     }
