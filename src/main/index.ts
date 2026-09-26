@@ -1,4 +1,5 @@
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
+import { applyMacosWindowBackdrop } from './macos-window-backdrop'
 import { runtimePackageRoot } from './runtime-package-root'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { RepairAgentService, type CrashEvidence } from './repair-agent'
@@ -501,7 +502,8 @@ function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOption
 
 function applyWindowChromeTheme(window: BrowserWindow, isDark: boolean): void {
   if (window.isDestroyed()) return
-  window.setBackgroundColor(isDark ? '#141416' : '#ffffff')
+  if (process.platform === 'darwin') applyMacosWindowBackdrop(window, isDark)
+  else window.setBackgroundColor(isDark ? '#141416' : '#ffffff')
   if (process.platform === 'win32') {
     windowsMenuDark = isDark
     window.setTitleBarOverlay(windowsTitleBarOverlay(isDark))
@@ -602,34 +604,11 @@ function configureAppIdentity(): void {
 async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   if (window.isDestroyed()) return
 
-  // The sidebar already reserves enough room for macOS traffic lights. Read
-  // Harness's resolved theme before showing the window so the native surface
-  // matches the first rendered frame. The transparent drag strip restores the
-  // native window gesture without adding a visual titlebar or covering the
-  // traffic lights and right-side header actions.
+  // Harness's marked chrome rows own window dragging. Its resolved body theme
+  // also works when macOS renders a transparent page over native vibrancy.
   const isDark = await window.webContents.executeJavaScript(
     `(() => {
-      if (${process.platform === 'darwin'}) {
-        let dragRegion = document.getElementById('dsh-desktop-drag-region')
-        if (!dragRegion) {
-          dragRegion = document.createElement('div')
-          dragRegion.id = 'dsh-desktop-drag-region'
-          dragRegion.setAttribute('aria-hidden', 'true')
-          Object.assign(dragRegion.style, {
-            position: 'fixed',
-            zIndex: '18',
-            top: '0',
-            left: '80px',
-            right: '220px',
-            height: '24px',
-            background: 'transparent',
-            pointerEvents: 'auto',
-            userSelect: 'none'
-          })
-          dragRegion.style.setProperty('-webkit-app-region', 'drag')
-          document.body.appendChild(dragRegion)
-        }
-      }
+      if (${process.platform === 'darwin'}) return document.body.hasAttribute('data-ds-dark-theme')
       if (document.body.hasAttribute('data-ds-dark-theme')) return true
       const color = getComputedStyle(document.body).backgroundColor
       const channels = color.match(/[\\d.]+/g)?.slice(0, 3).map(Number)
@@ -1057,8 +1036,12 @@ function createWindow(): BrowserWindow {
     show: false,
     title: '',
     icon: desktopIconPath(),
-    frame: process.platform !== 'darwin',
-    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const } : {}),
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset' as const,
+      trafficLightPosition: { x: 16, y: 18 },
+      vibrancy: 'sidebar' as const,
+      visualEffectState: 'active' as const
+    } : {}),
     ...(isWindows
       ? {
         titleBarStyle: 'hidden' as const,
@@ -1066,7 +1049,7 @@ function createWindow(): BrowserWindow {
         autoHideMenuBar: true
       }
       : {}),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141416' : '#f8f8f6',
+    backgroundColor: process.platform === 'darwin' ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#141416' : '#f8f8f6',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -1077,18 +1060,18 @@ function createWindow(): BrowserWindow {
   })
   if (process.platform === 'darwin') {
     window.setWindowButtonVisibility(true)
-    // Match the sidebar inset at the current zoom, with a 2px optical correction
-    // for the round native buttons relative to the logo's visible left edge.
-    const alignWindowButtons = (): void => {
+    const applyBackdrop = (): void => applyMacosWindowBackdrop(window, nativeTheme.shouldUseDarkColors)
+    window.on('minimize', applyBackdrop)
+    window.on('hide', applyBackdrop)
+    window.on('restore', applyBackdrop)
+    window.on('show', applyBackdrop)
+    const syncFullscreen = (): void => {
       if (window.isDestroyed()) return
-      window.setWindowButtonPosition({
-        x: Math.round(16 * window.webContents.getZoomFactor()) - 2,
-        y: 9
-      })
+      window.webContents.send('dsh-desktop:window-fullscreen', window.isFullScreen())
     }
-    alignWindowButtons()
-    window.webContents.on('did-finish-load', alignWindowButtons)
-    window.webContents.on('zoom-changed', () => setImmediate(alignWindowButtons))
+    window.webContents.on('did-finish-load', syncFullscreen)
+    window.on('enter-full-screen', syncFullscreen)
+    window.on('leave-full-screen', syncFullscreen)
   } else if (isWindows) {
     window.setMenuBarVisibility(false)
   }

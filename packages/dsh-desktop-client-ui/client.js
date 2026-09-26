@@ -106,6 +106,32 @@ window.__ModuleLoader__.load({
 
     const inject = ['slots', 'remote.session', 'sessions', 'uiWorkspace']
     function apply(ctx) {
+      ctx.effect(() => {
+        const id = 'dsh-desktop-preset-toolbar-style'
+        if (document.getElementById(id)) return
+        const style = document.createElement('style')
+        style.id = id
+        style.textContent = `
+          [data-dsh-preset-heading] { display:flex; align-items:center; flex-wrap:wrap; gap:12px 16px; }
+          [data-dsh-preset-heading] h2 { margin:0; }
+          [data-dsh-preset-actions] { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-left:auto; }
+          [data-dsh-preset-actions] button { white-space:nowrap; }
+          [data-dsh-preset-search] { margin-bottom:16px; }
+          [data-dsh-preset-search] input[type=search] {
+            box-sizing:border-box; width:100%; min-width:0; height:36px;
+            border:1px solid var(--dsw-alias-border-l2); border-radius:10px;
+            background:var(--dsw-alias-bg-module-platform); color:var(--dsw-alias-label-primary);
+            padding:0 12px; font:inherit; font-size:13px;
+          }
+          [data-dsh-preset-search] input[type=search]::placeholder { color:var(--dsw-alias-label-caption); }
+          [data-dsh-preset-search] input[type=search]:focus-visible {
+            outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:2px;
+            background:var(--dsw-alias-bg-base);
+          }
+        `
+        document.head.appendChild(style)
+        return () => style.remove()
+      })
       ctx.slots.inject('sidebar.brand.mark', () =>
         ctx.slots.inject('sidebar.brand.name', () =>
           ctx.slots.inject('conversation.hero.brand.mark', function* () {

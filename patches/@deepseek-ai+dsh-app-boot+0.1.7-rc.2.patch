@@ -1,8 +1,28 @@
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-index 8f6041d..2dd21ba 100644
+index 8f6041d..ed13f1f 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-@@ -835,6 +835,17 @@ function readProfileManifest(binName, dir) {
+@@ -318,8 +318,17 @@ function evaluatePluginCompatibility(manifest, exemptions = {}, runtimeVersion =
+ * @returns an English diagnostic for logs and stderr.
+ */
+ function pluginCompatibilityWarning(issue) {
+-	const key = `${issue.name}@${issue.version}`;
+-	return `Plugin ${key} is incompatible with dsh ${issue.runtimeVersion}: peerDependencies ${JSON.stringify(issue.peers)}. Running it may cause crashes or data loss. Update the plugin or install a plugin version compatible with this dsh runtime. To accept this risk explicitly, grant the exact-version exemption for ${key} on dsh ${issue.runtimeVersion} with \`dsh plugin allow-version\` or the plugin manager, then retry the installation or restart dsh. Exact-version exemption: ${issue.exempted ? "active" : "not active"}.`;
++	return `Plugin ${issue.name}@${issue.version} declares Harness peerDependencies ${JSON.stringify(issue.peers)} that do not include dsh ${issue.runtimeVersion}. Compatibility is unverified; Desktop will attempt loading it and report actual import or activation failures.`;
++}
++// Desktop treats declared version ranges as advisory. Keep evaluation pure for
++// diagnostics; report once per declaration/runtime per process, without writing
++// exemptions or changing the installed plugin manifest.
++const reportedPluginCompatibility = new Set();
++function reportPluginCompatibility(issue) {
++	const message = pluginCompatibilityWarning(issue);
++	if (reportedPluginCompatibility.has(message)) return;
++	reportedPluginCompatibility.add(message);
++	process.stderr.write(`[desktop] compatibility warning: ${message}\n`);
+ }
+ //#endregion
+ //#region lib/types/profile-compatibility.js
+@@ -835,6 +844,17 @@ function readProfileManifest(binName, dir) {
  	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${binName}: profile manifest ${path} must hold a JSON object`);
  	return parsed;
  }
@@ -20,7 +40,7 @@ index 8f6041d..2dd21ba 100644
  /**
  * Write a profile's manifest back (2-space JSON, trailing newline).
  * @param dir - the profile directory.
-@@ -916,31 +927,49 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
+@@ -916,31 +936,49 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
  * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
  * @returns the successfully loaded bundle layers and optional user patch layer.
  */
@@ -54,7 +74,8 @@ index 8f6041d..2dd21ba 100644
  		const bundle = bundleManifest.dsh?.bundle;
  		if (bundle === void 0) throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`);
  		const issue = evaluatePluginCompatibility(bundleManifest, exemptions);
- 		if (issue !== void 0 && !issue.exempted) throw new Error(pluginCompatibilityWarning(issue));
+-		if (issue !== void 0 && !issue.exempted) throw new Error(pluginCompatibilityWarning(issue));
++		if (issue !== void 0 && !issue.exempted) reportPluginCompatibility(issue);
  		const patchPaths = bundlePatchPaths(packageDir, bundle);
 -		const patches = patchPaths.flatMap((patchPath) => loadOverlayPatches(binName, patchPath));
 +		const patches = annotatePluginPatches(patchPaths.flatMap((patchPath) => loadOverlayPatches(binName, patchPath)), owner);
@@ -77,7 +98,17 @@ index 8f6041d..2dd21ba 100644
  	}
  	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
  	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
-@@ -3869,7 +3898,10 @@ var StartupError = class extends Error {
+@@ -2076,7 +2114,8 @@ function preflight(ctx, entries, parentURL, report) {
+ 			const manifest = manifestOf(ctx, row.name, base);
+ 			if (manifest === void 0) return void 0;
+ 			const issue = evaluatePluginCompatibility(manifest, exemptions);
+-			return issue === void 0 || issue.exempted ? void 0 : pluginCompatibilityWarning(issue);
++			if (issue !== void 0 && !issue.exempted) reportPluginCompatibility(issue);
++			return void 0;
+ 		} catch (error) {
+ 			return `its declared peer dependencies cannot be validated: ${error instanceof Error ? error.message : String(error)}`;
+ 		}
+@@ -3869,7 +3908,10 @@ var StartupError = class extends Error {
  	* @param entries - inactive plugin metadata and original failure values.
  	*/
  	constructor(message, entries) {
@@ -89,7 +120,7 @@ index 8f6041d..2dd21ba 100644
  		super(message, failures.length > 0 ? { cause: new AggregateError(failures, "Plugin activation failures") } : void 0);
  		this.entries = entries;
  		Object.defineProperties(this, {
-@@ -3906,7 +3938,7 @@ async function inactiveEntries(ctx) {
+@@ -3906,7 +3948,7 @@ async function inactiveEntries(ctx) {
  				entry,
  				outcome: {
  					kind: "failed",
@@ -98,7 +129,7 @@ index 8f6041d..2dd21ba 100644
  				}
  			});
  			continue;
-@@ -4007,13 +4039,14 @@ function startupDiagnostic(binName, failures, required) {
+@@ -4007,13 +4049,14 @@ function startupDiagnostic(binName, failures, required) {
  */
  async function auditStartupEntries(ctx, binName, warn = (line) => void process.stderr.write(line)) {
  	const failures = await inactiveEntries(ctx);
@@ -115,7 +146,7 @@ index 8f6041d..2dd21ba 100644
  	})));
  	if (failures.length > 0) warn(activationDiagnostic(binName, failures));
  }
-@@ -4085,7 +4118,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
+@@ -4085,7 +4128,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
  		await auditStartupEntries(ctx, binName);
  		return ctx;
  	} catch (cause) {
@@ -128,3 +159,32 @@ index 8f6041d..2dd21ba 100644
  		if (cause instanceof StartupError) {
  			cause.startup = {
  				configurationPath: absoluteConfigPath,
+@@ -4133,4 +4180,4 @@ function addHarnessSourceSection(ctx, sourceRoot) {
+ 	});
+ }
+ //#endregion
+-export { DEFAULT_PROFILE_BUNDLES, FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION, LOADER_EXPRESSION_SCHEMA, OPTIONAL_BUNDLES, PROFILES_DIR, PROFILE_COMPATIBILITY_FILENAME, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, PluginPackages, StartupError, addHarnessSourceSection, auditStartupEntries, boot, bundlePatchFiles, bundlePatchPaths, composeEntries, createConfigProjector, createRuntimeResolution, evaluatePluginCompatibility, generateConfigSchema, getDshRuntimeVersion, initProfile, installFailLoud, isNativeConfigSchema, loadEnv, loadLayeredEnv, loadOptionalPatches, loadOverlayPatches, loadProfile, loadProfileDirectory, mountRootInclude, pluginCompatibilityWarning, prepareProfileEntries, prepareProfilePatches, readPluginMeta, readProfileCompatibility, readProfileManifest, readProfilePatches, readProfilePlugins, readProfileVersionExemptions, reconcileProfilePatches, reconcileProfilePlugins, removeLinkProjections, renderConfigDump, reportSkippedBundles, resolveBundleDir, resolveConfigPath, resolveProfileDir, resolveTelemetryPatch, sanitizeProfile, setProfileVersionExemption, writeProfileBundles, writeProfileManifest };
++export { DEFAULT_PROFILE_BUNDLES, FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION, LOADER_EXPRESSION_SCHEMA, OPTIONAL_BUNDLES, PROFILES_DIR, PROFILE_COMPATIBILITY_FILENAME, PROFILE_PATCH_FILENAME, PROFILE_TEMPLATES, PluginPackages, StartupError, addHarnessSourceSection, auditStartupEntries, boot, bundlePatchFiles, bundlePatchPaths, composeEntries, createConfigProjector, createRuntimeResolution, evaluatePluginCompatibility, generateConfigSchema, getDshRuntimeVersion, reportPluginCompatibility, initProfile, installFailLoud, isNativeConfigSchema, loadEnv, loadLayeredEnv, loadOptionalPatches, loadOverlayPatches, loadProfile, loadProfileDirectory, mountRootInclude, pluginCompatibilityWarning, prepareProfileEntries, prepareProfilePatches, readPluginMeta, readProfileCompatibility, readProfileManifest, readProfilePatches, readProfilePlugins, readProfileVersionExemptions, reconcileProfilePatches, reconcileProfilePlugins, removeLinkProjections, renderConfigDump, reportSkippedBundles, resolveBundleDir, resolveConfigPath, resolveProfileDir, resolveTelemetryPatch, sanitizeProfile, setProfileVersionExemption, writeProfileBundles, writeProfileManifest };
+diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-app-boot/lib/types/index.d.ts
+index 5e9a393..7eb148e 100644
+--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/types/index.d.ts
+@@ -12,7 +12,7 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
+ import { type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment';
+ export { readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts';
+ export { sanitizeProfile } from './profile-sanitize.ts';
+-export { getDshRuntimeVersion, evaluatePluginCompatibility, pluginCompatibilityWarning, type PluginCompatibility } from './plugin-compatibility.ts';
++export { getDshRuntimeVersion, evaluatePluginCompatibility, pluginCompatibilityWarning, reportPluginCompatibility, type PluginCompatibility } from './plugin-compatibility.ts';
+ export { PROFILE_COMPATIBILITY_FILENAME, readProfileCompatibility, readProfileVersionExemptions, setProfileVersionExemption, type ProfileCompatibility, } from './profile-compatibility.ts';
+ export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts';
+ export { readPluginMeta } from './package-meta.ts';
+diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts b/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
+index 5e91973..23bf288 100644
+--- a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
++++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
+@@ -33,3 +33,5 @@ export declare function evaluatePluginCompatibility(manifest: object, exemptions
+  */
+ export declare function pluginCompatibilityWarning(issue: PluginCompatibility): string;
+ //# sourceMappingURL=plugin-compatibility.d.ts.map
++/** Report an unverified version declaration without blocking installation or loading. */
++export declare function reportPluginCompatibility(issue: PluginCompatibility): void;

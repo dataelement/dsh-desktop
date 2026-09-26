@@ -606,7 +606,7 @@ describe('agent preset package transfer', () => {
     expect(patch).toContain('type: "search", value: search')
     expect(patch).toContain('isBuiltInPreset(row) === builtIn')
     expect(patch).toContain('presetDisplayText(row, t).name')
-    expect(patch).toContain('Browse Awesome Presets')
+    expect(patch).toContain('Awesome preset')
   })
 
   it('keeps the loopback API discoverable by an explicitly requested online Skill', async () => {

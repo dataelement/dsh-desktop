@@ -1,19 +1,35 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-index 7f96b5f..8d8821f 100644
+index 7f96b5f..14780a1 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-@@ -854,6 +854,85 @@ window.__ModuleLoader__.load({
+@@ -271,6 +271,7 @@ window.__ModuleLoader__.load({
+ 		/** Locale bundles for the agent-preset hero chip, header label, and management section. */
+ 		/** English copy. */
+ 		const en = {
++            desktopImport: "Import", desktopAwesome: "Awesome preset", desktopSearch: "Search presets",
+ 			...guideEn,
+ 			builtInGroup: "Built-in",
+ 			customGroup: "Custom",
+@@ -299,6 +300,7 @@ window.__ModuleLoader__.load({
+ 		};
+ 		/** Simplified Chinese copy. */
+ 		const zh = {
++            desktopImport: "导入", desktopAwesome: "Awesome preset", desktopSearch: "搜索预设",
+ 			...guideZh,
+ 			builtInGroup: "内置",
+ 			customGroup: "自定义",
+@@ -854,6 +856,85 @@ window.__ModuleLoader__.load({
  		function AgentPresetSection({ useAgentPresetSection, load, view, closeView, makeDefault, startCreatorDraft, close: closeSettings, useDeveloperTools, t }) {
  			const state = useAgentPresetSection((value) => value);
  			const developerTools = useDeveloperTools((enabled) => enabled);
 +			const chinese = document.documentElement.lang?.toLowerCase().startsWith("zh");
 +			const copy = chinese ? {
-+				import: "导入预设", export: "导出预设", search: "搜索预设", awesome: "浏览 Awesome Presets",
++				import: "导入", export: "导出预设", search: "搜索预设", awesome: "Awesome preset",
 +				trust: "自定义预设可以使用与 Agent 相同权限的工具和命令。请只导入可信来源。",
 +				rename: "预设 ID", conflict: "该 ID 已存在，请换一个名称。", install: "安装并在重启后启用",
 +				restart: "预设已导入。重启 DSH Desktop 后生效。", cancel: "取消"
 +			} : {
-+				import: "Import preset", export: "Export preset", search: "Search presets", awesome: "Browse Awesome Presets",
++				import: "Import", export: "Export preset", search: "Search presets", awesome: "Awesome preset",
 +				trust: "Custom presets can run tools and commands with the same permissions as the Agent. Import only from trusted sources.",
 +				rename: "Preset ID", conflict: "This ID already exists. Choose another name.", install: "Install and enable after restart",
 +				restart: "Preset imported. Restart DSH Desktop to use it.", cancel: "Cancel"
@@ -88,23 +104,45 @@ index 7f96b5f..8d8821f 100644
  			const [guide, setGuide] = (0, react.useState)(null);
  			const viewTrigger = (0, react.useRef)(null);
  			const closeViewOnUnmount = (0, react.useRef)(closeView);
-@@ -896,13 +975,35 @@ window.__ModuleLoader__.load({
+@@ -888,21 +969,53 @@ window.__ModuleLoader__.load({
+ 			return (0, react_jsx_runtime.jsxs)("section", {
+ 				className: AgentPresetSection_module_css_default.section,
+ 				children: [
+-					(0, react_jsx_runtime.jsx)("h2", {
+-						className: AgentPresetSection_module_css_default.title,
+-						children: t("nav")
+-					}),
++					(0, react_jsx_runtime.jsxs)("div", {
++                        "data-dsh-preset-heading": "",
++                        children: [(0, react_jsx_runtime.jsx)("h2", {
++                            className: AgentPresetSection_module_css_default.title,
++                            children: t("nav")
++                        }), (0, react_jsx_runtime.jsxs)("div", {
++                            "data-dsh-preset-actions": "",
++                            children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++                                variant: "outline", disabled: importBusy,
++                                icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 16 }),
++                                onClick: () => importInput.current?.click(), children: t("desktopImport")
++                            }), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++                                variant: "outline",
++                                onClick: () => window.open("https://www.dshdesktop.com/preset/", "_blank", "noopener,noreferrer"),
++                                children: t("desktopAwesome")
++                            })]
++                        })]
++                    }),
+ 					(0, react_jsx_runtime.jsx)("p", {
  						className: AgentPresetSection_module_css_default.intro,
  						children: t("sectionIntro")
  					}),
 +					(0, react_jsx_runtime.jsxs)("div", {
-+						style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 },
++						"data-dsh-preset-search": "",
 +						children: [
 +							(0, react_jsx_runtime.jsx)("input", {
-+								type: "search", value: search, placeholder: copy.search,
-+								"aria-label": copy.search, onChange: (event) => setSearch(event.target.value),
-+								style: { minWidth: 160, flex: "1 1 160px" }
++								type: "search", value: search, placeholder: t("desktopSearch"),
++								"aria-label": t("desktopSearch"), onChange: (event) => setSearch(event.target.value),
++
 +							}),
-+							(0, react_jsx_runtime.jsx)("button", { type: "button", onClick: () => importInput.current?.click(), children: copy.import }),
-+							(0, react_jsx_runtime.jsx)("button", {
-+								type: "button", onClick: () => window.open("https://www.dshdesktop.com/preset/", "_blank", "noopener,noreferrer"),
-+								children: copy.awesome
-+							}),
++
 +							(0, react_jsx_runtime.jsx)("input", {
 +								ref: importInput, type: "file", accept: ".dshpreset,application/zip", style: { display: "none" },
 +								onChange: (event) => { const file = event.target.files?.[0]; if (file) void previewImport(file); event.target.value = ""; }
@@ -125,7 +163,7 @@ index 7f96b5f..8d8821f 100644
  						const entry = builtIn ? null : creatorButton;
  						if (rows.length === 0 && entry === null) return null;
  						return (0, react_jsx_runtime.jsxs)("section", {
-@@ -1011,7 +1112,13 @@ window.__ModuleLoader__.load({
+@@ -1011,7 +1124,13 @@ window.__ModuleLoader__.load({
  														view(row.id);
  													},
  													children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBrowseOutlineRegular, {})
@@ -140,7 +178,7 @@ index 7f96b5f..8d8821f 100644
  											})]
  										}, row.id);
  									})
-@@ -1028,6 +1135,34 @@ window.__ModuleLoader__.load({
+@@ -1028,6 +1147,34 @@ window.__ModuleLoader__.load({
  							setGuide(null);
  						}
  					}),

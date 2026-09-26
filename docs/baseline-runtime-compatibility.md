@@ -23,3 +23,36 @@ Harness 0.1.7 可以通过运行时 resolver 将宿主依赖解析到当前安�
 这是共享网络层兼容修复，影响使用旧 Dispatcher API 的调用者，不仅是 AntiGravity。不改变代理选路、认证、请求内容或压缩协商。上游 wrapper 正式兼容对象响应头后应删除补丁，并重跑同一回归。
 
 验证：内置 Fetch 的 gzip JSON、对象/数组响应头、重复 Set-Cookie、分块 SSE、HTTP/1.1 数组保持原样、trailers；在 Electron Node 24.17.0 中通过 Harness 代理向 Google OAuth token 端点发送无凭据诊断请求，修复前得到 gzip 字节且无响应头，修复后能解析预期的 HTTP 400 JSON。该检查不代表真实账号认证或模型推理验收。
+
+### Windows header clearance after rc.2
+
+`ConversationHeader` now owns the `<header>` outside `conversation.session.header`.
+The old preload selector (`[data-slot="conversation.session.header"] > header`)
+therefore no longer reserves space for native caption controls. The conversation
+patch adds only `data-dsh-conversation-header` to the resident header; preload
+uses that marker to reserve the native caption height and keeps all header slots
+in normal flow below it. This covers sessionless and active views without cloning
+contributions or relying on generated class names. This is window chrome, so the
+layout stays in preload rather than a business plugin. Remove the marker patch
+when upstream exposes an equivalent stable header/Windows clearance contract.
+
+Regression: `test/windows-titlebar-header.test.mjs` executes the installed rc.2
+header in both session states and verifies slot ownership/count. Local Chromium
+geometry checks cover narrow/wide, light/dark and blank/active layouts; they do
+not replace final Windows installer checks (DPI, zoom, maximize and clicks).
+
+## 插件 Harness 版本声明采用告警策略
+
+目标：`dsh-app-boot` 和 `dsh-plugin-manager` 的 `0.1.7-rc.2` 补丁。
+适用于所有插件的 Harness peer 版本范围声明，不设包名白名单，也不限于 rc.1 → rc.2。
+版本范围不包含当前 Harness 时，安装检查、Profile 组合预检、运行时行预检及 manager 启用检查输出告警并继续尝试。
+告警表示兼容性未经确认，不能当作实际加载成功；不修改第三方 manifest 或自动写入版本豁免。
+
+Profile 组合仍从当前 Profile 和安装 anchor 解析；普通 Profile 与 Safe Mode 的依赖解析范围不变。
+缺包、损坏的 manifest/YAML、非字符串 peer 字段及实际 import/apply/activation 错误仍保留原始诊断和恢复入口。
+仅放宽版本声明门禁，不放宽 generation 依赖闭包与宿主单例校验。
+安装告警进入安装输出和日志，启动告警按同一声明及运行时版本在每个进程中去重。
+
+回归：`profile-boot-preflight.test.ts`、`plugin-startup-failure.test.ts`、`plugin-version-policy.test.mjs`。
+覆盖旧声明正常运行、实际 API 失败、损坏输入、manager 安装不回滚及 manifest 不变。
+当上游支持宿主选择同等告警策略时，改用公开配置并移除此策略补丁。

@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 2107bbb..8f4eeb5 100644
+index 2107bbb..6b4defc 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -15719,12 +15719,13 @@ window.__ModuleLoader__.load({
@@ -54,7 +54,15 @@ index 2107bbb..8f4eeb5 100644
  				]
  			});
  			const composer = renderSlotChain("conversation.composer", {
-@@ -17092,13 +17100,14 @@ window.__ModuleLoader__.load({
+@@ -16290,6 +16298,7 @@ window.__ModuleLoader__.load({
+ 			const blank = session === void 0 || conversation === void 0 || session.blank && conversationPhase(session, conversation) === "blank";
+ 			return (0, react_jsx_runtime.jsxs)("header", {
+ 				className: clsx(ConversationRoot_module_css_default.header, blank && ConversationRoot_module_css_default.headerBlank, sessionId === void 0 && ConversationRoot_module_css_default.headerSessionless),
++				"data-dsh-conversation-header": "",
+ 				"data-window-drag": true,
+ 				children: [(0, react_jsx_runtime.jsx)("div", {
+ 					className: ConversationRoot_module_css_default.headerLeading,
+@@ -17092,13 +17101,14 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
@@ -70,7 +78,7 @@ index 2107bbb..8f4eeb5 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -17120,6 +17129,7 @@ window.__ModuleLoader__.load({
+@@ -17120,6 +17130,7 @@ window.__ModuleLoader__.load({
  			"pending": "uV2eYG_pending",
  			"placeholder": "uV2eYG_placeholder",
  			"primary": "uV2eYG_primary",
@@ -78,7 +86,7 @@ index 2107bbb..8f4eeb5 100644
  			"retry": "uV2eYG_retry",
  			"root": "uV2eYG_root",
  			"row": "uV2eYG_row",
-@@ -17146,7 +17156,7 @@ window.__ModuleLoader__.load({
+@@ -17146,7 +17157,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -87,7 +95,7 @@ index 2107bbb..8f4eeb5 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -17374,10 +17384,6 @@ window.__ModuleLoader__.load({
+@@ -17374,10 +17385,6 @@ window.__ModuleLoader__.load({
  								className: InputBar_module_css_default.overlayAnchor,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -98,7 +106,7 @@ index 2107bbb..8f4eeb5 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -17389,25 +17395,35 @@ window.__ModuleLoader__.load({
+@@ -17389,25 +17396,35 @@ window.__ModuleLoader__.load({
  								onRetryFile: (id) => {
  									retryFileUpload?.(id);
  								},
@@ -148,7 +156,7 @@ index 2107bbb..8f4eeb5 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								ref: rowRef,
-@@ -17535,7 +17551,7 @@ window.__ModuleLoader__.load({
+@@ -17535,7 +17552,7 @@ window.__ModuleLoader__.load({
  					}),
  					(0, react_jsx_runtime.jsxs)("div", {
  						className: InputBar_module_css_default.dock,
@@ -157,7 +165,7 @@ index 2107bbb..8f4eeb5 100644
  							useProjection,
  							t
  						})]
-@@ -18102,6 +18118,14 @@ window.__ModuleLoader__.load({
+@@ -18102,6 +18119,14 @@ window.__ModuleLoader__.load({
  					"conversation.hero.agentPreset": {
  						kind: "single",
  						scope: "session-maybe"
@@ -172,7 +180,7 @@ index 2107bbb..8f4eeb5 100644
  					}
  				},
  				slots: {
-@@ -18225,6 +18249,10 @@ window.__ModuleLoader__.load({
+@@ -18225,6 +18250,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -183,7 +191,7 @@ index 2107bbb..8f4eeb5 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -18261,6 +18289,7 @@ window.__ModuleLoader__.load({
+@@ -18261,6 +18290,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
  						retryFileUpload: void 0,
@@ -191,7 +199,7 @@ index 2107bbb..8f4eeb5 100644
  						toggleCommandMenu: void 0,
  						stop: void 0,
  						hooks: {
-@@ -18327,6 +18356,11 @@ window.__ModuleLoader__.load({
+@@ -18327,6 +18357,11 @@ window.__ModuleLoader__.load({
  						retryFileUpload: (id) => {
  							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
  						},
@@ -203,7 +211,7 @@ index 2107bbb..8f4eeb5 100644
  						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
-@@ -18359,10 +18393,7 @@ window.__ModuleLoader__.load({
+@@ -18359,10 +18394,7 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",

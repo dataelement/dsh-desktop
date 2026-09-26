@@ -23,6 +23,7 @@ describe('workspace Open in file manager integration', () => {
       throw new Error(`Unexpected dependency ${name}`)
     })
     plugin.apply({
+      effect: vi.fn(),
       slots: {
         inject: (_name: string, callback: () => unknown) => callback(),
         register: (config: (typeof registrations)[number]['config'], component: (props: Record<string, unknown>) => unknown) => {
