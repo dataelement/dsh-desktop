@@ -115,14 +115,18 @@ async function stageBuildApprovals(
   const approvals = generationBuildApprovals(yaml)
   const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, approvals)
   const stagedApprovals = pinned === undefined ? approvals : [...approvals, pinned]
-  if (stagedApprovals.length === 0) return []
+  // The workspace file is written even with nothing to allow: without it pnpm
+  // resolves the workspace root by walking the ancestor chain, and a
+  // pnpm-workspace.yaml above the staging tree (a home folder used as a pnpm
+  // workspace is the usual one) claims the install together with ITS store —
+  // ERR_PNPM_UNEXPECTED_STORE whenever its pnpm major differs from ours.
   const lines = [
     'packages:',
     '  - .',
     '',
-    'allowBuilds:',
-    ...stagedApprovals.map((key) => `  ${JSON.stringify(key)}: true`),
-    ''
+    ...(stagedApprovals.length === 0
+      ? []
+      : ['allowBuilds:', ...stagedApprovals.map((key) => `  ${JSON.stringify(key)}: true`), ''])
   ]
   await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), lines.join('\n'), 'utf8')
   return stagedApprovals
@@ -217,6 +221,28 @@ function diagnosticLine(output) {
   return (coded ?? named.at(-1) ?? lines.at(-1))?.slice(0, 400)
 }
 
+/**
+ * pnpm's ERR_PNPM_UNEXPECTED_STORE, with both stores it names. Inside the
+ * registry this means a pnpm-workspace.yaml above the staging tree (a home
+ * folder used as a pnpm workspace is the usual one) claimed the install, so
+ * the dependencies resolve to a store built by a different pnpm major.
+ * @param {string} output - combined stdout+stderr of the failed pnpm run.
+ * @returns {{recorded: string, wanted: string} | undefined} both stores when
+ * the failure is the store mismatch, undefined for every other failure.
+ */
+export function storeMismatch(output) {
+  if (!/ERR_PNPM_UNEXPECTED_STORE/u.test(output)) return undefined
+  const recorded = /currently linked from the store at "([^"]+)"/u.exec(output)?.[1]
+  const wanted = /now wants to use the store at "([^"]+)"/u.exec(output)?.[1]
+  if (recorded === undefined || wanted === undefined) return undefined
+  return { recorded, wanted }
+}
+
+/** Actionable summary for a store mismatch that survived its retry. */
+function storeMismatchDetail(mismatch) {
+  return `pnpm refused the staging workspace: its dependencies resolve to the store at ${mismatch.recorded} while this pnpm links from ${mismatch.wanted}. A pnpm-workspace.yaml above the staging directory (often the home folder) claimed the install; the retry in an isolated staging workspace still failed, so that outer workspace's node_modules is what blocks pnpm — relink it with its own pnpm major or remove the workspace file from that parent directory`
+}
+
 export async function installGeneration(options) {
   // A standalone staging workspace cannot see the Profile's peer policy.
   // Carry its explicit boolean into the subprocess before the first attempt:
@@ -239,35 +265,41 @@ export async function installGeneration(options) {
   // tarball specs are resolved to their actual direct dependency after pnpm runs.
   let pluginName = options.expectedPluginName ?? (pluginSpec.replace(/@[^@/]+$/u, '') || pluginSpec)
 
-  const stagingDir = join(layout.staging, randomUUID())
-  await mkdir(stagingDir, { recursive: true })
-  await writeFile(
-    join(stagingDir, 'package.json'),
-    `${JSON.stringify({ name: 'dsh-generation', private: true, version: '0.0.0' }, undefined, 2)}\n`
-  )
-  // node-linker=hoisted keeps every package a real directory under the
-  // generation's own node_modules — no links into a `.pnpm` store that the
-  // promotion rename would strand.
-  //
-  // The registry line, when the caller resolved one, is what keeps the source
-  // pnpm fetches from drifting away from the source the market read version
-  // metadata from (#337). A project `.npmrc` outranks the user's `~/.npmrc`,
-  // which is the only registry pnpm could see here before.
-  const settings = ['node-linker=hoisted', 'side-effects-cache=false']
-  if (options.strictDepBuilds === true) settings.push('strict-dep-builds=true')
-  if (Number.isSafeInteger(options.minimumReleaseAge) && options.minimumReleaseAge >= 0) {
-    settings.push(`minimum-release-age=${options.minimumReleaseAge}`)
-  }
-  if (typeof options.registry === 'string' && options.registry !== '') {
-    // npm's own convention terminates a registry with a slash.
-    settings.push(`registry=${options.registry.replace(/\/+$/u, '')}/`)
-    trace(`pinned staging to ${options.registry}`)
-  }
-  await writeFile(join(stagingDir, '.npmrc'), `${settings.join('\n')}\n`)
-
+  const newStagingDir = () => join(layout.staging, randomUUID())
+  let stagingDir = newStagingDir()
   const cleanupStaging = () => rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
 
-  try {
+  /**
+   * Materialize one staging workspace: manifest, .npmrc, the workspace file
+   * (always — see stageBuildApprovals), forwarded build approvals and, for
+   * directory-sourced plugins, the copied source tree.
+   * @returns the approvals in force and the spec pnpm should install.
+   */
+  const prepareStaging = async () => {
+    await mkdir(stagingDir, { recursive: true })
+    await writeFile(
+      join(stagingDir, 'package.json'),
+      `${JSON.stringify({ name: 'dsh-generation', private: true, version: '0.0.0' }, undefined, 2)}\n`
+    )
+    // node-linker=hoisted keeps every package a real directory under the
+    // generation's own node_modules — no links into a `.pnpm` store that the
+    // promotion rename would strand.
+    //
+    // The registry line, when the caller resolved one, is what keeps the source
+    // pnpm fetches from drifting away from the source the market read version
+    // metadata from (#337). A project `.npmrc` outranks the user's `~/.npmrc`,
+    // which is the only registry pnpm could see here before.
+    const settings = ['node-linker=hoisted', 'side-effects-cache=false']
+    if (options.strictDepBuilds === true) settings.push('strict-dep-builds=true')
+    if (Number.isSafeInteger(options.minimumReleaseAge) && options.minimumReleaseAge >= 0) {
+      settings.push(`minimum-release-age=${options.minimumReleaseAge}`)
+    }
+    if (typeof options.registry === 'string' && options.registry !== '') {
+      // npm's own convention terminates a registry with a slash.
+      settings.push(`registry=${options.registry.replace(/\/+$/u, '')}/`)
+      trace(`pinned staging to ${options.registry}`)
+    }
+    await writeFile(join(stagingDir, '.npmrc'), `${settings.join('\n')}\n`)
     const approvals = await stageBuildApprovals(
       dshHome,
       stagingDir,
@@ -285,6 +317,11 @@ export async function installGeneration(options) {
       await cp(options.sourceDirectory, sourceCopy, { recursive: true, dereference: true })
       installSpec = `file:${sourceCopy}`
     }
+    return { approvals, installSpec }
+  }
+
+  try {
+    let { approvals, installSpec } = await prepareStaging()
     trace(`installing ${options.sourceSpec ?? pluginSpec} into staging`)
     // A git subpackage can declare a pnpm version different from its workspace
     // root (the dsh-web remote UI currently does). Once this exact source has
@@ -303,15 +340,35 @@ export async function installGeneration(options) {
       environment: installEnvironment,
       pluginSpec: installSpec
     }, dir))
-    const started = Date.now()
-    const { code, output } = await runInstall(stagingDir)
+    let started = Date.now()
+    let outcome = await runInstall(stagingDir)
+    let mismatch = outcome.code !== 0 ? storeMismatch(outcome.output) : undefined
+    if (mismatch !== undefined) {
+      // Belt and suspenders for a staging tree that still got claimed by an
+      // ancestor pnpm workspace: a store mismatch means exactly that. One
+      // retry in a fresh staging workspace; the retry costs a disposable
+      // directory and cannot touch anything outside it.
+      trace(`pnpm refused the staging workspace: its dependencies resolve to the store at ${mismatch.recorded} while this pnpm links from ${mismatch.wanted}`)
+      trace('a pnpm-workspace.yaml above the staging tree claimed the install — retrying once in a fresh isolated staging workspace')
+      await cleanupStaging()
+      stagingDir = newStagingDir()
+      ;({ approvals, installSpec } = await prepareStaging())
+      started = Date.now()
+      outcome = await runInstall(stagingDir)
+      mismatch = outcome.code !== 0 ? storeMismatch(outcome.output) : undefined
+    }
+    const { code, output } = outcome
     if (code !== 0) {
       trace(`pnpm exited ${code} after ${Date.now() - started}ms`)
       for (const line of output.split(/\r?\n/u).slice(-8)) {
         if (line.trim()) trace(`output| ${line.trim()}`)
       }
       await cleanupStaging()
-      return { ok: false, detail: diagnosticLine(output) ?? `pnpm exited ${code}` }
+      return {
+        ok: false,
+        detail: (mismatch !== undefined ? storeMismatchDetail(mismatch) : diagnosticLine(output))
+          ?? `pnpm exited ${code}`
+      }
     }
     trace(`installed in ${Date.now() - started}ms`)
 
