@@ -1,0 +1,32 @@
+--- a/node_modules/@deepseek-ai/dsh-compaction-basic/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-compaction-basic/lib/index.js
+@@ -512,6 +512,21 @@
+ * @param session - session whose latest marker state is inspected.
+ * @param stage - operation label included in the busy diagnostic.
+ */
++/**
++ * Whether a maintenance claim was refused because the agent was still working.
++ *
++ * `AgentLoop.runMaintenance` admits maintenance only from an idle phase and has
++ * no other refusal path, but it reports that through a plain `Error` whose text
++ * is the only signal a compaction provider gets. Folding that case into the
++ * generic `busy` code hid which of the two possible causes applied: the agent
++ * still finishing its turn, or the shared durable compaction lock. They need
++ * different copy, because only the first clears by itself within seconds.
++ * @param error - value thrown by the maintenance claim.
++ * @returns whether the agent owned a running phase at claim time.
++ */
++function isAgentWorkingError(error) {
++	return error instanceof Error && /already has active work$/u.test(error.message);
++}
+ function assertNoActiveCompaction(session, stage) {
+ 	const entryState = inspectCompactionEntryState(session);
+ 	assertCompactionInactive(entryState.unmatchedCompactionStart, entryState.latestEndSeedSeq, stage);
+@@ -949,6 +964,7 @@
+ 				}
+ 			});
+ 		} catch (error) {
++			if (isAgentWorkingError(error)) throw new ManualCompactionError("agent-busy", "manual compaction did not start: the agent was still working", { cause: error });
+ 			throw new ManualCompactionError("busy", "manual compaction requires an idle agent with no waking queued work", { cause: error });
+ 		}
+ 	}
