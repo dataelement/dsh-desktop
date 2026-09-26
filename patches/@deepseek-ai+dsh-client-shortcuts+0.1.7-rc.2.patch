@@ -1,0 +1,13 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js b/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
+index 8670231..0367eb1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
+@@ -721,7 +721,7 @@ window.__ModuleLoader__.load({
+ 			const desktop = document.documentElement.dataset.platform;
+ 			const device = desktop ?? navigator.platform;
+ 			return {
+-				runtime: desktop === void 0 ? "web" : "desktop",
++				runtime: desktop === void 0 || document.documentElement.dataset.dshDesktopWebShortcuts === "true" ? "web" : "desktop",
+ 				platform: /darwin|mac|iphone|ipad/iu.test(device) ? "macos" : /win/iu.test(device) ? "windows" : "linux"
+ 			};
+ 		}

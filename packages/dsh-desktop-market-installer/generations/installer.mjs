@@ -235,7 +235,9 @@ export async function installGeneration(options) {
   const { dshHome, pluginSpec, onTrace } = options
   const trace = (line) => onTrace?.(`generation-install: ${line}`)
   const layout = await ensureRegistryDirectories(dshHome)
-  const pluginName = options.expectedPluginName ?? (pluginSpec.replace(/@[^@/]+$/u, '') || pluginSpec)
+  // Known registry/path names make staging provenance readable; generic git and
+  // tarball specs are resolved to their actual direct dependency after pnpm runs.
+  let pluginName = options.expectedPluginName ?? (pluginSpec.replace(/@[^@/]+$/u, '') || pluginSpec)
 
   const stagingDir = join(layout.staging, randomUUID())
   await mkdir(stagingDir, { recursive: true })
@@ -312,6 +314,16 @@ export async function installGeneration(options) {
       return { ok: false, detail: diagnosticLine(output) ?? `pnpm exited ${code}` }
     }
     trace(`installed in ${Date.now() - started}ms`)
+
+    const stagingManifest = JSON.parse(await readFile(join(stagingDir, 'package.json'), 'utf8'))
+    const directDependencies = Object.keys(stagingManifest.dependencies ?? {})
+    if (directDependencies.length === 1 && directDependencies[0] !== undefined) {
+      pluginName = directDependencies[0]
+    }
+    if (options.expectedPluginName !== undefined && pluginName !== options.expectedPluginName) {
+      await cleanupStaging()
+      return { ok: false, detail: `pnpm installed ${pluginName}, expected ${options.expectedPluginName}` }
+    }
 
     const installedManifestPath = join(stagingDir, 'node_modules', pluginName, 'package.json')
     if (!existsSync(installedManifestPath)) {
@@ -511,8 +523,18 @@ function importExportTarget(value) {
 }
 
 async function resolveNonRootPackage(requireFromPackage, dependency) {
-  for (const modules of requireFromPackage.resolve.paths(dependency) ?? []) {
-    const file = join(modules, dependency, 'package.json')
+  // Harness intercepts package resolution, but resolve.paths() still exposes
+  // legacy filesystem links. Ask the active resolver for the manifest first.
+  let selectedManifest
+  try {
+    selectedManifest = requireFromPackage.resolve(`${dependency}/package.json`)
+  } catch {
+    // Packages with exports may hide their manifest; keep the bounded lookup.
+  }
+  const files = selectedManifest ? [selectedManifest]
+    : (requireFromPackage.resolve.paths(dependency) ?? []).map(modules => join(modules, dependency, 'package.json'))
+  for (const file of files) {
+    const packageDirectory = file.slice(0, -'package.json'.length)
     let manifest
     try {
       manifest = JSON.parse(await readFile(file, 'utf8'))
@@ -526,8 +548,22 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       Object.hasOwn(exported, '.') ? exported['.'] : exported
     const importTarget = importExportTarget(rootExport)
     if (typeof importTarget === 'string' && importTarget.startsWith('./')) {
-      const entry = join(modules, dependency, importTarget)
+      const entry = join(packageDirectory, importTarget)
       if (existsSync(entry)) return entry
+    }
+    // CLI-only packages (including @deepseek-ai/dsh) have no importable root.
+    // Validate an actual executable target; a manifest alone is not enough.
+    // Do not let a bin hide a broken library main/exports entry.
+    if (!manifest.main && manifest.exports === undefined && manifest.bin) {
+      const targets = typeof manifest.bin === 'string' ? [manifest.bin]
+        : typeof manifest.bin === 'object' ? Object.values(manifest.bin) : []
+      const root = packageDirectory
+      for (const target of targets) {
+        if (typeof target !== 'string' || isAbsolute(target)) continue
+        const entry = join(root, target)
+        if (!isInsideDirectory(root, entry)) continue
+        if ((await lstat(entry).catch(() => undefined))?.isFile()) return entry
+      }
     }
     const declarationOnly = typeof (manifest.types ?? manifest.typings) === 'string' &&
       !manifest.main && !hasRuntimeExport(manifest.exports)
@@ -535,7 +571,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       !Array.isArray(manifest.exports) && !Object.hasOwn(manifest.exports, '.') &&
       Object.keys(manifest.exports).some((key) => key.startsWith('./'))
     if (declarationOnly) {
-      const declaration = join(modules, dependency, manifest.types ?? manifest.typings)
+      const declaration = join(packageDirectory, manifest.types ?? manifest.typings)
       return existsSync(declaration) ? declaration : undefined
     }
     // Some SDKs publish a root export without shipping its target, while their
@@ -547,7 +583,7 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
         if (!subpath.startsWith('./') || subpath.includes('*')) continue
         const selected = importExportTarget(target)
         if (typeof selected !== 'string' || !selected.startsWith('./') || selected.includes('*')) continue
-        const entry = join(modules, dependency, selected)
+        const entry = join(packageDirectory, selected)
         if (existsSync(entry)) return entry
       }
     }
@@ -559,8 +595,25 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
 }
 
 /** Verify every installed package's required runtime dependency stays in an allowed closure. */
-export async function verifyGenerationPeers(dshHome, generation) {
+export async function verifyGenerationPeers(dshHome, generation, options = {}) {
   const { createRequire } = await import('node:module')
+  // 0.1.7 can resolve host packages through runtime hooks without refreshing
+  // legacy Profile links. Validate the exact entry supplied by this running host.
+  const hostRequire = options.dshEntryPath ? createRequire(options.dshEntryPath) : undefined
+  const hostEntries = new Map()
+  const hostEntry = async (dependency) => {
+    if (!hostRequire || !isHostSingleton(dependency)) return undefined
+    if (!hostEntries.has(dependency)) {
+      let resolved
+      try {
+        resolved = hostRequire.resolve(dependency)
+      } catch {
+        resolved = await resolveNonRootPackage(hostRequire, dependency)
+      }
+      hostEntries.set(dependency, resolved === undefined ? undefined : await realpath(resolved).catch(() => resolved))
+    }
+    return hostEntries.get(dependency)
+  }
   const generationRoot = await realpath(generation.directory)
   const closure = await realpath(installationClosureDir(dshHome)).catch(
     () => installationClosureDir(dshHome)
@@ -649,7 +702,8 @@ export async function verifyGenerationPeers(dshHome, generation) {
       }
       const realResolved = await realpath(resolved).catch(() => resolved)
       const providedRoot = await fallbackRoot(dependency)
-      const insideClosure = isInsideDirectory(closure, realResolved) ||
+      const currentHostEntry = await hostEntry(dependency)
+      const insideClosure = currentHostEntry !== undefined ? realResolved === currentHostEntry : isInsideDirectory(closure, realResolved) ||
         (providedRoot !== undefined && isInsideDirectory(providedRoot, realResolved))
       if (isHostSingleton(dependency)) {
         if (!insideClosure) {

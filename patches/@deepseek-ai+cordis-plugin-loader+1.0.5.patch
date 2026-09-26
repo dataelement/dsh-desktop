@@ -1,0 +1,88 @@
+diff --git a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js b/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+index aed07af..54c9215 100644
+--- a/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
++++ b/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+@@ -151,11 +151,39 @@ var EntryTree = class EntryTree {
+ 		return [...this.entries()].map((entry) => entry._initTask || entry.fiber?.inertia).filter(isNonNullable);
+ 	}
+ 	/** Wait until this tree has no pending import or lifecycle tasks. */
+-	async await() {
++	async await(options) {
++		const configured = typeof process !== "undefined" ? Number(process.env?.DSH_LOADER_TIMEOUT_MS) : NaN;
++		const timeoutMs = options?.timeout ?? (Number.isFinite(configured) && configured > 0 ? configured : 100_000);
++		const started = Date.now();
++		let lastHeartbeat = started;
+ 		while (true) {
+ 			const tasks = this.getTasks();
+ 			if (!tasks.length) return;
+-			await Promise.allSettled(tasks);
++			const elapsed = Date.now() - started;
++			const pending = [...this.entries()].filter((entry) => entry._initTask || entry.fiber?.inertia);
++			const fail = () => {
++				const seconds = Math.round((Date.now() - started) / 1e3);
++				const names = pending.map((entry) => `${entry.options.name} (${entry.options.id})`).join(", ");
++				console.error(`[loader] plugin tree initialization timed out after ${seconds}s; stuck entries: ${names}`);
++				const failures = pending.map((entry) => entry._failure("apply", new Error(`plugin initialization timed out after ${seconds}s`)));
++				if (failures.length === 1) throw failures[0];
++				throw new AggregateError(failures, `loader timeout waiting for ${failures.length} plugin entries`);
++			};
++			if (elapsed >= timeoutMs) fail();
++			if (Date.now() - lastHeartbeat >= 5_000) {
++				lastHeartbeat = Date.now();
++				console.warn(`[loader] still waiting for ${pending.length} plugin entries after ${Math.round(elapsed / 1e3)}s: ${pending.map((entry) => `${entry.options.name} (${entry.options.id})`).join(", ")}`);
++			}
++			let timer;
++			try {
++				const settled = await Promise.race([
++					Promise.allSettled(tasks).then(() => true),
++					new Promise((resolve) => { timer = setTimeout(() => resolve(false), Math.min(5_000, Math.max(1, timeoutMs - elapsed))); })
++				]);
++				if (!settled && Date.now() - started >= timeoutMs) fail();
++			} finally {
++				clearTimeout(timer);
++			}
+ 		}
+ 	}
+ 	ensureId(options) {
+@@ -309,6 +337,7 @@ function sortKeys(object, prepend = ["id", "name"], append = ["config"]) {
+ /** One configured plugin node inside an `EntryTree`. */
+ var Entry = class Entry {
+ 	loader;
++	lastImportError;
+ 	static key = Symbol.for("cordis.entry");
+ 	ctx;
+ 	fiber;
+@@ -432,6 +461,23 @@ var Entry = class Entry {
+ 		} while (entry);
+ 		return result;
+ 	};
++	/** Preserve the owning bundle and original cause across startup auditing. */
++	_failure(stage, cause) {
++		const options = this.options;
++		const detail = cause instanceof Error ? cause.message : String(cause);
++		const error = new Error(`failed to ${stage} loader entry ${options.id} (${options.name}): ${detail}`, { cause });
++		const chain = [];
++		const seen = /* @__PURE__ */ new Set();
++		let owner = options.__dshPluginOwner;
++		for (let current = this; current && !seen.has(current); current = current.parent?.ctx.fiber.entry) {
++			seen.add(current);
++			const row = current.options;
++			chain.push({ entryId: row.id, packageName: row.name, baseUrl: current.parent?.tree.ctx.baseUrl });
++			owner ??= row.__dshPluginOwner;
++		}
++		error.dshPluginFailure = { stage, entryId: options.id, packageName: options.name, owner, chain, message: detail };
++		return error;
++	}
+ 	/** Import and start the configured plugin if it is not already running. */
+ 	async init() {
+ 		try {
+@@ -449,7 +495,9 @@ var Entry = class Entry {
+ 		let exports;
+ 		try {
+ 			exports = await this.parent.tree.import(this.options.name, this.getOuterStack);
++			this.lastImportError = void 0;
+ 		} catch (error) {
++			this.lastImportError = error;
+ 			this.ctx.logger.error(error);
+ 			return;
+ 		} finally {

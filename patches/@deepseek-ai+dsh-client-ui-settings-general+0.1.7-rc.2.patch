@@ -1,0 +1,25 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+index 8f5fe80..1857e2a 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
+@@ -63,7 +63,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-general";
+ 			tag.dataset.pluginCss = tagId$6;
+-			tag.textContent = css$6;
++			tag.textContent = css$6 + "\n.VOzbGW_nav{min-height:0;overflow-y:auto;padding-bottom:22px}";
+ 			document.head.appendChild(tag);
+ 		}
+ 		var SettingsRoot_module_css_default = {
+@@ -356,10 +356,7 @@ window.__ModuleLoader__.load({
+ 			const connectionState = useConnectionState((state) => state);
+ 			const previousConnectionState = (0, react.useRef)(connectionState);
+ 			const onboardingSteps = useOnboardingSteps((s) => s);
+-			const onboardingActive = useSessions((state) => {
+-				const main = Object.values(state.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0);
+-				return state.phase === "ready" && (main === void 0 || main.blank);
+-			});
++			const onboardingActive = useSessions((state) => state.phase === "ready");
+ 			const onboardingStep = requestedOnboarding !== void 0 ? onboardingSteps.find((step) => step.id === requestedOnboarding) : onboardingActive ? onboardingSteps.find((step) => !completedOnboarding.has(step.id)) : void 0;
+ 			(0, react.useEffect)(() => {
+ 				if (onboardingActive) return;
