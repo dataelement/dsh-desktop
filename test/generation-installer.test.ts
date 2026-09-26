@@ -549,6 +549,40 @@ describe('the generation installer', () => {
     )
   })
 
+  it('validates current host entries when legacy Profile links point at an older installation', async () => {
+    const home = await freshHome()
+    const checkout = join(home, 'current-installation')
+    const dshEntryPath = join(checkout, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    const directory = join(checkout, '.generations', 'plugin')
+    const plugin = join(directory, 'node_modules', 'root-plugin')
+    const name = '@deepseek-ai/dsh-llm'
+    const oldPackage = join(home, 'old-installation', 'node_modules', name)
+    const currentPackage = join(checkout, 'node_modules', name)
+    for (const root of [oldPackage, currentPackage]) {
+      await mkdir(root, { recursive: true })
+      await writeFile(join(root, 'package.json'), JSON.stringify({ name, main: 'index.js' }))
+      await writeFile(join(root, 'index.js'), 'module.exports = {}')
+    }
+    const closure = join(home, 'profiles', 'node_modules')
+    await mkdir(join(closure, '@deepseek-ai'), { recursive: true })
+    await symlink(oldPackage, join(closure, name), 'junction')
+    await mkdir(plugin, { recursive: true })
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin', peerDependencies: { [name]: '*' } }))
+    const generation = { id: 'plugin', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    expect(await verifyGenerationPeers(home, generation, { dshEntryPath })).toEqual({ ok: true, problems: [] })
+
+    // Merely being in the current checkout does not authorize arbitrary dependencies.
+    const other = join(checkout, 'node_modules', 'unrelated')
+    await mkdir(other, { recursive: true })
+    await writeFile(join(other, 'package.json'), JSON.stringify({ name: 'unrelated', main: 'index.js' }))
+    await writeFile(join(other, 'index.js'), 'module.exports = {}')
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin', dependencies: { unrelated: '*' } }))
+    expect((await verifyGenerationPeers(home, generation, { dshEntryPath })).problems).toEqual([
+      expect.stringContaining('unrelated resolves outside the generation and installation closure')
+    ])
+  })
+
   it('validates host singletons declared by a transitive package, not only the root plugin', async () => {
     const home = await freshHome()
     const directory = join(home, 'profiles', '.generations', 'live', 'transitive-peer')

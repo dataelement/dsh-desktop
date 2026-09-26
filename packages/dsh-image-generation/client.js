@@ -2,7 +2,7 @@ window.__ModuleLoader__.load({
   id: 'dsh-image-generation',
   factory: require => {
     const React = require('react')
-    const { IconChevronDownOutline14, Menu } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { IconChevronDownOutlineRegular, Menu } = require('@deepseek-ai/dsh-client-ui-primitives')
     const h = React.createElement
     const NS = 'settings.imageGeneration'
     const zh = {
@@ -102,7 +102,7 @@ window.__ModuleLoader__.load({
           onSelect: selected => { if (!disabled) { close(true); onChange(selected) } },
           anchor: h('button', { ref: trigger, name, type: 'button', disabled, className: 'dshImageSelectTrigger', 'aria-labelledby': `${id}-label ${id}-value`,
             'aria-haspopup': 'menu', 'aria-expanded': open && !disabled, onClick: () => setOpen(previous => !previous) },
-            h('span', { id: `${id}-value`, className: 'dshImageSelectValue' }, options.find(option => option.id === value)?.label || value), h(IconChevronDownOutline14)) }))
+            h('span', { id: `${id}-value`, className: 'dshImageSelectValue' }, options.find(option => option.id === value)?.label || value), h(IconChevronDownOutlineRegular)) }))
     }
     function ImageCard({ t, callApi }) {
       const [expanded, setExpanded] = React.useState(false)
@@ -226,10 +226,10 @@ window.__ModuleLoader__.load({
       }
       const field = (key, label, type = 'text', placeholder) => h('label', { className: 'dshImageField', key },
         t(label), h('input', { name: key, type, value: draft[key], placeholder, autoComplete: 'off', spellCheck: false, onChange: event => edit(key, event.target.value) }))
-      return h('li', { className: `dshImageCard${expanded ? ' dshImageCardOpen' : ''}`, 'data-testid': 'image-generation-card' },
+      return h('section', { className: `dshImageCard${expanded ? ' dshImageCardOpen' : ''}`, 'data-testid': 'image-generation-card' },
         h('button', { className: 'dshImageHeader', type: 'button', 'aria-expanded': expanded, 'aria-controls': `${id}-body`, onClick: () => setExpanded(value => !value) },
           h('span', { className: 'dshImageHeading' }, h('span', { className: 'dshImageTitle' }, t('title')), h('span', { className: 'dshImageDescription' }, t('description'))),
-          h(IconChevronDownOutline14, { className: 'dshImageChevron' })),
+          h(IconChevronDownOutlineRegular, { className: 'dshImageChevron' })),
         expanded && h('form', { id: `${id}-body`, className: 'dshImageBody', onSubmit: save, 'aria-busy': busy || fetching || loading },
           hostEnabled !== null && h('div', { className: 'dshImageHostControl' },
             h('label', null, h('input', { type: 'checkbox', role: 'switch', checked: hostEnabled, disabled: hostBusy, onChange: toggleHost }), t('builtInEnabled')),
@@ -346,8 +346,10 @@ window.__ModuleLoader__.load({
           document.head.appendChild(style)
           return () => style.remove()
         }, 'image-generation styles')
-        ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-          name: 'settings.plugin.item', key: 'image-generation', order: -100, locale: NS,
+        const t = ctx.locale.bind(NS)
+        ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+          name: 'settings.plugins.tab', id: 'image-generation', order: -100, locale: NS,
+          label: () => t('title'),
           inject: () => ({ callApi }),
         }, ImageCard))
       },

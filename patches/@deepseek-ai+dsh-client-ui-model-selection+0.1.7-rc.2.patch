@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
-index 6726a35..ae5c72e 100644
+index c904a89..e7d4297 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-model-selection/lib/client.js
-@@ -482,15 +482,71 @@ window.__ModuleLoader__.load({
+@@ -484,15 +484,71 @@ window.__ModuleLoader__.load({
  		* store/verbs) + the standard locale seat.
  		* @returns the trigger and, while open, the two-level menu.
  		*/
@@ -74,15 +74,15 @@ index 6726a35..ae5c72e 100644
  			const menuRef = (0, react.useRef)(null);
  			const [menuPos, setMenuPos] = (0, react.useState)(null);
  			const itemRefs = (0, react.useRef)([]);
-@@ -504,6 +560,7 @@ window.__ModuleLoader__.load({
+@@ -507,6 +563,7 @@ window.__ModuleLoader__.load({
  					...model.reasoning?.defaultEffort === void 0 ? {} : { reasoningEffort: model.reasoning.defaultEffort }
  				}
- 			}))), [state.groups]);
-+			const filteredGroups = (0, react.useMemo)(() => filterModelGroups(state.groups, modelQuery), [state.groups, modelQuery]);
+ 			}))), [groups]);
++			const filteredGroups = (0, react.useMemo)(() => filterModelGroups(groups, modelQuery), [groups, modelQuery]);
  			const currentChoice = choices[state.current === null ? -1 : choices.findIndex((c) => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)];
  			const reasoning = currentChoice?.model.reasoning;
  			const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort;
-@@ -579,16 +636,21 @@ window.__ModuleLoader__.load({
+@@ -583,17 +640,22 @@ window.__ModuleLoader__.load({
  				pane,
  				state
  			]);
@@ -92,7 +92,8 @@ index 6726a35..ae5c72e 100644
  			if (!available) return null;
  			const show = () => {
  				triggerRef.current?.focus();
- 				setPane("root");
+ 				if (state.current === null) paneFocus.current = "drill";
+ 				setPane(state.current === null ? "model" : "root");
 +				setModelQuery("");
  				setOpen(true);
  				reload();
@@ -104,7 +105,13 @@ index 6726a35..ae5c72e 100644
  				if (restoreFocus) queueMicrotask(() => {
  					triggerRef.current?.focus();
  				});
-@@ -606,12 +668,16 @@ window.__ModuleLoader__.load({
+@@ -606,17 +668,22 @@ window.__ModuleLoader__.load({
+ 			const back = (from) => {
+ 				paneFocus.current = from;
+ 				setPane("root");
++				setModelQuery("");
+ 			};
+ 			const moveFocus = (offset) => {
  				const items = itemRefs.current.filter((item) => item !== null);
  				if (items.length === 0) return;
  				const active = items.findIndex((item) => item === document.activeElement);
@@ -115,15 +122,15 @@ index 6726a35..ae5c72e 100644
  			const onRootKeyDown = (event) => {
  				if (event.key === "Escape" && open) {
  					event.preventDefault();
--					if (pane !== "root") back(pane);
-+					if (pane !== "root") {
+-					if (pane !== "root" && state.current !== null) back(pane);
++					if (pane !== "root" && state.current !== null) {
 +						back(pane);
 +						setModelQuery("");
 +					}
  					else close(true);
  					return;
  				}
-@@ -750,6 +816,7 @@ window.__ModuleLoader__.load({
+@@ -756,6 +823,7 @@ window.__ModuleLoader__.load({
  								role: "menuitem",
  								className: ModelSelect_module_css_default.cell,
  								onClick: () => {
@@ -131,13 +138,13 @@ index 6726a35..ae5c72e 100644
  									drill("model");
  								},
  								children: [
-@@ -784,6 +851,23 @@ window.__ModuleLoader__.load({
+@@ -790,6 +858,23 @@ window.__ModuleLoader__.load({
  								]
  							})] }),
  							pane === "model" && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 +								(0, react_jsx_runtime.jsxs)("label", {
 +									className: "dshModelSelectSearch",
-+									children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutline16, { className: "dshModelSelectSearchIcon" }), (0, react_jsx_runtime.jsx)("input", {
++									children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconSearchOutlineRegular, { className: "dshModelSelectSearchIcon" }), (0, react_jsx_runtime.jsx)("input", {
 +										ref: searchRef,
 +										type: "search",
 +										role: "searchbox",
@@ -155,16 +162,16 @@ index 6726a35..ae5c72e 100644
  								state.status === "loading" && (0, react_jsx_runtime.jsx)("div", {
  									className: ModelSelect_module_css_default.status,
  									children: t("status.loading")
-@@ -811,7 +895,7 @@ window.__ModuleLoader__.load({
+@@ -817,7 +902,7 @@ window.__ModuleLoader__.load({
  								}, failure.id)),
  								(0, react_jsx_runtime.jsx)("div", {
  									className: clsx(ModelSelect_module_css_default.groups, "scrollable"),
--									children: state.groups.map((group) => {
+-									children: groups.map((group) => {
 +									children: filteredGroups.map((group) => {
  										const headingId = `${id}-${group.id}`;
  										return (0, react_jsx_runtime.jsxs)("section", {
  											role: "group",
-@@ -855,6 +939,10 @@ window.__ModuleLoader__.load({
+@@ -861,6 +946,10 @@ window.__ModuleLoader__.load({
  								state.status === "ready" && choices.length === 0 && (0, react_jsx_runtime.jsx)("div", {
  									className: ModelSelect_module_css_default.empty,
  									children: t("empty.models")
@@ -175,7 +182,7 @@ index 6726a35..ae5c72e 100644
  								})
  							] }),
  							pane === "effort" && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [state.error !== null && lastActionRef.current === "load" && (0, react_jsx_runtime.jsxs)("div", {
-@@ -928,6 +1016,8 @@ window.__ModuleLoader__.load({
+@@ -935,6 +1024,8 @@ window.__ModuleLoader__.load({
  			"menu.aria": "模型与推理等级",
  			"menu.model": "模型",
  			"menu.effort": "推理等级",
@@ -184,15 +191,15 @@ index 6726a35..ae5c72e 100644
  			"effort.providerDefault": "Default",
  			"status.loading": "正在刷新模型列表…",
  			"error.action": "模型操作失败：{message}",
-@@ -935,6 +1025,7 @@ window.__ModuleLoader__.load({
+@@ -942,6 +1033,7 @@ window.__ModuleLoader__.load({
  			"action.reload": "重新加载",
  			"warning.groupLoad": "{name} 加载失败：{message}",
  			"empty.models": "没有可用的模型。",
 +			"empty.search": "没有找到匹配的模型。",
- 			"blocked.composer": "当前模型不可用，请先选择模型",
  			"empty.efforts": "当前模型未提供推理等级。"
  		};
-@@ -953,6 +1044,8 @@ window.__ModuleLoader__.load({
+ 		/** English dictionary, checked complete against the zh key set. */
+@@ -960,6 +1052,8 @@ window.__ModuleLoader__.load({
  			"menu.aria": "Model and reasoning effort",
  			"menu.model": "Model",
  			"menu.effort": "Effort",
@@ -201,11 +208,11 @@ index 6726a35..ae5c72e 100644
  			"effort.providerDefault": "Default",
  			"status.loading": "Refreshing model list…",
  			"error.action": "Model operation failed: {message}",
-@@ -960,6 +1053,7 @@ window.__ModuleLoader__.load({
+@@ -967,6 +1061,7 @@ window.__ModuleLoader__.load({
  			"action.reload": "Reload",
  			"warning.groupLoad": "{name} failed to load: {message}",
  			"empty.models": "No models available.",
 +			"empty.search": "No matching models.",
- 			"blocked.composer": "This model is unavailable — select one to continue",
  			"empty.efforts": "This model provides no reasoning effort levels."
  		};
+ 		//#endregion

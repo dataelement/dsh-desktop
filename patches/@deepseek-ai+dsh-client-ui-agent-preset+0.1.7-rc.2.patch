@@ -1,9 +1,9 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-index cbefdd9..88c64fd 100644
+index 7f96b5f..8d8821f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
-@@ -871,6 +871,85 @@ window.__ModuleLoader__.load({
- 		function AgentPresetSection({ useAgentPresetSection, load, view, closeView, makeDefault, setPickerVisible, startCreatorDraft, close: closeSettings, useDeveloperTools, t }) {
+@@ -854,6 +854,85 @@ window.__ModuleLoader__.load({
+ 		function AgentPresetSection({ useAgentPresetSection, load, view, closeView, makeDefault, startCreatorDraft, close: closeSettings, useDeveloperTools, t }) {
  			const state = useAgentPresetSection((value) => value);
  			const developerTools = useDeveloperTools((enabled) => enabled);
 +			const chinese = document.documentElement.lang?.toLowerCase().startsWith("zh");
@@ -88,7 +88,7 @@ index cbefdd9..88c64fd 100644
  			const [guide, setGuide] = (0, react.useState)(null);
  			const viewTrigger = (0, react.useRef)(null);
  			const closeViewOnUnmount = (0, react.useRef)(closeView);
-@@ -913,6 +992,27 @@ window.__ModuleLoader__.load({
+@@ -896,13 +975,35 @@ window.__ModuleLoader__.load({
  						className: AgentPresetSection_module_css_default.intro,
  						children: t("sectionIntro")
  					}),
@@ -113,10 +113,9 @@ index cbefdd9..88c64fd 100644
 +					}),
 +					transferError && (0, react_jsx_runtime.jsx)("p", { role: "alert", children: transferError }),
 +					transferNotice && (0, react_jsx_runtime.jsx)("p", { role: "status", children: transferNotice }),
- 					developerTools && (0, react_jsx_runtime.jsxs)("div", {
- 						className: AgentPresetSection_module_css_default.pickerPreference,
- 						children: [(0, react_jsx_runtime.jsxs)("div", {
-@@ -942,7 +1042,8 @@ window.__ModuleLoader__.load({
+ 					state.error === null ? null : (0, react_jsx_runtime.jsx)("p", {
+ 						className: AgentPresetSection_module_css_default.error,
+ 						role: "alert",
  						children: state.error
  					}),
  					[true, false].map((builtIn) => {
@@ -126,7 +125,7 @@ index cbefdd9..88c64fd 100644
  						const entry = builtIn ? null : creatorButton;
  						if (rows.length === 0 && entry === null) return null;
  						return (0, react_jsx_runtime.jsxs)("section", {
-@@ -1051,7 +1152,13 @@ window.__ModuleLoader__.load({
+@@ -1011,7 +1112,13 @@ window.__ModuleLoader__.load({
  														view(row.id);
  													},
  													children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBrowseOutlineRegular, {})
@@ -141,7 +140,7 @@ index cbefdd9..88c64fd 100644
  											})]
  										}, row.id);
  									})
-@@ -1068,6 +1175,34 @@ window.__ModuleLoader__.load({
+@@ -1028,6 +1135,34 @@ window.__ModuleLoader__.load({
  							setGuide(null);
  						}
  					}),

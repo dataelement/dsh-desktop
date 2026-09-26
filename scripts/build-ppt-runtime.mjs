@@ -12,6 +12,9 @@ const run = promisify(execFile)
 const root = path.resolve('packages/ppt-runtime')
 const templateRoot = path.resolve(process.env.DSH_PPT_TEMPLATE_OUTPUT ?? '.build/ppt-runtime/templates')
 const outputRoot = path.resolve('.build/ppt-runtime/packages')
+// Use npm_node_execpath so bin.js subprocesses use the real Node, not the `node`
+// npm package binary that npm injects into PATH via node_modules/.bin.
+const nodeExec = process.env.npm_node_execpath ?? process.execPath
 const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-ppt-build-'))
 const specs = []
 for (const category of await fs.readdir(templateRoot)) {
@@ -33,13 +36,13 @@ try {
 
   for (const { definition } of specs) {
     const directory = path.join(templateRoot, definition.referenceDirectory)
-    const { stdout } = await run(process.execPath, [path.join(root, 'core/lib/bin.js'), 'check', path.join(directory, 'source'), '--json'])
+    const { stdout } = await run(nodeExec, [path.join(root, 'core/lib/bin.js'), 'check', path.join(directory, 'source'), '--json'])
     const check = JSON.parse(stdout)
     if (check.errorCount) throw Error(definition.id + ': ' + stdout)
     checks.push({ id: definition.id, ...check })
 
     const pngDirectory = path.join(scratch, 'screenshots', definition.id)
-    await run(process.execPath, [path.join(root, 'core/lib/bin.js'), 'screenshot', path.join(directory, 'source'), '-o', pngDirectory, '--scale', '1.3333333333', '--json'])
+    await run(nodeExec, [path.join(root, 'core/lib/bin.js'), 'screenshot', path.join(directory, 'source'), '-o', pngDirectory, '--scale', '1.3333333333', '--json'])
     const pngs = JSON.parse(await fs.readFile(path.join(pngDirectory, 'index.json'), 'utf8')).pages.map(page => page.file)
     if (pngs.length !== definition.referencePageCount) throw Error('Incomplete preview set')
 

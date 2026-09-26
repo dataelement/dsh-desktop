@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
-index cd7c857..4b3da0d 100644
+index 9e3936a..77ed234 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/index.js
-@@ -536,6 +536,26 @@ var WorkspaceRegistry = class extends Service {
+@@ -538,6 +538,26 @@ var WorkspaceRegistry = class extends Service {
  			if (options.stopActivity === true) await this.stopSessionActivity(sessionId);
  		});
  	}
@@ -30,10 +30,10 @@ index cd7c857..4b3da0d 100644
  	* Unarchive one session durably by dropping it from the registry-global
  	* archive set; the accounting slot was never touched, so the session
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
-index d0ef23a..483d8c4 100644
+index daa6916..9687fcb 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.d.ts
-@@ -212,6 +212,8 @@ export declare class WorkspaceRegistry extends Service {
+@@ -211,6 +211,8 @@ export declare class WorkspaceRegistry extends Service {
       * @returns resolution after durability and, with `stopActivity`, after every stop request was issued.
       */
      archiveSession(sessionId: SessionId, options?: ArchiveSessionOptions): Promise<void>;
@@ -43,10 +43,10 @@ index d0ef23a..483d8c4 100644
       * Unarchive one session durably by dropping it from the registry-global
       * archive set; the accounting slot was never touched, so the session
 diff --git a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
-index 3207bb4..72b6386 100644
+index fa1c9a7..9be12f8 100644
 --- a/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
 +++ b/node_modules/@deepseek-ai/dsh-workspace/lib/types/index.js
-@@ -299,6 +299,31 @@ export class WorkspaceRegistry extends Service {
+@@ -301,6 +301,31 @@ export class WorkspaceRegistry extends Service {
                  await this.stopSessionActivity(sessionId);
          });
      }

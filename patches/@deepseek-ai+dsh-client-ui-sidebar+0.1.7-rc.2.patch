@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 12112b8..04fe759 100644
+index 1c2bc08..25e01b2 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-@@ -88,7 +88,7 @@ window.__ModuleLoader__.load({
+@@ -94,7 +94,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-sidebar";
  			tag.dataset.pluginCss = tagId;
@@ -11,7 +11,7 @@ index 12112b8..04fe759 100644
  			document.head.appendChild(tag);
  		}
  		var SidebarRoot_module_css_default = {
-@@ -274,6 +274,8 @@ window.__ModuleLoader__.load({
+@@ -288,6 +288,8 @@ window.__ModuleLoader__.load({
  			});
  			return (0, react_jsx_runtime.jsxs)("div", {
  				ref: column,
@@ -20,7 +20,7 @@ index 12112b8..04fe759 100644
  				className: clsx(SidebarRoot_module_css_default.root, !wide && SidebarRoot_module_css_default.collapsed, !wide && everWide.current && SidebarRoot_module_css_default.railIn, collapsed && wide && SidebarRoot_module_css_default.fading, !pointerInside && SidebarRoot_module_css_default.quietBars),
  				style: wide ? { width: collapsed ? lastWideWidth.current : width } : void 0,
  				onPointerEnter: () => {
-@@ -293,6 +295,7 @@ window.__ModuleLoader__.load({
+@@ -309,6 +311,7 @@ window.__ModuleLoader__.load({
  						children: [wide && (() => {
  							const identity = (0, react_jsx_runtime.jsxs)("span", {
  								className: SidebarRoot_module_css_default.brandIdentity,
@@ -28,7 +28,7 @@ index 12112b8..04fe759 100644
  								"aria-hidden": "true",
  								children: [(0, react_jsx_runtime.jsx)("span", {
  									className: SidebarRoot_module_css_default.brandMark,
-@@ -373,6 +376,7 @@ window.__ModuleLoader__.load({
+@@ -407,6 +410,7 @@ window.__ModuleLoader__.load({
  							className: SidebarRoot_module_css_default.footerActions,
  							children: renderSlot("sidebar.footer.action", { wide })
  						}), (0, react_jsx_runtime.jsx)("div", {

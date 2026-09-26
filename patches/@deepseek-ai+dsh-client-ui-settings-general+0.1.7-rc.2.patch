@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-index 2e00480..5a59924 100644
+index 8f5fe80..1857e2a 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-@@ -31,7 +31,7 @@ window.__ModuleLoader__.load({
+@@ -63,7 +63,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-general";
  			tag.dataset.pluginCss = tagId$6;
@@ -11,7 +11,7 @@ index 2e00480..5a59924 100644
  			document.head.appendChild(tag);
  		}
  		var SettingsRoot_module_css_default = {
-@@ -344,10 +344,7 @@ window.__ModuleLoader__.load({
+@@ -356,10 +356,7 @@ window.__ModuleLoader__.load({
  			const connectionState = useConnectionState((state) => state);
  			const previousConnectionState = (0, react.useRef)(connectionState);
  			const onboardingSteps = useOnboardingSteps((s) => s);

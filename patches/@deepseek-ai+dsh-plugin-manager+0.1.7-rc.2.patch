@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
-index eab7663..ea33d48 100644
+index 7ebf353..0570c41 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
-@@ -1637,7 +1637,13 @@ let PluginManager = (() => {
+@@ -1705,7 +1705,13 @@ let PluginManager = (() => {
  				});
  			};
  			const result = this.change(async (result) => {
@@ -17,7 +17,7 @@ index eab7663..ea33d48 100644
  				if (stopped()) throw new InstallCancelledError();
  				if (options?.approvedBuilds !== void 0) {
  					await approveBuilds(this.profile.dir, options.approvedBuilds);
-@@ -1645,9 +1651,13 @@ let PluginManager = (() => {
+@@ -1713,9 +1719,13 @@ let PluginManager = (() => {
  				}
  				const files = await this.readRestoredFiles();
  				const before = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -31,7 +31,7 @@ index eab7663..ea33d48 100644
  					const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
  						timeoutMs: this.githubConnectionTimeoutMs,
  						outputBytes: this.outputBytes,
-@@ -1668,7 +1678,6 @@ let PluginManager = (() => {
+@@ -1736,7 +1746,6 @@ let PluginManager = (() => {
  						throw new Error(connectionFailure.output);
  					}
  					const plan = registryPlan(options?.registry, await this.registries());
@@ -39,7 +39,7 @@ index eab7663..ea33d48 100644
  					for (const [index, registry] of plan.entries()) {
  						if (index > 0) await this.restoreFiles(files);
  						if (stopped()) throw new InstallCancelledError();
-@@ -1697,10 +1706,27 @@ let PluginManager = (() => {
+@@ -1765,10 +1774,27 @@ let PluginManager = (() => {
  					}
  					/* v8 ignore next -- the plan is never empty, so a run always settled */
  					if (run === void 0) throw new Error("no registry was asked");
@@ -68,7 +68,7 @@ index eab7663..ea33d48 100644
  							result.pendingBuilds = await readPendingBuilds(this.profile.dir);
  						} catch (error) {
  							this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
-@@ -1708,8 +1734,8 @@ let PluginManager = (() => {
+@@ -1776,8 +1802,8 @@ let PluginManager = (() => {
  						throw new Error(run.output);
  					}
  					const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -79,7 +79,7 @@ index eab7663..ea33d48 100644
  					const target = installed[0];
  					if (installed.length !== 1 || target === void 0) throw new ManagementFailure("ambiguous-install");
  					name = target;
-@@ -1720,6 +1746,7 @@ let PluginManager = (() => {
+@@ -1788,6 +1814,7 @@ let PluginManager = (() => {
  					if (compatibility !== void 0 && !compatibility.exempted) throw new ManagementFailure("incompatible-version", [incompatiblePlugin(compatibility)]);
  					for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches("dsh", file);
  				} catch (error) {
@@ -87,7 +87,7 @@ index eab7663..ea33d48 100644
  					await this.restoreFiles(files);
  					throw error;
  				}
-@@ -1728,11 +1755,19 @@ let PluginManager = (() => {
+@@ -1796,11 +1823,19 @@ let PluginManager = (() => {
  				result.bundle = name;
  				result.target = name;
  				result.stage = "enable";
@@ -112,7 +112,7 @@ index eab7663..ea33d48 100644
  			}, {
  				stage: "install",
  				target: spec,
-@@ -1786,7 +1821,13 @@ let PluginManager = (() => {
+@@ -1854,7 +1889,13 @@ let PluginManager = (() => {
  					}
  					if ([...this.ctx.loader.entries()].some((entry) => entry.fiber?.uid != null && contributions.some((row) => row.id === entry.options.id && row.name === entry.options.name))) throw new ManagementFailure("bundle-in-use");
  				});
@@ -127,7 +127,7 @@ index eab7663..ea33d48 100644
  				if (result.packageResult.exitCode !== 0 || result.packageResult.timedOut === true) throw new Error(result.packageResult.output);
  			}, {
  				stage: "remove",
-@@ -1831,6 +1872,17 @@ let PluginManager = (() => {
+@@ -1899,6 +1940,17 @@ let PluginManager = (() => {
  				overrides: [...new Set(patches.flatMap((item) => item.insert === void 0 && typeof item.id === "string" && !declared.has(item.id) ? [item.id] : []))]
  			};
  		}
@@ -146,7 +146,7 @@ index eab7663..ea33d48 100644
  		async runPnpm(args, signal, requestId) {
  			const jobId = randomUUID();
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
-index e47ee2b..9b38b92 100644
+index e47ee2b..2f0abe5 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
 @@ -6,6 +6,11 @@ export type * from './types.ts';

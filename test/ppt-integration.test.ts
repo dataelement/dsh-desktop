@@ -60,7 +60,7 @@ describe('DSH PPT built-in plugin', () => {
   })
 
   it('ships Harness 0.1.7-compatible peer ranges in both generated packages', async () => {
-    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1'
+    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2'
     const core = JSON.parse((await artifact('core')).get('package/package.json')!.toString('utf8'))
     const adapter = JSON.parse((await artifact('adapter')).get('package/package.json')!.toString('utf8'))
     expect(core.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
@@ -187,7 +187,7 @@ describe('DSH PPT built-in plugin', () => {
     }
   })
 
-  it('places the PPT action beside the agent preset and renders the catalog for the hero input', async () => {
+  it('keeps hero mode actions available while requiring a session for the shared composer dock', async () => {
     const client = await readFile(path.join(
       projectRoot,
       'node_modules',
@@ -205,7 +205,7 @@ describe('DSH PPT built-in plugin', () => {
     const owner = client.indexOf('extensionZone: zone')
     const input = client.indexOf('className: clsx(InputBar_module_css_default.card', owner)
     const catalog = client.indexOf(
-      'extensionZone !== void 0 || sessionId === void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null',
+      'input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null',
       input
     )
     const modeScope = client.slice(client.indexOf('"conversation.hero.modeActions": {'), client.indexOf('"conversation.hero.modeActions": {') + 180)
@@ -217,7 +217,7 @@ describe('DSH PPT built-in plugin', () => {
     expect(input).toBeGreaterThan(owner)
     expect(catalog).toBeGreaterThan(input)
     expect(modeScope).toContain('scope: "session-maybe"')
-    expect(dockScope).toContain('scope: "session-maybe"')
+    expect(dockScope).toContain('scope: "session"')
   })
 
   it('integrates hero mode actions with the adjacent agent-preset control style', async () => {
@@ -245,8 +245,9 @@ describe('DSH PPT built-in plugin', () => {
     const types = await readFile(path.join(root, 'types/client/contract/slots.d.ts'), 'utf8')
     for (const [name, scope] of [
       ['conversation.hero.modeActions', 'session-maybe'],
+      ['conversation.hero.dock', 'session-maybe'],
       ['conversation.input.accessory', 'session'],
-      ['conversation.composer.dock', 'session-maybe']
+      ['conversation.composer.dock', 'session']
     ] as const) {
       const escaped = name.replaceAll('.', '\\.')
       expect(runtime).toMatch(new RegExp(`"${escaped}": \\{\\s*kind: "list",\\s*scope: "${scope}"`))
@@ -270,7 +271,7 @@ describe('DSH PPT built-in plugin', () => {
     expect(promptRow).toBeGreaterThan(-1)
     expect(accessory).toBeGreaterThan(promptRow)
     expect(editor).toBeGreaterThan(accessory)
-    expect(client).toContain('children: accessory ?? renderSlot("conversation.input.accessory", extensionZone)')
+    expect(client).toContain('children: accessory ?? (sessionId === void 0 ? null : renderSlot("conversation.input.accessory", extensionZone))')
   })
 
   it('declares both local source packages and mounts only the PPT composer', async () => {

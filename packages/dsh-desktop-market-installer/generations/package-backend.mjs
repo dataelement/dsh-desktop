@@ -71,6 +71,7 @@ async function createOperationLog(dshHome) {
 export function createGenerationPackageBackend(options) {
   const {
     dshHome,
+    dshEntryPath,
     nodeExecutablePath,
     pnpmEntryPath,
     environment = process.env,
@@ -149,7 +150,7 @@ export function createGenerationPackageBackend(options) {
           }
           request.signal?.throwIfAborted()
           const generation = install.generation
-          const peers = await verifyGenerationPeers(dshHome, generation)
+          const peers = await verifyGenerationPeers(dshHome, generation, { dshEntryPath })
           if (!peers.ok) {
             return { ok: false, detail: `generation peer validation failed: ${peers.problems.join('; ')}` }
           }

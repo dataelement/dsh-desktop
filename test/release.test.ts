@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.1.7-rc.1'
+const HARNESS_VERSION = '0.1.7-rc.2'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {

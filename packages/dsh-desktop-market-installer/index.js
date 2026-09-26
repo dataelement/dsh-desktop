@@ -23,7 +23,7 @@ import { resolveMarketRegistry } from './market-registry.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
 
-export const RECOMMENDED_MARKET_VERSION = '^1.45.1'
+export const RECOMMENDED_MARKET_VERSION = '^1.65.1'
 export const MARKET_PACKAGE = 'dshmarket'
 export const MARKET_PROFILE = 'web'
 export const STATUS_PATH = '/dsh-desktop/market-installer/status'
@@ -436,6 +436,7 @@ export function createDesktopPnpmService(options) {
   const pnpmEntryPath = resolvePnpmEntry()
   const marketGenerationBackend = createGenerationPackageBackend({
     dshHome: home,
+    dshEntryPath,
     nodeExecutablePath: executablePath,
     pnpmEntryPath,
     environment,
@@ -819,6 +820,7 @@ export async function apply(ctx) {
   const desktopPnpm = createDesktopPnpmService({ binDirectory })
   const profileBundlePackageBackend = createGenerationPackageBackend({
     dshHome: home,
+    dshEntryPath: resolveDshEntry(),
     nodeExecutablePath: process.execPath,
     pnpmEntryPath: resolvePnpmEntry()
   })

@@ -36,6 +36,7 @@ export interface ProfileBundlePackageBackend {
 
 export function createGenerationPackageBackend(options: {
   dshHome: string
+  dshEntryPath?: string
   nodeExecutablePath: string
   pnpmEntryPath: string
   environment?: NodeJS.ProcessEnv

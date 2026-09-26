@@ -57,7 +57,7 @@ index a42f2a2..3e7e082 100644
  			if (header === void 0) continue;
  			if (ids.has(header.id)) throw new Error(`duplicate JSONL session id "${header.id}" appears in multiple project directories`);
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
-index 48f0351..c7f3e8b 100644
+index 48f0351..f5ef30e 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
 @@ -7,7 +7,7 @@

@@ -571,8 +571,25 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
 }
 
 /** Verify every installed package's required runtime dependency stays in an allowed closure. */
-export async function verifyGenerationPeers(dshHome, generation) {
+export async function verifyGenerationPeers(dshHome, generation, options = {}) {
   const { createRequire } = await import('node:module')
+  // 0.1.7 can resolve host packages through runtime hooks without refreshing
+  // legacy Profile links. Validate the exact entry supplied by this running host.
+  const hostRequire = options.dshEntryPath ? createRequire(options.dshEntryPath) : undefined
+  const hostEntries = new Map()
+  const hostEntry = async (dependency) => {
+    if (!hostRequire || !isHostSingleton(dependency)) return undefined
+    if (!hostEntries.has(dependency)) {
+      let resolved
+      try {
+        resolved = hostRequire.resolve(dependency)
+      } catch {
+        resolved = await resolveNonRootPackage(hostRequire, dependency)
+      }
+      hostEntries.set(dependency, resolved === undefined ? undefined : await realpath(resolved).catch(() => resolved))
+    }
+    return hostEntries.get(dependency)
+  }
   const generationRoot = await realpath(generation.directory)
   const closure = await realpath(installationClosureDir(dshHome)).catch(
     () => installationClosureDir(dshHome)
@@ -661,7 +678,8 @@ export async function verifyGenerationPeers(dshHome, generation) {
       }
       const realResolved = await realpath(resolved).catch(() => resolved)
       const providedRoot = await fallbackRoot(dependency)
-      const insideClosure = isInsideDirectory(closure, realResolved) ||
+      const currentHostEntry = await hostEntry(dependency)
+      const insideClosure = currentHostEntry !== undefined ? realResolved === currentHostEntry : isInsideDirectory(closure, realResolved) ||
         (providedRoot !== undefined && isInsideDirectory(providedRoot, realResolved))
       if (isHostSingleton(dependency)) {
         if (!insideClosure) {

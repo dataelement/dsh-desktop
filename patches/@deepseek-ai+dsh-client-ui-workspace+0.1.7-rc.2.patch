@@ -1,24 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index 580e6df..be93163 100644
+index 76cd793..455643d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-@@ -122,6 +122,7 @@ window.__ModuleLoader__.load({
- 			"status.compact.planReview": "计划待审",
- 			"status.compact.answer": "待回答",
- 			"status.completed": "已完成",
-+			"status.unread": "未读",
- 			"schedule.active": "有活动定时任务",
- 			"hover.created": "创建于 {time}",
- 			"hover.copied": "已复制",
-@@ -230,6 +231,7 @@ window.__ModuleLoader__.load({
- 			"status.compact.planReview": "Plan review",
- 			"status.compact.answer": "Answer",
- 			"status.completed": "Completed",
-+			"status.unread": "Unread",
- 			"schedule.active": "Has active scheduled task",
- 			"hover.created": "Created {time}",
- 			"hover.copied": "Copied",
-@@ -704,10 +706,18 @@ window.__ModuleLoader__.load({
+@@ -660,10 +660,18 @@ window.__ModuleLoader__.load({
  					orderBy: "updated",
  					groupExpansion: {},
  					sessionOrderByAccount: {},
@@ -37,7 +21,7 @@ index 580e6df..be93163 100644
  					setGroupBy: (d, mode) => {
  						d.groupBy = mode;
  					},
-@@ -802,6 +812,9 @@ window.__ModuleLoader__.load({
+@@ -758,6 +766,9 @@ window.__ModuleLoader__.load({
  			lifetime = new AbortController();
  			selection = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({}, { persist: { name: "dsh.sessions.current" } });
  			mainReference;
@@ -47,7 +31,7 @@ index 580e6df..be93163 100644
  			/**
  			* @param ctx - Client root Context.
  			* @param directoryPicker - the directory-picking Remote namespace.
-@@ -828,23 +841,23 @@ window.__ModuleLoader__.load({
+@@ -784,23 +795,23 @@ window.__ModuleLoader__.load({
  					};
  				}, "ui-workspace: Workspace navigation policy");
  			}
@@ -76,7 +60,7 @@ index 580e6df..be93163 100644
  					return this.reuseBlank(workspace.workspaceId, id);
  				}
  				return this.sessions.create({ workspaceId: workspace.workspaceId });
-@@ -860,14 +873,33 @@ window.__ModuleLoader__.load({
+@@ -816,14 +827,33 @@ window.__ModuleLoader__.load({
  					return this.sessions.create({ workspaceId });
  				}
  			}
@@ -113,7 +97,7 @@ index 580e6df..be93163 100644
  				} catch (error) {
  					if (!navigation.aborted) this.notify({
  						kind: "createFailed",
-@@ -876,6 +908,8 @@ window.__ModuleLoader__.load({
+@@ -832,6 +862,8 @@ window.__ModuleLoader__.load({
  					throw error;
  				}
  				if (navigation.aborted) return;
@@ -122,7 +106,7 @@ index 580e6df..be93163 100644
  				this.replaceMain(sessionId, navigation, "reveal", beforeOpen);
  			}
  			async forkSession(sessionId) {
-@@ -884,7 +918,18 @@ window.__ModuleLoader__.load({
+@@ -840,7 +872,18 @@ window.__ModuleLoader__.load({
  					increaseTitle: true
  				});
  			}
@@ -141,7 +125,7 @@ index 580e6df..be93163 100644
  				const workspace = this.workspaces.list.getSnapshot();
  				const sessions = this.sessions.list.getSnapshot();
  				const current = this.mainReference?.sessionId;
-@@ -895,7 +940,7 @@ window.__ModuleLoader__.load({
+@@ -851,7 +894,7 @@ window.__ModuleLoader__.load({
  					this.clearMain();
  					return;
  				}
@@ -150,7 +134,7 @@ index 580e6df..be93163 100644
  					console.warn("new session failed:", reason);
  				});
  			}
-@@ -906,6 +951,24 @@ window.__ModuleLoader__.load({
+@@ -862,6 +905,24 @@ window.__ModuleLoader__.load({
  			async unarchiveSession(sessionId) {
  				await this.workspaces.unarchiveSession(sessionId);
  			}
@@ -175,7 +159,7 @@ index 580e6df..be93163 100644
  			async pinSession(sessionId) {
  				await this.workspaces.pinSession(sessionId);
  				const { items, pinnedSessionIds, archivedSessionIds } = this.workspaces.list.getSnapshot();
-@@ -1533,7 +1596,7 @@ window.__ModuleLoader__.load({
+@@ -1490,7 +1551,7 @@ window.__ModuleLoader__.load({
  		* @param props.t - Workspace-browser translation seat.
  		* @returns the result row.
  		*/
@@ -184,7 +168,7 @@ index 580e6df..be93163 100644
  			const selected = result.id === currentId;
  			const statuses = sessionStatuses(result, t);
  			const primaryStatus = statuses[0];
-@@ -1548,6 +1611,7 @@ window.__ModuleLoader__.load({
+@@ -1505,6 +1566,7 @@ window.__ModuleLoader__.load({
  				children: [(0, react_jsx_runtime.jsxs)("span", {
  					className: Rows_module_css_default.searchResultHeading,
  					children: [
@@ -192,24 +176,16 @@ index 580e6df..be93163 100644
  						(0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
  							children: !result.archived && primaryStatus.state !== "idle" && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
-@@ -1608,7 +1672,7 @@ window.__ModuleLoader__.load({
+@@ -1565,7 +1627,7 @@ window.__ModuleLoader__.load({
  		* @param props.t - the browser root's locale seat.
  		* @returns the session row.
  		*/
--		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, flat = false, t }) {
-+		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, flat = false, unread = false, onUnreadChange, t }) {
+-		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, t }) {
++		function SessionNodeItem({ node, currentId, now, onOpen, onRenameRequest, renderSlot, onReveal, drag, unread = false, onUnreadChange, t }) {
  			const row = node;
  			const title = displayTitle(node, t);
  			const selected = node.id === currentId;
-@@ -1630,13 +1694,18 @@ window.__ModuleLoader__.load({
- 				anchor: (0, react_jsx_runtime.jsxs)("div", {
- 					ref: rowRef,
- 					"data-row-key": `session:${node.id}`,
--					className: clsx(Rows_module_css_default.sessionRow, selected && Rows_module_css_default.selected, menuOpen && Rows_module_css_default.menuOpen, row.archived && Rows_module_css_default.archived, flat && !showStatus && Rows_module_css_default.flatSessionRowWithoutStatus, drag?.marker === "before" && Rows_module_css_default.dropBefore, drag?.marker === "after" && Rows_module_css_default.dropAfter),
-+					className: clsx(Rows_module_css_default.sessionRow, selected && Rows_module_css_default.selected, menuOpen && Rows_module_css_default.menuOpen, row.archived && Rows_module_css_default.archived, flat && !showStatus && !unread && Rows_module_css_default.flatSessionRowWithoutStatus, drag?.marker === "before" && Rows_module_css_default.dropBefore, drag?.marker === "after" && Rows_module_css_default.dropAfter),
- 					role: "treeitem",
- 					"aria-selected": selected,
- 					"aria-description": row.archived ? t("toast.archivedNotOpenable") : void 0,
+@@ -1594,6 +1656,11 @@ window.__ModuleLoader__.load({
  					onClick: () => {
  						onOpen(node.id);
  					},
@@ -221,16 +197,12 @@ index 580e6df..be93163 100644
  					onPointerEnter: marquee.enter,
  					onPointerLeave: marquee.leave,
  					draggable,
-@@ -1658,13 +1727,15 @@ window.__ModuleLoader__.load({
- 						drag.drop(rowHalf(e));
- 					},
+@@ -1617,11 +1684,12 @@ window.__ModuleLoader__.load({
  					children: [
--						(!flat || showStatus) && (0, react_jsx_runtime.jsx)("span", {
-+
-+						(!flat || showStatus || unread) && (0, react_jsx_runtime.jsx)("span", {
+ 						(0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
--							children: !row.archived && showStatus && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
-+							children: !row.archived && (showStatus ? (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses }) : unread ? (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: "done" }), (0, react_jsx_runtime.jsx)("span", { className: Rows_module_css_default.visuallyHidden, children: t("status.unread") })] }) : null)
+-							children: !row.archived && !row.blank && (showStatus ? (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses }) : renderSlot("sidebar.session.row.leading", { sessionId: node.id }))
++							children: !row.archived && !row.blank && (showStatus ? (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses }) : unread ? (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.StateDot, { state: "done" }), (0, react_jsx_runtime.jsx)("span", { className: Rows_module_css_default.visuallyHidden, children: t("status.unread") })] }) : renderSlot("sidebar.session.row.leading", { sessionId: node.id }))
  						}),
  						(0, react_jsx_runtime.jsx)("span", {
  							ref: titleRef,
@@ -239,7 +211,7 @@ index 580e6df..be93163 100644
  							onDoubleClick: row.blank ? void 0 : (e) => {
  								e.stopPropagation();
  								onRenameRequest(node.id, row.title);
-@@ -1701,7 +1772,9 @@ window.__ModuleLoader__.load({
+@@ -1657,7 +1725,9 @@ window.__ModuleLoader__.load({
  								}),
  								children: renderSlot("sidebar.workspaces.session.menu.item", {
  									sessionId: node.id,
@@ -250,16 +222,16 @@ index 580e6df..be93163 100644
  								}, { hookContext: menuOpenState })
  							}), renderSlot("sidebar.workspaces.session.row.action", {
  								sessionId: node.id,
-@@ -2321,7 +2394,7 @@ window.__ModuleLoader__.load({
- 			return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+@@ -2310,7 +2380,7 @@ window.__ModuleLoader__.load({
+ 			});
  		}
  		/** The scrolling session tree; unmounting drops the sessions subscription and local row limits. */
--		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed }) {
-+		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, unreadSessionIds, onUnreadChange, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed }) {
+-		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
++		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const current = panelActive ? void 0 : Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
-@@ -2593,6 +2666,8 @@ window.__ModuleLoader__.load({
+@@ -2585,6 +2655,8 @@ window.__ModuleLoader__.load({
  								onOpen: open,
  								onRenameRequest: onSessionRenameRequest,
  								renderSlot,
@@ -268,16 +240,16 @@ index 580e6df..be93163 100644
  								onReveal: node.id === revealSessionId && group.key === revealGroup ? () => {
  									onSessionRevealed(node.id);
  								} : void 0,
-@@ -2641,7 +2716,7 @@ window.__ModuleLoader__.load({
+@@ -2633,7 +2705,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
--		function FlatList({ list, sessionIds, rowState, useSessionStatus, open, onSessionRenameRequest, renderSlot, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, t }) {
-+		function FlatList({ list, sessionIds, rowState, unreadSessionIds, onUnreadChange, useSessionStatus, open, onSessionRenameRequest, renderSlot, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, t }) {
+-		function FlatList({ list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t }) {
++		function FlatList({ list, sessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, useSessionStatus, open, onSessionRenameRequest, usePanelInfo, setSessionOrder, workspaceReady, animationResetKey, revealSessionId, onSessionRevealed, renderSlot, t }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, rowState, statuses), [
-@@ -2682,8 +2757,10 @@ window.__ModuleLoader__.load({
+@@ -2674,8 +2746,10 @@ window.__ModuleLoader__.load({
  							currentId,
  							now,
  							onOpen: open,
@@ -290,7 +262,7 @@ index 580e6df..be93163 100644
  							onReveal: node.id === revealSessionId ? () => {
  								onSessionRevealed(node.id);
  							} : void 0,
-@@ -2728,7 +2805,7 @@ window.__ModuleLoader__.load({
+@@ -2719,7 +2793,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Flat search body: local metadata matches plus the current Host result page. */
@@ -299,7 +271,7 @@ index 580e6df..be93163 100644
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const list = useSessions((s) => s);
  			const statuses = useSessionStatus((s) => s);
-@@ -2764,6 +2841,7 @@ window.__ModuleLoader__.load({
+@@ -2755,6 +2829,7 @@ window.__ModuleLoader__.load({
  								currentId,
  								onOpen: open,
  								onUnarchive,
@@ -307,7 +279,7 @@ index 580e6df..be93163 100644
  								t
  							}, result.id))
  						}),
-@@ -2810,6 +2888,11 @@ window.__ModuleLoader__.load({
+@@ -2810,6 +2885,11 @@ window.__ModuleLoader__.load({
  			const archivedFilter = useStore((s) => s.archivedFilter ?? "default");
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
@@ -319,53 +291,62 @@ index 580e6df..be93163 100644
  			const guardedOpen = (sessionId) => {
  				if (archivedSessionIds.includes(sessionId)) {
  					notifyArchivedNotOpenable();
-@@ -3239,12 +3322,15 @@ window.__ModuleLoader__.load({
- 							query: normalizedQuery,
- 							remote: remoteSearch,
- 							resultLimit: searchResultLimit,
-+							renderSlot,
- 							t
- 						}) : groupBy === "flat" ? (0, react_jsx_runtime.jsx)(FlatList, {
- 							usePanelInfo,
+@@ -3261,6 +3341,8 @@ window.__ModuleLoader__.load({
  							list,
  							sessionIds: orderedFlatSessionIds,
  							rowState,
 +							unreadSessionIds,
 +							onUnreadChange,
+ 							onLeaveArchivedOnly: leaveArchivedOnly,
  							workspaceReady,
  							animationResetKey: `${groupBy}/${orderBy}/${archivedFilter}`,
- 							useSessionStatus,
-@@ -3270,6 +3356,8 @@ window.__ModuleLoader__.load({
+@@ -3288,6 +3370,8 @@ window.__ModuleLoader__.load({
  							setGroupExpanded: actions.setGroupExpanded,
  							setSessionOrder: saveSessionOrder,
  							rowState,
 +							unreadSessionIds,
 +							onUnreadChange,
+ 							onLeaveArchivedOnly: leaveArchivedOnly,
  							startSession,
  							open: guardedOpen,
- 							insertWorkspaceBefore,
+@@ -3963,6 +4047,7 @@ window.__ModuleLoader__.load({
+ 			"status.compact.planReview": "计划待审",
+ 			"status.compact.answer": "待回答",
+ 			"status.completed": "已完成",
++			"status.unread": "未读",
+ 			"hover.created": "创建于 {time}",
+ 			"hover.copied": "已复制",
+ 			"date.ymd": "{y}年{m}月{d}日",
+@@ -4077,6 +4162,7 @@ window.__ModuleLoader__.load({
+ 			"status.compact.planReview": "Plan review",
+ 			"status.compact.answer": "Answer",
+ 			"status.completed": "Completed",
++			"status.unread": "Unread",
+ 			"hover.created": "Created {time}",
+ 			"hover.copied": "Copied",
+ 			"date.ymd": "{y}-{m}-{d}",
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
-index ade79bb..feef33e 100644
+index 26ee25b..df98396 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
-@@ -99,6 +99,7 @@ export declare const zh: {
+@@ -106,6 +106,7 @@ export declare const zh: {
      'status.compact.planReview': string;
      'status.compact.answer': string;
      'status.completed': string;
 +    'status.unread': string;
-     'schedule.active': string;
      'hover.created': string;
      'hover.copied': string;
-@@ -209,6 +210,7 @@ export declare const en: {
+     'date.ymd': string;
+@@ -222,6 +223,7 @@ export declare const en: {
      'status.compact.planReview': string;
      'status.compact.answer': string;
      'status.completed': string;
 +    'status.unread': string;
-     'schedule.active': string;
      'hover.created': string;
      'hover.copied': string;
+     'date.ymd': string;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
-index e251cf2..9b75368 100644
+index 9afabc2..3a1cc04 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 @@ -4,6 +4,7 @@ import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai
@@ -387,7 +368,7 @@ index e251cf2..9b75368 100644
      /**
       * Connect a Workspace and open its Session unless a later navigation supersedes it.
       * @param workspaceId - target Workspace.
-@@ -21,24 +24,26 @@ export interface UiWorkspace {
+@@ -22,24 +25,26 @@ export interface UiWorkspace {
       * @throws on failure; a refused creation is also shown through the Workspace
       * notice unless a later navigation or disposal superseded the request.
       */
@@ -416,7 +397,7 @@ index e251cf2..9b75368 100644
      startSession(workspaceId?: WorkspaceId): void;
      /**
       * Archive a Session and clear it when it is the current selection.
-@@ -110,6 +115,9 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -111,6 +116,9 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
      private readonly lifetime;
      private readonly selection;
      private mainReference;
@@ -426,7 +407,7 @@ index e251cf2..9b75368 100644
      /**
       * @param ctx - Client root Context.
       * @param directoryPicker - the directory-picking Remote namespace.
-@@ -118,13 +126,17 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -119,13 +127,17 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
       * @param view - the browser's viewing-store write set (one instance shared with its registration).
       * @param notify - show one notice through the Workspace notice channel.
       */
