@@ -121,15 +121,15 @@ describe('upgradeMarketInSharedTree', () => {
     const { home, profile, market, options } = await fixture()
     const before = await readFile(join(profile, 'package.json'), 'utf8')
     installMock.mockImplementationOnce(async () => {
-      await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.48.0' }))
+      await writeFile(join(market, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.66.0' }))
       return { ok: false, detail: 'interrupted after package extraction' }
     })
-    expect((await upgradeMarketInSharedTree({ ...options, targetVersion: '1.48.0' })).ok).toBe(false)
+    expect((await upgradeMarketInSharedTree({ ...options, targetVersion: '1.66.0' })).ok).toBe(false)
     expect(JSON.parse(await readFile(marketInstallPendingPath(home), 'utf8')).previousManifest).toBe(before)
     installMock.mockResolvedValue({ ok: true })
     await ensureMarketBaseline({ ...options, dshEntryPath: resolve('node_modules/@deepseek-ai/dsh/lib/bin.js') })
     expect(installMock).toHaveBeenCalledTimes(2)
-    expect(JSON.parse(await readFile(join(profile, 'package.json'), 'utf8')).dependencies.dshmarket).toBe('1.48.0')
+    expect(JSON.parse(await readFile(join(profile, 'package.json'), 'utf8')).dependencies.dshmarket).toBe('1.66.0')
     await expect(readFile(marketInstallPendingPath(home))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 

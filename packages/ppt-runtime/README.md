@@ -1,6 +1,6 @@
 # Maintained DSH PPT runtime
 
-Product packages: **`dsh-ppt`** (authoring/export) and **`dsh-ppt-composer`** (PPT button/template chooser). Their pinned distributions live in `../ppt-bundles/`.
+Product packages: **`dsh-ppt`** (authoring/export) and **`dsh-ppt-composer`** (PPT button/template chooser). The repository keeps their maintained runtime seeds and generator inputs, while every dev, test, build and package run assembles complete distributions under the ignored `.build/ppt-runtime/packages/` staging root.
 
 This directory maintains the distributed JavaScript extracted at Desktop base `9d4502f`; the complete original TypeScript source was not present. Original copyright notices and factual Kimi Slides research attribution remain in `THIRD_PARTY_NOTICES.md`. Renaming does not change provenance or establish legal clearance.
 
@@ -20,11 +20,13 @@ Every metadata/design record contains English and Chinese title/body fonts and p
 
 ## Build and install
 
-`npm run ppt:build` regenerates the ten Zara packs, restores the six maintained baseline packs from `scripts/ppt/base-templates/`, applies reviewed English translations, and expands all sixteen packs to twelve layouts each. It validates and renders the 192 English previews and builds both archives. `artifacts.json` records their hashes. The baseline inputs are separate from generated `source/` and `source-zh/`, so consecutive builds do not translate enriched output again. Every pack retains explicit English/Chinese font pairs. The two original experiments live in `scripts/ppt/rich-layouts.mjs`; the other composition plans and editable geometry live in `scripts/ppt/composition-library.mjs`.
+`npm run ppt:build` starts from an empty `.build/ppt-runtime/` directory, regenerates the ten Zara packs, restores the six maintained baseline packs from `scripts/ppt/base-templates/`, applies reviewed English translations, and expands all sixteen packs to twelve layouts each. It validates and renders the 192 English previews, hydrates the runtime clients/catalog, assembles both package directories, then atomically projects those directories into `node_modules` for local execution. It never writes generated templates, previews, archives or hash manifests back into tracked source paths. Every pack retains explicit English/Chinese font pairs. The two original experiments live in `scripts/ppt/rich-layouts.mjs`; the other composition plans and editable geometry live in `scripts/ppt/composition-library.mjs`.
 
-After rebuilding, refresh both dependency integrity entries in `package-lock.json`, then use `npm ci` and the normal postinstall flow. Tests verify the exact archives, language coverage, fonts, activation and state migration. The 23 withdrawn designs and 345 excluded images remain absent; `excluded-assets.json` is a hash-only regression list.
+`npm ci` bootstraps from the tracked local package seeds, so a clean checkout does not need a pre-existing archive. The `dev`, `build` and `test` lifecycles all invoke the same preparation step; every package script delegates to `build`. Electron Builder excludes the bootstrap links and copies the current staged packages explicitly. Tests verify the generated distributions, language coverage, fonts, activation and state migration. The 23 withdrawn designs and 345 excluded images remain absent; `excluded-assets.json` is a hash-only regression list.
 
 ## Compatibility
+
+For Harness `0.1.7-rc.1`, the chooser uses `conversation.hero.dock` (list, session-maybe, InputZone owner) before a session exists and the existing session-only `conversation.composer.dock` afterwards. The hero outlet belongs to ConversationContent and sits after its input bar; it must not be rendered inside the independently registered InputBar. Only one chooser outlet is active at a time, sharing the mode-button store. The panel measures the composer card width because the upstream session dock can shrink to its content width. The conversation patch can drop the extra hero outlet when Harness provides an equivalent public pre-session outlet.
 
 The built-in profile loads one `dsh-ppt-composer` plugin. The Skill, new automatic context records, client registration and primary RPC use DSH names. Historical attribution is kept in notices and an entry-point comment.
 
@@ -42,9 +44,7 @@ The host stores source PPTX, editable PPTD pages, assets, previews and conversio
 
 `ppt_template_create_project` copies the selected personal template into a new confined workspace directory. The model then adapts that copy with the existing PPTD tools and exports through `pptd_render`. The saved source remains separate from generated task files. All conversion and copy operations use the existing bounded parser/compiler and host audit. Company template fidelity requires review of actual imported pages, particularly master elements and advanced Office objects. Product rules and evidence: [Personal PPT templates](../../docs/ppt-personal-templates.md).
 
-For runtime-only changes, `node scripts/build-ppt-runtime.mjs --reuse-previews` validates all built-in source decks and packages their existing reviewed previews. A full `npm run ppt:build` regenerates the built-in assets.
-
-Validation evidence and temporary exports live under ignored `doc/ppt-remediation/`. Windows packaging and native Windows PowerPoint require their own runner/device validation.
+Generated templates, previews, package directories and build diagnostics live under ignored `.build/ppt-runtime/`. Validation evidence and temporary exports live under ignored `doc/ppt-remediation/`. Windows packaging and native Windows PowerPoint require their own runner/device validation.
 
 ### Layout refinement
 

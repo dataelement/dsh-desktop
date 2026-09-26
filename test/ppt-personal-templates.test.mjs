@@ -1,6 +1,5 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -15,7 +14,7 @@ let apply, packageRoot, MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLAT
 const cleanups = [];
 beforeAll(async () => {
   packageRoot = await mkdtemp(path.resolve('node_modules/.ppt-personal-'));
-  execFileSync('tar', ['-xzf', 'packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz', '-C', packageRoot, '--strip-components=1']);
+  await cp(path.resolve('.build/ppt-runtime/packages/dsh-ppt'), packageRoot, { recursive: true });
   ({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))));
   ({ MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
 });

@@ -1,0 +1,57 @@
+diff --git a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js b/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
+index abec6c7..d732576 100644
+--- a/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-api-remotes/lib/client.js
+@@ -9879,6 +9879,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 			"sessionId": intersection(string(), unknown()).readonly(),
+ 			"agentPreset": string().readonly().optional()
+ 		});
++		let _deepseek_ai_dsh_api_session_controller_session_delete_parameter_0$schema$value;
++		const _deepseek_ai_dsh_api_session_controller_session_delete_parameter_0$schema = () => _deepseek_ai_dsh_api_session_controller_session_delete_parameter_0$schema$value ??= object({
++			sessionId: intersection(string(), unknown()).readonly()
++		});
++		let _deepseek_ai_dsh_api_session_controller_session_delete_result$schema$value;
++		const _deepseek_ai_dsh_api_session_controller_session_delete_result$schema = () => _deepseek_ai_dsh_api_session_controller_session_delete_result$schema$value ??= object({
++			deleted: literal(true).readonly()
++		});
+ 		let _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value;
+ 		const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = () => _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value ??= object({
+ 			"address": union([object({
+@@ -11431,7 +11439,36 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
+ 					}
+ 				},
+ 				{
+-					id: "@deepseek-ai/dsh-api-job-controller#job/list",
++					id: "@deepseek-ai/dsh-api-session-controller#session/delete",
++					service: "sessionController",
++					namespace: "session",
++					method: "delete",
++					invocation: { kind: "direct" },
++					parameters: [
++						{
++							name: "request",
++							wire: "request",
++							source: "json",
++							codec: {
++								mode: "strict",
++								typeSymbol: "@deepseek-ai/dsh-api-session-controller/types#SessionDeleteRequest",
++								create: _deepseek_ai_dsh_api_session_controller_session_delete_parameter_0$schema
++							}
++						}
++					],
++					result: {
++						mode: "strict",
++						typeSymbol: "@deepseek-ai/dsh-api-session-controller/types#SessionDeleteValue",
++						create: _deepseek_ai_dsh_api_session_controller_session_delete_result$schema
++					},
++					sourceLocation: {
++						"file": "packages/api/session-controller/src/index.ts",
++						"line": 312,
++						"column": 3
++					}
++				},
++				{
++										id: "@deepseek-ai/dsh-api-job-controller#job/list",
+ 					service: "jobController",
+ 					namespace: "job",
+ 					method: "list",

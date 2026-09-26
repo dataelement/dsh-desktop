@@ -304,9 +304,8 @@ export function buildHarnessSpawnOptions(
   const pathApi = platform === 'win32' ? win32 : posix
 
   // ELECTRON_RUN_AS_NODE must not reach the Harness process itself: the macOS
-  // utility process is launched with Chromium switches (--type=utility, …)
-  // that Node rejects as bad options. The Harness entry re-declares Node mode
-  // from the inside, for its children only.
+  // utility process starts with Chromium switches that Node rejects. The
+  // Harness entry declares Node mode only for its Electron children.
   //
   // On Windows, `detached: true` puts the Harness in its own process group
   // and console. Without it, a child process that calls `os.kill(pid, 0)`
@@ -463,7 +462,7 @@ export class HarnessRuntime {
       return
     }
     if (!existsSync(this.options.nodeExecutablePath)) {
-      this.setState('failed', `Bundled Node.js runtime was not found: ${this.options.nodeExecutablePath}`)
+      this.setState('failed', `Harness Node executable was not found: ${this.options.nodeExecutablePath}`)
       return
     }
     if (!existsSync(this.options.nodeEntryPath)) {
@@ -482,7 +481,7 @@ export class HarnessRuntime {
     await mkdir(this.options.dshHome, { recursive: true })
     const patchPath = profile === SAFE_MODE_PROFILE
       ? sourcePatchPath
-      : await prepareHostPluginSourcesPatch(this.options.dshHome, sourcePatchPath)
+      : await prepareHostPluginSourcesPatch(this.options.dshHome, sourcePatchPath, this.options.dshEntryPath)
     const marketPatchPath = this.options.dshMarketPatchPath
     const patchPaths = profile !== SAFE_MODE_PROFILE &&
       marketPatchPath !== undefined &&

@@ -1,0 +1,36 @@
+diff --git a/node_modules/@deepseek-ai/dsh/lib/bin.js b/node_modules/@deepseek-ai/dsh/lib/bin.js
+index cfab70d..a665887 100755
+--- a/node_modules/@deepseek-ai/dsh/lib/bin.js
++++ b/node_modules/@deepseek-ai/dsh/lib/bin.js
+@@ -223,7 +223,8 @@ async function runCli() {
+ 					version,
+ 					profile: invocation.profile
+ 				});
+-				process.exit(1);
++				process.exitCode = 1;
++				throw error;
+ 			}
+ 			break;
+ 		}
+diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
+index c2e1b4a..90986d4 100644
+--- a/node_modules/@deepseek-ai/dsh/package.json
++++ b/node_modules/@deepseek-ai/dsh/package.json
+@@ -100,7 +100,16 @@
+     "@deepseek-ai/dsh-atomic-write": "0.1.7-rc.2",
+     "@deepseek-ai/dsh-experimental-voice-input-bundle": "0.1.7-rc.2",
+     "@deepseek-ai/dsh-agent-preset": "0.1.7-rc.2",
+-    "@deepseek-ai/dsh-experimental-auto-review": "0.1.7-rc.2"
++    "@deepseek-ai/dsh-experimental-auto-review": "0.1.7-rc.2",
++    "@deepseek-ai/dsh-deepseek-account": "0.1.7-rc.2",
++    "dsh-ppt-composer": "0.1.1-rc.2",
++    "dsh-desktop-client-ui": "0.1.0",
++    "dsh-desktop-hmr-fallback": "0.1.0",
++    "dsh-desktop-log-bridge": "0.1.0",
++    "dsh-desktop-market-installer": "0.1.0",
++    "dsh-desktop-preset-transfer": "0.1.0",
++    "dsh-image-generation": "0.1.0",
++    "react-dom": "18.3.1"
+   },
+   "devDependencies": {
+     "@agentclientprotocol/sdk": "1.4.0",

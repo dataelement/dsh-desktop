@@ -55,5 +55,6 @@ export function pinnedGitBuildApproval(
 
 export function verifyGenerationPeers(
   dshHome: string,
-  generation: Generation
+  generation: Generation,
+  options?: { dshEntryPath?: string }
 ): Promise<{ ok: boolean; problems: string[] }>

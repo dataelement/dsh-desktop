@@ -91,7 +91,7 @@ describe('composer model search', () => {
     )
 
     expect(patch).toContain('function filterModelGroups(groups, query)')
-    expect(patch).toContain('IconSearchOutline16')
+    expect(patch).toContain('IconSearchOutlineRegular')
     expect(patch).toContain('children: filteredGroups.map((group)')
   })
 })

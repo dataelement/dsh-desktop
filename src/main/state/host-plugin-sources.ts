@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { readDisabledHostPlugins } from './host-plugin-state'
@@ -73,7 +73,8 @@ function withoutDisabledInsertions(source: string, disabled: readonly string[]):
  */
 export async function prepareHostPluginSourcesPatch(
   dshHome: string,
-  desktopPatchPath: string
+  desktopPatchPath: string,
+  hostModuleAnchor: string
 ): Promise<string> {
   const original = await readFile(desktopPatchPath, 'utf8')
   const source = withoutDisabledInsertions(
@@ -82,11 +83,18 @@ export async function prepareHostPluginSourcesPatch(
   )
   const names = hostPluginNames(source)
   if (names.length === 0 && source === original) return desktopPatchPath
-  const appManifest = join(dirname(desktopPatchPath), '..', 'package.json')
-  const resolveHost = createRequire(appManifest).resolve
+  // Packaged patches live in resources, while dependencies live under
+  // app.asar.unpacked. Use the same installation anchor as Harness itself.
+  const resolveHost = createRequire(hostModuleAnchor).resolve
   let text = source
   for (const { name, start, end } of names.reverse()) {
-    const sourceUrl = pathToFileURL(resolveHost(name)).href
+    let sourceUrl: string
+    try {
+      sourceUrl = pathToFileURL(resolveHost(name)).href
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`Desktop host plugin source resolution failed for ${name} from ${hostModuleAnchor}: ${detail}`, { cause })
+    }
     text = text.slice(0, start) + JSON.stringify(sourceUrl) + text.slice(end)
   }
   const outputPath = join(dshHome, 'desktop-host-sources.patch.yml')
