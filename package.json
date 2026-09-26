@@ -24,8 +24,8 @@
   ],
   "scripts": {
     "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "npm run ppt:build && electron-vite dev",
+    "build": "npm run ppt:build && electron-vite build",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "loader:generate": "node scripts/generate-loader-gifs.mjs",
     "preview": "electron-vite preview",
@@ -41,7 +41,9 @@
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
     "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/electron-builder-windows.mjs --win --x64 --publish never",
-    "ppt:build": "node scripts/generate-zara-ppt-templates.mjs && node scripts/localize-ppt-templates.mjs && node scripts/enrich-ppt-templates.mjs && node scripts/build-ppt-runtime.mjs"
+    "ppt:build": "node scripts/prepare-ppt-runtime.mjs",
+    "pretest": "npm run ppt:build",
+    "pretest:watch": "npm run ppt:build"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -276,23 +278,23 @@
     "dsh-desktop-log-bridge": "file:packages/dsh-desktop-log-bridge",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-image-generation": "file:packages/dsh-image-generation",
+    "dsh-ppt": "file:packages/ppt-runtime/core",
+    "dsh-ppt-composer": "file:packages/ppt-runtime/adapter",
     "electron-updater": "^6.8.9",
     "node": "24.9.0",
     "pnpm": "10.34.5",
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "ws": "^8.21.3",
-    "dsh-ppt": "file:packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz",
-    "dsh-ppt-composer": "file:packages/ppt-bundles/dsh-ppt-composer-0.1.1-rc.2-desktop-20260906.tgz",
-    "dsh-image-generation": "file:packages/dsh-image-generation"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/js-yaml": "4.0.9",
     "@types/node": "24.10.1",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
-    "electron": "43.4.0",
+    "electron": "43.0.0",
     "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "patch-package": "^8.0.1",
@@ -308,7 +310,8 @@
     "productName": "DSH Desktop",
     "asar": true,
     "asarUnpack": [
-      "node_modules/**/*"
+      "node_modules/**/*",
+      ".build/ppt-runtime/packages/**/*"
     ],
     "npmRebuild": false,
     "compression": "maximum",
@@ -326,6 +329,22 @@
     "files": [
       "out/**/*",
       "node_modules/**/*",
+      "!node_modules/dsh-ppt-composer{,/**}",
+      "!node_modules/dsh-ppt{,/**}",
+      {
+        "from": ".build/ppt-runtime/packages/dsh-ppt-composer",
+        "to": "node_modules/dsh-ppt-composer",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".build/ppt-runtime/packages/dsh-ppt",
+        "to": "node_modules/dsh-ppt",
+        "filter": [
+          "**/*"
+        ]
+      },
       "package.json",
       "!**/*.map",
       "!**/*.d.ts",
@@ -412,7 +431,6 @@
         "from": "build/safe-mode.html",
         "to": "safe-mode.html"
       },
-
       {
         "from": "build/community-wechat-qr.png",
         "to": "community-wechat-qr.png"
@@ -467,6 +485,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    }
+    },
+    "afterPack": "scripts/verify-packaged-ppt-runtime.cjs"
   }
 }

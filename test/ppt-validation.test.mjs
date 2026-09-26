@@ -1,9 +1,9 @@
-import { beforeAll, afterAll, afterEach, describe, it, expect } from 'vitest'
+import { beforeAll, afterEach, describe, it, expect } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rm, symlink } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { pathToFileURL } from 'node:url'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import yaml from 'js-yaml'
 import { unzipSync } from 'fflate'
@@ -12,13 +12,11 @@ import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 let packageRoot, apply, cli
 const cleanups = []
 beforeAll(async () => {
-  // Test the distributable archive, with ordinary dependency resolution from node_modules.
-  packageRoot = await mkdtemp(path.resolve('node_modules/.ppt-validation-'))
-  execFileSync('tar', ['-xzf', 'packages/ppt-bundles/dsh-ppt-0.1.1-rc.2-desktop-20260906.tgz', '-C', packageRoot, '--strip-components=1'])
+  // Test the generated package that the unified build projected into node_modules.
+  packageRoot = path.resolve('node_modules/dsh-ppt')
   ;({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))))
   cli = path.join(packageRoot, 'lib/bin.js')
 })
-afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true, force: true }) })
 afterEach(async () => { for (const dir of cleanups.splice(0)) await rm(dir, { recursive: true, force: true }) })
 
 async function fixture({ broken = true, malformed = false } = {}) {

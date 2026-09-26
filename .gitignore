@@ -32,3 +32,5 @@ docs/mobile-connection-latency.zh.md
 # Local pnpm content store
 /.pnpm-store/
 /.build/
+/packages/ppt-runtime/templates/
+/packages/ppt-bundles/
