@@ -2,7 +2,7 @@
 
 本文记录 Harness 0.1.7 底座合入之后，Desktop 在 Windows 运行时、打包、插件加载和恢复几条线上还剩哪些改造，按什么顺序做，每一步怎么验收。计划以 `main` 的 `eec5d57e65`（已合入 #570，Harness `0.1.7-rc.2`）为起点，同时参考 `v0.10.0` 分支上的 #583。
 
-stable / beta 双通道不在本计划范围内。
+stable / beta 双通道，以及 Profile checkpoint 与 last-known-good 自动回退，不在本计划范围内。启动失败继续由现有的 Recovery 页、Safe Mode 和修复 Agent 处理。
 
 ## 目标
 
@@ -29,7 +29,6 @@ stable / beta 双通道不在本计划范围内。
 | Harness 运行时进 asar | 未完成。`asarUnpack: node_modules/**/*`，只有应用 shell 在 asar 里，#583 记录解包文件约 21,210 个 | `package.json` build 段 |
 | 按平台裁剪运行时文件、生成运行时清单 | 未完成。只排除了 `*.map`、`*.d.ts` | `package.json` build 段 |
 | 删除 `@deepseek-ai/*` 宿主回退钩子 | 未完成。`build/harness-node-entry.mjs` 仍注册 `host-module-fallback.mjs` | — |
-| Profile checkpoint 与 last-known-good | 未完成 | — |
 | 补丁数量 | 27 个，约 4,900 行 | `patches/` |
 
 ## 阶段 1：落地 RunAsNode，并收掉随包 Node
@@ -79,21 +78,7 @@ stable / beta 双通道不在本计划范围内。
 - 真实 Harness 子进程加临时 Profile 的回归覆盖正常、缺包和错误路径（`test/harness-node-entry.test.ts`、`test/plugin-startup-failure.test.ts`、`test/safe-mode-host-resolved.test.ts`、`test/desktop-plugin-closure.test.ts` 等）。
 - Windows 实机验证：旧版本升级上来的 Profile 能启动，旧共享链接被清理，插件升级时目标插件文件被占用的场景不会留下半安装状态。
 
-## 阶段 4：Profile checkpoint 与自动回退
-
-依赖：无。
-
-1. **健康启动后保存 checkpoint。** 客户端完成激活（不是 Harness ready）后，保存 `package.json`、`pnpm-lock.yaml`、`cordis.patch.yml` 和设置文件，记录 SHA-256，轮转保留 3 份。恢复时不运行 pnpm，也不复制 `node_modules`。
-2. **last-known-good 回退一次。** 插件变更后的首次启动失败时，自动回到最近的 checkpoint 并重启一次；再失败则进入 Recovery 页，不循环。回退要写日志，并在 Recovery 页说明发生过回退。
-3. **与现有恢复入口打通。** Recovery 页和修复 Agent 能列出可用 checkpoint 并手动恢复；Safe Mode 不使用普通 Profile 的 checkpoint。
-4. **Profile 内遗留的 pnpm store。** 已观察到 Profile 目录里有一份不再被 `.npmrc` 引用的 `.pnpm-store`（开发机上约 1.3 GB、2.7 万个文件）。先通过诊断上报确认用户机器上的普遍程度，再决定是否在启动维护中清理。
-
-验收：
-
-- 行为回归覆盖“安装坏插件 → 启动失败 → 自动回退 → 启动成功”和“回退后仍失败 → 进入 Recovery 页”。
-- 回退不修改会话和用户数据；checkpoint 损坏（哈希不符）时跳过该份。
-
-## 阶段 5：补丁与主进程瘦身
+## 阶段 4：补丁与主进程瘦身
 
 依赖：阶段 3 之后收益最大。
 
@@ -102,23 +87,23 @@ stable / beta 双通道不在本计划范围内。
 
 验收：补丁数量和行数、`index.ts` 行数在每个 PR 描述中记录变化；完整回归和打包 smoke 通过。
 
-## 阶段 6：插件体积与前端加载
+## 阶段 5：插件体积与前端加载
 
 问题 2 的 Profile 侧与首屏。依赖：无。
 
 1. **市场体积提示。** 安装前展示插件包体积和文件数，超过阈值时提示；阈值根据现有市场插件分布确定。
 2. **插件前端分块指引。** 在插件编写契约中要求大体积的客户端代码用 `require.async` 分块，只把首屏必需的部分放进 `lib/client.js`。
 3. **向上游提延后加载档。** `dsh-client-ui-sidebar-documentpreview` 单个客户端包约 6.9 MB，占首屏合包的大部分。向上游提案为 `dsh-client-modules` 增加延后加载阶段，不在 Desktop 侧改变引导顺序。
+4. **Profile 内遗留的 pnpm store。** 已观察到 Profile 目录里有一份不再被 `.npmrc` 引用的 `.pnpm-store`（开发机上约 1.3 GB、2.7 万个文件）。先通过诊断上报确认用户机器上的普遍程度，再决定是否在启动维护中清理。
 
-验收：记录首屏合包体积和首次绘制时间的变化。
+验收：记录首屏合包体积、首次绘制时间和 Profile 目录文件数的变化。
 
 ## 顺序
 
 ```text
 阶段 1（RunAsNode 落地） ──► 阶段 2（运行时进 asar）
-阶段 3（插件加载与事务）  ──► 阶段 5（补丁与主进程瘦身）
-阶段 4（checkpoint）        独立
-阶段 6（插件体积与前端）    独立
+阶段 3（插件加载与事务）  ──► 阶段 4（补丁与主进程瘦身）
+阶段 5（插件体积与前端）    独立
 ```
 
 每个阶段拆成可单独发布、可单独回退的 PR。涉及启动、打包、安装和 Windows 路径的 PR，交付说明必须列出已验证和未验证的阶段，Windows 行为以 Windows 实机或签名安装包 smoke 为准。
@@ -126,5 +111,4 @@ stable / beta 双通道不在本计划范围内。
 ## 参考
 
 - 官方：`deepseek-ai/deepseek-harness` 的 `apps/desktop`（dsh-v0.1.7-rc.2），特别是 `scripts/electron-builder-config.mjs`、`scripts/prepare-dsh.ts`、`scripts/runtime-file-policy.ts`、`scripts/windows-asar-unpack.mjs`，以及 `.agents/notes/implemented/architecture/` 下的桌面运行时与 Windows 安装决策记录。
-- 社区：anywhere-labs/dsh-desktop 的 `dsh-plugin-desktop/src/profile-checkpoint.ts`（checkpoint 与 last-known-good）。
 - 本仓库：`docs/dsh-0.1.7-baseline.md`、`docs/baseline-runtime-compatibility.md`、`docs/patch-compatibility-review-0.1.7.md`、`docs/patch-plugin-contract.md`。
