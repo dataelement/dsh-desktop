@@ -1,6 +1,6 @@
 # DSH Desktop 接入 VinaRouter
 
-本文记录 `product/0.9.0-rc1` 分支内置 VinaRouter（`https://router.vinabot.ai`）的实现、用户操作和维护注意事项。
+本文记录产品分支内置 VinaRouter（`https://router.vinabot.ai`）的实现、用户操作和维护注意事项。
 
 ## 目标
 
@@ -126,6 +126,8 @@ llm-pi-ai:
 ```
 
 API 密钥不在 YAML 中；它通过 `ctx.credentials` 写入 DSH 凭据存储。默认模型及其 `high` 推理等级通过 `ctx.agentDefaultModel.saveSelection()` 保存。
+
+在上游 `v0.10.0` / Harness `0.1.7-rc.2` 中，设置服务不再提供 `settings.get()`。Host 插件应从 `settings.describe()` 中按 `llm-pi-ai` 条目读取当前配置和 revision，再以 `settings.mutate()` 写入。启动时的默认推理等级迁移须等待 Loader 就绪。对应回归包括无旧版 `get()` 的单测，以及隔离 Profile 中实际启动 Harness 后通过登录、配置、状态接口验证的测试。
 
 ## 模型和协议策略
 

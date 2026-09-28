@@ -405,9 +405,27 @@ export class VinabotIntegration {
     return flow
   }
 
+  /** Harness 0.1.7 exposes live plugin config through schema-backed descriptors, not settings.get(). */
+  modelSettings() {
+    const descriptor = this.ctx.settings.describe().find(
+      (entry) => entry.ns === VINABOT_SETTINGS_NAMESPACE
+    )
+    if (descriptor === undefined) {
+      throw new VinabotIntegrationError(
+        '模型配置服务尚未就绪，请稍后重试。',
+        503,
+        'MODEL_SETTINGS_UNAVAILABLE'
+      )
+    }
+    const section = asObject(descriptor.value)
+    return {
+      providers: asObject(section?.providers) ?? {},
+      revision: descriptor.revision
+    }
+  }
+
   async ensureDefaultReasoningEffort() {
-    const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
-    const providers = asObject(section?.providers)
+    const { providers, revision } = this.modelSettings()
     const operations = Object.values(VINABOT_PROVIDER_BY_PROTOCOL).flatMap((provider) => {
       const profile = asObject(providers?.[provider])
       if (profile === undefined || profile.reasoning !== undefined) return []
@@ -418,13 +436,12 @@ export class VinabotIntegration {
       }]
     })
     if (operations.length > 0) {
-      await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, operations)
+      await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, operations, revision)
     }
   }
 
   async status() {
-    const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
-    const providers = asObject(section?.providers)
+    const { providers } = this.modelSettings()
     const profiles = Object.values(VINABOT_PROVIDER_BY_PROTOCOL).flatMap((provider) => {
       const profile = asObject(providers?.[provider])
       return profile === undefined ? [] : [{ provider, profile }]
@@ -662,8 +679,7 @@ export class VinabotIntegration {
         'CREDENTIAL_READ_ONLY'
       )
     }
-    const section = asObject(this.ctx.settings.get(VINABOT_SETTINGS_NAMESPACE))
-    const providers = asObject(section?.providers)
+    const { providers, revision } = this.modelSettings()
     const managedProviders = Object.values(VINABOT_PROVIDER_BY_PROTOCOL)
     const previous = new Map(managedProviders.map((provider) => [
       provider,
@@ -678,7 +694,7 @@ export class VinabotIntegration {
         ? []
         : [{ op: 'unset', path: ['providers', provider] }]
     })
-    await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, operations)
+    await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, operations, revision)
     try {
       await this.ctx.credentials.set(ref, flow.apiKey)
     } catch (cause) {
@@ -688,9 +704,21 @@ export class VinabotIntegration {
           ? { op: 'unset', path: ['providers', provider] }
           : { op: 'set', path: ['providers', provider], value: profile }
       })
-      await this.ctx.settings.mutate(VINABOT_SETTINGS_NAMESPACE, rollback).catch(() => {})
+      let rolledBack = false
+      try {
+        await this.ctx.settings.mutate(
+          VINABOT_SETTINGS_NAMESPACE,
+          rollback,
+          this.modelSettings().revision
+        )
+        rolledBack = true
+      } catch (error) {
+        console.warn(`VinaRouter 模型配置回滚失败（${error instanceof Error ? error.name : typeof error}）。`)
+      }
       throw new VinabotIntegrationError(
-        '模型配置已回滚，因为 API 密钥无法保存。',
+        rolledBack
+          ? '模型配置已回滚，因为 API 密钥无法保存。'
+          : 'API 密钥无法保存，模型配置可能已部分写入，请检查设置。',
         500,
         'CREDENTIAL_WRITE_FAILED',
         { cause }
@@ -773,7 +801,7 @@ export function apply(ctx) {
   const integration = new VinabotIntegration(ctx)
   const connection = Reflect.get(ctx, 'connection')
 
-  integration.ensureDefaultReasoningEffort().catch((error) => {
+  ctx.root.loader.await().then(() => integration.ensureDefaultReasoningEffort()).catch((error) => {
     console.warn('VinaRouter 默认推理等级迁移失败：', error)
   })
 

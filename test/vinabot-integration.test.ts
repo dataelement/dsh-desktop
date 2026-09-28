@@ -28,8 +28,8 @@ import {
 
 interface FakeContext {
   settings: {
-    get: (namespace: string) => unknown
-    mutate: (namespace: string, operations: Array<{ op: string; path: string[]; value?: unknown }>) => Promise<void>
+    describe: () => Array<{ ns: string; value: unknown; revision: number }>
+    mutate: (namespace: string, operations: Array<{ op: string; path: string[]; value?: unknown }>, expectedRevision?: number) => Promise<void>
   }
   credentials: {
     describe: () => Promise<{ configured: boolean; writable: boolean }>
@@ -43,23 +43,29 @@ interface FakeContext {
 
 function fakeContext(): FakeContext & {
   section: { providers: Record<string, unknown> }
+  revision: number
   secret?: string
   selection: { provider: string; model: string; reasoningEffort?: string }
 } {
   const context = {
     section: { providers: {} as Record<string, unknown> },
+    revision: 0,
     secret: undefined as string | undefined,
     selection: { provider: 'deepseek-official', model: 'deepseek-chat' },
     settings: {
-      get(namespace: string) {
-        expect(namespace).toBe(VINABOT_SETTINGS_NAMESPACE)
-        return context.section
+      describe() {
+        return [
+          { ns: 'unrelated-plugin', value: { providers: { unrelated: {} } }, revision: 0 },
+          { ns: VINABOT_SETTINGS_NAMESPACE, value: structuredClone(context.section), revision: context.revision }
+        ]
       },
       async mutate(
         namespace: string,
-        operations: Array<{ op: string; path: string[]; value?: unknown }>
+        operations: Array<{ op: string; path: string[]; value?: unknown }>,
+        expectedRevision?: number
       ) {
         expect(namespace).toBe(VINABOT_SETTINGS_NAMESPACE)
+        expect(expectedRevision).toBe(context.revision)
         for (const operation of operations) {
           expect(operation.path[0]).toBe('providers')
           const provider = operation.path[1]
@@ -67,6 +73,7 @@ function fakeContext(): FakeContext & {
           if (operation.op === 'set') context.section.providers[provider] = operation.value
           if (operation.op === 'unset') delete context.section.providers[provider]
         }
+        context.revision += 1
       }
     },
     credentials: {
@@ -159,6 +166,19 @@ describe('VinaRouter model normalization', () => {
 })
 
 describe('VinaRouter setup flow', () => {
+  it('uses the Harness 0.1.7 descriptor API and reports a missing model settings entry', async () => {
+    const context = fakeContext()
+    const integration = new VinabotIntegration(context, { anonymousId: '12345678' })
+
+    await expect(integration.status()).resolves.toMatchObject({ configured: false })
+    context.settings.describe = () => []
+    await expect(integration.status()).rejects.toMatchObject({
+      code: 'MODEL_SETTINGS_UNAVAILABLE',
+      status: 503
+    })
+    expect('get' in context.settings).toBe(false)
+  })
+
   it('migrates existing managed providers to High without replacing an explicit default', async () => {
     const context = fakeContext()
     context.section.providers[VINABOT_PROVIDER] = {
@@ -396,6 +416,31 @@ describe('VinaRouter setup flow', () => {
       api: 'openai-responses',
       models: [{ id: 'gpt-5.6-sol', input: ['text', 'image'] }]
     })
+  })
+
+  it('rolls back model settings if the credential store refuses the key', async () => {
+    const context = fakeContext()
+    context.credentials.set = async () => { throw new Error('credential store unavailable') }
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const pathname = new URL(String(url)).pathname
+      if (pathname === '/api/status') return json({ success: true, data: { turnstile_check: false } })
+      if (pathname === '/api/user/login') return json({ success: true, data: { access_token: 'panel-private', session: {}, user: {} } })
+      if (pathname === '/api/token/search') return json({ success: true, data: { items: [{ id: 1, name: 'dsh-desktop-12345678', status: 1 }] } })
+      if (pathname === '/api/token/1/key') return json({ success: true, data: { key: 'private' } })
+      if (pathname === '/v1/models') return json({ success: true, data: [{ id: 'gpt-5.6-sol', supported_endpoint_types: ['openai-response'] }] })
+      throw new Error(`Unexpected request: ${pathname}`)
+    })
+    const integration = new VinabotIntegration(context, {
+      fetchImpl,
+      anonymousId: '12345678',
+      randomUUID: () => 'flow-credential-failure'
+    })
+    await integration.login({ username: 'alice', password: 'secret' })
+
+    await expect(integration.configure({ flowId: 'flow-credential-failure', model: 'gpt-5.6-sol' }))
+      .rejects.toMatchObject({ code: 'CREDENTIAL_WRITE_FAILED' })
+    expect(context.section.providers).toEqual({})
+    expect(context.secret).toBeUndefined()
   })
 })
 
