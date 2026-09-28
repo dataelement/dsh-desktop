@@ -2,6 +2,8 @@
 
 DSH Desktop is an Electron host for the existing DeepSeek Harness runtime and Web UI. It does not maintain a second agent runtime or reimplement the Harness frontend.
 
+Planned changes to the Windows runtime, packaging, plugin loading, and recovery are tracked in the [Desktop architecture roadmap](desktop-architecture-roadmap.md).
+
 ## Runtime topology
 
 ```mermaid
