@@ -40,15 +40,30 @@ jobs:
           git remote add upstream https://github.com/dataelement/dsh-desktop.git 2>/dev/null || \
             git remote set-url upstream https://github.com/dataelement/dsh-desktop.git
           git fetch upstream main
-          git merge --no-commit --no-ff upstream/main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Upstream main is already merged"
+            exit 0
+          fi
+          # A workflow conflict is expected when upstream changes its release
+          # automation. Resolve only workflow conflicts with the fork's copy.
+          git merge --no-commit --no-ff upstream/main || {
+            unresolved="$(git diff --name-only --diff-filter=U)"
+            test -n "$unresolved"
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/*) ;;
+                *) echo "::error::Unresolved upstream conflict: $path"; exit 1 ;;
+              esac
+            done <<< "$unresolved"
+          }
           # The GitHub App token cannot update workflow files. Keep this fork's
           # release automation while syncing all other upstream source changes.
           rm -rf .github/workflows
           git checkout HEAD -- .github/workflows
           git add -A .github/workflows
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: sync upstream main (preserve fork workflows)"
-          fi
+          test -z "$(git diff --name-only --diff-filter=U)"
+          # Always finish the merge, even if upstream only changed workflows.
+          git commit -m "chore: sync upstream main (preserve fork workflows)"
           git push origin HEAD:main
 
   discover:
@@ -209,10 +224,32 @@ jobs:
           mkdir -p "$verify_root"
           dpkg-deb -x "$asset" "$verify_root"
           test -x "$verify_root/opt/DSH Desktop/dsh-desktop"
-          test -f "$verify_root/opt/DSH Desktop/resources/app/package.json"
-          test -f "$verify_root/opt/DSH Desktop/resources/app/out/main/index.js"
-          test -f "$verify_root/opt/DSH Desktop/resources/app/out/preload/index.cjs"
-          test -x "$verify_root/opt/DSH Desktop/resources/app/node_modules/node/bin/node"
+          app_resources="$verify_root/opt/DSH Desktop/resources"
+          if [ -f "$app_resources/app.asar" ]; then
+            APP_RESOURCES="$app_resources" EXPECTED_VERSION="$version" node <<'NODE'
+          const path = require('node:path')
+          const fs = require('node:fs')
+          const asar = require('@electron/asar')
+          const archive = path.join(process.env.APP_RESOURCES, 'app.asar')
+          const entries = new Set(asar.listPackage(archive).map((entry) => entry.replace(/^\//, '')))
+          for (const entry of ['package.json', 'out/main/index.js', 'out/preload/index.cjs']) {
+            if (!entries.has(entry)) throw new Error(`Missing from app.asar: ${entry}`)
+          }
+          const pkg = JSON.parse(asar.extractFile(archive, 'package.json').toString())
+          if (pkg.version !== process.env.EXPECTED_VERSION) {
+            throw new Error(`Packaged version ${pkg.version} != ${process.env.EXPECTED_VERSION}`)
+          }
+          const node = path.join(process.env.APP_RESOURCES, 'app.asar.unpacked/node_modules/node/bin/node')
+          fs.accessSync(node, fs.constants.X_OK)
+          NODE
+          else
+            test -f "$app_resources/app/package.json"
+            test -f "$app_resources/app/out/main/index.js"
+            test -f "$app_resources/app/out/preload/index.cjs"
+            test -x "$app_resources/app/node_modules/node/bin/node"
+            test "$(node -p 'require(process.argv[1]).version' \
+              "$app_resources/app/package.json")" = "$version"
+          fi
           test -f "$verify_root/opt/DSH Desktop/resources/icon.png"
           test -f "$verify_root/usr/share/applications/dsh-desktop.desktop"
           grep -Fxq 'Icon=dsh-desktop' \
@@ -220,8 +257,6 @@ jobs:
           grep -Fxq 'StartupWMClass=dsh-desktop' \
             "$verify_root/usr/share/applications/dsh-desktop.desktop"
           test -f "$verify_root/opt/DSH Desktop/resources/LICENSE"
-          test "$(node -p 'require(process.argv[1]).version' \
-            "$verify_root/opt/DSH Desktop/resources/app/package.json")" = "$version"
           for size in 16 24 32 48 64 128 256 512 1024; do
             test -f "$verify_root/usr/share/icons/hicolor/${size}x${size}/apps/dsh-desktop.png"
           done
