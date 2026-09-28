@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyPendingCreatedSessions,
   renderDesktopPairingPage,
   renderMobilePage,
   renderMobileReconnectPage,
-  renderPairingPinPage
+  renderPairingPinPage,
+  type PendingCreatedSession
 } from '../src/main/mobile/lan-mobile-pages'
 
 describe('LAN mobile page', () => {
@@ -50,8 +52,9 @@ describe('LAN mobile page', () => {
     expect(html).toContain("function showSessionList()")
     expect(html).toContain("try{await loadWorkspaces();syncWorkspaceUi()}catch(e){showError('listError',e)}await loadSessions()")
     expect(html).toContain('pendingCreatedSessions.push({workspaceId,sessionId:created.sessionId})')
-    expect(html).toContain('if(seen||pending.applied)continue')
-    expect(html).toContain('stillPending.push({workspaceId:pending.workspaceId,sessionId:pending.sessionId,applied:true})')
+    expect(html).toContain(`pendingCreatedSessions=${applyPendingCreatedSessions.name}(workspaces,pendingCreatedSessions,serverItems,archivedIds)`)
+    expect(html).toContain(applyPendingCreatedSessions.toString())
+    expect(html).not.toContain('pending.applied')
     expect(html).toContain('workspace.sessionIds=[created.sessionId,...ids]')
     expect(html).toContain("function handleHistory(state)")
     expect(html).toContain("function recentSession()")
@@ -705,6 +708,60 @@ describe('LAN mobile page', () => {
     expect(pinggy).toContain('id="fallbackLink" class="fallback-link hide"')
   })
 })
+describe('pending created sessions', () => {
+  const serverItems = [
+    { workspaceId: 'w1', title: 'One', sessionIds: ['s1'] },
+    { workspaceId: 'w2', title: 'Two', sessionIds: [] as string[] }
+  ]
+  const pending: PendingCreatedSession[] = [{ workspaceId: 'w1', sessionId: 's-new' }]
+
+  function cloneWorkspaces(items: typeof serverItems) {
+    return items.map((workspace) => ({
+      ...workspace,
+      sessionIds: [...(Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [])]
+    }))
+  }
+
+  it('reapplies a session the server snapshot has not caught up to', () => {
+    const first = cloneWorkspaces(serverItems)
+    const stillPending = applyPendingCreatedSessions(first, pending, serverItems, [])
+    expect(first[0]?.sessionIds).toEqual(['s-new', 's1'])
+    expect(stillPending).toEqual(pending)
+
+    const second = cloneWorkspaces(serverItems)
+    const stillPendingAgain = applyPendingCreatedSessions(second, stillPending, serverItems, [])
+    expect(second[0]?.sessionIds).toEqual(['s-new', 's1'])
+    expect(stillPendingAgain).toEqual(pending)
+    expect(serverItems[0]?.sessionIds).toEqual(['s1'])
+    expect(serverItems[1]?.sessionIds).toEqual([])
+  })
+
+  it('drops the pending entry once any workspace lists the session', () => {
+    const seen = [
+      { workspaceId: 'w1', title: 'One', sessionIds: ['s-new', 's1'] },
+      { workspaceId: 'w2', title: 'Two', sessionIds: [] as string[] }
+    ]
+    const workspaces = cloneWorkspaces(seen)
+    expect(applyPendingCreatedSessions(workspaces, pending, seen, [])).toEqual([])
+    expect(workspaces[0]?.sessionIds).toEqual(['s-new', 's1'])
+    expect(seen[0]?.sessionIds).toEqual(['s-new', 's1'])
+  })
+
+  it('drops the pending entry once the session is archived', () => {
+    const workspaces = cloneWorkspaces(serverItems)
+    expect(applyPendingCreatedSessions(workspaces, pending, serverItems, ['s-new'])).toEqual([])
+    expect(workspaces[0]?.sessionIds).toEqual(['s1'])
+  })
+
+  it('keeps the pending entry when its workspace is not in the snapshot', () => {
+    const other = [{ workspaceId: 'w2', title: 'Two', sessionIds: ['s1'] }]
+    const workspaces = cloneWorkspaces(other)
+    expect(applyPendingCreatedSessions(workspaces, pending, other, [])).toEqual(pending)
+    expect(workspaces[0]?.sessionIds).toEqual(['s1'])
+    expect(workspaces).toHaveLength(1)
+  })
+})
+
 describe('desktop pairing page QR expiry self-healing', () => {
   it('reloads the page when the pairing countdown reaches zero and no phone is connected', () => {
     const html = renderDesktopPairingPage({

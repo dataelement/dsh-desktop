@@ -2,6 +2,48 @@ export interface MobilePageOptions {
   locale: 'en' | 'zh'
 }
 
+export interface PendingCreatedSession {
+  workspaceId: string
+  sessionId: string
+}
+
+interface PendingWorkspace {
+  workspaceId?: string
+  sessionIds?: string[]
+}
+
+interface PendingServerWorkspace {
+  sessionIds?: unknown
+}
+
+/**
+ * Keep a phone-created session in its workspace until the follow snapshot
+ * lists or archives it. Each workspace reload replaces the local list with
+ * the server snapshot, so an id the server has not caught up to has to be
+ * spliced in again.
+ */
+export function applyPendingCreatedSessions(
+  workspaces: PendingWorkspace[],
+  pending: PendingCreatedSession[],
+  serverItems: PendingServerWorkspace[],
+  archivedIds: readonly string[]
+): PendingCreatedSession[] {
+  const stillPending: PendingCreatedSession[] = []
+  for (const item of pending) {
+    const seen = serverItems.some((workspace) => (
+      Array.isArray(workspace.sessionIds) && workspace.sessionIds.includes(item.sessionId)
+    )) || archivedIds.includes(item.sessionId)
+    if (seen) continue
+    const workspace = workspaces.find((candidate) => candidate.workspaceId === item.workspaceId)
+    const sessionIds = workspace?.sessionIds
+    if (workspace && Array.isArray(sessionIds) && !sessionIds.includes(item.sessionId)) {
+      workspace.sessionIds = [item.sessionId, ...sessionIds]
+    }
+    stillPending.push({ workspaceId: item.workspaceId, sessionId: item.sessionId })
+  }
+  return stillPending
+}
+
 export function renderMobilePage({ locale }: MobilePageOptions): string {
   const zh = locale === 'zh'
   return `<!doctype html>
@@ -51,6 +93,7 @@ export function renderMobilePage({ locale }: MobilePageOptions): string {
   </section>
 </main>
 <script>
+${applyPendingCreatedSessions.toString()}
 const L=${JSON.stringify({
     noSessions: zh ? '还没有会话' : 'No sessions yet',
     emptyHint: zh ? '创建一个新会话，从这里继续电脑上的工作。' : 'Start a session and continue your desktop work here.',
@@ -152,7 +195,7 @@ function renderMessage(message){const blocks=message.blocks.filter(Boolean);retu
   function advanceQuestion(skip=false){if(!pendingQuestion||questionBusy)return;const question=pendingQuestion.questions[questionIndex],draft=questionDraft(question);draft.custom=String($('questionCustom')?.value||'').trim();if(skip){draft.selected=[];draft.custom='';draft.skipped=true}else{draft.skipped=false;if(!draft.selected.length&&!draft.custom){$('questionError').textContent=L.chooseAnswer;return}}if(questionIndex<pendingQuestion.questions.length-1){questionIndex+=1;renderQuestionComposer()}else submitQuestionAnswers()}
   async function submitQuestionAnswers(){if(!pendingQuestion||questionBusy)return;questionBusy=true;renderQuestionComposer();const current=pendingQuestion;const answers=current.questions.map(question=>{const draft=questionDraft(question);return{id:question.id,selected:!question.multiSelect&&draft.custom?[]:draft.selected,...(draft.custom?{custom:draft.custom}:{})}});try{await rpc('interaction.answer',{rpcId:current.rpcId,sessionId:current.sessionId,answers});lastHistoryKey='';await loadHistory(false)}catch(e){questionBusy=false;renderQuestionComposer();showError('questionError',e)}}
   async function cancelQuestionRequest(){if(!pendingQuestion||questionBusy)return;questionBusy=true;renderQuestionComposer();const current=pendingQuestion;try{await rpc('interaction.cancel',{rpcId:current.rpcId,sessionId:current.sessionId});lastHistoryKey='';await loadHistory(false)}catch(e){questionBusy=false;renderQuestionComposer();showError('questionError',e)}}
-async function loadWorkspaces(){const previous=$('workspace').value,value=await rpc('workspace.list'),serverItems=value.items||[],archivedIds=value.archivedSessionIds||[];workspaces=serverItems.map(w=>({...w,sessionIds:[...(Array.isArray(w.sessionIds)?w.sessionIds:[])]}));const stillPending=[];for(const pending of pendingCreatedSessions){const seen=serverItems.some(w=>Array.isArray(w.sessionIds)&&w.sessionIds.includes(pending.sessionId))||archivedIds.includes(pending.sessionId);if(seen||pending.applied)continue;const workspace=workspaces.find(w=>w.workspaceId===pending.workspaceId);if(workspace&&!workspace.sessionIds.includes(pending.sessionId))workspace.sessionIds=[pending.sessionId,...workspace.sessionIds];stillPending.push({workspaceId:pending.workspaceId,sessionId:pending.sessionId,applied:true})}pendingCreatedSessions=stillPending;archivedSessionIds=archivedIds;if(workspaces.length){$('workspace').innerHTML=workspaces.map(w=>'<option value="'+esc(w.workspaceId)+'">'+esc(w.title||w.path)+'</option>').join('');$('workspace').value=workspaces.some(w=>w.workspaceId===previous)?previous:workspaces[0].workspaceId}else $('workspace').innerHTML='<option value="">'+L.noWorkspaces+'</option>'}
+async function loadWorkspaces(){const previous=$('workspace').value,value=await rpc('workspace.list'),serverItems=value.items||[],archivedIds=value.archivedSessionIds||[];workspaces=serverItems.map(w=>({...w,sessionIds:[...(Array.isArray(w.sessionIds)?w.sessionIds:[])]}));pendingCreatedSessions=${applyPendingCreatedSessions.name}(workspaces,pendingCreatedSessions,serverItems,archivedIds);archivedSessionIds=archivedIds;if(workspaces.length){$('workspace').innerHTML=workspaces.map(w=>'<option value="'+esc(w.workspaceId)+'">'+esc(w.title||w.path)+'</option>').join('');$('workspace').value=workspaces.some(w=>w.workspaceId===previous)?previous:workspaces[0].workspaceId}else $('workspace').innerHTML='<option value="">'+L.noWorkspaces+'</option>'}
   function syncWorkspaceUi(){const selected=!!$('workspace').value;$('newSession').disabled=!selected;$('workspaceHint').hidden=selected;$('workspaceHint').textContent=selected?'':L.noWorkspaces;if(selected)$('listError').textContent=''}
 function relativeTime(value){const parsed=typeof value==='number'?value:Date.parse(value),elapsed=Math.max(0,Date.now()-(Number.isFinite(parsed)?parsed:Date.now())),minutes=Math.floor(elapsed/60000);if(minutes<1)return L.justNow;if(minutes<60)return minutes+L.minute;const hours=Math.floor(minutes/60);if(hours<24)return hours+L.hour;return Math.floor(hours/24)+L.day}
 async function loadSessions(){try{const value=await rpc('session.list',{}),wid=$('workspace').value,w=workspaces.find(x=>x.workspaceId===wid),allowed=w?new Set(w.sessionIds):new Set(),archived=new Set(archivedSessionIds);sessionSummaries=value.items||[];const items=sessionSummaries.filter(s=>allowed.has(s.sessionId)&&!archived.has(s.sessionId)).sort((a,b)=>b.updatedAt-a.updatedAt);$('sessionCount').textContent=String(items.length);$('sessions').innerHTML=!wid?'':items.length?items.map(s=>{const title=titleFor(s);return'<button class="row" data-id="'+esc(s.sessionId)+'" data-title="'+esc(title)+'"><span class="session-mark"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 5.75C4 4.78 4.78 4 5.75 4h8.5C15.22 4 16 4.78 16 5.75v5.5c0 .97-.78 1.75-1.75 1.75H9l-3.5 2.5V13A1.5 1.5 0 0 1 4 11.5V5.75Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span><span class="row-copy"><strong>'+esc(title)+'</strong><time>'+esc(relativeTime(s.updatedAt))+'</time></span><svg class="row-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'}).join(''):'<div class="empty"><span class="empty-mark"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 5.75C4 4.78 4.78 4 5.75 4h8.5C15.22 4 16 4.78 16 5.75v5.5c0 .97-.78 1.75-1.75 1.75H9l-3.5 2.5V13A1.5 1.5 0 0 1 4 11.5V5.75Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span><strong>'+L.noSessions+'</strong><span>'+L.emptyHint+'</span></div>';document.querySelectorAll('.row').forEach(b=>b.onclick=()=>openSession(b.dataset.id,b.dataset.title));$('listError').textContent=''}catch(e){showError('listError',e)}}
