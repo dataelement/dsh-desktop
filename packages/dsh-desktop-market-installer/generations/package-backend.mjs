@@ -158,11 +158,8 @@ export function createGenerationPackageBackend(options) {
           try {
             const scan = await scanGenerationV4MessageSources(generation)
             if (scan.matches.length > 0) {
-              await emit(`DSH_V4_PLUGIN_SOURCE_WARNING ${JSON.stringify({
-                plugin: generation.pluginName,
-                locations: scan.matches.map(({ file, line }) => `${file}:${line}`),
-                incomplete: scan.incomplete
-              })}\n`, 'stderr')
+              const locations = scan.matches.map(({ file, line }) => `${file}:${line}`).join(', ')
+              await emit(`dsh: warning: ${generation.pluginName} may write obsolete Session V3 source.kind "plugin" (${locations}). Update this plugin before using it with Session V4.${scan.incomplete ? ' Scan incomplete.' : ''}\n`, 'stderr')
             } else if (scan.incomplete) {
               await emit(`generation-install: V4 message source scan was incomplete for ${generation.pluginName}\n`)
             }

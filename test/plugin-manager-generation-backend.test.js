@@ -109,18 +109,17 @@ describe('Plugin Manager generation package backend', () => {
       spec: 'demo-plugin@1.0.0', kind: 'registry',
       onOutput: (text, stream) => {
         output.push({ text, stream })
-        if (text.startsWith('DSH_V4_PLUGIN_SOURCE_WARNING ')) desiredAtWarning.push(readDesired(home))
+        if (text.startsWith('dsh: warning: demo-plugin may write obsolete Session V3')) desiredAtWarning.push(readDesired(home))
       }
     })
 
     expect(result.packageResult.exitCode).toBe(0)
     expect((await readDesired(home))).toHaveLength(1)
     expect(await Promise.all(desiredAtWarning)).toEqual([[]])
-    const warning = output.find(item => item.text.startsWith('DSH_V4_PLUGIN_SOURCE_WARNING '))
+    const warning = output.find(item => item.text.startsWith('dsh: warning: demo-plugin may write obsolete Session V3'))
     expect(warning?.stream).toBe('stderr')
-    expect(JSON.parse(warning.text.slice('DSH_V4_PLUGIN_SOURCE_WARNING '.length))).toEqual({
-      plugin: 'demo-plugin', locations: ['index.js:1'], incomplete: false
-    })
+    expect(warning.text).toContain('index.js:1')
+    expect(warning.text).toContain('Update this plugin before using it with Session V4.')
     expect(result.packageResult.output).toContain(warning.text.trim())
   })
 

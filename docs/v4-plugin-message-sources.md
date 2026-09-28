@@ -18,8 +18,10 @@ cannot safely rewrite executable code or quoted instructions.
 Community plugin installs and updates also scan the installed package's shipped
 JavaScript after staging and peer validation, before changing the Profile's
 desired generation. A literal `source: { kind: 'plugin' }` (or `source = ...`)
-produces a warning with the package name and relative file/line in the install
-result and operation log. This is advisory: installation continues, because
+produces a warning with the package name and relative file/line in the existing
+install output and operation log. It is available through the Plugin Manager's
+installation details. The current UI does not show it as a separate success
+banner. This is advisory: installation continues, because
 static matching can miss computed sources or flag a non-executed code path.
 The scan excludes private dependencies, tests, examples, and fixtures; only a
 producer-level V4 encoding test can confirm the behavior of a specific path.
