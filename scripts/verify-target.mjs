@@ -18,24 +18,24 @@ if (process.platform !== expectedPlatform || process.arch !== expectedArch) {
 }
 
 const executable = expectedPlatform === 'win32' ? 'node.exe' : 'node'
-const bundledNode = resolve('node_modules', 'node', 'bin', executable)
+const runtimeExecutable = resolve('node_modules', 'node', 'bin', executable)
 
 try {
-  accessSync(bundledNode, constants.X_OK)
+  accessSync(runtimeExecutable, constants.X_OK)
 } catch {
-  console.error(`Bundled Node.js runtime was not found or is not executable: ${bundledNode}`)
+  console.error(`Bundled Node.js runtime was not found or is not executable: ${runtimeExecutable}`)
   console.error('Reinstall dependencies with lifecycle scripts enabled, or run `npm rebuild node`.')
   process.exit(1)
 }
 
 const probe = spawnSync(
-  bundledNode,
+  runtimeExecutable,
   ['-p', 'JSON.stringify({ platform: process.platform, arch: process.arch, version: process.versions.node })'],
   { encoding: 'utf8' }
 )
 
 if (probe.status !== 0) {
-  console.error(`Bundled Node.js runtime could not start: ${bundledNode}`)
+  console.error(`Bundled Node.js runtime could not start: ${runtimeExecutable}`)
   if (probe.stderr) console.error(probe.stderr.trim())
   process.exit(1)
 }
@@ -55,6 +55,4 @@ if (runtime.platform !== expectedPlatform || runtime.arch !== expectedArch) {
   process.exit(1)
 }
 
-console.log(
-  `Packaging target verified: ${process.platform}/${process.arch}; bundled Node.js ${runtime.version}`
-)
+console.log(`Packaging target verified: ${process.platform}/${process.arch}; bundled Node.js ${runtime.version}`)

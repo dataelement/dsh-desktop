@@ -1,0 +1,79 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+index a42f2a2..3e7e082 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+@@ -2526,6 +2526,40 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 	flush() {
+ 		return this.tracker.flushAll();
+ 	}
++	/** Remove one durable session while holding its write claim and directory lease. */
++	async delete(id, options) {
++		options?.signal?.throwIfAborted();
++		await this.ensureRootEncoding();
++		options?.signal?.throwIfAborted();
++		if (this.tracker.hasPending(id)) throw new Error(`cannot delete session "${id}" while its unmaterialized create is live`);
++		this.tracker.claimWrite(id);
++		let lease;
++		try {
++			const resolved = await this.findLog(id, options?.signal);
++			if (resolved === void 0) return false;
++			const path = resolved.currentPath;
++			lease = await this.acquireLease(id, void 0, dirname(path));
++			try {
++				await rm(path);
++			} catch (error) {
++				if (isENOENT(error)) return false;
++				throw error;
++			}
++			if (process.platform !== "win32") await this.syncDirPosix(dirname(path));
++			return true;
++		} finally {
++			this.coldLogMemo.delete(id);
++			this.migrationPreparations.delete(id);
++			let releaseFailure;
++			try {
++				await lease?.release();
++			} catch (raw) {
++				releaseFailure = raw instanceof Error ? raw : new Error(String(raw));
++			}
++			this.tracker.releaseClaim(id);
++			if (releaseFailure !== void 0) throw releaseFailure;
++		}
++	}
+ 	/**
+ 	* Observe one stored session without reading its event log.
+ 	* @param id - the stored session to observe.
+@@ -3040,8 +3074,10 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+ 			try {
+ 				header = await this.readGenerationHeader(selected, void 0, signal);
+ 			} catch (error) {
+-				if (error instanceof SessionFormatUnsupportedError || error instanceof SessionPersistenceCorruptionError) continue;
+-				throw error;
++				if (error instanceof SessionFormatUnsupportedError) continue;
++				signal?.throwIfAborted();
++				this.ctx.logger.warn(`${this.name}: skipped unreadable session log ${selected.sourcePath}: ${error instanceof Error ? error.message : String(error)}`);
++				continue;
+ 			}
+ 			if (header === void 0) continue;
+ 			if (ids.has(header.id)) throw new Error(`duplicate JSONL session id "${header.id}" appears in multiple project directories`);
+diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
+index 48f0351..f5ef30e 100644
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/types/index.d.ts
+@@ -7,7 +7,7 @@
+  */
+ import { Context } from '@deepseek-ai/cordis';
+ import z from '@deepseek-ai/schemastery';
+-import { SessionPersistence, type SessionAccess, type SessionHandle, type SessionHandleReadResult, type SessionPersistenceCreateOptions, type SessionPersistenceListOptions, type SessionPersistenceOpenOptions, type SessionPersistenceSnapshot, type SessionPersistenceStatOptions, type SessionPersistenceRevision as PersistenceRevision } from '@deepseek-ai/dsh-session-persistence';
++import { SessionPersistence, type SessionAccess, type SessionHandle, type SessionHandleReadResult, type SessionPersistenceCreateOptions, type SessionPersistenceDeleteOptions, type SessionPersistenceListOptions, type SessionPersistenceOpenOptions, type SessionPersistenceSnapshot, type SessionPersistenceStatOptions, type SessionPersistenceRevision as PersistenceRevision } from '@deepseek-ai/dsh-session-persistence';
+ import { JsonlSessionHandle } from './storage.ts';
+ import { SessionWriteLease } from './lease.ts';
+ import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session';
+@@ -103,6 +103,7 @@ declare class JsonlSessionPersistence extends SessionPersistence {
+      * @returns resolution once every write handle active at the call has flushed.
+      */
+     flush(): Promise<void>;
++    delete(id: SessionId, options?: SessionPersistenceDeleteOptions): Promise<boolean>;
+     /**
+      * Observe one stored session without reading its event log.
+      * @param id - the stored session to observe.

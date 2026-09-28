@@ -1,0 +1,215 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
+index 7f96b5f..14780a1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-agent-preset/lib/client.js
+@@ -271,6 +271,7 @@ window.__ModuleLoader__.load({
+ 		/** Locale bundles for the agent-preset hero chip, header label, and management section. */
+ 		/** English copy. */
+ 		const en = {
++            desktopImport: "Import", desktopAwesome: "Awesome preset", desktopSearch: "Search presets",
+ 			...guideEn,
+ 			builtInGroup: "Built-in",
+ 			customGroup: "Custom",
+@@ -299,6 +300,7 @@ window.__ModuleLoader__.load({
+ 		};
+ 		/** Simplified Chinese copy. */
+ 		const zh = {
++            desktopImport: "导入", desktopAwesome: "Awesome preset", desktopSearch: "搜索预设",
+ 			...guideZh,
+ 			builtInGroup: "内置",
+ 			customGroup: "自定义",
+@@ -854,6 +856,85 @@ window.__ModuleLoader__.load({
+ 		function AgentPresetSection({ useAgentPresetSection, load, view, closeView, makeDefault, startCreatorDraft, close: closeSettings, useDeveloperTools, t }) {
+ 			const state = useAgentPresetSection((value) => value);
+ 			const developerTools = useDeveloperTools((enabled) => enabled);
++			const chinese = document.documentElement.lang?.toLowerCase().startsWith("zh");
++			const copy = chinese ? {
++				import: "导入", export: "导出预设", search: "搜索预设", awesome: "Awesome preset",
++				trust: "自定义预设可以使用与 Agent 相同权限的工具和命令。请只导入可信来源。",
++				rename: "预设 ID", conflict: "该 ID 已存在，请换一个名称。", install: "安装并在重启后启用",
++				restart: "预设已导入。重启 DSH Desktop 后生效。", cancel: "取消"
++			} : {
++				import: "Import", export: "Export preset", search: "Search presets", awesome: "Awesome preset",
++				trust: "Custom presets can run tools and commands with the same permissions as the Agent. Import only from trusted sources.",
++				rename: "Preset ID", conflict: "This ID already exists. Choose another name.", install: "Install and enable after restart",
++				restart: "Preset imported. Restart DSH Desktop to use it.", cancel: "Cancel"
++			};
++			const [search, setSearch] = (0, react.useState)("");
++			const [importFile, setImportFile] = (0, react.useState)(null);
++			const [importDraft, setImportDraft] = (0, react.useState)(null);
++			const [importId, setImportId] = (0, react.useState)("");
++			const [importBusy, setImportBusy] = (0, react.useState)(false);
++			const [transferError, setTransferError] = (0, react.useState)(null);
++			const [transferNotice, setTransferNotice] = (0, react.useState)(null);
++			const importInput = (0, react.useRef)(null);
++			const transferUrl = (id = "", install = false) => {
++				const params = new URLSearchParams();
++				if (id) params.set("agentPreset", id);
++				if (install) params.set("install", "1");
++				const query = params.toString();
++				return `/api/agent-preset.import${query ? `?${query}` : ""}`;
++			};
++			const readTransferError = async (response) => {
++				const body = await response.json().catch(() => ({}));
++				return body.error ?? `HTTP ${response.status}`;
++			};
++			const previewImport = async (file) => {
++				setImportBusy(true);
++				setTransferError(null);
++				try {
++					const response = await fetch(transferUrl(), { method: "POST", headers: { "content-type": "application/vnd.dsh.preset+zip" }, body: file });
++					if (!response.ok) throw new Error(await readTransferError(response));
++					const draft = await response.json();
++					setImportFile(file);
++					setImportDraft(draft);
++					setImportId(draft.agentPreset);
++				} catch (error) {
++					setTransferError(error instanceof Error ? error.message : String(error));
++				} finally {
++					setImportBusy(false);
++				}
++			};
++			const confirmImport = async () => {
++				if (!importFile) return;
++				setImportBusy(true);
++				setTransferError(null);
++				try {
++					const response = await fetch(transferUrl(importId.trim().toLowerCase(), true), { method: "POST", headers: { "content-type": "application/vnd.dsh.preset+zip" }, body: importFile });
++					if (!response.ok) throw new Error(await readTransferError(response));
++					setImportFile(null);
++					setImportDraft(null);
++					setTransferNotice(copy.restart);
++				} catch (error) {
++					setTransferError(error instanceof Error ? error.message : String(error));
++				} finally {
++					setImportBusy(false);
++				}
++			};
++			const exportPreset = async (id) => {
++				setTransferError(null);
++				try {
++					const response = await fetch(`/api/agent-preset.export?agentPreset=${encodeURIComponent(id)}`);
++					if (!response.ok) throw new Error(await readTransferError(response));
++					const url = URL.createObjectURL(await response.blob());
++					try {
++						const anchor = document.createElement("a");
++						anchor.href = url;
++						anchor.download = `${id}.dshpreset`;
++						anchor.click();
++					} finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
++				} catch (error) {
++					setTransferError(error instanceof Error ? error.message : String(error));
++				}
++			};
+ 			const [guide, setGuide] = (0, react.useState)(null);
+ 			const viewTrigger = (0, react.useRef)(null);
+ 			const closeViewOnUnmount = (0, react.useRef)(closeView);
+@@ -888,21 +969,53 @@ window.__ModuleLoader__.load({
+ 			return (0, react_jsx_runtime.jsxs)("section", {
+ 				className: AgentPresetSection_module_css_default.section,
+ 				children: [
+-					(0, react_jsx_runtime.jsx)("h2", {
+-						className: AgentPresetSection_module_css_default.title,
+-						children: t("nav")
+-					}),
++					(0, react_jsx_runtime.jsxs)("div", {
++                        "data-dsh-preset-heading": "",
++                        children: [(0, react_jsx_runtime.jsx)("h2", {
++                            className: AgentPresetSection_module_css_default.title,
++                            children: t("nav")
++                        }), (0, react_jsx_runtime.jsxs)("div", {
++                            "data-dsh-preset-actions": "",
++                            children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++                                variant: "outline", disabled: importBusy,
++                                icon: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 16 }),
++                                onClick: () => importInput.current?.click(), children: t("desktopImport")
++                            }), (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
++                                variant: "outline",
++                                onClick: () => window.open("https://www.dshdesktop.com/preset/", "_blank", "noopener,noreferrer"),
++                                children: t("desktopAwesome")
++                            })]
++                        })]
++                    }),
+ 					(0, react_jsx_runtime.jsx)("p", {
+ 						className: AgentPresetSection_module_css_default.intro,
+ 						children: t("sectionIntro")
+ 					}),
++					(0, react_jsx_runtime.jsxs)("div", {
++						"data-dsh-preset-search": "",
++						children: [
++							(0, react_jsx_runtime.jsx)("input", {
++								type: "search", value: search, placeholder: t("desktopSearch"),
++								"aria-label": t("desktopSearch"), onChange: (event) => setSearch(event.target.value),
++
++							}),
++
++							(0, react_jsx_runtime.jsx)("input", {
++								ref: importInput, type: "file", accept: ".dshpreset,application/zip", style: { display: "none" },
++								onChange: (event) => { const file = event.target.files?.[0]; if (file) void previewImport(file); event.target.value = ""; }
++							})
++						]
++					}),
++					transferError && (0, react_jsx_runtime.jsx)("p", { role: "alert", children: transferError }),
++					transferNotice && (0, react_jsx_runtime.jsx)("p", { role: "status", children: transferNotice }),
+ 					state.error === null ? null : (0, react_jsx_runtime.jsx)("p", {
+ 						className: AgentPresetSection_module_css_default.error,
+ 						role: "alert",
+ 						children: state.error
+ 					}),
+ 					[true, false].map((builtIn) => {
+-						const rows = state.rows.filter((row) => isBuiltInPreset(row) === builtIn);
++						const query = search.trim().toLowerCase();
++						const rows = state.rows.filter((row) => isBuiltInPreset(row) === builtIn && (query === "" || `${row.id} ${presetDisplayText(row, t).name} ${presetDisplayText(row, t).description ?? ""}`.toLowerCase().includes(query)));
+ 						const entry = builtIn ? null : creatorButton;
+ 						if (rows.length === 0 && entry === null) return null;
+ 						return (0, react_jsx_runtime.jsxs)("section", {
+@@ -1011,7 +1124,13 @@ window.__ModuleLoader__.load({
+ 														view(row.id);
+ 													},
+ 													children: (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconBrowseOutlineRegular, {})
+-												})]
++											}), !builtIn && (0, react_jsx_runtime.jsx)("button", {
++												type: "button",
++												"aria-label": `${copy.export}: ${display.name}`,
++												title: copy.export,
++												onClick: () => { void exportPreset(row.id); },
++												children: copy.export
++											})]
+ 											})]
+ 										}, row.id);
+ 									})
+@@ -1028,6 +1147,34 @@ window.__ModuleLoader__.load({
+ 							setGuide(null);
+ 						}
+ 					}),
++					(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
++						open: importDraft !== null,
++						onClose: () => { if (!importBusy) { setImportDraft(null); setImportFile(null); setTransferError(null); } },
++						closeLabel: copy.cancel,
++						title: copy.import,
++						footer: (0, react_jsx_runtime.jsxs)("div", {
++							style: { display: "flex", gap: 8, justifyContent: "flex-end" },
++							children: [
++								(0, react_jsx_runtime.jsx)("button", { type: "button", disabled: importBusy, onClick: () => { setImportDraft(null); setImportFile(null); setTransferError(null); }, children: copy.cancel }),
++								(0, react_jsx_runtime.jsx)("button", {
++									type: "button", disabled: importBusy || !/^[a-z0-9][a-z0-9-]*$/.test(importId.trim().toLowerCase()) || importDraft?.conflict && importId.trim().toLowerCase() === importDraft.agentPreset,
++									onClick: () => { void confirmImport(); }, children: copy.install
++								})
++							]
++						}),
++						children: importDraft === null ? null : (0, react_jsx_runtime.jsxs)("div", {
++							style: { display: "grid", gap: 12 },
++							children: [
++								(0, react_jsx_runtime.jsx)("strong", { children: importDraft.name }),
++								(0, react_jsx_runtime.jsx)("p", { children: `${importDraft.fileCount} files · ${importDraft.sourceDshVersion ?? "unknown version"}` }),
++								(0, react_jsx_runtime.jsx)("p", { children: copy.trust }),
++								importDraft.warnings?.length > 0 && (0, react_jsx_runtime.jsx)("p", { role: "alert", children: importDraft.warnings.join(", ") }),
++								(0, react_jsx_runtime.jsxs)("label", { children: [copy.rename, (0, react_jsx_runtime.jsx)("input", { value: importId, onChange: (event) => setImportId(event.target.value), style: { display: "block", width: "100%" } })] }),
++								importDraft.conflict && importId.trim().toLowerCase() === importDraft.agentPreset && (0, react_jsx_runtime.jsx)("p", { role: "alert", children: copy.conflict }),
++								transferError && (0, react_jsx_runtime.jsx)("p", { role: "alert", children: transferError })
++							]
++						})
++				}),
+ 					(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Modal, {
+ 						open: viewed !== null,
+ 						onClose: closeViewer,

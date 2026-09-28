@@ -10,7 +10,7 @@ import {
   writeDesired
 } from 'dsh-desktop-market-installer/generations/registry'
 import { resolveMarketRegistry } from 'dsh-desktop-market-installer/market-registry'
-import { lstat, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { installProfileDependenciesWithDsh } from '../runtime/profile-plugin-command'
 
@@ -85,6 +85,27 @@ export async function upgradePluginToGeneration(
 
 const MARKET_PACKAGE = 'dshmarket'
 
+export function marketInstallPendingPath(dshHome: string): string {
+  return join(dshHome, 'profiles', 'web', '.desktop-market-install-pending.json')
+}
+
+export async function hasPendingMarketInstall(
+  dshHome: string,
+  note?: (line: string) => void
+): Promise<boolean> {
+  try {
+    await lstat(marketInstallPendingPath(dshHome))
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') return false
+    // An unreadable marker is not a reason to stop booting: the installed
+    // version check still forces a repair when the tree is actually broken.
+    note?.(`[plugin-upgrade] market install marker unreadable (${code ?? 'unknown'}); relying on the installed version check`)
+    return false
+  }
+}
+
 export interface MarketSharedTreeUpgradeOptions {
   dshHome: string
   dshEntryPath: string
@@ -158,15 +179,23 @@ export async function upgradeMarketInSharedTree(
       manifest.dependencies[MARKET_PACKAGE] = targetVersion
       modified = true
     }
-    if (modified) await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
-
+    // pnpm can replace packages before failing. Restoring package.json alone
+    // is not a tree rollback: preserve the first manifest and force a retry
+    // until installation and active-path verification both finish.
+    const pendingPath = marketInstallPendingPath(dshHome)
+    await writeFile(pendingPath, JSON.stringify({ targetVersion, previousManifest: before }), { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EEXIST') throw error
+    })
     try {
+      if (modified) await writeFile(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`, 'utf8')
       const entry = await lstat(marketPath).catch((error) => {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
         throw error
       })
       if (entry?.isSymbolicLink()) {
-        note?.(`[plugin-upgrade] dropping the ${MARKET_PACKAGE} generation link before reinstalling`)
+        const target = await readlink(marketPath)
+        const isGenLink = target.includes('.generations')
+        note?.(`[plugin-upgrade] dropping the ${MARKET_PACKAGE} ${isGenLink ? 'generation' : 'store'} link before reinstalling`)
         // Remove only the pointer. The generation directory it targets is
         // left alone, so nothing that already loaded it is disturbed.
         await rm(marketPath, { force: true })
@@ -187,7 +216,10 @@ export async function upgradeMarketInSharedTree(
       // A zero exit code can be a CLI no-op. Verify the public Profile path
       // before retiring any generation ownership or reporting success.
       const installed = JSON.parse(await readFile(join(marketPath, 'package.json'), 'utf8')) as { version?: string }
-      if (installed.version !== targetVersion || (await lstat(marketPath)).isSymbolicLink()) {
+      const afterEntry = await lstat(marketPath)
+      const afterIsGenerationLink = afterEntry.isSymbolicLink() &&
+        (await readlink(marketPath)).includes('.generations')
+      if (installed.version !== targetVersion || afterIsGenerationLink) {
         throw new Error(`Market install expected a shared directory at ${targetVersion}, found ${installed.version ?? 'missing'} or a link`)
       }
 
@@ -201,6 +233,7 @@ export async function upgradeMarketInSharedTree(
         await writeDesired(dshHome, desired.filter((id) => !stale.has(id)))
       }
 
+      await rm(pendingPath)
       note?.(`[plugin-upgrade] successfully upgraded ${MARKET_PACKAGE} to v${targetVersion}`)
       return { ok: true }
     } catch (error) {

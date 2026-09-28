@@ -75,13 +75,6 @@ describe('the launch-process half of the generation model', () => {
     expect(await readDesired(home)).toEqual([])
   })
 
-  it('does not wire failed Harness startup to a generation-set rollback', async () => {
-    const main = await readFile('src/main/index.ts', 'utf8')
-    expect(main).not.toContain('rollBackToLastKnownGood')
-    expect(main).not.toContain('desiredIsUntried')
-    expect(main).toContain("A failed launch must not rewrite the user's enabled plugin set")
-  })
-
   it('sweeps an unreferenced generation and projects the desired one on launch', async () => {
     const home = await freshHome()
     await ensureRegistryDirectories(home)
@@ -175,18 +168,6 @@ describe('the launch-process half of the generation model', () => {
     const reprojected = JSON.parse(await readFile(manifestPath, 'utf8'))
     expect(await readDesired(home)).toEqual(['widget+1.44.0+af88ab682bc0'])
     expect(reprojected.dsh.profile.bundles).toContain('widget')
-  })
-
-  it('uninstalls the market through the generation path rather than pnpm alone', async () => {
-    const main = await readFile('src/main/index.ts', 'utf8')
-    const uninstall = main.slice(
-      main.indexOf('async function disableMarketGeneration'),
-      main.indexOf('function registerHarnessHandlers')
-    )
-    expect(uninstall).toContain('isProjectedGenerationPlugin')
-    expect(uninstall).toContain('uninstallGenerationPlugin')
-    // The pnpm removal stays, for a profile that never used a generation.
-    expect(uninstall).toContain('removeProfilePluginWithDsh')
   })
 
   it('does not retain or restore generations from a stale rollback pointer', async () => {

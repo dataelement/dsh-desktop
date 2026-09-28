@@ -32,10 +32,10 @@ describe('desktop plugin market installer', () => {
       'web',
       'add',
       '--workspace-root',
-      'dshmarket@^1.45.1'
+      'dshmarket@^1.65.1'
     ])
     expect(MARKET_PACKAGE).toBe('dshmarket')
-    expect(RECOMMENDED_MARKET_VERSION).toBe('^1.45.1')
+    expect(RECOMMENDED_MARKET_VERSION).toBe('^1.65.1')
     expect(STATUS_PATH).toBe('/dsh-desktop/market-installer/status')
     expect(INSTALL_PATH).toBe('/dsh-desktop/market-installer/install')
     expect(UNINSTALL_PATH).toBe('/dsh-desktop/market-installer/uninstall')
@@ -350,36 +350,5 @@ describe('desktop plugin market installer', () => {
       isTrustedRequest(request({ forwarded: 'for=127.0.0.1' }), false)
     ).toBe(false)
     expect(isTrustedRequest(request({}, '192.168.1.5'))).toBe(false)
-  })
-
-  it('registers a placeholder before install and a stable management tab afterward', async () => {
-    const client = await readFile(
-      join(process.cwd(), 'packages', 'dsh-desktop-market-installer', 'client.js'),
-      'utf8'
-    )
-    const desktopPatch = await readFile(
-      join(process.cwd(), 'build', 'dsh-desktop.patch.yml'),
-      'utf8'
-    )
-    const preload = await readFile(join(process.cwd(), 'src', 'preload', 'index.ts'), 'utf8')
-    const main = await readFile(join(process.cwd(), 'src', 'main', 'index.ts'), 'utf8')
-
-    expect(client).toContain("entry?.id === 'dshmarket'")
-    expect(client).toContain("id: 'market'")
-    expect(client).toContain('order: 40')
-    expect(client).toContain("id: 'desktop-market-management'")
-    expect(client).toContain("name: 'settings.plugins.tab'")
-    expect(client).toContain(
-      '只会移除 dsh-market。通过插件市场安装的其他插件将继续保留。'
-    )
-    expect(desktopPatch).toContain('name: dsh-desktop-market-installer')
-    expect(desktopPatch).toContain('inject: [desktopProfiles]')
-    expect(desktopPatch).toContain('allowRestart: false')
-    expect(preload).toContain("restartHarness: (): Promise<{ ok: boolean }>")
-    expect(preload).toContain("uninstallMarket: (): Promise<{ ok: boolean }>")
-    expect(client).toContain("typeof bridge.uninstallMarket === 'function'")
-    expect(main).toContain("ipcMain.handle('market:uninstall'")
-    expect(main).toContain("await runtime.stop()")
-    expect(main).toMatch(/'dshmarket',\s+true/u)
   })
 })

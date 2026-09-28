@@ -72,25 +72,33 @@ export class DesktopService {
     if (!uuid.test(this.installationId)) throw new Error('Invalid installation ID')
   }
   beginSession(): void {
-    if (existsSync(this.marker)) {
-      try {
-        const old = JSON.parse(readFileSync(this.marker, 'utf8')) as { eventId: string; version: string }
-        if (uuid.test(old.eventId) && isVersion(old.version)) this.capture('unclean-exit', 'Previous session ended without a clean shutdown (crash, power loss or forced termination).', old.eventId, old.version)
-      } catch { /* A damaged marker must not prevent the next session from being tracked. */ }
-    }
     this.sessionId = randomUUID()
     atomic(this.marker, { eventId: this.sessionId, version: this.options.version })
   }
   markCleanExit(): void {
     try { unlinkSync(this.marker) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   }
-  capture(kind: FailureKind, message: string, eventId: string = randomUUID(), version = this.options.version): void {
+  discard(eventId: string): boolean {
+    if (!uuid.test(eventId)) return false
+    const path = join(this.outbox, `${eventId}.json`)
+    if (existsSync(path)) {
+      try {
+        unlinkSync(path)
+        return true
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+  capture(kind: FailureKind, message: string, eventId: string = randomUUID(), version = this.options.version): string {
     if (!uuid.test(eventId)) throw new Error('Invalid event ID')
     const path = join(this.outbox, `${eventId}.json`)
-    if (existsSync(path)) return
+    if (existsSync(path)) return eventId
     const files = this.pending()
     while (files.length >= 50) unlinkSync(join(this.outbox, files.shift()!))
     atomic(path, { eventId, installationId: this.installationId, version, platform: this.platform, kind, occurredAt: new Date().toISOString(), message: redact(message).slice(0, 4000), ...tailLog(this.options.logPath) })
+    return eventId
   }
   captureFatal(error: Error): void { this.capture('main-crash', error.stack ?? error.message, this.sessionId) }
   pending(): string[] {
@@ -108,6 +116,9 @@ export class DesktopService {
       const body = readFileSync(path, 'utf8')
       unlinkSync(path)
       try {
+        let kind: string | undefined
+        try { kind = (JSON.parse(body) as { kind?: string }).kind } catch { /* A malformed report still goes through consent. */ }
+        if (kind === 'unclean-exit') continue
         if (await this.options.confirmUpload(body) !== true) continue
         await this.options.request(SERVICE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(5000), redirect: 'error' })
       } catch { /* Best effort: failed reports are discarded. */ }

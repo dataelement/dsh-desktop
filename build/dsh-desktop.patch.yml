@@ -1,7 +1,14 @@
+# Harness's runtime warnings and errors live only in an in-memory logger ring,
+# and session activation failures only reach the client. Bridge both to
+# stderr so harness.log keeps them. First, so it hears as much as it can.
+- insert:
+    - id: dsh-desktop-log-bridge
+      name: dsh-desktop-log-bridge
+
 # Keep the stock directory-picker (auto) row active: the native backend
 # serves ctx.directoryPicker, so host-side consumers (host.pickDirectory,
-# plugins reading the seam) work unmodified. The client surface keeps its
-# Electron-dialog bridge via the client-ui patch in patches/.
+# plugins reading the seam) work unmodified. The client surface reads the
+# upstream __DSH_DIRECTORY_PICKER__ bridge exposed by preload.
 
 # Disable the stock single-slot occupant before mounting Desktop's equivalent;
 # two occupants cannot share either brand seat. The Desktop plugin preserves
@@ -9,6 +16,10 @@
 # the public footer-action slot is a separate row. Window chrome geometry
 # remains a native-shell concern.
 - id: ui-brand-official
+  disabled: true
+
+# Keep the v0.9.2 settings launcher and model setup without upstream account UI.
+- id: ui-settings-account
   disabled: true
 
 - insert:
@@ -27,18 +38,12 @@
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
 
-    # Keep the bundled PPT artifacts installed but do not mount their Composer
-    # until its webServer injection contract is compatible with Harness 0.1.5.
-    # Re-enabling this entry before that fix prevents the whole profile booting.
+    # One shared image tool for conversations and Office workflows.
+    - id: dsh-image-generation
+      name: dsh-image-generation
 
-# dsh-market normally offers to restart its own Node process after mutations.
-# The desktop shell has the real lifecycle authority, so keep that behavior off
-# whenever the optional plugin is present in the composed profile.
-- id: dsh-market
-  inject: [desktopProfiles]
-  config:
-    profile: web
-    allowRestart: false
+    # PPT remains unmounted by product policy; the packages stay available
+    # so the feature can be enabled after its compatibility is verified.
 
 # Harness creates the full Cordis HMR service after boot when no `hmr` service
 # exists, and that service throws without Node's internal module loader —

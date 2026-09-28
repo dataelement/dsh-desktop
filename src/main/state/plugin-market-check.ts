@@ -216,12 +216,20 @@ export interface NpmPackageVersions {
 // Cache the complete version list, independent of the installed/runtime version.
 const manifestCache = new Map<string, { metadata: NpmPackageVersions; timestamp: number }>()
 const CACHE_TTL_MS = 5 * 60 * 1000
+/**
+ * A failed lookup is remembered only when the caller asks (`failureTtlMs`), so
+ * a screen that re-checks on every open does not wait out the registry
+ * timeouts again within that window; a deliberate user retry passes nothing
+ * and always makes a new request.
+ */
+const failureCache = new Map<string, { reason: string; timestamp: number }>()
 
 export async function fetchPluginVersionsFromRegistry(
   packageName: string,
   options?: {
     registry?: string
     timeoutMs?: number
+    failureTtlMs?: number
     fetchFn?: typeof fetch
     onFailure?: (reason: string) => void
   }
@@ -230,6 +238,17 @@ export async function fetchPluginVersionsFromRegistry(
   const cacheKey = `${primaryRegistry}/${packageName}`
   const cached = manifestCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.metadata
+  const failureTtlMs = options?.failureTtlMs ?? 0
+  const failed = failureCache.get(cacheKey)
+  if (failureTtlMs > 0 && failed && Date.now() - failed.timestamp < failureTtlMs) {
+    options?.onFailure?.(failed.reason)
+    return null
+  }
+  const failures: string[] = []
+  const reportFailure = (reason: string): void => {
+    failures.push(reason)
+    options?.onFailure?.(reason)
+  }
 
   const registries = [...new Set([primaryRegistry, FALLBACK_NPM_REGISTRY])]
   const timeoutMs = options?.timeoutMs ?? DEFAULT_MARKET_CHECK_TIMEOUT_MS
@@ -246,7 +265,7 @@ export async function fetchPluginVersionsFromRegistry(
         headers: { accept: 'application/json', 'user-agent': 'dsh-desktop' }
       })
       if (!res.ok) {
-        options?.onFailure?.(`${registry}: HTTP ${res.status}`)
+        reportFailure(`${registry}: HTTP ${res.status}`)
         continue
       }
       const data = (await res.json()) as NpmPackageVersions | null
@@ -259,15 +278,17 @@ export async function fetchPluginVersionsFromRegistry(
       if (!versions[latest]) throw new Error('Latest version manifest is missing')
       const metadata: NpmPackageVersions = { versions, 'dist-tags': { latest } }
       manifestCache.set(cacheKey, { metadata, timestamp: Date.now() })
+      failureCache.delete(cacheKey)
       return metadata
     } catch (error) {
       const failure = error as { message?: string; cause?: { code?: string } }
-      options?.onFailure?.(`${registry}: ${failure.cause?.code ?? failure.message ?? 'Request failed'}`)
+      reportFailure(`${registry}: ${failure.cause?.code ?? failure.message ?? 'Request failed'}`)
       // Try the fallback registry on transport, body or metadata errors.
     } finally {
       clearTimeout(timer)
     }
   }
+  if (failureTtlMs > 0) failureCache.set(cacheKey, { reason: failures.join('; '), timestamp: Date.now() })
   // A user retry must make a new request after a transient network failure.
   return null
 }
@@ -295,6 +316,7 @@ export function selectCompatiblePluginUpgrade(
 
 export function clearManifestCache(): void {
   manifestCache.clear()
+  failureCache.clear()
 }
 
 /**
@@ -376,6 +398,7 @@ export async function evaluatePluginMarketCompatibility(options: {
   currentRuntimeVersion: string
   registry?: string
   timeoutMs?: number
+  failureTtlMs?: number
   fetchFn?: typeof fetch
   hasLocalIssue?: boolean
   locale?: 'zh' | 'en'
@@ -393,6 +416,7 @@ export async function evaluatePluginMarketCompatibility(options: {
   const metadata = await fetchPluginVersionsFromRegistry(packageName, {
     registry: options.registry,
     timeoutMs: options.timeoutMs,
+    failureTtlMs: options.failureTtlMs,
     fetchFn: options.fetchFn,
     onFailure: reason => failures.push(reason)
   })
@@ -462,16 +486,24 @@ export async function evaluatePluginMarketCompatibility(options: {
         : `Plugin v${installedVersion} is already at latest (v${latestVersion}) or newer and still blocks startup. Remove this plugin and continue checking; no downgrade or reinstall will be attempted.`
     }
   }
+  const versionComparison = compareSemver(installedVersion, latestVersion)
+  const healthLabel = versionComparison === 0
+    ? (isZh ? '已是最新版' : 'Up to date')
+    : versionComparison > 0
+      ? (isZh ? '当前版本高于市场最新版' : 'Installed version is newer than market latest')
+      : (isZh ? '暂无适用于当前 DSH 的更新' : 'No update available for the current DSH')
   return {
     packageName, installedVersion, latestVersion,
-    healthStatus: hasLocalIssue ? 'incompatible-no-fix' : 'up-to-date',
-    healthLabel: isZh
-      ? (hasLocalIssue ? '加载异常，未找到兼容更新' : '未找到兼容更新')
-      : (hasLocalIssue ? 'Load failure; no compatible update found' : 'No compatible update found'),
+    healthStatus: 'up-to-date',
+    healthLabel,
     upgradeReady: false,
-    detail: isZh
-      ? `在已安装版本之后、latest（v${latestVersion}）以内，没有符合当前 DSH 和发布版本筛选条件的更新。`
-      : `No update after the installed version and up to latest (v${latestVersion}) satisfies the current DSH and release filters.`
+    detail: versionComparison >= 0
+      ? (isZh
+          ? `当前插件 v${installedVersion}，市场最新版（latest）为 v${latestVersion}，无需更新。更新检查不代表插件加载或兼容性验证。`
+          : `Installed: v${installedVersion}; market latest: v${latestVersion}. No update needed. This update check does not verify loading or compatibility.`)
+      : (isZh
+          ? `市场最新版为 v${latestVersion}，但没有符合当前 DSH 和发布版本筛选条件的更新；这不表示已安装版本不兼容。`
+          : `Market latest is v${latestVersion}, but no update satisfies the current DSH and release filters. This does not mean the installed version is incompatible.`)
   }
 }
 
@@ -485,6 +517,7 @@ export async function checkupAllProfilePlugins(options: {
   incompatiblePlugins?: string[]
   registry?: string
   timeoutMs?: number
+  failureTtlMs?: number
   fetchFn?: typeof fetch
   locale?: 'zh' | 'en'
 }): Promise<PluginHealthReport[]> {
@@ -501,6 +534,7 @@ export async function checkupAllProfilePlugins(options: {
         hasLocalIssue: incompatibleSet.has(plugin),
         registry: options.registry,
         timeoutMs: options.timeoutMs,
+        failureTtlMs: options.failureTtlMs,
         fetchFn: options.fetchFn,
         locale: options.locale
       })

@@ -1,20 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import { patchPath } from './patch-path'
 
 describe('desktop Electron directory picker', () => {
-  it('exposes a narrow preload bridge and handles it in the main process', async () => {
-    const preload = await readFile('src/preload/index.ts', 'utf8')
-    const main = await readFile('src/main/index.ts', 'utf8')
-
-    expect(preload).toContain("contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker'")
-    expect(preload).toContain("ipcRenderer.invoke('directory-picker:open')")
-    expect(main).toContain("ipcMain.handle('directory-picker:open'")
-    expect(main).toContain('event.senderFrame !== mainWindow.webContents.mainFrame')
-    expect(main).toContain('dialog.showOpenDialog(mainWindow')
-    expect(main).toContain("properties: ['openDirectory']")
-    expect(main).toContain("app.commandLine.appendSwitch('lang', harnessLocale() === 'zh' ? 'zh-CN' : 'en-US')")
-  })
 
   it('keeps native Chinese resources for both macOS and Windows locale names', async () => {
     const packageJson = JSON.parse(await readFile('package.json', 'utf8')) as {
@@ -34,14 +21,16 @@ describe('desktop Electron directory picker', () => {
     expect(desktopPatch).not.toContain('dsh-client-ui-directory-picker-native')
   })
 
-  it('captures the client bridge as a reproducible dependency patch', async () => {
-    const dependencyPatch = await readFile(
-      patchPath('@deepseek-ai/dsh-client-ui-directory-picker-native'),
+  it('provides the stock picker bridge from preload', async () => {
+    const preload = await readFile('src/preload/index.ts', 'utf8')
+    const stockClient = await readFile(
+      'node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native/lib/client.js',
       'utf8'
     )
 
-    expect(dependencyPatch).toContain('window.dshDesktopDirectoryPicker')
-    expect(dependencyPatch).toContain('DSH Desktop directory picker bridge is unavailable')
+    expect(preload).toContain("contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__'")
+    expect(stockClient).toContain('globalThis.__DSH_DIRECTORY_PICKER__')
+    expect(stockClient).toContain('ctx.uiWorkspace.pickDirectory()')
   })
 
   it('leaves a missing picker service to Harness rather than patching around it', async () => {

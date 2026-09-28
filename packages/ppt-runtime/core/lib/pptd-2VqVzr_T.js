@@ -1,10 +1,15 @@
+import { resolveFontFace, resolveRunFonts } from "./font-family.js";
+import { textEscapeIssues } from "./text-escapes.js";
 const MISPLACED_TEXT_STYLE_FIELDS = new Set(["fontFamily", "fontSize", "bold", "italic", "color", "lineHeight", "letterSpacing", "wrap", "align", "verticalAlign", "textDirection", "style"]);
 import { wrapTextLines } from "./text-wrap.js";
+import { layoutRichText, scaleTextRuns } from "./rich-text-layout.js";
+import { hasSourceLayout } from "./source-layout.js";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import yaml from "js-yaml";
 import PptxGenJSImport from "pptxgenjs";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 //#region lib/types/pptd-colors.js
 /** Shared PPTD color normalization used by checking, preview, and PPTX export. */
 /** Deterministic series palette used when a chart series omits an explicit color. */
@@ -189,6 +194,7 @@ const TEMPLATE_RELATIONSHIPS = new Set([
 const ELEMENT_BASE_FIELDS = [
 	"elementId",
 	"elementType",
+	"sourceLayout",
 	"bounds"
 ];
 const ELEMENT_FIELDS = {
@@ -686,23 +692,10 @@ function textLayout(project, element) {
 	const bounds = tuple(element.bounds, 4);
 	const content = record(element.content);
 	if (bounds === void 0 || content === void 0 || typeof content.text !== "string" || plainText(content.text).trim() === "") return void 0;
-	const style = textStyle(project, content);
-	const fontSize = number(style.fontSize) ?? 18;
-	const inlineSizes = Array.from(content.text.matchAll(/font-size\s*:\s*(\d+(?:\.\d+)?)px/giu), (match) => Number(match[1]));
+	const style = { ...textStyle(project, content), ...hasSourceLayout(element) ? {} : { fit: "none" } };
 	const vertical = style.textDirection === "vertical";
-	const lineHeight = number(style.lineHeight);
-	const letterSpacing = number(style.letterSpacing);
-	const wrap = boolean(style.wrap);
-	return measureTextLayout({
-		text: plainText(content.text),
-		width: bounds[vertical ? 3 : 2] ?? 0,
-		height: bounds[vertical ? 2 : 3] ?? 0,
-		fontSize: Math.max(fontSize, ...inlineSizes),
-		bold: boolean(style.bold) === true || /<(?:b|strong)(?:\s|>)/iu.test(content.text),
-		...lineHeight === void 0 ? {} : { lineHeight },
-		...letterSpacing === void 0 ? {} : { letterSpacing },
-		...wrap === void 0 ? {} : { wrap }
-	});
+	const runs = /<[^>]+>/u.test(content.text) ? richRuns(project, content.text) : [{ text: content.text, options: {} }];
+	return layoutRichText(runs, style, bounds[vertical ? 3 : 2] ?? 0, bounds[vertical ? 2 : 3] ?? 0);
 }
 function localAssetPath(value) {
 	if (typeof value !== "string" || /^https?:\/\//iu.test(value)) return void 0;
@@ -764,6 +757,7 @@ function validTableGrid(element) {
 function checkElement(project, page, pageNumber, element, ids) {
 	const issues = [];
 	const context = elementContext(pageNumber, element);
+	if (element.sourceLayout !== undefined && (typeof element.sourceLayout !== "string" || !/^[a-f0-9]{64}$/.test(element.sourceLayout))) issues.push({ code: "source-layout", severity: "error", file: page.file, ...context, message: "源对象校验值应为有效的 SHA-256。" });
 	const id = string(element.elementId);
 	issues.push(...colorThemeIssues(project, element, page.file, pageNumber, id));
 	if (id === void 0 || id.trim() === "") issues.push({
@@ -792,7 +786,7 @@ function checkElement(project, page, pageNumber, element, ids) {
 	});
 	else if (x < 0 || y < 0 || x + width > project.width + .01 || y + height > project.height + .01) issues.push({
 		code: "out-of-bounds",
-		severity: "error",
+		severity: hasSourceLayout(element) ? "warning" : "error",
 		file: page.file,
 		...context,
 		message: "元素超出 PPTD 页面边界。"
@@ -818,6 +812,7 @@ function checkElement(project, page, pageNumber, element, ids) {
 	}
 	if (type === "text") {
 		const content = record(element.content);
+		issues.push(...textEscapeIssues(content).map(issue => ({ ...issue, file: page.file, ...context })));
 		const styleIssue = themeReferenceIssue(project, content?.style, "textStyles", page.file, pageNumber, id);
 		if (styleIssue !== void 0) issues.push(styleIssue);
 		if (content === void 0 || typeof content.text !== "string") issues.push({
@@ -830,10 +825,10 @@ function checkElement(project, page, pageNumber, element, ids) {
 		else {
 			const layout = textLayout(project, element);
 			if (layout?.overflow === true) {
-				const message = layout.horizontalOverflow ? `文本设置为不换行，但预计宽度 ${Math.ceil(layout.widestLine)}pt 超过文本框可用宽度 ${Math.floor(layout.availableLineWidth)}pt；请缩短文案或增大文本框。` : `文本预计需要 ${layout.lineCount} 行，当前文本框可容纳 ${layout.maxLineCount} 行；请缩短文案、增大文本框或拆分页面。`;
+				const message = layout.horizontalOverflow ? `文本预计宽度 ${Math.ceil(Math.max(...layout.lines.map(line => line.width)))}pt 超过文本框可用宽度 ${Math.floor(layout.availableLineWidth)}pt；请缩短文案或增大文本框。` : `文本预计需要 ${Math.ceil(layout.requiredHeight)}pt 高度，当前文本框高度为 ${Math.floor(layout.availableHeight)}pt；请缩短文案、增大文本框或拆分页面。`;
 				issues.push({
 					code: "text-overflow",
-					severity: "error",
+					severity: hasSourceLayout(element) ? "warning" : "error",
 					file: page.file,
 					...context,
 					message
@@ -933,7 +928,9 @@ function checkElement(project, page, pageNumber, element, ids) {
 			if (styleIssue !== void 0) issues.push(styleIssue);
 		}
 		const rows = Array.isArray(element.rows) ? element.rows : [];
-		for (const rawRow of rows) for (const rawCell of Array.isArray(rawRow) ? rawRow : []) {
+		for (const [rowIndex, rawRow] of rows.entries()) for (const [columnIndex, rawCell] of (Array.isArray(rawRow) ? rawRow : []).entries()) {
+			const cell = record(rawCell) ?? { text: rawCell };
+			issues.push(...textEscapeIssues(cell, `rows[${rowIndex}][${columnIndex}]`).map(issue => ({ ...issue, file: page.file, ...context })));
 			const styleIssue = themeReferenceIssue(project, record(rawCell)?.textStyle, "textStyles", page.file, pageNumber, id);
 			if (styleIssue !== void 0) issues.push(styleIssue);
 		}
@@ -1223,11 +1220,7 @@ function frame(element) {
 	};
 }
 function fontFace(value, fallback = "Arial", text = "") {
-	if (typeof value === "string") return value;
-	const font = record(value);
-	const eastAsian = /[\u2e80-\u9fff\uf900-\ufaff]/u.test(text);
- const ea = process.platform === "darwin" ? font?.mac ?? font?.ea : process.platform === "win32" ? font?.win ?? font?.ea : font?.ea;
- return (eastAsian ? string(ea) ?? string(font?.latin) : string(font?.latin) ?? string(ea)) ?? fallback;
+	return resolveFontFace(value, fallback, text);
 }
 function inlineStyle(project, raw) {
 	const options = {};
@@ -1256,7 +1249,7 @@ function richRuns(project, value) {
 	for (const token of value.split(/(<[^>]+>)/gu)) {
 		if (token === "") continue;
 		if (!token.startsWith("<")) {
-			const decoded = plainText(token);
+			const decoded = token.replace(/&lt;/gu, "<").replace(/&gt;/gu, ">").replace(/&quot;/gu, "\"").replace(/&amp;/gu, "&");
 			if (decoded !== "") runs.push({
 				text: decoded,
 				options: { ...currentOptions() }
@@ -1294,7 +1287,7 @@ function richRuns(project, value) {
 			...currentOptions(),
 			...inlineStyle(project, style?.[1] ?? style?.[2])
 		};
-		if (tag === "strong") options.bold = true;
+		if (tag === "strong" || tag === "b") options.bold = true;
 		if (tag === "em") options.italic = true;
 		if (tag === "u") options.underline = { style: "sng" };
 		if (tag === "s") options.strike = "sngStrike";
@@ -1359,7 +1352,10 @@ function renderText(project, slide, element) {
 	const style = textStyle(project, content);
 	const align = Array.isArray(style.align) ? style.align : [];
 	const raw = string(content.text) ?? "";
-	const runs = /<[^>]+>/u.test(raw) ? richRuns(project, raw) : raw;
+	const sourceRuns = resolveRunFonts(/<[^>]+>/u.test(raw) ? richRuns(project, raw) : [{ text: raw, options: {} }], style.fontFamily);
+	const textBounds = tuple(element.bounds, 4) ?? [0, 0, 0, 0];
+	const scale = layoutRichText(sourceRuns, style, textBounds[2], textBounds[3]).fontScale;
+	const runs = scaleTextRuns(sourceRuns, scale);
 	const textColor = colorOptions(project, style.color).color;
 	const objectName = string(element.elementId);
 	const charSpacing = number(style.letterSpacing);
@@ -1370,7 +1366,8 @@ function renderText(project, slide, element) {
 		...frame(element),
 		...objectName === void 0 ? {} : { objectName },
 		fontFace: fontFace(style.fontFamily, "Arial", raw),
-		fontSize: number(style.fontSize) ?? 18,
+		fontSize: (number(style.fontSize) ?? 18) * scale,
+		fit: style.fit === "shrink" ? "shrink" : "none",
 		color: textColor,
 		bold: boolean(style.bold) ?? false,
 		italic: boolean(style.italic) ?? false,
@@ -1810,7 +1807,9 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			const value = row[categoryIndex];
 			return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
 		});
-		const values = filteredRows.map((row) => Number(row[valueIndex] ?? 0));
+		const values = filteredRows.map((row) => Number(row[valueIndex] ?? 0)).map((value) => value === 0 ? "0" : value);
+		const numericXY = chartTypeName === "scatter";
+		const xValues = numericXY ? filteredRows.map((row) => Number(row[categoryIndex] ?? 0)) : void 0;
 		const type = chartTypeName === "line" ? pptx.ChartType.line : chartTypeName === "area" ? pptx.ChartType.area : chartTypeName === "scatter" ? pptx.ChartType.scatter : chartTypeName === "bubble" ? pptx.ChartType.bubble : chartTypeName === "radar" ? pptx.ChartType.radar : chartTypeName === "pie" && (number(item.innerRadius) ?? 0) > 0 ? pptx.ChartType.doughnut : chartTypeName === "pie" ? pptx.ChartType.pie : pptx.ChartType.bar;
 		const chartColors = (resolvePptdChartSeriesColors(project, chartTypeName === "line" || chartTypeName === "area" || chartTypeName === "radar" ? item.lineColor ?? item.areaColor : item.fill) ?? [PPTD_CHART_SERIES_PALETTE[index % PPTD_CHART_SERIES_PALETTE.length] ?? "#2563EB"]).map((value) => colorOptions(project, value, 1).color);
 		const labelsConfig = record(item.dataLabels);
@@ -1853,6 +1852,11 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			} : {},
 			...chartTypeName === "area" ? { lineSize: number(item.width) ?? 2 } : {},
 			...chartTypeName === "radar" ? { radarStyle: item.areaColor === void 0 ? "marker" : "filled" } : {},
+			...chartTypeName === "scatter" ? {
+				lineSize: number(item.width) ?? 0,
+				lineDataSymbol: item.marker === false ? "none" : record(item.marker)?.shape === "rect" ? "square" : string(record(item.marker)?.shape) ?? "circle",
+				lineDataSymbolSize: number(record(item.marker)?.size) ?? 6
+			} : {},
 			...(chartTypeName === "line" || chartTypeName === "area") && item.marker === false ? { lineDataSymbol: "none" } : {},
 			...(chartTypeName === "line" || chartTypeName === "area") && record(item.marker) !== void 0 ? {
 				lineDataSymbol: record(item.marker)?.shape === "rect" ? "square" : string(record(item.marker)?.shape) ?? "circle",
@@ -1869,12 +1873,13 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			...chartTypeName === "bubble" ? { sizes: filteredRows.map((row) => Number(row[columns.indexOf(string(encode.size) ?? "")] ?? 0)) } : {}
 		};
 		const mergeable = type !== pptx.ChartType.pie && type !== pptx.ChartType.doughnut;
-		const groupKey = chartTypeName === "bar" ? `${type}:${horizontal ? "horizontal" : "vertical"}:${axisIndex}:${String(groupOptions.barGrouping)}` : `${type}:${JSON.stringify(groupOptions)}`;
+		const groupKey = chartTypeName === "bar" ? `${type}:${horizontal ? "horizontal" : "vertical"}:${axisIndex}:${String(groupOptions.barGrouping)}` : `${type}:${JSON.stringify(groupOptions)}:${JSON.stringify(xValues)}`;
 		const existing = mergeable ? mergeableGroups.get(groupKey) : void 0;
 		if (existing === void 0) {
 			const chartGroup = {
 				type,
-				data: [dataSeries],
+				// PptxGenJS consumes the first numeric series as shared X values.
+				data: numericXY ? [{ name: categoryColumn, labels: filteredLabels, values: xValues }, dataSeries] : [dataSeries],
 				options: {
 					...groupOptions,
 					chartColors
@@ -1957,7 +1962,8 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 			return string(item.type) === "bar" && columnIsNumeric(string(encode.x)) && !columnIsNumeric(string(encode.y));
 		}))
 	};
-	slide.addChart(types, common);
+	if (types.length === 1) slide.addChart(types[0].type, types[0].data, { ...common, ...types[0].options });
+	else slide.addChart(types, common);
 }
 function renderIcon(project, slide, element) {
 	const color = colorOptions(project, element.color).color;
@@ -2004,6 +2010,35 @@ function renderElement(project, pptx, slide, element, foregroundColor) {
 		return;
 	}
 }
+function normalizeSingleLevelChartCategories(xml) {
+	return xml.replace(/<c:multiLvlStrRef>([\s\S]*?)<\/c:multiLvlStrRef>/gu, (reference, body) => {
+		const formula = body.match(/<c:f>[\s\S]*?<\/c:f>/u)?.[0];
+		const cache = body.match(/<c:multiLvlStrCache>([\s\S]*?)<\/c:multiLvlStrCache>/u)?.[1];
+		const pointCount = cache?.match(/<c:ptCount\b[^>]*\/>/u)?.[0];
+		const levels = cache === void 0 ? [] : [...cache.matchAll(/<c:lvl>([\s\S]*?)<\/c:lvl>/gu)];
+		if (formula === void 0 || pointCount === void 0 || levels.length !== 1) return reference;
+		return `<c:strRef>${formula}<c:strCache>${pointCount}${levels[0][1]}</c:strCache></c:strRef>`;
+	});
+}
+function normalizePptxPackage(bytes) {
+	const entries = unzipSync(bytes);
+	const contentTypesEntry = entries["[Content_Types].xml"];
+	if (contentTypesEntry === void 0) throw new Error("Rendered PPTX is missing [Content_Types].xml");
+	const contentTypes = strFromU8(contentTypesEntry);
+	const normalized = contentTypes.replace(/<Override\b[^>]*\bPartName="([^"]+)"[^>]*\/>/gu, (override, partName) => entries[partName.replace(/^\/+/, "")] === void 0 ? "" : override);
+	let changed = normalized !== contentTypes;
+	if (changed) entries["[Content_Types].xml"] = strToU8(normalized);
+	for (const [name, entry] of Object.entries(entries)) {
+		if (!/^ppt\/charts\/chart\d+\.xml$/u.test(name)) continue;
+		const chart = strFromU8(entry);
+		const normalizedChart = normalizeSingleLevelChartCategories(chart);
+		if (normalizedChart === chart) continue;
+		entries[name] = strToU8(normalizedChart);
+		changed = true;
+	}
+	if (!changed) return bytes;
+	return zipSync(entries, { level: 6 });
+}
 /** Render one checked PPTD AST to editable native PowerPoint objects. */
 async function renderPptdProject(project) {
 	const check = checkPptdProject(project);
@@ -2043,7 +2078,7 @@ async function renderPptdProject(project) {
 		compression: true
 	});
 	return {
-		bytes: new Uint8Array(output),
+		bytes: normalizePptxPackage(new Uint8Array(output)),
 		nativeObjectCount: check.nativeObjectCount,
 		check
 	};

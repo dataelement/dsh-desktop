@@ -70,8 +70,22 @@ const windowsRendererFallbackCodes: ReadonlySet<number> = new Set([
   0x80000003 // STATUS_BREAKPOINT
 ])
 
-export function isGpuLossFatal(reason: string): boolean {
-  return !survivableReasons.has(reason)
+/**
+ * Chromium's own exit code when the GPU process detects a lost D3D11 device
+ * — normally because the OS reset the graphics driver (TDR) — and exits on
+ * purpose so Chromium can restart it. This is Chromium's device-loss
+ * recovery working as designed, not evidence this machine cannot run the
+ * GPU sandbox: counting it toward the fallback ladder would strip hardware
+ * acceleration from a driver hiccup that already fixed itself.
+ */
+const GPU_DEVICE_LOST_EXIT_CODE = 34
+
+export function isGpuLossFatal(reason: string, exitCode?: number): boolean {
+  if (!survivableReasons.has(reason)) {
+    if (reason === 'crashed' && exitCode === GPU_DEVICE_LOST_EXIT_CODE) return false
+    return true
+  }
+  return false
 }
 
 /**

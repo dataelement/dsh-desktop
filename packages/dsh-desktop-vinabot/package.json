@@ -25,10 +25,10 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-agent-default-model": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-anonymous-user-id": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-client-connection": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-settings": "^0.1.5-rc.2"
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-anonymous-user-id": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-credentials": "^0.1.7-rc.2",
+    "@deepseek-ai/dsh-settings": "^0.1.7-rc.2"
   }
 }

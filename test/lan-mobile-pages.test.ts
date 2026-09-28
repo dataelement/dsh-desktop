@@ -3,7 +3,7 @@ import {
   renderDesktopPairingPage,
   renderMobilePage,
   renderMobileReconnectPage,
-  renderPairingWaitPage
+  renderPairingPinPage
 } from '../src/main/mobile/lan-mobile-pages'
 
 describe('LAN mobile page', () => {
@@ -26,7 +26,7 @@ describe('LAN mobile page', () => {
     expect(html).toContain('body.chat-open .shell{padding:env(safe-area-inset-top) 14px 0}')
     expect(html).toContain('.chat-toolbar{position:absolute;inset:0 0 auto;z-index:2;min-height:40px;padding:0;background:transparent')
     expect(html).toContain('background:var(--card)!important;box-shadow:0 2px 8px')
-    expect(html).toContain('.chat-open .messages{padding-top:4px;padding-bottom:84px}')
+    expect(html).toContain('.chat-open .messages{padding-top:4px;padding-bottom:calc(84px + var(--tunnel-warn-h))}')
     expect(html).toContain('.composer{position:absolute;z-index:2;inset:auto 0 0;padding:10px 0 5px;background:transparent;pointer-events:none}')
     expect(html).toContain('.composer-inner:focus-within{border-color:color-mix')
     expect(html).toContain('box-shadow:inset 0 0 0 1px color-mix')
@@ -71,7 +71,7 @@ describe('LAN mobile page', () => {
     expect(html).not.toContain('class="preset-control"')
     expect(html).toContain('id="settings" class="settings-trigger"')
     expect(html).toContain('id="sessionSettings" class="session-settings" hidden')
-    expect(html).toContain('#composer .session-settings{z-index:1;bottom:76px}')
+    expect(html).toContain('#composer .session-settings{z-index:1;bottom:calc(76px + var(--tunnel-warn-h))}')
     expect(html).toContain("rpc('agentPreset.list',{})")
     expect(html).toContain("rpc('agentPreset.select',{sessionId:activeSession,agentPreset:next})")
     expect(html).toContain("rpc('session.models',{sessionId})")
@@ -161,6 +161,14 @@ describe('LAN mobile page', () => {
     expect(html).toContain("fetch('/api/status',{cache:'no-store'})")
     expect(html).toContain("location.replace('/disconnected')")
     expect(html).toContain('setInterval(checkConnection,1500)')
+    expect(html).toContain('function showUnreachableOverlay()')
+    expect(html).toContain('This remote address is no longer valid. Scan the new QR code in Connect Phone on the computer.')
+    expect(html).toContain('This remote link expires in about {n} min')
+    expect(html).toContain('id="tunnelWarn" class="tunnel-warn"')
+    expect(html.indexOf('class="composer-inner"')).toBeLessThan(html.indexOf('id="tunnelWarn" class="tunnel-warn"'))
+    expect(html).toContain('.tunnel-warn{margin:4px 16px 0;padding:0;background:transparent;color:var(--muted);font-size:11px;line-height:1.3;text-align:center;white-space:nowrap')
+    expect(html).toContain('body.tunnel-warn-open{--tunnel-warn-h:18px}')
+    expect(html).not.toContain('position:fixed;left:50%;bottom:calc(12px + env(safe-area-inset-bottom))')
     expect(html).toContain("status.classList.add('error-state')")
     expect(html).toContain("if(r.status===401)")
     expect(html).toContain('e.disconnected=true')
@@ -179,12 +187,13 @@ describe('LAN mobile page', () => {
     const tunnelZh = renderMobileReconnectPage('zh', 'tunnel')
     expect(zh).toContain('连接已断开')
     expect(zh).toContain('href="/reconnect">重新连接')
-    expect(zh).toContain('请确保手机和电脑连接到同一 Wi-Fi。点击重新连接后，在电脑上的 DSH Desktop 中允许此手机。')
+    expect(zh).toContain('请确保手机和电脑连接到同一 Wi-Fi，然后扫描电脑上的新二维码。')
     expect(zh).not.toContain('class="approval"')
     expect(zh).not.toContain('class="network"')
     expect(zh).not.toContain('class="symbol"')
     expect(en).toContain('Connection lost')
-    expect(tunnelZh).toContain('点击重新连接，然后在电脑上的 DSH Desktop 中允许此移动设备。')
+    expect(tunnelZh).toContain('输入连接密码')
+    expect(tunnelZh).toContain('隧道地址仍可用')
     expect(tunnelZh).not.toContain('连接到同一 Wi-Fi')
     for (const html of [zh, en]) {
       expect(html).toContain('prefers-color-scheme:dark')
@@ -201,7 +210,7 @@ describe('LAN mobile page', () => {
       locale: 'en',
       connected: false
     })
-    const phone = renderPairingWaitPage('pairing-id', 'en')
+    const phone = renderPairingPinPage('en')
     for (const html of [desktop, phone]) {
       expect(html).toContain('/brand-logo/light')
       for (const script of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
@@ -210,9 +219,7 @@ describe('LAN mobile page', () => {
         expect(() => new Function(script)).not.toThrow()
     }
     expect(desktop).toContain('/desktop/disconnect')
-    expect(desktop).toContain('--request-accent:#c16f52')
-    expect(desktop).toContain('--request-border:#dfbcae')
-    expect(desktop).toContain('--request-bg:#fbf6f3')
+    expect(desktop).toContain('class="pin-panel')
     expect(desktop).not.toContain('--request-bg:#f5f7ff')
     expect(desktop).toContain('prefers-color-scheme:dark')
     expect(desktop).toContain('/brand-logo/dark')
@@ -232,14 +239,12 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('id="tunnelProgressValue" class="loading-value">0%</span>')
     expect(desktop).toContain('id="tunnelProgressBar"')
     expect(desktop).toContain('</div></div><div class="url-row">')
-    expect(desktop).toContain(
-      '.has-request .qr,.has-request .url-row,.has-request .expires,.has-request .fallback-link{display:none}'
-    )
+    expect(desktop).toContain('id="pinPanel" class="pin-panel')
     expect(desktop).toContain("Can't open? Try another link")
     expect(desktop).toContain('id="fallbackLink" class="fallback-link hide"')
     expect(desktop).toContain("fetch('/desktop/tunnel/fallback'")
     expect(desktop).toContain('async function switchFallback()')
-    expect(desktop).toContain("document.body.classList.toggle('has-request',!!pendingId)")
+    expect(desktop).toContain("fetch('/desktop/pin/consent'")
     expect(desktop).toContain('duration=enableTunnel?4500:800')
     expect(desktop).toContain('Math.min(99,(Date.now()-tunnelProgressStartedAt)/duration*100)')
     expect(desktop).toContain('setTunnelProgress(100)')
@@ -276,9 +281,9 @@ describe('LAN mobile page', () => {
     expect(phone).toContain('/brand-logo/dark')
     expect(phone).toContain('background:var(--panel)')
     expect(phone).toContain('content="#141416" media="(prefers-color-scheme:dark)"')
-    expect(phone).toContain('id="retry" class="retry"')
-    expect(phone).toContain("fetch('/pair/retry'")
-    expect(phone).toContain('Request approval again')
+    expect(phone).toContain("fetch('/pair/verify'")
+    expect(phone).toContain('Enter pairing password')
+    expect(phone).toContain('Show password on the computer')
     expect(phone).toContain('Cannot reach the desktop. Start DSH Desktop and try again.')
     expect(phone).toContain("location.replace('/')")
     expect(phone).not.toContain("location.href='/'")
@@ -320,9 +325,11 @@ describe('LAN mobile page', () => {
       'qrCode',
       'modeHint',
       'tunnelError',
-      'requestMode',
-      'address',
-      'request',
+      'pinPanel',
+      'pinValue',
+      'pinHint',
+      'pinConsent',
+      'pinActions',
       'connection',
       'expires'
     ]
@@ -333,6 +340,8 @@ describe('LAN mobile page', () => {
           id,
           classList: classList(),
           disabled: false,
+          hidden: false,
+          checked: false,
           textContent: '',
           innerHTML: '',
           offsetWidth: 152,
@@ -350,7 +359,8 @@ describe('LAN mobile page', () => {
         active: true,
         pairingUrl: 'https://example.trycloudflare.com/pair?token=test',
         qrSvg: '<svg id="tunnel"></svg>',
-        expiresAt: Date.now() + 60_000
+        expiresAt: Date.now() + 60_000,
+        pairingPin: '123456'
       },
       {
         ok: true,
@@ -365,14 +375,11 @@ describe('LAN mobile page', () => {
         const value = toggleResults.shift()
         return { ok: true, json: async () => value }
       }
-      if (input === '/desktop/pending') {
-        return {
-          ok: true,
-          json: async () => ({ id: 'pending', mode: 'tunnel', remoteAddress: '203.0.113.8' })
-        }
-      }
       if (input === '/desktop/status') {
         return { ok: true, json: async () => ({ connected: false }) }
+      }
+      if (input === '/desktop/tunnel/status') {
+        return { ok: true, json: async () => ({ active: false }) }
       }
       throw new Error(`Unexpected request: ${input}`)
     }
@@ -401,9 +408,8 @@ describe('LAN mobile page', () => {
     const loadingNode = elements.qrLoading
 
     await api.switchMode(true)
-    expect(document.body.classList.contains('has-request')).toBe(true)
-    expect(elements.request?.classList.contains('show')).toBe(true)
-    expect(elements.requestMode?.textContent).toBe('Connection: Internet connection mode')
+    expect(elements.pinPanel?.classList.contains('show')).toBe(true)
+    expect(elements.pinValue?.textContent).toBe('123456')
     expect(elements.qrCode?.innerHTML).toBe('<svg id="tunnel"></svg>')
     expect(elements.qrLoading).toBe(loadingNode)
     expect(elements.qrLoading?.classList.contains('show')).toBe(false)
@@ -427,15 +433,17 @@ describe('LAN mobile page', () => {
       locale: 'zh',
       connected: false
     })
-    const phone = renderPairingWaitPage('pairing-id', 'zh')
+    const phone = renderPairingPinPage('zh')
     expect(desktop).toContain('<html lang="zh-CN">')
     expect(desktop).toContain('连接移动设备')
     expect(desktop).toContain('WiFi连接模式')
     expect(desktop).toContain('互联网连接模式')
     expect(desktop).toContain('移动设备与电脑需连接至同一 WiFi，同步实时性高')
     expect(desktop).toContain('正在创建全球网络链接')
-    expect(desktop).toContain('连接方式：WiFi 连接模式')
-    expect(desktop).toContain('连接方式：互联网连接模式')
+    expect(desktop).toContain('扫码即可连接')
+    expect(desktop).toContain('生成长期有效的连接密码')
+    expect(desktop).toContain('id="pinActions" class="pin-actions" hidden')
+    expect(desktop).toContain('.pin-actions[hidden]{display:none}')
     expect(desktop).toContain(
       '移动设备通过互联网（如 4G/5G 或其他WiFi网络等）均可远程操控，同步实时性中等'
     )
@@ -449,9 +457,28 @@ describe('LAN mobile page', () => {
     expect(desktop).toContain('id="copyBtn"')
     expect(desktop).toContain('id="copyTip"')
     expect(desktop).not.toContain('id="copyToast"')
-    expect(phone).toContain('请在 DSH Desktop 中确认连接请求。')
-    expect(phone).toContain('再次发起申请')
+    expect(phone).toContain('输入连接密码')
+    expect(phone).toContain('在电脑上查看密码')
     expect(phone).toContain('暂时无法连接桌面端，请先启动 DSH Desktop。')
+  })
+
+  it('renders the temporary pin hint with remaining seconds from one helper', () => {
+    const desktop = renderDesktopPairingPage({
+      qrSvg: '<svg></svg>',
+      pairingUrl: 'https://example.trycloudflare.com/pair?token=test',
+      expiresAt: Date.now() + 60_000,
+      locale: 'zh',
+      connected: false,
+      tunnelActive: true,
+      pairingPin: '123456',
+      pinConsent: false,
+      pinExpiresAt: Date.now() + 258_000
+    })
+    expect(desktop).toMatch(/5 分钟内有效，过期后需重新扫码。 \(\d+s\)/)
+    expect(desktop).toContain('function renderPinHint()')
+    expect(desktop).toMatch(/renderPinHint\(\);if\(actions\)/)
+    expect(desktop).toMatch(/location\.reload\(\);renderPinHint\(\)/)
+    expect(desktop).not.toContain('if(hint)hint.textContent=pinConsent?T.pinHintDurable:T.pinHintTemp')
   })
 
   it('renders a compact management state when a phone is already connected', () => {
@@ -541,9 +568,11 @@ describe('LAN mobile page', () => {
       'qrCode',
       'modeHint',
       'tunnelError',
-      'requestMode',
-      'address',
-      'request',
+      'pinPanel',
+      'pinValue',
+      'pinHint',
+      'pinConsent',
+      'pinActions',
       'connection',
       'expires'
     ]
@@ -554,6 +583,8 @@ describe('LAN mobile page', () => {
           id,
           classList: classList(),
           disabled: false,
+          hidden: false,
+          checked: false,
           textContent: '',
           innerHTML: '',
           offsetWidth: 152,
@@ -587,11 +618,11 @@ describe('LAN mobile page', () => {
           })
         }
       }
-      if (input === '/desktop/pending') {
-        return { ok: true, json: async () => ({}) }
-      }
       if (input === '/desktop/status') {
         return { ok: true, json: async () => ({ connected: false }) }
+      }
+      if (input === '/desktop/tunnel/status') {
+        return { ok: true, json: async () => ({ active: false }) }
       }
       throw new Error(`Unexpected request: ${input}`)
     }
@@ -676,7 +707,7 @@ describe('desktop pairing page QR expiry self-healing', () => {
     expect(countdown).toContain('T.expired')
     expect(countdown).toContain('location.reload()')
     expect(countdown).toContain('phoneConnected')
-    expect(countdown).toContain('pendingId')
+    expect(countdown).toContain('pairingUrl')
     expect(countdown).toContain('modeSwitching')
   })
 })

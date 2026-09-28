@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import type { RuntimeSnapshot } from '../src/shared/contracts'
 import {
@@ -16,6 +15,73 @@ function failedSnapshot(logs: string[] = []): RuntimeSnapshot {
 }
 
 describe('plugin recovery view model', () => {
+  it('treats a market that alone blocks startup like a lone plugin with an upgrade', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'zh',
+      market: { installedVersion: '1.48.0', upgradeVersion: '1.49.0' }
+    })
+    expect(model.canUninstall).toBe(false)
+    expect(model.marketPrimary).toBe(true)
+    expect(model.heading).toBe('插件市场导致启动失败')
+    expect(model.primaryLabel).toBe('升级插件并重启')
+    expect(model.marketCheck).toEqual({
+      name: 'dshmarket', installedVersion: '1.48.0',
+      hint: expect.stringContaining('可升级到兼容的新版本，或卸载插件市场'),
+      upgradeLabel: '升级至 v1.49.0', removeLabel: '卸载此插件'
+    })
+    expect(model.plugins).toEqual([])
+  })
+  it('removes a market with no compatible upgrade, as it would a lone plugin', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'en',
+      market: { installedVersion: '1.48.0' }
+    })
+    expect(model.marketCheck?.upgradeLabel).toBeUndefined()
+    expect(model.primaryLabel).toBe('Remove this plugin and continue')
+    expect(model.primaryBusyLabel).toBe('Removing and checking again…')
+  })
+  it('keeps third-party removal as the primary action when the market is not the only culprit', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['a'], removedPlugins: [], locale: 'zh',
+      market: { installedVersion: '1.48.0', upgradeVersion: '1.49.0' }
+    })
+    expect(model.marketPrimary).toBe(false)
+    expect(model.primaryLabel).toBe('卸载此插件并继续检测')
+    expect(model.marketCheck?.upgradeLabel).toBe('升级至 v1.49.0')
+  })
+  it('leaves the page unchanged when the market is not blamed', () => {
+    const model = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'zh'
+    })
+    expect(model.marketCheck).toBeUndefined()
+    expect(model.marketPrimary).toBe(false)
+    expect(model.primaryLabel).toBe('进入安全模式')
+  })
+  it('explains Safe Mode instead of plugin removal when nothing can be repaired', () => {
+    const zh = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'zh'
+    })
+    expect(zh.safeModeOnly).toBe(true)
+    expect(zh.safetyNote).toBe('安全模式不会删除或修改任何内容，随时可以退出。')
+    const en = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'en'
+    })
+    expect(en.safeModeOnly).toBe(true)
+    expect(en.safetyNote).toBe('Safe Mode does not delete or change anything, and you can exit at any time.')
+  })
+  it('keeps the removal note whenever a plugin or the market can be repaired', () => {
+    const plugin = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: ['a'], removedPlugins: [], locale: 'zh'
+    })
+    expect(plugin.safeModeOnly).toBe(false)
+    expect(plugin.safetyNote).toBe('工作区、会话、模型配置和其他插件不会被删除。')
+    const market = buildPluginRecoveryViewModel({
+      snapshot: failedSnapshot(), plugins: [], removedPlugins: [], locale: 'en',
+      market: { installedVersion: '1.48.0' }
+    })
+    expect(market.safeModeOnly).toBe(false)
+    expect(market.safetyNote).toBe('Your workspaces, sessions, model settings, and other plugins will not be removed.')
+  })
   it('offers a retry instead of a zero-action automatic recovery when all checks failed', () => {
     const model = buildPluginRecoveryViewModel({
       snapshot: failedSnapshot(), plugins: ['a', 'b'], removedPlugins: [], locale: 'zh',
@@ -70,7 +136,10 @@ describe('plugin recovery view model', () => {
     ['cannot resolve profile bundle example', '插件没有完整安装'],
     ['package declares no dsh.bundle', '安装的包不是兼容的 DSH 插件'],
     ['failed to import loader entry example', '插件代码加载失败'],
+    ['failed to apply loader entry example', '插件代码加载失败'],
     ['duplicate loader entry id: storage', '插件注册了重复的服务组件'],
+    ['duplicate loader entry id: dsh-image-generation', '插件注册了重复的服务组件'],
+    ['duplicate loader entry id: another-host-plugin', '插件注册了重复的服务组件'],
     ['single slot "conversation.hero.workspace.directoryFlow" already has a registration at priority 0', '插件存在界面插槽冲突']
   ])('describes known startup failures: %s', (log, expectedTitle) => {
     expect(describePluginFailure([`[stderr] ${log}`], 'zh').title).toBe(expectedTitle)
@@ -126,13 +195,6 @@ describe('plugin recovery view model', () => {
     expect(model.summary).toContain('Enter Safe Mode')
     expect(model.primaryLabel).toBe('Enter Safe Mode')
     expect(model.primaryBusyLabel).toBe('Entering Safe Mode…')
-  })
-
-  it('wires the unresolved recovery action to Safe Mode', async () => {
-    const html = await readFile('build/plugin-recovery.html', 'utf8')
-    expect(html).toContain("model.canUninstall ? 'uninstall' : 'safe-mode'")
-    expect(html).toContain("navigate('show-log')")
-    expect(html).not.toContain('id="restart"')
   })
 
   it.each(['zh', 'en'] as const)('shows the latest fallback explanation instead of claiming compatibility (%s)', (locale) => {

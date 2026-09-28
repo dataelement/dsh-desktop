@@ -1,7 +1,16 @@
-import { readInstalledVersion } from '../node_modules/dshmarket/lib/profile.js'
 import { suspendGenerationProjectionForPnpm } from '../packages/dsh-desktop-market-installer/pnpm-runner.mjs'
 import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, open, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
+
+function readInstalledVersion(_profile, name, explicitDir) {
+  try {
+    const manifest = JSON.parse(readFileSync(join(explicitDir, 'node_modules', name, 'package.json'), 'utf8'))
+    return manifest.version ?? null
+  } catch {
+    return null
+  }
+}
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -229,7 +238,7 @@ describe('the market install boundary', () => {
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('isolated generation')
-    expect(result.stdout).toContain('installed in profile: demo-plugin@9.9.9')
+    expect(result.stdout).toContain('published in profile: demo-plugin@9.9.9')
 
     const desired = await readDesired(home)
     expect(desired).toHaveLength(1)
@@ -415,6 +424,46 @@ describe('the market install boundary', () => {
     const desired = await readDesired(home)
     expect(desired).toHaveLength(1)
     expect(desired[0]).toMatch(/^widget\+2\.0\.0\+/u)
+  })
+
+  it('keeps an unresolved market plugin out of the active profile', async () => {
+    const home = await freshHome()
+    const installWithMissingPeer = async stagingDir => {
+      const result = await stubGenerationInstall('widget', '2.0.0')(stagingDir)
+      const manifestPath = join(stagingDir, 'node_modules/widget/package.json')
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+      manifest.peerDependencies = { 'dsh-test-missing-peer': '1.0.0' }
+      await writeFile(manifestPath, JSON.stringify(manifest))
+      return result
+    }
+    const result = await drainHandle(service(home, installWithMissingPeer).runExternalMarketPluginInstall(
+      ['add', 'widget@2.0.0'], join(home, 'profiles', 'web')
+    ))
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('generation peer validation failed')
+    expect(await readDesired(home)).toEqual([])
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web/package.json'), 'utf8'))
+    expect(manifest.dependencies.widget).toBeUndefined()
+  })
+
+  it('does not publish a cancelled market generation', async () => {
+    const home = await freshHome()
+    let notifyStarted
+    const started = new Promise(resolve => { notifyStarted = resolve })
+    let releaseInstall
+    const waitForRelease = new Promise(resolve => { releaseInstall = resolve })
+    const populate = stubGenerationInstall('widget', '2.0.0')
+    const handle = service(home, async staging => {
+      notifyStarted()
+      await waitForRelease
+      return populate(staging)
+    }).runExternalMarketPluginInstall(['add', 'widget@2.0.0'], join(home, 'profiles', 'web'))
+    const result = drainHandle(handle)
+    await started
+    handle.cancel()
+    releaseInstall()
+    expect((await result).exitCode).toBe(1)
+    expect(await readDesired(home)).toEqual([])
   })
 
   it('stages an exact copy of an installed external source and records its provenance', async () => {

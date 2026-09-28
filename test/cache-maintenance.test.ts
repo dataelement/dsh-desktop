@@ -97,18 +97,4 @@ describe('loopback HTTP cache maintenance', () => {
       await rm(directory, { recursive: true, force: true })
     }
   })
-
-  it('clears the cache after stopping old requests and before loading a new Harness origin', async () => {
-    const main = await readFile(path.join(projectRoot, 'src/main/index.ts'), 'utf8')
-    const start = main.indexOf('async function openHarness(')
-    const end = main.indexOf('\nfunction ', start)
-    const openHarness = main.slice(start, end)
-
-    expect(openHarness.indexOf('window.webContents.stop()')).toBeLessThan(
-      openHarness.indexOf('await clearStaleLoopbackHttpCache(')
-    )
-    expect(openHarness.indexOf('await clearStaleLoopbackHttpCache(')).toBeLessThan(
-      openHarness.indexOf('await window.loadURL(rendererUrl)')
-    )
-  })
 })

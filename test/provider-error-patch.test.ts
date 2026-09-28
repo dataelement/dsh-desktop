@@ -11,9 +11,9 @@ describe('provider error classification patches', () => {
     const deepseekPatch = await readPatch('@deepseek-ai/dsh-llm-deepseek')
     const piAiPatch = await readPatch('@deepseek-ai/dsh-llm-pi-ai')
 
-    expect(deepseekPatch).toContain('+\tif (status === 401) return "AUTH";')
+    expect(deepseekPatch).toContain('+\telse if (status === 401 || type === "authentication_error") code = "AUTH";')
     expect(deepseekPatch).toContain(
-      '+\tif (status === 403) return "FORBIDDEN";'
+      '+\telse if (status === 403 || type === "permission_error") code = "FORBIDDEN";'
     )
     expect(deepseekPatch.indexOf('isQuotaExceededError(detail)')).toBeLessThan(
       deepseekPatch.lastIndexOf('status === 401')
@@ -51,5 +51,46 @@ describe('provider error classification patches', () => {
         'The model provider denied this request. Check your account permissions, region, or model access.'
       )
     }
+  })
+
+  it('recovers a provider terminal message that omits its content array', async () => {
+    const patch = await readPatch('@deepseek-ai/dsh-llm-pi-ai')
+    const additions = patch
+      .split('\n')
+      .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+      .map((line) => line.slice(1))
+      .join('\n')
+    const helper = additions.match(
+      /function completeTerminalMessage\(message, completed\) \{[\s\S]*?^\}/m
+    )?.[0]
+
+    expect(helper).toBeDefined()
+    const completeTerminalMessage = new Function(
+      `${helper}; return completeTerminalMessage`
+    )() as (
+      message: Record<string, unknown>,
+      completed: Map<number, Record<string, unknown>>
+    ) => Record<string, unknown>
+    const completed = new Map([
+      [1, { type: 'text', text: 'second' }],
+      [0, { type: 'reasoning', text: 'first' }]
+    ])
+    const malformed = { model: 'custom-model', stopReason: 'stop' }
+
+    expect(completeTerminalMessage(malformed, completed)).toEqual({
+      ...malformed,
+      content: [
+        { type: 'reasoning', text: 'first' },
+        { type: 'text', text: 'second' }
+      ]
+    })
+    const valid = { ...malformed, content: [] }
+    expect(completeTerminalMessage(valid, completed)).toBe(valid)
+    expect(patch).toContain(
+      '+\t\t\tconst message = completeTerminalMessage(event.message, completed);'
+    )
+    expect(patch).toContain(
+      '+\t\t\t\treplayState: toPiReplayState(message, requestedModel)'
+    )
   })
 })

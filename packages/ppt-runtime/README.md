@@ -1,6 +1,6 @@
 # Maintained DSH PPT runtime
 
-Product packages: **`dsh-ppt`** (authoring/export) and **`dsh-ppt-composer`** (PPT button/template chooser). Their pinned distributions live in `../ppt-bundles/`.
+Product packages: **`dsh-ppt`** (authoring/export) and **`dsh-ppt-composer`** (PPT button/template chooser). The repository keeps their maintained runtime seeds and generator inputs, while every dev, test, build and package run assembles complete distributions under the ignored `.build/ppt-runtime/packages/` staging root.
 
 This directory maintains the distributed JavaScript extracted at Desktop base `9d4502f`; the complete original TypeScript source was not present. Original copyright notices and factual Kimi Slides research attribution remain in `THIRD_PARTY_NOTICES.md`. Renaming does not change provenance or establish legal clearance.
 
@@ -20,19 +20,31 @@ Every metadata/design record contains English and Chinese title/body fonts and p
 
 ## Build and install
 
-`npm run ppt:build` regenerates the ten Zara packs, restores the six maintained baseline packs from `scripts/ppt/base-templates/`, applies reviewed English translations, and expands all sixteen packs to twelve layouts each. It validates and renders the 192 English previews and builds both archives. `artifacts.json` records their hashes. The baseline inputs are separate from generated `source/` and `source-zh/`, so consecutive builds do not translate enriched output again. Every pack retains explicit English/Chinese font pairs. The two original experiments live in `scripts/ppt/rich-layouts.mjs`; the other composition plans and editable geometry live in `scripts/ppt/composition-library.mjs`.
+`npm run ppt:build` starts from an empty `.build/ppt-runtime/` directory, regenerates the ten Zara packs, restores the six maintained baseline packs from `scripts/ppt/base-templates/`, applies reviewed English translations, and expands all sixteen packs to twelve layouts each. It validates and renders the 192 English previews, hydrates the runtime clients/catalog, assembles both package directories, then atomically projects those directories into `node_modules` for local execution. It never writes generated templates, previews, archives or hash manifests back into tracked source paths. Every pack retains explicit English/Chinese font pairs. The two original experiments live in `scripts/ppt/rich-layouts.mjs`; the other composition plans and editable geometry live in `scripts/ppt/composition-library.mjs`.
 
-After rebuilding, refresh both dependency integrity entries in `package-lock.json`, then use `npm ci` and the normal postinstall flow. Tests verify the exact archives, language coverage, fonts, activation and state migration. The 23 withdrawn designs and 345 excluded images remain absent; `excluded-assets.json` is a hash-only regression list.
+`npm ci` bootstraps from the tracked local package seeds, so a clean checkout does not need a pre-existing archive. The `dev`, `build` and `test` lifecycles all invoke the same preparation step; every package script delegates to `build`. Electron Builder excludes the bootstrap links and copies the current staged packages explicitly. Tests verify the generated distributions, language coverage, fonts, activation and state migration. The 23 withdrawn designs and 345 excluded images remain absent; `excluded-assets.json` is a hash-only regression list.
 
 ## Compatibility
 
+For Harness `0.1.7-rc.1`, the chooser uses `conversation.hero.dock` (list, session-maybe, InputZone owner) before a session exists and the existing session-only `conversation.composer.dock` afterwards. The hero outlet belongs to ConversationContent and sits after its input bar; it must not be rendered inside the independently registered InputBar. Only one chooser outlet is active at a time, sharing the mode-button store. The panel measures the composer card width because the upstream session dock can shrink to its content width. The conversation patch can drop the extra hero outlet when Harness provides an equivalent public pre-session outlet.
+
 The built-in profile loads one `dsh-ppt-composer` plugin. The Skill, new automatic context records, client registration and primary RPC use DSH names. Historical attribution is kept in notices and an entry-point comment.
+
+Desktop's startup bundle reconciliation removes `dsh-ppt` and `dsh-ppt-composer` from the normal Profile's extra bundle list: the Desktop patch already loads the composer, which mounts the core. This prevents duplicate preview routes and the `dsh-ppt-bundled` skill provider when a Profile also declares these packages. Dependencies, installed packages, user patch files and existing `kimi-ppt` projects are retained. Custom patch rows are not rewritten; this reconciliation handles standard bundle declarations only. Standalone Harness profiles do not opt into Desktop's bundle ownership.
 
 The legacy on-disk `kimi-ppt` directory is deliberately retained to preserve sessions, revisions and output files. `/kimi-ppt` remains an alias for in-flight older clients; legacy Skill-root config/env values and old automatic snapshots are handled explicitly. The three retained template IDs migrate to DSH IDs without losing selection; removed IDs fall back visibly. User-authored messages and historical generated decks are preserved.
 
 PPT remains preinstalled. Its automatic instructions are scoped to sessions where the user enabled the PPT button.
 
-Validation evidence and temporary exports live under ignored `doc/ppt-remediation/`. Windows packaging and native Windows PowerPoint require their own runner/device validation.
+### Personal PPT templates
+
+The chooser's **My templates** tab accepts PPTX files with the configured slide limit (40 by default). Uploads use the Host's shared transport and archive resource limits. They produce page previews and conversion diagnostics. **Save template** registers the reviewed file in the current Desktop profile; new sessions and restarts read the same library. Identical source bytes resolve to the saved template. Users can rename or remove entries; generated task projects stay available.
+
+The host stores source PPTX, editable PPTD pages, assets, previews and conversion records under `personal-templates/` inside the configured PPT data root. Drafts belong to their initiating session. Registered templates belong to this local Desktop profile, including remote connections to that profile. Account-based sharing and cross-device synchronization require a separate identity integration.
+
+`ppt_template_create_project` copies the selected personal template into a new confined workspace directory. The model then adapts that copy with the existing PPTD tools and exports through `pptd_render`. The saved source remains separate from generated task files. All conversion and copy operations use the existing bounded parser/compiler and host audit. Company template fidelity requires review of actual imported pages, particularly master elements and advanced Office objects. Product rules and evidence: [Personal PPT templates](../../docs/ppt-personal-templates.md).
+
+Generated templates, previews, package directories and build diagnostics live under ignored `.build/ppt-runtime/`. Validation evidence and temporary exports live under ignored `doc/ppt-remediation/`. Windows packaging and native Windows PowerPoint require their own runner/device validation.
 
 ### Layout refinement
 
@@ -51,3 +63,7 @@ The build keeps the 192 reference JPGs only in the core skill directory. Both br
 The CLI resolves npm `.bin` symlinks before detecting its entry point. `check --json` retains its complete checker output and conventional nonzero exit code for failed validation; blocked `render --json` also prints complete diagnostics and `exported: false`. Neither bypasses the compiler checks.
 
 Authoring diagnostics group misplaced text-style fields by page while retaining per-field issues. Layout estimates wait until an element has a valid field structure. Tool diagnostics include confined absolute paths and `pptd_read_file` arguments. New files accept an omitted or empty `expected_sha256`; replacements still require the current hash. The bundled CLI and tool compiler apply the same structural checks.
+
+### Text escape semantics
+
+Multiline text uses actual line breaks, with YAML `|-` as the shared authoring form. The CLI and host use `lib/text-escapes.js` to report `text-escaped-newline` for literal `\n` or `\r` in text elements and table cells before export. An explicit boolean `literalEscapes: true` preserves intentionally displayed code, escape notation or paths; imported PPTX text carries this declaration when the original already displays those characters. The declaration leaves layout checks active. V4 automatic Skill snapshots explain the correction loop and replace older V2/V3 snapshots in active PPT sessions.

@@ -1,11 +1,11 @@
 import type { IpcRenderer } from 'electron'
+import { WINDOWS_TITLEBAR_HEIGHT } from '../shared/desktop-menu'
 
 const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
 const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
 const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
 const WINDOWS_DRAG_REGION_HEIGHT = 6
-
 interface TitlebarLayoutMountOptions {
   document: Document
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
@@ -56,6 +56,10 @@ function installLayout(document: Document): void {
       position: relative;
       z-index: 1;
     }
+    :root {
+      --dsh-titlebar-safe-inset-top: max(36px, env(titlebar-area-height, 36px));
+      --dsh-titlebar-safe-inset-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
+    }
     body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
       padding-top: 6px !important;
     }
@@ -64,13 +68,20 @@ function installLayout(document: Document): void {
       > div:has([data-dsh-sidebar-brand-identity]) {
       -webkit-app-region: drag;
     }
-    body.dsh-desktop-windows-titlebar-layout [data-slot="conversation.session.header"] > header {
-      padding-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 52px) !important;
-      -webkit-app-region: drag;
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel],
+    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel="fullscreen"],
+    body.dsh-desktop-windows-titlebar-layout [data-rightbar-col] > div,
+    body.dsh-desktop-windows-titlebar-layout [data-side="rightbar"] {
+      top: var(--dsh-titlebar-safe-inset-top, 36px) !important;
+      height: calc(100% - var(--dsh-titlebar-safe-inset-top, 36px)) !important;
     }
-    body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel]
-      [data-dockkit-strip]:has([data-dockkit-strip-chrome]) {
-      margin-right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
+    /* rc.2 owns the header outside the session slot. Keep all header
+       contributions in normal flow below the native caption/menu strip. */
+    body.dsh-desktop-windows-titlebar-layout [data-dsh-conversation-header] {
+      min-height: 76px !important;
+      padding-top: calc(var(--dsh-titlebar-safe-inset-top, 36px) + 6px) !important;
+      box-sizing: border-box !important;
+      -webkit-app-region: drag;
     }
     body.dsh-desktop-windows-titlebar-layout button,
     body.dsh-desktop-windows-titlebar-layout a,
@@ -80,6 +91,7 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout [role="button"],
     body.dsh-desktop-windows-titlebar-layout [role="tab"],
     body.dsh-desktop-windows-titlebar-layout [data-dockkit-strip],
+    body.dsh-desktop-windows-titlebar-layout [role="menuitem"],
     body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
       -webkit-app-region: no-drag !important;
     }
@@ -114,6 +126,42 @@ function installDragRegion(document: Document): void {
   dragRegion.id = DRAG_REGION_ID
   dragRegion.setAttribute('aria-hidden', 'true')
   document.body.appendChild(dragRegion)
+
+  // The native drag region still wins over a modal's buttons in the top
+  // 36px, so hide it while a real dialog is open. Only semantic dialog
+  // markers count: class-name guesses match permanent elements and would
+  // hide the region for good.
+  const modalSelector = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+
+  const updateDragRegionVisibility = (): void => {
+    const hasModal = Array.from(document.querySelectorAll<HTMLElement>(modalSelector)).some((el) => {
+      if (el.offsetWidth === 0 || el.offsetHeight === 0) return false
+      const style = window.getComputedStyle(el)
+      return style.visibility !== 'hidden' && style.opacity !== '0'
+    })
+    const display = hasModal ? 'none' : 'block'
+    if (dragRegion.style.display !== display) dragRegion.style.display = display
+  }
+
+  // Streaming output mutates the DOM continuously; check at most once a frame.
+  let scheduled = false
+  const scheduleUpdate = (): void => {
+    if (scheduled) return
+    scheduled = true
+    requestAnimationFrame(() => {
+      scheduled = false
+      updateDragRegionVisibility()
+    })
+  }
+
+  const observer = new MutationObserver(scheduleUpdate)
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['open', 'style', 'class', 'hidden', 'aria-hidden', 'aria-modal', 'role']
+  })
+  updateDragRegionVisibility()
 }
 
 function trackSidebarLayout(document: Document): void {

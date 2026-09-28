@@ -1,0 +1,33 @@
+diff --git a/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js b/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js
+index e206984..5319312 100644
+--- a/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js
++++ b/node_modules/undici/lib/dispatcher/dispatcher1-wrapper.js
+@@ -17,12 +17,16 @@ class LegacyHandlerWrapper {
+   }
+
+   onRequestUpgrade (controller, statusCode, headers, socket) {
+-    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
++    const rawHeaders = Array.isArray(controller?.rawHeaders)
++      ? controller.rawHeaders
++      : toRawHeaders(controller?.rawHeaders ?? headers ?? {})
+     this.#handler.onUpgrade?.(statusCode, rawHeaders, socket)
+   }
+
+   onResponseStart (controller, statusCode, headers, statusMessage) {
+-    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
++    const rawHeaders = Array.isArray(controller?.rawHeaders)
++      ? controller.rawHeaders
++      : toRawHeaders(controller?.rawHeaders ?? headers ?? {})
+
+     if (this.#handler.onHeaders?.(statusCode, rawHeaders, () => controller.resume(), statusMessage) === false) {
+       controller.pause()
+@@ -36,6 +40,8 @@ class LegacyHandlerWrapper {
+   }
+
+   onResponseEnd (controller, trailers) {
+-    const rawTrailers = controller?.rawTrailers ?? toRawHeaders(trailers ?? {})
++    const rawTrailers = Array.isArray(controller?.rawTrailers)
++      ? controller.rawTrailers
++      : toRawHeaders(controller?.rawTrailers ?? trailers ?? {})
+     this.#handler.onComplete?.(rawTrailers)
+   }

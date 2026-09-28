@@ -24,7 +24,7 @@ async function browserRemotes() {
 
 function accepts(codec: TypertCodec, value: unknown) {
   if (codec.mode !== 'strict') throw new Error('Expected strict Remote codec')
-  try { codec.schema.parse(value); return true } catch { return false }
+  try { codec.create().parse(value); return true } catch { return false }
 }
 
 describe('browser session deletion Remote', () => {

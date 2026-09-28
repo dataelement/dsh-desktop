@@ -8,10 +8,25 @@ import { detectPluginRecovery } from '../src/main/plugin-recovery-detection'
 import { parsePluginStartupFailures, PLUGIN_FAILURE_PREFIX } from '../src/shared/plugin-startup-failure'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 
-const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
+const lockedDirectoryCodes = new Set(['EBUSY', 'EPERM', 'EACCES'])
 
-async function fixture(sources: string[]) {
+async function removeTempDir(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      await rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!code || !lockedDirectoryCodes.has(code) || attempt === 7) throw error
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
+    }
+  }
+}
+
+const roots: string[] = []
+afterEach(async () => { await Promise.all(roots.splice(0).map((root) => removeTempDir(root))) })
+
+async function fixture(sources: string[], peerRange?: string) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-startup-failure-'))
   roots.push(home)
   const profile = join(home, 'profiles', 'web')
@@ -21,6 +36,7 @@ async function fixture(sources: string[]) {
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'package.json'), JSON.stringify({
       name: names[index], version: '1.2.3', type: 'module', main: './index.js',
+      ...(peerRange ? { peerDependencies: { '@deepseek-ai/dsh': peerRange } } : {}),
       dsh: { bundle: { patch: 'cordis.patch.yml' } }
     }))
     await writeFile(join(dir, 'index.js'), source)
@@ -43,6 +59,7 @@ async function fixture(sources: string[]) {
     const profile = loadProfile('fixture', 'web', ${JSON.stringify(resolve('node_modules/@deepseek-ai/dsh/package.json'))}, ${JSON.stringify(home)});
     await boot('fixture', ${JSON.stringify(join(profile, 'cordis.yml'))}, profile.layers.flatMap(layer => layer.patches), ctx => {
       ctx.provide('subagents', {});
+      ${peerRange ? `ctx.provide('profileContext', { dir: ${JSON.stringify(profile)} });` : ''}
     });
   `)
   return { home, entry, names }
@@ -63,6 +80,29 @@ function run(entry: string) {
 }
 
 describe('structured startup failures through the real bundled loader', () => {
+  it.each(['0.1.7-rc.1', '0.1.5'])('loads a working plugin with an outdated %s declaration', async range => {
+    const { entry } = await fixture([
+      'export default function() { process.stdout.write("fixture activated\\n"); }'
+    ], range)
+    const result = spawnSync(process.execPath, [resolve('build/harness-node-entry.mjs'), entry], {
+      encoding: 'utf8', timeout: 15_000
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('fixture activated')
+    expect(result.stderr).toContain('compatibility warning:')
+    expect(result.stderr).not.toContain(PLUGIN_FAILURE_PREFIX)
+  })
+
+  it('keeps actual API failures recoverable after warning about old declarations', async () => {
+    const { entry, names } = await fixture([
+      'export default function(ctx) { ctx.subagents.registerContinuableSetup(); }'
+    ], '0.1.7-rc.1')
+    const { failures, stderr } = run(entry)
+    expect(stderr).toContain('compatibility warning:')
+    expect(failures[0]).toMatchObject({ stage: 'apply', owner: { packageName: names[0] } })
+  })
+
   it('attributes a nested missing-method failure to its root bundle and reuses recovery selection', async () => {
     const { home, entry, names } = await fixture([
       'export default function(ctx) { ctx.subagents.registerContinuableSetup(); }'

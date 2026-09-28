@@ -1,16 +1,19 @@
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, extname, join, relative, resolve, sep } from 'node:path'
-import { Zip, ZipDeflate, strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
-import { COMPOSITION_FILE, SETTINGS_NAMESPACE, scanRoot, writableRoot } from '@deepseek-ai/dsh-agent-presets'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, extname, resolve, sep } from 'node:path'
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
+import { isSeq, parseDocument, stringify } from 'yaml'
+import { migratePersonaPrefix } from './persona-prefix.js'
+
+const COMPOSITION_FILE = 'agent.cordis.yml'
 
 /**
  * Preset package export and import for DSH Desktop.
  *
  * These two routes used to live in a patch on `@deepseek-ai/dsh-host-apiproxy`,
- * which 0.1.2-alpha.1 deleted. Upstream ships no preset transfer of its own —
- * `agentPresets` exposes copy, delete, list, read, and select, and nothing that
- * moves a preset between machines — so the capability still belongs to the
- * desktop. It is a plugin rather than a patch now: `dsh-client-connection`
+ * which 0.1.2-alpha.1 deleted. The 0.1.7 registry exposes list, resolve,
+ * and readDocument but no transfer operation. Imported legacy packages are
+ * published by Desktop's backed-up startup migration on the next launch.
+ * It is a plugin rather than a patch now: `dsh-client-connection`
  * offers a public registry for exact Fetch routes, which is the same seam
  * upstream's own `/api/session.export` uses, so nothing here has to be
  * re-derived against a rebuilt bundle on every Harness release.
@@ -28,7 +31,7 @@ const EXPORT_PATH = '/api/agent-preset.export'
 const IMPORT_PATH = '/api/agent-preset.import'
 
 /** Harness version stamped into an exported manifest. */
-const PRESET_SOURCE_DSH_VERSION = '0.1.2-rc.1'
+const PRESET_SOURCE_DSH_VERSION = '0.1.7-rc.1'
 
 const PRESET_ARCHIVE_FORMAT = "dsh-preset";
 const PRESET_ARCHIVE_VERSION = 1;
@@ -82,42 +85,12 @@ function presetArchiveWarnings(files) {
 	}
 	return warnings;
 }
-async function collectPresetArchiveFiles(dir) {
-	const files = {};
-	let count = 0;
-	let total = 0;
-	async function visit(current, relPrefix) {
-		const entries = await readdir(current, { withFileTypes: true });
-		for (const entry of entries) {
-			if (PRESET_ARCHIVE_IGNORED_FILES.has(entry.name) || entry.name.startsWith("._") || entry.name === "__MACOSX") continue;
-			const full = join(current, entry.name);
-			const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
-			if (entry.isDirectory()) {
-				await visit(full, rel);
-				continue;
-			}
-			const info = await lstat(full);
-			if (info.isSymbolicLink()) throw new Error(`Preset contains a symbolic link, which cannot be exported safely: ${rel}`);
-			if (!info.isFile()) throw new Error(`Preset contains an unsupported filesystem entry: ${rel}`);
-			if (++count > PRESET_ARCHIVE_MAX_FILES) throw new Error(`Preset contains more than ${PRESET_ARCHIVE_MAX_FILES} files`);
-			if (info.size > PRESET_ARCHIVE_MAX_FILE) throw new Error(`Preset file is too large to export: ${rel}`);
-			total += info.size;
-			if (total > PRESET_ARCHIVE_MAX_UNCOMPRESSED) throw new Error("Preset is too large to export");
-			files[`preset/${rel}`] = new Uint8Array(await readFile(full));
-		}
-	}
-	await visit(dir, "");
-	return files;
-}
-
-/**
- * The base URL a composition row's package name resolves against.
- * @param ctx - Host context, which carries it when composed under a Loader.
- * @returns the context's base URL, falling back to this plugin's own location.
- */
-function harnessBaseOf(ctx) {
-  const baseUrl = Reflect.get(ctx, 'baseUrl')
-  return typeof baseUrl === 'string' || baseUrl instanceof URL ? baseUrl : import.meta.url
+function legacyPresetRoot(presets) {
+  const existing = presets.roots?.find((root) => root.trust === 'user')
+  if (existing?.path) return resolve(existing.path)
+  const home = process.env.DSH_HOME
+  if (!home) throw new Error('DSH_HOME is not configured for preset transfer')
+  return resolve(home, '.agent-presets')
 }
 
 function createPresetArchive(ctx) {
@@ -128,16 +101,22 @@ function createPresetArchive(ctx) {
 			try {
 				signal?.throwIfAborted();
 				const preset = await presets.resolve(agentPreset);
-				if (preset.trust !== "user") return presetArchiveFailure("Built-in presets cannot be exported. Duplicate this preset first, then export the custom copy.", 403);
 				if (preset.broken !== void 0) return presetArchiveFailure(`This preset cannot be exported because it failed to load: ${preset.broken}`);
-				const files = await collectPresetArchiveFiles(dirname(preset.path));
+				const document = await presets.readDocument(agentPreset);
+				const files = {
+					[`preset/${COMPOSITION_FILE}`]: strToU8(document.content),
+					'preset/preset.yml': strToU8(stringify({
+						name: document.name ?? agentPreset,
+						description: document.description ?? ''
+					}))
+				};
 				const manifest = {
 					format: PRESET_ARCHIVE_FORMAT,
 					version: PRESET_ARCHIVE_VERSION,
 					id: preset.id,
-					name: preset.name,
-					description: preset.description,
-					icon: preset.icon,
+					name: document.name ?? agentPreset,
+					description: document.description ?? "",
+					icon: "sparkle",
 					sourceDshVersion: PRESET_SOURCE_DSH_VERSION,
 					exportedAt: (/* @__PURE__ */ new Date()).toISOString()
 				};
@@ -244,7 +223,7 @@ function createPresetArchive(ctx) {
 			if (conflict) return presetArchiveFailure(`A preset named "${targetId}" already exists. Choose a different name or remove the existing preset first.`, 409);
 			let container;
 			try {
-				const root = writableRoot(presets.roots);
+				const root = legacyPresetRoot(presets);
 				await mkdir(root, { recursive: true });
 				const target = resolve(root, targetId);
 				try {
@@ -270,25 +249,24 @@ function createPresetArchive(ctx) {
 						}
 					}
 				}
-				// scanRoot gained a second parameter in 0.1.2-alpha.1: the base URL a
-				// composition row's package name resolves against. Without it the
-				// scan throws before it can report a broken preset, so the imported
-				// tree would install unvalidated. The roster derives the same value
-				// from `ctx.baseUrl`.
-				const scanned = await scanRoot({
-					path: container,
-					trust: "user"
-				}, harnessBaseOf(ctx));
-				const parsed = scanned.find((candidate) => candidate.id === targetId);
-				if (!parsed || parsed.broken !== void 0) {
-					throw new Error(parsed?.broken ? `Invalid preset configuration: ${parsed.broken}` : "Failed to load imported preset configuration.");
+				const compositionPath = resolve(imported, COMPOSITION_FILE)
+				const compositionText = await readFile(compositionPath, 'utf8')
+				const migratedPersona = migratePersonaPrefix(compositionText)
+				if (migratedPersona.missingPrompt) {
+					throw new Error('Preset persona is missing its prompt. Restore the prompt before importing.')
+				}
+				if (migratedPersona.changed) await writeFile(compositionPath, migratedPersona.text)
+				const document = parseDocument((await readFile(compositionPath, 'utf8')).replace(/^\uFEFF/u, ''));
+				if (document.errors.length || !isSeq(document.contents)) {
+					throw new Error('Preset composition must contain a YAML plugin list.');
 				}
 				signal?.throwIfAborted();
 				await rename(imported, target);
 				return Response.json({
 					...preview,
 					conflict: false,
-					installed: true
+					installed: true,
+					restartRequired: true
 				}, { headers: { "cache-control": "no-store" } });
 			} catch (error) {
 				if (signal?.aborted) return presetArchiveFailure("Preset import was cancelled.", 499);
