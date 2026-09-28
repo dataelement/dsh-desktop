@@ -1,0 +1,231 @@
+diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
+index 7ebf353..b680aa5 100644
+--- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
+@@ -7,7 +7,7 @@ import { withFileLock, writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
+ import z from "@deepseek-ai/schemastery";
+ import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
+ import { pluginEntryId, readPluginInventory } from "@deepseek-ai/dsh-host-plugin-inventory";
+-import { OPTIONAL_BUNDLES, PROFILE_COMPATIBILITY_FILENAME, bundlePatchPaths, composeEntries, evaluatePluginCompatibility, loadOptionalPatches, loadOverlayPatches, pluginCompatibilityWarning, readPluginMeta, readProfileCompatibility, readProfileManifest, readProfilePatches, readProfileVersionExemptions, reconcileProfilePatches, resolveBundleDir, resolveProfileDir, setProfileVersionExemption } from "@deepseek-ai/dsh-app-boot";
++import { OPTIONAL_BUNDLES, PROFILE_COMPATIBILITY_FILENAME, bundlePatchPaths, composeEntries, evaluatePluginCompatibility, reportPluginCompatibility, loadOptionalPatches, loadOverlayPatches, pluginCompatibilityWarning, readPluginMeta, readProfileCompatibility, readProfileManifest, readProfilePatches, readProfileVersionExemptions, reconcileProfilePatches, resolveBundleDir, resolveProfileDir, setProfileVersionExemption } from "@deepseek-ai/dsh-app-boot";
+ import { once } from "node:events";
+ import { execa } from "execa";
+ import { scrubbedParentEnv } from "@deepseek-ai/dsh-subprocess";
+@@ -505,8 +505,11 @@ async function runProfilePnpm(context, args, options) {
+ 		if (manifest === void 0) continue;
+ 		const issue = evaluatePluginCompatibility(manifest, exemptions);
+ 		if (issue !== void 0 && !issue.exempted) {
+-			preflight.push(pluginCompatibilityWarning(issue));
+-			incompatible.push(incompatiblePlugin(issue));
++			reportPluginCompatibility(issue);
++			const notice = `dsh: warning: ${pluginCompatibilityWarning(issue)}\n`;
++			await log.write(notice);
++			options.onOutput?.(notice, "stderr");
++			append(Buffer.from(notice));
+ 		}
+ 	} catch (error) {
+ 		continue;
+@@ -627,8 +630,11 @@ async function runProfilePnpm(context, args, options) {
+ 					for (const candidate of [manifest, ...bundleComponentManifests(manifest, packageDir, context.installAnchor)]) {
+ 						const issue = evaluatePluginCompatibility(candidate, readProfileVersionExemptions(dir));
+ 						if (issue !== void 0 && !issue.exempted) {
+-							found.push(pluginCompatibilityWarning(issue));
+-							issues.push(incompatiblePlugin(issue));
++							reportPluginCompatibility(issue);
++			const notice = `dsh: warning: ${pluginCompatibilityWarning(issue)}\n`;
++			await log.write(notice);
++			options.onOutput?.(notice, "stderr");
++			append(Buffer.from(notice));
+ 						}
+ 					}
+ 				} catch (error) {
+@@ -639,7 +645,7 @@ async function runProfilePnpm(context, args, options) {
+ 					warnings.push(...found);
+ 					incompatible.push(...issues);
+ 				} else {
+-					const notice = `\ndsh: warning: ${found.join("\n")}\ndsh: it stays installed but profile startup denies it until you grant an exemption for those exact versions.\n`;
++					const notice = `\ndsh: warning: ${found.join("\n")}\ndsh: it stays installed; repair the invalid manifest before loading it.\n`;
+ 					await log.write(notice);
+ 					options.onOutput?.(notice, "stderr");
+ 				}
+@@ -1488,7 +1494,7 @@ let PluginManager = (() => {
+ 						continue;
+ 					}
+ 					const compatibility = evaluatePluginCompatibility(info, exemptions);
+-					if (compatibility !== void 0 && !compatibility.exempted) throw new ManagementFailure("incompatible-version", [incompatiblePlugin(compatibility)]);
++					if (compatibility !== void 0 && !compatibility.exempted) reportPluginCompatibility(compatibility);
+ 					const dir = resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
+ 					const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, "package.json")).href);
+ 					bundles.push({
+@@ -1705,7 +1711,13 @@ let PluginManager = (() => {
+ 				});
+ 			};
+ 			const result = this.change(async (result) => {
+-				if (spec.trim() === "" || spec.startsWith("-")) throw new ManagementFailure("invalid-spec");
++				let parsed;
++				try {
++					parsed = parseInstallSpec(spec);
++				} catch (error) {
++					if (error instanceof InvalidInstallSpecError) throw new ManagementFailure("invalid-spec", error.reason);
++					throw error;
++				}
+ 				if (stopped()) throw new InstallCancelledError();
+ 				if (options?.approvedBuilds !== void 0) {
+ 					await approveBuilds(this.profile.dir, options.approvedBuilds);
+@@ -1713,9 +1725,13 @@ let PluginManager = (() => {
+ 				}
+ 				const files = await this.readRestoredFiles();
+ 				const before = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
++				const backend = this.ownerContext.get("profileBundlePackageBackend");
++				let mutation;
+ 				let name;
+ 				try {
+ 					result.registries = [];
++					let run;
++					if (backend === void 0) {
+ 					const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
+ 						timeoutMs: this.githubConnectionTimeoutMs,
+ 						outputBytes: this.outputBytes,
+@@ -1736,7 +1752,6 @@ let PluginManager = (() => {
+ 						throw new Error(connectionFailure.output);
+ 					}
+ 					const plan = registryPlan(options?.registry, await this.registries());
+-					let run;
+ 					for (const [index, registry] of plan.entries()) {
+ 						if (index > 0) await this.restoreFiles(files);
+ 						if (stopped()) throw new InstallCancelledError();
+@@ -1765,10 +1780,27 @@ let PluginManager = (() => {
+ 					}
+ 					/* v8 ignore next -- the plan is never empty, so a run always settled */
+ 					if (run === void 0) throw new Error("no registry was asked");
++					} else {
++						announce("installing");
++						mutation = await backend.install({
++							spec: parsed.spec,
++							kind: parsed.kind,
++							path: parsed.path,
++							registry: options?.registry,
++							expectedName: parsed.name,
++							signal: control.abort.signal,
++							onOutput: (text, stream) => this.emitPackageOutput(requestId, text, stream, ["pnpm", "add", parsed.spec])
++						});
++						run = mutation.packageResult;
++						result.packageResult = run;
++						if (stopped()) throw new InstallCancelledError();
++						if (run.incompatible !== void 0) throw new ManagementFailure("incompatible-version", run.incompatible);
++					}
+ 					const succeeded = run.exitCode === 0 && run.timedOut !== true;
+ 					if (succeeded) delete result.failedAt;
+ 					if (!succeeded) {
+-						try {
++						if (mutation?.pendingBuilds !== void 0) result.pendingBuilds = mutation.pendingBuilds;
++						else try {
+ 							result.pendingBuilds = await readPendingBuilds(this.profile.dir);
+ 						} catch (error) {
+ 							this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
+@@ -1776,8 +1808,8 @@ let PluginManager = (() => {
+ 						throw new Error(run.output);
+ 					}
+ 					const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
+-					const installed = Object.keys(after).filter((name) => before[name] !== after[name]);
+-					if (installed.length === 0) installed.push(...Object.keys(after).filter((name) => spec === name || spec.startsWith(`${name}@`)));
++					const installed = mutation?.bundle === void 0 ? Object.keys(after).filter((name) => before[name] !== after[name]) : [mutation.bundle];
++					if (installed.length === 0) installed.push(...Object.keys(after).filter((name) => parsed.spec === name || parsed.spec.startsWith(`${name}@`)));
+ 					const target = installed[0];
+ 					if (installed.length !== 1 || target === void 0) throw new ManagementFailure("ambiguous-install");
+ 					name = target;
+@@ -1785,9 +1817,10 @@ let PluginManager = (() => {
+ 					const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
+ 					if (manifest?.dsh?.bundle === void 0) throw new ManagementFailure("not-bundle");
+ 					const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir));
+-					if (compatibility !== void 0 && !compatibility.exempted) throw new ManagementFailure("incompatible-version", [incompatiblePlugin(compatibility)]);
++					if (compatibility !== void 0 && !compatibility.exempted) reportPluginCompatibility(compatibility);
+ 					for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches("dsh", file);
+ 				} catch (error) {
++					await mutation?.rollback?.();
+ 					await this.restoreFiles(files);
+ 					throw error;
+ 				}
+@@ -1796,11 +1829,19 @@ let PluginManager = (() => {
+ 				result.bundle = name;
+ 				result.target = name;
+ 				result.stage = "enable";
+-				return this.configure(async () => {
+-					if (options?.enabled !== false) await this.selectBundle(name, true);
+-					if (Object.hasOwn(before, name)) return "restart-required";
+-					if (options?.enabled !== false) result.warnings = await this.reload();
+-				});
++				try {
++					const application = await this.configure(async () => {
++						if (options?.enabled !== false) await this.selectBundle(name, true);
++						if (mutation?.replaced === true || Object.hasOwn(before, name)) return "restart-required";
++						if (options?.enabled !== false) result.warnings = await this.reload();
++					});
++					mutation?.commit?.();
++					return application;
++				} catch (error) {
++					await mutation?.rollback?.();
++					await this.restoreFiles(files);
++					throw error;
++				}
+ 			}, {
+ 				stage: "install",
+ 				target: spec,
+@@ -1854,7 +1895,13 @@ let PluginManager = (() => {
+ 					}
+ 					if ([...this.ctx.loader.entries()].some((entry) => entry.fiber?.uid != null && contributions.some((row) => row.id === entry.options.id && row.name === entry.options.name))) throw new ManagementFailure("bundle-in-use");
+ 				});
+-				result.packageResult = await this.runPnpm(["remove", name]);
++				const backend = this.ownerContext.get("profileBundlePackageBackend");
++				const mutation = backend === void 0 ? void 0 : await backend.remove({
++					name,
++					signal: this.abort.signal,
++					onOutput: (text, stream) => this.emitPackageOutput(void 0, text, stream, ["pnpm", "remove", name])
++				});
++				result.packageResult = mutation?.packageResult ?? await this.runPnpm(["remove", name]);
+ 				if (result.packageResult.exitCode !== 0 || result.packageResult.timedOut === true) throw new Error(result.packageResult.output);
+ 			}, {
+ 				stage: "remove",
+@@ -1899,6 +1946,17 @@ let PluginManager = (() => {
+ 				overrides: [...new Set(patches.flatMap((item) => item.insert === void 0 && typeof item.id === "string" && !declared.has(item.id) ? [item.id] : []))]
+ 			};
+ 		}
++		/** Emit host backend output through the same remote event contract as pnpm. */
++		emitPackageOutput(requestId, text, stream, argv) {
++			this.ownerContext.emit("plugin-manager/install-log", {
++				...requestId === void 0 ? {} : { requestId },
++				jobId: randomUUID(),
++				argv,
++				cwd: this.profile.dir,
++				stream,
++				text
++			});
++		}
+ 		/** Run one pnpm command in the profile, streaming its output as install-log chunks. */
+ 		async runPnpm(args, signal, requestId) {
+ 			const jobId = randomUUID();
+@@ -1984,7 +2042,7 @@ let PluginManager = (() => {
+ 				if (metadata === void 0) throw new ManagementFailure("not-bundle");
+ 				if (enabled) {
+ 					const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir));
+-					if (compatibility !== void 0 && !compatibility.exempted) throw new ManagementFailure("incompatible-version", [incompatiblePlugin(compatibility)]);
++					if (compatibility !== void 0 && !compatibility.exempted) reportPluginCompatibility(compatibility);
+ 					this.bundleRows(name);
+ 				}
+ 			}
+diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
+index e47ee2b..2f0abe5 100644
+--- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
+@@ -6,6 +6,11 @@ export type * from './types.ts';
+ export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts';
+ export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts';
+ /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
++/** Host-owned package mutation backend for immutable Desktop generations. */
++export interface ProfileBundlePackageBackend {
++    install(request: { spec: string; kind: 'registry' | 'path' | 'git' | 'tarball'; path?: string; registry?: string; expectedName?: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; bundle?: string; replaced?: boolean; pendingBuilds?: string[]; rollback?(): Promise<void>; commit?(): void; }>;
++    remove(request: { name: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; }>;
++}
+ export interface Config {
+     /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
+     pnpmCommand?: string;

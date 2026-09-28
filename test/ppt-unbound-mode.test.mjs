@@ -241,3 +241,61 @@ describe('unbound PPT mode', () => {
     expect(calls).toEqual([{ route: '/dsh-ppt', endpoint: 'template/catalog', payload: {} }])
   })
 })
+
+describe('PPT hero and session dock routing', () => {
+  it('mounts only the hero dock without a session and only the shared dock with input', async () => {
+    const runtime = await readFile(path.resolve('node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js'), 'utf8')
+    const expression = /children: \[([^\n]+), activity \?/.exec(runtime)?.[1]
+    expect(expression).toBeDefined()
+    const render = new Function('sessionId', 'input', 'extensionZone', 'renderSlot', `return ${expression}`)
+    const zone = { marker: 'owner' }
+    const calls = []
+    const renderSlot = (name, owner) => { calls.push({ name, owner }); return name }
+    const heroExpression = /sessionId === void 0 \? renderSlot\("conversation.hero.dock", zone \?\? \{\}\) : null/.exec(runtime)?.[0]
+    expect(heroExpression).toBeDefined()
+    const hero = new Function('sessionId', 'zone', 'renderSlot', `return ${heroExpression}`)
+    expect(hero(undefined, zone, renderSlot)).toBe('conversation.hero.dock')
+    expect(render(undefined, undefined, zone, renderSlot)).toBeNull()
+    expect(hero('session-a', zone, renderSlot)).toBeNull()
+    expect(render('session-a', {}, zone, renderSlot)).toBe('conversation.composer.dock')
+    expect(render('session-a', undefined, zone, renderSlot)).toBeNull()
+    expect(calls).toEqual([
+      { name: 'conversation.hero.dock', owner: zone },
+      { name: 'conversation.composer.dock', owner: zone }
+    ])
+  })
+
+  it('registers the same chooser and shared mode store for both mutually exclusive docks', () => {
+    const registered = new Map()
+    const dock = () => null
+    const mode = new Store()
+    const injectHero = sessionId => ({ mode, sessionId })
+    const apply = new Function('officePptHeroInjection', 'OfficePptStandardModeAction', 'OfficePptStandardInputAccessory', 'OfficePptStandardComposerDock', 'NS',
+      `${slice(adapter, 'function applyStandard(ctx)', '//#endregion')}\nreturn applyStandard;`
+    )(() => injectHero, () => null, () => null, dock, 'dsh-ppt')
+    apply({ slots: { inject: (_name, register) => register(), register: (config, component) => registered.set(config.name, { config, component }) } })
+    for (const name of ['conversation.hero.dock', 'conversation.composer.dock']) {
+      expect(registered.get(name).component).toBe(dock)
+      expect(registered.get(name).config.inject(undefined).mode).toBe(mode)
+    }
+    mode.setMode(undefined, 'ppt')
+    expect(registered.get('conversation.hero.modeActions').config.inject(undefined).mode).toBe(mode)
+  })
+})
+
+describe('PPT panel geometry', () => {
+  it('uses the composer width instead of the shrink-wrapped dock width and clamps to the viewport', () => {
+    const values = new Map()
+    const source = slice(adapter, 'const syncGeometry = () => {', 'const resizeObserver =')
+    const sync = new Function('root', 'scrollBody', 'composerCard', 'panel', 'TEMPLATE_PANEL_MIN_HEIGHT_PX', 'TEMPLATE_DOCK_BOTTOM_PX', `${source}\nreturn syncGeometry;`)(
+      { style: { setProperty: (name, value) => values.set(name, value) } },
+      { getBoundingClientRect: () => ({ width: 720, bottom: 900 }) },
+      { getBoundingClientRect: () => ({ width: 900 }) },
+      { getBoundingClientRect: () => ({ top: 500, width: 32 }) },
+      120, 16
+    )
+    sync()
+    expect(values.get('--office-ppt-template-panel-width')).toBe('720px')
+    expect(values.get('--office-ppt-template-panel-height')).toBe('384px')
+  })
+})

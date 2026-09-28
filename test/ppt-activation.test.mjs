@@ -94,8 +94,12 @@ async function fixture(existingRoot) {
 }
 
 function automaticMessages(agent) {
-  return agent.session.deriveMessages().filter(m => m.source.kind === 'plugin'
-    && ['dsh-ppt-skill', 'dsh-ppt-composer'].includes(m.source.plugin))
+  return agent.session.deriveMessages().filter(m => {
+    const kind = m.source?.kind
+    const plugin = m.source?.plugin || (typeof kind === 'string' && kind.startsWith('plugin:') ? kind.slice('plugin:'.length) : kind)
+    return (kind === 'plugin' || (typeof kind === 'string' && kind.startsWith('plugin:')) || ['dsh-ppt-skill', 'dsh-ppt-composer'].includes(kind))
+      && ['dsh-ppt-skill', 'dsh-ppt-composer'].includes(plugin)
+  })
 }
 
 describe('PPT instructions follow the session composer button', () => {
@@ -203,7 +207,7 @@ describe('PPT catalog without a session', () => {
     const f = await fixture()
     const catalog = await f.rpc('template/catalog', {})
     expect(catalog.ok).toBe(true)
-    expect(catalog.value.status).toBe('ok')
+    expect(catalog.value.status, JSON.stringify(catalog.value)).toBe('ok')
     expect(catalog.value.data.templates.some(template => template.origin === 'built-in')).toBe(true)
     await expect(stat(path.join(f.root, 'sessions'))).rejects.toMatchObject({ code: 'ENOENT' })
     const denied = await f.rpc('presentation/mode', {})
@@ -313,5 +317,54 @@ describe('PPT identity compatibility', () => {
     expect(surface).not.toContain('Old automatic instructions')
     expect(surface).toContain('Please compare Kimi and other tools.')
     expect(automaticMessages(agent)).toHaveLength(0)
+  })
+
+  it('emits format v4 producer-owned source kinds without bare plugin wrappers', async () => {
+    const f = await fixture()
+    const agent = await f.agent()
+    await f.toggle(agent, true)
+    await f.preStep(agent)
+    const messages = agent.session.deriveMessages().filter(m => m.role === 'user' && m.source?.kind !== 'user')
+    expect(messages.length).toBeGreaterThanOrEqual(2)
+    for (const msg of messages) {
+      expect(msg.source.kind).not.toBe('plugin')
+      expect(typeof msg.source.kind).toBe('string')
+      expect(msg.source.kind.startsWith('plugin:')).toBe(true)
+    }
+    const skillMsg = messages.find(m => m.source.kind === 'plugin:dsh-ppt-skill')
+    expect(skillMsg).toBeDefined()
+    expect(skillMsg.source.form).toBe('snapshot')
+    const composerMsg = messages.find(m => m.source.kind === 'plugin:dsh-ppt-composer')
+    expect(composerMsg).toBeDefined()
+    expect(composerMsg.source.form).toBe('snapshot')
+  })
+
+  it('recognizes format v4 rewritten historical sessions without duplicate skill injection', async () => {
+    const f = await fixture()
+    const agent = await f.agent()
+    await f.toggle(agent, true)
+    // In format v4, historical plugin messages have source.plugin dropped and source.kind rewritten to plugin:<name>
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Existing PPT instructions' }],
+      source: { kind: 'plugin:dsh-ppt-skill', form: 'snapshot', sections: [{ name: 'dsh-ppt', text: 'Existing PPT instructions' }] }
+    }), { surfaceOp: 'append' })
+    await f.preStep(agent)
+    const skillMessages = agent.session.deriveMessages().filter(m => m.source?.kind === 'plugin:dsh-ppt-skill' || m.source?.plugin === 'dsh-ppt-skill')
+    expect(skillMessages).toHaveLength(1)
+  })
+
+  it('clears format v4 rewritten historical automatic prompts when PPT is off', async () => {
+    const f = await fixture()
+    const agent = await f.agent()
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Old V4 rewritten composer state' }],
+      source: { kind: 'plugin:kimi-ppt-composer', form: 'snapshot', sections: [{ name: 'kimi-ppt-composer', text: 'Old V4 rewritten composer state' }] }
+    }), { surfaceOp: 'append' })
+    await f.preStep(agent)
+    const surface = JSON.stringify(agent.session.deriveMessages())
+    expect(surface).not.toContain('Old V4 rewritten composer state')
+    const cleared = agent.session.deriveMessages().find(m => m.source?.kind === 'plugin:dsh-ppt-context-cleared')
+    expect(cleared).toBeDefined()
+    expect(cleared.source.kind).not.toBe('plugin')
   })
 })

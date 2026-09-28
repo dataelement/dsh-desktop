@@ -170,7 +170,7 @@ describe('Harness launch contract', () => {
     ])
   })
 
-  it('launches Harness with the bundled Node.js runtime', () => {
+  it('launches Windows Harness as an isolated Node process', () => {
     const options = buildHarnessSpawnOptions(
       'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\launch-root',
       'C:\\Users\\tester\\AppData\\Roaming\\dsh-desktop\\harness',
@@ -247,7 +247,7 @@ describe('Harness launch contract', () => {
     for (const [, value] of pathEntries) expect(value).toBe(userPath)
   })
 
-  it('passes the internal-loader flag directly to bundled Node.js', () => {
+  it('passes the internal-loader flag to the Harness Node process', () => {
     expect(
       buildNodeArguments(
         'C:\\app\\harness-node-entry.mjs',

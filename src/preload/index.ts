@@ -10,6 +10,18 @@ import {
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
 import { mountWindowsTitlebarLayout } from './windows-titlebar'
+import { mountMacosWindowChrome } from './macos-window-chrome'
+
+if (process.platform === 'darwin') {
+  const dispose = mountMacosWindowChrome(document, listener => {
+    const receive = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (typeof value === 'boolean') listener(value)
+    }
+    ipcRenderer.on('dsh-desktop:window-fullscreen', receive)
+    return () => ipcRenderer.removeListener('dsh-desktop:window-fullscreen', receive)
+  })
+  window.addEventListener('unload', dispose, { once: true })
+}
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
@@ -148,7 +160,7 @@ function runDomSync(): void {
   } else checkBootFailureInDom()
 }
 
-contextBridge.exposeInMainWorld('dshDesktopDirectoryPicker', {
+contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
   pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
 })
 

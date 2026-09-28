@@ -1,13 +1,13 @@
 import { lstat, readFile, readlink, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { healProfilesModuleFallback, resolveBundleDir } from '@deepseek-ai/dsh-app-boot'
+import { resolveBundleDir } from '@deepseek-ai/dsh-app-boot'
 import { listGenerations, readDesired, writeDesired } from 'dsh-desktop-market-installer/generations/registry'
 import { compareSemver, parseSemver, readInstalledPluginVersion } from './plugin-market-check'
 import { profilePackageJsonPath } from './plugin-recovery'
 import { clearProfileInstallMarker } from './profile-install-marker'
 import { hasPendingMarketInstall, upgradeMarketInSharedTree, type MarketSharedTreeUpgradeOptions } from './plugin-upgrade'
 
-export const VERIFIED_MARKET_BASELINE = '1.45.1'
+export const VERIFIED_MARKET_BASELINE = '1.65.1'
 
 const MARKET_PACKAGE = 'dshmarket'
 
@@ -252,12 +252,6 @@ export async function ensureMarketBaseline(
     await writeFile(workspaceYamlPath, 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n', 'utf8')
   }
 
-  // This normally happens inside Harness boot, which has not run yet. Ensure
-  // generation peer validation sees this installation's host packages first.
-  await healProfilesModuleFallback({
-    installAnchor,
-    home: options.dshHome
-  })
   await clearProfileInstallMarker(options.dshHome)
   const result = await upgrade({ ...options, targetVersion })
   if (!result.ok) throw new Error(result.detail ?? 'dshmarket installation failed')

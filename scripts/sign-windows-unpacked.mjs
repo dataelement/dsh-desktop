@@ -6,83 +6,52 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/**
- * Verify whether a file starts with the Windows PE 'MZ' magic bytes (0x4D, 0x5A).
- * This prevents Jsign from failing on non-Windows prebuild binaries (e.g. darwin Mach-O or linux ELF).
- * @param {string} filePath
- * @returns {Promise<boolean>}
- */
+/** Inspect content, including extensionless PE files. A broken MZ header must
+ * fail the release rather than silently leave a binary unsigned. */
 async function isWindowsPE(filePath) {
+  const handle = await open(filePath, 'r')
   try {
-    const handle = await open(filePath, 'r')
-    const buffer = Buffer.alloc(2)
-    const { bytesRead } = await handle.read(buffer, 0, 2, 0)
+    const header = Buffer.alloc(64)
+    const { bytesRead } = await handle.read(header, 0, header.length, 0)
+    if (bytesRead < 2 || header[0] !== 0x4d || header[1] !== 0x5a) return false
+    if (bytesRead < header.length) throw new Error(`Invalid PE header: ${filePath}`)
+    const peOffset = header.readUInt32LE(0x3c)
+    const size = (await handle.stat()).size
+    if (peOffset < 64 || peOffset + 4 > size) throw new Error(`Invalid PE offset: ${filePath}`)
+    const signature = Buffer.alloc(4)
+    const read = await handle.read(signature, 0, 4, peOffset)
+    if (read.bytesRead !== 4 || !signature.equals(Buffer.from([0x50, 0x45, 0, 0]))) {
+      throw new Error(`Invalid PE signature: ${filePath}`)
+    }
+    return true
+  } finally {
     await handle.close()
-    return bytesRead === 2 && buffer[0] === 0x4d && buffer[1] === 0x5a
-  } catch {
-    return false
   }
 }
 
 /**
- * Discover core Windows binaries inside an unpacked application directory that
- * must carry an Authenticode digital signature.
+ * Discover every PE in the unpacked application, regardless of extension or
+ * depth. Directory links are refused so a release cannot sign outside the
+ * packaged tree or silently skip an unknown linked subtree.
  *
  * @param {string} unpackedDir
  * @returns {Promise<string[]>} list of absolute file paths to sign
  */
 export async function findSignableBinaries(unpackedDir) {
   const root = resolve(unpackedDir)
-  const results = new Set()
-
-  // 1. Root executables and DLLs (e.g. DSH Desktop.exe, ffmpeg.dll)
-  try {
-    const rootEntries = await readdir(root, { withFileTypes: true })
-    for (const entry of rootEntries) {
-      if (!entry.isFile()) continue
-      const lower = entry.name.toLowerCase()
-      if (lower.endsWith('.exe') || lower.endsWith('.dll')) {
-        results.add(join(root, entry.name))
-      }
-    }
-  } catch (error) {
-    throw new Error(`Failed to read root unpacked directory ${root}: ${error.message}`)
-  }
-
-  // 2. Bundled Node runtime (resources/app/node_modules/node/bin/node.exe)
-  const bundledNode = join(root, 'resources', 'app', 'node_modules', 'node', 'bin', 'node.exe')
-  try {
-    const s = await stat(bundledNode)
-    if (s.isFile()) results.add(bundledNode)
-  } catch {
-    // Packaged node.exe might be absent in non-standard or dev layouts
-  }
-
-  // 3. Native C++ addon bindings (*.node) under resources/app/node_modules
-  const nodeModulesRoot = join(root, 'resources', 'app', 'node_modules')
-  async function scanNativeAddons(dir, depth = 0) {
-    if (depth > 8) return
-    let entries
-    try {
-      entries = await readdir(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        await scanNativeAddons(fullPath, depth + 1)
-      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.node')) {
-        if (await isWindowsPE(fullPath)) {
-          results.add(fullPath)
-        }
-      }
+  if (!(await stat(root)).isDirectory()) throw new Error(`Not an unpacked directory: ${root}`)
+  const results = []
+  async function scan(dir) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const filePath = join(dir, entry.name)
+      if (entry.isSymbolicLink()) throw new Error(`Linked path in unpacked application: ${filePath}`)
+      if (entry.isDirectory()) await scan(filePath)
+      else if (entry.isFile() && await isWindowsPE(filePath)) results.push(filePath)
     }
   }
-
-  await scanNativeAddons(nodeModulesRoot)
-
-  return Array.from(results).sort()
+  await scan(root)
+  if (results.length === 0) throw new Error(`No Windows PE binaries found in ${root}`)
+  return results.sort()
 }
 
 /**
@@ -149,6 +118,22 @@ async function signBinary(targetFile, config) {
   await sleep(300)
 }
 
+/** Keep a vendor's existing Authenticode signature. The installed Windows
+ * smoke verifies that each retained signature is valid. */
+async function hasExistingSignature(targetFile, jsignJar) {
+  try {
+    await execFileAsync('java', ['-jar', jsignJar, 'extract', '--format', 'DER', targetFile])
+    const signature = `${targetFile}.sig`
+    if ((await stat(signature)).size === 0) throw new Error(`Empty existing signature: ${targetFile}`)
+    await rm(signature)
+    return true
+  } catch (error) {
+    const detail = `${error.stderr ?? ''}\n${error.stdout ?? ''}\n${error.message ?? ''}`
+    if (detail.includes('No signature found in ')) return false
+    throw error
+  }
+}
+
 async function main() {
   const [unpackedDirArg] = process.argv.slice(2)
   if (!unpackedDirArg) {
@@ -170,7 +155,13 @@ async function main() {
   const targets = await findSignableBinaries(unpackedDir)
   console.log(`[sign-windows] Found ${targets.length} binary target(s) to sign.`)
 
+  let retained = 0
   for (const target of targets) {
+    if (!dryRun && await hasExistingSignature(target, jsignJar)) {
+      console.log(`[sign-windows] Retaining existing signature on ${target}`)
+      retained++
+      continue
+    }
     await signBinary(target, {
       jsignJar: jsignJar ?? 'jsign.jar',
       pinFile: pinFile ?? 'pin.txt',
@@ -179,7 +170,7 @@ async function main() {
     })
   }
 
-  console.log(`[sign-windows] Successfully signed all ${targets.length} binaries in ${unpackedDir}.`)
+  console.log(`[sign-windows] Scanned ${targets.length} PE binaries; signed ${targets.length - retained}, retained ${retained} existing signatures.`)
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {

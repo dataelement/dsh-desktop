@@ -49,7 +49,7 @@ export async function prepareGenerationsForLaunch(dshHome: string, note: Note): 
   if (!existsSync(join(profileDir, 'package.json'))) {
     const template = PROFILE_TEMPLATES.web
     if (template === undefined) throw new Error('Harness does not define the web profile template')
-    initProfile(profileDir, template.bundles, template.patchReload)
+    initProfile(profileDir, template.bundles)
   }
   try {
     const projection = await projectGenerations(dshHome)

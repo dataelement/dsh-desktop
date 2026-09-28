@@ -11,9 +11,9 @@ describe('provider error classification patches', () => {
     const deepseekPatch = await readPatch('@deepseek-ai/dsh-llm-deepseek')
     const piAiPatch = await readPatch('@deepseek-ai/dsh-llm-pi-ai')
 
-    expect(deepseekPatch).toContain('+\tif (status === 401) return "AUTH";')
+    expect(deepseekPatch).toContain('+\telse if (status === 401 || type === "authentication_error") code = "AUTH";')
     expect(deepseekPatch).toContain(
-      '+\tif (status === 403) return "FORBIDDEN";'
+      '+\telse if (status === 403 || type === "permission_error") code = "FORBIDDEN";'
     )
     expect(deepseekPatch.indexOf('isQuotaExceededError(detail)')).toBeLessThan(
       deepseekPatch.lastIndexOf('status === 401')

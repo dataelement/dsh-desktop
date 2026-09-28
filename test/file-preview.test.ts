@@ -138,20 +138,16 @@ describe('uploaded file preview', () => {
 
   it('offers a local-open action when sidebar preview cannot render the file', async () => {
     const preview = await packageClient('dsh-client-ui-sidebar-documentpreview')
-    const previewPatch = await readFile(
-      patchPath('@deepseek-ai/dsh-client-ui-sidebar-documentpreview'),
+    const desktop = await readFile(
+      path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'),
       'utf8'
     )
 
-    expect(preview).toContain('function canOfferLocalOpen')
-    expect(preview).toContain('failure.code !== "workspace-file/not-found"')
-    expect(preview).toContain('data-textpreview-open-local')
-    expect(preview).toContain('openLocally: "用本地应用打开"')
-    expect(preview).toContain('openLocally: "Open with local app"')
-    expect(preview).toContain('ctx.remote.session.openWorkspacePath({ path })')
-    expect(preview).toContain('"remote.session"')
-    expect(preview).not.toContain('window.dshDesktop.openInFinder')
-    expect(previewPatch).toContain('openLocally')
-    expect(previewPatch).toContain('data-textpreview-open-local')
+    expect(preview).toContain('renderSlot("sidebar.right.tab.document.unpreviewable", fileOwner)')
+    expect(desktop).toContain("ctx.slots.inject('sidebar.right.tab.document.unpreviewable'")
+    expect(desktop).toContain("'data-textpreview-open-local': true")
+    expect(desktop).toContain("ctx.remote.session.openWorkspacePath({ path })")
+    expect(desktop).toContain('Open with local app')
+    expect(desktop).toContain('用本地应用打开')
   })
 })

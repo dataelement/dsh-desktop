@@ -12,7 +12,7 @@ import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs
 // `--expose-internals` shifts argv and the CLI answers "--profile <name> is
 // required" instead of installing. Declaring it here, after this process has
 // already parsed the Chromium switches it was launched with, marks only the
-// children as Node processes. Bundled-Node hosts (Windows, Linux) skip it.
+// children as Node processes. Windows and Linux use standalone Node runtimes.
 if (process.versions.electron !== undefined) {
   process.env.ELECTRON_RUN_AS_NODE = '1'
 }

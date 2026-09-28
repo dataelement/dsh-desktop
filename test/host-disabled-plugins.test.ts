@@ -95,6 +95,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshSafePatchPath: join(projectRoot, 'build', 'dsh-desktop-safe.patch.yml'),
       dshHome: home,
       logPath: join(home, 'harness.log'),
+      preferredPort: 0,
       startupTimeoutMs: 30_000,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
@@ -134,6 +135,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshSafePatchPath: join(projectRoot, 'build', 'dsh-desktop-safe.patch.yml'),
       dshHome: home,
       logPath: join(home, 'harness.log'),
+      preferredPort: 0,
       startupTimeoutMs: 30_000,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
@@ -151,6 +153,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       manifest.dependencies['dsh-image-generation'] = '0.1.1'
       manifest.dsh.profile.bundles.push('dsh-image-generation')
       await writeFile(manifestPath, JSON.stringify(manifest))
+      await mkdir(join(profile, 'node_modules'), { recursive: true })
       await symlink(join(projectRoot, 'node_modules', 'dsh-image-generation'),
         join(profile, 'node_modules', 'dsh-image-generation'), 'junction')
       await mkdir(join(profile, '.dsh-market'), { recursive: true })
@@ -187,6 +190,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       dshSafePatchPath: join(projectRoot, 'build', 'dsh-desktop-safe.patch.yml'),
       dshHome: home,
       logPath: join(home, 'harness.log'),
+      preferredPort: 0,
       startupTimeoutMs: 30_000,
       launchProcess: (executable, args, options) => spawn(executable, args, options),
       onChanged() {}
@@ -204,6 +208,7 @@ describe('disabled Profile packages in Desktop host patch', () => {
       manifest.dependencies['dsh-image-generation'] = '0.1.1'
       manifest.dsh.profile.bundles.push('dsh-image-generation')
       await writeFile(manifestPath, JSON.stringify(manifest))
+      await mkdir(join(profile, 'node_modules'), { recursive: true })
       await symlink(join(projectRoot, 'node_modules', 'dsh-image-generation'),
         join(profile, 'node_modules', 'dsh-image-generation'), 'junction')
       expect(await inspectProfileBootInputs(home, entryPath, desktopPatchPath)).toBeUndefined()

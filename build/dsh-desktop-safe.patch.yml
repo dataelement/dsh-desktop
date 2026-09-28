@@ -11,6 +11,10 @@
 - id: ui-brand-official
   disabled: true
 
+# Match the normal Desktop settings/model setup during recovery.
+- id: ui-settings-account
+  disabled: true
+
 - insert:
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui

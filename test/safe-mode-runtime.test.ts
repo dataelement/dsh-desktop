@@ -8,6 +8,8 @@ import { it, expect } from 'vitest'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/state/safe-mode-profile'
 import { BRIDGE_READY_LINE } from '../packages/dsh-desktop-log-bridge/index.js'
+import { resolveTestNodeExecutable } from './node-executable'
+const TEST_NODE_EXECUTABLE = resolveTestNodeExecutable()
 
 it('boots recovery when a PPT dependency is missing without loading optional Desktop plugins', async () => {
   const root = resolve(import.meta.dirname, '..')
@@ -31,7 +33,7 @@ registerHooks({ resolve(specifier, context, next) {
   const makeRuntime = (dshSafePatchPath: string, logName: string) => new HarnessRuntime({
     dshEntryPath: join(root, 'node_modules/@deepseek-ai/dsh/lib/bin.js'),
     nodeEntryPath: join(root, 'build/harness-node-entry.mjs'),
-    nodeExecutablePath: process.execPath,
+    nodeExecutablePath: TEST_NODE_EXECUTABLE,
     dshPatchPath: normalPatch,
     dshSafePatchPath,
     dshHome: home,
@@ -50,7 +52,7 @@ registerHooks({ resolve(specifier, context, next) {
     await ensureSafeModeProfile(home)
     await broken.start(home, SAFE_MODE_PROFILE)
     expect(broken.snapshot().phase).toBe('failed')
-    expect(broken.snapshot().message, broken.snapshot().logs.join('\n')).toContain(missing)
+    expect(broken.snapshot().logs.join('\n')).toContain(missing)
     await broken.stop()
 
     await recovered.start(home, SAFE_MODE_PROFILE)
@@ -70,7 +72,7 @@ registerHooks({ resolve(specifier, context, next) {
     const cookie = login.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ')
     const html = await (await fetch(url, { headers: { Cookie: cookie } })).text()
     const scriptUrls = [...html.matchAll(/<script[^>]+src="([^"]+)"/gu)].map((match) => match[1])
-    const bootstrap = scriptUrls.find((src) => src?.includes('/plugins/??@deepseek-ai/dsh-client-modules/client.js'))
+    const bootstrap = scriptUrls.find((src) => src?.includes('plugins/??@deepseek-ai/dsh-client-modules/client.js'))
     expect(bootstrap, 'Recovery HTML must preload the client module system').toBeDefined()
     if (!bootstrap) throw new Error('Missing recovery bootstrap')
     const response = await fetch(new URL(bootstrap.replaceAll('&amp;', '&'), url), { headers: { Cookie: cookie } })
@@ -94,6 +96,6 @@ registerHooks({ resolve(specifier, context, next) {
   } finally {
     await broken.stop()
     await recovered.stop()
-    await rm(home, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 }, 80_000)

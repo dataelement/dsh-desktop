@@ -24,6 +24,21 @@ async function fixture() {
 }
 
 describe('normal Profile boot preflight', () => {
+  it('allows stale version declarations without granting exemptions or changing manifests', async () => {
+    const { profile, bundle, check } = await fixture()
+    const manifestPath = join(bundle, 'package.json')
+    const manifest = JSON.stringify({ name: 'test-startup-bundle', version: '1.0.0',
+      peerDependencies: { '@deepseek-ai/dsh': '0.1.7-rc.1' },
+      dsh: { bundle: { patch: 'cordis.patch.yml' } } })
+    const before = await readFile(join(profile, 'package.json'), 'utf8')
+    await writeFile(manifestPath, manifest)
+    expect(await check()).toBeUndefined()
+    expect(await readFile(manifestPath, 'utf8')).toBe(manifest)
+    expect(await readFile(join(profile, 'package.json'), 'utf8')).toBe(before)
+    await writeFile(manifestPath, manifest.replace('"0.1.7-rc.1"', '123'))
+    expect((await check())?.message).toContain('must be a string')
+  })
+
   it('accepts readable layers without evaluating config or modifying user files', async () => {
     const { profile, check } = await fixture()
     const patch = '- id: test\n  config:\n    value: !!js (() => { throw new Error("must not execute") })()\n'

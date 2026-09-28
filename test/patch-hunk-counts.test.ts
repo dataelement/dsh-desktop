@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { projectRoot } from './patch-path'
+import { patchPath, projectRoot } from './patch-path'
 
 const require = createRequire(import.meta.url)
 const { parsePatchFile } = require('patch-package/dist/patch/parse') as {
@@ -30,20 +30,20 @@ describe('patch hunk counts', () => {
   })
 
   it('keeps image generation and the log bridge in the dsh package.json patch', async () => {
-    const patch = await readFile(
-      path.join(projectRoot, 'patches/@deepseek-ai+dsh+0.1.5-rc.2.patch'),
-      'utf8'
-    )
-    expect(patch).toContain('+    "dsh-image-generation": "0.1.0",')
+    const patch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
+    expect(patch).toContain('+    "dsh-image-generation": "0.1.0"')
     expect(patch).toContain('+    "dsh-desktop-log-bridge": "0.1.0",')
   })
 
   it('rejects a dsh hunk header that undercounts the merged dependency lines', async () => {
-    const patch = await readFile(
-      path.join(projectRoot, 'patches/@deepseek-ai+dsh+0.1.5-rc.2.patch'),
-      'utf8'
+    const patch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
+    const manifestStart = patch.indexOf('diff --git a/node_modules/@deepseek-ai/dsh/package.json')
+    expect(manifestStart).toBeGreaterThanOrEqual(0)
+    const broken = patch.slice(0, manifestStart) + patch.slice(manifestStart).replace(
+      /(@@ -\d+,\d+ \+\d+,)(\d+)( @@)/,
+      (_header: string, prefix: string, count: string, suffix: string) =>
+        `${prefix}${Number(count) - 1}${suffix}`
     )
-    const broken = patch.replace('@@ -28,6 +28,13 @@', '@@ -28,6 +28,12 @@')
     expect(broken).not.toBe(patch)
     expect(() => parsePatchFile(broken)).toThrow(/hunk header integrity check failed/)
   })

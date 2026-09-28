@@ -161,7 +161,8 @@ async function profileHasGenerationProjection(dshHome: string): Promise<boolean>
 export function buildProfilePluginCommandEnvironment(
   environment: NodeJS.ProcessEnv,
   shimDirectory: string,
-  nodeExecutablePath: string
+  nodeExecutablePath: string,
+  platform: NodeJS.Platform = process.platform
 ): NodeJS.ProcessEnv {
   const result = { ...environment }
   delete result.ELECTRON_RUN_AS_NODE
@@ -176,7 +177,7 @@ export function buildProfilePluginCommandEnvironment(
   )
   const nextPath = [...additions, currentPath].filter(Boolean).join(delimiter)
   result.PATH = nextPath
-  if (process.platform === 'win32') result.Path = nextPath
+  if (platform === 'win32') result.Path = nextPath
   result.DSH_HOME = result.DSH_HOME ?? ''
   result.CI = 'true'
   result.NO_COLOR = '1'

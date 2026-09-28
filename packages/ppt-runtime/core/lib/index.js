@@ -2594,11 +2594,19 @@ function pptComposerContext(state) {
 		"workflow: direct local PPTD authoring with bounded pptd_* tools and final pptd_render conversion"
 	].join("\n");
 }
+function sourcePluginName(source) {
+	if (typeof source !== "object" || source === null) return undefined;
+	if (typeof source.plugin === "string" && source.plugin.length > 0) return source.plugin;
+	if (typeof source.kind === "string" && source.kind.startsWith("plugin:")) return source.kind.slice("plugin:".length);
+	return typeof source.kind === "string" ? source.kind : undefined;
+}
 function hasActiveSkill(agent) {
 	return agent.session.deriveMessages().some((message) => {
 		if (message.role !== "user") return false;
-		if (message.source.kind === "skill-invocation") return message.source.name === DSH_PPT_SKILL_NAME;
-		return message.source.kind === "plugin" && message.source.plugin === SKILL_PLUGIN && message.source.form === "snapshot" && message.source.sections.some((section) => section.name === "dsh-ppt");
+		if (message.source?.kind === "skill-invocation") return message.source.name === DSH_PPT_SKILL_NAME;
+		const source = message.source;
+		if (!source || source.form !== "snapshot") return false;
+		return sourcePluginName(source) === SKILL_PLUGIN && Array.isArray(source.sections) && source.sections.some((section) => section.name === "dsh-ppt");
 	});
 }
 async function automaticSkill(ctx, agent, signal) {
@@ -2616,7 +2624,7 @@ async function automaticSkill(ctx, agent, signal) {
 			text: skillText
 		}],
 		source: {
-			kind: "plugin",
+			kind: `plugin:${SKILL_PLUGIN}`,
 			plugin: SKILL_PLUGIN,
 			form: "snapshot",
 			sections: [{
@@ -2635,13 +2643,14 @@ function clearAutomaticPptContext(agent, staleOnly = false) {
 	for (const seq of [...agent.session.surface.nodes]) {
 		const event = agent.session.eventAt(seq);
 		if (event?.type !== "user/message") continue;
-		const source = event.data.source;
-		if (source.kind !== "plugin" || source.form !== "snapshot") continue;
-		if (![SKILL_PLUGIN, "dsh-ppt-composer", "kimi-ppt-skill", "kimi-ppt-composer"].includes(source.plugin)) continue;
-        if (staleOnly && source.plugin !== "kimi-ppt-skill" && source.plugin !== "kimi-ppt-composer" && (source.plugin !== SKILL_PLUGIN || event.data.content.some(part => part.type === "text" && part.text.includes("DSH-PPT-AUTHORING-20260910-V4")))) continue;
+		const source = event.data?.source;
+		if (!source || source.form !== "snapshot") continue;
+		const plugin = sourcePluginName(source);
+		if (![SKILL_PLUGIN, "dsh-ppt-composer", "kimi-ppt-skill", "kimi-ppt-composer"].includes(plugin)) continue;
+		if (staleOnly && plugin !== "kimi-ppt-skill" && plugin !== "kimi-ppt-composer" && (plugin !== SKILL_PLUGIN || event.data.content?.some(part => part.type === "text" && part.text.includes("DSH-PPT-AUTHORING-20260910-V4")))) continue;
 		agent.session.append("user/message", createUserMessage({
 			content: [{ type: "text", text: "[Retired automatic PPT instructions cleared.]" }],
-			source: { kind: "plugin", plugin: "dsh-ppt-context-cleared" }
+			source: { kind: "plugin:dsh-ppt-context-cleared", plugin: "dsh-ppt-context-cleared" }
 		}), {
 			surfaceOp: { op: "replace", startSeq: seq, endSeq: seq },
 			sourceEventSeqs: [seq]
@@ -2688,7 +2697,7 @@ function registerPptTools(ctx, service) {
 						text: context
 					}],
 					source: {
-						kind: "plugin",
+						kind: "plugin:dsh-ppt-composer",
 						plugin: "dsh-ppt-composer",
 						form: "snapshot",
 						sections: [{
