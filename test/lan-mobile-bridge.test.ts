@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import {
+  applyWorkspaceFollowFrame,
   isInternetTunnelHost,
   isPrivateAddress,
   LanMobileBridge,
@@ -1564,5 +1565,142 @@ describe('LAN vs tunnel pairing authorization', () => {
     })
     expect(fabricated.status).toBe(403)
     expect(await fabricated.text()).not.toContain('246810')
+  })
+})
+
+describe('workspace follow snapshot', () => {
+  const baseline = {
+    items: [
+      { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s1'] },
+      { workspaceId: 'w2', title: 'Two', path: '/two', sessionIds: [] as string[] }
+    ],
+    archivedSessionIds: [] as string[]
+  }
+
+  it('ignores increments until a baseline exists', () => {
+    const frame = {
+      type: 'upsert',
+      workspace: { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s2', 's1'] }
+    }
+    expect(applyWorkspaceFollowFrame(undefined, frame)).toBeUndefined()
+  })
+
+  it('folds upsert, order, archived, and remove into the baseline', () => {
+    const upserted = applyWorkspaceFollowFrame(baseline, {
+      type: 'upsert',
+      workspace: { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s2', 's1'] }
+    }) as typeof baseline
+    expect(upserted.items[0]?.sessionIds).toEqual(['s2', 's1'])
+    expect(upserted.items[1]?.workspaceId).toBe('w2')
+
+    const ordered = applyWorkspaceFollowFrame(upserted, {
+      type: 'order',
+      workspaceIds: ['w2', 'w1']
+    }) as typeof baseline
+    expect(ordered.items.map((item) => item.workspaceId)).toEqual(['w2', 'w1'])
+
+    const archived = applyWorkspaceFollowFrame(ordered, {
+      type: 'archived',
+      archivedSessionIds: ['s9']
+    }) as typeof baseline
+    expect(archived.archivedSessionIds).toEqual(['s9'])
+
+    const removed = applyWorkspaceFollowFrame(archived, {
+      type: 'remove',
+      workspaceId: 'w2'
+    }) as typeof baseline
+    expect(removed.items.map((item) => item.workspaceId)).toEqual(['w1'])
+    expect(removed.archivedSessionIds).toEqual(['s9'])
+    expect(baseline.items[0]?.sessionIds).toEqual(['s1'])
+  })
+
+  it('serves a created session from workspace.list after the follow upsert', async () => {
+    let client: TestWebSocket | undefined
+    const harness = createServer((_request, response) => {
+      response.statusCode = 404
+      response.end()
+    })
+    const pairingMux = new WebSocketServer({ noServer: true })
+    webSocketServers.push(pairingMux)
+    harness.on('upgrade', (request, socket, head) => {
+      if (request.url !== '/api/remote.mux') return socket.destroy()
+      pairingMux.handleUpgrade(request, socket, head, (connected) => {
+        client = connected
+        connected.send(JSON.stringify({
+          type: 'item',
+          streamId: 'mobile-workspaces',
+          value: { type: 'baseline', value: baseline }
+        }))
+      })
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    const token = new URL(snapshot.pairingUrl!).searchParams.get('token')
+    const paired = await fetch(`http://127.0.0.1:${snapshot.port}/pair?token=${token}`, {
+      redirect: 'manual'
+    })
+    const cookie = paired.headers.get('set-cookie')!.split(';', 1)[0]!
+    const readWorkspaces = async (): Promise<{ ok?: boolean; value?: typeof baseline }> => {
+      const response = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ method: 'workspace.list', payload: {} })
+      })
+      return response.json() as Promise<{ ok?: boolean; value?: typeof baseline }>
+    }
+    const until = async (
+      predicate: (value: typeof baseline) => boolean
+    ): Promise<typeof baseline> => {
+      const started = Date.now()
+      let latest: { ok?: boolean; value?: typeof baseline } | undefined
+      while (Date.now() - started < 2000) {
+        latest = await readWorkspaces()
+        if (latest.ok === true && latest.value && predicate(latest.value)) return latest.value
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      throw new Error(`workspace snapshot did not update: ${JSON.stringify(latest)}`)
+    }
+
+    await until((value) => value.items[0]?.sessionIds?.[0] === 's1')
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: {
+        type: 'upsert',
+        workspace: { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s2', 's1'] }
+      }
+    }))
+    const created = await until((value) => value.items.some((item) => item.sessionIds?.includes('s2')))
+    expect(created.items.find((item) => item.workspaceId === 'w1')?.sessionIds).toEqual(['s2', 's1'])
+
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: { type: 'order', workspaceIds: ['w2', 'w1'] }
+    }))
+    const ordered = await until((value) => value.items[0]?.workspaceId === 'w2')
+    expect(ordered.items.map((item) => item.workspaceId)).toEqual(['w2', 'w1'])
+
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: { type: 'archived', archivedSessionIds: ['s9'] }
+    }))
+    const archived = await until((value) => value.archivedSessionIds.includes('s9'))
+    expect(archived.archivedSessionIds).toEqual(['s9'])
+
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: { type: 'remove', workspaceId: 'w2' }
+    }))
+    const removed = await until((value) => value.items.length === 1)
+    expect(removed.items.map((item) => item.workspaceId)).toEqual(['w1'])
   })
 })
