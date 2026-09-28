@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
   desktopMenuCommands,
@@ -13,6 +14,14 @@ import {
 } from '../src/main/windows-menu-view'
 
 describe('Windows titlebar menu', () => {
+  it('keeps the drag strip above the window edge without covering controls', async () => {
+    const preload = await readFile('src/preload/windows-titlebar.ts', 'utf8')
+    expect(preload).toContain('const WINDOWS_DRAG_REGION_HEIGHT = 6')
+    expect(preload).toContain('z-index: 0')
+    expect(preload).toContain('[data-dsh-conversation-header]')
+    expect(preload).toContain('[data-dsh-sidebar-brand-identity]')
+    expect(preload).toContain('-webkit-app-region: no-drag !important')
+  })
 
   it('accepts only the fixed menu command allowlist', () => {
     expect(desktopMenuCommands).toContain('connect-phone')

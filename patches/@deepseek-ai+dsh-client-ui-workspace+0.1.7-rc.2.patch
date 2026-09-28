@@ -1,8 +1,72 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-index 76cd793..455643d 100644
+index 76cd793..2f0decc 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
-@@ -660,10 +660,18 @@ window.__ModuleLoader__.load({
+@@ -253,7 +253,13 @@ window.__ModuleLoader__.load({
+ 		* @returns owning Workspace id, or {@link UNGROUPED_KEY} when no Workspace accounts for it.
+ 		*/
+ 		function owningGroupKey(workspaces, sessionId) {
+-			return workspaces.find((workspace) => workspace.sessionIds.includes(sessionId))?.workspaceId ?? "";
++			const workspace = workspaces.find((candidate) => candidate.sessionIds.includes(sessionId));
++			if (workspace === void 0) return "";
++			return isTemporaryChatWorkspace(workspace) ? TEMPORARY_CHAT_GROUP_KEY : workspace.workspaceId;
++		}
++		const TEMPORARY_CHAT_GROUP_KEY = "__dsh_desktop_temporary_chats__";
++		function isTemporaryChatWorkspace(workspace) {
++			return /(?:^|\/)DSH Desktop\/Temporary Chats\/chat-[^/]+$/i.test(workspace.path.replace(/\\/g, "/"));
+ 		}
+ 		function mainSessionId(list) {
+ 			return Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
+@@ -415,24 +421,29 @@ window.__ModuleLoader__.load({
+ 		* Workspace trail in the browser-local Ungrouped order, which falls back to
+ 		* recency before that order is initialized.
+ 		*/
+-		function groupByWorkspace(list, workspaces, archived, archivedFilter, ungroupedOrder) {
++		function groupByWorkspace(list, workspaces, archived, archivedFilter, ungroupedOrder, temporaryLabel) {
+ 			const current = mainSessionId(list);
+ 			const groups = [];
+ 			const accounted = /* @__PURE__ */ new Set();
++			const temporaryMembers = [];
+ 			for (const workspace of workspaces) {
+ 				const members = [];
++				const temporary = isTemporaryChatWorkspace(workspace);
+ 				for (const id of workspace.sessionIds) {
+ 					const summary = list.byId[id];
+ 					if (summary === void 0) continue;
+ 					accounted.add(id);
+ 					if (!sessionVisible(summary, current, archived, archivedFilter)) continue;
+-					members.push(summary);
++					if (temporary) temporaryMembers.push(summary);
++					else members.push(summary);
+ 				}
++				if (temporary) continue;
+ 				if (archivedFilter === "only" && members.length === 0) continue;
+ 				groups.push(buildGroup(workspace.workspaceId, workspace.workspaceId, workspace.path, Date.parse(workspace.createdAt), workspace.title, members));
+ 			}
+ 			const stray = list.ids.map((id) => list.byId[id]).filter((s) => s !== void 0 && !accounted.has(s.id) && sessionVisible(s, current, archived, archivedFilter));
+ 			if (stray.length > 0) groups.push(buildGroup("", void 0, void 0, void 0, "", orderedUngrouped(stray, ungroupedOrder, list.byId)));
++			groups.push(buildGroup(TEMPORARY_CHAT_GROUP_KEY, void 0, void 0, void 0, temporaryLabel, temporaryMembers));
+ 			return groups;
+ 		}
+ 		/** Keep navigation presentation independent from domain-owned interaction objects. */
+@@ -479,14 +490,14 @@ window.__ModuleLoader__.load({
+ 		* @param view - local expansion arrays.
+ 		* @returns group sections in render order.
+ 		*/
+-		function deriveGroups(list, workspaces, rowState, statuses, view) {
++		function deriveGroups(list, workspaces, rowState, statuses, view, temporaryLabel) {
+ 			const archived = new Set(rowState.archivedSessionIds);
+ 			const pinned = new Set(rowState.pinnedSessionIds);
+ 			const expandedGroups = new Set(view.expandedGroups);
+ 			const current = mainSessionId(list);
+ 			const currentGroup = current === void 0 ? void 0 : owningGroupKey(workspaces, current);
+ 			const groups = [];
+-			for (const g of groupByWorkspace(list, workspaces, archived, rowState.archivedFilter, view.ungroupedOrder)) {
++			for (const g of groupByWorkspace(list, workspaces, archived, rowState.archivedFilter, view.ungroupedOrder, temporaryLabel)) {
+ 				const expanded = expandedGroups.has(g.key);
+ 				groups.push({
+ 					key: g.key,
+@@ -660,10 +671,18 @@ window.__ModuleLoader__.load({
  					orderBy: "updated",
  					groupExpansion: {},
  					sessionOrderByAccount: {},
@@ -21,7 +85,7 @@ index 76cd793..455643d 100644
  					setGroupBy: (d, mode) => {
  						d.groupBy = mode;
  					},
-@@ -758,6 +766,9 @@ window.__ModuleLoader__.load({
+@@ -758,6 +777,9 @@ window.__ModuleLoader__.load({
  			lifetime = new AbortController();
  			selection = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({}, { persist: { name: "dsh.sessions.current" } });
  			mainReference;
@@ -31,7 +95,7 @@ index 76cd793..455643d 100644
  			/**
  			* @param ctx - Client root Context.
  			* @param directoryPicker - the directory-picking Remote namespace.
-@@ -784,23 +795,23 @@ window.__ModuleLoader__.load({
+@@ -784,23 +806,23 @@ window.__ModuleLoader__.load({
  					};
  				}, "ui-workspace: Workspace navigation policy");
  			}
@@ -60,7 +124,7 @@ index 76cd793..455643d 100644
  					return this.reuseBlank(workspace.workspaceId, id);
  				}
  				return this.sessions.create({ workspaceId: workspace.workspaceId });
-@@ -816,14 +827,33 @@ window.__ModuleLoader__.load({
+@@ -816,14 +838,33 @@ window.__ModuleLoader__.load({
  					return this.sessions.create({ workspaceId });
  				}
  			}
@@ -97,7 +161,7 @@ index 76cd793..455643d 100644
  				} catch (error) {
  					if (!navigation.aborted) this.notify({
  						kind: "createFailed",
-@@ -832,6 +862,8 @@ window.__ModuleLoader__.load({
+@@ -832,6 +873,8 @@ window.__ModuleLoader__.load({
  					throw error;
  				}
  				if (navigation.aborted) return;
@@ -106,7 +170,7 @@ index 76cd793..455643d 100644
  				this.replaceMain(sessionId, navigation, "reveal", beforeOpen);
  			}
  			async forkSession(sessionId) {
-@@ -840,7 +872,18 @@ window.__ModuleLoader__.load({
+@@ -840,7 +883,18 @@ window.__ModuleLoader__.load({
  					increaseTitle: true
  				});
  			}
@@ -125,7 +189,7 @@ index 76cd793..455643d 100644
  				const workspace = this.workspaces.list.getSnapshot();
  				const sessions = this.sessions.list.getSnapshot();
  				const current = this.mainReference?.sessionId;
-@@ -851,7 +894,7 @@ window.__ModuleLoader__.load({
+@@ -851,10 +905,27 @@ window.__ModuleLoader__.load({
  					this.clearMain();
  					return;
  				}
@@ -134,7 +198,27 @@ index 76cd793..455643d 100644
  					console.warn("new session failed:", reason);
  				});
  			}
-@@ -862,6 +905,24 @@ window.__ModuleLoader__.load({
++			startTemporarySession() {
++				this.clearMain();
++				this.ctx.layout.selectPanel(null);
++				this.createTemporarySession().catch((reason) => {
++					console.warn("temporary session failed:", reason);
++				});
++			}
++			async createTemporarySession() {
++				const bridge = globalThis.dshDesktop;
++				if (typeof bridge?.createTemporaryChatWorkspace !== "function") throw new Error("Temporary chats are unavailable in this client.");
++				const created = await bridge.createTemporaryChatWorkspace();
++				if (typeof created?.path !== "string" || created.path === "") throw new Error("Temporary chat workspace creation returned no path.");
++				const workspace = await this.workspaces.create({ path: created.path });
++				const sessionId = await this.connectWorkspace(workspace.workspaceId);
++				this.openSession(sessionId);
++				return sessionId;
++			}
+ 			async archiveSession(sessionId, options = {}) {
+ 				await this.workspaces.archiveSession(sessionId, options);
+ 				if (this.mainReference?.sessionId === sessionId) this.clearMain();
+@@ -862,6 +933,24 @@ window.__ModuleLoader__.load({
  			async unarchiveSession(sessionId) {
  				await this.workspaces.unarchiveSession(sessionId);
  			}
@@ -159,7 +243,16 @@ index 76cd793..455643d 100644
  			async pinSession(sessionId) {
  				await this.workspaces.pinSession(sessionId);
  				const { items, pinnedSessionIds, archivedSessionIds } = this.workspaces.list.getSnapshot();
-@@ -1490,7 +1551,7 @@ window.__ModuleLoader__.load({
+@@ -1266,7 +1355,7 @@ window.__ModuleLoader__.load({
+ 		*/
+ 		function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, newShortcut, t }) {
+ 			const row = group;
+-			const label = row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
++			const label = row.key === TEMPORARY_CHAT_GROUP_KEY ? t("group.temporary") : row.workspaceId === void 0 ? t("group.ungrouped") : row.label;
+ 			const active = containsCurrentDescendant || group.expanded && group.containsCurrent;
+ 			const [menuOpen, setMenuOpen] = (0, react.useState)(false);
+ 			const workspaceMenuItems = [{
+@@ -1490,7 +1579,7 @@ window.__ModuleLoader__.load({
  		* @param props.t - Workspace-browser translation seat.
  		* @returns the result row.
  		*/
@@ -168,7 +261,7 @@ index 76cd793..455643d 100644
  			const selected = result.id === currentId;
  			const statuses = sessionStatuses(result, t);
  			const primaryStatus = statuses[0];
-@@ -1505,6 +1566,7 @@ window.__ModuleLoader__.load({
+@@ -1505,6 +1594,7 @@ window.__ModuleLoader__.load({
  				children: [(0, react_jsx_runtime.jsxs)("span", {
  					className: Rows_module_css_default.searchResultHeading,
  					children: [
@@ -176,7 +269,7 @@ index 76cd793..455643d 100644
  						(0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
  							children: !result.archived && primaryStatus.state !== "idle" && (0, react_jsx_runtime.jsx)(SessionStatusDots, { statuses })
-@@ -1565,7 +1627,7 @@ window.__ModuleLoader__.load({
+@@ -1565,7 +1655,7 @@ window.__ModuleLoader__.load({
  		* @param props.t - the browser root's locale seat.
  		* @returns the session row.
  		*/
@@ -185,7 +278,7 @@ index 76cd793..455643d 100644
  			const row = node;
  			const title = displayTitle(node, t);
  			const selected = node.id === currentId;
-@@ -1594,6 +1656,11 @@ window.__ModuleLoader__.load({
+@@ -1594,6 +1684,11 @@ window.__ModuleLoader__.load({
  					onClick: () => {
  						onOpen(node.id);
  					},
@@ -197,7 +290,7 @@ index 76cd793..455643d 100644
  					onPointerEnter: marquee.enter,
  					onPointerLeave: marquee.leave,
  					draggable,
-@@ -1617,11 +1684,12 @@ window.__ModuleLoader__.load({
+@@ -1617,11 +1712,12 @@ window.__ModuleLoader__.load({
  					children: [
  						(0, react_jsx_runtime.jsx)("span", {
  							className: Rows_module_css_default.slot,
@@ -211,7 +304,7 @@ index 76cd793..455643d 100644
  							onDoubleClick: row.blank ? void 0 : (e) => {
  								e.stopPropagation();
  								onRenameRequest(node.id, row.title);
-@@ -1657,7 +1725,9 @@ window.__ModuleLoader__.load({
+@@ -1657,7 +1753,9 @@ window.__ModuleLoader__.load({
  								}),
  								children: renderSlot("sidebar.workspaces.session.menu.item", {
  									sessionId: node.id,
@@ -222,16 +315,71 @@ index 76cd793..455643d 100644
  								}, { hookContext: menuOpenState })
  							}), renderSlot("sidebar.workspaces.session.row.action", {
  								sessionId: node.id,
-@@ -2310,7 +2380,7 @@ window.__ModuleLoader__.load({
+@@ -1881,7 +1979,7 @@ window.__ModuleLoader__.load({
+ 		*/
+ 		function WorkspacePickFlow({ t, open, anchorRef, useWorkspaces, createWorkspace, useDirectoryFlow, renderDirectoryFlow, onPick, onClose, addOnly = false, onBusyChange, side = "bottom", selectedId }) {
+ 			const workspaceSnapshot = useWorkspaces((state) => state);
+-			const workspaces = workspaceSnapshot.items;
++			const workspaces = workspaceSnapshot.items.filter((workspace) => !isTemporaryChatWorkspace(workspace));
+ 			const getAnchorRect = (0, react.useCallback)(() => anchorRef?.current?.getBoundingClientRect() ?? null, [anchorRef]);
+ 			const [errorOpen, setErrorOpen] = (0, react.useState)(false);
+ 			const [modalError, setModalError] = (0, react.useState)(null);
+@@ -2036,7 +2134,7 @@ window.__ModuleLoader__.load({
+ 			const tag = document.createElement("style");
+ 			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-workspace";
+ 			tag.dataset.pluginCss = tagId;
+-			tag.textContent = css;
++			tag.textContent = css + '[data-temporary-chat-group="true"]{border-top:.5px solid var(--dsw-alias-border-l3);margin-top:14px!important;padding-top:10px}';
+ 			document.head.appendChild(tag);
+ 		}
+ 		var WorkspaceBrowser_module_css_default = {
+@@ -2310,7 +2408,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The scrolling session tree; unmounting drops the sessions subscription and local row limits. */
 -		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
-+		function SessionTree({ list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
++		function SessionTree({ list, useSessionStatus, startSession, startTemporarySession, open, workspaces, ungroupedSessionIds, rowState, unreadSessionIds, onUnreadChange, onLeaveArchivedOnly, workspaceReady, animationResetKey, usePanelInfo, onRenameRequest, onDeleteRequest, onSessionRenameRequest, renderSlot, insertWorkspaceBefore, nestWorkspaces, groupExpansion, setGroupExpanded, setSessionOrder, home, t, revealSessionId, onSessionRevealed, shortcuts }) {
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const current = panelActive ? void 0 : Object.values(list.byId).find((session) => (session.retainedBy.mainView ?? 0) > 0)?.id;
-@@ -2585,6 +2655,8 @@ window.__ModuleLoader__.load({
+@@ -2348,7 +2446,7 @@ window.__ModuleLoader__.load({
+ 			}, [currentGroup, parents]);
+ 			const expandedGroups = (0, react.useMemo)(() => {
+ 				const ancestorKeys = new Set(parents.values());
+-				return [...workspaces.map((workspace) => workspace.workspaceId), ""].filter((key) => groupExpansion[key] ?? ancestorKeys.has(key));
++				return [...workspaces.map((workspace) => workspace.workspaceId), "", TEMPORARY_CHAT_GROUP_KEY].filter((key) => groupExpansion[key] ?? (key === TEMPORARY_CHAT_GROUP_KEY || ancestorKeys.has(key)));
+ 			}, [
+ 				groupExpansion,
+ 				parents,
+@@ -2357,7 +2455,7 @@ window.__ModuleLoader__.load({
+ 			const groups = (0, react.useMemo)(() => deriveGroups(list, workspaces, rowState, statuses, {
+ 				expandedGroups,
+ 				ungroupedOrder: ungroupedSessionIds
+-			}), [
++			}, t("group.temporary")), [
+ 				list,
+ 				workspaces,
+ 				rowState,
+@@ -2478,6 +2576,7 @@ window.__ModuleLoader__.load({
+ 				return (0, react_jsx_runtime.jsxs)("div", {
+ 					style: { "--dsh-workspace-indent": `${depth * 12}px` },
+ 					className: clsx(WorkspaceBrowser_module_css_default.groupSection, workspaceMarker === "before" && WorkspaceBrowser_module_css_default.workspaceDropBefore, workspaceMarker === "after" && WorkspaceBrowser_module_css_default.workspaceDropAfter),
++					"data-temporary-chat-group": group.key === TEMPORARY_CHAT_GROUP_KEY ? "true" : void 0,
+ 					onDragOver: workspaceDrag === null ? void 0 : (e) => {
+ 						e.preventDefault();
+ 						if (hoverWorkspace === void 0 && parents.get(group.key) !== void 0) return;
+@@ -2517,6 +2616,10 @@ window.__ModuleLoader__.load({
+ 								setGroupExpanded(group.key, !group.expanded);
+ 							},
+ 							onCreate: () => {
++								if (group.key === TEMPORARY_CHAT_GROUP_KEY) {
++									startTemporarySession();
++									return;
++								}
+ 								if (group.workspaceId !== void 0) {
+ 									setGroupExpanded(group.key, true);
+ 									startSession(group.workspaceId);
+@@ -2585,6 +2688,8 @@ window.__ModuleLoader__.load({
  								onOpen: open,
  								onRenameRequest: onSessionRenameRequest,
  								renderSlot,
@@ -240,7 +388,7 @@ index 76cd793..455643d 100644
  								onReveal: node.id === revealSessionId && group.key === revealGroup ? () => {
  									onSessionRevealed(node.id);
  								} : void 0,
-@@ -2633,7 +2705,7 @@ window.__ModuleLoader__.load({
+@@ -2633,7 +2738,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** The flat "In one list" body: every session is one draggable top-level row. */
@@ -249,7 +397,7 @@ index 76cd793..455643d 100644
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const statuses = useSessionStatus((s) => s);
  			const rows = (0, react.useMemo)(() => deriveFlat(list, sessionIds, rowState, statuses), [
-@@ -2674,8 +2746,10 @@ window.__ModuleLoader__.load({
+@@ -2674,8 +2779,10 @@ window.__ModuleLoader__.load({
  							currentId,
  							now,
  							onOpen: open,
@@ -262,7 +410,7 @@ index 76cd793..455643d 100644
  							onReveal: node.id === revealSessionId ? () => {
  								onSessionRevealed(node.id);
  							} : void 0,
-@@ -2719,7 +2793,7 @@ window.__ModuleLoader__.load({
+@@ -2719,7 +2826,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Flat search body: local metadata matches plus the current Host result page. */
@@ -271,7 +419,7 @@ index 76cd793..455643d 100644
  			const panelActive = usePanelInfo((info) => info.activePanelId !== null);
  			const list = useSessions((s) => s);
  			const statuses = useSessionStatus((s) => s);
-@@ -2755,6 +2829,7 @@ window.__ModuleLoader__.load({
+@@ -2755,6 +2862,7 @@ window.__ModuleLoader__.load({
  								currentId,
  								onOpen: open,
  								onUnarchive,
@@ -279,7 +427,16 @@ index 76cd793..455643d 100644
  								t
  							}, result.id))
  						}),
-@@ -2810,6 +2885,11 @@ window.__ModuleLoader__.load({
+@@ -2787,7 +2895,7 @@ window.__ModuleLoader__.load({
+ 		* @param props - composed slot props (shell owner share + store + injected actions).
+ 		* @returns the region element tree.
+ 		*/
+-		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, dismissForkError, renderSlot, t }) {
++		function WorkspaceBrowser({ wide, usePanelInfo, expandSidebar, useSessions, useSessionStatus, useWorkspaces, useStore, actions, startSession, startTemporarySession, open, requestSessionRename, notifyArchivedNotOpenable, renameWorkspace, deleteWorkspace, insertWorkspaceBefore, unarchiveSession, createWorkspace, searchSessions, searchResultLimit, useDirectoryFlow, useHostInfo, useShortcuts, useWorkspaceShortcuts, requestSearch, requestAddWorkspace, closeAddWorkspace, setDirectoryBusy, dismissForkError, renderSlot, t }) {
+ 			const home = useHostInfo((info) => info.home);
+ 			const shortcuts = useShortcuts((rows) => rows);
+ 			const searchShortcut = shortcuts.find((row) => row.id === "session.search");
+@@ -2810,6 +2918,11 @@ window.__ModuleLoader__.load({
  			const archivedFilter = useStore((s) => s.archivedFilter ?? "default");
  			const groupExpansion = useStore((s) => s.groupExpansion);
  			const sessionOrderByAccount = useStore((s) => s.sessionOrderByAccount);
@@ -291,7 +448,7 @@ index 76cd793..455643d 100644
  			const guardedOpen = (sessionId) => {
  				if (archivedSessionIds.includes(sessionId)) {
  					notifyArchivedNotOpenable();
-@@ -3261,6 +3341,8 @@ window.__ModuleLoader__.load({
+@@ -3261,6 +3374,8 @@ window.__ModuleLoader__.load({
  							list,
  							sessionIds: orderedFlatSessionIds,
  							rowState,
@@ -300,7 +457,7 @@ index 76cd793..455643d 100644
  							onLeaveArchivedOnly: leaveArchivedOnly,
  							workspaceReady,
  							animationResetKey: `${groupBy}/${orderBy}/${archivedFilter}`,
-@@ -3288,6 +3370,8 @@ window.__ModuleLoader__.load({
+@@ -3288,8 +3403,11 @@ window.__ModuleLoader__.load({
  							setGroupExpanded: actions.setGroupExpanded,
  							setSessionOrder: saveSessionOrder,
  							rowState,
@@ -308,8 +465,19 @@ index 76cd793..455643d 100644
 +							onUnreadChange,
  							onLeaveArchivedOnly: leaveArchivedOnly,
  							startSession,
++							startTemporarySession,
  							open: guardedOpen,
-@@ -3963,6 +4047,7 @@ window.__ModuleLoader__.load({
+ 							insertWorkspaceBefore,
+ 							revealSessionId,
+@@ -3864,6 +3982,7 @@ window.__ModuleLoader__.load({
+ 		const zh = {
+ 			"defaultWorkspace.failed": "无法创建默认工作区，请通过“选择工作区”选择文件夹",
+ 			"group.ungrouped": "未分组",
++			"group.temporary": "临时会话",
+ 			"session.new": "新会话",
+ 			"shortcut.noSession": "请先选择一个会话",
+ 			"shortcut.noPicker": "目录选择器不可用",
+@@ -3963,6 +4082,7 @@ window.__ModuleLoader__.load({
  			"status.compact.planReview": "计划待审",
  			"status.compact.answer": "待回答",
  			"status.completed": "已完成",
@@ -317,7 +485,15 @@ index 76cd793..455643d 100644
  			"hover.created": "创建于 {time}",
  			"hover.copied": "已复制",
  			"date.ymd": "{y}年{m}月{d}日",
-@@ -4077,6 +4162,7 @@ window.__ModuleLoader__.load({
+@@ -3978,6 +4098,7 @@ window.__ModuleLoader__.load({
+ 		const en = {
+ 			"defaultWorkspace.failed": "Unable to create default workspace. Use Choose workspace to select a folder.",
+ 			"group.ungrouped": "Ungrouped",
++			"group.temporary": "Temporary chats",
+ 			"session.new": "New Session",
+ 			"shortcut.noSession": "Select a session first",
+ 			"shortcut.noPicker": "Directory picker unavailable",
+@@ -4077,6 +4198,7 @@ window.__ModuleLoader__.load({
  			"status.compact.planReview": "Plan review",
  			"status.compact.answer": "Answer",
  			"status.completed": "Completed",
@@ -325,6 +501,29 @@ index 76cd793..455643d 100644
  			"hover.created": "Created {time}",
  			"hover.copied": "Copied",
  			"date.ymd": "{y}-{m}-{d}",
+@@ -4249,6 +4371,9 @@ window.__ModuleLoader__.load({
+ 				startSession: (workspaceId) => {
+ 					uiWorkspace.startSession(workspaceId);
+ 				},
++				startTemporarySession: () => {
++					uiWorkspace.startTemporarySession();
++				},
+ 				open: openSession,
+ 				searchSessions,
+ 				searchResultLimit: sessions.searchResultLimit,
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+index c56554a..a20d2e4 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/contract/slots.d.ts
+@@ -241,6 +241,8 @@ export type WorkspaceBrowserInjected = {
+      * Workspace, then the recent Workspace, or clear into the New Session view.
+      */
+     startSession: (workspaceId?: WorkspaceId) => void;
++    /** Create and open an isolated temporary chat using the standard Session UI. */
++    startTemporarySession: () => void;
+     /** Open a real Session. */
+     open: (sessionId: SessionId) => void;
+     /**
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
 index 26ee25b..df98396 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/locales.d.ts
@@ -346,7 +545,7 @@ index 26ee25b..df98396 100644
      'hover.copied': string;
      'date.ymd': string;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
-index 9afabc2..3a1cc04 100644
+index 9afabc2..310cbec 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/navigation.d.ts
 @@ -4,6 +4,7 @@ import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai
@@ -368,7 +567,7 @@ index 9afabc2..3a1cc04 100644
      /**
       * Connect a Workspace and open its Session unless a later navigation supersedes it.
       * @param workspaceId - target Workspace.
-@@ -22,24 +25,26 @@ export interface UiWorkspace {
+@@ -22,25 +25,30 @@ export interface UiWorkspace {
       * @throws on failure; a refused creation is also shown through the Workspace
       * notice unless a later navigation or disposal superseded the request.
       */
@@ -395,9 +594,13 @@ index 9afabc2..3a1cc04 100644
       */
 +    registerSessionStarter(handler: (workspaceId?: WorkspaceId) => boolean): () => void;
      startSession(workspaceId?: WorkspaceId): void;
++    /** Create and open an isolated temporary chat using the standard Session UI. */
++    startTemporarySession(): void;
++    createTemporarySession(): Promise<SessionId>;
      /**
       * Archive a Session and clear it when it is the current selection.
-@@ -111,6 +116,9 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+      * @param sessionId - Session to archive.
+@@ -111,6 +119,9 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
      private readonly lifetime;
      private readonly selection;
      private mainReference;
@@ -407,7 +610,7 @@ index 9afabc2..3a1cc04 100644
      /**
       * @param ctx - Client root Context.
       * @param directoryPicker - the directory-picking Remote namespace.
-@@ -119,13 +127,17 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
+@@ -119,14 +130,20 @@ declare class UiWorkspaceService extends Service implements UiWorkspace {
       * @param view - the browser's viewing-store write set (one instance shared with its registration).
       * @param notify - show one notice through the Workspace notice channel.
       */
@@ -427,8 +630,11 @@ index 9afabc2..3a1cc04 100644
 +    deleteSession(sessionId: SessionId): Promise<void>;
 +    registerSessionStarter(handler: (workspaceId?: WorkspaceId) => boolean): () => void;
      startSession(workspaceId?: WorkspaceId): void;
++    startTemporarySession(): void;
++    createTemporarySession(): Promise<SessionId>;
      archiveSession(sessionId: SessionId, options?: {
          readonly stopActivity?: boolean;
+     }): Promise<void>;
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts
 index 4e20866..d4d260f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/types/client/stores.d.ts

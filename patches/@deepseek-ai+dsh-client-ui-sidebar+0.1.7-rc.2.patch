@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
-index 1c2bc08..c5122d3 100644
+index 1c2bc08..de13cd7 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/client.js
 @@ -94,7 +94,7 @@ window.__ModuleLoader__.load({
@@ -36,3 +36,27 @@ index 1c2bc08..c5122d3 100644
  							className: SidebarRoot_module_css_default.settingsArea,
  							children: renderSlot("sidebar.settings", { wide })
  						})]
+@@ -475,7 +479,8 @@ window.__ModuleLoader__.load({
+ 			ctx.effect(() => ctx.locale.subscribe(syncPanels), "ui-sidebar: panel labels");
+ 			const injectProps = () => ({
+ 				startSession: (workspaceId) => {
+-					workspaceNavigation.startSession(workspaceId);
++					if (workspaceId === void 0) workspaceNavigation.startTemporarySession();
++					else workspaceNavigation.startSession(workspaceId);
+ 				},
+ 				toggleSidebar: () => {
+ 					ctx.layout.toggleSidebar();
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
+index 6c346de..bdb88ba 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-sidebar/lib/types/client/contract/slots.d.ts
+@@ -136,8 +136,7 @@ export interface SidebarFooterActionOwnerProps {
+ export type SidebarRootInjected = {
+     /**
+      * Start a New Session: with a workspace, reuse-or-create its blank session
+-     * and open it; without one, inherit the current Session Workspace, then the
+-     * recent Workspace, or clear into the New Session pure view when none exist.
++     * and open it; without one, create and open an isolated temporary chat.
+      */
+     startSession: (workspaceId?: WorkspaceId) => void;
+     /** Toggle the sidebar column through the layout service. */

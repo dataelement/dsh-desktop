@@ -78,7 +78,8 @@ $DSH_HOME/
 
 ### 4.2 复制清单
 
-源：`homedir()/.dsh`（与 `packages/dshmarket/src/home-paths.ts` 的 `defaultDshHome()` 一致）  
+源：`homedir()/.dsh`（与 `packages/dshmarket/src/home-paths.ts` 的 `defaultDshHome()` 一致）
+
 目标：`join(app.getPath('userData'), 'harness')`，必须仍为空。
 
 | 复制 | 跳过 |

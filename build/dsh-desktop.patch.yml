@@ -26,6 +26,12 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    # First-party VinaRouter onboarding. The Host half keeps dashboard and API
+    # credentials out of the renderer; the client half supplies the setup and
+    # settings surfaces.
+    - id: dsh-desktop-vinabot
+      name: dsh-desktop-vinabot
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.
@@ -36,12 +42,8 @@
     - id: dsh-image-generation
       name: dsh-image-generation
 
-    # DSH PPT owns one direct PPTD workflow and one standard Composer client.
-    # The package contains no Tencent editor runtime or SlideP route.
-    - id: dsh-ppt-composer
-      name: 'dsh-ppt-composer'
-      config:
-        root: !!js dshHomePath('kimi-ppt')
+    # PPT remains unmounted by product policy; the packages stay available
+    # so the feature can be enabled after its compatibility is verified.
 
 # Harness creates the full Cordis HMR service after boot when no `hmr` service
 # exists, and that service throws without Node's internal module loader —

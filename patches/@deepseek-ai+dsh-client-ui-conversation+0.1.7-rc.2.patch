@@ -1,8 +1,24 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 2107bbb..6b4defc 100644
+index 2107bbb..d1eef91 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-@@ -15719,12 +15719,13 @@ window.__ModuleLoader__.load({
+@@ -14417,6 +14417,7 @@ window.__ModuleLoader__.load({
+ 			"placeholder.parentOffline": "父会话已离线，无法继续发送；仍可停止当前运行",
+ 			"placeholder.hero": "描述你想要构建的内容, / 调用指令, @ 文件或对话",
+ 			"placeholder.workspace": "选择一个工作区开始",
++			"workspace.temporary": "临时会话",
+ 			"placeholder.steerQueue": "Cmd/Ctrl+Enter 插话发送全部排队消息",
+ 			"input.commands": "添加文件或调用指令",
+ 			"input.file": "文件",
+@@ -14783,6 +14784,7 @@ window.__ModuleLoader__.load({
+ 			"placeholder.parentOffline": "Parent session offline; sending is unavailable but you can still stop the run",
+ 			"placeholder.hero": "Describe what you want to build, / commands, @ files or sessions",
+ 			"placeholder.workspace": "Choose a workspace to start",
++			"workspace.temporary": "Temporary chat",
+ 			"placeholder.steerQueue": "Cmd/Ctrl+Enter steers all queued messages",
+ 			"input.commands": "Add files or run commands",
+ 			"input.file": "File",
+@@ -15719,12 +15721,13 @@ window.__ModuleLoader__.load({
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
  		const css$4 = ".wSkVaW_root{background:var(--dsw-alias-bg-base);flex-direction:column;min-width:0;height:100%;display:flex;position:relative}.wSkVaW_header{box-sizing:border-box;border-bottom:.5px solid var(--dsw-alias-border-l3);flex:none;grid-template-columns:auto minmax(0,1fr);min-height:76px;padding:10px 28px 0 20px;display:grid}.wSkVaW_header:where(:not(:has(.wSkVaW_tabs))){min-height:0;padding-bottom:10px}.wSkVaW_headerBlank{border-bottom:none;min-height:0;padding-bottom:0}.wSkVaW_headerBlank .wSkVaW_headerCorner{margin-left:auto}html:not([data-platform=darwin]) .wSkVaW_headerSessionless{padding-top:0}html:not([data-platform=darwin]) .wSkVaW_headerSessionless .wSkVaW_titleRow{min-height:0}[data-platform=darwin] .wSkVaW_headerLeading,[data-platform=darwin] .wSkVaW_headerActions,[data-platform=darwin] .wSkVaW_headerUtilities,[data-platform=darwin] .wSkVaW_headerCorner{-webkit-app-region:no-drag}.wSkVaW_titleRow{min-height:30px;grid-column:2;align-items:center;gap:0;padding-inline-start:max(0px, calc(var(--dsh-frame-leading-clearance,0px) - 20px));display:flex;container-type:inline-size}.wSkVaW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.wSkVaW_headerLeading{flex:none;grid-area:1/1;align-items:center;gap:8px;display:flex}.wSkVaW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.wSkVaW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.wSkVaW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.wSkVaW_crumb{border-radius:var(--dsw-radius-md);max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;padding:4px 8px;font-size:14px;line-height:20px;display:inline-block;overflow:hidden}.wSkVaW_crumbSubagent{font-size:12px;line-height:18px}button.wSkVaW_crumb:hover{background:var(--dsw-alias-interactive-bg-hover)}.wSkVaW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.wSkVaW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.wSkVaW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.wSkVaW_headerUtilities:empty{display:none}.wSkVaW_headerCorner{flex:none;align-items:center;margin-left:8px;margin-right:-16px;display:flex}.wSkVaW_headerCorner:empty{display:none}.wSkVaW_tabs{z-index:1;grid-column:1/-1;gap:36px;margin-top:10px;padding-left:8px;display:flex;position:relative}.wSkVaW_tab{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 9px;font-size:13px;font-weight:500;line-height:16px;position:relative}.wSkVaW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:-1px;left:0;right:0}.wSkVaW_tabActive{color:var(--dsw-alias-state-business-primary)}.wSkVaW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.wSkVaW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.wSkVaW_widthHandle{z-index:0;width:min(10px, calc((100% - var(--dsh-chat-content-width)) / 2 - 24px - 24px));cursor:col-resize;position:absolute;top:0;bottom:0}.wSkVaW_widthHandle[data-side=left]{right:calc(50% + var(--dsh-chat-content-width) / 2 + 24px)}.wSkVaW_widthHandle[data-side=right]{left:calc(50% + var(--dsh-chat-content-width) / 2 + 24px)}.wSkVaW_widthHandle:after{content:\"\";background:linear-gradient(to bottom, transparent calc(var(--dsh-width-handle-pointer-y,50%) - 36px), var(--dsw-alias-scrollbar-bg-l1) calc(var(--dsh-width-handle-pointer-y,50%) - 8px), var(--dsw-alias-scrollbar-bg-l1) calc(var(--dsh-width-handle-pointer-y,50%) + 8px), transparent calc(var(--dsh-width-handle-pointer-y,50%) + 36px));opacity:0;pointer-events:none;border-radius:2px;width:2px;position:absolute;top:0;bottom:0}.wSkVaW_widthHandle[data-side=left]:after{right:4px}.wSkVaW_widthHandle[data-side=right]:after{left:4px}.wSkVaW_widthHandle:hover:after,.wSkVaW_widthHandle[data-dragging]:after{opacity:1}.wSkVaW_widthHandle[data-dragging]{z-index:8}.wSkVaW_root:has([data-conversation-composer-overlay]) .wSkVaW_widthHandle{display:none}.wSkVaW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.wSkVaW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.wSkVaW_root[data-phase=active]{overflow:hidden}.wSkVaW_root[data-phase=active] .wSkVaW_header{flex:none}.wSkVaW_body{--dsh-chat-content-width:var(--dsh-chat-user-width,clamp(680px, calc(var(--dsh-conversation-column-width,0px) * .64), 920px));--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.wSkVaW_embeddedBody{--dsh-chat-content-width:min(calc(100% - 32px), 920px);--dsh-composer-card-max-width:min(calc(100% - 16px), 952px);--dsh-composer-side-clearance:8px;--dsh-composer-dock-inset:8px;overflow:hidden}.wSkVaW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;margin-right:2px;display:flex;overflow-y:auto}.wSkVaW_scrollBody::-webkit-scrollbar-track{margin:2px}.wSkVaW_root[data-phase=active] .wSkVaW_viewArea,.wSkVaW_embeddedBody[data-content-phase=active] .wSkVaW_viewArea{flex:1 0 auto;min-height:auto}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat,.wSkVaW_embeddedBody[data-content-phase=active] .wSkVaW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.wSkVaW_root[data-phase=active] .wSkVaW_composerSeat:has([data-trigger-menu]){z-index:9}.wSkVaW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>.wSkVaW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.wSkVaW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px}.wSkVaW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding:0 16px 0 20px;display:flex}.wSkVaW_root[data-phase=hero] .wSkVaW_scrollBody,.wSkVaW_embeddedBody[data-content-phase=hero] .wSkVaW_scrollBody{justify-content:center;overflow-y:auto}.wSkVaW_root[data-phase=settling] .wSkVaW_composerSeat,.wSkVaW_embeddedBody[data-content-phase=settling] .wSkVaW_composerSeat{visibility:hidden}";
@@ -17,7 +33,7 @@ index 2107bbb..6b4defc 100644
  			document.head.appendChild(tag);
  		}
  		var ConversationRoot_module_css_default = {
-@@ -15746,6 +15747,7 @@ window.__ModuleLoader__.load({
+@@ -15746,6 +15749,7 @@ window.__ModuleLoader__.load({
  			"headerLeading": "wSkVaW_headerLeading",
  			"headerSessionless": "wSkVaW_headerSessionless",
  			"headerUtilities": "wSkVaW_headerUtilities",
@@ -25,7 +41,34 @@ index 2107bbb..6b4defc 100644
  			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow",
  			"root": "wSkVaW_root",
  			"scrollBody": "wSkVaW_scrollBody",
-@@ -16203,12 +16205,17 @@ window.__ModuleLoader__.load({
+@@ -16008,6 +16012,9 @@ window.__ModuleLoader__.load({
+ 			const base = workspaceTitleOf(cwd);
+ 			return base !== "" ? base : cwd;
+ 		}
++		function isTemporaryChatPath(path) {
++			return /(?:^|[\\/])DSH Desktop[\\/]Temporary Chats[\\/]chat-[^\\/]+$/i.test(path);
++		}
+ 		/**
+ 		* The workspace chip (folder + label + chevron), always interactive: before
+ 		* the first message the workspace stays switchable — picking another one
+@@ -16160,6 +16167,7 @@ window.__ModuleLoader__.load({
+ 				seatObserver.current.observe(scroller);
+ 			}, []);
+ 			const sessionWorkspace = sessionId === void 0 ? void 0 : workspaces.items.find((workspace) => workspace.sessionIds.includes(sessionId));
++			const sessionWorkspaceTitle = sessionWorkspace !== void 0 && isTemporaryChatPath(sessionWorkspace.path) ? t("workspace.temporary") : sessionWorkspace?.title;
+ 			const pendingWorkspace = workspaces.items.find((workspace) => workspace.workspaceId === pendingWorkspaceId);
+ 			(0, react.useEffect)(() => {
+ 				if (pendingWorkspaceId === void 0) return;
+@@ -16174,7 +16182,7 @@ window.__ModuleLoader__.load({
+ 				session,
+ 				input: inputState
+ 			};
+-			const storedChipTitle = pendingWorkspace?.title ?? (sessionId === void 0 ? void 0 : sessionWorkspace?.title ?? (workspaces.phase === "ready" || cwd === void 0 || cwd === "" ? void 0 : workspaceLabel(cwd)));
++			const storedChipTitle = pendingWorkspace?.title ?? (sessionId === void 0 ? void 0 : sessionWorkspaceTitle ?? (workspaces.phase === "ready" || cwd === void 0 || cwd === "" ? void 0 : isTemporaryChatPath(cwd) ? t("workspace.temporary") : workspaceLabel(cwd)));
+ 			const chipTitle = storedChipTitle === void 0 ? void 0 : workspaceDisplayTitle(storedChipTitle, t("workspace.defaultName"));
+ 			const heroWorkspaceRow = (0, react_jsx_runtime.jsxs)("div", {
+ 				className: ConversationRoot_module_css_default.heroWorkspaceRow,
+@@ -16203,12 +16211,17 @@ window.__ModuleLoader__.load({
  							setPickerOpen(false);
  						}
  					}),
@@ -44,7 +87,7 @@ index 2107bbb..6b4defc 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -16230,7 +16237,8 @@ window.__ModuleLoader__.load({
+@@ -16230,7 +16243,8 @@ window.__ModuleLoader__.load({
  					}),
  					hero && heroWorkspaceRow,
  					zone !== void 0 && renderSlot("conversation.input.dock", zone),
@@ -54,7 +97,7 @@ index 2107bbb..6b4defc 100644
  				]
  			});
  			const composer = renderSlotChain("conversation.composer", {
-@@ -16290,6 +16298,7 @@ window.__ModuleLoader__.load({
+@@ -16290,6 +16304,7 @@ window.__ModuleLoader__.load({
  			const blank = session === void 0 || conversation === void 0 || session.blank && conversationPhase(session, conversation) === "blank";
  			return (0, react_jsx_runtime.jsxs)("header", {
  				className: clsx(ConversationRoot_module_css_default.header, blank && ConversationRoot_module_css_default.headerBlank, sessionId === void 0 && ConversationRoot_module_css_default.headerSessionless),
@@ -62,7 +105,7 @@ index 2107bbb..6b4defc 100644
  				"data-window-drag": true,
  				children: [(0, react_jsx_runtime.jsx)("div", {
  					className: ConversationRoot_module_css_default.headerLeading,
-@@ -17092,13 +17101,14 @@ window.__ModuleLoader__.load({
+@@ -17092,13 +17107,14 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
@@ -78,7 +121,7 @@ index 2107bbb..6b4defc 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -17120,6 +17130,7 @@ window.__ModuleLoader__.load({
+@@ -17120,6 +17136,7 @@ window.__ModuleLoader__.load({
  			"pending": "uV2eYG_pending",
  			"placeholder": "uV2eYG_placeholder",
  			"primary": "uV2eYG_primary",
@@ -86,7 +129,7 @@ index 2107bbb..6b4defc 100644
  			"retry": "uV2eYG_retry",
  			"root": "uV2eYG_root",
  			"row": "uV2eYG_row",
-@@ -17146,7 +17157,7 @@ window.__ModuleLoader__.load({
+@@ -17146,7 +17163,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -95,7 +138,7 @@ index 2107bbb..6b4defc 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -17374,10 +17385,6 @@ window.__ModuleLoader__.load({
+@@ -17374,10 +17391,6 @@ window.__ModuleLoader__.load({
  								className: InputBar_module_css_default.overlayAnchor,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -106,7 +149,7 @@ index 2107bbb..6b4defc 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -17389,25 +17396,35 @@ window.__ModuleLoader__.load({
+@@ -17389,25 +17402,35 @@ window.__ModuleLoader__.load({
  								onRetryFile: (id) => {
  									retryFileUpload?.(id);
  								},
@@ -156,7 +199,7 @@ index 2107bbb..6b4defc 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								ref: rowRef,
-@@ -17535,7 +17552,7 @@ window.__ModuleLoader__.load({
+@@ -17535,7 +17558,7 @@ window.__ModuleLoader__.load({
  					}),
  					(0, react_jsx_runtime.jsxs)("div", {
  						className: InputBar_module_css_default.dock,
@@ -165,7 +208,7 @@ index 2107bbb..6b4defc 100644
  							useProjection,
  							t
  						})]
-@@ -18102,6 +18119,14 @@ window.__ModuleLoader__.load({
+@@ -18102,6 +18125,14 @@ window.__ModuleLoader__.load({
  					"conversation.hero.agentPreset": {
  						kind: "single",
  						scope: "session-maybe"
@@ -180,7 +223,7 @@ index 2107bbb..6b4defc 100644
  					}
  				},
  				slots: {
-@@ -18225,6 +18250,10 @@ window.__ModuleLoader__.load({
+@@ -18225,6 +18256,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -191,7 +234,7 @@ index 2107bbb..6b4defc 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -18261,6 +18290,7 @@ window.__ModuleLoader__.load({
+@@ -18261,6 +18296,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
  						retryFileUpload: void 0,
@@ -199,7 +242,7 @@ index 2107bbb..6b4defc 100644
  						toggleCommandMenu: void 0,
  						stop: void 0,
  						hooks: {
-@@ -18327,6 +18357,11 @@ window.__ModuleLoader__.load({
+@@ -18327,6 +18363,11 @@ window.__ModuleLoader__.load({
  						retryFileUpload: (id) => {
  							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
  						},
@@ -211,7 +254,7 @@ index 2107bbb..6b4defc 100644
  						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
-@@ -18359,10 +18394,7 @@ window.__ModuleLoader__.load({
+@@ -18359,10 +18400,7 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",

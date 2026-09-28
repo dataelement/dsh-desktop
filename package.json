@@ -278,6 +278,7 @@
     "dsh-desktop-log-bridge": "file:packages/dsh-desktop-log-bridge",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-desktop-vinabot": "file:packages/dsh-desktop-vinabot",
     "dsh-image-generation": "file:packages/dsh-image-generation",
     "dsh-ppt": "file:packages/ppt-runtime/core",
     "dsh-ppt-composer": "file:packages/ppt-runtime/adapter",

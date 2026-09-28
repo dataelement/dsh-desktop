@@ -92,7 +92,7 @@ registerHooks({ resolve(specifier, context, next) {
     expect(envelope.result?.ok, JSON.stringify(envelope)).toBe(true)
     expect(envelope.result?.value?.sessionId).toBeTruthy()
     // Recovery uses its own overlay and never edits the normal composition.
-    expect(await readFile(normalPatch, 'utf8')).toContain('name: \'dsh-ppt-composer\'')
+    expect(await readFile(normalPatch, 'utf8')).not.toContain("name: 'dsh-ppt-composer'")
   } finally {
     await broken.stop()
     await recovered.stop()

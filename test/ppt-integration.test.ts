@@ -274,7 +274,7 @@ describe('DSH PPT built-in plugin', () => {
     expect(client).toContain('children: accessory ?? (sessionId === void 0 ? null : renderSlot("conversation.input.accessory", extensionZone))')
   })
 
-  it('declares both local source packages and mounts only the PPT composer', async () => {
+  it('keeps the local PPT packages available while the composer is unmounted', async () => {
     const manifest = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
     }
@@ -282,7 +282,7 @@ describe('DSH PPT built-in plugin', () => {
 
     expect(manifest.dependencies['dsh-ppt']).toBe('file:packages/ppt-runtime/core')
     expect(manifest.dependencies['dsh-ppt-composer']).toBe('file:packages/ppt-runtime/adapter')
-    expect(profilePatch).toContain("name: 'dsh-ppt-composer'")
+    expect(profilePatch).not.toContain("name: 'dsh-ppt-composer'")
     expect(profilePatch).not.toContain('office-ppt-standard-adapter')
     expect(profilePatch).not.toContain('name: dsh-ppt')
     expect(profilePatch).not.toContain('workbuddy')

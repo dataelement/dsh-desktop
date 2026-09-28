@@ -5,6 +5,7 @@ const LAYOUT_STYLE_ID = 'dsh-desktop-windows-titlebar-layout-style'
 const DRAG_REGION_ID = 'dsh-desktop-windows-drag-region'
 const SIDEBAR_WIDTH_PROPERTY = '--dsh-desktop-windows-sidebar-width'
 const CAPTION_WIDTH_PROPERTY = '--dsh-desktop-windows-caption-width'
+const WINDOWS_DRAG_REGION_HEIGHT = 6
 interface TitlebarLayoutMountOptions {
   document: Document
   ipcRenderer: Pick<IpcRenderer, 'invoke'>
@@ -52,6 +53,8 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout > #root {
       height: 100% !important;
       min-height: 0 !important;
+      position: relative;
+      z-index: 1;
     }
     :root {
       --dsh-titlebar-safe-inset-top: max(36px, env(titlebar-area-height, 36px));
@@ -59,6 +62,11 @@ function installLayout(document: Document): void {
     }
     body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"] {
       padding-top: 6px !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout
+      [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"]
+      > div:has([data-dsh-sidebar-brand-identity]) {
+      -webkit-app-region: drag;
     }
     body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel],
     body.dsh-desktop-windows-titlebar-layout [data-sidebar-right-panel="fullscreen"],
@@ -73,6 +81,7 @@ function installLayout(document: Document): void {
       min-height: 76px !important;
       padding-top: calc(var(--dsh-titlebar-safe-inset-top, 36px) + 6px) !important;
       box-sizing: border-box !important;
+      -webkit-app-region: drag;
     }
     body.dsh-desktop-windows-titlebar-layout button,
     body.dsh-desktop-windows-titlebar-layout a,
@@ -81,17 +90,27 @@ function installLayout(document: Document): void {
     body.dsh-desktop-windows-titlebar-layout textarea,
     body.dsh-desktop-windows-titlebar-layout [role="button"],
     body.dsh-desktop-windows-titlebar-layout [role="tab"],
+    body.dsh-desktop-windows-titlebar-layout [data-dockkit-strip],
     body.dsh-desktop-windows-titlebar-layout [role="menuitem"],
     body.dsh-desktop-windows-titlebar-layout [data-dsh-no-drag] {
       -webkit-app-region: no-drag !important;
     }
+    body.dsh-desktop-windows-titlebar-layout
+      [data-dsh-sidebar-root][data-dsh-sidebar-wide="true"]
+      > div:has([data-dsh-sidebar-brand-identity])
+      > button:has([data-dsh-sidebar-brand-identity]) {
+      -webkit-app-region: drag !important;
+    }
+    body.dsh-desktop-windows-titlebar-layout [data-dsh-sidebar-brand-identity] {
+      -webkit-app-region: no-drag !important;
+    }
     #${DRAG_REGION_ID} {
       position: fixed;
-      z-index: 10;
+      z-index: 0;
       top: 0;
       left: 0;
       right: calc(var(${CAPTION_WIDTH_PROPERTY}, 140px) + 44px);
-      height: 36px;
+      height: ${WINDOWS_DRAG_REGION_HEIGHT}px;
       background: transparent;
       pointer-events: none;
       user-select: none;

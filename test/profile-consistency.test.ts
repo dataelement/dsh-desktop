@@ -182,8 +182,8 @@ describe('profile consistency', () => {
     expect(await readFile(join(profile, 'cordis.patch.yml'), 'utf8')).toBe(layer)
     await expect(inspectProfileConsistency(home, HOST_COMPOSED_BUNDLES)).resolves.toEqual([])
 
-    // Compose with the real shipped layers: installed core + composer bundles
-    // used to activate the core twice (and could insert the composer twice).
+    // The product build keeps PPT packages installed but intentionally does not
+    // mount either PPT UI layer; image generation remains available.
     const patches = new Map([...HOST_COMPOSED_BUNDLES, 'dsh-image-generation'].map((name) => [
       name, loadOverlayPatches('test', join(projectRoot, 'node_modules', name, 'cordis.patch.yml'))
     ]))
@@ -193,7 +193,7 @@ describe('profile consistency', () => {
       desktop
     ])
     expect(entries.filter((entry) => !entry.disabled && entry.name === 'dsh-ppt')).toHaveLength(0)
-    expect(entries.filter((entry) => !entry.disabled && entry.name === 'dsh-ppt-composer')).toHaveLength(1)
+    expect(entries.filter((entry) => !entry.disabled && entry.name === 'dsh-ppt-composer')).toHaveLength(0)
     expect(entries.filter((entry) => !entry.disabled && entry.name === 'dsh-image-generation')).toHaveLength(2)
     const once = await readFile(join(profile, 'package.json'), 'utf8')
     await expect(healProfileBundles(home, HOST_COMPOSED_BUNDLES)).resolves.toEqual({ added: [], removed: [] })
