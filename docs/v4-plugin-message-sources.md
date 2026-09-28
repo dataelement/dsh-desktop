@@ -15,6 +15,15 @@ reports `legacy-plugin-message-source` when bundled text appears to construct
 the old wrapper; the archive is preserved unchanged because text matching
 cannot safely rewrite executable code or quoted instructions.
 
+Community plugin installs and updates also scan the installed package's shipped
+JavaScript after staging and peer validation, before changing the Profile's
+desired generation. A literal `source: { kind: 'plugin' }` (or `source = ...`)
+produces a warning with the package name and relative file/line in the install
+result and operation log. This is advisory: installation continues, because
+static matching can miss computed sources or flag a non-executed code path.
+The scan excludes private dependencies, tests, examples, and fixtures; only a
+producer-level V4 encoding test can confirm the behavior of a specific path.
+
 The repo-owned PPT plugin already emits producer-owned kinds. Its behavior
 test passes actual messages through the V4 encoder, including the automatic
 skill and composer context. Keep the historical source recognition in that

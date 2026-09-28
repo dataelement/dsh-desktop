@@ -1,0 +1,74 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-plugin-manager/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-plugin-manager/lib/client.js
+index ea674fe..efe10c1 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-plugin-manager/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-plugin-manager/lib/client.js
+@@ -363,6 +363,17 @@ window.__ModuleLoader__.load({
+ 				exitCode
+ 			} : run);
+ 		}
++		/** Desktop's generation preflight emits one bounded advisory in the package log. */
++		function legacyPluginSourceWarning(output) {
++			for (const line of output.split(/\r?\n/)) {
++					if (!line.startsWith("DSH_V4_PLUGIN_SOURCE_WARNING ")) continue;
++					try {
++						const warning = JSON.parse(line.slice("DSH_V4_PLUGIN_SOURCE_WARNING ".length));
++						if (typeof warning.plugin === "string" && Array.isArray(warning.locations) && warning.locations.every((location) => typeof location === "string")) return warning;
++					} catch {}
++			}
++			return null;
++		}
+ 		/**
+ 		* The key one row occupies in the busy list.
+ 		* @param entryId - the row's Loader entry id.
+@@ -934,6 +945,7 @@ window.__ModuleLoader__.load({
+ 					attempts: null,
+ 					failure: null,
+ 					installed: null,
++					sourceWarning: null,
+ 					approvedBuilds: []
+ 				});
+ 				const result = await this.ctx.remote.pluginManager.installBundle(spec, {
+@@ -1000,6 +1012,7 @@ window.__ModuleLoader__.load({
+ 					runs: settledRuns(runs, 0),
+ 					failure: null,
+ 					installed: result.bundle ?? null,
++					sourceWarning: legacyPluginSourceWarning(result.packageResult?.output ?? ""),
+ 					restartRequired: result.application === "restart-required",
+ 					approvedBuilds: result.approvedBuilds ?? [],
+ 					...asked
+@@ -2438,6 +2451,7 @@ window.__ModuleLoader__.load({
+ 			const pendingBuilds = phase === "failed" ? install.failure?.pendingBuilds ?? [] : [];
+ 			const approvable = pendingBuilds.length > 0;
+ 			const firstRun = install.runs[0];
++			const sourceWarning = phase === "done" ? install.sourceWarning : null;
+ 			const asked = install.attempts !== null && install.attempts.registries.length > 1 ? install.attempts : null;
+ 			const current = asked === null ? void 0 : asked.registries.at(-1);
+ 			const previous = asked === null ? void 0 : asked.registries.at(-2);
+@@ -2562,6 +2576,11 @@ window.__ModuleLoader__.load({
+ 								role: "status",
+ 								children: t("installDoneRestart")
+ 							}) : null,
++							sourceWarning === null ? null : (0, react_jsx_runtime.jsx)("p", {
++								className: PluginManagerPage_module_css_default.resultWarn,
++								role: "alert",
++								children: t("installLegacyMessageSource", { name: sourceWarning.plugin, locations: sourceWarning.locations.join(", ") })
++							}),
+ 							phase === "done" && install.approvedBuilds.length > 0 ? (0, react_jsx_runtime.jsx)("p", {
+ 								className: PluginManagerPage_module_css_default.result,
+ 								role: "status",
+@@ -3131,6 +3150,7 @@ window.__ModuleLoader__.load({
+ 			terminalNoExitCode: "未正常退出",
+ 			installDoneNothing: "安装完成，没有新增依赖。",
+ 			installDoneRestart: "已安装，下次启动后加载。",
++			installLegacyMessageSource: "兼容性提醒：{name} 的代码可能仍使用旧版消息格式（{locations}）。使用前请更新插件或联系作者。",
+ 			installDoneApproved: "已允许运行安装脚本：{names}",
+ 			installApprovalTitle: "需要允许安装脚本",
+ 			installApprovalDescription: "以下包声明了安装脚本，pnpm 默认不运行。",
+@@ -3320,6 +3340,7 @@ window.__ModuleLoader__.load({
+ 			terminalNoExitCode: "no exit code",
+ 			installDoneNothing: "Install finished with no new dependency.",
+ 			installDoneRestart: "Installed; it loads at the next start.",
++			installLegacyMessageSource: "Compatibility warning: {name} may still write messages in the old format ({locations}). Update the plugin or contact its author before use.",
+ 			installDoneApproved: "Install scripts allowed for {names}",
+ 			installApprovalTitle: "Install scripts need permission",
+ 			installApprovalDescription: "These packages have install scripts that pnpm did not run.",

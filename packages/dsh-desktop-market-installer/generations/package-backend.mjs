@@ -9,6 +9,7 @@ import {
   writeDesired
 } from './registry.mjs'
 import { projectGenerations, publishGenerationManifest, publishInstalledGeneration } from './projection.mjs'
+import { scanGenerationV4MessageSources } from './v4-message-source-scan.mjs'
 
 const PROFILE = 'web'
 const MAX_OUTPUT_BYTES = 16 * 1024
@@ -153,6 +154,22 @@ export function createGenerationPackageBackend(options) {
           const peers = await verifyGenerationPeers(dshHome, generation, { dshEntryPath })
           if (!peers.ok) {
             return { ok: false, detail: `generation peer validation failed: ${peers.problems.join('; ')}` }
+          }
+          try {
+            const scan = await scanGenerationV4MessageSources(generation)
+            if (scan.matches.length > 0) {
+              await emit(`DSH_V4_PLUGIN_SOURCE_WARNING ${JSON.stringify({
+                plugin: generation.pluginName,
+                locations: scan.matches.map(({ file, line }) => `${file}:${line}`),
+                incomplete: scan.incomplete
+              })}\n`, 'stderr')
+            } else if (scan.incomplete) {
+              await emit(`generation-install: V4 message source scan was incomplete for ${generation.pluginName}\n`)
+            }
+          } catch (error) {
+            // The static scan is advisory; an unreadable file must not turn a
+            // valid, recoverable generation installation into a failure.
+            await emit(`generation-install: V4 message source scan failed for ${generation.pluginName}: ${errorText(error)}\n`)
           }
           const replaced = beforeGenerations.some(item =>
             beforeDesired.includes(item.id) && item.pluginName === generation.pluginName
