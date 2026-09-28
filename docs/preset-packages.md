@@ -29,7 +29,7 @@ Import is a two-step operation. DSH Desktop first validates and previews the arc
 
 The importer rejects absolute archive paths, parent traversal, backslash-based paths, missing compositions, unsupported manifests, oversized packages, and invalid preset compositions. It retains extra files from older archives in the legacy directory, but the 0.1.7 Profile migration publishes the YAML plugin list only. Relative references to those extra files need review in the new Profile. Common OS metadata such as `.DS_Store`, `Thumbs.db`, and `desktop.ini` is omitted.
 
-If an archive contains code that appears to create a V3 `source: { kind: 'plugin', plugin: ... }` message, preview includes a `legacy-plugin-message-source` warning. Desktop's [V4 message compatibility](v4-plugin-message-sources.md) lets such messages reach the current Session writer, but the plugin should be updated to emit its own producer kind. The importer does not rewrite executable code.
+If an archive contains code that appears to create a V3 `source: { kind: 'plugin', plugin: ... }` message, preview includes a `legacy-plugin-message-source` warning. Update the producer to emit its own kind before using it with Harness 0.1.7; see [V4 message sources](v4-plugin-message-sources.md). The importer does not rewrite executable code.
 
 Custom presets are executable configuration. Their compositions may load plugins and expose tools that run commands or access files with the Agent's permissions. Import packages only from trusted sources and review warnings about possible credentials, absolute paths, and DSH version differences.
 

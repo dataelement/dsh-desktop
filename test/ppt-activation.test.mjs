@@ -8,6 +8,7 @@ import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { releasedV4SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v3-to-v4'
 import { SkillRegistry, isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
 import { PERSONA_PREFIX_SECTION, SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { apply } from 'dsh-ppt'
@@ -337,6 +338,9 @@ describe('PPT identity compatibility', () => {
     const composerMsg = messages.find(m => m.source.kind === 'plugin:dsh-ppt-composer')
     expect(composerMsg).toBeDefined()
     expect(composerMsg.source.form).toBe('snapshot')
+    for (const event of agent.session.log.filter(event => event.type === 'user/message')) {
+      expect(() => releasedV4SessionFormatCodec.encodeEvent(event)).not.toThrow()
+    }
   })
 
   it('recognizes format v4 rewritten historical sessions without duplicate skill injection', async () => {
