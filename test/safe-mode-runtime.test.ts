@@ -90,7 +90,20 @@ registerHooks({ resolve(specifier, context, next) {
     })
     const envelope = await created.json()
     expect(envelope.result?.ok, JSON.stringify(envelope)).toBe(true)
-    expect(envelope.result?.value?.sessionId).toBeTruthy()
+    const sessionId = envelope.result?.value?.sessionId
+    expect(sessionId).toBeTruthy()
+    const deleteSession = async (rpcId: string) => {
+      const response = await fetch(new URL('/api/session/delete', url), {
+        method: 'POST',
+        headers: { Cookie: cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'client-request', rpcId, method: 'session/delete', payload: { args: { request: { sessionId } } } })
+      })
+      return response.json()
+    }
+    const deleted = await deleteSession('safe-mode-delete')
+    expect(deleted.result, JSON.stringify(deleted)).toMatchObject({ ok: true, value: { deleted: true } })
+    const repeated = await deleteSession('safe-mode-delete-again')
+    expect(repeated.result, JSON.stringify(repeated)).toMatchObject({ ok: true, value: { deleted: false } })
     // Recovery uses its own overlay and never edits the normal composition.
     expect(await readFile(normalPatch, 'utf8')).toContain('name: \'dsh-ppt-composer\'')
   } finally {
