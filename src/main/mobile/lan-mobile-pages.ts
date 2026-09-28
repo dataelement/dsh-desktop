@@ -196,10 +196,11 @@ setInterval(checkConnection,1500);checkConnection();
 export function renderMobileReconnectPage(
   locale: 'en' | 'zh',
   connectionMode: 'lan' | 'tunnel' = 'lan',
-  options: { expired?: boolean } = {}
+  options: { expired?: boolean; resumeUnavailable?: boolean } = {}
 ): string {
   const zh = locale === 'zh'
   const expired = options.expired === true
+  const resumeUnavailable = options.resumeUnavailable === true
   const text = {
     title: zh ? '重新连接 DSH' : 'Reconnect DSH',
     heading: zh ? '连接已断开' : 'Connection lost',
@@ -211,8 +212,11 @@ export function renderMobileReconnectPage(
         : zh
           ? '重新连接'
           : 'Reconnect',
-    guidance:
-      connectionMode === 'tunnel'
+    guidance: resumeUnavailable
+      ? zh
+        ? '这部手机没有可恢复的连接。请回到电脑前，扫描「连接手机」里的新二维码。'
+        : 'This phone has no saved connection. Go back to the computer and scan the new QR code.'
+      : connectionMode === 'tunnel'
         ? expired
           ? zh
             ? '远程地址已失效，请在电脑上的「连接手机」扫描新二维码。'
@@ -221,10 +225,13 @@ export function renderMobileReconnectPage(
             ? '隧道地址仍可用。输入电脑上显示的连接密码即可继续，不必重新扫码。'
             : 'This tunnel is still reachable. Enter the pairing password shown on the computer.'
         : zh
-          ? '请确保手机和电脑连接到同一 Wi-Fi，然后扫描电脑上的新二维码。换了连接方式也需要重新扫码。'
-          : 'Stay on the same Wi-Fi, then scan the new QR code on the computer. Switching connection modes also requires a new scan.'
+          ? '请确保手机和电脑连接到同一 Wi-Fi，然后点下面的按钮重新连接。'
+          : 'Stay on the same Wi-Fi, then tap the button below to reconnect.'
   }
-  return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)"><title>${text.title}</title><style>:root{color-scheme:light;--bg:#fff;--ink:#18191c;--muted:#81858c}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--ink:#f5f5f6;--muted:#95979d}}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:100%;max-width:340px;text-align:center}.brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:22px;font-size:13px;font-weight:600}.brand img{width:35px;height:20px;object-fit:contain}.brand .dark-logo{display:none}@media(prefers-color-scheme:dark){.brand .light-logo{display:none}.brand .dark-logo{display:block}}h1{margin:0;font-size:28px;line-height:1.18;letter-spacing:-.03em}.guidance{margin:13px auto 0;max-width:310px;color:var(--muted);font-size:14px;line-height:1.65}.primary{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;height:50px;margin-top:26px;border-radius:15px;background:var(--ink);color:var(--bg);font-weight:650;text-decoration:none}</style></head><body><main class="card"><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>DSH Desktop</span></div><h1>${text.heading}</h1><p class="guidance">${text.guidance}</p><a class="primary" href="/reconnect">${text.action}<svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg></a></main></body></html>`
+  const action = resumeUnavailable
+    ? ''
+    : `<a class="primary" href="/reconnect">${text.action}<svg width="17" height="17" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg></a>`
+  return `<!doctype html><html lang="${zh ? 'zh-CN' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)"><meta name="theme-color" content="#141416" media="(prefers-color-scheme:dark)"><title>${text.title}</title><style>:root{color-scheme:light;--bg:#fff;--ink:#18191c;--muted:#81858c}@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#141416;--ink:#f5f5f6;--muted:#95979d}}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.card{width:100%;max-width:340px;text-align:center}.brand{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:22px;font-size:13px;font-weight:600}.brand img{width:35px;height:20px;object-fit:contain}.brand .dark-logo{display:none}@media(prefers-color-scheme:dark){.brand .light-logo{display:none}.brand .dark-logo{display:block}}h1{margin:0;font-size:28px;line-height:1.18;letter-spacing:-.03em}.guidance{margin:13px auto 0;max-width:310px;color:var(--muted);font-size:14px;line-height:1.65}.primary{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;height:50px;margin-top:26px;border-radius:15px;background:var(--ink);color:var(--bg);font-weight:650;text-decoration:none}</style></head><body><main class="card"><div class="brand"><img class="light-logo" src="/brand-logo/light" alt=""><img class="dark-logo" src="/brand-logo/dark" alt=""><span>DSH Desktop</span></div><h1>${text.heading}</h1><p class="guidance">${text.guidance}</p>${action}</main></body></html>`
 }
 
 export function renderDesktopPairingPage(options: {

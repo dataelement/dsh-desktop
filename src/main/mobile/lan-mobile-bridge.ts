@@ -177,6 +177,8 @@ export class LanMobileBridge {
   private tunnelLaunch?: Promise<void>
   private readonly sessions = new Map<string, MobileSession>()
   private readonly suspendedSessions = new Map<string, MobileSession>()
+  /** Sessions moved here only by a desktop disconnect. Reconnect will not honor anything else. */
+  private readonly resumableSessions = new Map<string, MobileSession>()
   private readonly pendingQuestions = new Map<string, PendingMobileQuestion>()
   private ephemeralPin?: string
   private ephemeralPinExpiresAt?: number
@@ -256,6 +258,7 @@ export class LanMobileBridge {
     this.tunnelError = undefined
     this.sessions.clear()
     this.suspendedSessions.clear()
+    this.resumableSessions.clear()
     this.pendingQuestions.clear()
     this.ephemeralPin = undefined
     this.ephemeralPinExpiresAt = undefined
@@ -555,6 +558,7 @@ export class LanMobileBridge {
   private revokeMobileSessions(): void {
     this.sessions.clear()
     this.suspendedSessions.clear()
+    this.resumableSessions.clear()
     this.rotatePairingToken()
     this.clearPinFailures()
     this.syncConnected()
@@ -573,12 +577,14 @@ export class LanMobileBridge {
         const session = this.suspendedSessions.get(existing)!
         this.sessions.set(existing, session)
         this.suspendedSessions.delete(existing)
+        this.resumableSessions.delete(existing)
       }
     } else {
       for (const [savedToken, session] of this.suspendedSessions) {
         if (session.remoteAddress !== remoteAddress) continue
         this.sessions.set(savedToken, session)
         this.suspendedSessions.delete(savedToken)
+        this.resumableSessions.delete(savedToken)
       }
     }
     this.sessions.set(token, { token, remoteAddress })
@@ -892,7 +898,10 @@ export class LanMobileBridge {
     if (request.method === 'POST' && url.pathname === '/desktop/disconnect') {
       if (this.rejectUnlessDesktop(request, transportAddress, response)) return
       this.verifySameOrigin(request)
-      for (const [token, session] of this.sessions) this.suspendedSessions.set(token, session)
+      for (const [token, session] of this.sessions) {
+        this.suspendedSessions.set(token, session)
+        this.resumableSessions.set(token, session)
+      }
       this.sessions.clear()
       this.rotatePairingToken()
       this.syncConnected()
@@ -914,8 +923,13 @@ export class LanMobileBridge {
         }
         return this.html(response, renderMobileReconnectPage(this.locale(), 'tunnel', { expired: true }))
       }
+      // The phone that was just disconnected still holds its cookie. Restoring
+      // that one session does not admit a neighbor who only knows the port.
+      if (this.resumeSuspendedMobileSession(request) || this.mobileSessionActive(request)) {
+        return this.redirect(response, '/')
+      }
       this.options.onReconnectRequested?.()
-      return this.html(response, renderMobileReconnectPage(this.locale(), 'lan'))
+      return this.html(response, renderMobileReconnectPage(this.locale(), 'lan', { resumeUnavailable: true }))
     }
 
     if (request.method === 'POST' && url.pathname === '/pair/retry') {
@@ -925,6 +939,9 @@ export class LanMobileBridge {
       if (connectionMode === 'tunnel') {
         this.options.onReconnectRequested?.()
         return this.json(response, 200, { ok: true, pinRequired: true })
+      }
+      if (this.resumeSuspendedMobileSession(request) || this.mobileSessionActive(request)) {
+        return this.json(response, 200, { ok: true, reconnected: true })
       }
       this.options.onReconnectRequested?.()
       return this.json(response, 200, { ok: true, rescan: true })
@@ -1085,6 +1102,27 @@ export class LanMobileBridge {
     return this.cookieValue(request, 'dsh_mobile')
   }
 
+  /**
+   * Restores one session the desktop disconnect suspended. Cookies that
+   * `rememberMobileContext` recorded from an anonymous request are not eligible,
+   * so a neighbor cannot mint a cookie and reconnect.
+   */
+  private resumeSuspendedMobileSession(request: IncomingMessage): boolean {
+    const token = this.mobileToken(request)
+    if (!token) return false
+    const session = this.resumableSessions.get(token)
+    if (!session) return false
+    this.resumableSessions.delete(token)
+    this.suspendedSessions.delete(token)
+    this.sessions.set(token, session)
+    return true
+  }
+
+  private mobileSessionActive(request: IncomingMessage): boolean {
+    const token = this.mobileToken(request)
+    return Boolean(token && this.sessions.has(token))
+  }
+
   private rememberMobileContext(
     request: IncomingMessage,
     remoteAddress: string,
@@ -1099,6 +1137,7 @@ export class LanMobileBridge {
     if (sameDeviceIsActive) {
       this.sessions.set(token, { token, remoteAddress })
       this.suspendedSessions.delete(token)
+      this.resumableSessions.delete(token)
       return
     }
     if (!this.suspendedSessions.has(token) && this.suspendedSessions.size >= 16) {

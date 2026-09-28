@@ -245,6 +245,192 @@ describe('LAN mobile bridge pairing surface', () => {
     expect(reconnectRequests).toBe(2)
   })
 
+  it('restores the same WiFi phone from its suspended cookie', async () => {
+    let reconnectRequests = 0
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      onReconnectRequested: () => {
+        reconnectRequests += 1
+      }
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const disconnected = await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    expect(disconnected.status).toBe(200)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const status = await fetch(`http://127.0.0.1:${port}/api/status`, { headers: { cookie } })
+    expect(status.status).toBe(401)
+    const disconnectedPage = await fetch(`http://127.0.0.1:${port}/disconnected`, {
+      headers: { cookie },
+      redirect: 'manual'
+    })
+    expect(disconnectedPage.status).toBe(200)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const stranger = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: `dsh_mobile=${'b'.repeat(43)}` },
+      redirect: 'manual'
+    })
+    expect(stranger.status).toBe(200)
+    expect(stranger.headers.get('set-cookie')).toBeNull()
+    expect(await stranger.text()).toContain('no saved connection')
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const resumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie },
+      redirect: 'manual'
+    })
+    expect(resumed.status).toBe(302)
+    expect(resumed.headers.get('location')).toBe('/')
+    expect(resumed.headers.get('set-cookie')).toBeNull()
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(true)
+    const restored = await fetch(`http://127.0.0.1:${port}/api/status`, { headers: { cookie } })
+    expect(restored.status).toBe(200)
+
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    expect(bridge.snapshot().connected).toBe(false)
+    const retried = await fetch(`http://127.0.0.1:${port}/pair/retry`, {
+      method: 'POST',
+      headers: {
+        cookie,
+        'content-type': 'application/json',
+        origin: `http://127.0.0.1:${port}`
+      },
+      body: '{}'
+    })
+    expect(await retried.json()).toEqual({ ok: true, reconnected: true })
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(true)
+  })
+
+  it('does not resume a cookie remembered from an unauthorized request', async () => {
+    let reconnectRequests = 0
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      onReconnectRequested: () => {
+        reconnectRequests += 1
+      }
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    const planted = `dsh_mobile=${'c'.repeat(43)}`
+    const plantedStatus = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: planted }
+    })
+    expect(plantedStatus.status).toBe(401)
+    const plantedReconnect = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: planted },
+      redirect: 'manual'
+    })
+    expect(plantedReconnect.status).toBe(200)
+    expect(plantedReconnect.headers.get('set-cookie')).toBeNull()
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const resumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie },
+      redirect: 'manual'
+    })
+    expect(resumed.status).toBe(302)
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(true)
+  })
+
+  it('restores each WiFi phone on its own after disconnect', async () => {
+    const store = memoryPinStore({ pin: '246810', pinConsent: true })
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const { port, cookie: firstCookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    armFakeTunnel(bridge)
+    const tunnelHeaders = {
+      host: 'active-mobile.trycloudflare.com',
+      'cf-connecting-ip': '203.0.113.21',
+      'cf-ray': 'test-ray'
+    }
+    const verified = await fetch(`http://127.0.0.1:${port}/pair/verify`, {
+      method: 'POST',
+      headers: { ...tunnelHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ pin: '246810' })
+    })
+    expect(verified.status).toBe(200)
+    const secondCookie = verified.headers.get('set-cookie')!.split(';', 1)[0]!
+    await bridge.toggleTunnel(false)
+    expect(bridge.snapshot().connected).toBe(true)
+
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const firstResumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: firstCookie },
+      redirect: 'manual'
+    })
+    expect(firstResumed.status).toBe(302)
+    const secondStillOut = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: secondCookie, ...tunnelHeaders }
+    })
+    expect(secondStillOut.status).toBe(401)
+    const firstStillIn = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: firstCookie, ...tunnelHeaders }
+    })
+    expect(firstStillIn.status).toBe(200)
+
+    const secondResumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: secondCookie },
+      redirect: 'manual'
+    })
+    expect(secondResumed.status).toBe(302)
+    const secondBack = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: secondCookie, ...tunnelHeaders }
+    })
+    expect(secondBack.status).toBe(200)
+  })
+
+  it('does not restore a suspended WiFi session from a tunnel reconnect', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    const tunnelReconnect = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: {
+        cookie,
+        host: 'active-mobile.trycloudflare.com',
+        'cf-connecting-ip': '203.0.113.8',
+        'cf-ray': 'test-ray'
+      },
+      redirect: 'manual'
+    })
+    expect(tunnelReconnect.status).toBe(200)
+    expect(bridge.snapshot().connected).toBe(false)
+  })
+
   it('pairs on scan, then forwards only allowlisted RPC methods', async () => {
     const harness = createServer(async (request, response) => {
       if (request.method === 'GET' && request.url === '/api/remote.mux') {
