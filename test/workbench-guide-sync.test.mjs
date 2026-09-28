@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from '../packages/dsh-desktop-workbenches/index.js'
 import { renderDocumentPage } from '../scripts/workbench-doc-page.mjs'
-import { SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, GUIDE_SOURCE, GUIDE_TARGET, renderAcceptanceFromSource, renderGuideFromSource } from '../scripts/build-workbench-guide.mjs'
+import { SITE_DOCUMENTS, ACCEPTANCE_SOURCE, ACCEPTANCE_TARGET, GUIDE_SOURCE, GUIDE_TARGET, QUICKSTART_SOURCE, renderAcceptanceFromSource, renderGuideFromSource, renderQuickstartFromSource } from '../scripts/build-workbench-guide.mjs'
 
 const root = join(import.meta.dirname, '..')
 const read = path => readFileSync(join(root, path), 'utf8')
@@ -83,7 +83,7 @@ describe('bundled workbench development guide', () => {
     } finally { await rm(root, { recursive: true, force: true }) }
   })
 
-  it('writes both documents and their reading pages for the website at the URLs Desktop uses', () => {
+  it('writes the documents and their reading pages for the website', () => {
     expect(SITE_DOCUMENTS.development).toEqual({
       file: 'docs/development.md', url: 'https://dshdesktop.com/workbench/docs/development.md',
       page: 'docs/development/index.html', pageUrl: 'https://dshdesktop.com/workbench/docs/development/'
@@ -92,8 +92,15 @@ describe('bundled workbench development guide', () => {
       file: 'docs/market-acceptance.md', url: 'https://dshdesktop.com/workbench/docs/market-acceptance.md',
       page: 'docs/market-acceptance/index.html', pageUrl: 'https://dshdesktop.com/workbench/docs/market-acceptance/'
     })
+    expect(SITE_DOCUMENTS.quickstart).toEqual({
+      file: 'docs/quickstart.md', url: 'https://dshdesktop.com/workbench/docs/quickstart.md',
+      page: 'docs/quickstart/index.html', pageUrl: 'https://dshdesktop.com/workbench/docs/quickstart/'
+    })
+    const quickstart = renderQuickstartFromSource(read)
+    expect(quickstart).toBe(read(QUICKSTART_SOURCE))
+    expect(quickstart).toContain('**空目录示例**')
     const client = read('packages/dsh-desktop-workbenches/client.js')
-    for (const doc of Object.values(SITE_DOCUMENTS)) {
+    for (const doc of [SITE_DOCUMENTS.development, SITE_DOCUMENTS.acceptance]) {
       expect(client).toContain(`'${doc.url}'`)
       expect(client).toContain(`'${doc.pageUrl}'`)
     }

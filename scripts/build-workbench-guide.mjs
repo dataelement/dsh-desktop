@@ -1,7 +1,8 @@
-// Generates the two workbench documents from their sources in docs/:
+// Generates the workbench documents from their sources in docs/:
 //
 //   docs/workbench-standard.zh.md           -> the workbench development spec
 //   docs/workbench-market-acceptance.zh.md  -> the workbench market acceptance spec
+//   docs/workbench-quickstart.zh.md         -> the short execution flow
 //
 // The website is the one public home of both documents: --site takes the
 // homepage repository's workbench/ directory and writes each document's
@@ -10,7 +11,7 @@
 //
 //   node scripts/build-workbench-guide.mjs                  rewrite Desktop's bundled copies
 //   node scripts/build-workbench-guide.mjs --check          fail if they drifted
-//   node scripts/build-workbench-guide.mjs --site <dir>     write both documents for the website
+//   node scripts/build-workbench-guide.mjs --site <dir>     write all documents for the website
 //   node scripts/build-workbench-guide.mjs --site-check <dir>
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -27,6 +28,7 @@ export const GUIDE_SOURCE = 'docs/workbench-standard.zh.md'
 // needs it, and listing in the market needs only it.
 export const ACCEPTANCE_TARGET = 'packages/dsh-desktop-workbenches/market-acceptance.zh.md'
 export const ACCEPTANCE_SOURCE = 'docs/workbench-market-acceptance.zh.md'
+export const QUICKSTART_SOURCE = 'docs/workbench-quickstart.zh.md'
 // Each document has a reading page for people and the Markdown source for Agents.
 export const SITE_DOCUMENTS = {
   development: {
@@ -36,6 +38,10 @@ export const SITE_DOCUMENTS = {
   acceptance: {
     file: 'docs/market-acceptance.md', url: 'https://dshdesktop.com/workbench/docs/market-acceptance.md',
     page: 'docs/market-acceptance/index.html', pageUrl: 'https://dshdesktop.com/workbench/docs/market-acceptance/'
+  },
+  quickstart: {
+    file: 'docs/quickstart.md', url: 'https://dshdesktop.com/workbench/docs/quickstart.md',
+    page: 'docs/quickstart/index.html', pageUrl: 'https://dshdesktop.com/workbench/docs/quickstart/'
   }
 }
 
@@ -47,6 +53,10 @@ export function renderGuideFromSource(readFile = path => readFileSync(join(root,
 
 export function renderAcceptanceFromSource(readFile = path => readFileSync(join(root, path), 'utf8')) {
   return withTrailingNewline(readFile(ACCEPTANCE_SOURCE))
+}
+
+export function renderQuickstartFromSource(readFile = path => readFileSync(join(root, path), 'utf8')) {
+  return withTrailingNewline(readFile(QUICKSTART_SOURCE))
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -61,7 +71,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   const check = argv.includes('--check') || argv.includes('--site-check')
   const outputs = siteDir
-    ? [[SITE_DOCUMENTS.development, renderGuideFromSource()], [SITE_DOCUMENTS.acceptance, renderAcceptanceFromSource()]]
+    ? [[SITE_DOCUMENTS.development, renderGuideFromSource()], [SITE_DOCUMENTS.acceptance, renderAcceptanceFromSource()], [SITE_DOCUMENTS.quickstart, renderQuickstartFromSource()]]
         .flatMap(([doc, markdown]) => [
           { destination: join(siteDir, doc.file), label: doc.url, rendered: markdown },
           { destination: join(siteDir, doc.page), label: doc.pageUrl, rendered: renderDocumentPage(markdown, { markdownUrl: doc.url }) }
