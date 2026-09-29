@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index a99972a..e26619b 100644
+index a99972a..ae3e932 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 @@ -115,6 +115,22 @@ window.__ModuleLoader__.load({
@@ -203,7 +203,80 @@ index a99972a..e26619b 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -12178,7 +12225,8 @@ window.__ModuleLoader__.load({
+@@ -5809,7 +5856,62 @@ window.__ModuleLoader__.load({
+ 			}
+ 			return fileMediaUrl(base, path);
+ 		}
+-		/** Reasoning block as the Think variant summary row (figma 39:28304). */
++				//#region lib/types/client/chat/SmoothMarkdownText.js
++		/**
++		 * Local patch: reveal streamed text at a steady pace.
++		 *
++		 * Upstream stream frames arrive in bursts, so the raf-flushed store renders
++		 * them as visible jumps. This component keeps a locally animated "shown"
++		 * prefix of the target text and walks it toward the target on every
++		 * animation frame, so a burst paints as continuous motion instead of one
++		 * big jump. Non-streaming renders bypass the animation entirely.
++		 */
++		const SMOOTH_TEXT_CATCH_UP_FRAMES = 12;
++		const SMOOTH_TEXT_MIN_STEP = 2;
++		function useSmoothText(target, active) {
++			const [shown, setShown] = (0, react.useState)(target);
++			const shownRef = (0, react.useRef)(target);
++			(0, react.useEffect)(() => {
++				if (!active) {
++					if (shownRef.current !== target) {
++						shownRef.current = target;
++						setShown(target);
++					}
++					return;
++				}
++				if (!target.startsWith(shownRef.current)) {
++					shownRef.current = "";
++					setShown("");
++				}
++			}, [target, active]);
++			(0, react.useEffect)(() => {
++				if (!active) return;
++				let frame;
++				const tick = () => {
++					if (!target.startsWith(shownRef.current)) shownRef.current = "";
++					const gap = target.length - shownRef.current.length;
++					if (gap > 0) {
++						const step = Math.min(gap, Math.max(SMOOTH_TEXT_MIN_STEP, Math.ceil(gap / SMOOTH_TEXT_CATCH_UP_FRAMES)));
++						shownRef.current = target.slice(0, shownRef.current.length + step);
++						setShown(shownRef.current);
++					}
++					frame = requestAnimationFrame(tick);
++				};
++				frame = requestAnimationFrame(tick);
++				return () => cancelAnimationFrame(frame);
++			}, [target, active]);
++			return active ? shown : target;
++		}
++		const SmoothMarkdownText = function SmoothMarkdownText({ text, streaming, ...rest }) {
++			const shown = useSmoothText(text, streaming === true);
++			return (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MarkdownText, {
++				text: shown,
++				streaming,
++				...rest
++			});
++		};
++		//#endregion
++/** Reasoning block as the Think variant summary row (figma 39:28304). */
+ 		const AssistantMarkdown = (0, react.memo)(function AssistantMarkdown({ blocks, streaming, interrupted, renderMessageImages, groupPart, useDisclosure, reasoningHidden = false, usePresentation, revealProcess, mentions, t }) {
+ 			const labels = (0, react.useMemo)(() => markdownLabels(t), [t]);
+ 			const pathImages = (0, react.useMemo)(() => {
+@@ -5825,7 +5927,7 @@ window.__ModuleLoader__.load({
+ 				if (groupPart === "response" && block.kind === "reasoning") continue;
+ 				switch (block.kind) {
+ 					case "text":
+-						rendered.push((0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.MarkdownText, {
++						rendered.push((0, react_jsx_runtime.jsx)(SmoothMarkdownText, {
+ 							text: block.text,
+ 							streaming,
+ 							labels,
+@@ -12178,7 +12280,8 @@ window.__ModuleLoader__.load({
  			"configForms",
  			"remote",
  			"remote.session",
@@ -213,7 +286,7 @@ index a99972a..e26619b 100644
  		];
  		/**
  		* Mount all Chat-owned contributions.
-@@ -12268,6 +12316,14 @@ window.__ModuleLoader__.load({
+@@ -12268,6 +12371,14 @@ window.__ModuleLoader__.load({
  				}, LinkOpeningRow));
  			});
  			const transcriptView = new TranscriptViewPolicy(chatSettings);
@@ -228,7 +301,7 @@ index a99972a..e26619b 100644
  			const presentation = derivePresentationPolicy(transcriptView.mode);
  			const performancePolicy = new PerformanceUsagePolicy(chatSettings);
  			ctx.effect(() => () => {
-@@ -12335,10 +12391,17 @@ window.__ModuleLoader__.load({
+@@ -12335,10 +12446,17 @@ window.__ModuleLoader__.load({
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
  								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
