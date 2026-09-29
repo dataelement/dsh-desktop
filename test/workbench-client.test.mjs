@@ -530,12 +530,14 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain('我的收藏')
     expect(source).toContain('已安装的工作台')
     expect(source).toContain('把开发指令交给 Agent')
+    expect(source).toContain('若你还没说明要做什么，它会先确认业务场景、目标用户和核心流程')
     expect(source).toContain('装到本机，自测确认能用')
+    expect(source).toContain('需求确认并完成开发后，Agent 会把工作台装到这台 Desktop')
     expect(source).toContain('想上架，再按验收规范提交')
-    // Step links open the website pages; the bundled copies stay reachable offline.
+    // The website is the only visible document entry point in this flow.
     expect(source).toContain('href: DEVELOPMENT_PAGE_URL')
     expect(source).toContain('href: ACCEPTANCE_PAGE_URL')
-    expect(source).toContain("'离线查看'")
+    expect(source).not.toContain('离线查看')
     expect(source).toContain('复制开发指令')
     expect(source).toContain('复制投稿指令')
     // Self-use must not read as a parallel alternative to submitting.
@@ -546,12 +548,7 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain("tab !== 'submit' && h('section'")
     expect(source).not.toContain('showSubmit')
     expect(source).not.toContain("'aria-expanded'")
-    expect(source).toContain("setGuideOpen('author')")
-    expect(source).toContain("setGuideOpen('acceptance')")
-    expect(source).not.toContain('GUIDE_PAGE')
-    expect(code).toContain("service.request(doc.api, { cache: 'no-store', credentials: 'same-origin' })")
-    expect(code).toContain("acceptance: { api: ACCEPTANCE_API, url: ACCEPTANCE_PAGE_URL, title: '工作台市场验收规范'")
-    expect(code).toContain("'官方地址：', h('a', { href: doc.url")
+    expect(source).not.toContain('setGuideOpen')
   })
 
   it('provides one prompt for local development and one for submission', () => {
@@ -561,6 +558,13 @@ describe('desktop workbench client navigation', () => {
     expect(development).toContain('已安装的工作台')
     expect(development).toContain('左侧入口')
     expect(development).toContain('不需要上传或投稿')
+    expect(development).toContain('这条通用指令没有提供业务需求')
+    expect(development).toContain('业务场景、目标用户和一次任务的核心流程')
+    expect(development).toContain('这个工作台要服务谁、解决什么业务场景？用户从进入到完成任务的核心步骤是什么？')
+    expect(development).toContain('等待我回答')
+    expect(development).toContain('答复前不要创建或修改业务代码、界面或包文件，也不要构建、打包、安装或投稿')
+    expect(development).toContain('空目录且没有业务目标时，到提问为止')
+    expect(development.indexOf('等待我回答')).toBeLessThan(development.indexOf('再按规范第 3 节'))
     expect(development).toContain('第 8 节“本地自测清单”')
     expect(development).toContain('不要声称已加载')
     // Prompts give the website as the one link; the bundled copies are for offline reading.
@@ -576,6 +580,9 @@ describe('desktop workbench client navigation', () => {
     expect(submissionAgentPrompt()).toBe(development)
 
     const submission = submissionWorkbenchAgentPrompt()
+    expect(submission).toContain('这条通用指令不代表这些前提已经完成')
+    expect(submission).toContain('不要凭空声称已验证或直接提交')
+    expect(submission).not.toContain('我的 DSH Desktop 工作台已经做好，也装到本机验证过了')
     expect(submission).toContain('工作台市场验收规范')
     expect(submission).toContain('https://dshdesktop.com/workbench/docs/market-acceptance.md')
     expect(submission).not.toContain('/api/desktop-workbenches/')

@@ -12,14 +12,10 @@ window.__ModuleLoader__.load({
     const CATALOG_API = '/api/desktop-workbenches/catalog'
     const MARKET_INSTALLS_API = '/api/desktop-workbenches/market-installs'
     const SUBMISSION_STATUS_API = '/api/desktop-workbenches/submission-status'
-    // One author guide ships with this Desktop version and covers development,
-    // local acceptance, first listing and later releases.
-    const GUIDE_API = '/api/desktop-workbenches/author-guide'
     const WORKBENCH_MARKET_REPO = 'https://github.com/dataelement/awesome-dsh-workbench'
-    const ACCEPTANCE_API = '/api/desktop-workbenches/market-acceptance'
-    // The website is the one public link for both documents; the bundled copies
-    // behind GUIDE_API and ACCEPTANCE_API are only for reading offline in Desktop.
-    // Agents read the Markdown; people open the reading page.
+    // The website is the public home for both documents. Agents read Markdown;
+    // people open the reading page. Bundled copies remain on the host for
+    // compatibility, but the creation flow links to the current website version.
     const DEVELOPMENT_DOC_URL = 'https://dshdesktop.com/workbench/docs/development.md'
     const ACCEPTANCE_DOC_URL = 'https://dshdesktop.com/workbench/docs/market-acceptance.md'
     const DEVELOPMENT_PAGE_URL = 'https://dshdesktop.com/workbench/docs/development/'
@@ -785,7 +781,6 @@ window.__ModuleLoader__.load({
       :is(.dshWbMarket,.dshWbSidebarSwitcher,.dshWbInit,.dshWbNotice) :is(button,input,select,textarea):focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:2px}
       .dshWbBtn{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:6px;padding:5px 10px;white-space:nowrap}
       a.dshWbBtn{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
-      .dshWbStepLink.dshWbOffline{font-size:12px;margin:0 4px;opacity:.75}
       .dshWbStatusForm{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin-top:12px}.dshWbStatusForm label{display:flex;flex-direction:column;gap:4px;flex:1 1 240px;min-width:0;font-size:13px}.dshWbStatusForm input{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:5px 8px;background:var(--dsw-alias-bg-layer-1);color:inherit}.dshWbStatusResult{flex-basis:100%;font-size:13px;line-height:1.6}
       .dshWb .dshWbBtn:not(.dshWbPrimary):not([role=tab]):hover:not(:disabled),.dshWb .dshWbBtn:not(.dshWbPrimary):not([role=tab]):active:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
       .dshWb .dshWbPrimary{background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);border-color:transparent}
@@ -867,10 +862,6 @@ window.__ModuleLoader__.load({
       .dshWbModalBackdrop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(16,16,18,.52);padding:24px;overflow:auto;animation:dshWbFade .16s ease-out}
       .dshWbModal{background:var(--dsw-alias-bg-layer-1);border-radius:14px;max-width:880px;width:100%;max-height:85vh;overflow:auto;padding:24px;box-shadow:0 18px 52px rgba(0,0,0,.24);animation:dshWbRise .2s cubic-bezier(.2,.8,.2,1)}
       .dshWbModal h2{margin:0}.dshWbModal p{font-size:14px;line-height:22px;margin:12px 0 0}.dshWbConfirm{max-width:430px}.dshWbModal .dshWbMeta{margin-top:14px}.dshWbConfirmIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--dsw-alias-bg-module-platform);margin-bottom:18px}.dshWbConfirm .dshWbActions{justify-content:flex-end;margin-top:24px}.dshWbDanger{color:#b42318}.dshWbDanger:hover:not(:disabled){background:rgba(180,35,24,.08)!important}
-      .dshWbGuideModal{max-width:920px;height:min(85vh,820px);padding:0;overflow:hidden;display:flex;flex-direction:column}
-      .dshWbGuideHeader{display:flex;align-items:center;gap:18px;padding:18px 22px;border-bottom:1px solid var(--dsw-alias-border-l2);flex:0 0 auto}.dshWbGuideHeaderText{min-width:0;flex:1}.dshWbGuideHeader h2{font-size:18px;line-height:26px}.dshWbGuideHeader p{margin:2px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
-      .dshWbGuideBody{min-height:0;overflow:auto;padding:28px 34px 42px}.dshWbGuideSource{padding:12px 14px;margin-bottom:26px;border-radius:8px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:19px}
-      .dshWbGuideDocument{max-width:780px;margin:0 auto}.dshWbGuideDocument h1{font-size:28px;line-height:38px;margin:0 0 24px}.dshWbGuideDocument h2{font-size:20px;line-height:29px;margin:36px 0 13px;padding-top:24px;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbGuideDocument h3{font-size:16px;line-height:24px;margin:26px 0 10px}.dshWbGuideDocument h4{font-size:14px;line-height:22px;margin:22px 0 8px}.dshWbGuideDocument p,.dshWbGuideDocument li{font-size:13px;line-height:22px}.dshWbGuideDocument p{margin:9px 0}.dshWbGuideDocument ul,.dshWbGuideDocument ol{margin:10px 0;padding-left:22px}.dshWbGuideDocument pre{overflow:auto;margin:14px 0;padding:14px 16px;border-radius:8px;background:#18181b;color:#f4f4f5;font:12px/19px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}.dshWbGuideDocument hr{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:32px 0}.dshWbGuideStatus{display:grid;place-items:center;min-height:220px;text-align:center;color:var(--dsw-alias-label-secondary)}.dshWbGuideStatus .dshWbActions{margin-top:14px;justify-content:center}
       @keyframes dshWbFade{from{opacity:0}to{opacity:1}}@keyframes dshWbRise{from{opacity:.75;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
       .dshWbDisabledHint{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:48px 24px;text-align:center;color:var(--dsw-alias-label-secondary);gap:8px}
       .dshWbFrame{height:100%;min-height:0;display:flex;flex-direction:column;position:relative}
@@ -892,7 +883,7 @@ window.__ModuleLoader__.load({
       @container workbench-market (max-width:980px){.dshWbGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
       @container workbench-market (max-width:620px){.dshWbGrid{grid-template-columns:1fr}}
       @media(max-width:900px){.dshWbMarket{padding:24px}.dshWbBusiness{min-width:180px}}
-      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbMarketHeaderActions{width:100%;justify-content:flex-start}.dshWbCreate{flex:1;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGuideModal{height:92vh;padding:0}.dshWbGuideHeader{padding:14px 16px}.dshWbGuideBody{padding:22px 18px 32px}.dshWbGuideDocument h1{font-size:24px;line-height:33px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
+      @media(max-width:640px){.dshWbMarket{padding:20px 16px 40px}.dshWbMarketHeader{flex-direction:column;margin-bottom:22px}.dshWbMarketHeaderActions{width:100%;justify-content:flex-start}.dshWbCreate{flex:1;justify-content:center}.dshWbTabs{min-width:0}.dshWbTabs [role=tablist]{width:100%}.dshWbBody{flex-direction:column}.dshWbBusiness,.dshWbBusiness[data-side=left]{order:2;width:100%;max-width:none;min-width:0;max-height:35%;border-left:0;border-top:1px solid var(--dsw-alias-border-l2)}.dshWbBusiness textarea{min-height:100px}.dshWbGrid{grid-template-columns:1fr}.dshWbBrowseTools,.dshWbSearch{width:100%;max-width:none}.dshWbCategories{width:100%}.dshWbSteps{grid-template-columns:1fr}.dshWbConfirm .dshWbActions{flex-direction:column;align-items:stretch}.dshWbConfirm .dshWbActions .dshWbBtn{width:100%}}
     `
     function ensureStyles() {
       const existing = document.querySelector('style[data-plugin-css="dsh-desktop-workbenches"]')
@@ -1235,107 +1226,12 @@ window.__ModuleLoader__.load({
               h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: onConfirm }, '确认移除')))),
         document.body)
     }
-    function renderGuideBlocks(markdown) {
-      const blocks = []
-      let paragraph = []
-      let list = null
-      let code = null
-      let key = 0
-      const flushParagraph = () => {
-        if (!paragraph.length) return
-        blocks.push(h('p', { key: `p-${key++}` }, paragraph.join(' ')))
-        paragraph = []
-      }
-      const flushList = () => {
-        if (!list) return
-        blocks.push(h(list.tag, { key: `list-${key++}` }, list.items.map((item, index) => h('li', { key: index }, item))))
-        list = null
-      }
-      const flushCode = () => {
-        if (code === null) return
-        blocks.push(h('pre', { key: `code-${key++}` }, h('code', null, code.join('\n'))))
-        code = null
-      }
-      for (const line of String(markdown).split('\n')) {
-        if (line.trim().startsWith('```')) {
-          flushParagraph(); flushList()
-          if (code === null) code = []
-          else flushCode()
-          continue
-        }
-        if (code !== null) { code.push(line); continue }
-        const heading = /^(#{1,4})\s+(.+)$/.exec(line)
-        if (heading) {
-          flushParagraph(); flushList()
-          blocks.push(h(`h${heading[1].length}`, { key: `heading-${key++}` }, heading[2]))
-          continue
-        }
-        if (/^---+$/.test(line.trim())) { flushParagraph(); flushList(); blocks.push(h('hr', { key: `hr-${key++}` })); continue }
-        const unordered = /^[-*]\s+(.+)$/.exec(line)
-        const ordered = /^\d+\.\s+(.+)$/.exec(line)
-        if (unordered || ordered) {
-          flushParagraph()
-          const tag = unordered ? 'ul' : 'ol'
-          if (list?.tag !== tag) { flushList(); list = { tag, items: [] } }
-          list.items.push((unordered || ordered)[1])
-          continue
-        }
-        if (!line.trim()) { flushParagraph(); flushList(); continue }
-        paragraph.push(line.trim())
-      }
-      flushParagraph(); flushList(); flushCode()
-      return blocks
-    }
-    const GUIDE_DOCUMENTS = {
-      author: { api: GUIDE_API, url: DEVELOPMENT_PAGE_URL, title: '工作台开发规范', source: '这里展示的是 Desktop 内附的离线副本，覆盖开发和本地自测。以官网版本为准。' },
-      acceptance: { api: ACCEPTANCE_API, url: ACCEPTANCE_PAGE_URL, title: '工作台市场验收规范', source: '这里展示的是 Desktop 内附的离线副本，只在上架到工作台市场时需要。以官网版本为准。' }
-    }
-    function GuideModal({ service, open, onClose, document: kind = 'author' }) {
-      const doc = GUIDE_DOCUMENTS[kind] || GUIDE_DOCUMENTS.author
-      const dialogRef = React.useRef(null)
-      const [retry, setRetry] = React.useState(0)
-      const [guide, setGuide] = React.useState({ loading: true, text: '', error: '' })
-      useDialogFocus(open, onClose, dialogRef)
-      React.useEffect(() => {
-        if (!open) return undefined
-        let cancelled = false
-        setGuide({ loading: true, text: '', error: '' })
-        service.request(doc.api, { cache: 'no-store', credentials: 'same-origin' })
-          .then(async response => {
-            if (!response.ok) {
-              const data = await response.json().catch(() => ({}))
-              throw new Error(data.error || `HTTP ${response.status}`)
-            }
-            const text = await response.text()
-            if (!text.trim()) throw new Error('接口未返回有效指南。')
-            if (!cancelled) setGuide({ loading: false, text, error: '' })
-          })
-          .catch(error => { if (!cancelled) setGuide({ loading: false, text: '', error: `指南暂时无法读取：${error instanceof Error ? error.message : String(error)}` }) })
-        return () => { cancelled = true }
-      }, [service, open, retry, doc.api])
-      if (!open) return null
-      return require('react-dom').createPortal(
-        h('div', { className: 'dshWbModalBackdrop', onClick: onClose },
-          h('div', { ref: dialogRef, className: 'dshWbModal dshWbGuideModal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-guide-title', tabIndex: -1, onClick: event => event.stopPropagation() },
-            h('header', { className: 'dshWbGuideHeader' },
-              h('div', { className: 'dshWbGuideHeaderText' },
-                h('h2', { id: 'dsh-workbench-guide-title' }, doc.title),
-                h('p', null, '官方地址：', h('a', { href: doc.url, target: '_blank', rel: 'noopener noreferrer' }, doc.url))),
-              h(Button, { autoFocus: true, onClick: onClose }, '关闭')),
-            h('div', { className: 'dshWbGuideBody' },
-              guide.loading
-                ? h('div', { className: 'dshWbGuideStatus', role: 'status' }, '正在读取指南…')
-                : guide.error
-                  ? h('div', { className: 'dshWbGuideStatus', role: 'alert' }, h('div', null, h('strong', null, guide.error), h('div', { className: 'dshWbActions' }, h(Button, { onClick: () => setRetry(value => value + 1) }, '重试'))))
-                  : h('div', { className: 'dshWbGuideDocument' },
-                    h('div', { className: 'dshWbGuideSource' }, doc.source),
-                    renderGuideBlocks(guide.text))))),
-        document.body)
-    }
     function developmentWorkbenchAgentPrompt() {
-      return `请帮我制作一个 DSH Desktop 工作台，只在本机开发和使用，不需要上传或投稿。你可以使用自己的开发流程，DSH 不控制开发过程。
+      return `我想在本机制作和使用一个 DSH Desktop 工作台，不需要上传或投稿。这条通用指令没有提供业务需求，不能据此直接决定做什么工作台。你可以使用自己的开发流程，DSH 不控制开发过程。
 
-${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
+${DEVELOPMENT_GUIDE_READING}首先检查我在当前对话中明确提出的业务场景、目标用户和一次任务的核心流程；可以只读检查项目目录、已有说明和未提交更改，但不能把目录名、示例或现有代码自行当成我已确认的开发意图。任一项不明确时，先只问我一个合并问题：“这个工作台要服务谁、解决什么业务场景？用户从进入到完成任务的核心步骤是什么？”等待我回答。答复前不要创建或修改业务代码、界面或包文件，也不要构建、打包、安装或投稿。空目录且没有业务目标时，到提问为止。
+
+需求明确后，确定最小业务流程，不要覆盖已有的未提交更改。再按规范第 3 节完成包格式（package.json 的 dsh 字段、cordis.patch.yml、服务端和客户端入口），实现工作台功能和界面，运行相关测试与构建；若存在 scripts/check-workbench-package.mjs，用它校验工作台包。
 
 完成后，按当前可用的插件安装方式把工作台装到我这台 DSH Desktop，不要让我重新填写项目信息。然后按规范第 8 节“本地自测清单”逐项检查，确认它出现在「已安装的工作台」和左侧入口，并实际打开使用。
 
@@ -1349,9 +1245,9 @@ ${DEVELOPMENT_GUIDE_READING}不要覆盖已有的未提交更改。按规范第 
       return `category 填 ${category.id}（${category.name}），这是作者自己选的分类，不要改成别的。${wanted ? `现有分类都不合适，请在 PR 描述里写一句“建议新增分类：${wanted}”，由市场维护者决定是否新增。` : ''}`
     }
     function submissionWorkbenchAgentPrompt({ category, suggestion } = {}) {
-      return `我的 DSH Desktop 工作台已经做好，也装到本机验证过了。现在按工作台市场验收规范把它提交到公共工作台市场，不用重复开发功能。
+      return `我想将已有的 DSH Desktop 工作台投稿到公共工作台市场。请先核实工作台项目、最终可安装版本、本机安装实测结果和我有权公开的仓库；这条通用指令不代表这些前提已经完成。若项目或验收证据缺失，先说明并完成能做的检查，不要凭空声称已验证或直接提交。
 
-${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥、业务数据或未经授权的私有代码。按规范的上架流程，把代码提交到我自己的公开 GitHub 仓库；有 npm 包就发布 npm，也可以发布 GitHub Release 安装包，或者只提供可直接安装的源码。先读取项目真实脚本和工具帮助，不要编造发布命令。
+${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥、业务数据或未经授权的私有代码。确认投稿前提和公开范围后，按规范的上架流程，把代码提交到我自己的公开 GitHub 仓库，并根据项目已有的可安装来源选择仅源码、GitHub Release 或 npm 路径。先读取项目真实脚本和工具帮助，不要编造发布命令。
 
 然后向 ${WORKBENCH_MARKET_REPO} 提交一个 PR，只新增 data/workbenches/<owner>__<repo>.yml。格式以该仓库的 catalog/README.md 为准：url、name、category、description.zh 和 description.en 必填，screenshots 填 1–5 张我仓库里的真实截图地址，没有 npm 时可以填 tarball。${categoryInstruction(category, suggestion)}不要填写版本、npm 包名或校验值，也不要修改生成的文件。使用我已经授权的 GitHub 网页或 gh；缺少登录或公开授权时，先完成能完成的部分，再准确说明缺什么。
 
@@ -1412,7 +1308,6 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const [removing, setRemoving] = React.useState(null)
       const [openPrompt, setOpenPrompt] = React.useState(null)
       const [copyStatus, setCopyStatus] = React.useState('')
-      const [guideOpen, setGuideOpen] = React.useState(null)
       const [submitCategory, setSubmitCategory] = React.useState('')
       const [categoryIdea, setCategoryIdea] = React.useState('')
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
@@ -1481,7 +1376,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '1'),
               h('strong', null, '把开发指令交给 Agent'),
-              h('p', null, '复制指令给你的 Agent，它会按', h('a', { href: DEVELOPMENT_PAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, '工作台开发规范'), h('button', { type: 'button', className: 'dshWbStepLink dshWbOffline', onClick: () => setGuideOpen('author') }, '离线查看'), '开发。只在本机使用，不需要上传代码。'),
+              h('p', null, '复制指令给你的 Agent。若你还没说明要做什么，它会先确认业务场景、目标用户和核心流程，得到答复后再按', h('a', { href: DEVELOPMENT_PAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, '工作台开发规范'), '开发。只在本机使用，不需要上传代码。'),
               h('div', { className: 'dshWbStepActions' },
                 h(Button, { primary: true, onClick: () => copyPrompt(developmentPrompt) }, '复制开发指令'),
                 h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setOpenPrompt(openPrompt === 'development' ? null : 'development') }, openPrompt === 'development' ? '收起指令' : '查看指令')),
@@ -1489,11 +1384,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '2'),
               h('strong', null, '装到本机，自测确认能用'),
-              h('p', null, 'Agent 会把它装到这台 Desktop，并按开发规范的本地自测清单检查。尚未上架的版本会出现在「本地工作台」，添加后也会出现在顶部快捷栏。自己用的话，到这一步就完成了。')),
+              h('p', null, '需求确认并完成开发后，Agent 会把工作台装到这台 Desktop，并按开发规范的本地自测清单检查。尚未上架的版本会出现在「本地工作台」，添加后也会出现在顶部快捷栏。自己用的话，到这一步就完成了。')),
             h('div', { className: 'dshWbStep' },
               h('span', { className: 'dshWbStepNum' }, '3'),
               h('strong', null, '想上架，再按验收规范提交'),
-              h('p', null, '按', h('a', { href: ACCEPTANCE_PAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场验收规范'), h('button', { type: 'button', className: 'dshWbStepLink dshWbOffline', onClick: () => setGuideOpen('acceptance') }, '离线查看'), '，把代码上传到你自己的 GitHub 仓库，准备简介和截图，再向', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场仓库'), '提交收录 PR。把投稿指令复制给 Agent 即可。'),
+              h('p', null, '按', h('a', { href: ACCEPTANCE_PAGE_URL, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场验收规范'), '，把代码上传到你自己的 GitHub 仓库，准备简介和截图，再向', h('a', { href: WORKBENCH_MARKET_REPO, target: '_blank', rel: 'noopener noreferrer' }, '工作台市场仓库'), '提交收录 PR。把投稿指令复制给 Agent 即可。'),
               marketCategories.length > 0 && h('div', { className: 'dshWbSubmitCategory' },
                 h('label', null, h('span', null, '上架分类'),
                   h('select', { value: submitCategory, onChange: (event) => setSubmitCategory(event.target.value), 'aria-label': '上架分类' },
@@ -1551,8 +1446,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : tab === 'local' && !search ? '还没有本地工作台' : '没有找到匹配的工作台'),
             h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击书签即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : tab === 'local' && !search ? '本地开发且尚未上架市场的工作台会显示在这里。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
-        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }),
-        guideOpen && h(GuideModal, { service, open: !!guideOpen, document: guideOpen, onClose: () => setGuideOpen(null) }))
+        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }))
     }
     function Notebook({ service, entry }) {
       const { state, drafts, pending, error } = useWorkbench(service)
