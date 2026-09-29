@@ -176,14 +176,14 @@ describe('profile pnpm shim and failure reporting', () => {
 })
 
 describe('buildProfilePluginCommandEnvironment', () => {
-  it('keeps Windows plugin repair on bundled Node without inheriting Electron mode', () => {
+  it('runs Windows plugin repair through Electron Node mode', () => {
     const result = buildProfilePluginCommandEnvironment(
       { Path: 'C:\\Windows\\System32', ELECTRON_RUN_AS_NODE: '1' },
       'C:\\shim',
       'C:\\DSH Desktop\\node.exe',
       'win32'
     )
-    expect(result.ELECTRON_RUN_AS_NODE).toBeUndefined()
+    expect(result.ELECTRON_RUN_AS_NODE).toBe('1')
   })
   it('keeps the user PATH when the environment block stores it lowercase', () => {
     // Spreading `process.env` keeps only the casing the OS block stores, so

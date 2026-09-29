@@ -1,50 +1,94 @@
+import type { MenuItemConstructorOptions } from 'electron'
 import { describe, expect, it } from 'vitest'
 import {
-  WINDOWS_TITLEBAR_HEIGHT,
   desktopMenuCommands,
-  formatZoomPercentage,
-  isDesktopMenuCommand
+  isDesktopMenuCommand,
+  type DesktopMenuCommand
 } from '../src/shared/desktop-menu'
 import {
-  WINDOWS_CAPTION_CONTROLS_WIDTH,
-  WINDOWS_MENU_BUTTON_WIDTH,
-  WINDOWS_MENU_PANEL_WIDTH,
-  windowsMenuViewBounds
-} from '../src/main/windows-menu-view'
+  parseWindowsMenuRequest,
+  windowsMenuTemplate,
+  type EditingKey
+} from '../src/main/windows-menu'
 
-describe('Windows titlebar menu', () => {
+function record(): { run: DesktopMenuCommand[]; keys: EditingKey[]; actions: Parameters<typeof windowsMenuTemplate>[3] } {
+  const run: DesktopMenuCommand[] = []
+  const keys: EditingKey[] = []
+  return { run, keys, actions: { run: (command) => run.push(command), sendEditingKey: (key) => keys.push(key) } }
+}
 
+function clickAll(items: MenuItemConstructorOptions[]): void {
+  for (const item of items) {
+    if (Array.isArray(item.submenu)) clickAll(item.submenu)
+    // The template's handlers ignore Electron's arguments.
+    else (item.click as (() => void) | undefined)?.()
+  }
+}
+
+function labels(items: MenuItemConstructorOptions[]): string[] {
+  return items.flatMap((item) => [
+    ...(item.label === undefined ? [] : [item.label]),
+    ...(Array.isArray(item.submenu) ? labels(item.submenu) : [])
+  ])
+}
+
+describe('Windows caption menus', () => {
   it('accepts only the fixed menu command allowlist', () => {
-    expect(desktopMenuCommands).toContain('connect-phone')
-    expect(desktopMenuCommands).toContain('safe-mode')
-    expect(desktopMenuCommands).toContain('check-for-updates')
-    expect(desktopMenuCommands).toContain('toggle-fullscreen')
     expect(isDesktopMenuCommand('copy')).toBe(true)
+    expect(isDesktopMenuCommand('export-session')).toBe(false)
     expect(isDesktopMenuCommand('run-shell-command')).toBe(false)
     expect(isDesktopMenuCommand({ command: 'quit' })).toBe(false)
   })
 
-  it('keeps the closed menu button aligned beside native caption controls at every page zoom', () => {
-    expect(WINDOWS_CAPTION_CONTROLS_WIDTH).toBe(140)
-    expect(WINDOWS_MENU_BUTTON_WIDTH).toBe(44)
-    expect(WINDOWS_MENU_PANEL_WIDTH).toBe(304)
+  it('keeps every Desktop command in the application menu, including the View group', () => {
+    const { run, actions } = record()
+    clickAll(windowsMenuTemplate('application', 'zh', 1, actions))
+    const editing = new Set<DesktopMenuCommand>(['undo', 'redo', 'cut', 'copy', 'paste', 'select-all'])
+    expect(new Set(run)).toEqual(new Set(desktopMenuCommands.filter((command) => !editing.has(command))))
+  })
 
-    const closedAt100Percent = windowsMenuViewBounds({ width: 1380, height: 900 }, false)
-    const closedAt69Percent = windowsMenuViewBounds({ width: 1380, height: 900 }, false)
-    expect(closedAt100Percent).toEqual({ x: 1196, y: 0, width: 44, height: 36 })
-    expect(closedAt69Percent).toEqual(closedAt100Percent)
+  it('sends editing shortcuts as key events so editor-owned history receives them', () => {
+    const { run, keys, actions } = record()
+    clickAll(windowsMenuTemplate('edit', 'en', 1, actions))
+    expect(run).toEqual([])
+    expect(keys).toEqual([
+      { keyCode: 'Z', modifiers: ['control'] },
+      { keyCode: 'Y', modifiers: ['control'] },
+      { keyCode: 'X', modifiers: ['control'] },
+      { keyCode: 'C', modifiers: ['control'] },
+      { keyCode: 'V', modifiers: ['control'] },
+      { keyCode: 'Delete', modifiers: [] },
+      { keyCode: 'A', modifiers: ['control'] }
+    ])
+  })
 
-    expect(windowsMenuViewBounds({ width: 1380, height: 900 }, true)).toEqual({
-      x: 936,
-      y: 0,
-      width: 304,
-      height: 760
-    })
-    expect(windowsMenuViewBounds({ width: 900, height: 640 }, false, true)).toEqual({
-      x: 856,
-      y: 0,
-      width: 44,
-      height: 36
-    })
+  it('labels the menus in the app language and shows the current zoom', () => {
+    const { actions } = record()
+    expect(labels(windowsMenuTemplate('application', 'zh', 1.25, actions))).toContain('实际大小（当前 125%）')
+    expect(labels(windowsMenuTemplate('application', 'en', 0.9, actions))).toContain('Actual Size (now 90%)')
+    expect(labels(windowsMenuTemplate('application', 'zh', 1, actions))).not.toContain('导出 Session 日志…')
+    expect(labels(windowsMenuTemplate('application', 'en', 1, actions))).not.toContain('Export Session Log…')
+    expect(labels(windowsMenuTemplate('edit', 'zh', 1, actions))).toEqual(
+      ['撤销', '重做', '剪切', '复制', '粘贴', '删除', '全选']
+    )
+  })
+
+  it('does not register popup accelerators over the application menu shortcuts', () => {
+    const { actions } = record()
+    const flatten = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
+      items.flatMap((item) => (Array.isArray(item.submenu) ? flatten(item.submenu) : [item]))
+    for (const name of ['application', 'edit'] as const) {
+      for (const item of flatten(windowsMenuTemplate(name, 'en', 1, actions))) {
+        if (item.accelerator !== undefined) expect(item.registerAccelerator).toBe(false)
+      }
+    }
+  })
+
+  it('rejects popup requests outside the two menus or the window', () => {
+    expect(parseWindowsMenuRequest('application', 48, 34)).toEqual({ name: 'application', x: 48, y: 34 })
+    expect(() => parseWindowsMenuRequest('view', 48, 34)).toThrow()
+    expect(() => parseWindowsMenuRequest('edit', -1, 34)).toThrow()
+    expect(() => parseWindowsMenuRequest('edit', 48, Number.NaN)).toThrow()
+    expect(() => parseWindowsMenuRequest('edit', '48', 34)).toThrow()
   })
 })

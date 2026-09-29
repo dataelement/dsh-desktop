@@ -261,6 +261,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         with:
           name: ${{ matrix.artifact }}
+          retention-days: 7
           path: |
             dist/dsh-desktop-mac-${{ matrix.arch }}.dmg
             dist/dsh-desktop-mac-${{ matrix.arch }}.zip
@@ -272,6 +273,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         with:
           name: ${{ matrix.artifact }}-dev
+          retention-days: 3
           path: |
             dist-dev/dsh-desktop-dev-mac-${{ matrix.arch }}.dmg
             dist-dev/dsh-desktop-dev-mac-${{ matrix.arch }}.zip
@@ -314,12 +316,16 @@ jobs:
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - run: npm run typecheck
+      - name: Boot Harness through Electron Node mode on Windows
+        run: node scripts/probe-electron-node-runtime.mjs
+        timeout-minutes: 5
       - name: Check recovery UI on native Windows at three display scales
         run: node scripts/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-recovery-ui
+          retention-days: 7
           path: |
             artifacts/recovery-ui/scale-*/*.png
             artifacts/recovery-ui/scale-*/results.json
@@ -349,11 +355,33 @@ jobs:
           $desktopStdout = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stdout.log'
           $desktopStderr = Join-Path $env:RUNNER_TEMP 'dsh-packaged-desktop.stderr.log'
           $packagedNode = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\node\bin\node.exe'
-          if (-not (Test-Path $packagedNode)) { throw 'Packaged Windows node.exe is missing.' }
+          if (Test-Path $packagedNode) { throw 'Standalone Windows node.exe must not be packaged.' }
           # Exercise the actual native binding too; the best-effort fallback
           # must not hide a missing or broken packaged koffi dependency.
-          & $packagedNode --input-type=module -e "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed');" (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\koffi\package.json') (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules')
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged koffi native binding failed.' }
+          # A Windows GUI-subsystem executable makes PowerShell's '&' return
+          # before the Node-mode child exits, leaving $LASTEXITCODE unset.
+          function Invoke-ElectronNode([string[]]$nodeArguments) {
+            $start = [System.Diagnostics.ProcessStartInfo]::new($executable)
+            $start.WorkingDirectory = $isolatedApp
+            $start.UseShellExecute = $false
+            $start.RedirectStandardOutput = $true
+            $start.RedirectStandardError = $true
+            $start.Environment['ELECTRON_RUN_AS_NODE'] = '1'
+            foreach ($argument in $nodeArguments) { [void]$start.ArgumentList.Add($argument) }
+            $child = [System.Diagnostics.Process]::Start($start)
+            $stdout = $child.StandardOutput.ReadToEnd()
+            $stderr = $child.StandardError.ReadToEnd()
+            $child.WaitForExit()
+            if ($stdout) { Write-Host $stdout }
+            if ($stderr) { Write-Host $stderr }
+            return $child.ExitCode
+          }
+          $koffiProbe = "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed'); process.exit(0);"
+          $koffiExitCode = Invoke-ElectronNode @('--input-type=module', '-e', $koffiProbe, (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\koffi\package.json'), (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules'))
+          if ($koffiExitCode -ne 0) { throw "Packaged koffi native binding failed (exit code $koffiExitCode)." }
+          $pnpmEntry = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\pnpm\bin\pnpm.cjs'
+          $pnpmExitCode = Invoke-ElectronNode @($pnpmEntry, '--version')
+          if ($pnpmExitCode -ne 0) { throw "Packaged pnpm failed under Electron Node mode (exit code $pnpmExitCode)." }
           if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
           $desktop = Start-Process -FilePath $executable -WorkingDirectory $isolatedApp -PassThru `
             -RedirectStandardOutput $desktopStdout -RedirectStandardError $desktopStderr
@@ -471,6 +499,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         with:
           name: windows-x64-dev
+          retention-days: 3
           path: |
             dist-dev/dsh-desktop-dev-windows-x64-setup.exe
             dist-dev/dsh-desktop-dev-windows-x64-setup.exe.blockmap
@@ -624,6 +653,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
+          retention-days: 7
           path: |
             ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe
             ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe.blockmap

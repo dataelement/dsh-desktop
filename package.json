@@ -434,10 +434,6 @@
       {
         "from": "build/community-wechat-qr.png",
         "to": "community-wechat-qr.png"
-      },
-      {
-        "from": "build/windows-menu.html",
-        "to": "windows-menu.html"
       }
     ],
     "publish": [
@@ -463,6 +459,7 @@
     },
     "win": {
       "icon": "build/icon.ico",
+      "files": ["!node_modules/node/**/*"],
       "verifyUpdateCodeSignature": true,
       "signtoolOptions": {
         "publisherName": "Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.",

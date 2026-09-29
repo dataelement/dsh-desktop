@@ -167,11 +167,12 @@ function createPresetArchive(ctx) {
 			const seenLowerPaths = new Set();
 			let fileCount = 0;
 			let totalUncompressed = 0;
-			for (const [entryName, bytes] of Object.entries(unzipped)) {
+			for (const [rawName, bytes] of Object.entries(unzipped)) {
+				const entryName = rawName.replaceAll("\\", "/");
 				if (entryName === "manifest.json") continue;
 				if (entryName.startsWith("__MACOSX/") || entryName.includes("/__MACOSX/")) continue;
 				const safe = safePresetArchivePath(entryName);
-				if (safe === null || entryName.includes("\\")) return presetArchiveFailure(`Package contains an unsafe path "${entryName}".`);
+				if (safe === null) return presetArchiveFailure(`Package contains an unsafe path "${rawName}".`);
 				if (entryName.endsWith("/")) continue;
 				const relPath = safe.startsWith("preset/") ? safe.slice("preset/".length) : safe;
 				if (relPath === "") continue;
