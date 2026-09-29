@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import {
+  applyWorkspaceFollowFrame,
   isInternetTunnelHost,
   isPrivateAddress,
   LanMobileBridge,
@@ -243,6 +244,192 @@ describe('LAN mobile bridge pairing surface', () => {
     })
     expect(await retried.json()).toEqual({ ok: true, rescan: true })
     expect(reconnectRequests).toBe(2)
+  })
+
+  it('restores the same WiFi phone from its suspended cookie', async () => {
+    let reconnectRequests = 0
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      onReconnectRequested: () => {
+        reconnectRequests += 1
+      }
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    const disconnected = await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    expect(disconnected.status).toBe(200)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const status = await fetch(`http://127.0.0.1:${port}/api/status`, { headers: { cookie } })
+    expect(status.status).toBe(401)
+    const disconnectedPage = await fetch(`http://127.0.0.1:${port}/disconnected`, {
+      headers: { cookie },
+      redirect: 'manual'
+    })
+    expect(disconnectedPage.status).toBe(200)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const stranger = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: `dsh_mobile=${'b'.repeat(43)}` },
+      redirect: 'manual'
+    })
+    expect(stranger.status).toBe(200)
+    expect(stranger.headers.get('set-cookie')).toBeNull()
+    expect(await stranger.text()).toContain('no saved connection')
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const resumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie },
+      redirect: 'manual'
+    })
+    expect(resumed.status).toBe(302)
+    expect(resumed.headers.get('location')).toBe('/')
+    expect(resumed.headers.get('set-cookie')).toBeNull()
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(true)
+    const restored = await fetch(`http://127.0.0.1:${port}/api/status`, { headers: { cookie } })
+    expect(restored.status).toBe(200)
+
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    expect(bridge.snapshot().connected).toBe(false)
+    const retried = await fetch(`http://127.0.0.1:${port}/pair/retry`, {
+      method: 'POST',
+      headers: {
+        cookie,
+        'content-type': 'application/json',
+        origin: `http://127.0.0.1:${port}`
+      },
+      body: '{}'
+    })
+    expect(await retried.json()).toEqual({ ok: true, reconnected: true })
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(true)
+  })
+
+  it('does not resume a cookie remembered from an unauthorized request', async () => {
+    let reconnectRequests = 0
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      onReconnectRequested: () => {
+        reconnectRequests += 1
+      }
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    const planted = `dsh_mobile=${'c'.repeat(43)}`
+    const plantedStatus = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: planted }
+    })
+    expect(plantedStatus.status).toBe(401)
+    const plantedReconnect = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: planted },
+      redirect: 'manual'
+    })
+    expect(plantedReconnect.status).toBe(200)
+    expect(plantedReconnect.headers.get('set-cookie')).toBeNull()
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const resumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie },
+      redirect: 'manual'
+    })
+    expect(resumed.status).toBe(302)
+    expect(reconnectRequests).toBe(1)
+    expect(bridge.snapshot().connected).toBe(true)
+  })
+
+  it('restores each WiFi phone on its own after disconnect', async () => {
+    const store = memoryPinStore({ pin: '246810', pinConsent: true })
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999',
+      pairingPinStore: store
+    })
+    bridges.push(bridge)
+    const { port, cookie: firstCookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    armFakeTunnel(bridge)
+    const tunnelHeaders = {
+      host: 'active-mobile.trycloudflare.com',
+      'cf-connecting-ip': '203.0.113.21',
+      'cf-ray': 'test-ray'
+    }
+    const verified = await fetch(`http://127.0.0.1:${port}/pair/verify`, {
+      method: 'POST',
+      headers: { ...tunnelHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ pin: '246810' })
+    })
+    expect(verified.status).toBe(200)
+    const secondCookie = verified.headers.get('set-cookie')!.split(';', 1)[0]!
+    await bridge.toggleTunnel(false)
+    expect(bridge.snapshot().connected).toBe(true)
+
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    expect(bridge.snapshot().connected).toBe(false)
+
+    const firstResumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: firstCookie },
+      redirect: 'manual'
+    })
+    expect(firstResumed.status).toBe(302)
+    const secondStillOut = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: secondCookie, ...tunnelHeaders }
+    })
+    expect(secondStillOut.status).toBe(401)
+    const firstStillIn = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: firstCookie, ...tunnelHeaders }
+    })
+    expect(firstStillIn.status).toBe(200)
+
+    const secondResumed = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: { cookie: secondCookie },
+      redirect: 'manual'
+    })
+    expect(secondResumed.status).toBe(302)
+    const secondBack = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers: { cookie: secondCookie, ...tunnelHeaders }
+    })
+    expect(secondBack.status).toBe(200)
+  })
+
+  it('does not restore a suspended WiFi session from a tunnel reconnect', async () => {
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => 'http://127.0.0.1:9999'
+    })
+    bridges.push(bridge)
+    const { port, cookie } = await pairBridge(bridge)
+    const desktopCookie = await authorizeDesktop(bridge)
+    await fetch(`http://127.0.0.1:${port}/desktop/disconnect`, {
+      method: 'POST',
+      headers: { cookie: desktopCookie }
+    })
+    const tunnelReconnect = await fetch(`http://127.0.0.1:${port}/reconnect`, {
+      headers: {
+        cookie,
+        host: 'active-mobile.trycloudflare.com',
+        'cf-connecting-ip': '203.0.113.8',
+        'cf-ray': 'test-ray'
+      },
+      redirect: 'manual'
+    })
+    expect(tunnelReconnect.status).toBe(200)
+    expect(bridge.snapshot().connected).toBe(false)
   })
 
   it('pairs on scan, then forwards only allowlisted RPC methods', async () => {
@@ -1564,5 +1751,142 @@ describe('LAN vs tunnel pairing authorization', () => {
     })
     expect(fabricated.status).toBe(403)
     expect(await fabricated.text()).not.toContain('246810')
+  })
+})
+
+describe('workspace follow snapshot', () => {
+  const baseline = {
+    items: [
+      { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s1'] },
+      { workspaceId: 'w2', title: 'Two', path: '/two', sessionIds: [] as string[] }
+    ],
+    archivedSessionIds: [] as string[]
+  }
+
+  it('ignores increments until a baseline exists', () => {
+    const frame = {
+      type: 'upsert',
+      workspace: { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s2', 's1'] }
+    }
+    expect(applyWorkspaceFollowFrame(undefined, frame)).toBeUndefined()
+  })
+
+  it('folds upsert, order, archived, and remove into the baseline', () => {
+    const upserted = applyWorkspaceFollowFrame(baseline, {
+      type: 'upsert',
+      workspace: { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s2', 's1'] }
+    }) as typeof baseline
+    expect(upserted.items[0]?.sessionIds).toEqual(['s2', 's1'])
+    expect(upserted.items[1]?.workspaceId).toBe('w2')
+
+    const ordered = applyWorkspaceFollowFrame(upserted, {
+      type: 'order',
+      workspaceIds: ['w2', 'w1']
+    }) as typeof baseline
+    expect(ordered.items.map((item) => item.workspaceId)).toEqual(['w2', 'w1'])
+
+    const archived = applyWorkspaceFollowFrame(ordered, {
+      type: 'archived',
+      archivedSessionIds: ['s9']
+    }) as typeof baseline
+    expect(archived.archivedSessionIds).toEqual(['s9'])
+
+    const removed = applyWorkspaceFollowFrame(archived, {
+      type: 'remove',
+      workspaceId: 'w2'
+    }) as typeof baseline
+    expect(removed.items.map((item) => item.workspaceId)).toEqual(['w1'])
+    expect(removed.archivedSessionIds).toEqual(['s9'])
+    expect(baseline.items[0]?.sessionIds).toEqual(['s1'])
+  })
+
+  it('serves a created session from workspace.list after the follow upsert', async () => {
+    let client: TestWebSocket | undefined
+    const harness = createServer((_request, response) => {
+      response.statusCode = 404
+      response.end()
+    })
+    const pairingMux = new WebSocketServer({ noServer: true })
+    webSocketServers.push(pairingMux)
+    harness.on('upgrade', (request, socket, head) => {
+      if (request.url !== '/api/remote.mux') return socket.destroy()
+      pairingMux.handleUpgrade(request, socket, head, (connected) => {
+        client = connected
+        connected.send(JSON.stringify({
+          type: 'item',
+          streamId: 'mobile-workspaces',
+          value: { type: 'baseline', value: baseline }
+        }))
+      })
+    })
+    servers.push(harness)
+    await new Promise<void>((resolve) => harness.listen(0, '127.0.0.1', resolve))
+    const harnessPort = (harness.address() as AddressInfo).port
+    const bridge = new LanMobileBridge({
+      harnessUrl: () => `http://127.0.0.1:${harnessPort}`
+    })
+    bridges.push(bridge)
+    const snapshot = await bridge.start()
+    const token = new URL(snapshot.pairingUrl!).searchParams.get('token')
+    const paired = await fetch(`http://127.0.0.1:${snapshot.port}/pair?token=${token}`, {
+      redirect: 'manual'
+    })
+    const cookie = paired.headers.get('set-cookie')!.split(';', 1)[0]!
+    const readWorkspaces = async (): Promise<{ ok?: boolean; value?: typeof baseline }> => {
+      const response = await fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ method: 'workspace.list', payload: {} })
+      })
+      return response.json() as Promise<{ ok?: boolean; value?: typeof baseline }>
+    }
+    const until = async (
+      predicate: (value: typeof baseline) => boolean
+    ): Promise<typeof baseline> => {
+      const started = Date.now()
+      let latest: { ok?: boolean; value?: typeof baseline } | undefined
+      while (Date.now() - started < 2000) {
+        latest = await readWorkspaces()
+        if (latest.ok === true && latest.value && predicate(latest.value)) return latest.value
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      throw new Error(`workspace snapshot did not update: ${JSON.stringify(latest)}`)
+    }
+
+    await until((value) => value.items[0]?.sessionIds?.[0] === 's1')
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: {
+        type: 'upsert',
+        workspace: { workspaceId: 'w1', title: 'One', path: '/one', sessionIds: ['s2', 's1'] }
+      }
+    }))
+    const created = await until((value) => value.items.some((item) => item.sessionIds?.includes('s2')))
+    expect(created.items.find((item) => item.workspaceId === 'w1')?.sessionIds).toEqual(['s2', 's1'])
+
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: { type: 'order', workspaceIds: ['w2', 'w1'] }
+    }))
+    const ordered = await until((value) => value.items[0]?.workspaceId === 'w2')
+    expect(ordered.items.map((item) => item.workspaceId)).toEqual(['w2', 'w1'])
+
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: { type: 'archived', archivedSessionIds: ['s9'] }
+    }))
+    const archived = await until((value) => value.archivedSessionIds.includes('s9'))
+    expect(archived.archivedSessionIds).toEqual(['s9'])
+
+    client?.send(JSON.stringify({
+      type: 'item',
+      streamId: 'mobile-workspaces',
+      value: { type: 'remove', workspaceId: 'w2' }
+    }))
+    const removed = await until((value) => value.items.length === 1)
+    expect(removed.items.map((item) => item.workspaceId)).toEqual(['w1'])
   })
 })

@@ -185,7 +185,7 @@ function menuEntries(locale: 'en' | 'zh'): MenuEntry[] {
   return [
     { kind: 'label', label: 'HARNESS' },
     { kind: 'command', command: 'connect-phone', label: zh ? '连接手机…' : 'Connect Phone…', shortcut: 'Ctrl+Shift+M' },
-    { kind: 'command', command: 'restart-harness', label: zh ? '重启 Harness' : 'Restart Harness', shortcut: 'Ctrl+Shift+R' },
+    { kind: 'command', command: 'restart-harness', label: zh ? '重启' : 'Restart', shortcut: 'Ctrl+Shift+R' },
     { kind: 'command', command: 'safe-mode', label: zh ? '以安全模式重启…' : 'Restart as Safe Mode…' },
     { kind: 'command', command: 'show-harness-log', label: zh ? '显示 Harness 日志' : 'Show Harness Log' },
     { kind: 'command', command: 'check-for-updates', label: zh ? '检查更新…' : 'Check for Updates…', shortcut: 'Ctrl+U' },
