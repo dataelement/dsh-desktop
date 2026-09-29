@@ -261,6 +261,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
         with:
           name: ${{ matrix.artifact }}
+          retention-days: 7
           path: |
             dist/dsh-desktop-mac-${{ matrix.arch }}.dmg
             dist/dsh-desktop-mac-${{ matrix.arch }}.zip
@@ -272,6 +273,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         with:
           name: ${{ matrix.artifact }}-dev
+          retention-days: 3
           path: |
             dist-dev/dsh-desktop-dev-mac-${{ matrix.arch }}.dmg
             dist-dev/dsh-desktop-dev-mac-${{ matrix.arch }}.zip
@@ -314,12 +316,16 @@ jobs:
       - name: Verify PPT generation leaves tracked sources clean
         run: git diff --exit-code -- packages/ppt-runtime scripts/ppt
       - run: npm run typecheck
+      - name: Boot Harness through Electron Node mode on Windows
+        run: node scripts/probe-electron-node-runtime.mjs
+        timeout-minutes: 5
       - name: Check recovery UI on native Windows at three display scales
         run: node scripts/check-recovery-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-recovery-ui
+          retention-days: 7
           path: |
             artifacts/recovery-ui/scale-*/*.png
             artifacts/recovery-ui/scale-*/results.json
@@ -493,6 +499,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.mode == 'development') }}
         with:
           name: windows-x64-dev
+          retention-days: 3
           path: |
             dist-dev/dsh-desktop-dev-windows-x64-setup.exe
             dist-dev/dsh-desktop-dev-windows-x64-setup.exe.blockmap
@@ -646,6 +653,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
+          retention-days: 7
           path: |
             ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe
             ${{ runner.temp }}/dsh-windows-${{ github.run_id }}/release/dsh-desktop-windows-x64-setup.exe.blockmap

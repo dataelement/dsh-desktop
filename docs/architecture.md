@@ -19,7 +19,7 @@ flowchart TD
   MAIN --> UPDATE["Installed-build update manager"]
 ```
 
-On macOS, Harness runs in an Electron UtilityProcess with Node capabilities. On Windows, it is launched with the bundled target-native Node.js executable. Cordis HMR's `--expose-internals` permission is granted to that isolated process and never to the web renderer.
+On macOS, Harness runs in an Electron UtilityProcess with Node capabilities. On Windows, it is launched from the packaged Electron executable in Node mode (`ELECTRON_RUN_AS_NODE=1`); Windows packages carry no standalone `node.exe`. Both paths reach Node internals through Harness's `node-addon-require-builtin`, which accepts only the Electron builds it was compiled for, so `scripts/verify-target.mjs` runs the same loader calls under the packaging Electron before every package build. Cordis HMR's `--expose-internals` permission is granted to that isolated process and never to the web renderer. On Windows the window uses a hidden title bar: Harness draws the 40 DIP caption row, and Desktop adds the "应用" / "编辑" caption menubar beside the sidebar toggle, whose native popups carry the Desktop commands.
 
 ## Startup flow
 

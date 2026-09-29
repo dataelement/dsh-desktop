@@ -1,6 +1,7 @@
 import { constants, accessSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { electronExecutable, harnessLoaderAnchor, probeElectronNodeLoader } from './electron-node-loader.mjs'
 
 const [expectedPlatform, expectedArch] = process.argv.slice(2)
 
@@ -55,4 +56,20 @@ if (runtime.platform !== expectedPlatform || runtime.arch !== expectedArch) {
   process.exit(1)
 }
 
-console.log(`Packaging target verified: ${process.platform}/${process.arch}; bundled Node.js ${runtime.version}`)
+// Windows runs Harness through Electron Node mode and macOS through a utility
+// process; both reach Node internals through the Harness native loader, which
+// accepts only the Electron builds it was compiled for.
+const loader = probeElectronNodeLoader({
+  executable: electronExecutable(process.cwd()),
+  anchor: harnessLoaderAnchor(process.cwd())
+})
+if (!loader.ok) {
+  console.error(`Electron Node mode cannot load the Harness native loader: ${loader.detail}`)
+  console.error('Pin an Electron version the installed node-addon-require-builtin supports, or update the loader, before packaging.')
+  process.exit(1)
+}
+
+console.log(
+  `Packaging target verified: ${process.platform}/${process.arch}; bundled Node.js ${runtime.version}; ` +
+  `Electron ${loader.runtime.electron} (Node ${loader.runtime.node}) loads the Harness native loader`
+)
