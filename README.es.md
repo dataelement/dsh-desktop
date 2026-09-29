@@ -103,7 +103,7 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | DMG/ZIP firmados y notarizados | Compatible |
 | Windows x64 | Instalador NSIS firmado | Compatible |
 | Windows ARM64 | — | No compatible actualmente |
-| Linux | — | No compatible actualmente |
+| Linux x64 | deb/AppImage sin firmar compilados desde el código fuente | Compilación local compatible |
 
 Harness incluye dependencias nativas, por lo que cada artefacto se compila en el sistema operativo y la arquitectura correspondientes.
 

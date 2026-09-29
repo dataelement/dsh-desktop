@@ -24,6 +24,8 @@ describe('workspace Open in file manager integration', () => {
     })
     plugin.apply({
       effect: vi.fn(),
+      // The plugin registers its settings-header menu text here at apply time.
+      locale: { register: () => () => undefined, bind: () => (key: string) => key },
       slots: {
         inject: (_name: string, callback: () => unknown) => callback(),
         register: (config: (typeof registrations)[number]['config'], component: (props: Record<string, unknown>) => unknown) => {

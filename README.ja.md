@@ -102,7 +102,7 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | 署名・公証済み DMG/ZIP | 対応 |
 | Windows x64 | コード署名済み NSIS インストーラー | 対応 |
 | Windows ARM64 | — | 未対応 |
-| Linux | — | 未対応 |
+| Linux x64 | ソースからローカルビルドする未署名 deb/AppImage | ローカルビルドに対応 |
 
 Harness にはターゲット固有のネイティブ依存関係が含まれるため、各リリースは対応する OS とアーキテクチャ上でビルドされます。
 

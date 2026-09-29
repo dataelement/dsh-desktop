@@ -106,9 +106,9 @@ open -a "DSH Desktop" --args --safe-mode
 | macOS Intel | 已签名并通过公证的 DMG/ZIP | 支持 |
 | Windows x64 | 已完成代码签名的 NSIS 安装包 | 支持 |
 | Windows ARM64 | — | 当前不支持 |
-| Linux | — | 当前不支持 |
+| Linux x64 | 由源码在本地构建的未签名 deb/AppImage | 支持本地构建，见 [Linux 移植指南](docs/linux-port.md) |
 
-Harness 包含目标平台原生依赖，因此每一种正式安装包都在对应操作系统与架构上构建。
+Harness 包含目标平台原生依赖，因此每一种正式安装包都在对应操作系统与架构上构建。Linux 安装包暂不由发布流程产出，请在将要运行该应用的 Linux 机器上自行构建。
 
 ## 开发与架构
 

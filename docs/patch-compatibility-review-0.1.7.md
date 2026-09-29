@@ -26,7 +26,7 @@
 | dsh-client-ui-agent-preset | 导入导出、搜索、Modal 引用 | 未发现新增问题 |
 | dsh-client-ui-attachment | 文件卡片回调、组件导出 | 未发现新增问题 |
 | dsh-client-ui-chat | 上传文件打开链、错误提示 | 未发现新增问题 |
-| dsh-client-ui-conversation | 输入区及 PPT slot 声明、props、图标 | 未发现新增接口缺失；布局改动仍由 PPT 组合测试覆盖 |
+| dsh-client-ui-conversation | 输入区及 PPT slot 声明、props、图标、宽度拖拽条的悬停高光 | 未发现新增接口缺失；布局改动仍由 PPT 组合测试覆盖，拖拽条悬停行为由 `conversation-width-handle-hover` 覆盖 |
 | dsh-client-ui-deliverables | 本地路径识别与文件打开 | 未发现新增问题 |
 | dsh-client-ui-model-selection | 图标、搜索、推理等级 | 前序修复后未发现新增问题 |
 | dsh-client-ui-settings-general | 设置入口、onboarding 条件 | 未发现新增问题 |

@@ -5,9 +5,9 @@ import { createRequire } from 'node:module'
 
 // Regenerate the startup splash loaders (build/dsh-loader.gif and
 // build/dsh-loader-dark.gif) from the brand mark in build/brand-mark.svg.
-// The mark is quantised onto a 4px pixel grid, bobs gently, and sheds a few
-// square "bubbles" from the window's traffic lights — the same motion the
-// previous hand-drawn loaders used, so splash.html needs no changes.
+// The mark is quantised onto a pixel grid, bobs gently, and sheds a few square
+// "bubbles" from its back — the same motion the previous hand-drawn loaders
+// used, so splash.html needs no changes.
 
 const require = createRequire(import.meta.url)
 const sharp = require('sharp')
@@ -16,18 +16,25 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const buildDirectory = path.join(projectRoot, 'build')
 const markSource = path.join(buildDirectory, 'brand-mark.svg')
 
-const WIDTH = 640
-const HEIGHT = 360
+// splash.html draws the loader at a fixed 196 CSS px wide with
+// `image-rendering: pixelated`, so a 640px canvas was being resampled to 30.6%
+// by nearest neighbour — fractional, and every cell edge landed between device
+// pixels. Generating at twice the display width with a 2px cell puts every cell
+// on whole device pixels at 2x scaling (and on exactly one at 1x) instead.
+const DISPLAY_WIDTH = 196
+const SCALE = 2
+const WIDTH = DISPLAY_WIDTH * SCALE
+const HEIGHT = 220
 const FRAMES = 48
 const DELAY_MS = 50
-const CELL = 4
+const CELL = 2
 const COLS = WIDTH / CELL
 const ROWS = HEIGHT / CELL
 
-/** Tight bounds of the mark inside its 1000x1000 artwork (shared with the sidebar mark). */
-const MARK_VIEWBOX = { x: 42, y: 218, width: 898, height: 564 }
-/** Body width in cells; matches the ~310px silhouette of the previous loader. */
-const BODY_CELLS = 78
+/** Native viewBox of the mark, matching build/brand-mark.svg. */
+const MARK_VIEWBOX = { x: 0, y: 0, width: 23.16, height: 17.04 }
+/** Body width in cells; keeps the mark's share of the canvas the previous loader used. */
+const BODY_CELLS = 96
 
 const THEMES = {
   light: {
@@ -84,9 +91,9 @@ function rng(seed) {
 
 /**
  * Bubbles are scheduled on a loop of FRAMES so the animation cycles seamlessly.
- * Each one starts inside the traffic-light corner, rises about a cell per two
- * frames with a little sideways drift, and fades through the theme's three
- * spark shades before it goes out.
+ * Each one starts just above the mark's back, rises about a cell per two frames
+ * with a little sideways drift, and fades through the theme's three spark shades
+ * before it goes out.
  */
 function buildSparks(body, random) {
   const sparks = []

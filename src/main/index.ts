@@ -156,6 +156,7 @@ import { resolveHarnessLocale } from './application-locale'
 import { installContextMenu } from './context-menu'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
+  isDesktopMenuCommand,
   isZoomMenuCommand,
   type DesktopMenuCommand
 } from '../shared/desktop-menu'
@@ -924,20 +925,40 @@ function restoreMainWindow(): void {
   }
 }
 
+function trayPlatform(): boolean {
+  // Linux shows the icon through a StatusNotifier host, which Ubuntu provides
+  // with the AppIndicator extension; macOS keeps its own dock/window model.
+  return process.platform === 'win32' || process.platform === 'linux'
+}
+
+function hasUsableTray(): boolean {
+  return tray !== undefined && !tray.isDestroyed()
+}
+
 function ensureTray(): void {
-  if (process.platform !== 'win32' || tray) return
+  if (!trayPlatform() || hasUsableTray()) return
 
   const locale = harnessLocale()
-  tray = new Tray(desktopIconPath())
-  tray.setToolTip('DSH Desktop')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: locale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: restoreMainWindow },
-      { type: 'separator' },
-      { label: locale === 'zh' ? '退出' : 'Exit', click: () => app.quit() }
-    ])
-  )
-  tray.on('click', restoreMainWindow)
+  try {
+    const icon = new Tray(desktopIconPath())
+    icon.setToolTip('DSH Desktop')
+    icon.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: locale === 'zh' ? '显示 DSH Desktop' : 'Show DSH Desktop', click: restoreMainWindow },
+        { type: 'separator' },
+        { label: locale === 'zh' ? '退出' : 'Exit', click: () => app.quit() }
+      ])
+    )
+    // A StatusNotifier host does not deliver click events on every desktop, so
+    // the window is always reachable through the context menu above.
+    icon.on('click', restoreMainWindow)
+    tray = icon
+  } catch (error) {
+    // No icon means no way back to a hidden window: keep the native close
+    // behavior and record why, instead of hiding the window into nowhere.
+    tray = undefined
+    console.warn('[desktop] tray icon unavailable; the window will keep its native close behavior:', error)
+  }
 }
 
 function createWindow(): BrowserWindow {
@@ -967,6 +988,10 @@ function createWindow(): BrowserWindow {
         autoHideMenuBar: true
       }
       : {}),
+    // Linux has no OS-drawn caption overlay to borrow: the desktop draws the
+    // window's own controls (src/preload/linux-window-chrome.ts), and a GTK
+    // frame would otherwise add a native titlebar above them.
+    ...(process.platform === 'linux' ? { frame: false } : {}),
     backgroundColor: process.platform === 'darwin' ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#141416' : '#f8f8f6',
     webPreferences: {
       contextIsolation: true,
@@ -992,6 +1017,19 @@ function createWindow(): BrowserWindow {
     window.on('leave-full-screen', syncFullscreen)
   } else if (isWindows) {
     window.setMenuBarVisibility(false)
+  } else {
+    // The renderer's caption draws the maximize/restore icon from this state, so
+    // it has to follow what the renderer did not initiate: a double-click on the
+    // drag region, a keyboard command, or the window manager itself.
+    const syncWindowState = (): void => {
+      if (window.isDestroyed()) return
+      window.webContents.send('desktop-window:state-changed', { maximized: window.isMaximized() })
+    }
+    window.webContents.on('did-finish-load', syncWindowState)
+    window.on('maximize', syncWindowState)
+    window.on('unmaximize', syncWindowState)
+    window.on('enter-full-screen', syncWindowState)
+    window.on('leave-full-screen', syncWindowState)
   }
   windowStateManager.track(window)
   if (windowStateManager.getState().isMaximized) {
@@ -1000,7 +1038,7 @@ function createWindow(): BrowserWindow {
   window.on('close', (event) => {
     desktopStorageManager?.flushSync()
     windowStateManager?.flushSync()
-    if (!shouldKeepRunningInBackground(process.platform, quitting)) return
+    if (!shouldKeepRunningInBackground(process.platform, quitting, hasUsableTray())) return
     event.preventDefault()
     window.hide()
   })
@@ -1750,6 +1788,37 @@ function registerHarnessHandlers(): void {
       applyWindowChromeTheme(mainWindow, isDark)
     }
     return { ok: true }
+  })
+
+  // Linux draws its own caption, so these are the window's only minimize,
+  // maximize and close controls. Same trust rule as the rest of the chrome.
+  ipcMain.removeHandler('desktop-window:minimize')
+  ipcMain.handle('desktop-window:minimize', (event) => {
+    assertTrustedMainWindowEvent(event)
+    mainWindow?.minimize()
+    return { ok: true }
+  })
+
+  ipcMain.removeHandler('desktop-window:toggle-maximize')
+  ipcMain.handle('desktop-window:toggle-maximize', (event) => {
+    assertTrustedMainWindowEvent(event)
+    if (!mainWindow || mainWindow.isDestroyed()) return { ok: false }
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+    return { ok: true }
+  })
+
+  ipcMain.removeHandler('desktop-window:close')
+  ipcMain.handle('desktop-window:close', (event) => {
+    assertTrustedMainWindowEvent(event)
+    mainWindow?.close()
+    return { ok: true }
+  })
+
+  ipcMain.removeHandler('desktop-window:get-state')
+  ipcMain.handle('desktop-window:get-state', (event) => {
+    assertTrustedMainWindowEvent(event)
+    return { maximized: mainWindow?.isMaximized() ?? false }
   })
 
   ipcMain.removeHandler('desktop:about-info')
@@ -3051,20 +3120,33 @@ function installMenu(): void {
   const checkForUpdatesLabel = isChinese
     ? '检查更新…'
     : 'Check for Updates…'
+  const aboutEntry: Electron.MenuItemConstructorOptions = {
+    label: isChinese ? '关于 DSH Desktop' : 'About DSH Desktop',
+    click: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        void showAbout(mainWindow).catch(showUnexpectedError)
+      }
+    }
+  }
+  // A GTK window draws the application menu as a row of top-level menus across
+  // its top-left, and Electron cannot keep the menu while hiding that row the
+  // way Windows does with `autoHideMenuBar`. Linux therefore installs no menu at
+  // all, and the commands it used to be the only home for — Export Session Log,
+  // About, and the rest of the Harness group — are registered in the settings
+  // panel header by packages/dsh-desktop-client-ui. Removing the row removes
+  // those accelerators too; the platform had no other working shortcuts anyway
+  // (see "The frontend on Linux").
+  if (process.platform === 'linux') {
+    Menu.setApplicationMenu(null)
+    return
+  }
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(process.platform === 'darwin'
       ? [
         {
           label: app.name,
           submenu: [
-            {
-              label: isChinese ? '关于 DSH Desktop' : 'About DSH Desktop',
-              click: () => {
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  void showAbout(mainWindow).catch(showUnexpectedError)
-                }
-              }
-            },
+            aboutEntry,
             {
               label: checkForUpdatesLabel,
               accelerator: 'CmdOrCtrl+U',
@@ -3112,9 +3194,8 @@ function installMenu(): void {
               click: () => void checkForUpdates(true).catch(showUnexpectedError)
             }
           ]),
-        ...(process.platform === 'darwin'
-          ? []
-          : [{ type: 'separator' as const }, { role: 'quit' as const }])
+        { type: 'separator' },
+        { role: 'quit' as const }
       ]
     },
     {
@@ -3337,6 +3418,20 @@ async function bootstrap(): Promise<void> {
     const errorMessage = await shell.openPath(path)
     if (errorMessage) throw new Error(errorMessage)
     return { ok: true }
+  })
+  // macOS runs these commands from the application menu and Windows from its
+  // caption menu; both call the executor directly. Linux installs no menu and
+  // offers the commands in the settings panel header instead, so the renderer
+  // needs an IPC entry point in front of the same executor and the same shared
+  // validation.
+  ipcMain.removeHandler('desktop-menu:execute')
+  ipcMain.handle('desktop-menu:execute', async (event, command: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (!isDesktopMenuCommand(command)) {
+      throw new Error('Unknown DSH Desktop menu command.')
+    }
+    const zoomFactor = await executeDesktopMenuCommand(command)
+    return zoomFactor === undefined ? { ok: true } : { ok: true, zoomFactor }
   })
   ipcMain.removeHandler('harness:renderer-healthy')
   ipcMain.handle('harness:renderer-healthy', (event) => {
@@ -3599,8 +3694,9 @@ if (isDaemonLaunch(process.env, process.platform)) {
       desktopStorageManager?.flushSync()
       stopUpdateManager()
       // Windows leaves the tray icon behind as a ghost until the user hovers
-      // over it unless it is destroyed explicitly before the process exits.
-      if (tray && !tray.isDestroyed()) tray.destroy()
+      // over it, and a Linux StatusNotifier item outlives the process until the
+      // host refreshes it, so destroy the icon explicitly before exiting.
+      if (hasUsableTray()) tray?.destroy()
       tray = undefined
       repairAgentService?.dispose()
       repairAgentService = undefined

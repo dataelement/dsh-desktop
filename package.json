@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
+  "desktopName": "dsh-desktop.desktop",
   "author": "DataElement",
   "license": "MIT",
   "repository": {
@@ -26,6 +27,7 @@
     "postinstall": "patch-package && node scripts/install-brand-assets.mjs && install-electron --no",
     "dev": "npm run ppt:build && electron-vite dev",
     "build": "npm run ppt:build && electron-vite build",
+    "brand:generate": "node scripts/generate-brand-assets.mjs && node scripts/install-brand-assets.mjs",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "loader:generate": "node scripts/generate-loader-gifs.mjs",
     "preview": "electron-vite preview",
@@ -41,6 +43,10 @@
     "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
     "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
     "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/electron-builder-windows.mjs --win --x64 --publish never",
+    "package:linux": "node scripts/verify-target.mjs linux x64 && npm run build && electron-builder --linux --x64 --publish never",
+    "package:linux:local": "node scripts/verify-target.mjs linux x64 && npm run build && electron-builder --linux --x64 --publish never --config.extraMetadata.version=$(node scripts/local-build-version.mjs)",
+    "package:linux:dir": "node scripts/verify-target.mjs linux x64 && npm run build && electron-builder --linux --x64 --dir --publish never",
+    "package:dev:linux": "node scripts/verify-target.mjs linux x64 && npm run build && electron-builder --linux --x64 --publish never --config electron-builder.dev.cjs",
     "ppt:build": "node scripts/prepare-ppt-runtime.mjs",
     "pretest": "npm run ppt:build",
     "pretest:watch": "npm run ppt:build"
@@ -400,6 +406,10 @@
         "to": "dsh-desktop.patch.yml"
       },
       {
+        "from": "build/dsh-desktop.apparmor",
+        "to": "dsh-desktop.apparmor"
+      },
+      {
         "from": "build/dsh-desktop-market.patch.yml",
         "to": "dsh-desktop-market.patch.yml"
       },
@@ -484,6 +494,40 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "linux": {
+      "icon": "build/icons",
+      "category": "Development;Utility",
+      "executableName": "dsh-desktop",
+      "syncDesktopName": true,
+      "synopsis": "DeepSeek Harness desktop shell",
+      "description": "Local-first DeepSeek Harness desktop application.",
+      "target": [
+        "deb",
+        "AppImage"
+      ]
+    },
+    "deb": {
+      "maintainer": "DSH Desktop Linux port <dsh-desktop-linux@example.com>",
+      "depends": [
+        "libgtk-3-0t64 | libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0t64 | libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ],
+      "recommends": [],
+      "afterInstall": "build/linux-after-install.sh",
+      "afterRemove": "build/linux-after-remove.sh"
+    },
+    "appImage": {
+      "executableArgs": [
+        "--no-sandbox"
+      ]
     },
     "afterPack": "scripts/verify-packaged-ppt-runtime.cjs"
   }

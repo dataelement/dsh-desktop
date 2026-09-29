@@ -1,0 +1,22 @@
+# AppArmor profile for the installed DSH Desktop package.
+#
+# Chromium starts its renderer inside an unprivileged user namespace when the
+# SUID `chrome-sandbox` helper is unusable. Ubuntu 23.10 and newer set
+# `kernel.apparmor_restrict_unprivileged_userns=1`, which denies user namespace
+# creation to programs that have no AppArmor profile, so such a launch aborts
+# with "No usable sandbox!". The Debian package installs this profile (with
+# @EXECUTABLE@ replaced by the real executable path) and loads it, which keeps
+# Chromium's namespace sandbox available without weakening the renderer.
+#
+# The profile is deliberately unconfined apart from the `userns` rule: it names
+# the process and stops the kernel restriction from treating DSH Desktop as a
+# program that must not create user namespaces.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile dsh-desktop "@EXECUTABLE@" flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/dsh-desktop>
+}
