@@ -72,6 +72,7 @@ stable / beta 双通道，以及 Profile checkpoint 与 last-known-good 自动�
 3. **收敛 generation 的每插件 junction。** 现在每个市场插件在 `profiles/web/node_modules/<插件>` 有一个指向 `.generations/<id>` 的 junction。给创建和切换加有界重试与明确诊断（EPERM/EBUSY 时指出占用方），并评估改为运行时解析的 linked root 注册、不再建链接的可行性。
 4. **明确插件版本策略。** main 通过补丁把“声明的 Harness 版本不兼容”从拒绝改为告警。保留告警可以，但要让 Recovery 页能把“版本不兼容”作为启动失败的候选原因展示出来，并写清什么情况下仍然拒绝加载。
 5. **固化市场约束。** dshmarket 已不在运行时依赖里。增加打包门禁：任何可由市场或用户升级的 bundle 出现在安装包依赖中时构建失败，避免 `resolveBundleDir` 安装目录优先带来的遮蔽问题再次出现。
+6. **统一插件状态与管理入口。** 官方 Plugins 页、dshmarket、Safe Mode/Recovery 和内置插件各自读写启停状态，语义不一致；例如官方页停用会从 `dsh.profile.bundles` 删除名称，而下次启动的 `healProfileBundles()` 又会把它加回。按 [插件状态与管理入口统一方案](plugin-management-unification-plan.md) 先统一状态语义和旧数据迁移，再把各入口的安装、启停、卸载接到同一个管理服务。市场层保留 dshmarket 作为发现入口。
 
 验收：
 
