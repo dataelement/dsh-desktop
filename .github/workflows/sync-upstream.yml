@@ -1,0 +1,72 @@
+name: Sync upstream main
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge upstream main into fork
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/dataelement/dsh-desktop.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/dataelement/dsh-desktop.git
+          git fetch upstream main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Upstream main is already merged"
+            exit 0
+          fi
+
+          fork_head="$(git rev-parse HEAD)"
+
+          # Merge upstream source. GitHub's GITHUB_TOKEN cannot safely carry
+          # upstream workflow-file changes in this fork, so workflow conflicts
+          # are intentionally resolved in favor of the fork's copies.
+          git merge --no-commit --no-ff upstream/main || {
+            unresolved="$(git diff --name-only --diff-filter=U)"
+            test -n "$unresolved"
+
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/*)
+                  git checkout --ours -- "$path"
+                  git add -- "$path"
+                  ;;
+                *)
+                  echo "::error::Upstream sync needs manual resolution: $path"
+                  exit 1
+                  ;;
+              esac
+            done <<< "$unresolved"
+          }
+
+          # Preserve this fork's workflow directory even when upstream changed
+          # workflow files without producing a textual merge conflict.
+          rm -rf .github/workflows
+          git checkout "$fork_head" -- .github/workflows
+          git add -A .github/workflows
+
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git commit -m "chore: sync upstream main (preserve fork workflows)"
+          git push origin HEAD:main
