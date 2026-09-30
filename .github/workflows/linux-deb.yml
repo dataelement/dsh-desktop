@@ -168,7 +168,9 @@ jobs:
           # --- Hard checks: the package is installable and launchable. ---
           dpkg-deb --info "$asset"
           [ "$(dpkg-deb -f "$asset" Package)" = "dsh-desktop" ] || fail "Package name"
-          [ "$(dpkg-deb -f "$asset" Version)" = "$version" ] || fail "Version != $version"
+          # electron-builder writes prereleases the Debian way: 0.10.0-beta -> 0.10.0~beta
+          deb_version="${version/-/\~}"
+          [ "$(dpkg-deb -f "$asset" Version)" = "$deb_version" ] || fail "Version != $deb_version"
           [ "$(dpkg-deb -f "$asset" Architecture)" = "amd64" ] || fail "Architecture"
           dpkg-deb -x "$asset" "$root"
 
