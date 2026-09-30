@@ -21,51 +21,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  sync-upstream:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
-      - name: Merge upstream main into fork
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/dataelement/dsh-desktop.git 2>/dev/null || \
-            git remote set-url upstream https://github.com/dataelement/dsh-desktop.git
-          git fetch upstream main
-          if git merge-base --is-ancestor upstream/main HEAD; then
-            echo "Upstream main is already merged"
-            exit 0
-          fi
-          # A workflow conflict is expected when upstream changes its release
-          # automation. Resolve only workflow conflicts with the fork's copy.
-          git merge --no-commit --no-ff upstream/main || {
-            unresolved="$(git diff --name-only --diff-filter=U)"
-            test -n "$unresolved"
-            while IFS= read -r path; do
-              case "$path" in
-                .github/workflows/*) ;;
-                *) echo "::error::Unresolved upstream conflict: $path"; exit 1 ;;
-              esac
-            done <<< "$unresolved"
-          }
-          # The GitHub App token cannot update workflow files. Keep this fork's
-          # release automation while syncing all other upstream source changes.
-          rm -rf .github/workflows
-          git checkout HEAD -- .github/workflows
-          git add -A .github/workflows
-          test -z "$(git diff --name-only --diff-filter=U)"
-          # Always finish the merge, even if upstream only changed workflows.
-          git commit -m "chore: sync upstream main (preserve fork workflows)"
-          git push origin HEAD:main
-
   discover:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
