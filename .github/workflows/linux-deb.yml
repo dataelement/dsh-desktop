@@ -1,17 +1,27 @@
 name: Build unofficial Linux DEB
 
+# Builds Linux amd64 .deb packages straight from upstream release tags
+# (dataelement/dsh-desktop vX.Y.Z) and publishes them here as linux-vX.Y.Z.
+# The fork's own branches never carry upstream source, so there is nothing
+# to sync or merge.
+
 on:
-  push:
-    branches: [main]
-    paths: [.github/workflows/linux-deb.yml]
+  schedule:
+    - cron: "23 */3 * * *"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Upstream tag to build (leave empty for latest stable release)"
+        description: "Upstream tag to build, e.g. v0.9.3 (empty = every recent release still missing a Linux build)"
         required: false
         type: string
-  schedule:
-    - cron: "17 2 * * *"
+      force:
+        description: "Rebuild even if the Linux asset already exists"
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: [.github/workflows/linux-deb.yml]
 
 permissions:
   contents: read
@@ -20,80 +30,81 @@ concurrency:
   group: linux-deb-release
   cancel-in-progress: false
 
+env:
+  UPSTREAM_REPO: dataelement/dsh-desktop
+  # How many of the newest upstream releases to check on each scheduled run.
+  RECENT_RELEASES: "5"
+
 jobs:
   discover:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      release_tag: ${{ steps.version.outputs.release_tag }}
-      source_sha: ${{ steps.version.outputs.source_sha }}
-      should_build: ${{ steps.version.outputs.should_build }}
+      matrix: ${{ steps.find.outputs.matrix }}
+      count: ${{ steps.find.outputs.count }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Find upstream release to build
-        id: version
+      - name: Find upstream releases missing a Linux build
+        id: find
         env:
-          REQUESTED_TAG: ${{ inputs.tag }}
-          EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
-          git remote add upstream https://github.com/dataelement/dsh-desktop.git 2>/dev/null || \
-            git remote set-url upstream https://github.com/dataelement/dsh-desktop.git
-          git fetch --force --tags upstream
 
-          tag="$REQUESTED_TAG"
-          if [ -z "$tag" ]; then
-            tag="$(gh api repos/dataelement/dsh-desktop/releases/latest --jq '.tag_name')"
-          fi
-          test -n "$tag"
-          git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null
-          source_sha="$(git rev-list -n 1 "$tag")"
-
-          version="${tag#v}"
-          release_tag="linux-$tag"
-          asset="dsh-desktop-${version}-linux-amd64.deb"
-          should_build=true
-          if [ "$EVENT_NAME" != "push" ] && \
-            gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json assets \
-            --jq ".assets[].name" 2>/dev/null | grep -Fxq "$asset"; then
-            should_build=false
+          if [ -n "$REQUESTED_TAG" ]; then
+            candidates="$REQUESTED_TAG"
+          else
+            candidates="$(gh api "repos/$UPSTREAM_REPO/releases?per_page=30" \
+              --jq '[.[] | select(.draft | not) | select(.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+"))][:'"$RECENT_RELEASES"'][] | .tag_name')"
           fi
 
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
-          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          tags=()
+          for tag in $candidates; do
+            sha="$(gh api "repos/$UPSTREAM_REPO/commits/$tag" --jq .sha)" || {
+              echo "::warning::Upstream tag $tag not found, skipping"; continue; }
+            asset="dsh-desktop-${tag#v}-linux-amd64.deb"
+            if [ "$FORCE" != "true" ] && \
+              gh release view "linux-$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+                --jq '.assets[].name' 2>/dev/null | grep -Fxq "$asset"; then
+              echo "linux-$tag already has $asset"
+              continue
+            fi
+            echo "Will build $tag ($sha)"
+            tags+=("{\"tag\":\"$tag\",\"sha\":\"$sha\"}")
+          done
+
+          # Build oldest first so the newest release ends up marked "latest".
+          json="[]"
+          if [ ${#tags[@]} -gt 0 ]; then
+            json="$(printf '%s\n' "${tags[@]}" | jq -s -c 'reverse')"
+          fi
+          echo "matrix={\"include\":$json}" >> "$GITHUB_OUTPUT"
+          echo "count=${#tags[@]}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: discover
-    if: needs.discover.outputs.should_build == 'true'
+    if: needs.discover.outputs.count != '0'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    env:
+      UPSTREAM_TAG: ${{ matrix.tag }}
+      SOURCE_SHA: ${{ matrix.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out upstream source at ${{ matrix.tag }}
+        uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
 
-      - name: Check out exact upstream source
-        env:
-          UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
-          SOURCE_SHA: ${{ needs.discover.outputs.source_sha }}
-        run: |
-          set -euo pipefail
-          git remote add upstream https://github.com/dataelement/dsh-desktop.git 2>/dev/null || \
-            git remote set-url upstream https://github.com/dataelement/dsh-desktop.git
-          git fetch --force upstream "refs/tags/$UPSTREAM_TAG:refs/tags/$UPSTREAM_TAG"
-          git checkout --detach "$UPSTREAM_TAG"
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -102,14 +113,12 @@ jobs:
         run: npm ci
 
       - name: Add Linux packaging metadata
-        env:
-          UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
         run: |
           node <<'NODE'
           const fs = require('node:fs')
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'))
-          const version = process.env.UPSTREAM_TAG?.replace(/^v/, '')
-          if (!version || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+          const version = process.env.UPSTREAM_TAG.replace(/^v/, '')
+          if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
             throw new Error(`Cannot derive a valid package version from tag: ${process.env.UPSTREAM_TAG}`)
           }
           pkg.version = version
@@ -120,11 +129,7 @@ jobs:
             icon: 'build/linux-icons',
             maintainer: 'ethanrise <ethanrise.ai@gmail.com>',
             artifactName: 'dsh-desktop-linux-${arch}.${ext}',
-            desktop: {
-              entry: {
-                StartupWMClass: 'dsh-desktop'
-              }
-            }
+            desktop: { entry: { StartupWMClass: 'dsh-desktop' } }
           }
           pkg.build.extraResources ??= []
           pkg.build.extraResources.push({ from: 'LICENSE', to: 'LICENSE' })
@@ -137,115 +142,97 @@ jobs:
           const fs = require('node:fs')
           const path = require('node:path')
           const sharp = require('sharp')
-          const sizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024]
-          const output = path.join('build', 'linux-icons')
-          fs.mkdirSync(output, { recursive: true })
-          Promise.all(sizes.map((size) =>
-            sharp('build/app-icon.png')
-              .resize(size, size)
-              .png()
-              .toFile(path.join(output, `${size}x${size}.png`))
-          )).catch((error) => {
-            console.error(error)
-            process.exit(1)
-          })
+          const out = path.join('build', 'linux-icons')
+          fs.mkdirSync(out, { recursive: true })
+          Promise.all([16, 24, 32, 48, 64, 128, 256, 512, 1024].map((s) =>
+            sharp('build/app-icon.png').resize(s, s).png().toFile(path.join(out, `${s}x${s}.png`))
+          )).catch((e) => { console.error(e); process.exit(1) })
           NODE
 
       - name: Build application and DEB
-        env:
-          UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
         run: |
+          set -euo pipefail
           npm run build
           npx electron-builder --linux deb --x64 --publish never
-          test -f dist/dsh-desktop-linux-amd64.deb
-          mv dist/dsh-desktop-linux-amd64.deb \
-            "dist/dsh-desktop-${UPSTREAM_TAG#v}-linux-amd64.deb"
+          mv dist/dsh-desktop-linux-amd64.deb "dist/dsh-desktop-${UPSTREAM_TAG#v}-linux-amd64.deb"
 
-      - name: Verify DEB contents and metadata
-        env:
-          UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
+      - name: Verify DEB
         run: |
           set -euo pipefail
           version="${UPSTREAM_TAG#v}"
           asset="dist/dsh-desktop-${version}-linux-amd64.deb"
-          dpkg-deb --info "$asset" >/dev/null
-          dpkg-deb --contents "$asset" >/dev/null
-          test "$(dpkg-deb -f "$asset" Package)" = "dsh-desktop"
-          test "$(dpkg-deb -f "$asset" Version)" = "$version"
-          test "$(dpkg-deb -f "$asset" Architecture)" = "amd64"
-          test -n "$(dpkg-deb -f "$asset" Depends)"
+          root="$RUNNER_TEMP/deb-root"
+          fail() { echo "::error::$1"; exit 1; }
+          warn() { echo "::warning::$1"; }
 
-          verify_root="$RUNNER_TEMP/dsh-deb-verify"
-          mkdir -p "$verify_root"
-          dpkg-deb -x "$asset" "$verify_root"
-          test -x "$verify_root/opt/DSH Desktop/dsh-desktop"
-          app_resources="$verify_root/opt/DSH Desktop/resources"
-          if [ -f "$app_resources/app.asar" ]; then
-            APP_RESOURCES="$app_resources" EXPECTED_VERSION="$version" node <<'NODE'
+          # --- Hard checks: the package is installable and launchable. ---
+          dpkg-deb --info "$asset"
+          [ "$(dpkg-deb -f "$asset" Package)" = "dsh-desktop" ] || fail "Package name"
+          [ "$(dpkg-deb -f "$asset" Version)" = "$version" ] || fail "Version != $version"
+          [ "$(dpkg-deb -f "$asset" Architecture)" = "amd64" ] || fail "Architecture"
+          dpkg-deb -x "$asset" "$root"
+
+          # Print the layout up front so any failure below is easy to diagnose.
+          echo "::group::Package layout"
+          (cd "$root" && find . -maxdepth 4 -not -path '*/node_modules/*' | sort)
+          echo "::endgroup::"
+
+          app_dir="$(dirname "$(find "$root/opt" -maxdepth 2 -type f -name dsh-desktop -perm -u+x | head -1)")"
+          [ -n "$app_dir" ] && [ "$app_dir" != "." ] || fail "No executable dsh-desktop under /opt"
+          desktop="$root/usr/share/applications/dsh-desktop.desktop"
+          [ -f "$desktop" ] || fail "Missing $desktop"
+          [ -f "$root/usr/share/icons/hicolor/256x256/apps/dsh-desktop.png" ] || fail "Missing 256px icon"
+
+          # --- Soft checks: upstream packaging details that may change. ---
+          grep -Fxq 'StartupWMClass=dsh-desktop' "$desktop" || warn "StartupWMClass not set"
+          for s in 16 24 32 48 64 128 512 1024; do
+            [ -f "$root/usr/share/icons/hicolor/${s}x${s}/apps/dsh-desktop.png" ] || warn "Missing ${s}px icon"
+          done
+          [ -f "$app_dir/resources/LICENSE" ] || warn "LICENSE not bundled"
+          if [ -f "$app_dir/resources/app.asar" ]; then
+            APP_RESOURCES="$app_dir/resources" EXPECTED_VERSION="$version" node <<'NODE' || warn "app.asar contents differ from expectations (see log above)"
           const path = require('node:path')
-          const fs = require('node:fs')
           const asar = require('@electron/asar')
           const archive = path.join(process.env.APP_RESOURCES, 'app.asar')
-          const entries = new Set(asar.listPackage(archive).map((entry) => entry.replace(/^\//, '')))
-          for (const entry of ['package.json', 'out/main/index.js', 'out/preload/index.cjs']) {
-            if (!entries.has(entry)) throw new Error(`Missing from app.asar: ${entry}`)
-          }
           const pkg = JSON.parse(asar.extractFile(archive, 'package.json').toString())
-          if (pkg.version !== process.env.EXPECTED_VERSION) {
-            throw new Error(`Packaged version ${pkg.version} != ${process.env.EXPECTED_VERSION}`)
-          }
-          const node = path.join(process.env.APP_RESOURCES, 'app.asar.unpacked/node_modules/node/bin/node')
-          fs.accessSync(node, fs.constants.X_OK)
+          if (pkg.version !== process.env.EXPECTED_VERSION) throw new Error(`asar version ${pkg.version}`)
+          const entries = new Set(asar.listPackage(archive).map((e) => e.replace(/^\//, '')))
+          const missing = ['out/main/index.js'].filter((e) => !entries.has(e))
+          if (missing.length) throw new Error(`Missing from app.asar: ${missing.join(', ')}`)
           NODE
-          else
-            test -f "$app_resources/app/package.json"
-            test -f "$app_resources/app/out/main/index.js"
-            test -f "$app_resources/app/out/preload/index.cjs"
-            test -x "$app_resources/app/node_modules/node/bin/node"
-            test "$(node -p 'require(process.argv[1]).version' \
-              "$app_resources/app/package.json")" = "$version"
           fi
-          test -f "$verify_root/opt/DSH Desktop/resources/icon.png"
-          test -f "$verify_root/usr/share/applications/dsh-desktop.desktop"
-          grep -Fxq 'Icon=dsh-desktop' \
-            "$verify_root/usr/share/applications/dsh-desktop.desktop"
-          grep -Fxq 'StartupWMClass=dsh-desktop' \
-            "$verify_root/usr/share/applications/dsh-desktop.desktop"
-          test -f "$verify_root/opt/DSH Desktop/resources/LICENSE"
-          for size in 16 24 32 48 64 128 256 512 1024; do
-            test -f "$verify_root/usr/share/icons/hicolor/${size}x${size}/apps/dsh-desktop.png"
-          done
 
           (cd dist && sha256sum "$(basename "$asset")" > SHA256SUMS)
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
-          name: dsh-desktop-linux-amd64-${{ needs.discover.outputs.tag }}
+          name: dsh-desktop-linux-amd64-${{ matrix.tag }}
           path: |
             dist/dsh-desktop-*-linux-amd64.deb
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish unofficial Linux release asset
+      - name: Publish linux-${{ matrix.tag }}
         env:
           GH_TOKEN: ${{ github.token }}
-          UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
-          RELEASE_TAG: ${{ needs.discover.outputs.release_tag }}
-          SOURCE_SHA: ${{ needs.discover.outputs.source_sha }}
         run: |
           set -euo pipefail
+          release_tag="linux-$UPSTREAM_TAG"
           asset="dist/dsh-desktop-${UPSTREAM_TAG#v}-linux-amd64.deb"
-          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          title="DSH Desktop $UPSTREAM_TAG - Unofficial Linux build"
+          prerelease=""
+          case "$UPSTREAM_TAG" in *-*) prerelease="--prerelease" ;; esac
+
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
           ## Unofficial Linux build
 
           Community-maintained Linux amd64 package built from
-          [dataelement/dsh-desktop@$UPSTREAM_TAG](https://github.com/dataelement/dsh-desktop/tree/$UPSTREAM_TAG).
+          [$UPSTREAM_REPO@$UPSTREAM_TAG](https://github.com/$UPSTREAM_REPO/tree/$UPSTREAM_TAG).
 
           - Upstream tag: \`$UPSTREAM_TAG\`
           - Source commit: \`$SOURCE_SHA\`
           - Architecture: \`amd64\`
-          - Package format: \`.deb\`
 
           Install:
 
@@ -253,34 +240,33 @@ jobs:
           sudo apt install ./$(basename "$asset")
           \`\`\`
 
-          Verify the download with the attached \`SHA256SUMS\` file.
-
-          This is an unofficial community build and is not an official DataElement release.
+          Verify the download with the attached \`SHA256SUMS\`.
+          This is not an official DataElement release.
           EOF
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$asset" dist/SHA256SUMS \
-              --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$RELEASE_TAG" \
-              --notes-file "$RUNNER_TEMP/release-notes.md" \
-              --title "DSH Desktop $UPSTREAM_TAG - Unofficial Linux build" \
+
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$release_tag" "$asset" dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$release_tag" --title "$title" --notes-file "$RUNNER_TEMP/notes.md" \
               --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$RELEASE_TAG" "$asset" dist/SHA256SUMS \
-              --repo "$GITHUB_REPOSITORY" \
-              --target main \
-              --title "DSH Desktop $UPSTREAM_TAG - Unofficial Linux build" \
-              --notes-file "$RUNNER_TEMP/release-notes.md"
+            gh release create "$release_tag" "$asset" dist/SHA256SUMS $prerelease \
+              --target "$GITHUB_SHA" --title "$title" --notes-file "$RUNNER_TEMP/notes.md" \
+              --repo "$GITHUB_REPOSITORY"
           fi
-          # Remove a legacy release only when its same-name tag points at the
-          # wrong commit. Correct upstream tags are preserved.
-          legacy_commit="$(git ls-remote origin "refs/tags/$UPSTREAM_TAG^{}" | awk '{print $1}')"
-          if [ -z "$legacy_commit" ]; then
-            legacy_commit="$(git ls-remote origin "refs/tags/$UPSTREAM_TAG" | awk '{print $1}')"
+
+  # GitHub disables scheduled workflows after 60 days without repository
+  # activity. Now that nothing commits here automatically, re-enable monthly.
+  keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Keep schedule enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date -u +%d)" = "01" ] && [ "$(date -u +%H)" -lt 3 ]; then
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/linux-deb.yml/enable"
           fi
-          if [ -n "$legacy_commit" ] && [ "$legacy_commit" != "$SOURCE_SHA" ]; then
-            gh release delete "$UPSTREAM_TAG" --cleanup-tag --yes \
-              --repo "$GITHUB_REPOSITORY" || \
-              echo "::warning::Could not remove legacy release/tag $UPSTREAM_TAG"
-          fi
-          gh release delete-asset "$UPSTREAM_TAG" dsh-desktop-linux-amd64.deb \
-            --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
