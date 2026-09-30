@@ -9,6 +9,8 @@ import {
   ensureProfilePnpmShim,
   removeProfilePluginWithDsh
 } from '../src/main/runtime/profile-plugin-command'
+import { resolveTestNodeExecutable } from './node-executable'
+const TEST_NODE_EXECUTABLE = resolveTestNodeExecutable()
 
 const existingRunnerPath = join(
   __dirname,
@@ -67,7 +69,7 @@ describe('profile-plugin-command', () => {
       {
         dshHome: testDir,
         dshEntryPath,
-        nodeExecutablePath: process.execPath,
+        nodeExecutablePath: TEST_NODE_EXECUTABLE,
         pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
         environment: process.env
       },
@@ -98,7 +100,7 @@ describe('profile-plugin-command', () => {
       {
         dshHome: testDir,
         dshEntryPath,
-        nodeExecutablePath: process.execPath,
+        nodeExecutablePath: TEST_NODE_EXECUTABLE,
         pnpmEntryPath: join(process.cwd(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
         environment: process.env
       },
@@ -176,14 +178,14 @@ describe('profile pnpm shim and failure reporting', () => {
 })
 
 describe('buildProfilePluginCommandEnvironment', () => {
-  it('keeps Windows plugin repair on bundled Node without inheriting Electron mode', () => {
+  it('runs Windows plugin repair through Electron Node mode', () => {
     const result = buildProfilePluginCommandEnvironment(
       { Path: 'C:\\Windows\\System32', ELECTRON_RUN_AS_NODE: '1' },
       'C:\\shim',
       'C:\\DSH Desktop\\node.exe',
       'win32'
     )
-    expect(result.ELECTRON_RUN_AS_NODE).toBeUndefined()
+    expect(result.ELECTRON_RUN_AS_NODE).toBe('1')
   })
   it('keeps the user PATH when the environment block stores it lowercase', () => {
     // Spreading `process.env` keeps only the casing the OS block stores, so

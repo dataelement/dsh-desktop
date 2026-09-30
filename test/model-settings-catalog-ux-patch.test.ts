@@ -41,6 +41,15 @@ function customProviderCardSource(client: string): string {
   return client.slice(start, end)
 }
 
+function modelListEditorSource(client: string): string {
+  const start = client.indexOf('function ModelListEditor(props) {')
+  const end = client.indexOf('\n\t\t//#endregion', start)
+
+  expect(start).toBeGreaterThanOrEqual(0)
+  expect(end).toBeGreaterThan(start)
+  return client.slice(start, end)
+}
+
 describe('settings model catalog search', () => {
   const models: ModelRow[] = [
     { id: 'qwen3.8-max', name: 'Qwen Max' },
@@ -108,6 +117,22 @@ describe('settings model catalog search', () => {
     expect(customProviderCard).toContain('jsx)(EditorFooter, {')
     expect(customProviderCard.match(/onClick: addModel/g)).toHaveLength(1)
   })
+
+  it('renders model-row actions with imported primitive icons', async () => {
+    const client = await readFile(settingsModelsClient, 'utf8')
+    const modelListEditor = modelListEditorSource(client)
+
+    expect(modelListEditor).toContain(
+      '_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular'
+    )
+    expect(modelListEditor).toContain(
+      '_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutlineRegular'
+    )
+    expect(modelListEditor).toContain(
+      '_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular'
+    )
+    expect(modelListEditor).not.toMatch(/jsx\)\(Icon(?:Chevron|Trash)\b/)
+  })
 })
 
 describe('settings provider editor sticky actions', () => {
@@ -148,5 +173,15 @@ describe('settings provider editor sticky actions', () => {
     expect(patch).toContain(
       'className: ModelsSection_module_css_default["addModelButton"]'
     )
+    expect(patch).toContain(
+      '_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutlineRegular'
+    )
+    expect(patch).toContain(
+      '_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutlineRegular'
+    )
+    expect(patch).toContain(
+      '_deepseek_ai_dsh_client_ui_primitives.IconTrashOutlineRegular'
+    )
+    expect(patch).not.toMatch(/jsx\)\(Icon(?:Chevron|Trash)\b/)
   })
 })

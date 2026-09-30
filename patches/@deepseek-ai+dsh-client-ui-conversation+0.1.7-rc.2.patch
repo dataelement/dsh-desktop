@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index 2107bbb..6b4defc 100644
+index 2107bbb..4db62a2 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -15719,12 +15719,13 @@ window.__ModuleLoader__.load({
@@ -54,14 +54,16 @@ index 2107bbb..6b4defc 100644
  				]
  			});
  			const composer = renderSlotChain("conversation.composer", {
-@@ -16290,6 +16298,7 @@ window.__ModuleLoader__.load({
- 			const blank = session === void 0 || conversation === void 0 || session.blank && conversationPhase(session, conversation) === "blank";
- 			return (0, react_jsx_runtime.jsxs)("header", {
- 				className: clsx(ConversationRoot_module_css_default.header, blank && ConversationRoot_module_css_default.headerBlank, sessionId === void 0 && ConversationRoot_module_css_default.headerSessionless),
-+				"data-dsh-conversation-header": "",
- 				"data-window-drag": true,
- 				children: [(0, react_jsx_runtime.jsx)("div", {
- 					className: ConversationRoot_module_css_default.headerLeading,
+@@ -16274,7 +16282,8 @@ window.__ModuleLoader__.load({
+ 		* @returns the Conversation subtree.
+ 		*/
+ 		function ConversationPanel({ renderSlot }) {
+-			return renderSlot("main.conversation", {});
++			const conversation = renderSlot("main.conversation", {});
++			return renderSlot("desktop.workbench.frame", { conversation }, { fallback: conversation });
+ 		}
+ 		//#endregion
+ 		//#region lib/types/client/skeleton/ConversationHeader.js
 @@ -17092,13 +17101,14 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
@@ -219,15 +221,28 @@ index 2107bbb..6b4defc 100644
 -						kind: "single",
 -						scope: "session-maybe"
 -					} }
-+					children: { "main.conversation": { kind: "single", scope: "session-maybe" } }
++					children: { "main.conversation": { kind: "single", scope: "session-maybe" }, "desktop.workbench.frame": { kind: "single", scope: "root" } }
  				}, ConversationPanel);
  				yield registerConversationRoot();
  				yield registerConversationContent();
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 74f5846..c26522d 100644
+index 74f5846..66e825e 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-@@ -210,6 +210,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -118,6 +118,12 @@ export type UseConversation = SnapshotSelectorHook<ConversationSnapshot>;
+ export type UseConversationViews = SnapshotSelectorHook<readonly ViewTab[]>;
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
+     interface SlotMap {
++        /** Desktop workbench frame around the single native Conversation. */
++        'desktop.workbench.frame': {
++            kind: 'single';
++            scope: 'root';
++            owner: { conversation: ReactNode };
++        };
+         /** Conversation shell beneath its root-scoped main-panel entry. */
+         'main.conversation': {
+             kind: 'single';
+@@ -210,6 +216,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              scope: 'session-maybe';
              owner: HeroAgentPresetOwnerProps;
          };
@@ -246,7 +261,7 @@ index 74f5846..c26522d 100644
          /** Full-width entries above the composer card. */
          'conversation.input.dock': {
              kind: 'list';
-@@ -221,10 +233,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -221,10 +239,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              kind: 'list';
              scope: 'session';
          };
@@ -264,7 +279,7 @@ index 74f5846..c26522d 100644
          };
          /** Compact controls at the left of the composer tool row. */
          'conversation.input.left': {
-@@ -440,8 +459,10 @@ export interface ComposerBarOwnerProps {
+@@ -440,8 +465,10 @@ export interface ComposerBarOwnerProps {
      /** Open the Workspace picker from the inert composer surface. */
      onRequestWorkspace?: () => void;
      placeholder?: string;
@@ -276,7 +291,7 @@ index 74f5846..c26522d 100644
  }
  /** Package-private operations injected into the resident composer bar. */
  export interface ComposerBarInjected {
-@@ -486,7 +507,7 @@ export interface InputActivityOwnerProps extends InputControlOwnerProps {
+@@ -486,7 +513,7 @@ export interface InputActivityOwnerProps extends InputControlOwnerProps {
      onActiveChange: (active: boolean) => void;
  }
  /** Full props of the resident composer bar. */
@@ -285,3 +300,15 @@ index 74f5846..c26522d 100644
  /** Owner values used to elect a composer takeover. */
  export interface ComposerChainProps {
      /** Current Session identity used by temporary business-owned entries. */
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
+index 046ea88..aed438a 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
+@@ -5,5 +5,5 @@ import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-
+  * @param props - main-slot inputs and the declared Conversation renderer.
+  * @returns the Conversation subtree.
+  */
+-export declare function ConversationPanel({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlots<'main.conversation'>): import("react").ReactNode;
++export declare function ConversationPanel({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlots<'main.conversation' | 'desktop.workbench.frame'>): import("react").ReactNode;
+ //# sourceMappingURL=ConversationPanel.d.ts.map
+\ No newline at end of file

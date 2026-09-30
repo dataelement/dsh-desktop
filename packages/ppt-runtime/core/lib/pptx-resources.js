@@ -57,14 +57,15 @@ export function sanitizePptxFiles(files) {
 export function supplementResources(files, bytes) {
   let total = 0;
   const extra = unzipSync(bytes, { filter(entry) {
-    const name = entry.name;
-    if (!name.startsWith('ppt/') || name.includes('..') || name.includes('\\') || !/\/(?:media|charts)\/[^/]+\.(?:svg|png|jpe?g|gif|webp|emf|xml)$/i.test(name)) return false;
+    const name = entry.name.replaceAll('\\', '/');
+    if (!name.startsWith('ppt/') || name.includes('..') || !/\/(?:media|charts)\/[^/]+\.(?:svg|png|jpe?g|gif|webp|emf|xml)$/i.test(name)) return false;
     if (files.media.has(name) || files.charts.has(name)) return false;
     total += entry.originalSize;
     if (entry.originalSize > limits.maxEntryUncompressedBytes || total > limits.maxTotalUncompressedBytes) throw new Error('PPTX 资源超过解析大小限制');
     return true;
   } });
-  for (const [name, data] of Object.entries(extra)) {
+  for (const [rawName, data] of Object.entries(extra)) {
+    const name = rawName.replaceAll('\\', '/');
     const key = (() => { try { return decodeURIComponent(name); } catch { return name; } })();
     if (name.endsWith('.xml') && name.includes('/charts/')) { files.charts.set(name, Buffer.from(data).toString('utf8')); files.charts.set(key, files.charts.get(name)); }
     else { files.media.set(name, data); files.media.set(key, data); }

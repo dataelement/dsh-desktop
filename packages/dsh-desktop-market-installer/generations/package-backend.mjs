@@ -105,7 +105,7 @@ export function createGenerationPackageBackend(options) {
         request.signal?.throwIfAborted()
         let expectedPluginName = request.expectedName
         let sourceDirectory
-        let sourceSpec
+        let sourceSpec = request.sourceSpec
         if (request.kind === 'registry') {
           expectedPluginName ??= packageNameFromRegistrySpec(request.spec)
         } else if (request.kind === 'path') {

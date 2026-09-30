@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-index 8f6041d..ed13f1f 100644
+index 8f6041d..7c54a1a 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 @@ -318,8 +318,17 @@ function evaluatePluginCompatibility(manifest, exemptions = {}, runtimeVersion =
@@ -40,7 +40,7 @@ index 8f6041d..ed13f1f 100644
  /**
  * Write a profile's manifest back (2-space JSON, trailing newline).
  * @param dir - the profile directory.
-@@ -916,31 +936,49 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
+@@ -916,31 +936,50 @@ function resolveBundleDir(binName, packageName, installAnchor, profileDir) {
  * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
  * @returns the successfully loaded bundle layers and optional user patch layer.
  */
@@ -71,6 +71,7 @@ index 8f6041d..ed13f1f 100644
 +		owner.packageDir = packageDir;
  		const bundleManifest = readProfileManifest(binName, packageDir);
 +		owner.version = bundleManifest.version;
++		owner.workbench = Array.isArray(bundleManifest.dsh?.client?.inject) && bundleManifest.dsh.client.inject.includes("dsh-desktop-workbenches");
  		const bundle = bundleManifest.dsh?.bundle;
  		if (bundle === void 0) throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`);
  		const issue = evaluatePluginCompatibility(bundleManifest, exemptions);
@@ -98,7 +99,7 @@ index 8f6041d..ed13f1f 100644
  	}
  	const patchPath = join(dir, PROFILE_PATCH_FILENAME);
  	const patches = options.userLayer !== false && existsSync(patchPath) ? loadOverlayPatches(binName, patchPath) : [];
-@@ -2076,7 +2114,8 @@ function preflight(ctx, entries, parentURL, report) {
+@@ -2076,7 +2115,8 @@ function preflight(ctx, entries, parentURL, report) {
  			const manifest = manifestOf(ctx, row.name, base);
  			if (manifest === void 0) return void 0;
  			const issue = evaluatePluginCompatibility(manifest, exemptions);
@@ -108,7 +109,7 @@ index 8f6041d..ed13f1f 100644
  		} catch (error) {
  			return `its declared peer dependencies cannot be validated: ${error instanceof Error ? error.message : String(error)}`;
  		}
-@@ -3869,7 +3908,10 @@ var StartupError = class extends Error {
+@@ -3869,7 +3909,10 @@ var StartupError = class extends Error {
  	* @param entries - inactive plugin metadata and original failure values.
  	*/
  	constructor(message, entries) {
@@ -120,7 +121,7 @@ index 8f6041d..ed13f1f 100644
  		super(message, failures.length > 0 ? { cause: new AggregateError(failures, "Plugin activation failures") } : void 0);
  		this.entries = entries;
  		Object.defineProperties(this, {
-@@ -3906,7 +3948,7 @@ async function inactiveEntries(ctx) {
+@@ -3906,7 +3949,7 @@ async function inactiveEntries(ctx) {
  				entry,
  				outcome: {
  					kind: "failed",
@@ -129,12 +130,20 @@ index 8f6041d..ed13f1f 100644
  				}
  			});
  			continue;
-@@ -4007,13 +4049,14 @@ function startupDiagnostic(binName, failures, required) {
+@@ -4007,13 +4050,22 @@ function startupDiagnostic(binName, failures, required) {
  */
  async function auditStartupEntries(ctx, binName, warn = (line) => void process.stderr.write(line)) {
  	const failures = await inactiveEntries(ctx);
 -	const required = new Set(failures.filter(({ entry }) => entry === bootstrapIncludes.get(ctx) || requiredStartupEntryIds.has(entry.options.id)).map(({ entry }) => entry));
-+	const required = new Set(failures.map(({ entry }) => entry));
++	const required = new Set(failures.filter(({ entry }) => {
++		if (entry === bootstrapIncludes.get(ctx) || requiredStartupEntryIds.has(entry.options.id)) return true;
++		const seen = /* @__PURE__ */ new Set();
++		for (let current = entry; current && !seen.has(current); current = current.parent?.ctx.fiber.entry) {
++			seen.add(current);
++			if (current.options.__dshPluginOwner?.workbench === true) return false;
++		}
++		return true;
++	}).map(({ entry }) => entry));
  	if (required.size > 0) throw new StartupError(startupDiagnostic(binName, failures, required), failures.map(({ entry, outcome }) => ({
  		id: entry.options.id,
  		module: entry.options.name,
@@ -146,7 +155,7 @@ index 8f6041d..ed13f1f 100644
  	})));
  	if (failures.length > 0) warn(activationDiagnostic(binName, failures));
  }
-@@ -4085,7 +4128,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
+@@ -4085,7 +4137,11 @@ async function boot(binName, absoluteConfigPath, patches, prepare, bareModuleBas
  		await auditStartupEntries(ctx, binName);
  		return ctx;
  	} catch (cause) {
@@ -159,7 +168,7 @@ index 8f6041d..ed13f1f 100644
  		if (cause instanceof StartupError) {
  			cause.startup = {
  				configurationPath: absoluteConfigPath,
-@@ -4133,4 +4180,4 @@ function addHarnessSourceSection(ctx, sourceRoot) {
+@@ -4133,4 +4189,4 @@ function addHarnessSourceSection(ctx, sourceRoot) {
  	});
  }
  //#endregion
@@ -179,7 +188,7 @@ index 5e9a393..7eb148e 100644
  export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts';
  export { readPluginMeta } from './package-meta.ts';
 diff --git a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts b/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
-index 5e91973..23bf288 100644
+index 5e91973..32c7a63 100644
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/types/plugin-compatibility.d.ts
 @@ -33,3 +33,5 @@ export declare function evaluatePluginCompatibility(manifest: object, exemptions
@@ -188,3 +197,4 @@ index 5e91973..23bf288 100644
  //# sourceMappingURL=plugin-compatibility.d.ts.map
 +/** Report an unverified version declaration without blocking installation or loading. */
 +export declare function reportPluginCompatibility(issue: PluginCompatibility): void;
+\ No newline at end of file

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /**
@@ -56,6 +56,7 @@ const SAFE_VERSION_PATTERN = /^[0-9a-z][0-9a-z._+-]*$/iu
  * installable from the market, so only dshmarket needs guarding here.
  */
 const SHARED_TREE_ONLY = new Set(['dshmarket'])
+const LOCK_OWNER_PATTERN = /^([1-9]\d*)\s+[^\r\n]+(?:\s+[^\r\n]+)?\r?\n?$/u
 
 function assertSafePackageName(pluginName, context = 'Generation plugin name') {
   if (typeof pluginName !== 'string' || !SAFE_PACKAGE_NAME_PATTERN.test(pluginName)) {
@@ -139,49 +140,138 @@ async function writePointerAtomically(path, ids) {
  * A cross-process lock. `operationPromise` inside the market plugin only
  * serialises calls within one process; an external `dsh plugin`, a second app
  * instance, or a recovery run can still race it. `open(path, 'wx')` fails when
- * the file exists, which is the whole primitive — a stale lock from a crash is
- * broken after the deadline.
+ * the file exists, which is the whole primitive. Locks with a dead owner are
+ * recovered immediately; otherwise the existing age deadline remains the
+ * fallback for a wedged live operation or a lock without usable owner data.
  */
 export async function withRegistryLock(dshHome, run, options = {}) {
-  const { staleAfterMs = 20 * 60 * 1000, retryMs = 500, timeoutMs = 15 * 60 * 1000 } = options
+  const {
+    staleAfterMs = 20 * 60 * 1000,
+    retryMs = 500,
+    timeoutMs = 15 * 60 * 1000,
+    processAlive = isProcessAlive
+  } = options
   const { lockFile, root } = registryLayout(dshHome)
   await mkdir(root, { recursive: true })
   const deadline = Date.now() + timeoutMs
+  let ownerText
 
   for (;;) {
+    let handle
     try {
-      const handle = await open(lockFile, 'wx')
-      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`)
-      await handle.close()
+      handle = await open(lockFile, 'wx')
+      ownerText = `${process.pid} ${new Date().toISOString()} ${randomUUID()}\n`
+      await handle.writeFile(ownerText)
       break
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error
-      const age = await lockAgeMs(lockFile)
-      if (age !== undefined && age > staleAfterMs) {
-        await rm(lockFile, { force: true }).catch(() => undefined)
-        continue
+      const snapshot = await readLockSnapshot(lockFile)
+      if (snapshot === null) continue
+      if (snapshot) {
+        const ownerPid = lockOwnerPid(snapshot.text)
+        let ownerIsGone = false
+        if (ownerPid !== undefined) {
+          try {
+            ownerIsGone = processAlive(ownerPid) === false
+          } catch {
+            // Liveness errors other than a definite "not alive" result are not
+            // permission to delete a lock that may still have a live owner.
+          }
+        }
+        const pastStaleDeadline = Date.now() - snapshot.mtimeMs > staleAfterMs
+        if (ownerIsGone || pastStaleDeadline) {
+          if (await removeLockIfUnchanged(lockFile, snapshot)) continue
+        }
       }
       if (Date.now() > deadline) {
         throw new Error('Another plugin operation is holding the registry lock.')
       }
       await new Promise((resolve) => setTimeout(resolve, retryMs))
+    } finally {
+      await handle?.close().catch(() => undefined)
     }
   }
 
   try {
     return await run()
   } finally {
-    await rm(lockFile, { force: true }).catch(() => undefined)
+    await removeOwnedLock(lockFile, ownerText)
   }
 }
 
-async function lockAgeMs(lockFile) {
+function isProcessAlive(pid) {
   try {
-    const { mtimeMs } = await stat(lockFile)
-    return Date.now() - mtimeMs
-  } catch {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // EPERM means the process exists but is owned by another user. Unknown
+    // platform errors are also fail-closed: only ESRCH proves an owner is gone.
+    return error?.code !== 'ESRCH'
+  }
+}
+
+function lockOwnerPid(text) {
+  const match = LOCK_OWNER_PATTERN.exec(text)
+  if (!match) return undefined
+  const pid = Number(match[1])
+  return Number.isSafeInteger(pid) ? pid : undefined
+}
+
+async function readLockSnapshot(lockFile) {
+  try {
+    const handle = await open(lockFile, 'r')
+    try {
+      const before = await handle.stat()
+      const text = await handle.readFile('utf8')
+      const after = await handle.stat()
+      if (
+        before.size !== after.size
+        || before.mtimeMs !== after.mtimeMs
+        || before.ctimeMs !== after.ctimeMs
+      ) return undefined
+      return {
+        text,
+        dev: after.dev,
+        ino: after.ino,
+        size: after.size,
+        mtimeMs: after.mtimeMs,
+        ctimeMs: after.ctimeMs
+      }
+    } finally {
+      await handle.close().catch(() => undefined)
+    }
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
     return undefined
   }
+}
+
+function sameLockSnapshot(left, right) {
+  return left.text === right.text
+    && left.dev === right.dev
+    && left.ino === right.ino
+    && left.size === right.size
+    && left.mtimeMs === right.mtimeMs
+    && left.ctimeMs === right.ctimeMs
+}
+
+async function removeLockIfUnchanged(lockFile, expected) {
+  const current = await readLockSnapshot(lockFile)
+  if (!current || !sameLockSnapshot(current, expected)) return false
+  try {
+    await rm(lockFile)
+    return true
+  } catch {
+    // Another waiter or the owner may have released it after the snapshot.
+    return false
+  }
+}
+
+async function removeOwnedLock(lockFile, ownerText) {
+  if (typeof ownerText !== 'string') return
+  const snapshot = await readLockSnapshot(lockFile)
+  if (!snapshot || snapshot.text !== ownerText) return
+  await removeLockIfUnchanged(lockFile, snapshot)
 }
 
 const META_NAME = 'generation.json'

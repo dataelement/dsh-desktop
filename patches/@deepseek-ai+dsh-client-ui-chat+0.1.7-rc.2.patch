@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index a99972a..e26619b 100644
+index a99972a..1db8b66 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 @@ -115,6 +115,22 @@ window.__ModuleLoader__.load({
@@ -151,7 +151,13 @@ index a99972a..e26619b 100644
  			const order = useChat((s) => s.order);
  			const groupedEntries = useConversation((snapshot) => snapshot.views.grouped("chat")?.entries);
  			const entries = (0, react.useMemo)(() => groupedEntries ?? order.map((key) => ({
-@@ -5087,6 +5114,23 @@ window.__ModuleLoader__.load({
+@@ -5082,11 +5109,29 @@ window.__ModuleLoader__.load({
+ 					if (id !== fileOpenRequest.current) return;
+ 					setFileOpenError({
+ 						path,
++						options,
+ 						message: openFailureMessage(error, t("fileOpen.unknown"))
+ 					});
  					setFileOpenBusy(false);
  				});
  			}, [openFile, t]);
@@ -175,7 +181,7 @@ index a99972a..e26619b 100644
  			const closeFileOpenError = (0, react.useCallback)(() => {
  				fileOpenRequest.current += 1;
  				setFileOpenError(null);
-@@ -5209,6 +5253,7 @@ window.__ModuleLoader__.load({
+@@ -5209,6 +5254,7 @@ window.__ModuleLoader__.load({
  											renderMessageImages,
  											fileMentions,
  											renderSlot,
@@ -183,7 +189,16 @@ index a99972a..e26619b 100644
  											t
  										})
  									})
-@@ -5426,7 +5471,8 @@ window.__ModuleLoader__.load({
+@@ -5231,7 +5277,7 @@ window.__ModuleLoader__.load({
+ 						busy: fileOpenBusy,
+ 						onClose: closeFileOpenError,
+ 						onRetry: () => {
+-							requestOpenFile(fileOpenError.path);
++							requestOpenFile(fileOpenError.path, fileOpenError.options);
+ 						},
+ 						t
+ 					})
+@@ -5426,7 +5472,8 @@ window.__ModuleLoader__.load({
  			"message.accountStopped": "任务已停止",
  			"message.failure.accountSignedOut": "任务已因退出 DeepSeek 登录而停止。",
  			"message.failure.accountSignInRequired": "请先登录 DeepSeek，并确认请求地址支持账号认证。",
@@ -193,7 +208,7 @@ index a99972a..e26619b 100644
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -5615,7 +5661,8 @@ window.__ModuleLoader__.load({
+@@ -5615,7 +5662,8 @@ window.__ModuleLoader__.load({
  			"message.accountStopped": "Task stopped",
  			"message.failure.accountSignedOut": "Stopped because you signed out of DeepSeek.",
  			"message.failure.accountSignInRequired": "Sign in to DeepSeek and ensure the request destination supports account authentication.",
@@ -203,7 +218,7 @@ index a99972a..e26619b 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -12178,7 +12225,8 @@ window.__ModuleLoader__.load({
+@@ -12178,7 +12226,8 @@ window.__ModuleLoader__.load({
  			"configForms",
  			"remote",
  			"remote.session",
@@ -213,7 +228,7 @@ index a99972a..e26619b 100644
  		];
  		/**
  		* Mount all Chat-owned contributions.
-@@ -12268,6 +12316,14 @@ window.__ModuleLoader__.load({
+@@ -12268,6 +12317,14 @@ window.__ModuleLoader__.load({
  				}, LinkOpeningRow));
  			});
  			const transcriptView = new TranscriptViewPolicy(chatSettings);
@@ -228,7 +243,7 @@ index a99972a..e26619b 100644
  			const presentation = derivePresentationPolicy(transcriptView.mode);
  			const performancePolicy = new PerformanceUsagePolicy(chatSettings);
  			ctx.effect(() => () => {
-@@ -12335,10 +12391,17 @@ window.__ModuleLoader__.load({
+@@ -12335,10 +12392,22 @@ window.__ModuleLoader__.load({
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
  								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
@@ -236,6 +251,11 @@ index a99972a..e26619b 100644
 -								if (options?.line === void 0) ctx.sidebarRight.openResource(url);
 -								else ctx.sidebarRight.openResource(url, { params: { line: options.line } });
 -								await Promise.resolve();
++								if (options?.revealInFileManager === true) {
++									const opened = await ctx.remote.session.openWorkspacePath({ path: hostPathForOpen(cwd, path) });
++									if (!opened.ok) throw opened.error;
++									return;
++								}
 +								const byName = await session.readFileHostPath({ name: path });
 +								if (byName.ok) {
 +									await openResolvedHostFile(ctx, sessionId, cwd, byName.value.path);
@@ -250,3 +270,27 @@ index a99972a..e26619b 100644
  							},
  							openSkill: (name) => {
  								const scope = ctx.sessions.scope(sessionId);
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
+index a3f4a42..46cc5a2 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
+@@ -28,12 +28,18 @@ export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>;
+ export interface OpenFileOptions {
+     /** 1-based line to reveal; absent = the file's beginning. */
+     readonly line?: number;
++    /**
++     * Open the path in the system file manager instead of the document preview.
++     * Directory-shaped inline references set this so a missing folder does not
++     * become a "file not found" preview tab.
++     */
++    readonly revealInFileManager?: boolean;
+ }
+ /** Owner currency of the completed-Turn extension chain. */
+ export interface TurnTailOwnerProps {
+     turn: TurnLocation;
+     seq: number;
+-    openFile: (path: string) => void;
++    openFile: (path: string, options?: OpenFileOptions) => void;
+ }
+ /** Owner currency of finalized-assistant actions. */
+ export interface AssistantActionOwnerProps {

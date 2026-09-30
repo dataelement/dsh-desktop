@@ -277,7 +277,9 @@
     "dsh-desktop-hmr-fallback": "file:packages/dsh-desktop-hmr-fallback",
     "dsh-desktop-log-bridge": "file:packages/dsh-desktop-log-bridge",
     "dsh-desktop-market-installer": "file:packages/dsh-desktop-market-installer",
+    "dsh-desktop-onboarding": "file:packages/dsh-desktop-onboarding",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-desktop-workbenches": "file:packages/dsh-desktop-workbenches",
     "dsh-image-generation": "file:packages/dsh-image-generation",
     "dsh-ppt": "file:packages/ppt-runtime/core",
     "dsh-ppt-composer": "file:packages/ppt-runtime/adapter",
@@ -434,10 +436,6 @@
       {
         "from": "build/community-wechat-qr.png",
         "to": "community-wechat-qr.png"
-      },
-      {
-        "from": "build/windows-menu.html",
-        "to": "windows-menu.html"
       }
     ],
     "publish": [
@@ -463,6 +461,7 @@
     },
     "win": {
       "icon": "build/icon.ico",
+      "files": ["!node_modules/node/**/*"],
       "verifyUpdateCodeSignature": true,
       "signtoolOptions": {
         "publisherName": "Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.",

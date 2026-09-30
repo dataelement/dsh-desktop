@@ -9,7 +9,7 @@ import {
 } from './update-view'
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
-import { mountWindowsTitlebarLayout } from './windows-titlebar'
+import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'
 import { mountMacosWindowChrome } from './macos-window-chrome'
 
 if (process.platform === 'darwin') {
@@ -22,6 +22,8 @@ if (process.platform === 'darwin') {
   })
   window.addEventListener('unload', dispose, { once: true })
 }
+
+if (process.platform === 'win32') markWindowsTitlebar(document)
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
@@ -583,7 +585,6 @@ contextBridge.exposeInMainWorld(
     action: (action: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('web-import:action', action)
   })
 )
-
 
 function mount(): void {
   if (document.getElementById(ROOT_ID)) return

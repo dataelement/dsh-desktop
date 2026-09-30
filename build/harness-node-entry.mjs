@@ -12,7 +12,8 @@ import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs
 // `--expose-internals` shifts argv and the CLI answers "--profile <name> is
 // required" instead of installing. Declaring it here, after this process has
 // already parsed the Chromium switches it was launched with, marks only the
-// children as Node processes. Windows and Linux use standalone Node runtimes.
+// children as Node processes. Windows declares Node mode before launching this
+// entry; Linux uses a standalone Node runtime.
 if (process.versions.electron !== undefined) {
   process.env.ELECTRON_RUN_AS_NODE = '1'
 }

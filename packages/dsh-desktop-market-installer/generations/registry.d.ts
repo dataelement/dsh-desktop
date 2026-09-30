@@ -21,7 +21,12 @@ export function generationId(pluginName: string, version: string, lockfileText: 
 export function withRegistryLock<T>(
   dshHome: string,
   run: () => Promise<T>,
-  options?: { staleAfterMs?: number; retryMs?: number; timeoutMs?: number }
+  options?: {
+    staleAfterMs?: number
+    retryMs?: number
+    timeoutMs?: number
+    processAlive?: (pid: number) => boolean
+  }
 ): Promise<T>
 export function writeGenerationMeta(
   directory: string,

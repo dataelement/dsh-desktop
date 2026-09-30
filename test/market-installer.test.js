@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/state/profile-store'
+import { readDesired } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
 import {
   INSTALL_PATH,
   MARKET_PACKAGE,
@@ -288,6 +289,72 @@ describe('desktop plugin market installer', () => {
     await expect(next.done).resolves.toEqual({ exitCode: 0, signal: null })
     await service.dispose()
     expect(() => service.runPlugin(['install'], root)).toThrow('has been disposed')
+  })
+
+
+  it('treats a missing workbench generation as already uninstalled', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-workbench-remove-missing-'))
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(join(home, 'profiles', '.generations'), { recursive: true })
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(home, 'profiles', '.generations', 'desired.json'), '[]\n')
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true, dependencies: { dshmarket: '1.31.1' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dshmarket'] } }
+    }))
+    const service = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'),
+      dshEntryPath: join(home, 'unused-dsh-entry.mjs'),
+      executablePath: process.execPath,
+      home
+    })
+
+    const handle = service.removeWorkbenchGeneration('ming-life', join(home, 'desktop-workbenches'))
+    let output = ''
+    handle.stdout.on('data', chunk => { output += chunk.toString('utf8') })
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    expect(output).toContain('already absent from the next restart: ming-life')
+    await service.dispose()
+  })
+
+  it('publishes a verified workbench through the generation backend', async () => {
+    const home = await realpath(await mkdtemp(join(tmpdir(), 'dsh-workbench-generation-')))
+    const profile = join(home, 'profiles', 'web')
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true, dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } }
+    }))
+    const service = createDesktopPnpmService({
+      binDirectory: join(home, '.desktop-bin'),
+      dshEntryPath: join(home, 'unused-dsh-entry.mjs'),
+      executablePath: process.execPath,
+      home,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ dist: { integrity: 'sha512-demo' } }) }),
+      runGenerationInstall: async staging => {
+        const directory = join(staging, 'node_modules', 'demo-workbench')
+        await mkdir(directory, { recursive: true })
+        await writeFile(join(directory, 'package.json'), JSON.stringify({
+          name: 'demo-workbench', version: '1.0.0', dsh: { bundle: { patch: 'cordis.patch.yml' } }
+        }))
+        await writeFile(join(directory, 'cordis.patch.yml'), '[]\n')
+        await writeFile(join(staging, 'package.json'), JSON.stringify({
+          name: 'dsh-generation', private: true, version: '0.0.0', dependencies: { 'demo-workbench': '1.0.0' }
+        }))
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+        return { code: 0, output: 'installed\n' }
+      }
+    })
+
+    const handle = service.installWorkbenchGeneration({
+      pluginSpec: 'demo-workbench@1.0.0', expectedPluginName: 'demo-workbench',
+      expectedVersion: '1.0.0', npmIntegrity: 'sha512-demo'
+    }, join(home, 'desktop-workbenches'))
+    await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    expect(await readDesired(home)).toHaveLength(1)
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(manifest.dependencies['demo-workbench']).toBe('1.0.0')
+    await service.dispose()
   })
 
   it('rejects a package operation that was already aborted', async () => {

@@ -16,7 +16,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 index c2e1b4a..90986d4 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -100,7 +100,16 @@
+@@ -100,7 +100,18 @@
      "@deepseek-ai/dsh-atomic-write": "0.1.7-rc.2",
      "@deepseek-ai/dsh-experimental-voice-input-bundle": "0.1.7-rc.2",
      "@deepseek-ai/dsh-agent-preset": "0.1.7-rc.2",
@@ -30,7 +30,9 @@ index c2e1b4a..90986d4 100644
 +    "dsh-desktop-market-installer": "0.1.0",
 +    "dsh-desktop-preset-transfer": "0.1.0",
 +    "dsh-image-generation": "0.1.0",
-+    "react-dom": "18.3.1"
++    "react-dom": "18.3.1",
++    "dsh-desktop-onboarding": "0.1.0",
++    "dsh-desktop-workbenches": "0.1.0"
    },
    "devDependencies": {
      "@agentclientprotocol/sdk": "1.4.0",
