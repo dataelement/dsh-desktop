@@ -1,12 +1,12 @@
 diff --git a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
-index a42f2a2..3e7e082 100644
+index a42f2a2..5e42315 100644
 --- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
-@@ -2526,6 +2526,40 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+@@ -2526,6 +2526,51 @@ var JsonlSessionPersistence = class extends SessionPersistence {
  	flush() {
  		return this.tracker.flushAll();
  	}
-+	/** Remove one durable session while holding its write claim and directory lease. */
++	/** Remove every stored generation of one session under its write claim and directory lease. */
 +	async delete(id, options) {
 +		options?.signal?.throwIfAborted();
 +		await this.ensureRootEncoding();
@@ -17,16 +17,27 @@ index a42f2a2..3e7e082 100644
 +		try {
 +			const resolved = await this.findLog(id, options?.signal);
 +			if (resolved === void 0) return false;
-+			const path = resolved.currentPath;
-+			lease = await this.acquireLease(id, void 0, dirname(path));
++			const dir = dirname(resolved.sourcePath);
++			lease = await this.acquireLease(id, void 0, dir);
++			let entries;
 +			try {
-+				await rm(path);
++				entries = await readdir(dir, { withFileTypes: true });
 +			} catch (error) {
 +				if (isENOENT(error)) return false;
 +				throw error;
 +			}
-+			if (process.platform !== "win32") await this.syncDirPosix(dirname(path));
-+			return true;
++			let removed = false;
++			for (const entry of entries) {
++				if (parseGenerationLogFilename(entry.name, this.compression) === void 0) continue;
++				try {
++					await rm(join(dir, entry.name));
++					removed = true;
++				} catch (error) {
++					if (!isENOENT(error)) throw error;
++				}
++			}
++			if (removed && process.platform !== "win32") await this.syncDirPosix(dir);
++			return removed;
 +		} finally {
 +			this.coldLogMemo.delete(id);
 +			this.migrationPreparations.delete(id);
@@ -43,7 +54,7 @@ index a42f2a2..3e7e082 100644
  	/**
  	* Observe one stored session without reading its event log.
  	* @param id - the stored session to observe.
-@@ -3040,8 +3074,10 @@ var JsonlSessionPersistence = class extends SessionPersistence {
+@@ -3040,8 +3085,10 @@ var JsonlSessionPersistence = class extends SessionPersistence {
  			try {
  				header = await this.readGenerationHeader(selected, void 0, signal);
  			} catch (error) {
