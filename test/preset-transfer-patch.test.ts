@@ -383,6 +383,27 @@ describe('agent preset package transfer', () => {
     }
   })
 
+  it('warns about legacy message sources in bundled preset code without rewriting it', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
+    try {
+      const legacyCode = "agent.inject({ source: { kind: 'plugin', plugin: 'example' } })\n"
+      const data = zipSync({
+        'manifest.json': strToU8(JSON.stringify({ format: 'dsh-preset', version: 1, id: 'legacy-source' })),
+        'preset/agent.cordis.yml': strToU8(composition),
+        'preset/plugin.js': strToU8(legacyCode)
+      })
+      const transfer = presetTransferApi(root).agentPresets
+      const preview = await transfer.importArchive(data, { install: false })
+      expect((await preview.json()).warnings).toContain('legacy-plugin-message-source')
+
+      const installed = await transfer.importArchive(data, { install: true })
+      expect(installed.status).toBe(200)
+      expect(await readFile(path.join(root, 'legacy-source', 'plugin.js'), 'utf8')).toBe(legacyCode)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('preserves executable permissions for shell scripts on POSIX platforms', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-preset-transfer-'))
     try {

@@ -89,6 +89,40 @@ describe('Plugin Manager generation package backend', () => {
     expect(installed.bundle).toBe('git-plugin')
   })
 
+  it('reports a suspected V3 message source before publishing the new generation', async () => {
+    const home = await freshHome()
+    const output = []
+    const desiredAtWarning = []
+    const populate = installer('demo-plugin', '1.0.0')
+    const backend = createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused',
+      runInstall: async staging => {
+        const result = await populate(staging)
+        await writeFile(join(staging, 'node_modules', 'demo-plugin', 'index.js'),
+          "agent.session.append('user/message', { source: { kind: 'plugin', plugin: 'demo-plugin' } })\n")
+        return result
+      }
+    })
+    const result = await backend.install({
+      spec: 'demo-plugin@1.0.0', kind: 'registry',
+      onOutput: (text, stream) => {
+        output.push({ text, stream })
+        if (text.startsWith('dsh: warning: demo-plugin may write obsolete Session V3')) desiredAtWarning.push(readDesired(home))
+      }
+    })
+
+    expect(result.packageResult.exitCode).toBe(0)
+    expect((await readDesired(home))).toHaveLength(1)
+    expect(await Promise.all(desiredAtWarning)).toEqual([[]])
+    const warning = output.find(item => item.text.startsWith('dsh: warning: demo-plugin may write obsolete Session V3'))
+    expect(warning?.stream).toBe('stderr')
+    expect(warning.text).toContain('index.js:1')
+    expect(warning.text).toContain('Update this plugin before using it with Session V4.')
+    expect(result.packageResult.output).toContain(warning.text.trim())
+  })
+
   it('pins the manager-selected registry in the generation staging directory', async () => {
     const home = await freshHome()
     let stagingRegistry

@@ -65,6 +65,7 @@ function presetArchiveWarnings(files) {
 	const warnings = [];
 	let hasSecrets = false;
 	let hasAbsolutePaths = false;
+	let hasLegacyPluginSource = false;
 	for (const [rel, bytes] of Object.entries(files)) {
 		const ext = extname(rel).toLowerCase();
 		if (!PRESET_TEXT_EXTENSIONS.has(ext)) continue;
@@ -81,6 +82,12 @@ function presetArchiveWarnings(files) {
 		if (!hasAbsolutePaths && /(?:\/(?:Users|home|root|var|etc)\/|[a-zA-Z]:\\(?:Users|Documents|Program))/i.test(text)) {
 			hasAbsolutePaths = true;
 			warnings.push("absolute-paths");
+		}
+		// A source record in a preset's local code may still inject the V3 wrapper.
+		// Warn only: rewriting executable source or quoted instructions is unsafe.
+		if (!hasLegacyPluginSource && /\bsource\s*[:=]\s*(?:\{[^{}]{0,512}\bkind\s*:\s*['"]plugin['"]|\r?\n[ \t]+kind\s*:\s*['"]?plugin['"]?\b)/.test(text)) {
+			hasLegacyPluginSource = true;
+			warnings.push("legacy-plugin-message-source");
 		}
 	}
 	return warnings;
