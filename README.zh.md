@@ -125,6 +125,8 @@ Harness 包含目标平台原生依赖，因此每一种正式安装包都在对
 
 [dsh-market](https://github.com/dsh-market/dsh-market) 是 DeepSeek Harness 社区插件市场，可在 Harness 界面中浏览和搜索插件、查看截图、安装或更新包、启停插件以及切换主题。
 
+[dsh-native-macos](https://github.com/DanielW203/dsh-native-macos) 是非官方的 DeepSeek Harness 原生 SwiftUI macOS 客户端：多个运行时版本并存，升级后对新启动的运行时跑 8 项自检、阻断项失败时一次性回退，另含安全模式恢复与内置微信/手机远控。
+
 ## 许可证
 
 DSH Desktop 采用 [MIT License](LICENSE) 开源。
