@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { disableProfilePlugin } from '../src/main/state/plugin-disable'
@@ -298,5 +298,64 @@ describe('profile compatibility recovery', () => {
     expect(issues.map((issue) => issue.target)).not.toContain('dsh-vision-router')
     expect(issues.filter((issue) => issue.detail.includes('potrace'))).toEqual([])
     expect(issues.filter((issue) => issue.detail.includes('schemastery'))).toEqual([])
+  })
+
+  it('accepts generation siblings for a pnpm-laid-out plugin instead of flagging them as missing', async () => {
+    // pnpm generation layout: the plugin sits at
+    // `<generation>/node_modules/<plugin>` and every dependency lives beside
+    // it as a sibling — neither nested under the plugin nor flat in the
+    // profile. Type-only packages add the second trap: they ship no JS entry,
+    // so a CJS `require.resolve` probe from the plugin directory fails even
+    // though the package is present, which used to escalate into a blocking
+    // "not installed in this profile" finding and froze normal mode.
+    const generationModules = join(
+      root, 'generations', 'live', 'dsh-gen-plugin+1.0.0+abc', 'node_modules'
+    )
+    const pluginDir = join(generationModules, 'dsh-gen-plugin')
+    await manifest(pluginDir, {
+      name: 'dsh-gen-plugin',
+      version: '1.0.0',
+      dependencies: { '@types/d3': '^5.0.0', 'ghost-kit': '^1.0.0' },
+      dsh: { bundle: { patch: './cordis.patch.yml' } }
+    })
+    await mkdir(join(pluginDir, 'lib'), { recursive: true })
+    await writeFile(join(pluginDir, 'lib', 'index.js'), 'export {}\n')
+    // Present on disk as a sibling: no index.js and no exports map, so
+    // createRequire(...).resolve('@types/d3') from the plugin throws while
+    // resolve('@types/d3/package.json') still finds it through the parent walk.
+    await manifest(join(generationModules, '@types', 'd3'), {
+      name: '@types/d3',
+      version: '5.0.0'
+    })
+    await mkdir(join(profile, 'node_modules'), { recursive: true })
+    await symlink(pluginDir, join(profile, 'node_modules', 'dsh-gen-plugin'), 'junction')
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { 'dsh-dream-skin': '^0.4.14', 'dsh-gen-plugin': '1.0.0' },
+      dsh: {
+        profile: {
+          bundles: [
+            '@deepseek-ai/dsh-base',
+            '@deepseek-ai/dsh-web-app',
+            'dsh-dream-skin',
+            'dsh-gen-plugin'
+          ]
+        }
+      }
+    }, undefined, 2))
+
+    const { issues } = await inspectProfileCompatibility(dshHome, bundled)
+    // The type-only generation sibling resolves from the shared generation
+    // directory and must not block normal mode...
+    expect(issues.filter((issue) => issue.packageName === '@types/d3')).toEqual([])
+    // ...while a dependency that exists nowhere keeps the blocking finding.
+    expect(issues).toContainEqual(expect.objectContaining({
+      kind: 'missing-client-module',
+      severity: 'blocking',
+      packageName: 'ghost-kit',
+      target: 'dsh-gen-plugin',
+      detail: expect.stringContaining('not installed in this profile')
+    }))
   })
 })
