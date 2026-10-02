@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { packagedArchiveRoot, registerOfficeEngineResolution } from '../build/office-engine-resolution.mjs'
@@ -61,6 +61,18 @@ describe('Office engine resolution', () => {
   it('resolves the engine package to app.asar.unpacked so the OS can spawn it', async () => {
     const { archive, entry } = await packagedLayout()
     expect(resolveEngine(archive, entry)).toBe(join(`${archive}.unpacked`, 'node_modules', ENGINE, 'package.json'))
+  })
+
+  it('matches when the entry path names the install directory through a link', async () => {
+    // Resolved URLs are canonical; the entry path may not be (a symlinked or
+    // junctioned install, Windows 8.3 names). Without canonicalizing the
+    // archive the hook never matched and the engine stayed inside app.asar.
+    const { archive } = await packagedLayout()
+    const linked = join(dirname(dirname(archive)), 'Linked Resources')
+    await symlink(dirname(archive), linked, process.platform === 'win32' ? 'junction' : 'dir')
+    const linkedArchive = join(linked, 'app.asar')
+    const entry = join(linkedArchive, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    expect(resolveEngine(linkedArchive, entry)).toBe(join(`${archive}.unpacked`, 'node_modules', ENGINE, 'package.json'))
   })
 
   it('installs nothing outside an app.asar installation', () => {

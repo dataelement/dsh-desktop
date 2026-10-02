@@ -26,8 +26,12 @@ export function packagedArchiveRoot(dshEntryPath) {
  * Hooks apply to this thread only.
  */
 export function registerOfficeEngineResolution(dshEntryPath) {
-  const archive = packagedArchiveRoot(dshEntryPath)
-  if (archive === undefined) return undefined
+  const entryArchive = packagedArchiveRoot(dshEntryPath)
+  if (entryArchive === undefined) return undefined
+  // Compare canonical paths on both sides, as upstream does: resolved URLs are
+  // realpath'd below, and the entry path can differ in spelling (a symlinked
+  // or junctioned install directory, Windows 8.3 names or drive-letter case).
+  const archive = realpathSync(entryArchive)
   const engines = join(archive, 'node_modules', '@deepseek-ai', 'libreoffice-kit-')
   const source = pathToFileURL(engines).href
   const destination = pathToFileURL(join(`${archive}.unpacked`, 'node_modules', '@deepseek-ai', 'libreoffice-kit-')).href
