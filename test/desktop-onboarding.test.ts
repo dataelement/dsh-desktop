@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
@@ -26,8 +26,8 @@ interface CtxHarness {
     register: (ns: string, dicts: Record<string, Record<string, string>>) => void
     bind: (ns: string) => (key: string) => string
   }
-  settingsScope: {
-    bind: (spec: { namespace: string }) => unknown
+  configForms: {
+    get: (entryId: string) => unknown
     describe: () => unknown
   }
   remote: {
@@ -97,14 +97,14 @@ function createPrimitiveStub() {
     IconCloseOutline16: passthrough,
     IconCheckOutline16: passthrough,
     IconSparkle16: passthrough,
-    IconGlobeOutline14: passthrough,
+    IconGlobeOutlineRegular: passthrough,
     IconFolderClose16: passthrough,
     IconShieldOutline16: passthrough,
     IconCordisPluginOutline14: passthrough
   } as const
 }
 
-function loadPlugin() {
+function loadPlugin(fetchImpl?: typeof fetch, showNotice = false) {
   const source = readFileSync(
     path.join(projectRoot, 'packages', 'dsh-desktop-onboarding', 'client.js'),
     'utf8'
@@ -125,6 +125,7 @@ function loadPlugin() {
   }
   vm.runInNewContext(source, {
     document,
+    fetch: fetchImpl,
     navigator: { language: 'en-US' },
     window: {
       __ModuleLoader__: {
@@ -136,11 +137,17 @@ function loadPlugin() {
   })
   if (!definition) throw new Error('client.js did not register a plugin definition')
   const React = createReactStub()
+  if (showNotice) Object.assign(React, { useState: (initial: unknown) => [initial === 'loading' ? 'show' : initial, () => undefined] })
   const primitives = createPrimitiveStub()
   return {
     plugin: definition.factory((id) => {
       if (id === 'react') return React
-      if (id === '@deepseek-ai/dsh-client-ui-primitives') return primitives
+      if (id === '@deepseek-ai/dsh-client-ui-primitives') return new Proxy(primitives, {
+        get: (target, key) => {
+          if (!(key in target)) throw new Error(`UI primitives does not export ${String(key)}`)
+          return Reflect.get(target, key)
+        }
+      })
       if (id === '@deepseek-ai/dsh-client-ui-settings-models') return {
         ModelsSection: primitives.OnboardingSurface,
         ModelsSettingsStore: class {
@@ -169,14 +176,14 @@ function createCtx(overrides: Partial<CtxHarness> = {}): { ctx: CtxHarness; regi
   }
   const noopEffect = () => () => undefined
   const ctx: CtxHarness = {
-    inject: (_deps, callback) => callback(ctx),
+    inject: (deps, callback) => deps.every(dep => dep in ctx) ? callback(ctx) : undefined,
     effect: noopEffect,
     locale: {
       register: () => undefined,
       bind: () => (key: string) => key
     },
-    settingsScope: {
-      bind: () => ({ getSnapshot: () => ({ mode: 'memory', value: {} }), subscribe: () => () => undefined, set: async () => undefined }),
+    configForms: {
+      get: () => ({ getSnapshot: () => ({ mode: 'memory', value: {} }), subscribe: () => () => undefined, set: async () => undefined }),
       describe: () => ({ ensure: async () => undefined, getSnapshot: () => ({ view: undefined }) })
     },
     remote: {
@@ -204,7 +211,7 @@ describe('DSH Desktop onboarding wizard', () => {
       path.join(projectRoot, 'packages', 'dsh-desktop-onboarding', 'client.js'),
       'utf8'
     )
-    expect(source).toContain("const WIZARD_ACK_FIELD = 'wizardVersion'")
+    expect(source).toContain("'/api/desktop-onboarding/acknowledge'")
     expect(source).toContain("const MODELS_SECTION_ID = 'models'")
     expect(source).toContain('openSection(MODELS_SECTION_ID)')
     expect(source).not.toContain('OnboardingSurface')
@@ -212,7 +219,7 @@ describe('DSH Desktop onboarding wizard', () => {
     expect(source).toContain('https://github.com/dataelement/dsh-desktop\'')
     expect(source).not.toContain('dsh-desktop/issues')
     expect(source).toContain('GITHUB_MARK_PATH')
-    expect(source).toContain('IconGlobeOutline14')
+    expect(source).toContain('IconGlobeOutlineRegular')
   })
 
   it('registers the desktop notice as the only onboarding step', () => {
@@ -233,6 +240,43 @@ describe('DSH Desktop onboarding wizard', () => {
     expect(appended).toHaveLength(1)
     const [styleTag] = appended
     expect(styleTag?.id).toBe('dsh-desktop-onboarding-style')
+  })
+
+  it('uses components exported by the installed UI primitives', () => {
+    const primitivesTypes = readFileSync(path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/icons/index.d.ts'), 'utf8')
+    const primitivesIndex = readFileSync(path.join(projectRoot, 'node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/types/index.d.ts'), 'utf8')
+    expect(primitivesIndex).toContain("export { Button }")
+    expect(primitivesIndex).toContain("export { Modal }")
+    expect(primitivesTypes).toContain('export declare const IconGlobeOutlineRegular:')
+    expect(primitivesTypes).not.toContain('export declare const IconGlobeOutline14:')
+  })
+
+  it('activates with the current configForms service and uses the host entry id', () => {
+    const { plugin } = loadPlugin()
+    const get = vi.fn(() => ({}))
+    const { ctx, registrations } = createCtx({ configForms: { get, describe: () => ({}) } })
+    plugin.apply(ctx)
+    expect(get).toHaveBeenCalledWith('dsh-desktop-onboarding')
+    expect(registrations).toHaveLength(1)
+  })
+
+  it('keeps the notice open after failed acknowledgment and allows a successful retry', async () => {
+    const request = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{}', { status: 500 }))
+      .mockResolvedValueOnce(Response.json({ acknowledged: true }))
+    const { plugin } = loadPlugin(request, true)
+    const { ctx, registrations } = createCtx()
+    plugin.apply(ctx)
+    const complete = vi.fn()
+    const entry = registrations[0]!
+    const element = entry.component({ ...entry.config.inject?.(), complete }) as { children: Array<{ children: Array<{ children: Array<{ props: { onClick: () => Promise<void> } }> }> }> }
+    const actions = element.children[0]!.children.at(-1)!
+    const later = actions.children[0]!.props.onClick
+    await later()
+    expect(complete).not.toHaveBeenCalled()
+    await later()
+    expect(complete).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledWith('/api/desktop-onboarding/acknowledge', { method: 'POST', credentials: 'same-origin', cache: 'no-store' })
   })
 
   it('registers both Chinese and English dictionaries on the desktop-onboarding namespace', () => {
@@ -327,6 +371,7 @@ describe('DSH Desktop onboarding host eligibility', () => {
       fiber,
       ctx: {
         fiber,
+        connection: { fetch: { register: vi.fn((_route: unknown) => undefined) } },
         inject: (_deps: string[], callback: (ctx: unknown) => void) => callback({
           effect: (effect: () => unknown) => effect(),
           // Reproduce the Cordis proxy symptom from the packaged Harness: the
@@ -378,6 +423,97 @@ describe('DSH Desktop onboarding host eligibility', () => {
       if (previous === undefined) delete process.env.DSH_HOME
       else process.env.DSH_HOME = previous
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('persists acknowledgment across host mounts without editing overlay config', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-onboarding-ack-'))
+    const previous = process.env.DSH_HOME
+    try {
+      process.env.DSH_HOME = root
+      await writeFile(path.join(root, '.desktop-install-state.json'), JSON.stringify({
+        schemaVersion: 1, classification: 'new', firstSeenVersion: '0.12.0', classifiedAt: '2026-10-08T00:00:00Z'
+      }))
+      const host = createHostHarness()
+      const config = { eligible: false }
+      applyHost(host.ctx, config)
+      const route = host.ctx.connection.fetch.register.mock.calls[0]?.[0] as unknown as { path: string; methods: string[]; fetch: () => Promise<Response> }
+      expect(route.path).toBe('/api/desktop-onboarding/acknowledge')
+      expect(route.methods).toEqual(['POST'])
+      expect((await route.fetch()).status).toBe(200)
+      const saved = JSON.parse(await readFile(path.join(root, '.desktop-onboarding-state.json'), 'utf8'))
+      expect(saved.acknowledged).toBe(true)
+      expect(config.eligible).toBe(false)
+      expect((await route.fetch()).status).toBe(200)
+      expect(JSON.parse(await readFile(path.join(root, '.desktop-onboarding-state.json'), 'utf8'))).toEqual(saved)
+      const restarted = { eligible: true }
+      applyHost(createHostHarness().ctx, restarted)
+      expect(restarted.eligible).toBe(false)
+      await writeFile(path.join(root, '.desktop-onboarding-state.json'), '{broken')
+      const brokenAck = { eligible: false }
+      applyHost(createHostHarness().ctx, brokenAck)
+      expect(brokenAck.eligible).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects acknowledgment for an installation without a valid new marker', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-onboarding-ineligible-'))
+    const previous = process.env.DSH_HOME
+    try {
+      process.env.DSH_HOME = root
+      const host = createHostHarness()
+      applyHost(host.ctx, { eligible: false })
+      const route = host.ctx.connection.fetch.register.mock.calls[0]?.[0] as unknown as { fetch: () => Promise<Response> }
+      expect((await route.fetch()).status).toBe(409)
+      await expect(readFile(path.join(root, '.desktop-onboarding-state.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('cleans up a failed acknowledgment write and keeps the installation eligible', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-onboarding-write-failure-'))
+    const previous = process.env.DSH_HOME
+    try {
+      process.env.DSH_HOME = root
+      await writeFile(path.join(root, '.desktop-install-state.json'), JSON.stringify({
+        schemaVersion: 1, classification: 'new', firstSeenVersion: '0.12.0', classifiedAt: '2026-10-08T00:00:00Z'
+      }))
+      // A directory at the destination forces the atomic rename to fail.
+      await mkdir(path.join(root, '.desktop-onboarding-state.json'))
+      const host = createHostHarness()
+      const config = { eligible: false }
+      applyHost(host.ctx, config)
+      expect(config.eligible).toBe(true)
+      const route = host.ctx.connection.fetch.register.mock.calls[0]?.[0] as unknown as { fetch: () => Promise<Response> }
+      expect((await route.fetch()).status).toBe(500)
+      expect(config.eligible).toBe(true)
+      expect((await readdir(root)).some(name => name.endsWith('.tmp'))).toBe(false)
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previous
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reports an unavailable Desktop home without saving acknowledgment', async () => {
+    const previous = process.env.DSH_HOME
+    try {
+      delete process.env.DSH_HOME
+      const host = createHostHarness()
+      const config = { eligible: true }
+      applyHost(host.ctx, config)
+      const route = host.ctx.connection.fetch.register.mock.calls[0]?.[0] as unknown as { fetch: () => Promise<Response> }
+      expect((await route.fetch()).status).toBe(500)
+      expect(config.eligible).toBe(false)
+    } finally {
+      if (previous !== undefined) process.env.DSH_HOME = previous
     }
   })
 

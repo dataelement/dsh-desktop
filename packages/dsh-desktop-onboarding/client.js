@@ -7,18 +7,11 @@ window.__ModuleLoader__.load({
 
     const React = require('react')
     const { useCallback, useEffect, useRef, useState } = React
-    const { Button, Modal, IconGlobeOutline14 } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { Button, Modal, IconGlobeOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
 
     const NS = 'desktop-onboarding'
-    // Retained as the acknowledgement payload for settings compatibility.
-    // Eligibility is install-scoped; changing this value never re-prompts.
-    const WIZARD_VERSION = '2026-09-21.1'
     // Settings section the "configure a model" action opens.
     const MODELS_SECTION_ID = 'models'
-
-    // Settings owned by the notice. The host half (index.js) registered the
-    // schema; the value object the mirror hands back has exactly this shape.
-    const WIZARD_ACK_FIELD = 'wizardVersion'
 
     // DSH Desktop whale mark (same artwork as the sidebar brand seat), drawn
     // in currentColor so it follows the header text color in both themes.
@@ -75,7 +68,8 @@ window.__ModuleLoader__.load({
       officialSiteUrl: 'https://www.dshdesktop.com/',
       desktopIntroFeedback: 'Found a bug or have a suggestion? Open an issue on GitHub, or reach us through the official site.',
       configureModel: 'Configure a model',
-      later: 'Maybe later'
+      later: 'Maybe later',
+      saveFailed: 'Could not save your acknowledgment. Please try again.'
     }
 
     const zh = {
@@ -89,7 +83,8 @@ window.__ModuleLoader__.load({
       officialSiteUrl: 'https://dshdesktop.com/zh/',
       desktopIntroFeedback: '遇到问题或有功能建议？欢迎在 GitHub 提交 Issue，或在官网联系我们。',
       configureModel: '去配置模型',
-      later: '稍后再说'
+      later: '稍后再说',
+      saveFailed: '未能保存确认，请重试。'
     }
 
     // ---------- components ----------
@@ -133,7 +128,7 @@ window.__ModuleLoader__.load({
       const paragraphs = t('declarationBody').split('\n\n')
       const links = [
         { label: 'GitHub', href: 'https://github.com/dataelement/dsh-desktop', icon: GitHubMark },
-        { label: t('officialSite'), href: t('officialSiteUrl'), icon: IconGlobeOutline14 }
+        { label: t('officialSite'), href: t('officialSiteUrl'), icon: IconGlobeOutlineRegular }
       ]
       return React.createElement(
         'div',
@@ -178,24 +173,30 @@ window.__ModuleLoader__.load({
       const { complete, openSection, t } = props
       const wizardScope = props.controller.scope
       const [decision, setDecision] = useState('loading')
+      const [saving, setSaving] = useState(false)
+      const [saveError, setSaveError] = useState(false)
       const titleRef = useRef(null)
       const finishedRef = useRef(false)
 
       // Persist the acknowledgement, then hand the onboarding slot back. The
       // optional follow-up runs after the slot is released (e.g. opening the
       // models settings section).
-      const finish = useCallback((followUp) => {
+      const finish = useCallback(async (followUp) => {
         if (finishedRef.current) return
         finishedRef.current = true
-        const scope = wizardScope.getSnapshot()
-        const persist = scope.mode === 'memory'
-          ? Promise.resolve()
-          : wizardScope.set(WIZARD_ACK_FIELD, WIZARD_VERSION).catch(() => undefined)
-        Promise.resolve(persist).finally(() => {
+        setSaving(true)
+        setSaveError(false)
+        try {
+          const response = await fetch('/api/desktop-onboarding/acknowledge', { method: 'POST', credentials: 'same-origin', cache: 'no-store' })
+          if (!response.ok || (await response.json()).acknowledged !== true) throw new Error('Acknowledgment was not saved')
           complete()
           if (followUp) followUp()
-        })
-      }, [complete, wizardScope])
+        } catch {
+          finishedRef.current = false
+          setSaving(false)
+          setSaveError(true)
+        }
+      }, [complete])
 
       useEffect(() => {
         const read = () => {
@@ -260,18 +261,20 @@ window.__ModuleLoader__.load({
             t('step0Title')
           ),
           React.createElement(NoticeBody, { t }),
+          saveError ? React.createElement('p', { role: 'alert', className: 'dshDeskOnbHint' }, t('saveFailed')) : null,
           React.createElement(
             'div',
             { className: 'dshDeskOnbActions' },
             React.createElement(
               Button,
-              { variant: 'outline', onClick: () => finish() },
+              { variant: 'outline', disabled: saving, onClick: () => finish() },
               t('later')
             ),
             React.createElement(
               Button,
               {
                 variant: 'primary',
+                disabled: saving,
                 onClick: () => finish(() => {
                   if (typeof openSection === 'function') openSection(MODELS_SECTION_ID)
                 })
@@ -286,14 +289,11 @@ window.__ModuleLoader__.load({
     // ---------- composition ----------
 
     function apply(ctx) {
-      ctx.inject(['slots', 'locale', 'settingsScope'], (scope) => {
+      ctx.inject(['slots', 'locale', 'configForms'], (scope) => {
         installStyles()
         const t = scope.locale.bind(NS)
 
-        const wizardScope = scope.settingsScope.bind({
-          namespace: NS,
-          decode: (value) => (typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {})
-        })
+        const wizardScope = scope.configForms.get('dsh-desktop-onboarding')
 
         scope.locale.register(NS, { zh, en })
 
