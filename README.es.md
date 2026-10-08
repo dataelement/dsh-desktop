@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/images/readme-logo-black.svg" width="64" alt="Logotipo de DSH Desktop" valign="middle" />
+  <img src="docs/images/readme-logo-black-rounded.svg" width="64" alt="Logotipo de DSH Desktop" valign="middle" />
   DSH Desktop
 </h1>
 
