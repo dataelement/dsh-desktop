@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const React = require('react')
     const { Service } = require('@deepseek-ai/cordis')
-    const { Switch } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { Switch, Toast } = require('@deepseek-ai/dsh-client-ui-primitives')
     const h = React.createElement
     const PANEL = 'desktop-workbenches'
     const API = '/api/desktop-workbenches/state'
@@ -1093,8 +1093,10 @@ window.__ModuleLoader__.load({
       .dshWbMarket{container-type:inline-size;container-name:workbench-market;overflow:auto;height:100%;width:100%;min-width:0;padding:30px 32px 52px;max-width:1440px;margin:0 auto;scrollbar-color:var(--dsw-alias-border-l2) transparent;scrollbar-width:thin}
       .dshWbMarket::selection,.dshWbMarket *::selection{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)}
       .dshWbMarketHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}
-      .dshWbMarketHeaderText{max-width:70ch}.dshWbMarket h1{font-size:28px;line-height:36px;letter-spacing:-.025em;font-weight:650;margin:0 0 7px;text-wrap:balance}.dshWbMarketHeader p{margin:0}
+      .dshWbMarketHeaderText{flex:1;min-width:0;max-width:70ch}.dshWbMarket h1{font-size:28px;line-height:36px;letter-spacing:-.025em;font-weight:650;margin:0 0 7px;text-wrap:balance}.dshWbMarketHeader p{margin:0}
       .dshWbMarketHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+      html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketHeader{padding-inline-start:max(0px,calc(var(--dsh-frame-leading-clearance,160px) - 32px))}
+      .dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}
       .dshWbRefresh{display:grid;place-items:center;width:36px;height:36px;padding:0;flex:none}.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}@keyframes dshWbSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.dshWbRefresh[aria-busy=true] svg{animation:none}}
       .dshWbCheckUpdates{display:inline-flex;align-items:center;gap:6px;width:auto;padding:5px 10px}
       .dshWbCreate{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;flex:none}
@@ -1126,7 +1128,6 @@ window.__ModuleLoader__.load({
       .dshWbSubmitCategory select,.dshWbSubmitCategory input{height:28px;min-width:0;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);font:inherit}
       .dshWbSubmitOutcome{margin-top:14px!important;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l2);font-size:13px}
       .dshWbPrompt{display:block;width:100%;min-height:160px;resize:vertical;margin:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-module-platform);font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;font-size:11px!important;line-height:18px!important}
-      .dshWbCopyStatus{min-height:20px;margin:0;font-size:12px;color:var(--dsw-alias-label-secondary)}
       .dshWbGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
       .dshWbCard{min-width:0;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);overflow:hidden;transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s cubic-bezier(.2,.8,.2,1)}
       .dshWbCard:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.08)}
@@ -1178,7 +1179,7 @@ window.__ModuleLoader__.load({
          workbench's semantic top header share that row after its reserved width. */
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbBusiness[data-side=left][data-embedded=true] > :first-child > header:first-child,
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbCustomFrame > :first-child > header:first-child{padding-inline-start:var(--dsh-frame-leading-clearance,160px)}
-.dshWbSidebarSwitcher{position:relative;z-index:30;display:flex;align-items:center;gap:8px;box-sizing:border-box;min-width:0;min-height:36px;margin:0 2px 8px;padding:0;overflow:visible}.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1 1 0;min-width:88px;box-sizing:border-box;min-height:36px;padding:7px 8px;font:inherit;line-height:22px;cursor:pointer;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);text-align:left;white-space:nowrap}.dshWbSidebarSwitcher.dshWb{font-size:14px;line-height:22px}.dshWbSidebarSwitcher .dshWbWorkbenchHome{font:inherit;line-height:22px}.dshWbWorkbenchHome svg{flex:0 0 auto}.dshWbSidebarSwitcher[data-selected=true]{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}.dshWbWorkbenchHome:hover{background:var(--dsw-alias-interactive-bg-hover)}.dshWbCurrentMode{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:42%;padding:0 8px;color:var(--dsw-alias-label-secondary);font-size:12px}.dshWbCurrentModeLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dshWbModeSwitch{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:42%;box-sizing:border-box;height:36px;padding:7px 8px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:pointer}.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}.dshWbModeSwitch:hover:not(:disabled),.dshWbModeSwitch[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}.dshWbModeSwitch:focus-visible,.dshWbWorkbenchHome:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;top:calc(100% + 5px);display:grid;gap:2px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 28px rgba(0,0,0,.14)}.dshWbModeOptionRow{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:0;min-width:0}.dshWbModeOptionRow[data-dragging=true]{opacity:.46}.dshWbModeOptionRow[data-drop-edge=before]::before,.dshWbModeOptionRow[data-drop-edge=after]::after{content:"";position:absolute;z-index:1;left:8px;right:6px;height:2px;border-radius:1px;background:var(--dsw-alias-label-primary);pointer-events:none}.dshWbModeOptionRow[data-drop-edge=before]::before{top:-2px}.dshWbModeOptionRow[data-drop-edge=after]::after{bottom:-2px}.dshWbModeOption{display:grid;grid-template-columns:18px minmax(0,1fr) 16px;align-items:center;gap:8px;width:100%;min-width:0;min-height:34px;padding:6px 8px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left}.dshWbModeOption:hover:not(:disabled),.dshWbModeOption:focus-visible{background:var(--dsw-alias-bg-layer-2)}.dshWbModeOptionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.dshWbModeOptionCheck{font-size:12px;text-align:center;color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle{display:grid;place-items:center;width:24px;height:34px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:grab}.dshWbModeDragHandle:hover:not(:disabled),.dshWbModeDragHandle:focus-visible{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}.dshWbModeDragHandle:active{cursor:grabbing}.dshWbModeDragHandle:disabled{cursor:default;opacity:.35}.dshWbSrOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.dshWbSidebarSwitcher{position:relative;z-index:30;display:flex;align-items:center;gap:8px;box-sizing:border-box;min-width:0;min-height:36px;margin:0 2px 8px;padding:0;overflow:visible}.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1 1 0;min-width:88px;box-sizing:border-box;min-height:36px;padding:7px 8px;font:inherit;line-height:22px;cursor:pointer;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);text-align:left;white-space:nowrap}.dshWbSidebarSwitcher.dshWb{font-size:14px;line-height:22px}.dshWbSidebarSwitcher .dshWbWorkbenchHome{font:inherit;line-height:22px}.dshWbWorkbenchHome svg{flex:0 0 auto}.dshWbSidebarSwitcher:is([data-selected=true],:hover,:focus-within){border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}.dshWbCurrentMode{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:42%;padding:0 8px;color:var(--dsw-alias-label-secondary);font-size:12px}.dshWbCurrentModeLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dshWbModeSwitch{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:42%;box-sizing:border-box;height:36px;padding:7px 8px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;cursor:pointer}.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}.dshWbModeSwitch:focus-visible,.dshWbWorkbenchHome:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.dshWbModeMenu{position:absolute;z-index:32;left:2px;right:2px;top:calc(100% + 5px);display:grid;gap:2px;padding:5px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 28px rgba(0,0,0,.14)}.dshWbModeOptionRow{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:center;gap:0;min-width:0}.dshWbModeOptionRow[data-dragging=true]{opacity:.46}.dshWbModeOptionRow[data-drop-edge=before]::before,.dshWbModeOptionRow[data-drop-edge=after]::after{content:"";position:absolute;z-index:1;left:8px;right:6px;height:2px;border-radius:1px;background:var(--dsw-alias-label-primary);pointer-events:none}.dshWbModeOptionRow[data-drop-edge=before]::before{top:-2px}.dshWbModeOptionRow[data-drop-edge=after]::after{bottom:-2px}.dshWbModeOption{display:grid;grid-template-columns:18px minmax(0,1fr) 16px;align-items:center;gap:8px;width:100%;min-width:0;min-height:34px;padding:6px 8px;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);text-align:left}.dshWbModeOption:hover:not(:disabled),.dshWbModeOption:focus-visible{background:var(--dsw-alias-bg-layer-2)}.dshWbModeOptionLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.dshWbModeOptionCheck{font-size:12px;text-align:center;color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle{display:grid;place-items:center;width:24px;height:34px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:grab}.dshWbModeDragHandle:hover:not(:disabled),.dshWbModeDragHandle:focus-visible{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}.dshWbModeDragHandle:active{cursor:grabbing}.dshWbModeDragHandle:disabled{cursor:default;opacity:.35}.dshWbSrOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
       .dshWbBody{display:flex;flex:1;min-height:0;min-width:0}.dshWbConversation{container-type:inline-size;container-name:workbench-conversation;overflow:hidden;order:1;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
       .dshWbBusiness{order:2;width:var(--workbench-business-width,36%);min-width:220px;border-left:1px solid var(--dsw-alias-border-l2);overflow:auto;padding:18px;box-sizing:border-box}
       .dshWbBusiness[data-side=left]{order:0;border-left:0;border-right:1px solid var(--dsw-alias-border-l2)}
@@ -1317,7 +1318,8 @@ window.__ModuleLoader__.load({
     }
     function WorkbenchSidebarSwitcher({ service, wide, startSession, usePanelInfo }) {
       const { state, catalog, ready, pending, marketOpen } = useWorkbench(service)
-      const marketSelected = usePanelInfo((info) => info.activePanelId === PANEL)
+      const activePanelId = usePanelInfo((info) => info.activePanelId)
+      const marketSelected = activePanelId === PANEL
       const enabled = React.useSyncExternalStore(workbenchPreference.subscribe.bind(workbenchPreference), workbenchPreference.getSnapshot.bind(workbenchPreference))
       const [open, setOpen] = React.useState(false)
       const [draggingId, setDraggingId] = React.useState(null)
@@ -1399,7 +1401,7 @@ window.__ModuleLoader__.load({
         }
         clearDrag()
       }
-      return h('nav', { className: 'dshWb dshWbSidebarSwitcher', 'data-dsh-workbench-switcher': '', 'data-selected': marketSelected ? 'true' : undefined, 'aria-label': '工作台导航', onBlur: (event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false) }, onKeyDown: (event) => { if (event.key === 'Escape' && open) { setOpen(false); event.currentTarget.querySelector('.dshWbModeSwitch')?.focus() } } },
+      return h('nav', { className: 'dshWb dshWbSidebarSwitcher', 'data-dsh-workbench-switcher': '', 'data-selected': marketSelected || (activePanelId == null && !!active) ? 'true' : undefined, 'aria-label': '工作台导航', onBlur: (event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false) }, onKeyDown: (event) => { if (event.key === 'Escape' && open) { setOpen(false); event.currentTarget.querySelector('.dshWbModeSwitch')?.focus() } } },
         h('button', { type: 'button', className: 'dshWbWorkbenchHome', title: '工作台主页', 'aria-label': '打开工作台主页', 'aria-current': marketSelected ? 'page' : undefined, onClick: () => { setOpen(false); service.showMarket() } },
           h(MarketIcon, { name: 'market', size: 16 }), h('span', null, '工作台')),
         pinned.length > 0
@@ -1676,7 +1678,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const [detail, setDetail] = React.useState(null)
       const [removing, setRemoving] = React.useState(null)
       const [openPrompt, setOpenPrompt] = React.useState(null)
-      const [copyStatus, setCopyStatus] = React.useState('')
+      const [copyStatus, setCopyStatus] = React.useState(null)
       const [submitCategory, setSubmitCategory] = React.useState('')
       const [categoryIdea, setCategoryIdea] = React.useState('')
       if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
@@ -1716,18 +1718,17 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         requestAnimationFrame(() => document.getElementById(`dsh-workbench-${values[next]}-tab`)?.focus())
       }
       const copyPrompt = async (text) => {
-        setCopyStatus('')
-        try { await copySubmissionPrompt(text); setCopyStatus('已复制，现在可以粘贴给你的 Agent。') }
-        catch { setCopyStatus('复制失败，请展开指令后手动全选复制。') }
+        try { await copySubmissionPrompt(text); setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: '已复制', tone: 'success' }) }
+        catch { setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: '复制失败，请展开指令手动复制。' }) }
       }
       return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
-        h('header', { className: 'dshWbMarketHeader' },
+        h('header', { className: 'dshWbMarketHeader', 'data-window-drag': true },
           h('div', { className: 'dshWbMarketHeaderText' },
             h('h1', null, tab === 'submit' ? '制作属于你的工作台' : '工作台'),
             h('p', { className: 'dshWbMuted' }, tab === 'submit' ? '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。' : '工作台把专属界面、会话和资料组织在一起。可通过顶部快捷栏在会话与不同工作台之间切换。')),
           h('div', { className: 'dshWbMarketHeaderActions' },
             tab !== 'submit' && h(Button, { className: `dshWbBtn dshWbRefresh${tab === 'mine' ? ' dshWbCheckUpdates' : ''}`, title: checkingUpdates ? '正在检查更新' : tab === 'mine' ? '检查更新' : '刷新目录', 'aria-label': checkingUpdates ? '正在检查更新' : tab === 'mine' ? '检查更新' : '刷新目录', 'aria-busy': catalogRefreshing || checkingUpdates, disabled: catalogRefreshing || checkingUpdates, onClick: () => service.run(tab === 'mine' ? service.checkUpdates() : service.refreshCatalog()) }, h(MarketIcon, { name: 'refresh', size: 17 }), tab === 'mine' && (checkingUpdates ? '正在检查…' : '检查更新')),
-            h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus('') } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台'))),
+            h(Button, { primary: tab !== 'submit', className: `dshWbBtn${tab !== 'submit' ? ' dshWbPrimary' : ''} dshWbCreate`, onClick: () => { setTab(tab === 'submit' ? 'market' : 'submit'); setDetail(null); setCopyStatus(null) } }, h(MarketIcon, { name: tab === 'submit' ? 'search' : 'plus' }), tab === 'submit' ? '返回工作台市场' : '制作我的工作台'))),
         h(Notice, { service }),
         tab !== 'submit' && h('div', { className: 'dshWbToolbar' },
           h('div', { className: 'dshWbTabs' }, h('div', { role: 'tablist', 'aria-label': '工作台集合' },
@@ -1774,7 +1775,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
               openPrompt === 'submission' && h('textarea', { className: 'dshWbPrompt', readOnly: true, value: submissionPrompt, 'aria-label': '投稿工作台给 Agent 的指令', onFocus: (event) => event.currentTarget.select() }),
               h(SubmissionStatus, { service }))),
           h('p', { className: 'dshWbMuted dshWbSubmitOutcome' }, '提交 PR 就是进入审核，进度以 GitHub 上的 PR 为准，本机不保存投稿状态。PR 合并、市场目录更新后，工作台就会出现在工作台市场中。'),
-          h('p', { className: 'dshWbCopyStatus', role: 'status', 'aria-live': 'polite' }, copyStatus)),
+          copyStatus && h(Toast, { key: copyStatus.id, text: copyStatus.text, tone: copyStatus.tone, holdMs: 2000, onDone: () => setCopyStatus((current) => current?.id === copyStatus.id ? null : current) })),
         tab !== 'submit' && h('section', { id: `dsh-workbench-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `dsh-workbench-${tab}-tab`, tabIndex: 0 },
           h('div', { className: 'dshWbGrid', 'data-tab': tab }, entries.map((entry) => {
             const catalogId = entry.catalogId || entry.id

@@ -70,7 +70,7 @@ function marketCard(service, tab = 'market') {
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
-    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).Market
+    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null, Toast: function Toast() {} }).Market
   } } }, document, setTimeout, clearTimeout, AbortController })
   const tree = renderMarket({ service })
   const find = (node, predicate) => {
@@ -93,7 +93,7 @@ function cardButtons(card) {
   return buttons.map(button => button.props.children.flat().filter(child => typeof child === 'string').join(''))
 }
 
-function interactiveMarket(service, tab = 'market') {
+function interactiveMarket(service, tab = 'market', clipboard) {
   let renderMarket
   let stateIndex = 0
   const state = []
@@ -104,13 +104,13 @@ function interactiveMarket(service, tab = 'market') {
     useState: (initial) => {
       const index = stateIndex++
       if (!(index in state)) state[index] = index === 0 ? tab : initial
-      return [state[index], (value) => { state[index] = value }]
+      return [state[index], (value) => { state[index] = typeof value === 'function' ? value(state[index]) : value }]
     },
     useLayoutEffect: () => {},
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
-  vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
-    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).Market
+  vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, navigator: clipboard && { clipboard }, __ModuleLoader__: { load({ factory }) {
+    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null, Toast: function Toast() {} }).Market
   } } }, document, setTimeout, clearTimeout, AbortController })
   const find = (node, predicate) => {
     if (Array.isArray(node)) return node.flatMap(item => find(item, predicate))
@@ -978,6 +978,32 @@ describe('desktop workbench client navigation', () => {
     await copySubmissionPrompt('Agent prompt', targetWindow)
     expect(writeText).toHaveBeenCalledOnce()
     expect(writeText).toHaveBeenCalledWith('Agent prompt')
+  })
+
+  it.each([['复制开发指令', '本地开发'], ['复制投稿指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
+    const { service } = await fixture()
+    const writeText = vi.fn(async () => {})
+    const ui = interactiveMarket(service, 'submit', { writeText })
+    const tree = ui.render()
+    expect(tree.props.children[0].props['data-window-drag']).toBe(true)
+    await ui.button(tree, label).props.onClick()
+    expect(writeText).toHaveBeenCalledOnce()
+    expect(writeText.mock.calls[0][0]).toContain(promptFragment)
+    const toast = ui.find(ui.render(), node => node.type?.name === 'Toast')[0]
+    expect(toast.props).toMatchObject({ text: '已复制', tone: 'success' })
+    toast.props.onDone()
+    expect(ui.find(ui.render(), node => node.type?.name === 'Toast')).toHaveLength(0)
+    service.dispose()
+  })
+
+  it('shows failure feedback when copying a workbench instruction fails', async () => {
+    const { service } = await fixture()
+    const ui = interactiveMarket(service, 'submit', { writeText: vi.fn(async () => { throw new Error('denied') }) })
+    await ui.button(ui.render(), '复制开发指令').props.onClick()
+    const toast = ui.find(ui.render(), node => node.type?.name === 'Toast')[0]
+    expect(toast.props.text).toContain('复制失败')
+    expect(toast.props.tone).toBeUndefined()
+    service.dispose()
   })
 
   it('falls back to a temporary text area when the clipboard API is unavailable', async () => {
@@ -1861,8 +1887,8 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("title: '工作台主页', 'aria-label': '打开工作台主页'")
     expect(fullSource).toContain('setOpen(false); service.showMarket()')
     expect(fullSource).toContain('.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1 1 0;min-width:88px;')
-    expect(fullSource).toContain('.dshWbSidebarSwitcher[data-selected=true]{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}')
-    expect(fullSource).toContain('.dshWbWorkbenchHome:hover{background:var(--dsw-alias-interactive-bg-hover)}')
+    expect(fullSource).toContain('.dshWbSidebarSwitcher:is([data-selected=true],:hover,:focus-within){border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}')
+    expect(fullSource).not.toContain('.dshWbModeSwitch:hover:not(:disabled),.dshWbModeSwitch[aria-expanded=true]{background:')
     expect(fullSource).toContain('min-height:36px;margin:0 2px 8px;padding:0;')
     expect(fullSource).toContain('.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}')
     expect(fullSource).toContain('.dshWbCurrentModeLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
@@ -2900,6 +2926,16 @@ describe('workbench market screenshot and metadata display', () => {
 
 
 describe('sidebar central panel selection', () => {
+  it('highlights the entire row for an active workbench frame, but not other panels', () => {
+    const ui = sidebarSwitcher({ pinned: ['writer'], active: 'writer', title: '装修工作台' })
+    const selected = () => ui.find(ui.render(), node => node.props?.['data-dsh-workbench-switcher'] === '')[0].props['data-selected']
+    expect(selected()).toBe('true')
+    ui.selectPanel('plugins')
+    expect(selected()).toBeUndefined()
+    ui.selectPanel('desktop-workbenches')
+    expect(selected()).toBe('true')
+  })
+
   it('clears workbench selection when Plugins opens even with stale market restoration state', () => {
     const ui = sidebarSwitcher()
     const snapshot = ui.service.getSnapshot()
