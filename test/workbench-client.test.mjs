@@ -980,12 +980,13 @@ describe('desktop workbench client navigation', () => {
     expect(writeText).toHaveBeenCalledWith('Agent prompt')
   })
 
-  it('moves the whole collapsed Mac market header below window controls without shifting its left edge', () => {
-    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarket{padding-top:var(--dsh-frame-top-clearance,48px)}')
-    expect(code).not.toContain('[data-sidebar-collapsed] .dshWbMarketHeader{padding-inline-start:')
-    expect(code).toContain('.dshWbMarket{position:relative;')
-    expect(code).toContain('.dshWbMarketDragStrip{display:none}')
-    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketDragStrip{display:block;position:absolute;top:0;right:0;left:var(--dsh-frame-leading-clearance,160px);height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:drag}')
+  it('includes the market and builder header whitespace in the drag region while preserving caption and button controls', () => {
+    expect(code).toContain('.dshWbMarket{position:relative;container-type:inline-size;container-name:workbench-market;overflow:auto;height:100%;width:100%;min-width:0;padding:0 32px 52px')
+    expect(code).toContain('.dshWbMarketHeader{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin:0 -32px;padding:30px 32px 28px}')
+    expect(code).toContain('html[data-platform=darwin] .dshWbMarketHeader{-webkit-app-region:drag}')
+    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketHeader{padding-top:var(--dsh-frame-top-clearance,48px)}')
+    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketHeader::before{content:\'\';position:absolute;top:0;left:0;width:var(--dsh-frame-leading-clearance,160px);height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:no-drag}')
+    expect(code).toContain('html[data-platform=darwin] .dshWbMarketModalOpen .dshWbMarketHeader{-webkit-app-region:no-drag}')
     expect(code).toContain("className: 'dshWbMarketHeader', 'data-window-drag': true")
     expect(code).toContain('.dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}')
   })
@@ -995,8 +996,7 @@ describe('desktop workbench client navigation', () => {
     const writeText = vi.fn(async () => {})
     const ui = interactiveMarket(service, 'submit', { writeText })
     const tree = ui.render()
-    expect(tree.props.children[0].props).toMatchObject({ className: 'dshWbMarketDragStrip', 'data-window-drag': true, 'aria-hidden': true })
-    expect(tree.props.children[1].props['data-window-drag']).toBe(true)
+    expect(tree.props.children[0].props['data-window-drag']).toBe(true)
     await ui.button(tree, label).props.onClick()
     expect(writeText).toHaveBeenCalledOnce()
     expect(writeText.mock.calls[0][0]).toContain(promptFragment)
@@ -1411,8 +1411,8 @@ describe('desktop workbench client navigation', () => {
     expect(customHost.props.className).toBe('dshWbCustomFrame')
     expect(code).toContain('.dshWbBusiness[data-side=left][data-embedded=true] > :first-child > header:first-child')
     expect(code).toContain('padding-inline-start:var(--dsh-frame-leading-clearance,160px)')
-    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbCustomFrame > :first-child > header:first-child{-webkit-app-region:drag}')
-    expect(code).toContain('.dshWbCustomFrame > :first-child > header:first-child :is(button,a,input,select,textarea,[role=button],[role=tab],[role=combobox],[contenteditable=true],[data-dsh-no-drag]){-webkit-app-region:no-drag}')
+    expect(code).toContain('html[data-platform=darwin] .dshWbCustomFrame > :first-child > header:first-child{-webkit-app-region:drag}')
+    expect(code).toContain('html[data-platform=darwin] .dshWbCustomFrame > :first-child > header:first-child :is(button,a,input,select,textarea,[role=button],[role=tab],[role=combobox],[contenteditable=true],[data-dsh-no-drag]){-webkit-app-region:no-drag}')
     expect(customHost.props.style).toMatchObject({
       position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0,
       width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box'
