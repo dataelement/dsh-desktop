@@ -1090,14 +1090,16 @@ window.__ModuleLoader__.load({
       .dshWbSetting{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}
       .dshWbSettingText{display:flex;flex-direction:column;gap:4px;min-width:0}.dshWbSetting strong{font-size:14px;line-height:20px;font-weight:600}.dshWbSetting small{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
       .dshWbSessionIcon{width:16px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--dsw-alias-label-tertiary)}
-      .dshWbMarket{container-type:inline-size;container-name:workbench-market;overflow:auto;height:100%;width:100%;min-width:0;padding:30px 32px 52px;max-width:1440px;margin:0 auto;scrollbar-color:var(--dsw-alias-border-l2) transparent;scrollbar-width:thin}
+      .dshWbMarket{position:relative;container-type:inline-size;container-name:workbench-market;overflow:auto;height:100%;width:100%;min-width:0;padding:30px 32px 52px;max-width:1440px;margin:0 auto;scrollbar-color:var(--dsw-alias-border-l2) transparent;scrollbar-width:thin}
       .dshWbMarket::selection,.dshWbMarket *::selection{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground)}
       .dshWbMarketHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}
       .dshWbMarketHeaderText{flex:1;min-width:0;max-width:70ch}.dshWbMarket h1{font-size:28px;line-height:36px;letter-spacing:-.025em;font-weight:650;margin:0 0 7px;text-wrap:balance}.dshWbMarketHeader p{margin:0}
       .dshWbMarketHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-      /* Keep the full header in the content grid, below the collapsed Mac
-         caption controls. The blank header area remains the drag surface. */
+      /* The collapsed Mac caption controls own the left side of the top band.
+         Keep the header below them and make its otherwise empty band draggable. */
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarket{padding-top:var(--dsh-frame-top-clearance,48px)}
+      .dshWbMarketDragStrip{display:none}
+      html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketDragStrip{display:block;position:absolute;top:0;right:0;left:var(--dsh-frame-leading-clearance,160px);height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:drag}
       .dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}
       .dshWbRefresh{display:grid;place-items:center;width:36px;height:36px;padding:0;flex:none}.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}@keyframes dshWbSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.dshWbRefresh[aria-busy=true] svg{animation:none}}
       .dshWbCheckUpdates{display:inline-flex;align-items:center;gap:6px;width:auto;padding:5px 10px}
@@ -1683,7 +1685,8 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const [copyStatus, setCopyStatus] = React.useState(null)
       const [submitCategory, setSubmitCategory] = React.useState('')
       const [categoryIdea, setCategoryIdea] = React.useState('')
-      if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
+      const dragStrip = () => h('div', { className: 'dshWbMarketDragStrip', 'data-window-drag': true, 'aria-hidden': true })
+      if (!workbenchEnabled) return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' }, dragStrip(),
         h('div', { className: 'dshWbDisabledHint' }, h('h1', null, '工作台功能已关闭'), h('p', { className: 'dshWbMuted' }, '可在 设置 → 通用 中重新开启。')))
       const developmentPrompt = developmentWorkbenchAgentPrompt()
       const chosenCategory = marketCategories.find((item) => item.id === submitCategory)
@@ -1724,6 +1727,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         catch { setCopyStatus({ id: `${Date.now()}-${Math.random()}`, text: '复制失败，请展开指令手动复制。' }) }
       }
       return h('section', { className: 'dshWb dshWbMarket', 'aria-label': '工作台市场' },
+        dragStrip(),
         h('header', { className: 'dshWbMarketHeader', 'data-window-drag': true },
           h('div', { className: 'dshWbMarketHeaderText' },
             h('h1', null, tab === 'submit' ? '制作属于你的工作台' : '工作台'),
