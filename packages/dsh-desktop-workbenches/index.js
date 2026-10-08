@@ -85,6 +85,9 @@ export function apply(ctx, config) {
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/development-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/author-guide', 'development-guide.zh.md'))
   ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/market-acceptance', 'market-acceptance.zh.md'))
+  ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/development-guide-en', 'development-guide.en.md'))
+  ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/author-guide-en', 'development-guide.en.md'))
+  ctx.connection.fetch.register(documentRoute('/api/desktop-workbenches/market-acceptance-en', 'market-acceptance.en.md'))
   ctx.connection.fetch.register({
     path: '/api/desktop-workbenches/catalog',
     methods: ['GET'],

@@ -886,8 +886,8 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain('需求确认并完成开发后，Agent 会把工作台装到这台 Desktop')
     expect(source).toContain('想上架，再按验收规范提交')
     // The website is the only visible document entry point in this flow.
-    expect(source).toContain('href: DEVELOPMENT_PAGE_URL')
-    expect(source).toContain('href: ACCEPTANCE_PAGE_URL')
+    expect(source).toContain('href: developmentPageUrl()')
+    expect(source).toContain('href: acceptancePageUrl()')
     expect(source).not.toContain('离线查看')
     expect(source).toContain('复制开发指令')
     expect(source).toContain('复制投稿指令')
@@ -951,6 +951,20 @@ describe('desktop workbench client navigation', () => {
     expect(submission).not.toContain('不要把 pending 说成已经投稿成功')
     expect(submission).not.toContain('preset-packages')
     expect(submissionAgentPrompt('submission')).toBe(submission)
+  })
+
+  it('provides English Agent prompts and English documentation URLs in English mode', () => {
+    const development = developmentWorkbenchAgentPrompt(true)
+    expect(development).toContain('https://dshdesktop.com/workbench/docs/development-en.md')
+    expect(development).toContain('Who is this workbench for')
+    expect(development).toContain('Wait for my answer')
+    expect(development).not.toContain('工作台开发规范')
+    const submission = submissionWorkbenchAgentPrompt({ english: true, category: { id: 'other', name: '其他', names: { en: 'Other' } }, suggestion: 'Legal' })
+    expect(submission).toContain('https://dshdesktop.com/workbench/docs/market-acceptance-en.md')
+    expect(submission).toContain('category to other (Other)')
+    expect(submission).toContain('suggest a new category: Legal')
+    expect(submission).toContain('description.zh')
+    expect(submission).not.toContain('工作台市场验收规范')
   })
 
   it('writes the author-chosen market category into the submission prompt', () => {

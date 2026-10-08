@@ -97,15 +97,18 @@ export function renderMarkdownBody(markdown) {
   return out.join('\n')
 }
 
-export function renderDocumentPage(markdown, { markdownUrl }) {
-  const title = /^#\s+(.*)$/m.exec(markdown)?.[1] ?? 'DSH 工作台文档'
+export function renderDocumentPage(markdown, { markdownUrl, language = 'zh-CN', alternatePageUrl }) {
+  const title = /^#\s+(.*)$/m.exec(markdown)?.[1] ?? (language === 'en' ? 'DSH workbench documentation' : 'DSH 工作台文档')
+  const alternateLanguage = language === 'en' ? 'zh-CN' : 'en'
+  const alternateLabel = language === 'en' ? '中文' : 'English'
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(language)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(title)} — DSH Desktop</title>
 <link rel="alternate" type="text/markdown" href="${escapeHtml(markdownUrl)}">
+${alternatePageUrl ? `<link rel="alternate" hreflang="${alternateLanguage}" href="${escapeHtml(alternatePageUrl)}">` : ''}
 <style>
 :root{color-scheme:light dark;--bg:#fbfbf9;--fg:#1b1b1a;--muted:#6b6b66;--line:#e2e2dc;--code:#f0f0eb;--link:#2457c5}
 @media(prefers-color-scheme:dark){:root{--bg:#161615;--fg:#ececea;--muted:#a3a39d;--line:#34342f;--code:#23231f;--link:#8ab0ff}}
@@ -121,6 +124,7 @@ li{margin:4px 0}li.task{list-style:none;margin-left:-1.2em}
 </head>
 <body>
 <main>
+${alternatePageUrl ? `<nav aria-label="Language"><a href="${escapeHtml(alternatePageUrl)}">${alternateLabel}</a></nav>` : ''}
 ${renderMarkdownBody(markdown)}
 </main>
 </body>
