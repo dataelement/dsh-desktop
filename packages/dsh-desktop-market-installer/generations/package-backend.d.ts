@@ -19,6 +19,7 @@ export interface ProfileBundleInstallRequest {
 }
 
 export interface ProfileBundlePackageBackend {
+  /** Resolves undefined for a shared-tree package (the market); pnpm installs it. */
   install(request: ProfileBundleInstallRequest): Promise<{
     packageResult: PackageResult
     bundle?: string
@@ -26,12 +27,15 @@ export interface ProfileBundlePackageBackend {
     pendingBuilds?: string[]
     rollback?(): Promise<void>
     commit?(): void
-  }>
+  } | undefined>
+  /** Resolves undefined for a package that is not an enabled generation; pnpm removes it. */
   remove(request: {
     name: string
     signal?: AbortSignal
     onOutput?(text: string, stream: 'stdout' | 'stderr'): void
-  }): Promise<{ packageResult: PackageResult }>
+  }): Promise<{ packageResult: PackageResult } | undefined>
+  switched(request: { name: string; enabled: boolean; rowIds?: readonly string[] }): Promise<void>
+  removed(request: { name: string }): Promise<void>
 }
 
 export function createGenerationPackageBackend(options: {

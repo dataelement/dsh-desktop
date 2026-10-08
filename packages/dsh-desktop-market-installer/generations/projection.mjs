@@ -40,6 +40,9 @@ const IN_BOX_BUNDLES = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-a
 /** Substring that marks a symlink target as one this projector wrote. */
 const GENERATION_LINK_MARKER = join('profiles', '.generations', 'live')
 
+/** Error code for a live switch refused because pnpm still owns a real directory there. */
+export const REAL_DIRECTORY_IN_PLACE = 'EDSH_REAL_PLUGIN_DIRECTORY'
+
 /** Versioned marker for the manifest fields owned by this derived projection. */
 const PROJECTION_VERSION = 1
 
@@ -267,7 +270,9 @@ export async function publishInstalledGeneration(dshHome, pluginName, profile = 
       const info = await lstat(link)
       previousIsDirectory = !info.isSymbolicLink()
       if (previousIsDirectory && (!allowRealDirectory || !info.isDirectory())) {
-        throw new Error(`Cannot switch a non-link plugin directory: ${link}`)
+        throw Object.assign(new Error(`Cannot switch a non-link plugin directory: ${link}`), {
+          code: REAL_DIRECTORY_IN_PLACE
+        })
       }
       if (await realpath(link) === await realpath(target)) {
         const bundles = await syncProfileManifest(dir, enabled, linkSpecs, manifestState, { syncBundles })

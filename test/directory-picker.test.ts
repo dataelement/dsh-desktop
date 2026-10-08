@@ -54,4 +54,12 @@ describe('desktop Electron directory picker', () => {
     expect(controller).toContain('static inject = ["directoryPicker"]')
     expect(controller).toContain('"directoryPickerController"')
   })
+
+  it('lets the workspace directory dialog create a folder on macOS', async () => {
+    const main = await readFile('src/main/index.ts', 'utf8')
+    const handlerStart = main.indexOf("ipcMain.handle('directory-picker:open'")
+    const handler = main.slice(handlerStart, main.indexOf('ipcMain.handle(', handlerStart + 1))
+
+    expect(handler).toContain("properties: ['openDirectory', 'createDirectory']")
+  })
 })

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyPendingCreatedSessions,
   renderDesktopPairingPage,
   renderMobilePage,
   renderMobileReconnectPage,
-  renderPairingPinPage
+  renderPairingPinPage,
+  type PendingCreatedSession
 } from '../src/main/mobile/lan-mobile-pages'
 
 describe('LAN mobile page', () => {
@@ -48,6 +50,12 @@ describe('LAN mobile page', () => {
     expect(html).toContain("window.addEventListener('popstate'")
     expect(html).toContain("if(history.state?.view==='chat')history.back()")
     expect(html).toContain("function showSessionList()")
+    expect(html).toContain("try{await loadWorkspaces();syncWorkspaceUi()}catch(e){showError('listError',e)}await loadSessions()")
+    expect(html).toContain('pendingCreatedSessions.push({workspaceId,sessionId:created.sessionId})')
+    expect(html).toContain(`pendingCreatedSessions=${applyPendingCreatedSessions.name}(workspaces,pendingCreatedSessions,serverItems,archivedIds)`)
+    expect(html).toContain(applyPendingCreatedSessions.toString())
+    expect(html).not.toContain('pending.applied')
+    expect(html).toContain('workspace.sessionIds=[created.sessionId,...ids]')
     expect(html).toContain("function handleHistory(state)")
     expect(html).toContain("function recentSession()")
     expect(html).toContain("await openRecentSession()")
@@ -82,6 +90,16 @@ describe('LAN mobile page', () => {
     expect(html).toContain('function presetIsLocked(){return!sessionBlank||optimisticPrompts.length>0}')
     expect(html).toContain('sessionBlank=false;awaitingTurnStartedAt=Date.now()-1000;agentRunning=true')
     expect(html).toContain('Preset is locked after the first message.')
+    expect(html).toContain('function modelSelectionOf(projections){const selection=projections&&projections.values&&projections.values.modelSelection;return normalizeSelection(selection&&selection.next)}')
+    expect(html).toContain('if(!value||typeof value.provider!==\'string\'||!value.provider||typeof value.model!==\'string\'||!value.model)return null')
+    expect(html).toContain('const selected=modelSelectionOf(summary&&summary.projections)||modelSelectionOf(streamProjections);if(selected)modelCatalog.current=selected')
+    expect(html).toContain('function showSessionModel(selection){const next=normalizeSelection(selection);if(!next||settingsBusy||!modelCatalog||sameModelSelection(modelCatalog.current,next))return;modelCatalog.current=next;if(!$(\'sessionSettings\').hidden)renderSessionSettings()}')
+    expect(html).toContain("if(type==='model/selection')showSessionModel(entry.data)")
+    expect(html).toContain('showSessionModel(modelSelectionOf(value.projections))')
+    expect(html).toContain('const selected=normalizeSelection(value&&value.selected)||normalizeSelection({provider,model,...(reasoningEffort?{reasoningEffort}:{})});if(selected)modelCatalog.current=selected')
+    expect(html).not.toContain('modelCatalog.current=modelCatalog.default=value.selected')
+    expect(html).toContain('if(model)model.disabled=settingsBusy||!routable')
+    expect(html).toContain("else if(e.target.id==='modelSelect'){const chosen=selectedModelEntry();syncEffortOptions();selectModel(chosen)}")
     expect(html).toContain('id="todoDock" class="todo-dock"')
     expect(html).toContain('function updateTodos(projections)')
     expect(html).toContain('projections?.values?.todos')
@@ -175,7 +193,8 @@ describe('LAN mobile page', () => {
     expect(html).toContain("function showError(id,error)")
     expect(html).toContain("showError('chatError',e)")
     expect(html).not.toContain("$('chatError').textContent=e.message")
-    expect(html).toContain('archivedSessionIds=value.archivedSessionIds||[]')
+    expect(html).toContain('archivedIds=value.archivedSessionIds||[]')
+    expect(html).toContain('archivedSessionIds=archivedIds')
     expect(html).toContain('archived=new Set(archivedSessionIds)')
     expect(html).not.toContain('new Set(value.archivedSessionIds||[])')
     expect(html).toContain('!archived.has(s.sessionId)')
@@ -187,7 +206,10 @@ describe('LAN mobile page', () => {
     const tunnelZh = renderMobileReconnectPage('zh', 'tunnel')
     expect(zh).toContain('连接已断开')
     expect(zh).toContain('href="/reconnect">重新连接')
-    expect(zh).toContain('请确保手机和电脑连接到同一 Wi-Fi，然后扫描电脑上的新二维码。')
+    expect(zh).toContain('请确保手机和电脑连接到同一 Wi-Fi，然后点下面的按钮重新连接。')
+    const unavailable = renderMobileReconnectPage('zh', 'lan', { resumeUnavailable: true })
+    expect(unavailable).toContain('这部手机没有可恢复的连接。请回到电脑前，扫描「连接手机」里的新二维码。')
+    expect(unavailable).not.toContain('href="/reconnect"')
     expect(zh).not.toContain('class="approval"')
     expect(zh).not.toContain('class="network"')
     expect(zh).not.toContain('class="symbol"')
@@ -689,6 +711,60 @@ describe('LAN mobile page', () => {
     expect(pinggy).toContain('id="fallbackLink" class="fallback-link hide"')
   })
 })
+describe('pending created sessions', () => {
+  const serverItems = [
+    { workspaceId: 'w1', title: 'One', sessionIds: ['s1'] },
+    { workspaceId: 'w2', title: 'Two', sessionIds: [] as string[] }
+  ]
+  const pending: PendingCreatedSession[] = [{ workspaceId: 'w1', sessionId: 's-new' }]
+
+  function cloneWorkspaces(items: typeof serverItems) {
+    return items.map((workspace) => ({
+      ...workspace,
+      sessionIds: [...(Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [])]
+    }))
+  }
+
+  it('reapplies a session the server snapshot has not caught up to', () => {
+    const first = cloneWorkspaces(serverItems)
+    const stillPending = applyPendingCreatedSessions(first, pending, serverItems, [])
+    expect(first[0]?.sessionIds).toEqual(['s-new', 's1'])
+    expect(stillPending).toEqual(pending)
+
+    const second = cloneWorkspaces(serverItems)
+    const stillPendingAgain = applyPendingCreatedSessions(second, stillPending, serverItems, [])
+    expect(second[0]?.sessionIds).toEqual(['s-new', 's1'])
+    expect(stillPendingAgain).toEqual(pending)
+    expect(serverItems[0]?.sessionIds).toEqual(['s1'])
+    expect(serverItems[1]?.sessionIds).toEqual([])
+  })
+
+  it('drops the pending entry once any workspace lists the session', () => {
+    const seen = [
+      { workspaceId: 'w1', title: 'One', sessionIds: ['s-new', 's1'] },
+      { workspaceId: 'w2', title: 'Two', sessionIds: [] as string[] }
+    ]
+    const workspaces = cloneWorkspaces(seen)
+    expect(applyPendingCreatedSessions(workspaces, pending, seen, [])).toEqual([])
+    expect(workspaces[0]?.sessionIds).toEqual(['s-new', 's1'])
+    expect(seen[0]?.sessionIds).toEqual(['s-new', 's1'])
+  })
+
+  it('drops the pending entry once the session is archived', () => {
+    const workspaces = cloneWorkspaces(serverItems)
+    expect(applyPendingCreatedSessions(workspaces, pending, serverItems, ['s-new'])).toEqual([])
+    expect(workspaces[0]?.sessionIds).toEqual(['s1'])
+  })
+
+  it('keeps the pending entry when its workspace is not in the snapshot', () => {
+    const other = [{ workspaceId: 'w2', title: 'Two', sessionIds: ['s1'] }]
+    const workspaces = cloneWorkspaces(other)
+    expect(applyPendingCreatedSessions(workspaces, pending, other, [])).toEqual(pending)
+    expect(workspaces[0]?.sessionIds).toEqual(['s1'])
+    expect(workspaces).toHaveLength(1)
+  })
+})
+
 describe('desktop pairing page QR expiry self-healing', () => {
   it('reloads the page when the pairing countdown reaches zero and no phone is connected', () => {
     const html = renderDesktopPairingPage({

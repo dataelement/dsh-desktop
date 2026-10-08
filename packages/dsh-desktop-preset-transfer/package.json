@@ -18,7 +18,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent-preset-registry": "^0.1.7-rc.1 || ^0.1.7-rc.2",
+    "@deepseek-ai/dsh-agent-preset-registry": "^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1",
     "fflate": "^0.8.2"
   },
   "types": "./index.d.ts"

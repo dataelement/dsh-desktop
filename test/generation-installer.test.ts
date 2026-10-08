@@ -319,6 +319,43 @@ describe('the generation installer', () => {
     ).rejects.toThrow()
   })
 
+  it('keeps an @deepseek-ai plugin in its own generation while hoisting its host singletons', async () => {
+    // The singleton pattern covers the whole @deepseek-ai scope, which once
+    // removed the plugin itself: migration then failed with ENOENT on its
+    // package.json and rolled the Profile back.
+    const home = await freshHome()
+    const plugin = '@deepseek-ai/dsh-subagent-demo'
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: `${plugin}@0.1.0`,
+      expectedPluginName: plugin,
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      runInstall: stubInstall(async (staging) => {
+        const modules = join(staging, 'node_modules')
+        await writeFile(join(staging, 'package.json'), JSON.stringify({ dependencies: { [plugin]: '0.1.0' } }))
+        await mkdir(join(modules, plugin), { recursive: true })
+        await writeFile(join(modules, plugin, 'package.json'), JSON.stringify({ name: plugin, version: '0.1.0' }))
+        await mkdir(join(modules, '@deepseek-ai', 'schemastery'), { recursive: true })
+        await writeFile(join(modules, '@deepseek-ai', 'schemastery', 'index.js'), '')
+        // A nested copy of the plugin's own name is still a private host package.
+        await mkdir(join(modules, 'lodash', 'node_modules', plugin), { recursive: true })
+        await writeFile(join(modules, 'lodash', 'package.json'), JSON.stringify({ name: 'lodash', version: '4.0.0' }))
+        await writeFile(join(modules, 'lodash', 'node_modules', plugin, 'index.js'), '')
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'x\n')
+      })
+    })
+
+    expect(result.ok, result.detail).toBe(true)
+    expect(result.hoisted?.sort()).toEqual(['@deepseek-ai/dsh-subagent-demo', '@deepseek-ai/schemastery'])
+    const generation = result.generation!
+    const generationModules = join(generation.directory, 'node_modules')
+    expect(JSON.parse(await readFile(join(generationModules, plugin, 'package.json'), 'utf8')).name).toBe(plugin)
+    await expect(readFile(join(generationModules, 'lodash', 'node_modules', plugin, 'index.js'))).rejects.toThrow()
+    await expect(readFile(join(generationModules, '@deepseek-ai', 'schemastery', 'index.js'))).rejects.toThrow()
+    expect(await verifyGenerationPeers(home, generation)).toEqual({ ok: true, problems: [] })
+  })
+
   it('fails without promoting when pnpm exits non-zero', async () => {
     const home = await freshHome()
     const result = await installGeneration({

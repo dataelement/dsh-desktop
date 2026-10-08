@@ -9,6 +9,9 @@ export interface PublishedGenerationManifest {
   bundles: string[]
 }
 
+/** Error code of a live switch refused because pnpm still owns a real directory. */
+export const REAL_DIRECTORY_IN_PLACE: string
+
 export function projectGenerations(dshHome: string, profile?: string): Promise<ProjectionResult>
 export function publishGenerationManifest(
   dshHome: string,

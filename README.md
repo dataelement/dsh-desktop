@@ -25,7 +25,7 @@
 DSH Desktop packages the local DeepSeek Harness experience as an installed desktop application. It starts Harness automatically, keeps profiles, plugins, workspaces, model settings, and sessions outside the application directory, and opens the full Harness interface as soon as the local runtime is ready.
 
 > [!IMPORTANT]
-> DSH Desktop is an early preview built on the rapidly evolving `@deepseek-ai/dsh@0.1.7-rc.1`. macOS releases are code-signed and notarized by Apple. Windows x64 installers are code-signed; Windows security warnings may still decrease gradually as the publisher builds download and installation reputation.
+> DSH Desktop is an early preview built on the rapidly evolving `@deepseek-ai/dsh@0.2.0-rc.2`. macOS releases are code-signed and notarized by Apple. Windows x64 installers are code-signed; Windows security warnings may still decrease gradually as the publisher builds download and installation reputation.
 
 ## Download
 
@@ -52,6 +52,7 @@ DeepSeek Harness already provides the Agent runtime and Web UI. DSH Desktop adds
 - Supports official DeepSeek models and mainstream third-party model providers
 - Imports and exports complete custom Agent presets as portable [`.dshpreset` packages](docs/preset-packages.md), with conflict checks and a trust warning before installation
 - Turns source material into editable PPTX decks through the built-in PPT mode
+- Includes offline DOCX, PPTX and XLSX skills with bundled Python libraries on macOS and Windows
 - Preserves profiles, plugins, workspaces, sessions, and model settings across app upgrades
 - Detects startup and frontend plugin failures, keeps diagnostics in `harness.log`, and offers guided recovery actions
 - Provides a non-destructive Safe Mode that temporarily blocks third-party plugins

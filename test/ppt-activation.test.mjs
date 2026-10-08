@@ -9,6 +9,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SkillRegistry, isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
+import { apply as registerSkillTools } from '@deepseek-ai/dsh-tool-skill'
 import { PERSONA_PREFIX_SECTION, SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { apply } from 'dsh-ppt'
 
@@ -90,7 +91,7 @@ async function fixture(existingRoot) {
     }
     return decision
   }
-  return { root, ctx, tools, agent, toggle, assemble, preStep, rpc: (...args) => rpc(...args) }
+  return { root, ctx, tools, agent, toggle, assemble, preStep, disposePpt: () => plugin.dispose(), rpc: (...args) => rpc(...args) }
 }
 
 function automaticMessages(agent) {
@@ -103,6 +104,55 @@ function automaticMessages(agent) {
 }
 
 describe('PPT instructions follow the session composer button', () => {
+  it('routes general PPT skills per session on cached catalogs and direct loads, restoring them after mode changes', async () => {
+    const f = await fixture()
+    let skillTool
+    const office = f.ctx.plugin({
+      inject: ['skills'],
+      apply(ctx) {
+        for (const name of ['office-pptx', 'office-docx', 'office-xlsx']) {
+          ctx.skills.register({ name, description: name, content: `General ${name}`, source: 'bundled' })
+        }
+        registerSkillTools({
+          skills: ctx.skills, on: ctx.on.bind(ctx),
+          tools: { register: tool => { skillTool = tool }, get: () => skillTool }
+        })
+      }
+    })
+    await office
+    cleanups.push(() => office.dispose())
+    const template = await f.agent()
+    const ordinary = await f.agent()
+    const modelNames = async agent => (await f.ctx.skills.list({ scope: agent })).filter(isModelInvocable).map(skill => skill.name)
+    expect(await modelNames(template)).toContain('office-pptx')
+    await f.toggle(template, true)
+    const [templateNames, ordinaryNames] = await Promise.all([modelNames(template), modelNames(ordinary)])
+    expect(templateNames).not.toContain('office-pptx')
+    expect(templateNames).toEqual(expect.arrayContaining(['office-docx', 'office-xlsx']))
+    expect(ordinaryNames).toContain('office-pptx')
+    const cold = await f.ctx.skills.list({ sessionId: template.id })
+    expect(isModelInvocable(cold.find(skill => skill.name === 'office-pptx'))).toBe(false)
+    const loaded = await f.ctx.skills.get('office-pptx', { scope: template })
+    expect(isModelInvocable(loaded)).toBe(false)
+    expect(isUserInvocable(loaded)).toBe(true)
+    const call = agent => skillTool.execute({ name: 'office-pptx' }, { agent, signal: new AbortController().signal })
+    await expect(call(template)).rejects.toThrow('not available for model invocation')
+    await expect(call(ordinary)).resolves.toMatchObject({ name: 'office-pptx' })
+    expect(isModelInvocable(await f.ctx.skills.get('office-pptx', { scope: ordinary }))).toBe(true)
+    expect(isModelInvocable(await f.ctx.skills.get('office-pptx'))).toBe(true)
+    expect(renderPrompt(await f.assemble(template))).toContain('not switching engines')
+    await f.toggle(template, false)
+    expect(await modelNames(template)).toContain('office-pptx')
+    expect(isModelInvocable(await f.ctx.skills.get('office-pptx', { scope: template }))).toBe(true)
+    await expect(call(template)).resolves.toMatchObject({ name: 'office-pptx' })
+    expect(renderPrompt(await f.assemble(template))).not.toContain('not switching engines')
+    await f.toggle(template, true)
+    expect(await modelNames(template)).not.toContain('office-pptx')
+    await f.disposePpt()
+    expect(await modelNames(template)).toContain('office-pptx')
+    await expect(call(template)).resolves.toMatchObject({ name: 'office-pptx' })
+  })
+
   it('keeps the plugin/tools installed without changing an inactive custom preset or global assembly', async () => {
     const f = await fixture()
     const agent = await f.agent()

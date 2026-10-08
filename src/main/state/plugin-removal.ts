@@ -29,6 +29,7 @@ import {
 } from 'dsh-desktop-market-installer/generations/registry'
 import { projectGenerations } from 'dsh-desktop-market-installer/generations/projection'
 import { verifyGenerationPeers } from 'dsh-desktop-market-installer/generations/installer'
+import { forgetPlugin, setPluginDisabled } from 'dsh-desktop-market-installer/plugin-state'
 import {
   isThirdPartyPackageName,
   pluginDeclaredEntryIds,
@@ -1981,6 +1982,9 @@ export async function removePluginSafely(options: PluginRemovalOptions): Promise
       generationBackups
     }))
     await disableInManifest(options.dshHome, new Set([options.pluginName]))
+    // The package switch keeps a half-removed plugin off even when launch
+    // reconciliation re-lists its bundle; it is forgotten once removal commits.
+    await setPluginDisabled(dirname(profilePackageJsonPath(options.dshHome)), options.pluginName, true)
     entry = await updateEntry(options.dshHome, entry.removalId, (current) => ({
       ...(current ?? entry),
       status: 'disabled',
@@ -2117,6 +2121,15 @@ export async function removePluginSafely(options: PluginRemovalOptions): Promise
       failures: [detail]
     }
   }
+  // A removed package must not leave its switch behind, or reinstalling it
+  // later brings it back disabled. The removal itself is already committed.
+  await forgetPlugin(dirname(profilePackageJsonPath(options.dshHome)), options.pluginName).catch((error: unknown) => {
+    options.note?.(
+      `[plugin-removal] could not clear the package switch for ${options.pluginName}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
+  })
   options.note?.(
     `[plugin-removal] removed ${options.pluginName}; recovery backup ${entry.removalId} kept at ${entry.backupDirectory}`
   )

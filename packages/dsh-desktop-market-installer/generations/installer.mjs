@@ -145,6 +145,10 @@ async function defaultRunInstall(options, stagingDir) {
         cwd: stagingDir,
         env: {
           ...(options.environment ?? process.env),
+          // Under Electron the runtime is always an Electron binary: Harness's
+          // own execPath, or the macOS Helper / Windows executable the main
+          // process passes, whose environment carries no Node mode of its own.
+          ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
           CI: 'true',
           NO_COLOR: '1',
           npm_config_side_effects_cache: 'false'
@@ -181,11 +185,11 @@ async function defaultRunInstall(options, stagingDir) {
 
 /**
  * Delete every host-singleton package from every nested node_modules in a
- * generation. Returns what was removed.
+ * generation, except the plugin the generation exists for. Returns what was removed.
  */
-async function hoistHostSingletons(generationDir) {
+async function hoistHostSingletons(generationDir, pluginName) {
   const removed = []
-  await walkGenerationPackages(generationDir, {
+  await walkGenerationPackages(generationDir, pluginName, {
     async onPackage() {},
     async onSingleton(name, path, info) {
       // Never follow a package link while removing it. A hostile or malformed
@@ -337,7 +341,7 @@ export async function installGeneration(options) {
       await cleanupStaging()
       return { ok: false, detail: `ERR_RESOLVED_VERSION_MISMATCH: expected ${options.expectedVersion}, installed ${version}` }
     }
-    const hoisted = await hoistHostSingletons(stagingDir)
+    const hoisted = await hoistHostSingletons(stagingDir, pluginName)
     if (hoisted.length > 0) {
       trace(`hoisted ${hoisted.length} host singletons: ${hoisted.slice(0, 6).join(', ')}…`)
     }
@@ -387,8 +391,13 @@ async function pathInfo(path, missingAllowed = false) {
 /**
  * Walk package boundaries in every nested node_modules without following a
  * symlink or allowing a real directory to escape the immutable generation.
+ *
+ * `pluginName` at the generation's top level is the plugin itself, not a host
+ * singleton, even when its name matches a pattern (an `@deepseek-ai/*` plugin):
+ * removing it would leave the generation without the package it was built for.
+ * Copies of that name nested deeper are still singletons.
  */
-async function walkGenerationPackages(generationDir, visitor) {
+async function walkGenerationPackages(generationDir, pluginName, visitor) {
   const rootInfo = await pathInfo(generationDir)
   if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
     await visitor.onUnsafePath(`generation root is not a real directory: ${generationDir}`)
@@ -411,9 +420,9 @@ async function walkGenerationPackages(generationDir, visitor) {
     return readdir(directory, { withFileTypes: true })
   }
 
-  const walkPackage = async (name, packagePath) => {
+  const walkPackage = async (name, packagePath, topLevel) => {
     const info = await pathInfo(packagePath)
-    if (isHostSingleton(name)) {
+    if (isHostSingleton(name) && !(topLevel && name === pluginName)) {
       await visitor.onSingleton(name, packagePath, info)
       return
     }
@@ -427,10 +436,10 @@ async function walkGenerationPackages(generationDir, visitor) {
       return
     }
     await visitor.onPackage(name, packagePath, root)
-    await walkModules(join(packagePath, 'node_modules'), true)
+    await walkModules(join(packagePath, 'node_modules'), true, false)
   }
 
-  const walkScope = async (scopeName, scopePath) => {
+  const walkScope = async (scopeName, scopePath, topLevel) => {
     const info = await pathInfo(scopePath)
     if (scopeName === '@deepseek-ai' && (info.isSymbolicLink() || !info.isDirectory())) {
       await visitor.onSingleton('@deepseek-ai/*', scopePath, info)
@@ -440,28 +449,28 @@ async function walkGenerationPackages(generationDir, visitor) {
     if (entries === undefined) return
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue
-      await walkPackage(`${scopeName}/${entry.name}`, join(scopePath, entry.name))
+      await walkPackage(`${scopeName}/${entry.name}`, join(scopePath, entry.name), topLevel)
     }
   }
 
-  async function walkModules(modules, missingAllowed) {
+  async function walkModules(modules, missingAllowed, topLevel) {
     const entries = await safeDirectoryEntries(modules, missingAllowed, 'node_modules')
     if (entries === undefined) return
     for (const entry of entries) {
       if (entry.name.startsWith('.') || entry.name === '.bin') continue
       const path = join(modules, entry.name)
-      if (entry.name.startsWith('@')) await walkScope(entry.name, path)
-      else await walkPackage(entry.name, path)
+      if (entry.name.startsWith('@')) await walkScope(entry.name, path, topLevel)
+      else await walkPackage(entry.name, path, topLevel)
     }
   }
 
-  await walkModules(join(generationDir, 'node_modules'), false)
+  await walkModules(join(generationDir, 'node_modules'), false, true)
 }
 
-async function installedPackageManifestPaths(generationDir) {
+async function installedPackageManifestPaths(generationDir, pluginName) {
   const manifests = []
   const problems = []
-  await walkGenerationPackages(generationDir, {
+  await walkGenerationPackages(generationDir, pluginName, {
     async onPackage(name, packagePath, root) {
       const manifestPath = join(packagePath, 'package.json')
       const info = await pathInfo(manifestPath, true)
@@ -642,7 +651,7 @@ export async function verifyGenerationPeers(dshHome, generation, options = {}) {
   if (!existsSync(manifestPath)) return { ok: false, problems: ['plugin package root missing'] }
 
   const problems = []
-  const scanned = await installedPackageManifestPaths(generation.directory)
+  const scanned = await installedPackageManifestPaths(generation.directory, generation.pluginName)
   problems.push(...scanned.problems)
   const manifests = scanned.manifests
   if (!manifests.includes(manifestPath)) {

@@ -12,7 +12,7 @@ import {
 import { resolveMarketRegistry } from 'dsh-desktop-market-installer/market-registry'
 import { lstat, readFile, readlink, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { installProfileDependenciesWithDsh } from '../runtime/profile-plugin-command'
+import { installProfileDependenciesWithDsh, packageCommandEnvironment } from '../runtime/profile-plugin-command'
 
 export interface PluginUpgradeOptions {
   dshHome: string
@@ -20,6 +20,8 @@ export interface PluginUpgradeOptions {
   targetVersion: string
   nodeExecutablePath: string
   pnpmEntryPath: string
+  /** The packaged lock-recovery runner the `.desktop-bin` pnpm shim routes through. */
+  pnpmRunnerPath?: string
   note?: (line: string) => void
 }
 
@@ -36,7 +38,7 @@ export interface PluginUpgradeResult {
 export async function upgradePluginToGeneration(
   options: PluginUpgradeOptions
 ): Promise<PluginUpgradeResult> {
-  const { dshHome, pluginName, targetVersion, nodeExecutablePath, pnpmEntryPath, note } = options
+  const { dshHome, pluginName, targetVersion, nodeExecutablePath, pnpmEntryPath, pnpmRunnerPath, note } = options
   const spec = `${pluginName}@${targetVersion}`
 
   return withRegistryLock(dshHome, async () => {
@@ -48,6 +50,7 @@ export async function upgradePluginToGeneration(
       expectedVersion: targetVersion,
       nodeExecutablePath,
       pnpmEntryPath,
+      environment: await packageCommandEnvironment({ dshHome, nodeExecutablePath, pnpmEntryPath, pnpmRunnerPath }),
       // targetVersion came from the market's registry; fetch it from there
       // too rather than from whatever ~/.npmrc happens to name (#337).
       registry: await resolveMarketRegistry({ profileDir: join(dshHome, 'profiles', 'web') }),

@@ -198,7 +198,7 @@ describe('Harness launch contract', () => {
         Path: 'windows-path'
       }
     })
-    expect(options.env).not.toHaveProperty('ELECTRON_RUN_AS_NODE')
+    expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
   })
 
   it('asks the patched Harness to resolve Safe Mode plugins from its installation only', () => {
@@ -226,6 +226,12 @@ describe('Harness launch contract', () => {
       })
       expect(options.detached).toBeFalsy()
     }
+  })
+
+  it('launches Linux Harness through the Electron executable in Node mode', () => {
+    // No standalone Node is installed; Linux development runs execPath as Node.
+    const options = buildHarnessSpawnOptions('/launch-root', '/harness', 'linux', { PATH: '/usr/bin' })
+    expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
   })
 
   it('finds the Windows PATH when the environment block stores it lowercase', () => {
@@ -729,10 +735,10 @@ describe('Harness window activation', () => {
 
   it('stamps Windows renderer URLs so plugins can avoid the native titlebar overlay', () => {
     expect(desktopHarnessUrl('http://127.0.0.1:43127', 'win32')).toBe(
-      'http://127.0.0.1:43127/?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=36'
+      'http://127.0.0.1:43127/?dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=40'
     )
     expect(desktopHarnessUrl('http://127.0.0.1:43127/?workspace=demo', 'win32')).toBe(
-      'http://127.0.0.1:43127/?workspace=demo&dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=36'
+      'http://127.0.0.1:43127/?workspace=demo&dsh-desktop-mode=advanced&dsh-desktop-platform=win32&dsh-desktop-titlebar-inset=40'
     )
     expect(desktopHarnessUrl('http://127.0.0.1:43127', 'darwin')).toBe(
       'http://127.0.0.1:43127'

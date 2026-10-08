@@ -149,6 +149,23 @@ describe('profile consistency', () => {
     ])
   })
 
+  it('does not re-compose a plugin whose removal is still pending', async () => {
+    const { home, modules } = await profileHome({
+      dependencies: { 'dsh-better-sidebar': '^1.0.0', 'dsh-dream-skin': '^1.0.0' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } }
+    })
+    await install(modules, 'dsh-better-sidebar', true)
+    await install(modules, 'dsh-dream-skin', true)
+
+    await expect(healProfileBundles(home, [], ['dsh-dream-skin'])).resolves.toEqual({
+      added: ['dsh-better-sidebar'],
+      removed: []
+    })
+    await expect(inspectProfileConsistency(home, [], ['dsh-dream-skin'])).resolves.toEqual([])
+    const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'))
+    expect(manifest.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'dsh-better-sidebar'])
+  })
+
   it.each([
     [],
     ['dsh-ppt'],

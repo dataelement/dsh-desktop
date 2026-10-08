@@ -24,7 +24,7 @@
 DSH Desktop は、ローカルの DeepSeek Harness をインストール可能なデスクトップアプリとして提供します。Harness を自動起動し、Profile、プラグイン、ワークスペース、モデル設定、セッションをアプリ本体とは別の場所に保存し、ローカル Runtime の準備が整うと完全な Harness 画面を開きます。
 
 > [!IMPORTANT]
-> DSH Desktop は、急速に進化している `@deepseek-ai/dsh@0.1.7-rc.1` を基盤とする早期プレビューです。macOS 版はコード署名と Apple 公証済みです。Windows x64 インストーラーもコード署名済みですが、発行元のダウンロード・インストール実績が蓄積されるまでは Windows のセキュリティ警告が表示される場合があります。
+> DSH Desktop は、急速に進化している `@deepseek-ai/dsh@0.2.0-rc.2` を基盤とする早期プレビューです。macOS 版はコード署名と Apple 公証済みです。Windows x64 インストーラーもコード署名済みですが、発行元のダウンロード・インストール実績が蓄積されるまでは Windows のセキュリティ警告が表示される場合があります。
 
 ## ダウンロード
 
@@ -51,6 +51,7 @@ DeepSeek Harness は Agent Runtime と Web UI を提供します。DSH Desktop �
 - DeepSeek 公式モデルと主要なサードパーティーモデルプロバイダーに対応
 - カスタム Agent Preset 一式をポータブルな [`.dshpreset` パッケージ](docs/preset-packages.md)としてインポート・エクスポート
 - 内蔵の PPT モードで資料から編集可能な PPTX を生成・出力
+- macOS と Windows に Python と Office ライブラリを同梱し、DOCX・PPTX・XLSX のオフライン作成と検証に対応
 - アプリ更新後も Profile、プラグイン、ワークスペース、セッション、モデル設定を保持
 - Harness 起動時やフロントエンドのプラグイン障害を検出し、診断ログとガイド付き復旧を提供
 - サードパーティープラグインだけを一時停止する非破壊的なセーフモード

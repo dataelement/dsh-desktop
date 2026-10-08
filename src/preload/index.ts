@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
 import { setupDesktopStoragePersistence } from './desktop-storage'
 import {
@@ -9,8 +9,9 @@ import {
 } from './update-view'
 import { isPluginLoadError } from './plugin-error-view'
 import { findBootFailureText } from './boot-failure'
-import { mountWindowsTitlebarLayout } from './windows-titlebar'
+import { markWindowsTitlebar, mountWindowsTitlebarLayout } from './windows-titlebar'
 import { mountMacosWindowChrome } from './macos-window-chrome'
+import { createHostPathsBridge, HOST_PATHS_BRIDGE } from './host-paths'
 
 if (process.platform === 'darwin') {
   const dispose = mountMacosWindowChrome(document, listener => {
@@ -22,6 +23,8 @@ if (process.platform === 'darwin') {
   })
   window.addEventListener('unload', dispose, { once: true })
 }
+
+if (process.platform === 'win32') markWindowsTitlebar(document)
 
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
@@ -163,6 +166,11 @@ function runDomSync(): void {
 contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
   pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
 })
+
+contextBridge.exposeInMainWorld(
+  HOST_PATHS_BRIDGE,
+  createHostPathsBridge(file => webUtils.getPathForFile(file))
+)
 
 /**
  * `[data-dsh-*]` lookups are attribute selectors with no index behind them, so
@@ -583,7 +591,6 @@ contextBridge.exposeInMainWorld(
     action: (action: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('web-import:action', action)
   })
 )
-
 
 function mount(): void {
   if (document.getElementById(ROOT_ID)) return

@@ -76,6 +76,12 @@ function Get-HarnessLogPaths {
     ForEach-Object { Join-Path $_ 'dsh-desktop\logs\harness.log' }
 }
 
+function Assert-OfficeRuntime([string]$executable) {
+  $resources = Join-Path (Split-Path $executable) 'resources'
+  & node (Join-Path $PSScriptRoot 'verify-office-runtime.cjs') $resources $executable
+  if ($LASTEXITCODE -ne 0) { throw 'Installed Office runtime validation failed.' }
+}
+
 function Assert-Starts([string]$executable) {
   $logPaths = @(Get-HarnessLogPaths)
   $launchTime = (Get-Date).ToUniversalTime().AddSeconds(-2)
@@ -131,6 +137,7 @@ $secondDirectory = Join-Path $root 'install-two'
 
 $firstExecutable = Install-At $firstDirectory
 Assert-InstalledPeSignatures $firstDirectory
+Assert-OfficeRuntime $firstExecutable
 Assert-Starts $firstExecutable
 
 $profileMarker = Join-Path $script:activeAppDataRoot 'dsh-desktop\harness\signed-smoke-marker'
@@ -166,5 +173,6 @@ $secondExecutable = Install-At $secondDirectory
 if (-not (Test-Path $firstExecutable)) { throw 'Custom-directory install removed the previous installation.' }
 Assert-Signature $firstExecutable $true
 Assert-InstalledPeSignatures $secondDirectory
+Assert-OfficeRuntime $secondExecutable
 Assert-Starts $secondExecutable
 Write-Host 'Final signed installer passed first install, same-path upgrade, custom directory, signature and startup checks.'

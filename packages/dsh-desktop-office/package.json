@@ -1,0 +1,15 @@
+{
+  "name": "dsh-desktop-office",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" }, "./package.json": "./package.json" },
+  "types": "./index.d.ts",
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-skill-office": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "0.2.0-rc.2"
+  }
+}
