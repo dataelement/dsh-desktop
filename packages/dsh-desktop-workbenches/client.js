@@ -462,6 +462,14 @@ window.__ModuleLoader__.load({
       marketInstallFor(id) {
         return this.installs[id] ? id : null
       }
+      async clearUnavailableRecord(id) {
+        // Keep notes and session ownership so they can be recovered if the provider returns.
+        if (!this.state.added.includes(id) || this.catalog.has(id) || this.installs[id] ||
+          this.marketCatalog().some((entry) => entry.id === id) || this.knownProviders[id]?.sourcePackage) {
+          throw new Error('此工作台仍有关联插件，不能只移除记录。')
+        }
+        await this.remove(id)
+      }
       async removeWorkbench(id) {
         // Market installs use their recorded package identity. Other workbenches
         // must resolve to a removable native bundle before their record is cleared.
@@ -1609,6 +1617,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             const bundle = pluginName && native?.bundles?.[pluginName]
             const hasNativeControl = !!bundle && !bundle.readOnlyReason && !bundle.error
             const canUninstall = !!service.marketInstallFor(entry.id) || (native?.status === NATIVE_STATUS.ready && !!bundle && bundle.installed !== false && bundle.removable === true)
+            const canClearRecord = entry.unavailable && !pluginName && !service.marketInstallFor(entry.id)
             const installed = !removedWorkbenchIds.includes(catalogId) && (entry.pendingRestart || (native?.status === NATIVE_STATUS.ready && pluginName
               ? !!bundle && bundle.installed !== false
               : entry.installed || !!installs[catalogId]))
@@ -1621,10 +1630,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             const updating = installed && installing === catalogId
             const showUpdate = updateAvailable || updating || awaitingRestart
             const installedFailure = installed && !!entry.loadFailure && !updating
+            const canRetryInstalled = installedFailure && entry.listed && !!entry.distribution && !showUpdate
             const updateLabel = awaitingRestart ? '重启后生效' : updating ? '更新中…' : '更新'
             const updateTitle = awaitingRestart ? `${entry.title}安装完成，重启 Harness 后生效` : updating ? `正在更新${entry.title}` : `${updateLabel}${entry.title}至 v${entry.listedVersion}`
             return h('article', { key: catalogId, className: 'dshWbCard' },
-              h('div', { className: 'dshWbMedia' }, h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-label': `查看${entry.title}详情`, onClick: () => setDetail(catalogId) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))), tab === 'mine' && h('div', { className: 'dshWbMediaActions' }, h('button', { type: 'button', className: 'dshWbUninstall', title: canUninstall ? `卸载${entry.title}` : '原生插件状态未知或不可卸载', 'aria-label': `卸载${entry.title}`, disabled: disabled || !!removingPlugin || !canUninstall, onClick: () => setRemoving(entry.id) }, h(MarketIcon, { name: 'remove', size: 17 }))), !entry.local && h('button', { type: 'button', className: 'dshWbFavorite', title: isFavorite ? '取消收藏' : '收藏工作台', 'aria-label': isFavorite ? `取消收藏${entry.title}` : `收藏${entry.title}`, 'aria-pressed': isFavorite, disabled: disabled, onClick: () => service.run(service.toggleFavorite(catalogId)) }, h(MarketIcon, { name: 'bookmark', size: 17 }))),
+              h('div', { className: 'dshWbMedia' }, h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-label': `查看${entry.title}详情`, onClick: () => setDetail(catalogId) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))), tab === 'mine' && h('div', { className: 'dshWbMediaActions' }, h('button', { type: 'button', className: 'dshWbUninstall', title: canClearRecord ? `移除${entry.title}的失联记录` : canUninstall ? `卸载${entry.title}` : '原生插件状态未知或不可卸载', 'aria-label': canClearRecord ? `移除${entry.title}的失联记录` : `卸载${entry.title}`, disabled: disabled || !!removingPlugin || !(canUninstall || canClearRecord), onClick: () => setRemoving(entry.id) }, h(MarketIcon, { name: 'remove', size: 17 }))), !entry.local && h('button', { type: 'button', className: 'dshWbFavorite', title: isFavorite ? '取消收藏' : '收藏工作台', 'aria-label': isFavorite ? `取消收藏${entry.title}` : `收藏${entry.title}`, 'aria-pressed': isFavorite, disabled: disabled, onClick: () => service.run(service.toggleFavorite(catalogId)) }, h(MarketIcon, { name: 'bookmark', size: 17 }))),
               h('div', { className: 'dshWbCardBody' },
                 h('div', { className: 'dshWbCardTitle' }, h('h2', null, h(EntryTitle, { entry, showIcon: true })), h('span', { className: 'dshWbCategory' }, entry.local ? '本地' : entry.category || '其他')),
                 h(EntryMeta, { entry, showVersion: false }),
@@ -1633,13 +1643,14 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
                   h('div', { className: 'dshWbCardVersionActions' },
                     typeof cardVersion === 'string' && cardVersion.trim() && h('span', { className: 'dshWbCardVersion' }, `v${cardVersion.trim()}`),
                     showUpdate && h('button', { type: 'button', className: 'dshWbUpdate', title: updateTitle, 'aria-label': updateTitle, disabled: disabled || !!installing || awaitingRestart, onClick: () => service.run(service.installFromMarket(catalogId)) }, h(MarketIcon, { name: 'refresh', size: 14 }), h('span', { className: 'dshWbUpdateText' }, updateLabel)),
-                    installedFailure && h('span', { className: 'dshWbFailureIcon', role: 'img', tabIndex: 0, title: entry.loadFailure, 'aria-label': `${service.installFailures.has(catalogId) ? '更新失败' : '工作台加载失败'}详情：${entry.loadFailure}` }, h(MarketIcon, { name: 'failure', size: 17 }))),
+                    installedFailure && h('span', { className: 'dshWbFailureIcon', role: 'img', tabIndex: 0, title: entry.loadFailure, 'aria-label': `${service.installFailures.has(catalogId) ? '更新失败' : '工作台加载失败'}详情：${entry.loadFailure}` }, h(MarketIcon, { name: 'failure', size: 17 })),
+                    canRetryInstalled && h('button', { type: 'button', className: 'dshWbRetry', title: `重试安装${entry.title}`, 'aria-label': `重试安装${entry.title}`, disabled: disabled || !!installing, onClick: () => service.run(service.installFromMarket(catalogId)) }, h(MarketIcon, { name: 'refresh', size: 17 }))),
                   h('div', { className: 'dshWbCardControls' },
                   entry.loadFailure && !installed && !updating
                     ? h(React.Fragment, null,
                       h('span', { className: 'dshWbInstalled dshWbInstallFailed', role: 'status' }, '安装失败'),
                       h('span', { className: 'dshWbFailureIcon', role: 'img', tabIndex: 0, title: entry.loadFailure, 'aria-label': `安装失败详情：${entry.loadFailure}` }, h(MarketIcon, { name: 'failure', size: 17 })),
-                      h('button', { type: 'button', className: 'dshWbRetry', title: entry.listed && entry.distribution ? '重试安装' : '重新加载', 'aria-label': `${entry.listed && entry.distribution ? '重试安装' : '重新加载'}${entry.title}`, disabled: disabled || !!installing, onClick: () => service.run(entry.listed && entry.distribution ? service.installFromMarket(catalogId) : service.load()) }, h(MarketIcon, { name: 'refresh', size: 17 })))
+                      !entry.unavailable && h('button', { type: 'button', className: 'dshWbRetry', title: entry.listed && entry.distribution ? '重试安装' : '重新加载', 'aria-label': `${entry.listed && entry.distribution ? '重试安装' : '重新加载'}${entry.title}`, disabled: disabled || !!installing, onClick: () => service.run(entry.listed && entry.distribution ? service.installFromMarket(catalogId) : service.load()) }, h(MarketIcon, { name: 'refresh', size: 17 })))
                     : tab === 'mine'
                     ? h('button', { type: 'button', className: 'dshWbRunSwitch', role: 'switch', 'aria-checked': activation === 'on', 'aria-label': `${entry.title}运行状态`, title: activation === 'unknown' ? '原生插件状态暂不可用' : activation === 'on' ? '运行中' : '已关闭', disabled: disabled || !!togglingPlugin || !hasNativeControl || activation === 'unknown', onClick: () => service.run(service.setPluginEnabled(pluginName, activation !== 'on')) })
                     : installed
@@ -1651,7 +1662,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('strong', null, tab === 'favorites' && !search ? '还没有收藏工作台' : tab === 'mine' && !search ? '还没有安装工作台' : '没有找到匹配的工作台'),
             h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? '把鼠标移到市场卡片上，点击书签即可收藏。' : tab === 'mine' && !search ? '到工作台市场选择一个工作台开始。' : '试试其他关键词或分类。'))))),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
-        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled: disabled || !!installing || !!removingPlugin, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), nativeUninstall: !service.marketInstallFor(removing), recordOnly: false, onConfirm: () => service.run(service.removeWorkbench(removing).then(() => setRemoving(null))) }))
+        removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled: disabled || !!installing || !!removingPlugin, onCancel: () => setRemoving(null), uninstall: !!service.marketInstallFor(removing), nativeUninstall: !service.marketInstallFor(removing) && !removingEntry?.unavailable, recordOnly: !!removingEntry?.unavailable, onConfirm: () => service.run((removingEntry?.unavailable ? service.clearUnavailableRecord(removing) : service.removeWorkbench(removing)).then(() => setRemoving(null))) }))
     }
     function Notebook({ service, entry }) {
       const { state, drafts, pending, error } = useWorkbench(service)

@@ -2415,6 +2415,22 @@ describe('workbench market screenshot and metadata display', () => {
     expect(retry).toHaveBeenCalledWith('o/helper')
   })
 
+  it('retries an installed but unregistered market workbench at the listed version', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.0.0' })]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    ctx.remote = { pluginManager: { listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: true, version: '1.0.0' }] })) } }
+    await service.refreshNative()
+    const retryInstall = vi.spyOn(service, 'installFromMarket').mockResolvedValue(undefined)
+    const ui = interactiveMarket(service, 'mine')
+    const card = ui.find(ui.render(), node => node.type === 'article')[0]
+    expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')).toHaveLength(0)
+    const retry = ui.find(card, node => node.props?.className === 'dshWbRetry')[0]
+    expect(retry.props['aria-label']).toBe('重试安装Helper')
+    retry.props.onClick()
+    await vi.waitFor(() => expect(retryInstall).toHaveBeenCalledExactlyOnceWith('o/helper'))
+  })
+
   it('marks stale added and installed records as failed after a restart, even without a module error', async () => {
     const { service } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'] })
     service.remoteCatalog = [listed()]
@@ -2563,6 +2579,26 @@ describe('workbench market screenshot and metadata display', () => {
     await expect(service.removeWorkbench('owner/local')).rejects.toThrow('不可卸载')
     expect(ctx.remote.pluginManager.removeBundle).not.toHaveBeenCalled()
     expect(saved().state.added).toEqual(['owner/local'])
+  })
+
+  it('clears an orphaned local-only card without removing its session ownership or notes', async () => {
+    const id = 'dsh-local-only/missing'
+    const initial = { ...emptyState(), added: [id], pinned: [id], notes: { [id]: 'saved' }, sessionBindings: { old: id } }
+    const { service, saved } = await fixture(initial)
+    const ui = interactiveMarket(service, 'mine')
+    const card = ui.find(ui.render(), node => node.type === 'article' && node.props.key === id)[0]
+    const clear = ui.find(card, node => node.props?.className === 'dshWbUninstall')[0]
+    expect(clear.props.disabled).toBe(false)
+    expect(clear.props['aria-label']).toContain('移除')
+    expect(ui.find(card, node => node.props?.className === 'dshWbRetry')).toHaveLength(0)
+    clear.props.onClick()
+    expect(ui.modal(ui.render()).props.recordOnly).toBe(true)
+    await service.clearUnavailableRecord(id)
+    expect(saved().state.added).toEqual([])
+    expect(saved().state.pinned).toEqual([])
+    expect(saved().state.notes[id]).toBe('saved')
+    expect(saved().state.sessionBindings.old).toBe(id)
+    expect(ui.find(ui.render(), node => node.type === 'article' && node.props.key === id)).toHaveLength(0)
   })
 
   it('shows a hover-only uninstall action only in Installed and opens the existing confirmation', async () => {
