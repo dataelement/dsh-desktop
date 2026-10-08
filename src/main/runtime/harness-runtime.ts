@@ -303,7 +303,7 @@ export function buildHarnessSpawnOptions(
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
   const pathApi = platform === 'win32' ? win32 : posix
 
-  // The Windows Harness uses the packaged Electron executable as Node. macOS
+  // Windows and Linux run Harness through the Electron executable as Node. macOS
   // uses a utility process, which must not receive this flag before Chromium
   // parses its switches. Its entry declares Node mode only for children.
   //
@@ -318,7 +318,7 @@ export function buildHarnessSpawnOptions(
     cwd: launchDirectory,
     env: {
       ...parentEnvironment,
-      ...(platform === 'win32' && { ELECTRON_RUN_AS_NODE: '1' }),
+      ...(platform !== 'darwin' && { ELECTRON_RUN_AS_NODE: '1' }),
       DSH_HOME: dshHome,
       NO_COLOR: '1',
       // package-import-method/child-concurrency are left at pnpm's defaults
@@ -575,7 +575,7 @@ export class HarnessRuntime {
         this.writeLog(`[desktop] failed to stop rejected Harness launch: ${detail}`)
       })
     })
-    child.once('spawn', () => this.writeLog('[desktop] Bundled Node.js Harness process started'))
+    child.once('spawn', () => this.writeLog('[desktop] Harness process started'))
     child.once('error', (error) => {
       this.writeLog(`[node] ${error.stack ?? error.message}`)
       if (this.child !== child) return

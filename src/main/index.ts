@@ -1,6 +1,5 @@
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { applyMacosWindowBackdrop } from './macos-window-backdrop'
-import { runtimePackageRoot } from './runtime-package-root'
 import { checkBlockingPluginUpdates, selectPluginRecoveryTarget, PluginRecoveryEvidence, planPluginRecovery, runPluginRecoveryPlan, type PluginRecoveryCheck } from './plugin-recovery-market'
 import { RepairAgentService, type CrashEvidence } from './repair-agent'
 import { spawn } from 'node:child_process'
@@ -57,7 +56,6 @@ import {
 import {
   disableProfilePlugin,
   enableProfilePlugin,
-  forgetMarketDisable,
   listDisabledProfilePlugins
 } from './state/plugin-disable'
 import {
@@ -90,10 +88,12 @@ import { secureWindow } from './security'
 import { SafeModeFrame } from './safe-mode-frame'
 import { desktopResourceUrl, installDesktopProtocol, registerDesktopScheme, SAFE_MODE_PAGE } from './desktop-protocol'
 import { ensureLaunchRoot } from './state/launch-root'
+import { electronNodeExecutable } from './runtime/electron-node-executable'
+import { initializeDesktopInstall } from './state/desktop-startup-install'
+import { forgetRemovedWorkbenchMarketInstall } from './state/workbench-market-recovery'
 import {
   listInstalledProfilePlugins,
-  pruneUnresolvableProfileBundles,
-  resetPluginProfile
+  pruneUnresolvableProfileBundles
 } from './state/plugin-recovery'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from './state/safe-mode-profile'
 import { migrateLegacyAgentPresets } from './state/legacy-preset-migration'
@@ -168,7 +168,12 @@ import {
   shouldOfferWebHomeImport,
   writeSkipDecision
 } from './state/web-home-import'
-import { buildSafeModeViewModel, shouldStartInSafeMode } from './safe-mode'
+import {
+  buildSafeModeViewModel,
+  safeModeBlockingGroupCount,
+  safeModeExitConfirmation,
+  shouldStartInSafeMode
+} from './safe-mode'
 import {
   checkupAllProfilePlugins,
   evaluatePluginMarketCompatibility,
@@ -540,8 +545,14 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   applyWindowChromeTheme(window, isDark)
 }
 
+/**
+ * Where the bundled Harness and its packages load from: app.asar when packaged.
+ * Every consumer runs on the Electron runtime, which reads the archive; native
+ * files the OS executes are unpacked and reached through their own resolution
+ * (node-pty, ripgrep, and the Office engine hook in harness-node-entry).
+ */
 function bundledRuntimeRoot(): string {
-  return runtimePackageRoot(app.getAppPath(), app.isPackaged)
+  return app.getAppPath()
 }
 
 function dshEntryPath(): string {
@@ -549,8 +560,7 @@ function dshEntryPath(): string {
 }
 
 function bundledNodePath(): string {
-  if (process.platform === 'win32') return process.execPath
-  return join(bundledRuntimeRoot(), 'node_modules', 'node', 'bin', 'node')
+  return electronNodeExecutable(process.execPath)
 }
 
 /**
@@ -1180,8 +1190,18 @@ async function showSplash(): Promise<void> {
  * files, user patch rows or plugin data, and runs while Harness is stopped.
  */
 async function reportProfileConsistency(dshHome: string): Promise<void> {
+  let pendingRemovals: string[] = []
   try {
-    const healed = await healProfileBundles(dshHome, HOST_COMPOSED_BUNDLES)
+    pendingRemovals = await listPendingPluginRemovals(dshHome)
+  } catch (error) {
+    // An unreadable ledger already blocks normal startup maintenance; healing
+    // then only has host-composed layers to reconcile.
+    runtime.note(`[desktop] pending plugin removals unreadable during bundle healing: ${
+      error instanceof Error ? error.message : String(error)
+    }`)
+  }
+  try {
+    const healed = await healProfileBundles(dshHome, HOST_COMPOSED_BUNDLES, pendingRemovals)
     if (healed.removed.length > 0) {
       runtime.note(`[desktop] removed duplicate host-composed bundle layer(s): ${healed.removed.join(', ')}; packages and user patches kept`)
     }
@@ -1199,7 +1219,7 @@ async function reportProfileConsistency(dshHome: string): Promise<void> {
   // Defer heavy recursive inspections of the profiles directory and package store
   // so they run asynchronously without blocking the startup launch pipeline.
   void Promise.all([
-    inspectProfileConsistency(dshHome, HOST_COMPOSED_BUNDLES),
+    inspectProfileConsistency(dshHome, HOST_COMPOSED_BUNDLES, pendingRemovals),
     inspectStoreConsistency(dshHome)
   ])
     .then(([findings, store]) => {
@@ -1389,6 +1409,7 @@ function launchHarness(): Promise<void> {
           dshHome,
           nodeExecutablePath: bundledNodePath(),
           pnpmEntryPath: bundledPnpmEntryPath(),
+          pnpmRunnerPath: bundledPnpmRunnerPath(),
           dshEntryPath: dshEntryPath(),
           note: (line) => runtime.note(line),
           reinstallSharedTree: async () => {
@@ -2215,6 +2236,7 @@ async function showPluginRecovery(options?: {
           upgrade: candidate => upgradePluginToGeneration({
             dshHome, pluginName: candidate.packageName, targetVersion: candidate.targetVersion,
             nodeExecutablePath: bundledNodePath(), pnpmEntryPath: bundledPnpmEntryPath(),
+            pnpmRunnerPath: bundledPnpmRunnerPath(),
             note: line => runtime.note(line)
           }),
           remove: plugin => removeProfilePluginCompletely(dshHome, plugin, 'plugin-recovery')
@@ -2580,10 +2602,8 @@ async function removeProfilePluginCompletely(
   for (const failure of result.failures) {
     runtime.note(`[${logPrefix}] ${pluginName} remains disabled; cleanup pending: ${failure}`)
   }
-  if (result.disabled) {
-    await forgetMarketDisable(dshHome, pluginName).catch((error: unknown) => {
-      runtime.note(`[${logPrefix}] could not clear the market disable entry for ${pluginName}: ${String(error)}`)
-    })
+  if (result.removed) {
+    await forgetRemovedWorkbenchMarketInstall(dshHome, pluginName, (message) => runtime.note(`[${logPrefix}] ${message}`))
   }
   return result
 }
@@ -2937,6 +2957,7 @@ async function showSafeModeManager(initial?: {
             targetVersion: report.upgradeVersion!,
             nodeExecutablePath: bundledNodePath(),
             pnpmEntryPath: bundledPnpmEntryPath(),
+            pnpmRunnerPath: bundledPnpmRunnerPath(),
             note: (line) => runtime.note(line)
           })
           if (res.ok) {
@@ -3320,7 +3341,7 @@ async function bootstrap(): Promise<void> {
 
     const result = await dialog.showOpenDialog(mainWindow, {
       title: harnessLocale() === 'zh' ? '选择工作区目录' : 'Select Workspace Directory',
-      properties: ['openDirectory']
+      properties: ['openDirectory', 'createDirectory']
     })
     return result.canceled ? null : result.filePaths[0] ?? null
   })
@@ -3495,25 +3516,39 @@ async function bootstrap(): Promise<void> {
       dshHome,
       join(bundledRuntimeRoot(), 'node_modules')
     )
-    if (compatibility.issues.some((issue) => issue.severity === 'blocking')) {
-      void showSafeModeManager().catch(showUnexpectedError)
-      return { ok: false, blocked: true }
+    const locale = harnessLocale()
+    const confirmation = safeModeExitConfirmation(safeModeBlockingGroupCount(compatibility.issues), locale)
+    if (confirmation !== undefined) {
+      // Ask the same question as the manager's restart button. Reopening an
+      // already-open manager instead left this click with no visible effect.
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      const options: MessageBoxOptions = {
+        type: 'warning',
+        message: confirmation,
+        buttons: locale === 'zh' ? ['仍然退出', '管理插件'] : ['Exit anyway', 'Manage plugins'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true
+      }
+      const { response } = owner && !owner.isDestroyed()
+        ? await dialog.showMessageBox(owner, options)
+        : await dialog.showMessageBox(options)
+      if (response !== 0) {
+        if (!safeModeManagerVisible) void showSafeModeManager().catch(showUnexpectedError)
+        return { ok: false, blocked: true }
+      }
+    }
+    if (safeModeManagerVisible && safeModeActionResolver !== undefined) {
+      // The open manager owns leaving Safe Mode: its restart action relaunches,
+      // records unresolved findings, and keeps the manager if startup falls
+      // back into Safe Mode.
+      resolveSafeModeAction({ type: 'restart' })
+      return { ok: true }
     }
     resolveSafeModeAction({ type: 'agent' })
     await launchHarness()
     void mobileBridge.start().catch(showUnexpectedError)
     return { ok: true }
-  })
-  ipcMain.removeHandler('harness:reset-plugins')
-  ipcMain.handle('harness:reset-plugins', async (event, pluginName?: unknown) => {
-    assertTrustedMainWindowEvent(event)
-    if (pluginName !== undefined && typeof pluginName !== 'string') {
-      throw new Error('The failing plugin name must be a string.')
-    }
-    const dshHome = join(app.getPath('userData'), 'harness')
-    await resetPluginProfile(dshHome, pluginName)
-    await launchHarness()
-    return { ok: runtime.snapshot().phase === 'ready' }
   })
   installMenu()
   if (startInSafeMode) {
@@ -3557,7 +3592,13 @@ if (isDaemonLaunch(process.env, process.platform)) {
     // and the splash instead of blocking the main process right before the
     // Harness spawn. Only the instance that will actually launch pays for it.
     void prewarmShellEnvironment()
-    initializeDesktopService()
+    // Classify before DesktopService creates installation.json and bootstrap
+    // creates launch-root; either path would otherwise look like legacy data.
+    initializeDesktopInstall({
+      userDataPath: app.getPath('userData'),
+      appVersion: app.getVersion(),
+      developmentBuild
+    }, initializeDesktopService)
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
       if (shouldStartInSafeMode(argv)) {

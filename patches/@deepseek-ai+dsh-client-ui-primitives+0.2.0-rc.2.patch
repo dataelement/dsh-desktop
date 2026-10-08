@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-index fd78084..79e4984 100644
+index 2d94c1a..633f98f 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js
-@@ -11123,7 +11123,7 @@ function renderNode(node, key, context) {
+@@ -11323,7 +11323,7 @@ function renderNode(node, key, context) {
  				"aria-label": mention.label,
  				onClick: mention.open,
  				children: [jsx(LinkIconMedium, {

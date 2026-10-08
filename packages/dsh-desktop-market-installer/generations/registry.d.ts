@@ -15,6 +15,9 @@ export interface RegistryLayout {
   lockFile: string
 }
 
+/** Packages that live in the shared Profile tree and are never generations. */
+export const SHARED_TREE_ONLY: ReadonlySet<string>
+
 export function registryLayout(dshHome: string): RegistryLayout
 export function ensureRegistryDirectories(dshHome: string): Promise<RegistryLayout>
 export function generationId(pluginName: string, version: string, lockfileText: string): string

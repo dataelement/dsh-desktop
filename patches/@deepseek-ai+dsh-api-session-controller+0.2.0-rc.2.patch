@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
-index 3622a98..51c8247 100644
+index 1ae21e3..b65b36b 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/client.js
 @@ -1786,6 +1786,63 @@ window.__ModuleLoader__.load({
@@ -117,7 +117,7 @@ index 3622a98..51c8247 100644
  			* synchronous-addressability guarantee as {@link ClientSessions.create}:
  			* on resolution the child is catalogued and may be explicitly retained).
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
-index 3b8507e..8d84248 100644
+index 3b8507e..da70b37 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 @@ -5,7 +5,7 @@ import { AssistantStreamAccumulator, ReasoningEffortId, assistantStreamChunks, c
@@ -424,7 +424,15 @@ index 3b8507e..8d84248 100644
  //#endregion
  //#region lib/types/control.js
  /** Live Session projection state with reconnect baselines. */
-@@ -2401,6 +2587,171 @@ const SessionMediaReferences = {
+@@ -2296,6 +2482,7 @@ let SessionSkillCatalog = (() => {
+ 				const scope = live ?? lease?.key;
+ 				try {
+ 					return { skills: (await skillRegistry.list({
++						sessionId,
+ 						cwd,
+ 						scope
+ 					})).filter(isUserInvocable).map((skill) => ({
+@@ -2401,6 +2588,171 @@ const SessionMediaReferences = {
  		}), "session-controller: /api/file");
  	}
  };
@@ -596,7 +604,7 @@ index 3b8507e..8d84248 100644
  //#endregion
  //#region lib/types/archived-session-gate.js
  /**
-@@ -2566,6 +2917,7 @@ let SessionController = (() => {
+@@ -2566,6 +2918,7 @@ let SessionController = (() => {
  	let _openWorkspacePath_decorators;
  	let _workspacePathApplications_decorators;
  	let _rename_decorators;
@@ -604,7 +612,7 @@ index 3b8507e..8d84248 100644
  	let _fork_decorators;
  	let _prompt_decorators;
  	let _attachment_decorators;
-@@ -2588,6 +2940,7 @@ let SessionController = (() => {
+@@ -2588,6 +2941,7 @@ let SessionController = (() => {
  			_openWorkspacePath_decorators = [Remote("openWorkspacePath")];
  			_workspacePathApplications_decorators = [Remote("workspacePathApplications")];
  			_rename_decorators = [Remote("rename")];
@@ -612,7 +620,7 @@ index 3b8507e..8d84248 100644
  			_fork_decorators = [Remote("fork")];
  			_prompt_decorators = [Remote("prompt")];
  			_attachment_decorators = [Remote("attachment")];
-@@ -2707,6 +3060,17 @@ let SessionController = (() => {
+@@ -2707,6 +3061,17 @@ let SessionController = (() => {
  				},
  				metadata: _metadata
  			}, null, _instanceExtraInitializers);
@@ -630,7 +638,7 @@ index 3b8507e..8d84248 100644
  			__esDecorate(this, null, _fork_decorators, {
  				kind: "method",
  				name: "fork",
-@@ -2868,10 +3232,12 @@ let SessionController = (() => {
+@@ -2868,10 +3233,12 @@ let SessionController = (() => {
  			this.canOpenPath = internals.canOpenPath ?? (() => config.nativeOpen ?? (internals.openPath !== void 0 || canOpenNativePath()));
  			ctx.plugin(SessionFileReferences);
  			ctx.plugin(SessionMediaReferences);
@@ -644,7 +652,7 @@ index 3b8507e..8d84248 100644
  			});
  			ctx.on("session/disposed", (session) => {
  				ctx.emit("api-session/removed", session.id);
-@@ -3077,6 +3443,10 @@ let SessionController = (() => {
+@@ -3077,6 +3444,10 @@ let SessionController = (() => {
  		rename(request) {
  			return this.commands.rename(request);
  		}
@@ -656,10 +664,10 @@ index 3b8507e..8d84248 100644
  		* Fork one cold-readable exact event prefix into a new Session. An omitted
  		* boundary selects the latest completed-turn prefix; an open cut receives
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
-index 3ee71e3..919a477 100644
+index 57b5a2b..4724a90 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.host.js
-@@ -170,6 +170,14 @@ const _deepseek_ai_dsh_api_session_controller_session_create_result$schema = ()
+@@ -200,6 +200,14 @@ const _deepseek_ai_dsh_api_session_controller_session_create_result$schema = ()
    'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
    'agentPreset': z.string().readonly().optional(),
  }))
@@ -674,7 +682,7 @@ index 3ee71e3..919a477 100644
  let _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value
  const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = () => (_deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value ??= z.object({
    'address': z.union([z.object({
-@@ -895,6 +903,31 @@ export const TYPERT = {
+@@ -1015,6 +1023,31 @@ export const TYPERT = {
        },
        sourceLocation: {"file":"packages/api/session-controller/src/index.ts","line":520,"column":3},
      },
@@ -706,7 +714,7 @@ index 3ee71e3..919a477 100644
      {
        id: '@deepseek-ai/dsh-api-session-controller#session/create',
        service: 'sessionController',
-@@ -1387,6 +1420,13 @@ export const TYPERT = {
+@@ -1507,6 +1540,13 @@ export const TYPERT = {
              "summary": "Rename one Session after explicitly resuming it.",
              "jsDoc": "/**\n * Rename one Session after explicitly resuming it.\n * @param request - Session identity and proposed title.\n * @returns the accepted title and durable event sequence.\n */"
            },
@@ -720,7 +728,7 @@ index 3ee71e3..919a477 100644
            {
              "kind": "method",
              "name": "fork",
-@@ -1980,6 +2020,14 @@ export const TYPERT = {
+@@ -2120,6 +2160,14 @@ export const TYPERT = {
              "name": "SessionCreateValue",
              "declaration": "export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}"
            },
@@ -765,10 +773,10 @@ index 853e788..e97465a 100644
      'session/fork': (request: SessionForkRequest) => Promise<RemoteResult<SessionForkValue>>
      'session/initializeDefaultModel': () => Promise<RemoteResult<void>>
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js
-index 2a0d24d..ae3f6fa 100644
+index 4e6d18f..1b15a02 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js
-@@ -170,6 +170,14 @@ const _deepseek_ai_dsh_api_session_controller_session_create_result$schema = ()
+@@ -200,6 +200,14 @@ const _deepseek_ai_dsh_api_session_controller_session_create_result$schema = ()
    'sessionId': z.intersection(z.string(), z.unknown()).readonly(),
    'agentPreset': z.string().readonly().optional(),
  }))
@@ -783,7 +791,7 @@ index 2a0d24d..ae3f6fa 100644
  let _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value
  const _deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema = () => (_deepseek_ai_dsh_api_session_controller_session_follow_parameter_0$schema$value ??= z.object({
    'address': z.union([z.object({
-@@ -892,6 +900,31 @@ export const TYPERT_REMOTE = {
+@@ -1012,6 +1020,31 @@ export const TYPERT_REMOTE = {
        },
        sourceLocation: {"file":"packages/api/session-controller/src/index.ts","line":520,"column":3},
      },
@@ -935,7 +943,7 @@ index 9e3657a..0490f35 100644
      agentOptions() {
          const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/contract/sessions.d.ts b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/contract/sessions.d.ts
-index 6eddfb2..438c8c0 100644
+index 81cc3c6..bf30fa6 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/contract/sessions.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/contract/sessions.d.ts
 @@ -82,6 +82,8 @@ export interface ISessions {
@@ -981,7 +989,7 @@ index aeba315..6016fbc 100644
       * Contract session.fork; on success merge the child into summaries
       * immediately (same synchronous-addressability guarantee as create).
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts
-index 4db7072..9c81aed 100644
+index f73b123..12b37fd 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.d.ts
 @@ -72,6 +72,13 @@ export declare class SessionForkError extends Error {
@@ -1008,7 +1016,7 @@ index 4db7072..9c81aed 100644
       * Fork a session from an exact inclusive prefix of the source (same
       * synchronous-addressability guarantee as {@link ClientSessions.create}:
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js
-index 344cb96..1554a31 100644
+index 1620c4d..4ce5659 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/client/sessions/service.js
 @@ -34,6 +34,17 @@ export class SessionForkError extends Error {

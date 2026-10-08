@@ -228,6 +228,12 @@ describe('Harness launch contract', () => {
     }
   })
 
+  it('launches Linux Harness through the Electron executable in Node mode', () => {
+    // No standalone Node is installed; Linux development runs execPath as Node.
+    const options = buildHarnessSpawnOptions('/launch-root', '/harness', 'linux', { PATH: '/usr/bin' })
+    expect(options.env).toHaveProperty('ELECTRON_RUN_AS_NODE', '1')
+  })
+
   it('finds the Windows PATH when the environment block stores it lowercase', () => {
     // Windows environment variable names are case-insensitive and the captured
     // block is not normalised, so a machine whose registry PATH value name is

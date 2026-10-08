@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/images/readme-logo-black-v020.png" width="64" alt="DSH Desktop Logo" valign="middle" />
+  <img src="docs/images/readme-logo-black-rounded.svg" width="64" alt="DSH Desktop Logo" valign="middle" />
   DSH Desktop
 </h1>
 
@@ -24,7 +24,7 @@
 DSH Desktop 把本地 DeepSeek Harness 封装为可安装的桌面应用。它会自动启动 Harness，把 Profile、插件、工作区、模型配置和会话保存在应用安装目录之外，并在本地 Runtime 就绪后直接进入完整 Harness 界面。
 
 > [!IMPORTANT]
-> DSH Desktop 当前处于早期预览阶段，基于仍在快速迭代的 `@deepseek-ai/dsh@0.1.7-rc.1`。macOS 正式包已完成代码签名并通过 Apple 公证；Windows x64 安装包也已完成代码签名。随着下载量、安装量和发行者信誉逐步积累，Windows 安全提示会逐渐减少，但不会立即消失。
+> DSH Desktop 当前处于早期预览阶段，基于仍在快速迭代的 `@deepseek-ai/dsh@0.2.0-rc.2`。macOS 正式包已完成代码签名并通过 Apple 公证；Windows x64 安装包也已完成代码签名。随着下载量、安装量和发行者信誉逐步积累，Windows 安全提示会逐渐减少，但不会立即消失。
 
 ## 下载安装
 
@@ -51,6 +51,7 @@ DeepSeek Harness 已经提供 Agent Runtime 与 Web UI。DSH Desktop 在此基�
 - 支持 DeepSeek 官方模型与主流第三方模型提供方
 - 将完整的自定义 Agent Preset 导入或导出为便携的 [`.dshpreset` 压缩包](docs/preset-packages.md)，安装前检查命名冲突并提示信任风险
 - 通过内置 PPT 模式将材料生成并交付为可继续编辑的 PPTX
+- 在 macOS 和 Windows 自带 Python 及 Office 库，支持离线生成和检查 DOCX、PPTX、XLSX
 - 应用升级时保留 Profile、插件、工作区、会话和模型配置
 - 识别 Harness 启动或前端插件故障，把诊断写入 `harness.log` 并提供引导恢复入口
 - 提供不破坏用户数据的安全模式，临时屏蔽第三方插件

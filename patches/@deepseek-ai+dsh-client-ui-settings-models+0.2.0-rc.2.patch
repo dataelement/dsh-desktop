@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
-index 5cb34cb..b2b837a 100644
+index c5252c1..efd12ce 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js
 @@ -64,6 +64,38 @@ window.__ModuleLoader__.load({
@@ -665,7 +665,7 @@ index 5cb34cb..b2b837a 100644
  					children: [(0, react_jsx_runtime.jsx)("summary", {
  						className: ModelsSection_module_css_default["customizedSummary"],
  						children: t("customized")
-@@ -1797,8 +2140,22 @@ window.__ModuleLoader__.load({
+@@ -1797,8 +2140,23 @@ window.__ModuleLoader__.load({
  					})]
  				})] });
  			};
@@ -680,6 +680,7 @@ index 5cb34cb..b2b837a 100644
 +					props.onClose(false);
 +				},
 +				onSubmit: () => {
++					props.onSubmitCredential?.();
 +					apply();
 +				}
 +			};
@@ -689,7 +690,7 @@ index 5cb34cb..b2b837a 100644
  				children: [
  					props.hideTitle === true ? null : (0, react_jsx_runtime.jsxs)("div", {
  						className: ModelsSection_module_css_default["editorHeader"],
-@@ -1822,19 +2179,15 @@ window.__ModuleLoader__.load({
+@@ -1822,20 +2180,15 @@ window.__ModuleLoader__.load({
  						className: ModelsSection_module_css_default["advancedHint"],
  						children: `${t("model")} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`
  					}),
@@ -704,6 +705,7 @@ index 5cb34cb..b2b837a 100644
 -							props.onClose(false);
 -						},
 -						onSubmit: () => {
+-							props.onSubmitCredential?.();
 -							apply();
 -						}
 +					props.credentialOnly === true || !customizedOpen || layout === "unknown" ? (0, react_jsx_runtime.jsx)(EditorFooter, { ...footerProps }) : (0, react_jsx_runtime.jsxs)("div", {
@@ -718,7 +720,7 @@ index 5cb34cb..b2b837a 100644
  					})
  				]
  			});
-@@ -1940,6 +2293,26 @@ window.__ModuleLoader__.load({
+@@ -1941,6 +2294,26 @@ window.__ModuleLoader__.load({
  		function providerCopy(template, target) {
  			return template.replace("{provider}", () => providerTargetLabel(target));
  		}
@@ -745,7 +747,7 @@ index 5cb34cb..b2b837a 100644
  		/**
  		* Render the Models section content column.
  		* @param props - slot-delivered injected dependencies.
-@@ -1986,6 +2359,7 @@ window.__ModuleLoader__.load({
+@@ -1987,6 +2360,7 @@ window.__ModuleLoader__.load({
  			const [deleting, setDeleting] = (0, react.useState)(false);
  			const [deleteFailure, setDeleteFailure] = (0, react.useState)(void 0);
  			const [savedTarget, setSavedTarget] = (0, react.useState)(void 0);
@@ -753,7 +755,7 @@ index 5cb34cb..b2b837a 100644
  			const [dismissedSetup, setDismissedSetup] = (0, react.useState)(() => /* @__PURE__ */ new Set());
  			const announceSaved = (target) => {
  				controller.load().then(() => {
-@@ -2073,6 +2447,10 @@ window.__ModuleLoader__.load({
+@@ -2074,6 +2448,10 @@ window.__ModuleLoader__.load({
  					row,
  					namespace
  				}];
@@ -764,7 +766,7 @@ index 5cb34cb..b2b837a 100644
  			});
  			const piAi = state.namespaces.get("llm-pi-ai");
  			const protocols = protocolChoices(piAi, schema);
-@@ -2483,9 +2861,24 @@ window.__ModuleLoader__.load({
+@@ -2477,9 +2855,24 @@ window.__ModuleLoader__.load({
  		function assertNever$1(_value) {
  			throw new Error("unexpected DeepSeek onboarding state");
  		}
@@ -791,7 +793,7 @@ index 5cb34cb..b2b837a 100644
  		* @param props - settings-shell owner state and Models feature dependencies.
  		* @returns the onboarding modal or null when onboarding needs no intervention.
  		*/
-@@ -2494,6 +2887,16 @@ window.__ModuleLoader__.load({
+@@ -2488,6 +2881,16 @@ window.__ModuleLoader__.load({
  			const [apiKey, setApiKey] = (0, react.useState)(explicit);
  			const state = useModels((snapshot) => snapshot);
  			const readiness = onboardingReadiness(state);
@@ -808,7 +810,7 @@ index 5cb34cb..b2b837a 100644
  			(0, react.useEffect)(() => {
  				if ((automatic || explicit) && state.status === "idle") controller.load();
  			}, [
-@@ -2867,6 +3270,8 @@ window.__ModuleLoader__.load({
+@@ -2864,6 +3267,8 @@ window.__ModuleLoader__.load({
  			addCatalogExhausted: "Every catalog provider is already configured.",
  			addCustomUnavailable: "No API protocol is available to declare.",
  			provider: "Provider",
@@ -817,7 +819,7 @@ index 5cb34cb..b2b837a 100644
  			close: "Close",
  			cancel: "Cancel",
  			apply: "Apply",
-@@ -2904,6 +3309,14 @@ window.__ModuleLoader__.load({
+@@ -2901,6 +3306,14 @@ window.__ModuleLoader__.load({
  			modelInputTypes: "Input types",
  			modelInputText: "Text",
  			modelInputImage: "Image",
@@ -832,8 +834,8 @@ index 5cb34cb..b2b837a 100644
  			addModel: "Add model",
  			removeModel: "Delete model",
  			modelsEmpty: "No models will be shown in the selector. Unlisted IDs can still be sent directly.",
-@@ -2952,10 +3365,14 @@ window.__ModuleLoader__.load({
- 			welcomeBody: "DeepSeek Harness 0.1 remains in testing for Harness developers. Many areas need further improvement, and we welcome feedback from the developer community. DeepSeek Harness's core plugins and foundational APIs will continue to evolve rapidly over the coming months.\n\nWe look forward to exploring the limits of intelligence with developers around the world, building on open-source, open, reusable, and composable infrastructure. We welcome Harness developers everywhere to join the DSH plugin ecosystem.",
+@@ -2949,10 +3362,14 @@ window.__ModuleLoader__.load({
+ 			welcomeBody: "DeepSeek Harness 0.2 is still in preview, and many areas need continued improvement and refinement. We welcome feedback and suggestions from all developers and users. The new desktop app now targets a broad range of users, while developer-related advanced features can be enabled in the settings. DeepSeek Harness’s product features and plugin APIs are expected to continue rapid iteration and evolution, and will gradually stabilize over time.\n\nWe look forward to exploring the limits of intelligence together with users and developers around the world, building on open-source, reusable, and composable infrastructure. We welcome everyone to bring their ideas to life with DeepSeek Harness and participate in the community to enrich the plugin ecosystem.",
  			welcomeContinue: "Continue",
  			welcomeError: "The acknowledgement could not be saved. Please try again.",
 -			onboardingTitle: "Add an API key to get started",
@@ -850,7 +852,7 @@ index 5cb34cb..b2b837a 100644
  			onboardingSaving: "Saving…",
  			keyRequired: "Enter an API key to continue."
  		};
-@@ -3020,6 +3437,14 @@ window.__ModuleLoader__.load({
+@@ -3017,6 +3434,14 @@ window.__ModuleLoader__.load({
  			modelInputTypes: "输入类型",
  			modelInputText: "文本",
  			modelInputImage: "图片",
@@ -865,8 +867,8 @@ index 5cb34cb..b2b837a 100644
  			addModel: "添加模型",
  			removeModel: "删除模型",
  			modelsEmpty: "模型选择器中将不显示任何模型；目录外 ID 仍可直接发送。",
-@@ -3068,10 +3493,14 @@ window.__ModuleLoader__.load({
- 			welcomeBody: "DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。",
+@@ -3065,10 +3490,14 @@ window.__ModuleLoader__.load({
+ 			welcomeBody: "DeepSeek Harness 目前的 0.2 版本仍处于预览阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者和用户的反馈建议。现在，新的桌面端面向广泛用户，开发者相关的进阶功能可在配置中开启使用。预计 DeepSeek Harness 的产品功能以及插件 API 都会继续快速迭代、持续演化，并逐渐趋于稳定。\n\n我们期待与全球用户和开发者一起，在开源、可复用、可组合的基础设施之上，共同探索智能上限。欢迎大家用 DeepSeek Harness 将想法变成现实，与社区一起丰富插件生态。",
  			welcomeContinue: "继续",
  			welcomeError: "暂时无法保存确认状态，请重试。",
 -			onboardingTitle: "添加一个 API Key 开始使用",
@@ -883,7 +885,7 @@ index 5cb34cb..b2b837a 100644
  			onboardingSaving: "保存中…",
  			keyRequired: "请输入 API 密钥后继续。"
  		};
-@@ -4075,22 +4504,7 @@ window.__ModuleLoader__.load({
+@@ -4073,22 +4502,7 @@ window.__ModuleLoader__.load({
  					}
  				}
  			}, ModelsSection));

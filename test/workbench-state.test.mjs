@@ -77,16 +77,38 @@ describe('desktop workbench state', () => {
       active: 'ming-life',
       sessionBindings: { 'session-legacy': 'ming-life' },
       recentSessions: { 'ming-life': 'session-legacy' },
-      notes: { 'ming-life': 'Keep this note' }
+      notes: { 'ming-life': 'Keep this note' },
+      hiddenWorkspaces: { 'ming-life': ['workspace-b'] }
     }
     await writeFile(join(root, 'state.json'), JSON.stringify({ revision: 7, state: legacy }))
     expect(await store.read()).toEqual({ revision: 7, state: { ...legacy, favorites: [] } })
 
     const canonical = 'dataelement/dsh-ming-life'
     const migrated = { ...legacy, favorites: [], added: [canonical], pinned: [canonical], active: canonical,
-      sessionBindings: { 'session-legacy': canonical }, recentSessions: { [canonical]: 'session-legacy' }, notes: { [canonical]: 'Keep this note' } }
+      sessionBindings: { 'session-legacy': canonical }, recentSessions: { [canonical]: 'session-legacy' }, notes: { [canonical]: 'Keep this note' },
+      hiddenWorkspaces: { [canonical]: ['workspace-b'] } }
     await expect(store.migrate({ revision: 7, state: migrated }, { 'ming-life': canonical })).resolves.toMatchObject({ revision: 8 })
     expect(await store.read()).toEqual({ revision: 8, state: migrated })
+  })
+
+  it('loads state written before per-workbench workspace visibility existed', async () => {
+    const { root, store } = await fixture()
+    const legacy = { ...populated() }
+    delete legacy.hiddenWorkspaces
+    await writeFile(join(root, 'state.json'), JSON.stringify({ revision: 3, state: legacy }))
+    expect(await store.read()).toEqual({ revision: 3, state: { ...legacy, hiddenWorkspaces: {} } })
+  })
+
+  it('saves scoped workspace removal without changing sessions or the other workbench', async () => {
+    const { store } = await fixture()
+    const state = { ...populated(), sessionBindings: { 'session-1': WRITER, 'session-2': RESEARCH },
+      hiddenWorkspaces: { [WRITER]: ['workspace-b'] } }
+    await store.write({ revision: 0, state })
+    expect((await store.read()).state).toEqual(state)
+    const removed = { ...state, added: [RESEARCH], pinned: [RESEARCH], active: null }
+    await store.write({ revision: 1, state: removed })
+    expect((await store.read()).state.hiddenWorkspaces[WRITER]).toEqual(['workspace-b'])
+    expect((await store.read()).state.sessionBindings).toEqual(state.sessionBindings)
   })
 
   it('does not permit ordinary writes to introduce new legacy identities', async () => {
@@ -148,6 +170,10 @@ describe('desktop workbench state', () => {
     { version: 2 },
     { added: ['../unsafe'] },
     { notes: JSON.parse('{"__proto__":"bad"}') },
+    { hiddenWorkspaces: { [WRITER]: ['workspace-b', 'workspace-b'] } },
+    { hiddenWorkspaces: { [WRITER]: ['../unsafe'] } },
+    { hiddenWorkspaces: JSON.parse('{"__proto__":["workspace-b"]}') },
+    { hiddenWorkspaces: { [WRITER]: 'workspace-b' } },
     { recentSessions: { [WRITER]: 'unbound-session' } },
     { notes: { [WRITER]: 42 } }
   ])('rejects malformed state %j without writing it', async (patch) => {

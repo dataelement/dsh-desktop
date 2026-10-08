@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createGenerationPackageBackend } from '../packages/dsh-desktop-market-installer/generations/package-backend.mjs'
+import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection.mjs'
 import { readDesired } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
+import { readDisabledPlugins } from '../packages/dsh-desktop-market-installer/plugin-state.mjs'
 
 const homes = []
 
@@ -158,5 +160,85 @@ describe('Plugin Manager generation package backend', () => {
     const removed = await backend.remove({ name: 'demo-plugin', signal: new AbortController().signal })
     expect(removed.packageResult.exitCode).toBe(0)
     expect(await readDesired(home)).toEqual([])
+  })
+
+  it('leaves a package pnpm owns to Plugin Manager instead of failing its removal', async () => {
+    const home = await freshHome()
+    const backend = createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused'
+    })
+    expect(await backend.remove({ name: 'legacy-plugin', signal: new AbortController().signal })).toBeUndefined()
+    expect(await backend.remove({ name: 'dshmarket', signal: new AbortController().signal })).toBeUndefined()
+  })
+
+  it('declines the shared-tree market before staging a generation', async () => {
+    const home = await freshHome()
+    let staged = false
+    const backend = createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused',
+      runInstall: async () => { staged = true; return { code: 1, output: '' } }
+    })
+    expect(await backend.install({
+      spec: 'dshmarket@1.48.0', kind: 'registry', signal: new AbortController().signal
+    })).toBeUndefined()
+    expect(staged).toBe(false)
+    expect(await readDesired(home)).toEqual([])
+  })
+
+  it('defers replacing a Profile-owned directory to launch projection', async () => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles', 'web')
+    const legacy = join(profile, 'node_modules', 'demo-plugin')
+    await mkdir(legacy, { recursive: true })
+    await writeFile(join(legacy, 'package.json'), JSON.stringify({
+      name: 'demo-plugin', version: '0.9.0', dsh: { bundle: { patch: 'cordis.patch.yml' } }
+    }))
+    const backend = createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused',
+      runInstall: installer('demo-plugin', '1.0.0')
+    })
+    const installed = await backend.install({
+      spec: 'demo-plugin@1.0.0', kind: 'registry', expectedName: 'demo-plugin', signal: new AbortController().signal
+    })
+    expect(installed.packageResult.exitCode).toBe(0)
+    expect(installed.replaced).toBe(true)
+    installed.commit?.()
+    // The running copy stays in place until Harness stops.
+    expect((await lstat(legacy)).isSymbolicLink()).toBe(false)
+    expect((await readDesired(home)).length).toBe(1)
+
+    await projectGenerations(home)
+    expect((await lstat(legacy)).isSymbolicLink()).toBe(true)
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'))
+    expect(manifest.dependencies['demo-plugin']).toBe('1.0.0')
+    expect(manifest.dsh.profile.bundles).toContain('demo-plugin')
+  })
+
+  it('records enable switches and forgets them after removal', async () => {
+    const home = await freshHome()
+    const profile = join(home, 'profiles', 'web')
+    await writeFile(join(profile, 'cordis.patch.yml'), '- id: demo-row\n  disabled: false\n- id: other-row\n  disabled: false\n')
+    const backend = createGenerationPackageBackend({
+      dshHome: home,
+      nodeExecutablePath: process.execPath,
+      pnpmEntryPath: 'unused'
+    })
+    await backend.switched({ name: 'demo-plugin', enabled: false, rowIds: ['demo-row'] })
+    expect(await readDisabledPlugins(profile)).toEqual(['demo-plugin'])
+    // Only the package's own force-enable override goes; another plugin's stays.
+    expect(await readFile(join(profile, 'cordis.patch.yml'), 'utf8')).toBe('- id: other-row\n  disabled: false\n')
+
+    await backend.switched({ name: 'demo-plugin', enabled: true, rowIds: ['demo-row'] })
+    expect(await readDisabledPlugins(profile)).toEqual([])
+
+    await backend.switched({ name: 'demo-plugin', enabled: false, rowIds: [] })
+    await backend.removed({ name: 'demo-plugin' })
+    expect(await readDisabledPlugins(profile)).toEqual([])
   })
 })

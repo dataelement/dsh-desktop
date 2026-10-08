@@ -150,7 +150,7 @@ export function createMarketInstallStore(root) {
   const update = (change) => {
     const task = queue.then(async () => {
       const installs = await read()
-      change(installs)
+      if (!change(installs)) return installs
       await mkdir(root, { recursive: true })
       const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
       await writeFile(temporary, `${JSON.stringify({ version: 1, installs }, null, 2)}\n`)
@@ -162,8 +162,18 @@ export function createMarketInstallStore(root) {
   }
   return {
     read,
-    record: (id, value) => update((installs) => { installs[id] = value }),
-    forget: (id) => update((installs) => { delete installs[id] })
+    record: (id, value) => update((installs) => { installs[id] = value; return true }),
+    forget: (id) => update((installs) => { if (!Object.hasOwn(installs, id)) return false; delete installs[id]; return true }),
+    // Recovery removes a package by its native name, not by catalog identity.
+    forgetPlugin: (pluginName) => update((installs) => {
+      let changed = false
+      for (const [id, install] of Object.entries(installs)) {
+        if (install?.pluginName !== pluginName) continue
+        delete installs[id]
+        changed = true
+      }
+      return changed
+    })
   }
 }
 

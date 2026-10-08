@@ -93,6 +93,17 @@ describe('workbench market install targets', () => {
     await store.forget('project-helper')
     expect(await store.read()).toEqual({})
   })
+
+  it('forgets only the recovered package across repository identities', async () => {
+    const root = await tempRoot()
+    const store = createMarketInstallStore(root)
+    await store.record('o/first', { catalogId: 'o/first', pluginName: 'shared', version: '1.0.0' })
+    await store.record('o/second', { catalogId: 'o/second', pluginName: 'shared', version: '1.0.0' })
+    await store.record('other/kept', { catalogId: 'other/kept', pluginName: 'kept', version: '1.0.0' })
+    await store.forgetPlugin('shared')
+    expect(await store.read()).toEqual({ 'other/kept': { catalogId: 'other/kept', pluginName: 'kept', version: '1.0.0' } })
+    expect(JSON.parse(await readFile(join(root, 'market-installs.json'), 'utf8')).installs).toEqual(await store.read())
+  })
 })
 
 describe('workbench market install routes', () => {

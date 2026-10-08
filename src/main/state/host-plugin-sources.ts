@@ -83,8 +83,8 @@ export async function prepareHostPluginSourcesPatch(
   )
   const names = hostPluginNames(source)
   if (names.length === 0 && source === original) return desktopPatchPath
-  // Packaged patches live in resources, while dependencies live under
-  // app.asar.unpacked. Use the same installation anchor as Harness itself.
+  // Packaged patches live in resources, while dependencies live in app.asar.
+  // Use the same installation anchor as Harness itself.
   const resolveHost = createRequire(hostModuleAnchor).resolve
   let text = source
   for (const { name, start, end } of names.reverse()) {

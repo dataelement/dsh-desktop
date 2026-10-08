@@ -59,8 +59,8 @@ describe('DSH PPT built-in plugin', () => {
     }
   })
 
-  it('ships Harness 0.1.7-compatible peer ranges in both generated packages', async () => {
-    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2'
+  it('ships Harness 0.2.0-compatible peer ranges in both generated packages', async () => {
+    const expected = '^0.1.5-rc.1 || ^0.1.6-alpha.2 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1'
     const core = JSON.parse((await artifact('core')).get('package/package.json')!.toString('utf8'))
     const adapter = JSON.parse((await artifact('adapter')).get('package/package.json')!.toString('utf8'))
     expect(core.peerDependencies['@deepseek-ai/cordis']).toBe('~4.0.4')
@@ -286,5 +286,70 @@ describe('DSH PPT built-in plugin', () => {
     expect(profilePatch).not.toContain('office-ppt-standard-adapter')
     expect(profilePatch).not.toContain('name: dsh-ppt')
     expect(profilePatch).not.toContain('workbuddy')
+  })
+})
+
+function sourceSlice(source: string, start: string, end: string): string {
+  const from = source.indexOf(start)
+  const to = source.indexOf(end, from)
+  if (from < 0 || to < 0) throw new Error(`missing ${start}`)
+  return source.slice(from, to)
+}
+
+describe('opening PPT template card', () => {
+  it('keeps the footer on the first loaded user message and its send echo', async () => {
+    const chat = await readFile(path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-chat', 'lib', 'client.js'), 'utf8')
+    const openingUserMessageTarget = new Function(`${sourceSlice(chat, 'function openingUserMessageTarget', 'function observedInputs')}\nreturn openingUserMessageTarget;`)() as (
+      hasMore: boolean,
+      order: readonly string[],
+      kindAt: (key: string) => string | undefined,
+      pendingInputs: readonly { requestId?: string; placement?: string }[]
+    ) => { leadingUserKey: string | null; leadingPendingId: string | null }
+    const kindAt = (key: string) => ({ a: 'context', b: 'user', c: 'user' })[key]
+
+    expect(openingUserMessageTarget(true, ['b'], kindAt, [])).toEqual({ leadingUserKey: null, leadingPendingId: null })
+    expect(openingUserMessageTarget(false, ['a', 'b', 'c'], kindAt, [{ requestId: 'echo', placement: 'transcript' }])).toEqual({
+      leadingUserKey: 'b',
+      leadingPendingId: null
+    })
+    expect(openingUserMessageTarget(false, ['a'], kindAt, [
+      { id: 'steer' } as { requestId?: string },
+      { requestId: 'echo', placement: 'transcript' }
+    ])).toEqual({ leadingUserKey: null, leadingPendingId: 'echo' })
+    expect(openingUserMessageTarget(false, [], () => undefined, [{ requestId: 'steer', placement: 'steering' }])).toEqual({
+      leadingUserKey: null,
+      leadingPendingId: null
+    })
+    expect(chat).toContain('renderSlot("conversation.chat.userMessageFooter", { leading: true })')
+    expect(chat).toContain('footer: item.requestId === leadingPendingId ? messageFooter : null')
+    expect(chat).toContain('const showBubble = hasBody || footer != null')
+    expect(chat).toContain('i)), footer]')
+    expect(chat).toMatch(/"conversation\.chat\.userMessageFooter": \{\s*kind: "list",\s*scope: "session"/)
+  })
+
+  it('publishes the footer slot and restores the persisted template into a preview card', async () => {
+    const types = await readFile(path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-client-ui-chat', 'lib', 'types', 'client', 'contract', 'slots.d.ts'), 'utf8')
+    const adapter = await readFile(path.join(projectRoot, 'packages', 'ppt-runtime', 'adapter', 'lib', 'client.js'), 'utf8')
+    const card = sourceSlice(adapter, 'function OfficePptOpeningTemplateCard', 'function OfficePptStandardInputAccessory')
+
+    expect(types).toMatch(/'conversation\.chat\.userMessageFooter': \{\s*kind: 'list';\s*scope: 'session';/)
+    expect(adapter).toContain('name: "conversation.chat.userMessageFooter"')
+    expect(card).toContain('loadTemplateState')
+    expect(card).toContain('applyLoadedTemplates')
+    expect(card).toContain('showModal()')
+    expect(card).toContain('data-ppt-opening-template')
+    expect(card).toContain('className: "dsh-ppt-opening-title"')
+    expect(card).toContain('OpeningPptFileIcon')
+    expect(adapter).toContain('dsh-ppt-opening-file{flex:none;color:var(--dsw-static-amber-500)}')
+    expect(adapter).toContain('dsh-ppt-opening-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:transparent;padding:0;color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 68%,var(--dsw-alias-label-primary));font:inherit;font-size:13px;line-height:20px;text-align:left;text-decoration:none;cursor:pointer}')
+    expect(adapter).not.toContain('text-decoration:underline')
+    expect(card).not.toContain('dsh-ppt-opening-card')
+    expect(card).not.toContain('template/select')
+    expect(card).not.toContain('template/deselect')
+    expect(card).not.toContain('session.blank')
+    expect(adapter).toContain('"opening.preview": "预览模板 {name}"')
+    expect(adapter).toContain('"opening.preview": "Preview template {name}"')
+    expect(adapter).toContain('"opening.close": "关闭预览"')
+    expect(adapter).toContain('"opening.close": "Close preview"')
   })
 })

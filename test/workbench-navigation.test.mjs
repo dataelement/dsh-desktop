@@ -18,8 +18,10 @@ const UiWorkspaceService = vm.runInNewContext(`(() => {
   return (${source.slice(classStart, classEnd).trim().replace(/;$/, '')})
 })()`, { _deepseek_ai_cordis: { Service: class {} }, AbortController, AbortSignal, console, setTimeout, clearTimeout })
 let apply, Workbenches
+// Workbench routing only runs once the user has switched the feature on.
+const enabledStorage = { getItem: key => key === 'dsh-workbench-enabled' ? 'true' : null, setItem: () => {}, removeItem: () => {} }
 vm.runInNewContext(workbenchSource, {
-  window: { __ModuleLoader__: { load({ factory }) {
+  window: { localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
     const client = factory((name) => {
       if (name === 'react') return { createElement() {}, Component: class {} }
       if (name === '@deepseek-ai/cordis') return { Service }
@@ -49,12 +51,22 @@ function fixture() {
   service.view = { markSessionRead: vi.fn() }
   service.sessionFilter = null
   service.sessionFilterUnsubscribe = null
+  service.workspaceFilter = null
+  service.workspaceFilterUnsubscribe = null
+  service.workspaceDeleteHandler = null
   let visibilityRevision = 0
   const visibilityListeners = new Set()
   service.sessionVisibility = {
     getSnapshot: () => visibilityRevision,
     set: value => { visibilityRevision = value; for (const listener of visibilityListeners) listener() },
     subscribe: listener => { visibilityListeners.add(listener); return () => visibilityListeners.delete(listener) }
+  }
+  let workspaceVisibilityRevision = 0
+  const workspaceVisibilityListeners = new Set()
+  service.workspaceVisibility = {
+    getSnapshot: () => workspaceVisibilityRevision,
+    set: value => { workspaceVisibilityRevision = value; for (const listener of workspaceVisibilityListeners) listener() },
+    subscribe: listener => { workspaceVisibilityListeners.add(listener); return () => workspaceVisibilityListeners.delete(listener) }
   }
   service.connecting = new Map()
   service.lifetime = new AbortController()
@@ -64,7 +76,7 @@ function fixture() {
     beginNavigation: vi.fn(() => { navigation.abort(); navigation = new AbortController(); return navigation.signal }),
     selectPanel: vi.fn(() => navigation.abort())
   } }
-  service.workspaces = { list: { getSnapshot: () => workspaceState, subscribe } }
+  service.workspaces = { list: { getSnapshot: () => workspaceState, subscribe }, delete: vi.fn(async () => {}) }
   service.sessions = {
     list: { getSnapshot: () => sessionState, subscribe },
     create: vi.fn(async ({ workspaceId, sessionId }) => {
@@ -156,6 +168,61 @@ function attachWorkbenchRouting(uiWorkspace, sessionState, workspaceState) {
 }
 
 describe('native Workspace navigation with workbench routing', () => {
+  it('filters workspace rows only while a scoped filter is registered', () => {
+    const { service } = fixture()
+    const listeners = new Set()
+    const release = service.registerWorkspaceFilter(id => id === 'project', listener => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    })
+    expect(service.isWorkspaceVisible('project')).toBe(true)
+    expect(service.isWorkspaceVisible('other')).toBe(false)
+    expect(service.workspaceVisibility.getSnapshot()).toBe(1)
+    expect(() => service.registerWorkspaceFilter(() => true, () => () => {})).toThrow('already registered')
+    for (const listener of listeners) listener()
+    expect(service.workspaceVisibility.getSnapshot()).toBe(2)
+    release()
+    release()
+    expect(listeners.size).toBe(0)
+    expect(service.isWorkspaceVisible('other')).toBe(true)
+    expect(service.workspaceVisibility.getSnapshot()).toBe(3)
+  })
+
+  it('routes scoped workspace deletion without deleting the Host registration', async () => {
+    const { service } = fixture()
+    const scopedDelete = vi.fn(async () => true)
+    const release = service.registerWorkspaceDeleteHandler(scopedDelete)
+    expect(() => service.registerWorkspaceDeleteHandler(() => true)).toThrow('already registered')
+    await service.deleteWorkspace('project')
+    expect(scopedDelete).toHaveBeenCalledWith('project')
+    expect(service.workspaces.delete).not.toHaveBeenCalled()
+    release()
+    release()
+    await service.deleteWorkspace('project')
+    expect(service.workspaces.delete).toHaveBeenCalledOnce()
+    expect(service.workspaces.delete).toHaveBeenCalledWith('project')
+  })
+
+  it('does not globally delete a workspace when the scoped handler fails', async () => {
+    const { service } = fixture()
+    service.registerWorkspaceDeleteHandler(async () => { throw new Error('scoped delete failed') })
+    await expect(service.deleteWorkspace('project')).rejects.toThrow('scoped delete failed')
+    expect(service.workspaces.delete).not.toHaveBeenCalled()
+  })
+
+  it('does not globally delete when a scoped handler omits its decision', async () => {
+    const { service } = fixture()
+    service.registerWorkspaceDeleteHandler(async () => undefined)
+    await expect(service.deleteWorkspace('project')).rejects.toThrow('must return a boolean')
+    expect(service.workspaces.delete).not.toHaveBeenCalled()
+  })
+
+  it('uses native workspace deletion when the handler declines it', async () => {
+    const { service } = fixture()
+    service.registerWorkspaceDeleteHandler(() => false)
+    await service.deleteWorkspace('project')
+    expect(service.workspaces.delete).toHaveBeenCalledWith('project')
+  })
   it('removes workspace folders that have no sessions in the active scope', () => {
     expect(source).toContain('sessionIds: workspace.sessionIds.filter(isSessionVisible)')
     expect(source).toContain('.filter((workspace) => workspace.sessionIds.length > 0)')

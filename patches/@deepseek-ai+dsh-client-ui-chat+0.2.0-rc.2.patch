@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index a99972a..1db8b66 100644
+index f997683..e5482e0 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 @@ -115,6 +115,22 @@ window.__ModuleLoader__.load({
@@ -42,7 +42,7 @@ index a99972a..1db8b66 100644
  			"fileContent": "Sixlwa_fileContent",
  			"fileIcon": "Sixlwa_fileIcon",
  			"fileMeta": "Sixlwa_fileMeta",
-@@ -1230,6 +1247,7 @@ window.__ModuleLoader__.load({
+@@ -1220,6 +1237,7 @@ window.__ModuleLoader__.load({
  			if (code === "ACCOUNT_SIGNED_OUT") return t("message.failure.accountSignedOut");
  			if (code === "ACCOUNT_SIGN_IN_REQUIRED") return t("message.failure.accountSignInRequired");
  			if (code === "QUOTA" || code === "ACCOUNT_QUOTA") return t("message.failure.quota");
@@ -50,16 +50,23 @@ index a99972a..1db8b66 100644
  			return code === "AUTH" ? t("message.failure.auth") : message;
  		}
  		function ModelRetryItem({ node, active, t }) {
-@@ -1336,7 +1354,7 @@ window.__ModuleLoader__.load({
+@@ -1329,12 +1347,13 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Right-aligned bubble shared by user and steering rows. */
 -		function UserStyleBubble({ content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [], previewAttachments, references, t }) {
-+		function UserStyleBubble({ content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [], previewAttachments, references, onOpenUploadedFile, t }) {
++		function UserStyleBubble({ content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [], previewAttachments, references, onOpenUploadedFile, footer = null, t }) {
  			const { text, attachments: contentAttachments, rest } = contentParts(content);
  			const attachments = previewAttachments ?? contentAttachments;
  			const compactImages = attachments.length > 1;
-@@ -1356,9 +1374,13 @@ window.__ModuleLoader__.load({
+ 			const truncated = (total) => t("json.truncated", { total });
+-			const showBubble = text !== "" || rest.length > 0;
++			const hasBody = text !== "" || rest.length > 0;
++			const showBubble = hasBody || footer != null;
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: MessageItem_module_css_default.userRow,
+ 				"data-pending-steering": pending || void 0,
+@@ -1349,9 +1368,13 @@ window.__ModuleLoader__.load({
  								images: [attachment.image],
  								align: "end",
  								compact: compactImages
@@ -75,50 +82,66 @@ index a99972a..1db8b66 100644
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
  									path: attachment.file.name,
  									className: MessageItem_module_css_default.fileIcon
-@@ -1418,7 +1440,7 @@ window.__ModuleLoader__.load({
+@@ -1369,11 +1392,11 @@ window.__ModuleLoader__.load({
+ 						}),
+ 						showBubble && (0, react_jsx_runtime.jsxs)("div", {
+ 							className: MessageItem_module_css_default.bubble,
+-							children: [(0, _deepseek_ai_dsh_client_ui_primitives.projectUserText)(text, referenceLabels, skillNames, "skill", references), rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
++							children: [hasBody ? (0, _deepseek_ai_dsh_client_ui_primitives.projectUserText)(text, referenceLabels, skillNames, "skill", references) : null, rest.map((block, i) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
+ 								label: t("message.extraBlock"),
+ 								payload: block,
+ 								truncatedLabel: truncated
+-							}, i))]
++							}, i)), footer]
+ 						}),
+ 						referenceLabels.length > 0 && (0, react_jsx_runtime.jsx)("div", {
+ 							className: MessageItem_module_css_default.referenceSummary,
+@@ -1411,7 +1434,7 @@ window.__ModuleLoader__.load({
  		* @param props - the session snapshot's pending submission and render seats.
  		* @returns the echoed user bubble.
  		*/
 -		function PendingSubmissionBubble({ submission, renderMessageImages, t }) {
-+		function PendingSubmissionBubble({ submission, renderMessageImages, onOpenUploadedFile, t }) {
++		function PendingSubmissionBubble({ submission, renderMessageImages, onOpenUploadedFile, footer = null, t }) {
  			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
  				content: (0, react.useMemo)(() => submission.text === "" ? [] : [{
  					type: "text",
-@@ -1437,6 +1459,7 @@ window.__ModuleLoader__.load({
+@@ -1430,6 +1453,8 @@ window.__ModuleLoader__.load({
  					file: attachment.value
  				}), [submission.attachments]),
  				renderMessageImages,
 +				onOpenUploadedFile,
++				footer,
  				pending: submission.placement === "steering",
  				echo: true,
  				t,
-@@ -1450,7 +1473,7 @@ window.__ModuleLoader__.load({
+@@ -1443,7 +1468,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** User and admitted-steering keyed Chat renderer. */
 -		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, renderMessageImages, openFile, openSkill, t }) {
-+		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, renderMessageImages, openFile, openSkill, onOpenUploadedFile, t }) {
++		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, renderMessageImages, openFile, openSkill, onOpenUploadedFile, messageFooter = null, t }) {
  			const data = node.data;
  			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
  				content: data.content,
-@@ -1459,6 +1482,7 @@ window.__ModuleLoader__.load({
+@@ -1452,6 +1477,8 @@ window.__ModuleLoader__.load({
  					openSkill
  				},
  				renderMessageImages,
 +				onOpenUploadedFile,
++				footer: messageFooter,
  				...data.referenceLabels === void 0 ? {} : { referenceLabels: data.referenceLabels },
  				...data.skillNames === void 0 ? {} : { skillNames: data.skillNames },
  				t,
-@@ -1665,7 +1689,7 @@ window.__ModuleLoader__.load({
+@@ -1665,7 +1692,7 @@ window.__ModuleLoader__.load({
  		* Policy reads select this seat's own conclusion, so a mode change re-renders
  		* only seats whose visibility actually changes.
  		*/
 -		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t }) {
-+		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, onOpenUploadedFile, t }) {
++		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, onOpenUploadedFile, leadingUserKey = null, messageFooter = null, t }) {
  			const node = useChatNode(nodeKey);
  			const routedNode = node;
  			const turn = turnOf$1(routedNode);
-@@ -1729,6 +1753,7 @@ window.__ModuleLoader__.load({
+@@ -1729,24 +1756,30 @@ window.__ModuleLoader__.load({
  				cwd,
  				openFile,
  				openSkill,
@@ -126,7 +149,14 @@ index a99972a..1db8b66 100644
  				inspectCall,
  				forkAt,
  				loadImage,
-@@ -1741,6 +1766,7 @@ window.__ModuleLoader__.load({
+ 				renderMessageImages,
+ 				fileMentions,
+-				turnProcess
++				turnProcess,
++				...nodeKey === leadingUserKey && messageFooter != null ? { messageFooter } : {}
+ 			}, [
+ 				node,
+ 				groupPart,
  				cwd,
  				openFile,
  				openSkill,
@@ -134,15 +164,73 @@ index a99972a..1db8b66 100644
  				inspectCall,
  				forkAt,
  				loadImage,
-@@ -5021,6 +5047,7 @@ window.__ModuleLoader__.load({
+ 				renderMessageImages,
+ 				fileMentions,
+-				turnProcess
++				turnProcess,
++				nodeKey,
++				leadingUserKey,
++				messageFooter
+ 			]);
+ 			if (routedNode === void 0 || owner === null) return null;
+ 			const routedOwner = {
+@@ -5072,6 +5105,28 @@ window.__ModuleLoader__.load({
+ 		* The last input's Turn also distinguishes an empty opening control from
+ 		* one whose human input or trigger notice is already present.
+ 		*/
++		/**
++		* The opening user message is the footer host only when older history is
++		* fully loaded. A pending transcript echo hosts it until that node exists.
++		* @param hasMore - whether older history remains.
++		* @param order - durable chat node keys.
++		* @param kindAt - kind lookup for one key.
++		* @param pendingInputs - visible echoes and steering rows.
++		* @returns the single host key, or neither when the opening is unknown.
++		*/
++		function openingUserMessageTarget(hasMore, order, kindAt, pendingInputs) {
++			if (hasMore !== false) return { leadingUserKey: null, leadingPendingId: null };
++			let leadingUserKey = null;
++			for (const key of order) {
++				if (kindAt(key) === "user") {
++					leadingUserKey = key;
++					break;
++				}
++			}
++			if (leadingUserKey != null) return { leadingUserKey, leadingPendingId: null };
++			const pending = pendingInputs.find((item) => Object.hasOwn(item, "requestId") && item.placement !== "steering");
++			return { leadingUserKey: null, leadingPendingId: pending?.requestId ?? null };
++		}
+ 		function observedInputs(order, nodes) {
+ 			const observed = /* @__PURE__ */ new Set();
+ 			let lastInputTurn;
+@@ -5088,13 +5143,15 @@ window.__ModuleLoader__.load({
+ 				lastInputTurn
+ 			};
+ 		}
+-		const ChatNodeList = (0, react.memo)(function ChatNodeList({ entries, useChatGroup, pendingInputs, lastInputTurn, ...seatProps }) {
++		const ChatNodeList = (0, react.memo)(function ChatNodeList({ entries, useChatGroup, pendingInputs, lastInputTurn, leadingUserKey = null, leadingPendingId = null, messageFooter = null, ...seatProps }) {
+ 			const rows = entries.map((entry) => {
+ 				switch (entry.kind) {
+ 					case "node": return (0, react.createElement)(ChatNodeSeat, {
+ 						...seatProps,
+ 						key: chatRenderKey(entry),
+ 						nodeKey: entry.key,
++						leadingUserKey,
++						messageFooter,
+ 						...entry.groupPart === void 0 ? {} : { groupPart: entry.groupPart }
+ 					});
+ 					case "group": return (0, react.createElement)(ChatGroupSeat, {
+@@ -5108,7 +5165,9 @@ window.__ModuleLoader__.load({
  			});
  			const pendingRows = pendingInputs.map((item) => "requestId" in item ? (0, react_jsx_runtime.jsx)(PendingSubmissionBubble, {
  				submission: item,
 +				onOpenUploadedFile: seatProps.onOpenUploadedFile,
  				renderMessageImages: seatProps.renderMessageImages,
++				footer: item.requestId === leadingPendingId ? messageFooter : null,
  				t: seatProps.t
  			}, item.requestId) : (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
-@@ -5040,7 +5067,7 @@ window.__ModuleLoader__.load({
+ 				content: item.content,
+@@ -5127,7 +5186,7 @@ window.__ModuleLoader__.load({
  		* The chat view slot entry: pure component over the composed props; each
  		* ordered business Node crosses the keyed renderer seat.
  		*/
@@ -151,7 +239,7 @@ index a99972a..1db8b66 100644
  			const order = useChat((s) => s.order);
  			const groupedEntries = useConversation((snapshot) => snapshot.views.grouped("chat")?.entries);
  			const entries = (0, react.useMemo)(() => groupedEntries ?? order.map((key) => ({
-@@ -5082,11 +5109,29 @@ window.__ModuleLoader__.load({
+@@ -5174,11 +5233,29 @@ window.__ModuleLoader__.load({
  					if (id !== fileOpenRequest.current) return;
  					setFileOpenError({
  						path,
@@ -181,15 +269,39 @@ index a99972a..1db8b66 100644
  			const closeFileOpenError = (0, react.useCallback)(() => {
  				fileOpenRequest.current += 1;
  				setFileOpenError(null);
-@@ -5209,6 +5254,7 @@ window.__ModuleLoader__.load({
+@@ -5211,6 +5288,8 @@ window.__ModuleLoader__.load({
+ 				pendingSubmissions,
+ 				visibleSubmissions
+ 			]);
++			const openingTarget = openingUserMessageTarget(hasMore, order, (key) => nodeStore.get(key)?.kind, pendingInputs);
++			const openingFooter = openingTarget.leadingUserKey != null || openingTarget.leadingPendingId != null ? renderSlot("conversation.chat.userMessageFooter", { leading: true }) : null;
+ 			const renderMessageImages = (0, react.useCallback)((owner) => renderSlot("conversation.message.images", {
+ 				...owner,
+ 				loadImage
+@@ -5281,10 +5360,13 @@ window.__ModuleLoader__.load({
+ 										openExternalLink,
+ 										openFile: requestOpenFile,
+ 										fileImages,
+-										children: (0, react_jsx_runtime.jsx)(ChatNodeList, {
++										children: 										(0, react_jsx_runtime.jsx)(ChatNodeList, {
+ 											entries,
+ 											pendingInputs,
+ 											lastInputTurn,
++											leadingUserKey: openingTarget.leadingUserKey,
++											leadingPendingId: openingTarget.leadingPendingId,
++											messageFooter: openingFooter,
+ 											nodeStore,
+ 											useChatGroup,
+ 											useChatNode,
+@@ -5301,6 +5383,7 @@ window.__ModuleLoader__.load({
  											renderMessageImages,
  											fileMentions,
  											renderSlot,
 +											onOpenUploadedFile: requestOpenUploadedFile,
  											t
  										})
- 									})
-@@ -5231,7 +5277,7 @@ window.__ModuleLoader__.load({
+ 									}),
+@@ -5327,7 +5410,7 @@ window.__ModuleLoader__.load({
  						busy: fileOpenBusy,
  						onClose: closeFileOpenError,
  						onRetry: () => {
@@ -198,7 +310,7 @@ index a99972a..1db8b66 100644
  						},
  						t
  					})
-@@ -5426,7 +5472,8 @@ window.__ModuleLoader__.load({
+@@ -5522,7 +5605,8 @@ window.__ModuleLoader__.load({
  			"message.accountStopped": "任务已停止",
  			"message.failure.accountSignedOut": "任务已因退出 DeepSeek 登录而停止。",
  			"message.failure.accountSignInRequired": "请先登录 DeepSeek，并确认请求地址支持账号认证。",
@@ -208,7 +320,7 @@ index a99972a..1db8b66 100644
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -5615,7 +5662,8 @@ window.__ModuleLoader__.load({
+@@ -5711,7 +5795,8 @@ window.__ModuleLoader__.load({
  			"message.accountStopped": "Task stopped",
  			"message.failure.accountSignedOut": "Stopped because you signed out of DeepSeek.",
  			"message.failure.accountSignInRequired": "Sign in to DeepSeek and ensure the request destination supports account authentication.",
@@ -218,7 +330,7 @@ index a99972a..1db8b66 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -12178,7 +12226,8 @@ window.__ModuleLoader__.load({
+@@ -12265,7 +12350,8 @@ window.__ModuleLoader__.load({
  			"configForms",
  			"remote",
  			"remote.session",
@@ -228,10 +340,10 @@ index a99972a..1db8b66 100644
  		];
  		/**
  		* Mount all Chat-owned contributions.
-@@ -12268,6 +12317,14 @@ window.__ModuleLoader__.load({
+@@ -12355,6 +12441,14 @@ window.__ModuleLoader__.load({
  				}, LinkOpeningRow));
  			});
- 			const transcriptView = new TranscriptViewPolicy(chatSettings);
+ 			const transcriptView = new TranscriptViewPolicy(chatSettings, "dshDesktop" in globalThis ? "standard" : DEFAULT_TRANSCRIPT_VIEW_MODE);
 +			ctx.provide("openUploadedAttachment", { open: async (sessionId, attachmentId) => {
 +				const binding = ctx.sessions.binding(sessionId);
 +				if (binding === void 0) throw new Error(`ui-chat: unknown session "${sessionId}"`);
@@ -243,7 +355,18 @@ index a99972a..1db8b66 100644
  			const presentation = derivePresentationPolicy(transcriptView.mode);
  			const performancePolicy = new PerformanceUsagePolicy(chatSettings);
  			ctx.effect(() => () => {
-@@ -12335,10 +12392,22 @@ window.__ModuleLoader__.load({
+@@ -12403,6 +12497,10 @@ window.__ModuleLoader__.load({
+ 						"conversation.message.images": {
+ 							kind: "single",
+ 							scope: "session"
++						},
++						"conversation.chat.userMessageFooter": {
++							kind: "list",
++							scope: "session"
+ 						}
+ 					},
+ 					store: chatStore,
+@@ -12422,10 +12520,22 @@ window.__ModuleLoader__.load({
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
  								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
@@ -271,7 +394,7 @@ index a99972a..1db8b66 100644
  							openSkill: (name) => {
  								const scope = ctx.sessions.scope(sessionId);
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
-index a3f4a42..46cc5a2 100644
+index a3f4a42..576bab3 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
 @@ -28,12 +28,18 @@ export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>;
@@ -294,3 +417,35 @@ index a3f4a42..46cc5a2 100644
  }
  /** Owner currency of finalized-assistant actions. */
  export interface AssistantActionOwnerProps {
+@@ -213,8 +219,13 @@ export interface ChatViewInjected {
+     forkAt: (seq: number) => void;
+     fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined;
+ }
++/** Owner currency of the opening user-message footer. */
++export interface UserMessageFooterOwnerProps {
++    /** True only for the loaded conversation's first user message. */
++    readonly leading: true;
++}
+ /** Full Chat view props. */
+-export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
++export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images' | 'conversation.chat.userMessageFooter'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
+ /** Full props of the durable-message image renderer. */
+ export type MessageImagesProps = PropsRuntime<'conversation.message.images'> & PropsLocale<'conversation'>;
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -254,6 +265,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+             scope: 'session';
+             owner: MessageImagesOwnerProps;
+         };
++        /**
++         * Ordered contributions under the loaded conversation's first user message.
++         * The host renders nothing when older history is still paged out, and mounts
++         * the same slot on the opening echo until the durable user node arrives.
++         */
++        'conversation.chat.userMessageFooter': {
++            kind: 'list';
++            scope: 'session';
++            owner: UserMessageFooterOwnerProps;
++        };
+         /**
+          * Command row keyed by the command name. The component receives the folded
+          * command lifecycle and linked compaction when present. Reusing a key

@@ -43,6 +43,7 @@ import {
   writeGenerationMeta
 } from '../packages/dsh-desktop-market-installer/generations/registry'
 import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection'
+import { readDisabledPlugins } from '../packages/dsh-desktop-market-installer/plugin-state'
 import { prepareGenerationsForLaunch } from '../src/main/state/generation-launch'
 import type { PluginComponentRestoreOptions } from '../src/main/state/plugin-component-cleanup'
 import {
@@ -317,6 +318,8 @@ describe('durable plugin removal', () => {
     expect(existsSync(join(profileDirectory, 'node_modules', 'plugin-one'))).toBe(true)
     expect(existsSync(join(result.backupDirectory as string, 'package.json'))).toBe(true)
     expect(await listPendingPluginRemovals(dshHome)).toEqual(['plugin-one'])
+    // Launch reconciliation may re-list the bundle; the package switch keeps it off.
+    expect(await readDisabledPlugins(profileDirectory)).toEqual(['plugin-one'])
     expect(await shouldDeferProfileMaintenance(dshHome)).toBe(true)
     await confirmPluginRemovalsBooted(dshHome)
     expect(await shouldDeferProfileMaintenance(dshHome)).toBe(true)
@@ -329,6 +332,7 @@ describe('durable plugin removal', () => {
       now: () => new Date('2026-08-29T12:06:00.000Z')
     })
     expect(retried).toMatchObject({ disabled: true, removed: true, pending: false })
+    expect(await readDisabledPlugins(profileDirectory)).toEqual([])
     const originalBackup = JSON.parse(
       await readFile(join(result.backupDirectory as string, 'package.json'), 'utf8')
     )

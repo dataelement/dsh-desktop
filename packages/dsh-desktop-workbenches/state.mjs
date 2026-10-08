@@ -19,11 +19,12 @@ const legacyReferences = state => new Set([
   ...(state.active === null ? [] : [state.active]),
   ...Object.values(state.sessionBindings),
   ...Object.keys(state.recentSessions),
-  ...Object.keys(state.notes)
+  ...Object.keys(state.notes),
+  ...Object.keys(state.hiddenWorkspaces)
 ].filter(id => !validWorkbenchId(id)))
 
 export function emptyState() {
-  return { version: 1, added: [], pinned: [], favorites: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {} }
+  return { version: 1, added: [], pinned: [], favorites: [], active: null, sessionBindings: {}, recentSessions: {}, notes: {}, hiddenWorkspaces: {} }
 }
 
 export function validateState(value, previous, migrations = {}) {
@@ -38,6 +39,9 @@ export function validateState(value, previous, migrations = {}) {
   if (!isObject(value.sessionBindings) || !Object.entries(value.sessionBindings).every(([session, owner]) => validId(session) && validStoredWorkbenchId(owner))) fail('Invalid sessionBindings.')
   if (!isObject(value.recentSessions) || !Object.entries(value.recentSessions).every(([owner, session]) => validStoredWorkbenchId(owner) && validId(session))) fail('Invalid recentSessions.')
   if (!isObject(value.notes) || !Object.entries(value.notes).every(([owner, note]) => validStoredWorkbenchId(owner) && typeof note === 'string' && note.length <= 200000)) fail('Invalid notes.')
+  if (!isObject(value.hiddenWorkspaces) || !Object.entries(value.hiddenWorkspaces).every(([owner, workspaces]) =>
+    validStoredWorkbenchId(owner) && Array.isArray(workspaces) && workspaces.every(validId)
+    && new Set(workspaces).size === workspaces.length)) fail('Invalid hiddenWorkspaces.')
   for (const [workbench, session] of Object.entries(value.recentSessions)) {
     if (value.sessionBindings[session] !== workbench) fail('Recent session must belong to its workbench.')
   }
@@ -50,6 +54,9 @@ export function validateState(value, previous, migrations = {}) {
     }
     for (const id of Object.keys(previous.notes)) {
       if (!Object.hasOwn(value.notes, id) && !Object.hasOwn(value.notes, migrations[id])) fail('Removing a workbench must preserve its notes.')
+    }
+    for (const id of Object.keys(previous.hiddenWorkspaces)) {
+      if (!Object.hasOwn(value.hiddenWorkspaces, id) && !Object.hasOwn(value.hiddenWorkspaces, migrations[id])) fail('Removing a workbench must preserve its workspace visibility.')
     }
     const previousLegacy = legacyReferences(previous)
     for (const id of legacyReferences(value)) {
@@ -80,8 +87,8 @@ export function createStateStore(root) {
       if (raw.length > MAX_STATE_BYTES) throw new Error('File exceeds size limit')
       const saved = JSON.parse(raw.toString('utf8'))
       if (!Number.isSafeInteger(saved.revision) || saved.revision < 0) throw new Error('Invalid revision')
-      const state = isObject(saved.state) && saved.state.version === 1 && !Object.hasOwn(saved.state, 'favorites')
-        ? { ...saved.state, favorites: [] }
+      const state = isObject(saved.state) && saved.state.version === 1
+        ? { favorites: [], hiddenWorkspaces: {}, ...saved.state }
         : saved.state
       return { revision: saved.revision, state: validateState(state) }
     } catch {

@@ -20,7 +20,7 @@ on:
           - windows
           - macos
       mode:
-        description: development=unsigned Dev; signed=sign only; resign=sign existing unsigned artifact; prerelease=publish; smoke=check signed artifact
+        description: development=unsigned Dev; signed=test packages and notify; resign=sign existing unsigned artifact; prerelease=publish; smoke=check signed artifact
         required: false
         default: development
         type: choice
@@ -51,7 +51,7 @@ permissions:
   contents: write
 
 env:
-  RELEASE_NOTES_MODEL: gpt-5.6-terra
+  RELEASE_NOTES_MODEL: gpt-6-luna
 
 concurrency:
   # Platform-only retries have independent artifacts and never publish.
@@ -119,6 +119,14 @@ jobs:
       - name: Skip validation for tag and pull_request
         if: github.event_name != 'workflow_dispatch'
         run: echo "No dispatch inputs to validate."
+      - name: Validate signed test upload and notification secrets
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'signed'
+        env:
+          MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
+          FEISHU_RELEASE_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}
+        run: |
+          test -n "$MODELSCOPE_TOKEN" || { echo "::error::Missing secret MODELSCOPE_TOKEN"; exit 1; }
+          test -n "$FEISHU_RELEASE_WEBHOOK" || { echo "::error::Missing secret FEISHU_RELEASE_WEBHOOK"; exit 1; }
 
   macos:
     name: macOS ${{ matrix.label }}
@@ -377,9 +385,10 @@ jobs:
             return $child.ExitCode
           }
           $koffiProbe = "import { createRequire } from 'node:module'; import { pathToFileURL } from 'node:url'; const require = createRequire(pathToFileURL(process.argv[1])); const resolved = require.resolve('koffi'); if (!resolved.startsWith(process.argv[2])) throw new Error('koffi resolved outside packaged app: ' + resolved); const koffi = require('koffi'); const getCurrentProcessId = koffi.load('kernel32.dll').func('GetCurrentProcessId', 'uint32', []); if (getCurrentProcessId() !== process.pid) throw new Error('Native koffi smoke failed'); console.log('Packaged koffi native binding passed'); process.exit(0);"
-          $koffiExitCode = Invoke-ElectronNode @('--input-type=module', '-e', $koffiProbe, (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\koffi\package.json'), (Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules'))
+          $koffiExitCode = Invoke-ElectronNode @('--input-type=module', '-e', $koffiProbe, (Join-Path $isolatedApp 'resources\app.asar\node_modules\koffi\package.json'), (Join-Path $isolatedApp 'resources\app.asar\node_modules'))
           if ($koffiExitCode -ne 0) { throw "Packaged koffi native binding failed (exit code $koffiExitCode)." }
-          $pnpmEntry = Join-Path $isolatedApp 'resources\app.asar.unpacked\node_modules\pnpm\bin\pnpm.cjs'
+          # Packages load through app.asar (native files are unpacked beside it).
+          $pnpmEntry = Join-Path $isolatedApp 'resources\app.asar\node_modules\pnpm\bin\pnpm.cjs'
           $pnpmExitCode = Invoke-ElectronNode @($pnpmEntry, '--version')
           if ($pnpmExitCode -ne 0) { throw "Packaged pnpm failed under Electron Node mode (exit code $pnpmExitCode)." }
           if (Test-Path $userData) { Remove-Item -Recurse -Force $userData }
@@ -709,6 +718,45 @@ jobs:
           ./scripts/smoke-signed-windows-installer.ps1 `
             -Installer 'signed-windows/dsh-desktop-windows-x64-setup.exe' `
             -PublisherName 'Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.'
+
+  publish-signed-test:
+    name: Upload signed test installers and notify
+    needs: [macos, sign-windows, smoke-signed-windows]
+    if: >-
+      always() && github.event_name == 'workflow_dispatch' && inputs.mode == 'signed' &&
+      (inputs.target == 'windows' || needs.macos.result == 'success') &&
+      (inputs.target == 'macos' ||
+       (needs.sign-windows.result == 'success' && needs.smoke-signed-windows.result == 'success'))
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        if: inputs.target == 'all' || inputs.target == 'macos'
+        with:
+          pattern: macos-*
+          path: test-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        if: inputs.target == 'all' || inputs.target == 'windows'
+        with:
+          name: windows-x64
+          path: test-assets
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Upload test installers, verify downloads, and send Feishu notification
+        env:
+          MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
+          MODELSCOPE_REPO_ID: alexyaojin/dsh-desktop
+          FEISHU_RELEASE_WEBHOOK: ${{ secrets.FEISHU_RELEASE_WEBHOOK }}
+          SIGNED_VERSION: ${{ inputs.signed_version }}
+          TEST_TARGET: ${{ inputs.target }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/test-upload-env"
+          "$RUNNER_TEMP/test-upload-env/bin/pip" install -q modelscope
+          "$RUNNER_TEMP/test-upload-env/bin/python3" .github/scripts/signed_test_build.py \
+            --directory test-assets --target "$TEST_TARGET" \
+            --version "$SIGNED_VERSION" --run-id "$GITHUB_RUN_ID"
 
   publish:
     name: Publish GitHub Release

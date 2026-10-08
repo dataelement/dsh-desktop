@@ -68,3 +68,11 @@
 - insert:
     - id: dsh-desktop-preset-transfer
       name: dsh-desktop-preset-transfer
+
+# Offline Office authoring is installation-owned and shared by agent presets.
+- insert:
+    - id: dsh-desktop-office
+      name: dsh-desktop-office
+      config:
+        resources: !!js process.env.DSH_DESKTOP_OFFICE_RESOURCES
+        cli: !!js process.env.DSH_DESKTOP_OFFICE_CLI

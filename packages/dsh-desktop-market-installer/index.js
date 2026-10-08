@@ -20,6 +20,7 @@ import {
   writeDesired
 } from './generations/registry.mjs'
 import { DEFAULT_NPM_REGISTRY, resolveMarketRegistry } from './market-registry.mjs'
+import { forgetPlugin } from './plugin-state.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
 
@@ -725,6 +726,8 @@ export function createDesktopPnpmService(options) {
         const disabled = await disableGeneration(home, pluginName)
         if (isCancelled()) return { exitCode: 1, message: 'The package operation was aborted.' }
         const published = await publishGenerationManifest(home, MARKET_PROFILE, { syncBundles: true })
+        // A removed package leaves no switch behind; a reinstall starts enabled.
+        await forgetPlugin(profileDirectory(home), pluginName)
         write(disabled
           ? `staged for next restart: ${published.plugins.join(', ')}`
           : `already absent from the next restart: ${pluginName}`)
@@ -760,6 +763,7 @@ export function createDesktopPnpmService(options) {
           const published = await publishGenerationManifest(home, MARKET_PROFILE, {
             syncBundles: true
           })
+          await forgetPlugin(profileDirectory(home), generationRemoval)
           write(`staged for next restart: ${published.plugins.join(', ')}`)
           return { exitCode: 0 }
         })
@@ -787,11 +791,22 @@ export function createDesktopPnpmService(options) {
       }
     )
     const cancel = () => killProcessTree(child)
+    const removed = removalTarget(args)
     const done = new Promise((resolveDone, rejectDone) => {
       child.once('error', rejectDone)
       child.once('close', (exitCode, exitSignal) => {
         resolveDone({ exitCode, signal: exitSignal })
       })
+    }).then(async (exit) => {
+      // pnpm removed a Profile-owned package; its switch must not outlive it.
+      if (removed !== undefined && exit.exitCode === 0) {
+        await forgetPlugin(profileDirectory(home), removed).catch((error) => {
+          process.stderr.write(
+            `dsh-desktop: could not clear the package switch for ${removed}: ${error instanceof Error ? error.message : String(error)}\n`
+          )
+        })
+      }
+      return exit
     })
     const handle = {
       stdout: child.stdout,

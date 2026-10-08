@@ -1,0 +1,69 @@
+diff --git a/node_modules/@deepseek-ai/dsh-skill/lib/index.js b/node_modules/@deepseek-ai/dsh-skill/lib/index.js
+index 7d9c365..014ec3f 100644
+--- a/node_modules/@deepseek-ai/dsh-skill/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-skill/lib/index.js
+@@ -1,6 +1,6 @@
+ import { Service } from "@deepseek-ai/cordis";
+ import { assertNever } from "@deepseek-ai/dsh-util-values";
+-import { NamedEntries, ScopedLayers, scopeChainOf, scopeOf } from "@deepseek-ai/dsh-scope";
++import { NamedEntries, ScopedLayers, scopeChainOf, scopeOf, scopeTarget } from "@deepseek-ai/dsh-scope";
+ import z from "@deepseek-ai/schemastery";
+ //#region lib/types/index.js
+ /**
+@@ -234,7 +234,7 @@ var SkillRegistry = class extends Service {
+ 	async snapshot(options = {}) {
+ 		const collected = await this.collect(options);
+ 		return {
+-			skills: [...collected.entries.values()].map((entry) => toSummary(entry.candidate)).sort(compareSkillSummary),
++			skills: await Promise.all([...collected.entries.values()].map((entry) => this.invocationView(toSummary(entry.candidate), options))).then((skills) => skills.sort(compareSkillSummary)),
+ 			complete: collected.cacheable
+ 		};
+ 	}
+@@ -260,7 +260,14 @@ var SkillRegistry = class extends Service {
+ 			this.invalidateEntry(match);
+ 			return;
+ 		}
+-		return definition;
++		return this.invocationView(definition, options);
++	}
++	/** Resolve view-time policy after discovery caching, for both catalogs and loaders. */
++	async invocationView(skill, options) {
++		const invocation = await this.ctx.waterfall(scopeTarget(this, options.scope), "skills/invocation", skill.invocation, toSummary(skill), options, () => Promise.resolve(skill.invocation));
++		throwIfAborted(options.signal);
++		validateInvocation(invocation, `skill "${skill.name}" invocation view`);
++		return { ...skill, invocation };
+ 	}
+ 	async collect(options) {
+ 		throwIfAborted(options.signal);
+diff --git a/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts
+index b809c1b..20a2bc8 100644
+--- a/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts
++++ b/node_modules/@deepseek-ai/dsh-skill/lib/types/index.d.ts
+@@ -96,6 +96,8 @@ export interface SkillLookupOptions {
+  * contract from it.
+  */
+ export interface SkillViewOptions extends SkillLookupOptions {
++    /** Durable Session identity for invocation policies, including catalogs before Agent activation. */
++    readonly sessionId?: string | undefined;
+     /** Viewing scope (the calling agent); omitted reads the global layer alone. */
+     readonly scope?: ScopeKey | undefined;
+ }
+@@ -209,6 +211,10 @@ declare module '@deepseek-ai/cordis' {
+          * @mode emit
+          */
+         'skills/change'(): void;
++        /** View-time invocation policy, applied after discovery caching to catalogs and loaded bodies.
++         * @mode waterfall
++         */
++        'skills/invocation'(policy: SkillInvocationPolicy, skill: SkillSummary, options: SkillViewOptions, next: () => Promise<SkillInvocationPolicy>): Promise<SkillInvocationPolicy>;
+     }
+ }
+ /**
+@@ -282,6 +288,7 @@ export declare class SkillRegistry extends Service {
+      * @returns the full skill, including body content, or `undefined`.
+      */
+     get(name: string, options?: SkillViewOptions): Promise<SkillDefinition | undefined>;
++    private invocationView;
+     private collect;
+     private collectFresh;
+     private collectLayer;

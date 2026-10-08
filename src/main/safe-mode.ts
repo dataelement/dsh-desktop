@@ -93,6 +93,26 @@ export interface SafeModeViewModel {
   enableBusyLabel: string
 }
 
+/** Distinct blocking findings, counted by the group a user resolves them in. */
+export function safeModeBlockingGroupCount(issues: readonly ProfileCompatibilityIssue[]): number {
+  return new Set(
+    issues
+      .filter((issue) => issue.severity === 'blocking')
+      .map((issue) => issue.groupId ?? `${issue.resolution}:${issue.target}`)
+  ).size
+}
+
+/**
+ * The question asked before leaving Safe Mode with blocking findings left;
+ * shared by the manager's restart button and the sidebar's exit button.
+ */
+export function safeModeExitConfirmation(blockingGroups: number, locale: SafeModeLocale): string | undefined {
+  if (blockingGroups <= 0) return undefined
+  return locale === 'zh'
+    ? `仍有 ${blockingGroups} 组阻断问题。退出后会重新启用第三方插件，可能再次启动失败。仍然退出安全模式吗？`
+    : `${blockingGroups} blocking group${blockingGroups === 1 ? '' : 's'} remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?`
+}
+
 export function shouldStartInSafeMode(argv: readonly string[]): boolean {
   return argv.includes('--safe-mode')
 }
@@ -282,11 +302,7 @@ export function buildSafeModeViewModel(options: {
       issues: grouped
     }
   })
-  const blockingGroups = new Set(
-    issues
-      .filter((issue) => issue.severity === 'blocking')
-      .map((issue) => issue.groupId ?? `${issue.resolution}:${issue.target}`)
-  ).size
+  const blockingGroups = safeModeBlockingGroupCount(issues)
   const backupItems = (options.backups ?? []).map((backup): SafeModeBackupViewModel => {
     const zh = options.locale === 'zh'
     const cleanupReady = backup.bootVerifiedAt !== undefined && backup.restoreStartedAt === undefined
@@ -374,9 +390,7 @@ export function buildSafeModeViewModel(options: {
       agentBusyLabel: '正在关闭…',
       restartLabel: '退出安全模式并重启',
       restartBusyLabel: '正在重启…',
-      restartConfirm: blockingGroups > 0
-        ? `仍有 ${blockingGroups} 组阻断问题。退出后会重新启用第三方插件，可能再次启动失败。仍然退出安全模式吗？`
-        : undefined,
+      restartConfirm: safeModeExitConfirmation(blockingGroups, 'zh'),
       quitLabel: '退出 DSH Desktop',
       notice: options.notice,
       noticeSummary: summarizeLongNotice(options.notice, 'zh'),
@@ -418,9 +432,7 @@ export function buildSafeModeViewModel(options: {
     agentBusyLabel: 'Closing…',
     restartLabel: 'Exit Safe Mode and restart',
     restartBusyLabel: 'Restarting…',
-    restartConfirm: blockingGroups > 0
-      ? `${blockingGroups} blocking group${blockingGroups === 1 ? '' : 's'} remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?`
-      : undefined,
+    restartConfirm: safeModeExitConfirmation(blockingGroups, 'en'),
     quitLabel: 'Quit DSH Desktop',
     notice: options.notice,
     noticeSummary: summarizeLongNotice(options.notice, 'en'),

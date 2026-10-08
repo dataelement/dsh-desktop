@@ -47,6 +47,9 @@ export interface ProfilePluginCommandOptions {
   environment?: NodeJS.ProcessEnv
 }
 
+/** What a package command needs besides the dsh entry: the runtime, pnpm and shims. */
+export type PackageCommandRuntime = Omit<ProfilePluginCommandOptions, 'dshEntryPath'> & { dshEntryPath?: string }
+
 export interface ProfilePluginCommandResult {
   ok: boolean
   detail?: string
@@ -91,7 +94,7 @@ export function buildProfileInstallArguments(dshEntryPath: string): string[] {
   return [dshEntryPath, 'plugin', '--profile', PROFILE, 'install', '--no-frozen-lockfile']
 }
 
-export function buildPnpmShimCommand(options: ProfilePluginCommandOptions): string[] {
+export function buildPnpmShimCommand(options: PackageCommandRuntime): string[] {
   const runner =
     options.pnpmRunnerPath !== undefined && existsSync(options.pnpmRunnerPath)
       ? [options.pnpmRunnerPath]
@@ -99,7 +102,7 @@ export function buildPnpmShimCommand(options: ProfilePluginCommandOptions): stri
   return [...runner, options.pnpmEntryPath]
 }
 
-export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions): Promise<string> {
+export async function ensureProfilePnpmShim(options: PackageCommandRuntime): Promise<string> {
   const directory = join(options.dshHome, '.desktop-bin')
   await mkdir(directory, { recursive: true })
   const command = buildPnpmShimCommand(options)
@@ -126,7 +129,7 @@ export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions
     const pnpmPath = join(directory, 'pnpm')
     await writeFile(
       pnpmPath,
-      `#!/bin/sh\nexec ${shellQuote(options.nodeExecutablePath)} ${command
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(options.nodeExecutablePath)} ${command
         .map(shellQuote)
         .join(' ')} "$@"\n`,
       { encoding: 'utf8', mode: 0o755 }
@@ -135,7 +138,7 @@ export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions
     const nodePath = join(directory, 'node')
     await writeFile(
       nodePath,
-      `#!/bin/sh\nexec ${shellQuote(options.nodeExecutablePath)} "$@"\n`,
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(options.nodeExecutablePath)} "$@"\n`,
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(nodePath, 0o755)
@@ -165,8 +168,9 @@ export function buildProfilePluginCommandEnvironment(
   platform: NodeJS.Platform = process.platform
 ): NodeJS.ProcessEnv {
   const result = { ...environment }
-  delete result.ELECTRON_RUN_AS_NODE
-  if (platform === 'win32') result.ELECTRON_RUN_AS_NODE = '1'
+  // The runtime is the Electron executable on every platform (the macOS Helper),
+  // which runs the dsh CLI and pnpm as Node only in this mode.
+  result.ELECTRON_RUN_AS_NODE = '1'
 
   // The spread above keeps only the casing the OS block actually stores —
   // even for `process.env`, whose case-insensitivity does not survive a
@@ -185,6 +189,25 @@ export function buildProfilePluginCommandEnvironment(
   result.npm_config_side_effects_cache = 'false'
   result.PNPM_CONFIG_SIDE_EFFECTS_CACHE = 'false'
   return result
+}
+
+/**
+ * Environment for a package command run by the main process: rewrites the
+ * `.desktop-bin` shims for the current runtime first — an upgraded install may
+ * still hold shims naming a runtime that no longer exists — and puts them on
+ * PATH. pnpm adds only its own runtime's directory for lifecycle scripts, and
+ * the Electron runtime ships no `node` there, so `node` in a dependency's
+ * install script resolves only through this shim.
+ */
+export async function packageCommandEnvironment(options: PackageCommandRuntime): Promise<NodeJS.ProcessEnv> {
+  const shimDirectory = await ensureProfilePnpmShim(options)
+  const environment = buildProfilePluginCommandEnvironment(
+    options.environment ?? process.env,
+    shimDirectory,
+    options.nodeExecutablePath
+  )
+  environment.DSH_HOME = options.dshHome
+  return environment
 }
 
 /**
@@ -333,13 +356,7 @@ async function runProfileCommand(
   }
 
   try {
-    const shimDirectory = await ensureProfilePnpmShim(options)
-    const environment = buildProfilePluginCommandEnvironment(
-      options.environment ?? process.env,
-      shimDirectory,
-      options.nodeExecutablePath
-    )
-    environment.DSH_HOME = options.dshHome
+    const environment = await packageCommandEnvironment(options)
 
     const child = spawn(
       options.nodeExecutablePath,

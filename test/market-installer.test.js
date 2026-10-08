@@ -244,11 +244,16 @@ describe('desktop plugin market installer', () => {
       DSH_DESKTOP_TEST_DELAY_MS: '80',
       ELECTRON_RUN_AS_NODE: '1'
     }
+    // An isolated home: removals clear the package switch in the Profile.
+    const profile = join(root, 'profiles', 'web')
+    await mkdir(join(profile, '.dsh-market'), { recursive: true })
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['example-plugin', 'kept'] }))
     const service = createDesktopPnpmService({
       binDirectory,
       dshEntryPath: fakeDshEntry,
       executablePath: process.execPath,
-      environment
+      environment,
+      home: root
     })
     const handle = service.runPlugin(['remove', 'example-plugin'], root)
     expect(() => service.runPlugin(['install'], root)).toThrow(
@@ -260,6 +265,7 @@ describe('desktop plugin market installer', () => {
       stdout += chunk.toString('utf8')
     })
     await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+    expect(JSON.parse(await readFile(join(profile, '.dsh-market', 'state.json'), 'utf8'))).toEqual({ disabled: ['kept'] })
     const invocation = JSON.parse(stdout)
     expect(invocation.args).toEqual([
       'plugin',
@@ -302,6 +308,8 @@ describe('desktop plugin market installer', () => {
       name: 'dsh-profile-web', private: true, dependencies: { dshmarket: '1.31.1' },
       dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dshmarket'] } }
     }))
+    await mkdir(join(profile, '.dsh-market'), { recursive: true })
+    await writeFile(join(profile, '.dsh-market', 'state.json'), JSON.stringify({ disabled: ['ming-life'] }))
     const service = createDesktopPnpmService({
       binDirectory: join(home, '.desktop-bin'),
       dshEntryPath: join(home, 'unused-dsh-entry.mjs'),
@@ -314,6 +322,7 @@ describe('desktop plugin market installer', () => {
     handle.stdout.on('data', chunk => { output += chunk.toString('utf8') })
     await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
     expect(output).toContain('already absent from the next restart: ming-life')
+    expect(JSON.parse(await readFile(join(profile, '.dsh-market', 'state.json'), 'utf8'))).toEqual({ disabled: [] })
     await service.dispose()
   })
 

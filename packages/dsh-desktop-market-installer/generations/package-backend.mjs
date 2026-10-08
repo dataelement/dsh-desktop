@@ -1,16 +1,24 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, readFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
+import { forgetPlugin, recordPluginSwitch } from '../plugin-state.mjs'
 import { installGeneration, verifyGenerationPeers } from './installer.mjs'
 import {
+  SHARED_TREE_ONLY,
   listGenerations,
   readDesired,
   withRegistryLock,
   writeDesired
 } from './registry.mjs'
-import { projectGenerations, publishGenerationManifest, publishInstalledGeneration } from './projection.mjs'
+import {
+  REAL_DIRECTORY_IN_PLACE,
+  projectGenerations,
+  publishGenerationManifest,
+  publishInstalledGeneration
+} from './projection.mjs'
 
 const PROFILE = 'web'
+const profileDirectory = dshHome => join(dshHome, 'profiles', PROFILE)
 const MAX_OUTPUT_BYTES = 16 * 1024
 
 function errorText(error) {
@@ -67,6 +75,12 @@ async function createOperationLog(dshHome) {
  * Host package-mutation backend consumed by the patched Harness Plugin Manager.
  * Staging and promotion happen before publication; the returned rollback remains
  * live only until Plugin Manager has validated the bundle and begins enablement.
+ *
+ * Packages that are not the generation registry's — the market, which lives in
+ * the shared tree, and plugins pnpm still owns in the Profile — resolve
+ * `undefined`, and Plugin Manager runs its ordinary pnpm path for them.
+ * Enable switches from every surface land in the shared package switch
+ * (plugin-state.mjs), which launch reconciliation never rewrites.
  */
 export function createGenerationPackageBackend(options) {
   const {
@@ -117,6 +131,10 @@ export function createGenerationPackageBackend(options) {
           sourceDirectory = path
           sourceSpec = request.spec
         }
+        if (expectedPluginName !== undefined && SHARED_TREE_ONLY.has(expectedPluginName)) {
+          await finishLog()
+          return undefined
+        }
 
         const result = await withRegistryLock(dshHome, async () => {
           request.signal?.throwIfAborted()
@@ -154,7 +172,7 @@ export function createGenerationPackageBackend(options) {
           if (!peers.ok) {
             return { ok: false, detail: `generation peer validation failed: ${peers.problems.join('; ')}` }
           }
-          const replaced = beforeGenerations.some(item =>
+          const replacedGeneration = beforeGenerations.some(item =>
             beforeDesired.includes(item.id) && item.pluginName === generation.pluginName
           )
           const nextDesired = replaceDesiredGeneration(
@@ -164,13 +182,27 @@ export function createGenerationPackageBackend(options) {
             generation.id
           )
           await writeDesired(dshHome, nextDesired)
+          let deferredSwitch = false
           try {
             await publishInstalledGeneration(dshHome, generation.pluginName, PROFILE, {
               syncBundles: false
             })
           } catch (error) {
-            await writeDesired(dshHome, beforeDesired)
-            throw error
+            if (error?.code !== REAL_DIRECTORY_IN_PLACE) {
+              await writeDesired(dshHome, beforeDesired)
+              throw error
+            }
+            // A pnpm-owned copy is loaded from that directory; it cannot be
+            // replaced while Harness runs. Launch projection swaps it for the
+            // generation link, so this install completes on restart.
+            try {
+              await publishGenerationManifest(dshHome, PROFILE, { syncBundles: false })
+            } catch (manifestError) {
+              await writeDesired(dshHome, beforeDesired)
+              throw manifestError
+            }
+            deferredSwitch = true
+            void emit(`generation-install: ${generation.pluginName} replaces a Profile-owned copy on restart\n`)
           }
 
           let committed = false
@@ -202,7 +234,7 @@ export function createGenerationPackageBackend(options) {
           return {
             ok: true,
             bundle: generation.pluginName,
-            replaced,
+            replaced: replacedGeneration || deferredSwitch,
             rollback,
             commit: () => { committed = true }
           }
@@ -254,7 +286,7 @@ export function createGenerationPackageBackend(options) {
       }
       try {
         request.signal?.throwIfAborted()
-        await withRegistryLock(dshHome, async () => {
+        const owned = await withRegistryLock(dshHome, async () => {
           request.signal?.throwIfAborted()
           const beforeDesired = await readDesired(dshHome)
           const generations = await listGenerations(dshHome)
@@ -262,9 +294,9 @@ export function createGenerationPackageBackend(options) {
             generations.filter(item => item.pluginName === request.name).map(item => item.id)
           )
           const nextDesired = beforeDesired.filter(id => !removedIds.has(id))
-          if (nextDesired.length === beforeDesired.length) {
-            throw new Error(`No enabled generation for ${request.name}.`)
-          }
+          // Not an enabled generation: pnpm owns this package (or the market
+          // does, in the shared tree), so Plugin Manager removes it with pnpm.
+          if (nextDesired.length === beforeDesired.length) return false
           await writeDesired(dshHome, nextDesired)
           try {
             await publishGenerationManifest(dshHome, PROFILE, { syncBundles: true })
@@ -273,14 +305,26 @@ export function createGenerationPackageBackend(options) {
             throw error
           }
           await emit(`generation-remove: staged ${request.name} for removal on restart\n`)
+          return true
         })
         const captured = await log.close()
+        if (!owned) return undefined
         return { packageResult: { exitCode: 0, ...captured, logPath: log.path } }
       } catch (error) {
         await emit(`generation-remove: ${errorText(error)}\n`, 'stderr').catch(() => undefined)
         const captured = await log.close()
         return { packageResult: { exitCode: 1, ...captured, logPath: log.path } }
       }
+    },
+
+    async switched(request) {
+      await recordPluginSwitch(profileDirectory(dshHome), request.name, request.enabled, {
+        rowIds: request.rowIds ?? []
+      })
+    },
+
+    async removed(request) {
+      await forgetPlugin(profileDirectory(dshHome), request.name)
     }
   })
 }
