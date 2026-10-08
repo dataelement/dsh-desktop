@@ -1095,7 +1095,9 @@ window.__ModuleLoader__.load({
       .dshWbMarketHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}
       .dshWbMarketHeaderText{flex:1;min-width:0;max-width:70ch}.dshWbMarket h1{font-size:28px;line-height:36px;letter-spacing:-.025em;font-weight:650;margin:0 0 7px;text-wrap:balance}.dshWbMarketHeader p{margin:0}
       .dshWbMarketHeaderActions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-      html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketHeader{padding-inline-start:max(0px,calc(var(--dsh-frame-leading-clearance,160px) - 32px))}
+      /* Keep the full header in the content grid, below the collapsed Mac
+         caption controls. The blank header area remains the drag surface. */
+      html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarket{padding-top:var(--dsh-frame-top-clearance,48px)}
       .dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}
       .dshWbRefresh{display:grid;place-items:center;width:36px;height:36px;padding:0;flex:none}.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}@keyframes dshWbSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.dshWbRefresh[aria-busy=true] svg{animation:none}}
       .dshWbCheckUpdates{display:inline-flex;align-items:center;gap:6px;width:auto;padding:5px 10px}

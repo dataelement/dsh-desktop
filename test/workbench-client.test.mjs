@@ -980,6 +980,13 @@ describe('desktop workbench client navigation', () => {
     expect(writeText).toHaveBeenCalledWith('Agent prompt')
   })
 
+  it('moves the whole collapsed Mac market header below window controls without shifting its left edge', () => {
+    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarket{padding-top:var(--dsh-frame-top-clearance,48px)}')
+    expect(code).not.toContain('[data-sidebar-collapsed] .dshWbMarketHeader{padding-inline-start:')
+    expect(code).toContain("className: 'dshWbMarketHeader', 'data-window-drag': true")
+    expect(code).toContain('.dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}')
+  })
+
   it.each([['复制开发指令', '本地开发'], ['复制投稿指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
     const { service } = await fixture()
     const writeText = vi.fn(async () => {})
