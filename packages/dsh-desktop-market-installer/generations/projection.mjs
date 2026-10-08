@@ -20,9 +20,9 @@ import { resolveEnabledGenerations } from './registry.mjs'
  *     plugin's own code runs from a realpath whose parent walk reaches
  *     `$DSH_HOME/profiles/node_modules` for its peers.
  *
- *   - `dsh.profile.bundles` lists exactly the enabled plugins, so the
- *     consistency check, recovery, and inventory — all of which read this
- *     contract — agree with what is actually linked.
+ *   - Generation-owned entries in `dsh.profile.bundles` match the enabled
+ *     generations. Other bundle selections, including installation-provided
+ *     optional bundles, stay owned by the Profile's plugin manager.
  *
  * Generation plugins appear in `dependencies` at their installed version so
  * dsh-market can present them as ordinary installed releases. A root override
@@ -447,6 +447,7 @@ async function syncProfileManifest(
       typeof previousProjection.plugins === 'object' && previousProjection.plugins !== null
     ? previousProjection.plugins
     : {}
+  const managedBundles = new Set(Object.keys(previousPlugins))
 
   // Real profile dependencies carry through unchanged. Previous generation
   // entries are removed using the explicit ownership marker, then enabled
@@ -458,7 +459,10 @@ async function syncProfileManifest(
   }
   // Migrate the pre-version-projection shape even when it predates the marker.
   for (const [name, spec] of Object.entries(dependencies)) {
-    if (typeof spec === 'string' && spec.includes('.generations/live/')) delete dependencies[name]
+    if (typeof spec === 'string' && spec.includes('.generations/live/')) {
+      managedBundles.add(name)
+      delete dependencies[name]
+    }
   }
 
   const currentOverrides = manifest.pnpm?.overrides ?? {}
@@ -472,7 +476,10 @@ async function syncProfileManifest(
   }
   // Clean up an old managed override even if the marker was lost.
   for (const [name, spec] of Object.entries(overrides)) {
-    if (typeof spec === 'string' && spec.includes('.generations/live/')) delete overrides[name]
+    if (typeof spec === 'string' && spec.includes('.generations/live/')) {
+      managedBundles.add(name)
+      delete overrides[name]
+    }
   }
 
   const projectedPlugins = {}
@@ -493,14 +500,19 @@ async function syncProfileManifest(
     }
   }
 
-  // Bundle entries that survive: in-box bundles, plus any kept dependency that
-  // declares its own `dsh.bundle` (dshmarket). A bundle-declaring dependency
-  // left out of `bundles` makes the consistency check report "installed and
-  // declares a bundle, but is not composed", which the app surfaces as a
-  // restart prompt on every launch.
-  let bundles = [...(manifest.dsh?.profile?.bundles ?? [])]
+  // Only generation-owned selections are derived here. Host-provided optional
+  // bundles have no Profile dependency and must keep the user's selection.
+  // Heal bundle-declaring Profile dependencies as before; missing declarations
+  // otherwise make the consistency check request a restart on every launch.
+  // Drop retired selections even during metadata-only publication, before their
+  // ownership markers disappear and a later projection treats them as user-owned.
+  let bundles = (manifest.dsh?.profile?.bundles ?? []).filter((name) =>
+    IN_BOX_BUNDLES.has(name) || !managedBundles.has(name) || enabled.has(name)
+  )
   if (syncBundles) {
-    const declaredBundles = bundles.filter((name) => IN_BOX_BUNDLES.has(name))
+    const declaredBundles = [...new Set(bundles.filter((name) =>
+      IN_BOX_BUNDLES.has(name) || (!managedBundles.has(name) && !enabled.has(name))
+    ))]
     for (const name of Object.keys(dependencies)) {
       if (declaredBundles.includes(name) || enabled.has(name)) continue
       if (await declaresBundle(join(dir, 'node_modules', name))) declaredBundles.push(name)

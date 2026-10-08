@@ -4,10 +4,10 @@ import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from 'node:f
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { projectGenerations } from '../packages/dsh-desktop-market-installer/generations/projection'
+import { projectGenerations, publishGenerationManifest } from '../packages/dsh-desktop-market-installer/generations/projection'
 import { suspendGenerationProjectionForPnpm } from '../packages/dsh-desktop-market-installer/pnpm-runner.mjs'
 import {
   ensureRegistryDirectories,
@@ -133,6 +133,114 @@ describe('generation projection onto the app-boot contract', () => {
       visibleVersion: '0.17.1'
     })
     expect(manifest.dependencies.dshmarket).toBe('^1.35.0')
+  })
+
+  it.each(['cold-start', 'manifest-publication'])('preserves selected host bundles during %s projection', async (mode) => {
+    const home = await freshHome()
+    await ensureRegistryDirectories(home)
+    await initProfile(home)
+    const manifestPath = join(home, 'profiles', 'web', 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    manifest.dsh.profile.bundles.push(official)
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    await fakeGeneration(home, 'a+1+x', 'plugin-a', '1.0.0')
+    await writeDesired(home, ['a+1+x'])
+
+    for (let launch = 0; launch < 2; launch++) {
+      if (mode === 'cold-start') await projectGenerations(home)
+      else await publishGenerationManifest(home, 'web', { syncBundles: true })
+      const projected = JSON.parse(await readFile(manifestPath, 'utf8'))
+      expect(projected.dsh.profile.bundles).toEqual([...manifest.dsh.profile.bundles, 'plugin-a'])
+      expect(projected.dependencies).not.toHaveProperty(official)
+      expect(projected.dsh.desktop.generationProjection.plugins).not.toHaveProperty(official)
+    }
+
+    const disabled = JSON.parse(await readFile(manifestPath, 'utf8'))
+    disabled.dsh.profile.bundles = disabled.dsh.profile.bundles.filter((name: string) => name !== official)
+    await writeFile(manifestPath, JSON.stringify(disabled))
+    await projectGenerations(home)
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).dsh.profile.bundles).not.toContain(official)
+  })
+
+  it('loads the selected official bundle in fresh Harness profile-loader processes after projection', async () => {
+    const home = await freshHome()
+    const profileDir = join(home, 'profiles', 'web')
+    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    await mkdir(profileDir, { recursive: true })
+    await writeFile(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true, dependencies: {},
+      dsh: { profile: { bundles: [official] } }
+    }))
+    const projectionUrl = new URL('../packages/dsh-desktop-market-installer/generations/projection.mjs', import.meta.url).href
+    const anchor = createRequire(import.meta.url).resolve('@deepseek-ai/dsh-app-boot')
+    const script = [
+      'import { projectGenerations } from ' + JSON.stringify(projectionUrl),
+      'import { loadProfile } from ' + JSON.stringify(pathToFileURL(anchor).href),
+      'await projectGenerations(process.argv[1])',
+      'const profile = loadProfile("dsh", "web", process.argv[2], process.argv[1])',
+      'console.log(JSON.stringify(profile.layers.map((layer) => layer.packageName)))'
+    ].join('\n')
+    for (let launch = 0; launch < 2; launch++) {
+      const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', script, home, anchor])
+      expect(JSON.parse(stdout)).toContain(official)
+    }
+    const marketDir = join(profileDir, '.dsh-market')
+    await mkdir(marketDir, { recursive: true })
+    const disabledState = JSON.stringify({ disabled: [official] })
+    await writeFile(join(marketDir, 'state.json'), disabledState)
+    const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', script, home, anchor])
+    expect(JSON.parse(stdout)).not.toContain(official)
+    expect(await readFile(join(marketDir, 'state.json'), 'utf8')).toBe(disabledState)
+  })
+
+  it.each(['generation-marker', 'legacy-link'])('clears retired %s selections before metadata-only publication loses ownership', async (ownership) => {
+    const home = await freshHome()
+    await initProfile(home)
+    const manifestPath = join(home, 'profiles', 'web', 'package.json')
+    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.dsh.profile.bundles.push(official)
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    if (ownership === 'generation-marker') {
+      await fakeGeneration(home, 'a+1+x', 'plugin-a', '1.0.0')
+      await writeDesired(home, ['a+1+x'])
+      await projectGenerations(home)
+      await writeDesired(home, [])
+    } else {
+      manifest.dsh.profile.bundles.push('plugin-a')
+      manifest.dependencies['plugin-a'] = 'link:../.generations/live/old/node_modules/plugin-a'
+      await writeFile(manifestPath, JSON.stringify(manifest))
+    }
+
+    await publishGenerationManifest(home)
+    await projectGenerations(home)
+
+    const projected = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(projected.dsh.profile.bundles).toContain(official)
+    expect(projected.dsh.profile.bundles).not.toContain('plugin-a')
+    expect(projected.dependencies).not.toHaveProperty('plugin-a')
+  })
+
+  it('removes legacy generation selections without dropping host selections', async () => {
+    const home = await freshHome()
+    await initProfile(home)
+    const manifestPath = join(home, 'profiles', 'web', 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    const official = '@deepseek-ai/dsh-experimental-schedule-bundle'
+    manifest.dsh.profile.bundles.push(official, 'legacy-plugin', 'override-plugin')
+    manifest.dependencies['legacy-plugin'] = 'link:../.generations/live/legacy/node_modules/legacy-plugin'
+    manifest.pnpm = { overrides: { 'override-plugin': 'link:../.generations/live/old/node_modules/override-plugin' } }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+
+    await projectGenerations(home)
+
+    const projected = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(projected.dsh.profile.bundles).toEqual([
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dshmarket', official
+    ])
+    expect(projected.dependencies).not.toHaveProperty('legacy-plugin')
+    expect(projected.pnpm?.overrides).toBeUndefined()
   })
 
   it('drops the link and the bundle entry when a plugin stops being desired', async () => {
