@@ -1,4 +1,3 @@
-import { homedir } from 'node:os'
 import { existsSync } from 'node:fs'
 import {
   cp,
@@ -10,7 +9,10 @@ import {
   stat,
   writeFile
 } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+
+import { auditAttachmentReferences, formatAttachmentGaps } from './attachment-refs'
 
 const DECISION_FILE = '.web-import-decision.json'
 const IMPORT_TMP_SUFFIX = '.import-tmp'
@@ -185,6 +187,9 @@ export async function importWebHome(options: ImportWebHomeOptions): Promise<void
     await mkdir(tmp, { recursive: true })
     await copyHomePayload(source, tmp, note)
     await replaceUnusedDest(dest, tmp)
+    for (const line of formatAttachmentGaps(await auditAttachmentReferences(dest))) {
+      note(line)
+    }
     await writeImportedDecision(dest, source)
     note('imported')
   } catch (error) {
