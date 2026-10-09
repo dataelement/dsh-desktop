@@ -3060,9 +3060,9 @@ describe('workbench feature default', () => {
     }
   }
 
-  it('keeps workbenches off until the user switches the feature on', async () => {
-    expect(await openError(undefined)).toBe('工作台功能已关闭。')
-    expect(await openError('false')).toBe('工作台功能已关闭。')
+  it('keeps workbenches on unless the user switches the feature off', async () => {
+    expect(await openError(undefined)).not.toBe('工作台功能已关闭。')
     expect(await openError('true')).not.toBe('工作台功能已关闭。')
+    expect(await openError('false')).toBe('工作台功能已关闭。')
   })
 })
