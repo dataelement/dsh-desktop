@@ -1913,7 +1913,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain("active?.title || tr('会话')")
     expect(fullSource).toContain("title: tr('工作台主页'), 'aria-label': tr('打开工作台主页')")
     expect(fullSource).toContain('setOpen(false); service.showMarket()')
-    expect(fullSource).toContain('.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1 1 0;min-width:88px;')
+    expect(fullSource).toContain('.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:0 0 auto;min-width:88px;')
     expect(fullSource).toContain('.dshWbSidebarSwitcher:is([data-selected=true],:hover,:focus-within){border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}')
     expect(fullSource).not.toContain('.dshWbModeSwitch:hover:not(:disabled),.dshWbModeSwitch[aria-expanded=true]{background:')
     expect(fullSource).toContain('min-height:36px;margin:0 2px 8px;padding:0;')
