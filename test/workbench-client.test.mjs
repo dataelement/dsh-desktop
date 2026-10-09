@@ -70,7 +70,7 @@ function marketCard(service, tab = 'market') {
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
-    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).Market
+    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null, Toast: function Toast() {} }).Market
   } } }, document, setTimeout, clearTimeout, AbortController })
   const tree = renderMarket({ service })
   const find = (node, predicate) => {
@@ -93,7 +93,7 @@ function cardButtons(card) {
   return buttons.map(button => button.props.children.flat().filter(child => typeof child === 'string').join(''))
 }
 
-function interactiveMarket(service, tab = 'market') {
+function interactiveMarket(service, tab = 'market', clipboard) {
   let renderMarket
   let stateIndex = 0
   const state = []
@@ -104,13 +104,13 @@ function interactiveMarket(service, tab = 'market') {
     useState: (initial) => {
       const index = stateIndex++
       if (!(index in state)) state[index] = index === 0 ? tab : initial
-      return [state[index], (value) => { state[index] = value }]
+      return [state[index], (value) => { state[index] = typeof value === 'function' ? value(state[index]) : value }]
     },
     useLayoutEffect: () => {},
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
-  vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
-    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null }).Market
+  vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, navigator: clipboard && { clipboard }, __ModuleLoader__: { load({ factory }) {
+    renderMarket = factory(name => name === 'react' ? testReact : name === '@deepseek-ai/cordis' ? { Service } : { Switch: () => null, Toast: function Toast() {} }).Market
   } } }, document, setTimeout, clearTimeout, AbortController })
   const find = (node, predicate) => {
     if (Array.isArray(node)) return node.flatMap(item => find(item, predicate))
@@ -581,9 +581,9 @@ describe('desktop workbench client navigation', () => {
     const { service, request } = await fixture()
     request.mockImplementation(async (url, options = {}) => {
       if (url === '/api/desktop-workbenches/catalog') return Response.json({ stale: false, catalog: {
-        schemaVersion: 2, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容' } }],
+        schemaVersion: 2, kind: 'catalog', categories: [{ id: 'content', name: { zh: '内容', en: 'Content' } }],
         workbenches: [{ id: 'owner/remote', owner: 'owner', repository: 'remote', url: 'https://github.com/owner/remote',
-          name: '远程工作台', category: 'content', description: { zh: '中文简介', en: 'English description' },
+          name: '远程工作台', nameEn: 'Remote Workbench', category: 'content', description: { zh: '中文简介', en: 'English description' },
           version: '1.0.0', license: 'MIT', distribution: { type: 'github-source', name: 'remote-package', version: '1.0.0' },
           screenshots: [{ url: 'https://raw.githubusercontent.com/owner/remote/main/shot.png' }] }]
       } })
@@ -592,9 +592,9 @@ describe('desktop workbench client navigation', () => {
     })
     await service.load()
     const entry = service.getSnapshot().catalog.find(item => item.catalogId === 'owner/remote')
-    expect(entry).toMatchObject({ id: 'owner/remote', title: '远程工作台', category: '内容', description: '中文简介', installed: false })
+    expect(entry).toMatchObject({ id: 'owner/remote', title: '远程工作台', titleEn: 'Remote Workbench', category: '内容', categoryId: 'content', categoryNames: { zh: '内容', en: 'Content' }, description: '中文简介', descriptionEn: 'English description', installed: false })
     // Submissions choose from the market's own list, not a Desktop copy.
-    expect(service.getSnapshot().categories).toEqual([{ id: 'content', name: '内容' }])
+    expect(service.getSnapshot().categories).toEqual([{ id: 'content', name: '内容', names: { zh: '内容', en: 'Content' } }])
     await service.toggleFavorite('owner/remote')
     expect(service.state.favorites).toEqual(['owner/remote'])
     await expect(service.add('owner/remote')).rejects.toThrow('工作台当前不可用')
@@ -886,8 +886,8 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain('需求确认并完成开发后，Agent 会把工作台装到这台 Desktop')
     expect(source).toContain('想上架，再按验收规范提交')
     // The website is the only visible document entry point in this flow.
-    expect(source).toContain('href: DEVELOPMENT_PAGE_URL')
-    expect(source).toContain('href: ACCEPTANCE_PAGE_URL')
+    expect(source).toContain('href: developmentPageUrl()')
+    expect(source).toContain('href: acceptancePageUrl()')
     expect(source).not.toContain('离线查看')
     expect(source).toContain('复制开发指令')
     expect(source).toContain('复制投稿指令')
@@ -953,6 +953,20 @@ describe('desktop workbench client navigation', () => {
     expect(submissionAgentPrompt('submission')).toBe(submission)
   })
 
+  it('provides English Agent prompts and English documentation URLs in English mode', () => {
+    const development = developmentWorkbenchAgentPrompt(true)
+    expect(development).toContain('https://dshdesktop.com/workbench/docs/development-en.md')
+    expect(development).toContain('Who is this workbench for')
+    expect(development).toContain('Wait for my answer')
+    expect(development).not.toContain('工作台开发规范')
+    const submission = submissionWorkbenchAgentPrompt({ english: true, category: { id: 'other', name: '其他', names: { en: 'Other' } }, suggestion: 'Legal' })
+    expect(submission).toContain('https://dshdesktop.com/workbench/docs/market-acceptance-en.md')
+    expect(submission).toContain('category to other (Other)')
+    expect(submission).toContain('suggest a new category: Legal')
+    expect(submission).toContain('description.zh')
+    expect(submission).not.toContain('工作台市场验收规范')
+  })
+
   it('writes the author-chosen market category into the submission prompt', () => {
     expect(submissionWorkbenchAgentPrompt()).toContain('分类按市场仓库 data/categories.json 选最贴切的一个')
     const chosen = submissionWorkbenchAgentPrompt({ category: { id: 'retail', name: '零售与门店' } })
@@ -968,7 +982,7 @@ describe('desktop workbench client navigation', () => {
 
   it('offers the category picker only when the market list is available', () => {
     expect(code).toContain("marketCategories.length > 0 && h('div', { className: 'dshWbSubmitCategory' }")
-    expect(code).toContain("h('option', { value: '' }, '让 Agent 按规范选择')")
+    expect(code).toContain("h('option', { value: '' }, tr('让 Agent 按规范选择'))")
     expect(code).toContain("submitCategory === 'other' && h('label'")
   })
 
@@ -978,6 +992,43 @@ describe('desktop workbench client navigation', () => {
     await copySubmissionPrompt('Agent prompt', targetWindow)
     expect(writeText).toHaveBeenCalledOnce()
     expect(writeText).toHaveBeenCalledWith('Agent prompt')
+  })
+
+  it('includes the market and builder header whitespace in the drag region while preserving caption and button controls', () => {
+    expect(code).toContain('.dshWbMarket{position:relative;container-type:inline-size;container-name:workbench-market;overflow:auto;height:100%;width:100%;min-width:0;padding:0 32px 52px')
+    expect(code).toContain('.dshWbMarketHeader{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin:0 -32px;padding:30px 32px 28px}')
+    expect(code).toContain('html[data-platform=darwin] .dshWbMarketHeader{-webkit-app-region:drag}')
+    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketHeader{padding-top:var(--dsh-frame-top-clearance,48px)}')
+    expect(code).toContain('html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketHeader::before{content:\'\';position:absolute;top:0;left:0;width:var(--dsh-frame-leading-clearance,160px);height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:no-drag}')
+    expect(code).toContain('html[data-platform=darwin] .dshWbMarketModalOpen .dshWbMarketHeader{-webkit-app-region:no-drag}')
+    expect(code).toContain("className: 'dshWbMarketHeader', 'data-window-drag': true")
+    expect(code).toContain('.dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}')
+  })
+
+  it.each([['复制开发指令', '本地开发'], ['复制投稿指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
+    const { service } = await fixture()
+    const writeText = vi.fn(async () => {})
+    const ui = interactiveMarket(service, 'submit', { writeText })
+    const tree = ui.render()
+    expect(tree.props.children[0].props['data-window-drag']).toBe(true)
+    await ui.button(tree, label).props.onClick()
+    expect(writeText).toHaveBeenCalledOnce()
+    expect(writeText.mock.calls[0][0]).toContain(promptFragment)
+    const toast = ui.find(ui.render(), node => node.type?.name === 'Toast')[0]
+    expect(toast.props).toMatchObject({ text: '已复制', tone: 'success' })
+    toast.props.onDone()
+    expect(ui.find(ui.render(), node => node.type?.name === 'Toast')).toHaveLength(0)
+    service.dispose()
+  })
+
+  it('shows failure feedback when copying a workbench instruction fails', async () => {
+    const { service } = await fixture()
+    const ui = interactiveMarket(service, 'submit', { writeText: vi.fn(async () => { throw new Error('denied') }) })
+    await ui.button(ui.render(), '复制开发指令').props.onClick()
+    const toast = ui.find(ui.render(), node => node.type?.name === 'Toast')[0]
+    expect(toast.props.text).toContain('复制失败')
+    expect(toast.props.tone).toBeUndefined()
+    service.dispose()
   })
 
   it('falls back to a temporary text area when the clipboard API is unavailable', async () => {
@@ -1374,6 +1425,8 @@ describe('desktop workbench client navigation', () => {
     expect(customHost.props.className).toBe('dshWbCustomFrame')
     expect(code).toContain('.dshWbBusiness[data-side=left][data-embedded=true] > :first-child > header:first-child')
     expect(code).toContain('padding-inline-start:var(--dsh-frame-leading-clearance,160px)')
+    expect(code).toContain('html[data-platform=darwin] .dshWbCustomFrame > :first-child > header:first-child{-webkit-app-region:drag}')
+    expect(code).toContain('html[data-platform=darwin] .dshWbCustomFrame > :first-child > header:first-child :is(button,a,input,select,textarea,[role=button],[role=tab],[role=combobox],[contenteditable=true],[data-dsh-no-drag]){-webkit-app-region:no-drag}')
     expect(customHost.props.style).toMatchObject({
       position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0,
       width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box'
@@ -1827,7 +1880,7 @@ describe('workbench business layout contract', () => {
 describe('workbench market screenshot and metadata display', () => {
   const fullSource = code
   it('explains the workbench concept and the sidebar shortcut model', () => {
-    expect(fullSource).toContain("tab === 'submit' ? '制作属于你的工作台' : '工作台'")
+    expect(fullSource).toContain("tab === 'submit' ? tr('制作属于你的工作台') : tr('工作台')")
     expect(fullSource).toContain('工作台把专属界面、会话和资料组织在一起。可通过顶部快捷栏在会话与不同工作台之间切换。')
   })
 
@@ -1851,18 +1904,18 @@ describe('workbench market screenshot and metadata display', () => {
   it('renders a persistent Workbench home area beside the current mode and switch button', () => {
     expect(fullSource).toContain('function WorkbenchSidebarSwitcher({ service, wide, startSession, usePanelInfo })')
     expect(fullSource).toContain("'data-dsh-workbench-switcher': ''")
-    expect(fullSource).toContain("className: 'dshWbModeSwitch', title: `切换工作台（当前：${active?.title || '会话'}）`, 'aria-label': `切换工作台，当前：${active?.title || '会话'}`, 'aria-haspopup': 'menu', 'aria-expanded': open")
-    expect(fullSource).toContain("role: 'menu', 'aria-label': '选择会话模式'")
+    expect(fullSource).toContain("className: 'dshWbModeSwitch', title: both(`切换工作台（当前：${active?.title || tr('会话')}）`, `Switch workbench (current: ${active?.title || tr('会话')})`)")
+    expect(fullSource).toContain("role: 'menu', 'aria-label': tr('选择会话模式')")
     expect(fullSource).toContain("role: 'menuitemradio'")
     expect(fullSource).toContain('service.openNative(startSession)')
     expect(fullSource).toContain("name: 'home'")
     expect(fullSource).not.toContain('dshWbSidebarTooltip')
-    expect(fullSource).toContain("active?.title || '会话'")
-    expect(fullSource).toContain("title: '工作台主页', 'aria-label': '打开工作台主页'")
+    expect(fullSource).toContain("active?.title || tr('会话')")
+    expect(fullSource).toContain("title: tr('工作台主页'), 'aria-label': tr('打开工作台主页')")
     expect(fullSource).toContain('setOpen(false); service.showMarket()')
     expect(fullSource).toContain('.dshWbWorkbenchHome{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1 1 0;min-width:88px;')
-    expect(fullSource).toContain('.dshWbSidebarSwitcher[data-selected=true]{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}')
-    expect(fullSource).toContain('.dshWbWorkbenchHome:hover{background:var(--dsw-alias-interactive-bg-hover)}')
+    expect(fullSource).toContain('.dshWbSidebarSwitcher:is([data-selected=true],:hover,:focus-within){border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover)}')
+    expect(fullSource).not.toContain('.dshWbModeSwitch:hover:not(:disabled),.dshWbModeSwitch[aria-expanded=true]{background:')
     expect(fullSource).toContain('min-height:36px;margin:0 2px 8px;padding:0;')
     expect(fullSource).toContain('.dshWbModeSwitch svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary)}')
     expect(fullSource).toContain('.dshWbCurrentModeLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
@@ -1952,9 +2005,9 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('event.stopPropagation()')
     expect(fullSource).toContain("if (event.key === 'ArrowUp' && index > 0) move(item, index, pinned[index - 1].id, index)")
     expect(fullSource).toContain("if (event.key === 'ArrowDown' && index < pinned.length - 1) move(item, index, pinned[index + 2]?.id ?? null, index + 2)")
-    expect(fullSource).toContain("'aria-keyshortcuts': 'ArrowUp ArrowDown', 'aria-roledescription': '拖拽排序手柄'")
-    expect(fullSource).toContain("'aria-label': `${item.title}，当前位置 ${index + 1}/${pinned.length}，使用上下方向键调整顺序`")
-    expect(fullSource).toContain("setAnnouncement(`${item.title} 已移至第 ${nextPosition} 位`)")
+    expect(fullSource).toContain("'aria-keyshortcuts': 'ArrowUp ArrowDown', 'aria-roledescription': both('拖拽排序手柄', 'Reorder handle')")
+    expect(fullSource).toContain("'aria-label': both(`${item.title}，当前位置 ${index + 1}/${pinned.length}，使用上下方向键调整顺序`")
+    expect(fullSource).toContain("setAnnouncement(both(`${item.title} 已移至第 ${nextPosition} 位`")
     expect(fullSource).toContain("className: 'dshWbSrOnly', role: 'status', 'aria-live': 'polite', 'aria-atomic': true")
     expect(fullSource).not.toContain('aria-grabbed')
     expect(fullSource).toContain('.dshWbModeDragHandle:focus-visible{outline:2px solid var(--dsw-alias-label-primary);outline-offset:-2px}')
@@ -1974,7 +2027,7 @@ describe('workbench market screenshot and metadata display', () => {
   it('uses the top switcher as the only Workbench navigation entry', () => {
     expect(fullSource).not.toContain("ctx.slots.inject('sidebar.panellist'")
     expect(fullSource).not.toContain('function WorkbenchPanelIcon(')
-    expect(fullSource).toContain("title: '工作台主页', 'aria-label': '打开工作台主页'")
+    expect(fullSource).toContain("title: tr('工作台主页'), 'aria-label': tr('打开工作台主页')")
   })
 
   it('does not fail the whole Workbench plugin when an older host lacks session filtering', () => {
@@ -1987,22 +2040,22 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).not.toContain('workbenchDockPreference')
     expect(fullSource).not.toContain('显示工作台快捷栏')
     expect(fullSource).toContain('if (!enabled || !wide) return null')
-    expect(fullSource).toContain("h(Switch, { checked: enabled, onChange: (next) => service.setEnabled(next), label: '启用工作台功能' })")
+    expect(fullSource).toContain("h(Switch, { checked: enabled, onChange: (next) => service.setEnabled(next), label: tr('启用工作台功能') })")
     expect(fullSource).toContain('if (!workbenchEnabled) return conversation')
   })
 
   it('offers an independent catalog refresh without resetting local market controls', () => {
     const source = Market.toString()
     expect(source).toContain("const [search, setSearch] = React.useState('')")
-    expect(source).toContain("const [category, setCategory] = React.useState('全部')")
+    expect(source).toContain("const [category, setCategory] = React.useState('all')")
     expect(source).toContain("tab === 'mine' ? service.checkUpdates() : service.refreshCatalog()")
-    expect(source).toContain("tab === 'mine' ? '检查更新' : '刷新目录'")
+    expect(source).toContain("tab === 'mine' ? tr('检查更新') : tr('刷新目录')")
     expect(source).toContain("h(MarketIcon, { name: 'refresh', size: 17 })")
     expect(fullSource).toContain('.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}')
   })
 
   it('shows GitHub stars and downloads, with a dash instead of a made-up zero when the catalog has no value', () => {
-    expect(fullSource).toContain("h(MetaItem, { icon: 'star', label: stars === undefined ? 'GitHub Stars：暂无数据' : 'GitHub Stars'")
+    expect(fullSource).toContain("h(MetaItem, { icon: 'star', label: stars === undefined ? tr('GitHub Stars：暂无数据') : 'GitHub Stars'")
     expect(fullSource).toContain('entry.metrics?.githubReleaseDownloads?.value')
     expect(fullSource).toContain("value: downloads === undefined ? '—' : compactCount(downloads)")
     expect(fullSource).not.toContain("icon: 'like'")
@@ -2026,8 +2079,8 @@ describe('workbench market screenshot and metadata display', () => {
 
   it('gives market and favorites the same installation-only card footer', () => {
     expect(fullSource).toContain("tab === 'mine'\n                    ? h('button'")
-    expect(fullSource).toContain("h('span', { className: 'dshWbInstalled', role: 'status' }, '已安装')")
-    expect(fullSource).toContain("installing === catalogId ? '正在安装…' : '安装'")
+    expect(fullSource).toContain("h('span', { className: 'dshWbInstalled', role: 'status' }, tr('已安装'))")
+    expect(fullSource).toContain("installing === catalogId ? tr('正在安装…') : tr('安装')")
     expect(fullSource).toContain('.dshWbCard .dshWbActions{margin-top:auto;min-height:36px;gap:8px;padding-top:8px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}')
     expect(fullSource).toContain('height:232px;flex:0 0 232px')
     expect(fullSource).toContain('gap:8px;padding:18px 20px 16px')
@@ -2051,7 +2104,7 @@ describe('workbench market screenshot and metadata display', () => {
   it('marks bound sessions with the owning workbench icon through the native sidebar slot', () => {
     expect(fullSource).toContain("ctx.slots.inject('sidebar.session.leading'")
     expect(fullSource).toContain('state.sessionBindings[sessionId]')
-    expect(fullSource).toContain("'aria-label': `属于${entry.title}`")
+    expect(fullSource).toContain("'aria-label': both(`属于${entry.title}`")
   })
 
   it('hides version on cards while retaining it in details', () => {
@@ -2121,7 +2174,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(fullSource).toContain('.dshWbCarouselTrack{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;')
     expect(fullSource).toContain('.dshWbCarouselSlide{flex:0 0 100%;scroll-snap-align:start;')
     expect(fullSource).toContain("const [index, setIndex] = React.useState(0)")
-    expect(fullSource).toContain("'aria-label': '上一张'")
+    expect(fullSource).toContain("'aria-label': tr('上一张')")
     expect(fullSource).toContain('dshWbDetailLightbox')
     expect(fullSource).toContain('max-width:880px')
     expect(fullSource).not.toContain('dshWbDetailGallery')
@@ -2637,6 +2690,22 @@ describe('workbench market screenshot and metadata display', () => {
     expect(retry).toHaveBeenCalledWith('o/helper')
   })
 
+  it('retries an installed but unregistered market workbench at the listed version', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.0.0' })]
+    service.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' } }
+    ctx.remote = { pluginManager: { listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: true, version: '1.0.0' }] })) } }
+    await service.refreshNative()
+    const retryInstall = vi.spyOn(service, 'installFromMarket').mockResolvedValue(undefined)
+    const ui = interactiveMarket(service, 'mine')
+    const card = ui.find(ui.render(), node => node.type === 'article')[0]
+    expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')).toHaveLength(0)
+    const retry = ui.find(card, node => node.props?.className === 'dshWbRetry')[0]
+    expect(retry.props['aria-label']).toBe('重试安装Helper')
+    retry.props.onClick()
+    await vi.waitFor(() => expect(retryInstall).toHaveBeenCalledExactlyOnceWith('o/helper'))
+  })
+
   it('reports a provider load failure only while its native package remains installed', async () => {
     const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'] })
     service.remoteCatalog = [listed()]
@@ -2845,7 +2914,7 @@ describe('workbench market screenshot and metadata display', () => {
     const source = Market.toString()
     expect(source).toContain('service.installFromMarket(catalogId)')
     expect(source).not.toContain('`更新到 v${entry.listedVersion}`')
-    expect(source).toContain("awaitingRestart ? '重启后生效'")
+    expect(source).toContain("awaitingRestart ? tr('重启后生效')")
     expect(source).toContain('service.removeWorkbench(removing)')
     expect(fullSource).toContain('async removeWorkbench(id)')
     expect(code).toContain('工作台安装变更需要重启 Harness 后生效')
@@ -2878,12 +2947,73 @@ describe('workbench market screenshot and metadata display', () => {
     expect(source).toContain("tabIndex: tab === 'favorites' ? 0 : -1")
     expect(source).toContain("tabIndex: tab === 'mine' ? 0 : -1")
     expect(source).not.toContain("tabIndex: tab === 'local' ? 0 : -1")
-    expect(source).toContain("entry.local ? '本地'")
+    expect(source).toContain("entry.local ? tr('本地')")
+  })
+})
+
+describe('workbench host localization', () => {
+  const bilingualEntry = () => ({ id: 'o/a', owner: 'o', repository: 'a', url: 'https://github.com/o/a', name: '中文工作台', nameEn: 'English Workbench', category: 'content', categoryName: '内容', categoryNames: { zh: '内容', en: 'Content' }, description: { zh: '中文简介', en: 'English summary' }, screenshots: [], version: '1.0.0', distribution: { name: 'a', version: '1.0.0' } })
+  it('renders bilingual catalog metadata and preserves category and search on a live locale switch', async () => {
+    const { service, ctx } = await fixture()
+    let snapshot = { active: 'en', revision: 1 }
+    const listeners = new Set()
+    ctx.locale = {
+      getSnapshot: () => snapshot,
+      subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) },
+      setActive: active => { snapshot = { active, revision: snapshot.revision + 1 }; for (const listener of listeners) listener() }
+    }
+    service.remoteCatalog = [bilingualEntry()]
+    service.publish()
+    const ui = interactiveMarket(service)
+    const find = predicate => ui.find(ui.render(), predicate)[0]
+    expect(find(node => node.type === 'h1').props.children).toEqual(['Workbenches'])
+    expect(find(node => node.type === 'input' && node.props.type === 'search').props.placeholder).toBe('Search name, author, or category')
+    const card = find(node => node.type === 'article')
+    expect(ui.find(card, node => node.type?.name === 'EntryTitle')[0].props.entry.title).toBe('English Workbench')
+    expect(ui.find(card, node => node.props?.className?.includes('dshWbCardDescription'))[0].props.children).toEqual(['English summary'])
+    find(node => node.type === 'button' && node.props.className === 'dshWbCategoryFilter' && node.props.children[0] === 'Content').props.onClick()
+    find(node => node.type === 'input' && node.props.type === 'search').props.onChange({ target: { value: 'English Workbench' } })
+    expect(ui.find(ui.render(), node => node.type === 'article')).toHaveLength(1)
+    ctx.locale.setActive('zh')
+    expect(find(node => node.type === 'h1').props.children).toEqual(['工作台'])
+    expect(find(node => node.type === 'button' && node.props.className === 'dshWbCategoryFilter' && node.props['aria-pressed']).props.children).toEqual(['内容'])
+    expect(ui.find(ui.render(), node => node.type === 'article')).toHaveLength(1)
+    expect(find(node => node.type === 'input' && node.props.type === 'search').props.value).toBe('English Workbench')
+  })
+
+  it('localizes the creation workflow and installed-state actions', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/a'] })
+    ctx.locale = { getSnapshot: () => ({ active: 'en', revision: 1 }), subscribe: () => () => {} }
+    service.remoteCatalog = [bilingualEntry()]
+    service.publish()
+    const ui = interactiveMarket(service)
+    let tree = ui.render()
+    expect(ui.button(tree, 'Build my workbench')).toBeDefined()
+    ui.button(tree, 'Build my workbench').props.onClick()
+    tree = ui.render()
+    expect(ui.find(tree, node => node.type === 'h1')[0].props.children).toEqual(['Build your own workbench'])
+    expect(ui.button(tree, 'Copy development instructions')).toBeDefined()
+    expect(ui.button(tree, 'Copy submission instructions')).toBeDefined()
+    ui.button(tree, 'Back to Workbench Market').props.onClick()
+    ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-mine-tab')[0].props.onClick()
+    tree = ui.render()
+    expect(ui.find(tree, node => node.props?.className === 'dshWbInstalled')).toHaveLength(0)
+    expect(ui.find(tree, node => node.props?.className === 'dshWbCategory')[0].props.children).toEqual(['Content'])
   })
 })
 
 
 describe('sidebar central panel selection', () => {
+  it('highlights the entire row for an active workbench frame, but not other panels', () => {
+    const ui = sidebarSwitcher({ pinned: ['writer'], active: 'writer', title: '装修工作台' })
+    const selected = () => ui.find(ui.render(), node => node.props?.['data-dsh-workbench-switcher'] === '')[0].props['data-selected']
+    expect(selected()).toBe('true')
+    ui.selectPanel('plugins')
+    expect(selected()).toBeUndefined()
+    ui.selectPanel('desktop-workbenches')
+    expect(selected()).toBe('true')
+  })
+
   it('clears workbench selection when Plugins opens even with stale market restoration state', () => {
     const ui = sidebarSwitcher()
     const snapshot = ui.service.getSnapshot()
