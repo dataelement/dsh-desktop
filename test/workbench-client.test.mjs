@@ -1283,6 +1283,52 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.active).toBe('research')
   })
 
+  it('keeps business usable before a user starts an AI conversation and groups the workspace actions', async () => {
+    const { JSDOM } = await import('jsdom')
+    const ReactDOM = await import('react-dom')
+    const { createRoot } = await import('react-dom/client')
+    const dom = new JSDOM('<div id="root"></div>')
+    const previous = { window: globalThis.window, document: globalThis.document, act: globalThis.IS_REACT_ACT_ENVIRONMENT }
+    globalThis.window = dom.window
+    globalThis.document = dom.window.document
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    let root
+    const { service, ctx } = await fixture()
+    try {
+      let Frame
+      vm.runInNewContext(code, { document: dom.window.document, window: { localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
+        Frame = factory(name => name === 'react-dom' ? ReactDOM : name === '@deepseek-ai/cordis' ? { Service } : React).Frame
+      } } } })
+      const snapshot = ctx.workspaces.list.getSnapshot()
+      ctx.workspaces.list.getSnapshot = () => snapshot
+      ctx.workspaces.list.subscribe = () => () => {}
+      ctx.sessions.list.subscribe = () => () => {}
+      registerProvider(service, ctx, 'helper', { title: 'Helper' }, () => React.createElement('div', { 'data-test-business': true }, 'Business is available'))
+      await service.add('helper')
+      await service.open('helper')
+      root = createRoot(dom.window.document.getElementById('root'))
+      await React.act(async () => root.render(React.createElement(Frame, { service, conversation: React.createElement('div', null, 'Native conversation') })))
+      expect(ctx.sessions.create).not.toHaveBeenCalled()
+      expect(dom.window.document.querySelector('.dshWbBusiness').hidden).toBe(false)
+      expect(dom.window.document.querySelector('[data-test-business]').textContent).toBe('Business is available')
+      const row = dom.window.document.querySelector('.dshWbInitWorkspaceRow')
+      expect(row.querySelector('select').value).toBe('project-1')
+      expect(row.querySelector('button').textContent).toBe('开始对话')
+      expect(dom.window.document.querySelector('label').htmlFor).toBe(row.querySelector('select').id)
+      await React.act(async () => { row.querySelector('button').click(); await service.queue })
+      expect(ctx.sessions.create).toHaveBeenCalledWith({ workspaceId: 'project-1' })
+      expect(dom.window.document.querySelector('.dshWbInit')).toBeNull()
+      expect(service.state.sessionBindings['fresh-1']).toBe('helper')
+    } finally {
+      if (root) await React.act(async () => root.unmount())
+      service.dispose()
+      globalThis.window = previous.window
+      globalThis.document = previous.document
+      globalThis.IS_REACT_ACT_ENVIRONMENT = previous.act
+      dom.window.close()
+    }
+  })
+
   it('keeps exactly one native input mounted while custom frames and the default frame exchange its container', async () => {
     const { JSDOM } = await import('jsdom')
     const React = await import('react')
