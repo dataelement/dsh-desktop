@@ -3,8 +3,10 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } 
 import path from 'node:path';
 import sharp from 'sharp';
 import { loadPptdProject, checkPptdProject, parsePptdProject } from './pptd.js';
-import { runCli } from './bin.js';
+import { renderOfficeTemplatePreview } from './office-template-preview.js';
 
+export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 7;
+export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 8;
 const MAX_TEMPLATES = 100;
 const PREVIEW_LONG_EDGE = 1920;
 const THUMBNAIL_LONG_EDGE = 720;
@@ -48,6 +50,7 @@ function conversionError(check, fileName, sha256) {
 /** One library per host-owned Desktop profile; caller-supplied paths never select a library. */
 export class PersonalTemplateLibrary {
   tail = Promise.resolve();
+  imports = new Map();
   constructor(store, convert, writeSource, maxSlides) {
     this.store = store;
     this.root = path.join(store.root, 'personal-templates');
@@ -125,7 +128,16 @@ export class PersonalTemplateLibrary {
     }
   }
   async prepare(sessionId, input) {
-    return this.locked(() => this.audit(sessionId, 'prepare-personal-template', async () => {
+    const requestId=input?.requestId;
+    let progress;
+    if(requestId!==undefined) {
+      if(!DRAFT.test(requestId)) throw new Error('处理标识无效');
+      for(const [id,job] of this.imports) if(Date.now()-job.startedAt>3600000) this.imports.delete(id);
+      if(this.imports.has(requestId)||this.imports.size>=32) throw new Error('请稍后重新处理模板');
+      progress={session:hash(sessionId),startedAt:Date.now(),total:0,pages:[],status:'processing'};
+      this.imports.set(requestId,progress);
+    }
+    try { return await this.locked(() => this.audit(sessionId, 'prepare-personal-template', async () => {
       const fileName = input?.fileName;
       if (typeof fileName !== 'string' || fileName.length > 240 || !/\.pptx$/i.test(fileName) || /[\\/\u0000]/u.test(fileName))
         throw new Error('请选择 PPTX 文件');
@@ -142,8 +154,8 @@ export class PersonalTemplateLibrary {
         throw new Error('请选择有效的 PPTX 文件');
       const id = `personal-${hash(bytes)}`;
       const saved = (await this.list()).find(item => item.id === id);
-      if (saved) return { duplicate: true, template: saved };
-      if ((await this.list()).length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
+      if (saved?.conversionVersion === PERSONAL_TEMPLATE_CONVERSION_VERSION && saved?.previewVersion === PERSONAL_TEMPLATE_PREVIEW_VERSION) return { duplicate: true, template: saved };
+      if (!saved && (await this.list()).length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
       const drafts = await this.directory('drafts');
       // Expired previews are temporary resources, independent of registered templates.
       for (const item of await readdir(drafts, { withFileTypes: true })) {
@@ -158,6 +170,7 @@ export class PersonalTemplateLibrary {
         severity: 'error', code: 'conversion-unsupported', page: item.slide, elementId: item.nodeId,
         message: `${item.feature}：${item.message}`
       })) }, fileName, hash(bytes));
+      if(progress) progress.total=converted.slideCount;
       const parsed = parsePptdProject(converted.source);
       const checked = checkPptdProject(parsed);
       if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
@@ -168,12 +181,10 @@ export class PersonalTemplateLibrary {
         await this.writeSource(project, converted.source);
         await writeFile(path.join(directory, 'source.pptx'), bytes, { mode: 0o600 });
         const previewDirectory = path.join(directory, 'preview');
-        let output = '';
-        const scale = Math.min(8, PREVIEW_LONG_EDGE / Math.max(parsed.width, parsed.height));
-        const code = await runCli(['screenshot', project, '-o', previewDirectory, '--scale', String(scale), '--json'], {
-          stdout: { write: value => { output += value; } }, stderr: { write: value => { output += value; } }
-        });
-        if (code !== 0) throw new Error(`模板预览生成失败：${output.slice(0, 500)}`);
+        const previewMetadata = await renderOfficeTemplatePreview(parsed,directory,PREVIEW_LONG_EDGE,this.maxSlides,progress ? async ({page,path:imagePath}) => {
+          const thumbnail=await sharp(await readFile(imagePath)).resize({width:240,height:240,fit:'inside',withoutEnlargement:true}).png().toBuffer();
+          progress.pages.push({page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`});
+        } : undefined);
         const previewPage = async page => readFile(path.join(previewDirectory, 'pages', `page-${page}.png`));
         const previewImages = await Promise.all([1, Math.floor(converted.slideCount / 2) + 1, converted.slideCount].map(async page => {
           const thumbnail = await sharp(await previewPage(page)).resize({
@@ -184,13 +195,14 @@ export class PersonalTemplateLibrary {
         const preview = `data:image/png;base64,${(await previewPage(1)).toString('base64')}`;
         const name = nameOf(fileName.replace(/\.pptx$/i, '').slice(0, 80));
         const record = {
-          id, origin: 'personal', name, category: 'personal', supportedModes: ['ppt'], aspectRatio: 'wide',
+          id, conversionVersion: PERSONAL_TEMPLATE_CONVERSION_VERSION, previewVersion: PERSONAL_TEMPLATE_PREVIEW_VERSION, origin: 'personal', name: saved?.name ?? name, category: 'personal', supportedModes: ['ppt'], aspectRatio: 'wide',
           description: `${converted.slideCount} 页个人 PPT 模板`, previewTitle: name, previewSubtitle: '我的模板',
           palette: { background: 'FFFFFF', surface: 'F4F4F4', text: '222222', muted: '666666', accent: '333333', secondary: 'AAAAAA' },
           titleFontFace: 'Arial', bodyFontFace: 'Arial',
-          createdAt: new Date().toISOString(), fileName, sha256: hash(bytes), slideCount: converted.slideCount,
-          previewImages,
+          createdAt: saved?.createdAt ?? new Date().toISOString(), ...(saved ? {description:saved.description,updatedAt:new Date().toISOString()} : {}), fileName, sha256: hash(bytes), slideCount: converted.slideCount,
+          previewImages, previewMetadata,
           diagnostics: converted.diagnostics, checkWarnings: checked.warningCount,
+          resourcePlaceholders: converted.diagnostics.filter(item => item.level === 'placeholder'),
           reviewIssues: checked.issues.filter(issue => issue.severity === 'warning').map(issue => ({
             ...issue, message: issue.code === 'out-of-bounds' ? '源文件对象位于页面边缘或画布外，预览按页面范围显示。'
               : issue.code === 'text-overflow' ? '源文件文字可能超出文本框，请在预览中核对。' : issue.message
@@ -201,7 +213,14 @@ export class PersonalTemplateLibrary {
         await writeFile(path.join(directory, 'owner.json'), JSON.stringify({ session: hash(sessionId) }), { mode: 0o600 });
         return { draftId, template: record, preview };
       } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
-    }));
+    })); } finally { if(progress) {progress.status='finished';progress.startedAt=Date.now();} }
+  }
+  async importProgress(sessionId,requestId,after=0) {
+    if(!DRAFT.test(requestId)||!Number.isInteger(after)||after<0||after>this.maxSlides) throw new Error('处理进度参数无效');
+    const job=this.imports.get(requestId);
+    if(!job) return {total:0,completed:0,pages:[],status:'waiting'};
+    if(job.session!==hash(sessionId)) throw new Error('该处理任务属于其他会话');
+    return {total:job.total,completed:job.pages.length,pages:job.pages.slice(after),status:job.status};
   }
   async draft(sessionId, draftId) {
     if (!DRAFT.test(draftId)) throw new Error('预览标识无效');
@@ -220,6 +239,14 @@ export class PersonalTemplateLibrary {
     const image = await this.checkedFile(path.join(directory, 'preview', 'pages'), `page-${page}.png`);
     return { page, preview: `data:image/png;base64,${(await readFile(image)).toString('base64')}` };
   }
+  async previewSavedPage(sessionId, templateId, page) {
+    return this.locked(() => this.audit(sessionId, 'preview-personal-template', async () => {
+      const record = await this.readRecord(templateId);
+      if (!Number.isInteger(page) || page < 1 || page > record.slideCount) throw new Error('预览页码无效');
+      const image = await this.checkedFile(path.join(this.root, 'saved', templateId, 'preview', 'pages'), `page-${page}.png`);
+      return { page, preview: `data:image/png;base64,${(await readFile(image)).toString('base64')}` };
+    }));
+  }
   async save(sessionId, draftId, name) {
     name = nameOf(name);
     return this.locked(() => this.audit(sessionId, 'save-personal-template', async () => {
@@ -227,13 +254,20 @@ export class PersonalTemplateLibrary {
       const record = JSON.parse(await readFile(await this.checkedFile(directory, 'template.json'), 'utf8'));
       if (!ID.test(record.id)) throw new Error('模板标识无效');
       const duplicate = (await this.list()).find(item => item.id === record.id);
-      if (duplicate) { await rm(directory, { recursive: true }); return duplicate; }
-      if ((await this.list()).length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
+      if (duplicate?.conversionVersion === record.conversionVersion && duplicate?.previewVersion === record.previewVersion) { await rm(directory, { recursive: true }); return duplicate; }
+      if (!duplicate && (await this.list()).length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
       const project = await loadPptdProject(path.join(directory, 'project'));
       if (checkPptdProject(project).status === 'fail') throw new Error('请重新上传完整的模板文件');
-      const next = { ...record, name, previewTitle: name };
+      const next = { ...record, ...(duplicate ? {createdAt:duplicate.createdAt,description:duplicate.description} : {}), name, previewTitle: name };
       await writeFile(path.join(directory, 'template.json'), JSON.stringify(next), { mode: 0o600 });
-      await rename(directory, path.join(await this.directory('saved'), record.id));
+      const destination = path.join(await this.directory('saved'), record.id);
+      if (duplicate) {
+        // Publish only after preview acceptance; retain the old source/project for recovery.
+        const backup = path.join(await this.directory('backups', record.id), randomUUID());
+        await rename(destination, backup);
+        try { await rename(directory, destination); }
+        catch (error) { await rename(backup, destination); throw error; }
+      } else await rename(directory, destination);
       return next;
     }));
   }

@@ -165,6 +165,8 @@ export interface OfficeTemplate {
     readonly sha256?: string;
     readonly pageIndex?: readonly { slideNumber: number; file: string }[];
     readonly diagnostics?: readonly { slide: number; feature: string; level: string; message: string }[];
+    /** Source objects retained as replaceable image slots at their original geometry. */
+    readonly resourcePlaceholders?: readonly { slide: number; feature: string; elementId: string; message: string; bounds: readonly [number, number, number, number] }[];
 }
 /**
  * Resolve workflow availability while preserving compatibility with older extracted templates.

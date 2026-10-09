@@ -10,13 +10,13 @@ import sharp from 'sharp';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools';
 
-let apply, packageRoot, MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES;
+let apply, packageRoot, MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION;
 const cleanups = [];
 beforeAll(async () => {
   packageRoot = await mkdtemp(path.resolve('node_modules/.ppt-personal-'));
   await cp(path.resolve('.build/ppt-runtime/packages/dsh-ppt'), packageRoot, { recursive: true });
   ({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))));
-  ({ MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
+  ({ MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
 });
 afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true, force: true }); });
 afterEach(async () => { for (const root of cleanups.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -108,6 +108,33 @@ async function save(f) {
 }
 
 describe('personal PPT templates in the shipped runtime', () => {
+  it('publishes real rendered pages during preparation with session ownership and cursor reads', async () => {
+    const f=await fixture(), bytes=await source(), requestId=randomUUID();
+    const preparing=f.request('template/prepare',{input:{fileName:'progress.pptx',base64:bytes.toString('base64'),requestId}});
+    await expect(f.request('template/import-progress',{requestId},'session-b')).rejects.toThrow('其他会话');
+    const draft=await preparing;
+    const progress=await f.request('template/import-progress',{requestId,after:0});
+    expect(progress).toMatchObject({total:4,completed:4,status:'finished'});
+    expect(progress.pages.map(item=>item.page)).toEqual([1,2,3,4]);
+    const image=await sharp(Buffer.from(progress.pages[0].preview.split(',')[1],'base64')).metadata();
+    expect(Math.max(image.width,image.height)).toBe(240);
+    expect((await f.request('template/import-progress',{requestId,after:3})).pages.map(item=>item.page)).toEqual([4]);
+    await expect(f.request('template/import-progress',{requestId,after:-1})).rejects.toThrow();
+    await f.request('template/cancel',{draftId:draft.draftId});
+  },120000);
+
+  it('reads full-size saved previews through the authenticated host and validates page bounds', async () => {
+    const f = await fixture();
+    const { template } = await save(f);
+    const result = await f.request('template/preview-saved-page', { templateId: template.id, page: 4 });
+    expect(result.page).toBe(4);
+    const metadata = await sharp(Buffer.from(result.preview.split(',')[1], 'base64')).metadata();
+    expect(Math.max(metadata.width, metadata.height)).toBe(1920);
+    expect(await f.httpRequest('template/preview-saved-page', { templateId: template.id, page: 1 }, { authorized: false })).toEqual({ status: 401, body: 'unauthorized' });
+    await expect(f.request('template/preview-saved-page', { templateId: template.id, page: 5 })).rejects.toThrow('预览页码无效');
+    await expect(f.request('template/preview-saved-page', { templateId: '../private', page: 1 })).rejects.toThrow('个人模板标识无效');
+  });
+
   it('uploads and saves a personal template through authenticated current and legacy HTTP routes', async () => {
     const f = await fixture();
     const bytes = await source();
@@ -177,7 +204,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     expect(xml).toContain('world');
   }, 30000);
 
-  it('reports every conversion issue with its page and object, audits the source identity, and accepts a retry', async () => {
+  it('imports missing pictures as visible placeholders and persists source identity and page diagnostics', async () => {
     const f = await fixture();
     const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_WIDE';
     for (let page = 0; page < 3; page++) {
@@ -186,6 +213,36 @@ describe('personal PPT templates in the shipped runtime', () => {
     }
     const parts = unzipSync(Buffer.from(await pptx.write({ outputType: 'nodebuffer' })));
     for (const key of Object.keys(parts)) if (key.startsWith('ppt/media/')) delete parts[key];
+    const bytes = Buffer.from(zipSync(parts));
+    const result = await f.rpc('template/prepare', { sessionId: 'session-a', input: { fileName: '转换问题.pptx', base64: bytes.toString('base64') } });
+    expect(result.value.status).toBe('ok');
+    const draft = result.value.data;
+    expect(draft.template.resourcePlaceholders).toHaveLength(3);
+    expect(draft.template.resourcePlaceholders.map(item => item.slide)).toEqual([1, 2, 3]);
+    expect(draft.template.resourcePlaceholders.every(item => item.feature === 'picture' && item.elementId && item.bounds.length === 4)).toBe(true);
+    const preview = await f.request('template/preview-page', { draftId: draft.draftId, page: 3 });
+    expect((await sharp(Buffer.from(preview.preview.split(',')[1], 'base64')).metadata()).width).toBe(1920);
+    const saved = await f.request('template/save', { draftId: draft.draftId, name: '占位模板' });
+    expect(saved.resourcePlaceholders).toEqual(draft.template.resourcePlaceholders);
+    const directory = path.join(f.storage, 'personal-templates', 'saved', saved.id);
+    expect(await readFile(path.join(directory, 'source.pptx'))).toEqual(bytes);
+    expect(saved.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+    const audit = (await readFile(path.join(f.storage, 'audit.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+    expect(audit.every(item => item.status === 'completed')).toBe(true);
+    expect((await f.request('state')).templates.find(item => item.id === saved.id).resourcePlaceholders).toHaveLength(3);
+    await writeFile(path.join(f.workspace, 'missing.pptx'), bytes);
+    const imported = await f.tool('pptd_import', { pptx_path: 'missing.pptx', output_directory: 'imported' });
+    expect(imported.status).toBe('warning'); expect(imported.placeholderCount).toBe(3); expect(imported.unsupportedCount).toBe(0);
+    expect(imported.diagnostics.filter(item => item.level === 'placeholder')).toHaveLength(3);
+    await expect(f.tool('pptd_import', { pptx_path: 'missing.pptx', output_directory: 'strict', strict: true })).rejects.toThrow('3 placeholder');
+  }, 30000);
+
+  it('reports structural conversion issues with their pages and objects and accepts a retry', async () => {
+    const f = await fixture();
+    const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_WIDE';
+    for (let page = 0; page < 3; page++) pptx.addSlide().addShape(pptx.ShapeType.rect, { x: 1, y: 1, w: 1, h: 1 });
+    const parts = unzipSync(Buffer.from(await pptx.write({ outputType: 'nodebuffer' })));
+    for (const key of Object.keys(parts)) if (/^ppt\/slides\/slide\d+\.xml$/.test(key)) parts[key] = strToU8(strFromU8(parts[key]).replace('prst="rect"', 'prst="invalidGeometry"').replace('<a:ext cx="914400" cy="914400"/>','<a:ext cx="-914400" cy="914400"/>'));
     const bytes = Buffer.from(zipSync(parts));
     const result = await f.rpc('template/prepare', { sessionId: 'session-a', input: { fileName: '转换问题.pptx', base64: bytes.toString('base64') } });
     expect(result.value.status).toBe('error');
@@ -200,6 +257,20 @@ describe('personal PPT templates in the shipped runtime', () => {
     expect((await readdir(path.join(f.storage, 'personal-templates', 'drafts')))).toEqual([]);
     expect((await save(f)).template.slideCount).toBe(4);
   });
+
+  it('previews, saves and reopens unsupported shapes as position-preserving placeholders', async () => {
+    const f=await fixture(),pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';
+    pptx.addSlide().addShape('rect',{x:1,y:1,w:2,h:1});
+    const parts=unzipSync(Buffer.from(await pptx.write({outputType:'nodebuffer'})));
+    parts['ppt/slides/slide1.xml']=strToU8(strFromU8(parts['ppt/slides/slide1.xml']).replace('prst="rect"','prst="vendorShape"'));
+    const bytes=Buffer.from(zipSync(parts));
+    const draft=await f.request('template/prepare',{input:{fileName:'Unknown shape.pptx',base64:bytes.toString('base64')}});
+    expect(draft.preview).toContain('data:image/png;base64,');
+    expect(draft.template.resourcePlaceholders).toMatchObject([{feature:'shape-geometry',slide:1,bounds:[72,72,144,72]}]);
+    const saved=await f.request('template/save',{draftId:draft.draftId,name:'Unknown shape'});
+    expect((await f.request('template/preview-saved-page',{templateId:saved.id,page:1})).preview).toContain('data:image/png;base64,');
+    expect(await readFile(path.join(f.storage,'personal-templates','saved',saved.id,'source.pptx'))).toEqual(bytes);
+  },30000);
 
   it('previews before registration and persists across sessions/restarts with profile isolation', async () => {
     const f = await fixture(); const bytes = await source();
@@ -313,4 +384,23 @@ describe('personal PPT templates in the shipped runtime', () => {
     await symlink(f.workspace, path.join(f.storage, 'personal-templates/saved', `personal-${'a'.repeat(64)}`));
     await expect(f.request('state')).rejects.toThrow();
   }, 30000);
+  it('reconverts legacy uploads after preview acceptance while preserving identity, metadata and backup', async () => {
+    const f = await fixture(); const { bytes, template } = await save(f);
+    await f.request('template/select', {templateId:template.id,mode:'ppt'}, 'session-b');
+    const file = path.join(f.storage,'personal-templates','saved',template.id,'template.json');
+    const old = JSON.parse(await readFile(file,'utf8'));
+    delete old.conversionVersion; delete old.previewVersion; old.description='Keep metadata';
+    await writeFile(file,JSON.stringify(old));
+    const draft=await f.request('template/prepare',{input:{fileName:'refresh.pptx',base64:bytes.toString('base64')}});
+    expect(draft.duplicate).toBeUndefined();expect(draft.template.id).toBe(template.id);
+    expect(JSON.parse(await readFile(file,'utf8')).conversionVersion).toBeUndefined();
+    const updated=await f.request('template/save',{draftId:draft.draftId,name:old.name});
+    expect(updated.conversionVersion).toBe(PERSONAL_TEMPLATE_CONVERSION_VERSION);expect(updated.previewVersion).toBe(PERSONAL_TEMPLATE_PREVIEW_VERSION);expect(updated.description).toBe('Keep metadata');
+    expect(updated.createdAt).toBe(old.createdAt);
+    expect((await f.request('state',{},'session-b')).selectedTemplateId).toBe(old.id);
+    const backups=await readdir(path.join(f.storage,'personal-templates','backups',template.id));
+    expect(backups).toHaveLength(1);
+    expect(JSON.parse(await readFile(path.join(f.storage,'personal-templates','backups',template.id,backups[0],'template.json'),'utf8')).conversionVersion).toBeUndefined();
+  },30000);
+
 });

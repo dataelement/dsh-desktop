@@ -49,3 +49,28 @@ it('accepts self-contained SVG and rejects active or external content including 
  }
  expect(isSafeSvg(strToU8('<!DOCTYPE svg SYSTEM "file:///etc/passwd">'+safeSvg))).toBe(false);
 });
+
+it('inherits placeholder title size, color and face from the layout while preserving explicit run overrides', async () => {
+ const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_WIDE';
+ pptx.addSlide().addText('Inherited title', {x:1,y:1,w:10,h:2});
+ const parts = unzipSync(Buffer.from(await pptx.write({outputType:'nodebuffer'})));
+ let slide = strFromU8(parts['ppt/slides/slide1.xml']);
+ slide = slide.replace('<p:cNvSpPr/><p:nvPr></p:nvPr>', '<p:cNvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr>');
+ slide = slide.replace(/<a:rPr\b[^>]*>[\s\S]*?<\/a:rPr>/g, '<a:rPr lang="en-US"/>');
+ slide = slide.replace(/<a:pPr\b[^>]*>[\s\S]*?<\/a:pPr>/g, '<a:pPr/>');
+ parts['ppt/slides/slide1.xml'] = strToU8(slide);
+ const layoutPath = Object.keys(parts).find(name => /^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(name));
+ let layout = strFromU8(parts[layoutPath]);
+ layout = layout.replace('</p:spTree>', '<p:sp><p:nvSpPr><p:cNvPr id="99" name="Title"/><p:cNvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr sz="4000"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:latin typeface="Arial"/></a:defRPr></a:lvl1pPr></a:lstStyle><a:p/></p:txBody></p:sp></p:spTree>');
+ parts[layoutPath] = strToU8(layout);
+ let converted = await convertPptxToPptd(Buffer.from(zipSync(parts)), 'inherited.pptx');
+ let text = yaml.load([...converted.source.pages.values()][0]).elements.find(item => item.elementType === 'text').content;
+ expect(text.fontSize).toBe(40); expect(text.color).toBe('#FFFFFF'); expect(text.fontFamily).toBe('Arial');
+ parts['ppt/slides/slide1.xml'] = strToU8(slide.replace('<a:rPr lang="en-US"/>', '<a:rPr sz="2000"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:rPr>'));
+ converted = await convertPptxToPptd(Buffer.from(zipSync(parts)), 'override.pptx');
+ text = yaml.load([...converted.source.pages.values()][0]).elements.find(item => item.elementType === 'text').content;
+ expect(text.fontSize).toBe(20); expect(text.color).toBe('#FF0000');
+ const exported = await renderPptdProject(parsePptdProject(converted.source));
+ const xml = strFromU8(unzipSync(exported.bytes)['ppt/slides/slide1.xml']);
+ expect(xml).toContain('sz="2000"'); expect(xml).toContain('FF0000');
+});

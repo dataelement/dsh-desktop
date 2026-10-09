@@ -987,7 +987,9 @@ function pptRpc(service) {
 			if (endpoint === "template/catalog") return ok(await service.catalog());
 			const sessionId = sessionIdOf(payload);
 				switch (endpoint) {
+				case "template/import-progress": return ok(await service.store.personalTemplates.importProgress(sessionId, request.requestId, request.after));
 				case "template/prepare": return ok(await service.store.personalTemplates.prepare(sessionId, request.input));
+				case "template/preview-saved-page": return ok(await service.store.personalTemplates.previewSavedPage(sessionId, request.templateId, request.page));
 				case "template/preview-page": return ok(await service.store.personalTemplates.previewPage(sessionId, request.draftId, request.page));
 				case "template/save": return ok(await service.store.personalTemplates.save(sessionId, request.draftId, request.name));
 				case "template/cancel": return ok(await service.store.personalTemplates.cancel(sessionId, request.draftId));
@@ -2159,7 +2161,7 @@ function registerPptdProjectTools(ctx, service) {
 			},
 			strict: {
 				type: "boolean",
-				description: "When true, reject every normalized or unsupported source feature instead of publishing the project."
+				description: "When true, require lossless coverage of all source features, including image resources."
 			}
 		},
 		output: {
@@ -2204,6 +2206,7 @@ function registerPptdProjectTools(ctx, service) {
 						type: "integer",
 						required: true
 					},
+                    placeholderCount: { type: 'integer', required: true },
 					diagnosticsTruncated: {
 						type: "boolean",
 						required: true
@@ -2218,13 +2221,14 @@ function registerPptdProjectTools(ctx, service) {
 								level: {
 									type: "string",
 									required: true,
-									enum: ["normalized", "unsupported"]
+									enum: ["normalized", "placeholder", "unsupported"]
 								},
 								slide: {
-									type: "integer",
-									required: true
+									type: "integer"
 								},
 								nodeId: { type: "string" },
+                                elementId: { type: 'string' },
+                                bounds: { type: 'array', items: { type: 'number' } },
 								feature: {
 									type: "string",
 									required: true
@@ -2244,8 +2248,8 @@ function registerPptdProjectTools(ctx, service) {
 					`PPTD 导入${value.status === "pass" ? "通过" : "完成并带有兼容性提示"}：${value.slideCount} 页，${value.outputElementCount} 个可编辑元素。`,
 					`工程：${value.projectPath}`,
 					`入口：${value.manifestPath}`,
-					`转换边界：${value.normalizedCount} 项标准化，${value.unsupportedCount} 项未映射。`,
-					...value.diagnostics.map((item) => `第 ${item.slide} 页 · ${item.level} · ${item.feature}：${item.message}`),
+					`转换边界：${value.normalizedCount} 项标准化，${value.placeholderCount} 项资源占位，${value.unsupportedCount} 项未映射。`,
+					...value.diagnostics.map((item) => `${item.slide === undefined ? '文稿' : `第 ${item.slide} 页`} · ${item.level} · ${item.feature}：${item.message}`),
 					...value.diagnosticsTruncated ? ["诊断数量超过工具展示上限；请在导入后逐页检查工程。"] : []
 				].join("\n")
 			}]
@@ -2258,7 +2262,8 @@ function registerPptdProjectTools(ctx, service) {
 			const converted = await convertPptxToPptd(await readFile(source), path.basename(source));
 			const normalizedCount = converted.diagnostics.filter((item) => item.level === "normalized").length;
 			const unsupportedCount = converted.diagnostics.filter((item) => item.level === "unsupported").length;
-			if (args.strict === true && converted.diagnostics.length > 0) throw new Error(`strict PPTD import requires lossless coverage; received ${normalizedCount} normalized and ${unsupportedCount} unsupported diagnostic(s)`);
+            const placeholderCount = converted.diagnostics.filter(item => item.level === 'placeholder').length;
+			if (args.strict === true && converted.diagnostics.length > 0) throw new Error(`strict PPTD import requires lossless coverage; received ${normalizedCount} normalized, ${placeholderCount} placeholder and ${unsupportedCount} unsupported diagnostic(s)`);
 			const initialCheck = checkPptdProject(parsePptdProject(converted.source));
 			if (initialCheck.status === "fail") throw new Error(`PPTX conversion produced a PPTD project that cannot be rendered; received ${initialCheck.errorCount} format error(s)`);
 			const output = await outputWorkspacePath(workspace, args.output_directory ?? defaultProjectPath(safePptxName(args.pptx_path, "pptx_path")), "output_directory");
@@ -2274,6 +2279,7 @@ function registerPptdProjectTools(ctx, service) {
 				extractedAssetCount: converted.extractedAssetCount,
 				normalizedCount,
 				unsupportedCount,
+                placeholderCount,
 				diagnosticsTruncated: converted.diagnostics.length > MAX_DIAGNOSTICS,
 				diagnostics: converted.diagnostics.slice(0, MAX_DIAGNOSTICS)
 			};

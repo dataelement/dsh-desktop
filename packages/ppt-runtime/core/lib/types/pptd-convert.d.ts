@@ -2,9 +2,11 @@
 import type { PptdProjectSource } from './pptd.ts';
 /** One explicit fidelity boundary encountered while converting PPTX to PPTD. */
 export interface PptxToPptdDiagnostic {
-    readonly level: 'normalized' | 'unsupported';
-    readonly slide: number;
+    readonly level: 'normalized' | 'placeholder' | 'unsupported';
+    readonly slide?: number;
     readonly nodeId?: string;
+    readonly elementId?: string;
+    readonly bounds?: readonly [number, number, number, number];
     readonly feature: string;
     readonly message: string;
 }

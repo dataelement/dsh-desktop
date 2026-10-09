@@ -32,7 +32,7 @@ it('imports nested EMF relationships and preserves their image in editable PPTX 
 it('uses distinct internal identities for repeated and normalized display names and exports straight connectors',async()=>{
  const p=new PptxGenJS();const s=p.addSlide();for(const[x,name]of[[1,'标题 2'],[3,'图片 2'],[5,'标题 2']])s.addText(name,{x,y:1,w:1.5,h:.5,objectName:name,fontSize:12});s.addShape(p.ShapeType.line,{x:1,y:3,w:4,h:0,line:{color:'00AA00',width:2}});
  const bytes=unzipSync(Buffer.from(await p.write({outputType:'nodebuffer'})));bytes['ppt/slides/slide1.xml']=strToU8(strFromU8(bytes['ppt/slides/slide1.xml']).replace('prst="line"','prst="straightConnector1"'));
- const c=await convertPptxToPptd(zipSync(bytes),'same-name.pptx');const project=parsePptdProject(c.source);expect(checkPptdProject(project).errorCount).toBe(0);const elements=yaml.load([...c.source.pages.values()][0]).elements;expect(new Set(elements.map(e=>e.elementId)).size).toBe(elements.length);expect(elements.filter(e=>e.elementType==='line')).toHaveLength(1);const native=unzipSync((await renderPptdProject(project)).bytes);expect(strFromU8(native['ppt/slides/slide1.xml'])).toContain('00AA00');
+ const c=await convertPptxToPptd(zipSync(bytes),'same-name.pptx');const project=parsePptdProject(c.source);expect(checkPptdProject(project).errorCount).toBe(0);const elements=yaml.load([...c.source.pages.values()][0]).elements;expect(new Set(elements.map(e=>e.elementId)).size).toBe(elements.length);expect(elements.filter(e=>e.elementType==='shape'&&e.shapeName==='straightConnector1')).toHaveLength(1);const native=unzipSync((await renderPptdProject(project)).bytes);expect(strFromU8(native['ppt/slides/slide1.xml'])).toContain('00AA00');expect(strFromU8(native['ppt/slides/slide1.xml'])).toContain('prst="straightConnector1"');
 });
 it('keeps nested group coordinates, scale and child styles when expanding to editable objects',async()=>{
  const p=new PptxGenJS();p.addSlide().addText('Group text',{x:2,y:3,w:1,h:.5,fontSize:12,color:'123456',fill:{color:'AABBCC'},objectName:'child'});
@@ -41,5 +41,6 @@ it('keeps nested group coordinates, scale and child styles when expanding to edi
  // Inner moves (2,3) to (3,4); outer maps (3,4) to (6,7) and doubles its size.
  xml=xml.replace(shape,group(10,4,5,4,4,2,3,2,2,group(11,3,4,1,.5,2,3,1,.5,shape)));parts[sp]=strToU8(xml);
  const c=await convertPptxToPptd(zipSync(parts),'nested-group.pptx'),els=yaml.load([...c.source.pages.values()][0]).elements;
- const text=els.find(e=>e.elementType==='text');expect(text.bounds).toEqual([432,504,144,72]);expect(text.content.fontSize).toBe(24);expect(text.content.color).toBe('#123456');expect(els.find(e=>e.elementType==='shape').fill.color).toBe('#AABBCC');expect(checkPptdProject(parsePptdProject(c.source)).errorCount).toBe(0);
+ // Group geometry scales while the source's physical point size stays 12pt.
+ const text=els.find(e=>e.elementType==='text');expect(text.bounds).toEqual([432,504,144,72]);expect(text.content.fontSize).toBe(12);expect(text.content.color).toBe('#123456');expect(els.find(e=>e.elementType==='shape').fill.color).toBe('#AABBCC');expect(checkPptdProject(parsePptdProject(c.source)).errorCount).toBe(0);
 });

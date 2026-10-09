@@ -7,6 +7,7 @@ it('marks the platform before mount and tracks fullscreen without retaining list
   const unsubscribe = vi.fn()
   let receive: (value: boolean) => void = () => {}
   const dispose = mountMacosWindowChrome(doc, listener => { receive = listener; return unsubscribe })
+  expect(doc.querySelector('[data-dsh-macos-sidebar-theme]')).not.toBeNull()
   expect(doc.documentElement.dataset.platform).toBe('darwin')
   expect(doc.documentElement.hasAttribute('data-fullscreen')).toBe(false)
   receive(true)
@@ -15,6 +16,7 @@ it('marks the platform before mount and tracks fullscreen without retaining list
   expect(doc.documentElement.hasAttribute('data-fullscreen')).toBe(false)
   dispose()
   expect(unsubscribe).toHaveBeenCalledOnce()
+  expect(doc.querySelector('[data-dsh-macos-sidebar-theme]')).toBeNull()
 })
 
 it('retains fullscreen until the document root exists', () => {
@@ -43,4 +45,15 @@ it('opts this host into Web shortcuts without changing official desktop detectio
   const dispose = mountMacosWindowChrome(doc, () => () => {})
   expect(detect(doc, { platform: 'MacIntel' })).toEqual({ runtime: 'web', platform: 'macos' })
   dispose()
+})
+
+it('shares sidebar theme ownership across repeated mounts', () => {
+  const doc = document.implementation.createHTMLDocument()
+  const first = mountMacosWindowChrome(doc, () => () => {})
+  const second = mountMacosWindowChrome(doc, () => () => {})
+  expect(doc.querySelectorAll('[data-dsh-macos-sidebar-theme]')).toHaveLength(1)
+  first()
+  expect(doc.querySelectorAll('[data-dsh-macos-sidebar-theme]')).toHaveLength(1)
+  second()
+  expect(doc.querySelectorAll('[data-dsh-macos-sidebar-theme]')).toHaveLength(0)
 })

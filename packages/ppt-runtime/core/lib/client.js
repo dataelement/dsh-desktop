@@ -698,7 +698,7 @@ window.__ModuleLoader__.load({
 				select(selected, "ppt");
 			};
 			const modeTemplates = state.templates.filter((template) => templateSupportsMode(template, "ppt"));
-			const templateCategories = ["all", "personal", ...new Set(modeTemplates.filter(item => item.origin !== "personal").map(templateCategory))];
+			const templateCategories = ["all", ...new Set(modeTemplates.filter(item => item.origin !== "personal").map(templateCategory)), "personal"];
 			const visibleTemplates = modeTemplates.filter((template) => category === "all" ? template.origin !== "personal" : templateCategory(template) === category);
 			(0, react.useEffect)(() => {
 				if (!templateCategories.includes(category)) setCategory("all");
@@ -779,11 +779,11 @@ window.__ModuleLoader__.load({
 						className: OfficePptHero_module_css_default.templateViewport,
 						"data-office-ppt-template-viewport": "",
 						"data-native-wheel-owner": "",
-						children: [category === "personal" && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						children: [(category === "all" || category === "personal") && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true, builtInCards: category === "all" ? visibleTemplates.map(template => react.createElement(TemplatePreviewCard, { key: template.id, template, selected: template.id === state.selectedId, choose, client, t })) : [] }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateError,
 							role: "alert",
 							children: state.error
-						}), category === "personal" ? null : state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						}), (category === "all" || category === "personal") ? null : state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.panelState,
 							children: t("status.loading")
 						}) : state.error !== "" && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -802,7 +802,8 @@ window.__ModuleLoader__.load({
 							children: t("templates.empty")
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateGrid,
-							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplateCard, {
+							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplatePreviewCard, {
+                                client, t,
 								template,
 								selected: template.id === state.selectedId,
 								choose
@@ -854,8 +855,8 @@ window.__ModuleLoader__.load({
 			"templates.empty": "该分类下还没有模板",
 			"templates.loadTimeout": "模板加载超时，请重试",
 			"templates.retry": "重新加载模板",
-			"templates.category.all": "内置模板",
-"templates.category.personal": "我的模板",
+			"templates.category.all": "全部",
+"templates.category.personal": "自定义",
 "personal.deletedSelection": "已选个人模板已被删除，请重新选择。",
 "personal.upload": "上传 PPT 模板",
 "personal.create": "新建自定义模板",
@@ -865,13 +866,23 @@ window.__ModuleLoader__.load({
 "personal.fileTooLarge": "个人模板 PPTX 不能超过 64 MB",
 "personal.readFailed": "文件读取失败，请重新选择",
 "personal.duplicate": "这份文件已在我的模板中，可直接选择使用",
+"personal.useSame": "做同款",
+"personal.view": "预览",
+"personal.zoomIn": "放大",
+"personal.zoomOut": "缩小",
+"personal.fit": "适应窗口",
+"personal.previewFailed": "预览加载失败，请重试",
 "personal.processing": "正在处理模板…",
+"personal.completedPages": "已完成",
+"personal.placeholderNotice": "部分对象已使用占位图，可在 PPT 中替换。",
+"personal.previewReady": "预览已就绪",
 "personal.chooseFile": "重新选择 PPT",
 "personal.preview": "模板预览",
 "personal.name": "模板名称",
 "personal.previous": "上一页",
 "personal.next": "下一页",
 "personal.save": "保存模板",
+"personal.saved": "模板已保存",
 "personal.cancel": "取消",
 "personal.edit": "编辑模板",
 "personal.editTitle": "编辑自定义模板",
@@ -947,8 +958,8 @@ window.__ModuleLoader__.load({
 			"templates.empty": "No templates in this category",
 			"templates.loadTimeout": "Template loading timed out. Try again.",
 			"templates.retry": "Reload templates",
-			"templates.category.all": "Built-in templates",
-"templates.category.personal": "My templates",
+			"templates.category.all": "All",
+"templates.category.personal": "Custom",
 "personal.deletedSelection": "The selected personal template was deleted. Choose another template.",
 "personal.upload": "Upload PPT template",
 "personal.create": "Create custom template",
@@ -958,13 +969,23 @@ window.__ModuleLoader__.load({
 "personal.fileTooLarge": "Personal PPTX templates cannot exceed 64 MB",
 "personal.readFailed": "Could not read the file. Choose it again.",
 "personal.duplicate": "This file is already in My templates. Select it to reuse it.",
+"personal.useSame": "Use this template",
+"personal.view": "Preview",
+"personal.zoomIn": "Zoom in",
+"personal.zoomOut": "Zoom out",
+"personal.fit": "Fit to window",
+"personal.previewFailed": "Could not load preview. Please retry.",
 "personal.processing": "Processing template…",
+"personal.completedPages": "Completed",
+"personal.placeholderNotice": "Some objects use placeholders. You can replace them in the PPT.",
+"personal.previewReady": "Preview ready",
 "personal.chooseFile": "Choose another PPT",
 "personal.preview": "Template preview",
 "personal.name": "Template name",
 "personal.previous": "Previous page",
 "personal.next": "Next page",
 "personal.save": "Save template",
+"personal.saved": "Template saved",
 "personal.cancel": "Cancel",
 "personal.edit": "Edit template",
 "personal.editTitle": "Edit custom template",

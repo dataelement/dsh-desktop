@@ -3,22 +3,56 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import React, { act } from 'react';
+import * as jsxRuntime from 'react/jsx-runtime';
 import { createRoot } from 'react-dom/client';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-// jsdom supplies the element; actual modal/top-layer behavior is verified in Chrome.
+// jsdom exercises component state; native modal/top-layer behavior has a separate acceptance gate.
 HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
 HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
 const source = await readFile(path.resolve('packages/ppt-runtime/client/personal-template-manager.js'), 'utf8');
+it.each(['core', 'adapter'])('provides localized dialog copy in both languages for the %s client', async plugin => {
+  const clientSource = await readFile(path.resolve(`packages/ppt-runtime/${plugin}/lib/client.js`), 'utf8');
+  const usedKeys = new Set([...source.matchAll(/\bt\(['"](personal\.[^'"]+)['"]/g)].map(match => match[1]));
+  for (const language of ['zh', 'en']) {
+    const match = clientSource.match(new RegExp(`const ${language} = (\\{[\\s\\S]*?\\n\\s*\\});`));
+    expect(match, `${plugin}/${language} dictionary`).not.toBeNull();
+    const dictionary = new Function(`return (${match[1]});`)();
+    for (const key of usedKeys) expect(dictionary[key], `${plugin}/${language}/${key}`).toBeTypeOf('string');
+  }
+});
 const TemplateCard = ({ template, selected, choose }) => React.createElement('button', { 'aria-pressed': selected, onClick: () => choose(template) }, template.name);
 const Manager = new Function('react', 'TemplateCard', 'OfficePptHero_module_css_default', `${source}\nreturn PersonalTemplateManager;`)(React, TemplateCard, { templateGrid: 'template-grid' });
+const previewClients = [{ name: 'maintained', Component: Manager }];
+for (const name of ['dsh-ppt', 'dsh-ppt-composer']) {
+  const generated = await readFile(path.resolve(process.env.DSH_PPT_UI_PACKAGES ?? '.build/ppt-runtime/packages', name, 'lib/client.js'), 'utf8');
+  let Component;
+  const loader = { load({ factory }) { Component = factory(module => {
+    if (module === 'react') return React;
+    if (module === 'react/jsx-runtime') return jsxRuntime;
+    if (module === '@deepseek-ai/dsh-client-ui-primitives') return {};
+    throw new Error(`Unexpected client module: ${module}`);
+  }); } };
+  const instrumented = generated.replace('window.__ModuleLoader__.load(', 'moduleLoader.load(')
+    .replace(/\breturn\s+module\.exports\b\s*;?/u, 'return PersonalTemplateManager;');
+  new Function('moduleLoader', instrumented)(loader);
+  expect(Component).toBeTypeOf('function');
+  previewClients.push({ name, Component });
+}
 let root, container;
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
   container?.remove(); root = null;
+  vi.useRealTimers(); vi.restoreAllMocks();
 });
 
-async function fixture(prepareError, waitForPrepare) {
+async function loadPreview() {
+  const image = container.querySelector('.personal-zoom-stage img');
+  Object.defineProperties(image, { naturalWidth: { configurable: true, value: 1920 }, naturalHeight: { configurable: true, value: 1080 } });
+  await act(async () => image.dispatchEvent(new Event('load')));
+}
+
+async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], Component = Manager) {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   let saved = [], draft, selectedId;
   const calls = [];
@@ -32,9 +66,10 @@ async function fixture(prepareError, waitForPrepare) {
     if (endpoint === 'template/prepare') {
       if (waitForPrepare) await waitForPrepare;
       if (prepareError) throw new Error(prepareError);
-      draft = { draftId: 'draft-1', template: { id: 'personal-1', name: 'Company', origin: 'personal', slideCount: 2, diagnostics: [{ slide: 2, feature: 'shape-style', message: '样式已标准化' }] }, preview: image };
+      draft = { draftId: 'draft-1', template: { id: 'personal-1', name: 'Company', origin: 'personal', slideCount: 2, previewImages: [image], palette: { background: 'FFFFFF', surface: 'F4F4F4', text: '242424', muted: '666666', accent: '3888FF', secondary: 'E7E7E9' }, resourcePlaceholders, diagnostics: [{ slide: 2, feature: 'shape-style', message: '样式已标准化' }] }, preview: image };
       return draft;
     }
+    if (endpoint === 'template/import-progress') return {total:2,completed:1,pages:payload.after ? [] : [{page:1,preview:image}],status:'processing'};
     if (endpoint === 'template/preview-page') return { page: payload.page, preview: image };
     if (endpoint === 'template/save') { const template = { ...draft.template, name: payload.name }; saved = [template]; return template; }
     if (endpoint === 'template/select') { selectedId = payload.templateId; return true; }
@@ -47,7 +82,7 @@ async function fixture(prepareError, waitForPrepare) {
   let state = { templates: [], selectedId: null, activeMode: 'ppt' };
   const mode = { setTemplateState(_id, next) { state = { ...state, templates: next.templates, selectedId: next.selectedTemplateId ?? null }; render(); }, setTemplates(_id, templates) { state = { ...state, templates }; render(); }, setNotice() {}, select(_id, template) { state = { ...state, selectedId: template.id }; render(); }, deselect() { state = { ...state, selectedId: null }; render(); } };
   let sessionId = 'session-a';
-  function render() { root.render(React.createElement(Manager, { client, mode, sessionId, state, choose, t: key => key })); }
+  function render() { root.render(React.createElement(Component, { client, mode, sessionId, state, choose, t: key => key })); }
   await act(async () => render());
   async function click(label) {
     const scope = container.querySelector('dialog[open]') ?? container;
@@ -170,6 +205,8 @@ it('previews uploads in the modal while retaining the grid, then supports editin
   await f.click('personal.next'); expect(container.textContent).toContain('2 / 2');
   await f.click('personal.save');
   expect(f.calls.find(call => call.endpoint === 'template/select').payload.templateId).toBe('personal-1');
+  expect(container.querySelector('.personal-save-feedback').textContent).toBe('personal.saved');
+  expect(container.querySelector('.personal-save-feedback svg path')).not.toBeNull();
   const grid = container.querySelector('[data-personal-template-grid]');
   expect(grid.children[0].textContent).toBe('personal.create');
   expect(grid.children[1].getAttribute('data-personal-card')).toBe('personal-1');
@@ -229,6 +266,74 @@ it('rejects unsupported files and cancels a prepared preview without registering
   expect(f.calls.some(call => call.endpoint === 'template/cancel')).toBe(true);
   expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
   expect(container.querySelector('section')).toBeNull();
+});
+
+it('shows a quiet placeholder notice while keeping preview, pagination and saving available', async () => {
+  const f = await fixture(undefined, undefined, [{ slide: 2, feature: 'picture' }]);
+  await f.upload(new File(['source'], 'Company.pptx'));
+  expect(container.querySelector('dialog[open] small[role=status]').textContent).toBe('personal.placeholderNotice');
+  expect(container.querySelector('[role=alert]')).toBeNull();
+  await f.click('personal.next');
+  await f.click('personal.save');
+  expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(true);
+  expect(f.calls.some(call => call.endpoint === 'template/select')).toBe(true);
+});
+
+it.each(previewClients)('celebrates a rendered import preview once while allowing immediate pagination and saving ($name)', async ({ Component }) => {
+  const f = await fixture(undefined, undefined, [], Component);
+  await f.upload(new File(['source'], 'Company.pptx'));
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  await loadPreview();
+  const feedback = container.querySelector('.personal-preview-ready');
+  expect(feedback.textContent).toBe('personal.previewReady');
+  expect(feedback.querySelectorAll('.personal-ready-particle').length).toBeGreaterThan(8);
+  expect(getComputedStyle(feedback).pointerEvents).toBe('none');
+  expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
+  await loadPreview();
+  expect(container.querySelector('.personal-preview-ready')).toBe(feedback);
+  await f.click('personal.next'); await loadPreview();
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  await f.click('personal.previous'); await loadPreview();
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  await f.click('personal.save');
+  expect(container.querySelector('.personal-save-feedback').textContent).toBe('personal.saved');
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+});
+
+it.each(previewClients)('finishes the preview cue promptly and releases it when switching sessions ($name)', async ({ Component }) => {
+  const f = await fixture(undefined, undefined, [], Component);
+  await f.upload(new File(['source'], 'Company.pptx'));
+  vi.useFakeTimers(); await loadPreview();
+  expect(container.querySelector('.personal-preview-ready')).not.toBeNull();
+  await act(async () => vi.advanceTimersByTime(850));
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  await loadPreview();
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  await f.switchSession();
+  expect(container.querySelector('dialog[open]')).toBeNull();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(previewClients)('waits for a successful image load after a failed preview ($name)', async ({ Component }) => {
+  const f = await fixture(undefined, undefined, [], Component);
+  await f.upload(new File(['source'], 'Company.pptx'));
+  await act(async () => container.querySelector('.personal-zoom-stage img').dispatchEvent(new Event('error')));
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  expect(container.querySelector('[role=alert]')).not.toBeNull();
+  await f.click('templates.retry'); await loadPreview();
+  expect(container.querySelector('.personal-preview-ready')).not.toBeNull();
+  expect(container.querySelector('[role=alert]')).toBeNull();
+});
+
+it.each(previewClients)('recognizes a cached rendered image before its load event arrives ($name)', async ({ Component }) => {
+  vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(1920);
+  vi.spyOn(HTMLImageElement.prototype, 'naturalHeight', 'get').mockReturnValue(1080);
+  vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
+  const f = await fixture(undefined, undefined, [], Component);
+  await f.upload(new File(['source'], 'Company.pptx'));
+  expect(container.querySelector('.personal-preview-ready')).not.toBeNull();
+  await f.click('personal.next');
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
 });
 
 it('reads a file above 16 MB and sends its full payload to the Host', async () => {
@@ -309,4 +414,78 @@ it('discards an uploaded draft when the preview is dismissed with Escape', async
   expect(f.calls.filter(call => call.endpoint === 'template/cancel')).toHaveLength(1);
   expect(container.querySelector('dialog[open]')).toBeNull();
   expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
+});
+
+it('shows page request failures and retries without losing the uploaded draft', async () => {
+  const f = await fixture();
+  await f.upload(new File(['source'], 'Company.pptx'));
+  f.failNext('template/preview-page', '预览页读取失败');
+  await f.click('personal.next');
+  expect(container.querySelector('dialog[open] [role=alert]').textContent).toContain('预览页读取失败');
+  expect(container.textContent).toContain('2 / 2');
+  await f.click('templates.retry');
+  expect(container.querySelector('dialog[open] [role=alert]')).toBeNull();
+  expect(container.querySelector('dialog[open] img')).not.toBeNull();
+  expect(container.querySelector('[aria-label="personal.zoomIn"]')).toBeNull();
+  await act(async()=>container.querySelector('.ppt-fit-viewport').dispatchEvent(new WheelEvent('wheel',{ctrlKey:true,deltaY:-Math.log(1.5)/.01,cancelable:true})));
+  expect(Number(container.querySelector('dialog[open] img').getAttribute('data-zoom'))).toBeCloseTo(1.5);
+  await act(async()=>container.querySelector('.ppt-fit-viewport').dispatchEvent(new WheelEvent('wheel',{ctrlKey:true,deltaY:1000,cancelable:true})));
+  expect(container.querySelector('dialog[open] img').getAttribute('data-zoom')).toBe('1');
+  const viewport=container.querySelector('.ppt-fit-viewport');
+  const touch=(type,distance)=>{const event=new Event(type,{cancelable:true});Object.defineProperty(event,'touches',{value:[{clientX:0,clientY:0},{clientX:distance,clientY:0}]});return event;};
+  await act(async()=>{viewport.dispatchEvent(touch('touchstart',100));viewport.dispatchEvent(touch('touchmove',200));});
+  expect(container.querySelector('img').getAttribute('data-zoom')).toBe('2');
+  await act(async()=>viewport.dispatchEvent(new Event('touchend')));
+  expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
+});
+
+it('opens a separate detailed viewer without selecting and supports zoom, arrows and Escape', async () => {
+  const Viewer = new Function('react', 'TemplateCard', 'OfficePptHero_module_css_default', `${source}\nreturn TemplatePreviewCard;`)(React, TemplateCard, {});
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+  const choose = vi.fn();
+  const template = { id: 'personal-view', name: 'Preview sample', origin: 'personal', slideCount: 2 };
+  const client = { bound: true, call: vi.fn(async (_endpoint, payload) => ({ page: payload.page, preview: `data:image/png;base64,page${payload.page}` })) };
+  await act(async () => root.render(React.createElement(Viewer, { template, selected: false, choose, client, t: key => key })));
+  await act(async () => container.querySelector('.ppt-preview-open').click());
+  expect(choose).not.toHaveBeenCalled();
+  expect(client.call).toHaveBeenCalledWith('template/preview-saved-page', { templateId: template.id, page: 1 });
+  const modal = container.querySelector('dialog[open]');
+  expect(modal.querySelector('img').getAttribute('src')).toContain('page1');
+  await act(async()=>modal.querySelector('.ppt-fit-viewport').dispatchEvent(new WheelEvent('wheel',{ctrlKey:true,deltaY:-Math.log(1.5)/.01,cancelable:true})));
+  expect(Number(modal.querySelector('img').getAttribute('data-zoom'))).toBeCloseTo(1.5);
+  await act(async () => modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  expect(modal.textContent).toContain('2 / 2');
+  expect(modal.querySelector('img').getAttribute('src')).toContain('page2');
+  expect(modal.querySelector('img').getAttribute('data-zoom')).toBe('1');
+  await act(async () => modal.dispatchEvent(new Event('cancel', { cancelable: true })));
+  expect(container.querySelector('dialog[open]')).toBeNull();
+});
+
+it('shows completed thumbnails before preparation finishes', async () => {
+  let finish;
+  const pending=new Promise(resolve=>{finish=resolve;});
+  const f=await fixture(undefined,pending);
+  await f.upload(new File([new Uint8Array(10)],'Progress.pptx'));
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,450));});
+  expect(container.querySelector('.personal-progress-pages img')).not.toBeNull();
+  expect(container.querySelector('.personal-progress-count').textContent).toContain('1 / 2');
+  await act(async()=>{finish();await new Promise(resolve=>setTimeout(resolve,30));});
+  expect(container.querySelector('.personal-progress-pages')).toBeNull();
+  expect(container.querySelector('dialog[open] img')).not.toBeNull();
+});
+
+it('uses the previewed template and preserves an existing selection', async () => {
+  const Viewer=new Function('react','TemplateCard','OfficePptHero_module_css_default',`${source}\nreturn TemplatePreviewCard;`)(React,TemplateCard,{});
+  container=document.createElement('div');document.body.append(container);root=createRoot(container);
+  const template={id:'reuse',name:'Reuse',previewImages:['data:image/png;base64,page1']};
+  const choose=vi.fn();
+  for(const selected of [false,true]) {
+    await act(async()=>root.render(React.createElement(Viewer,{template,selected,choose,client:{bound:false},t:key=>key})));
+    await act(async()=>container.querySelector('.ppt-preview-open').click());
+    expect(container.querySelector('.ppt-preview-use').textContent).toBe('personal.useSame');
+    await act(async()=>container.querySelector('.ppt-preview-use').click());
+    expect(container.querySelector('dialog[open]')).toBeNull();
+    expect(choose).toHaveBeenCalledTimes(1);
+    expect(choose).toHaveBeenCalledWith(template);
+  }
 });
