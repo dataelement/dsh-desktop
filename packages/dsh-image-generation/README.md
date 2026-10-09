@@ -4,9 +4,9 @@ DSH/Cordis 公共生图插件，提供 `image_generate` 工具、`generate-image
 
 ## 使用
 
-DSH Desktop 默认关闭内置生图插件。需要使用内置版本时，在「设置 → 插件」启用「内置生图工具」并重启 Harness；启用前须先停用同名市场版本。启用后，在生图工具卡片选择 Seedream 或 OpenAI，填写该平台的 API Key 并保存。生图模型支持预设选择或自定义输入，API 地址可在高级设置中修改。
+DSH Desktop 默认关闭内置生图插件。需要使用内置版本时，在「设置 → 插件」启用「内置生图工具」并重启 Harness；启用前须先停用同名市场版本。启用后，在生图工具卡片选择 Seedream、OpenAI、Grok Imagine（xAI）或 Agnes，填写该平台的 API Key 并保存。生图模型支持预设选择或自定义输入，API 地址可在高级设置中修改。
 
-生图模型使用下拉选择。OpenAI 的「获取模型」用当前填写或已保存的 Key 发起一次 `GET /models`，筛选 Images API 支持的 GPT Image 模型；获取过程只更新候选列表，配置在点击保存时生效。查询来源保留在接口中，界面显示候选模型、空列表和查询错误。字节的管理接口使用独立签名凭据，因此 API Key 模式提供内置选项和自定义模型/接入点 ID。
+生图模型使用下拉选择。OpenAI 的「获取模型」用当前填写或已保存的 Key 发起一次 `GET /models`，筛选 Images API 支持的 GPT Image 模型；获取过程只更新候选列表，配置在点击保存时生效。查询来源保留在接口中，界面显示候选模型、空列表和查询错误。字节的管理接口使用独立签名凭据，因此 API Key 模式提供内置选项和自定义模型/接入点 ID。xAI 与 Agnes 同样提供内置选项和自定义模型。
 
 Seedream 预设按 [火山方舟模型列表](https://docs.volcengine.com/docs/82379/1330310) 的图片生成能力核对（2026-09-10）：
 
@@ -20,23 +20,36 @@ Seedream 预设按 [火山方舟模型列表](https://docs.volcengine.com/docs/8
 
 官方目录明确同时支持 5.0 和 5.0 Lite 两个 ID。预设表示插件支持的型号，实际可用性取决于账户开通情况；自定义入口用于填写其他模型或接入点 ID。
 
+Grok Imagine 与 Agnes 预设按官方模型文档核对（2026-09-22）：
+
+| 模型 | 模型 ID |
+| --- | --- |
+| Grok Imagine | `grok-imagine-image` |
+| Grok Imagine Quality | `grok-imagine-image-quality` |
+| Agnes Image 2.5 Flash | `agnes-image-2.5-flash` |
+| Agnes Image 2.1 Flash | `agnes-image-2.1-flash` |
+| Agnes Image 2.0 Flash | `agnes-image-2.0-flash` |
+
 API 地址同时接受基础地址和控制台提供的完整 `/images/generations` 地址。保存时统一为基础地址，实际请求只添加一次接口路径。
 
 | 服务商 | 默认模型 | 默认 API 地址 |
 | --- | --- | --- |
 | 字节 / 火山方舟 | `doubao-seedream-4-5-251128` | `https://ark.cn-beijing.volces.com/api/v3` |
 | OpenAI | `gpt-image-1.5` | `https://api.openai.com/v1` |
+| xAI / Grok Imagine | `grok-imagine-image` | `https://api.x.ai/v1` |
+| Agnes | `agnes-image-2.5-flash` | `https://apihub.agnes-ai.com/v1` |
 
-保存自动发起一次非生图校验请求，界面显示校验中、保存成功或具体错误。失败保留输入及之前的有效配置。Key 更换后立即生效；两个服务商分别保存配置和 Key。更换 API 地址的域名时需要重新填写 Key。
+保存自动发起一次非生图校验请求，界面显示校验中、保存成功或具体错误。失败保留输入及之前的有效配置。Key 更换后立即生效；各服务商分别保存配置和 Key。更换 API 地址的域名时需要重新填写 Key。
 
 - OpenAI：`GET /models/{model}`，检查凭据和模型元数据访问。Key 需要允许读取该模型信息。
 - 字节：`POST /images/generations`，请求体仅含 `model`，省略必填 `prompt`。只将明确的 prompt 缺参错误识别为连接校验成功，其他错误正常报错。该请求进入参数检查，不提交生图任务。采用此方式是因为 Ark 官方运行时 SDK 没有可依赖的模型列表接口。
+- xAI、Agnes：`GET /models`，检查凭据并读取 OpenAI 兼容模型列表。列表包含所选模型时记为模型元数据校验，否则记为连接校验（自定义接入点 ID 不强制出现在列表中）。
 
 校验结果与实际生图成功分别记录。生图权限、余额、内容审核和输出效果在真正调用时确认。本插件没有生成测试图按钮。
 
 提示词示例：「为这份 PPT 生成一张留出左侧标题空间的科技插画，风格沿用当前模板。」Agent 加载 Skill 后调用 `image_generate`，按当前 Host 权限策略直接执行，将图片保存到工作区 `.workbuddy/generated-images/<sha256>.png`。工具返回路径、尺寸、字节数、哈希、服务商和模型。图片可保留透明通道，标题、表格和简单图表继续使用 Office 原生对象。
 
-本期支持文生图，每次生成一张图片。OpenAI 的 16:9 / 4:3 请求使用 1536×1024 画布，竖图使用 1024×1536；文档按实际返回尺寸等比放置或裁剪。字节按目标比例选择支持的画布。编辑图、参考图、批量生图和本地模型留待后续版本。
+本期支持文生图，每次生成一张图片。OpenAI 的 16:9 / 4:3 请求使用 1536×1024 画布，竖图使用 1024×1536；文档按实际返回尺寸等比放置或裁剪。字节按目标比例选择支持的画布。xAI 请求使用 `aspect_ratio`（1:1 / 16:9 / 9:16 / 4:3 / 3:4），不发送 `size`。Agnes 请求使用 `size: 2K` 档位加独立 `ratio` 枚举，并以 `return_base64` 返回 `b64_json`。编辑图、参考图、批量生图和本地模型留待后续版本。
 
 字节请求采用 Seedream 4.5 / 5.0 Pro 共用的单图字段，由服务端默认单图模式执行。自定义接入点 ID 也使用这一契约。组图控制属于独立能力，5.0 Pro 的单图请求省略 `sequential_image_generation` 及其 options。模型能力和画布范围参考 [BytePlus 官方 Seedream 能力表](https://docs.byteplus.com/api/docs/ModelArk/1824121)。
 
@@ -78,4 +91,4 @@ npm test
 
 测试使用本机模拟服务和真实 Harness 凭据存储、工具执行管线，覆盖两个厂商、单请求保存、成功/失败、修订冲突、凭据隔离、PNG 落盘、取消、体积限制和目录越界。Host smoke 启动隔离实例，验证插件启用后的 Client 入口、鉴权、Origin 及保存结果。真实付费模型与 Office 文档视觉验收在 `STATUS.md` 单独记录。
 
-接口参考：[OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate)、[OpenAI 模型列表](https://developers.openai.com/api/reference/resources/models/methods/list)、[火山方舟生图 API](https://www.volcengine.com/docs/82379/1541523)、[火山方舟官方运行时 SDK](https://github.com/volcengine/volcengine-python-sdk/tree/master/volcenginesdkarkruntime/resources/images)、[火山管理接口及签名鉴权](https://github.com/volcengine/volcengine-python-sdk/blob/master/volcenginesdkark/api/ark_api.py)。
+接口参考：[OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate)、[OpenAI 模型列表](https://developers.openai.com/api/reference/resources/models/methods/list)、[火山方舟生图 API](https://www.volcengine.com/docs/82379/1541523)、[火山方舟官方运行时 SDK](https://github.com/volcengine/volcengine-python-sdk/tree/master/volcenginesdkarkruntime/resources/images)、[火山管理接口及签名鉴权](https://github.com/volcengine/volcengine-python-sdk/blob/master/volcenginesdkark/api/ark_api.py)、[xAI Imagine 模型](https://docs.x.ai/developers/models/grok-imagine-image)、[Agnes Image 2.5 Flash](https://wiki.agnes-ai.com/zh-Hans/docs/agnes-image-25-flash)。
