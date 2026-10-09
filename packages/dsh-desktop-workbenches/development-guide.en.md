@@ -1,6 +1,6 @@
 # Workbench Development Standard
 
-Version: 2026-09-29 · The website is authoritative; DSH Desktop bundles a copy for offline use.
+Version: 2026-10-08 · The website is authoritative; DSH Desktop bundles a copy for offline use.
 
 Official page: https://dshdesktop.com/workbench/docs/development-en/
 
@@ -31,10 +31,12 @@ Before development, check:
 
 1. **Confirm requirements**: Record scenario, users, and one complete task flow from the current request and confirmed context. Generic instructions and the project directory do not count. If any is unclear, use the gate above and wait.
 2. **Inspect project**: Identify root; run `pwd` and, for a Git repository, `git status --short`; inspect code, package manager, uncommitted work, and target Desktop version. Preserve unrelated changes.
-3. **Define the smallest business flow**: Write down entry point, main action, completion state, and failure recovery before choosing panels and host capabilities.
+3. **Define the smallest business flow and layout**: Write down entry point, main action, completion state, and failure recovery. Under Section 4, choose a standard split or `customFrame` and define the first-use path without a session before choosing host capabilities.
 4. **Implement**: Create the plugin package and registration under Section 3; follow Sections 4–7 for applicable responsibilities and capabilities.
 5. **Verify package**: Run `pnpm pack`; inspect `package.json`, declared entries, `cordis.patch.yml`, size, and sensitive files inside the tarball.
-6. **Install and test locally**: Check installation capabilities under Section 3.6, install that tarball, restart Harness, and record real UI and loading evidence under Section 8.
+6. **Install and test locally**: Check installation capabilities under Section 3.6, install that tarball, complete the required restart, and record real UI and loading evidence under Section 8. If the agent runs inside the target DSH Desktop, ask the user to restart it manually under the boundary below.
+
+**Restart boundary inside the target app**: If the agent is running in the DSH Desktop session that needs restarting, do not close or restart DSH Desktop or Harness yourself, and do not use process probes such as `ps` or `pgrep` to manage that restart. Ask the user to quit DSH Desktop completely and reopen it. Only after the user returns and confirms it has reopened should you check plugin loading, the installed list, sidebar entry, and real UI. Until then, mark those post-restart checks **pending verification**; do not claim they passed. An agent running outside the target app may follow the normal restart process.
 
 **Empty-directory exercise**: If the directory is empty and the user only pasted Desktop's “development instructions” or said “make a workbench,” Step 1 has not passed. Ask one combined question: “Who is this workbench for, what business scenario should it address, and what are the core steps from entry to task completion?” `pwd`, directory inspection, and Desktop capability checks are allowed. Until the answer arrives, stop at Step 1: do not create `package.json`, components, or business pages; do not build, install, or submit.
 
@@ -159,7 +161,7 @@ window.__ModuleLoader__.load({
 
 - The client file **must** already be built as a single file. Desktop does not build it for you.
 - **Detect capabilities first; do not guess from a version number.** Record the version shown in Desktop About, platform, and architecture. Look for local installation in “Workbench management / Installed workbenches”; then check whether the installed version's plugin installation UI or `dsh plugin add --help` accepts local `.tgz`. Install only when the UI or command explicitly supports this input. Do not infer capability from the website publication date. Record the entry point and output used.
-- Install the `.tgz` produced by `pnpm pack` through a confirmed supported path. For CLI, follow its actual `--help` syntax. Restart Harness as instructed, confirm the entry under “Installed workbenches,” open it from the sidebar, and inspect the real business panel. `dsh --profile web --dump-config` showing a plugin layer proves configuration only, not UI loading.
+- Install the `.tgz` produced by `pnpm pack` through a confirmed supported path. For CLI, follow its actual `--help` syntax. Complete the restart indicated by Desktop, confirm the entry under “Installed workbenches,” open it from the sidebar, and inspect the real business panel. If the agent is running inside the target DSH Desktop, follow the Section 1 restart boundary: the user must fully quit and reopen the app. `dsh --profile web --dump-config` showing a plugin layer proves configuration only, not UI loading.
 - If the current Desktop lacks a local package installer, CLI support is absent, or installation fails, deliver the verified `.tgz` and package contents/check record. State Desktop version, capability findings, and failure reason. Mark “install, load after restart, installed list, sidebar entry, business operation” individually **untested**; do not claim local acceptance passed.
 - If installation or build scripts need to run (pnpm 10 blocks them by default), understand each script and obtain separate authorization.
 
@@ -168,6 +170,13 @@ window.__ModuleLoader__.load({
 A workbench is a plugin for a specific business scenario. This standard governs its relationship and switching behavior with sessions and workspaces; it does not prescribe a uniform business panel design.
 
 Authors or users may define business panel layout, content, toolbar, and operations. When integrating an existing workbench, reuse its existing UI and business binding flow where possible. A universal top toolbar, session dropdown, business-area collapse control, or “generic chat” button is not required.
+
+### 4.1 Choose the layout for the primary task
+
+- **Standard split**: By default, the host native conversation is on the left and the business panel occupies 36% of the main content area on the right. In `register()`, `layout` may set `businessSide: 'left' | 'right'` and `businessWidth: 0.25–0.7`; this proportion does not guarantee enough space for every column inside the business panel. The split suits compact tools, status, and reference material that accompany a conversation. With no current session, the host displays its generic “Get started” guidance in the conversation area. The business panel must still work; check whether both sides together make a coherent first-use flow. Do not simply enlarge `businessWidth` to squeeze a report into the split at the expense of the guidance or conversation.
+- **`customFrame: true`**: When reading reports, operating dashboards, or working with wide tables is the primary task, the workbench may arrange the entire host-assigned main content area. If a native conversation is needed, place the host-provided `conversation` node appropriately; do not duplicate the chat UI. This mode does not show the standard split's generic no-session guidance. Provide your own first-entry and no-session actions, and make clear when to create or restore a workbench session. Compact tools that accompany a conversation may still use the standard split; a full-page layout is not required for every workbench.
+
+In either layout, make the business UI respond to the **actual width of its own container**. Window-wide media queries alone do not reflect the space left by the sidebar, split, or embedding. Use container queries or measure the business root; rearrange columns, collapse secondary information, or provide bounded scrolling when space is tight. Long Chinese headings, English identifiers, numbers, and action buttons must stay readable and usable, without single-character vertical wrapping, clipped controls, or page-wide horizontal overflow.
 
 DSH reserves shared entrances for the market, workbench switcher, and settings; the business panel must not cover them. A `customFrame` (Section 3.5) must stay within the host-assigned main content area. Its root should fill that area using normal flex layout. Internal absolute positioning, maximization, or drag-based repositioning must remain inside the host container's positioning and clipping boundaries, never cover Desktop's left session sidebar. Put the host-provided `conversation` node into the business layout for native sessions; do not build a second chat UI. Native conversation capabilities and mode switching continue to follow Desktop rules.
 
@@ -214,11 +223,13 @@ Check each applicable responsibility after development. “Host responsibility�
 **Package and loading**
 
 - [ ] **Plugin**: All required items in Section 3 pass. Run `pnpm pack`; use `tar -tzf <artifact.tgz>` to confirm `package.json`, server and client entries, and `cordis.patch.yml`. Install that artifact rather than running only from source.
-- [ ] **Plugin**: Install under 3.6 and restart Harness. Find the plugin layer in `dsh --profile web --dump-config`, the entry in Desktop “Workbench management / Installed workbenches,” and the real business panel opened from the sidebar. Record configuration, list, and UI evidence separately.
+- [ ] **Plugin**: Install under 3.6 and complete the required restart. If the agent runs inside the target DSH Desktop, the user must fully quit and reopen the app; check only after the user confirms. Find the plugin layer in `dsh --profile web --dump-config`, the entry in Desktop “Workbench management / Installed workbenches,” and the real business panel opened from the sidebar. Record configuration, list, and UI evidence separately; keep post-restart loading and UI checks pending until restart is confirmed.
 
 **Section 4: UI boundary**
 
 - [ ] **Plugin**: Open the panel, resize the window, switch between native session and workbench modes, and verify the panel does not cover sidebar, market, or management controls; business actions are keyboard reachable.
+- [ ] **Plugin**: Check the business entry point and session-related actions both on first entry without a workbench session and with an owned session open. In a standard split, check the host generic guidance beside the business panel. With `customFrame`, check the workbench's own first-use and no-session actions.
+- [ ] **Plugin**: With the sidebar expanded and collapsed and the window narrowed, check realistic Chinese and English headings, identifiers, numbers, and buttons. Avoid single-character vertical wrapping, clipped primary controls, and page-wide horizontal overflow. Verify that columns respond to the business container width, not only the window width.
 - [ ] **Only if used; plugin**: With `customFrame`, narrow the window and operate layouts, overlays, and drag actions. Everything stays in host main content; native `conversation` works.
 
 **Sections 5–6: workspaces and sessions**
