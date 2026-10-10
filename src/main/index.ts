@@ -141,6 +141,7 @@ import {
   DesktopStorageManager,
   type DesktopStorageAction
 } from './state/desktop-storage'
+import { registerDesktopNotificationBridge } from './desktop-notification'
 import {
   raiseWindowWithoutStealingFocus,
   type WindowFocusIntent
@@ -1680,6 +1681,7 @@ async function uninstallMarketAndRestart(): Promise<{ ok: boolean }> {
 }
 
 function registerHarnessHandlers(): void {
+  registerDesktopNotificationBridge(() => mainWindow, desktopIconPath)
   ipcMain.removeAllListeners('dsh:storage-load-sync')
   ipcMain.on('dsh:storage-load-sync', (event) => {
     event.returnValue = desktopStorageManager?.getAll() ?? {}
