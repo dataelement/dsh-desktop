@@ -65,6 +65,10 @@ function ImportProgressThumbnails({ pages, t }) {
     observer.observe(first);
     return () => observer.disconnect();
   }, []);
+  react.useLayoutEffect(() => {
+    const node = grid.current;
+    node.scrollTop = node.scrollHeight;
+  }, [pages.length, height]);
   return h('div', { ref: grid, className: 'personal-progress-pages', tabIndex: 0, role: 'region', 'aria-label': t('personal.preview'),
     style: height === null ? undefined : { '--personal-progress-height': `${height}px` } },
     ...pages.map(item => h('figure', { key: item.page },
@@ -150,7 +154,7 @@ function TemplatePreviewCard({ template, selected, choose, client, t }) {
 const FULL_TEMPLATE_PREVIEWS = /* GENERATED_PPT_FULL_PREVIEWS */ {};
 const TEMPLATE_VIEWER_CSS = `
 .ppt-preview-card {position:relative;min-width:0}
-.ppt-preview-open {position:absolute;left:10px;top:10px;width:28px;height:28px;display:grid;place-items:center;padding:0;opacity:0;pointer-events:none;transition:opacity 120ms;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:7px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
+.ppt-preview-open {position:absolute;z-index:2;left:10px;top:10px;width:28px;height:28px;display:grid;place-items:center;padding:0;opacity:0;pointer-events:none;transition:opacity 120ms;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:7px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
 .ppt-preview-card:hover .ppt-preview-open,.ppt-preview-card:focus-within .ppt-preview-open {opacity:1;pointer-events:auto}
 @media (hover:none) {.ppt-preview-open {opacity:1;pointer-events:auto}}
 @media (prefers-reduced-motion:reduce) {.ppt-preview-open {transition:none}}
@@ -346,9 +350,11 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       [data-personal-template-library] .personal-create:focus-visible {outline:2px solid var(--dsw-alias-state-business-primary,#3385ff);outline-offset:2px}
       [data-personal-template-library] .personal-create:disabled {opacity:.55;cursor:default}
       [data-personal-card] {min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;align-content:start}
-      [data-personal-card] .personal-frame {min-width:0;position:relative}
+      [data-personal-card] .personal-frame {min-width:0;position:relative;isolation:isolate}
+      [data-personal-card] .ppt-preview-open {top:8px;left:8px}
+      [data-personal-card]:hover .ppt-preview-open,[data-personal-card]:has(:focus-visible) .ppt-preview-open {opacity:1;pointer-events:auto}
       [data-personal-card] .${OfficePptHero_module_css_default.previewViewport} {box-sizing:border-box;border-radius:14px}
-      [data-personal-card] .personal-selected {box-sizing:border-box;position:absolute;inset:0 0 auto;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;gap:7px;border:2px solid var(--dsw-alias-state-business-primary,#3385ff);border-radius:14px;background:#0006;color:white;font-size:13px;pointer-events:none}
+      [data-personal-card] .personal-selected {box-sizing:border-box;position:absolute;z-index:1;inset:0 0 auto;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;gap:7px;border:2px solid var(--dsw-alias-state-business-primary,#3385ff);border-radius:14px;background:#0006;color:white;font-size:13px;pointer-events:none}
       [data-personal-card] .personal-check {display:grid;place-items:center;background:white;color:#50545c;border-radius:50%;width:18px;height:18px}
       [data-personal-card] .personal-actions {position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:2;opacity:0;pointer-events:none;transition:opacity .12s}
       [data-personal-card]:hover .personal-actions,[data-personal-card]:has(:focus-visible) .personal-actions {opacity:1;pointer-events:auto}
