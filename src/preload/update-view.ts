@@ -16,6 +16,14 @@ export function isUpdateDismissed(
   return status.phase === dismissedTransientPhase
 }
 
+/** A manual request may replay a cached update; progress keeps the same request ID. */
+export function isNewManualPresentation(status: UpdateStatus, previous?: UpdateStatus): boolean {
+  if (!status.manual) return false
+  if (!previous) return true
+  if (status.presentationId !== undefined) return status.presentationId !== previous.presentationId
+  return status.phase === 'checking' && previous.phase !== 'checking'
+}
+
 export interface UpdateHeadline {
   title: string
   description: string
@@ -49,7 +57,7 @@ export function updateHeadline(status: UpdateStatus, locale: UpdateLocale): Upda
       }
     case 'available':
       return {
-        title: zh ? '有可用更新' : 'Update available',
+        title: zh ? `检测到新版本 ${version}` : `New version ${version} available`,
         description: zh
           ? `${version} 已发布，同意后开始下载。`
           : `${version} is ready to download.`

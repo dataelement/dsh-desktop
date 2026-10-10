@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { UpdateStatus } from '../src/shared/contracts'
 import {
   isUpdateDismissed,
+  isNewManualPresentation,
   shouldShowUpdate,
   updateHeadline,
   updateMessage
@@ -82,3 +83,26 @@ describe('accepting an update is what starts the download', () => {
   })
 })
 
+
+
+describe('manual update presentation lifecycle', () => {
+  it('reopens a cached release only for a new manual request', () => {
+    const previous: UpdateStatus = { ...downloading, manual: true, presentationId: 1 }
+    expect(isNewManualPresentation({ ...previous, percent: 80 }, previous)).toBe(false)
+    expect(isNewManualPresentation({ ...previous, phase: 'downloaded' }, previous)).toBe(false)
+    expect(isNewManualPresentation({ ...previous, presentationId: 2 }, previous)).toBe(true)
+    expect(isNewManualPresentation({ ...previous, manual: false, source: 'runtime', presentationId: 2 }, previous)).toBe(false)
+  })
+
+  it('opens the initial manual result and supports older producers without IDs', () => {
+    expect(isNewManualPresentation({ ...downloaded, manual: true })).toBe(true)
+    expect(isNewManualPresentation({ ...downloaded, manual: true, phase: 'checking' }, downloaded)).toBe(true)
+    expect(isNewManualPresentation({ ...downloading, manual: true }, { ...downloading, manual: true })).toBe(false)
+  })
+
+  it('names the available version in the notification title in both languages', () => {
+    const status: UpdateStatus = { ...downloaded, phase: 'available' }
+    expect(updateHeadline(status, 'zh').title).toBe('检测到新版本 v1.1.0')
+    expect(updateHeadline(status, 'en').title).toBe('New version v1.1.0 available')
+  })
+})

@@ -3246,7 +3246,7 @@ async function bootstrap(): Promise<void> {
   installDesktopProtocol(desktopResourcePath)
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
-  registerUpdateHandlers()
+  registerUpdateHandlers({ locale: harnessLocale })
   nativeTheme.themeSource = harnessThemePreference()
   ensureTray()
   const dshHome = join(app.getPath('userData'), 'harness')
