@@ -51,6 +51,26 @@ function personalPreviewSlides(template) {
     ? template.templateSamples.representativePages : Array.from({length:template.slideCount},(_,i)=>i+1);
 }
 
+/** Bound the responsive grid by four measured rows, including captions and gaps. */
+function ImportProgressThumbnails({ pages, t }) {
+  const h = react.createElement;
+  const grid = react.useRef(null);
+  const [height, setHeight] = react.useState(null);
+  react.useLayoutEffect(() => {
+    const node = grid.current, first = node.firstElementChild;
+    const measure = () => setHeight(first.getBoundingClientRect().height * 4 + parseFloat(getComputedStyle(node).rowGap) * 3);
+    measure();
+    if (typeof ResizeObserver === 'undefined') { window.addEventListener('resize', measure); return () => window.removeEventListener('resize', measure); }
+    const observer = new ResizeObserver(measure);
+    observer.observe(first);
+    return () => observer.disconnect();
+  }, []);
+  return h('div', { ref: grid, className: 'personal-progress-pages', tabIndex: 0, role: 'region', 'aria-label': t('personal.preview'),
+    style: height === null ? undefined : { '--personal-progress-height': `${height}px` } },
+    ...pages.map(item => h('figure', { key: item.page },
+      h('img', { src: item.preview, alt: `${t('personal.preview')} ${item.page}` }), h('figcaption', null, item.page))));
+}
+
 /** Shared detailed template viewer; selection remains an independent action. */
 function TemplatePreviewCard({ template, selected, choose, client, t }) {
   const h = react.createElement;
@@ -349,7 +369,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       .personal-dialog footer {display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:4px}
       .personal-dialog footer button {min-height:38px;padding:8px 16px;border:1px solid #d1d5db;background:#fff;color:#242424;border-radius:10px;font:inherit;font-size:14px;line-height:20px;cursor:pointer;transition:transform 120ms cubic-bezier(.23,1,.32,1)}
       .personal-dialog .personal-submit {min-width:104px}
-      .personal-dialog :is(button,input,textarea):focus-visible {outline:2px solid var(--dsw-alias-state-business-primary,#3888ff);outline-offset:2px}
+      .personal-dialog :is(button,input,textarea,.personal-progress-pages):focus-visible {outline:2px solid var(--dsw-alias-state-business-primary,#3888ff);outline-offset:2px}
       .personal-dialog button:active:not(:disabled) {transform:scale(.97)}
       .personal-dialog :disabled {cursor:default}
       .personal-dialog .personal-modal-error {margin:0;padding:10px 12px;border-radius:10px;background:#f0445212;color:#d12e3c;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -370,7 +390,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       .personal-pagination button:disabled {color:var(--dsw-alias-label-tertiary,#aaa)}
       .personal-upload footer .personal-pagination button {min-height:32px;padding:0;font-size:18px}
       @media (max-width:640px) {.personal-upload footer {grid-template-columns:minmax(0,1fr) auto;gap:8px}.personal-upload footer .personal-pagination {grid-column:1;justify-self:start;gap:8px}.personal-upload-actions {grid-column:2;gap:8px}.personal-upload footer .personal-upload-actions button {padding-inline:10px}}
-      .personal-progress-pages {display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px;width:100%;align-self:stretch}
+      .personal-progress-pages {display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px;width:100%;align-self:stretch;align-content:start;max-height:min(var(--personal-progress-height,55dvh),max(120px,calc(100dvh - 240px)));overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;flex-shrink:0}
       .personal-progress-pages figure {animation:personal-thumbnail-enter 160ms cubic-bezier(.23,1,.32,1) both;margin:0;min-width:0;color:var(--dsw-alias-label-secondary,#666);text-align:center;font-size:12px}
       .personal-progress-pages img {display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:var(--dsw-alias-background-secondary,#f4f4f4);border-radius:4px;margin-bottom:4px}
       .personal-upload-wait:has(.personal-progress-pages) {justify-content:flex-start;align-items:flex-start}
@@ -409,7 +429,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       onCancel: event => { event.preventDefault(); closeModal(); },
       onKeyDown: event => {
         if (event.key !== 'Tab') return;
-        const fields = [...event.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled)')];
+        const fields = [...event.currentTarget.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]')];
         const first = fields[0], last = fields.at(-1);
         if (event.shiftKey && (document.activeElement === first || !event.currentTarget.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && (document.activeElement === last || !event.currentTarget.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
@@ -447,8 +467,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
               !importProgress.pages.length && h('div', { className: 'personal-loading-dots', 'aria-hidden': true },
                 ...[0, 1, 2].map(index => h('span', { key: index, style: { '--dot-delay': `${index * .2}s` } }))),
               h('span', {className:importProgress.total ? 'personal-progress-count' : '',role:'status','aria-live':'polite'}, importProgress.total ? `${t('personal.completedPages')} ${importProgress.pages.length} / ${importProgress.total}` : t('personal.processing')),
-              importProgress.pages.length>0 && h('div',{className:'personal-progress-pages'},...importProgress.pages.map(item=>h('figure',{key:item.page},
-                h('img',{src:item.preview,alt:`${t('personal.preview')} ${item.page}`}),h('figcaption',null,item.page))))),
+              importProgress.pages.length>0 && h(ImportProgressThumbnails,{pages:importProgress.pages,t})),
             error && h('div', { role: 'alert', className: 'personal-modal-error' }, error)),
           h('footer', null,
             draft && h('div', { className: 'personal-pagination' },
