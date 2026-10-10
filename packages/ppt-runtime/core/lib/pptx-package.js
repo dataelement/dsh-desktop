@@ -8,7 +8,7 @@ import { restoreImportedText } from './imported-text-export.js';
 import { restoreImageCrops } from './image-crop.js';
 
 /** Generated slides share one media part for identical resources. */
-export function deduplicatePptxMedia(entries) {
+export async function deduplicatePptxMedia(entries) {
   const originals=new Map(), replacements=new Map();
   for(const [name,bytes] of Object.entries(entries)) {
     if(!name.startsWith('ppt/media/')||name.endsWith('/'))continue;
@@ -21,6 +21,7 @@ export function deduplicatePptxMedia(entries) {
   try {
     for(const [name,bytes] of Object.entries(entries)) {
       if(!name.endsWith('.rels'))continue;
+      await new Promise(resolve=>setImmediate(resolve));
       const source=name.replace(/(^|\/)_rels\//,'$1').replace(/\.rels$/,'');
       const directory=path.posix.dirname(source),doc=parser.parseFromString(strFromU8(bytes),'application/xml');
       let changed=false;
@@ -40,12 +41,13 @@ export function deduplicatePptxMedia(entries) {
 }
 
 /** Restore text and shapes together: one slide parse and one final ZIP compression. */
-export function restoreImportedSlides(entries,pages) {
+export async function restoreImportedSlides(entries,pages) {
   const pending=pages.map((page,index)=>({page,index})).filter(({page})=>page.elements.some(element=>hasNativeShape(element)||(element.elementType==='image'&&element.crop!==undefined)||(hasSourceLayout(element)&&Array.isArray(element.content?.paragraphs))));
   if(!pending.length)return false;
   const window=new JSDOM('').window,parser=new window.DOMParser();
   try {
     for(const {page,index} of pending) {
+      await new Promise(resolve=>setImmediate(resolve));
       const key=`ppt/slides/slide${index+1}.xml`,doc=parser.parseFromString(strFromU8(entries[key]),'application/xml');
       if(doc.getElementsByTagName('parsererror').length)throw new Error('Generated slide XML is invalid');
       const shapes=new Map([...doc.getElementsByTagNameNS('*','sp')].map(shape=>[shape.getElementsByTagNameNS('*','cNvPr')[0]?.getAttribute('name'),shape]));

@@ -17,7 +17,7 @@ function remapRelationships(node, mapping) {
   }
 }
 /** Compose visible non-placeholder layers in painter order, with slide-owned relationships. */
-export function composePptxLayers(files) {
+export async function composePptxLayers(files) {
   // Layouts and masters are immutable inputs. Clone their nodes into each slide,
   // keeping relationship remapping and placeholder removal owned by that slide.
   const documents=new Map();
@@ -26,7 +26,12 @@ export function composePptxLayers(files) {
     return documents.get(part);
   };
   for (const [slidePath, xml] of files.slides) {
-    const slide = parse(xml), relKey = relPath(slidePath), rels = parse(files.slideRels.get(relKey));
+    // XML documents queue lifecycle callbacks. Yield so a completed page and
+    // its temporary clones are released before the next page is parsed.
+    await new Promise(resolve => setImmediate(resolve));
+    const slide = parse(xml);
+    if(slide.getElementsByTagName('parsererror').length)throw new Error('PPTX 页面 XML 无效');
+    const relKey = relPath(slidePath), rels = parse(files.slideRels.get(relKey));
     const layoutRel = [...rels.documentElement.children].find(r => r.getAttribute('Type').endsWith('/slideLayout'));
     if (!layoutRel) continue;
     const layoutPath = target(slidePath, layoutRel), layoutXml = files.slideLayouts.get(layoutPath);

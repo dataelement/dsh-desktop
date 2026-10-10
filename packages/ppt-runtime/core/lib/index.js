@@ -3187,7 +3187,7 @@ async function apply(ctx, config) {
 		maxDecksPerSession: config.maxDecksPerSession ?? 50,
 		maxActivities: config.maxActivities ?? 200
 	}), { maxSlides: config.maxSlides ?? 40 });
-	service.store.personalTemplates = new PersonalTemplateLibrary(service.store, convertPptxToPptd, writePptdProjectSource, config.maxSlides ?? 40);
+	service.store.personalTemplates = new PersonalTemplateLibrary(service.store, convertPptxToPptd, writePptdProjectSource);
 	const rpcHandler = pptRpc(service);
 	ctx.inject(["webServer"], (webCtx) => {
 		registerPptRpcRoute(webCtx, "/dsh-ppt", rpcHandler);

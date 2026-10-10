@@ -72,7 +72,8 @@
     "sharp": "^0.35.3",
     "typescript": "^6.0.3",
     "zod": "^4.4.3",
-    "@deepseek-ai/libreoffice-kit": "0.1.3"
+    "@deepseek-ai/libreoffice-kit": "0.1.3",
+    "saxes": "6.0.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",

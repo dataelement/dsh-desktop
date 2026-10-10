@@ -18,6 +18,7 @@ const transform=(node,group=false)=>{
  */
 export function flattenPptxGroups(xml) {
  const source=sanitizeOoXml(xml);
+ if(!/<(?:[A-Za-z_][\w.-]*:)?grpSp(?:\s|>)/u.test(source))return {xml:source,count:0};
  const doc=new DOMParser().parseFromString(source,'application/xml');
  if(doc.querySelector('parsererror'))return{xml:source,count:0};
  const tree=[...doc.getElementsByTagNameNS('*','spTree')][0];if(!tree)return{xml:source,count:0};

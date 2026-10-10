@@ -2544,10 +2544,10 @@ function normalizeSingleLevelChartCategories(xml) {
 		return `<c:strRef>${formula}<c:strCache>${pointCount}${levels[0][1]}</c:strCache></c:strRef>`;
 	});
 }
-function normalizePptxPackage(bytes, pages) {
+async function normalizePptxPackage(bytes, pages) {
 	const entries = unzipSync(bytes);
-	deduplicatePptxMedia(entries);
-	restoreImportedSlides(entries,pages);
+	await deduplicatePptxMedia(entries);
+	await restoreImportedSlides(entries,pages);
 	const contentTypesEntry = entries["[Content_Types].xml"];
 	if (contentTypesEntry === void 0) throw new Error("Rendered PPTX is missing [Content_Types].xml");
 	const contentTypes = strFromU8(contentTypesEntry);
@@ -2603,7 +2603,7 @@ async function renderPptdProject(project) {
 		compression: false
 	});
 	return {
-		bytes: normalizePptxPackage(new Uint8Array(output),project.pages),
+		bytes: await normalizePptxPackage(new Uint8Array(output),project.pages),
 		nativeObjectCount: check.nativeObjectCount,
 		check
 	};

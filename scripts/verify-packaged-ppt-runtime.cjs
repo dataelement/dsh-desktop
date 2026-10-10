@@ -74,6 +74,17 @@ async function verifyRuntime(appRoot) {
     if (result.engine !== 'libreoffice-pdfium') throw new Error('Packaged Office preview engine mismatch')
     const png = await sharp(path.join(temporary, 'preview', 'pages', 'page-1.png')).metadata()
     if (png.width < 800 || png.height < 400) throw new Error('Packaged Office preview dimensions are incomplete')
+    const { PersonalTemplateLibrary } = await import(pathToFileURL(path.join(core, 'lib', 'personal-templates.js')).href)
+    const library = new PersonalTemplateLibrary({ root: path.join(temporary, 'import-host'), appendAudit: async () => {} })
+    const source = await fs.readFile(path.join(temporary, 'preview-deck.pptx'))
+    const upload = await library.uploadStart('packaged-regression', { fileName: 'Packaged.pptx', size: source.length })
+    for (let offset = 0; offset < source.length; offset += upload.chunkBytes) {
+      await library.uploadChunk('packaged-regression', { uploadId: upload.uploadId, offset, base64: source.subarray(offset, offset + upload.chunkBytes).toString('base64') })
+    }
+    const draft = await library.prepare('packaged-regression', { uploadId: upload.uploadId })
+    if (draft.template.slideCount !== 1 || draft.template.previewMetadata.engine !== 'libreoffice-pdfium') throw new Error('Packaged isolated template import failed')
+    await library.cancel('packaged-regression', draft.draftId)
+    console.log('Packaged isolated template import and Office preview passed')
   } finally { await fs.rm(temporary, { recursive: true, force: true }) }
 
 }

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import { runPersonalTemplateImport } from './personal-template-import.js';
 import { loadPptdProject, checkPptdProject, parsePptdProject } from './pptd.js';
 import { renderOfficeTemplatePreview } from './office-template-preview.js';
 import { extractPersonalTemplateProfile, personalTemplateSourceTheme, validPersonalTemplateProfile, PERSONAL_TEMPLATE_PROFILE_VERSION } from './personal-template-profile.js';
@@ -11,6 +12,8 @@ import { PersonalTemplateUploads, personalTemplateFileName, decodeTemplateBase64
 export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 8;
 export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 9;
 const MAX_TEMPLATES = 100;
+// Template input pages have their own processing budget; generation remains capped separately.
+export const MAX_PERSONAL_TEMPLATE_SLIDES = 200;
 const PREVIEW_LONG_EDGE = 1920;
 const THUMBNAIL_LONG_EDGE = 720;
 // Bounds each JSON RPC request. Browser uploads transfer independent 8 MiB chunks.
@@ -56,7 +59,7 @@ function conversionError(check, fileName, sha256) {
 export class PersonalTemplateLibrary {
   tail = Promise.resolve();
   imports = new Map();
-  constructor(store, convert, writeSource, maxSlides) {
+  constructor(store, convert, writeSource, maxSlides = MAX_PERSONAL_TEMPLATE_SLIDES) {
     this.store = store;
     this.root = path.join(store.root, 'personal-templates');
     this.convert = convert;
@@ -155,6 +158,28 @@ export class PersonalTemplateLibrary {
       this.imports.set(requestId,progress);
     }
     try { return await this.locked(() => this.audit(sessionId, 'prepare-personal-template', async () => {
+      let uploadId=input?.uploadId;
+      if(uploadId===undefined) {
+        const fileName=personalTemplateFileName(input?.fileName),bytes=decodeTemplateBase64(input?.base64);
+        const started=await this.uploads.start(sessionId,{fileName,size:bytes.length});uploadId=started.uploadId;
+        try {
+          for(let offset=0;offset<bytes.length;offset+=started.chunkBytes)
+            await this.uploads.append(sessionId,{uploadId,offset,base64:bytes.subarray(offset,offset+started.chunkBytes).toString('base64')});
+        } catch(error) {await this.uploads.cancel(sessionId,uploadId);throw error;}
+      }
+      const upload=await this.uploads.record(sessionId,uploadId);
+      const draftId=randomUUID();
+      if((await lstat(upload.file)).size!==upload.record.size)throw new Error('请完成文件上传后再处理模板');
+      try {
+        return await runPersonalTemplateImport({root:this.store.root,sessionId,uploadId,draftId,maxSlides:this.maxSlides}, progress ? update=>{
+          progress.total=update.total;
+          if(update.page)progress.pages.push(update.page);
+        } : undefined);
+      } catch(error) {await rm(path.join(this.root,'drafts',draftId),{recursive:true,force:true});throw error;} finally {await rm(upload.directory,{recursive:true,force:true});}
+    })); } finally { if(progress) {progress.status='finished';progress.startedAt=Date.now();} }
+  }
+  /** Runs inside the host-owned import process, under the parent's policy/audit lock. */
+  async prepareSource(sessionId,input,progress) {
       const started=Date.now();
       let upload;
       try {
@@ -193,7 +218,7 @@ export class PersonalTemplateLibrary {
           severity: 'error', code: 'conversion-unsupported', page: item.slide, elementId: item.nodeId,
           message: `${item.feature}：${item.message}`
         })) }, fileName, hash(bytes));
-        if(progress) progress.total=converted.slideCount;
+        progress?.({total:converted.slideCount});
         const original = parsePptdProject(converted.source);
         const checked = checkPptdProject(original);
         if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
@@ -203,7 +228,7 @@ export class PersonalTemplateLibrary {
         const parsed = parsePptdProject(source);
         const sampleCheck=checkPptdProject(parsed);
         if(sampleCheck.status==='fail')throw conversionError(sampleCheck,fileName,hash(bytes));
-        const draftId = randomUUID();
+        const draftId = input.draftId ?? randomUUID();
         const directory = await this.directory('drafts', draftId);
         try {
           const project = await this.directory('drafts', draftId, 'project');
@@ -212,7 +237,7 @@ export class PersonalTemplateLibrary {
           const previewDirectory = path.join(directory, 'preview');
           const previewMetadata = await renderOfficeTemplatePreview(parsed,directory,PREVIEW_LONG_EDGE,this.maxSlides,progress ? async ({page,path:imagePath}) => {
             const thumbnail=await sharp(imagePath).resize({width:240,height:240,fit:'inside',withoutEnlargement:true}).png().toBuffer();
-            progress.pages.push({page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`});
+            progress({total:converted.slideCount,page:{page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`}});
           } : undefined);
           const previewPage = async page => readFile(path.join(previewDirectory, 'pages', `page-${page}.png`));
           const uniquePages=templateSamples.representativePages;
@@ -248,8 +273,8 @@ export class PersonalTemplateLibrary {
           return { draftId, template: record, preview };
         } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
       } finally { if (upload) await rm(upload.directory, { recursive: true, force: true }); }
-    })); } finally { if(progress) {progress.status='finished';progress.startedAt=Date.now();} }
   }
+
   async importProgress(sessionId,requestId,after=0) {
     if(!DRAFT.test(requestId)||!Number.isInteger(after)||after<0||after>this.maxSlides) throw new Error('处理进度参数无效');
     const job=this.imports.get(requestId);

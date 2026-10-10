@@ -20,7 +20,7 @@ export async function renderOfficeTemplatePreview(project,directory,longEdge,max
     // PDFium rasterizes the PDF exported by Office, using the same model as final output.
     const destination=path.join(directory,'preview','pages');await mkdir(destination,{recursive:true,mode:0o700});
     // Publish the cover immediately. Eight-page batches amortize helper/font/PDF
-    // loading while keeping the 40-page and per-operation resource limits.
+    // loading within the import page and per-operation resource budgets.
     for(let first=1;first<=project.pages.length;) {
       const pages=Array.from({length:Math.min(first===1?1:8,project.pages.length-first+1)},(_,index)=>first+index);
       const outputDir=path.join(tiles,`page-${first}`);

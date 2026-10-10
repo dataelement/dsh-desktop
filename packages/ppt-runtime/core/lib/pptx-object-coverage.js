@@ -7,6 +7,7 @@ const first = (node, name) => node.getElementsByTagNameNS('*', name)[0];
 
 /** Select an explicit compatibility branch before the parser enumerates slide objects. */
 export function resolvePptxAlternatives(xml) {
+  if(!/<(?:[A-Za-z_][\w.-]*:)?AlternateContent(?:\s|>)/u.test(xml))return {xml,count:0};
   const doc = new DOMParser().parseFromString(sanitizeOoXml(xml), 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('PPTX 页面 XML 无效');
   const tree = first(doc, 'spTree');

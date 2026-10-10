@@ -1,8 +1,9 @@
 import { markNativeShape, nativeShapeIssue } from "./imported-shape-export.js";
 import path from "node:path";
+import { boundedPptxGeometry, GEOMETRY_BUDGET_NAMESPACE } from "./pptx-geometry-budget.js";
 import { createHash } from "node:crypto";
 import yaml from "js-yaml";
-import { RECOMMENDED_ZIP_LIMITS, buildPresentation, parseZip, serializePresentation } from "@aiden0z/pptx-renderer";
+import { RECOMMENDED_ZIP_LIMITS, buildPresentation, materializeSlideNodes, parseZip, serializePresentation } from "@aiden0z/pptx-renderer";
 import { JSDOM } from "jsdom";
 import { containsLiteralLineBreak } from "./text-escapes.js";
 import { supplementResources, sanitizeOoXml, sanitizePptxFiles, serializeOoXmlElement } from "./pptx-resources.js";
@@ -624,28 +625,34 @@ async function convertPptxWithDomParser(bytes, fileName) {
 		const diagnostics = [];
 		const imageContracts = readPptxImageContracts(input);
 		const readImage = createPptxImageReader();
-        composePptxLayers(files);
+        for(const group of [files.slides,files.slideLayouts,files.slideMasters])
+            for(const [part,xml] of group)group.set(part,boundedPptxGeometry(xml));
+        await composePptxLayers(files);
         const groupFallbacks = new Map();
         for (const [slidePath, xml] of files.slides) {
+            await new Promise(resolve=>setImmediate(resolve));
             const alternatives = resolvePptxAlternatives(xml);
+            await new Promise(resolve=>setImmediate(resolve));
             const flattened = flattenPptxGroups(alternatives.xml);
             files.slides.set(slidePath, flattened.xml);
             groupFallbacks.set(slidePath, new Map((flattened.fallbacks ?? []).map(item => [item.nodeId, item])));
             if (flattened.count) diagnostics.push({ level: "normalized", feature: "group", message: `${flattened.count} 个组合已展开为页面对象，变换降级详情按对象记录。` });
             if (alternatives.count) diagnostics.push({ level: "normalized", feature: "alternate-content", message: `${alternatives.count} 个兼容分支已按源文件的备用表示导入。` });
         }
-        const presentation = buildPresentation(files);
-        for (const [slideIndex, sourceSlide] of presentation.slides.entries()) {
-          for (const node of sourceSlide.nodes) if (node.nodeType === 'shape' && node.textBody) node.textBody = inheritedTextBody(presentation, slideIndex, node);
-        }
-        const serialized = serializePresentation(presentation);
+        // Keep one page's XML tree alive. Dense vectors can expand a small XML
+        // package into several gigabytes when every page retains its DOM nodes.
+        const presentation = buildPresentation(files, {lazySlides:true});
 		const pages = /* @__PURE__ */ new Map();
 		const assets = /* @__PURE__ */ new Map();
 		let sourceNodeCount = 0;
 		let outputElementCount = 0;
-		for (const slide of serialized.slides) {
-			const sourceSlide = presentation.slides[slide.index];
-			if (sourceSlide === void 0) continue;
+        let title;
+        const convertSlide = async sourceSlide => {
+            materializeSlideNodes(presentation,sourceSlide);
+            for(const node of sourceSlide.nodes) if(node.nodeType==='shape' && node.textBody) node.textBody=inheritedTextBody(presentation,sourceSlide.index,node);
+            const serialized=serializePresentation({...presentation,slides:[sourceSlide]});
+            const slide={...serialized.slides[0],index:sourceSlide.index};
+            if(slide.index===0) title=slide.nodes.find(node=>node.textBody?.totalText.trim()!=='')?.textBody?.totalText.trim()?.split(/\r?\n/u)[0]?.slice(0,160);
 			const theme = themeForSlide(presentation, slide.index);
 			const output = [];
 			const elementNames = new Map();
@@ -690,6 +697,7 @@ async function convertPptxWithDomParser(bytes, fileName) {
 					const rawShape = rawNode?.nodeType === "shape" ? rawNode : void 0;
 					let elements;
                     try {
+                      if(descendantElement(safeElement(rawShape?.source),'prstGeom')?.getAttributeNS(GEOMETRY_BUDGET_NAMESPACE,'placeholder'))throw new Error('图形路径超过解析预算，已保留原位置占位。');
                       elements = shapeElements(node, elementId, offsetX, offsetY, rawShape, theme);
                       for (const element of elements) { const issue = nativeShapeIssue(element); if (issue) throw new Error(issue); }
                     }
@@ -784,6 +792,7 @@ async function convertPptxWithDomParser(bytes, fileName) {
 			for (const sourceObject of inventory) {
 				const node = slide.nodes.find(candidate => candidate.id === sourceObject.id);
 				await convertNode(node ?? sourceObject, 0, 0, sourceSlide.nodes.find(candidate => candidate.id === sourceObject.id));
+                await new Promise(resolve=>setImmediate(resolve));
 			}
 			const pagePath = `pages/page-${slide.index + 1}.page`;
 			const backgroundContainer = safeElement(sourceSlide.background);
@@ -830,14 +839,23 @@ async function convertPptxWithDomParser(bytes, fileName) {
 				elements: output.map(markNativeShape).map(markSourceLayout),
 				...imageNotes ? { notes: imageNotes } : {}
 			}));
-		}
+            sourceSlide.nodes=[];
+            sourceSlide.background=undefined;
+            files.slides.delete(sourceSlide.slidePath);
+        };
+        for(const sourceSlide of presentation.slides) {
+            await convertSlide(sourceSlide);
+            // Yield between pages so the host can deliver progress and collect
+            // discarded DOM trees before another dense page is materialized.
+            await new Promise(resolve=>setImmediate(resolve));
+        }
 		return {
 			source: {
 				entryName: "deck.pptd",
 				manifest: yamlText({
 					version: "v2",
-					title: (serialized.slides[0]?.nodes.find((node) => node.textBody?.totalText.trim() !== "")?.textBody?.totalText.trim())?.split(/\r?\n/u)[0]?.slice(0, 160) || path.basename(fileName, path.extname(fileName)),
-					size: [points(serialized.width), points(serialized.height)],
+					title: title || path.basename(fileName, path.extname(fileName)),
+					size: [points(presentation.width), points(presentation.height)],
 					theme: {
 						colors: {
 							primary: "#1F2937",
@@ -865,7 +883,7 @@ async function convertPptxWithDomParser(bytes, fileName) {
 				pages,
 				assets
 			},
-			slideCount: serialized.slideCount,
+			slideCount: presentation.slides.length,
 			sourceNodeCount,
 			outputElementCount,
 			extractedAssetCount: assets.size,
