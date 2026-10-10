@@ -52,7 +52,7 @@ async function loadPreview() {
   await act(async () => image.dispatchEvent(new Event('load')));
 }
 
-async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], Component = Manager) {
+async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], Component = Manager, templateSamples) {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   let saved = [], draft, selectedId;
   const calls = [];
@@ -66,7 +66,7 @@ async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], 
     if (endpoint === 'template/prepare') {
       if (waitForPrepare) await waitForPrepare;
       if (prepareError) throw new Error(prepareError);
-      draft = { draftId: 'draft-1', template: { id: 'personal-1', name: 'Company', origin: 'personal', slideCount: 2, previewImages: [image], palette: { background: 'FFFFFF', surface: 'F4F4F4', text: '242424', muted: '666666', accent: '3888FF', secondary: 'E7E7E9' }, resourcePlaceholders, diagnostics: [{ slide: 2, feature: 'shape-style', message: '样式已标准化' }] }, preview: image };
+      draft = { draftId: 'draft-1', template: { id: 'personal-1', name: 'Company', origin: 'personal', slideCount: templateSamples ? 4 : 2,templateSamples, previewImages: [image], palette: { background: 'FFFFFF', surface: 'F4F4F4', text: '242424', muted: '666666', accent: '3888FF', secondary: 'E7E7E9' }, resourcePlaceholders, diagnostics: [{ slide: 2, feature: 'shape-style', message: '样式已标准化' }] }, preview: image };
       return draft;
     }
     if (endpoint === 'template/import-progress') return {total:2,completed:1,pages:payload.after ? [] : [{page:1,preview:image}],status:'processing'};
@@ -453,6 +453,51 @@ it('shows page request failures and retries without losing the uploaded draft', 
   expect(container.querySelector('img').getAttribute('data-zoom')).toBe('2');
   await act(async()=>viewport.dispatchEvent(new Event('touchend')));
   expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
+});
+
+it.each(previewClients)('$name pages through representative layouts and switches to original without stale results replacing samples',async({Component})=>{
+  const f=await fixture(undefined,undefined,[],Component,{representativePages:[1,3]});
+  await f.upload(new File(['source'],'Samples.pptx'));
+  expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 1 / 2');
+  expect(f.calls.some(call=>call.payload?.view==='original')).toBe(false);
+  await f.click('personal.next');
+  expect(f.calls.at(-1)).toMatchObject({endpoint:'template/preview-page',payload:{page:3}});
+  expect(container.querySelector('dialog[open]').textContent).toContain('2 / 2');
+  const release=f.hold('template/preview-page');
+  await f.click('personal.originalView');
+  expect(container.querySelector('dialog[open]').textContent).toContain('3 / 4');
+  expect(f.calls.at(-1)).toMatchObject({payload:{page:3,view:'original'}});
+  await f.click('personal.sampleView');
+  expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 2 / 2');
+  await release();
+  expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 2 / 2');
+  expect(container.querySelector('.personal-view-toggle').getAttribute('aria-pressed')).toBe('false');
+  await f.click('personal.save');
+  expect(f.calls.some(call=>call.endpoint==='template/select')).toBe(true);
+});
+
+it('uses separate sample and original page caches in the detailed viewer and chooses the same reusable template',async()=>{
+  const Viewer=new Function('react','TemplateCard','OfficePptHero_module_css_default',`${source}\nreturn TemplatePreviewCard;`)(React,TemplateCard,{});
+  container=document.createElement('div');document.body.append(container);root=createRoot(container);
+  const template={id:'sample-view',name:'Samples',origin:'personal',previewVersion:9,slideCount:4,templateSamples:{representativePages:[1,3]}};
+  const client={bound:true,call:vi.fn(async(_endpoint,payload)=>({preview:`data:image/png;base64,${payload.view ?? 'sample'}-${payload.page}`}))};
+  const choose=vi.fn();
+  await act(async()=>root.render(React.createElement(Viewer,{template,client,choose,t:key=>key})));
+  await act(async()=>container.querySelector('.ppt-preview-open').click());
+  const modal=container.querySelector('dialog[open]');
+  expect(modal.textContent).toContain('personal.layouts 1 / 2');
+  await act(async()=>modal.querySelector('[aria-label="personal.next"]').click());
+  expect(modal.querySelector('img').src).toContain('sample-3');
+  await act(async()=>modal.querySelector('.personal-view-toggle').click());
+  expect(modal.textContent).toContain('3 / 4');
+  expect(modal.querySelector('img').src).toContain('original-3');
+  const requests=client.call.mock.calls.length;
+  await act(async()=>modal.querySelector('.personal-view-toggle').click());
+  expect(client.call.mock.calls).toHaveLength(requests);
+  expect(modal.querySelector('img').src).toContain('sample-3');
+  await act(async()=>modal.querySelector('.ppt-preview-use').click());
+  expect(choose).toHaveBeenCalledWith(template);
+  expect(container.querySelector('dialog[open]')).toBeNull();
 });
 
 it('opens a separate detailed viewer without selecting and supports zoom, arrows and Escape', async () => {

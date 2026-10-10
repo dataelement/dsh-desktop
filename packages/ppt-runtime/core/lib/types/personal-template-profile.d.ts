@@ -32,5 +32,5 @@ export declare const PERSONAL_TEMPLATE_PROFILE_VERSION: number;
 export declare function extractPersonalTemplateProfile(project: PptdProject): PersonalTemplateProfile;
 export declare function personalTemplateSourceTheme<T extends Pick<PptdProjectSource, 'manifest'>>(source: T, profile: PersonalTemplateProfile): T;
 export declare function personalTemplatePageSummary(page: PersonalTemplatePageProfile, detailed?: boolean): string;
-export declare function personalTemplateDesignProfile(template: { readonly templateProfile?: PersonalTemplateProfile }): string;
+export declare function personalTemplateDesignProfile(template: { readonly templateProfile?: PersonalTemplateProfile; readonly templateSamples?: import('./personal-template-samples.js').PersonalTemplateSamples }): string;
 export declare function validPersonalTemplateProfile(profile: unknown, pageIndex: readonly {readonly file: string}[]): profile is PersonalTemplateProfile;

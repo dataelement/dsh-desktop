@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { cp, mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -200,8 +200,10 @@ describe('personal PPT templates in the shipped runtime', () => {
     const xml = new TextDecoder().decode(unzipSync(exported.bytes)['ppt/slides/slide1.xml']);
     expect(xml).toContain('sz="2400"');
     expect(xml).toContain('sz="1000"');
-    expect(xml).toContain('Hello ');
-    expect(xml).toContain('world');
+    expect(xml).not.toContain('Hello ');
+    expect(xml).not.toContain('world');
+    expect(xml).toContain('项目方案');
+    expect(xml).toMatch(/<a:rPr sz="1000"[^>]*b="1"[^>]*>[\s\S]*?<\/a:rPr><a:t>ine<\/a:t>/u);
   }, 30000);
 
   it('imports missing pictures as visible placeholders and persists source identity and page diagnostics', async () => {
@@ -308,7 +310,9 @@ describe('personal PPT templates in the shipped runtime', () => {
     const index = await f.tool('ppt_get_template_pages', { template_id: template.id });
     expect(index).toHaveLength(4);
     const detail = await f.tool('ppt_get_template_pages', { template_id: template.id, slide_numbers: [2] });
-    expect(detail[0].pptdLayoutReference).toContain('Company template 2');
+    expect(detail[0].pptdLayoutReference).toContain('Section overview');
+    expect(detail[0].pptdLayoutReference).not.toContain('Company template 2');
+    expect(template.templateSamples.representativePages).toEqual([1,2]);
     expect(template.palette).toMatchObject({background:'F4F2ED',text:'000000'});
     expect(template.templateProfile.typography.title.fontSize).toBe(28);
     expect(JSON.parse(index[1].structureSummary).slotCounts).toMatchObject({title:1,body:1,image:1});
@@ -320,12 +324,15 @@ describe('personal PPT templates in the shipped runtime', () => {
     await f.tool('ppt_template_create_project', { template_id: template.id, output_directory: 'new-year' });
     expect(await readFile(path.join(f.workspace,'new-quarter/deck.pptd'),'utf8')).toContain('fontSize: 28');
     const file = path.join(f.workspace, 'new-quarter', template.pageIndex[0].file);
-    await writeFile(file, (await readFile(file, 'utf8')).replace('Company template 1', 'Quarterly review'));
-    expect(await readFile(path.join(f.workspace, 'new-year', template.pageIndex[0].file), 'utf8')).toContain('Company template 1');
+    await writeFile(file, (await readFile(file, 'utf8')).replaceAll('Project overview', 'Quarterly review'));
+    expect(await readFile(path.join(f.workspace, 'new-year', template.pageIndex[0].file), 'utf8')).toContain('Project overview');
     const result = await f.tool('pptd_render', { project_path: 'new-quarter', output_file: 'quarter.pptx' });
     expect(result.status, JSON.stringify(result.check)).toBe('exported');
     expect(result.pageCount).toBe(4);
     expect(result.nativeObjectCount).toBeGreaterThanOrEqual(12);
+    const exported=unzipSync(await readFile(path.join(f.workspace,result.outputPath)));
+    expect(strFromU8(exported['ppt/slides/slide1.xml'])).toContain('Quarterly review');
+    expect(strFromU8(exported['ppt/slides/slide1.xml'])).not.toContain('Company template');
     const stored = await readFile(path.join(f.storage, 'personal-templates', 'saved', template.id, 'source.pptx'));
     expect(stored.equals(bytes)).toBe(true);
     const audit = await readFile(path.join(f.storage, 'audit.ndjson'), 'utf8');
@@ -333,6 +340,30 @@ describe('personal PPT templates in the shipped runtime', () => {
     await expect(f.tool('ppt_template_create_project', { template_id: template.id, output_directory: 'new-year' })).rejects.toThrow();
     await expect(f.tool('ppt_template_create_project', { template_id: template.id, output_directory: '../escape' })).rejects.toThrow();
   }, 30000);
+
+  it('lazily previews the preserved original independently of samples, caches pages and enforces ownership and file confinement',async()=>{
+    const f=await fixture(),bytes=await source();
+    const draft=await f.request('template/prepare',{input:{fileName:'Original.pptx',base64:bytes.toString('base64')}});
+    const directory=path.join(f.storage,'personal-templates/drafts',draft.draftId);
+    expect(await readdir(directory)).not.toContain('original-preview');
+    await expect(f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'original'},'session-b')).rejects.toThrow('其他会话');
+    await expect(f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'../original'})).rejects.toThrow('预览类型无效');
+    const original=await f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'original'});
+    expect(original.preview).not.toEqual(draft.preview);
+    const png=path.join(directory,'original-preview/page-1.png'),pdf=path.join(directory,'original-preview/source.pdf');
+    const first=await stat(png),pdfFirst=await stat(pdf);
+    expect(await f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'original'})).toEqual(original);
+    expect((await stat(png)).mtimeMs).toBe(first.mtimeMs);
+    await f.request('template/preview-page',{draftId:draft.draftId,page:2,view:'original'});
+    expect((await stat(pdf)).mtimeMs).toBe(pdfFirst.mtimeMs);
+    const saved=await f.request('template/save',{draftId:draft.draftId,name:'Sample library'});
+    expect(await f.request('template/preview-saved-page',{templateId:saved.id,page:1,view:'original'})).toEqual(original);
+    expect((await f.request('template/preview-saved-page',{templateId:saved.id,page:1})).preview).toBe(draft.preview);
+    expect(await readFile(path.join(f.storage,'personal-templates/saved',saved.id,'source.pptx'))).toEqual(bytes);
+    const cached=path.join(f.storage,'personal-templates/saved',saved.id,'original-preview/page-1.png');
+    await rm(cached);await symlink(path.join(f.root,'private.png'),cached);
+    await expect(f.request('template/preview-saved-page',{templateId:saved.id,page:1,view:'original'})).rejects.toThrow('原稿缓存应为普通本地文件');
+  },30000);
 
   it('enriches a current cached conversion from its editable model while reusing every rendered page',async()=>{
     const f=await fixture(),{bytes,template}=await save(f);

@@ -3,11 +3,12 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } 
 import path from 'node:path';
 import sharp from 'sharp';
 import { loadPptdProject, checkPptdProject, parsePptdProject } from './pptd.js';
-import { renderOfficeTemplatePreview } from './office-template-preview.js';
+import { renderOfficeTemplatePreview, renderOriginalTemplatePage } from './office-template-preview.js';
 import { extractPersonalTemplateProfile, personalTemplateSourceTheme, validPersonalTemplateProfile, PERSONAL_TEMPLATE_PROFILE_VERSION } from './personal-template-profile.js';
+import { createPersonalTemplateSamples, validPersonalTemplateSamples } from './personal-template-samples.js';
 
-export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 7;
-export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 8;
+export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 8;
+export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 9;
 const MAX_TEMPLATES = 100;
 const PREVIEW_LONG_EDGE = 1920;
 const THUMBNAIL_LONG_EDGE = 720;
@@ -101,6 +102,7 @@ export class PersonalTemplateLibrary {
     if (!Array.isArray(record.pageIndex) || record.pageIndex.length !== record.slideCount || record.pageIndex.some((page, i) =>
       page.slideNumber !== i + 1 || typeof page.file !== 'string' || !/^pages\/[A-Za-z0-9_.-]+\.page$/.test(page.file))) throw new Error('模板页面索引无效');
     if(record.templateProfile!==undefined && !validPersonalTemplateProfile(record.templateProfile,record.pageIndex)) throw new Error('模板结构索引无效，请重新上传 PPT');
+    if(record.templateSamples!==undefined && !validPersonalTemplateSamples(record.templateSamples,record.slideCount)) throw new Error('模板示例索引无效，请重新上传 PPT');
     return record;
   }
   async list() {
@@ -193,8 +195,11 @@ export class PersonalTemplateLibrary {
       const checked = checkPptdProject(original);
       if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
       const templateProfile=extractPersonalTemplateProfile(original);
-      const source=personalTemplateSourceTheme(converted.source,templateProfile);
+      const {source:sampleSource,samples:templateSamples}=createPersonalTemplateSamples(original,templateProfile);
+      const source=personalTemplateSourceTheme(sampleSource,templateProfile);
       const parsed = parsePptdProject(source);
+      const sampleCheck=checkPptdProject(parsed);
+      if(sampleCheck.status==='fail')throw conversionError(sampleCheck,fileName,hash(bytes));
       const draftId = randomUUID();
       const directory = await this.directory('drafts', draftId);
       try {
@@ -207,7 +212,8 @@ export class PersonalTemplateLibrary {
           progress.pages.push({page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`});
         } : undefined);
         const previewPage = async page => readFile(path.join(previewDirectory, 'pages', `page-${page}.png`));
-        const representativePages=[1,Math.floor(converted.slideCount/2)+1,converted.slideCount];
+        const uniquePages=templateSamples.representativePages;
+        const representativePages=[uniquePages[0],uniquePages[Math.floor(uniquePages.length/2)],uniquePages.at(-1)];
         const thumbnails=new Map();
         for(const page of new Set(representativePages)) thumbnails.set(page,(async()=>{
           const thumbnail = await sharp(path.join(previewDirectory,'pages',`page-${page}.png`)).resize({
@@ -222,6 +228,7 @@ export class PersonalTemplateLibrary {
           id, conversionVersion: PERSONAL_TEMPLATE_CONVERSION_VERSION, previewVersion: PERSONAL_TEMPLATE_PREVIEW_VERSION, origin: 'personal', name: saved?.name ?? name, category: 'personal', supportedModes: ['ppt'], aspectRatio: 'wide',
           description: `${converted.slideCount} 页个人 PPT 模板`, previewTitle: name, previewSubtitle: '我的模板',
           ...profileMetadata(templateProfile),
+          templateSamples,
           createdAt: saved?.createdAt ?? new Date().toISOString(), ...(saved ? {description:saved.description,updatedAt:new Date().toISOString()} : {}), fileName, sha256: hash(bytes), slideCount: converted.slideCount,
           previewImages, previewMetadata,
           preparationTimings:{conversionMs:convertedAt-conversionStarted,totalMs:Date.now()-started},
@@ -255,20 +262,29 @@ export class PersonalTemplateLibrary {
     if (owner.session !== hash(sessionId)) throw new Error('该预览属于其他会话');
     return directory;
   }
-  async previewPage(sessionId, draftId, page) {
-    const directory = await this.draft(sessionId, draftId);
-    const record = JSON.parse(await readFile(await this.checkedFile(directory, 'template.json'), 'utf8'));
-    if (!Number.isInteger(page) || page < 1 || page > record.slideCount)
-      throw new Error('预览页码无效');
-    const image = await this.checkedFile(path.join(directory, 'preview', 'pages'), `page-${page}.png`);
+  async readPreview(directory,record,page,view='template') {
+    if(!['template','original'].includes(view))throw new Error('预览类型无效');
+    if(!Number.isInteger(page)||page<1||page>record.slideCount)throw new Error('预览页码无效');
+    let image;
+    if(view==='original') {
+      const source=await this.checkedFile(directory,'source.pptx');
+      const cache=await this.directory(...path.relative(this.root,directory).split(path.sep),'original-preview');
+      image=await renderOriginalTemplatePage(source,cache,page,record.templateProfile?.canvas ?? {width:960,height:540},record.slideCount,this.maxSlides,PREVIEW_LONG_EDGE);
+      image=await this.checkedFile(cache,path.basename(image));
+    } else image=await this.checkedFile(path.join(directory,'preview','pages'),`page-${page}.png`);
     return { page, preview: `data:image/png;base64,${(await readFile(image)).toString('base64')}` };
   }
-  async previewSavedPage(sessionId, templateId, page) {
+  async previewPage(sessionId,draftId,page,view) {
+    return this.locked(()=>this.audit(sessionId,'preview-personal-template',async()=>{
+      const directory=await this.draft(sessionId,draftId);
+      const record=JSON.parse(await readFile(await this.checkedFile(directory,'template.json'),'utf8'));
+      return this.readPreview(directory,record,page,view);
+    }));
+  }
+  async previewSavedPage(sessionId, templateId, page,view) {
     return this.locked(() => this.audit(sessionId, 'preview-personal-template', async () => {
       const record = await this.readRecord(templateId);
-      if (!Number.isInteger(page) || page < 1 || page > record.slideCount) throw new Error('预览页码无效');
-      const image = await this.checkedFile(path.join(this.root, 'saved', templateId, 'preview', 'pages'), `page-${page}.png`);
-      return { page, preview: `data:image/png;base64,${(await readFile(image)).toString('base64')}` };
+      return this.readPreview(path.join(this.root,'saved',templateId),record,page,view);
     }));
   }
   async save(sessionId, draftId, name) {

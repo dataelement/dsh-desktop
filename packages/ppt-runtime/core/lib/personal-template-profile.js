@@ -120,6 +120,7 @@ export function personalTemplateDesignProfile(template) {
     `字体：标题 ${profile.typography.title.fontFace} ${profile.typography.title.fontSize} pt；正文 ${profile.typography.body.fontFace} ${profile.typography.body.fontSize} pt。`,
     `配色：${Object.entries(profile.palette).map(([role,value])=>`${role} #${value}`).join('；')}。`,
     `可复用页型（按几何推断）：${[...new Set(profile.pages.map(p=>p.role))].join('、')}。`,
+    ...(template.templateSamples ? [`模板示例：${template.templateSamples.representativePages.length} 个代表版式，共 ${profile.pages.length} 页可编辑页面。文字示例和页面结构共用实际工程；图表、表格和密集图示保留原数据，按当前任务逐项替换。`] : []),
     '通过 ppt_get_template_pages 读取元素 ID、位置、字体和文字容量估计，选择适合本次内容的页面。替换内容后核对换行与留白；重复边缘文字和背景素材按品牌需要保留。'].join('\n');
 }
 

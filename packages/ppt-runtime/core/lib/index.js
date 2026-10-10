@@ -990,8 +990,8 @@ function pptRpc(service) {
 				switch (endpoint) {
 				case "template/import-progress": return ok(await service.store.personalTemplates.importProgress(sessionId, request.requestId, request.after));
 				case "template/prepare": return ok(await service.store.personalTemplates.prepare(sessionId, request.input));
-				case "template/preview-saved-page": return ok(await service.store.personalTemplates.previewSavedPage(sessionId, request.templateId, request.page));
-				case "template/preview-page": return ok(await service.store.personalTemplates.previewPage(sessionId, request.draftId, request.page));
+				case "template/preview-saved-page": return ok(await service.store.personalTemplates.previewSavedPage(sessionId, request.templateId, request.page,request.view));
+				case "template/preview-page": return ok(await service.store.personalTemplates.previewPage(sessionId, request.draftId, request.page,request.view));
 				case "template/save": return ok(await service.store.personalTemplates.save(sessionId, request.draftId, request.name));
 				case "template/cancel": return ok(await service.store.personalTemplates.cancel(sessionId, request.draftId));
 				case "template/rename": return ok(await service.store.personalTemplates.rename(sessionId, request.templateId, request.name));
@@ -2422,7 +2422,7 @@ async function loadTemplateVisualReference(template) {
 	if (template.origin === "personal") return {
 		kind: "semantic-profile",
 		designProfile: `可编辑模板：${template.name}，${template.slideCount} 页。${personalTemplateDesignProfile(template)}\n使用 ppt_template_create_project 创建工作副本，再通过 pptd_read_file 检查并修改实际页面。页面文件保存模板的版式、字体、素材和配图规则。按实际语言明确设置字体：中文无衬线使用 { latin: Arial, ea: Noto Sans CJK SC, mac: PingFang SC, win: Microsoft YaHei }，衬线模板选择相应中文衬线字体。同步更新 content.fontFamily 与富文本 span 的 font-family，确保行内样式与整体设定一致。按中文字符宽度重排标题、正文和表格；放大字号时同步调整文字区和相邻留白，并检查封面、最密集页与结尾页。示例文字和业务数据根据当前任务替换。转换提示：${JSON.stringify(template.diagnostics)}`,
-		representativeSlides: [1, template.slideCount]
+		representativeSlides: template.templateSamples?.representativePages ?? [1, template.slideCount]
 	};
 	const definition = DEFINITIONS_BY_ID.get(template.id);
 	if (definition === void 0) return {
