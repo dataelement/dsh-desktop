@@ -381,6 +381,15 @@ function renderAbout(): void {
   header.appendChild(appIcon())
   const switcher = element('div', 'switcher')
   const selectVersionBtn = button(zh ? '版本切换' : 'Switch version', 'version-switch')
+  const switchIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  switchIcon.setAttribute('viewBox', '0 0 24 24')
+  switchIcon.setAttribute('aria-hidden', 'true')
+  switchIcon.setAttribute('focusable', 'false')
+  switchIcon.classList.add('version-switch-icon')
+  const switchArrows = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  switchArrows.setAttribute('d', 'M3 8h18l-6-6M21 16H3l6 6')
+  switchIcon.appendChild(switchArrows)
+  selectVersionBtn.prepend(switchIcon)
   selectVersionBtn.setAttribute('aria-expanded', String(versionPickerOpen))
   selectVersionBtn.setAttribute('aria-controls', 'desktop-version-list')
   selectVersionBtn.addEventListener('click', () => {
@@ -551,6 +560,8 @@ const styles = `
   .primary:hover:not(:disabled) { background:#0057db; }
   .secondary,.details,.version-switch { color:var(--dsw-alias-label-secondary,#666b73); background:transparent; padding:4px 8px; font-size:13px; }
   .details { color:var(--dsw-alias-link,#0066ff); padding-left:0; }
+  .version-switch { display:inline-flex; align-items:center; gap:8px; }
+  .version-switch-icon { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
   .secondary:hover,.details:hover,.version-switch:hover { background:var(--dsw-alias-interactive-bg-hover,#f0f2f5); }
   .actions { display:flex; gap:8px; margin-top:16px; }
   .centered .primary,.confirm { width:100%; }
