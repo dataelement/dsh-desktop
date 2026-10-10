@@ -18,16 +18,23 @@ function remapRelationships(node, mapping) {
 }
 /** Compose visible non-placeholder layers in painter order, with slide-owned relationships. */
 export function composePptxLayers(files) {
+  // Layouts and masters are immutable inputs. Clone their nodes into each slide,
+  // keeping relationship remapping and placeholder removal owned by that slide.
+  const documents=new Map();
+  const readLayer=(part,xml)=>{
+    if(!documents.has(part))documents.set(part,parse(xml));
+    return documents.get(part);
+  };
   for (const [slidePath, xml] of files.slides) {
     const slide = parse(xml), relKey = relPath(slidePath), rels = parse(files.slideRels.get(relKey));
     const layoutRel = [...rels.documentElement.children].find(r => r.getAttribute('Type').endsWith('/slideLayout'));
     if (!layoutRel) continue;
     const layoutPath = target(slidePath, layoutRel), layoutXml = files.slideLayouts.get(layoutPath);
     if (!layoutXml) continue;
-    const layout = parse(layoutXml), layoutRels = parse(files.slideLayoutRels.get(relPath(layoutPath)));
+    const layout = readLayer(layoutPath,layoutXml), layoutRels = readLayer(relPath(layoutPath),files.slideLayoutRels.get(relPath(layoutPath)));
     const masterRel = [...layoutRels.documentElement.children].find(r => r.getAttribute('Type').endsWith('/slideMaster'));
     const masterPath = masterRel && target(layoutPath, masterRel);
-    const master = masterPath && files.slideMasters.has(masterPath) ? parse(files.slideMasters.get(masterPath)) : undefined;
+    const master = masterPath && files.slideMasters.has(masterPath) ? readLayer(masterPath,files.slideMasters.get(masterPath)) : undefined;
     const layers = [];
     if (!['0','false'].includes(slide.documentElement.getAttribute('showMasterSp')) && !['0','false'].includes(layout.documentElement.getAttribute('showMasterSp')) && master) layers.push([masterPath, master, files.slideMasterRels]);
     layers.push([layoutPath, layout, files.slideLayoutRels]);
@@ -38,7 +45,7 @@ export function composePptxLayers(files) {
     let nextId = Math.max(0, ...[...slide.getElementsByTagNameNS('*', 'cNvPr')].map(n => Number(n.getAttribute('id')) || 0)) + 1;
     for (const [part, layer, relationshipMap] of layers) {
       const layerTree = child(child(layer.documentElement, 'cSld'), 'spTree');
-      const layerRels = parse(relationshipMap.get(relPath(part)));
+      const layerRels = readLayer(relPath(part),relationshipMap.get(relPath(part)));
       const mapping = new Map();
       layerMappings.set(layer, mapping);
       for (const rel of [...layerRels.documentElement.children]) {
@@ -67,7 +74,7 @@ export function composePptxLayers(files) {
           mapping=new Map();
           const part=bg.ownerDocument===layout?layoutPath:masterPath;
           const relationshipMap=bg.ownerDocument===layout?files.slideLayoutRels:files.slideMasterRels;
-          const sourceRels=parse(relationshipMap.get(relPath(part)));
+          const sourceRels=readLayer(relPath(part),relationshipMap.get(relPath(part)));
           for (const rel of [...sourceRels.documentElement.children]) {
             if (rel.getAttribute('TargetMode')==='External') continue;
             const id=`dsh-background-${sequence++}`,imported=rels.importNode(rel,true);

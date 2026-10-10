@@ -7,10 +7,13 @@ import {convertedGeometry} from '../packages/ppt-runtime/core/lib/pptx-geometry.
 import {importedTextLines} from '../packages/ppt-runtime/core/lib/imported-text-layout.js';
 import {parsePptdProject,renderPptdProject} from '../packages/ppt-runtime/core/lib/pptd.js';
 import {JSDOM} from 'jsdom';
-async function fixture(edit) {
- const pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';const slide=pptx.addSlide();
- slide.addShape(pptx.ShapeType.rect,{x:1,y:1,w:3,h:1,fill:{color:'8FAADC'}});
- slide.addText('ABC',{x:1,y:2,w:3,h:1,fontSize:18});
+async function fixture(edit,pageCount=1) {
+ const pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';
+ for(let i=0;i<pageCount;i++){
+  const slide=pptx.addSlide();
+  slide.addShape(pptx.ShapeType.rect,{x:1,y:1,w:3,h:1,fill:{color:'8FAADC'}});
+  slide.addText('ABC',{x:1,y:2,w:3,h:1,fontSize:18});
+ }
  const parts=unzipSync(Buffer.from(await pptx.write({outputType:'nodebuffer'})));edit(parts);
  return convertPptxToPptd(Buffer.from(zipSync(parts)),'fidelity.pptx');
 }
@@ -34,6 +37,20 @@ it('composes visible master graphics and respects showMasterSp',async()=>{
   const converted=await fixture(p=>edit(p,hidden));
   const elements=yaml.load([...converted.source.pages.values()][0]).elements;
   expect(elements.some(e=>e.fill?.color==='#00FF00')).toBe(!hidden);
+ }
+});
+it('keeps shared master inputs intact across slides with independent visibility and object identities',async()=>{
+ const converted=await fixture(parts=>{
+  const key='ppt/slideMasters/slideMaster1.xml';
+  const shape='<p:sp><p:nvSpPr><p:cNvPr id="900" name="Shared decoration"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></p:spPr></p:sp>';
+  parts[key]=strToU8(strFromU8(parts[key]).replace('</p:spTree>',shape+'</p:spTree>'));
+  parts['ppt/slides/slide1.xml']=strToU8(strFromU8(parts['ppt/slides/slide1.xml']).replace('<p:sld ','<p:sld showMasterSp="0" '));
+ },3);
+ const pages=[...converted.source.pages.values()].map(text=>yaml.load(text));
+ expect(pages.map(page=>page.elements.filter(e=>e.fill?.color==='#00FF00').length)).toEqual([0,1,1]);
+ for(const page of pages){
+  expect(new Set(page.elements.map(e=>e.elementId)).size).toBe(page.elements.length);
+  expect(page.elements.filter(e=>e.elementType==='text').map(e=>e.content.text).join('')).toContain('ABC');
  }
 });
 it('preserves source spacing and tabs, exports editable text and honors edits',async()=>{

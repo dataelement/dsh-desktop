@@ -140,6 +140,7 @@ export type OfficePresentationMode = 'ppt';
 export type OfficeTemplateCategory = 'strategy' | 'business' | 'work' | 'promotion' | 'academic' | 'consulting' | 'finance' | 'custom' | 'personal';
 /** Selectable presentation theme, page references, and model-facing visual guidance. */
 export interface OfficeTemplate {
+    readonly templateProfile?: import('./personal-template-profile.js').PersonalTemplateProfile;
     readonly id: OfficeTemplateId;
     readonly name: string;
     readonly description: string;

@@ -1,6 +1,7 @@
 import { parseImageContract } from "./template-image-contract.js";
 import { validationSchema, validationReport, formatValidation } from "./validation.js";
 import { MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PersonalTemplateLibrary } from "./personal-templates.js";
+import { personalTemplateSourceTheme, personalTemplateDesignProfile, personalTemplatePageSummary } from './personal-template-profile.js';
 /**
  * 实现方案参考了 Kimi PPT（Kimi Slides）的 PPTD 文档与示例：
  * 以本地声明式工程组织页面，经校验后导出可编辑 PPTX。
@@ -1799,7 +1800,8 @@ function registerPptdProjectTools(ctx, service) {
 					const entry = path.join(stage, "deck.pptd");
 					const manifest = yaml.load(await readFile(entry, "utf8"), { schema: yaml.JSON_SCHEMA });
 					manifest.template = { id: template.id, name: template.name };
-					await writeFile(entry, yamlText(manifest), { mode: 384 });
+					const source={manifest:yamlText(manifest)};
+					await writeFile(entry,template.templateProfile ? personalTemplateSourceTheme(source,template.templateProfile).manifest : source.manifest,{mode:384});
 					if (checkPptdProject(await loadPptdProject(stage)).status === "fail") throw new Error("模板副本需要修复后才能发布");
 					exec.signal.throwIfAborted();
 				});
@@ -2419,7 +2421,7 @@ function designProfile(template) {
 async function loadTemplateVisualReference(template) {
 	if (template.origin === "personal") return {
 		kind: "semantic-profile",
-		designProfile: `可编辑模板：${template.name}，${template.slideCount} 页。使用 ppt_template_create_project 创建工作副本，再通过 pptd_read_file 检查并修改实际页面。页面文件保存模板的版式、字体、素材和配图规则。按实际语言明确设置字体：中文无衬线使用 { latin: Arial, ea: Noto Sans CJK SC, mac: PingFang SC, win: Microsoft YaHei }，衬线模板选择相应中文衬线字体。同步更新 content.fontFamily 与富文本 span 的 font-family，确保行内样式与整体设定一致。按中文字符宽度重排标题、正文和表格；放大字号时同步调整文字区和相邻留白，并检查封面、最密集页与结尾页。示例文字和业务数据根据当前任务替换。转换提示：${JSON.stringify(template.diagnostics)}`,
+		designProfile: `可编辑模板：${template.name}，${template.slideCount} 页。${personalTemplateDesignProfile(template)}\n使用 ppt_template_create_project 创建工作副本，再通过 pptd_read_file 检查并修改实际页面。页面文件保存模板的版式、字体、素材和配图规则。按实际语言明确设置字体：中文无衬线使用 { latin: Arial, ea: Noto Sans CJK SC, mac: PingFang SC, win: Microsoft YaHei }，衬线模板选择相应中文衬线字体。同步更新 content.fontFamily 与富文本 span 的 font-family，确保行内样式与整体设定一致。按中文字符宽度重排标题、正文和表格；放大字号时同步调整文字区和相邻留白，并检查封面、最密集页与结尾页。示例文字和业务数据根据当前任务替换。转换提示：${JSON.stringify(template.diagnostics)}`,
 		representativeSlides: [1, template.slideCount]
 	};
 	const definition = DEFINITIONS_BY_ID.get(template.id);
@@ -2910,7 +2912,10 @@ function registerPptTools(ctx, service) {
 			const template = state.templates.find((item) => item.id === args.template_id);
 			if (template === void 0 || !templateSupportsMode(template, "ppt")) throw new Error(`template ${args.template_id} is not available to the DSH PPT workflow`);
 			const reference = await loadTemplateVisualReference(template);
-			const pageContracts = (template.source?.pageReferences ?? []).map((page) => ({
+				const pageContracts = template.origin==='personal' && template.templateProfile ? template.templateProfile.pages.map(page=>({
+          slideNumber:page.slideNumber,sourceTitle:`模板第 ${page.slideNumber} 页`,relationship:'source-layout',
+          structureSummary:personalTemplatePageSummary(page),pptdReference:`通过 ppt_get_template_pages 指定 slide_numbers: [${page.slideNumber}] 读取实际页面。`
+        })) : (template.source?.pageReferences ?? []).map((page) => ({
 				slideNumber: page.slideNumber,
 				sourceTitle: page.sourceTitle,
 				relationship: page.relationship ?? "generic",
@@ -3040,9 +3045,11 @@ function registerPptTools(ctx, service) {
 					const pageText = await readFile(pagePath, "utf8");
 					const pageData = yaml.load(pageText, { schema: yaml.JSON_SCHEMA });
 					const images = parseImageContract(pageData?.notes, pageData?.elements);
+					const profile=template.templateProfile?.pages.find(item=>item.slideNumber===page.slideNumber);
 					return {
-						slideNumber: page.slideNumber, sourceTitle: `模板第 ${page.slideNumber} 页`, family: "source-page", density: "source", relationship: "source-layout",
-						structureSummary: images ? `${images.pageRole}；配图：${images.slots.map(slot => slot.role).join("、") || "原生文字、表格和图表"}；可编辑源页：${page.file}` : `可编辑源页：${page.file}`,
+						slideNumber: page.slideNumber, sourceTitle: `模板第 ${page.slideNumber} 页`, family: profile?.role ?? "source-page", density: "source", relationship: "source-layout",
+						structureSummary: [profile ? personalTemplatePageSummary(profile,numbers!==undefined) : `可编辑源页：${page.file}`,
+              images ? `${images.pageRole}；配图：${images.slots.map(slot=>slot.role).join('、')}` : ''].filter(Boolean).join('\n'),
 						simplificationGuidance: "先复制模板工程，再根据当前内容选页、替换示例文本并检查排版。",
 						...(numbers === void 0 ? {} : { pptdLayoutReference: pageText })
 					};

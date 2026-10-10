@@ -309,8 +309,16 @@ describe('personal PPT templates in the shipped runtime', () => {
     expect(index).toHaveLength(4);
     const detail = await f.tool('ppt_get_template_pages', { template_id: template.id, slide_numbers: [2] });
     expect(detail[0].pptdLayoutReference).toContain('Company template 2');
+    expect(template.palette).toMatchObject({background:'F4F2ED',text:'000000'});
+    expect(template.templateProfile.typography.title.fontSize).toBe(28);
+    expect(JSON.parse(index[1].structureSummary).slotCounts).toMatchObject({title:1,body:1,image:1});
+    expect(JSON.parse(detail[0].structureSummary).slots.find(slot=>slot.role==='title')).toMatchObject({fontSize:28,fontFace:'Arial',action:'replace-content'});
+    const reference=await f.tool('ppt_get_template_reference',{template_id:template.id});
+    expect(reference.designProfile).toContain('F4F2ED');
+    expect(reference.pageContracts).toHaveLength(4);
     await f.tool('ppt_template_create_project', { template_id: template.id, output_directory: 'new-quarter' });
     await f.tool('ppt_template_create_project', { template_id: template.id, output_directory: 'new-year' });
+    expect(await readFile(path.join(f.workspace,'new-quarter/deck.pptd'),'utf8')).toContain('fontSize: 28');
     const file = path.join(f.workspace, 'new-quarter', template.pageIndex[0].file);
     await writeFile(file, (await readFile(file, 'utf8')).replace('Company template 1', 'Quarterly review'));
     expect(await readFile(path.join(f.workspace, 'new-year', template.pageIndex[0].file), 'utf8')).toContain('Company template 1');
@@ -325,6 +333,24 @@ describe('personal PPT templates in the shipped runtime', () => {
     await expect(f.tool('ppt_template_create_project', { template_id: template.id, output_directory: 'new-year' })).rejects.toThrow();
     await expect(f.tool('ppt_template_create_project', { template_id: template.id, output_directory: '../escape' })).rejects.toThrow();
   }, 30000);
+
+  it('enriches a current cached conversion from its editable model while reusing every rendered page',async()=>{
+    const f=await fixture(),{bytes,template}=await save(f);
+    const directory=path.join(f.storage,'personal-templates/saved',template.id);
+    const record=JSON.parse(await readFile(path.join(directory,'template.json'),'utf8'));
+    delete record.templateProfile;
+    record.titleFontFace='Arial';record.palette.background='FFFFFF';
+    await writeFile(path.join(directory,'template.json'),JSON.stringify(record));
+    const imageBefore=await readFile(path.join(directory,'preview/pages/page-1.png'));
+    const enriched=await f.request('template/prepare',{input:{fileName:'again.pptx',base64:bytes.toString('base64')}});
+    expect(enriched.duplicate).toBe(true);
+    expect(enriched.template.templateProfile.version).toBe(1);
+    expect(enriched.template.palette.background).toBe('F4F2ED');
+    expect(enriched.template.previewMetadata).toEqual(record.previewMetadata);
+    expect(await readFile(path.join(directory,'preview/pages/page-1.png'))).toEqual(imageBefore);
+    expect((await f.request('state')).templates.find(t=>t.id===template.id).templateProfile).toEqual(enriched.template.templateProfile);
+    expect(await readFile(path.join(directory,'source.pptx'))).toEqual(bytes);
+  },30000);
 
   it('renames globally, deletes from selection, and retains existing task copies', async () => {
     const f = await fixture(); const { template } = await save(f);

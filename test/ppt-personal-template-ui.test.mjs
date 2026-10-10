@@ -121,6 +121,22 @@ it('hides create, rename, and delete before a session exists', async () => {
   expect(container.querySelector('[data-personal-card="personal-1"]')).not.toBeNull();
 });
 
+it.each(previewClients)('$name puts newest personal templates after create and before built-in cards', async ({Component}) => {
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+  const templates = [
+    {id:'older',name:'Older',origin:'personal',createdAt:'2026-10-08'},
+    {id:'builtin',name:'Built-in',origin:'built-in'},
+    {id:'newer',name:'Newer',origin:'personal',createdAt:'2026-10-10'}
+  ].map(template=>({...template,previewImages:['data:image/png;base64,iVBORw0KGgo='],palette:{background:'FFFFFF',surface:'F4F4F4',text:'222222',muted:'666666',accent:'333333',secondary:'AAAAAA'}}));
+  await act(async () => root.render(React.createElement(Component, {
+    client:{bound:false},mode:{},state:{templates,selectedId:null},choose:()=>{},t:key=>key,
+    builtInCards:[React.createElement('div',{key:'builtin','data-built-in-card':'builtin'},'Built-in')]
+  })));
+  const grid=container.querySelector('[data-personal-template-grid]');
+  expect([...grid.children].map(item=>item.getAttribute('data-personal-card')??item.getAttribute('data-built-in-card')??item.textContent))
+    .toEqual(['personal.create','newer','older','builtin']);
+});
+
 it('keeps a staged built-in template when opening personal templates before a session exists', async () => {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   const builtIn = { id: 'built-in-a', name: 'Blueprint', origin: 'built-in' };
