@@ -295,61 +295,46 @@ it('shows a quiet placeholder notice while keeping preview, pagination and savin
   expect(f.calls.some(call => call.endpoint === 'template/select')).toBe(true);
 });
 
-it.each(previewClients)('celebrates a rendered import preview once while allowing immediate pagination and saving ($name)', async ({ Component }) => {
+it.each(previewClients)('shows the completed template directly and supports pagination and saving ($name)', async ({ Component }) => {
   const f = await fixture(undefined, undefined, [], Component);
   await f.upload(new File(['source'], 'Company.pptx'));
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
   await loadPreview();
-  const feedback = container.querySelector('.personal-preview-ready');
-  expect(feedback.textContent).toBe('personal.previewReady');
-  expect(feedback.querySelectorAll('.personal-ready-particle').length).toBeGreaterThan(8);
-  expect(getComputedStyle(feedback).pointerEvents).toBe('none');
+  expect(container.querySelector('.personal-zoom-stage img')).not.toBeNull();
+  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  expect(container.querySelector('.personal-view-toggle')).toBeNull();
   expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
-  await loadPreview();
-  expect(container.querySelector('.personal-preview-ready')).toBe(feedback);
   await f.click('personal.next'); await loadPreview();
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  expect(container.querySelector('dialog[open]').textContent).toContain('2 / 2');
   await f.click('personal.previous'); await loadPreview();
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  expect(container.querySelector('dialog[open]').textContent).toContain('1 / 2');
   await f.click('personal.save');
   expect(container.querySelector('.personal-save-feedback').textContent).toBe('personal.saved');
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
-});
-
-it.each(previewClients)('finishes the preview cue promptly and releases it when switching sessions ($name)', async ({ Component }) => {
-  const f = await fixture(undefined, undefined, [], Component);
-  await f.upload(new File(['source'], 'Company.pptx'));
-  vi.useFakeTimers(); await loadPreview();
-  expect(container.querySelector('.personal-preview-ready')).not.toBeNull();
-  await act(async () => vi.advanceTimersByTime(850));
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
-  await loadPreview();
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
-  await f.switchSession();
   expect(container.querySelector('dialog[open]')).toBeNull();
-  expect(vi.getTimerCount()).toBe(0);
 });
 
-it.each(previewClients)('waits for a successful image load after a failed preview ($name)', async ({ Component }) => {
+it.each(previewClients)('recovers the template image after a failed preview ($name)', async ({ Component }) => {
   const f = await fixture(undefined, undefined, [], Component);
   await f.upload(new File(['source'], 'Company.pptx'));
   await act(async () => container.querySelector('.personal-zoom-stage img').dispatchEvent(new Event('error')));
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
   expect(container.querySelector('[role=alert]')).not.toBeNull();
   await f.click('templates.retry'); await loadPreview();
-  expect(container.querySelector('.personal-preview-ready')).not.toBeNull();
+  expect(container.querySelector('.personal-zoom-stage img')).not.toBeNull();
   expect(container.querySelector('[role=alert]')).toBeNull();
 });
 
-it.each(previewClients)('recognizes a cached rendered image before its load event arrives ($name)', async ({ Component }) => {
-  vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(1920);
-  vi.spyOn(HTMLImageElement.prototype, 'naturalHeight', 'get').mockReturnValue(1080);
+it.each(previewClients)('fits a cached image using its actual aspect ratio before the load event ($name)', async ({ Component }) => {
+  vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(1600);
+  vi.spyOn(HTMLImageElement.prototype, 'naturalHeight', 'get').mockReturnValue(1200);
   vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600);
   const f = await fixture(undefined, undefined, [], Component);
   await f.upload(new File(['source'], 'Company.pptx'));
-  expect(container.querySelector('.personal-preview-ready')).not.toBeNull();
-  await f.click('personal.next');
-  expect(container.querySelector('.personal-preview-ready')).toBeNull();
+  const image = container.querySelector('.personal-zoom-stage img');
+  expect(image.style.width).toBe('800px');
+  expect(image.style.height).toBe('600px');
+  await f.switchSession();
+  expect(container.querySelector('dialog[open]')).toBeNull();
 });
 
 it('reads a file above 16 MB and sends its full payload to the Host', async () => {
@@ -455,46 +440,47 @@ it('shows page request failures and retries without losing the uploaded draft', 
   expect(f.calls.some(call => call.endpoint === 'template/save')).toBe(false);
 });
 
-it.each(previewClients)('$name pages through representative layouts and switches to original without stale results replacing samples',async({Component})=>{
+it.each(previewClients)('$name pages through representative layouts and isolates late page responses',async({Component})=>{
   const f=await fixture(undefined,undefined,[],Component,{representativePages:[1,3]});
   await f.upload(new File(['source'],'Samples.pptx'));
   expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 1 / 2');
-  expect(f.calls.some(call=>call.payload?.view==='original')).toBe(false);
+  expect(container.querySelector('.personal-view-toggle')).toBeNull();
+  const release=f.hold('template/preview-page');
   await f.click('personal.next');
   expect(f.calls.at(-1)).toMatchObject({endpoint:'template/preview-page',payload:{page:3}});
   expect(container.querySelector('dialog[open]').textContent).toContain('2 / 2');
-  const release=f.hold('template/preview-page');
-  await f.click('personal.originalView');
-  expect(container.querySelector('dialog[open]').textContent).toContain('3 / 4');
-  expect(f.calls.at(-1)).toMatchObject({payload:{page:3,view:'original'}});
-  await f.click('personal.sampleView');
-  expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 2 / 2');
+  expect(container.querySelector('.personal-zoom-stage').getAttribute('aria-busy')).toBe('true');
+  await f.click('personal.previous');
   await release();
+  expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 1 / 2');
+  expect(container.querySelector('.personal-zoom-stage').getAttribute('aria-busy')).toBe('false');
+  expect(container.querySelector('.personal-zoom-stage img')).not.toBeNull();
+  // The late third page was discarded; navigation requests that page again.
+  await f.click('personal.next');
+  expect(f.calls.filter(call=>call.endpoint==='template/preview-page'&&call.payload.page===3)).toHaveLength(2);
   expect(container.querySelector('dialog[open]').textContent).toContain('personal.layouts 2 / 2');
-  expect(container.querySelector('.personal-view-toggle').getAttribute('aria-pressed')).toBe('false');
   await f.click('personal.save');
   expect(f.calls.some(call=>call.endpoint==='template/select')).toBe(true);
 });
 
-it('uses separate sample and original page caches in the detailed viewer and chooses the same reusable template',async()=>{
+it('caches representative pages in the detailed viewer and chooses the same reusable template',async()=>{
   const Viewer=new Function('react','TemplateCard','OfficePptHero_module_css_default',`${source}\nreturn TemplatePreviewCard;`)(React,TemplateCard,{});
   container=document.createElement('div');document.body.append(container);root=createRoot(container);
   const template={id:'sample-view',name:'Samples',origin:'personal',previewVersion:9,slideCount:4,templateSamples:{representativePages:[1,3]}};
-  const client={bound:true,call:vi.fn(async(_endpoint,payload)=>({preview:`data:image/png;base64,${payload.view ?? 'sample'}-${payload.page}`}))};
+  const client={bound:true,call:vi.fn(async(_endpoint,payload)=>({preview:`data:image/png;base64,sample-${payload.page}`}))};
   const choose=vi.fn();
   await act(async()=>root.render(React.createElement(Viewer,{template,client,choose,t:key=>key})));
   await act(async()=>container.querySelector('.ppt-preview-open').click());
   const modal=container.querySelector('dialog[open]');
   expect(modal.textContent).toContain('personal.layouts 1 / 2');
+  expect(modal.querySelector('.personal-view-toggle')).toBeNull();
   await act(async()=>modal.querySelector('[aria-label="personal.next"]').click());
   expect(modal.querySelector('img').src).toContain('sample-3');
-  await act(async()=>modal.querySelector('.personal-view-toggle').click());
-  expect(modal.textContent).toContain('3 / 4');
-  expect(modal.querySelector('img').src).toContain('original-3');
+  expect(client.call).toHaveBeenLastCalledWith('template/preview-saved-page',{templateId:template.id,page:3});
   const requests=client.call.mock.calls.length;
-  await act(async()=>modal.querySelector('.personal-view-toggle').click());
+  await act(async()=>modal.querySelector('[aria-label="personal.previous"]').click());
   expect(client.call.mock.calls).toHaveLength(requests);
-  expect(modal.querySelector('img').src).toContain('sample-3');
+  expect(modal.querySelector('img').src).toContain('sample-1');
   await act(async()=>modal.querySelector('.ppt-preview-use').click());
   expect(choose).toHaveBeenCalledWith(template);
   expect(container.querySelector('dialog[open]')).toBeNull();

@@ -3,7 +3,7 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } 
 import path from 'node:path';
 import sharp from 'sharp';
 import { loadPptdProject, checkPptdProject, parsePptdProject } from './pptd.js';
-import { renderOfficeTemplatePreview, renderOriginalTemplatePage } from './office-template-preview.js';
+import { renderOfficeTemplatePreview } from './office-template-preview.js';
 import { extractPersonalTemplateProfile, personalTemplateSourceTheme, validPersonalTemplateProfile, PERSONAL_TEMPLATE_PROFILE_VERSION } from './personal-template-profile.js';
 import { createPersonalTemplateSamples, validPersonalTemplateSamples } from './personal-template-samples.js';
 
@@ -262,29 +262,22 @@ export class PersonalTemplateLibrary {
     if (owner.session !== hash(sessionId)) throw new Error('该预览属于其他会话');
     return directory;
   }
-  async readPreview(directory,record,page,view='template') {
-    if(!['template','original'].includes(view))throw new Error('预览类型无效');
+  async readPreview(directory,record,page) {
     if(!Number.isInteger(page)||page<1||page>record.slideCount)throw new Error('预览页码无效');
-    let image;
-    if(view==='original') {
-      const source=await this.checkedFile(directory,'source.pptx');
-      const cache=await this.directory(...path.relative(this.root,directory).split(path.sep),'original-preview');
-      image=await renderOriginalTemplatePage(source,cache,page,record.templateProfile?.canvas ?? {width:960,height:540},record.slideCount,this.maxSlides,PREVIEW_LONG_EDGE);
-      image=await this.checkedFile(cache,path.basename(image));
-    } else image=await this.checkedFile(path.join(directory,'preview','pages'),`page-${page}.png`);
+    const image=await this.checkedFile(path.join(directory,'preview','pages'),`page-${page}.png`);
     return { page, preview: `data:image/png;base64,${(await readFile(image)).toString('base64')}` };
   }
-  async previewPage(sessionId,draftId,page,view) {
+  async previewPage(sessionId,draftId,page) {
     return this.locked(()=>this.audit(sessionId,'preview-personal-template',async()=>{
       const directory=await this.draft(sessionId,draftId);
       const record=JSON.parse(await readFile(await this.checkedFile(directory,'template.json'),'utf8'));
-      return this.readPreview(directory,record,page,view);
+      return this.readPreview(directory,record,page);
     }));
   }
-  async previewSavedPage(sessionId, templateId, page,view) {
+  async previewSavedPage(sessionId, templateId, page) {
     return this.locked(() => this.audit(sessionId, 'preview-personal-template', async () => {
       const record = await this.readRecord(templateId);
-      return this.readPreview(path.join(this.root,'saved',templateId),record,page,view);
+      return this.readPreview(path.join(this.root,'saved',templateId),record,page);
     }));
   }
   async save(sessionId, draftId, name) {

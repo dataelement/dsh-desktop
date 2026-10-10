@@ -1,5 +1,5 @@
 /** Fit the entire slide into the measured viewport; zoom multiplies that fit. */
-function FitPreviewImage({ src, alt, zoom, onZoom, onError, onReady, className }) {
+function FitPreviewImage({ src, alt, zoom, onZoom, onError, className }) {
   const h = react.createElement;
   const viewport = react.useRef(null);
   const imageRef = react.useRef(null);
@@ -8,7 +8,6 @@ function FitPreviewImage({ src, alt, zoom, onZoom, onError, onReady, className }
   const imageReady = image => {
     if (!image?.naturalWidth || !image.naturalHeight) return;
     setNatural({ width: image.naturalWidth, height: image.naturalHeight });
-    onReady?.();
   };
   // Cached images may finish before React installs the load handler.
   react.useEffect(() => { if (imageRef.current?.complete) imageReady(imageRef.current); }, [src]);
@@ -47,34 +46,8 @@ function FitPreviewImage({ src, alt, zoom, onZoom, onError, onReady, className }
         style: { display: 'block', width, height, maxWidth: 'none', flex: 'none' } })));
 }
 
-/** One brief completion cue, owned by the newly prepared preview. */
-function PreviewReadyFeedback({ label }) {
-  const h = react.createElement;
-  const [visible, setVisible] = react.useState(true);
-  react.useEffect(() => {
-    const timer = setTimeout(() => setVisible(false), 850);
-    return () => clearTimeout(timer);
-  }, []);
-  if (!visible) return null;
-  const colors = ['business', 'success', 'warn', 'error'];
-  return h('div', { className: 'personal-preview-ready', role: 'status', 'aria-live': 'polite' },
-    h('span', { className: 'personal-ready-burst', 'aria-hidden': true },
-      ...Array.from({ length: 16 }, (_, index) => {
-        const angle = (index * 22.5 - 90) * Math.PI / 180, radius = 62 + index % 3 * 10;
-        return h('i', { key: index, className: `personal-ready-particle personal-ready-${colors[index % 4]}`, style: {
-          '--particle-x': `${Math.cos(angle) * radius}px`, '--particle-y': `${Math.sin(angle) * radius}px`,
-          '--particle-turn': `${index * 31}deg`, '--particle-delay': `${index % 4 * 18}ms`
-        } });
-      })),
-    h('span', { className: 'personal-ready-content' },
-      h('span', { className: 'personal-ready-check', 'aria-hidden': true },
-        h('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' },
-          h('path', { d: 'm6.5 12 3.5 3.5 7.5-7.5' }))),
-      h('span', { className: 'personal-ready-label' }, label)));
-}
-
-function personalPreviewSlides(template,view='template') {
-  return view==='template' && template.templateSamples?.representativePages?.length
+function personalPreviewSlides(template) {
+  return template.templateSamples?.representativePages?.length
     ? template.templateSamples.representativePages : Array.from({length:template.slideCount},(_,i)=>i+1);
 }
 
@@ -83,7 +56,6 @@ function TemplatePreviewCard({ template, selected, choose, client, t }) {
   const h = react.createElement;
   const [open, setOpen] = react.useState(false);
   const [page, setPage] = react.useState(0);
-  const [view,setView]=react.useState('template');
   const [pages, setPages] = react.useState({});
   const [loading, setLoading] = react.useState(false);
   const [error, setError] = react.useState('');
@@ -93,18 +65,18 @@ function TemplatePreviewCard({ template, selected, choose, client, t }) {
   const titleId = react.useId();
   const staticPages = FULL_TEMPLATE_PREVIEWS[template.id] ?? template.previewImages ?? [];
   const detailedPersonal = template.origin === 'personal' && client.bound === true;
-  const slides=personalPreviewSlides(template,view);
+  const slides=personalPreviewSlides(template);
   const count = detailedPersonal ? slides.length : staticPages.length;
-  const cacheKey=(mode,slide)=>`${template.previewVersion ?? 0}:${mode}:${slide}`;
-  const src = detailedPersonal ? pages[cacheKey(view,slides[page])] : staticPages[page];
-  async function load(next,nextView=view) {
-    const slide=personalPreviewSlides(template,nextView)[next],key=cacheKey(nextView,slide);
+  const cacheKey=slide=>`${template.previewVersion ?? 0}:${slide}`;
+  const src = detailedPersonal ? pages[cacheKey(slides[page])] : staticPages[page];
+  async function load(next) {
+    const slide=slides[next],key=cacheKey(slide);
     const token = ++request.current;
-    setView(nextView);setPage(next); setZoom(1); setError('');
+    setPage(next); setZoom(1); setError('');
     if (!detailedPersonal || pages[key]) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await client.call('template/preview-saved-page', { templateId: template.id, page: slide,...nextView==='original'?{view:'original'}:{} });
+      const result = await client.call('template/preview-saved-page', { templateId: template.id, page: slide });
       if (request.current === token) setPages(value => ({ ...value, [key]: result.preview }));
     } catch (reason) {
       if (request.current === token) setError(reason instanceof Error ? reason.message : String(reason));
@@ -115,7 +87,7 @@ function TemplatePreviewCard({ template, selected, choose, client, t }) {
     const node = dialog.current;
     node.showModal();
     node.querySelector('button')?.focus();
-    load(0,'template');
+    load(0);
     return () => { request.current++; if (node.open) node.close(); };
   }, [open,template.previewVersion]);
   react.useEffect(() => () => { request.current++; }, [client, template.id,template.previewVersion]);
@@ -150,12 +122,8 @@ function TemplatePreviewCard({ template, selected, choose, client, t }) {
           : src ? h(FitPreviewImage, { src, alt: `${template.name} ${page + 1}`, zoom, onZoom: setZoom, onError: () => setError(t('personal.previewFailed')) })
           : h('span', { role: 'status' }, t('personal.previewFailed'))),
       h('footer', null,
-        detailedPersonal && template.templateSamples && h('button',{type:'button',className:'personal-view-toggle','aria-pressed':view==='original',onClick:()=>{
-          const nextView=view==='template'?'original':'template';
-          load(Math.max(0,personalPreviewSlides(template,nextView).indexOf(slides[page])),nextView);
-        }},t(view==='template'?'personal.originalView':'personal.sampleView')),
         h('button', { type: 'button', disabled: page === 0, 'aria-label': t('personal.previous'), onClick: () => load(page - 1) }, '‹'),
-        h('span', { role: 'status' }, `${template.templateSamples && view==='template' ? t('personal.layouts')+' ' : ''}${page + 1} / ${count}`),
+        h('span', { role: 'status' }, `${template.templateSamples ? t('personal.layouts')+' ' : ''}${page + 1} / ${count}`),
         h('button', { type: 'button', disabled: page >= count - 1, 'aria-label': t('personal.next'), onClick: () => load(page + 1) }, '›'),
         h('button',{type:'button',className:'ppt-preview-use',onClick:()=>{if(!selected)choose(template);setOpen(false);}},t('personal.useSame')))));
 }
@@ -177,7 +145,6 @@ const TEMPLATE_VIEWER_CSS = `
 .ppt-template-viewer button {min-width:32px;min-height:32px;border:1px solid var(--dsw-alias-border-l2-darkmode-thin);border-radius:7px;background:var(--dsw-alias-bg-base);color:inherit;font:inherit;cursor:pointer}
 .ppt-template-viewer button:disabled {opacity:.35;cursor:default}
 .ppt-template-viewer button:focus-visible,.ppt-preview-open:focus-visible {outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
-.ppt-template-viewer .personal-view-toggle {padding:0 10px;color:var(--dsw-alias-label-secondary);font-size:12px}
 .ppt-template-stage {display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);position:relative}
 .ppt-template-stage img {display:block;height:auto;margin:0 auto}
 .ppt-template-stage>[role] {display:grid;place-content:center;min-height:240px;text-align:center;padding:16px}
@@ -194,13 +161,10 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
   const savedDraft = react.useRef(null);
   const [name, setName] = react.useState('');
   const [page, setPage] = react.useState(0);
-  const [view,setView]=react.useState('template');
   const [pageLoading, setPageLoading] = react.useState(false);
   const [pageError, setPageError] = react.useState('');
   const [zoom, setZoom] = react.useState(1);
   const pageRequest = react.useRef(0);
-  const readyDraft = react.useRef(null);
-  const [previewReady, setPreviewReady] = react.useState(null);
   const [editing, setEditing] = react.useState(null);
   const [deleting, setDeleting] = react.useState(null);
   const [description, setDescription] = react.useState('');
@@ -220,7 +184,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
   react.useEffect(() => {
     generation.current++; pageRequest.current++;
     alive.current = true;
-    setView('template');setPageLoading(false); setPageError(''); setZoom(1); setDraft(null); setImporting(false); savedDraft.current = null; readyDraft.current = null; setPreviewReady(null); setBusy(false); setError(''); setNotice(''); setSavedFeedback(null); setEditing(null); setDeleting(null);
+    setPageLoading(false); setPageError(''); setZoom(1); setDraft(null); setImporting(false); savedDraft.current = null; setBusy(false); setError(''); setNotice(''); setSavedFeedback(null); setEditing(null); setDeleting(null);
     return () => {
       generation.current++; pageRequest.current++;
       alive.current = false;
@@ -230,7 +194,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
   }, [client, sessionId]);
   const templates = state.templates.filter(item => item.origin === 'personal').sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
   const deletingTemplate = templates.find(template => template.id === deleting);
-  const slides=draft ? personalPreviewSlides(draft.template,view) : [];
+  const slides=draft ? personalPreviewSlides(draft.template) : [];
   react.useLayoutEffect(() => {
     if (!modalOpen) return;
     const node = dialog.current;
@@ -241,8 +205,8 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
     if (modalOpen) (deleting ? cancelDelete.current : editName.current)?.focus();
   }, [modalOpen, deleting, !!draft]);
   const dismissModal = () => {
-    pageRequest.current++;setView('template');setPageLoading(false); setPageError(''); setZoom(1);
-    activeDraft.current = null; savedDraft.current = null; readyDraft.current = null; setPreviewReady(null);
+    pageRequest.current++;setPageLoading(false); setPageError(''); setZoom(1);
+    activeDraft.current = null; savedDraft.current = null;
     setDraft(null); setImporting(false); setEditing(null); setDeleting(null); setError('');
   };
   const closeModal = () => {
@@ -277,7 +241,6 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
   async function upload(file) {
     if (!file) return;
     const current = generation.current;
-    readyDraft.current = null; setPreviewReady(null);
     setImporting(true); setImportProgress({total:0,pages:[]});
     await act(async () => {
       if (!/\.pptx$/i.test(file.name)) throw new Error(t('personal.fileType'));
@@ -312,33 +275,27 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       setDraft({
         ...result,
         slideCount: result.template.slideCount,
-        pages: { 'template:1': result.preview }
+        pages: { 1: result.preview }
       });
-      setView('template');setName(result.template.name); setPage(0);
+      setName(result.template.name); setPage(0);
     });
   }
-  async function showPage(next,nextView=view) {
-    if (!draft || next < 0 || next >= personalPreviewSlides(draft.template,nextView).length) return;
-    setPreviewReady(null);
+  async function showPage(next) {
+    if (!draft || next < 0 || next >= slides.length) return;
     const token = ++pageRequest.current;
     const current = generation.current;
-    setView(nextView);setPage(next); setZoom(1); setPageError('');
-    const slide=personalPreviewSlides(draft.template,nextView)[next],key=`${nextView}:${slide}`;
-    if (draft.pages[key]) { setPageLoading(false); return; }
+    setPage(next); setZoom(1); setPageError('');
+    const slide=slides[next];
+    if (draft.pages[slide]) { setPageLoading(false); return; }
     setPageLoading(true);
     try {
-      const result = await client.call('template/preview-page', { draftId: draft.draftId, page: slide,...nextView==='original'?{view:'original'}:{} });
+      const result = await client.call('template/preview-page', { draftId: draft.draftId, page: slide });
       if (!alive.current || generation.current !== current || token !== pageRequest.current) return;
-      setDraft(value => value && value.draftId === draft.draftId ? { ...value, pages: { ...value.pages, [key]: result.preview } } : value);
+      setDraft(value => value && value.draftId === draft.draftId ? { ...value, pages: { ...value.pages, [slide]: result.preview } } : value);
     } catch (reason) {
       if (alive.current && generation.current === current && token === pageRequest.current) setPageError(reason instanceof Error ? reason.message : String(reason));
     } finally { if (alive.current && generation.current === current && token === pageRequest.current) setPageLoading(false); }
   }
-  const previewDidLoad = () => {
-    if (!draft || readyDraft.current === draft.draftId) return;
-    readyDraft.current = draft.draftId;
-    setPreviewReady(draft.draftId);
-  };
   const icon = name => h('svg', { width: name === 'create' ? 28 : 16, height: name === 'create' ? 28 : 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.65, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
     ...(name === 'create' ? ['m4 20 11-11 3 3L7 23z', 'm14 10 3 3', 'M6 3v4M4 5h4M18 2v4M16 4h4M21 8v4M19 10h4']
       : name === 'rename' ? ['m15 4 5 5', 'M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z']
@@ -391,7 +348,6 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       .personal-pagination {display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;font-size:13px;font-variant-numeric:tabular-nums}
       .personal-pagination button {display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--dsw-alias-border-l2-darkmode-thin,#ddd);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:18px}
       .personal-pagination button:disabled {color:var(--dsw-alias-label-tertiary,#aaa)}
-      .personal-pagination .personal-view-toggle {width:auto;padding:0 10px;font:inherit;font-size:12px;color:var(--dsw-alias-label-secondary)}
       .personal-progress-pages {display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px;width:100%;align-self:stretch}
       .personal-progress-pages figure {animation:personal-thumbnail-enter 160ms cubic-bezier(.23,1,.32,1) both;margin:0;min-width:0;color:var(--dsw-alias-label-secondary,#666);text-align:center;font-size:12px}
       .personal-progress-pages img {display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:var(--dsw-alias-background-secondary,#f4f4f4);border-radius:4px;margin-bottom:4px}
@@ -399,23 +355,8 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       .personal-upload-wait {position:relative;box-sizing:border-box;width:100%;padding-bottom:32px;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--dsw-alias-label-secondary,#666);font-size:14px;line-height:22px}
       .personal-progress-count {position:absolute;right:0;bottom:0;font-size:12px;font-variant-numeric:tabular-nums}
       .personal-save-feedback {position:fixed;right:24px;bottom:24px;z-index:100;display:flex;align-items:center;gap:8px;padding:12px 16px;border:1px solid var(--dsw-alias-border-l2-darkmode-thin,#ddd);border-radius:12px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-state-success-primary,#22864a);box-shadow:0 4px 20px #0001;font-size:14px;pointer-events:none}
-      .personal-dialog .personal-preview-ready {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);min-height:0;z-index:1;pointer-events:none}
-      .personal-ready-burst {position:absolute;left:50%;top:24px;width:0;height:0;animation:personal-ready-out 140ms 700ms ease-out forwards}
-      .personal-ready-particle {position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:0;animation:personal-ready-particle 280ms var(--particle-delay) cubic-bezier(.23,1,.32,1) both}
-      .personal-ready-particle:nth-child(odd) {width:5px;height:10px;border-radius:3px}
-      .personal-ready-business {color:var(--dsw-alias-state-business-primary)}
-      .personal-ready-success {color:var(--dsw-alias-state-success-primary)}
-      .personal-ready-warn {color:var(--dsw-alias-state-warn-primary)}
-      .personal-ready-error {color:var(--dsw-alias-state-error-primary)}
-      .personal-ready-content {display:grid;justify-items:center;gap:8px;animation:personal-ready-in 180ms cubic-bezier(.23,1,.32,1) both,personal-ready-out 140ms 700ms ease-out forwards}
-      .personal-ready-check {display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-state-success-primary);box-shadow:0 4px 20px color-mix(in srgb,var(--dsw-alias-label-primary) 12%,transparent)}
-      .personal-ready-label {padding:4px 10px;border-radius:12px;white-space:nowrap;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
-      @keyframes personal-ready-in {from {opacity:0;transform:scale(.9)} to {opacity:1;transform:scale(1)}}
-      @keyframes personal-ready-out {to {opacity:0}}
-      @keyframes personal-ready-particle {0% {opacity:0;transform:translate(0,0) rotate(0) scale(.9)} 15% {opacity:1} 100% {opacity:0;transform:translate(var(--particle-x),var(--particle-y)) rotate(var(--particle-turn)) scale(.9)}}
       @keyframes personal-thumbnail-enter {from {opacity:0;transform:translateY(3px)} to {opacity:1;transform:translateY(0)}}
-      @media (prefers-reduced-motion:reduce) {.personal-progress-pages figure {animation:none}.personal-ready-particle {display:none}.personal-ready-content {animation:personal-ready-opacity 160ms both,personal-ready-out 140ms 700ms ease-out forwards}}
-      @keyframes personal-ready-opacity {from {opacity:0} to {opacity:1}}
+      @media (prefers-reduced-motion:reduce) {.personal-progress-pages figure {animation:none}}
       .personal-loading-dots {display:flex;align-items:center;gap:6px;height:16px;color:var(--dsw-alias-label-secondary)}
       .personal-loading-dots span {width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.25;animation:personal-loading-pulse 1.5s linear infinite;animation-delay:var(--dot-delay)}
       @keyframes personal-loading-pulse {0%,65%,100% {opacity:.25} 30% {opacity:.85}}
@@ -479,15 +420,10 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
               h('div', { className: 'personal-zoom-stage', 'aria-busy': pageLoading },
                 pageLoading ? h('div', { role: 'status' }, t('personal.processing'))
                 : pageError ? h('div', { role: 'alert' }, h('span', null, pageError), h('button', { type: 'button', onClick: () => showPage(page) }, t('templates.retry')))
-                : h(FitPreviewImage, { src: draft.pages[`${view}:${slides[page]}`], alt: `${t(view==='original'?'personal.originalView':'personal.preview')} ${page + 1}`, zoom, onZoom: setZoom, onReady: previewDidLoad, onError: () => { setPreviewReady(null); setPageError(t('personal.previewFailed')); } }),
-                !pageLoading && !pageError && previewReady === draft.draftId && h(PreviewReadyFeedback, { key: draft.draftId, label: t('personal.previewReady') })),
+                : h(FitPreviewImage, { src: draft.pages[slides[page]], alt: `${t('personal.preview')} ${page + 1}`, zoom, onZoom: setZoom, onError: () => setPageError(t('personal.previewFailed')) })),
               h('div', { className: 'personal-pagination' },
-                draft.template.templateSamples && h('button',{type:'button',className:'personal-view-toggle','aria-pressed':view==='original',onClick:()=>{
-                  const nextView=view==='template'?'original':'template';
-                  showPage(Math.max(0,personalPreviewSlides(draft.template,nextView).indexOf(slides[page])),nextView);
-                }},t(view==='template'?'personal.originalView':'personal.sampleView')),
                 h('button', { type: 'button', 'aria-label': t('personal.previous'), disabled: page === 0, onClick: () => showPage(page - 1) }, '‹'),
-                h('span', { role: 'status' }, `${draft.template.templateSamples && view==='template' ? t('personal.layouts')+' ' : ''}${page + 1} / ${slides.length}`),
+                h('span', { role: 'status' }, `${draft.template.templateSamples ? t('personal.layouts')+' ' : ''}${page + 1} / ${slides.length}`),
                 h('button', { type: 'button', 'aria-label': t('personal.next'), disabled: page === slides.length - 1, onClick: () => showPage(page + 1) }, '›')))
             : busy && h('div', { className: 'personal-upload-wait' },
               !importProgress.pages.length && h('div', { className: 'personal-loading-dots', 'aria-hidden': true },

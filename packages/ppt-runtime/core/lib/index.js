@@ -990,8 +990,8 @@ function pptRpc(service) {
 				switch (endpoint) {
 				case "template/import-progress": return ok(await service.store.personalTemplates.importProgress(sessionId, request.requestId, request.after));
 				case "template/prepare": return ok(await service.store.personalTemplates.prepare(sessionId, request.input));
-				case "template/preview-saved-page": return ok(await service.store.personalTemplates.previewSavedPage(sessionId, request.templateId, request.page,request.view));
-				case "template/preview-page": return ok(await service.store.personalTemplates.previewPage(sessionId, request.draftId, request.page,request.view));
+				case "template/preview-saved-page": return ok(await service.store.personalTemplates.previewSavedPage(sessionId, request.templateId, request.page));
+				case "template/preview-page": return ok(await service.store.personalTemplates.previewPage(sessionId, request.draftId, request.page));
 				case "template/save": return ok(await service.store.personalTemplates.save(sessionId, request.draftId, request.name));
 				case "template/cancel": return ok(await service.store.personalTemplates.cancel(sessionId, request.draftId));
 				case "template/rename": return ok(await service.store.personalTemplates.rename(sessionId, request.templateId, request.name));

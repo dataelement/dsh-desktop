@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { cp, mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink, stat } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -341,28 +341,30 @@ describe('personal PPT templates in the shipped runtime', () => {
     await expect(f.tool('ppt_template_create_project', { template_id: template.id, output_directory: '../escape' })).rejects.toThrow();
   }, 30000);
 
-  it('lazily previews the preserved original independently of samples, caches pages and enforces ownership and file confinement',async()=>{
+  it('reuses template page images through saving and enforces ownership, bounds and file confinement',async()=>{
     const f=await fixture(),bytes=await source();
-    const draft=await f.request('template/prepare',{input:{fileName:'Original.pptx',base64:bytes.toString('base64')}});
+    const draft=await f.request('template/prepare',{input:{fileName:'Sample.pptx',base64:bytes.toString('base64')}});
     const directory=path.join(f.storage,'personal-templates/drafts',draft.draftId);
+    await expect(f.request('template/preview-page',{draftId:draft.draftId,page:1},'session-b')).rejects.toThrow('其他会话');
+    await expect(f.request('template/preview-page',{draftId:draft.draftId,page:0})).rejects.toThrow('预览页码无效');
+    await expect(f.request('template/preview-page',{draftId:draft.draftId,page:draft.template.slideCount+1})).rejects.toThrow('预览页码无效');
+    const first=await f.request('template/preview-page',{draftId:draft.draftId,page:1});
+    expect(first.preview).toBe(draft.preview);
+    expect(await f.request('template/preview-page',{draftId:draft.draftId,page:1})).toEqual(first);
+    // A request from an older client also follows the single template-preview path.
+    expect(await f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'original'})).toEqual(first);
     expect(await readdir(directory)).not.toContain('original-preview');
-    await expect(f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'original'},'session-b')).rejects.toThrow('其他会话');
-    await expect(f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'../original'})).rejects.toThrow('预览类型无效');
-    const original=await f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'original'});
-    expect(original.preview).not.toEqual(draft.preview);
-    const png=path.join(directory,'original-preview/page-1.png'),pdf=path.join(directory,'original-preview/source.pdf');
-    const first=await stat(png),pdfFirst=await stat(pdf);
-    expect(await f.request('template/preview-page',{draftId:draft.draftId,page:1,view:'original'})).toEqual(original);
-    expect((await stat(png)).mtimeMs).toBe(first.mtimeMs);
-    await f.request('template/preview-page',{draftId:draft.draftId,page:2,view:'original'});
-    expect((await stat(pdf)).mtimeMs).toBe(pdfFirst.mtimeMs);
+    const second=await f.request('template/preview-page',{draftId:draft.draftId,page:2});
+    expect(second.preview).not.toBe(first.preview);
     const saved=await f.request('template/save',{draftId:draft.draftId,name:'Sample library'});
-    expect(await f.request('template/preview-saved-page',{templateId:saved.id,page:1,view:'original'})).toEqual(original);
-    expect((await f.request('template/preview-saved-page',{templateId:saved.id,page:1})).preview).toBe(draft.preview);
-    expect(await readFile(path.join(f.storage,'personal-templates/saved',saved.id,'source.pptx'))).toEqual(bytes);
-    const cached=path.join(f.storage,'personal-templates/saved',saved.id,'original-preview/page-1.png');
+    expect(await f.request('template/preview-saved-page',{templateId:saved.id,page:1})).toEqual(first);
+    expect(await f.request('template/preview-saved-page',{templateId:saved.id,page:2})).toEqual(second);
+    const savedDirectory=path.join(f.storage,'personal-templates/saved',saved.id);
+    expect(await readFile(path.join(savedDirectory,'source.pptx'))).toEqual(bytes);
+    expect(await readdir(savedDirectory)).not.toContain('original-preview');
+    const cached=path.join(savedDirectory,'preview/pages/page-1.png');
     await rm(cached);await symlink(path.join(f.root,'private.png'),cached);
-    await expect(f.request('template/preview-saved-page',{templateId:saved.id,page:1,view:'original'})).rejects.toThrow('原稿缓存应为普通本地文件');
+    await expect(f.request('template/preview-saved-page',{templateId:saved.id,page:1})).rejects.toThrow('模板文件应为普通本地文件');
   },30000);
 
   it('enriches a current cached conversion from its editable model while reusing every rendered page',async()=>{
