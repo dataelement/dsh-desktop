@@ -205,6 +205,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
   const [importProgress,setImportProgress] = react.useState({total:0,pages:[]});
   const activeDraft = react.useRef(null);
   const activeUpload = react.useRef(null);
+  const finishImportPause = react.useRef(null);
   react.useEffect(() => { activeDraft.current = draft; }, [draft]);
   react.useEffect(() => {
     generation.current++; pageRequest.current++;
@@ -213,6 +214,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
     return () => {
       generation.current++; pageRequest.current++;
       alive.current = false;
+      finishImportPause.current?.();
       if (activeDraft.current) client.call('template/cancel', { draftId: activeDraft.current.draftId }).catch(() => {});
       activeDraft.current = null;
       if (activeUpload.current) activeUpload.current.client.call('template/upload-cancel', { uploadId: activeUpload.current.uploadId }).catch(() => {});
@@ -303,7 +305,17 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
         };
         const pollingTask=poll();
         let result;
-        try {result=await client.call('template/prepare', { input: { uploadId, requestId } });}
+        try {
+          result=await client.call('template/prepare', { input: { uploadId, requestId } });
+          if (isCurrent() && !result.duplicate) {
+            // Keep the completed grid visible while final progress pages arrive.
+            await new Promise(resolve => {
+              const finish = () => { clearTimeout(timer); finishImportPause.current = null; resolve(); };
+              const timer = setTimeout(finish, 1000);
+              finishImportPause.current = finish;
+            });
+          }
+        }
         finally {polling=false;void pollingTask;}
 
         if (!alive.current || current !== generation.current) { if (result.draftId) await client.call('template/cancel', { draftId: result.draftId }); return; }

@@ -52,7 +52,7 @@ async function loadPreview() {
   await act(async () => image.dispatchEvent(new Event('load')));
 }
 
-async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], Component = Manager, templateSamples) {
+async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], Component = Manager, templateSamples, waitForPreview = true) {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   let saved = [], draft, selectedId;
   const calls = [];
@@ -100,6 +100,7 @@ async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], 
       input.dispatchEvent(new Event('change', { bubbles: true }));
       // FileReader dispatches on a later DOM task.
       await new Promise(resolve => setTimeout(resolve, 20));
+      if (draft && waitForPreview) await new Promise(resolve => setTimeout(resolve, 1050));
     });
   }
   return { calls, click, upload, choose, hold(endpoint) { let release; waits.set(endpoint, new Promise(resolve => release = resolve)); return async () => { await act(async () => { waits.delete(endpoint); release(); }); }; }, failNext(endpoint, message) { failures.set(endpoint, message); }, async switchSession() { sessionId = 'session-b'; await act(async () => render()); } };
@@ -347,12 +348,13 @@ it('transfers a file above 16 MB as bounded ordered chunks before preparing it',
   await act(async () => {
     await vi.waitFor(() => expect(f.calls.some(call => call.endpoint === 'template/prepare')).toBe(true));
   });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1050)); });
   expect(f.calls.find(call => call.endpoint === 'template/upload-start').payload.input).toEqual({fileName:'Large.pptx',size});
   const chunks=f.calls.filter(call=>call.endpoint==='template/upload-chunk').map(call=>call.payload);
   expect(chunks.map(chunk=>chunk.offset)).toEqual([0,8*1024*1024,16*1024*1024]);
   expect(chunks.reduce((length,chunk)=>length+Buffer.from(chunk.base64,'base64').length,0)).toBe(size);
   expect(f.calls.find(call=>call.endpoint==='template/prepare').payload.input).toMatchObject({uploadId:'upload-1'});
-  expect(container.querySelector('dialog[open] img')).not.toBeNull();
+  expect(container.querySelector('dialog[open] .personal-zoom-stage img')).not.toBeNull();
   expect(container.querySelector('[role=alert]')).toBeNull();
 });
 
@@ -361,6 +363,7 @@ it('uploads a file larger than 64 MB through the full template preview flow', as
   const size=65*1024*1024;
   await f.upload(new File([new Uint8Array(size)],'Huge.pptx'));
   await act(async()=>vi.waitFor(()=>expect(f.calls.some(call=>call.endpoint==='template/prepare')).toBe(true),{timeout:5000}));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1050)); });
   const chunks=f.calls.filter(call=>call.endpoint==='template/upload-chunk').map(call=>call.payload);
   expect(chunks).toHaveLength(9);
   expect(chunks.map(chunk=>chunk.offset)).toEqual(Array.from({length:9},(_,index)=>index*8*1024*1024));
@@ -538,17 +541,35 @@ it('opens a separate detailed viewer without selecting and supports zoom, arrows
   expect(container.querySelector('dialog[open]')).toBeNull();
 });
 
-it('shows completed thumbnails before preparation finishes', async () => {
+it.each(previewClients)('$name holds completed thumbnails for one second before opening the preview', async ({ Component }) => {
   let finish;
   const pending=new Promise(resolve=>{finish=resolve;});
-  const f=await fixture(undefined,pending);
+  const f=await fixture(undefined,pending,[],Component);
   await f.upload(new File([new Uint8Array(10)],'Progress.pptx'));
   await act(async()=>{await new Promise(resolve=>setTimeout(resolve,450));});
   expect(container.querySelector('.personal-progress-pages img')).not.toBeNull();
   expect(container.querySelector('.personal-progress-count').textContent).toContain('1 / 2');
-  await act(async()=>{finish();await new Promise(resolve=>setTimeout(resolve,30));});
+  vi.useFakeTimers();
+  await act(async()=>{finish();});
+  await act(async()=>{await vi.advanceTimersByTimeAsync(999);});
+  expect(container.querySelector('.personal-progress-pages img')).not.toBeNull();
+  expect(container.querySelector('.personal-zoom-stage')).toBeNull();
+  await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
   expect(container.querySelector('.personal-progress-pages')).toBeNull();
   expect(container.querySelector('dialog[open] img')).not.toBeNull();
+});
+
+it.each(previewClients)('$name clears the completion pause and discards the draft on a session change', async ({ Component }) => {
+  const f = await fixture(undefined, undefined, [], Component, undefined, false);
+  await f.upload(new File(['source'], 'Ready.pptx'));
+  expect(container.querySelector('dialog[open] .personal-zoom-stage')).toBeNull();
+  await f.switchSession();
+  expect(container.querySelector('dialog[open]')).toBeNull();
+  expect(f.calls.filter(call => call.endpoint === 'template/cancel')).toHaveLength(1);
+  expect(f.calls).toContainEqual({ endpoint: 'template/upload-cancel', payload: { uploadId: 'upload-1' } });
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1050));});
+  expect(container.querySelector('dialog[open]')).toBeNull();
+  expect(f.calls.filter(call => call.endpoint === 'template/cancel')).toHaveLength(1);
 });
 
 it('uses the previewed template and preserves an existing selection', async () => {
