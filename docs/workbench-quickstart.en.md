@@ -1,6 +1,6 @@
 # Workbench development: six-step quickstart
 
-Version: 2026-10-08 · For full rules, see the [Workbench Development Standard](https://dshdesktop.com/workbench/docs/development-en/); for listing, see the [Workbench Market Acceptance Standard](https://dshdesktop.com/workbench/docs/market-acceptance-en/).
+Version: 2026-10-09 · For full rules, see the [Workbench Development Standard](https://dshdesktop.com/workbench/docs/development-en/); for listing, see the [Workbench Market Acceptance Standard](https://dshdesktop.com/workbench/docs/market-acceptance-en/).
 
 1. **Confirm requirements**: From the user's current request and confirmed context, identify the business scenario, target users, and core steps to complete one task. Generic development instructions, a directory name, and existing code do not establish the user's intent. If any item is missing, ask one combined question and wait before designing business features.
 2. **Inspect the project**: Check `pwd`, directory contents, `git status --short` if this is a Git repository, existing scripts, package manager, and Desktop version. Preserve uncommitted changes.
