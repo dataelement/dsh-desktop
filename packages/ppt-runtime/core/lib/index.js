@@ -989,6 +989,9 @@ function pptRpc(service) {
 			const sessionId = sessionIdOf(payload);
 				switch (endpoint) {
 				case "template/import-progress": return ok(await service.store.personalTemplates.importProgress(sessionId, request.requestId, request.after));
+				case "template/upload-start": return ok(await service.store.personalTemplates.uploadStart(sessionId, request.input));
+				case "template/upload-chunk": return ok(await service.store.personalTemplates.uploadChunk(sessionId, request));
+				case "template/upload-cancel": return ok(await service.store.personalTemplates.cancelUpload(sessionId, request.uploadId));
 				case "template/prepare": return ok(await service.store.personalTemplates.prepare(sessionId, request.input));
 				case "template/preview-saved-page": return ok(await service.store.personalTemplates.previewSavedPage(sessionId, request.templateId, request.page));
 				case "template/preview-page": return ok(await service.store.personalTemplates.previewPage(sessionId, request.draftId, request.page));

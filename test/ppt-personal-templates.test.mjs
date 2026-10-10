@@ -10,13 +10,13 @@ import sharp from 'sharp';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools';
 
-let apply, packageRoot, MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION;
+let apply, packageRoot, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION;
 const cleanups = [];
 beforeAll(async () => {
   packageRoot = await mkdtemp(path.resolve('node_modules/.ppt-personal-'));
   await cp(path.resolve('.build/ppt-runtime/packages/dsh-ppt'), packageRoot, { recursive: true });
   ({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))));
-  ({ MAX_PERSONAL_TEMPLATE_BASE64_CHARS, MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
+  ({ MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
 });
 afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true, force: true }); });
 afterEach(async () => { for (const root of cleanups.splice(0)) await rm(root, { recursive: true, force: true }); });
@@ -149,20 +149,33 @@ describe('personal PPT templates in the shipped runtime', () => {
     expect(JSON.parse(saved.body).result.value.data).toMatchObject({ name: 'HTTP template' });
   }, 30_000);
 
-  it('imports and reuses a PPTX above 16 MB with its real image assets intact', async () => {
+  it('uploads, imports and reuses a PPTX above 64 MB with its real image assets intact', async () => {
     const f = await fixture();
     const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_WIDE';
     const slide = pptx.addSlide();
     slide.addText('Large image template', { x: 0.5, y: 0.3, w: 11, h: 0.6, fontSize: 24 });
     const images = [];
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 8; i++) {
       const image = await sharp(randomBytes(1800 * 1600 * 3), { raw: { width: 1800, height: 1600, channels: 3 } }).png().toBuffer();
       images.push(image);
-      slide.addImage({ data: `image/png;base64,${image.toString('base64')}`, x: 0.5 + i * 6.2, y: 1.3, w: 5.8, h: 5.2 });
+      slide.addImage({ data: `image/png;base64,${image.toString('base64')}`, x: 0.4 + i % 4 * 3.2, y: 1.3 + Math.floor(i / 4) * 2.5, w: 3, h: 2.3 });
     }
     const bytes = Buffer.from(await pptx.write({ outputType: 'nodebuffer' }));
-    expect(bytes.length).toBeGreaterThan(16 * 1024 * 1024);
-    const draft = await f.request('template/prepare', { input: { fileName: 'Large.pptx', base64: bytes.toString('base64') } });
+    expect(bytes.length).toBeGreaterThan(64 * 1024 * 1024);
+    async function http(endpoint,payload) {
+      const response=await f.httpRequest(endpoint,payload);
+      expect(response.status).toBe(200);
+      const result=JSON.parse(response.body).result;
+      expect(result.value.status,JSON.stringify(result)).toBe('ok');
+      return result.value.data;
+    }
+    const upload=await http('template/upload-start',{input:{fileName:'Large.pptx',size:bytes.length}});
+    for(let offset=0;offset<bytes.length;offset+=upload.chunkBytes) {
+      const chunk=bytes.subarray(offset,offset+upload.chunkBytes);
+      expect(await http('template/upload-chunk',{uploadId:upload.uploadId,offset,base64:chunk.toString('base64')})).toEqual({received:offset+chunk.length,size:bytes.length});
+    }
+    const draft=await http('template/prepare',{input:{uploadId:upload.uploadId}});
+    expect(await readdir(path.join(f.storage,'personal-templates/uploads'))).toEqual([]);
     expect(draft.preview.startsWith('data:image/png;base64,')).toBe(true);
     expect(draft.previews).toBeUndefined();
     const template = await f.request('template/save', { draftId: draft.draftId, name: 'Large image template' });
@@ -175,7 +188,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     const mediaHashes = Object.entries(exported).filter(([name]) => name.startsWith('ppt/media/')).map(([, data]) => createHash('sha256').update(data).digest('hex'));
     for (const image of images) expect(mediaHashes).toContain(createHash('sha256').update(image).digest('hex'));
     expect((await readFile(path.join(f.storage, 'personal-templates/saved', template.id, 'source.pptx'))).equals(bytes)).toBe(true);
-  }, 30000);
+  }, 60000);
 
   it('imports mixed-size title and body text without inflating all text to the largest run', async () => {
     const f = await fixture();
@@ -420,6 +433,43 @@ describe('personal PPT templates in the shipped runtime', () => {
     expect(await readFile(path.join(f.storage, 'audit.ndjson'), 'utf8')).toContain('update-personal-template');
   }, 30000);
 
+  it('validates chunk ordering, total integrity and upload session ownership',async()=>{
+    const f=await fixture(),bytes=await source();
+    await expect(f.request('template/upload-start',{input:{fileName:'../escape.pptx',size:8}})).rejects.toThrow('PPTX');
+    await expect(f.request('template/upload-start',{input:{fileName:'Source.pptx',size:-1}})).rejects.toThrow('大小无效');
+    const upload=await f.request('template/upload-start',{input:{fileName:'Source.pptx',size:bytes.length}});
+    const chunk={uploadId:upload.uploadId,offset:0,base64:bytes.subarray(0,4).toString('base64')};
+    await expect(f.request('template/upload-chunk',chunk,'session-b')).rejects.toThrow('其他会话');
+    await expect(f.request('template/prepare',{input:{uploadId:upload.uploadId}},'session-b')).rejects.toThrow('其他会话');
+    await expect(f.request('template/upload-cancel',{uploadId:upload.uploadId},'session-b')).rejects.toThrow('其他会话');
+    await expect(f.request('template/upload-chunk',{...chunk,offset:1})).rejects.toThrow('不匹配');
+    await expect(f.request('template/upload-chunk',{...chunk,base64:'UEsDBB=='})).rejects.toThrow('Base64');
+    await expect(f.request('template/upload-chunk',{...chunk,base64:'A'.repeat(Math.ceil(upload.chunkBytes/3)*4+4)})).rejects.toThrow('分片');
+    await expect(f.request('template/upload-chunk',{...chunk,base64:Buffer.alloc(bytes.length+1).toString('base64')})).rejects.toThrow('不匹配');
+    expect(await f.request('template/upload-chunk',chunk)).toEqual({received:4,size:bytes.length});
+    await expect(f.request('template/prepare',{input:{uploadId:upload.uploadId}})).rejects.toThrow('完成文件上传');
+    await f.request('template/upload-chunk',{...chunk,offset:4,base64:bytes.subarray(4).toString('base64')});
+    expect(await readFile(path.join(f.storage,'personal-templates/uploads',upload.uploadId,'source.pptx'))).toEqual(bytes);
+    await f.request('template/upload-cancel',{uploadId:upload.uploadId});
+    await f.request('template/upload-cancel',{uploadId:upload.uploadId});
+    expect(await readdir(path.join(f.storage,'personal-templates/uploads'))).toEqual([]);
+    expect(await readFile(path.join(f.storage,'audit.ndjson'),'utf8')).toContain('upload-personal-template-chunk');
+  });
+
+  it('confines uploaded files and cleans a complete source when conversion fails',async()=>{
+    const f=await fixture();
+    const upload=await f.request('template/upload-start',{input:{fileName:'Bad.pptx',size:4}});
+    const file=path.join(f.storage,'personal-templates/uploads',upload.uploadId,'source.pptx');
+    const privateFile=path.join(f.root,'private.pptx');await writeFile(privateFile,'kept');
+    await rm(file);await symlink(privateFile,file);
+    await expect(f.request('template/upload-chunk',{uploadId:upload.uploadId,offset:0,base64:'UEsDBA=='})).rejects.toThrow('普通本地文件');
+    expect(await readFile(privateFile,'utf8')).toBe('kept');
+    await rm(file);await writeFile(file,Buffer.alloc(0));
+    await f.request('template/upload-chunk',{uploadId:upload.uploadId,offset:0,base64:'UEsDBA=='});
+    await expect(f.request('template/prepare',{input:{uploadId:upload.uploadId}})).rejects.toThrow();
+    expect(await readdir(path.join(f.storage,'personal-templates/uploads'))).toEqual([]);
+  });
+
   it('rejects invalid uploads, cancels drafts, and prevents library path escapes', async () => {
     const f = await fixture();
     await expect(f.request('template/prepare', { input: { fileName: 'legacy.ppt', base64: 'UEsDBA==' } })).rejects.toThrow('PPTX');
@@ -427,9 +477,6 @@ describe('personal PPT templates in the shipped runtime', () => {
       await expect(f.request('template/prepare', { input: { fileName: 'bad.pptx', base64 } })).rejects.toThrow('Base64');
     await expect(f.request('template/prepare', { input: { fileName: '../secret.pptx', base64: 'UEsDBA==' } })).rejects.toThrow();
     await expect(f.request('template/prepare', { input: { fileName: 'bad.pptx', base64: 'UEsDBA==' } })).rejects.toThrow();
-    await expect(f.request('template/prepare', {
-      input: { fileName: 'huge.pptx', base64: 'A'.repeat(MAX_PERSONAL_TEMPLATE_BASE64_CHARS + 4) }
-    })).rejects.toThrow('不能超过');
     expect(await f.httpRequestOversize(MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES + 1)).toEqual({
       status: 413,
       body: 'payload too large'

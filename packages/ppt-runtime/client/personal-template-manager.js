@@ -180,6 +180,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
   const generation = react.useRef(0);
   const [importProgress,setImportProgress] = react.useState({total:0,pages:[]});
   const activeDraft = react.useRef(null);
+  const activeUpload = react.useRef(null);
   react.useEffect(() => { activeDraft.current = draft; }, [draft]);
   react.useEffect(() => {
     generation.current++; pageRequest.current++;
@@ -190,6 +191,8 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       alive.current = false;
       if (activeDraft.current) client.call('template/cancel', { draftId: activeDraft.current.draftId }).catch(() => {});
       activeDraft.current = null;
+      if (activeUpload.current) activeUpload.current.client.call('template/upload-cancel', { uploadId: activeUpload.current.uploadId }).catch(() => {});
+      activeUpload.current = null;
     };
   }, [client, sessionId]);
   const templates = state.templates.filter(item => item.origin === 'personal').sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
@@ -242,42 +245,56 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
     if (!file) return;
     const current = generation.current;
     setImporting(true); setImportProgress({total:0,pages:[]});
-    await act(async () => {
+    await act(async isCurrent => {
       if (!/\.pptx$/i.test(file.name)) throw new Error(t('personal.fileType'));
-      if (file.size > 64 * 1024 * 1024) throw new Error(t('personal.fileTooLarge'));
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(',')[1]);
-        reader.onerror = () => reject(new Error(t('personal.readFailed')));
-        reader.readAsDataURL(file);
-      });
-      const requestId=crypto.randomUUID();
-      let polling=true,after=0;
-      const poll=async () => {
-        while(polling && alive.current && current===generation.current) {
-          try {
-            const progress=await client.call('template/import-progress',{requestId,after});
-            if(polling && alive.current && current===generation.current) {
-              after=progress.completed;
-              setImportProgress(previous=>({total:progress.total,pages:[...previous.pages,...progress.pages]}));
-            }
-          } catch { /* The prepare request remains the authoritative error result. */ }
-          if(polling) await new Promise(resolve=>setTimeout(resolve,400));
+      const { uploadId, chunkBytes } = await client.call('template/upload-start', { input: { fileName: file.name, size: file.size } });
+      try {
+        if (!isCurrent()) return;
+        activeUpload.current = { uploadId, client };
+        for (let offset = 0; offset < file.size; offset += chunkBytes) {
+          if (!isCurrent()) return;
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(',')[1]);
+            reader.onerror = () => reject(new Error(t('personal.readFailed')));
+            reader.readAsDataURL(file.slice(offset, offset + chunkBytes));
+          });
+          if (!isCurrent()) return;
+          await client.call('template/upload-chunk', { uploadId, offset, base64 });
         }
-      };
-      const pollingTask=poll();
-      let result;
-      try {result=await client.call('template/prepare', { input: { fileName: file.name, base64,requestId } });}
-      finally {polling=false;void pollingTask;}
+        if (!isCurrent()) return;
+        const requestId=crypto.randomUUID();
+        let polling=true,after=0;
+        const poll=async () => {
+          while(polling && alive.current && current===generation.current) {
+            try {
+              const progress=await client.call('template/import-progress',{requestId,after});
+              if(polling && alive.current && current===generation.current) {
+                after=progress.completed;
+                setImportProgress(previous=>({total:progress.total,pages:[...previous.pages,...progress.pages]}));
+              }
+            } catch { /* The prepare request remains the authoritative error result. */ }
+            if(polling) await new Promise(resolve=>setTimeout(resolve,400));
+          }
+        };
+        const pollingTask=poll();
+        let result;
+        try {result=await client.call('template/prepare', { input: { uploadId, requestId } });}
+        finally {polling=false;void pollingTask;}
 
-      if (!alive.current || current !== generation.current) { if (result.draftId) await client.call('template/cancel', { draftId: result.draftId }); return; }
-      if (result.duplicate) { await refresh(); if (alive.current && current === generation.current) { dismissModal(); setNotice(t('personal.duplicate')); } return; }
-      setDraft({
-        ...result,
-        slideCount: result.template.slideCount,
-        pages: { 1: result.preview }
-      });
-      setName(result.template.name); setPage(0);
+        if (!alive.current || current !== generation.current) { if (result.draftId) await client.call('template/cancel', { draftId: result.draftId }); return; }
+        if (result.duplicate) { await refresh(); if (alive.current && current === generation.current) { dismissModal(); setNotice(t('personal.duplicate')); } return; }
+        setDraft({
+          ...result,
+          slideCount: result.template.slideCount,
+          pages: { 1: result.preview }
+        });
+        setName(result.template.name); setPage(0);
+      } finally {
+        if (activeUpload.current?.uploadId === uploadId) activeUpload.current = null;
+        // The host also expires abandoned transfers after a client disconnect.
+        await client.call('template/upload-cancel', { uploadId }).catch(() => {});
+      }
     });
   }
   async function showPage(next) {
@@ -340,6 +357,9 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       .personal-dialog.personal-upload {width:min(1280px,calc(100vw - 32px))}
       .personal-dialog.personal-upload[open] {display:flex;flex-direction:column}
       .personal-upload header,.personal-upload footer {flex:none}
+      .personal-upload footer {display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px}
+      .personal-upload footer .personal-pagination {grid-column:2;justify-self:center;flex-wrap:nowrap;white-space:nowrap}
+      .personal-upload-actions {grid-column:3;justify-self:end;display:flex;align-items:center;gap:10px;white-space:nowrap}
       .personal-dialog .personal-upload-form {display:flex;flex-direction:column;gap:18px;min-height:0}
       .personal-upload-body {display:grid;gap:16px;overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:4px}
       .personal-upload-preview {display:block;width:100%;height:auto;max-width:none;border:1px solid var(--dsw-alias-border-l2-darkmode-thin,#e7e7e9);border-radius:10px;background:white;box-sizing:border-box}
@@ -348,6 +368,8 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
       .personal-pagination {display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;font-size:13px;font-variant-numeric:tabular-nums}
       .personal-pagination button {display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--dsw-alias-border-l2-darkmode-thin,#ddd);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font-size:18px}
       .personal-pagination button:disabled {color:var(--dsw-alias-label-tertiary,#aaa)}
+      .personal-upload footer .personal-pagination button {min-height:32px;padding:0;font-size:18px}
+      @media (max-width:640px) {.personal-upload footer {grid-template-columns:minmax(0,1fr) auto;gap:8px}.personal-upload footer .personal-pagination {grid-column:1;justify-self:start;gap:8px}.personal-upload-actions {grid-column:2;gap:8px}.personal-upload footer .personal-upload-actions button {padding-inline:10px}}
       .personal-progress-pages {display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:16px;width:100%;align-self:stretch}
       .personal-progress-pages figure {animation:personal-thumbnail-enter 160ms cubic-bezier(.23,1,.32,1) both;margin:0;min-width:0;color:var(--dsw-alias-label-secondary,#666);text-align:center;font-size:12px}
       .personal-progress-pages img {display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:var(--dsw-alias-background-secondary,#f4f4f4);border-radius:4px;margin-bottom:4px}
@@ -420,11 +442,7 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
               h('div', { className: 'personal-zoom-stage', 'aria-busy': pageLoading },
                 pageLoading ? h('div', { role: 'status' }, t('personal.processing'))
                 : pageError ? h('div', { role: 'alert' }, h('span', null, pageError), h('button', { type: 'button', onClick: () => showPage(page) }, t('templates.retry')))
-                : h(FitPreviewImage, { src: draft.pages[slides[page]], alt: `${t('personal.preview')} ${page + 1}`, zoom, onZoom: setZoom, onError: () => setPageError(t('personal.previewFailed')) })),
-              h('div', { className: 'personal-pagination' },
-                h('button', { type: 'button', 'aria-label': t('personal.previous'), disabled: page === 0, onClick: () => showPage(page - 1) }, '‹'),
-                h('span', { role: 'status' }, `${draft.template.templateSamples ? t('personal.layouts')+' ' : ''}${page + 1} / ${slides.length}`),
-                h('button', { type: 'button', 'aria-label': t('personal.next'), disabled: page === slides.length - 1, onClick: () => showPage(page + 1) }, '›')))
+                : h(FitPreviewImage, { src: draft.pages[slides[page]], alt: `${t('personal.preview')} ${page + 1}`, zoom, onZoom: setZoom, onError: () => setPageError(t('personal.previewFailed')) })))
             : busy && h('div', { className: 'personal-upload-wait' },
               !importProgress.pages.length && h('div', { className: 'personal-loading-dots', 'aria-hidden': true },
                 ...[0, 1, 2].map(index => h('span', { key: index, style: { '--dot-delay': `${index * .2}s` } }))),
@@ -433,9 +451,14 @@ function PersonalTemplateManager({ client, mode, sessionId, state, choose, t, mu
                 h('img',{src:item.preview,alt:`${t('personal.preview')} ${item.page}`}),h('figcaption',null,item.page))))),
             error && h('div', { role: 'alert', className: 'personal-modal-error' }, error)),
           h('footer', null,
-            h('button', { type: 'button', disabled: busy, onClick: closeModal }, t('personal.cancel')),
-            draft ? h('button', { type: 'submit', className: 'personal-submit', disabled: busy || !name.trim() }, t(busy ? 'personal.processing' : 'personal.save'))
-            : !busy && h('button', { type: 'button', onClick: () => input.current?.click() }, t('personal.chooseFile'))))
+            draft && h('div', { className: 'personal-pagination' },
+              h('button', { type: 'button', 'aria-label': t('personal.previous'), disabled: page === 0, onClick: () => showPage(page - 1) }, '‹'),
+              h('span', { role: 'status' }, `${draft.template.templateSamples ? t('personal.layouts')+' ' : ''}${page + 1} / ${slides.length}`),
+              h('button', { type: 'button', 'aria-label': t('personal.next'), disabled: page === slides.length - 1, onClick: () => showPage(page + 1) }, '›')),
+            h('div', { className: 'personal-upload-actions' },
+              h('button', { type: 'button', disabled: busy, onClick: closeModal }, t('personal.cancel')),
+              draft ? h('button', { type: 'submit', className: 'personal-submit', disabled: busy || !name.trim() }, t(busy ? 'personal.processing' : 'personal.save'))
+              : !busy && h('button', { type: 'button', onClick: () => input.current?.click() }, t('personal.chooseFile')))))
         : deleting ? h('div', { className: 'personal-fields' },
           h('p', { className: 'personal-delete-copy' }, `${deletingTemplate?.name ?? ''}。${t('personal.deleteHint')}`),
           error && h('div', { role: 'alert', className: 'personal-modal-error' }, error),

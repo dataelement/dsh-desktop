@@ -63,6 +63,9 @@ async function fixture(prepareError, waitForPrepare, resourcePlaceholders = [], 
     if (waits.has(endpoint)) await waits.get(endpoint);
     if (failures.has(endpoint)) { const error = failures.get(endpoint); failures.delete(endpoint); throw new Error(error); }
     if (endpoint === 'state') return { templates: saved, selectedTemplateId: selectedId, presentationMode: 'ppt' };
+    if (endpoint === 'template/upload-start') return {uploadId:'upload-1',chunkBytes:8*1024*1024};
+    if (endpoint === 'template/upload-chunk') return {received:payload.offset+Buffer.from(payload.base64,'base64').length};
+    if (endpoint === 'template/upload-cancel') return {uploadId:payload.uploadId};
     if (endpoint === 'template/prepare') {
       if (waitForPrepare) await waitForPrepare;
       if (prepareError) throw new Error(prepareError);
@@ -337,27 +340,54 @@ it.each(previewClients)('fits a cached image using its actual aspect ratio befor
   expect(container.querySelector('dialog[open]')).toBeNull();
 });
 
-it('reads a file above 16 MB and sends its full payload to the Host', async () => {
+it('transfers a file above 16 MB as bounded ordered chunks before preparing it', async () => {
   const f = await fixture();
   const size = 17 * 1024 * 1024;
   await f.upload(new File([new Uint8Array(size)], 'Large.pptx'));
   await act(async () => {
     await vi.waitFor(() => expect(f.calls.some(call => call.endpoint === 'template/prepare')).toBe(true));
   });
-  const sent = f.calls.find(call => call.endpoint === 'template/prepare').payload.input;
-  expect(sent.fileName).toBe('Large.pptx');
-  expect(Buffer.from(sent.base64, 'base64')).toHaveLength(size);
+  expect(f.calls.find(call => call.endpoint === 'template/upload-start').payload.input).toEqual({fileName:'Large.pptx',size});
+  const chunks=f.calls.filter(call=>call.endpoint==='template/upload-chunk').map(call=>call.payload);
+  expect(chunks.map(chunk=>chunk.offset)).toEqual([0,8*1024*1024,16*1024*1024]);
+  expect(chunks.reduce((length,chunk)=>length+Buffer.from(chunk.base64,'base64').length,0)).toBe(size);
+  expect(f.calls.find(call=>call.endpoint==='template/prepare').payload.input).toMatchObject({uploadId:'upload-1'});
   expect(container.querySelector('dialog[open] img')).not.toBeNull();
   expect(container.querySelector('[role=alert]')).toBeNull();
 });
 
-it('rejects a file larger than 64 MB before reading it', async () => {
+it('uploads a file larger than 64 MB through the full template preview flow', async () => {
   const f = await fixture();
-  const file = new File(['x'], 'Huge.pptx');
-  Object.defineProperty(file, 'size', { value: 65 * 1024 * 1024 });
-  await f.upload(file);
-  expect(container.querySelector('[role=alert]').textContent).toBe('personal.fileTooLarge');
-  expect(f.calls.some(call => call.endpoint === 'template/prepare')).toBe(false);
+  const size=65*1024*1024;
+  await f.upload(new File([new Uint8Array(size)],'Huge.pptx'));
+  await act(async()=>vi.waitFor(()=>expect(f.calls.some(call=>call.endpoint==='template/prepare')).toBe(true),{timeout:5000}));
+  const chunks=f.calls.filter(call=>call.endpoint==='template/upload-chunk').map(call=>call.payload);
+  expect(chunks).toHaveLength(9);
+  expect(chunks.map(chunk=>chunk.offset)).toEqual(Array.from({length:9},(_,index)=>index*8*1024*1024));
+  expect(chunks.reduce((length,chunk)=>length+Buffer.from(chunk.base64,'base64').length,0)).toBe(size);
+  expect(container.querySelector('[role=alert]')).toBeNull();
+  expect(container.querySelector('dialog[open] img')).not.toBeNull();
+  await f.click('personal.save');
+  expect(f.calls.some(call=>call.endpoint==='template/select')).toBe(true);
+});
+
+it('releases a failed transfer and keeps the upload action available for retry',async()=>{
+  const f=await fixture();f.failNext('template/upload-chunk','上传分片写入失败');
+  await f.upload(new File(['source'],'Retry.pptx'));
+  expect(container.querySelector('[role=alert]').textContent).toBe('上传分片写入失败');
+  expect(f.calls.some(call=>call.endpoint==='template/upload-cancel')).toBe(true);
+  expect(f.calls.some(call=>call.endpoint==='template/prepare')).toBe(false);
+  expect(container.querySelector('input[type=file]').disabled).toBe(false);
+});
+
+it('cancels a transfer when the session changes during a chunk request',async()=>{
+  const f=await fixture();const release=f.hold('template/upload-chunk');
+  await f.upload(new File(['source'],'Interrupted.pptx'));
+  expect(f.calls.some(call=>call.endpoint==='template/upload-chunk')).toBe(true);
+  await f.switchSession();await release();
+  expect(f.calls.some(call=>call.endpoint==='template/upload-cancel')).toBe(true);
+  expect(f.calls.some(call=>call.endpoint==='template/prepare')).toBe(false);
+  expect(container.querySelector('dialog[open]')).toBeNull();
 });
 
 it('cancels an upload completed after switching sessions and keeps the new session ready', async () => {

@@ -6,14 +6,14 @@ import { loadPptdProject, checkPptdProject, parsePptdProject } from './pptd.js';
 import { renderOfficeTemplatePreview } from './office-template-preview.js';
 import { extractPersonalTemplateProfile, personalTemplateSourceTheme, validPersonalTemplateProfile, PERSONAL_TEMPLATE_PROFILE_VERSION } from './personal-template-profile.js';
 import { createPersonalTemplateSamples, validPersonalTemplateSamples } from './personal-template-samples.js';
+import { PersonalTemplateUploads, personalTemplateFileName, decodeTemplateBase64 } from './personal-template-upload.js';
 
 export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 8;
 export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 9;
 const MAX_TEMPLATES = 100;
 const PREVIEW_LONG_EDGE = 1920;
 const THUMBNAIL_LONG_EDGE = 720;
-export const MAX_PERSONAL_TEMPLATE_BYTES = 64 * 1024 * 1024;
-export const MAX_PERSONAL_TEMPLATE_BASE64_CHARS = Math.ceil(MAX_PERSONAL_TEMPLATE_BYTES / 3) * 4;
+// Bounds each JSON RPC request. Browser uploads transfer independent 8 MiB chunks.
 export const MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES = 86 * 1024 * 1024;
 const ID = /^personal-[a-f0-9]{64}$/;
 const DRAFT = /^[a-f0-9-]{36}$/;
@@ -62,6 +62,7 @@ export class PersonalTemplateLibrary {
     this.convert = convert;
     this.writeSource = writeSource;
     this.maxSlides = maxSlides;
+    this.uploads = new PersonalTemplateUploads(this);
   }
   async locked(work) {
     const pending = this.tail.catch(() => {}).then(work);
@@ -134,6 +135,15 @@ export class PersonalTemplateLibrary {
       throw error;
     }
   }
+  async uploadStart(sessionId, input) {
+    return this.locked(() => this.audit(sessionId, 'upload-personal-template', () => this.uploads.start(sessionId, input)));
+  }
+  async uploadChunk(sessionId, input) {
+    return this.locked(() => this.audit(sessionId, 'upload-personal-template-chunk', () => this.uploads.append(sessionId, input)));
+  }
+  async cancelUpload(sessionId, uploadId) {
+    return this.locked(() => this.audit(sessionId, 'cancel-personal-template-upload', () => this.uploads.cancel(sessionId, uploadId)));
+  }
   async prepare(sessionId, input) {
     const requestId=input?.requestId;
     let progress;
@@ -146,104 +156,98 @@ export class PersonalTemplateLibrary {
     }
     try { return await this.locked(() => this.audit(sessionId, 'prepare-personal-template', async () => {
       const started=Date.now();
-      const fileName = input?.fileName;
-      if (typeof fileName !== 'string' || fileName.length > 240 || !/\.pptx$/i.test(fileName) || /[\\/\u0000]/u.test(fileName))
-        throw new Error('请选择 PPTX 文件');
-      const encoded = input?.base64;
-      if (typeof encoded !== 'string' || encoded.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(encoded))
-        throw new Error('上传数据应为有效 Base64');
-      if (encoded.length > MAX_PERSONAL_TEMPLATE_BASE64_CHARS)
-        throw new Error(`个人模板 PPTX 不能超过 ${MAX_PERSONAL_TEMPLATE_BYTES} 字节`);
-      const bytes = Buffer.from(encoded, 'base64');
-      if (bytes.toString('base64') !== encoded) throw new Error('上传数据应为有效 Base64');
-      if (bytes.length > MAX_PERSONAL_TEMPLATE_BYTES)
-        throw new Error(`个人模板 PPTX 不能超过 ${MAX_PERSONAL_TEMPLATE_BYTES} 字节`);
-      if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from([80, 75, 3, 4])))
-        throw new Error('请选择有效的 PPTX 文件');
-      const id = `personal-${hash(bytes)}`;
-      const templates=await this.list();
-      const saved = templates.find(item => item.id === id);
-      if (saved?.conversionVersion === PERSONAL_TEMPLATE_CONVERSION_VERSION && saved?.previewVersion === PERSONAL_TEMPLATE_PREVIEW_VERSION) {
-        if(saved.templateProfile?.version===PERSONAL_TEMPLATE_PROFILE_VERSION)return {duplicate:true,template:saved};
-        // Enrich a current cached conversion without repeating Office rendering.
-        const project=await loadPptdProject(await this.projectSource(id));
-        const template={...saved,...profileMetadata(extractPersonalTemplateProfile(project))};
-        const directory=path.join(this.root,'saved',id),temporary=path.join(directory,`profile-${randomUUID()}.json`);
-        try {await writeFile(temporary,JSON.stringify(template),{flag:'wx',mode:0o600});await rename(temporary,await this.checkedFile(directory,'template.json'));}
-        finally {await rm(temporary,{force:true});}
-        return {duplicate:true,template};
-      }
-      if (!saved && templates.length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
-      const drafts = await this.directory('drafts');
-      // Expired previews are temporary resources, independent of registered templates.
-      for (const item of await readdir(drafts, { withFileTypes: true })) {
-        if (item.isDirectory() && DRAFT.test(item.name) && Date.now() - (await lstat(path.join(drafts, item.name))).mtimeMs > 86400000)
-          await rm(path.join(drafts, item.name), { recursive: true });
-      }
-      if ((await readdir(drafts)).length >= 10) throw new Error('待保存模板达到 10 套，请先保存或取消已有预览');
-      const conversionStarted=Date.now();
-      const converted = await this.convert(bytes, fileName);
-      const convertedAt=Date.now();
-      if (!converted.slideCount || converted.slideCount > this.maxSlides) throw new Error(`模板应包含 1–${this.maxSlides} 页`);
-      const missing = converted.diagnostics.filter(item => item.level === 'unsupported');
-      if (missing.length) throw conversionError({ errorCount: missing.length, issues: missing.map(item => ({
-        severity: 'error', code: 'conversion-unsupported', page: item.slide, elementId: item.nodeId,
-        message: `${item.feature}：${item.message}`
-      })) }, fileName, hash(bytes));
-      if(progress) progress.total=converted.slideCount;
-      const original = parsePptdProject(converted.source);
-      const checked = checkPptdProject(original);
-      if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
-      const templateProfile=extractPersonalTemplateProfile(original);
-      const {source:sampleSource,samples:templateSamples}=createPersonalTemplateSamples(original,templateProfile);
-      const source=personalTemplateSourceTheme(sampleSource,templateProfile);
-      const parsed = parsePptdProject(source);
-      const sampleCheck=checkPptdProject(parsed);
-      if(sampleCheck.status==='fail')throw conversionError(sampleCheck,fileName,hash(bytes));
-      const draftId = randomUUID();
-      const directory = await this.directory('drafts', draftId);
+      let upload;
       try {
-        const project = await this.directory('drafts', draftId, 'project');
-        await this.writeSource(project, source);
-        await writeFile(path.join(directory, 'source.pptx'), bytes, { mode: 0o600 });
-        const previewDirectory = path.join(directory, 'preview');
-        const previewMetadata = await renderOfficeTemplatePreview(parsed,directory,PREVIEW_LONG_EDGE,this.maxSlides,progress ? async ({page,path:imagePath}) => {
-          const thumbnail=await sharp(imagePath).resize({width:240,height:240,fit:'inside',withoutEnlargement:true}).png().toBuffer();
-          progress.pages.push({page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`});
-        } : undefined);
-        const previewPage = async page => readFile(path.join(previewDirectory, 'pages', `page-${page}.png`));
-        const uniquePages=templateSamples.representativePages;
-        const representativePages=[uniquePages[0],uniquePages[Math.floor(uniquePages.length/2)],uniquePages.at(-1)];
-        const thumbnails=new Map();
-        for(const page of new Set(representativePages)) thumbnails.set(page,(async()=>{
-          const thumbnail = await sharp(path.join(previewDirectory,'pages',`page-${page}.png`)).resize({
-            width: THUMBNAIL_LONG_EDGE, height: THUMBNAIL_LONG_EDGE, fit: 'inside', withoutEnlargement: true
-          }).png().toBuffer();
-          return `data:image/png;base64,${thumbnail.toString('base64')}`;
-        })());
-        const previewImages=await Promise.all(representativePages.map(page=>thumbnails.get(page)));
-        const preview = `data:image/png;base64,${(await previewPage(1)).toString('base64')}`;
-        const name = nameOf(fileName.replace(/\.pptx$/i, '').slice(0, 80));
-        const record = {
-          id, conversionVersion: PERSONAL_TEMPLATE_CONVERSION_VERSION, previewVersion: PERSONAL_TEMPLATE_PREVIEW_VERSION, origin: 'personal', name: saved?.name ?? name, category: 'personal', supportedModes: ['ppt'], aspectRatio: 'wide',
-          description: `${converted.slideCount} 页个人 PPT 模板`, previewTitle: name, previewSubtitle: '我的模板',
-          ...profileMetadata(templateProfile),
-          templateSamples,
-          createdAt: saved?.createdAt ?? new Date().toISOString(), ...(saved ? {description:saved.description,updatedAt:new Date().toISOString()} : {}), fileName, sha256: hash(bytes), slideCount: converted.slideCount,
-          previewImages, previewMetadata,
-          preparationTimings:{conversionMs:convertedAt-conversionStarted,totalMs:Date.now()-started},
-          diagnostics: converted.diagnostics, checkWarnings: checked.warningCount,
-          resourcePlaceholders: converted.diagnostics.filter(item => item.level === 'placeholder'),
-          reviewIssues: checked.issues.filter(issue => issue.severity === 'warning').map(issue => ({
-            ...issue, message: issue.code === 'out-of-bounds' ? '源文件对象位于页面边缘或画布外，预览按页面范围显示。'
-              : issue.code === 'text-overflow' ? '源文件文字可能超出文本框，请在预览中核对。' : issue.message
-          })),
-          pageIndex: [...converted.source.pages.keys()].map((file, i) => ({ slideNumber: i + 1, file }))
-        };
-        await writeFile(path.join(directory, 'template.json'), JSON.stringify(record), { mode: 0o600 });
-        await writeFile(path.join(directory, 'owner.json'), JSON.stringify({ session: hash(sessionId) }), { mode: 0o600 });
-        return { draftId, template: record, preview };
-      } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
+        if (input?.uploadId !== undefined) upload = await this.uploads.read(sessionId, input.uploadId);
+        const fileName = upload?.fileName ?? personalTemplateFileName(input?.fileName);
+        const bytes = upload?.bytes ?? decodeTemplateBase64(input?.base64);
+        if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from([80, 75, 3, 4])))
+          throw new Error('请选择有效的 PPTX 文件');
+        const id = `personal-${hash(bytes)}`;
+        const templates=await this.list();
+        const saved = templates.find(item => item.id === id);
+        if (saved?.conversionVersion === PERSONAL_TEMPLATE_CONVERSION_VERSION && saved?.previewVersion === PERSONAL_TEMPLATE_PREVIEW_VERSION) {
+          if(saved.templateProfile?.version===PERSONAL_TEMPLATE_PROFILE_VERSION)return {duplicate:true,template:saved};
+          // Enrich a current cached conversion without repeating Office rendering.
+          const project=await loadPptdProject(await this.projectSource(id));
+          const template={...saved,...profileMetadata(extractPersonalTemplateProfile(project))};
+          const directory=path.join(this.root,'saved',id),temporary=path.join(directory,`profile-${randomUUID()}.json`);
+          try {await writeFile(temporary,JSON.stringify(template),{flag:'wx',mode:0o600});await rename(temporary,await this.checkedFile(directory,'template.json'));}
+          finally {await rm(temporary,{force:true});}
+          return {duplicate:true,template};
+        }
+        if (!saved && templates.length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
+        const drafts = await this.directory('drafts');
+        // Expired previews are temporary resources, independent of registered templates.
+        for (const item of await readdir(drafts, { withFileTypes: true })) {
+          if (item.isDirectory() && DRAFT.test(item.name) && Date.now() - (await lstat(path.join(drafts, item.name))).mtimeMs > 86400000)
+            await rm(path.join(drafts, item.name), { recursive: true });
+        }
+        if ((await readdir(drafts)).length >= 10) throw new Error('待保存模板达到 10 套，请先保存或取消已有预览');
+        const conversionStarted=Date.now();
+        const converted = await this.convert(bytes, fileName);
+        const convertedAt=Date.now();
+        if (!converted.slideCount || converted.slideCount > this.maxSlides) throw new Error(`模板应包含 1–${this.maxSlides} 页`);
+        const missing = converted.diagnostics.filter(item => item.level === 'unsupported');
+        if (missing.length) throw conversionError({ errorCount: missing.length, issues: missing.map(item => ({
+          severity: 'error', code: 'conversion-unsupported', page: item.slide, elementId: item.nodeId,
+          message: `${item.feature}：${item.message}`
+        })) }, fileName, hash(bytes));
+        if(progress) progress.total=converted.slideCount;
+        const original = parsePptdProject(converted.source);
+        const checked = checkPptdProject(original);
+        if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
+        const templateProfile=extractPersonalTemplateProfile(original);
+        const {source:sampleSource,samples:templateSamples}=createPersonalTemplateSamples(original,templateProfile);
+        const source=personalTemplateSourceTheme(sampleSource,templateProfile);
+        const parsed = parsePptdProject(source);
+        const sampleCheck=checkPptdProject(parsed);
+        if(sampleCheck.status==='fail')throw conversionError(sampleCheck,fileName,hash(bytes));
+        const draftId = randomUUID();
+        const directory = await this.directory('drafts', draftId);
+        try {
+          const project = await this.directory('drafts', draftId, 'project');
+          await this.writeSource(project, source);
+          await writeFile(path.join(directory, 'source.pptx'), bytes, { mode: 0o600 });
+          const previewDirectory = path.join(directory, 'preview');
+          const previewMetadata = await renderOfficeTemplatePreview(parsed,directory,PREVIEW_LONG_EDGE,this.maxSlides,progress ? async ({page,path:imagePath}) => {
+            const thumbnail=await sharp(imagePath).resize({width:240,height:240,fit:'inside',withoutEnlargement:true}).png().toBuffer();
+            progress.pages.push({page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`});
+          } : undefined);
+          const previewPage = async page => readFile(path.join(previewDirectory, 'pages', `page-${page}.png`));
+          const uniquePages=templateSamples.representativePages;
+          const representativePages=[uniquePages[0],uniquePages[Math.floor(uniquePages.length/2)],uniquePages.at(-1)];
+          const thumbnails=new Map();
+          for(const page of new Set(representativePages)) thumbnails.set(page,(async()=>{
+            const thumbnail = await sharp(path.join(previewDirectory,'pages',`page-${page}.png`)).resize({
+              width: THUMBNAIL_LONG_EDGE, height: THUMBNAIL_LONG_EDGE, fit: 'inside', withoutEnlargement: true
+            }).png().toBuffer();
+            return `data:image/png;base64,${thumbnail.toString('base64')}`;
+          })());
+          const previewImages=await Promise.all(representativePages.map(page=>thumbnails.get(page)));
+          const preview = `data:image/png;base64,${(await previewPage(1)).toString('base64')}`;
+          const name = nameOf(fileName.replace(/\.pptx$/i, '').slice(0, 80));
+          const record = {
+            id, conversionVersion: PERSONAL_TEMPLATE_CONVERSION_VERSION, previewVersion: PERSONAL_TEMPLATE_PREVIEW_VERSION, origin: 'personal', name: saved?.name ?? name, category: 'personal', supportedModes: ['ppt'], aspectRatio: 'wide',
+            description: `${converted.slideCount} 页个人 PPT 模板`, previewTitle: name, previewSubtitle: '我的模板',
+            ...profileMetadata(templateProfile),
+            templateSamples,
+            createdAt: saved?.createdAt ?? new Date().toISOString(), ...(saved ? {description:saved.description,updatedAt:new Date().toISOString()} : {}), fileName, sha256: hash(bytes), slideCount: converted.slideCount,
+            previewImages, previewMetadata,
+            preparationTimings:{conversionMs:convertedAt-conversionStarted,totalMs:Date.now()-started},
+            diagnostics: converted.diagnostics, checkWarnings: checked.warningCount,
+            resourcePlaceholders: converted.diagnostics.filter(item => item.level === 'placeholder'),
+            reviewIssues: checked.issues.filter(issue => issue.severity === 'warning').map(issue => ({
+              ...issue, message: issue.code === 'out-of-bounds' ? '源文件对象位于页面边缘或画布外，预览按页面范围显示。'
+                : issue.code === 'text-overflow' ? '源文件文字可能超出文本框，请在预览中核对。' : issue.message
+            })),
+            pageIndex: [...converted.source.pages.keys()].map((file, i) => ({ slideNumber: i + 1, file }))
+          };
+          await writeFile(path.join(directory, 'template.json'), JSON.stringify(record), { mode: 0o600 });
+          await writeFile(path.join(directory, 'owner.json'), JSON.stringify({ session: hash(sessionId) }), { mode: 0o600 });
+          return { draftId, template: record, preview };
+        } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
+      } finally { if (upload) await rm(upload.directory, { recursive: true, force: true }); }
     })); } finally { if(progress) {progress.status='finished';progress.startedAt=Date.now();} }
   }
   async importProgress(sessionId,requestId,after=0) {
