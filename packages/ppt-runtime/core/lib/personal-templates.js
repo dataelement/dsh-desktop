@@ -2,18 +2,28 @@ import { createHash, randomUUID } from 'node:crypto';
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import { runPersonalTemplateImport } from './personal-template-import.js';
 import { loadPptdProject, checkPptdProject, parsePptdProject } from './pptd.js';
-import { runCli } from './bin.js';
+import { renderOfficeTemplatePreview } from './office-template-preview.js';
+import { extractPersonalTemplateProfile, personalTemplateSourceTheme, validPersonalTemplateProfile, PERSONAL_TEMPLATE_PROFILE_VERSION } from './personal-template-profile.js';
+import { createPersonalTemplateSamples, validPersonalTemplateSamples } from './personal-template-samples.js';
+import { PersonalTemplateUploads, personalTemplateFileName, decodeTemplateBase64 } from './personal-template-upload.js';
 
+export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 8;
+export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 9;
 const MAX_TEMPLATES = 100;
+// Template input pages have their own processing budget; generation remains capped separately.
+export const MAX_PERSONAL_TEMPLATE_SLIDES = 200;
 const PREVIEW_LONG_EDGE = 1920;
 const THUMBNAIL_LONG_EDGE = 720;
-export const MAX_PERSONAL_TEMPLATE_BYTES = 64 * 1024 * 1024;
-export const MAX_PERSONAL_TEMPLATE_BASE64_CHARS = Math.ceil(MAX_PERSONAL_TEMPLATE_BYTES / 3) * 4;
+// Bounds each JSON RPC request. Browser uploads transfer independent 8 MiB chunks.
 export const MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES = 86 * 1024 * 1024;
 const ID = /^personal-[a-f0-9]{64}$/;
 const DRAFT = /^[a-f0-9-]{36}$/;
 const hash = value => createHash('sha256').update(value).digest('hex');
+const profileMetadata = templateProfile => ({templateProfile,palette:templateProfile.palette,
+  titleFontFace:templateProfile.typography.title.fontFace,bodyFontFace:templateProfile.typography.body.fontFace,
+  aspectRatio:templateProfile.canvas.width/templateProfile.canvas.height>=1.5?'wide':'standard'});
 const nameOf = value => {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > 80 || /[\u0000-\u001f\u007f]/u.test(value))
     throw new Error('模板名称应为 1–80 个字符');
@@ -48,12 +58,14 @@ function conversionError(check, fileName, sha256) {
 /** One library per host-owned Desktop profile; caller-supplied paths never select a library. */
 export class PersonalTemplateLibrary {
   tail = Promise.resolve();
-  constructor(store, convert, writeSource, maxSlides) {
+  imports = new Map();
+  constructor(store, convert, writeSource, maxSlides = MAX_PERSONAL_TEMPLATE_SLIDES) {
     this.store = store;
     this.root = path.join(store.root, 'personal-templates');
     this.convert = convert;
     this.writeSource = writeSource;
     this.maxSlides = maxSlides;
+    this.uploads = new PersonalTemplateUploads(this);
   }
   async locked(work) {
     const pending = this.tail.catch(() => {}).then(work);
@@ -93,6 +105,8 @@ export class PersonalTemplateLibrary {
     nameOf(record.name);
     if (!Array.isArray(record.pageIndex) || record.pageIndex.length !== record.slideCount || record.pageIndex.some((page, i) =>
       page.slideNumber !== i + 1 || typeof page.file !== 'string' || !/^pages\/[A-Za-z0-9_.-]+\.page$/.test(page.file))) throw new Error('模板页面索引无效');
+    if(record.templateProfile!==undefined && !validPersonalTemplateProfile(record.templateProfile,record.pageIndex)) throw new Error('模板结构索引无效，请重新上传 PPT');
+    if(record.templateSamples!==undefined && !validPersonalTemplateSamples(record.templateSamples,record.slideCount)) throw new Error('模板示例索引无效，请重新上传 PPT');
     return record;
   }
   async list() {
@@ -124,84 +138,149 @@ export class PersonalTemplateLibrary {
       throw error;
     }
   }
+  async uploadStart(sessionId, input) {
+    return this.locked(() => this.audit(sessionId, 'upload-personal-template', () => this.uploads.start(sessionId, input)));
+  }
+  async uploadChunk(sessionId, input) {
+    return this.locked(() => this.audit(sessionId, 'upload-personal-template-chunk', () => this.uploads.append(sessionId, input)));
+  }
+  async cancelUpload(sessionId, uploadId) {
+    return this.locked(() => this.audit(sessionId, 'cancel-personal-template-upload', () => this.uploads.cancel(sessionId, uploadId)));
+  }
   async prepare(sessionId, input) {
-    return this.locked(() => this.audit(sessionId, 'prepare-personal-template', async () => {
-      const fileName = input?.fileName;
-      if (typeof fileName !== 'string' || fileName.length > 240 || !/\.pptx$/i.test(fileName) || /[\\/\u0000]/u.test(fileName))
-        throw new Error('请选择 PPTX 文件');
-      const encoded = input?.base64;
-      if (typeof encoded !== 'string' || encoded.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(encoded))
-        throw new Error('上传数据应为有效 Base64');
-      if (encoded.length > MAX_PERSONAL_TEMPLATE_BASE64_CHARS)
-        throw new Error(`个人模板 PPTX 不能超过 ${MAX_PERSONAL_TEMPLATE_BYTES} 字节`);
-      const bytes = Buffer.from(encoded, 'base64');
-      if (bytes.toString('base64') !== encoded) throw new Error('上传数据应为有效 Base64');
-      if (bytes.length > MAX_PERSONAL_TEMPLATE_BYTES)
-        throw new Error(`个人模板 PPTX 不能超过 ${MAX_PERSONAL_TEMPLATE_BYTES} 字节`);
-      if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from([80, 75, 3, 4])))
-        throw new Error('请选择有效的 PPTX 文件');
-      const id = `personal-${hash(bytes)}`;
-      const saved = (await this.list()).find(item => item.id === id);
-      if (saved) return { duplicate: true, template: saved };
-      if ((await this.list()).length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
-      const drafts = await this.directory('drafts');
-      // Expired previews are temporary resources, independent of registered templates.
-      for (const item of await readdir(drafts, { withFileTypes: true })) {
-        if (item.isDirectory() && DRAFT.test(item.name) && Date.now() - (await lstat(path.join(drafts, item.name))).mtimeMs > 86400000)
-          await rm(path.join(drafts, item.name), { recursive: true });
+    const requestId=input?.requestId;
+    let progress;
+    if(requestId!==undefined) {
+      if(!DRAFT.test(requestId)) throw new Error('处理标识无效');
+      for(const [id,job] of this.imports) if(Date.now()-job.startedAt>3600000) this.imports.delete(id);
+      if(this.imports.has(requestId)||this.imports.size>=32) throw new Error('请稍后重新处理模板');
+      progress={session:hash(sessionId),startedAt:Date.now(),total:0,pages:[],status:'processing'};
+      this.imports.set(requestId,progress);
+    }
+    try { return await this.locked(() => this.audit(sessionId, 'prepare-personal-template', async () => {
+      let uploadId=input?.uploadId;
+      if(uploadId===undefined) {
+        const fileName=personalTemplateFileName(input?.fileName),bytes=decodeTemplateBase64(input?.base64);
+        const started=await this.uploads.start(sessionId,{fileName,size:bytes.length});uploadId=started.uploadId;
+        try {
+          for(let offset=0;offset<bytes.length;offset+=started.chunkBytes)
+            await this.uploads.append(sessionId,{uploadId,offset,base64:bytes.subarray(offset,offset+started.chunkBytes).toString('base64')});
+        } catch(error) {await this.uploads.cancel(sessionId,uploadId);throw error;}
       }
-      if ((await readdir(drafts)).length >= 10) throw new Error('待保存模板达到 10 套，请先保存或取消已有预览');
-      const converted = await this.convert(bytes, fileName);
-      if (!converted.slideCount || converted.slideCount > this.maxSlides) throw new Error(`模板应包含 1–${this.maxSlides} 页`);
-      const missing = converted.diagnostics.filter(item => item.level === 'unsupported');
-      if (missing.length) throw conversionError({ errorCount: missing.length, issues: missing.map(item => ({
-        severity: 'error', code: 'conversion-unsupported', page: item.slide, elementId: item.nodeId,
-        message: `${item.feature}：${item.message}`
-      })) }, fileName, hash(bytes));
-      const parsed = parsePptdProject(converted.source);
-      const checked = checkPptdProject(parsed);
-      if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
-      const draftId = randomUUID();
-      const directory = await this.directory('drafts', draftId);
+      const upload=await this.uploads.record(sessionId,uploadId);
+      const draftId=randomUUID();
+      if((await lstat(upload.file)).size!==upload.record.size)throw new Error('请完成文件上传后再处理模板');
       try {
-        const project = await this.directory('drafts', draftId, 'project');
-        await this.writeSource(project, converted.source);
-        await writeFile(path.join(directory, 'source.pptx'), bytes, { mode: 0o600 });
-        const previewDirectory = path.join(directory, 'preview');
-        let output = '';
-        const scale = Math.min(8, PREVIEW_LONG_EDGE / Math.max(parsed.width, parsed.height));
-        const code = await runCli(['screenshot', project, '-o', previewDirectory, '--scale', String(scale), '--json'], {
-          stdout: { write: value => { output += value; } }, stderr: { write: value => { output += value; } }
-        });
-        if (code !== 0) throw new Error(`模板预览生成失败：${output.slice(0, 500)}`);
-        const previewPage = async page => readFile(path.join(previewDirectory, 'pages', `page-${page}.png`));
-        const previewImages = await Promise.all([1, Math.floor(converted.slideCount / 2) + 1, converted.slideCount].map(async page => {
-          const thumbnail = await sharp(await previewPage(page)).resize({
-            width: THUMBNAIL_LONG_EDGE, height: THUMBNAIL_LONG_EDGE, fit: 'inside', withoutEnlargement: true
-          }).png().toBuffer();
-          return `data:image/png;base64,${thumbnail.toString('base64')}`;
-        }));
-        const preview = `data:image/png;base64,${(await previewPage(1)).toString('base64')}`;
-        const name = nameOf(fileName.replace(/\.pptx$/i, '').slice(0, 80));
-        const record = {
-          id, origin: 'personal', name, category: 'personal', supportedModes: ['ppt'], aspectRatio: 'wide',
-          description: `${converted.slideCount} 页个人 PPT 模板`, previewTitle: name, previewSubtitle: '我的模板',
-          palette: { background: 'FFFFFF', surface: 'F4F4F4', text: '222222', muted: '666666', accent: '333333', secondary: 'AAAAAA' },
-          titleFontFace: 'Arial', bodyFontFace: 'Arial',
-          createdAt: new Date().toISOString(), fileName, sha256: hash(bytes), slideCount: converted.slideCount,
-          previewImages,
-          diagnostics: converted.diagnostics, checkWarnings: checked.warningCount,
-          reviewIssues: checked.issues.filter(issue => issue.severity === 'warning').map(issue => ({
-            ...issue, message: issue.code === 'out-of-bounds' ? '源文件对象位于页面边缘或画布外，预览按页面范围显示。'
-              : issue.code === 'text-overflow' ? '源文件文字可能超出文本框，请在预览中核对。' : issue.message
-          })),
-          pageIndex: [...converted.source.pages.keys()].map((file, i) => ({ slideNumber: i + 1, file }))
-        };
-        await writeFile(path.join(directory, 'template.json'), JSON.stringify(record), { mode: 0o600 });
-        await writeFile(path.join(directory, 'owner.json'), JSON.stringify({ session: hash(sessionId) }), { mode: 0o600 });
-        return { draftId, template: record, preview };
-      } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
-    }));
+        return await runPersonalTemplateImport({root:this.store.root,sessionId,uploadId,draftId,maxSlides:this.maxSlides}, progress ? update=>{
+          progress.total=update.total;
+          if(update.page)progress.pages.push(update.page);
+        } : undefined);
+      } catch(error) {await rm(path.join(this.root,'drafts',draftId),{recursive:true,force:true});throw error;} finally {await rm(upload.directory,{recursive:true,force:true});}
+    })); } finally { if(progress) {progress.status='finished';progress.startedAt=Date.now();} }
+  }
+  /** Runs inside the host-owned import process, under the parent's policy/audit lock. */
+  async prepareSource(sessionId,input,progress) {
+      const started=Date.now();
+      let upload;
+      try {
+        if (input?.uploadId !== undefined) upload = await this.uploads.read(sessionId, input.uploadId);
+        const fileName = upload?.fileName ?? personalTemplateFileName(input?.fileName);
+        const bytes = upload?.bytes ?? decodeTemplateBase64(input?.base64);
+        if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from([80, 75, 3, 4])))
+          throw new Error('请选择有效的 PPTX 文件');
+        const id = `personal-${hash(bytes)}`;
+        const templates=await this.list();
+        const saved = templates.find(item => item.id === id);
+        if (saved?.conversionVersion === PERSONAL_TEMPLATE_CONVERSION_VERSION && saved?.previewVersion === PERSONAL_TEMPLATE_PREVIEW_VERSION) {
+          if(saved.templateProfile?.version===PERSONAL_TEMPLATE_PROFILE_VERSION)return {duplicate:true,template:saved};
+          // Enrich a current cached conversion without repeating Office rendering.
+          const project=await loadPptdProject(await this.projectSource(id));
+          const template={...saved,...profileMetadata(extractPersonalTemplateProfile(project))};
+          const directory=path.join(this.root,'saved',id),temporary=path.join(directory,`profile-${randomUUID()}.json`);
+          try {await writeFile(temporary,JSON.stringify(template),{flag:'wx',mode:0o600});await rename(temporary,await this.checkedFile(directory,'template.json'));}
+          finally {await rm(temporary,{force:true});}
+          return {duplicate:true,template};
+        }
+        if (!saved && templates.length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
+        const drafts = await this.directory('drafts');
+        // Expired previews are temporary resources, independent of registered templates.
+        for (const item of await readdir(drafts, { withFileTypes: true })) {
+          if (item.isDirectory() && DRAFT.test(item.name) && Date.now() - (await lstat(path.join(drafts, item.name))).mtimeMs > 86400000)
+            await rm(path.join(drafts, item.name), { recursive: true });
+        }
+        if ((await readdir(drafts)).length >= 10) throw new Error('待保存模板达到 10 套，请先保存或取消已有预览');
+        const conversionStarted=Date.now();
+        const converted = await this.convert(bytes, fileName);
+        const convertedAt=Date.now();
+        if (!converted.slideCount || converted.slideCount > this.maxSlides) throw new Error(`模板应包含 1–${this.maxSlides} 页`);
+        const missing = converted.diagnostics.filter(item => item.level === 'unsupported');
+        if (missing.length) throw conversionError({ errorCount: missing.length, issues: missing.map(item => ({
+          severity: 'error', code: 'conversion-unsupported', page: item.slide, elementId: item.nodeId,
+          message: `${item.feature}：${item.message}`
+        })) }, fileName, hash(bytes));
+        progress?.({total:converted.slideCount});
+        const original = parsePptdProject(converted.source);
+        const checked = checkPptdProject(original);
+        if (checked.status === 'fail') throw conversionError(checked, fileName, hash(bytes));
+        const templateProfile=extractPersonalTemplateProfile(original);
+        const {source:sampleSource,samples:templateSamples}=createPersonalTemplateSamples(original,templateProfile);
+        const source=personalTemplateSourceTheme(sampleSource,templateProfile);
+        const parsed = parsePptdProject(source);
+        const sampleCheck=checkPptdProject(parsed);
+        if(sampleCheck.status==='fail')throw conversionError(sampleCheck,fileName,hash(bytes));
+        const draftId = input.draftId ?? randomUUID();
+        const directory = await this.directory('drafts', draftId);
+        try {
+          const project = await this.directory('drafts', draftId, 'project');
+          await this.writeSource(project, source);
+          await writeFile(path.join(directory, 'source.pptx'), bytes, { mode: 0o600 });
+          const previewDirectory = path.join(directory, 'preview');
+          const previewMetadata = await renderOfficeTemplatePreview(parsed,directory,PREVIEW_LONG_EDGE,this.maxSlides,progress ? async ({page,path:imagePath}) => {
+            const thumbnail=await sharp(imagePath).resize({width:240,height:240,fit:'inside',withoutEnlargement:true}).png().toBuffer();
+            progress({total:converted.slideCount,page:{page,preview:`data:image/png;base64,${thumbnail.toString('base64')}`}});
+          } : undefined);
+          const previewPage = async page => readFile(path.join(previewDirectory, 'pages', `page-${page}.png`));
+          const uniquePages=templateSamples.representativePages;
+          const representativePages=[uniquePages[0],uniquePages[Math.floor(uniquePages.length/2)],uniquePages.at(-1)];
+          const thumbnails=new Map();
+          for(const page of new Set(representativePages)) thumbnails.set(page,(async()=>{
+            const thumbnail = await sharp(path.join(previewDirectory,'pages',`page-${page}.png`)).resize({
+              width: THUMBNAIL_LONG_EDGE, height: THUMBNAIL_LONG_EDGE, fit: 'inside', withoutEnlargement: true
+            }).png().toBuffer();
+            return `data:image/png;base64,${thumbnail.toString('base64')}`;
+          })());
+          const previewImages=await Promise.all(representativePages.map(page=>thumbnails.get(page)));
+          const preview = `data:image/png;base64,${(await previewPage(1)).toString('base64')}`;
+          const name = nameOf(fileName.replace(/\.pptx$/i, '').slice(0, 80));
+          const record = {
+            id, conversionVersion: PERSONAL_TEMPLATE_CONVERSION_VERSION, previewVersion: PERSONAL_TEMPLATE_PREVIEW_VERSION, origin: 'personal', name: saved?.name ?? name, category: 'personal', supportedModes: ['ppt'], aspectRatio: 'wide',
+            description: `${converted.slideCount} 页个人 PPT 模板`, previewTitle: name, previewSubtitle: '我的模板',
+            ...profileMetadata(templateProfile),
+            templateSamples,
+            createdAt: saved?.createdAt ?? new Date().toISOString(), ...(saved ? {description:saved.description,updatedAt:new Date().toISOString()} : {}), fileName, sha256: hash(bytes), slideCount: converted.slideCount,
+            previewImages, previewMetadata,
+            preparationTimings:{conversionMs:convertedAt-conversionStarted,totalMs:Date.now()-started},
+            diagnostics: converted.diagnostics, checkWarnings: checked.warningCount,
+            resourcePlaceholders: converted.diagnostics.filter(item => item.level === 'placeholder'),
+            reviewIssues: checked.issues.filter(issue => issue.severity === 'warning').map(issue => ({
+              ...issue, message: issue.code === 'out-of-bounds' ? '源文件对象位于页面边缘或画布外，预览按页面范围显示。'
+                : issue.code === 'text-overflow' ? '源文件文字可能超出文本框，请在预览中核对。' : issue.message
+            })),
+            pageIndex: [...converted.source.pages.keys()].map((file, i) => ({ slideNumber: i + 1, file }))
+          };
+          await writeFile(path.join(directory, 'template.json'), JSON.stringify(record), { mode: 0o600 });
+          await writeFile(path.join(directory, 'owner.json'), JSON.stringify({ session: hash(sessionId) }), { mode: 0o600 });
+          return { draftId, template: record, preview };
+        } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
+      } finally { if (upload) await rm(upload.directory, { recursive: true, force: true }); }
+  }
+
+  async importProgress(sessionId,requestId,after=0) {
+    if(!DRAFT.test(requestId)||!Number.isInteger(after)||after<0||after>this.maxSlides) throw new Error('处理进度参数无效');
+    const job=this.imports.get(requestId);
+    if(!job) return {total:0,completed:0,pages:[],status:'waiting'};
+    if(job.session!==hash(sessionId)) throw new Error('该处理任务属于其他会话');
+    return {total:job.total,completed:job.pages.length,pages:job.pages.slice(after),status:job.status};
   }
   async draft(sessionId, draftId) {
     if (!DRAFT.test(draftId)) throw new Error('预览标识无效');
@@ -212,13 +291,23 @@ export class PersonalTemplateLibrary {
     if (owner.session !== hash(sessionId)) throw new Error('该预览属于其他会话');
     return directory;
   }
-  async previewPage(sessionId, draftId, page) {
-    const directory = await this.draft(sessionId, draftId);
-    const record = JSON.parse(await readFile(await this.checkedFile(directory, 'template.json'), 'utf8'));
-    if (!Number.isInteger(page) || page < 1 || page > record.slideCount)
-      throw new Error('预览页码无效');
-    const image = await this.checkedFile(path.join(directory, 'preview', 'pages'), `page-${page}.png`);
+  async readPreview(directory,record,page) {
+    if(!Number.isInteger(page)||page<1||page>record.slideCount)throw new Error('预览页码无效');
+    const image=await this.checkedFile(path.join(directory,'preview','pages'),`page-${page}.png`);
     return { page, preview: `data:image/png;base64,${(await readFile(image)).toString('base64')}` };
+  }
+  async previewPage(sessionId,draftId,page) {
+    return this.locked(()=>this.audit(sessionId,'preview-personal-template',async()=>{
+      const directory=await this.draft(sessionId,draftId);
+      const record=JSON.parse(await readFile(await this.checkedFile(directory,'template.json'),'utf8'));
+      return this.readPreview(directory,record,page);
+    }));
+  }
+  async previewSavedPage(sessionId, templateId, page) {
+    return this.locked(() => this.audit(sessionId, 'preview-personal-template', async () => {
+      const record = await this.readRecord(templateId);
+      return this.readPreview(path.join(this.root,'saved',templateId),record,page);
+    }));
   }
   async save(sessionId, draftId, name) {
     name = nameOf(name);
@@ -226,14 +315,22 @@ export class PersonalTemplateLibrary {
       const directory = await this.draft(sessionId, draftId);
       const record = JSON.parse(await readFile(await this.checkedFile(directory, 'template.json'), 'utf8'));
       if (!ID.test(record.id)) throw new Error('模板标识无效');
-      const duplicate = (await this.list()).find(item => item.id === record.id);
-      if (duplicate) { await rm(directory, { recursive: true }); return duplicate; }
-      if ((await this.list()).length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
+      const templates=await this.list();
+      const duplicate = templates.find(item => item.id === record.id);
+      if (duplicate?.conversionVersion === record.conversionVersion && duplicate?.previewVersion === record.previewVersion) { await rm(directory, { recursive: true }); return duplicate; }
+      if (!duplicate && templates.length >= MAX_TEMPLATES) throw new Error('个人模板库最多保存 100 套模板');
       const project = await loadPptdProject(path.join(directory, 'project'));
       if (checkPptdProject(project).status === 'fail') throw new Error('请重新上传完整的模板文件');
-      const next = { ...record, name, previewTitle: name };
+      const next = { ...record, ...(duplicate ? {createdAt:duplicate.createdAt,description:duplicate.description} : {}), name, previewTitle: name };
       await writeFile(path.join(directory, 'template.json'), JSON.stringify(next), { mode: 0o600 });
-      await rename(directory, path.join(await this.directory('saved'), record.id));
+      const destination = path.join(await this.directory('saved'), record.id);
+      if (duplicate) {
+        // Publish only after preview acceptance; retain the old source/project for recovery.
+        const backup = path.join(await this.directory('backups', record.id), randomUUID());
+        await rename(destination, backup);
+        try { await rename(directory, destination); }
+        catch (error) { await rename(backup, destination); throw error; }
+      } else await rename(directory, destination);
       return next;
     }));
   }

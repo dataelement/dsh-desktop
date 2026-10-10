@@ -140,6 +140,8 @@ export type OfficePresentationMode = 'ppt';
 export type OfficeTemplateCategory = 'strategy' | 'business' | 'work' | 'promotion' | 'academic' | 'consulting' | 'finance' | 'custom' | 'personal';
 /** Selectable presentation theme, page references, and model-facing visual guidance. */
 export interface OfficeTemplate {
+    readonly templateSamples?: import('./personal-template-samples.js').PersonalTemplateSamples;
+    readonly templateProfile?: import('./personal-template-profile.js').PersonalTemplateProfile;
     readonly id: OfficeTemplateId;
     readonly name: string;
     readonly description: string;
@@ -165,6 +167,8 @@ export interface OfficeTemplate {
     readonly sha256?: string;
     readonly pageIndex?: readonly { slideNumber: number; file: string }[];
     readonly diagnostics?: readonly { slide: number; feature: string; level: string; message: string }[];
+    /** Source objects retained as replaceable image slots at their original geometry. */
+    readonly resourcePlaceholders?: readonly { slide: number; feature: string; elementId: string; message: string; bounds: readonly [number, number, number, number] }[];
 }
 /**
  * Resolve workflow availability while preserving compatibility with older extracted templates.
