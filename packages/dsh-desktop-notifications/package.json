@@ -1,0 +1,32 @@
+{
+  "name": "dsh-desktop-notifications",
+  "version": "0.1.0",
+  "description": "DSH Desktop completed-turn and waiting-request notifications for Harness sessions.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-settings-general"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1 || ^0.1.6-alpha.1 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1 || ^0.1.6-alpha.1 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-session": "^0.1.5-rc.1 || ^0.1.6-alpha.1 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings-general": "^0.1.5-rc.1 || ^0.1.6-alpha.1 || ^0.1.7-rc.1 || ^0.1.7-rc.2 || ^0.2.0-rc.1"
+  },
+  "license": "MIT"
+}

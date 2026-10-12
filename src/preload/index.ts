@@ -574,7 +574,17 @@ contextBridge.exposeInMainWorld(
     setBuiltInImageGenerationEnabled: (enabled: boolean): Promise<{ ok: boolean; enabled?: boolean; restartRequired?: boolean; reason?: string }> =>
       ipcRenderer.invoke('desktop-host-plugin:set-enabled', enabled),
     uninstallMarket: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('market:uninstall'),
-    openInFinder: (path: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:open-in-finder', path)
+    openInFinder: (path: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('harness:open-in-finder', path),
+    // Background-turn attention. The renderer only reports the session news it
+    // observed; the shell decides whether the window is unfocused and owns the
+    // native notice, so no focus state crosses this bridge.
+    notifyTurnComplete: (payload: {
+      title?: string
+      body?: string
+      sound?: boolean
+      unfocusedOnly?: boolean
+    }): Promise<{ ok: boolean }> => ipcRenderer.invoke('desktop:turn-notification', payload),
+    clearTurnNotification: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('desktop:turn-notification-clear')
   })
 )
 
