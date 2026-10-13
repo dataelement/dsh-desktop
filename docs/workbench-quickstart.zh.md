@@ -1,6 +1,6 @@
 # 工作台开发：六步速览
 
-版本：2026-10-08 · 详细规则见[工作台开发规范](https://dshdesktop.com/workbench/docs/development/)；投稿见[工作台市场验收规范](https://dshdesktop.com/workbench/docs/market-acceptance/)。
+版本：2026-10-09 · 详细规则见[工作台开发规范](https://dshdesktop.com/workbench/docs/development/)；投稿见[工作台市场验收规范](https://dshdesktop.com/workbench/docs/market-acceptance/)。
 
 1. **确认需求**：从用户本次请求及已确认的上下文写明业务场景、目标用户和用户完成一次任务的核心流程。通用开发指令、目录名和现有代码不能代替用户确认；缺任一项时只问一个合并问题，等答复后再设计业务功能。
 2. **检查项目**：查看 `pwd`、目录内容、`git status --short`（若为 Git 仓库）、现有脚本、包管理器及 Desktop 版本；保留未提交改动。

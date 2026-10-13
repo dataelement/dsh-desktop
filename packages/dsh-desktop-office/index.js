@@ -1,8 +1,13 @@
 import { isAbsolute, join } from 'node:path'
 import * as officeSkills from '@deepseek-ai/dsh-skill-office'
 import * as workspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import { createTemplateLibrary } from './lib/templates.js'
+import { registerBusinessSkills } from './lib/business-skills.js'
+import { registerOfficeContext, registerOfficeRoutes } from './lib/modes.js'
+import { templateTool } from './lib/template-tool.js'
 
 export const name = 'desktop-office'
+export const inject = ['skills']
 
 /** Installation-owned resources; neither Profile paths nor cwd are anchors. */
 export async function apply(ctx, config) {
@@ -18,5 +23,12 @@ export async function apply(ctx, config) {
     assetRoot: join(config.resources, 'office-skills'),
     node: process.execPath,
     cli: config.cli
+  })
+  registerBusinessSkills(ctx, join(config.resources, 'business-skills'))
+  const library = await createTemplateLibrary(join(config.resources, 'templates'))
+  ctx.inject(['officeModes', 'tools', 'skills', 'sandboxPolicy', 'sandbox', 'subprocess'], scoped => {
+    registerOfficeContext(scoped, library, scoped.officeModes)
+    scoped.tools.register(templateTool(scoped, library, scoped.officeModes))
+    scoped.inject(['connection'], routes => registerOfficeRoutes(routes, library, scoped.officeModes))
   })
 }

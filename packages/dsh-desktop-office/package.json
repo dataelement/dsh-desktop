@@ -4,12 +4,36 @@
   "private": true,
   "type": "module",
   "main": "./index.js",
-  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" }, "./package.json": "./package.json" },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json",
+    "./client": "./client.js"
+  },
   "types": "./index.d.ts",
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
     "@deepseek-ai/dsh-skill-office": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tool-workspace-dependencies": "0.2.0-rc.2"
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-skill": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "react": "^19.2.0",
+    "@deepseek-ai/dsh-client-connection": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.0-rc.2"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
   }
 }

@@ -147,8 +147,9 @@ export class DesktopService {
     }
   }
 
-  async checkUpdate(): Promise<UpdateDecision> {
+  async checkUpdate(manual = false): Promise<UpdateDecision> {
     const query = new URLSearchParams({ installationId: this.installationId, currentVersion: this.options.version, platform: this.platform })
+    if (manual) query.set('manual', 'true')
     const response = await this.options.request(`${SERVICE_URL}/v1/updates/check?${query}`, { signal: AbortSignal.timeout(5000), redirect: 'error' })
     if (!response.ok) throw new Error(`Update policy unavailable (${response.status})`)
     const policy = await response.json() as Record<string, unknown>

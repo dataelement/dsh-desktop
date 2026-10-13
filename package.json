@@ -44,7 +44,7 @@
     "ppt:build": "node scripts/prepare-ppt-runtime.mjs",
     "pretest": "npm run office:prepare && npm run ppt:build",
     "pretest:watch": "npm run office:prepare && npm run ppt:build",
-    "office:prepare": "node scripts/office-runtime/prepare.mjs"
+    "office:prepare": "node scripts/office-runtime/prepare.mjs && node scripts/office-runtime/prepare-templates.mjs"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -292,7 +292,8 @@
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "saxes": "6.0.0"
   },
   "devDependencies": {
     "@types/js-yaml": "4.0.9",
@@ -307,7 +308,8 @@
     "tar": "7.5.22",
     "typescript": "5.9.3",
     "vitest": "^4.1.10",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.3",
+    "esbuild": "0.25.12"
   },
   "overrides": {
     "koffi": "3.1.5"
@@ -343,6 +345,8 @@
       "node_modules/**/*",
       "!node_modules/dsh-ppt-composer{,/**}",
       "!node_modules/dsh-ppt{,/**}",
+      "!node_modules/dsh-desktop-office/sources{,/**}",
+      "!node_modules/dsh-desktop-office/business-skills{,/**}",
       {
         "from": ".build/ppt-runtime/packages/dsh-ppt-composer",
         "to": "node_modules/dsh-ppt-composer",

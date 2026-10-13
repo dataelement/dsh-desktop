@@ -1,6 +1,7 @@
 import { parseImageContract } from "./template-image-contract.js";
 import { validationSchema, validationReport, formatValidation } from "./validation.js";
 import { MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PersonalTemplateLibrary } from "./personal-templates.js";
+import { personalTemplateSourceTheme, personalTemplateDesignProfile, personalTemplatePageSummary } from './personal-template-profile.js';
 /**
  * 实现方案参考了 Kimi PPT（Kimi Slides）的 PPTD 文档与示例：
  * 以本地声明式工程组织页面，经校验后导出可编辑 PPTX。
@@ -763,6 +764,7 @@ var PptService = class {
 				state: {
 					...state,
 					selectedTemplateId: template.id,
+                    documentMode: undefined, selectedDocumentTemplate: undefined,
                     templateMigration: undefined,
 					presentationMode: "ppt"
 				},
@@ -781,7 +783,7 @@ var PptService = class {
 			return {
 				state: active ? {
 					...rest,
-					presentationMode: "ppt"
+					presentationMode: "ppt", documentMode: undefined, selectedDocumentTemplate: undefined
 				} : rest,
 				value: true,
 				summary: active ? "已进入 PPT 模式" : "已退出 PPT 模式",
@@ -789,6 +791,29 @@ var PptService = class {
 			};
 		});
 	}
+	selectDocumentMode(sessionId, mode, actor) {
+        if (![null, 'word', 'excel'].includes(mode)) throw new PptError('invalid-request', 'Choose Word, Excel or ordinary conversation');
+        return this.mutate(sessionId, 'select-document-mode', actor, state => {
+            const { presentationMode, selectedTemplateId, templateMigration, documentMode, selectedDocumentTemplate, ...rest } = state;
+            return { state: mode === null ? rest : { ...rest, documentMode: mode }, value: true,
+                summary: mode === null ? '已进入普通对话' : `已进入 ${mode} 模式`, facts: { mode } };
+        });
+    }
+    selectDocumentTemplate(sessionId, template, actor) {
+        if (!template || !['word', 'excel'].includes(template.mode) || typeof template.id !== 'string' || !/^[a-z0-9-]{1,96}$/.test(template.id)
+            || typeof template.revision !== 'string' || !/^[a-zA-Z0-9.-]{1,96}$/.test(template.revision)) throw new PptError('invalid-request', 'Choose a versioned Office template');
+        return this.mutate(sessionId, 'select-document-template', actor, state => {
+            if (state.documentMode !== template.mode) throw new PptError('conflict', 'Choose the matching document format');
+            return { state: { ...state, selectedDocumentTemplate: { id: template.id, mode: template.mode, revision: template.revision } }, value: true,
+                summary: `已选择 Office 案例 ${template.id}`, facts: { ...template } };
+        });
+    }
+    deselectDocumentTemplate(sessionId, actor) {
+        return this.mutate(sessionId, 'deselect-document-template', actor, state => {
+            const { selectedDocumentTemplate, ...rest } = state;
+            return { state: rest, value: true, summary: '已移除 Office 案例参考', facts: {} };
+        });
+    }
 	deselectTemplate(sessionId, actor) {
 		return this.mutate(sessionId, "deselect-template", actor, (state) => {
 			const { selectedTemplateId: _selectedTemplateId, templateMigration: _migration, ...next } = state;
@@ -987,7 +1012,12 @@ function pptRpc(service) {
 			if (endpoint === "template/catalog") return ok(await service.catalog());
 			const sessionId = sessionIdOf(payload);
 				switch (endpoint) {
+				case "template/import-progress": return ok(await service.store.personalTemplates.importProgress(sessionId, request.requestId, request.after));
+				case "template/upload-start": return ok(await service.store.personalTemplates.uploadStart(sessionId, request.input));
+				case "template/upload-chunk": return ok(await service.store.personalTemplates.uploadChunk(sessionId, request));
+				case "template/upload-cancel": return ok(await service.store.personalTemplates.cancelUpload(sessionId, request.uploadId));
 				case "template/prepare": return ok(await service.store.personalTemplates.prepare(sessionId, request.input));
+				case "template/preview-saved-page": return ok(await service.store.personalTemplates.previewSavedPage(sessionId, request.templateId, request.page));
 				case "template/preview-page": return ok(await service.store.personalTemplates.previewPage(sessionId, request.draftId, request.page));
 				case "template/save": return ok(await service.store.personalTemplates.save(sessionId, request.draftId, request.name));
 				case "template/cancel": return ok(await service.store.personalTemplates.cancel(sessionId, request.draftId));
@@ -1307,7 +1337,11 @@ function persistedState(value, sessionId, personalTemplates = []) {
   // Preserve historical decks and generated files; they are user-owned records.
   decks: Array.isArray(record.decks) ? record.decks : [],
   activities: Array.isArray(record.activities) ? record.activities : [],
-  ...(record.presentationMode === "ppt" ? { presentationMode: "ppt" } : {}),
+  ...(['word', 'excel'].includes(record.documentMode) ? { documentMode: record.documentMode } :
+      record.presentationMode === "ppt" ? { presentationMode: "ppt" } : {}),
+  ...(['word', 'excel'].includes(record.documentMode) && record.selectedDocumentTemplate?.mode === record.documentMode
+      && /^[a-z0-9-]{1,96}$/.test(record.selectedDocumentTemplate?.id ?? '') && /^[a-zA-Z0-9.-]{1,96}$/.test(record.selectedDocumentTemplate?.revision ?? '')
+      ? { selectedDocumentTemplate: { id: record.selectedDocumentTemplate.id, mode: record.documentMode, revision: record.selectedDocumentTemplate.revision } } : {}),
   ...(selectedTemplateId === undefined ? {} : { selectedTemplateId }),
   ...(missingPersonal ? { templateMigration: { reason: "personal-template-deleted" } } : retired ? { templateMigration: { reason: "template-retired", replacementId: fallback.id } } :
      record.templateMigration?.reason === "template-retired" ? { templateMigration: record.templateMigration } : {})
@@ -1797,7 +1831,8 @@ function registerPptdProjectTools(ctx, service) {
 					const entry = path.join(stage, "deck.pptd");
 					const manifest = yaml.load(await readFile(entry, "utf8"), { schema: yaml.JSON_SCHEMA });
 					manifest.template = { id: template.id, name: template.name };
-					await writeFile(entry, yamlText(manifest), { mode: 384 });
+					const source={manifest:yamlText(manifest)};
+					await writeFile(entry,template.templateProfile ? personalTemplateSourceTheme(source,template.templateProfile).manifest : source.manifest,{mode:384});
 					if (checkPptdProject(await loadPptdProject(stage)).status === "fail") throw new Error("模板副本需要修复后才能发布");
 					exec.signal.throwIfAborted();
 				});
@@ -2159,7 +2194,7 @@ function registerPptdProjectTools(ctx, service) {
 			},
 			strict: {
 				type: "boolean",
-				description: "When true, reject every normalized or unsupported source feature instead of publishing the project."
+				description: "When true, require lossless coverage of all source features, including image resources."
 			}
 		},
 		output: {
@@ -2204,6 +2239,7 @@ function registerPptdProjectTools(ctx, service) {
 						type: "integer",
 						required: true
 					},
+                    placeholderCount: { type: 'integer', required: true },
 					diagnosticsTruncated: {
 						type: "boolean",
 						required: true
@@ -2218,13 +2254,14 @@ function registerPptdProjectTools(ctx, service) {
 								level: {
 									type: "string",
 									required: true,
-									enum: ["normalized", "unsupported"]
+									enum: ["normalized", "placeholder", "unsupported"]
 								},
 								slide: {
-									type: "integer",
-									required: true
+									type: "integer"
 								},
 								nodeId: { type: "string" },
+                                elementId: { type: 'string' },
+                                bounds: { type: 'array', items: { type: 'number' } },
 								feature: {
 									type: "string",
 									required: true
@@ -2244,8 +2281,8 @@ function registerPptdProjectTools(ctx, service) {
 					`PPTD 导入${value.status === "pass" ? "通过" : "完成并带有兼容性提示"}：${value.slideCount} 页，${value.outputElementCount} 个可编辑元素。`,
 					`工程：${value.projectPath}`,
 					`入口：${value.manifestPath}`,
-					`转换边界：${value.normalizedCount} 项标准化，${value.unsupportedCount} 项未映射。`,
-					...value.diagnostics.map((item) => `第 ${item.slide} 页 · ${item.level} · ${item.feature}：${item.message}`),
+					`转换边界：${value.normalizedCount} 项标准化，${value.placeholderCount} 项资源占位，${value.unsupportedCount} 项未映射。`,
+					...value.diagnostics.map((item) => `${item.slide === undefined ? '文稿' : `第 ${item.slide} 页`} · ${item.level} · ${item.feature}：${item.message}`),
 					...value.diagnosticsTruncated ? ["诊断数量超过工具展示上限；请在导入后逐页检查工程。"] : []
 				].join("\n")
 			}]
@@ -2258,7 +2295,8 @@ function registerPptdProjectTools(ctx, service) {
 			const converted = await convertPptxToPptd(await readFile(source), path.basename(source));
 			const normalizedCount = converted.diagnostics.filter((item) => item.level === "normalized").length;
 			const unsupportedCount = converted.diagnostics.filter((item) => item.level === "unsupported").length;
-			if (args.strict === true && converted.diagnostics.length > 0) throw new Error(`strict PPTD import requires lossless coverage; received ${normalizedCount} normalized and ${unsupportedCount} unsupported diagnostic(s)`);
+            const placeholderCount = converted.diagnostics.filter(item => item.level === 'placeholder').length;
+			if (args.strict === true && converted.diagnostics.length > 0) throw new Error(`strict PPTD import requires lossless coverage; received ${normalizedCount} normalized, ${placeholderCount} placeholder and ${unsupportedCount} unsupported diagnostic(s)`);
 			const initialCheck = checkPptdProject(parsePptdProject(converted.source));
 			if (initialCheck.status === "fail") throw new Error(`PPTX conversion produced a PPTD project that cannot be rendered; received ${initialCheck.errorCount} format error(s)`);
 			const output = await outputWorkspacePath(workspace, args.output_directory ?? defaultProjectPath(safePptxName(args.pptx_path, "pptx_path")), "output_directory");
@@ -2274,6 +2312,7 @@ function registerPptdProjectTools(ctx, service) {
 				extractedAssetCount: converted.extractedAssetCount,
 				normalizedCount,
 				unsupportedCount,
+                placeholderCount,
 				diagnosticsTruncated: converted.diagnostics.length > MAX_DIAGNOSTICS,
 				diagnostics: converted.diagnostics.slice(0, MAX_DIAGNOSTICS)
 			};
@@ -2413,8 +2452,8 @@ function designProfile(template) {
 async function loadTemplateVisualReference(template) {
 	if (template.origin === "personal") return {
 		kind: "semantic-profile",
-		designProfile: `可编辑模板：${template.name}，${template.slideCount} 页。使用 ppt_template_create_project 创建工作副本，再通过 pptd_read_file 检查并修改实际页面。页面文件保存模板的版式、字体、素材和配图规则。按实际语言明确设置字体：中文无衬线使用 { latin: Arial, ea: Noto Sans CJK SC, mac: PingFang SC, win: Microsoft YaHei }，衬线模板选择相应中文衬线字体。同步更新 content.fontFamily 与富文本 span 的 font-family，确保行内样式与整体设定一致。按中文字符宽度重排标题、正文和表格；放大字号时同步调整文字区和相邻留白，并检查封面、最密集页与结尾页。示例文字和业务数据根据当前任务替换。转换提示：${JSON.stringify(template.diagnostics)}`,
-		representativeSlides: [1, template.slideCount]
+		designProfile: `可编辑模板：${template.name}，${template.slideCount} 页。${personalTemplateDesignProfile(template)}\n使用 ppt_template_create_project 创建工作副本，再通过 pptd_read_file 检查并修改实际页面。页面文件保存模板的版式、字体、素材和配图规则。按实际语言明确设置字体：中文无衬线使用 { latin: Arial, ea: Noto Sans CJK SC, mac: PingFang SC, win: Microsoft YaHei }，衬线模板选择相应中文衬线字体。同步更新 content.fontFamily 与富文本 span 的 font-family，确保行内样式与整体设定一致。按中文字符宽度重排标题、正文和表格；放大字号时同步调整文字区和相邻留白，并检查封面、最密集页与结尾页。示例文字和业务数据根据当前任务替换。转换提示：${JSON.stringify(template.diagnostics)}`,
+		representativeSlides: template.templateSamples?.representativePages ?? [1, template.slideCount]
 	};
 	const definition = DEFINITIONS_BY_ID.get(template.id);
 	if (definition === void 0) return {
@@ -2904,7 +2943,10 @@ function registerPptTools(ctx, service) {
 			const template = state.templates.find((item) => item.id === args.template_id);
 			if (template === void 0 || !templateSupportsMode(template, "ppt")) throw new Error(`template ${args.template_id} is not available to the DSH PPT workflow`);
 			const reference = await loadTemplateVisualReference(template);
-			const pageContracts = (template.source?.pageReferences ?? []).map((page) => ({
+				const pageContracts = template.origin==='personal' && template.templateProfile ? template.templateProfile.pages.map(page=>({
+          slideNumber:page.slideNumber,sourceTitle:`模板第 ${page.slideNumber} 页`,relationship:'source-layout',
+          structureSummary:personalTemplatePageSummary(page),pptdReference:`通过 ppt_get_template_pages 指定 slide_numbers: [${page.slideNumber}] 读取实际页面。`
+        })) : (template.source?.pageReferences ?? []).map((page) => ({
 				slideNumber: page.slideNumber,
 				sourceTitle: page.sourceTitle,
 				relationship: page.relationship ?? "generic",
@@ -3034,9 +3076,11 @@ function registerPptTools(ctx, service) {
 					const pageText = await readFile(pagePath, "utf8");
 					const pageData = yaml.load(pageText, { schema: yaml.JSON_SCHEMA });
 					const images = parseImageContract(pageData?.notes, pageData?.elements);
+					const profile=template.templateProfile?.pages.find(item=>item.slideNumber===page.slideNumber);
 					return {
-						slideNumber: page.slideNumber, sourceTitle: `模板第 ${page.slideNumber} 页`, family: "source-page", density: "source", relationship: "source-layout",
-						structureSummary: images ? `${images.pageRole}；配图：${images.slots.map(slot => slot.role).join("、") || "原生文字、表格和图表"}；可编辑源页：${page.file}` : `可编辑源页：${page.file}`,
+						slideNumber: page.slideNumber, sourceTitle: `模板第 ${page.slideNumber} 页`, family: profile?.role ?? "source-page", density: "source", relationship: "source-layout",
+						structureSummary: [profile ? personalTemplatePageSummary(profile,numbers!==undefined) : `可编辑源页：${page.file}`,
+              images ? `${images.pageRole}；配图：${images.slots.map(slot=>slot.role).join('、')}` : ''].filter(Boolean).join('\n'),
 						simplificationGuidance: "先复制模板工程，再根据当前内容选页、替换示例文本并检查排版。",
 						...(numbers === void 0 ? {} : { pptdLayoutReference: pageText })
 					};
@@ -3171,7 +3215,14 @@ async function apply(ctx, config) {
 		maxDecksPerSession: config.maxDecksPerSession ?? 50,
 		maxActivities: config.maxActivities ?? 200
 	}), { maxSlides: config.maxSlides ?? 40 });
-	service.store.personalTemplates = new PersonalTemplateLibrary(service.store, convertPptxToPptd, writePptdProjectSource, config.maxSlides ?? 40);
+    ctx.provide('officeModes', {
+        state: sessionId => service.state(sessionId),
+        select: (sessionId, mode) => service.selectDocumentMode(sessionId, mode, { kind: 'user' }),
+        selectTemplate: (sessionId, template) => service.selectDocumentTemplate(sessionId, template, { kind: 'user' }),
+        deselectTemplate: sessionId => service.deselectDocumentTemplate(sessionId, { kind: 'user' }),
+        record: (sessionId, operation, facts) => service.mutate(sessionId, operation, { kind: 'agent' }, state => ({ state, value: true, summary: operation, facts }))
+    });
+	service.store.personalTemplates = new PersonalTemplateLibrary(service.store, convertPptxToPptd, writePptdProjectSource);
 	const rpcHandler = pptRpc(service);
 	ctx.inject(["webServer"], (webCtx) => {
 		registerPptRpcRoute(webCtx, "/dsh-ppt", rpcHandler);

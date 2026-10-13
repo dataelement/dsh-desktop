@@ -97,7 +97,7 @@ it('mounts Office skills and queries the immutable runtime in a real Harness sub
   const diagnostic = join(home, 'office-probe.mjs')
   await writeFile(diagnostic, `
 export const name = 'office-probe'
-export const inject = ['skills', 'tools']
+export const inject = ['skills', 'tools', 'connection', 'officeModes', 'sessionController', 'webServer']
 export async function apply(ctx) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const skills = await ctx.skills.list()
@@ -106,6 +106,17 @@ export async function apply(ctx) {
       const deps = await tool.execute({})
       const loaded = await ctx.skills.get('office-docx')
       console.log('OFFICE_PROBE:' + JSON.stringify({ names: skills.map(skill => skill.name), deps, content: loaded.content }))
+      ctx.connection.fetch.register({ path: '/api/office-probe', methods: ['POST'], requestBody: 'buffered', async fetch(request) {
+        const { payload } = await request.json(); const signal = request.signal; const endpoint = payload.endpoint
+        if (endpoint !== 'prepare') throw new Error('Unknown probe')
+        const resolved = await ctx.sessionController.resolveAgent(payload.sessionId)
+        if (resolved.error) throw new Error(JSON.stringify(resolved.error))
+        const { setSandboxMode } = await import(${JSON.stringify(pathToFileURL(join(root, 'node_modules/@deepseek-ai/dsh-sandbox-policy/lib/index.js')).href)})
+        setSandboxMode(resolved.agent.session, 'workspace-write')
+        const tool = ctx.tools.get('office_template')
+        if (!tool) throw new Error('Template tool unavailable')
+        return Response.json({ type: 'server-response', rpcId: 'office-prepare', result: { ok: true, value: await tool.execute({ template_id: payload.templateId }, { agent: resolved.agent, signal }) } })
+      } })
       return
     }
     await new Promise(resolve => setTimeout(resolve, 50))
@@ -174,6 +185,36 @@ export async function apply(ctx) {
     await togglePpt(false)
     const restored = await rpc('skills/list', { sessionId: session.sessionId })
     expect(restored.skills.find(skill => skill.name === 'office-pptx')?.modelInvocable).toBe(true)
+    const officeRpc = async (endpoint, payload, method = 'office-templates') => {
+      const response = await fetch(new URL('/api/' + method, snapshot.url), {
+        method: 'POST', headers: { Cookie: cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'client-request', rpcId: 'office-' + endpoint, method, payload: { endpoint, ...payload } })
+      })
+      const envelope = await response.json()
+      expect(envelope.result?.ok, JSON.stringify(envelope)).toBe(true)
+      return envelope.result.value
+    }
+    const officeCatalog = await officeRpc('catalog', {})
+    expect(officeCatalog.templates).toHaveLength(7)
+    const officeSession = await rpc('session/create', { cwd: neutral })
+    await officeRpc('mode', { sessionId: officeSession.sessionId, mode: 'word' })
+    for (const id of ['government-notice', 'meeting-minutes']) {
+      const template = officeCatalog.templates.find(item => item.id === id)
+      await officeRpc('select', { sessionId: officeSession.sessionId, templateId: id, revision: template.revision })
+      const copied = await officeRpc('prepare', { sessionId: officeSession.sessionId, templateId: id }, 'office-probe')
+      expect(copied.workspace_path).toMatch(new RegExp(`^office-templates/${id}-[a-f0-9-]+/example\\.docx$`))
+      const bytes = await readFile(join(neutral, copied.workspace_path))
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(copied.files.find(file => file.workspace_path === copied.workspace_path).sha256)
+      if (id === 'meeting-minutes') {
+        expect(bytes).toEqual(await readFile(join(root, 'packages/dsh-desktop-office/sources/curated/meeting-minutes/example.docx')))
+        const preview = await officeRpc('preview', { templateId: id, revision: template.revision, page: 3 })
+        expect(preview).toMatchObject({ page: 3, pages: 3 })
+        expect(preview.image).toMatch(/^data:image\/webp;base64,/)
+      }
+    }
+    expect(probe.names).toEqual(expect.arrayContaining(['gov-doc-writing', 'meeting-recap', 'research-writer', 'saas-metrics-coach', 'dataset-health-audit', 'data-viz-gen']))
+    await officeRpc('mode', { sessionId: officeSession.sessionId, mode: 'excel' })
+    expect((await officeRpc('state', { sessionId: officeSession.sessionId })).selectedTemplateId).toBeNull()
     await exec(electronExecutable(root), [join(root, 'build/office-cli.mjs'), 'capabilities', '--json'], { cwd: neutral, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 30_000 })
   } finally {
     await runtime.stop()

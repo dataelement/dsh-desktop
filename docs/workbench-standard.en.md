@@ -1,6 +1,6 @@
 # Workbench Development Standard
 
-Version: 2026-10-08 · The website is authoritative; DSH Desktop bundles a copy for offline use.
+Version: 2026-10-09 · The website is authoritative; DSH Desktop bundles a copy for offline use.
 
 Official page: https://dshdesktop.com/workbench/docs/development-en/
 

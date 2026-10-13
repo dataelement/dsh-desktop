@@ -246,7 +246,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				this.update(sessionId, () => ({ ...staged, loading: true, error: "" }));
 				try {
 					const remote = await client.call("state");
-					const occupied = remote?.presentationMode === "ppt" || typeof remote?.selectedTemplateId === "string";
+					const occupied = remote?.presentationMode === "ppt" || remote?.documentMode === "word" || remote?.documentMode === "excel" || typeof remote?.selectedTemplateId === "string";
 					if (occupied) {
 						this.clearStaged();
 						this.update(sessionId, (current) => ({
@@ -527,26 +527,39 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			});
 		}
 		function deselectTemplate(client, mode, sessionId, activeMode) {
+            mode.bump(sessionId);
+            const revision = mode.revision(sessionId);
 			mode.setLoading(sessionId, true);
 			if (!client.bound) {
 				mode.deselect(sessionId, activeMode);
+                announcePptMode(sessionId);
 				return;
 			}
 			client.call("template/deselect").then(() => {
+                if (mode.revision(sessionId) !== revision) return;
 				return client.call("presentation/mode", { mode: activeMode });
 			}).then(() => {
+                if (mode.revision(sessionId) !== revision) return;
+                announcePptMode(sessionId);
 				mode.deselect(sessionId, activeMode);
 			}).catch((reason) => {
-				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+                if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 			});
 		}
 		function selectPresentationMode(client, mode, sessionId, activeMode) {
-			mode.setMode(sessionId, activeMode);
-			if (!client.bound) return;
-			client.call("presentation/mode", { mode: activeMode }).catch((reason) => {
-				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
-			});
-		}
+            if (!client.bound) { mode.setMode(sessionId, activeMode); announcePptMode(sessionId); return; }
+            mode.bump(sessionId);
+            const revision = mode.revision(sessionId);
+            mode.setLoading(sessionId, true);
+            client.call("presentation/mode", { mode: activeMode }).then(() => {
+                if (mode.revision(sessionId) !== revision) return;
+                announcePptMode(sessionId);
+                mode.setMode(sessionId, activeMode);
+                mode.setLoading(sessionId, false);
+            }).catch((reason) => {
+                if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+            });
+        }
 		/** Compact selected-template thumbnail inside the resident input card. */
 		function OfficePptInputAccessory({ client, mode, sessionId, t }) {
 			const state = useMode(mode, sessionId);
@@ -856,16 +869,21 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			const select = (template, activeMode = state.activeMode ?? "ppt") => {
 				if (!client.bound) {
 					mode.select(sessionId, template, activeMode);
+                    announcePptMode(sessionId);
 					return;
 				}
+                mode.bump(sessionId);
+                const revision = mode.revision(sessionId);
 				mode.setLoading(sessionId, true);
 				client.call("template/select", {
 					templateId: template.id,
 					mode: activeMode
 				}).then(() => {
+                    if (mode.revision(sessionId) !== revision) return;
+                    announcePptMode(sessionId);
 					mode.select(sessionId, template, activeMode);
 				}).catch((reason) => {
-					mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+					if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 				});
 			};
 			const choose = (template) => {
@@ -892,7 +910,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				select(selected, "ppt");
 			};
 			const modeTemplates = state.templates.filter((template) => templateSupportsMode(template, "ppt"));
-			const templateCategories = ["all", "personal", ...new Set(modeTemplates.filter(item => item.origin !== "personal").map(templateCategory))];
+			const templateCategories = ["all", ...new Set(modeTemplates.filter(item => item.origin !== "personal").map(templateCategory)), "personal"];
 			const visibleTemplates = modeTemplates.filter((template) => category === "all" ? template.origin !== "personal" : templateCategory(template) === category);
 			(0, react.useEffect)(() => {
 				if (!templateCategories.includes(category)) setCategory("all");
@@ -933,6 +951,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				"aria-expanded": state.activeMode === "ppt",
 				"aria-pressed": state.activeMode === "ppt",
 				"data-desktop-ppt": "",
+                "aria-busy": state.loading,
+                disabled: state.loading,
 				onClick: togglePpt,
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DesktopPptIcon, {}), t("mode.label")]
 			});
@@ -951,6 +971,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 						"aria-expanded": state.activeMode === "ppt",
 						"aria-pressed": state.activeMode === "ppt",
 						"data-desktop-ppt": "",
+                        "aria-busy": state.loading,
+                        disabled: state.loading,
 						onClick: togglePpt,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DesktopPptIcon, {}), t("mode.label")]
 					})
@@ -980,11 +1002,11 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 						className: OfficePptHero_module_css_default.templateViewport,
 						"data-office-ppt-template-viewport": "",
 						"data-native-wheel-owner": "",
-						children: [category === "personal" && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						children: [(category === "all" || category === "personal") && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true, builtInCards: category === "all" ? visibleTemplates.map(template => react.createElement(TemplatePreviewCard, { key: template.id, template, selected: template.id === state.selectedId, choose, client, t })) : [] }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateError,
 							role: "alert",
 							children: state.error
-						}), category === "personal" ? null : state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						}), (category === "all" || category === "personal") ? null : state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.panelState,
 							children: t("status.loading")
 						}) : state.error !== "" && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -1003,7 +1025,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 							children: t("templates.empty")
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateGrid,
-							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplateCard, {
+							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplatePreviewCard, {
+                                client, t,
 								template,
 								selected: template.id === state.selectedId,
 								choose
@@ -1027,10 +1050,17 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
             const state = useMode(props.mode, props.sessionId);
             (0, react.useEffect)(() => {
                 if (!props.client?.bound) return;
-                props.mode.adopt(props.sessionId, props.client);
+                let active = true;
+                props.mode.adopt(props.sessionId, props.client).then(result => {
+                    if (active && ['applied', 'partial'].includes(result) && props.mode.snapshot(props.sessionId).activeMode === 'ppt') announcePptMode(props.sessionId);
+                }).catch(reason => {
+                    if (active) props.mode.setError(props.sessionId, reason instanceof Error ? reason.message : String(reason));
+                });
+                return () => { active = false; };
             }, [props.client, props.mode, props.sessionId]);
             return (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [
                 (0, react_jsx_runtime.jsx)(OfficePptChooser, { ...props, placement: "trigger" }),
+                state.error && state.activeMode === null ? (0, react_jsx_runtime.jsx)("span", { role: "alert", children: state.error }) : null,
                 state.notice && state.activeMode !== null ? (0, react_jsx_runtime.jsx)("span", {
                     role: "status", "data-ppt-template-migration": "",
                     style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)", maxWidth: 300 },
@@ -1060,24 +1090,33 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"templates.empty": "该分类下还没有模板",
 			"templates.loadTimeout": "模板加载超时，请重试",
 			"templates.retry": "重新加载模板",
-			"templates.category.all": "内置模板",
-"templates.category.personal": "我的模板",
+			"templates.category.all": "全部",
+"templates.category.personal": "自定义",
 "personal.deletedSelection": "已选个人模板已被删除，请重新选择。",
 "personal.upload": "上传 PPT 模板",
 "personal.create": "新建自定义模板",
 "personal.selected": "已选中",
 "personal.local": "保存在当前 Desktop · PPTX",
 "personal.fileType": "请选择 PPTX 文件",
-"personal.fileTooLarge": "个人模板 PPTX 不能超过 64 MB",
 "personal.readFailed": "文件读取失败，请重新选择",
 "personal.duplicate": "这份文件已在我的模板中，可直接选择使用",
+"personal.useSame": "做同款",
+"personal.view": "预览",
+"personal.zoomIn": "放大",
+"personal.zoomOut": "缩小",
+"personal.fit": "适应窗口",
+"personal.previewFailed": "预览加载失败，请重试",
 "personal.processing": "正在处理模板…",
+"personal.completedPages": "已完成",
+"personal.placeholderNotice": "部分对象已使用占位图，可在 PPT 中替换。",
+"personal.layouts": "版式",
 "personal.chooseFile": "重新选择 PPT",
 "personal.preview": "模板预览",
 "personal.name": "模板名称",
 "personal.previous": "上一页",
 "personal.next": "下一页",
 "personal.save": "保存模板",
+"personal.saved": "模板已保存",
 "personal.cancel": "取消",
 "personal.edit": "编辑模板",
 "personal.editTitle": "编辑自定义模板",
@@ -1158,24 +1197,33 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"templates.empty": "No templates in this category",
 			"templates.loadTimeout": "Template loading timed out. Try again.",
 			"templates.retry": "Reload templates",
-			"templates.category.all": "Built-in templates",
-"templates.category.personal": "My templates",
+			"templates.category.all": "All",
+"templates.category.personal": "Custom",
 "personal.deletedSelection": "The selected personal template was deleted. Choose another template.",
 "personal.upload": "Upload PPT template",
 "personal.create": "Create custom template",
 "personal.selected": "Selected",
 "personal.local": "Saved in this Desktop profile · PPTX",
 "personal.fileType": "Choose a PPTX file",
-"personal.fileTooLarge": "Personal PPTX templates cannot exceed 64 MB",
 "personal.readFailed": "Could not read the file. Choose it again.",
 "personal.duplicate": "This file is already in My templates. Select it to reuse it.",
+"personal.useSame": "Use this template",
+"personal.view": "Preview",
+"personal.zoomIn": "Zoom in",
+"personal.zoomOut": "Zoom out",
+"personal.fit": "Fit to window",
+"personal.previewFailed": "Could not load preview. Please retry.",
 "personal.processing": "Processing template…",
+"personal.completedPages": "Completed",
+"personal.placeholderNotice": "Some objects use placeholders. You can replace them in the PPT.",
+"personal.layouts": "Layouts",
 "personal.chooseFile": "Choose another PPT",
 "personal.preview": "Template preview",
 "personal.name": "Template name",
 "personal.previous": "Previous page",
 "personal.next": "Next page",
 "personal.save": "Save template",
+"personal.saved": "Template saved",
 "personal.cancel": "Cancel",
 "personal.edit": "Edit template",
 "personal.editTitle": "Edit custom template",
@@ -1247,6 +1295,9 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 		* @param sessionId - Active conversation session.
 		* @returns Session-bound Office PPT client.
 		*/
+        function announcePptMode(sessionId) {
+            window.dispatchEvent(new CustomEvent('dsh-office-mode-change', { detail: { sessionId, origin: 'ppt' } }));
+        }
 		function createOfficePptClient(rpc, sessionId) {
 			const bound = typeof sessionId === "string" && sessionId.trim().length > 0;
 			return { bound, async call(endpoint, payload = {}, signal) {
@@ -1278,6 +1329,16 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), "dsh-ppt: dictionaries");
 			const connection = ctx.get("connection");
 			const mode = new OfficePptHeroStore();
+            ctx.effect(() => {
+                const listener = event => {
+                    const detail = event.detail;
+                    if (detail?.origin !== 'office') return;
+                    mode.bump(detail.sessionId);
+                    mode.update(detail.sessionId, current => ({ ...current, activeMode: null, selectedId: null, engaged: false, loading: false, error: '' }));
+                };
+                window.addEventListener('dsh-office-mode-change', listener);
+                return () => window.removeEventListener('dsh-office-mode-change', listener);
+            }, 'PPT / Office mode synchronization');
 			return (sessionId) => ({
 				client: createOfficePptClient(connection.rpc, sessionId),
 				mode

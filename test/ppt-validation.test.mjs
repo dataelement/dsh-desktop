@@ -37,6 +37,7 @@ async function fixture({ broken = true, malformed = false } = {}) {
   const tools = new Map()
   let rpc
   const host = {
+    provide() {},
     // The plugin scopes its webServer work under ctx.inject(['webServer'])
     // (0.1.5 owns connection routes on the reading Context). Give the fake host
     // the two members those callbacks touch so they run inertly.

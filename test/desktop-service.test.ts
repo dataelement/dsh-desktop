@@ -149,6 +149,10 @@ describe('desktop service', () => {
     request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: false })))
     expect(await service.checkUpdate()).toEqual({ updateAvailable: false })
     const url = new URL(request.mock.calls[0]![0])
+    expect(url.searchParams.has('manual')).toBe(false)
+    request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: false })))
+    await service.checkUpdate(true)
+    expect(new URL(request.mock.calls.at(-1)![0]).searchParams.get('manual')).toBe('true')
     expect(url.searchParams.get('platform')).toBe('mac'); expect(url.searchParams.has('channel')).toBe(false); expect(url.searchParams.has('arch')).toBe(false)
     for (const version of ['0.7.0', '0.8.0', '0.9.0-rc.1', '../../evil', '0.9.0-01']) {
       request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: true, version, feedUrl: `https://dshdesktop.com/updates/archive/${version}/` })))

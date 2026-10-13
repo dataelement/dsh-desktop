@@ -36,6 +36,7 @@ async function fixture(existingRoot) {
     inject: ['systemPrompt', 'skills'],
     async apply(pluginCtx) {
       const host = {
+    provide() {},
         // The plugin scopes its webServer work under ctx.inject(['webServer'])
         // (0.1.5 owns connection routes on the reading Context). This fixture
         // has no webServer service, so run those callbacks on the same fake

@@ -1,6 +1,6 @@
 # 工作台开发规范
 
-版本：2026-10-08 · 以官网版本为准，DSH Desktop 内附文档副本供离线取用。
+版本：2026-10-09 · 以官网版本为准，DSH Desktop 内附文档副本供离线取用。
 
 官方地址：https://dshdesktop.com/workbench/docs/development/
 

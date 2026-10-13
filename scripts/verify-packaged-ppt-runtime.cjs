@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const os = require('node:os')
 const { createRequire } = require('node:module')
 const { execFile } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
@@ -40,6 +41,11 @@ async function verifyRuntime(appRoot) {
   }
 
   const coreRequire = createRequire(path.join(core, 'package.json'))
+  if (path.basename(appRoot) === 'app.asar') {
+    // Match the Harness entry's native-engine resolution before rendering.
+    const { registerOfficeEngineResolution } = await import(pathToFileURL(path.join(path.dirname(appRoot), 'office-engine-resolution.mjs')).href)
+    registerOfficeEngineResolution(path.join(appRoot, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+  }
   const sharp = coreRequire('sharp')
   if (!sharp?.versions?.vips) throw new Error('Packaged dsh-ppt cannot load the sharp native runtime')
   await import(pathToFileURL(path.join(core, 'lib', 'index.js')).href)
@@ -58,6 +64,29 @@ async function verifyRuntime(appRoot) {
   for (const relative of Object.values(previewFiles)) await fs.access(path.join(references, relative))
   const previewCount = await countFiles(references, '.jpg')
   if (previewCount !== 192) throw new Error('Packaged dsh-ppt contains ' + previewCount + ' previews; expected 192')
+
+  const { loadPptdProject } = await import(pathToFileURL(path.join(core, 'lib', 'pptd.js')).href)
+  const { renderOfficeTemplatePreview } = await import(pathToFileURL(path.join(core, 'lib', 'office-template-preview.js')).href)
+  const project = await loadPptdProject(path.join(references, definitions[0].referenceDirectory, 'source'))
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-packaged-office-preview-'))
+  try {
+    const result = await renderOfficeTemplatePreview({ ...project, pages: project.pages.slice(0, 1) }, temporary, 960, 1)
+    if (result.engine !== 'libreoffice-pdfium') throw new Error('Packaged Office preview engine mismatch')
+    const png = await sharp(path.join(temporary, 'preview', 'pages', 'page-1.png')).metadata()
+    if (png.width < 800 || png.height < 400) throw new Error('Packaged Office preview dimensions are incomplete')
+    const { PersonalTemplateLibrary } = await import(pathToFileURL(path.join(core, 'lib', 'personal-templates.js')).href)
+    const library = new PersonalTemplateLibrary({ root: path.join(temporary, 'import-host'), appendAudit: async () => {} })
+    const source = await fs.readFile(path.join(temporary, 'preview-deck.pptx'))
+    const upload = await library.uploadStart('packaged-regression', { fileName: 'Packaged.pptx', size: source.length })
+    for (let offset = 0; offset < source.length; offset += upload.chunkBytes) {
+      await library.uploadChunk('packaged-regression', { uploadId: upload.uploadId, offset, base64: source.subarray(offset, offset + upload.chunkBytes).toString('base64') })
+    }
+    const draft = await library.prepare('packaged-regression', { uploadId: upload.uploadId })
+    if (draft.template.slideCount !== 1 || draft.template.previewMetadata.engine !== 'libreoffice-pdfium') throw new Error('Packaged isolated template import failed')
+    await library.cancel('packaged-regression', draft.draftId)
+    console.log('Packaged isolated template import and Office preview passed')
+  } finally { await fs.rm(temporary, { recursive: true, force: true }) }
+
 }
 
 module.exports = async function verifyPackagedPptRuntime(context) {
