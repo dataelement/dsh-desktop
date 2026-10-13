@@ -67,6 +67,8 @@ test/                     Unit and source-contract regression coverage
 
 The desktop product intentionally reuses the upstream Harness UI. Desktop-specific provider onboarding, preset transfer, model selection, workspace, branding, and layout changes are captured under `patches/` rather than stored as untracked edits in `node_modules`.
 
+The `@deepseek-ai/dsh-host-open-in-app@0.2.0-rc.2` patch addresses [#686](https://github.com/dataelement/dsh-desktop/issues/686): detached external app launches remove inherited `ELECTRON_RUN_AS_NODE` names case-insensitively before merging the adapter's explicit environment. GitHub Desktop's Windows CLI adapter keeps its explicit Node mode; the shared subprocess scrub and internal runners remain unchanged. `test/open-in-app-environment.test.ts` exercises the installed bundle, module, host route, and native Electron runtime. Remove this patch when the pinned upstream package provides equivalent behavior. Validate native Windows Open In when replaying or retiring this patch.
+
 When upgrading Harness:
 
 1. Install the intended upstream version.
