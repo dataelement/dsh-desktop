@@ -4,7 +4,8 @@
 </h1>
 
 <p align="center">
-  为 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> 打造的本地优先、跨平台桌面应用。
+  <strong>DSH Desktop by Dataelem</strong> 是 Dataelem 团队基于 DeepSeek Harness 框架打造的桌面 Agent 应用，提供开源版与企业版。<br />
+  官方网站：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · 开源仓库：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
 </p>
 
 <p align="center">

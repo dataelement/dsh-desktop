@@ -4,8 +4,8 @@
 </h1>
 
 <p align="center">
-  Локальное кроссплатформенное настольное приложение для
-  <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>.
+  <strong>DSH Desktop by Dataelem</strong> — настольное Agent-приложение, разработанное командой Dataelem на базе фреймворка DeepSeek Harness. Доступны версия с открытым исходным кодом и корпоративная версия.<br />
+  Официальный сайт：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · Репозиторий с открытым исходным кодом：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
 </p>
 
 <p align="center">
