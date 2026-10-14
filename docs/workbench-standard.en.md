@@ -188,7 +188,7 @@ DSH reserves shared entrances for the market, workbench switcher, and settings; 
 
 ### Header layout: default and compact
 
-`register()` accepts `headerLayout: 'default' | 'compact'`; omission means `default` and other values fail registration. In default mode the host reserves a separate, non-scrolling system-controls row on macOS outside fullscreen, with the sidebar either expanded or collapsed (`--dsh-frame-top-clearance`, normally 48px). Business headings and descriptions begin below it, regardless of nested header markup. Windows keeps its separate title bar; fullscreen adds no row. Existing providers default to this mode. The host does not infer the first `<header>` as a toolbar or clear provider-owned heading padding.
+`register()` accepts `headerLayout: 'default' | 'compact'`; omission means `default` and other values fail registration. With the sidebar expanded, the host preserves the existing layout and adds no blank row. It makes only unoccupied pieces of the existing top band (`--dsh-frame-top-clearance`, normally 48px) draggable, subtracting actual rectangles for controls, menus, iframes and custom `data-dsh-no-drag` areas. Default mode reserves a separate system-controls row only on macOS outside fullscreen with the sidebar collapsed; business content starts below it regardless of nested header markup. Windows keeps its separate title bar; fullscreen adds no row. Existing providers default to this mode. The host does not infer the first `<header>` as a toolbar or clear provider-owned heading padding.
 
 Any `customFrame: true` provider, or a standard split with `layout.businessSide: 'left'` (`embedded` is not required), can opt into compact mode:
 
@@ -205,7 +205,7 @@ React.createElement('header', { 'data-dsh-workbench-toolbar': '' },
 
 Ordinary left splits retain their side and bottom content gutters. Only valid compact mode removes the top gutter and makes the toolbar sticky while content scrolls. Toolbar ancestors must span the content height, without extra top margin/padding or an independent scroll container.
 
-The marked toolbar must be the top row and span the host content width; nested wrappers are supported. For ordinary left splits, the host supplies a separate drag row above the right conversation. For custom frames the toolbar must span the entire custom frame, including the conversation area, rather than only a business subpanel. The host sets minimum row height and leading clearance, makes blank space draggable, and excludes buttons, links, form controls and standard interactive roles. Add `data-dsh-no-drag` to custom interactions, expanded menus and popovers. `data-dsh-compact-toolbar` and `data-dsh-compact-valid` are host-owned internal markers. Do not duplicate system-controls padding or override the entire drag/no-drag policy.
+The marked toolbar must be the top row and span the host content width; nested wrappers are supported. For ordinary left splits, the host uses existing blank space above the right conversation without adding a row. For custom frames the toolbar must span the entire custom frame, including the conversation area, rather than only a business subpanel. The host sets minimum row height and leading clearance, makes blank space draggable, and excludes buttons, links, form controls and standard interactive roles. Add `data-dsh-no-drag` to custom interactions, expanded menus and popovers. `data-dsh-compact-toolbar` and `data-dsh-compact-valid` are host-owned internal markers. Do not duplicate system-controls padding or override the entire drag/no-drag policy.
 
 Missing or multiple markers, right-side splits safely fall back to the default row. Iframe documents are outside this protocol: an iframe-based provider may place its unique toolbar in a same-document outer wrapper; marking the whole iframe does not make its contents a draggable toolbar. Reflow by business container width; truncate long titles, move descriptions below the toolbar, and keep actions usable.
 
@@ -213,12 +213,12 @@ Verify both modes with expanded/collapsed sidebar, narrow containers, realistic 
 
 ### Existing-provider migration and compatibility limits
 
-This is an explicit opt-in contract. The host cannot both prevent system controls from overlapping arbitrary legacy DOM and automatically preserve every legacy compact arrangement. Unmigrated providers remain loadable with the safe default layout. The extra controls row on macOS outside fullscreen is a visible layout change, not a zero-impact upgrade.
+This is an explicit opt-in contract. The host cannot both prevent system controls from overlapping arbitrary legacy DOM and automatically preserve every legacy compact arrangement. Unmigrated providers remain loadable with the safe default layout. Only the collapsed sidebar on macOS outside fullscreen adds the default controls row; expanded layouts retain their original geometry.
 
 | Existing provider | Migration | Before migration |
 | --- | --- | --- |
-| Default business heading and description | May omit the declaration; review and remove provider-owned system-controls clearance while keeping normal business padding | Separate system-controls row |
-| Custom frame or left split that should share the top row | Declare `headerLayout: 'compact'`, mark exactly one same-document `data-dsh-workbench-toolbar`, and remove duplicate system-controls clearance | Separate row; no toolbar inference |
+| Default business heading and description | May omit the declaration; review and remove provider-owned system-controls clearance while keeping normal business padding | Original expanded layout; separate row when collapsed |
+| Custom frame or left split that should share the top row | Declare `headerLayout: 'compact'`, mark exactly one same-document `data-dsh-workbench-toolbar`, and remove duplicate system-controls clearance | Original expanded layout; separate collapsed row, no toolbar inference |
 | Toolbar inside an iframe, right split, or multiple markers | Move a single toolbar to a supported same-document position or retain default mode | Safe fallback to default mode |
 
 Migration uses only the public registration field and toolbar marker, with no provider-name allowlist or semantic-header inference. External maintainers must publish their own migration releases; host updates do not modify installed external packages. Only valid compact declarations remove the host's 18px top gutter in ordinary left splits. Default mode and provider-owned header padding retain their existing values.

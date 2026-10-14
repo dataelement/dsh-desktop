@@ -9,6 +9,7 @@ const interactive = process.argv.includes('--interactive')
 const profile = mkdtempSync(join(tmpdir(), 'dsh-header-layout-'))
 app.setPath('userData', profile)
 const source = readFileSync(join(__dirname, '../packages/dsh-desktop-workbenches/client.js'), 'utf8')
+const dragHelper = source.slice(source.indexOf('    function mountNativeDragRegions('), source.indexOf('    function Frame(', source.indexOf('    function mountNativeDragRegions(')))
 const css = source.match(/const css = `([\s\S]*?)`/)[1]
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ title: 'DSH Header Layout Fixture', show: true, width: 800, height: 500, webPreferences: { nodeIntegration: false, contextIsolation: true } })
@@ -45,6 +46,25 @@ app.whenReady().then(async () => {
       host.scrollTop = 0
       return 19
     })()`)
+    const geometryChecks = await win.webContents.executeJavaScript(`(() => {
+      ${dragHelper}
+      const check = (condition, message) => { if (!condition) throw new Error(message) }
+      const frame = document.querySelector('.dshWbFrame'), host = document.querySelector('#provider'), bar = document.querySelector('#toolbar')
+      const shell = document.querySelector('#shell')
+      shell.removeAttribute('data-sidebar-collapsed'); host.removeAttribute('data-dsh-compact-valid'); bar.removeAttribute('data-dsh-compact-toolbar')
+      host.className = ''; host.style.cssText = ''; bar.style.cssText = 'height:48px;display:flex;align-items:center;gap:16px'
+      bar.setAttribute('role', 'toolbar')
+      const before = bar.getBoundingClientRect().top
+      window.__cleanupDrag = mountNativeDragRegions(frame)
+      check(bar.getBoundingClientRect().top === before && before === 0, 'expanded header retains original position')
+      const button = document.querySelector('#button'), r = button.getBoundingClientRect()
+      check(document.elementFromPoint(r.left + 2, r.top + 2).closest('#button'), 'segments do not intercept button')
+      check([...document.querySelectorAll('.dshWbNativeDragSegment')].some(node => node.getBoundingClientRect().width > 0), 'toolbar role leaves blank draggable pieces')
+      const blank = document.elementFromPoint(780, 20)
+      check(blank.classList.contains('dshWbNativeDragSegment'), 'right blank band hits a generated segment')
+      check(getComputedStyle(blank).webkitAppRegion === 'drag', 'blank uses native region styling')
+      return 5
+    })()`)
     await win.webContents.executeJavaScript(`window.__clicks = 0; document.querySelector('#button').onclick = () => window.__clicks++; true`);
     const point = await win.webContents.executeJavaScript(`(() => { const r = document.querySelector('#button').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } })()`);
     win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
@@ -54,7 +74,7 @@ app.whenReady().then(async () => {
     const clicks = await win.webContents.executeJavaScript('window.__clicks')
     if (clicks !== 1) throw new Error('Native Chromium pointer input did not click toolbar action')
     if (interactive) await win.webContents.executeJavaScript(`document.documentElement.dataset.platform = 'darwin'; document.querySelector('#provider').setAttribute('data-dsh-compact-valid', 'true'); true`)
-    console.log(`PASS: ${checks} Chromium layout/interaction checks; native drag remains manual.`)
+    console.log(`PASS: ${checks + geometryChecks} Chromium layout/interaction checks; native drag remains manual.`)
   } catch (error) { console.error(error); process.exitCode = 1 } finally { if (!interactive || process.exitCode) { win.destroy(); app.exit(process.exitCode || 0) } }
 }).catch(error => { console.error(error); app.exit(1) })
 app.on('window-all-closed', () => app.quit())

@@ -67,6 +67,7 @@ function marketCard(service, tab = 'market') {
     Fragment: Symbol('Fragment'),
     useState: (initial) => [stateIndex++ === 0 ? tab : initial, () => {}],
     useLayoutEffect: () => {},
+      useRef: () => ({ current: null }),
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
@@ -107,6 +108,7 @@ function interactiveMarket(service, tab = 'market', clipboard) {
       return [state[index], (value) => { state[index] = typeof value === 'function' ? value(state[index]) : value }]
     },
     useLayoutEffect: () => {},
+      useRef: () => ({ current: null }),
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   vm.runInNewContext(code, { window: { sessionStorage, localStorage: enabledStorage, navigator: clipboard && { clipboard }, __ModuleLoader__: { load({ factory }) {
@@ -139,6 +141,7 @@ function sidebarSwitcher({ pinned = [], active = null, title = '工作台', work
     },
     useRef: initial => ({ current: initial }),
     useLayoutEffect: () => {},
+      useRef: () => ({ current: null }),
     useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot()
   }
   const sandbox = { window: { sessionStorage, localStorage: clientWindow.localStorage, __ModuleLoader__: { load({ factory }) {
@@ -1143,6 +1146,7 @@ describe('desktop workbench client navigation', () => {
       createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
       Component: class {},
       useLayoutEffect: () => {},
+      useRef: () => ({ current: null }),
       useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
       useCallback: callback => callback,
       useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}]
@@ -1184,6 +1188,7 @@ describe('desktop workbench client navigation', () => {
       createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
       Component: class {},
       useLayoutEffect: () => {},
+      useRef: () => ({ current: null }),
       useSyncExternalStore: (_subscribe, snapshot) => snapshot(),
       useCallback: callback => callback,
       useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}]
@@ -1519,7 +1524,7 @@ describe('desktop workbench client navigation', () => {
 
   it.each(['default', 'compact-left', 'compact-custom'])('reserves host caption rows for %s across platform and sidebar states', async mode => {
     const { JSDOM } = await import('jsdom')
-    const dom = new JSDOM(`<div class="dshWbFrame"><div class="dshWbCaptionRow"></div><div class="dshWbBody"><div class="dshWbConversation"><div class="dshWbCaptionRow dshWbConversationCaption"></div></div><aside class="dshWbBusiness"></aside></div></div>`)
+    const dom = new JSDOM(`<div class="dshWbFrame"><div class="dshWbCaptionRow"></div><div class="dshWbBody"><div class="dshWbConversation"></div><aside class="dshWbBusiness"></aside></div></div>`)
     const doc = dom.window.document
     const style = doc.createElement('style')
     // Exercise the emitted layout rules, not a second copy of the policy.
@@ -1531,14 +1536,13 @@ describe('desktop workbench client navigation', () => {
       if (mode === 'compact-custom') doc.querySelector('.dshWbFrame').append(host)
     }
     const caption = doc.querySelector('.dshWbFrame > .dshWbCaptionRow')
-    const conversationCaption = doc.querySelector('.dshWbConversationCaption')
     for (const platform of ['darwin', 'win32']) for (const fullscreen of ['true', 'false']) for (const collapsed of [true, false]) {
       doc.documentElement.setAttribute('data-platform', platform)
       doc.documentElement.setAttribute('data-fullscreen', fullscreen)
       doc.body.toggleAttribute('data-sidebar-collapsed', collapsed)
-      const visible = platform === 'darwin' && fullscreen === 'false'
+      const visible = platform === 'darwin' && fullscreen === 'false' && collapsed
       expect(dom.window.getComputedStyle(caption).display !== 'none').toBe(visible && mode === 'default')
-      expect(dom.window.getComputedStyle(conversationCaption).display !== 'none').toBe(visible && mode === 'compact-left')
+      expect(doc.querySelector('.dshWbConversationCaption')).toBeNull()
     }
     dom.window.close()
   })
@@ -1567,8 +1571,7 @@ describe('desktop workbench client navigation', () => {
       await React.act(async () => root.render(React.createElement(Frame, { service, conversation: null })))
       const host = dom.window.document.querySelector(descriptor.customFrame ? '.dshWbCustomFrame' : '.dshWbBusiness')
       const conversationCaption = dom.window.document.querySelector('.dshWbConversationCaption')
-      expect(conversationCaption.parentElement.className).toBe('dshWbConversation')
-      expect(conversationCaption.parentElement.firstElementChild).toBe(conversationCaption)
+      expect(conversationCaption).toBeNull()
       const toolbar = host.querySelector('header')
       const compact = descriptor.headerLayout !== 'default' && (descriptor.customFrame || descriptor.layout?.businessSide === 'left')
       if (!compact) {
@@ -1608,6 +1611,7 @@ describe('desktop workbench client navigation', () => {
       useState: (value) => [typeof value === 'function' ? value() : value, () => {}],
       useCallback: (callback) => callback,
       useLayoutEffect: () => {},
+      useRef: () => ({ current: null }),
       useSyncExternalStore(subscribe, getSnapshot) {
         // React calls these as standalone functions, without a store receiver.
         cleanups.push(subscribe(() => {}))

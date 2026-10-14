@@ -1303,13 +1303,11 @@ window.__ModuleLoader__.load({
       /* The host owns a non-scrolling caption row. Compact authors opt into one
          explicit toolbar; semantic headers and nested content are never guessed. */
       .dshWbCaptionRow{display:none;flex:none;position:relative}
-      html[data-platform=darwin]:not([data-fullscreen=true]) .dshWbCaptionRow{display:block;height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:drag}
+      html[data-platform=darwin]:not([data-fullscreen=true]) [data-sidebar-collapsed] .dshWbCaptionRow{display:block;height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:drag}
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbFrame > .dshWbCaptionRow::before{content:'';position:absolute;inset-block:0;left:0;width:var(--dsh-frame-leading-clearance,160px);-webkit-app-region:no-drag}
       .dshWbFrame:has([data-dsh-compact-valid=true]:not([hidden])) > .dshWbCaptionRow{display:none!important}
-      /* A real sibling row keeps the native conversation draggable without an
-         overlay intercepting its controls or provider content. */
-      .dshWbConversationCaption{display:none!important}
-      html[data-platform=darwin]:not([data-fullscreen=true]) .dshWbFrame:has(.dshWbBusiness[data-dsh-compact-valid=true]:not([hidden])) .dshWbConversationCaption{display:block!important}
+      .dshWbNativeDragLayer{position:absolute;inset:0;pointer-events:none;z-index:20}
+      .dshWbNativeDragSegment{position:absolute;pointer-events:auto;-webkit-app-region:drag}
       [data-dsh-compact-toolbar]{box-sizing:border-box;min-width:0;min-height:var(--dsh-frame-top-clearance,48px)}
       html[data-platform=darwin] [data-dsh-compact-toolbar]{-webkit-app-region:drag}
       html[data-platform=darwin]:not([data-fullscreen=true]) [data-sidebar-collapsed] [data-dsh-compact-toolbar]{padding-inline-start:var(--dsh-frame-leading-clearance,160px)}
@@ -2110,6 +2108,108 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       }, [entry.headerLayout, entry.customFrame, entry.embedded, entry.layout?.businessSide])
       return h(as, { ...props, ref: root }, children)
     }
+    // Only unoccupied pieces of the existing caption band become native drag
+    // regions. Never overlay controls, infer a provider header, or move content.
+    function mountNativeDragRegions(frame) {
+      if (document.documentElement.dataset.platform !== 'darwin') return () => {}
+      const controls = 'button,a,input,select,textarea,label,summary,iframe,canvas,video,audio,[role=button],[role=tab],[role=combobox],[role=slider],[role=menu],[role=menuitem],[role=checkbox],[role=radio],[role=switch],[role=spinbutton],[role=listbox],[role=option],[role=dialog],[role=tree],[role=treeitem],[contenteditable]:not([contenteditable=false]),[tabindex],[draggable=true],[data-dsh-no-drag],[data-window-drag=false],[onclick],[onmousedown],[onpointerdown]'
+      const layer = document.createElement('div')
+      layer.className = 'dshWbNativeDragLayer'
+      layer.setAttribute('aria-hidden', 'true')
+      frame.appendChild(layer)
+      let ticket = 0
+      let signature = ''
+      const observed = new Set()
+      const resize = new ResizeObserver(() => schedule())
+      const intersect = (a, b) => ({ left: Math.max(a.left, b.left), top: Math.max(a.top, b.top), right: Math.min(a.right, b.right), bottom: Math.min(a.bottom, b.bottom) })
+      const valid = (r) => r.right > r.left && r.bottom > r.top
+      const subtract = (r, cut) => {
+        const overlap = intersect(r, cut)
+        if (!valid(overlap)) return [r]
+        return [
+          { ...r, bottom: overlap.top }, { ...r, top: overlap.bottom },
+          { left: r.left, right: overlap.left, top: overlap.top, bottom: overlap.bottom },
+          { left: overlap.right, right: r.right, top: overlap.top, bottom: overlap.bottom },
+        ].filter(valid)
+      }
+      const update = () => {
+        ticket = 0
+        const html = document.documentElement
+        const collapsed = !!frame.closest('[data-sidebar-collapsed]')
+        const bounds = frame.getBoundingClientRect()
+        const caption = frame.querySelector(':scope > .dshWbCaptionRow')
+        const separateRow = caption && getComputedStyle(caption).display !== 'none'
+        let parts = []
+        if (html.dataset.platform === 'darwin' && html.dataset.fullscreen !== 'true' && !separateRow) {
+          const height = parseFloat(getComputedStyle(frame).getPropertyValue('--dsh-frame-top-clearance')) || 48
+          const band = intersect(bounds, { left: 0, top: 0, right: window.innerWidth, bottom: Math.min(window.innerHeight, bounds.top + height) })
+          if (valid(band)) parts = [band]
+          if (collapsed) {
+            const leading = parseFloat(getComputedStyle(frame).getPropertyValue('--dsh-frame-leading-clearance')) || 160
+            parts = parts.flatMap((r) => subtract(r, { left: bounds.left, top: bounds.top, right: bounds.left + leading, bottom: bounds.top + height }))
+          }
+        }
+        const targets = new Set([frame])
+        for (const element of frame.querySelectorAll(controls)) {
+          if (layer.contains(element)) continue
+          targets.add(element)
+          // Include transformed fragments, then clip to visible scroll ancestors.
+          for (const rect of element.getClientRects()) {
+            let visible = intersect({ left: rect.left - 1, top: rect.top - 1, right: rect.right + 1, bottom: rect.bottom + 1 }, bounds)
+            for (let ancestor = element.parentElement; valid(visible) && ancestor && ancestor !== frame; ancestor = ancestor.parentElement) {
+              const style = getComputedStyle(ancestor)
+              const box = ancestor.getBoundingClientRect()
+              if (/(hidden|clip|scroll|auto)/.test(style.overflowX)) visible = { ...visible, left: Math.max(visible.left, box.left), right: Math.min(visible.right, box.right) }
+              if (/(hidden|clip|scroll|auto)/.test(style.overflowY)) visible = { ...visible, top: Math.max(visible.top, box.top), bottom: Math.min(visible.bottom, box.bottom) }
+            }
+            if (valid(visible)) parts = parts.flatMap((r) => subtract(r, visible))
+            // Fail closed for pathological fragmented control layouts.
+            if (parts.length > 256) parts = []
+          }
+        }
+        // A scroll gutter is an interaction surface even without semantic roles.
+        for (const element of frame.querySelectorAll('*')) {
+          if (!parts.length || layer.contains(element)) continue
+          const rect = element.getBoundingClientRect()
+          if (!parts.some((part) => valid(intersect(part, rect)))) continue
+          const style = getComputedStyle(element)
+          if (!/(auto|scroll)/.test(style.overflowX + style.overflowY)) continue
+          targets.add(element)
+          const vertical = Math.max(0, element.offsetWidth - element.clientWidth - parseFloat(style.borderLeftWidth || '0') - parseFloat(style.borderRightWidth || '0'))
+          const horizontal = Math.max(0, element.offsetHeight - element.clientHeight - parseFloat(style.borderTopWidth || '0') - parseFloat(style.borderBottomWidth || '0'))
+          if (vertical) parts = parts.flatMap((part) => subtract(part, style.direction === 'rtl' ? { left: rect.left, right: rect.left + vertical + 1, top: rect.top, bottom: rect.bottom } : { left: rect.right - vertical - 1, right: rect.right, top: rect.top, bottom: rect.bottom }))
+          if (horizontal) parts = parts.flatMap((part) => subtract(part, { left: rect.left, right: rect.right, top: rect.bottom - horizontal - 1, bottom: rect.bottom }))
+          if (parts.length > 256) parts = []
+        }
+        for (const element of observed) if (!targets.has(element)) { resize.unobserve(element); observed.delete(element) }
+        for (const element of targets) if (!observed.has(element)) { resize.observe(element); observed.add(element) }
+        const next = JSON.stringify(parts)
+        if (next === signature) return
+        signature = next
+        layer.replaceChildren(...parts.map((r) => {
+          const segment = document.createElement('div')
+          segment.className = 'dshWbNativeDragSegment'
+          Object.assign(segment.style, { left: `${r.left - bounds.left}px`, top: `${r.top - bounds.top}px`, width: `${r.right - r.left}px`, height: `${r.bottom - r.top}px` })
+          return segment
+        }))
+      }
+      function schedule() { if (!ticket) ticket = requestAnimationFrame(update) }
+      const mutation = new MutationObserver((records) => {
+        // Ignore our generated regions, including their own child replacement.
+        if (records.some((record) => !layer.contains(record.target) && !(record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].every((node) => node === layer)))) schedule()
+      })
+      mutation.observe(frame, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'role', 'tabindex', 'contenteditable', 'draggable', 'data-dsh-no-drag', 'data-window-drag', 'onclick', 'onmousedown', 'onpointerdown', 'data-dsh-compact-valid'] })
+      const platform = new MutationObserver(schedule)
+      platform.observe(document.documentElement, { attributes: true, attributeFilter: ['data-platform', 'data-fullscreen'] })
+      // Sidebar flags live on a host ancestor, outside provider DOM.
+      for (let ancestor = frame.parentElement; ancestor; ancestor = ancestor.parentElement) platform.observe(ancestor, { attributes: true, attributeFilter: ['data-sidebar-collapsed', 'class', 'style'] })
+      window.addEventListener('resize', schedule)
+      document.addEventListener('scroll', schedule, true)
+      frame.addEventListener('transitionend', schedule, true)
+      frame.addEventListener('animationend', schedule, true)
+      update()
+      return () => { mutation.disconnect(); platform.disconnect(); resize.disconnect(); cancelAnimationFrame(ticket); window.removeEventListener('resize', schedule); document.removeEventListener('scroll', schedule, true); frame.removeEventListener('transitionend', schedule, true); frame.removeEventListener('animationend', schedule, true); layer.remove() }
+    }
     function Frame({ service, conversation }) {
       useHostLocale(service)
       const { state, catalog, ready, pending } = useWorkbench(service)
@@ -2118,6 +2218,8 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       React.useSyncExternalStore(React.useCallback((listener) => service.ctx.sessions.list.subscribe(listener), [service]), () => service.ctx.sessions.list.getSnapshot())
       const workspaces = React.useSyncExternalStore(React.useCallback((listener) => service.ctx.workspaces.list.subscribe(listener), [service]), () => service.ctx.workspaces.list.getSnapshot())
       const [workspaceId, setWorkspaceId] = React.useState('')
+      const frameRef = React.useRef(null)
+      React.useLayoutEffect(() => frameRef.current ? mountNativeDragRegions(frameRef.current) : undefined, [workbenchEnabled])
       const [conversationContainer] = React.useState(() => {
         const node = document.createElement('div')
         Object.assign(node.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0', minWidth: '0', height: '100%' })
@@ -2141,12 +2243,11 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const disabled = !ready || pending > 0 || service.blocked
       const visibleWorkspaces = workspaces.items.filter((item) => service.workspaceVisible(item.workspaceId, state.active))
       const chosen = visibleWorkspaces.find((item) => item.workspaceId === workspaceId) || service.defaultWorkspace()
-      return h('div', { className: 'dshWb dshWbFrame' }, runtimeEntry && h('div', { className: 'dshWbCaptionRow', 'aria-hidden': true }), h(Notice, { service }),
+      return h('div', { className: 'dshWb dshWbFrame', ref: frameRef }, runtimeEntry && h('div', { className: 'dshWbCaptionRow', 'aria-hidden': true }), h(Notice, { service }),
         require('react-dom').createPortal(conversation, conversationContainer),
         ...loaded.filter((item) => item.customFrame === true).map((item) => h(HeaderHost, { entry: item, key: item.id, className: 'dshWbCustomFrame', hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, { service }, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? h('div', { style: { display: hasCurrentSession ? 'contents' : 'none' } }, conversationMount) : null })))),
         h('div', { className: 'dshWbBody', hidden: customFrame, style: { '--workbench-business-width': `${(entry?.layout?.businessWidth ?? 0.36) * 100}%` } },
           h('div', { className: 'dshWbConversation' },
-            runtimeEntry && h('div', { className: 'dshWbCaptionRow dshWbConversationCaption', 'aria-hidden': true }),
             entry && !hasCurrentSession && h('section', { className: 'dshWbInit' },
               h('h2', null, both('需要 AI 协助时，开始对话', 'Start a conversation for AI help')),
               h('p', { className: 'dshWbMuted' }, both('你可以先使用业务面板。需要 AI 协助时，选择工作区开始对话，会话会关联到这个工作台。', 'You can use the business panel first. When you need AI help, choose a workspace to start a conversation linked to this workbench.')),
