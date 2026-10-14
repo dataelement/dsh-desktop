@@ -1315,6 +1315,10 @@ window.__ModuleLoader__.load({
       .dshWbBody{display:flex;flex:1;min-height:0;min-width:0}.dshWbConversation{container-type:inline-size;container-name:workbench-conversation;overflow:hidden;order:1;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
       .dshWbBusiness{order:2;width:var(--workbench-business-width,36%);min-width:220px;border-left:1px solid var(--dsw-alias-border-l2);overflow:auto;padding:18px;box-sizing:border-box}
       .dshWbBusiness[data-side=left]{order:0;border-left:0;border-right:1px solid var(--dsw-alias-border-l2)}
+      /* Ordinary split panels keep their content gutters, but the opted-in
+         caption toolbar must start at the top and remain safe while scrolling. */
+      .dshWbBusiness[data-dsh-compact-valid=true]:not([data-embedded=true]){padding-top:0}
+      .dshWbBusiness[data-dsh-compact-valid=true]:not([data-embedded=true]) [data-dsh-compact-toolbar]{position:sticky;top:0;z-index:1;background:var(--dsw-alias-bg-layer-1)}
       .dshWbBusiness[data-embedded=true]{padding:0;overflow:hidden;display:flex;flex-direction:column}.dshWbBusiness[data-embedded=true]>div{flex:1;min-height:0}
       .dshWbBusiness h3{margin:0 0 8px;font-size:16px}.dshWbBusiness textarea{display:block;resize:vertical;min-height:260px;width:100%;padding:12px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;line-height:1.7}
       .dshWbPanelFailure{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;max-width:408px;max-height:100%;min-width:0;min-height:0;margin:auto;padding:24px;text-align:center;overflow:auto;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
@@ -2081,7 +2085,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const root = React.useRef(null)
       React.useLayoutEffect(() => {
         const node = root.current
-        const eligible = entry.headerLayout === 'compact' && (entry.customFrame === true || (entry.embedded === true && entry.layout?.businessSide === 'left'))
+        const eligible = entry.headerLayout === 'compact' && (entry.customFrame === true || entry.layout?.businessSide === 'left')
         if (!node || !eligible) return
         let marked = null
         let warned = false

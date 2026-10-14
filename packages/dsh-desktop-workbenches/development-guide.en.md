@@ -190,7 +190,7 @@ DSH reserves shared entrances for the market, workbench switcher, and settings; 
 
 `register()` accepts `headerLayout: 'default' | 'compact'`; omission means `default` and other values fail registration. In default mode the host reserves a separate, non-scrolling system-controls row on macOS with the sidebar collapsed and outside fullscreen (`--dsh-frame-top-clearance`, normally 48px). Business headings and descriptions begin below it, regardless of nested header markup. Windows keeps its separate title bar; expanded sidebar and fullscreen add no row. Existing providers default to this mode; remove their duplicate system-controls padding.
 
-Any `customFrame: true` provider, or a standard split with `embedded: true` and `layout.businessSide: 'left'`, can opt into compact mode:
+Any `customFrame: true` provider, or a standard split with `layout.businessSide: 'left'` (`embedded` is not required), can opt into compact mode:
 
 ```js
 ctx.desktopWorkbenches.register({
@@ -203,9 +203,11 @@ React.createElement('header', { 'data-dsh-workbench-toolbar': '' },
   React.createElement('button', { onClick: refresh }, 'Refresh'))
 ```
 
+Ordinary left splits retain their side and bottom content gutters. Only valid compact mode removes the top gutter and makes the toolbar sticky while content scrolls. Toolbar ancestors must span the content height, without extra top margin/padding or an independent scroll container.
+
 The marked toolbar must be the top row and span the host content width; nested wrappers are supported. The host sets minimum row height and leading clearance, makes blank space draggable, and excludes buttons, links, form controls and standard interactive roles. Add `data-dsh-no-drag` to custom interactions, expanded menus and popovers. `data-dsh-compact-toolbar` and `data-dsh-compact-valid` are host-owned internal markers. Do not duplicate system-controls padding or override the entire drag/no-drag policy.
 
-Missing or multiple markers, right-side or non-embedded splits safely fall back to the default row. Iframe documents are outside this protocol: an iframe-based provider may place its unique toolbar in a same-document outer wrapper; marking the whole iframe does not make its contents a draggable toolbar. Reflow by business container width; truncate long titles, move descriptions below the toolbar, and keep actions usable.
+Missing or multiple markers, right-side splits safely fall back to the default row. Iframe documents are outside this protocol: an iframe-based provider may place its unique toolbar in a same-document outer wrapper; marking the whole iframe does not make its contents a draggable toolbar. Reflow by business container width; truncate long titles, move descriptions below the toolbar, and keep actions usable.
 
 Verify both modes with expanded/collapsed sidebar, narrow containers, realistic Chinese/English headings, entering/leaving fullscreen, and no duplicated space or covered controls. Click buttons, edit inputs, open menus and check keyboard focus. Verify actual native window movement from blank space; DOM/CSS checks do not replace native drag acceptance.
 

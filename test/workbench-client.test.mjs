@@ -1517,7 +1517,7 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.added).toEqual(['example/writer'])
   })
 
-  it('resolves one nested compact toolbar and safely falls back when markers change', async () => {
+  it.each([{ customFrame: true }, { customFrame: false, layout: { businessSide: 'left' } }, { customFrame: false, layout: { businessSide: 'right' } }, { customFrame: true, headerLayout: 'default' }])('resolves one nested compact toolbar and safely falls back when markers change (%j)', async descriptor => {
     const { JSDOM } = await import('jsdom')
     const ReactDOM = await import('react-dom')
     const { createRoot } = await import('react-dom/client')
@@ -1535,12 +1535,18 @@ describe('desktop workbench client navigation', () => {
       ctx.workspaces.list.getSnapshot = () => snapshot; ctx.workspaces.list.subscribe = () => () => {}; ctx.sessions.list.subscribe = () => () => {}
       let clicks = 0
       const Panel = () => React.createElement('div', null, React.createElement('section', null, React.createElement('header', { 'data-dsh-workbench-toolbar': '' }, React.createElement('button', { onClick: () => clicks++ }, 'Refresh'))))
-      registerProvider(service, ctx, 'compact', { title: 'Compact', customFrame: true, headerLayout: 'compact' }, Panel)
+      registerProvider(service, ctx, 'compact', { title: 'Compact', headerLayout: 'compact', ...descriptor }, Panel)
       await service.add('compact'); await service.open('compact')
       root = createRoot(dom.window.document.getElementById('root'))
       await React.act(async () => root.render(React.createElement(Frame, { service, conversation: null })))
-      const host = dom.window.document.querySelector('.dshWbCustomFrame')
+      const host = dom.window.document.querySelector(descriptor.customFrame ? '.dshWbCustomFrame' : '.dshWbBusiness')
       const toolbar = host.querySelector('header')
+      const compact = descriptor.headerLayout !== 'default' && (descriptor.customFrame || descriptor.layout?.businessSide === 'left')
+      if (!compact) {
+        expect(host.hasAttribute('data-dsh-compact-valid')).toBe(false)
+        expect(toolbar.hasAttribute('data-dsh-compact-toolbar')).toBe(false)
+        return
+      }
       expect(host.getAttribute('data-dsh-compact-valid')).toBe('true')
       expect(toolbar.hasAttribute('data-dsh-compact-toolbar')).toBe(true)
       await React.act(async () => toolbar.querySelector('button').click())

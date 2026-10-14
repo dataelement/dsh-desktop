@@ -34,7 +34,16 @@ app.whenReady().then(async () => {
       document.querySelector('#shell').setAttribute('data-sidebar-collapsed', '')
       document.documentElement.dataset.platform = 'win32'; check(style(row).display === 'none', 'Windows has its own titlebar')
       check(style(bar).paddingLeft === '0px', 'Windows has no macOS leading clearance')
-      return 15
+      document.documentElement.dataset.platform = 'darwin'
+      host.className = 'dshWbBusiness'; host.dataset.side = 'left'; host.setAttribute('data-dsh-compact-valid', 'true')
+      host.style.height = '140px'; host.style.width = '100%'; host.style.flex = 'none'; host.querySelector('section').style.minHeight = '600px'
+      check(style(host).paddingTop === '0px' && style(host).paddingLeft === '18px', 'ordinary left compact removes only top gutter')
+      check(bar.getBoundingClientRect().top === host.getBoundingClientRect().top, 'ordinary left toolbar starts at caption top')
+      check(document.querySelector('#button').getBoundingClientRect().left >= host.getBoundingClientRect().left + 160, 'ordinary left actions clear system controls')
+      host.scrollTop = 100
+      check(bar.getBoundingClientRect().top === host.getBoundingClientRect().top, 'ordinary left toolbar stays safe when body scrolls')
+      host.scrollTop = 0
+      return 19
     })()`)
     await win.webContents.executeJavaScript(`window.__clicks = 0; document.querySelector('#button').onclick = () => window.__clicks++; true`);
     const point = await win.webContents.executeJavaScript(`(() => { const r = document.querySelector('#button').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } })()`);

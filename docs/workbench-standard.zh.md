@@ -190,7 +190,7 @@ window.__ModuleLoader__.load({
 
 `register()` 的 `headerLayout` 可选值为 `'default'`（省略时默认）和 `'compact'`；其他值注册失败。默认模式由宿主在 macOS 侧栏收起且非全屏时预留独立、不可滚动的系统控件行（`--dsh-frame-top-clearance`，通常 48px）。业务标题和长介绍从该行下方开始，不依赖内部 `<header>` 的层级。Windows 使用独立标题栏；侧栏展开或全屏时不额外占用此行。旧工作台不声明时采用默认模式，移除自己重复的顶部/左侧系统控件避让。
 
-紧凑模式可用于任何 `customFrame: true` 工作台，或 `embedded: true` 且 `layout.businessSide: 'left'` 的标准分栏工作台：
+紧凑模式可用于任何 `customFrame: true` 工作台，或 `layout.businessSide: 'left'` 的标准分栏工作台（无需设置 `embedded`）：
 
 ```js
 ctx.desktopWorkbenches.register({
@@ -203,9 +203,11 @@ React.createElement('header', { 'data-dsh-workbench-toolbar': '' },
   React.createElement('button', { onClick: refresh }, '刷新'))
 ```
 
+普通左侧分栏仍保留侧边与底部的业务间距；仅有效紧凑模式取消顶部间距，工具栏以 sticky 保持在顶部，正文可滚动。工具栏祖先必须覆盖正文高度，不得另加顶部 margin/padding 或独立滚动容器。
+
 标记工具栏必须位于面板顶部、占满宿主可用宽度，可嵌套在容器中。宿主仅为这一行设置最低高度和左侧控件避让，空白可拖动；按钮、链接、表单控件及标准交互 role 排除拖动。自定义交互区、展开菜单和弹层加 `data-dsh-no-drag`。宿主内部标记 `data-dsh-compact-toolbar` 和 `data-dsh-compact-valid` 不得由工作台设置。不要自行重复系统控件 padding 或 drag/no-drag 整体覆盖规则。
 
-标记缺失或不唯一、右侧/非嵌入分栏不满足共享位置条件时，安全回退默认系统控件行。iframe 内部 DOM 不属于此协议；包含 iframe 的工作台可将唯一工具栏放在同一文档的外部容器，不能标记整个 iframe 来充当可拖动顶栏。工具栏按业务容器宽度重排；长标题缩略、次要描述放在下一行或正文，按钮不得压成不可用尺寸。
+标记缺失或不唯一、右侧分栏不满足共享位置条件时，安全回退默认系统控件行。iframe 内部 DOM 不属于此协议；包含 iframe 的工作台可将唯一工具栏放在同一文档的外部容器，不能标记整个 iframe 来充当可拖动顶栏。工具栏按业务容器宽度重排；长标题缩略、次要描述放在下一行或正文，按钮不得压成不可用尺寸。
 
 验收两种模式：侧栏展开/收起、窄容器、中英文长标题、全屏进入/退出，确认无双重留白或控件遮挡；点击按钮、编辑输入、打开菜单和键盘焦点正常；实际拖动空白移动窗口。DOM/CSS 校验不能替代原生窗口拖动验收。
 
