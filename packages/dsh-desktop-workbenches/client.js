@@ -1303,9 +1303,13 @@ window.__ModuleLoader__.load({
       /* The host owns a non-scrolling caption row. Compact authors opt into one
          explicit toolbar; semantic headers and nested content are never guessed. */
       .dshWbCaptionRow{display:none;flex:none;position:relative}
-      html[data-platform=darwin]:not([data-fullscreen=true]) [data-sidebar-collapsed] .dshWbCaptionRow{display:block;height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:drag}
-      html[data-platform=darwin] .dshWbCaptionRow::before{content:'';position:absolute;inset-block:0;left:0;width:var(--dsh-frame-leading-clearance,160px);-webkit-app-region:no-drag}
+      html[data-platform=darwin]:not([data-fullscreen=true]) .dshWbCaptionRow{display:block;height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:drag}
+      html[data-platform=darwin] [data-sidebar-collapsed] .dshWbFrame > .dshWbCaptionRow::before{content:'';position:absolute;inset-block:0;left:0;width:var(--dsh-frame-leading-clearance,160px);-webkit-app-region:no-drag}
       .dshWbFrame:has([data-dsh-compact-valid=true]:not([hidden])) > .dshWbCaptionRow{display:none!important}
+      /* A real sibling row keeps the native conversation draggable without an
+         overlay intercepting its controls or provider content. */
+      .dshWbConversationCaption{display:none!important}
+      html[data-platform=darwin]:not([data-fullscreen=true]) .dshWbFrame:has(.dshWbBusiness[data-dsh-compact-valid=true]:not([hidden])) .dshWbConversationCaption{display:block!important}
       [data-dsh-compact-toolbar]{box-sizing:border-box;min-width:0;min-height:var(--dsh-frame-top-clearance,48px)}
       html[data-platform=darwin] [data-dsh-compact-toolbar]{-webkit-app-region:drag}
       html[data-platform=darwin]:not([data-fullscreen=true]) [data-sidebar-collapsed] [data-dsh-compact-toolbar]{padding-inline-start:var(--dsh-frame-leading-clearance,160px)}
@@ -2142,6 +2146,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
         ...loaded.filter((item) => item.customFrame === true).map((item) => h(HeaderHost, { entry: item, key: item.id, className: 'dshWbCustomFrame', hidden: id !== item.id, style: { position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0, width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' } }, h(PanelBoundary, { service }, h(item.Component, { service, entry: item, active: id === item.id, conversation: id === item.id ? h('div', { style: { display: hasCurrentSession ? 'contents' : 'none' } }, conversationMount) : null })))),
         h('div', { className: 'dshWbBody', hidden: customFrame, style: { '--workbench-business-width': `${(entry?.layout?.businessWidth ?? 0.36) * 100}%` } },
           h('div', { className: 'dshWbConversation' },
+            runtimeEntry && h('div', { className: 'dshWbCaptionRow dshWbConversationCaption', 'aria-hidden': true }),
             entry && !hasCurrentSession && h('section', { className: 'dshWbInit' },
               h('h2', null, both('需要 AI 协助时，开始对话', 'Start a conversation for AI help')),
               h('p', { className: 'dshWbMuted' }, both('你可以先使用业务面板。需要 AI 协助时，选择工作区开始对话，会话会关联到这个工作台。', 'You can use the business panel first. When you need AI help, choose a workspace to start a conversation linked to this workbench.')),

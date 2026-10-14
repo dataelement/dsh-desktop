@@ -1517,6 +1517,32 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.added).toEqual(['example/writer'])
   })
 
+  it.each(['default', 'compact-left', 'compact-custom'])('reserves host caption rows for %s across platform and sidebar states', async mode => {
+    const { JSDOM } = await import('jsdom')
+    const dom = new JSDOM(`<div class="dshWbFrame"><div class="dshWbCaptionRow"></div><div class="dshWbBody"><div class="dshWbConversation"><div class="dshWbCaptionRow dshWbConversationCaption"></div></div><aside class="dshWbBusiness"></aside></div></div>`)
+    const doc = dom.window.document
+    const style = doc.createElement('style')
+    // Exercise the emitted layout rules, not a second copy of the policy.
+    style.textContent = code.slice(code.indexOf('      .dshWbCaptionRow{'), code.indexOf('      [data-dsh-compact-toolbar]{'))
+    doc.head.append(style)
+    if (mode !== 'default') {
+      const host = mode === 'compact-left' ? doc.querySelector('aside') : doc.createElement('div')
+      host.setAttribute('data-dsh-compact-valid', 'true')
+      if (mode === 'compact-custom') doc.querySelector('.dshWbFrame').append(host)
+    }
+    const caption = doc.querySelector('.dshWbFrame > .dshWbCaptionRow')
+    const conversationCaption = doc.querySelector('.dshWbConversationCaption')
+    for (const platform of ['darwin', 'win32']) for (const fullscreen of ['true', 'false']) for (const collapsed of [true, false]) {
+      doc.documentElement.setAttribute('data-platform', platform)
+      doc.documentElement.setAttribute('data-fullscreen', fullscreen)
+      doc.body.toggleAttribute('data-sidebar-collapsed', collapsed)
+      const visible = platform === 'darwin' && fullscreen === 'false'
+      expect(dom.window.getComputedStyle(caption).display !== 'none').toBe(visible && mode === 'default')
+      expect(dom.window.getComputedStyle(conversationCaption).display !== 'none').toBe(visible && mode === 'compact-left')
+    }
+    dom.window.close()
+  })
+
   it.each([{ customFrame: true }, { customFrame: false, layout: { businessSide: 'left' } }, { customFrame: false, layout: { businessSide: 'right' } }, { customFrame: true, headerLayout: 'default' }])('resolves one nested compact toolbar and safely falls back when markers change (%j)', async descriptor => {
     const { JSDOM } = await import('jsdom')
     const ReactDOM = await import('react-dom')
@@ -1540,6 +1566,9 @@ describe('desktop workbench client navigation', () => {
       root = createRoot(dom.window.document.getElementById('root'))
       await React.act(async () => root.render(React.createElement(Frame, { service, conversation: null })))
       const host = dom.window.document.querySelector(descriptor.customFrame ? '.dshWbCustomFrame' : '.dshWbBusiness')
+      const conversationCaption = dom.window.document.querySelector('.dshWbConversationCaption')
+      expect(conversationCaption.parentElement.className).toBe('dshWbConversation')
+      expect(conversationCaption.parentElement.firstElementChild).toBe(conversationCaption)
       const toolbar = host.querySelector('header')
       const compact = descriptor.headerLayout !== 'default' && (descriptor.customFrame || descriptor.layout?.businessSide === 'left')
       if (!compact) {
