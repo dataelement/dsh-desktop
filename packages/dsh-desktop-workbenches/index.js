@@ -58,7 +58,10 @@ async function readPayload(request, maximum = MAX_STATE_BYTES, tooLarge = 'Workb
 
 export function apply(ctx, config) {
   const store = createStateStore(config.root)
-  const readCatalog = createCatalogReader()
+  const readCatalog = createCatalogReader({
+    cachePath: join(config.root, 'workbench-catalog-cache.json'),
+    onWarning: error => ctx.logger?.warn?.(error)
+  })
   const marketInstalls = createMarketInstallStore(config.root)
   // Providers must use the same persisted ownership as Desktop, never a second
   // settings namespace that could accidentally authorize an ordinary session.
@@ -179,7 +182,9 @@ export function apply(ctx, config) {
     }
   })
   const known = (error) => error instanceof MarketInstallError || error instanceof CatalogError || error instanceof StateError
-  const installFailure = (error, fallback) => Response.json({ error: known(error) ? error.message : fallback }, {
+  const installFailure = (error, fallback) => Response.json({ error: known(error) ? error.message : fallback,
+    ...(error instanceof MarketInstallError && error.code ? { code: error.code, params: error.params } : {})
+  }, {
     status: known(error) ? error.status : 500,
     headers: { 'cache-control': 'no-store' }
   })
@@ -220,7 +225,7 @@ export function apply(ctx, config) {
             if (confirmedReplacement === true) return
             const packages = await readInstallEvidence(installs, undefined, names)
             if (names.some(name => packages[name] && packages[name].origin !== 'market')) {
-              throw new MarketInstallError('Confirm replacement of the installed workbench with the market version.', 409)
+              throw new MarketInstallError('Confirm updating the installed workbench code; local changes may be overwritten.', 409)
             }
           }
           // Check known package identities before resolving or downloading the target.

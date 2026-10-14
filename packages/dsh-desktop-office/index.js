@@ -5,6 +5,7 @@ import { createTemplateLibrary } from './lib/templates.js'
 import { registerBusinessSkills } from './lib/business-skills.js'
 import { registerOfficeContext, registerOfficeRoutes } from './lib/modes.js'
 import { templateTool } from './lib/template-tool.js'
+import { createDocxWorkflow, docxWriteTool, registerDocxDelivery } from './lib/docx-workflow.js'
 
 export const name = 'desktop-office'
 export const inject = ['skills']
@@ -28,7 +29,10 @@ export async function apply(ctx, config) {
   const library = await createTemplateLibrary(join(config.resources, 'templates'))
   ctx.inject(['officeModes', 'tools', 'skills', 'sandboxPolicy', 'sandbox', 'subprocess'], scoped => {
     registerOfficeContext(scoped, library, scoped.officeModes)
-    scoped.tools.register(templateTool(scoped, library, scoped.officeModes))
+    const docx = createDocxWorkflow(scoped, library, scoped.officeModes, config.resources)
+    scoped.tools.register(templateTool(scoped, library, scoped.officeModes, docx))
+    scoped.tools.register(docxWriteTool(docx))
+    registerDocxDelivery(scoped, library, scoped.officeModes, docx)
     scoped.inject(['connection'], routes => registerOfficeRoutes(routes, library, scoped.officeModes))
   })
 }

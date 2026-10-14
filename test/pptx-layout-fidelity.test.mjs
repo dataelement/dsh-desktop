@@ -283,3 +283,71 @@ it('resolves theme fill placeholders and gives explicit local paint priority',as
   else{expect(shape.nativeShape.fill).toContain('val="123456"');expect(shape.nativeShape.fill).toContain('val="54321"');expect(shape.nativeShape.fill).not.toContain('phClr');}
  }
 });
+
+async function textboxStyleFixture({ textbox = '1', placeholder, listAlign, paragraphAlign } = {}) {
+ return fixture(parts => {
+  const A='http://schemas.openxmlformats.org/drawingml/2006/main',P='http://schemas.openxmlformats.org/presentationml/2006/main';
+  const edit=(key,update)=>{const window=new JSDOM(strFromU8(parts[key]),{contentType:'text/xml'}).window;try{update(window.document);parts[key]=strToU8(new window.XMLSerializer().serializeToString(window.document));}finally{window.close();}};
+  const children=(doc,element,source)=>{const window=new JSDOM(`<root xmlns:a="${A}" xmlns:p="${P}">${source}</root>`,{contentType:'text/xml'}).window;try{for(const child of window.document.documentElement.children)element.appendChild(doc.importNode(child,true));}finally{window.close();}};
+  edit('ppt/presentation.xml',doc=>{let style=doc.getElementsByTagNameNS(P,'defaultTextStyle')[0];if(!style){style=doc.createElementNS(P,'p:defaultTextStyle');doc.documentElement.appendChild(style);}style.replaceChildren();children(doc,style,'<a:lvl1pPr algn="l" marL="0"><a:defRPr sz="1800"/></a:lvl1pPr>');});
+  edit('ppt/slideMasters/slideMaster1.xml',doc=>{for(const [name,align,size] of [['otherStyle','r',1200],['titleStyle','ctr',3600],['bodyStyle','r',2400]]){const style=doc.getElementsByTagNameNS(P,name)[0];style.replaceChildren();children(doc,style,`<a:lvl1pPr algn="${align}" marL="12700"><a:defRPr sz="${size}"/></a:lvl1pPr>`);}});
+  edit('ppt/slides/slide1.xml',doc=>{const shape=[...doc.getElementsByTagNameNS(P,'sp')].find(s=>s.textContent.includes('ABC'));const properties=shape.getElementsByTagNameNS(P,'cNvSpPr')[0];properties.setAttribute('txBox',textbox);if(placeholder){const nv=shape.getElementsByTagNameNS(P,'nvPr')[0];nv.replaceChildren();children(doc,nv,`<p:ph type="${placeholder}"/>`);}const body=shape.getElementsByTagNameNS(P,'txBody')[0];body.replaceChildren();children(doc,body,`<a:bodyPr wrap="none" anchor="ctr" lIns="0" rIns="0" tIns="0" bIns="0"/><a:lstStyle>${listAlign?`<a:lvl1pPr algn="${listAlign}"><a:defRPr sz="2600"/></a:lvl1pPr>`:''}</a:lstStyle><a:p><a:pPr${paragraphAlign?` algn="${paragraphAlign}"`:''}/><a:r><a:t>ABC</a:t></a:r></a:p>`);});
+ });
+}
+
+it.each(['1','true'])('resolves a free textbox marked %s from presentation defaults and exports its original frame',async textbox=>{
+ const converted=await textboxStyleFixture({textbox}),element=yaml.load([...converted.source.pages.values()][0]).elements.find(e=>e.elementType==='text');
+ expect(element.bounds).toEqual([72,144,216,72]);expect(element.content.textBox).toBe(true);
+ expect(element.content.align).toEqual(['left','middle']);expect(element.content.paragraphs[0].marginLeft).toBe(0);
+ expect(element.content.paragraphs[0].runs[0].options.fontSize).toBe(18);
+ const exported=unzipSync((await renderPptdProject(parsePptdProject(converted.source))).bytes);
+ const window=new JSDOM(strFromU8(exported['ppt/slides/slide1.xml']),{contentType:'text/xml'}).window;
+ try{const shape=[...window.document.getElementsByTagNameNS('*','sp')].find(s=>s.textContent.includes('ABC'));const off=shape.getElementsByTagNameNS('*','off')[0];expect([off.getAttribute('x'),off.getAttribute('y')]).toEqual(['914400','1828800']);expect(shape.getElementsByTagNameNS('*','pPr')[0].getAttribute('algn')).toBe('l');expect(shape.getElementsByTagNameNS('*','rPr')[0].getAttribute('sz')).toBe('1800');}finally{window.close();}
+});
+
+it.each([['title','center',36],['body','right',24]])('keeps matched %s placeholder inheritance for textbox shapes',async (placeholder,align,size)=>{
+ const converted=await textboxStyleFixture({placeholder}),element=yaml.load([...converted.source.pages.values()][0]).elements.find(e=>e.elementType==='text');
+ expect(element.content.align[0]).toBe(align);expect(element.content.paragraphs[0].runs[0].options.fontSize).toBe(size);
+});
+
+it.each([['ctr',undefined,'center'],['ctr','r','right']])('honors textbox list %s and direct paragraph %s alignment',async (listAlign,paragraphAlign,align)=>{
+ const converted=await textboxStyleFixture({listAlign,paragraphAlign}),element=yaml.load([...converted.source.pages.values()][0]).elements.find(e=>e.elementType==='text');
+ expect(element.content.align[0]).toBe(align);expect(element.content.paragraphs[0].runs[0].options.fontSize).toBe(26);
+});
+
+it('keeps master otherStyle for ordinary shape text',async ()=>{
+ const converted=await textboxStyleFixture({textbox:'0'}),element=yaml.load([...converted.source.pages.values()][0]).elements.find(e=>e.elementType==='text');
+ expect(element.content.textBox).toBe(false);expect(element.content.align[0]).toBe('right');expect(element.content.paragraphs[0].runs[0].options.fontSize).toBe(12);
+});
+
+it.each(['bar','col'])('retains %s chart axis labels, lines and grid visibility through editable export',async direction=>{
+ const pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';
+ pptx.addSlide().addChart(pptx.ChartType.bar,[{name:'Values',labels:['A','B'],values:[2,8]}],{
+  x:1,y:1,w:8,h:4,layout:{x:.12,y:.05,w:.86,h:.92},barDir:direction,catAxisLabelFontFace:'Arial',catAxisLabelFontSize:10,
+  catAxisLabelColor:'666666',catAxisLineColor:'D4D4D4',catAxisLineSize:1,
+  valAxisMajorUnit:2,catAxisMajorTickMark:'none',catAxisMinorTickMark:'none',valAxisMajorTickMark:'none',valAxisMinorTickMark:'none',valAxisLabelPos:'none',valAxisLineShow:false,valGridLine:{style:'none'},catGridLine:{style:'none'}
+ });
+ const converted=await convertPptxToPptd(Buffer.from(await pptx.write({outputType:'nodebuffer'})),'axes.pptx');
+ const chart=yaml.load([...converted.source.pages.values()][0]).elements.find(e=>e.elementType==='chart');
+ const category=direction==='bar'?chart.yAxis:chart.xAxis,value=direction==='bar'?chart.xAxis:chart.yAxis;
+ expect(category.label).toMatchObject({fontFamily:'Arial',fontSize:10,color:'#666666'});
+ expect(chart.plotLayout).toEqual({x:.12,y:.05,w:.86,h:.92});
+ expect(value.majorUnit).toBe(2);
+ expect(value.label.position).toBe('none');expect(value.line).toBe(false);expect(value.gridLine).toBe(false);
+ const parts=unzipSync((await renderPptdProject(parsePptdProject(converted.source))).bytes);
+ const window=new JSDOM(strFromU8(Object.entries(parts).find(([key])=>/^ppt\/charts\/chart\d+\.xml$/.test(key))[1]),{contentType:'text/xml'}).window;
+ const manual=window.document.getElementsByTagNameNS('*','manualLayout')[0];
+ expect(manual.getElementsByTagNameNS('*','w')[0].getAttribute('val')).toBe('0.86');
+ const plot=window.document.getElementsByTagNameNS('*','plotArea')[0];
+ const plotPaint=[...plot.children].find(n=>n.localName==='spPr');
+ expect(plotPaint.getElementsByTagNameNS('*','noFill').length).toBeGreaterThan(0);
+ const axis=window.document.getElementsByTagNameNS('*','valAx')[0],cat=window.document.getElementsByTagNameNS('*','catAx')[0];
+ expect(axis.getElementsByTagNameNS('*','tickLblPos')[0].getAttribute('val')).toBe('none');
+ expect(axis.getElementsByTagNameNS('*','majorUnit')[0].getAttribute('val')).toBe('2');
+ expect(axis.getElementsByTagNameNS('*','majorGridlines')).toHaveLength(0);
+ expect(cat.getElementsByTagNameNS('*','majorTickMark')[0].getAttribute('val')).toBe('none');
+ expect(axis.getElementsByTagNameNS('*','noFill').length).toBeGreaterThan(0);
+ expect(cat.getElementsByTagNameNS('*','defRPr')[0].getAttribute('sz')).toBe('1000');
+ expect([...cat.getElementsByTagNameNS('*','srgbClr')].map(n=>n.getAttribute('val'))).toContain('666666');
+ window.close();
+});

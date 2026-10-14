@@ -276,6 +276,8 @@ const ELEMENT_FIELDS = {
 		"xAxis",
 		"yAxis",
 		"barWidth",
+        "plotLayout",
+        "plotBorder",
 		"barGap",
 		"categoryGap",
 		"spokeAxis",
@@ -972,6 +974,14 @@ function checkElement(project, page, pageNumber, element, ids) {
 			...context,
 			message: "图表 data/series/encode 结构不完整。"
 		});
+        if (element.plotLayout !== undefined) {
+            const layout = record(element.plotLayout);
+            if (!layout || Object.keys(layout).some(key => !['x','y','w','h'].includes(key))
+                || !['x','y','w','h'].every(key => Number.isFinite(layout[key]))
+                || layout.w <= 0 || layout.h <= 0)
+                issues.push({code:'chart-layout',severity:'error',file:page.file,...context,
+                    message:'图表绘图区布局需要有限的 x/y/w/h 比例及正宽高。'});
+        }
 		const chartTypes = series.map((item) => string(item.type)).filter((item) => item !== void 0);
 		const unknownTypes = chartTypes.filter((item) => !NATIVE_CHART_TYPES.has(item) && !UNSUPPORTED_CHART_TYPES.has(item));
 		if (unknownTypes.length > 0) issues.push({
@@ -1723,6 +1733,23 @@ function legendPosition(value) {
 		topRight: "tr"
 	}[string(value) ?? ""] ?? "r";
 }
+// Map both axes through one display contract for imported and authored charts.
+function axisDisplayOptions(project, axis, prefix) {
+    const label = record(axis.label) ?? {}, line = record(axis.line);
+    const position = string(label.position);
+    const color = label.color === undefined ? undefined : colorOptions(project, label.color).color;
+    return {
+        ...boolean(axis.hidden) === undefined ? {} : { [prefix + 'AxisHidden']: boolean(axis.hidden) },
+        ...['none','in','out','cross'].includes(axis.majorTick) ? { [prefix + 'AxisMajorTickMark']: axis.majorTick } : {},
+        ...['none','in','out','cross'].includes(axis.minorTick) ? { [prefix + 'AxisMinorTickMark']: axis.minorTick } : {},
+        ...['none', 'low', 'high', 'nextTo'].includes(position) ? { [prefix + 'AxisLabelPos']: position } : {},
+        ...string(label.fontFamily) === undefined ? {} : { [prefix + 'AxisLabelFontFace']: fontFace(label.fontFamily) },
+        ...color === undefined ? {} : { [prefix + 'AxisLabelColor']: color },
+        ...axis.line === false ? { [prefix + 'AxisLineShow']: false } : {},
+        ...line?.color === undefined ? {} : { [prefix + 'AxisLineColor']: colorOptions(project, line.color).color },
+        ...number(line?.width) === undefined ? {} : { [prefix + 'AxisLineSize']: number(line.width) }
+    };
+}
 function valueAxisOptions(project, axis) {
 	const label = record(axis.label) ?? {};
 	const grid = record(axis.gridLine);
@@ -1731,8 +1758,10 @@ function valueAxisOptions(project, axis) {
 	const fontSize = number(label.fontSize);
 	const title = string(axis.title);
 	return {
+        ...axisDisplayOptions(project, axis, "val"),
 		...minimum === void 0 ? {} : { valAxisMinVal: minimum },
 		...maximum === void 0 ? {} : { valAxisMaxVal: maximum },
+        ...number(axis.majorUnit) === undefined ? {} : { valAxisMajorUnit: number(axis.majorUnit) },
 		...fontSize === void 0 ? {} : { valAxisLabelFontSize: fontSize },
 		...title === void 0 ? {} : {
 			showValAxisTitle: true,
@@ -1752,6 +1781,7 @@ function chartAxisOptions(project, element, horizontal = false) {
 	const categoryLabel = record(categoryAxis.label) ?? {};
 	return {
 		...valueAxisOptions(project, valueAxis),
+        ...axisDisplayOptions(project, categoryAxis, "cat"),
 		...number(categoryLabel.fontSize) === void 0 ? {} : { catAxisLabelFontSize: number(categoryLabel.fontSize) },
 		...number(categoryLabel.rotate) === void 0 ? {} : { catAxisLabelRotate: number(categoryLabel.rotate) },
 		...categoryAxis.gridLine === false ? { catGridLine: { style: "none" } } : {}
@@ -1836,26 +1866,10 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 		const dataLabelColor = labelsConfig?.color === void 0 ? foregroundColor : colorOptions(project, labelsConfig.color).color;
 		const axisIndex = Math.max(0, Math.trunc(number(item.yAxisIndex) ?? 0));
 		const valueAxis = horizontal ? xAxis : yAxes[axisIndex] ?? yAxes[0] ?? {};
-		const valueAxisLabel = record(valueAxis.label) ?? {};
-		const valueAxisGrid = record(valueAxis.gridLine);
-		const valueAxisMin = number(valueAxis.min);
-		const valueAxisMax = number(valueAxis.max);
-		const valueAxisLabelFontSize = number(valueAxisLabel.fontSize);
-		const valueAxisTitle = string(valueAxis.title);
-		const groupOptions = {
-			...horizontal ? { barDir: "bar" } : chartTypeName === "bar" ? { barDir: "col" } : {},
-			...axisIndex === 1 ? { secondaryValAxis: true } : {},
-			...valueAxisMin === void 0 ? {} : { valAxisMinVal: valueAxisMin },
-			...valueAxisMax === void 0 ? {} : { valAxisMaxVal: valueAxisMax },
-			...valueAxisLabelFontSize === void 0 ? {} : { valAxisLabelFontSize: valueAxisLabelFontSize },
-			...valueAxisTitle === void 0 ? {} : {
-				showValAxisTitle: true,
-				valAxisTitle: valueAxisTitle
-			},
-			...valueAxis.gridLine === false ? { valGridLine: { style: "none" } } : valueAxisGrid === void 0 ? {} : { valGridLine: {
-				color: colorOptions(project, valueAxisGrid.color, 1).color,
-				style: dash(valueAxisGrid.style)
-			} },
+        const groupOptions = {
+            ...horizontal ? { barDir: "bar" } : chartTypeName === "bar" ? { barDir: "col" } : {},
+            ...axisIndex === 1 ? { secondaryValAxis: true } : {},
+            ...valueAxisOptions(project, valueAxis),
 			...showLabels && !showPercent ? { showValue: true } : {},
 			...showLabels && showPercent ? { showPercent: true } : {},
 			dataLabelColor,
@@ -1917,6 +1931,8 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 	const objectName = string(element.elementId);
 	const title = typeof element.title === "string" ? { text: element.title } : record(element.title) ?? {};
 	const chartFill = solidFill(project, element.fill);
+    const plotLayout = record(element.plotLayout);
+    const plotBorder = border(project, element.plotBorder);
 	const chartBorder = border(project, element.border);
 	const legendFontSize = number(legend.fontSize);
 	const titleFontSize = number(title.fontSize);
@@ -1950,29 +1966,24 @@ function renderChart(project, pptx, slide, element, foregroundColor) {
 		...titleFontSize === void 0 ? {} : { titleFontSize },
 		showValue: false,
 		chartArea: {
-			border: chartBorder === void 0 ? {
-				color: "FFFFFF",
-				pt: 0
-			} : {
+			...chartBorder === void 0 ? {} : { border: {
 				color: chartBorder.color,
 				pt: chartBorder.width
-			},
+            } },
 			fill: chartFill ?? {
 				color: "FFFFFF",
 				transparency: 100
 			}
 		},
 		plotArea: {
-			border: {
-				color: "FFFFFF",
-				pt: 0
-			},
+			...plotBorder === void 0 ? {} : { border: { color: plotBorder.color, pt: plotBorder.width } },
 			fill: {
 				color: "FFFFFF",
 				transparency: 100
 			}
 		},
-		...barGap === void 0 ? {} : { barGapWidthPct: Math.round(barGap * 100) },
+		...plotLayout === undefined ? {} : { layout: plotLayout },
+        ...barGap === void 0 ? {} : { barGapWidthPct: Math.round(barGap * 100) },
 		...valAxes === void 0 ? {} : { valAxes },
 		...chartAxisOptions(project, element, series.some((item) => {
 			const encode = record(item.encode) ?? {};

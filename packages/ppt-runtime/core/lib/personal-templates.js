@@ -10,8 +10,8 @@ import { extractPersonalTemplateProfile, personalTemplateSourceTheme, validPerso
 import { createPersonalTemplateSamples, validPersonalTemplateSamples } from './personal-template-samples.js';
 import { PersonalTemplateUploads, personalTemplateFileName, decodeTemplateBase64 } from './personal-template-upload.js';
 
-export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 8;
-export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 9;
+export const PERSONAL_TEMPLATE_CONVERSION_VERSION = 9;
+export const PERSONAL_TEMPLATE_PREVIEW_VERSION = 10;
 const MAX_TEMPLATES = 100;
 // Template input pages have their own processing budget; generation remains capped separately.
 export const MAX_PERSONAL_TEMPLATE_SLIDES = 200;

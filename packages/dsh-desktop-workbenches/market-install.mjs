@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { finished } from 'node:stream/promises'
 import { gunzipSync } from 'node:zlib'
+import { selectMarketFetch } from './market-fetch.mjs'
 
 export const MAX_PACKAGE_BYTES = 8 * 1024 * 1024
 const MAX_UNPACKED_BYTES = 64 * 1024 * 1024
@@ -19,20 +20,50 @@ const DOWNLOAD_TIMEOUT_MS = 60_000
 const INSTALLS_FILE = 'market-installs.json'
 
 export class MarketInstallError extends Error {
-  constructor(message, status = 400) {
+  constructor(message, status = 400, code, params) {
     super(message)
     this.name = 'MarketInstallError'
     this.status = status
+    this.code = code
+    this.params = params
   }
 }
 const fail = (message, status) => { throw new MarketInstallError(message, status) }
 
+// Native errors can contain signed redirect URLs or proxy credentials. Expose
+// only bounded diagnostic codes, including Node's nested cause and Chromium's
+// net::ERR_* message, never the original message or address.
+function networkDiagnostic(error) {
+  const codes = new Set()
+  const seen = new Set()
+  const visit = (value, depth = 0) => {
+    if (!value || typeof value !== 'object' || seen.has(value) || depth > 4) return
+    seen.add(value)
+    if (typeof value.code === 'string' && /^(?:E[A-Z0-9_]{1,63}|UND_ERR_[A-Z0-9_]{1,55})$/.test(value.code)) codes.add(value.code)
+    if (value.name === 'TimeoutError') codes.add('TIMEOUT')
+    if (value.name === 'AbortError') codes.add('ABORTED')
+    if (typeof value.message === 'string') {
+      const code = value.message.match(/\bnet::(ERR_[A-Z0-9_]{1,60})\b/)
+      if (code) codes.add(code[1])
+    }
+    visit(value.cause, depth + 1)
+    if (Array.isArray(value.errors)) value.errors.slice(0, 8).forEach(item => visit(item, depth + 1))
+  }
+  visit(error)
+  return codes.size ? [...codes].join(', ') : 'NETWORK_ERROR'
+}
+
 async function download(url, { fetchImpl, maxBytes, what }) {
+  let address
+  try { address = new URL(url) } catch { throw new MarketInstallError(`The download URL for ${what} is invalid.`, 502, 'invalid_download_url') }
+  if (address.protocol !== 'https:' || address.username || address.password || address.port) {
+    throw new MarketInstallError(`The download URL for ${what} must use HTTPS without credentials or a custom port.`, 502, 'unsafe_download_url')
+  }
   let response
   try {
-    response = await fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
+    response = await (fetchImpl ?? selectMarketFetch())(url, { redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
   } catch (error) {
-    fail(`Could not download ${what}: ${error instanceof Error ? error.message : String(error)}`, 502)
+    throw new MarketInstallError(`Could not download ${what}: ${networkDiagnostic(error)}.`, 502, 'download_failed', { diagnostic: networkDiagnostic(error) })
   }
   if (!response.ok) fail(`Downloading ${what} returned HTTP ${response.status}.`, 502)
   const declared = Number(response.headers.get('content-length'))
@@ -52,6 +83,9 @@ async function download(url, { fetchImpl, maxBytes, what }) {
       }
       chunks.push(value)
     }
+  } catch (error) {
+    if (error instanceof MarketInstallError) throw error
+    throw new MarketInstallError(`Could not finish downloading ${what}: ${networkDiagnostic(error)}.`, 502, 'download_interrupted', { diagnostic: networkDiagnostic(error) })
   } finally { reader.releaseLock() }
   return Buffer.concat(chunks)
 }
@@ -90,7 +124,7 @@ function checkManifest(manifest, entry) {
  * Resolves the single install target for an index entry. The returned
  * `cleanup` removes any temporary download and must run after installing.
  */
-export async function resolveInstallTarget(entry, { fetchImpl = fetch, temporaryRoot = tmpdir() } = {}) {
+export async function resolveInstallTarget(entry, { fetchImpl, temporaryRoot = tmpdir() } = {}) {
   const distribution = entry.distribution
   if (distribution.type === 'npm') {
     return {

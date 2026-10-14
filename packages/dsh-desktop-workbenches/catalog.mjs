@@ -1,3 +1,7 @@
+import { mkdir, open, rename, unlink, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { randomUUID } from 'node:crypto'
+
 const DEFAULT_CATALOG_URL = 'https://market.dshdesktop.com/index.json'
 const MAX_CATALOG_BYTES = 2 * 1024 * 1024
 const FETCH_TIMEOUT_MS = 10_000
@@ -61,10 +65,54 @@ export function validatePublishedCatalog(value) {
   return structuredClone(value)
 }
 
-export function createCatalogReader({ fetch: fetchCatalog = globalThis.fetch, url = DEFAULT_CATALOG_URL, now = Date.now } = {}) {
+/** cachePath is optional; disk snapshots are only used after a network failure. */
+export function createCatalogReader({ fetch: fetchCatalog = globalThis.fetch, url = DEFAULT_CATALOG_URL, now = Date.now, cachePath, onWarning } = {}) {
   let cached
   let fetchedAt = 0
   let pending
+
+  const warn = (stage, error) => onWarning?.(new Error(`Workbench catalog ${stage}: ${error instanceof Error ? error.message : String(error)}`))
+
+  const readSnapshot = async () => {
+    if (!cachePath) return undefined
+    let handle
+    try {
+      handle = await open(cachePath, 'r')
+      // Bound the actual read as well as stat, even if the file changes in place.
+      if ((await handle.stat()).size > MAX_CATALOG_BYTES + 4096) fail('Workbench catalog cache is too large.')
+      const bytes = Buffer.alloc(MAX_CATALOG_BYTES + 4097)
+      let bytesRead = 0
+      while (bytesRead < bytes.length) {
+        const chunk = await handle.read(bytes, bytesRead, bytes.length - bytesRead, bytesRead)
+        if (chunk.bytesRead === 0) break
+        bytesRead += chunk.bytesRead
+      }
+      if (bytesRead > MAX_CATALOG_BYTES + 4096) fail('Workbench catalog cache is too large.')
+      const snapshot = JSON.parse(bytes.subarray(0, bytesRead).toString('utf8'))
+      if (!object(snapshot) || snapshot.schemaVersion !== 1 || snapshot.url !== url
+        || !Number.isFinite(snapshot.fetchedAt) || snapshot.fetchedAt < 0) fail('Invalid workbench catalog cache.')
+      if (Buffer.byteLength(JSON.stringify(snapshot.catalog)) > MAX_CATALOG_BYTES) fail('Workbench catalog cache is too large.')
+      return validatePublishedCatalog(snapshot.catalog)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('cache read failed', error)
+      return undefined
+    } finally { if (handle) await handle.close().catch(error => warn('cache close failed', error)) }
+  }
+
+  const writeSnapshot = async () => {
+    if (!cachePath) return
+    const temporary = `${cachePath}.${randomUUID()}.tmp`
+    try {
+      await mkdir(dirname(cachePath), { recursive: true })
+      await writeFile(temporary,
+        JSON.stringify({ schemaVersion: 1, url, fetchedAt, catalog: cached }), { flag: 'wx', mode: 0o600 })
+      await rename(temporary, cachePath)
+    } catch (error) {
+      warn('cache write failed', error)
+    } finally {
+      await unlink(temporary).catch(error => { if (error?.code !== 'ENOENT') warn('cache cleanup failed', error) })
+    }
+  }
 
   const fetchFresh = async () => {
     const controller = new AbortController()
@@ -80,17 +128,20 @@ export function createCatalogReader({ fetch: fetchCatalog = globalThis.fetch, ur
       try { value = JSON.parse(new TextDecoder().decode(bytes)) } catch { fail('Workbench catalog returned invalid JSON.') }
       cached = validatePublishedCatalog(value)
       fetchedAt = now()
+      await writeSnapshot()
       return { catalog: structuredClone(cached), stale: false }
     } finally { clearTimeout(timeout) }
   }
 
   return async function readCatalog({ force = false } = {}) {
     if (!force && cached && now() - fetchedAt < CACHE_MAX_AGE_MS) return { catalog: structuredClone(cached), stale: false }
-    if (!pending) pending = fetchFresh().finally(() => { pending = undefined })
-    try { return await pending } catch (error) {
-      if (cached) return { catalog: structuredClone(cached), stale: true }
+    if (!pending) pending = fetchFresh().catch(async error => {
+      warn('fetch failed', error)
+      const fallback = cached || await readSnapshot()
+      if (fallback) return { catalog: structuredClone(fallback), stale: true }
       throw error
-    }
+    }).finally(() => { pending = undefined })
+    return pending
   }
 }
 

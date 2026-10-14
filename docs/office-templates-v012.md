@@ -132,7 +132,7 @@ Word 卡片使用浅蓝背景，Excel 使用浅绿背景，前景文档带圆角
 
 `dsh-desktop-office` 保留官方 `office-docx`、`office-xlsx`、`office-pptx`，通过独立的 `dsh-desktop-office-business` provider 加入业务方法。客户端使用公开 Slots、Locale、Connection；Host 在已鉴权的 Connection 通道注册精确 Office 路由。模板目录保留完整 SHA-256 与版本，预览和选择都校验当前版本。
 
-Agent 每一步从当前会话恢复格式和案例上下文，覆盖压缩、恢复及任务中途选择。`office_template` 工具校验所选版本、当前工作区写入策略和调用取消信号，通过官方 Sandbox/Subprocess 执行固定资源复制器，在工作区创建独立目录。复制完成核对文件哈希，并记录审计事件。后续制作由官方 Skill、安装级 Python 和 Kit 完成，最终通过 `present` 交付。
+Agent 每一步从当前会话恢复格式和案例上下文，覆盖压缩、恢复及任务中途选择。`office_template` 工具校验所选版本、当前工作区写入策略和调用取消信号，通过官方 Sandbox/Subprocess 执行固定资源复制器，在工作区创建独立目录。复制完成核对文件哈希，并记录审计事件。Word 案例返回稳定段落和原生文字样式 ID，后续通过 `office_template_write` 填写内容并沿用源件版式；官方 Skill 负责内容复核与渲染，`present` 在准入前验证当前 DOCX 字节。Excel 由官方 Skill、安装级 Python 和 Kit 制作与复核。详见 [Word 制作与交付](office-runtime.md#word-原生模板制作与交付)。
 
 模板预览由相同的官方 Kit 重算、渲染原生文件后生成，全部资源放在安装目录的 `office-runtime/templates`；业务 Skill 放在 `office-runtime/business-skills`。dev、build、pretest、package 统一调用 `office:prepare`；生成的预览、清单和缓存位于忽略的 `.build`。Git 维护原始输入、生成器、客户端、Host 和测试。
 

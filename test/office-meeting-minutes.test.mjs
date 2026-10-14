@@ -90,3 +90,29 @@ print(json.dumps(result))
     grid: [5783, 1757, 2097], todayCount: 2, reviewTime: true, marketPolish: true,
     absoluteDeadline: false, titleBorder: false, styleBorder: false, headingStyles: ['Heading 1', 'Heading 2'] })
 })
+
+it('renders complete meeting title glyphs using the explicit Chinese font family', async () => {
+  const { stdout } = await promisify(execFile)(python, ['-I', '-B', '-c', `
+import json
+import zipfile
+from pathlib import Path
+from lxml import etree
+from PIL import Image
+root = Path('.build/office-runtime/templates/meeting-minutes')
+ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+with zipfile.ZipFile(root / 'example.docx') as archive:
+    families = {font for name in ('word/document.xml', 'word/styles.xml', 'word/footer1.xml')
+                for font in etree.fromstring(archive.read(name)).xpath('//w:rFonts/@w:eastAsia', namespaces=ns)}
+proof = json.loads((root / 'preview-checks.json').read_text(encoding='utf-8'))['checks'][0]
+image = Image.open(root / proof['image']).convert('RGB')
+x0, y0, x1, y1 = proof['region']
+region = image.crop((int(image.width*x0), int(image.height*y0), int(image.width*x1), int(image.height*y1)))
+coverage = sum(max(pixel) < proof['darkMax'] for pixel in region.getdata()) / (region.width * region.height)
+print(json.dumps({'families':sorted(families), 'coverage':coverage, 'minimum':proof['minInkCoverage']}))
+`])
+  const result = JSON.parse(stdout)
+  expect(result.families).toContain('Hiragino Sans GB W3')
+  expect(result.families).not.toContain('Hiragino Sans GB')
+  expect(result.minimum).toBe(0.14)
+  expect(result.coverage).toBeGreaterThanOrEqual(result.minimum)
+})

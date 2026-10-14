@@ -19,7 +19,8 @@ export function templateContext(template) {
   return [
     `当前界面所选 Office 案例：${template.title}。`,
     `selected_template_id: ${template.id}`, `selected_template_revision: ${template.revision}`,
-    `先调用 office_template(template_id="${template.id}")，再用 ${template.mode === 'word' ? 'office-docx' : 'office-xlsx'} 处理返回的原生工作副本。`,
+    `先调用 office_template(template_id="${template.id}")，再用 ${template.mode === 'word' ? 'office_template_write 按返回的 editable_paragraphs 编排并替换内容，生成新的 DOCX' : 'office-xlsx 处理返回的原生工作副本'}。`,
+    ...(template.mode === 'word' ? ['Word 的原生页面、样式、嵌入字体、版头、分隔线和页脚由所选模板提供。使用 office_template_write 的 replacements / additions / removals 填写当前内容，发文机关版头使用当前机构名称；present 时宿主会核对模板版式。'] : []),
     '案例提供版式、章节、工作表与图表结构。当前用户材料提供全部事实、数值和结论；模板中的示例数据属于参考材料。',
     ...(businessNames(template).length ? [`业务方法使用 ${businessNames(template).join('、')}。`] : [])
   ].join('\n')

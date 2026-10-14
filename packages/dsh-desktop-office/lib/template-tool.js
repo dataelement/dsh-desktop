@@ -3,21 +3,21 @@ import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
-export async function workspacePolicy(ctx, exec) {
+export async function workspacePolicy(ctx, exec, write = true) {
   const session = exec.agent?.session
   if (!session?.header.cwd) throw new Error('Choose a workspace for the Office task')
   const policy = ctx.sandboxPolicy.resolve({ session })
-  if (!['workspace-write', 'danger-full-access'].includes(policy.mode)) throw new Error('Office template copies require workspace write permission')
+  if (!(write ? ['workspace-write', 'danger-full-access'] : ['read-only', 'workspace-write', 'danger-full-access']).includes(policy.mode)) throw new Error('Office template copies require workspace write permission')
   const root = await realpath(session.header.cwd)
   if (root !== await realpath(policy.workspaceRoot) || !(await lstat(root)).isDirectory()) throw new Error('Choose the workspace covered by the session write policy')
   exec.signal?.throwIfAborted()
-  return { ...policy, mode: 'workspace-write', workspaceRoot: root }
+  return { ...policy, mode: write ? 'workspace-write' : 'read-only', workspaceRoot: root }
 }
 
-export function templateTool(ctx, library, modes) {
+export function templateTool(ctx, library, modes, docx) {
   return defineTool({
     name: 'office_template',
-    description: 'Copy the current Word or Excel example and its design/reference inputs into a fresh session workspace directory. Use the returned editable DOCX/XLSX with the official office-docx/office-xlsx Skill and load_workspace_dependencies. Replace example facts with current user materials; present the final file.',
+    description: 'Prepare the current Word or Excel example and its design/reference inputs in a fresh workspace directory. For Word, use the returned editable_paragraphs with office_template_write to retain the native template layout. For Excel, use the returned XLSX with office-xlsx and load_workspace_dependencies. Fill all example facts from current user materials and present the final file.',
     parameters: { template_id: { type: 'string', required: true, description: 'The template ID from the current Office selection.' } },
     output: { schema: { type: 'object', additionalProperties: false, properties: {
       template_id: { type: 'string', required: true }, revision: { type: 'string', required: true },
@@ -25,6 +25,11 @@ export function templateTool(ctx, library, modes) {
       design_path: { type: 'string', required: true }, guide: { type: 'string', required: true }, skill: { type: 'string', required: true },
       files: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
         workspace_path: { type: 'string', required: true }, sha256: { type: 'string', required: true }
+      } } },
+      editing_tool: { type: 'string', required: true },
+      editable_paragraphs: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: {
+        id: { type: 'string', required: true }, text: { type: 'string', required: true }, can_remove: { type: 'boolean', required: true },
+        runs: { type: 'array', required: true, items: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, text: { type: 'string', required: true }, fonts: { type: 'string', required: true }, size: { type: 'string', required: true }, bold: { type: 'boolean', required: true } } } }
       } } }
     } }, render: (_args, result) => [{ type: 'text', text: JSON.stringify(result) }] },
     timeoutMs: 45_000,
@@ -57,10 +62,18 @@ export function templateTool(ctx, library, modes) {
         // A selection made during the copy belongs to the next attempt.
         const live = (await modes.state(sessionId)).selectedDocumentTemplate
         if (live?.id !== selection.id || live?.revision !== selection.revision || (await workspacePolicy(ctx, exec)).workspaceRoot !== policy.workspaceRoot) throw new Error('The Office selection or workspace changed; prepare the current example')
+        let paragraphs = []
+        const workspacePath = `${directory}/${prepared.item.sampleFile}`
+        if (prepared.item.mode === 'word' && docx) {
+          const normalized = await docx.run('prepare', { path: workspacePath }, exec)
+          paragraphs = normalized.paragraphs
+          result.files.find(file => file.workspace_path === workspacePath).sha256 = normalized.sha256
+        }
         await modes.record(sessionId, 'office-template-ready', facts)
         return { template_id: prepared.item.id, revision: prepared.item.revision, mode: prepared.item.mode,
-          workspace_path: `${directory}/${prepared.item.sampleFile}`, design_path: `${directory}/design.md`,
-          files: result.files, guide: prepared.guide, skill: prepared.item.mode === 'word' ? 'office-docx' : 'office-xlsx' }
+          workspace_path: workspacePath, design_path: `${directory}/design.md`,
+          files: result.files, guide: prepared.guide, skill: prepared.item.mode === 'word' ? 'office-docx' : 'office-xlsx',
+          editing_tool: prepared.item.mode === 'word' ? 'office_template_write' : 'office-xlsx', editable_paragraphs: paragraphs }
       } catch (error) {
         await modes.record(sessionId, 'office-template-failed', facts)
         throw error

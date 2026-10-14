@@ -52,10 +52,12 @@ async function fixture(bound = true) {
     new Function(source)(); plugin.apply(ctx)
   }
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
-  const parts = seats.filter(({ meta }) => ['conversation.hero.modeActions', 'conversation.hero.dock'].includes(meta.name))
-  await act(async () => root.render(React.createElement(React.Fragment, null, parts.map(({ meta, component, props }) => React.createElement(component, {
+  const renderSeats = name => seats.filter(({ meta }) => meta.name === name).sort((a, b) => a.meta.order - b.meta.order).map(({ meta, component, props }) => React.createElement(component, {
     ...props, key: meta.name + meta.id, sessionId, session: { blank: true }, t: key => dictionaries.get(meta.locale)?.zh[key] ?? key
-  })))))
+  }))
+  await act(async () => root.render(React.createElement(React.Fragment, null,
+    React.createElement('div', { 'data-mode-actions': '' }, renderSeats('conversation.hero.modeActions')),
+    ...renderSeats('conversation.hero.dock'))))
   const officeStore = seats.find(({ meta }) => meta.id === 'desktop-office').props.store
   const history = []; disposers.push(officeStore.subscribe(sessionId, () => history.push(officeStore.snapshot(sessionId).mode)))
   return {
@@ -65,6 +67,14 @@ async function fixture(bound = true) {
     panels() { return { office: container.querySelector('[data-office-dock]')?.dataset.officeDock ?? null, ppt: !!container.querySelector('[data-office-ppt-template-panel]') } }
   }
 }
+
+it('places PPT, Word and Excel as direct siblings in the shared spacing container', async () => {
+  await fixture()
+  const cluster = container.querySelector('[data-mode-actions]')
+  const buttons = [...cluster.querySelectorAll('button')]
+  expect(buttons.map(button => button.textContent)).toEqual(['PPT', 'Word', 'Excel'])
+  expect(buttons.every(button => button.parentElement === cluster)).toBe(true)
+})
 
 it('replaces Excel with PPT once the Host confirms the new mode', async () => {
   const f = await fixture()

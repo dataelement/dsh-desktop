@@ -177,6 +177,9 @@ function runMarkup(text, style) {
 	return declarations.length === 0 ? escaped : `<span style="${declarations.join(";")}">${escaped}</span>`;
 }
 /** Resolve OOXML placeholder/list defaults before converting individual runs. */
+function isTextBox(source) {
+  return ['1','true'].includes(childElement(childElement(source,'nvSpPr'),'cNvSpPr')?.getAttribute('txBox'));
+}
 function inheritedTextBody(presentation, slideIndex, shape) {
   const textBody = shape.textBody;
   if (!textBody) return textBody;
@@ -211,7 +214,11 @@ function inheritedTextBody(presentation, slideIndex, shape) {
     }
     return target;
   }
-  const masterStyle = master?.textStyles?.[type === 'title' || type === 'ctrTitle' ? 'titleStyle' : type === 'body' ? 'bodyStyle' : 'otherStyle'];
+  // Free textboxes use presentation defaults and their own list/paragraph styles.
+  // Placeholder styles belong to the matched master/layout; otherStyle serves shape text.
+  const masterStyle = ph || !isTextBox(source)
+    ? master?.textStyles?.[type === 'title' || type === 'ctrTitle' ? 'titleStyle' : type === 'body' ? 'bodyStyle' : 'otherStyle']
+    : undefined;
   const paragraphs = textBody.paragraphs.map(paragraph => {
     const levelName = `lvl${(paragraph.level ?? 0) + 1}pPr`;
     const defaults = [safeElement(presentation.defaultTextStyle), safeElement(master?.defaultTextStyle), safeElement(masterStyle)]
@@ -319,7 +326,7 @@ function convertedText(node, textBody, theme) {
 			wrap: body?.getAttribute("wrap") !== "none",
 			...(childElement(body, "normAutofit") || childElement(body,"spAutoFit") ? { fit: "shrink" } : {}),
 			text: markup,
-            ...(paragraphs.length ? {paragraphs:sourceParagraphs,nativeTextBody:preservedTextBody(textBody,theme),textBox:childElement(childElement(safeElement(node.source),"nvSpPr"),"cNvSpPr")?.getAttribute("txBox")==="1",margins,...(childElement(body,"normAutofit")?.hasAttribute("fontScale")?{fontScale:Number(childElement(body,"normAutofit").getAttribute("fontScale"))/100000}:{}),overflow:"clip",...(childElement(body,"spAutoFit")?{sourceAutoFit:"grow"}:{})} : {}),
+            ...(paragraphs.length ? {paragraphs:sourceParagraphs,nativeTextBody:preservedTextBody(textBody,theme),textBox:isTextBox(safeElement(node.source)),margins,...(childElement(body,"normAutofit")?.hasAttribute("fontScale")?{fontScale:Number(childElement(body,"normAutofit").getAttribute("fontScale"))/100000}:{}),overflow:"clip",...(childElement(body,"spAutoFit")?{sourceAutoFit:"grow"}:{})} : {}),
 			...containsLiteralLineBreak(markup) ? { literalEscapes: true } : {}
 		}
 	};
@@ -450,13 +457,47 @@ function convertedChart(node, xml, elementId, offsetX, offsetY, theme) {
 		const minimum = Number(childElement(scaling, "min")?.getAttribute("val") ?? NaN);
 		const maximum = Number(childElement(scaling, "max")?.getAttribute("val") ?? NaN);
 		const title = descendantElement(childElement(axis, "title"), "t")?.textContent?.trim();
-		return {
+        const text = childElement(axis, 'txPr');
+        const props = descendantElement(text, 'defRPr');
+        const labelColor = ooxmlColor(props, theme);
+        const labelSize = Number(props?.getAttribute('sz') ?? NaN) / 100;
+        const fontFamily = descendantElement(props, 'latin')?.getAttribute('typeface');
+        const position = childElement(axis, 'tickLblPos')?.getAttribute('val');
+        const line = childElement(childElement(axis, 'spPr'), 'ln');
+        const lineColor = ooxmlColor(line, theme);
+        const grid = childElement(axis, 'majorGridlines');
+        return {
 			...Number.isFinite(minimum) ? { min: minimum } : {},
 			...Number.isFinite(maximum) ? { max: maximum } : {},
-			...title === void 0 || title === "" ? {} : { title }
-		};
+            ...childElement(axis, 'majorUnit') ? { majorUnit: Number(childElement(axis, 'majorUnit').getAttribute('val')) } : {},
+			...title === void 0 || title === "" ? {} : { title },
+            hidden: childElement(axis, 'delete')?.getAttribute('val') === '1',
+            ...childElement(axis, 'majorTickMark') ? { majorTick: childElement(axis, 'majorTickMark').getAttribute('val') } : {},
+            ...childElement(axis, 'minorTickMark') ? { minorTick: childElement(axis, 'minorTickMark').getAttribute('val') } : {},
+            label: {
+                ...position ? { position } : {},
+                ...Number.isFinite(labelSize) ? { fontSize: labelSize } : {},
+                ...fontFamily ? { fontFamily } : {},
+                ...labelColor ? { color: labelColor } : {}
+            },
+            ...line ? { line: childElement(line, 'noFill') ? false : {
+                ...lineColor ? { color: lineColor } : {},
+                ...line.hasAttribute('w') ? { width: Number(line.getAttribute('w')) / 12700 } : {}
+            }} : {},
+            gridLine: grid ? { color: ooxmlColor(grid, theme) ?? '#D4D4D4' } : false
+        };
 	};
-	const convertedAxes = valueAxes.map(axisConfig);
+	const plotArea = descendantElement(document.documentElement, 'plotArea');
+    const manual = childElement(childElement(plotArea, 'layout'), 'manualLayout');
+    const plotLayout = manual && childElement(manual, 'layoutTarget')?.getAttribute('val') === 'inner'
+        && ['xMode', 'yMode'].every(key => !childElement(manual, key) || childElement(manual, key).getAttribute('val') === 'edge')
+        ? Object.fromEntries(['x', 'y', 'w', 'h'].map(key => [key, Number(childElement(manual, key)?.getAttribute('val') ?? (key === 'w' || key === 'h' ? 1 : 0))])) : undefined;
+    const chartLine = childElement(childElement(document.documentElement, 'spPr'), 'ln');
+    const chartBorder = convertedBorder(chartLine, theme);
+    const plotLine = childElement(childElement(plotArea, 'spPr'), 'ln');
+    const plotBorder = convertedBorder(plotLine, theme);
+    const convertedAxes = valueAxes.map(axisConfig);
+    const convertedCategoryAxis = categoryAxis ? axisConfig(categoryAxis) : undefined;
 	const outputSeries = [];
 	const valuesBySeries = [];
 	let categories = [];
@@ -483,6 +524,9 @@ function convertedChart(node, xml, elementId, offsetX, offsetY, theme) {
 		const dataLabels = descendantElement(container, "dLbls");
 		const showValue = descendantElement(dataLabels, "showVal")?.getAttribute("val") === "1";
 		const showPercent = descendantElement(dataLabels, "showPercent")?.getAttribute("val") === "1";
+        const labelProps = descendantElement(childElement(dataLabels, 'txPr'), 'defRPr');
+        const labelSize = Number(labelProps?.getAttribute('sz') ?? NaN) / 100;
+        const labelColor = ooxmlColor(labelProps, theme);
 		const grouping = childElement(container, "grouping")?.getAttribute("val");
 		const containerAxisIds = container === void 0 ? [] : [...container.children].filter((child) => child.localName === "axId").map((child) => child.getAttribute("val") ?? "");
 		const valueAxisIndex = valueAxisIds.findIndex((axisId) => containerAxisIds.includes(axisId));
@@ -505,6 +549,8 @@ function convertedChart(node, xml, elementId, offsetX, offsetY, theme) {
 			...pointColors.length > 0 && type === "pie" ? { fill: pointColors } : seriesColor === void 0 ? {} : type === "line" || type === "area" || type === "radar" ? { lineColor: seriesColor } : { fill: seriesColor },
 			...showValue || showPercent ? { dataLabels: {
 				show: true,
+                ...Number.isFinite(labelSize) ? { fontSize: labelSize } : {},
+                ...labelColor ? { color: labelColor } : {},
 				...showPercent ? { content: "percentage" } : {}
 			} } : {},
 			...valueAxisIndex > 0 && !horizontal ? { yAxisIndex: valueAxisIndex } : {},
@@ -524,8 +570,12 @@ function convertedChart(node, xml, elementId, offsetX, offsetY, theme) {
 			rows
 		},
 		series: outputSeries,
+        ...plotLayout && Object.values(plotLayout).every(Number.isFinite) ? { plotLayout } : {},
+        ...chartBorder ? { border: chartBorder } : {},
+        ...plotBorder ? { plotBorder } : {},
 		legend: outputSeries.length > 1,
-		fontFamily: "MiSans",
+		fontFamily: convertedCategoryAxis?.label.fontFamily ?? convertedAxes[0]?.label.fontFamily ?? "MiSans",
+        ...convertedCategoryAxis ? outputSeries.some(item => record(item.encode)?.y === "category") ? { yAxis: convertedCategoryAxis } : { xAxis: convertedCategoryAxis } : {},
 		...outputSeries.some((item) => record(item.encode)?.y === "category") ? convertedAxes[0] === void 0 || Object.keys(convertedAxes[0]).length === 0 ? {} : { xAxis: convertedAxes[0] } : convertedAxes.length === 0 ? {} : { yAxis: convertedAxes.length === 1 ? convertedAxes[0] : convertedAxes }
 	};
 }

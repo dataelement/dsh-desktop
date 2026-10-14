@@ -144,6 +144,64 @@ describe('desktop service', () => {
     new DesktopService({ ...options, version: '0.9.0' }).beginSession()
     expect(queued(service, dir).map(r => r.kind)).toEqual(['main-crash'])
   })
+  it.each([
+    ['win32', 'x64', 'windows'],
+    ['darwin', 'arm64', 'mac'],
+    ['darwin', 'x64', 'mac-intel']
+  ])('uses the strict rollout query schema for automatic and manual checks on %s/%s', async (platform, arch, expectedPlatform) => {
+    const { options, request } = fixture()
+    const service = new DesktopService({ ...options, platform, arch })
+    const selected = { updateAvailable: true, version: '0.9.0', feedUrl: 'https://dshdesktop.com/updates/archive/0.9.0/' }
+    let policy: { updateAvailable: false } | typeof selected = { updateAvailable: false }
+    request.mockImplementation(async (address, init) => {
+      const url = new URL(address)
+      const allowed = ['currentVersion', 'installationId', 'platform']
+      // Model the backend's strict schema: an extra manual/channel/arch field
+      // fails the request rather than being ignored by an accepting fixture.
+      if (url.searchParams.size !== allowed.length || [...url.searchParams.keys()].some(key => !allowed.includes(key))) {
+        return Response.json({ error: 'unrecognized_keys' }, { status: 400 })
+      }
+      expect(url.origin + url.pathname).toBe(`${SERVICE_URL}/v1/updates/check`)
+      expect(Object.fromEntries(url.searchParams)).toEqual({ installationId: service.installationId, currentVersion: options.version, platform: expectedPlatform })
+      expect(init?.redirect).toBe('error')
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+      return Response.json(policy)
+    })
+    for (const manual of [false, true]) {
+      policy = { updateAvailable: false }
+      await expect(service.checkUpdate(manual)).resolves.toEqual(policy)
+      policy = selected
+      await expect(service.checkUpdate(manual)).resolves.toEqual(selected)
+    }
+    expect(request).toHaveBeenCalledTimes(4)
+  })
+  it.each([false, true])('fails closed without a fallback feed when manual=%s', async manual => {
+    const { options, request } = fixture()
+    const service = new DesktopService({ ...options, platform: 'win32', arch: 'x64' })
+    for (const response of [
+      new Response('unrecognized_keys', { status: 400 }),
+      new Response('unavailable', { status: 503 }),
+      new Response('malformed JSON'),
+      Response.json({ updateAvailable: true, version: '0.9.0', feedUrl: 'https://evil.test/' }),
+      Response.json({ updateAvailable: true, version: '0.7.0', feedUrl: 'https://dshdesktop.com/updates/archive/0.7.0/' })
+    ]) {
+      request.mockClear()
+      request.mockResolvedValueOnce(response)
+      await expect(service.checkUpdate(manual)).rejects.toThrow()
+      expect(request).toHaveBeenCalledTimes(1)
+      const call = request.mock.calls[0]
+      if (!call) throw new Error('Expected an update policy request')
+      expect(new URL(call[0]).pathname).toBe('/crash/v1/updates/check')
+    }
+    request.mockClear()
+    const timeout = new DOMException('Update policy request timed out', 'TimeoutError')
+    request.mockRejectedValueOnce(timeout)
+    await expect(service.checkUpdate(manual)).rejects.toBe(timeout)
+    expect(request).toHaveBeenCalledTimes(1)
+    const call = request.mock.calls[0]
+    if (!call) throw new Error('Expected an update policy request')
+    expect(new URL(call[0]).pathname).toBe('/crash/v1/updates/check')
+  })
   it('queries with no channel/arch and rejects invalid or downgraded policy responses', async () => {
     const { service, request } = fixture()
     request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: false })))
@@ -152,7 +210,7 @@ describe('desktop service', () => {
     expect(url.searchParams.has('manual')).toBe(false)
     request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: false })))
     await service.checkUpdate(true)
-    expect(new URL(request.mock.calls.at(-1)![0]).searchParams.get('manual')).toBe('true')
+    expect(new URL(request.mock.calls.at(-1)![0]).searchParams.has('manual')).toBe(false)
     expect(url.searchParams.get('platform')).toBe('mac'); expect(url.searchParams.has('channel')).toBe(false); expect(url.searchParams.has('arch')).toBe(false)
     for (const version of ['0.7.0', '0.8.0', '0.9.0-rc.1', '../../evil', '0.9.0-01']) {
       request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: true, version, feedUrl: `https://dshdesktop.com/updates/archive/${version}/` })))

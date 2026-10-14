@@ -18,8 +18,9 @@ const templates = [
 let root, container, cleanup = []
 afterEach(async () => { if (root) await act(async () => root.unmount()); for (const dispose of cleanup.splice(0)) dispose?.(); container?.remove(); root = null; delete window.__ModuleLoader__ })
 
-async function fixture({ bound = true, remote = {}, english = false, deferState = false, examples = templates } = {}) {
+async function fixture({ bound = true, remote = {}, english = false, deferState = false, examples = templates, blank = true } = {}) {
   let plugin, dictionaries, store, sessionId = bound ? 'session-a' : undefined
+  let leading = true
   const seats = new Map(), calls = [], held = new Map(), failures = new Map(), states = new Map([['session-a', { mode: null, ...remote }]])
   const hooks = new Map()
   let releaseInitial
@@ -47,7 +48,13 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
   plugin.apply(ctx)
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
   const t = key => dictionaries[english ? 'en' : 'zh'][key] ?? key
-  function render() { root.render(React.createElement(React.Fragment, null, ...['conversation.hero.modeActions', 'conversation.input.accessory', 'conversation.hero.dock'].map(seat => React.createElement(seats.get(seat), { key: seat, sessionId, session: { blank: true }, store, t })))) }
+  function render() {
+    const names = ['conversation.hero.modeActions', 'conversation.input.accessory', 'conversation.hero.dock']
+    if (seats.has('conversation.chat.userMessageFooter')) names.push('conversation.chat.userMessageFooter')
+    root.render(React.createElement(React.Fragment, null, ...names.map(seat => React.createElement(seats.get(seat), {
+      key: seat, sessionId, session: { blank }, leading: blank ? false : leading, store, t
+    }))))
+  }
   await act(async () => render())
   async function click(label) {
     const scope = container.querySelector('dialog[open]') ?? container
@@ -57,8 +64,44 @@ async function fixture({ bound = true, remote = {}, english = false, deferState 
   return { calls, store, click, states, async reset() { await act(async () => hooks.get('connection/reset')()) },
     async releaseInitial() { await act(async () => { held.delete('state'); releaseInitial?.() }) }, fail(endpoint, message) { failures.set(endpoint, message) },
     hold(endpoint) { let release; held.set(endpoint, new Promise(resolve => release = resolve)); return async () => { await act(async () => { held.delete(endpoint); release() }) } },
+    async setBlank(value) { blank = value; await act(async () => render()) },
+    async setLeading(value) { leading = value; await act(async () => render()) },
     async switchSession(id) { sessionId = id; await act(async () => render()) } }
 }
+
+it.each([
+  ['Word', 'coffee-market', '中国现制咖啡市场调研报告'],
+  ['Excel', 'annual-business', '年度经营与客户分析']
+])('moves the %s example from the composer to the opening message after sending', async (format, id, title) => {
+  const f = await fixture(); await f.click(format); await f.click(`选用案例 ${title}`)
+  expect(container.querySelector('[data-office-selected]')?.dataset.officeSelected).toBe(id)
+  expect(container.querySelector('[data-office-opening-template]')).toBeNull()
+  await f.setBlank(false)
+  expect(container.querySelector('[data-office-selected]')).toBeNull()
+  expect(container.querySelector('[data-office-dock]')).toBeNull()
+  expect(container.querySelector('[data-office-opening-template]')?.dataset.officeOpeningTemplate).toBe(id)
+  expect(f.store.snapshot('session-a').selectedTemplateId).toBe(id)
+  await f.click(`查看案例 ${title}`)
+  expect(container.querySelector('dialog[open]')).not.toBeNull()
+  expect(container.querySelector('.dso-use')).toBeNull()
+  expect(container.querySelector('[aria-label="取消选择案例"]')).toBeNull()
+  await f.click('关闭预览')
+  await f.setLeading(false)
+  expect(container.querySelector('[data-office-opening-template]')).toBeNull()
+  await f.switchSession('session-new')
+  expect(container.querySelector('[data-office-selected]')).toBeNull()
+})
+
+it('restores the opening example in an existing conversation with English preview controls', async () => {
+  const f = await fixture({ blank: false, english: true, remote: { mode: 'word', selectedTemplateId: 'coffee-market' } })
+  expect(container.querySelector('[data-office-selected]')).toBeNull()
+  expect(container.querySelector('[data-office-opening-template]')?.textContent).toContain('Coffee market research')
+  await f.click('Preview example Coffee market research')
+  expect(container.textContent).toContain('Pages 1–2 of 2')
+  await f.click('Close preview')
+  await f.switchSession('session-new')
+  expect(container.querySelector('[data-office-opening-template]')).toBeNull()
+})
 
 it('refreshes the unbound catalogue after a connection reset while preserving the chosen format', async () => {
   const f = await fixture({ bound: false }); await f.click('Word')

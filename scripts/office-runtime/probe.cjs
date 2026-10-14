@@ -51,6 +51,29 @@ async function probe(appRoot, resources) {
     const dependencies = await tool.execute({})
     assert(dependencies.python.startsWith(join(resources, 'office-runtime')))
     assert.equal(dependencies.node, undefined)
+    // Exercise the fixed editor from app.asar on the installed Python and actual file sandbox.
+    const { mkdtemp, realpath, writeFile, rm } = require('node:fs/promises')
+    const { tmpdir } = require('node:os')
+    const scratch = await realpath(await mkdtemp(join(tmpdir(), 'packaged-docx-layout-')))
+    const nativeFibers = []
+    try {
+      for (const plugin of ['@deepseek-ai/dsh-sandbox-local', '@deepseek-ai/dsh-subprocess-local']) nativeFibers.push(await ctx.plugin((await load(plugin)).default))
+      const { createDocxWorkflow } = await import(new URL('./lib/docx-workflow.js', entry).href)
+      const item = library.entry('government-notice')
+      const modes = { state: async () => ({ documentMode: 'word', selectedDocumentTemplate: { id: item.id, revision: item.revision, mode: 'word' } }), record: async () => true }
+      const workflow = createDocxWorkflow({ sandbox: ctx.sandbox, subprocess: ctx.subprocess, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: scratch }) } }, library, modes, join(resources, 'office-runtime'))
+      const exec = { agent: { id: 'packaged-notice', session: { header: { cwd: scratch } } }, signal: new AbortController().signal }
+      await writeFile(join(scratch, 'source.docx'), await library.asset(item.id, item.sampleFile))
+      const prepared = await workflow.run('prepare', { path: 'source.docx' }, exec)
+      assert(prepared.paragraphs.some(p => p.id === 'p1' && p.text === '中国中车股份有限公司文件'))
+      await workflow.run('write', { output_path: 'notice.docx', replacements: [{ id: 'p1', text: '示例单位文件' }] }, exec)
+      const verified = await workflow.run('validate', { path: 'notice.docx' }, exec)
+      assert(verified.checks.includes('paragraph-and-run-styles'))
+      console.log('Packaged native Word template editor, embedded-font retention and layout validation passed')
+    } finally {
+      for (const fiber of nativeFibers.reverse()) await fiber.dispose()
+      await rm(scratch, { recursive: true, force: true })
+    }
     console.log('Packaged Office plugin activated; seven templates, seven business skills and the official runtime resolve current physical resources')
   } finally {
     for (const fiber of fibers.reverse()) await fiber.dispose()
