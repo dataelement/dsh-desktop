@@ -752,7 +752,7 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
-  it('shows an unpinned workbench in Installed without an unknown-source badge', async () => {
+  it('labels an unlisted live registration as local without changing its unknown install evidence', async () => {
     const { service, ctx } = await fixture()
     setFiberPackage(ctx, 'local-package')
     service.register({ title: '本地示例', repository: 'https://github.com/owner/local' }, () => null)
@@ -760,7 +760,8 @@ describe('desktop workbench client navigation', () => {
     const cards = ui.find(ui.render(), node => node.type === 'article')
     const local = cards.find(card => card.props.key === 'owner/local')
     expect(local).toBeDefined()
-    expect(ui.find(local, node => node.props?.className === 'dshWbCategory')).toHaveLength(0)
+    expect(ui.find(local, node => node.props?.className === 'dshWbCategory')[0].props.children).toEqual(['本地'])
+    expect(service.originFor(service.getSnapshot().catalog.find(entry => entry.id === 'owner/local'))).toBe('unknown')
     expect(cardButtons(local)).toEqual([])
     expect(ui.find(local, node => node.props?.role === 'switch')).toHaveLength(1)
     service.dispose()
@@ -3009,8 +3010,25 @@ describe('workbench market screenshot and metadata display', () => {
     expect(ui.find(card, node => node.props?.className === 'dshWbMuted dshWbCardDescription')[0].props.children).toEqual(['市场中文介绍'])
     expect(ui.find(card, node => node.type?.name === 'Preview')[0].props.entry.screenshots).toEqual(['https://market/screenshot.png'])
     expect(ui.find(card, node => node.props?.role === 'switch')[0].props['aria-checked']).toBe(true)
-    expect(ui.find(card, node => node.props?.className === 'dshWbCategory')).toHaveLength(0)
+    expect(ui.find(card, node => node.props?.className === 'dshWbCategory').map(node => node.props.children)).toEqual(origin === 'local' ? [['本地']] : [])
     expect(JSON.stringify(card)).not.toContain('查看市场版本')
+    expect(JSON.stringify(card)).not.toContain('来源未知')
+  })
+
+  it.each([
+    { origin: 'unknown', marketHistory: true },
+    { origin: 'market', marketHistory: false }
+  ])('does not label an unlisted $origin market installation as local', async ({ origin, marketHistory }) => {
+    const { service, ctx } = await fixture()
+    setFiberPackage(ctx, 'local-package')
+    service.register({ title: 'Previously listed', repository: 'https://github.com/owner/local' }, () => null)
+    service.packageEvidence = { 'local-package': { origin } }
+    if (marketHistory) service.installs = { 'owner/old-id': { catalogId: 'owner/old-id', pluginName: 'local-package', version: '1.0.0' } }
+    service.publish()
+    const ui = interactiveMarket(service, 'mine')
+    const card = ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'owner/local')[0]
+    expect(card).toBeDefined()
+    expect(ui.find(card, node => node.props?.className === 'dshWbCategory')).toHaveLength(0)
     expect(JSON.stringify(card)).not.toContain('来源未知')
   })
 
@@ -3037,6 +3055,7 @@ describe('workbench market screenshot and metadata display', () => {
         expect(updates).toHaveLength(version === '1.1.0' ? 1 : 0)
         if (updates.length) expect(updates[0].props.children.at(-1).props.children[0]).toBe('更新')
         expect(JSON.stringify(card)).not.toContain('替换为市场版')
+        expect(ui.find(card, node => node.props?.className === 'dshWbCategory').map(node => node.props.children)).toEqual(tab === 'mine' && origin === 'local' ? [['本地']] : [])
       }
     }
   })
@@ -3334,7 +3353,7 @@ describe('workbench host localization', () => {
     ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-mine-tab')[0].props.onClick()
     tree = ui.render()
     expect(ui.find(tree, node => node.props?.className === 'dshWbInstalled')).toHaveLength(0)
-    expect(ui.find(tree, node => node.props?.className === 'dshWbCategory')).toHaveLength(0)
+    expect(ui.find(tree, node => node.props?.className === 'dshWbCategory').map(node => node.props.children)).toEqual([['Local'], ['Local']])
   })
 })
 
