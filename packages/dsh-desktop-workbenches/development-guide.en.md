@@ -188,7 +188,7 @@ DSH reserves shared entrances for the market, workbench switcher, and settings; 
 
 ### Header layout: default and compact
 
-`register()` accepts `headerLayout: 'default' | 'compact'`; omission means `default` and other values fail registration. In default mode the host reserves a separate, non-scrolling system-controls row on macOS with the sidebar collapsed and outside fullscreen (`--dsh-frame-top-clearance`, normally 48px). Business headings and descriptions begin below it, regardless of nested header markup. Windows keeps its separate title bar; expanded sidebar and fullscreen add no row. Existing providers default to this mode; remove their duplicate system-controls padding.
+`register()` accepts `headerLayout: 'default' | 'compact'`; omission means `default` and other values fail registration. In default mode the host reserves a separate, non-scrolling system-controls row on macOS with the sidebar collapsed and outside fullscreen (`--dsh-frame-top-clearance`, normally 48px). Business headings and descriptions begin below it, regardless of nested header markup. Windows keeps its separate title bar; expanded sidebar and fullscreen add no row. Existing providers default to this mode. The host does not infer the first `<header>` as a toolbar or clear provider-owned heading padding.
 
 Any `customFrame: true` provider, or a standard split with `layout.businessSide: 'left'` (`embedded` is not required), can opt into compact mode:
 
@@ -210,6 +210,18 @@ The marked toolbar must be the top row and span the host content width; nested w
 Missing or multiple markers, right-side splits safely fall back to the default row. Iframe documents are outside this protocol: an iframe-based provider may place its unique toolbar in a same-document outer wrapper; marking the whole iframe does not make its contents a draggable toolbar. Reflow by business container width; truncate long titles, move descriptions below the toolbar, and keep actions usable.
 
 Verify both modes with expanded/collapsed sidebar, narrow containers, realistic Chinese/English headings, entering/leaving fullscreen, and no duplicated space or covered controls. Click buttons, edit inputs, open menus and check keyboard focus. Verify actual native window movement from blank space; DOM/CSS checks do not replace native drag acceptance.
+
+### Existing-provider migration and compatibility limits
+
+This is an explicit opt-in contract. The host cannot both prevent system controls from overlapping arbitrary legacy DOM and automatically preserve every legacy compact arrangement. Unmigrated providers remain loadable with the safe default layout. The extra controls row on macOS with the sidebar collapsed is a visible layout change, not a zero-impact upgrade.
+
+| Existing provider | Migration | Before migration |
+| --- | --- | --- |
+| Default business heading and description | May omit the declaration; review and remove provider-owned system-controls clearance while keeping normal business padding | Separate system-controls row |
+| Custom frame or left split that should share the top row | Declare `headerLayout: 'compact'`, mark exactly one same-document `data-dsh-workbench-toolbar`, and remove duplicate system-controls clearance | Separate row; no toolbar inference |
+| Toolbar inside an iframe, right split, or multiple markers | Move a single toolbar to a supported same-document position or retain default mode | Safe fallback to default mode |
+
+Migration uses only the public registration field and toolbar marker, with no provider-name allowlist or semantic-header inference. External maintainers must publish their own migration releases; host updates do not modify installed external packages. Only valid compact declarations remove the host's 18px top gutter in ordinary left splits. Default mode and provider-owned header padding retain their existing values.
 
 ## 5. Workbenches, sessions, and workspaces
 
