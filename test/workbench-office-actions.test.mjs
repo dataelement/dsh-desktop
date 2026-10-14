@@ -77,12 +77,12 @@ it.each([
   root = createRoot(container)
   await act(async () => root.render(React.createElement(Frame, { service, conversation: React.createElement(Conversation) })))
   const input = container.querySelector('input')
-  const office = container.querySelector('.dso-actions')
+  const office = [...container.querySelectorAll('button[data-office-mode]')]
   const ppt = container.querySelector('button[data-desktop-ppt]')
-  expect(office.querySelectorAll('[data-office-mode]')).toHaveLength(2)
+  expect(office.map(button => button.dataset.officeMode)).toEqual(['word', 'excel'])
   expect(ppt).not.toBeNull()
   const assertDisplay = hidden => {
-    expect(getComputedStyle(office).display === 'none').toBe(hidden)
+    for (const button of office) expect(getComputedStyle(button).display === 'none').toBe(hidden)
     expect(getComputedStyle(ppt).display === 'none').toBe(hidden)
     expect(getComputedStyle(container.querySelector('[data-test-other-action]')).display).not.toBe('none')
     expect(container.querySelectorAll('[data-test-conversation]')).toHaveLength(1)
