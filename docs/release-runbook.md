@@ -40,6 +40,8 @@ Prepare the local runner once:
 4. In the GitHub repository, open **Settings → Secrets and variables → Actions** and create a repository secret named `DESKTOP_WINDOWS_SIGNING_PIN` containing the UKey PIN. For stronger release controls, use an environment secret and add the matching `environment` to the `sign-windows` job.
 5. Restrict release tag creation and workflow changes to trusted maintainers. A self-hosted runner can access any secret injected into its job.
 
+The persistent UKey signing worker uses its local npm download cache. Its `setup-node` step does not restore or upload the Actions npm cache, and Node setup is bounded to five minutes. GitHub-hosted build and publish jobs continue using the Actions cache. Clearing the local npm cache is safe, but the next `npm ci` must download packages again.
+
 The workflow pins Jsign 7.5 by SHA-256 and uses the SafeNet `ETOKEN` store, SHA-256 signing, and a DigiCert RFC 3161 timestamp. GitHub injects the PIN only into the signing step. The step copies it to a mode-`600` temporary file, removes it from the shell environment, and deletes the file when the step exits. The workflow never prints the PIN or passes it as a command-line argument.
 
 The configured update publisher is `Beijing Shuju Xiangsu Intelligence Technology Co., Ltd.`, taken from the signed v0.9.2 installer. If the signing certificate changes, update `build.win.signtoolOptions.publisherName` only after checking the new certificate subject and the updater's signature verification on an installed Windows build. After a tag release succeeds, verify that the Windows installer shows the expected publisher and a valid RFC 3161 timestamp in its Digital Signatures properties. Never reuse a published tag; fix the issue and release a new version.

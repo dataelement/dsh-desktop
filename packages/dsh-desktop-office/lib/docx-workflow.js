@@ -15,6 +15,15 @@ export function docxWorkerArgv(python) {
   return [python, '-I', '-B', '-c', docxWorkerBootstrap]
 }
 
+/**
+ * Confined Word interpreter. Windows uses pythonw.exe: python.exe is a console
+ * binary, and a console-less Electron host makes the ACL runner exit
+ * 0xC0000142 before Python starts. Inherited pipes still carry the result.
+ */
+export function docxWorkerPython(resources, platform = process.platform) {
+  return join(resources, 'primary-runtime/dependencies/python', platform === 'win32' ? 'pythonw.exe' : 'bin/python3')
+}
+
 /** Environment for the confined Word worker. Credentials stay behind. */
 export function docxWorkerEnvironment(runtime = process, script) {
   const env = Object.fromEntries(Object.keys(runtime.env).map(key => [key, undefined]))
@@ -46,7 +55,7 @@ export function docxWorkerEnvironment(runtime = process, script) {
  * @returns {DocxWorkflow}
  */
 export function createDocxWorkflow(ctx, library, modes, resources) {
-  const python = join(resources, 'primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
+  const python = docxWorkerPython(resources)
   let worker
   async function run(command, args, exec) {
     const id = exec.agent?.id

@@ -534,8 +534,10 @@ jobs:
       JSIGN_SHA256: '602a51c3545a6dc4fb99bd2ea7152b26d1345916d0c93ddfbd5936cb735af91c'
     steps:
       - uses: actions/checkout@v4
-      # The signer only installs release tooling; skip remote npm cache restore.
+      # Persistent runners retain npm downloads locally; restoring the remote
+      # cache duplicates disk usage and can stall release setup for minutes.
       - uses: actions/setup-node@v4
+        timeout-minutes: 5
         with:
           node-version: 22
       - uses: actions/setup-java@v4

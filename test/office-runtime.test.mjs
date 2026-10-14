@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { officeTarget, downloadAsset, unpackWheel, prepareOfficeRuntime } from '../scripts/office-runtime/prepare.mjs'
+import { officeCliCommand, officeCliTimeoutMs } from '../scripts/office-runtime/prepare-templates.mjs'
 import { HarnessRuntime } from '../src/main/runtime/harness-runtime'
 import { prepareHostPluginSourcesPatch } from '../src/main/state/host-plugin-sources'
 import { ensureSafeModeProfile, SAFE_MODE_PROFILE } from '../src/main/state/safe-mode-profile'
@@ -23,6 +24,15 @@ const temporary = async () => {
 }
 afterEach(async () => {
   await Promise.all(scratch.splice(0).map(path => rm(path, { recursive: true, force: true })))
+})
+
+describe('Office template preview limits', () => {
+  it('gives each LibreOffice preview 240 seconds', () => {
+    expect(officeCliTimeoutMs).toBe(240_000)
+    const command = officeCliCommand('electron', 'office-cli.mjs', ['render', '--input', 'book.xlsx', '--dpi', '100'])
+    expect(command.args).toEqual(['office-cli.mjs', 'render', '--input', 'book.xlsx', '--dpi', '100', '--timeout-ms', '240000'])
+    expect(command.timeout).toBe(300_000)
+  })
 })
 
 describe('Office runtime assembly', () => {

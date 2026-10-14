@@ -9,7 +9,7 @@ import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
-import { createDocxWorkflow, docxWorkerArgv, docxWorkerEnvironment, docxWriteTool, registerDocxDelivery } from '../packages/dsh-desktop-office/lib/docx-workflow.js'
+import { createDocxWorkflow, docxWorkerArgv, docxWorkerEnvironment, docxWorkerPython, docxWriteTool, registerDocxDelivery } from '../packages/dsh-desktop-office/lib/docx-workflow.js'
 const cleanups = []
 afterEach(async () => { for (const fn of cleanups.splice(0).reverse()) await fn() })
 const sha = data => createHash('sha256').update(data).digest('hex')
@@ -53,6 +53,8 @@ it('keeps the Word worker off the Windows confinement command line', () => {
   expect(env.SECRET).toBeUndefined()
   expect(docxWorkerEnvironment({ env: { SystemRoot: 'C:\\Windows' }, platform: 'win32', versions: {} }).ELECTRON_RUN_AS_NODE).toBeUndefined()
   expect(() => docxWorkerEnvironment({ env: {}, platform: 'win32', versions: {} }, 'x'.repeat(24001))).toThrow('Windows environment limit')
+  expect(docxWorkerPython('runtime', 'win32')).toBe(join('runtime', 'primary-runtime/dependencies/python', 'pythonw.exe'))
+  expect(docxWorkerPython('runtime', 'darwin')).toBe(join('runtime', 'primary-runtime/dependencies/python', 'bin/python3'))
 })
 it('returns Chinese layout JSON when the Windows code page is charmap', async () => {
   const { spawn } = await import('node:child_process')

@@ -12,6 +12,18 @@ const project = resolve(import.meta.dirname, '../..')
 const sources = join(project, 'packages/dsh-desktop-office/sources')
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 
+/** One LibreOffice call. The Kit default is 120s, which macOS CI exceeds on a heavy workbook page. */
+export const officeCliTimeoutMs = 240_000
+
+/** Electron startup happens before the Kit timer, so the process limit is longer than 240s. */
+export function officeCliCommand(executable, script, args, timeoutMs = officeCliTimeoutMs) {
+  return {
+    file: executable,
+    args: [script, ...args, '--timeout-ms', String(timeoutMs)],
+    timeout: timeoutMs + 60_000,
+  }
+}
+
 async function files(root, prefix = '') {
   const result = []
   for (const entry of (await readdir(join(root, prefix), { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -50,8 +62,9 @@ export async function prepareOfficeTemplates({ runtime = join(project, '.build/o
         ...legacy.filter(x => x.mode === 'word' && x.id !== 'government-notice'), ...legacy.filter(x => x.mode === 'excel')]
       const catalog = []
       const cli = async args => {
-        const { stdout } = await exec(electronExecutable(project), [join(project, 'build/office-cli.mjs'), ...args],
-          { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 180_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true })
+        const command = officeCliCommand(electronExecutable(project), join(project, 'build/office-cli.mjs'), args)
+        const { stdout } = await exec(command.file, command.args,
+          { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: command.timeout, maxBuffer: 4 * 1024 * 1024, windowsHide: true })
         return JSON.parse(stdout.trim())
       }
       for (const source of ordered) {
