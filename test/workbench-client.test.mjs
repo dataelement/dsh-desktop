@@ -752,7 +752,7 @@ describe('desktop workbench client navigation', () => {
     service.dispose()
   })
 
-  it('shows an unpinned local workbench in Installed with a local badge', async () => {
+  it('shows an unpinned workbench in Installed without an unknown-source badge', async () => {
     const { service, ctx } = await fixture()
     setFiberPackage(ctx, 'local-package')
     service.register({ title: '本地示例', repository: 'https://github.com/owner/local' }, () => null)
@@ -760,7 +760,7 @@ describe('desktop workbench client navigation', () => {
     const cards = ui.find(ui.render(), node => node.type === 'article')
     const local = cards.find(card => card.props.key === 'owner/local')
     expect(local).toBeDefined()
-    expect(ui.find(local, node => node.props?.className === 'dshWbCategory').some(node => node.props.children.includes('来源未知'))).toBe(true)
+    expect(ui.find(local, node => node.props?.className === 'dshWbCategory')).toHaveLength(0)
     expect(cardButtons(local)).toEqual([])
     expect(ui.find(local, node => node.props?.role === 'switch')).toHaveLength(1)
     service.dispose()
@@ -2400,7 +2400,7 @@ describe('workbench market screenshot and metadata display', () => {
     node(item => item.props?.id === 'dsh-workbench-favorites-tab').props.onClick()
     expect(cards()).toEqual(['o/b', 'o/a'])
     node(item => item.props?.id === 'dsh-workbench-mine-tab').props.onClick()
-    expect(cards()).toEqual(['o/a', 'o/b', 'writer', 'research'])
+    expect(cards()).toEqual(['o/b', 'o/a', 'writer', 'research'])
   })
 
   it('shows enable and disable switch tooltips and preserves unavailable protection', async () => {
@@ -2540,7 +2540,7 @@ describe('workbench market screenshot and metadata display', () => {
     const mine = interactiveMarket(service, 'mine')
     const stale = mine.find(mine.render(), node => node.type === 'article' && node.props.key === 'o/helper')[0]
     expect(stale).toBeDefined()
-    expect(mine.find(stale, node => node.props?.className === 'dshWbUninstall')[0].props['aria-label']).toBe('移除残留记录helper')
+    expect(mine.find(stale, node => node.props?.className === 'dshWbUninstall')[0].props['aria-label']).toBe('移除残留记录Helper')
   })
 
   it('forgets a stale market install before clearing the sidebar record', async () => {
@@ -2872,7 +2872,7 @@ describe('workbench market screenshot and metadata display', () => {
       expect(ui.find(card, node => node.props?.className === 'dshWbFailureHint')[0].props.children[0].props.children).toEqual(['加载失败'])
       expect(ui.find(card, node => node.props?.className === 'dshWbRetry')).toHaveLength(0)
       const button = ui.find(card, node => node.props?.className === 'dshWbUpdate')[0]
-      expect(button.props['aria-label']).toBe(tab === 'mine' ? '更新helper至 v1.1.0' : '更新Helper至 v1.1.0')
+      expect(button.props['aria-label']).toBe('更新Helper至 v1.1.0')
       expect(button.props.children.at(-1).props.children[0]).toBe('更新')
       expect(versionActions.props.children[1]).toBe(button)
       if (tab === 'mine') {
@@ -2898,7 +2898,7 @@ describe('workbench market screenshot and metadata display', () => {
     const card = ui.find(ui.render(), node => node.type === 'article')[0]
     expect(ui.find(card, node => node.props?.className === 'dshWbUpdate')).toHaveLength(0)
     const retry = ui.find(card, node => node.props?.className === 'dshWbRetry')[0]
-    expect(retry.props['aria-label']).toBe('重试安装helper')
+    expect(retry.props['aria-label']).toBe('重试安装Helper')
     retry.props.onClick()
     await vi.waitFor(() => expect(retryInstall).toHaveBeenCalledExactlyOnceWith('o/helper'))
   })
@@ -2990,42 +2990,97 @@ describe('workbench market screenshot and metadata display', () => {
     expect(JSON.stringify(marketCard(service))).not.toContain('安装失败')
   })
 
-  it('keeps matching published and installed metadata separate, including missing English fields', async () => {
+  it.each(['market', 'local', 'unknown'])('uses market presentation with the actual installed version for %s installs', async origin => {
     const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
-    service.remoteCatalog = [listed({ name: 'Published', nameEn: 'Published English', description: { zh: 'Market description', en: 'Market English' }, version: '2.0.0', screenshots: [{ url: 'https://market/screenshot.png' }] })]
+    service.remoteCatalog = [listed({ name: '合同审核工作台', nameEn: 'Contract review', description: { zh: '市场中文介绍', en: 'Market English' }, version: '2.0.0', avatar: 'https://market/avatar.png', screenshots: [{ url: 'https://market/screenshot.png' }], metrics: { githubStars: { value: 12 }, downloads: { value: 301 } } })]
     setFiberPackage(ctx, 'helper')
-    service.register({ title: '本机标题', description: '本机简介', author: 'Developer', version: '1.0.0' }, () => null)
-    service.packageEvidence = { helper: { origin: 'local', version: '1.0.0', metadata: { author: 'Actual Author' } } }
+    service.register({ title: 'Local contract review', description: 'Local English description', version: '1.0.0' }, () => null)
+    service.packageEvidence = { helper: { origin, version: '1.1.0', metadata: { author: 'Local Author' } } }
+    service.native = { status: 'ready', bundles: { helper: { name: 'helper', installed: true, enabled: true, version: '1.2.0' } } }
     service.publish()
     const listing = service.marketCatalog().find(item => item.id === 'o/helper')
-    expect(listing.title).toBe('Published')
     expect(listing.version).toBe('2.0.0')
     const installed = service.installedEntry(listing)
-    expect(installed).toMatchObject({ title: '本机标题', description: '本机简介', author: 'Actual Author', version: '1.0.0', origin: 'local' })
-    expect(installed.titleEn).toBeUndefined()
-    expect(installed.descriptionEn).toBeUndefined()
-    expect(installed.owner).toBeUndefined()
-    expect(installed.screenshots).toBeUndefined()
-    expect(installed.repository).toBeUndefined()
+    expect(installed).toMatchObject({ title: '合同审核工作台', description: '市场中文介绍', author: 'o', owner: 'o', version: '1.2.0', origin, local: false,
+      titleEn: 'Contract review', descriptionEn: 'Market English', avatar: 'https://market/avatar.png', screenshots: ['https://market/screenshot.png'], repository: 'https://github.com/o/helper', metrics: { githubStars: { value: 12 }, downloads: { value: 301 } } })
+    const ui = interactiveMarket(service, 'mine')
+    const card = ui.find(ui.render(), node => node.type === 'article')[0]
+    expect(ui.find(card, node => node.props?.className === 'dshWbCardVersion')[0].props.children).toEqual(['v1.2.0'])
+    expect(ui.find(card, node => node.props?.className === 'dshWbMuted dshWbCardDescription')[0].props.children).toEqual(['市场中文介绍'])
+    expect(ui.find(card, node => node.type?.name === 'Preview')[0].props.entry.screenshots).toEqual(['https://market/screenshot.png'])
+    expect(ui.find(card, node => node.props?.role === 'switch')[0].props['aria-checked']).toBe(true)
+    expect(ui.find(card, node => node.props?.className === 'dshWbCategory')).toHaveLength(0)
+    expect(JSON.stringify(card)).not.toContain('查看市场版本')
+    expect(JSON.stringify(card)).not.toContain('来源未知')
   })
 
-  it('requires explicit replacement even at the same version, then preserves existing session identity', async () => {
-    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'], sessionBindings: { old: 'o/helper' }, notes: { 'o/helper': 'Keep notes' } })
+  it('keeps local metadata when an installed workbench has no market listing', async () => {
+    const { service } = await fixture()
+    const entry = { id: 'local/helper', listed: false, local: true, version: '1.0.0', installedMetadata: { title: '本地工作台', description: '本机简介', author: 'Developer', screenshots: ['local.png'] } }
+    expect(service.installedEntry(entry)).toMatchObject({ title: '本地工作台', description: '本机简介', author: 'Developer', screenshots: ['local.png'], version: '1.0.0', local: true })
+  })
+
+  it.each(['market', 'local', 'unknown'])('offers updates only for newer market versions for %s installs', async origin => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], favorites: ['o/helper'] })
     service.remoteCatalog = [listed({ version: '1.0.0' })]
     setFiberPackage(ctx, 'helper')
     service.register({ title: 'Local', version: '1.0.0' }, () => null)
-    service.packageEvidence = { helper: { origin: 'local' } }
+    service.packageEvidence = { helper: { origin, version: '1.0.0' } }
+    for (const version of ['0.9.0', '1.0.0', '1.1.0']) {
+      service.remoteCatalog = [listed({ version })]
+      service.publish()
+      for (const tab of ['market', 'favorites', 'mine']) {
+        const ui = interactiveMarket(service, tab)
+        const card = ui.find(ui.render(), node => node.type === 'article')[0]
+        expect(card).toBeDefined()
+        const updates = ui.find(card, node => node.props?.className === 'dshWbUpdate')
+        expect(updates).toHaveLength(version === '1.1.0' ? 1 : 0)
+        if (updates.length) expect(updates[0].props.children.at(-1).props.children[0]).toBe('更新')
+        expect(JSON.stringify(card)).not.toContain('替换为市场版')
+      }
+    }
+  })
+
+  it('updates verified market installs directly without a confirmation dialog', async () => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'] })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Helper', version: '1.0.0' }, () => null)
+    service.packageEvidence = { helper: { origin: 'market' } }
+    service.publish()
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': options => {
+      expect(JSON.parse(options.body)).toEqual({ id: 'o/helper' })
+      return Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.1.0' }, restartRequired: true })
+    } })
+    const ui = interactiveMarket(service)
+    ui.find(ui.render(), node => node.props?.className === 'dshWbUpdate')[0].props.onClick()
+    expect(ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')).toHaveLength(0)
+    await vi.waitFor(() => expect(service.pendingRestart.has('o/helper')).toBe(true))
+    expect(calls).toEqual(['/api/desktop-workbenches/market-install'])
+  })
+
+  it.each(['local', 'unknown'])('confirms a newer update for %s installs and preserves existing session identity', async origin => {
+    const { service, ctx } = await fixture({ ...emptyState(), added: ['o/helper'], pinned: ['o/helper'], sessionBindings: { old: 'o/helper' }, notes: { 'o/helper': 'Keep notes' } })
+    service.remoteCatalog = [listed({ version: '1.1.0' })]
+    setFiberPackage(ctx, 'helper')
+    service.register({ title: 'Local', version: '1.0.0' }, () => null)
+    service.packageEvidence = { helper: { origin } }
     service.publish()
     const bodies = []
-    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': options => { bodies.push(JSON.parse(options.body)); return Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0', fingerprint: 'new' }, restartRequired: true }) } })
-    await expect(service.installFromMarket('o/helper')).rejects.toThrow('确认替换')
+    const calls = withMarket(service, { '/api/desktop-workbenches/market-install': options => { bodies.push(JSON.parse(options.body)); return Response.json({ install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.1.0', fingerprint: 'new' }, restartRequired: true }) } })
+    await expect(service.installFromMarket('o/helper')).rejects.toThrow('确认更新')
     expect(calls).toHaveLength(0)
     const ui = interactiveMarket(service, 'mine')
     ui.find(ui.render(), node => node.props?.className === 'dshWbUpdate')[0].props.onClick()
-    const confirmation = ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketReplacement')[0]
+    const confirmation = ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')[0]
     expect(confirmation).toBeDefined()
+    expect(confirmation.props.origin).toBe(origin)
     expect(calls).toHaveLength(0)
-    confirmation.props.onConfirm()
+    confirmation.props.onCancel()
+    expect(ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')).toHaveLength(0)
+    expect(calls).toHaveLength(0)
+    ui.find(ui.render(), node => node.props?.className === 'dshWbUpdate')[0].props.onClick()
+    ui.find(ui.render(), node => node.type?.name === 'ConfirmMarketUpdate')[0].props.onConfirm()
     await vi.waitFor(() => expect(service.pendingRestart.has('o/helper')).toBe(true))
     expect(bodies).toEqual([{ id: 'o/helper', confirmedReplacement: true }])
     expect(service.state.sessionBindings.old).toBe('o/helper')
@@ -3160,7 +3215,7 @@ describe('workbench market screenshot and metadata display', () => {
     const card = ui.find(tree, node => node.type === 'article')[0]
     const media = ui.find(card, node => node.props?.className === 'dshWbMedia')[0]
     const uninstall = ui.find(card, node => node.props?.className === 'dshWbUninstall')[0]
-    expect(uninstall.props['aria-label']).toBe('卸载helper')
+    expect(uninstall.props['aria-label']).toBe('卸载Helper')
     expect(uninstall.props.disabled).toBe(false)
     expect(ui.modal(tree)).toBeUndefined()
     uninstall.props.onClick()
@@ -3188,7 +3243,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(modal.props.nativeUninstall).toBe(true)
     // The missing package remains manageable until its stale sidebar record is cleared.
     const stale = ui.find(ui.render(), node => node.type === 'article' && node.props.key === 'o/helper')[0]
-    expect(ui.find(stale, node => node.props?.className === 'dshWbUninstall')[0].props['aria-label']).toBe('移除残留记录helper')
+    expect(ui.find(stale, node => node.props?.className === 'dshWbUninstall')[0].props['aria-label']).toBe('移除残留记录Helper')
   })
 
   it('offers installation in market cards and keeps update and uninstall services', () => {
@@ -3228,7 +3283,7 @@ describe('workbench market screenshot and metadata display', () => {
     expect(source).toContain("tabIndex: tab === 'favorites' ? 0 : -1")
     expect(source).toContain("tabIndex: tab === 'mine' ? 0 : -1")
     expect(source).not.toContain("tabIndex: tab === 'local' ? 0 : -1")
-    expect(source).toContain("'来源未知'")
+    expect(source).not.toContain("'来源未知'")
   })
 })
 
@@ -3279,7 +3334,7 @@ describe('workbench host localization', () => {
     ui.find(ui.render(), node => node.props?.id === 'dsh-workbench-mine-tab')[0].props.onClick()
     tree = ui.render()
     expect(ui.find(tree, node => node.props?.className === 'dshWbInstalled')).toHaveLength(0)
-    expect(ui.find(tree, node => node.props?.className === 'dshWbCategory')[0].props.children).toEqual(['Unknown source'])
+    expect(ui.find(tree, node => node.props?.className === 'dshWbCategory')).toHaveLength(0)
   })
 })
 

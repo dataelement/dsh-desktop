@@ -220,7 +220,7 @@ export function apply(ctx, config) {
             if (confirmedReplacement === true) return
             const packages = await readInstallEvidence(installs, undefined, names)
             if (names.some(name => packages[name] && packages[name].origin !== 'market')) {
-              throw new MarketInstallError('Confirm replacement of the installed workbench with the market version.', 409)
+              throw new MarketInstallError('Confirm updating the installed workbench code; local changes may be overwritten.', 409)
             }
           }
           // Check known package identities before resolving or downloading the target.

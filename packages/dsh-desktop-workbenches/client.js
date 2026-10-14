@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
       '遵循规范开发、安装并验证，也可以准备材料提交到工作台市场。': 'Follow the guidelines to build, install, and test a workbench. You can also prepare a market submission.',
       '有序组织专属界面、会话与资料': 'Organize your dedicated interfaces, conversations, and resources', '市场': 'Market', '全部类型': 'All types', '按推荐值': 'Recommended', '在此切换会话与不同工作台': 'Switch between conversations and workbenches here', '知道了': 'Got it', '停用': 'Disable', '启用': 'Enable', '已收藏': 'Favorited', '查看 GitHub': 'View GitHub', '查看详情': 'View details',
       '刷新目录': 'Refresh catalog', '正在检查更新': 'Checking for updates', '检查更新': 'Check for updates', '正在检查…': 'Checking…',
-      '本地开发': 'Local development', '市场安装': 'Market installation', '来源未知': 'Unknown source', '替换为市场版': 'Replace with market version', '查看市场版本': 'View market version', '这将替换本机工作台的代码。已有会话、关联和数据保留；本地代码修改可能丢失，请先在开发目录保留副本。': 'This replaces the installed workbench code. Sessions, associations, and data are preserved; local code changes may be lost, so keep a copy in your development folder first.', '确认替换': 'Confirm replacement', '需要确认替换本机工作台代码。': 'Confirm replacement of the installed workbench code.', '工作台集合': 'Workbench collections', '我的收藏': 'Favorites', '已安装': 'Installed', '搜索名称、作者或分类': 'Search name, author, or category', '搜索工作台': 'Search workbenches', '按分类筛选': 'Filter by category',
+      '本地开发': 'Local development', '市场安装': 'Market installation', '来源未知': 'Unknown source', '查看市场版本': 'View market version', '当前工作台来自本地开发。更新会改用市场发布的代码，本地代码修改不会带入新版本。请先保留代码及存放在安装目录中的数据副本。': 'This workbench is a local development installation. Updating will use the published market code; local code changes will not carry over. Back up your code and any data stored in the installation directory first.', '无法确认当前工作台是否有本地修改。更新可能覆盖本地代码，请先保留代码及存放在安装目录中的数据副本。': 'We cannot verify whether this workbench has local changes. Updating may overwrite local code. Back up your code and any data stored in the installation directory first.', '确认更新': 'Confirm update', '需要确认更新本机工作台代码。': 'Confirm updating the installed workbench code.', '工作台集合': 'Workbench collections', '我的收藏': 'Favorites', '已安装': 'Installed', '搜索名称、作者或分类': 'Search name, author, or category', '搜索工作台': 'Search workbenches', '按分类筛选': 'Filter by category',
       '全部': 'All', '其他': 'Other', '本地': 'Local', '排序': 'Sort', '工作台排序方式': 'Workbench sort order', '市场顺序': 'Market order', 'Star 数量': 'Stars', '下载量': 'Downloads', '更新时间': 'Recently updated', '名称': 'Name',
       '工作台功能已关闭': 'Workbenches are turned off', '可在 设置 → 通用 中重新开启。': 'Turn them on again in Settings → General.',
       '启用工作台功能': 'Enable workbenches', '开启后可使用工作台市场和已安装的工作台；关闭后所有工作台不加载，不影响已保存的会话和数据。': 'Browse the market and use installed workbenches when enabled. Turning this off does not affect saved sessions or data.',
@@ -215,13 +215,11 @@ window.__ModuleLoader__.load({
         return this.packageEvidence?.[this.pluginFor(entry)]?.origin || 'unknown'
       }
       installedEntry(entry) {
-        const local = entry.installedMetadata || {}
-        const metadataKeys = ['titleEn', 'descriptionEn', 'name', 'nameEn', 'avatar', 'category', 'categoryId', 'categoryNames', 'screenshots', 'screenshot', 'icon', 'repository', 'audience', 'audienceEn', 'requirements', 'requirementsEn']
-        const fields = Object.fromEntries(metadataKeys.map(key => [key, local[key]]))
-        return { ...entry, ...local, ...fields, owner: undefined, metrics: undefined,
-          title: local.title || this.pluginFor(entry) || entry.id,
-          description: local.description || '', author: local.author,
-          version: this.installedVersionFor(entry), origin: this.originFor(entry), local: this.originFor(entry) === 'local' }
+        // Catalog metadata supplies presentation for matched listings, just as
+        // in the market. Installation evidence remains authoritative for the
+        // running version and update confirmation, not the card's artwork.
+        const display = entry.listed ? entry : { ...entry, ...entry.installedMetadata }
+        return { ...display, version: this.installedVersionFor(entry), origin: this.originFor(entry) }
       }
       pluginFor(entry) {
         // A disabled native bundle unloads its provider. The market package name
@@ -573,7 +571,7 @@ window.__ModuleLoader__.load({
           ? !!bundle && bundle.installed !== false
           : !!installed?.installed || !!this.installRecordFor(catalogId)
         if (installedVersion && newerVersion(installedVersion, entry.version)) throw new Error('本机工作台版本高于市场版本，已取消安装以避免降级。')
-        if (wasInstalled && this.originFor(installed) !== 'market' && confirmedReplacement !== true) throw new Error('需要确认替换本机工作台代码。')
+        if (wasInstalled && this.originFor(installed) !== 'market' && confirmedReplacement !== true) throw new Error('需要确认更新本机工作台代码。')
         try {
           const data = await this.marketPackage('/api/desktop-workbenches/market-install', catalogId, confirmedReplacement === true ? { confirmedReplacement: true } : {})
           if (data.install?.catalogId !== catalogId || typeof data.install?.pluginName !== 'string') throw new Error('市场安装记录无效。')
@@ -1696,17 +1694,17 @@ window.__ModuleLoader__.load({
         document.body
       )
     }
-    function ConfirmMarketReplacement({ disabled, onCancel, onConfirm }) {
+    function ConfirmMarketUpdate({ origin, disabled, onCancel, onConfirm }) {
       const dialogRef = React.useRef(null)
       const dismiss = () => { if (!disabled) onCancel() }
       useDialogFocus(true, dismiss, dialogRef)
       return require('react-dom').createPortal(
         h('div', { className: 'dshWbModalBackdrop', onClick: dismiss },
           h('div', { ref: dialogRef, className: 'dshWbModal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-wb-replacement-title', 'aria-describedby': 'dsh-wb-replacement-description', tabIndex: -1, onClick: event => event.stopPropagation() },
-            h('h2', { id: 'dsh-wb-replacement-title' }, tr('替换为市场版')),
-            h('p', { id: 'dsh-wb-replacement-description' }, tr('这将替换本机工作台的代码。已有会话、关联和数据保留；本地代码修改可能丢失，请先在开发目录保留副本。')),
+            h('h2', { id: 'dsh-wb-replacement-title' }, tr('确认更新')),
+            h('p', { id: 'dsh-wb-replacement-description' }, tr(origin === 'local' ? '当前工作台来自本地开发。更新会改用市场发布的代码，本地代码修改不会带入新版本。请先保留代码及存放在安装目录中的数据副本。' : '无法确认当前工作台是否有本地修改。更新可能覆盖本地代码，请先保留代码及存放在安装目录中的数据副本。')),
             h('div', { className: 'dshWbActions' }, h(Button, { autoFocus: true, disabled, onClick: dismiss }, tr('取消')),
-              h(Button, { primary: true, disabled, onClick: onConfirm }, tr('确认替换'))))), document.body)
+              h(Button, { primary: true, disabled, onClick: onConfirm }, tr('确认更新'))))), document.body)
     }
     function ConfirmRemoveModal({ entry, disabled, uninstall, nativeUninstall, recordOnly, onCancel, onConfirm }) {
       const dialogRef = React.useRef(null)
@@ -1995,18 +1993,16 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             const updateAvailable = installed && service.updateAvailableFor(entry)
             const awaitingRestart = installed && service.pendingRestart.has(catalogId)
             const updating = installed && installing === catalogId
-            const replacementAvailable = installed && entry.listed && !!entry.distribution && service.originFor(entry) !== 'market'
-            const showUpdate = updateAvailable || updating || awaitingRestart || replacementAvailable
+            const showUpdate = updateAvailable || updating || awaitingRestart
             const installedFailure = installed && !!entry.loadFailure && !updating
             const canRetryInstalled = installedFailure && entry.listed && !!entry.distribution && !showUpdate
-            const updateLabel = awaitingRestart ? tr('重启后生效') : updating ? tr('更新中…') : replacementAvailable ? tr('替换为市场版') : tr('更新')
+            const updateLabel = awaitingRestart ? tr('重启后生效') : updating ? tr('更新中…') : tr('更新')
             const updateTitle = awaitingRestart ? both(`${entry.title}安装完成，重启 Harness 后生效`, `${entry.title} installed. Restart Harness to apply.`) : updating ? both(`正在更新${entry.title}`, `Updating ${entry.title}`) : both(`${updateLabel}${entry.title}至 v${entry.listedVersion}`, `Update ${entry.title} to v${entry.listedVersion}`)
             return h('article', { key: catalogId, className: 'dshWbCard' },
               h('div', { className: 'dshWbMedia' }, h('button', { type: 'button', className: 'dshWbMediaOpen', 'aria-describedby': `dsh-wb-preview-tooltip-${catalogId}`, 'aria-label': both(`查看${entry.title}详情`, `View ${entry.title} details`), onClick: () => setDetail(catalogId) }, h(Preview, { entry }), h('span', { className: 'dshWbMediaZoom', 'aria-hidden': true }, h(MarketIcon, { name: 'zoom', size: 18 }))), h('span', { id: `dsh-wb-preview-tooltip-${catalogId}`, className: 'dshWbControlTooltip', role: 'tooltip' }, tr('查看详情'))),
               h('div', { className: 'dshWbCardBody' },
-                h('div', { className: 'dshWbCardTitle' }, h('h2', null, h(EntryTitle, { entry })), tab === 'mine' && h('span', { className: 'dshWbCategory' }, tr(service.originFor(entry) === 'market' ? '市场安装' : service.originFor(entry) === 'local' ? '本地开发' : '来源未知')), tab === 'mine' && h('span', { className: 'dshWbControlHint dshWbSwitchHint' }, h('button', { type: 'button', className: 'dshWbRunSwitch', role: 'switch', 'aria-checked': activation === 'on', 'aria-label': both(`${entry.title}运行状态`, `${entry.title} running state`), 'aria-describedby': `dsh-wb-switch-tooltip-${catalogId}`, disabled: disabled || !!togglingPlugin || !hasNativeControl || activation === 'unknown', onClick: () => service.run(service.setPluginEnabled(pluginName, activation !== 'on')) }), h('span', { id: `dsh-wb-switch-tooltip-${catalogId}`, className: 'dshWbControlTooltip', role: 'tooltip' }, activation === 'unknown' ? tr('原生插件状态暂不可用') : activation === 'on' ? tr('停用') : tr('启用')))),
+                h('div', { className: 'dshWbCardTitle' }, h('h2', null, h(EntryTitle, { entry })), tab === 'mine' && h('span', { className: 'dshWbControlHint dshWbSwitchHint' }, h('button', { type: 'button', className: 'dshWbRunSwitch', role: 'switch', 'aria-checked': activation === 'on', 'aria-label': both(`${entry.title}运行状态`, `${entry.title} running state`), 'aria-describedby': `dsh-wb-switch-tooltip-${catalogId}`, disabled: disabled || !!togglingPlugin || !hasNativeControl || activation === 'unknown', onClick: () => service.run(service.setPluginEnabled(pluginName, activation !== 'on')) }), h('span', { id: `dsh-wb-switch-tooltip-${catalogId}`, className: 'dshWbControlTooltip', role: 'tooltip' }, activation === 'unknown' ? tr('原生插件状态暂不可用') : activation === 'on' ? tr('停用') : tr('启用')))),
                 h('div', { className: 'dshWbAuthorRow' }, h(AuthorItem, { entry, showVersion: false }), typeof cardVersion === 'string' && cardVersion.trim() && h('span', { className: 'dshWbCardVersion' }, `v${cardVersion.trim()}`)),
-                tab === 'mine' && entry.listed && h('button', { type: 'button', className: 'dshWbStepLink', onClick: () => setDetail(entry.catalogId) }, tr('查看市场版本')),
                 h('div', { className: 'dshWbDescriptionHint' }, h('p', { className: 'dshWbMuted dshWbCardDescription' }, entry.description || tr('这个工作台暂时还没有填写介绍。'))),
                 tab === 'mine' && localRemoval && !localRemoval.removable && h('p', { className: 'dshWbUninstallReason', role: 'status' }, tr(localRemoval.reason)),
                 h('div', { className: 'dshWbActions' },
@@ -2033,7 +2029,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
           }), entries.length === 0 && h('div', { className: 'dshWbEmpty' }, h('div', null,
             h('strong', null, tab === 'favorites' && !search ? tr('还没有收藏工作台') : tab === 'mine' && !search ? tr('还没有安装工作台') : tr('没有找到匹配的工作台')),
             h('p', { className: 'dshWbMuted' }, tab === 'favorites' && !search ? tr('把鼠标移到市场卡片上，点击书签即可收藏。') : tab === 'mine' && !search ? tr('到工作台市场选择一个工作台开始。') : tr('试试其他关键词或分类。')))))),
-        replacing && h(ConfirmMarketReplacement, { disabled: !!installing, onCancel: () => setReplacing(null), onConfirm: () => { service.run(service.installFromMarket(replacing.catalogId || replacing.id, { confirmedReplacement: true })); setReplacing(null) } }),
+        replacing && h(ConfirmMarketUpdate, { origin: service.originFor(replacing), disabled: !!installing, onCancel: () => setReplacing(null), onConfirm: () => { service.run(service.installFromMarket(replacing.catalogId || replacing.id, { confirmedReplacement: true })); setReplacing(null) } }),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
         removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled: disabled || !!installing || !!removingPlugin, onCancel: () => setRemoving(null), uninstall: !removingStale && !removingEntry?.unavailable && !!service.marketInstallFor(removing), nativeUninstall: !removingStale && !removingEntry?.unavailable && !service.marketInstallFor(removing), recordOnly: !!removingStale || !!removingEntry?.unavailable, onConfirm: () => service.run((removingEntry?.unavailable ? service.clearUnavailableRecord(removing) : removingStale ? service.removeStaleWorkbenchRecord(removing) : service.removeWorkbench(removing)).then(() => setRemoving(null))) }))
     }
