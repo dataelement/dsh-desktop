@@ -1168,7 +1168,7 @@ describe('desktop workbench client navigation', () => {
       node.children?.flat(Infinity).forEach(walk)
     }
     walk(tree)
-    const panel = nodes.find(node => node.type === 'aside')
+    const panel = nodes.find(node => node.props?.as === 'aside')
     expect(panel.props.hidden).toBe(false)
     expect(panel.props['data-side']).toBe('left')
     expect(nodes.some(node => node.type === Business)).toBe(true)
@@ -1517,6 +1517,53 @@ describe('desktop workbench client navigation', () => {
     expect(service.state.added).toEqual(['example/writer'])
   })
 
+  it('resolves one nested compact toolbar and safely falls back when markers change', async () => {
+    const { JSDOM } = await import('jsdom')
+    const ReactDOM = await import('react-dom')
+    const { createRoot } = await import('react-dom/client')
+    const dom = new JSDOM('<div id="root"></div>')
+    const previous = { window: globalThis.window, document: globalThis.document, act: globalThis.IS_REACT_ACT_ENVIRONMENT }
+    globalThis.window = dom.window; globalThis.document = dom.window.document; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    const { service, ctx } = await fixture()
+    let root
+    try {
+      let Frame
+      vm.runInNewContext(code, { console, MutationObserver: dom.window.MutationObserver, document: dom.window.document, window: { localStorage: enabledStorage, __ModuleLoader__: { load({ factory }) {
+        Frame = factory(name => name === 'react-dom' ? ReactDOM : name === '@deepseek-ai/cordis' ? { Service } : React).Frame
+      } } } })
+      const snapshot = ctx.workspaces.list.getSnapshot()
+      ctx.workspaces.list.getSnapshot = () => snapshot; ctx.workspaces.list.subscribe = () => () => {}; ctx.sessions.list.subscribe = () => () => {}
+      let clicks = 0
+      const Panel = () => React.createElement('div', null, React.createElement('section', null, React.createElement('header', { 'data-dsh-workbench-toolbar': '' }, React.createElement('button', { onClick: () => clicks++ }, 'Refresh'))))
+      registerProvider(service, ctx, 'compact', { title: 'Compact', customFrame: true, headerLayout: 'compact' }, Panel)
+      await service.add('compact'); await service.open('compact')
+      root = createRoot(dom.window.document.getElementById('root'))
+      await React.act(async () => root.render(React.createElement(Frame, { service, conversation: null })))
+      const host = dom.window.document.querySelector('.dshWbCustomFrame')
+      const toolbar = host.querySelector('header')
+      expect(host.getAttribute('data-dsh-compact-valid')).toBe('true')
+      expect(toolbar.hasAttribute('data-dsh-compact-toolbar')).toBe(true)
+      await React.act(async () => toolbar.querySelector('button').click())
+      expect(clicks).toBe(1)
+      const extra = dom.window.document.createElement('header'); extra.setAttribute('data-dsh-workbench-toolbar', '')
+      await React.act(async () => { host.append(extra); await Promise.resolve() })
+      expect(host.hasAttribute('data-dsh-compact-valid')).toBe(false)
+      expect(toolbar.hasAttribute('data-dsh-compact-toolbar')).toBe(false)
+      await React.act(async () => { extra.remove(); await Promise.resolve() })
+      expect(host.getAttribute('data-dsh-compact-valid')).toBe('true')
+      await React.act(async () => { toolbar.removeAttribute('data-dsh-workbench-toolbar'); await Promise.resolve() })
+      expect(host.hasAttribute('data-dsh-compact-valid')).toBe(false)
+      await React.act(async () => root.unmount()); root = null
+      toolbar.setAttribute('data-dsh-workbench-toolbar', '')
+      await Promise.resolve()
+      expect(toolbar.hasAttribute('data-dsh-compact-toolbar')).toBe(false)
+    } finally {
+      if (root) await React.act(async () => root.unmount())
+      service.dispose(); dom.window.close()
+      globalThis.window = previous.window; globalThis.document = previous.document; globalThis.IS_REACT_ACT_ENVIRONMENT = previous.act
+    }
+  })
+
   it('renders Frame with native stores whose snapshot and subscribe methods require their receiver', async () => {
     const cleanups = []
     let Frame
@@ -1552,10 +1599,8 @@ describe('desktop workbench client navigation', () => {
     const customHost = frame.children.find((child) => child?.props?.key === 'dock')
     expect(customHost.props.hidden).toBe(false)
     expect(customHost.props.className).toBe('dshWbCustomFrame')
-    expect(code).toContain('.dshWbBusiness[data-side=left][data-embedded=true] > :first-child > header:first-child')
-    expect(code).toContain('padding-inline-start:var(--dsh-frame-leading-clearance,160px)')
-    expect(code).toContain('html[data-platform=darwin] .dshWbCustomFrame > :first-child > header:first-child{-webkit-app-region:drag}')
-    expect(code).toContain('html[data-platform=darwin] .dshWbCustomFrame > :first-child > header:first-child :is(button,a,input,select,textarea,[role=button],[role=tab],[role=combobox],[contenteditable=true],[data-dsh-no-drag]){-webkit-app-region:no-drag}')
+    expect(frame.children.some(child => child?.props?.className === 'dshWbCaptionRow')).toBe(true)
+    expect(customHost.props.entry.customFrame).toBe(true)
     expect(customHost.props.style).toMatchObject({
       position: 'relative', overflow: 'hidden', flex: 1, minHeight: 0, minWidth: 0,
       width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box'
@@ -2001,6 +2046,7 @@ describe('workbench business layout contract', () => {
     registerProvider(service, ctx, 'map', { title: 'Map', embedded: true, layout: { businessSide: 'left', businessWidth: 0.65 } })
     expect(service.catalog.get('map').layout).toEqual({ businessSide: 'left', businessWidth: 0.65 })
     expect(service.catalog.get('writer').layout).toEqual({ businessSide: 'right', businessWidth: 0.36 })
+    expect(() => registerProvider(service, ctx, 'bad-header', { title: 'Bad', headerLayout: 'guess' })).toThrow(/header layout/)
     expect(() => registerProvider(service, ctx, 'bad-width', { title: 'Bad', layout: { businessWidth: 1 } })).toThrow(/width/)
     expect(() => registerProvider(service, ctx, 'bad-side', { title: 'Bad', layout: { businessSide: 'overlay' } })).toThrow(/side/)
   })

@@ -156,7 +156,7 @@ window.__ModuleLoader__.load({
 - `require` 只能拿到共享基线（React、Cordis 等）、已加载的插件和 `dsh.client.external` 中列出的模块。其他依赖要在构建时打进客户端文件。
 - `register()` **必须**提供 `title`、业务组件和规范的 GitHub `repository` URL。新包**不要填写** `register({ id })`；Desktop 用 `repository` 解析 `owner/repo`，并用调用方客户端包、市场分发或安装记录交叉核对，来源冲突时不会暴露 provider。旧包的 `id` 仅用于迁移，不是新协议。
 - `workbench.json` 和投稿 YAML 的 `workbenchId` 不是新工作台的必填协议；运行时包名必须与 `window.__ModuleLoader__.load({ id })` 对应。
-- 可选注册字段：`description`、`panelTitle`、`icon`、`audience`、`requirements`、`layout`（`businessSide` 为 `left` 或 `right`，`businessWidth` 在 0.25–0.7 之间）、`customFrame`（布尔值，见第 4 节）、`initialization`。
+- 可选注册字段：`description`、`panelTitle`、`icon`、`audience`、`requirements`、`layout`（`businessSide` 为 `left` 或 `right`，`businessWidth` 在 0.25–0.7 之间）、`customFrame`（布尔值，见第 4 节）、`headerLayout`（第 4 节）、`initialization`。
 - 注册返回的函数用于注销，要交给 `ctx.effect` 管理。
 
 ### 3.6 构建与本地安装
@@ -186,7 +186,28 @@ window.__ModuleLoader__.load({
 
 市场、工作台切换和设置等公共入口由 DSH 保留，业务面板不得遮挡。使用 `customFrame`（见 3.5）的工作台必须限制在宿主分配的主内容区域内：根容器应按正常 flex 布局填满该区域；内部使用绝对定位、窗口最大化或拖拽换位时，都不得越过宿主容器的定位与裁剪边界，也不得覆盖 Desktop 左侧会话栏。原生会话由宿主提供的 `conversation` 节点放进业务布局，不能再创建一套聊天界面。原生会话能力与模式切换沿用 Desktop 的规则。
 
-macOS 收起侧边栏后，窗口按钮与侧边栏展开按钮占用主内容区左上角。宿主会给左侧嵌入式业务面板和 `customFrame` 的根节点内、作为首个子元素的语义 `<header>` 预留 `--dsh-frame-leading-clearance` 宽度；工具栏可留在原来的 48px 顶部行，主体无需整体下移。自定义工具栏若不是这个结构，应在自身样式中使用同一变量避让，不要覆盖窗口按钮或 `shell.leading`。
+### 顶部布局：默认与紧凑
+
+`register()` 的 `headerLayout` 可选值为 `'default'`（省略时默认）和 `'compact'`；其他值注册失败。默认模式由宿主在 macOS 侧栏收起且非全屏时预留独立、不可滚动的系统控件行（`--dsh-frame-top-clearance`，通常 48px）。业务标题和长介绍从该行下方开始，不依赖内部 `<header>` 的层级。Windows 使用独立标题栏；侧栏展开或全屏时不额外占用此行。旧工作台不声明时采用默认模式，移除自己重复的顶部/左侧系统控件避让。
+
+紧凑模式可用于任何 `customFrame: true` 工作台，或 `embedded: true` 且 `layout.businessSide: 'left'` 的标准分栏工作台：
+
+```js
+ctx.desktopWorkbenches.register({
+  title: '业务工具', repository: 'https://github.com/your-org/your-workbench',
+  customFrame: true, headerLayout: 'compact'
+}, BusinessPanel)
+// BusinessPanel 渲染的同一文档中，唯一一行工具栏：
+React.createElement('header', { 'data-dsh-workbench-toolbar': '' },
+  React.createElement('span', null, '业务工具'),
+  React.createElement('button', { onClick: refresh }, '刷新'))
+```
+
+标记工具栏必须位于面板顶部、占满宿主可用宽度，可嵌套在容器中。宿主仅为这一行设置最低高度和左侧控件避让，空白可拖动；按钮、链接、表单控件及标准交互 role 排除拖动。自定义交互区、展开菜单和弹层加 `data-dsh-no-drag`。宿主内部标记 `data-dsh-compact-toolbar` 和 `data-dsh-compact-valid` 不得由工作台设置。不要自行重复系统控件 padding 或 drag/no-drag 整体覆盖规则。
+
+标记缺失或不唯一、右侧/非嵌入分栏不满足共享位置条件时，安全回退默认系统控件行。iframe 内部 DOM 不属于此协议；包含 iframe 的工作台可将唯一工具栏放在同一文档的外部容器，不能标记整个 iframe 来充当可拖动顶栏。工具栏按业务容器宽度重排；长标题缩略、次要描述放在下一行或正文，按钮不得压成不可用尺寸。
+
+验收两种模式：侧栏展开/收起、窄容器、中英文长标题、全屏进入/退出，确认无双重留白或控件遮挡；点击按钮、编辑输入、打开菜单和键盘焦点正常；实际拖动空白移动窗口。DOM/CSS 校验不能替代原生窗口拖动验收。
 
 ## 5. 工作台、会话与工作区
 

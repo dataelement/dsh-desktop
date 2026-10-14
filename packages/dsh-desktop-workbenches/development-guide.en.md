@@ -156,7 +156,7 @@ window.__ModuleLoader__.load({
 - `require` can access only the shared baseline (React, Cordis, etc.), loaded plugins, and modules listed in `dsh.client.external`. Bundle other dependencies into the client file at build time.
 - `register()` **must** provide a `title`, business component, and canonical GitHub `repository` URL. New packages **must not specify** `register({ id })`. Desktop resolves `owner/repo` from `repository` and cross-checks the caller client package, market distribution, or installation record. A source conflict prevents provider exposure. An old package's `id` is only for migration, not the new protocol.
 - `workbench.json` and submission YAML `workbenchId` are not required for new workbenches. The runtime package name must correspond to `window.__ModuleLoader__.load({ id })`.
-- Optional registration fields: `description`, `panelTitle`, `icon`, `audience`, `requirements`, `layout` (`businessSide` is `left` or `right`; `businessWidth` is 0.25–0.7), `customFrame` (boolean; Section 4), and `initialization`.
+- Optional registration fields: `description`, `panelTitle`, `icon`, `audience`, `requirements`, `layout` (`businessSide` is `left` or `right`; `businessWidth` is 0.25–0.7), `customFrame` (boolean; Section 4), `headerLayout` (Section 4), and `initialization`.
 - Give the unregister function returned by registration to `ctx.effect`.
 
 ### 3.6 Build and local installation
@@ -186,7 +186,28 @@ In either layout, make the business UI respond to the **actual width of its own 
 
 DSH reserves shared entrances for the market, workbench switcher, and settings; the business panel must not cover them. A `customFrame` (Section 3.5) must stay within the host-assigned main content area. Its root should fill that area using normal flex layout. Internal absolute positioning, maximization, or drag-based repositioning must remain inside the host container's positioning and clipping boundaries, never cover Desktop's left session sidebar. Put the host-provided `conversation` node into the business layout for native sessions; do not build a second chat UI. Native conversation capabilities and mode switching continue to follow Desktop rules.
 
-On macOS, after the sidebar collapses, window controls and the sidebar expansion button occupy the upper-left of main content. The host reserves `--dsh-frame-leading-clearance` width for a left-side embedded business panel and a semantic `<header>` that is the first child of a `customFrame` root. The toolbar may stay in the original 48px top row; the whole content need not move down. A custom toolbar with a different structure should use the same variable in its own styles to clear the controls. Do not cover window controls or `shell.leading`.
+### Header layout: default and compact
+
+`register()` accepts `headerLayout: 'default' | 'compact'`; omission means `default` and other values fail registration. In default mode the host reserves a separate, non-scrolling system-controls row on macOS with the sidebar collapsed and outside fullscreen (`--dsh-frame-top-clearance`, normally 48px). Business headings and descriptions begin below it, regardless of nested header markup. Windows keeps its separate title bar; expanded sidebar and fullscreen add no row. Existing providers default to this mode; remove their duplicate system-controls padding.
+
+Any `customFrame: true` provider, or a standard split with `embedded: true` and `layout.businessSide: 'left'`, can opt into compact mode:
+
+```js
+ctx.desktopWorkbenches.register({
+  title: 'Business tool', repository: 'https://github.com/your-org/your-workbench',
+  customFrame: true, headerLayout: 'compact'
+}, BusinessPanel)
+// Exactly one same-document toolbar rendered by BusinessPanel:
+React.createElement('header', { 'data-dsh-workbench-toolbar': '' },
+  React.createElement('span', null, 'Business tool'),
+  React.createElement('button', { onClick: refresh }, 'Refresh'))
+```
+
+The marked toolbar must be the top row and span the host content width; nested wrappers are supported. The host sets minimum row height and leading clearance, makes blank space draggable, and excludes buttons, links, form controls and standard interactive roles. Add `data-dsh-no-drag` to custom interactions, expanded menus and popovers. `data-dsh-compact-toolbar` and `data-dsh-compact-valid` are host-owned internal markers. Do not duplicate system-controls padding or override the entire drag/no-drag policy.
+
+Missing or multiple markers, right-side or non-embedded splits safely fall back to the default row. Iframe documents are outside this protocol: an iframe-based provider may place its unique toolbar in a same-document outer wrapper; marking the whole iframe does not make its contents a draggable toolbar. Reflow by business container width; truncate long titles, move descriptions below the toolbar, and keep actions usable.
+
+Verify both modes with expanded/collapsed sidebar, narrow containers, realistic Chinese/English headings, entering/leaving fullscreen, and no duplicated space or covered controls. Click buttons, edit inputs, open menus and check keyboard focus. Verify actual native window movement from blank space; DOM/CSS checks do not replace native drag acceptance.
 
 ## 5. Workbenches, sessions, and workspaces
 
