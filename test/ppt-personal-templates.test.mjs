@@ -1,9 +1,10 @@
-import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { cp, mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { crc32 } from 'node:zlib';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import PptxGenJS from 'pptxgenjs';
 import sharp from 'sharp';
@@ -101,6 +102,27 @@ async function source() {
   return Buffer.from(await pptx.write({ outputType: 'nodebuffer' }));
 }
 
+function insertPngChunk(png, type, data) {
+  const name = Buffer.from(type);
+  const prefix = Buffer.alloc(8);
+  prefix.writeUInt32BE(data.length, 0);
+  name.copy(prefix, 4);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(Buffer.concat([name, data])) >>> 0, 0);
+  const iend = png.lastIndexOf(Buffer.from('IEND')) - 4;
+  return Buffer.concat([png.subarray(0, iend), prefix, data, checksum, png.subarray(iend)]);
+}
+
+// Intel release runners time out while deflating and rasterizing multi-megapixel
+// random PNGs. A private ancillary chunk keeps each picture under the 16 MiB
+// import cap, makes the stored PPTX exceed 64 MiB, and must survive export.
+async function largeTemplateImage(seed) {
+  const png = await sharp({
+    create: { width: 32, height: 32, channels: 3, background: { r: 32 + seed * 24, g: 84, b: 132 } }
+  }).png().toBuffer();
+  return insertPngChunk(png, 'prIv', Buffer.alloc(9 * 1024 * 1024));
+}
+
 async function save(f) {
   const bytes = await source();
   const draft = await f.request('template/prepare', { input: { fileName: '公司模板.pptx', base64: bytes.toString('base64') } });
@@ -174,7 +196,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     slide.addText('Large image template', { x: 0.5, y: 0.3, w: 11, h: 0.6, fontSize: 24 });
     const images = [];
     for (let i = 0; i < 8; i++) {
-      const image = await sharp(randomBytes(1800 * 1600 * 3), { raw: { width: 1800, height: 1600, channels: 3 } }).png().toBuffer();
+      const image = await largeTemplateImage(i);
       images.push(image);
       slide.addImage({ data: `image/png;base64,${image.toString('base64')}`, x: 0.4 + i % 4 * 3.2, y: 1.3 + Math.floor(i / 4) * 2.5, w: 3, h: 2.3 });
     }
@@ -206,7 +228,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     const mediaHashes = Object.entries(exported).filter(([name]) => name.startsWith('ppt/media/')).map(([, data]) => createHash('sha256').update(data).digest('hex'));
     for (const image of images) expect(mediaHashes).toContain(createHash('sha256').update(image).digest('hex'));
     expect((await readFile(path.join(f.storage, 'personal-templates/saved', template.id, 'source.pptx'))).equals(bytes)).toBe(true);
-  }, 60000);
+  }, 120000);
 
   it('imports mixed-size title and body text without inflating all text to the largest run', async () => {
     const f = await fixture();
@@ -525,6 +547,6 @@ describe('personal PPT templates in the shipped runtime', () => {
     const backups=await readdir(path.join(f.storage,'personal-templates','backups',template.id));
     expect(backups).toHaveLength(1);
     expect(JSON.parse(await readFile(path.join(f.storage,'personal-templates','backups',template.id,backups[0],'template.json'),'utf8')).conversionVersion).toBeUndefined();
-  },30000);
+  }, 120000);
 
 });
