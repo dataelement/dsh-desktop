@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  <strong>DSH Desktop by Dataelem</strong> 是 Dataelem 团队基于 DeepSeek Harness 框架打造的桌面 Agent 应用，提供开源版与企业版。<br />
+  <strong>DSH Desktop by Dataelem</strong>（DSH 客户端）是 Dataelem 团队基于 DeepSeek Harness 框架打造的桌面 Agent 应用，提供开源版与企业版。<br />
   官方网站：<a href="https://www.dshdesktop.com/">www.dshdesktop.com</a> · 开源仓库：<a href="https://github.com/dataelement/dsh-desktop">dataelement/dsh-desktop</a>
 </p>
 
