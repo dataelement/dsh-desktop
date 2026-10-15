@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { registerHostModuleFallback } from './host-module-fallback.mjs'
 import { packagedArchiveRoot, registerOfficeEngineResolution } from './office-engine-resolution.mjs'
+import {
+  PACKAGED_PNPM_ENTRY_ENV,
+  PACKAGED_PNPM_RUNNER_ENV,
+  buildPackagedPnpmInvocation
+} from './packaged-pnpm-invocation.mjs'
 import { enforceWindowsChildProcessHide } from './windows-child-process-hide.mjs'
 
 // On macOS Harness runs inside an Electron utility process (TCC responsibility
@@ -105,8 +110,26 @@ if (!dshEntryPath) {
     const entry = await import(pathToFileURL(dshEntryPath).href)
     process.stdout.write('[harness-node] DSH entry loaded\n')
     if (typeof entry.runCli === 'function') {
-      process.stdout.write('[harness-node] invoking DSH runCli()\n')
-      await entry.runCli()
+      // PATH `pnpm` is a `.cmd` shim on Windows. Plugin manager's registry
+      // read (`pnpm config get registry`) runs on every add-plugin click, and
+      // execa launches that shim through cmd.exe. Pass the packaged executable
+      // so the same read never creates a console. Missing injection keeps the
+      // previous PATH fallback rather than failing startup.
+      const packageManager = buildPackagedPnpmInvocation(process.env, process.execPath)
+      if (packageManager) {
+        const runner = packageManager.args.length > 1 ? 'via lock-recovery runner' : 'without lock-recovery runner'
+        process.stdout.write(`[harness-node] invoking DSH runCli() with packaged pnpm (${runner})\n`)
+        if (process.env[PACKAGED_PNPM_RUNNER_ENV] && packageManager.args.length === 1) {
+          process.stderr.write('[harness-node] packaged pnpm runner is missing; installs skip lock recovery\n')
+        }
+        await entry.runCli({ packageManager })
+      } else {
+        process.stdout.write('[harness-node] invoking DSH runCli()\n')
+        if (process.env[PACKAGED_PNPM_ENTRY_ENV]) {
+          process.stderr.write('[harness-node] packaged pnpm entry is missing; plugin manager will resolve pnpm from PATH\n')
+        }
+        await entry.runCli()
+      }
     }
   } catch (error) {
     reportPluginFailures(error)

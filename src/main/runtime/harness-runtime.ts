@@ -31,6 +31,14 @@ export interface HarnessRuntimeOptions {
   startupTimeoutMs?: number
   /** Mirror log lines to the console (development builds only). */
   echoLogs?: boolean
+  /**
+   * Packaged pnpm script. Plugin manager uses this instead of PATH `pnpm`,
+   * which on Windows is a `.cmd` shim and flashes a console on every
+   * add-plugin click.
+   */
+  pnpmEntryPath?: string
+  /** Lock-recovery runner placed ahead of `pnpmEntryPath` when the file exists. */
+  pnpmRunnerPath?: string
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
@@ -288,16 +296,26 @@ export function resolveEnvironmentPath(
   return ''
 }
 
+/** Paths the Harness entry turns into `runCli({ packageManager })`. */
+export interface PackagedPnpmLaunchPaths {
+  entryPath?: string
+  runnerPath?: string
+}
+
 export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
   platform: NodeJS.Platform = process.platform,
   environment: NodeJS.ProcessEnv = process.env,
-  profile: string = 'web'
+  profile: string = 'web',
+  packagedPnpm: PackagedPnpmLaunchPaths = {}
 ): SpawnOptionsWithoutStdio {
   const {
     ELECTRON_RUN_AS_NODE: _runAsNode,
     DSH_DESKTOP_HOST_RESOLVED: _hostResolved,
+    // The desktop, not the parent shell, decides which pnpm the Harness uses.
+    DSH_DESKTOP_PNPM_ENTRY: _pnpmEntry,
+    DSH_DESKTOP_PNPM_RUNNER: _pnpmRunner,
     ...parentEnvironment
   } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -334,6 +352,10 @@ export function buildHarnessSpawnOptions(
       // resolves them from its own installation and never touches the shared
       // `profiles/node_modules` fallback, whose junctions Windows can refuse.
       ...(profile === SAFE_MODE_PROFILE && { DSH_DESKTOP_HOST_RESOLVED: '1' }),
+      // Read by harness-node-entry before runCli. Plugin manager then spawns
+      // the Electron executable directly instead of PATH `pnpm.cmd`.
+      ...(packagedPnpm.entryPath ? { DSH_DESKTOP_PNPM_ENTRY: packagedPnpm.entryPath } : {}),
+      ...(packagedPnpm.runnerPath ? { DSH_DESKTOP_PNPM_RUNNER: packagedPnpm.runnerPath } : {}),
       NODE_COMPILE_CACHE: environment.NODE_COMPILE_CACHE ?? pathApi.join(dshHome, 'cache', 'compile-cache'),
       [pathKey]: resolveEnvironmentPath(environment, platform)
     },
@@ -539,7 +561,11 @@ export class HarnessRuntime {
           this.options.dshHome,
           process.platform,
           shellEnvironment,
-          profile
+          profile,
+          {
+            entryPath: this.options.pnpmEntryPath,
+            runnerPath: this.options.pnpmRunnerPath
+          }
         )
       )
     } catch (error) {

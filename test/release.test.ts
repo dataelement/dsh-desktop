@@ -202,6 +202,11 @@ describe('GitHub release contract', () => {
     })
     expect(harnessNodeEntry).toContain("from './host-module-fallback.mjs'")
     expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/packaged-pnpm-invocation.mjs',
+      to: 'packaged-pnpm-invocation.mjs'
+    })
+    expect(harnessNodeEntry).toContain("from './packaged-pnpm-invocation.mjs'")
+    expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/office-engine-resolution.mjs',
       to: 'office-engine-resolution.mjs'
     })

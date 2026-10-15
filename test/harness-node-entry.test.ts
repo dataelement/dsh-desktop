@@ -5,6 +5,11 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { applyWindowsHide } from '../build/windows-child-process-hide.mjs'
+import {
+  PACKAGED_PNPM_ENTRY_ENV,
+  PACKAGED_PNPM_RUNNER_ENV,
+  buildPackagedPnpmInvocation
+} from '../build/packaged-pnpm-invocation.mjs'
 import { projectRoot } from './patch-path'
 
 describe('linked Profile plugin host dependency fallback', () => {
@@ -441,6 +446,107 @@ describe('windowsHide patching for fork', () => {
       '/path/to/worker.js',
       { cwd: 'C:\\test', windowsHide: true }
     )
+  })
+})
+
+describe('packaged pnpm invocation', () => {
+  it('points plugin manager at the Electron executable and the lock-recovery runner', () => {
+    const invocation = buildPackagedPnpmInvocation({
+      [PACKAGED_PNPM_ENTRY_ENV]: 'C:\\app\\pnpm.cjs',
+      [PACKAGED_PNPM_RUNNER_ENV]: 'C:\\app\\pnpm-runner.mjs'
+    }, 'C:\\app\\DSH Desktop.exe', () => true)
+
+    expect(invocation).toEqual({
+      command: 'C:\\app\\DSH Desktop.exe',
+      args: ['C:\\app\\pnpm-runner.mjs', 'C:\\app\\pnpm.cjs'],
+      env: { ELECTRON_RUN_AS_NODE: '1' }
+    })
+  })
+
+  it('omits a runner that is not on disk and still avoids PATH pnpm', () => {
+    const invocation = buildPackagedPnpmInvocation({
+      [PACKAGED_PNPM_ENTRY_ENV]: 'C:\\app\\pnpm.cjs',
+      [PACKAGED_PNPM_RUNNER_ENV]: 'C:\\missing\\pnpm-runner.mjs'
+    }, 'C:\\app\\DSH Desktop.exe', (path) => path === 'C:\\app\\pnpm.cjs')
+
+    expect(invocation).toEqual({
+      command: 'C:\\app\\DSH Desktop.exe',
+      args: ['C:\\app\\pnpm.cjs'],
+      env: { ELECTRON_RUN_AS_NODE: '1' }
+    })
+  })
+
+  it('leaves plugin manager on PATH pnpm when the desktop did not inject an entry', () => {
+    expect(buildPackagedPnpmInvocation({}, 'C:\\app\\DSH Desktop.exe', () => true)).toBeUndefined()
+    expect(buildPackagedPnpmInvocation({
+      [PACKAGED_PNPM_ENTRY_ENV]: 'C:\\missing\\pnpm.cjs'
+    }, 'C:\\app\\DSH Desktop.exe', () => false)).toBeUndefined()
+  })
+
+  it('passes the packaged invocation into runCli and otherwise calls it with no arguments', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-packaged-pnpm-'))
+    try {
+      const entry = join(root, 'entry.mjs')
+      const pnpmEntry = join(root, 'pnpm.cjs')
+      const runner = join(root, 'pnpm-runner.mjs')
+      await writeFile(entry, `
+        export async function runCli(options) {
+          process.stdout.write('fixture:' + JSON.stringify(options ?? null) + '\\n')
+        }
+      `)
+      await writeFile(pnpmEntry, '')
+      await writeFile(runner, '')
+
+      const withPnpm = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        entry
+      ], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          [PACKAGED_PNPM_ENTRY_ENV]: pnpmEntry,
+          [PACKAGED_PNPM_RUNNER_ENV]: runner
+        }
+      })
+      expect(withPnpm.status, withPnpm.stderr).toBe(0)
+      const passed = JSON.parse(withPnpm.stdout.split('fixture:')[1] ?? 'null') as {
+        packageManager?: { command: string; args: string[]; env: Record<string, string> }
+      }
+      expect(passed.packageManager).toEqual({
+        command: process.execPath,
+        args: [runner, pnpmEntry],
+        env: { ELECTRON_RUN_AS_NODE: '1' }
+      })
+      expect(withPnpm.stdout).toContain('invoking DSH runCli() with packaged pnpm (via lock-recovery runner)')
+
+      const missingRunner = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        entry
+      ], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          [PACKAGED_PNPM_ENTRY_ENV]: pnpmEntry,
+          [PACKAGED_PNPM_RUNNER_ENV]: join(root, 'absent-runner.mjs')
+        }
+      })
+      expect(missingRunner.status, missingRunner.stderr).toBe(0)
+      expect(missingRunner.stderr).toContain('packaged pnpm runner is missing')
+      const withoutRunner = JSON.parse(missingRunner.stdout.split('fixture:')[1] ?? 'null') as {
+        packageManager?: { args: string[] }
+      }
+      expect(withoutRunner.packageManager?.args).toEqual([pnpmEntry])
+
+      const withoutInjection = spawnSync(process.execPath, [
+        join(projectRoot, 'build', 'harness-node-entry.mjs'),
+        entry
+      ], { encoding: 'utf8' })
+      expect(withoutInjection.status, withoutInjection.stderr).toBe(0)
+      expect(withoutInjection.stdout).toContain('fixture:null')
+      expect(withoutInjection.stdout).toContain('invoking DSH runCli()\n')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

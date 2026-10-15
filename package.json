@@ -404,6 +404,10 @@
         "to": "host-module-fallback.mjs"
       },
       {
+        "from": "build/packaged-pnpm-invocation.mjs",
+        "to": "packaged-pnpm-invocation.mjs"
+      },
+      {
         "from": "build/office-engine-resolution.mjs",
         "to": "office-engine-resolution.mjs"
       },
