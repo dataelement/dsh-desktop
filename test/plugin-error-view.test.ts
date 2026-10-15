@@ -17,7 +17,7 @@ const sampleScriptError =
 
 describe('plugin load error detection and extraction', () => {
   it('detects bundle script and loader entry failure errors', () => {
-    expect(isPluginLoadError(new Error(sampleLoaderError))).toBe(true)
+    expect(isPluginLoadError(new Error('client-modules: @perrylink/dsh-github import failed (see console)'))).toBe(true)
     expect(isPluginLoadError(sampleLoaderError)).toBe(true)
     expect(isPluginLoadError({ message: sampleScriptError })).toBe(true)
     expect(isPluginLoadError({ reason: sampleLoaderError })).toBe(true)

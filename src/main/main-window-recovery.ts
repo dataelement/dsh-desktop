@@ -23,3 +23,12 @@ export function shouldReloadAfterMainWindowRendererLoss(options: {
   if (options.lastReloadAt === 0) return true
   return options.now - options.lastReloadAt >= cooldown
 }
+
+/**
+ * A main-frame load reports -3 (ERR_ABORTED) when a newer navigation replaces
+ * it. Plugin recovery does that on purpose. Reloading in response cancels the
+ * recovery page and surfaces ERR_FAILED.
+ */
+export function isSupersededMainFrameLoad(errorCode: number): boolean {
+  return errorCode === -3
+}

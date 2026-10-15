@@ -15,6 +15,7 @@ export function isPluginLoadError(error: unknown): boolean {
 
   return (
     /client-modules:\s*bundle\s*script\s*.*failed\s*to\s*load/i.test(message) ||
+    /client-modules:.*\bimport\s+failed\b/i.test(message) ||
     /failed\s*to\s*import\s*loader\s*entry/i.test(message) ||
     /client-modules:.*missed\s*the\s*module\s*table/i.test(message)
   )

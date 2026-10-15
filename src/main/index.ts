@@ -187,8 +187,21 @@ import {
 import { upgradeMarketInSharedTree, upgradePluginToGeneration } from './state/plugin-upgrade'
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { parseWindowsMenuRequest, windowsMenuTemplate, type EditingKey } from './windows-menu'
+import {
+  createHarnessBootCoverSession,
+  installHarnessBootCover,
+  noteHarnessBootCoverInstallStarted,
+  noteHarnessBootCoverNavigation,
+  noteHarnessBootCoverReveal,
+  removeHarnessBootCover,
+  restoreHarnessBootCoverKey,
+  settleHarnessBootCoverInstall,
+  shouldInstallHarnessBootCover,
+  type HarnessBootCoverSession
+} from './harness-boot-cover'
 import { shouldKeepRunningInBackground } from './close-to-tray'
 import {
+  isSupersededMainFrameLoad,
   MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
   shouldReloadAfterMainWindowRendererLoss
 } from './main-window-recovery'
@@ -468,7 +481,7 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     reloadMainWindowAfterRendererLoss(window)
   })
   webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame) return
+    if (!isMainFrame || isSupersededMainFrameLoad(errorCode)) return
     clearProfileBootConfirmation()
     // The harness web server is local; a failure to reach it is almost
     // always the renderer dropping, not a real network error. Surface the
@@ -490,9 +503,58 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     if (!runtime) return
     runtime.note('[desktop] main window webContents became responsive again')
   })
-  webContents.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) clearProfileBootConfirmation()
+  webContents.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) return
+    clearProfileBootConfirmation()
+    if (isInPlace) return
+    // The document that owned the previous rule is going away. Drop the key
+    // without removing the rule, so a failure page stays covered until the
+    // next document commits. In-place updates keep the same document and rule.
+    harnessBootCover = noteHarnessBootCoverNavigation(harnessBootCover, url)
   })
+  webContents.on('dom-ready', () => {
+    if (webContents.isDestroyed()) return
+    const url = webContents.getURL()
+    if (!shouldInstallHarnessBootCover(harnessBootCover, url)) return
+    void concealHarnessBootPage(webContents, url)
+  })
+}
+
+let harnessBootCover: HarnessBootCoverSession = createHarnessBootCoverSession()
+
+async function concealHarnessBootPage(contents: Electron.WebContents, url: string): Promise<void> {
+  if (contents.isDestroyed() || !shouldInstallHarnessBootCover(harnessBootCover, url)) return
+  const startedGeneration = harnessBootCover.generation
+  harnessBootCover = noteHarnessBootCoverInstallStarted(harnessBootCover)
+  const cssKey = await installHarnessBootCover(contents)
+  const currentUrl = contents.isDestroyed() ? '' : contents.getURL()
+  const settled = settleHarnessBootCoverInstall(
+    harnessBootCover,
+    startedGeneration,
+    currentUrl,
+    cssKey
+  )
+  harnessBootCover = settled.session
+  if (!settled.staleKey || contents.isDestroyed()) return
+  // A late insert can land on the document that replaced the failure page.
+  // Remove that rule; the document it was meant for is already gone.
+  await removeHarnessBootCover(contents, settled.staleKey).catch(() => undefined)
+}
+
+async function revealHarnessBootPage(contents: Electron.WebContents): Promise<void> {
+  const revealed = noteHarnessBootCoverReveal(harnessBootCover)
+  harnessBootCover = revealed.session
+  if (!revealed.cssKey || contents.isDestroyed()) return
+  try {
+    await removeHarnessBootCover(contents, revealed.cssKey)
+  } catch (error) {
+    harnessBootCover = restoreHarnessBootCoverKey(
+      harnessBootCover,
+      revealed.session.generation,
+      revealed.cssKey
+    )
+    throw error
+  }
 }
 
 function windowsTitleBarOverlay(isDark: boolean): Electron.TitleBarOverlayOptions {
@@ -534,9 +596,11 @@ async function syncNativeTheme(window: BrowserWindow): Promise<void> {
   // also works when macOS renders a transparent page over native vibrancy.
   const isDark = await window.webContents.executeJavaScript(
     `(() => {
-      if (${process.platform === 'darwin'}) return document.body.hasAttribute('data-ds-dark-theme')
-      if (document.body.hasAttribute('data-ds-dark-theme')) return true
-      const color = getComputedStyle(document.body).backgroundColor
+      const body = document.body
+      if (!body) return matchMedia('(prefers-color-scheme: dark)').matches
+      if (${process.platform === 'darwin'}) return body.hasAttribute('data-ds-dark-theme')
+      if (body.hasAttribute('data-ds-dark-theme')) return true
+      const color = getComputedStyle(body).backgroundColor
       const channels = color.match(/[\\d.]+/g)?.slice(0, 3).map(Number)
       if (!channels || channels.length < 3) {
         return matchMedia('(prefers-color-scheme: dark)').matches
@@ -2000,6 +2064,14 @@ async function showPluginRecovery(options?: {
   let followRendererLogs = options?.followRendererLogs === true
   let waitForRendererEvidence = followRendererLogs
 
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    // Replace the Harness boot-failure document before the market check.
+    // The diagnostics for this pass were already captured by the renderer.
+    await showSplash().catch((error: unknown) => {
+      runtime.note(`[desktop] could not cover plugin recovery with the splash: ${error instanceof Error ? error.message : String(error)}`)
+    })
+  }
+
   const applyPendingFrontendEvidence = (): boolean => {
     const pending = takePendingFrontendPluginRecovery()
     if (!pending.pending) return false
@@ -3363,9 +3435,16 @@ async function bootstrap(): Promise<void> {
     if (errorMessage) throw new Error(errorMessage)
     return { ok: true }
   })
-  ipcMain.removeHandler('harness:renderer-healthy')
-  ipcMain.handle('harness:renderer-healthy', (event) => {
+  ipcMain.removeHandler('harness:reveal-boot-cover')
+  ipcMain.handle('harness:reveal-boot-cover', async (event) => {
     assertTrustedMainWindowEvent(event)
+    await revealHarnessBootPage(event.sender)
+    return { ok: true }
+  })
+  ipcMain.removeHandler('harness:renderer-healthy')
+  ipcMain.handle('harness:renderer-healthy', async (event) => {
+    assertTrustedMainWindowEvent(event)
+    await revealHarnessBootPage(event.sender)
     if (safeModeVisible || failureRecoveryVisible || runtime.snapshot().phase !== 'ready') {
       return { ok: false }
     }

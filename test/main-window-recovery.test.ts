@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isSupersededMainFrameLoad,
   MAIN_WINDOW_RECOVERY_MAX_RELOADS,
   MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
   shouldReloadAfterMainWindowRendererLoss
@@ -34,6 +35,11 @@ describe('main window renderer recovery', () => {
         reloadCount: 1
       })
     ).toBe(true)
+  })
+
+  it('does not treat an aborted navigation as a renderer crash', () => {
+    expect(isSupersededMainFrameLoad(-3)).toBe(true)
+    expect(isSupersededMainFrameLoad(-2)).toBe(false)
   })
 
   it('gives up after the configured number of reloads to avoid hammering a dead GPU', () => {
