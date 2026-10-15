@@ -13,7 +13,7 @@ const releaseAssets = [
 ]
 
 /** The exact Harness build every `@deepseek-ai/dsh-*` production dep is pinned to. */
-const HARNESS_VERSION = '0.2.0-rc.2'
+const HARNESS_VERSION = '0.2.1-alpha.2'
 
 describe('GitHub release contract', () => {
   it('keeps the package and lockfile versions aligned', async () => {
@@ -129,7 +129,6 @@ describe('GitHub release contract', () => {
       // 0.1.2-alpha.3, so its exclusion assertion is gone. dsh-storage-sqlite is
       // likewise no longer in the closure but its guard is kept defensively.
       '@deepseek-ai/dsh-session-snapshot',
-      '@deepseek-ai/dsh-session-title-all-prompts-llm',
       '@deepseek-ai/dsh-storage-sqlite',
       '@deepseek-ai/dsh-subagent-acp',
       '@deepseek-ai/dsh-subagent-claude-code',
@@ -137,8 +136,9 @@ describe('GitHub release contract', () => {
       '@deepseek-ai/dsh-subagent-dsh-sdk',
       '@deepseek-ai/dsh-subprocess-e2b',
       '@deepseek-ai/dsh-tool-lsp',
-      '@deepseek-ai/dsh-tool-session-query',
-      '@deepseek-ai/dsh-tool-terminal',
+      // 0.2.1-alpha.2 root bundles depend on these: session search, session
+      // titles, and the terminal bundle. They stay out of package.json and
+      // arrive only as those bundles' dependencies.
       '@deepseek-ai/dsh-web-search-exa',
       '@deepseek-ai/dsh-web-search-perplexity'
     ]

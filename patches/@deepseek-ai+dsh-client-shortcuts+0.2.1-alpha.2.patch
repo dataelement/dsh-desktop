@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js b/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
-index 8670231..0367eb1 100644
+index 838ac44..0356b19 100644
 --- a/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
-@@ -721,7 +721,7 @@ window.__ModuleLoader__.load({
+@@ -1343,7 +1343,7 @@ window.__ModuleLoader__.load({
  			const desktop = document.documentElement.dataset.platform;
  			const device = desktop ?? navigator.platform;
  			return {

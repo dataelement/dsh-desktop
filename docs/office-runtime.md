@@ -14,6 +14,6 @@ Python 和 wheel 的固定 URL/SHA-256 来源：[上游固定提交的 primary-r
 
 普通会话使用上游 `office-pptx` / python-pptx；开启现有 PPT 模式后使用 `dsh-ppt`、选中的模板及 `pptd_*` / `pptd_render`。校验或导出失败时修正原工程，不自动切换引擎。用户明确要求改变工作流时仍遵循用户指令。Word/Excel 不受 PPT 模式影响。
 
-`dsh-skill@0.2.0-rc.2` 的最小补丁增加 `skills/invocation` waterfall：目录和技能正文读取均在发现缓存之后解析当前调用策略，不改 provider、优先级或资源归属。PPT 插件根据已有的会话状态，仅在模板模式中关闭 `office-pptx` 的模型调用；保留用户显式调用。`dsh-api-session-controller@0.2.0-rc.2` 的目录查询传入 Session ID，以覆盖 Agent 尚未激活的冷会话。监听器随 PPT 插件卸载，卸载后恢复上游默认策略；不增加第二份模式状态。
+`dsh-skill@0.2.1-alpha.2` 的最小补丁增加 `skills/invocation` waterfall：目录和技能正文读取均在发现缓存之后解析当前调用策略，不改 provider、优先级或资源归属。PPT 插件根据已有的会话状态，仅在模板模式中关闭 `office-pptx` 的模型调用；保留用户显式调用。`dsh-api-session-controller@0.2.1-alpha.2` 的目录查询传入 Session ID，以覆盖 Agent 尚未激活的冷会话。监听器随 PPT 插件卸载，卸载后恢复上游默认策略；不增加第二份模式状态。
 
 上游当前没有目录/加载共用的动态调用策略接缝，provider 的发现结果又会缓存，因此不能只修改静态技能声明。上游提供等价接缝后移除该补丁并迁移监听器。回归需同时覆盖缓存命中、直接模型加载、模式反复切换、会话隔离、冷会话与宿主 HTTP 目录；实际模型创作和界面预览仍需独立验收。

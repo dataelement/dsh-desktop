@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index f997683..e5482e0 100644
+index 964312b..97ff3bb 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 @@ -115,6 +115,22 @@ window.__ModuleLoader__.load({
@@ -25,7 +25,7 @@ index f997683..e5482e0 100644
  		//#endregion
  		//#region lib/types/client/contract/snapshot.js
  		const EMPTY_LIST$1 = [];
-@@ -217,7 +233,7 @@ window.__ModuleLoader__.load({
+@@ -1385,7 +1401,7 @@ window.__ModuleLoader__.load({
  			const tag = document.createElement("style");
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-chat";
  			tag.dataset.pluginCss = tagId$17;
@@ -33,8 +33,152 @@ index f997683..e5482e0 100644
 +			tag.textContent = css$17 + ".Sixlwa_fileCardButton{color:inherit;font:inherit;cursor:pointer;appearance:none}";
  			document.head.appendChild(tag);
  		}
- 		var MessageItem_module_css_default = {
-@@ -234,6 +250,7 @@ window.__ModuleLoader__.load({
+ 		var TurnNavigator_module_css_default = {
+@@ -3451,6 +3467,25 @@ window.__ModuleLoader__.load({
+ 			const message = error instanceof Error ? error.message : String(error);
+ 			return message === "" ? fallback : message;
+ 		}
++		function openingUserMessageTarget(hasMore, order, kindAt, pendingInputs) {
++			if (hasMore) return {
++				leadingUserKey: null,
++				leadingPendingId: null
++			};
++			let leadingUserKey = null;
++			for (const key of order) {
++				const kind = kindAt(key);
++				if (kind === "user") {
++					leadingUserKey = key;
++					break;
++				}
++			}
++			const echo = pendingInputs.find((item) => item.placement === "transcript" && typeof item.requestId === "string");
++			return {
++				leadingUserKey,
++				leadingPendingId: leadingUserKey === null ? echo?.requestId ?? null : null
++			};
++		}
+ 		/**
+ 		* Durable input identities suppress matching echoes in the same render.
+ 		* The last input's Turn also distinguishes an empty opening control from
+@@ -3478,7 +3513,7 @@ window.__ModuleLoader__.load({
+ 		* The chat view slot entry: pure component over the composed props; each
+ 		* ordered business Node crosses the keyed renderer seat.
+ 		*/
+-		function ChatView({ useSession, useChat, useConversation, useSessions, renderSlot, sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions, usePresentation, useProjection, t }) {
++		function ChatView({ useSession, useChat, useConversation, useSessions, renderSlot, sessionId, openFile, openUploadedFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions, usePresentation, useProjection, t }) {
+ 			const order = useChat((s) => s.order);
+ 			const groupedEntries = useConversation((snapshot) => snapshot.views.grouped("chat")?.entries);
+ 			const entries = (0, react.useMemo)(() => groupedEntries ?? order.map((key) => ({
+@@ -3538,11 +3573,29 @@ window.__ModuleLoader__.load({
+ 					if (id !== fileOpenRequest.current) return;
+ 					setFileOpenError({
+ 						path,
++						options,
+ 						message: openFailureMessage(error, t("fileOpen.unknown"))
+ 					});
+ 					setFileOpenBusy(false);
+ 				});
+ 			}, [openFile, t]);
++			const requestOpenUploadedFile = (0, react.useCallback)((attachmentId) => {
++				const id = ++fileOpenRequest.current;
++				setFileOpenBusy(true);
++				openUploadedFile(attachmentId).then(() => {
++					if (id !== fileOpenRequest.current) return;
++					setFileOpenError(null);
++					setFileOpenBusy(false);
++				}, (error) => {
++					if (id !== fileOpenRequest.current) return;
++					setFileOpenError({
++						path: attachmentId,
++						uploaded: true,
++						message: openFailureMessage(error, t("fileOpen.unknown"))
++					});
++					setFileOpenBusy(false);
++				});
++			}, [openUploadedFile, t]);
+ 			const closeFileOpenError = (0, react.useCallback)(() => {
+ 				fileOpenRequest.current += 1;
+ 				setFileOpenError(null);
+@@ -3598,6 +3651,12 @@ window.__ModuleLoader__.load({
+ 				submissionId: visibleSubmissions.at(-1)?.requestId ?? null,
+ 				loadedTurns: turnNavigationItems
+ 			});
++			const openingTarget = (0, react.useMemo)(() => openingUserMessageTarget(hasMore, order, (key) => nodeStore.get(key)?.kind, pendingInputs), [
++				hasMore,
++				order,
++				nodeStore,
++				pendingInputs
++			]);
+ 			const flowContext = (0, react.useMemo)(() => ({ motion: scroll.motion }), [scroll.motion]);
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: ChatView_module_css_default.frame,
+@@ -3652,11 +3711,14 @@ window.__ModuleLoader__.load({
+ 											deferCollapse,
+ 											cwd,
+ 											openFile: requestOpenFile,
++											openUploadedFile: requestOpenUploadedFile,
+ 											openSkill,
+ 											inspectCall,
+ 											forkAt,
+ 											loadImage,
+-											fileMentions
++											fileMentions,
++											leadingUserKey: openingTarget.leadingUserKey,
++											leadingPendingId: openingTarget.leadingPendingId
+ 										}, { hookContext: flowContext })
+ 									})
+ 								]
+@@ -3682,7 +3744,8 @@ window.__ModuleLoader__.load({
+ 						busy: fileOpenBusy,
+ 						onClose: closeFileOpenError,
+ 						onRetry: () => {
+-							requestOpenFile(fileOpenError.path);
++							if (fileOpenError.uploaded === true) requestOpenUploadedFile(fileOpenError.path);
++							else requestOpenFile(fileOpenError.path, fileOpenError.options);
+ 						},
+ 						t
+ 					})
+@@ -4454,7 +4517,7 @@ window.__ModuleLoader__.load({
+ 		* Policy reads select this seat's own conclusion, so a mode change re-renders
+ 		* only seats whose visibility actually changes.
+ 		*/
+-		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t, useChatNodeBottom, deferCollapse, useGroupAction }) {
++		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, onOpenUploadedFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, leadingUserKey, messageFooter, useStore, actions, renderSlot, t, useChatNodeBottom, deferCollapse, useGroupAction }) {
+ 			const bottom = useChatNodeBottom(nodeKey);
+ 			const node = useChatNode(nodeKey);
+ 			const routedNode = node;
+@@ -4522,24 +4585,30 @@ window.__ModuleLoader__.load({
+ 				...groupPart === void 0 ? {} : { groupPart },
+ 				cwd,
+ 				openFile,
++				onOpenUploadedFile,
+ 				openSkill,
+ 				inspectCall,
+ 				forkAt,
+ 				loadImage,
+ 				renderMessageImages,
+ 				fileMentions,
++				...nodeKey === leadingUserKey && messageFooter != null ? { messageFooter } : {},
+ 				turnProcess
+ 			}, [
+ 				node,
+ 				groupPart,
+ 				cwd,
+ 				openFile,
++				onOpenUploadedFile,
+ 				openSkill,
+ 				inspectCall,
+ 				forkAt,
+ 				loadImage,
+ 				renderMessageImages,
+ 				fileMentions,
++				nodeKey,
++				leadingUserKey,
++				messageFooter,
+ 				turnProcess
+ 			]);
+ 			if (routedNode === void 0 || owner === null) return null;
+@@ -5041,6 +5110,7 @@ window.__ModuleLoader__.load({
  			"compactionTitle": "Sixlwa_compactionTitle",
  			"contextRow": "Sixlwa_contextRow",
  			"fileCard": "Sixlwa_fileCard",
@@ -42,7 +186,7 @@ index f997683..e5482e0 100644
  			"fileContent": "Sixlwa_fileContent",
  			"fileIcon": "Sixlwa_fileIcon",
  			"fileMeta": "Sixlwa_fileMeta",
-@@ -1220,6 +1237,7 @@ window.__ModuleLoader__.load({
+@@ -6027,6 +6097,7 @@ window.__ModuleLoader__.load({
  			if (code === "ACCOUNT_SIGNED_OUT") return t("message.failure.accountSignedOut");
  			if (code === "ACCOUNT_SIGN_IN_REQUIRED") return t("message.failure.accountSignInRequired");
  			if (code === "QUOTA" || code === "ACCOUNT_QUOTA") return t("message.failure.quota");
@@ -50,7 +194,7 @@ index f997683..e5482e0 100644
  			return code === "AUTH" ? t("message.failure.auth") : message;
  		}
  		function ModelRetryItem({ node, active, t }) {
-@@ -1329,12 +1347,13 @@ window.__ModuleLoader__.load({
+@@ -6136,12 +6207,13 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** Right-aligned bubble shared by user and steering rows. */
@@ -66,7 +210,7 @@ index f997683..e5482e0 100644
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: MessageItem_module_css_default.userRow,
  				"data-pending-steering": pending || void 0,
-@@ -1349,9 +1368,13 @@ window.__ModuleLoader__.load({
+@@ -6156,9 +6228,13 @@ window.__ModuleLoader__.load({
  								images: [attachment.image],
  								align: "end",
  								compact: compactImages
@@ -82,7 +226,7 @@ index f997683..e5482e0 100644
  								children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
  									path: attachment.file.name,
  									className: MessageItem_module_css_default.fileIcon
-@@ -1369,11 +1392,11 @@ window.__ModuleLoader__.load({
+@@ -6176,11 +6252,11 @@ window.__ModuleLoader__.load({
  						}),
  						showBubble && (0, react_jsx_runtime.jsxs)("div", {
  							className: MessageItem_module_css_default.bubble,
@@ -96,7 +240,7 @@ index f997683..e5482e0 100644
  						}),
  						referenceLabels.length > 0 && (0, react_jsx_runtime.jsx)("div", {
  							className: MessageItem_module_css_default.referenceSummary,
-@@ -1411,7 +1434,7 @@ window.__ModuleLoader__.load({
+@@ -6218,7 +6294,7 @@ window.__ModuleLoader__.load({
  		* @param props - the session snapshot's pending submission and render seats.
  		* @returns the echoed user bubble.
  		*/
@@ -105,7 +249,7 @@ index f997683..e5482e0 100644
  			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
  				content: (0, react.useMemo)(() => submission.text === "" ? [] : [{
  					type: "text",
-@@ -1430,6 +1453,8 @@ window.__ModuleLoader__.load({
+@@ -6237,6 +6313,8 @@ window.__ModuleLoader__.load({
  					file: attachment.value
  				}), [submission.attachments]),
  				renderMessageImages,
@@ -114,7 +258,7 @@ index f997683..e5482e0 100644
  				pending: submission.placement === "steering",
  				echo: true,
  				t,
-@@ -1443,7 +1468,7 @@ window.__ModuleLoader__.load({
+@@ -6250,7 +6328,7 @@ window.__ModuleLoader__.load({
  			});
  		}
  		/** User and admitted-steering keyed Chat renderer. */
@@ -123,7 +267,7 @@ index f997683..e5482e0 100644
  			const data = node.data;
  			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
  				content: data.content,
-@@ -1452,6 +1477,8 @@ window.__ModuleLoader__.load({
+@@ -6259,6 +6337,8 @@ window.__ModuleLoader__.load({
  					openSkill
  				},
  				renderMessageImages,
@@ -132,185 +276,43 @@ index f997683..e5482e0 100644
  				...data.referenceLabels === void 0 ? {} : { referenceLabels: data.referenceLabels },
  				...data.skillNames === void 0 ? {} : { skillNames: data.skillNames },
  				t,
-@@ -1665,7 +1692,7 @@ window.__ModuleLoader__.load({
- 		* Policy reads select this seat's own conclusion, so a mode change re-renders
- 		* only seats whose visibility actually changes.
- 		*/
--		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, t }) {
-+		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, openSkill, inspectCall, forkAt, loadImage, renderMessageImages, fileMentions, useStore, actions, renderSlot, onOpenUploadedFile, leadingUserKey = null, messageFooter = null, t }) {
- 			const node = useChatNode(nodeKey);
- 			const routedNode = node;
- 			const turn = turnOf$1(routedNode);
-@@ -1729,24 +1756,30 @@ window.__ModuleLoader__.load({
+@@ -6410,7 +6490,8 @@ window.__ModuleLoader__.load({
+ 		//#region lib/types/client/chat/ChatFlow.js
+ 		/** Ordered Chat rows, local echoes, and running status share the flow slot's parent. */
+ 		/** Render the flow without adding a DOM parent or changing keyed row positions. */
+-		const ChatFlow = (0, react.memo)(function ChatFlow({ entries, pendingInputs, lastInputTurn, deferCollapse, useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useStore, actions, renderSlot, t, useGroupAction, useGroupHeaderAction, cwd, openFile, openSkill, inspectCall, forkAt, loadImage, fileMentions }) {
++		const ChatFlow = (0, react.memo)(function ChatFlow({ entries, pendingInputs, lastInputTurn, deferCollapse, useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useStore, actions, renderSlot, t, useGroupAction, useGroupHeaderAction, cwd, openFile, openUploadedFile, openSkill, inspectCall, forkAt, loadImage, fileMentions, leadingUserKey, leadingPendingId }) {
++			const messageFooter = leadingUserKey == null && leadingPendingId == null ? null : renderSlot("conversation.chat.userMessageFooter", { leading: true });
+ 			const nodeStore = useChat((snapshot) => snapshot.nodes);
+ 			const running = useSession((snapshot) => snapshot.running);
+ 			const runningStartTime = useChatNode(useChat((snapshot) => snapshot.navigation.items().at(-1)?.anchorKey) ?? "", (node) => {
+@@ -6435,12 +6516,15 @@ window.__ModuleLoader__.load({
+ 				deferCollapse,
  				cwd,
  				openFile,
++				onOpenUploadedFile: openUploadedFile,
  				openSkill,
-+				onOpenUploadedFile,
  				inspectCall,
  				forkAt,
  				loadImage,
  				renderMessageImages,
- 				fileMentions,
--				turnProcess
-+				turnProcess,
-+				...nodeKey === leadingUserKey && messageFooter != null ? { messageFooter } : {}
- 			}, [
- 				node,
- 				groupPart,
- 				cwd,
- 				openFile,
- 				openSkill,
-+				onOpenUploadedFile,
- 				inspectCall,
- 				forkAt,
- 				loadImage,
- 				renderMessageImages,
- 				fileMentions,
--				turnProcess
-+				turnProcess,
-+				nodeKey,
+-				fileMentions
++				fileMentions,
 +				leadingUserKey,
 +				messageFooter
- 			]);
- 			if (routedNode === void 0 || owner === null) return null;
- 			const routedOwner = {
-@@ -5072,6 +5105,28 @@ window.__ModuleLoader__.load({
- 		* The last input's Turn also distinguishes an empty opening control from
- 		* one whose human input or trigger notice is already present.
- 		*/
-+		/**
-+		* The opening user message is the footer host only when older history is
-+		* fully loaded. A pending transcript echo hosts it until that node exists.
-+		* @param hasMore - whether older history remains.
-+		* @param order - durable chat node keys.
-+		* @param kindAt - kind lookup for one key.
-+		* @param pendingInputs - visible echoes and steering rows.
-+		* @returns the single host key, or neither when the opening is unknown.
-+		*/
-+		function openingUserMessageTarget(hasMore, order, kindAt, pendingInputs) {
-+			if (hasMore !== false) return { leadingUserKey: null, leadingPendingId: null };
-+			let leadingUserKey = null;
-+			for (const key of order) {
-+				if (kindAt(key) === "user") {
-+					leadingUserKey = key;
-+					break;
-+				}
-+			}
-+			if (leadingUserKey != null) return { leadingUserKey, leadingPendingId: null };
-+			const pending = pendingInputs.find((item) => Object.hasOwn(item, "requestId") && item.placement !== "steering");
-+			return { leadingUserKey: null, leadingPendingId: pending?.requestId ?? null };
-+		}
- 		function observedInputs(order, nodes) {
- 			const observed = /* @__PURE__ */ new Set();
- 			let lastInputTurn;
-@@ -5088,13 +5143,15 @@ window.__ModuleLoader__.load({
- 				lastInputTurn
  			};
- 		}
--		const ChatNodeList = (0, react.memo)(function ChatNodeList({ entries, useChatGroup, pendingInputs, lastInputTurn, ...seatProps }) {
-+		const ChatNodeList = (0, react.memo)(function ChatNodeList({ entries, useChatGroup, pendingInputs, lastInputTurn, leadingUserKey = null, leadingPendingId = null, messageFooter = null, ...seatProps }) {
  			const rows = entries.map((entry) => {
  				switch (entry.kind) {
- 					case "node": return (0, react.createElement)(ChatNodeSeat, {
- 						...seatProps,
- 						key: chatRenderKey(entry),
- 						nodeKey: entry.key,
-+						leadingUserKey,
-+						messageFooter,
- 						...entry.groupPart === void 0 ? {} : { groupPart: entry.groupPart }
- 					});
- 					case "group": return (0, react.createElement)(ChatGroupSeat, {
-@@ -5108,7 +5165,9 @@ window.__ModuleLoader__.load({
- 			});
+@@ -6463,6 +6547,8 @@ window.__ModuleLoader__.load({
  			const pendingRows = pendingInputs.map((item) => "requestId" in item ? (0, react_jsx_runtime.jsx)(PendingSubmissionBubble, {
  				submission: item,
-+				onOpenUploadedFile: seatProps.onOpenUploadedFile,
- 				renderMessageImages: seatProps.renderMessageImages,
+ 				renderMessageImages,
++				onOpenUploadedFile: openUploadedFile,
 +				footer: item.requestId === leadingPendingId ? messageFooter : null,
- 				t: seatProps.t
+ 				t
  			}, item.requestId) : (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
  				content: item.content,
-@@ -5127,7 +5186,7 @@ window.__ModuleLoader__.load({
- 		* The chat view slot entry: pure component over the composed props; each
- 		* ordered business Node crosses the keyed renderer seat.
- 		*/
--		function ChatView({ useSession, useChat, useChatNode, useChatNodeProcess, useChatGroup, useConversation, useSessions, useStore, actions, renderSlot, sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions, usePresentation, useProjection, t }) {
-+		function ChatView({ useSession, useChat, useChatNode, useChatNodeProcess, useChatGroup, useConversation, useSessions, useStore, actions, renderSlot, sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions, usePresentation, useProjection, openUploadedFile, t }) {
- 			const order = useChat((s) => s.order);
- 			const groupedEntries = useConversation((snapshot) => snapshot.views.grouped("chat")?.entries);
- 			const entries = (0, react.useMemo)(() => groupedEntries ?? order.map((key) => ({
-@@ -5174,11 +5233,29 @@ window.__ModuleLoader__.load({
- 					if (id !== fileOpenRequest.current) return;
- 					setFileOpenError({
- 						path,
-+						options,
- 						message: openFailureMessage(error, t("fileOpen.unknown"))
- 					});
- 					setFileOpenBusy(false);
- 				});
- 			}, [openFile, t]);
-+			const requestOpenUploadedFile = (0, react.useCallback)((attachmentId) => {
-+				if (openUploadedFile === void 0) return;
-+				const id = ++fileOpenRequest.current;
-+				setFileOpenBusy(true);
-+				openUploadedFile(attachmentId).then(() => {
-+					if (id !== fileOpenRequest.current) return;
-+					setFileOpenError(null);
-+					setFileOpenBusy(false);
-+				}, (error) => {
-+					if (id !== fileOpenRequest.current) return;
-+					setFileOpenError({
-+						path: String(attachmentId),
-+						message: openFailureMessage(error, t("fileOpen.unknown"))
-+					});
-+					setFileOpenBusy(false);
-+				});
-+			}, [openUploadedFile, t]);
- 			const closeFileOpenError = (0, react.useCallback)(() => {
- 				fileOpenRequest.current += 1;
- 				setFileOpenError(null);
-@@ -5211,6 +5288,8 @@ window.__ModuleLoader__.load({
- 				pendingSubmissions,
- 				visibleSubmissions
- 			]);
-+			const openingTarget = openingUserMessageTarget(hasMore, order, (key) => nodeStore.get(key)?.kind, pendingInputs);
-+			const openingFooter = openingTarget.leadingUserKey != null || openingTarget.leadingPendingId != null ? renderSlot("conversation.chat.userMessageFooter", { leading: true }) : null;
- 			const renderMessageImages = (0, react.useCallback)((owner) => renderSlot("conversation.message.images", {
- 				...owner,
- 				loadImage
-@@ -5281,10 +5360,13 @@ window.__ModuleLoader__.load({
- 										openExternalLink,
- 										openFile: requestOpenFile,
- 										fileImages,
--										children: (0, react_jsx_runtime.jsx)(ChatNodeList, {
-+										children: 										(0, react_jsx_runtime.jsx)(ChatNodeList, {
- 											entries,
- 											pendingInputs,
- 											lastInputTurn,
-+											leadingUserKey: openingTarget.leadingUserKey,
-+											leadingPendingId: openingTarget.leadingPendingId,
-+											messageFooter: openingFooter,
- 											nodeStore,
- 											useChatGroup,
- 											useChatNode,
-@@ -5301,6 +5383,7 @@ window.__ModuleLoader__.load({
- 											renderMessageImages,
- 											fileMentions,
- 											renderSlot,
-+											onOpenUploadedFile: requestOpenUploadedFile,
- 											t
- 										})
- 									}),
-@@ -5327,7 +5410,7 @@ window.__ModuleLoader__.load({
- 						busy: fileOpenBusy,
- 						onClose: closeFileOpenError,
- 						onRetry: () => {
--							requestOpenFile(fileOpenError.path);
-+							requestOpenFile(fileOpenError.path, fileOpenError.options);
- 						},
- 						t
- 					})
-@@ -5522,7 +5605,8 @@ window.__ModuleLoader__.load({
+@@ -6654,7 +6740,8 @@ window.__ModuleLoader__.load({
  			"message.accountStopped": "任务已停止",
  			"message.failure.accountSignedOut": "任务已因退出 DeepSeek 登录而停止。",
  			"message.failure.accountSignInRequired": "请先登录 DeepSeek，并确认请求地址支持账号认证。",
@@ -320,7 +322,7 @@ index f997683..e5482e0 100644
  			"message.turnError": "本轮运行失败",
  			"message.maxTokens": "已达到输出 token 上限",
  			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
-@@ -5711,7 +5795,8 @@ window.__ModuleLoader__.load({
+@@ -6847,7 +6934,8 @@ window.__ModuleLoader__.load({
  			"message.accountStopped": "Task stopped",
  			"message.failure.accountSignedOut": "Stopped because you signed out of DeepSeek.",
  			"message.failure.accountSignInRequired": "Sign in to DeepSeek and ensure the request destination supports account authentication.",
@@ -330,7 +332,7 @@ index f997683..e5482e0 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -12265,7 +12350,8 @@ window.__ModuleLoader__.load({
+@@ -13656,7 +13744,8 @@ window.__ModuleLoader__.load({
  			"configForms",
  			"remote",
  			"remote.session",
@@ -340,33 +342,35 @@ index f997683..e5482e0 100644
  		];
  		/**
  		* Mount all Chat-owned contributions.
-@@ -12355,6 +12441,14 @@ window.__ModuleLoader__.load({
+@@ -13745,6 +13834,16 @@ window.__ModuleLoader__.load({
+ 					})
  				}, LinkOpeningRow));
  			});
++			ctx.provide("openUploadedAttachment", {
++				open: async (sessionId, attachmentId) => {
++					const binding = ctx.sessions.binding(sessionId);
++					if (binding === void 0) throw new Error(`ui-chat: unknown session "${sessionId}"`);
++					const result = await binding.session.readFileHostPath(attachmentId);
++					if (!result.ok) throw result.error;
++					const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
++					await openResolvedHostFile(ctx, sessionId, cwd, result.value.path);
++				}
++			});
  			const transcriptView = new TranscriptViewPolicy(chatSettings, "dshDesktop" in globalThis ? "standard" : DEFAULT_TRANSCRIPT_VIEW_MODE);
-+			ctx.provide("openUploadedAttachment", { open: async (sessionId, attachmentId) => {
-+				const binding = ctx.sessions.binding(sessionId);
-+				if (binding === void 0) throw new Error(`ui-chat: unknown session "${sessionId}"`);
-+				const result = await binding.session.readFileHostPath(attachmentId);
-+				if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
-+				const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
-+				await openResolvedHostFile(ctx, sessionId, cwd, result.value.path);
-+			} });
- 			const presentation = derivePresentationPolicy(transcriptView.mode);
+ 			const presentation = derivePresentationPolicy(transcriptView.mode, transcriptView.collapseTiming);
  			const performancePolicy = new PerformanceUsagePolicy(chatSettings);
- 			ctx.effect(() => () => {
-@@ -12403,6 +12497,10 @@ window.__ModuleLoader__.load({
- 						"conversation.message.images": {
- 							kind: "single",
- 							scope: "session"
-+						},
-+						"conversation.chat.userMessageFooter": {
-+							kind: "list",
-+							scope: "session"
- 						}
- 					},
- 					store: chatStore,
-@@ -12422,10 +12520,22 @@ window.__ModuleLoader__.load({
+@@ -13810,6 +13909,10 @@ window.__ModuleLoader__.load({
+ 					"conversation.message.images": {
+ 						kind: "single",
+ 						scope: "session"
++					},
++					"conversation.chat.userMessageFooter": {
++						kind: "list",
++						scope: "session"
+ 					}
+ 				},
+ 				inject: (sessionId) => {
+@@ -13841,10 +13944,22 @@ window.__ModuleLoader__.load({
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
  								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
@@ -394,10 +398,10 @@ index f997683..e5482e0 100644
  							openSkill: (name) => {
  								const scope = ctx.sessions.scope(sessionId);
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
-index a3f4a42..576bab3 100644
+index ced315d..ddebd91 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
-@@ -28,12 +28,18 @@ export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>;
+@@ -32,12 +32,18 @@ export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>;
  export interface OpenFileOptions {
      /** 1-based line to reveal; absent = the file's beginning. */
      readonly line?: number;
@@ -417,22 +421,28 @@ index a3f4a42..576bab3 100644
  }
  /** Owner currency of finalized-assistant actions. */
  export interface AssistantActionOwnerProps {
-@@ -213,8 +219,13 @@ export interface ChatViewInjected {
-     forkAt: (seq: number) => void;
-     fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined;
+@@ -203,6 +209,11 @@ export interface PresentationInjected {
  }
-+/** Owner currency of the opening user-message footer. */
+ /** Full props of one keyed Chat renderer. */
+ export type ChatNodeViewProps<Kind extends ChatNodeKind = ChatNodeKind> = PropsRuntime<'conversation.chat.node', Kind> & PropsLocale<'chat'>;
++/** Owner of the opening user-message footer. */
 +export interface UserMessageFooterOwnerProps {
-+    /** True only for the loaded conversation's first user message. */
++    /** True only for the first loaded user message or its send echo. */
 +    readonly leading: true;
 +}
+ /** Command-row owner share. */
+ export interface CommandRowOwnerProps {
+     node: CommandNode;
+@@ -267,7 +278,7 @@ export interface ChatFlowOwnerProps extends Pick<ChatNodeOwnerProps, 'cwd' | 'op
+     readonly deferCollapse: boolean;
+ }
+ /** Full props of the Chat-owned flow renderer. */
+-export type ChatFlowSlotProps = PropsRuntime<'conversation.chat.flow'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'> & PropsStore<ChatStore> & InjectFace<ChatFlowDataInjected> & PropsLocale<'chat'>;
++export type ChatFlowSlotProps = PropsRuntime<'conversation.chat.flow'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images' | 'conversation.chat.userMessageFooter'> & PropsStore<ChatStore> & InjectFace<ChatFlowDataInjected> & PropsLocale<'chat'>;
  /** Full Chat view props. */
--export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
-+export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images' | 'conversation.chat.userMessageFooter'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
+ export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.flow'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
  /** Full props of the durable-message image renderer. */
- export type MessageImagesProps = PropsRuntime<'conversation.message.images'> & PropsLocale<'conversation'>;
- declare module '@deepseek-ai/dsh-client-ui-slots' {
-@@ -254,6 +265,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+@@ -325,6 +336,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
              scope: 'session';
              owner: MessageImagesOwnerProps;
          };

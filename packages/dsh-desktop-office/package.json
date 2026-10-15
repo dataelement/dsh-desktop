@@ -4,12 +4,18 @@
   "private": true,
   "type": "module",
   "main": "./index.js",
-  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" }, "./package.json": "./package.json" },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "types": "./index.d.ts",
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-skill-office": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tool-workspace-dependencies": "0.2.0-rc.2"
+    "@deepseek-ai/cordis": "^4.0.4 || ~4.0.5-alpha.1",
+    "@deepseek-ai/dsh-skill-office": "0.2.0-rc.2 || ^0.2.1-alpha.1",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "0.2.0-rc.2 || ^0.2.1-alpha.1"
   }
 }

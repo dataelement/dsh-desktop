@@ -1,0 +1,19 @@
+diff --git a/node_modules/@deepseek-ai/dsh-session-title-first-prompt-llm/lib/index.js b/node_modules/@deepseek-ai/dsh-session-title-first-prompt-llm/lib/index.js
+index eef0e72..c7d8cf0 100644
+--- a/node_modules/@deepseek-ai/dsh-session-title-first-prompt-llm/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-title-first-prompt-llm/lib/index.js
+@@ -63,9 +63,13 @@ const EMPHASIS_WRAPPER = /^(?<marker>\*{1,3})(?<inner>\S(?:.*\S)?)\k<marker>$/u;
+ * that is entirely `*` emphasis loses the marker pair even when the model
+ * meant it literally; the inner-marker check keeps emphasis inside a longer
+ * line, and the system instruction forbids Markdown.
++* MiniMax and similar routes leave reasoning in the text channel as a
++* `<think>` block. That block is not the title; drop it before the line read
++* so a following title survives and a reasoning-only reply stays empty.
+ */
+ function titleFromOutput(text) {
+-	const line = text.split(/\r?\n/u).map((item) => item.trim()).find((item) => item.length > 0) ?? "";
++	const visible = text.replace(/<think>[\s\S]*?<\/think>/giu, "").replace(/<think>[\s\S]*$/giu, "");
++	const line = visible.split(/\r?\n/u).map((item) => item.trim()).find((item) => item.length > 0) ?? "";
+ 	const groups = EMPHASIS_WRAPPER.exec(line)?.groups;
+ 	const marker = groups?.["marker"];
+ 	const inner = groups?.["inner"];

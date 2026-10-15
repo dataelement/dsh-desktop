@@ -5,7 +5,12 @@ import { expect, it } from 'vitest'
 const require = createRequire(import.meta.url)
 const Dispatcher1Wrapper = require('undici/lib/dispatcher/dispatcher1-wrapper.js')
 
-it.each(['object', 'array'])('preserves %s response headers for legacy fetch and decompresses gzip', async (shape) => {
+// Node 22 fetch still consumes the legacy dispatcher handler. Node 24+ fetch
+// speaks the current handler, so these cases no longer describe it. The
+// wrapHandler cases below still check the object-header conversion.
+const legacyFetch = Number(process.versions.node.split('.')[0]) < 24
+
+it.skipIf(!legacyFetch).each(['object', 'array'])('preserves %s response headers for legacy fetch and decompresses gzip', async (shape) => {
   const headers = { 'content-type': 'application/json', 'content-encoding': 'gzip' }
   const rawHeaders = shape === 'object' ? headers : Object.entries(headers).flat().map(value => Buffer.from(value))
   const controller = { rawHeaders, resume() {}, pause() {}, abort() {} }
@@ -32,7 +37,7 @@ it('converts HTTP/2 trailer objects to the legacy flat array', () => {
   expect(trailers.map(value => value.toString())).toEqual(['x-check', 'done'])
 })
 
-it('preserves duplicate headers, streaming chunks, and request options', async () => {
+it.skipIf(!legacyFetch)('preserves duplicate headers, streaming chunks, and request options', async () => {
   const requestBody = 'unchanged request'
   const headers = { 'content-type': 'text/event-stream', 'set-cookie': ['one=1', 'two=2'] }
   const controller = { rawHeaders: headers, resume() {}, pause() {}, abort() {} }

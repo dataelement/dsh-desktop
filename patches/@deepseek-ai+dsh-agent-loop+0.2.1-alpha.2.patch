@@ -1,0 +1,12 @@
+diff --git a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
+index 332c382..21e9ec4 100644
+--- a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
+@@ -1590,6 +1590,7 @@ var AgentLoop = class extends Service {
+ 		ctx.effect(() => ctx.agents.setFactory(this), "agentLoop.setFactory()");
+ 		ctx.systemPrompt.variable("provider", (context) => context.agent?.options.provider);
+ 		ctx.systemPrompt.variable("model", (context) => context.agent?.options.model);
++		ctx.systemPrompt.variable("cwd", (context) => context.agent?.session.header.cwd);
+ 		for (const { id, sessionId, cwd, resumeSessionId, ...options } of this.config.agents) {
+ 			const meta = cwd === void 0 ? {} : { cwd };
+ 			if (resumeSessionId === void 0 || resumeSessionId === "") {

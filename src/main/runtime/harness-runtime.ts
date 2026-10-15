@@ -406,6 +406,25 @@ export function isHarnessStartupProbeHealthy(
   return launchToken !== undefined && status >= 200 && status < 500
 }
 
+const guardedStreams = new WeakSet<NodeJS.EventEmitter>()
+
+export function isBrokenPipe(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EPIPE'
+}
+
+/**
+ * A dev Electron process echoes Harness logs to the parent terminal. When that
+ * pipe closes, Node emits EPIPE on stdout and Electron presents it as an
+ * uncaught main-process exception. Listening here keeps the window alive.
+ */
+export function absorbBrokenPipe(stream: NodeJS.EventEmitter): void {
+  if (guardedStreams.has(stream)) return
+  guardedStreams.add(stream)
+  stream.on('error', (error: unknown) => {
+    if (!isBrokenPipe(error)) throw error
+  })
+}
+
 export class HarnessRuntime {
   private child?: HarnessChildProcess
   private logStream?: WriteStream
@@ -726,7 +745,16 @@ ${cause}`
     if (this.logLines.length > 200) this.logLines.splice(0, this.logLines.length - 200)
     const stamped = this.stampLog(line)
     this.logStream?.write(`${stamped}\n`)
-    if (this.options.echoLogs) console.log(stamped)
+    if (!this.options.echoLogs) return
+    // Dev launches echo into the parent pipe. Once that parent exits, stdout
+    // emits EPIPE and Electron shows it as an uncaught main-process dialog.
+    absorbBrokenPipe(process.stdout)
+    absorbBrokenPipe(process.stderr)
+    try {
+      console.log(stamped)
+    } catch (error) {
+      if (!isBrokenPipe(error)) throw error
+    }
   }
 
   /**

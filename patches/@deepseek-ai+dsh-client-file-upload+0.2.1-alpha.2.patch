@@ -1,8 +1,8 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
-index 4094ab6..6cc5771 100644
+index deb9ccf..3d2c2ea 100644
 --- a/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js
-@@ -231,6 +231,19 @@ let FileUploads = (() => {
+@@ -229,6 +229,19 @@ let FileUploads = (() => {
  			return this.stagedFiles.get(agent.session)?.get(receiptId)?.file;
  		}
  		/**

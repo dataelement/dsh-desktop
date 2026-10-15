@@ -8,7 +8,7 @@ This guide covers local development, validation, patch maintenance, and target-n
 - npm
 - macOS on Apple Silicon or Intel, or Windows x64
 
-This baseline pins `@deepseek-ai/dsh@0.2.0-rc.2`. Windows packages run Harness in Electron Node mode, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
+This baseline pins `@deepseek-ai/dsh@0.2.1-alpha.2`. Windows packages run Harness in Electron Node mode, while macOS uses an Electron UtilityProcess. Both are independent of the Node.js version used to run development commands.
 
 ## Local setup
 

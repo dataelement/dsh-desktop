@@ -115,6 +115,7 @@ describe('PPT instructions follow the session composer button', () => {
         }
         registerSkillTools({
           skills: ctx.skills, on: ctx.on.bind(ctx),
+          workingDirectory: { ensure: async () => '/tmp' },
           tools: { register: tool => { skillTool = tool }, get: () => skillTool }
         })
       }
