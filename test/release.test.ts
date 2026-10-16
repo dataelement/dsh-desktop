@@ -174,6 +174,10 @@ describe('GitHub release contract', () => {
       path.join(projectRoot, 'build', 'windows-hidden-console.mjs'),
       'utf8'
     )
+    const windowsHideConsoleImport = await readFile(
+      path.join(projectRoot, 'build', 'windows-hide-console-import.mjs'),
+      'utf8'
+    )
 
     expect(packageJson.build.artifactName).toBe('dsh-desktop-${os}-${arch}.${ext}')
     expect(packageJson.build.asar).toBe(true)
@@ -215,6 +219,12 @@ describe('GitHub release contract', () => {
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/windows-child-process-hide.mjs',
       to: 'windows-child-process-hide.mjs'
+    })
+    expect(windowsHideConsoleImport).toContain("await import('./windows-hidden-console.mjs')")
+    expect(windowsHideConsoleImport).toContain('enforceWindowsChildProcessHide')
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/windows-hide-console-import.mjs',
+      to: 'windows-hide-console-import.mjs'
     })
     expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/splash.html',

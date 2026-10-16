@@ -593,6 +593,22 @@ function harnessNodeEntryPath(): string {
     : join(app.getAppPath(), 'build', 'harness-node-entry.mjs')
 }
 
+let notedMissingConsoleBootstrap = false
+
+/** Windows `--import` bootstrap. Absent on other platforms and when packaging omitted it. */
+function hideConsoleBootstrapPath(): string | undefined {
+  if (process.platform !== 'win32') return undefined
+  const path = app.isPackaged
+    ? join(process.resourcesPath, 'windows-hide-console-import.mjs')
+    : join(app.getAppPath(), 'build', 'windows-hide-console-import.mjs')
+  if (existsSync(path)) return path
+  if (!notedMissingConsoleBootstrap) {
+    notedMissingConsoleBootstrap = true
+    console.warn('[desktop] Windows console hide bootstrap is missing; child consoles are not suppressed')
+  }
+  return undefined
+}
+
 function desktopResourcePath(name: string): string {
   return app.isPackaged ? join(process.resourcesPath, name) : join(app.getAppPath(), 'build', name)
 }
@@ -1413,6 +1429,7 @@ function launchHarness(): Promise<void> {
           nodeExecutablePath: bundledNodePath(),
           pnpmEntryPath: bundledPnpmEntryPath(),
           pnpmRunnerPath: bundledPnpmRunnerPath(),
+          hideConsoleBootstrapPath: hideConsoleBootstrapPath(),
           dshEntryPath: dshEntryPath(),
           note: (line) => runtime.note(line),
           reinstallSharedTree: async () => {
@@ -1422,7 +1439,8 @@ function launchHarness(): Promise<void> {
               dshEntryPath: dshEntryPath(),
               nodeExecutablePath: bundledNodePath(),
               pnpmEntryPath: bundledPnpmEntryPath(),
-              pnpmRunnerPath: bundledPnpmRunnerPath()
+              pnpmRunnerPath: bundledPnpmRunnerPath(),
+              hideConsoleBootstrapPath: hideConsoleBootstrapPath()
             })
             if (result.ok) await markProfileInstallComplete(dshHome)
             return result
@@ -1435,6 +1453,7 @@ function launchHarness(): Promise<void> {
         nodeExecutablePath: bundledNodePath(),
         pnpmEntryPath: bundledPnpmEntryPath(),
         pnpmRunnerPath: bundledPnpmRunnerPath(),
+        hideConsoleBootstrapPath: hideConsoleBootstrapPath(),
         note: (line) => runtime.note(line)
       }),
       marketUsableWithoutBaseline: () => marketUsableWithoutBaseline(dshHome),
@@ -1647,7 +1666,8 @@ async function removeMarket(dshHome: string): Promise<{ ok: boolean; detail?: st
         dshEntryPath: dshEntryPath(),
         nodeExecutablePath: bundledNodePath(),
         pnpmEntryPath: bundledPnpmEntryPath(),
-        pnpmRunnerPath: bundledPnpmRunnerPath()
+        pnpmRunnerPath: bundledPnpmRunnerPath(),
+        hideConsoleBootstrapPath: hideConsoleBootstrapPath()
       },
       'dshmarket',
       true
@@ -2164,6 +2184,7 @@ async function showPluginRecovery(options?: {
             nodeExecutablePath: bundledNodePath(),
             pnpmEntryPath: bundledPnpmEntryPath(),
             pnpmRunnerPath: bundledPnpmRunnerPath(),
+            hideConsoleBootstrapPath: hideConsoleBootstrapPath(),
             note: (line) => runtime.note(line)
           })).catch((error: unknown) => ({ ok: false, detail: error instanceof Error ? error.message : String(error) }))
         runtime.note(`[plugin-recovery] ${action} ${result.ok ? 'succeeded' : 'failed'}${result.detail ? `: ${result.detail}` : ''}`)
@@ -2241,6 +2262,7 @@ async function showPluginRecovery(options?: {
             dshHome, pluginName: candidate.packageName, targetVersion: candidate.targetVersion,
             nodeExecutablePath: bundledNodePath(), pnpmEntryPath: bundledPnpmEntryPath(),
             pnpmRunnerPath: bundledPnpmRunnerPath(),
+            hideConsoleBootstrapPath: hideConsoleBootstrapPath(),
             note: line => runtime.note(line)
           }),
           remove: plugin => removeProfilePluginCompletely(dshHome, plugin, 'plugin-recovery')
@@ -2543,7 +2565,8 @@ async function repairSafeModeCompatibilityIssues(
       dshEntryPath: dshEntryPath(),
       nodeExecutablePath: bundledNodePath(),
       pnpmEntryPath: bundledPnpmEntryPath(),
-      pnpmRunnerPath: bundledPnpmRunnerPath()
+      pnpmRunnerPath: bundledPnpmRunnerPath(),
+      hideConsoleBootstrapPath: hideConsoleBootstrapPath()
     })
     if (!result.ok) return { repaired, failed, installFailed: result.detail ?? 'unknown error' }
     await markProfileInstallComplete(dshHome)
@@ -2581,7 +2604,8 @@ async function removeProfilePluginCompletely(
         dshEntryPath: dshEntryPath(),
         nodeExecutablePath: bundledNodePath(),
         pnpmEntryPath: bundledPnpmEntryPath(),
-        pnpmRunnerPath: bundledPnpmRunnerPath()
+        pnpmRunnerPath: bundledPnpmRunnerPath(),
+        hideConsoleBootstrapPath: hideConsoleBootstrapPath()
       })
       if (!rebuild.ok) {
         runtime.note(
@@ -2962,6 +2986,7 @@ async function showSafeModeManager(initial?: {
             nodeExecutablePath: bundledNodePath(),
             pnpmEntryPath: bundledPnpmEntryPath(),
             pnpmRunnerPath: bundledPnpmRunnerPath(),
+            hideConsoleBootstrapPath: hideConsoleBootstrapPath(),
             note: (line) => runtime.note(line)
           })
           if (res.ok) {
@@ -3273,6 +3298,7 @@ async function bootstrap(): Promise<void> {
     logPath: join(app.getPath('logs'), 'harness.log'),
     pnpmEntryPath: bundledPnpmEntryPath(),
     pnpmRunnerPath: bundledPnpmRunnerPath(),
+    hideConsoleBootstrapPath: hideConsoleBootstrapPath(),
     // Keep the Harness origin stable across launches. These ports are separate
     // from the production/development mobile bridge ports (43127/43128).
     preferredPort: developmentConfig.harnessPort,

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
+import { hideConsoleImportArguments } from '../windows-hide-console.mjs'
 import { ensureRegistryDirectories, generationId, writeGenerationMeta } from './registry.mjs'
 
 /**
@@ -128,19 +129,39 @@ async function stageBuildApprovals(
   return stagedApprovals
 }
 
+/**
+ * pnpm argv for one generation install. A scrubbed `options.environment` that
+ * omits the console-hide path still inherits it from this process; an explicit
+ * value in the options wins.
+ * @param {object} options
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string[]}
+ */
+export function installPnpmArguments(options, env = process.env, platform = process.platform) {
+  return [
+    ...hideConsoleImportArguments({
+      ...env,
+      ...(options.environment ?? {})
+    }, platform),
+    options.pnpmEntryPath,
+    'add',
+    options.pluginSpec,
+    ...(options.registry ? [`--registry=${options.registry}`] : []),
+    ...(typeof options.autoInstallPeers === 'boolean'
+      ? [`--config.auto-install-peers=${options.autoInstallPeers}`] : []),
+    ...(options.strictDepBuilds === true ? ['--config.strict-dep-builds=true'] : []),
+    ...(Number.isSafeInteger(options.minimumReleaseAge) && options.minimumReleaseAge >= 0
+      ? [`--config.minimum-release-age=${options.minimumReleaseAge}`] : [])
+  ]
+}
+
 async function defaultRunInstall(options, stagingDir) {
   const spawnProcess = options.spawnProcess ?? spawn
   return new Promise((resolve) => {
     const child = spawnProcess(
       options.nodeExecutablePath,
-      [options.pnpmEntryPath, 'add', options.pluginSpec,
-        ...(options.registry ? [`--registry=${options.registry}`] : []),
-        ...(typeof options.autoInstallPeers === 'boolean'
-          ? [`--config.auto-install-peers=${options.autoInstallPeers}`] : []),
-        ...(options.strictDepBuilds === true ? ['--config.strict-dep-builds=true'] : []),
-        ...(Number.isSafeInteger(options.minimumReleaseAge) && options.minimumReleaseAge >= 0
-          ? [`--config.minimum-release-age=${options.minimumReleaseAge}`] : [])
-      ],
+      installPnpmArguments(options),
       {
         cwd: stagingDir,
         env: {

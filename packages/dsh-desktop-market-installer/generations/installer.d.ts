@@ -45,6 +45,21 @@ export function installGeneration(
   options: GenerationInstallOptions
 ): Promise<GenerationInstallResult>
 
+export function installPnpmArguments(
+  options: Pick<
+    GenerationInstallOptions,
+    | 'pnpmEntryPath'
+    | 'pluginSpec'
+    | 'registry'
+    | 'autoInstallPeers'
+    | 'strictDepBuilds'
+    | 'minimumReleaseAge'
+    | 'environment'
+  >,
+  env?: NodeJS.ProcessEnv,
+  platform?: NodeJS.Platform
+): string[]
+
 export function generationBuildApprovals(workspaceYaml: string): string[]
 
 export function pinnedGitBuildApproval(

@@ -32,6 +32,10 @@
       "types": "./market-registry.d.ts",
       "default": "./market-registry.mjs"
     },
+    "./windows-hide-console": {
+      "types": "./windows-hide-console.d.ts",
+      "default": "./windows-hide-console.mjs"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {

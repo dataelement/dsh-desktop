@@ -23,6 +23,7 @@ import { DEFAULT_NPM_REGISTRY, resolveMarketRegistry } from './market-registry.m
 import { forgetPlugin } from './plugin-state.mjs'
 import { SIDELINE_MARKER } from './pnpm-runner.mjs'
 import { removeTree } from './remove-tree.mjs'
+import { hideConsoleCmdAssignment, hideConsoleImportArguments } from './windows-hide-console.mjs'
 
 export const RECOMMENDED_MARKET_VERSION = '^1.65.1'
 export const MARKET_PACKAGE = 'dshmarket'
@@ -204,8 +205,12 @@ export function resolvePnpmEntry(requireFrom = import.meta.url) {
  */
 export async function stagePnpmRunner(directory) {
   const source = fileURLToPath(new URL('./pnpm-runner.mjs', import.meta.url))
+  const helperSource = fileURLToPath(new URL('./windows-hide-console.mjs', import.meta.url))
   const staged = join(directory, 'pnpm-runner.mjs')
   try {
+    // The staged runner imports this sibling. Copy it first so a failed helper
+    // copy cannot leave a runner that resolves the helper from .desktop-bin.
+    await copyFile(helperSource, join(directory, 'windows-hide-console.mjs'))
     await copyFile(source, staged)
     return staged
   } catch {
@@ -213,11 +218,14 @@ export async function stagePnpmRunner(directory) {
   }
 }
 
-export async function ensurePnpmShim(home = dshHome()) {
+export async function ensurePnpmShim(home = dshHome(), options = {}) {
   const directory = join(home, '.desktop-bin')
   await mkdir(directory, { recursive: true })
   const pnpmEntry = resolvePnpmEntry()
   const executable = process.execPath
+  const hideConsoleAssignment = hideConsoleCmdAssignment(
+    options.hideConsoleBootstrapPath ?? process.env.DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP
+  )
 
   // pnpm is reached through this shim by every profile package operation —
   // DSH Desktop's installer and the community market alike — so the runner it
@@ -246,7 +254,7 @@ export async function ensurePnpmShim(home = dshHome()) {
     const pnpmPath = join(directory, 'pnpm.cmd')
     await writeFile(
       pnpmPath,
-      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n\"${executable}\" ${pnpmCommand.map((part) => `\"${part}\"`).join(' ')} %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n${hideConsoleAssignment}\"${executable}\" ${pnpmCommand.map((part) => `\"${part}\"`).join(' ')} %*\r\n`,
       'utf8'
     )
     const nodePath = join(directory, 'node.cmd')
@@ -528,7 +536,7 @@ export function createDesktopPnpmService(options) {
       const addArgs = args.includes('--workspace-root') ? args : [...args, '--workspace-root']
       write(`Updating ${spec} in the shared profile…`)
       const child = spawnProcess(executablePath,
-        [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...addArgs], {
+        pluginCommandArguments(dshEntryPath, addArgs, env), {
           cwd: invokingDir, env, stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true, detached: process.platform !== 'win32'
         })
@@ -781,7 +789,7 @@ export function createDesktopPnpmService(options) {
 
     const child = spawnProcess(
       executablePath,
-      [dshEntryPath, 'plugin', '--profile', MARKET_PROFILE, ...args],
+      pluginCommandArguments(dshEntryPath, args, environment),
       {
         cwd: invokingDir,
         env: buildPnpmEnvironment(binDirectory, environment, executablePath),
@@ -848,6 +856,17 @@ export function resolveDshEntry(argv = process.argv) {
     throw new Error('The running DSH entry could not be identified.')
   }
   return resolve(entry)
+}
+
+export function pluginCommandArguments(dshEntryPath, args, env = process.env, platform = process.platform) {
+  return [
+    ...hideConsoleImportArguments(env, platform),
+    dshEntryPath,
+    'plugin',
+    '--profile',
+    MARKET_PROFILE,
+    ...args
+  ]
 }
 
 export function buildInstallArguments(dshEntry = resolveDshEntry()) {

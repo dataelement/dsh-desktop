@@ -82,6 +82,8 @@ interface MigrationDeps {
   pnpmEntryPath: string
   /** The packaged lock-recovery runner the `.desktop-bin` pnpm shim routes through. */
   pnpmRunnerPath?: string
+  /** Windows console-hide bootstrap restored by the pnpm shim and passed to pnpm. */
+  hideConsoleBootstrapPath?: string
   dshEntryPath: string
   /** Rebuild the shared tree from the rewritten manifest (dshmarket only). */
   reinstallSharedTree: () => Promise<{ ok: boolean; detail?: string }>
@@ -672,7 +674,8 @@ export async function migrateProfileToGenerations(deps: MigrationDeps): Promise<
       dshHome,
       nodeExecutablePath: deps.nodeExecutablePath,
       pnpmEntryPath: deps.pnpmEntryPath,
-      pnpmRunnerPath: deps.pnpmRunnerPath
+      pnpmRunnerPath: deps.pnpmRunnerPath,
+      hideConsoleBootstrapPath: deps.hideConsoleBootstrapPath
     })
     // Preflight every plugin while the working legacy profile is still intact.
     // Promoted generations are inert until desired.json moves, so a failure here

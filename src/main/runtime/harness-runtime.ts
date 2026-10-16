@@ -39,6 +39,8 @@ export interface HarnessRuntimeOptions {
   pnpmEntryPath?: string
   /** Lock-recovery runner placed ahead of `pnpmEntryPath` when the file exists. */
   pnpmRunnerPath?: string
+  /** Windows console-hide bootstrap passed to the Harness as an absolute path. */
+  hideConsoleBootstrapPath?: string
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
@@ -300,6 +302,8 @@ export function resolveEnvironmentPath(
 export interface PackagedPnpmLaunchPaths {
   entryPath?: string
   runnerPath?: string
+  /** Absolute path of the Windows `--import` bootstrap, when the file exists. */
+  hideConsoleBootstrapPath?: string
 }
 
 export function buildHarnessSpawnOptions(
@@ -316,6 +320,7 @@ export function buildHarnessSpawnOptions(
     // The desktop, not the parent shell, decides which pnpm the Harness uses.
     DSH_DESKTOP_PNPM_ENTRY: _pnpmEntry,
     DSH_DESKTOP_PNPM_RUNNER: _pnpmRunner,
+    DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: _hideConsoleBootstrap,
     ...parentEnvironment
   } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
@@ -356,6 +361,9 @@ export function buildHarnessSpawnOptions(
       // the Electron executable directly instead of PATH `pnpm.cmd`.
       ...(packagedPnpm.entryPath ? { DSH_DESKTOP_PNPM_ENTRY: packagedPnpm.entryPath } : {}),
       ...(packagedPnpm.runnerPath ? { DSH_DESKTOP_PNPM_RUNNER: packagedPnpm.runnerPath } : {}),
+      ...(platform === 'win32' && packagedPnpm.hideConsoleBootstrapPath
+        ? { DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: packagedPnpm.hideConsoleBootstrapPath }
+        : {}),
       NODE_COMPILE_CACHE: environment.NODE_COMPILE_CACHE ?? pathApi.join(dshHome, 'cache', 'compile-cache'),
       [pathKey]: resolveEnvironmentPath(environment, platform)
     },
@@ -564,7 +572,8 @@ export class HarnessRuntime {
           profile,
           {
             entryPath: this.options.pnpmEntryPath,
-            runnerPath: this.options.pnpmRunnerPath
+            runnerPath: this.options.pnpmRunnerPath,
+            hideConsoleBootstrapPath: this.options.hideConsoleBootstrapPath
           }
         )
       )

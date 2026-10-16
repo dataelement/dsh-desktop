@@ -209,6 +209,24 @@ describe('profile pnpm shim and failure reporting', () => {
     }
   })
 
+  it('quotes the console-hide bootstrap in the Windows pnpm shim', async () => {
+    const home = join(__dirname, '.temp-profile-plugin-command-console-hide')
+    const bootstrap = 'C:\\Program Files (x86)\\DSH Desktop\\resources\\windows-hide-console-import.mjs'
+    try {
+      await ensureProfilePnpmShim({
+        dshHome: home,
+        nodeExecutablePath: '/app/node',
+        pnpmEntryPath: '/app/pnpm.cjs',
+        hideConsoleBootstrapPath: bootstrap
+      })
+      if (process.platform !== 'win32') return
+      const shim = await readFile(join(home, '.desktop-bin', 'pnpm.cmd'), 'utf8')
+      expect(shim).toContain(`@set "DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP=${bootstrap}"`)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('reports the failure that names a cause, not dsh’s wrapper line', () => {
     // dsh always ends with "pnpm failed in profile directory …", which names
     // nothing — reporting that turns every failure into a dead end.

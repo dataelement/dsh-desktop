@@ -1,6 +1,8 @@
 import { mkdtemp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ensureStoreDirPinned, inspectStoreConsistency } from '../src/main/state/profile-store'
 import { readDesired } from '../packages/dsh-desktop-market-installer/generations/registry.mjs'
@@ -17,6 +19,7 @@ import {
   createDesktopPnpmService,
   createDesktopProfilesService,
   ensurePnpmShim,
+  pluginCommandArguments,
   isTrustedRequest,
   readMarketInstallation,
   resolvePnpmEntry,
@@ -153,6 +156,35 @@ describe('desktop plugin market installer', () => {
     expect(npmrc).toContain('side-effects-cache=false')
     expect(npmrc).not.toContain('package-import-method')
     expect(npmrc).not.toContain('child-concurrency')
+  })
+
+  it('prefixes a plugin command with the Windows console-hide import', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-console-hide-plugin-'))
+    const bootstrap = join(dir, 'windows-hide-console-import.mjs')
+    const entry = join(dir, 'bin.js')
+    await writeFile(bootstrap, '')
+    const env = { DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: bootstrap }
+    expect(pluginCommandArguments(entry, ['add', 'dshmarket@^1.65.1'], env, 'win32')).toEqual([
+      '--import',
+      pathToFileURL(bootstrap).href,
+      entry,
+      'plugin',
+      '--profile',
+      'web',
+      'add',
+      'dshmarket@^1.65.1'
+    ])
+    expect(pluginCommandArguments(entry, ['add', 'demo'], env, 'darwin')[0]).toBe(entry)
+  })
+
+  it('restores the console-hide bootstrap from the Windows pnpm shim', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-console-hide-shim-'))
+    const bootstrap = 'C:\\Program Files (x86)\\DSH Desktop\\resources\\windows-hide-console-import.mjs'
+    await ensurePnpmShim(home, { hideConsoleBootstrapPath: bootstrap })
+    if (process.platform !== 'win32') return
+    const pnpmCmd = await readFile(join(home, '.desktop-bin', 'pnpm.cmd'), 'utf8')
+    expect(pnpmCmd).toContain(`@set "DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP=${bootstrap}"`)
+    expect(existsSync(join(home, '.desktop-bin', 'windows-hide-console.mjs'))).toBe(true)
   })
 
   it('cleans up staging and sidelined directories left by interrupted installations', async () => {
