@@ -12,18 +12,29 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-/** A profile whose `npm` is a marker, so a real npm spawn cannot hide. */
+/**
+ * A profile whose `npm` is a marker, so a real npm spawn cannot hide.
+ * Windows resolves `npm` to `npm.cmd`; a shebang file named `npm` is skipped
+ * and the machine's real npm answers instead.
+ */
 async function profileWithNpmMarker(npmrc) {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-registry-query-'))
   roots.push(dir)
   const bin = join(dir, 'node_modules', '.bin')
   await mkdir(bin, { recursive: true })
   const marker = join(dir, 'npm-was-spawned')
-  await writeFile(join(bin, 'npm'), `#!/bin/sh
+  if (process.platform === 'win32') {
+    await writeFile(join(bin, 'npm.cmd'), `@echo off\r
+>"%NPM_SPAWN_MARKER%" echo spawned\r
+echo https://example.invalid/from-npm\r
+`)
+  } else {
+    await writeFile(join(bin, 'npm'), `#!/bin/sh
 printf spawned > "$NPM_SPAWN_MARKER"
 printf 'https://example.invalid/from-npm\\n'
 `)
-  await chmod(join(bin, 'npm'), 0o755)
+    await chmod(join(bin, 'npm'), 0o755)
+  }
   if (npmrc !== undefined) await writeFile(join(dir, '.npmrc'), npmrc)
   return { dir, marker }
 }
@@ -52,7 +63,7 @@ describe('pnpm config get registry', () => {
     const result = queryRegistry(dir, marker)
     expect(result.status).toBe(0)
     expect(result.stdout.trim()).toBe('https://example.invalid/from-npm')
-    expect(await readFile(marker, 'utf8')).toBe('spawned')
+    expect((await readFile(marker, 'utf8')).trim()).toBe('spawned')
   })
 })
 
