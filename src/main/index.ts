@@ -87,6 +87,7 @@ import {
 } from './gpu-fallback'
 import { secureWindow } from './security'
 import { SafeModeFrame } from './safe-mode-frame'
+import { DesktopTurnNotification } from './turn-notification'
 import { desktopResourceUrl, installDesktopProtocol, registerDesktopScheme, SAFE_MODE_PAGE } from './desktop-protocol'
 import { ensureLaunchRoot } from './state/launch-root'
 import { electronNodeExecutable } from './runtime/electron-node-executable'
@@ -3335,6 +3336,36 @@ async function bootstrap(): Promise<void> {
     appVersion: () => app.getVersion()
   })
 
+  // Completed-turn attention: the renderer watches Harness sessions, while the
+  // shell owns window focus and the native notification centre, so the notice
+  // is decided and presented here from the window's real focus state.
+  const turnNotifications = new DesktopTurnNotification({
+    isFocused: () =>
+      mainWindow !== undefined && !mainWindow.isDestroyed() && mainWindow.isFocused(),
+    activate: () => {
+      const snapshot = runtime.snapshot()
+      if (snapshot.phase === 'ready' && snapshot.url) {
+        void openHarness(snapshot.url, 'user').catch(showUnexpectedError)
+        return
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    },
+    locale: harnessLocale
+  })
+  ipcMain.removeHandler('desktop:turn-notification')
+  ipcMain.handle('desktop:turn-notification', (event, payload: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    return turnNotifications.present(payload)
+  })
+  ipcMain.removeHandler('desktop:turn-notification-clear')
+  ipcMain.handle('desktop:turn-notification-clear', (event) => {
+    assertTrustedMainWindowEvent(event)
+    turnNotifications.clear()
+    return { ok: true }
+  })
   ipcMain.handle('directory-picker:open', async (event) => {
     if (
       !mainWindow ||

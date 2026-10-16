@@ -57,6 +57,7 @@ DeepSeek Harness already provides the Agent runtime and Web UI. DSH Desktop adds
 - Detects startup and frontend plugin failures, keeps diagnostics in `harness.log`, and offers guided recovery actions
 - Provides a non-destructive Safe Mode that temporarily blocks third-party plugins
 - Lets a paired phone continue sessions over the local network or an optional temporary public tunnel
+- Notifies you when a turn finishes or waits for an answer while the window is in the background, with the mode and sound controlled in Settings → General
 - Checks for desktop updates and keeps download and installation under user control
 - Adapts native menus, titlebar behavior, window focus, theme, and application branding for macOS and Windows
 

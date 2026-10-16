@@ -31,6 +31,11 @@
       config:
         root: !!js dshHomePath('desktop-workbenches')
 
+    # Completed-turn and waiting-request notices for a window the user is not
+    # looking at; the rows live in Settings -> General.
+    - id: dsh-desktop-notifications
+      name: dsh-desktop-notifications
+
     - id: dsh-desktop-onboarding
       name: dsh-desktop-onboarding
 
