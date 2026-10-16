@@ -1,0 +1,30 @@
+name: patch drift check
+
+on:
+  pull_request:
+    paths:
+      - 'patches/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/verify-patches.mjs'
+      - '.github/workflows/patches.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/verify-patches.mjs'
+      - '.github/workflows/patches.yml'
+
+jobs:
+  verify-patches:
+    name: Replay patches against locked packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify every patch applies to a clean locked installation
+        run: npm run verify:patches
