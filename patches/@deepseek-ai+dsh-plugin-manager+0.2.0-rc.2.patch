@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
-index 7ebf353..72239bf 100644
+index 7ebf353..80a0587 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 @@ -7,7 +7,7 @@ import { withFileLock, writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
@@ -48,7 +48,25 @@ index 7ebf353..72239bf 100644
  					await log.write(notice);
  					options.onOutput?.(notice, "stderr");
  				}
-@@ -1457,6 +1463,7 @@ let PluginManager = (() => {
+@@ -691,11 +697,16 @@ async function runProfilePnpm(context, args, options) {
+ * @returns The registry URL as pnpm printed it, or null when pnpm did not answer with one.
+ */
+ async function readProfileRegistry(dir, options) {
++	// Windows: the default (global) `config get registry` shells out to npm.cmd,
++	// and that .cmd is wrapped in a visible cmd.exe. Project location reads the
++	// already-merged registry in-process, so opening Add Plugin does not flash
++	// a console. Other platforms keep the upstream invocation.
+ 	const result = await execa(options.command ?? "pnpm", [
+ 		...options.args ?? [],
+ 		"config",
+ 		"get",
+-		"registry"
++		"registry",
++		...process.platform === "win32" ? ["--location=project"] : []
+ 	], {
+ 		cwd: dir,
+ 		env: {
+@@ -1457,6 +1468,7 @@ let PluginManager = (() => {
  			const manifest = readProfileManifest("dsh", this.profile.dir);
  			const exemptions = readProfileVersionExemptions(this.profile.dir);
  			const selected = manifest.dsh?.profile?.bundles ?? [];
@@ -56,7 +74,7 @@ index 7ebf353..72239bf 100644
  			const dependencies = Object.keys(manifest.dependencies ?? {});
  			const installation = JSON.parse(readFileSync(this.profile.installAnchor, "utf8"));
  			const names = [...new Set([
-@@ -1469,7 +1476,7 @@ let PluginManager = (() => {
+@@ -1469,7 +1481,7 @@ let PluginManager = (() => {
  				const installed = dependencies.includes(name);
  				const optional = OPTIONAL_BUNDLES.includes(name);
  				const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, name);
@@ -65,7 +83,7 @@ index 7ebf353..72239bf 100644
  				const readOnlyReason = this.protectsManager(name) ? "management-required" : void 0;
  				try {
  					const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
-@@ -1488,7 +1495,7 @@ let PluginManager = (() => {
+@@ -1488,7 +1500,7 @@ let PluginManager = (() => {
  						continue;
  					}
  					const compatibility = evaluatePluginCompatibility(info, exemptions);
@@ -74,7 +92,7 @@ index 7ebf353..72239bf 100644
  					const dir = resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
  					const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, "package.json")).href);
  					bundles.push({
-@@ -1670,6 +1677,7 @@ let PluginManager = (() => {
+@@ -1670,6 +1682,7 @@ let PluginManager = (() => {
  		setBundleEnabled(name, enabled) {
  			return this.change((result) => this.configure(async () => {
  				await this.selectBundle(name, enabled);
@@ -82,7 +100,7 @@ index 7ebf353..72239bf 100644
  				result.warnings = await this.reload(enabled ? this.bundleRows(name).map((row) => row.id) : []);
  			}), {
  				stage: "enable",
-@@ -1705,7 +1713,13 @@ let PluginManager = (() => {
+@@ -1705,7 +1718,13 @@ let PluginManager = (() => {
  				});
  			};
  			const result = this.change(async (result) => {
@@ -97,7 +115,7 @@ index 7ebf353..72239bf 100644
  				if (stopped()) throw new InstallCancelledError();
  				if (options?.approvedBuilds !== void 0) {
  					await approveBuilds(this.profile.dir, options.approvedBuilds);
-@@ -1713,9 +1727,25 @@ let PluginManager = (() => {
+@@ -1713,9 +1732,25 @@ let PluginManager = (() => {
  				}
  				const files = await this.readRestoredFiles();
  				const before = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -123,7 +141,7 @@ index 7ebf353..72239bf 100644
  					const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
  						timeoutMs: this.githubConnectionTimeoutMs,
  						outputBytes: this.outputBytes,
-@@ -1736,7 +1766,6 @@ let PluginManager = (() => {
+@@ -1736,7 +1771,6 @@ let PluginManager = (() => {
  						throw new Error(connectionFailure.output);
  					}
  					const plan = registryPlan(options?.registry, await this.registries());
@@ -131,7 +149,7 @@ index 7ebf353..72239bf 100644
  					for (const [index, registry] of plan.entries()) {
  						if (index > 0) await this.restoreFiles(files);
  						if (stopped()) throw new InstallCancelledError();
-@@ -1765,10 +1794,17 @@ let PluginManager = (() => {
+@@ -1765,10 +1799,17 @@ let PluginManager = (() => {
  					}
  					/* v8 ignore next -- the plan is never empty, so a run always settled */
  					if (run === void 0) throw new Error("no registry was asked");
@@ -150,7 +168,7 @@ index 7ebf353..72239bf 100644
  							result.pendingBuilds = await readPendingBuilds(this.profile.dir);
  						} catch (error) {
  							this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
-@@ -1776,8 +1812,8 @@ let PluginManager = (() => {
+@@ -1776,8 +1817,8 @@ let PluginManager = (() => {
  						throw new Error(run.output);
  					}
  					const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -161,7 +179,7 @@ index 7ebf353..72239bf 100644
  					const target = installed[0];
  					if (installed.length !== 1 || target === void 0) throw new ManagementFailure("ambiguous-install");
  					name = target;
-@@ -1785,9 +1821,10 @@ let PluginManager = (() => {
+@@ -1785,9 +1826,10 @@ let PluginManager = (() => {
  					const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
  					if (manifest?.dsh?.bundle === void 0) throw new ManagementFailure("not-bundle");
  					const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir));
@@ -173,7 +191,7 @@ index 7ebf353..72239bf 100644
  					await this.restoreFiles(files);
  					throw error;
  				}
-@@ -1796,11 +1833,22 @@ let PluginManager = (() => {
+@@ -1796,11 +1838,22 @@ let PluginManager = (() => {
  				result.bundle = name;
  				result.target = name;
  				result.stage = "enable";
@@ -201,7 +219,7 @@ index 7ebf353..72239bf 100644
  			}, {
  				stage: "install",
  				target: spec,
-@@ -1848,14 +1896,21 @@ let PluginManager = (() => {
+@@ -1848,14 +1901,21 @@ let PluginManager = (() => {
  					if (bundle === void 0 || !bundle.removable) throw new ManagementFailure("not-removable");
  					if (this.ownerContext.get("hmr") === void 0 && (this.profile.startedBundles.includes(name) || bundle.error === void 0 && this.bundleRows(name).some((row) => [...this.ctx.loader.entries()].some((entry) => entry.options.id === row.id && entry.fiber !== void 0)))) throw new ManagementFailure("stop-profile");
  					const contributions = bundle.error === void 0 ? this.bundleRows(name) : [];
@@ -225,7 +243,7 @@ index 7ebf353..72239bf 100644
  			}, {
  				stage: "remove",
  				target: name
-@@ -1899,6 +1954,33 @@ let PluginManager = (() => {
+@@ -1899,6 +1959,33 @@ let PluginManager = (() => {
  				overrides: [...new Set(patches.flatMap((item) => item.insert === void 0 && typeof item.id === "string" && !declared.has(item.id) ? [item.id] : []))]
  			};
  		}
@@ -259,7 +277,7 @@ index 7ebf353..72239bf 100644
  		/** Run one pnpm command in the profile, streaming its output as install-log chunks. */
  		async runPnpm(args, signal, requestId) {
  			const jobId = randomUUID();
-@@ -1984,7 +2066,7 @@ let PluginManager = (() => {
+@@ -1984,7 +2071,7 @@ let PluginManager = (() => {
  				if (metadata === void 0) throw new ManagementFailure("not-bundle");
  				if (enabled) {
  					const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir));
