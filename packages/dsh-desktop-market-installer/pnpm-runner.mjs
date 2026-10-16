@@ -121,6 +121,76 @@ async function writeTextAtomically(path, value) {
   }
 }
 
+/**
+ * Remove generation-owned direct dependencies from pnpm's lockfile view.
+ *
+ * pnpm derives the roots it owns from an importer's dependency mappings. The
+ * package and snapshot sections are merely their transitive resolution, so
+ * removing the importer mappings is both sufficient and lets pnpm prune the
+ * stale legacy records as part of the operation it is already performing.
+ * This intentionally handles the indentation-based YAML emitted by pnpm
+ * without making the staged runner depend on an application-local module.
+ */
+function removeProjectedLockfileImporters(text, pluginNames) {
+  const names = new Set(pluginNames)
+  if (names.size === 0) return text
+  const lines = text.split(/(?<=\n)/u)
+  let inImporters = false
+  let changed = false
+  const output = []
+
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index]
+    const topLevel = /^[^\s#][^:]*:/u.test(line)
+    if (topLevel) inImporters = /^importers:\s*(?:#.*)?(?:\r?\n)?$/u.test(line)
+
+    if (!inImporters) {
+      output.push(line)
+      index += 1
+      continue
+    }
+
+    const match = /^(\s+)(?:'([^']+)'|"([^"]+)"|([^\s:#][^:]*)):\s*(?:#.*)?(?:\r?\n)?$/u.exec(line)
+    const name = match?.[2] ?? match?.[3] ?? match?.[4]
+    if (match === null || name === undefined || !names.has(name)) {
+      output.push(line)
+      index += 1
+      continue
+    }
+
+    const indent = match[1].length
+    index += 1
+    while (index < lines.length) {
+      const next = lines[index]
+      if (next.trim() === '' || next.trimStart().startsWith('#')) {
+        index += 1
+        continue
+      }
+      const nextIndent = /^\s*/u.exec(next)?.[0].length ?? 0
+      if (nextIndent <= indent) break
+      index += 1
+    }
+    changed = true
+  }
+
+  return changed ? output.join('') : text
+}
+
+async function removeGenerationLockfileEntries(profileDirectory, pluginNames) {
+  const lockfilePath = join(profileDirectory, 'pnpm-lock.yaml')
+  let text
+  try {
+    text = await readFile(lockfilePath, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+  const updated = removeProjectedLockfileImporters(text, pluginNames)
+  if (updated === text) return false
+  await writeTextAtomically(lockfilePath, updated)
+  return true
+}
+
 function buildApprovalValues(workspaceYaml) {
   const values = new Map()
   for (const block of workspaceYaml.matchAll(ALLOW_BUILDS_BLOCK_PATTERN)) {
@@ -272,6 +342,7 @@ export async function suspendGenerationProjectionForPnpm(profileDirectory) {
   if (Object.keys(pnpm).length > 0) manifest.pnpm = pnpm
   else delete manifest.pnpm
   await writeJsonAtomically(manifestPath, manifest)
+  await removeGenerationLockfileEntries(profileDirectory, projectedPlugins)
 
   let restored = false
   return {
