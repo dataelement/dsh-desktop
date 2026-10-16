@@ -2,13 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createServer, request as httpRequest, type IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
 import type { AddressInfo } from 'node:net'
+import type { NetworkInterfaceInfo } from 'node:os'
 import type { Duplex } from 'node:stream'
 import {
   applyWorkspaceFollowFrame,
   isInternetTunnelHost,
   isPrivateAddress,
   LanMobileBridge,
-  normalizeRemoteAddress
+  normalizeRemoteAddress,
+  preferredLanAddress
 } from '../src/main/mobile/lan-mobile-bridge'
 
 const bridges: LanMobileBridge[] = []
@@ -71,6 +73,87 @@ describe('LAN mobile bridge address policy', () => {
     expect(isInternetTunnelHost('mobile.run.pinggy-free.link')).toBe(true)
     expect(isInternetTunnelHost('mobile.a.free.pinggy.online')).toBe(true)
     expect(isInternetTunnelHost('free.pinggy.io')).toBe(false)
+  })
+
+  describe('preferredLanAddress', () => {
+    const ipv4 = (address: string, internal = false): NetworkInterfaceInfo => ({
+      address,
+      netmask: '255.255.255.0',
+      family: 'IPv4',
+      mac: '00:00:00:00:00:00',
+      internal,
+      cidr: `${address}/24`
+    })
+
+    it('picks the physical adapter over the WSL switch Windows enumerates first (#601)', () => {
+      expect(
+        preferredLanAddress({
+          'vEthernet (WSL)': [ipv4('192.168.208.1')],
+          Ethernet: [ipv4('192.168.1.23')],
+          'Loopback Pseudo-Interface 1': [ipv4('127.0.0.1', true)]
+        })
+      ).toBe('192.168.1.23')
+    })
+
+    it('skips Hyper-V, VMware and VirtualBox adapters and keeps the order of localized adapters', () => {
+      expect(
+        preferredLanAddress({
+          'vEthernet (Default Switch)': [ipv4('172.29.80.1')],
+          'VMware Network Adapter VMnet8': [ipv4('192.168.150.1')],
+          'VirtualBox Host-Only Network': [ipv4('192.168.56.1')],
+          以太网: [ipv4('10.0.0.8')],
+          WLAN: [ipv4('192.168.2.111')]
+        })
+      ).toBe('10.0.0.8')
+    })
+
+    it('skips container bridges and tunnels but keeps a host bridge that carries the LAN', () => {
+      expect(
+        preferredLanAddress({
+          docker0: [ipv4('172.17.0.1')],
+          'br-3f2a9c1d7e8b': [ipv4('172.18.0.1')],
+          virbr0: [ipv4('192.168.122.1')],
+          wg0: [ipv4('10.8.0.2')],
+          br0: [ipv4('192.168.1.40')]
+        })
+      ).toBe('192.168.1.40')
+      expect(
+        preferredLanAddress({
+          bridge100: [ipv4('192.168.64.1')],
+          utun3: [ipv4('10.64.0.2')],
+          en0: [ipv4('192.168.1.41')]
+        })
+      ).toBe('192.168.1.41')
+    })
+
+    it('falls back to a virtual adapter when no physical adapter has a private address', () => {
+      expect(
+        preferredLanAddress({
+          'vEthernet (WSL)': [ipv4('192.168.208.1')],
+          WLAN: [ipv4('169.254.10.20')]
+        })
+      ).toBe('192.168.208.1')
+    })
+
+    it('ignores IPv6, internal and non-private addresses', () => {
+      expect(
+        preferredLanAddress({
+          Meta: [ipv4('198.18.0.1')],
+          WLAN: [
+            {
+              address: 'fe80::1',
+              netmask: 'ffff:ffff:ffff:ffff::',
+              family: 'IPv6',
+              mac: '00:00:00:00:00:00',
+              internal: false,
+              cidr: 'fe80::1/64',
+              scopeid: 12
+            }
+          ],
+          'Loopback Pseudo-Interface 1': [ipv4('127.0.0.1', true)]
+        })
+      ).toBeUndefined()
+    })
   })
 })
 
