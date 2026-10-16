@@ -1,3 +1,5 @@
+import { promisify } from 'node:util'
+
 /** Add the Windows no-console flag without overriding an explicit choice. */
 export function applyWindowsHide(options) {
   if (options && typeof options === 'object' && options.windowsHide !== undefined) {
@@ -47,6 +49,14 @@ export function enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExpor
     }
     return originalExec.call(this, command, applyWindowsHide(options), callback)
   }
+  // Keep Node's result/error shape and Promise.child without bypassing the
+  // no-console options on the promisified path.
+  Object.defineProperty(childProcess.exec, promisify.custom, {
+    ...Object.getOwnPropertyDescriptor(originalExec, promisify.custom),
+    value(command, options) {
+      return originalExec[promisify.custom].call(this, command, applyWindowsHide(options))
+    }
+  })
 
   childProcess.execSync = function patchedExecSync(command, options) {
     return originalExecSync.call(this, command, applyWindowsHide(options))
@@ -56,11 +66,23 @@ export function enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExpor
     if (typeof args === 'function') {
       return originalExecFile.call(this, file, applyWindowsHide(undefined), undefined, args)
     }
+    if (args && typeof args === 'object' && !Array.isArray(args)) {
+      return originalExecFile.call(this, file, applyWindowsHide(args), options)
+    }
     if (typeof options === 'function') {
       return originalExecFile.call(this, file, args, applyWindowsHide(undefined), options)
     }
     return originalExecFile.call(this, file, args, applyWindowsHide(options), callback)
   }
+  Object.defineProperty(childProcess.execFile, promisify.custom, {
+    ...Object.getOwnPropertyDescriptor(originalExecFile, promisify.custom),
+    value(file, args, options) {
+      if (args && typeof args === 'object' && !Array.isArray(args)) {
+        return originalExecFile[promisify.custom].call(this, file, applyWindowsHide(args))
+      }
+      return originalExecFile[promisify.custom].call(this, file, args, applyWindowsHide(options))
+    }
+  })
 
   childProcess.execFileSync = function patchedExecFileSync(file, args, options) {
     if (args && !Array.isArray(args)) {

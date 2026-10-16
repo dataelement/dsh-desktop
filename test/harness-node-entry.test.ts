@@ -226,6 +226,95 @@ describe('windowsHide ESM built-in synchronization', () => {
   })
 })
 
+describe('windowsHide promisified child processes', () => {
+  const helperUrl = pathToFileURL(join(projectRoot, 'build', 'windows-child-process-hide.mjs')).href
+
+  it.each(['exec', 'execFile'])('preserves %s results, child handles, errors, and hide options', (method) => {
+    const script = `
+      import assert from 'node:assert/strict'
+      import childProcess from 'node:child_process'
+      import { syncBuiltinESMExports } from 'node:module'
+      import { promisify } from 'node:util'
+      import { enforceWindowsChildProcessHide } from ${JSON.stringify(helperUrl)}
+
+      const observed = []
+      const spawn = childProcess.ChildProcess.prototype.spawn
+      childProcess.ChildProcess.prototype.spawn = function(options) {
+        observed.push(options.windowsHide)
+        return spawn.call(this, options)
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(childProcess[${JSON.stringify(method)}], promisify.custom)
+      enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExports)
+      const named = await import('node:child_process')
+      const patched = named[${JSON.stringify(method)}]
+      const custom = Object.getOwnPropertyDescriptor(patched, promisify.custom)
+      assert.equal(typeof custom.value, 'function')
+      for (const key of ['enumerable', 'writable', 'configurable']) assert.equal(custom[key], descriptor[key])
+      const run = promisify(patched)
+      function args(source, options) {
+        return ${JSON.stringify(method)} === 'exec'
+          ? ['"' + process.execPath + '" -e ' + JSON.stringify(source), options]
+          : [process.execPath, ['-e', source], options]
+      }
+
+      const source = "process.stdout.write('out'); process.stderr.write('err')"
+      const pending = run(...args(source, undefined))
+      assert(pending.child instanceof childProcess.ChildProcess)
+      assert.equal(typeof pending.child.pid, 'number')
+      assert.deepEqual(await pending, { stdout: 'out', stderr: 'err' })
+      assert.deepEqual(await run(...args(source, { windowsHide: false })), { stdout: 'out', stderr: 'err' })
+      const binary = await run(...args(source, { encoding: 'buffer', windowsHide: true }))
+      assert(Buffer.isBuffer(binary.stdout))
+      assert(Buffer.isBuffer(binary.stderr))
+      assert.equal(binary.stdout.toString(), 'out')
+      assert.equal(binary.stderr.toString(), 'err')
+      await assert.rejects(run(...args(source + '; process.exit(3)', undefined)), error => {
+        assert.equal(error.code, 3)
+        assert.equal(error.stdout, 'out')
+        assert.equal(error.stderr, 'err')
+        return true
+      })
+      const callbackResult = await new Promise((resolve, reject) => {
+        patched(...args(source, {}), (error, stdout, stderr) => error ? reject(error) : resolve({ stdout, stderr }))
+      })
+      assert.deepEqual(callbackResult, { stdout: 'out', stderr: 'err' })
+      assert.deepEqual(observed, [true, false, true, true, true])
+      process.stdout.write('ok')
+    `
+    const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], { encoding: 'utf8' })
+    expect(output).toBe('ok')
+  })
+
+  it('supports execFile without an args array and retains ENOENT diagnostics', () => {
+    const script = `
+      import assert from 'node:assert/strict'
+      import childProcess from 'node:child_process'
+      import { promisify } from 'node:util'
+      import { enforceWindowsChildProcessHide } from ${JSON.stringify(helperUrl)}
+      enforceWindowsChildProcessHide(childProcess, () => {})
+      const run = promisify(childProcess.execFile)
+      for (const args of [[process.execPath], [process.execPath, { encoding: 'utf8' }]]) {
+        const pending = run(...args)
+        pending.child.stdin.end("process.stdout.write('stdin')")
+        assert.deepEqual(await pending, { stdout: 'stdin', stderr: '' })
+      }
+      const binary = run(process.execPath, undefined, { encoding: 'buffer' })
+      binary.child.stdin.end("process.stdout.write('binary')")
+      assert(Buffer.isBuffer((await binary).stdout))
+      assert.throws(() => run(process.execPath, 'invalid args'), { code: 'ERR_INVALID_ARG_TYPE' })
+      await assert.rejects(run('dsh-missing-executable-for-test'), error => {
+        assert.equal(error.code, 'ENOENT')
+        assert.equal(error.stdout, '')
+        assert.equal(error.stderr, '')
+        return true
+      })
+      process.stdout.write('ok')
+    `
+    const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], { encoding: 'utf8' })
+    expect(output).toBe('ok')
+  })
+})
+
 describe('windowsHide patching for spawn', () => {
   let spawnSpy: ReturnType<typeof vi.fn>
 
