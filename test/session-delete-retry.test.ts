@@ -9,8 +9,7 @@ type SessionCommandControllerConstructor = new (
   agents: object,
   defaultCwd: string
 ) => {
-  delete(request: { sessionId: string }): Promise<{ deleted: true }>
-  readSessionState(sessionId: string): Promise<{ header: { origin: string } }>
+  delete(request: { sessionId: string }): Promise<{ deleted: boolean }>
 }
 
 async function loadSessionCommandController(): Promise<SessionCommandControllerConstructor> {
@@ -49,16 +48,14 @@ describe('session deletion transaction', () => {
       agents: { get: () => undefined },
       sessions: { get: () => undefined },
       workspaceRegistry: { forgetSession },
-      get: (name: string) => name === 'sessionPersistence' ? { delete: removePersistedSession } : undefined,
+      get: (name: string) => name === 'sessionPersistence' ? {
+        stat: async () => persisted ? { header: { id: sessionId, origin: 'user' } } : undefined,
+        delete: removePersistedSession
+      } : undefined,
       emit: vi.fn()
     }, {
       disposeOwned: vi.fn(async () => false)
     }, process.cwd())
-    controller.readSessionState = vi.fn(async () => {
-      if (!persisted) throw new Error('session should not be inspected after a successful delete')
-      return { header: { origin: 'user' } }
-    })
-
     await expect(controller.delete({ sessionId })).rejects.toThrow('failed to delete session')
     expect(order).toEqual(['forget', 'delete'])
     expect(attached).toBe(false)

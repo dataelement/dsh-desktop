@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { copyFile, mkdtemp, readFile, readdir, rename, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { sessionFormatLogFilename } from '@deepseek-ai/dsh-session-format'
 import { describe, expect, it } from 'vitest'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
@@ -20,7 +21,7 @@ const patchedPackages = [
     name: 'dsh-session-persistence-jsonl',
     version: '0.2.0-rc.2',
     file: 'lib/index.js',
-    markers: ['async delete(id, options)', 'this.tracker.claimWrite(id)', 'this.coldLogMemo.delete(id)']
+    markers: ['async delete(id, options)', 'this.tracker.claimWrite(id)', 'parseGenerationLogFilename(entry.name, this.compression)', 'this.coldLogMemo.delete(id)']
   },
   {
     name: 'dsh-workspace',
@@ -98,7 +99,7 @@ describe('permanent session deletion dependency patches', () => {
     expect(ui).toContain('Workspace files are kept. This can’t be undone.')
   })
 
-  it('removes one materialized JSONL log without touching another session', async () => {
+  it('removes current and historical JSONL generations without touching another session', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-desktop-session-delete-'))
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -107,6 +108,7 @@ describe('permanent session deletion dependency patches', () => {
       delete(id: ReturnType<typeof SessionId>): Promise<boolean>
     }
     const removed = SessionId('desktop-delete-removed')
+    const historical = SessionId('desktop-delete-historical')
     const kept = SessionId('desktop-delete-kept')
     const event = [{ type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } }] as const
 
@@ -125,11 +127,27 @@ describe('permanent session deletion dependency patches', () => {
 
     try {
       await seed(removed, 1)
-      await seed(kept, 2)
+      await seed(historical, 2)
+      await seed(kept, 3)
+
+      const logs = await readdir(root, { recursive: true, withFileTypes: true })
+      const currentLog = (id: string) => {
+        const entry = logs.find((candidate) => candidate.isFile() &&
+          candidate.name === sessionFormatLogFilename(SESSION_FORMAT_VERSION) && candidate.parentPath.includes(id))
+        if (!entry) throw new Error(`missing test log for ${id}`)
+        return path.join(entry.parentPath, entry.name)
+      }
+      const previousLog = (current: string) => path.join(path.dirname(current), sessionFormatLogFilename(SESSION_FORMAT_VERSION - 1))
+      // The old filenames exercise both migration states; deletion only reads
+      // directory entries, so their payloads need no historical encoding.
+      await copyFile(currentLog(removed), previousLog(currentLog(removed)))
+      await rename(currentLog(historical), previousLog(currentLog(historical)))
 
       expect(await persistence.delete(removed)).toBe(true)
+      expect(await persistence.delete(historical)).toBe(true)
       expect((await persistence.list()).map((snapshot) => snapshot.header.id)).toEqual([kept])
       expect(await persistence.stat(removed)).toBeUndefined()
+      expect(await persistence.stat(historical)).toBeUndefined()
       expect((await persistence.stat(kept))?.header.id).toBe(kept)
       // A second delete of the same id is a no-op, not a failure.
       expect(await persistence.delete(removed)).toBe(false)

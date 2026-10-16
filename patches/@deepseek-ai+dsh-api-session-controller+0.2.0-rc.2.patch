@@ -117,7 +117,7 @@ index 1ae21e3..b65b36b 100644
  			* synchronous-addressability guarantee as {@link ClientSessions.create}:
  			* on resolution the child is catalogued and may be explicitly retained).
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
-index 3b8507e..da70b37 100644
+index 3b8507e..112ecd2 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 @@ -5,7 +5,7 @@ import { AssistantStreamAccumulator, ReasoningEffortId, assistantStreamChunks, c
@@ -245,33 +245,36 @@ index 3b8507e..da70b37 100644
  	}
  	agentOptions() {
  		const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
-@@ -766,6 +803,34 @@ var SessionCommandController = class {
+@@ -766,6 +803,37 @@ var SessionCommandController = class {
  			throw new RemoteError("gateway/internal", `failed to rename session "${request.sessionId}": ${String(error)}`, {});
  		}
  	}
 +	/** Permanently delete one ordinary Session while retaining its Workspace files. */
 +	async delete(request) {
-+		let state;
-+		try {
-+			state = await this.readSessionState(request.sessionId);
-+		} catch (error) {
-+			if (error instanceof ApiSessionNotFound) throw new RemoteError("session/not-found", error.message, { sessionId: request.sessionId });
-+			throw new RemoteError("gateway/internal", `failed to inspect session "${request.sessionId}" before deletion: ${String(error)}`, {});
-+		}
-+		const live = this.ctx.agents.get(request.sessionId);
-+		if (hasApiSessionSubagentOwner(this.ctx, { header: state.header }, live)) throw apiSessionSubagentOwnershipError(request.sessionId);
 +		const persistence = this.ctx.get("sessionPersistence");
 +		if (persistence === void 0) throw new RemoteError("gateway/internal", "session deletion is unavailable: this deployment mounts no session-persistence service", {});
-+		const hadLiveSession = this.ctx.sessions.get(request.sessionId) !== void 0;
++		const live = this.ctx.agents.get(request.sessionId);
++		const attached = this.ctx.sessions.get(request.sessionId);
++		let header = attached?.header ?? live?.session.header;
++		try {
++			// A missing log may still have Workspace metadata or an unmaterialized live Session.
++			// Inspect only the header; reading the full event log is unnecessary for deletion.
++			header ??= (await persistence.stat(request.sessionId))?.header;
++		} catch (error) {
++			throw new RemoteError("gateway/internal", `failed to inspect session "${request.sessionId}" before deletion: ${String(error)}`, {});
++		}
++		if (header !== void 0 && hasApiSessionSubagentOwner(this.ctx, { header }, live)) throw apiSessionSubagentOwnershipError(request.sessionId);
 +		try {
 +			await this.agents.disposeOwned(request.sessionId);
 +			if (this.ctx.agents.get(request.sessionId) !== void 0 || this.ctx.sessions.get(request.sessionId) !== void 0) throw new RemoteError("session/agent-busy", `session "${request.sessionId}" is still active`, { reason: "the live Agent is owned by another capability" });
 +			// Remove idempotent Workspace metadata before the irreversible persistence commit.
 +			// Otherwise a cleanup failure leaves a retry unable to reach the ghost metadata.
 +			await this.ctx.workspaceRegistry.forgetSession(request.sessionId);
-+			if (!await persistence.delete(request.sessionId)) throw new RemoteError("session/not-found", `session "${request.sessionId}" not found`, { sessionId: request.sessionId });
-+			if (!hadLiveSession) this.ctx.emit("api-session/removed", request.sessionId);
-+			return { deleted: true };
++			// With no validated header, do not unlink an unreadable artifact merely
++			// because stat could not identify it. Missing metadata is still cleaned.
++			const deleted = header === void 0 ? false : await persistence.delete(request.sessionId);
++			if (attached === void 0) this.ctx.emit("api-session/removed", request.sessionId);
++			return { deleted };
 +		} catch (error) {
 +			if (remoteErrorOf(error) !== void 0) throw error;
 +			throw new RemoteError("gateway/internal", `failed to delete session "${request.sessionId}": ${String(error)}`, {});
@@ -280,7 +283,7 @@ index 3b8507e..da70b37 100644
  	/**
  	* Create a new ordinary Session from an exact event prefix. An explicit
  	* `atSeq` is the inclusive cut; an omitted value selects the latest
-@@ -807,7 +872,7 @@ var SessionCommandController = class {
+@@ -807,7 +875,7 @@ var SessionCommandController = class {
  			const composition = await this.agents.composeAgent(this.agents.presetForObservation(source));
  			try {
  				const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
@@ -289,7 +292,7 @@ index 3b8507e..da70b37 100644
  					sessionId: childId,
  					seed,
  					inheritedEventCount: SessionLogOffset(boundary + 1),
-@@ -823,6 +888,7 @@ var SessionCommandController = class {
+@@ -823,6 +891,7 @@ var SessionCommandController = class {
  					},
  					setup: composition.setup
  				});
@@ -297,7 +300,7 @@ index 3b8507e..da70b37 100644
  			} catch (error) {
  				throw new RemoteError("gateway/internal", `failed to fork session "${request.sessionId}": ${String(error)}`, {});
  			}
-@@ -1124,6 +1190,126 @@ function referencedImage(events, attachmentId) {
+@@ -1124,6 +1193,126 @@ function referencedImage(events, attachmentId) {
  		if (found !== void 0) return found;
  	}
  }
@@ -424,7 +427,7 @@ index 3b8507e..da70b37 100644
  //#endregion
  //#region lib/types/control.js
  /** Live Session projection state with reconnect baselines. */
-@@ -2296,6 +2482,7 @@ let SessionSkillCatalog = (() => {
+@@ -2296,6 +2485,7 @@ let SessionSkillCatalog = (() => {
  				const scope = live ?? lease?.key;
  				try {
  					return { skills: (await skillRegistry.list({
@@ -432,7 +435,7 @@ index 3b8507e..da70b37 100644
  						cwd,
  						scope
  					})).filter(isUserInvocable).map((skill) => ({
-@@ -2401,6 +2588,171 @@ const SessionMediaReferences = {
+@@ -2401,6 +2591,171 @@ const SessionMediaReferences = {
  		}), "session-controller: /api/file");
  	}
  };
@@ -604,7 +607,7 @@ index 3b8507e..da70b37 100644
  //#endregion
  //#region lib/types/archived-session-gate.js
  /**
-@@ -2566,6 +2918,7 @@ let SessionController = (() => {
+@@ -2566,6 +2921,7 @@ let SessionController = (() => {
  	let _openWorkspacePath_decorators;
  	let _workspacePathApplications_decorators;
  	let _rename_decorators;
@@ -612,7 +615,7 @@ index 3b8507e..da70b37 100644
  	let _fork_decorators;
  	let _prompt_decorators;
  	let _attachment_decorators;
-@@ -2588,6 +2941,7 @@ let SessionController = (() => {
+@@ -2588,6 +2944,7 @@ let SessionController = (() => {
  			_openWorkspacePath_decorators = [Remote("openWorkspacePath")];
  			_workspacePathApplications_decorators = [Remote("workspacePathApplications")];
  			_rename_decorators = [Remote("rename")];
@@ -620,7 +623,7 @@ index 3b8507e..da70b37 100644
  			_fork_decorators = [Remote("fork")];
  			_prompt_decorators = [Remote("prompt")];
  			_attachment_decorators = [Remote("attachment")];
-@@ -2707,6 +3061,17 @@ let SessionController = (() => {
+@@ -2707,6 +3064,17 @@ let SessionController = (() => {
  				},
  				metadata: _metadata
  			}, null, _instanceExtraInitializers);
@@ -638,7 +641,7 @@ index 3b8507e..da70b37 100644
  			__esDecorate(this, null, _fork_decorators, {
  				kind: "method",
  				name: "fork",
-@@ -2868,10 +3233,12 @@ let SessionController = (() => {
+@@ -2868,10 +3236,12 @@ let SessionController = (() => {
  			this.canOpenPath = internals.canOpenPath ?? (() => config.nativeOpen ?? (internals.openPath !== void 0 || canOpenNativePath()));
  			ctx.plugin(SessionFileReferences);
  			ctx.plugin(SessionMediaReferences);
@@ -652,7 +655,7 @@ index 3b8507e..da70b37 100644
  			});
  			ctx.on("session/disposed", (session) => {
  				ctx.emit("api-session/removed", session.id);
-@@ -3077,6 +3444,10 @@ let SessionController = (() => {
+@@ -3077,6 +3447,10 @@ let SessionController = (() => {
  		rename(request) {
  			return this.commands.rename(request);
  		}
@@ -1077,47 +1080,48 @@ index fcb93a6..5779c7c 100644
       * Create a new ordinary Session from an exact event prefix. An explicit
       * `atSeq` is the inclusive cut; an omitted value selects the latest
 diff --git a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/commands.js b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/commands.js
-index cd4e27c..0a70822 100644
+index cd4e27c..48c953d 100644
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/commands.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/commands.js
-@@ -196,6 +196,47 @@ export class SessionCommandController {
+@@ -196,6 +196,48 @@ export class SessionCommandController {
              throw new RemoteError('gateway/internal', `failed to rename session "${request.sessionId}": ${String(error)}`, {});
          }
      }
 +    /** Permanently delete one ordinary Session while retaining its Workspace files. */
 +    async delete(request) {
-+        let state;
-+        try {
-+            state = await this.readSessionState(request.sessionId);
-+        }
-+        catch (error) {
-+            if (error instanceof ApiSessionNotFound) {
-+                throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId });
-+            }
-+            throw new RemoteError('gateway/internal', `failed to inspect session "${request.sessionId}" before deletion: ${String(error)}`, {});
-+        }
-+        const live = this.ctx.agents.get(request.sessionId);
-+        if (hasApiSessionSubagentOwner(this.ctx, { header: state.header }, live)) {
-+            throw apiSessionSubagentOwnershipError(request.sessionId);
-+        }
 +        const persistence = this.ctx.get('sessionPersistence');
 +        if (persistence === undefined) {
 +            throw new RemoteError('gateway/internal', 'session deletion is unavailable: this deployment mounts no session-persistence service', {});
 +        }
-+        const hadLiveSession = this.ctx.sessions.get(request.sessionId) !== undefined;
++        const live = this.ctx.agents.get(request.sessionId);
++        const attached = this.ctx.sessions.get(request.sessionId);
++        let header = attached?.header ?? live?.session.header;
++        try {
++            // A missing log may still have Workspace metadata or an unmaterialized live Session.
++            // Inspect only the header; reading the full event log is unnecessary for deletion.
++            header ??= (await persistence.stat(request.sessionId))?.header;
++        }
++        catch (error) {
++            throw new RemoteError('gateway/internal', `failed to inspect session "${request.sessionId}" before deletion: ${String(error)}`, {});
++        }
++        if (header !== undefined && hasApiSessionSubagentOwner(this.ctx, { header }, live)) {
++            throw apiSessionSubagentOwnershipError(request.sessionId);
++        }
 +        try {
 +            await this.agents.disposeOwned(request.sessionId);
 +            if (this.ctx.agents.get(request.sessionId) !== undefined
 +                || this.ctx.sessions.get(request.sessionId) !== undefined) {
 +                throw new RemoteError('session/agent-busy', `session "${request.sessionId}" is still active`, { reason: 'the live Agent is owned by another capability' });
 +            }
-+            if (!(await persistence.delete(request.sessionId))) {
-+                throw new RemoteError('session/not-found', `session "${request.sessionId}" not found`, { sessionId: request.sessionId });
-+            }
++            // Remove idempotent Workspace metadata before the irreversible persistence commit.
++            // Otherwise a cleanup failure leaves a retry unable to reach the ghost metadata.
 +            await this.ctx.workspaceRegistry.forgetSession(request.sessionId);
-+            if (!hadLiveSession)
++            // With no validated header, do not unlink an unreadable artifact merely
++            // because stat could not identify it. Missing metadata is still cleaned.
++            const deleted = header === undefined ? false : await persistence.delete(request.sessionId);
++            if (attached === undefined)
 +                this.ctx.emit('api-session/removed', request.sessionId);
-+            return { deleted: true };
++            return { deleted };
 +        }
 +        catch (error) {
 +            if (remoteErrorOf(error) !== undefined)
@@ -1128,7 +1132,7 @@ index cd4e27c..0a70822 100644
      /**
       * Create a new ordinary Session from an exact event prefix. An explicit
       * `atSeq` is the inclusive cut; an omitted value selects the latest
-@@ -245,7 +286,7 @@ export class SessionCommandController {
+@@ -245,7 +287,7 @@ export class SessionCommandController {
              const composition = await this.agents.composeAgent(this.agents.presetForObservation(source));
              try {
                  const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
@@ -1137,7 +1141,7 @@ index cd4e27c..0a70822 100644
                      sessionId: childId,
                      seed,
                      inheritedEventCount: SessionLogOffset(boundary + 1),
-@@ -260,6 +301,7 @@ export class SessionCommandController {
+@@ -260,6 +302,7 @@ export class SessionCommandController {
                      agentOptions: { provider, model },
                      setup: composition.setup,
                  });
