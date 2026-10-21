@@ -440,6 +440,10 @@
         "to": "splash.html"
       },
       {
+        "from": "build/startup-whale.gif",
+        "to": "startup-whale.gif"
+      },
+      {
         "from": "build/dsh-loader.gif",
         "to": "dsh-loader.gif"
       },

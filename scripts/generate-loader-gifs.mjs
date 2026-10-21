@@ -3,11 +3,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
-// Regenerate the startup splash loaders (build/dsh-loader.gif and
+// Regenerate the legacy brand loaders (build/dsh-loader.gif and
 // build/dsh-loader-dark.gif) from the brand mark in build/brand-mark.svg.
 // The mark is quantised onto a 4px pixel grid, bobs gently, and sheds a few
 // square "bubbles" from the window's traffic lights — the same motion the
-// previous hand-drawn loaders used, so splash.html needs no changes.
+// previous hand-drawn loaders used. The startup splash now uses the original
+// build/startup-whale.gif asset; this generator must never overwrite it.
 
 const require = createRequire(import.meta.url)
 const sharp = require('sharp')
