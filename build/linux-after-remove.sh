@@ -1,7 +1,14 @@
 #!/bin/sh
-# Debian postrm hook: drop the AppArmor profile installed for the packaged app.
-# Unloading is best effort — a system without AppArmor never had the profile.
+# Debian postrm hook: drop the executable link and the AppArmor profile
+# installed for the packaged app. This script replaces electron-builder's
+# default postrm, which is why the alternative is unregistered here.
 set -u
+
+if command -v update-alternatives >/dev/null 2>&1; then
+  update-alternatives --remove-all dsh-desktop >/dev/null 2>&1 || true
+else
+  rm -f /usr/bin/dsh-desktop
+fi
 
 profile_name=dsh-desktop
 profile_path="/etc/apparmor.d/$profile_name"

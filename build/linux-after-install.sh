@@ -43,6 +43,30 @@ if [ -f "$app_dir/chrome-sandbox" ]; then
   chmod 4755 "$app_dir/chrome-sandbox" 2>/dev/null || true
 fi
 
+# `deb.afterInstall` replaces electron-builder's default postinst rather than
+# extending it, so the entries that template provided are restored here: the
+# /usr/bin link the documentation advertises and the desktop/mime caches.
+link_name=dsh-desktop
+link_path="/usr/bin/$link_name"
+if command -v update-alternatives >/dev/null 2>&1; then
+  # A symlink from an older install is not managed by update-alternatives and
+  # would make the registration fail.
+  if [ -L "$link_path" ] && [ -e "$link_path" ] &&
+     [ "$(readlink "$link_path")" != "/etc/alternatives/$link_name" ]; then
+    rm -f "$link_path" 2>/dev/null || true
+  fi
+  update-alternatives --install "$link_path" "$link_name" "$executable" 100 >/dev/null 2>&1 || true
+else
+  ln -sf "$executable" "$link_path" 2>/dev/null || true
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+fi
+if command -v update-mime-database >/dev/null 2>&1; then
+  update-mime-database /usr/share/mime >/dev/null 2>&1 || true
+fi
+
 # Without AppArmor, or without the 4.0 ABI that knows the `userns` rule, there is
 # nothing else to install — those systems do not restrict user namespaces either.
 profile_name=dsh-desktop

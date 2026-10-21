@@ -103,4 +103,23 @@ describe('Linux packaging', () => {
     expect(postinst).toContain('chmod 4755 "$app_dir/chrome-sandbox"')
     expect(postinst).toContain('apparmor_parser')
   })
+
+  it('keeps the entries electron-builder replaces with the custom hooks', async () => {
+    const postinst = await readFile(
+      path.join(projectRoot, 'build', 'linux-after-install.sh'),
+      'utf8'
+    )
+    const postrm = await readFile(
+      path.join(projectRoot, 'build', 'linux-after-remove.sh'),
+      'utf8'
+    )
+
+    // `deb.afterInstall`/`afterRemove` replace the default templates, so the
+    // pieces they provided — the /usr/bin link the docs advertise and the
+    // desktop/mime caches — have to be restored here.
+    expect(postinst).toContain('update-alternatives --install')
+    expect(postinst).toContain('update-desktop-database')
+    expect(postinst).toContain('update-mime-database')
+    expect(postrm).toContain('update-alternatives --remove-all')
+  })
 })
