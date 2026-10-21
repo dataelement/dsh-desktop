@@ -175,5 +175,26 @@ describe('page hooks', () => {
     const source = await readFile('src/preload/linux-window-chrome.ts', 'utf8')
     expect(source).toContain("doc.addEventListener('dblclick', onDoubleClick)")
     expect(source).toContain("run('desktop-window:toggle-maximize')")
+    // The desktop chrome subscribes on `document`, so the handler has to tell a
+    // caption double-click from one that selects a word in the page.
+    expect(source).toContain("target?.closest('[data-window-drag]')")
+  })
+
+  it('maximizes for a drag-band double-click only', async () => {
+    const { doc, ipc, dispose } = mount()
+    const band = doc.createElement('div')
+    band.setAttribute('data-window-drag', '')
+    const label = doc.createElement('span')
+    const action = doc.createElement('button')
+    band.append(label, action)
+    doc.body.appendChild(band)
+
+    label.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    action.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    doc.body.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+    expect(ipc.invoked.filter((channel) => channel === 'desktop-window:toggle-maximize'))
+      .toHaveLength(1)
+    dispose()
   })
 })

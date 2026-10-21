@@ -276,12 +276,21 @@ function installControls(
   const onMinimize = (): void => run('desktop-window:minimize')
   const onToggle = (): void => run('desktop-window:toggle-maximize')
   const onClose = (): void => run('desktop-window:close')
-  const onDoubleClick = (): void => run('desktop-window:toggle-maximize')
+  const INTERACTIVE =
+    'button, a, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"], [data-dsh-no-drag]'
+  const onDoubleClick = (event: Event): void => {
+    // Nothing native is left to turn a double-click on the drag band into a
+    // maximize, which is what Windows gets from its caption overlay. The overlay
+    // only covers the caption, so the band — and not the page around it — is the
+    // handle: a double-click that selects a word must not resize the window, and
+    // neither must one on a control the band hosts.
+    const target = event.target instanceof Element ? event.target : null
+    if (!target?.closest('[data-window-drag]') || target.closest(INTERACTIVE)) return
+    run('desktop-window:toggle-maximize')
+  }
   minimize.addEventListener('click', onMinimize)
   toggle.addEventListener('click', onToggle)
   close.addEventListener('click', onClose)
-  // Nothing native is left to turn a double-click on the drag band into a
-  // maximize, which is what Windows gets from its caption overlay.
   doc.addEventListener('dblclick', onDoubleClick)
 
   const onStateChanged = (_event: unknown, value: unknown): void => {
