@@ -44,7 +44,12 @@ applies every patch without errors. Every seam above has a regression test in
 
 - Ubuntu 24.04 or newer (Debian 13+) on x64, or another distribution with the
   same libraries
-- Node.js 22 or later and npm
+- Node.js 22 or later and npm 10. `node@24.9.0`'s install script calls npm
+  with `--allow-scripts`, which npm 11 rejects in project-scoped installs
+  (`EALLOWSCRIPTS`), so `npm ci` aborts there. Install npm 10 explicitly
+  (`npm install --global npm@10`) before installing; the project cannot pin it
+  through `packageManager` because the plugin tooling runs `pnpm` inside the
+  same tree and pnpm refuses a project configured for npm.
 - No additional build toolchain: Electron, the Harness runtime, and the PPT
   runtime are downloaded as prebuilt or JavaScript packages
 
