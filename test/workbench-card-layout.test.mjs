@@ -49,7 +49,7 @@ async function mountCard({ state = 'normal', language = 'zh', listed = true, ori
   if (state === 'catalog-stale') { service.catalogLoaded = true; service.catalogStale = true }
   if (favorite) service.state.favorites = ['owner/helper']
   if (state === 'loading') service.installing = 'owner/helper'
-  if (state === 'restart') service.pendingRestart.add('owner/helper')
+  if (state === 'restart') service.recordApplication('project-helper', { application: 'restart-required' }, 'owner/helper', 'install')
   if (state === 'install-failure' || state === 'update-failure') service.installFailures.set('owner/helper', { kind: state.split('-')[0], message: 'Could not download package: fetch failed '.repeat(20) })
   service.publish()
   const root = createRoot(dom.window.document.getElementById('root'))

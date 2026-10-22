@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
-index f010583..15229cd 100644
+index f010583..6817871 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 @@ -7,7 +7,7 @@ import { withFileLock, writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
@@ -94,7 +94,7 @@ index f010583..15229cd 100644
  				Object.assign(result, enabled ? await this.publishAndReload(this.bundleRows(name).map((row) => row.id)) : await this.reload());
  			}), {
  				stage: "enable",
-@@ -1984,7 +1993,13 @@ let PluginManager = (() => {
+@@ -1984,20 +1993,57 @@ let PluginManager = (() => {
  				});
  			};
  			const result = this.change(async (result) => {
@@ -108,12 +108,27 @@ index f010583..15229cd 100644
 +				}
  				if (stopped()) throw new InstallCancelledError();
  				const before = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
- 				const known = specPackageName(spec, before, this.profile.dir);
-@@ -1994,10 +2009,27 @@ let PluginManager = (() => {
+-				const known = specPackageName(spec, before, this.profile.dir);
+-				if (this.ownerContext.get("hmr") !== void 0 && known !== void 0 && Object.hasOwn(before, known)) throw new ManagementFailure("already-installed");
++				const detected = specPackageName(spec, before, this.profile.dir);
++				const expectedName = options?.expectedName;
++				const verified = expectedName !== void 0 || options?.expectedVersion !== void 0 || options?.npmIntegrity !== void 0;
++				for (const key of ["expectedName", "expectedVersion", "npmIntegrity"]) {
++					if (options?.[key] !== void 0 && (typeof options[key] !== "string" || options[key].trim() === "")) throw new ManagementFailure("invalid-spec");
++				}
++				if (expectedName !== void 0 && (parseInstallSpec(expectedName).name !== expectedName || detected !== void 0 && detected !== expectedName)) throw new ManagementFailure("invalid-spec");
++				const known = detected ?? expectedName;
++				if (options?.replace !== void 0 && typeof options.replace !== "boolean") throw new ManagementFailure("invalid-spec");
++				if (options?.replace === true && (expectedName === void 0 || known !== expectedName)) throw new ManagementFailure("invalid-spec");
++				if (known !== void 0 && (protectedModules.has(known) || this.protectsManager(known))) throw new ManagementFailure("management-required");
++				if (known !== void 0 && Object.hasOwn(before, known) && options?.replace !== true) throw new ManagementFailure("already-installed");
++				const backend = this.ownerContext.get("profileBundlePackageBackend");
++				if (verified && backend?.supportsVerifiedInstall !== true) throw new Error("Package backend does not support verified installs");
+ 				if (options?.approvedBuilds !== void 0) {
+ 					await approveBuilds(this.profile.dir, options.approvedBuilds);
  					result.approvedBuilds = options.approvedBuilds;
  				}
  				const files = await this.readRestoredFiles();
-+				const backend = this.ownerContext.get("profileBundlePackageBackend");
 +				let mutation;
 +				let used = null;
  				let name;
@@ -128,16 +143,19 @@ index f010583..15229cd 100644
 +							kind: parsed.kind,
 +							path: parsed.path,
 +							registry: options?.registry,
-+							expectedName: parsed.name,
++							expectedName: expectedName ?? parsed.name,
++							expectedVersion: options?.expectedVersion,
++							npmIntegrity: options?.npmIntegrity,
 +							signal: control.abort.signal,
 +							onOutput: (text, stream) => this.emitPackageOutput(requestId, text, stream, ["pnpm", "add", parsed.spec])
 +						});
 +					}
++					if (verified && mutation === void 0) throw new Error("Package backend declined verified install");
 +					if (mutation === void 0) {
  					const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
  						timeoutMs: this.githubConnectionTimeoutMs,
  						outputBytes: this.outputBytes,
-@@ -2018,8 +2050,6 @@ let PluginManager = (() => {
+@@ -2018,8 +2064,6 @@ let PluginManager = (() => {
  						throw new Error(connectionFailure.output);
  					}
  					const plan = registryPlan(options?.registry, await this.registries());
@@ -146,7 +164,7 @@ index f010583..15229cd 100644
  					for (const [index, registry] of plan.entries()) {
  						if (index > 0) await this.restoreFiles(files);
  						if (stopped()) throw new InstallCancelledError();
-@@ -2050,10 +2080,17 @@ let PluginManager = (() => {
+@@ -2050,10 +2094,17 @@ let PluginManager = (() => {
  					}
  					/* v8 ignore next -- the plan is never empty, so a run always settled */
  					if (run === void 0) throw new Error("no registry was asked");
@@ -165,7 +183,7 @@ index f010583..15229cd 100644
  							result.pendingBuilds = await recordPendingBuilds(this.profile.dir, run.output);
  						} catch (error) {
  							this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
-@@ -2061,7 +2098,7 @@ let PluginManager = (() => {
+@@ -2061,23 +2112,29 @@ let PluginManager = (() => {
  						throw new Error(run.output);
  					}
  					const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
@@ -174,9 +192,18 @@ index f010583..15229cd 100644
  					if (installed.length === 0) {
  						const local = specPackageName(spec, after, this.profile.dir);
  						if (local !== void 0 && Object.hasOwn(after, local)) installed.push(local);
-@@ -2073,11 +2110,12 @@ let PluginManager = (() => {
+ 					}
+ 					const target = installed[0];
+ 					if (installed.length !== 1 || target === void 0) throw new ManagementFailure("ambiguous-install");
++					if (protectedModules.has(target) || this.protectsManager(target)) throw new ManagementFailure("management-required");
++					if (expectedName !== void 0 && target !== expectedName) throw new Error("Installed bundle name does not match expectedName");
++					if (Object.hasOwn(before, target) && options?.replace !== true) throw new ManagementFailure("already-installed");
+ 					name = target;
+ 					const dir = resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
  					const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
  					if (manifest?.dsh?.bundle === void 0) throw new ManagementFailure("not-bundle");
++					if (expectedName !== void 0 && manifest.name !== expectedName) throw new Error("Installed manifest name does not match expectedName");
++					if (options?.expectedVersion !== void 0 && manifest.version !== options.expectedVersion) throw new Error("Installed manifest version does not match expectedVersion");
  					const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir));
 -					if (compatibility !== void 0 && !compatibility.exempted) throw new ManagementFailure("incompatible-version", [incompatiblePlugin(compatibility)]);
 +					if (compatibility !== void 0 && !compatibility.exempted) reportPluginCompatibility(compatibility);
@@ -188,15 +215,7 @@ index f010583..15229cd 100644
  					await this.restoreFiles(files);
  					throw error;
  				}
-@@ -2093,6 +2131,7 @@ let PluginManager = (() => {
- 					const selected = bundleSelection(readProfileManifest("dsh", this.profile.dir)).includes(name);
- 					Object.assign(result, await this.publishAndReload(selected ? this.bundleRows(name).map((row) => row.id) : []));
- 				});
-+			const switchedOff = readDisabledProfileBundles(this.profile.dir);
- 			}, {
- 				stage: "install",
- 				target: spec,
-@@ -2141,20 +2180,22 @@ let PluginManager = (() => {
+@@ -2141,20 +2198,22 @@ let PluginManager = (() => {
  					if (bundle === void 0 || !bundle.removable) throw new ManagementFailure("not-removable");
  					if (this.ownerContext.get("hmr") === void 0 && (this.profile.startedBundles.includes(name) || bundle.error === void 0 && this.bundleRows(name).some((row) => [...this.ctx.loader.entries()].some((entry) => entry.options.id === row.id && entry.fiber !== void 0)))) throw new ManagementFailure("stop-profile");
  					const contributions = bundle.error === void 0 ? this.bundleRows(name) : [];
@@ -225,7 +244,7 @@ index f010583..15229cd 100644
  				this.installedFrom.delete(name);
  				Object.assign(result, await this.configure(() => this.publishAndReload()));
  			}, {
-@@ -2200,6 +2241,33 @@ let PluginManager = (() => {
+@@ -2200,6 +2259,33 @@ let PluginManager = (() => {
  				overrides: [...new Set(patches.flatMap((item) => item.insert === void 0 && typeof item.id === "string" && !declared.has(item.id) ? [item.id] : []))]
  			};
  		}
@@ -259,7 +278,7 @@ index f010583..15229cd 100644
  		/** Run one pnpm command in the profile, streaming its output as install-log chunks. */
  		async runPnpm(args, signal, requestId) {
  			const jobId = randomUUID();
-@@ -2285,7 +2353,7 @@ let PluginManager = (() => {
+@@ -2285,7 +2371,7 @@ let PluginManager = (() => {
  				if (metadata === void 0) throw new ManagementFailure("not-bundle");
  				if (enabled) {
  					const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir));
@@ -268,17 +287,132 @@ index f010583..15229cd 100644
  					this.bundleRows(name);
  				}
  			}
+@@ -2370,6 +2456,7 @@ let PluginManager = (() => {
+ 				restartReason: restart
+ 			};
+ 		}
++		listApplications() { return structuredClone([...(this.applicationResults?.values() ?? [])]); }
+ 		async change(operation, request, reason) {
+ 			return withFileLock(join(this.profile.dir, "package.json"), async () => {
+ 				this.abort.signal.throwIfAborted();
+@@ -2395,6 +2482,11 @@ let PluginManager = (() => {
+ 				}
+ 				if (result.application !== "restart-required") delete result.restartReason;
+ 				result.changed = before !== this.diskState();
++				const key = result.bundle ?? result.target;
++				if (key) {
++					this.applicationResults ??= new Map();
++					this.applicationResults.set(key, structuredClone(result));
++				}
+ 				this.ownerContext.emit("plugin-manager/changed", { reason });
+ 				return result;
+ 			}, { waitMs: this.lockWaitMs });
+diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js
+index 9ced5c2..d79dc16 100644
+--- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js
++++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.host.js
+@@ -35,6 +35,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$sche
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$schema$value ??= z.string())
+ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema$value
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema$value ??= z.union([z.undefined(), z.object({
++  'expectedName': z.string().optional(),
++  'expectedVersion': z.string().optional(),
++  'npmIntegrity': z.string().optional(),
++  'replace': z.boolean().optional(),
+   'enabled': z.boolean().optional(),
+   'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
+   'requestId': z.string().optional(),
+@@ -414,6 +418,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_stri
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema$value ??= z.string())
+ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value ??= z.union([z.undefined(), z.strictObject({
++  'expectedName': z.string().optional(),
++  'expectedVersion': z.string().optional(),
++  'npmIntegrity': z.string().optional(),
++  'replace': z.boolean().optional(),
+   'enabled': z.boolean().optional(),
+   'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
+   'requestId': z.string().optional(),
+@@ -558,13 +566,13 @@ const $remote = createTypertRemoteInfo({
+             mode: 'strict',
+             typeSymbol: '@deepseek-ai/dsh-plugin-manager/types#InstallBundleOptions',
+             create: _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema,
+-            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."}},"required":[],"additionalProperties":true},
++            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."},"expectedName":{"type":"string"},"expectedVersion":{"type":"string"},"npmIntegrity":{"type":"string"},"replace":{"type":"boolean"}},"required":[],"additionalProperties":true},
+           },
+           strictCodec: {
+             mode: 'strict',
+             typeSymbol: '@deepseek-ai/dsh-plugin-manager/types#InstallBundleOptions',
+             create: _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema,
+-            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."}},"required":[],"additionalProperties":false},
++            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."},"expectedName":{"type":"string"},"expectedVersion":{"type":"string"},"npmIntegrity":{"type":"string"},"replace":{"type":"boolean"}},"required":[],"additionalProperties":false},
+           },
+         },
+       ],
+@@ -1014,7 +1022,7 @@ export const TYPERT = {
+           },
+           {
+             "name": "InstallBundleOptions",
+-            "declaration": "export interface InstallBundleOptions {\n    enabled?: boolean;\n    saveExact?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n    registry?: Registry;\n}"
++            "declaration": "export interface InstallBundleOptions {\n    enabled?: boolean;\n    expectedName?: string;\n    expectedVersion?: string;\n    npmIntegrity?: string;\n    replace?: boolean;\n    saveExact?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n    registry?: Registry;\n}"
+           },
+           {
+             "name": "InstallSpecKind",
+diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js
+index 6e478bd..e98c4c4 100644
+--- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js
++++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js
+@@ -35,6 +35,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$sche
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0$schema$value ??= z.string())
+ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema$value
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema$value ??= z.union([z.undefined(), z.object({
++  'expectedName': z.string().optional(),
++  'expectedVersion': z.string().optional(),
++  'npmIntegrity': z.string().optional(),
++  'replace': z.boolean().optional(),
+   'enabled': z.boolean().optional(),
+   'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
+   'requestId': z.string().optional(),
+@@ -414,6 +418,10 @@ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_stri
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_0_strict$schema$value ??= z.string())
+ let _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value
+ const _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema = () => (_deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema$value ??= z.union([z.undefined(), z.strictObject({
++  'expectedName': z.string().optional(),
++  'expectedVersion': z.string().optional(),
++  'npmIntegrity': z.string().optional(),
++  'replace': z.boolean().optional(),
+   'enabled': z.boolean().optional(),
+   'saveExact': z.boolean().optional().describe('Save the resolved dependency version without a range; applies to any bundle installation.'),
+   'requestId': z.string().optional(),
+@@ -558,13 +566,13 @@ export const TYPERT_REMOTE = createTypertRemoteInfo({
+             mode: 'strict',
+             typeSymbol: '@deepseek-ai/dsh-plugin-manager/types#InstallBundleOptions',
+             create: _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1$schema,
+-            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."}},"required":[],"additionalProperties":true},
++            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."},"expectedName":{"type":"string"},"expectedVersion":{"type":"string"},"npmIntegrity":{"type":"string"},"replace":{"type":"boolean"}},"required":[],"additionalProperties":true},
+           },
+           strictCodec: {
+             mode: 'strict',
+             typeSymbol: '@deepseek-ai/dsh-plugin-manager/types#InstallBundleOptions',
+             create: _deepseek_ai_dsh_plugin_manager_pluginManager_installBundle_parameter_1_strict$schema,
+-            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."}},"required":[],"additionalProperties":false},
++            jsonSchema: {"type":"object","properties":{"enabled":{"type":"boolean"},"saveExact":{"type":"boolean","description":"Save the resolved dependency version without a range; applies to any bundle installation."},"requestId":{"type":"string"},"approvedBuilds":{"type":"array","items":{"type":"string"},"description":"Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call."},"registry":{"oneOf":[{"type":"null","const":null},{"type":"string"}],"description":"The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale."},"expectedName":{"type":"string"},"expectedVersion":{"type":"string"},"npmIntegrity":{"type":"string"},"replace":{"type":"boolean"}},"required":[],"additionalProperties":false},
+           },
+         },
+       ],
 diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
-index ba39109..7ebd975 100644
+index ba39109..1bd5210 100644
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.d.ts
-@@ -6,6 +6,16 @@ export type * from './types.ts';
+@@ -6,6 +6,18 @@ export type * from './types.ts';
  export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts';
  export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts';
  /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 +/** Host-owned package mutation backend for immutable Desktop generations. */
 +export interface ProfileBundlePackageBackend {
-+    install(request: { spec: string; kind: 'registry' | 'path' | 'git' | 'tarball'; path?: string; registry?: string; expectedName?: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; bundle?: string; replaced?: boolean; pendingBuilds?: string[]; rollback?(): Promise<void>; commit?(): void; } | undefined>;
++    /** Validates expected identity, version and npm SRI before publishing a generation. */
++    readonly supportsVerifiedInstall?: boolean;
++    install(request: { spec: string; kind: 'registry' | 'path' | 'git' | 'tarball'; path?: string; registry?: string; expectedName?: string; expectedVersion?: string; npmIntegrity?: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; bundle?: string; replaced?: boolean; pendingBuilds?: string[]; rollback?(): Promise<void>; commit?(): void; } | undefined>;
 +    /** Resolves undefined when the package is not the backend's to remove; Plugin Manager then uses pnpm. */
 +    remove(request: { name: string; signal: AbortSignal; onOutput(text: string, stream: 'stdout' | 'stderr'): void; }): Promise<{ packageResult: import('./types.ts').PackageResult; } | undefined>;
 +    /** Persist a package-level switch that launch reconciliation of `dsh.profile.bundles` cannot revert. */
@@ -289,3 +423,346 @@ index ba39109..7ebd975 100644
  export interface Config {
      /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
      pnpmCommand?: string;
+@@ -86,6 +98,8 @@ export declare class PluginManager extends TypertRemoteService {
+      * display metadata, activation selections, whether the installation offers the bundle, and removal availability.
+      */
+     listBundles(): Promise<BundleInfo[]>;
++    /** Latest process-local application outcomes; reset at restart. */
++    listApplications(): ChangeResult[];
+     /** Read the registries this manager asks: the configured first one, its fallbacks in order, and what pnpm's own configuration names.
+      * @returns The registries in pnpm's comparison form; null is the one pnpm's own configuration names, `resolved` as pnpm reads it now.
+      */
+diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.js b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.js
+index bd94176..05bcf69 100644
+--- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.js
++++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/index.js
+@@ -42,7 +42,7 @@ import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write';
+ import z from '@deepseek-ai/schemastery';
+ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol';
+ import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory';
+-import { readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths, evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions, setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME, OFFICIAL_ON_DEMAND_CATALOG, getDshRuntimeVersion, ResolutionRestartRequired, } from '@deepseek-ai/dsh-app-boot';
++import { reportPluginCompatibility, readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths, evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions, setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME, OFFICIAL_ON_DEMAND_CATALOG, getDshRuntimeVersion, ResolutionRestartRequired, } from '@deepseek-ai/dsh-app-boot';
+ import { bundleManifest, readProfileRegistry, registryArguments, runProfilePnpm, saveManifest, viewProfilePackage } from "./operations.js";
+ import { classifyInstallFailure } from "./install-failure.js";
+ import { officialBundleInstallTarget } from "./official-install-target.js";
+@@ -539,158 +539,187 @@ let PluginManager = (() => {
+          */
+         installBundle(spec, options) {
+             const requestId = options?.requestId;
+-            const control = { abort: new AbortController(), phase: 'installing', result: Promise.resolve(null) };
++            const control = {
++                abort: new AbortController(),
++                phase: "installing",
++                result: Promise.resolve(null)
++            };
+             const stopped = () => control.abort.signal.aborted || this.abort.signal.aborted;
+-            if (requestId !== undefined)
+-                this.installs.set(requestId, control);
++            if (requestId !== void 0) this.installs.set(requestId, control);
+             const announce = (phase, attempt) => {
+-                if (requestId !== undefined)
+-                    this.ownerContext.emit('plugin-manager/install-state', { requestId, phase, ...attempt === undefined ? {} : { attempt } });
++                if (requestId !== void 0) this.ownerContext.emit("plugin-manager/install-state", {
++                    requestId,
++                    phase,
++                    ...attempt === void 0 ? {} : { attempt }
++                });
+             };
+             const result = this.change(async (result) => {
+-                if (spec.trim() === '' || spec.startsWith('-'))
+-                    throw new ManagementFailure('invalid-spec');
+-                if (stopped())
+-                    throw new InstallCancelledError();
+-                const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {};
+-                // With HMR, an installed package is removed before another version is installed, so its plugins stop first.
+-                const known = specPackageName(spec, before, this.profile.dir);
+-                if (this.ownerContext.get('hmr') !== undefined && known !== undefined && Object.hasOwn(before, known)) {
+-                    throw new ManagementFailure('already-installed');
++                let parsed;
++                try {
++                    parsed = parseInstallSpec(spec);
++                } catch (error) {
++                    if (error instanceof InvalidInstallSpecError) throw new ManagementFailure("invalid-spec", error.reason);
++                    throw error;
++                }
++                if (stopped()) throw new InstallCancelledError();
++                const before = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
++                const detected = specPackageName(spec, before, this.profile.dir);
++                const expectedName = options?.expectedName;
++                const verified = expectedName !== void 0 || options?.expectedVersion !== void 0 || options?.npmIntegrity !== void 0;
++                for (const key of ["expectedName", "expectedVersion", "npmIntegrity"]) {
++                    if (options?.[key] !== void 0 && (typeof options[key] !== "string" || options[key].trim() === "")) throw new ManagementFailure("invalid-spec");
+                 }
+-                if (options?.approvedBuilds !== undefined) {
++                if (expectedName !== void 0 && (parseInstallSpec(expectedName).name !== expectedName || detected !== void 0 && detected !== expectedName)) throw new ManagementFailure("invalid-spec");
++                const known = detected ?? expectedName;
++                if (options?.replace !== void 0 && typeof options.replace !== "boolean") throw new ManagementFailure("invalid-spec");
++                if (options?.replace === true && (expectedName === void 0 || known !== expectedName)) throw new ManagementFailure("invalid-spec");
++                if (known !== void 0 && (protectedModules.has(known) || this.protectsManager(known))) throw new ManagementFailure("management-required");
++                if (known !== void 0 && Object.hasOwn(before, known) && options?.replace !== true) throw new ManagementFailure("already-installed");
++                const backend = this.ownerContext.get("profileBundlePackageBackend");
++                if (verified && backend?.supportsVerifiedInstall !== true) throw new Error("Package backend does not support verified installs");
++                if (options?.approvedBuilds !== void 0) {
+                     await approveBuilds(this.profile.dir, options.approvedBuilds);
+                     result.approvedBuilds = options.approvedBuilds;
+                 }
+                 const files = await this.readRestoredFiles();
++                let mutation;
++                let used = null;
+                 let name;
+                 let version;
+                 try {
+                     result.registries = [];
++                    let run;
++                    if (backend !== void 0) {
++                        announce("installing");
++                        mutation = await backend.install({
++                            spec: parsed.spec,
++                            kind: parsed.kind,
++                            path: parsed.path,
++                            registry: options?.registry,
++                            expectedName: expectedName ?? parsed.name,
++                            expectedVersion: options?.expectedVersion,
++                            npmIntegrity: options?.npmIntegrity,
++                            signal: control.abort.signal,
++                            onOutput: (text, stream) => this.emitPackageOutput(requestId, text, stream, ["pnpm", "add", parsed.spec])
++                        });
++                    }
++                    if (verified && mutation === void 0) throw new Error("Package backend declined verified install");
++                    if (mutation === void 0) {
+                     const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
+-                        timeoutMs: this.githubConnectionTimeoutMs, outputBytes: this.outputBytes,
++                        timeoutMs: this.githubConnectionTimeoutMs,
++                        outputBytes: this.outputBytes,
+                         signal: AbortSignal.any([this.abort.signal, control.abort.signal]),
+-                        ...this.profile.packageManager?.env === undefined ? {} : { env: this.profile.packageManager.env },
++                        ...this.profile.packageManager?.env === void 0 ? {} : { env: this.profile.packageManager.env }
+                     });
+                     this.packageOperations.add(connection);
+                     let connectionFailure;
+                     try {
+                         connectionFailure = await connection;
+-                    }
+-                    finally {
++                    } finally {
+                         this.packageOperations.delete(connection);
+                     }
+-                    if (stopped())
+-                        throw new InstallCancelledError();
+-                    if (connectionFailure?.kind === 'network' || connectionFailure?.kind === 'timeout') {
++                    if (stopped()) throw new InstallCancelledError();
++                    if (connectionFailure?.kind === "network" || connectionFailure?.kind === "timeout") {
+                         result.packageResult = connectionFailure;
+-                        result.failedAt = 'spec-host';
++                        result.failedAt = "spec-host";
+                         throw new Error(connectionFailure.output);
+                     }
+-                    // The last run is the result's; the registries asked stay listed whatever the outcome.
+                     const plan = registryPlan(options?.registry, await this.registries());
+-                    let run;
+-                    let used = null;
+                     for (const [index, registry] of plan.entries()) {
+-                        if (index > 0)
+-                            await this.restoreFiles(files);
+-                        // A stop that landed while the files went back, or before the first run, starts no run with a dead signal.
+-                        if (stopped())
+-                            throw new InstallCancelledError();
++                        if (index > 0) await this.restoreFiles(files);
++                        if (stopped()) throw new InstallCancelledError();
+                         result.registries.push(registry);
+                         used = registry;
+-                        announce('installing', { registry, index: index + 1, total: plan.length });
+-                        run = await this.runPnpm(['add', spec, ...options?.saveExact === true ? ['--save-exact'] : [], ...registryArguments(registry)], control.abort.signal, requestId);
++                        announce("installing", {
++                            registry,
++                            index: index + 1,
++                            total: plan.length
++                        });
++                        run = await this.runPnpm([
++                            "add",
++                            spec,
++                            ...options?.saveExact === true ? ["--save-exact"] : [],
++                            ...registryArguments(registry)
++                        ], control.abort.signal, requestId);
+                         result.packageResult = run;
+-                        if (stopped())
+-                            throw new InstallCancelledError();
+-                        // A compatibility refusal is the package's own answer, so no other registry is asked.
+-                        if (run.incompatible !== undefined)
+-                            throw new ManagementFailure('incompatible-version', run.incompatible);
+-                        // A run this manager terminated is not a success, even when pnpm trapped the signal and exited 0.
+-                        if (run.exitCode === 0 && run.timedOut !== true)
+-                            break;
++                        if (stopped()) throw new InstallCancelledError();
++                        if (run.incompatible !== void 0) throw new ManagementFailure("incompatible-version", run.incompatible);
++                        if (run.exitCode === 0 && run.timedOut !== true) break;
+                         /* v8 ignore next 2 -- runPnpm classifies every run it does not report as succeeded */
+-                        if (run.kind === undefined)
+-                            break;
+-                        // What the last failed run could not reach; a later run that succeeds leaves nothing to say.
++                        if (run.kind === void 0) break;
+                         delete result.failedAt;
+-                        // A run this manager terminated got no answer from the registry at all, so no registry explains it.
+-                        if (run.timedOut === true)
+-                            break;
++                        if (run.timedOut === true) break;
+                         const failedAt = attributeFailure(run.kind, run.output, parsedForRegistry(spec));
+-                        if (failedAt !== 'other')
+-                            result.failedAt = failedAt;
+-                        if (failedAt !== 'registry' || index === plan.length - 1)
+-                            break;
++                        if (failedAt !== "other") result.failedAt = failedAt;
++                        if (failedAt !== "registry" || index === plan.length - 1) break;
+                     }
+                     /* v8 ignore next -- the plan is never empty, so a run always settled */
+-                    if (run === undefined)
+-                        throw new Error('no registry was asked');
+-                    // A terminated run reports no usable exit status, so neither its files nor its bundle are trusted.
++                    if (run === void 0) throw new Error("no registry was asked");
++                    } else {
++                        run = mutation.packageResult;
++                        result.packageResult = run;
++                        if (stopped()) throw new InstallCancelledError();
++                        if (run.incompatible !== void 0) throw new ManagementFailure("incompatible-version", run.incompatible);
++                    }
+                     const succeeded = run.exitCode === 0 && run.timedOut !== true;
+-                    if (succeeded)
+-                        delete result.failedAt;
++                    if (succeeded) delete result.failedAt;
+                     if (!succeeded) {
+-                        // pnpm-workspace.yaml is not restored, so the names it left undecided, or reported as ignored, are offered for approval.
+-                        try {
++                        if (mutation?.pendingBuilds !== void 0) result.pendingBuilds = mutation.pendingBuilds;
++                        else try {
+                             result.pendingBuilds = await recordPendingBuilds(this.profile.dir, run.output);
+-                        }
+-                        catch (error) {
+-                            this.ownerContext.logger.warn('Could not read pending build approvals after pnpm failed', error);
++                        } catch (error) {
++                            this.ownerContext.logger.warn("Could not read pending build approvals after pnpm failed", error);
+                         }
+                         throw new Error(run.output);
+                     }
+-                    const after = readProfileManifest('dsh', this.profile.dir).dependencies ?? {};
+-                    const installed = Object.keys(after).filter(name => before[name] !== after[name]);
+-                    // Without HMR a repeated installation can leave the saved dependency as it was.
++                    const after = readProfileManifest("dsh", this.profile.dir).dependencies ?? {};
++                    const installed = mutation?.bundle === void 0 ? Object.keys(after).filter((name) => before[name] !== after[name]) : [mutation.bundle];
+                     if (installed.length === 0) {
+                         const local = specPackageName(spec, after, this.profile.dir);
+-                        if (local !== undefined && Object.hasOwn(after, local))
+-                            installed.push(local);
++                        if (local !== void 0 && Object.hasOwn(after, local)) installed.push(local);
+                     }
+                     const target = installed[0];
+-                    if (installed.length !== 1 || target === undefined)
+-                        throw new ManagementFailure('ambiguous-install');
++                    if (installed.length !== 1 || target === void 0) throw new ManagementFailure("ambiguous-install");
++                    if (protectedModules.has(target) || this.protectsManager(target)) throw new ManagementFailure("management-required");
++                    if (expectedName !== void 0 && target !== expectedName) throw new Error("Installed bundle name does not match expectedName");
++                    if (Object.hasOwn(before, target) && options?.replace !== true) throw new ManagementFailure("already-installed");
+                     name = target;
+-                    const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir);
++                    const dir = resolveBundleDir("dsh", name, this.profile.installAnchor, this.profile.dir);
+                     const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor);
+-                    if (manifest?.dsh?.bundle === undefined)
+-                        throw new ManagementFailure('not-bundle');
++                    if (manifest?.dsh?.bundle === void 0) throw new ManagementFailure("not-bundle");
++                    if (expectedName !== void 0 && manifest.name !== expectedName) throw new Error("Installed manifest name does not match expectedName");
++                    if (options?.expectedVersion !== void 0 && manifest.version !== options.expectedVersion) throw new Error("Installed manifest version does not match expectedVersion");
+                     const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir));
+-                    if (compatibility !== undefined && !compatibility.exempted)
+-                        throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)]);
+-                    for (const file of bundlePatchPaths(dir, manifest.dsh.bundle))
+-                        loadOverlayPatches('dsh', file);
++                    if (compatibility !== void 0 && !compatibility.exempted) reportPluginCompatibility(compatibility);
++                    for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches("dsh", file);
+                     version = manifest.version;
+                     this.installedFrom.set(name, used);
+-                }
+-                catch (error) {
+-                    // pnpm has exited by now, so the files it rewrote go back as they were.
++                } catch (error) {
++                    await mutation?.rollback?.();
+                     await this.restoreFiles(files);
+                     throw error;
+                 }
+-                control.phase = 'applying';
+-                announce('applying');
++                control.phase = "applying";
++                announce("applying");
+                 result.bundle = name;
+-                if (version !== undefined)
+-                    result.version = version;
++                if (version !== void 0) result.version = version;
+                 result.target = name;
+-                result.stage = 'enable';
++                result.stage = "enable";
+                 return this.configure(async () => {
+-                    if (options?.enabled !== false)
+-                        await this.selectBundle(name, true);
+-                    // Without HMR the replaced package's plugins keep running until the restart the result already reports.
+-                    if (Object.hasOwn(before, name) && this.ownerContext.get('hmr') === undefined)
+-                        return;
+-                    // A selected bundle's own rows must start.
+-                    const selected = bundleSelection(readProfileManifest('dsh', this.profile.dir)).includes(name);
+-                    Object.assign(result, await this.publishAndReload(selected ? this.bundleRows(name).map(row => row.id) : []));
++                    if (options?.enabled !== false) await this.selectBundle(name, true);
++                    if (Object.hasOwn(before, name) && this.ownerContext.get("hmr") === void 0) return;
++                    const selected = bundleSelection(readProfileManifest("dsh", this.profile.dir)).includes(name);
++                    Object.assign(result, await this.publishAndReload(selected ? this.bundleRows(name).map((row) => row.id) : []));
+                 });
+-            }, { stage: 'install', target: spec, enabled: options?.enabled !== false }, 'install');
++            }, {
++                stage: "install",
++                target: spec,
++                enabled: options?.enabled !== false
++            }, "install");
+             control.result = result;
+-            return result.finally(() => { if (requestId !== undefined)
+-                this.installs.delete(requestId); });
++            return result.finally(() => {
++                if (requestId !== void 0) this.installs.delete(requestId);
++            });
+         }
+         /** Recover the result of an active installation without cancelling it.
+          * @param requestId The id supplied when installation started.
+@@ -945,6 +974,7 @@ let PluginManager = (() => {
+             const restart = restartReason ?? pending[0]?.reason;
+             return restart === undefined ? { warnings } : { warnings, restartReason: restart };
+         }
++        listApplications() { return structuredClone([...(this.applicationResults?.values() ?? [])]); }
+         async change(operation, request, reason) {
+             return withFileLock(join(this.profile.dir, 'package.json'), async () => {
+                 this.abort.signal.throwIfAborted();
+@@ -971,6 +1001,11 @@ let PluginManager = (() => {
+                 if (result.application !== 'restart-required')
+                     delete result.restartReason;
+                 result.changed = before !== this.diskState();
++                const key = result.bundle ?? result.target;
++                if (key) {
++                    this.applicationResults ??= new Map();
++                    this.applicationResults.set(key, structuredClone(result));
++                }
+                 this.ownerContext.emit('plugin-manager/changed', { reason });
+                 return result;
+             }, { waitMs: this.lockWaitMs });
+diff --git a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts
+index cb03e52..f4a0bc1 100644
+--- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts
++++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/types.d.ts
+@@ -147,6 +147,14 @@ export type PluginInstallRequestId = Branded<'PluginInstallRequestId'>;
+ /** Bundle installation defaults to activation; callers that offer cancellation supply their request id. */
+ export interface InstallBundleOptions {
+     enabled?: boolean;
++    /** Verified identity; must match the package named by spec. Requires a verified-install backend. */
++    expectedName?: string;
++    /** Exact installed manifest version. Requires a verified-install backend. */
++    expectedVersion?: string;
++    /** Catalog npm SRI, verified by the host backend before publication; never falls back to pnpm. */
++    npmIntegrity?: string;
++    /** Permit replacement only of the known expectedName; management bundles remain protected. */
++    replace?: boolean;
+     /** Save the resolved dependency version without a range; applies to any bundle installation. */
+     saveExact?: boolean;
+     requestId?: PluginInstallRequestId;
