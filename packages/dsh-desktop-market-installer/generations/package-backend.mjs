@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, open, readFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
-import { forgetPlugin, recordPluginSwitch } from '../plugin-state.mjs'
+import { forgetPlugin, recordPluginSwitch, validatePluginSwitch } from '../plugin-state.mjs'
 import { installGeneration, verifyGenerationPeers } from './installer.mjs'
 import {
   SHARED_TREE_ONLY,
@@ -315,6 +315,12 @@ export function createGenerationPackageBackend(options) {
         const captured = await log.close()
         return { packageResult: { exitCode: 1, ...captured, logPath: log.path } }
       }
+    },
+
+    async validateSwitch(request) {
+      await validatePluginSwitch(profileDirectory(dshHome), request.name, request.enabled, {
+        rowIds: request.rowIds ?? []
+      })
     },
 
     async switched(request) {

@@ -1,0 +1,42 @@
+name: Plugin switch configuration preservation
+
+on:
+  pull_request:
+    branches: [V0.12.2]
+    paths:
+      - ".github/workflows/plugin-switch-preservation.yml"
+      - "packages/dsh-desktop-market-installer/**"
+      - "patches/@deepseek-ai+dsh-plugin-manager+*.patch"
+      - "test/plugin-state-patch-preservation.test.ts"
+      - "test/plugin-manager-switch-preflight.test.mjs"
+      - "test/plugin-manager-switch.test.mjs"
+      - "test/plugin-disable.test.ts"
+      - "test/plugin-manager-generation-backend.test.js"
+      - "test/host-plugin-state.test.ts"
+      - "test/desktop-plugin-closure.test.ts"
+      - "test/patch-hunk-counts.test.ts"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile-switch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify persisted YAML ownership and actual manager preflight
+        run: npx --no-install vitest run --maxWorkers=1 test/plugin-state-patch-preservation.test.ts test/plugin-manager-switch-preflight.test.mjs test/plugin-manager-switch.test.mjs test/plugin-disable.test.ts test/plugin-manager-generation-backend.test.js test/host-plugin-state.test.ts test/desktop-plugin-closure.test.ts test/patch-hunk-counts.test.ts --reporter=verbose
+      - run: npm run typecheck
