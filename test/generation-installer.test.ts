@@ -586,6 +586,32 @@ describe('the generation installer', () => {
     )
   })
 
+  it('resolves removed host peers from a separate installation without Profile links (#744)', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'host-fallback')
+    const plugin = join(directory, 'node_modules', 'root-plugin')
+    const host = join(home, 'separate-installation', 'node_modules')
+    const name = '@deepseek-ai/host-peer'
+    const entry = join(host, '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    await mkdir(plugin, { recursive: true })
+    await mkdir(join(host, name), { recursive: true })
+    await writeFile(join(host, name, 'package.json'), JSON.stringify({ name, main: 'index.js' }))
+    await writeFile(join(host, name, 'index.js'), 'module.exports = {}')
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin', peerDependencies: { [name]: '*' } }))
+    const generation = { id: 'host-fallback', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    expect(await verifyGenerationPeers(home, generation, { dshEntryPath: entry })).toEqual({ ok: true, problems: [] })
+    // Ordinary peers remain plugin-owned, even if the host happens to ship them.
+    const ordinary = join(host, 'ordinary-peer')
+    await mkdir(ordinary, { recursive: true })
+    await writeFile(join(ordinary, 'package.json'), JSON.stringify({ name: 'ordinary-peer', main: 'index.js' }))
+    await writeFile(join(ordinary, 'index.js'), 'module.exports = {}')
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin', peerDependencies: { 'ordinary-peer': '*' } }))
+    expect((await verifyGenerationPeers(home, generation, { dshEntryPath: entry })).problems).toContain(
+      'ordinary-peer does not resolve from the generation or installation closure'
+    )
+  })
+
   it('validates current host entries when legacy Profile links point at an older installation', async () => {
     const home = await freshHome()
     const checkout = join(home, 'current-installation')
