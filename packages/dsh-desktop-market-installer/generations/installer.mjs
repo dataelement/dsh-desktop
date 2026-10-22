@@ -602,7 +602,11 @@ async function resolveNonRootPackage(requireFromPackage, dependency) {
       Object.keys(manifest.exports).some((key) => key.startsWith('./'))
     if (declarationOnly) {
       const declaration = join(packageDirectory, manifest.types ?? manifest.typings)
-      return existsSync(declaration) ? declaration : undefined
+      const candidates = [declaration, `${declaration}.d.ts`, `${declaration}.d.mts`, `${declaration}.d.cts`]
+      for (const candidate of candidates) {
+        if (existsSync(candidate)) return candidate
+      }
+      return undefined
     }
     // Some SDKs publish a root export without shipping its target, while their
     // supported API is exposed through concrete client/server subpaths. Package

@@ -667,10 +667,11 @@ describe('the generation installer', () => {
     const directory = join(home, 'profiles', '.generations', 'live', 'lexical-shape')
     const modules = join(directory, 'node_modules')
     const packages = {
-      'root-plugin': { dependencies: { '@types/example': '*', 'type-only': '*', 'subpaths': '*', 'esm-only': '*', 'sdk-shape': '*' },
+      'root-plugin': { dependencies: { '@types/example': '*', 'type-only': '*', 'type-extensionless': '*', 'subpaths': '*', 'esm-only': '*', 'sdk-shape': '*' },
         peerDependencies: { typescript: '*' }, peerDependenciesMeta: { typescript: { optional: true } } },
       '@types/example': { types: 'index.d.ts' },
       'type-only': { types: 'api.d.ts', exports: { '.': { types: './api.d.ts' } } },
+      'type-extensionless': { types: 'index' },
       'esm-only': { exports: { '.': { types: './index.d.ts', import: './index.mjs' } } },
       subpaths: { exports: { './feature': './feature.js' } },
       'sdk-shape': { exports: { '.': './missing.js', './client': { import: './client.mjs' } } }
@@ -680,6 +681,7 @@ describe('the generation installer', () => {
       await writeFile(join(modules, name, 'package.json'), JSON.stringify({ name, ...fields }))
     }
     await writeFile(join(modules, '@types/example/index.d.ts'), 'export interface Example {}')
+    await writeFile(join(modules, 'type-extensionless/index.d.ts'), 'export interface Retried {}')
     await writeFile(join(modules, 'sdk-shape/client.mjs'), 'export default {}')
     await writeFile(join(modules, 'esm-only/index.mjs'), 'export default {}')
     await writeFile(join(modules, 'type-only/api.d.ts'), 'export interface Api {}')
