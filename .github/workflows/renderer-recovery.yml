@@ -1,0 +1,43 @@
+name: Renderer recovery
+
+on:
+  pull_request:
+    branches: [V0.12.2]
+    paths:
+      - ".github/workflows/renderer-recovery.yml"
+      - "src/main/index.ts"
+      - "src/main/desktop-navigation.ts"
+      - "src/main/desktop-window-load.ts"
+      - "src/main/renderer-navigation-recovery.ts"
+      - "src/main/main-window-recovery.ts"
+      - "test/*recovery*.test.ts"
+      - "test/desktop-navigation.test.ts"
+      - "test/desktop-window-load.test.ts"
+      - "test/gpu-fallback.test.ts"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-recovery:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify owned recovery with actual secure Electron renderer
+        run: npx --no-install vitest run --maxWorkers=1 test/main-window-recovery-events.test.ts test/renderer-navigation-recovery.test.ts test/main-window-recovery.test.ts test/desktop-navigation.test.ts test/desktop-window-load.test.ts test/gpu-fallback.test.ts test/renderer-recovery-electron.test.ts --reporter=verbose
+        env:
+          DSH_TEST_RENDERER_RECOVERY_ELECTRON: "1"
+      - run: npm run typecheck

@@ -1,0 +1,240 @@
+import { EventEmitter } from 'node:events'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { RendererNavigationRecovery } from '../src/main/renderer-navigation-recovery'
+
+function deferred() {
+  let resolve: () => void = () => {}
+  let reject: (error: Error) => void = () => {}
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+function fixture() {
+  const events = new EventEmitter()
+  const loads: ReturnType<typeof deferred>[] = []
+  const load = vi.fn(() => { const item = deferred(); loads.push(item); return item.promise })
+  const error = vi.fn()
+  const recovery = new RendererNavigationRecovery({ onError: error, load, cancelled: () => false, cooldownMs: 50, timeoutMs: 100, healthyMs: 200 })
+  events.on('render-process-gone', () => recovery.rendererGone())
+  events.on('did-fail-load', (url: string, code: number) => recovery.loadFailed(url, code))
+  return { events, loads, load, recovery, error }
+}
+afterEach(() => vi.useRealTimers())
+describe('owned renderer navigation recovery', () => {
+  it('recovers the settled current URL after a redirect or direct reload without accepting stale pending failures', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const initial = f.recovery.navigate('http://127.0.0.1/?token=launch')
+    f.loads[0]?.resolve()
+    await initial
+    f.recovery.loadFailed('http://127.0.0.1/clean', -2, 'http://127.0.0.1/clean')
+    await vi.advanceTimersByTimeAsync(50)
+    expect(f.load).toHaveBeenLastCalledWith('http://127.0.0.1/clean', expect.any(Function))
+    f.loads[1]?.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    f.recovery.dispose()
+  })
+
+  it.each(['closed', 'superseded'])('does not surface a background terminal rejection after %s', async reason => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const initial = f.recovery.navigate('file:///splash.html')
+    f.loads[0]?.resolve()
+    await initial
+    for (let i = 1; i <= 3; i++) {
+      f.recovery.rendererGone()
+      await vi.advanceTimersByTimeAsync(50)
+      f.loads[i]?.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+    }
+    f.recovery.rendererGone()
+    if (reason === 'closed') f.recovery.dispose()
+    else {
+      const current = f.recovery.navigate('file:///new.html')
+      f.loads[4]?.resolve()
+      await current
+    }
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.error).not.toHaveBeenCalled()
+    f.recovery.dispose()
+  })
+
+  it('preserves the current client route after a loaded renderer is lost', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const initial = f.recovery.navigate('http://127.0.0.1/')
+    f.loads[0]?.resolve()
+    await initial
+    f.recovery.rendererGone('http://127.0.0.1/session/current')
+    await vi.advanceTimersByTimeAsync(50)
+    expect(f.load).toHaveBeenLastCalledWith('http://127.0.0.1/session/current', expect.any(Function))
+    f.loads[1]?.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    f.recovery.dispose()
+  })
+
+  it('does not load a replacement after navigation-generation cancellation during backoff', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    let superseded = false
+    const result = f.recovery.navigate('file:///splash.html', false, () => superseded)
+    f.events.emit('render-process-gone')
+    await vi.advanceTimersByTimeAsync(10)
+    superseded = true
+    await vi.advanceTimersByTimeAsync(40)
+    await expect(result).resolves.toBe(false)
+    expect(f.load).toHaveBeenCalledTimes(1)
+    expect(f.error).not.toHaveBeenCalled()
+    f.recovery.dispose()
+  })
+
+  it('coalesces delayed paired notifications during backoff', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const result = f.recovery.navigate('file:///splash.html')
+    f.events.emit('render-process-gone')
+    await vi.advanceTimersByTimeAsync(10)
+    f.events.emit('did-fail-load', 'file:///splash.html', -2)
+    f.events.emit('render-process-gone')
+    await vi.advanceTimersByTimeAsync(40)
+    expect(f.load).toHaveBeenCalledTimes(2)
+    f.loads[1]?.resolve()
+    await expect(result).resolves.toBe(true)
+    expect(f.error).not.toHaveBeenCalled()
+    f.recovery.dispose()
+  })
+
+  it('bounds silent hung loads without any Electron failure event', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const result = f.recovery.navigate('file:///splash.html')
+    const failed = expect(result).rejects.toThrow('renderer')
+    await vi.advanceTimersByTimeAsync(600)
+    await failed
+    expect(f.load).toHaveBeenCalledTimes(4)
+    expect(vi.getTimerCount()).toBe(0)
+    f.recovery.dispose()
+  })
+
+  it('rearms one healthy reset and does not let older success timers clear a newer streak', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const initial = f.recovery.navigate('file:///splash.html')
+    f.loads[0]?.resolve()
+    await initial
+    for (let i = 1; i <= 3; i++) {
+      await vi.advanceTimersByTimeAsync(40)
+      f.events.emit('render-process-gone')
+      await vi.advanceTimersByTimeAsync(50)
+      f.loads[i]?.resolve()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(f.recovery.reloadCount).toBe(i)
+      expect(vi.getTimerCount()).toBe(1)
+    }
+    f.events.emit('render-process-gone')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.error).toHaveBeenCalledTimes(1)
+    f.events.emit('render-process-gone')
+    expect(f.error).toHaveBeenCalledTimes(1)
+    expect(f.load).toHaveBeenCalledTimes(4)
+    f.recovery.dispose()
+  })
+
+  it('resets a streak only after an uninterrupted healthy interval', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const result = f.recovery.navigate('file:///splash.html')
+    f.events.emit('render-process-gone')
+    await vi.advanceTimersByTimeAsync(50)
+    f.loads[1]?.resolve()
+    await result
+    await vi.advanceTimersByTimeAsync(199)
+    expect(f.recovery.reloadCount).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(f.recovery.reloadCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    f.recovery.dispose()
+  })
+
+  it('isolates replacement windows and cancels old backoff timers', async () => {
+    vi.useFakeTimers()
+    const old = fixture()
+    const abandoned = old.recovery.navigate('file:///splash.html')
+    old.events.emit('render-process-gone')
+    await vi.advanceTimersByTimeAsync(10)
+    old.recovery.dispose()
+    await expect(abandoned).resolves.toBe(false)
+    const current = fixture()
+    const loaded = current.recovery.navigate('file:///splash.html')
+    current.loads[0]?.resolve()
+    await loaded
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(old.load).toHaveBeenCalledTimes(1)
+    expect(current.recovery.reloadCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+    current.recovery.dispose()
+  })
+  it.each(['event-first', 'rejection-first', 'load-event-first'])('awaits replacement success with paired signals: %s', async order => {
+    vi.useFakeTimers()
+    const f = fixture()
+    let done = false
+    const result = f.recovery.navigate('file:///splash.html').then(value => { done = true; return value })
+    const error = Object.assign(new Error('ERR_FAILED'), { code: 'ERR_FAILED' })
+    if (order === 'rejection-first') f.loads[0]?.reject(error)
+    if (order === 'load-event-first') f.events.emit('did-fail-load', 'file:///splash.html', -2)
+    f.events.emit('render-process-gone')
+    f.events.emit('did-fail-load', 'file:///splash.html', -2)
+    f.loads[0]?.reject(error)
+    await vi.advanceTimersByTimeAsync(50)
+    expect(f.load).toHaveBeenCalledTimes(2)
+    expect(done).toBe(false)
+    f.loads[1]?.resolve()
+    await expect(result).resolves.toBe(true)
+    f.recovery.dispose()
+  })
+  it('counts actual replacement failures and rejects after the bounded budget', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const result = f.recovery.navigate('file:///splash.html')
+    const failed = expect(result).rejects.toThrow('renderer')
+    for (let i = 0; i < 4; i++) {
+      f.events.emit('render-process-gone')
+      f.events.emit('did-fail-load', 'file:///splash.html', -2)
+      await vi.advanceTimersByTimeAsync(50)
+    }
+    await failed
+    expect(f.load).toHaveBeenCalledTimes(4)
+    f.recovery.dispose()
+  })
+  it('preserves a missing resource error without retry', async () => {
+    const f = fixture()
+    const result = f.recovery.navigate('file:///missing.html')
+    const error = Object.assign(new Error('missing'), { code: 'ERR_FILE_NOT_FOUND' })
+    f.loads[0]?.reject(error)
+    await expect(result).rejects.toBe(error)
+    expect(f.load).toHaveBeenCalledTimes(1)
+    f.recovery.dispose()
+  })
+  it('ignores stale URLs while a new URL is pending and cancels replaced navigation', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const old = f.recovery.navigate('file:///old.html')
+    const current = f.recovery.navigate('http://127.0.0.1/new')
+    f.events.emit('did-fail-load', 'file:///old.html', -2)
+    await expect(old).resolves.toBe(false)
+    await vi.advanceTimersByTimeAsync(50)
+    expect(f.load).toHaveBeenCalledTimes(2)
+    f.loads[1]?.resolve()
+    await expect(current).resolves.toBe(true)
+    f.recovery.dispose()
+  })
+  it('cancels pending work and timers on window disposal', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    const result = f.recovery.navigate('file:///splash.html')
+    f.recovery.dispose()
+    await expect(result).resolves.toBe(false)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(f.load).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
