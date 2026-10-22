@@ -1,0 +1,35 @@
+name: Generation peers
+
+on:
+  pull_request:
+    branches: [V0.12.2]
+    paths:
+      - ".github/workflows/generation-peers.yml"
+      - "packages/dsh-desktop-market-installer/**"
+      - "test/generation-*"
+      - "test/plugin-manager-generation-backend.test.js"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-generation:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify generation installation, peer ownership and physical-path resolution
+        run: npx --no-install vitest run --maxWorkers=1 test/generation- test/plugin-manager-generation-backend.test.js test/desktop-plugin-closure.test.ts --reporter=verbose
+      - run: npm run typecheck
