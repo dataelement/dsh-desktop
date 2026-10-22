@@ -110,12 +110,13 @@ async function stageBuildApprovals(
   try {
     yaml = await readFile(source, 'utf8')
   } catch (error) {
-    if (error?.code === 'ENOENT') return []
-    throw error
+    if (error?.code !== 'ENOENT') throw error
   }
   const approvals = generationBuildApprovals(yaml)
   const pinned = pinnedGitBuildApproval(pluginName, pluginSpec, approvals)
   const stagedApprovals = pinned === undefined ? approvals : [...approvals, pinned]
+  // Isolate hoisting from ancestor workspaces even without Profile approvals.
+  await writeFile(join(stagingDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n', 'utf8')
   if (stagedApprovals.length === 0) return []
   const lines = [
     'packages:',
