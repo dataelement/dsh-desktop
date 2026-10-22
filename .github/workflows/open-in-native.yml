@@ -1,0 +1,37 @@
+name: Native external Electron launch
+
+on:
+  pull_request:
+    branches: [V0.12.2]
+    paths:
+      - ".github/workflows/open-in-native.yml"
+      - "patches/@deepseek-ai+dsh-host-open-in-app+*.patch"
+      - "test/open-in-app-environment.test.ts"
+      - "test/patch-hunk-counts.test.ts"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-open-in:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify real Electron GUI and explicit CLI adapter launches
+        run: npx --no-install vitest run --maxWorkers=1 test/open-in-app-environment.test.ts test/patch-hunk-counts.test.ts --reporter=verbose
+        env:
+          DSH_TEST_OPEN_IN_ELECTRON: "1"
+      - run: npm run typecheck
