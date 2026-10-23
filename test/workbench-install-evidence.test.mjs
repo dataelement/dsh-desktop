@@ -123,7 +123,9 @@ describe('actual workbench installation evidence', () => {
     const { home, directory } = await fixture('1.0.0')
     const initial = (await readInstallEvidence({}, home, ['workbench'])).workbench
     const { symlink } = await import('node:fs/promises')
-    await symlink('/tmp', join(directory, 'external'))
+    // Preserve the external target while using a real directory reparse point
+    // that does not require Windows file-symlink privileges.
+    await symlink('/tmp', join(directory, 'external'), process.platform === 'win32' ? 'junction' : 'dir')
     const records = { market: { pluginName: 'workbench', version: '1.0.0', fingerprint: initial.fingerprint } }
     expect((await readInstallEvidence(records, home)).workbench).toMatchObject({ origin: 'market', contentVerified: false, updateRisk: null })
   })
@@ -162,7 +164,7 @@ describe('actual workbench installation evidence', () => {
   it('does not follow plugin-owned symlinks as verified content', async () => {
     const { home, directory } = await fixture()
     const { symlink } = await import('node:fs/promises')
-    await symlink('/tmp', join(directory, 'external'))
+    await symlink('/tmp', join(directory, 'external'), process.platform === 'win32' ? 'junction' : 'dir')
     expect((await readInstallEvidence({}, home, ['workbench'])).workbench.fingerprint).toBeUndefined()
   })
 })

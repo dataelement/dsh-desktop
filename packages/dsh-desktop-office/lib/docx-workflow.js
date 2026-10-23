@@ -27,7 +27,15 @@ export function docxWorkerPython(resources, platform = process.platform) {
 /** Environment for the confined Word worker. Credentials stay behind. */
 export function docxWorkerEnvironment(runtime = process, script) {
   const env = Object.fromEntries(Object.keys(runtime.env).map(key => [key, undefined]))
-  if (runtime.platform === 'win32') env.SystemRoot = runtime.env.SystemRoot
+  // The ACL runner needs the host temp directory for its locks before it sets
+  // the confined child's private TMP/TEMP. Otherwise GetTempPathW falls back to
+  // the protected Windows directory. Preserve only these directory settings,
+  // using their original case so Windows receives no duplicate variable names.
+  if (runtime.platform === 'win32') {
+    for (const key of Object.keys(runtime.env)) {
+      if (['SYSTEMROOT', 'TMP', 'TEMP'].includes(key.toUpperCase())) env[key] = runtime.env[key]
+    }
+  }
   // Windows wraps this command in the ACL runner at process.execPath. Inside the
   // Electron harness that executable runs the runner only in Node mode.
   if (runtime.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'

@@ -268,6 +268,13 @@ describe('image tool and durable Office assets', () => {
     })
     expect(writerEnvironment({ env, platform: 'darwin', versions: { node: '24.9.0' } }).ELECTRON_RUN_AS_NODE).toBeUndefined()
   })
+  it('keeps Windows temp paths available to the ACL runner without passing host secrets', () => {
+    const env = { SystemRoot: 'C:\\Windows', Temp: 'C:\\Users\\test\\Temp', TMP: 'C:\\Users\\test\\Temp', API_KEY: 'secret', NODE_OPTIONS: '--require secret.js' }
+    expect(writerEnvironment({ env, platform: 'win32', versions: {} })).toEqual({
+      ...env, API_KEY: undefined, NODE_OPTIONS: undefined,
+    })
+    expect(writerEnvironment({ env, platform: 'linux', versions: {} }).Temp).toBeUndefined()
+  })
   it.each(['openai', 'bytedance'])('executes %s through ToolRuntime and writes a verifiable PNG', async provider => {
     const f = await fixture(); const s = await server()
     await f.settings.save(saveInput(provider, s.baseUrl))
@@ -288,7 +295,7 @@ describe('image tool and durable Office assets', () => {
     f.setMode('read-only')
     await expect(tool.execute({ prompt: 'Forest' }, { agent: f.agent })).rejects.toMatchObject({ code: 'POLICY' })
     f.setMode('workspace-write')
-    const outside = await temp(); await symlink(outside, path.join(f.workspace, '.workbuddy'))
+    const outside = await temp(); await symlink(outside, path.join(f.workspace, '.workbuddy'), process.platform === 'win32' ? 'junction' : 'dir')
     await expect(tool.execute({ prompt: 'Forest' }, { agent: f.agent })).rejects.toMatchObject({ code: 'ASSET_PATH' })
     expect(s.calls).toHaveLength(1); expect(await readdir(outside)).toEqual([])
   })
@@ -431,7 +438,7 @@ describe('session-authorized generated image previews', () => {
     await symlink(outside, f.target)
     expect((await previewImage(f.ctx, f.request())).status).toBe(404)
     await rm(path.dirname(f.target), { recursive: true })
-    await symlink(path.dirname(outside), path.dirname(f.target))
+    await symlink(path.dirname(outside), path.dirname(f.target), process.platform === 'win32' ? 'junction' : 'dir')
     expect((await previewImage(f.ctx, f.request())).status).toBe(404)
   })
 })

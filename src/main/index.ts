@@ -1,5 +1,5 @@
 import { developmentEnvironment } from './development-environment'
-import { desktopFileUrl, navigateDesktopWindow } from './desktop-navigation'
+import { desktopFileUrl, replaceDesktopWindowPage, type ShellNavigationTarget } from './desktop-navigation'
 import { recoverStartupConfiguration } from './startup-config-recovery'
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
 import { applyMacosWindowBackdrop } from './macos-window-backdrop'
@@ -611,15 +611,13 @@ function desktopResourcePath(name: string): string {
 }
 
 async function loadDesktopResource(
-  target: {
-    isDestroyed: () => boolean
-    loadURL: (url: string) => Promise<void>
-  },
+  target: ShellNavigationTarget,
   filePath: string,
   options?: { query?: Record<string, string> }
 ): Promise<boolean> {
   const version = mainWindowNavigationVersion
-  return navigateDesktopWindow(target, desktopFileUrl(filePath, options?.query),
+  // Startup/import/recovery surfaces are lifecycle states, not browsable pages.
+  return replaceDesktopWindowPage(target, desktopFileUrl(filePath, options?.query),
     () => quitting || gpuFallbackRelaunching || version !== mainWindowNavigationVersion)
 }
 
@@ -1091,7 +1089,9 @@ async function openHarness(
       runtime.note(`[desktop] cleared ${clearedCookies} stale Harness authentication cookie(s)`)
     }
     try {
-      const loaded = await navigateDesktopWindow(window, rendererUrl,
+      // The Harness entry replaces the startup/recovery surface. Later in-app
+      // routing owns its history and does not pass through this handoff.
+      const loaded = await replaceDesktopWindowPage(window, rendererUrl,
         () => quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
       if (!loaded) return
     } catch (error) {

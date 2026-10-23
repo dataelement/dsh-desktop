@@ -3,6 +3,7 @@ import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { listenOnBrowserPort } from '../browser-port'
 import { dirname, join, posix, win32 } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
@@ -1050,21 +1051,11 @@ export function formatExitCode(code: number): string {
 }
 
 async function reservePort(port: number): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.unref()
-    server.once('error', reject)
-    server.listen({ host: '127.0.0.1', port }, () => {
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        server.close()
-        reject(new Error('Could not reserve a local port.'))
-        return
-      }
-      const { port } = address
-      server.close((error) => (error ? reject(error) : resolve(port)))
-    })
-  })
+  const server = createServer()
+  server.unref()
+  const selected = await listenOnBrowserPort(server, '127.0.0.1', port)
+  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+  return selected
 }
 
 /**

@@ -233,7 +233,7 @@ it('copies registered editable inputs into a new directory and rejects hashes, c
   await expect(materialize(root, { directory, files: prepared.files })).rejects.toMatchObject({ code: 'EEXIST' })
   await expect(materialize(root, { directory: `office-templates/government-notice-${randomUUID()}`, files: [{ ...prepared.files[0], data: Buffer.from('changed').toString('base64') }] })).rejects.toThrow('identity')
   const linked = await temporary(), outside = await temporary()
-  await symlink(outside, join(linked, 'office-templates'), 'dir')
+  await symlink(outside, join(linked, 'office-templates'), process.platform === 'win32' ? 'junction' : 'dir')
   await expect(materialize(linked, { directory: `office-templates/government-notice-${randomUUID()}`, files: prepared.files })).rejects.toThrow('regular workspace')
 })
 
@@ -278,7 +278,7 @@ it('uses the effective Office directory without granting access outside the auth
   current = outside
   await expect(workspacePolicy(ctx, exec)).rejects.toThrow('covered')
   const link = join(root, 'escape')
-  await symlink(outside, link, 'dir')
+  await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
   current = link
   await expect(workspacePolicy(ctx, exec)).rejects.toThrow('covered')
   current = child; mode = 'read-only'

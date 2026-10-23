@@ -335,7 +335,7 @@ describe('market baseline at normal startup', () => {
       await mkdir(generation, { recursive: true })
       await writeFile(join(generation, 'package.json'), JSON.stringify({ name: 'dshmarket', version: '1.48.0' }))
       await rm(market, { recursive: true })
-      await symlink(generation, join(profile, 'node_modules', 'dshmarket'))
+      await symlink(generation, join(profile, 'node_modules', 'dshmarket'), process.platform === 'win32' ? 'junction' : 'dir')
       expect(await marketUsableWithoutBaseline(home)).toBe(false)
     })
   })

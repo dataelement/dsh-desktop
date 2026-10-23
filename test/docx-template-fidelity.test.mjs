@@ -10,6 +10,7 @@ import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { createDocxWorkflow, docxWorkerArgv, docxWorkerEnvironment, docxWorkerPython, docxWriteTool, registerDocxDelivery } from '../packages/dsh-desktop-office/lib/docx-workflow.js'
+import { templateTool } from '../packages/dsh-desktop-office/lib/template-tool.js'
 const cleanups = []
 afterEach(async () => { for (const fn of cleanups.splice(0).reverse()) await fn() })
 const sha = data => createHash('sha256').update(data).digest('hex')
@@ -40,8 +41,22 @@ async function fixture(templateId = 'government-notice') {
   const other = prepared.paragraphs.find(p => p.text === '一、活动主题和时间')
   const plan = templateId === 'government-notice' ? { output_path: 'result.docx', replacements: [{ id: 'p1', text: '示例市公园管理局文件' }, { id: title.id, text: '关于公园节假日开放安排的通告' }, { id: normal.id, text: '现将公园节假日开放有关事项通告如下。' }], additions: [{ after: normal.id, source: normal.id, text: '具体开放时间以已确认的安排为准。' }], removals: [other.id] } : { output_path: 'result.docx', replacements: [{ id: prepared.paragraphs.find(p => p.text && p.can_remove).id, text: '当前材料的标题与内容' }] }
   const call = async (name, args) => ctx.tools.execute({ name, arguments: args, callId: randomUUID(), ...exec })
-  return { ctx, workflow, prepared, plan, call, delivered, workspace, modes, exec, setDirectory: value => { currentDirectory = value }, setMode: value => { mode = value }, clearSelection: () => { selection = {} } }
+  return { ctx, services, workflow, prepared, plan, call, delivered, workspace, modes, exec, setDirectory: value => { currentDirectory = value }, setMode: value => { mode = value }, clearSelection: () => { selection = {} } }
 }
+it('copies the selected Office resource through the real confined template worker', async () => {
+  const f = await fixture()
+  const item = { ...(await f.modes.state()).selectedDocumentTemplate, sampleFile: 'example.docx' }
+  const source = await readFile(join(f.workspace, 'working.docx'))
+  const library = { prepare: async () => ({ item, guide: 'Selected resource', files: [
+    { path: item.sampleFile, data: source.toString('base64'), sha256: sha(source) },
+  ] }) }
+  const result = await templateTool(f.services, library, f.modes).execute({ template_id: item.id }, f.exec)
+  // Embedded fonts make this DOCX about 18 MB. Compare every byte natively;
+  // expanding the Buffer into assertion properties exhausts the test V8 heap.
+  expect((await readFile(join(f.workspace, result.workspace_path))).equals(source)).toBe(true)
+  expect(result.files[0].sha256).toBe(sha(source))
+  expect(f.modes.record).toHaveBeenCalledWith(f.exec.agent.id, 'office-template-ready', expect.objectContaining({ templateId: item.id }))
+})
 it('writes the real Word worker output in a changed session directory', async () => {
   const f = await fixture()
   const current = join(f.workspace, 'worktree')
@@ -56,11 +71,14 @@ it('keeps the Word worker off the Windows confinement command line', () => {
   const argv = docxWorkerArgv('python.exe')
   expect(argv.join('\0')).not.toContain(script)
   expect(argv.filter(arg => arg.includes('\n'))).toEqual([])
-  const env = docxWorkerEnvironment({ env: { ELECTRON_RUN_AS_NODE: '1', SystemRoot: 'C:\\Windows', SECRET: 'x' }, platform: 'win32', versions: { electron: '39.0.0' } }, script)
+  const env = docxWorkerEnvironment({ env: { ELECTRON_RUN_AS_NODE: '1', SystemRoot: 'C:\\Windows', Temp: 'C:\\Users\\test\\Temp', TMP: 'C:\\Users\\test\\Temp', SECRET: 'x', NODE_OPTIONS: '--require secret.js' }, platform: 'win32', versions: { electron: '39.0.0' } }, script)
   expect(env.DSH_DOCX_LAYOUT_SOURCE).toBe(script)
   expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
   expect(env.SystemRoot).toBe('C:\\Windows')
+  expect(env.Temp).toBe('C:\\Users\\test\\Temp')
+  expect(env.TMP).toBe('C:\\Users\\test\\Temp')
   expect(env.SECRET).toBeUndefined()
+  expect(env.NODE_OPTIONS).toBeUndefined()
   expect(docxWorkerEnvironment({ env: { SystemRoot: 'C:\\Windows' }, platform: 'win32', versions: {} }).ELECTRON_RUN_AS_NODE).toBeUndefined()
   expect(() => docxWorkerEnvironment({ env: {}, platform: 'win32', versions: {} }, 'x'.repeat(24001))).toThrow('Windows environment limit')
   expect(docxWorkerPython('runtime', 'win32')).toBe(join('runtime', 'primary-runtime/dependencies/python', 'pythonw.exe'))

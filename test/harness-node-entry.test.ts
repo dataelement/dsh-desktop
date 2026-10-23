@@ -46,7 +46,8 @@ describe('linked Profile plugin host dependency fallback', () => {
           }
         `)
       ])
-      await symlink(localPlugin, join(profileModules, 'linked-plugin'))
+      // A junction exercises the same directory resolution on unprivileged Windows.
+      await symlink(localPlugin, join(profileModules, 'linked-plugin'), process.platform === 'win32' ? 'junction' : 'dir')
 
       const result = spawnSync(process.execPath, [
         join(projectRoot, 'build', 'harness-node-entry.mjs'),
@@ -144,7 +145,7 @@ describe('linked Profile plugin host dependency fallback', () => {
           }
         `)
       ])
-      await symlink(localPlugin, join(profileModules, 'linked-plugin'))
+      await symlink(localPlugin, join(profileModules, 'linked-plugin'), process.platform === 'win32' ? 'junction' : 'dir')
 
       const result = spawnSync(process.execPath, [
         join(projectRoot, 'build', 'harness-node-entry.mjs'),

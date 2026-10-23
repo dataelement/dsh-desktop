@@ -18,7 +18,9 @@ beforeAll(async () => {
   await cp(path.resolve('.build/ppt-runtime/packages/dsh-ppt'), packageRoot, { recursive: true });
   ({ apply } = await import(pathToFileURL(path.join(packageRoot, 'lib/index.js'))));
   ({ MAX_PERSONAL_TEMPLATE_HTTP_BODY_BYTES, PERSONAL_TEMPLATE_CONVERSION_VERSION, PERSONAL_TEMPLATE_PREVIEW_VERSION } = await import(pathToFileURL(path.join(packageRoot, 'lib/personal-templates.js'))));
-});
+  // The unchanged isolated runtime copy took 14s on Windows even with serial
+  // files. Give only this I/O setup a bounded budget; test deadlines stay intact.
+}, 60000);
 afterAll(async () => { if (packageRoot) await rm(packageRoot, { recursive: true, force: true }); });
 afterEach(async () => { for (const root of cleanups.splice(0)) await rm(root, { recursive: true, force: true }); });
 
@@ -529,7 +531,7 @@ describe('personal PPT templates in the shipped runtime', () => {
     await f.request('template/cancel', { draftId: draft.draftId });
     await expect(f.request('template/save', { draftId: draft.draftId, name: 'Cancelled' })).rejects.toThrow();
     await mkdir(path.join(f.storage, 'personal-templates/saved'), { recursive: true });
-    await symlink(f.workspace, path.join(f.storage, 'personal-templates/saved', `personal-${'a'.repeat(64)}`));
+    await symlink(f.workspace, path.join(f.storage, 'personal-templates/saved', `personal-${'a'.repeat(64)}`), process.platform === 'win32' ? 'junction' : 'dir');
     await expect(f.request('state')).rejects.toThrow();
   }, 30000);
   it.each(['legacy', 'previous'])('reconverts %s uploads after preview acceptance while preserving identity, metadata and backup', async revision => {

@@ -34,6 +34,11 @@ import {
 } from '../src/main/window-navigation'
 
 describe('Harness launch contract', () => {
+  it('falls back from a browser-blocked preferred loopback port', async () => {
+    const selected = await reserveLoopbackPort(6667)
+    expect(selected.usedPreferredPort).toBe(false)
+    expect(selected.port).not.toBe(6667)
+  })
   it('reuses a preferred loopback port when it is available', async () => {
     const probe = createServer()
     await new Promise<void>((resolve, reject) => {

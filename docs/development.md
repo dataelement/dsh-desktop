@@ -41,6 +41,12 @@ npm run typecheck
 npm run build
 ```
 
+The full test suite needs a Git checkout (`git ls-files` checks the source/build boundary) and a working Python 3 executable named `python3` for release-metadata scripts. On Windows, verify that `python3 --version` runs the interpreter rather than the Microsoft Store alias.
+
+Windows file-symlink security tests require [Developer Mode](https://learn.microsoft.com/en-us/windows/advanced-settings/developer-mode) or an account with the symbolic-link privilege. Directory fixtures use junctions; file-link fixtures still create actual file symlinks. Do not replace those fixtures with ordinary files or skip their assertions when the permission is missing.
+
+When local Windows integration tests contend for CPU or disk, use `npm test -- --no-file-parallelism`. This runs every test serially, matching the repository's Windows CI scheduling; it does not disable tests or change their individual deadlines.
+
 Static checks are not a substitute for runtime verification. Changes that affect startup, profiles, plugins, native dialogs, updates, mobile access, or packaging should also be exercised through the corresponding real application flow.
 
 To exercise the Cloudflare-to-Pinggy fallback without disrupting the machine's network, start the development app with Cloudflare failure simulation enabled:

@@ -75,6 +75,16 @@ describe('LAN mobile bridge address policy', () => {
 })
 
 describe('LAN mobile bridge pairing surface', () => {
+  it('rejects a browser-blocked fixed port and can retry with an ephemeral port', async () => {
+    const options = { harnessUrl: () => 'http://127.0.0.1:9999', port: 6667 }
+    const bridge = new LanMobileBridge(options)
+    bridges.push(bridge)
+    await expect(bridge.start()).rejects.toThrow('blocked by browsers')
+    options.port = 0
+    const snapshot = await bridge.start()
+    const cookie = await authorizeDesktop(bridge)
+    expect((await fetch(snapshot.desktopUrl!, { headers: { cookie } })).status).toBe(200)
+  })
   it('serves the desktop pairing page only on loopback', async () => {
     const bridge = new LanMobileBridge({
       harnessUrl: () => 'http://127.0.0.1:9999'

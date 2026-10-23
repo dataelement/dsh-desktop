@@ -50,7 +50,14 @@ export function templateTool(ctx, library, modes, docx) {
       const directory = `office-templates/${prepared.item.id}-${randomUUID()}`
       const plan = await ctx.sandbox.confine([process.execPath, fileURLToPath(new URL('./template-writer.js', import.meta.url))], policy)
       const env = Object.fromEntries(Object.keys(process.env).map(key => [key, undefined]))
-      if (process.platform === 'win32') env.SystemRoot = process.env.SystemRoot
+      // The ACL runner resolves its lock directory before replacing TMP/TEMP
+      // with the confined child's private temp. Keep those host path settings
+      // without admitting credentials or NODE_OPTIONS into the worker.
+      if (process.platform === 'win32') {
+        for (const key of Object.keys(process.env)) {
+          if (['SYSTEMROOT', 'TMP', 'TEMP'].includes(key.toUpperCase())) env[key] = process.env[key]
+        }
+      }
       if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'
       const facts = { templateId: prepared.item.id, revision: prepared.item.revision, directory }
       await modes.record(sessionId, 'office-template-start', facts)

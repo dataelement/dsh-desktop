@@ -1,7 +1,7 @@
 import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { networkInterfaces, tmpdir } from 'node:os'
-import type { AddressInfo } from 'node:net'
+import { listenOnBrowserPort } from '../browser-port'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import QRCode from 'qrcode'
@@ -230,11 +230,14 @@ export class LanMobileBridge {
         // the renderers in step without polling either of them.
         .finally(() => this.syncConnected())
     })
-    await new Promise<void>((resolve, reject) => {
-      this.server?.once('error', reject)
-      this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
-    })
-    this.port = (this.server.address() as AddressInfo).port
+    try {
+      this.port = await listenOnBrowserPort(this.server, '0.0.0.0', this.options.port)
+    } catch (error) {
+      // A rejected bind must not leave start() reporting a running bridge or
+      // prevent a later retry with a usable port.
+      this.server = undefined
+      throw error
+    }
     this.syncConnected()
     return this.snapshot()
   }
