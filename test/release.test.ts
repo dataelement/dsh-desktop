@@ -246,6 +246,10 @@ describe('GitHub release contract', () => {
       to: 'splash.html'
     })
     expect(packageJson.build.extraResources).toContainEqual({
+      from: 'build/startup-whale.gif',
+      to: 'startup-whale.gif'
+    })
+    expect(packageJson.build.extraResources).toContainEqual({
       from: 'build/dsh-loader.gif',
       to: 'dsh-loader.gif'
     })
