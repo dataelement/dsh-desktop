@@ -79,7 +79,7 @@ describe('Safe Mode', () => {
     })
     expect(model.badge).toBe('安全模式')
     expect(model.heading).toBe('')
-    expect(model.summary).toBe('安全模式暂时跳过第三方插件。停用有问题的插件后重启；插件和数据都会保留。')
+    expect(model.summary).toBe('当前处于安全模式，尚未恢复正常启动。可能由插件导致，可在此停用后重启验证；插件和数据都会保留。')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.pluginItems).toEqual([
       { name: 'plugin-a', actionLabel: '停用插件（不删除）', incompatible: false, suspected: false, disabled: false },
@@ -96,7 +96,7 @@ describe('Safe Mode', () => {
       selectionHint: 'Select plugins to disable',
       applyLabel: 'Disable selected plugins',
       agentLabel: 'Close',
-      restartLabel: 'Exit Safe Mode and restart',
+      restartLabel: 'Restart and verify',
       quitLabel: 'Quit DSH Desktop'
     })
   })
@@ -143,7 +143,7 @@ describe('Safe Mode', () => {
       disabled: false
     })
     expect(model.issueGroups).toEqual([])
-    expect(model.restartLabel).toBe('退出安全模式并重启')
+    expect(model.restartLabel).toBe('重启并验证')
     expect(model.restartConfirm).toContain('仍有 1 组阻断问题')
   })
 
