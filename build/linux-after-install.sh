@@ -39,8 +39,14 @@ fi
 executable="$app_dir/dsh-desktop"
 
 if [ -f "$app_dir/chrome-sandbox" ]; then
-  chown root:root "$app_dir/chrome-sandbox" 2>/dev/null || true
-  chmod 4755 "$app_dir/chrome-sandbox" 2>/dev/null || true
+  # The package still installs when these fail, so say what breaks instead of
+  # leaving a silent "No usable sandbox!" for the first launch.
+  if ! chown root:root "$app_dir/chrome-sandbox" 2>/dev/null; then
+    echo "dsh-desktop: warning: could not make $app_dir/chrome-sandbox root-owned; Chromium's SUID sandbox may be unavailable" >&2
+  fi
+  if ! chmod 4755 "$app_dir/chrome-sandbox" 2>/dev/null; then
+    echo "dsh-desktop: warning: could not set the setuid bit on $app_dir/chrome-sandbox; Chromium's SUID sandbox may be unavailable" >&2
+  fi
 fi
 
 # `deb.afterInstall` replaces electron-builder's default postinst rather than
@@ -76,10 +82,11 @@ if [ ! -x "$executable" ] || [ ! -d /etc/apparmor.d ] || [ ! -f /etc/apparmor.d/
 fi
 
 template="$app_dir/resources/dsh-desktop.apparmor"
+rm -f "$profile_path" 2>/dev/null || true
 if [ -f "$template" ]; then
-  sed "s|@EXECUTABLE@|$executable|g" "$template" > "$profile_path" 2>/dev/null || exit 0
+  { sed "s|@EXECUTABLE@|$executable|g" "$template" > "$profile_path"; } 2>/dev/null || true
 else
-  cat > "$profile_path" 2>/dev/null <<EOF || exit 0
+  { cat > "$profile_path" <<EOF
 abi <abi/4.0>,
 include <tunables/global>
 
@@ -89,13 +96,21 @@ profile $profile_name "$executable" flags=(unconfined) {
   include if exists <local/$profile_name>
 }
 EOF
+  } 2>/dev/null || true
+fi
+
+if [ ! -s "$profile_path" ]; then
+  echo "dsh-desktop: warning: could not write $profile_path; Chromium may fall back to the SUID sandbox" >&2
+  exit 0
 fi
 
 chmod 0644 "$profile_path" 2>/dev/null || true
 
 if command -v apparmor_parser >/dev/null 2>&1; then
   # -W writes the compiled cache; -r reloads a profile that is already loaded.
-  apparmor_parser -r -W "$profile_path" >/dev/null 2>&1 || true
+  if ! apparmor_parser -r -W "$profile_path" >/dev/null 2>&1; then
+    echo "dsh-desktop: warning: apparmor_parser could not load $profile_path; Chromium may fall back to the SUID sandbox" >&2
+  fi
 fi
 
 exit 0

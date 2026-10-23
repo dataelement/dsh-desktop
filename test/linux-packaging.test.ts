@@ -102,6 +102,9 @@ describe('Linux packaging', () => {
     expect(postinst).toContain('chown root:root "$app_dir/chrome-sandbox"')
     expect(postinst).toContain('chmod 4755 "$app_dir/chrome-sandbox"')
     expect(postinst).toContain('apparmor_parser')
+    // A package that installs but leaves the sandbox unusable has to say so.
+    expect(postinst).toContain('could not set the setuid bit')
+    expect(postinst).toContain('apparmor_parser could not load')
   })
 
   it('keeps the entries electron-builder replaces with the custom hooks', async () => {
