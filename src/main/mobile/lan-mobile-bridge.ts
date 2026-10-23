@@ -1,6 +1,6 @@
 import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { networkInterfaces, tmpdir } from 'node:os'
+import { networkInterfaces, tmpdir, type NetworkInterfaceInfo } from 'node:os'
 import type { AddressInfo } from 'node:net'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -1749,13 +1749,34 @@ export function cookiePair(headers: readonly string[]): string | undefined {
   return undefined
 }
 
-export function preferredLanAddress(): string | undefined {
-  for (const entries of Object.values(networkInterfaces())) {
+/**
+ * Adapters that other devices on the LAN cannot reach this machine through:
+ * hypervisor switches (WSL and Hyper-V both appear as `vEthernet (…)`), VM
+ * host-only networks, container bridges and VPN tunnels. Their addresses are
+ * often RFC 1918 as well — WSL hands out `192.168.x.1` — so the adapter name is
+ * the only thing that separates them from the real LAN interface (#601).
+ */
+const VIRTUAL_INTERFACE_PATTERNS: readonly RegExp[] = [
+  /^vethernet\b/i,
+  /vmware|^vmnet\d/i,
+  /virtualbox|^vboxnet\d/i,
+  /^(docker|br-|veth|virbr|lxcbr|lxdbr|cni|podman)/i,
+  /^bridge\d/i,
+  /^(utun|tun|tap|wg)\d|^zt|tailscale|zerotier|wireguard|openvpn|wintun/i
+]
+
+export function preferredLanAddress(
+  interfaces: Record<string, NetworkInterfaceInfo[] | undefined> = networkInterfaces()
+): string | undefined {
+  let virtualFallback: string | undefined
+  for (const [name, entries] of Object.entries(interfaces)) {
     for (const entry of entries ?? []) {
-      if (entry.family === 'IPv4' && !entry.internal && isPrivateAddress(entry.address)) return entry.address
+      if (entry.family !== 'IPv4' || entry.internal || !isPrivateAddress(entry.address)) continue
+      if (!VIRTUAL_INTERFACE_PATTERNS.some((pattern) => pattern.test(name))) return entry.address
+      virtualFallback ??= entry.address
     }
   }
-  return undefined
+  return virtualFallback
 }
 
 export function normalizeRemoteAddress(address: string): string {
