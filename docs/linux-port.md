@@ -159,6 +159,16 @@ mechanisms:
   root-owned SUID helper, and it cannot install a profile. `appImage.executableArgs`
   therefore launches it with `--no-sandbox`.
 
+That AppImage flag is a deliberate security decision rather than an omission. It
+is also electron-builder's own default for the bundled AppImage tool, which
+writes `--no-sandbox` into the desktop entry when `appImage.executableArgs` is
+unset; this port states it explicitly instead of inheriting it invisibly. The
+flag only reaches launches that go through the generated desktop entry:
+`./dsh-desktop-linux-x86_64.AppImage` started directly runs without it, so a
+user who installs the profile below keeps the namespace sandbox for direct
+launches, and the deb — the recommended artifact — always installs both
+mechanisms.
+
 Run `ls -l '/opt/DSH Desktop/chrome-sandbox'` after installing the deb to confirm
 the helper shows `-rwsr-xr-x root root`; if a later copy of the tree loses that,
 the AppArmor profile keeps the namespace sandbox working as long as
