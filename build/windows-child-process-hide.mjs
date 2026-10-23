@@ -1,3 +1,5 @@
+import { promisify } from 'node:util'
+
 /** Add the Windows no-console flag without overriding an explicit choice. */
 export function applyWindowsHide(options) {
   if (options && typeof options === 'object' && options.windowsHide !== undefined) {
@@ -54,7 +56,10 @@ export function enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExpor
 
   childProcess.execFile = function patchedExecFile(file, args, options, callback) {
     if (typeof args === 'function') {
-      return originalExecFile.call(this, file, applyWindowsHide(undefined), undefined, args)
+      return originalExecFile.call(this, file, applyWindowsHide(undefined), args)
+    }
+    if (args && typeof args === 'object' && !Array.isArray(args)) {
+      return originalExecFile.call(this, file, applyWindowsHide(args), typeof options === 'function' ? options : callback)
     }
     if (typeof options === 'function') {
       return originalExecFile.call(this, file, args, applyWindowsHide(undefined), options)
@@ -74,6 +79,26 @@ export function enforceWindowsChildProcessHide(childProcess, syncBuiltinESMExpor
       return originalFork.call(this, modulePath, args, applyWindowsHide(options))
     }
     return originalFork.call(this, modulePath, applyWindowsHide(args))
+  }
+
+  // Node's custom hooks close over the original functions, so copying them
+  // would bypass windowsHide. Keep their promise contract on the wrappers.
+  for (const exec of [childProcess.exec, childProcess.execFile]) {
+    Object.defineProperty(exec, promisify.custom, {
+      value(...args) {
+        const { promise, resolve, reject } = Promise.withResolvers()
+        promise.child = exec(...args, (error, stdout, stderr) => {
+          if (error !== null) {
+            error.stdout = stdout
+            error.stderr = stderr
+            reject(error)
+          } else {
+            resolve({ stdout, stderr })
+          }
+        })
+        return promise
+      }
+    })
   }
 
   syncBuiltinESMExports()
