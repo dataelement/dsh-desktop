@@ -1,0 +1,24 @@
+diff --git a/node_modules/@deepseek-ai/dsh-settings/lib/index.js b/node_modules/@deepseek-ai/dsh-settings/lib/index.js
+index 5eb4ac6..c920f2e 100644
+--- a/node_modules/@deepseek-ai/dsh-settings/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-settings/lib/index.js
+@@ -510,6 +510,19 @@ var SettingsForms = class extends Service {
+ 			if (descriptor === void 0) throw new Error(`Plugin entry "${ns}" is no longer configurable`);
+ 			if (expected !== void 0 && descriptor.revision !== expected) throw new SettingsConflictError(ns, expected, descriptor.revision);
+ 			const next = cloneJsonShaped(change(projectForm(form, raw), projectForm(form, inherited), schema));
++			// Validate before configEditor persists a model endpoint that would fail the next boot.
++			const endpoint = (value, deepseek) => {
++				if (value === void 0) return;
++				let parsed;
++				try { parsed = typeof value === "string" && value.trim() === value ? new URL(value) : void 0; } catch { /* Invalid user input is rejected without echoing it. */ }
++				if (parsed === void 0 || !["http:", "https:"].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password || deepseek && (parsed.search || parsed.hash)) {
++					throw new Error("Model baseURL must be an HTTP(S) endpoint without embedded credentials; DeepSeek roots cannot include query or fragment");
++				}
++			};
++			if (ns === "llm-deepseek" || entry.options.name === "@deepseek-ai/dsh-llm-deepseek-api-key") endpoint(next.baseURL, true);
++			if ((ns === "llm-pi-ai" || entry.options.name === "@deepseek-ai/dsh-llm-pi-ai") && isPlainObject(next.providers)) {
++				for (const provider of Object.values(next.providers)) if (isPlainObject(provider)) endpoint(provider.baseURL, false);
++			}
+ 			const validatePaths = (value, node, path = []) => {
+ 				for (const [key, child] of Object.entries(value)) {
+ 					const target = [...path, key];

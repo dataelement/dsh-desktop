@@ -23,9 +23,8 @@ const manifestPath = path.join(destinationDirectory, 'manifest.webmanifest')
  * Swap the Harness favicon link for the desktop's own.
  *
  * The href is matched rather than pinned: 0.1.2-alpha.1 moved it from
- * `/favicon.svg` to `./favicon.svg`, and either is the same link. The tag
- * itself still has to be there exactly once — a frontend that stopped
- * declaring one is a change worth failing on, not one to paper over.
+ * `/favicon.svg` to `./favicon.svg`. Harness 0.1.7-rc.1 declares separate
+ * light and dark favicon links; Desktop uses the same PNG for both themes.
  * @param contents - index.html source.
  * @param file - path shown in the failure message.
  * @returns index.html with the desktop icon link.
@@ -34,12 +33,17 @@ function replaceIconLink(contents, file) {
   const desktop = '<link rel="icon" type="image/png" href="/dsh-desktop-logo.png" />'
   if (contents.includes(desktop)) return contents
   const matches = contents.match(/<link rel="icon"[^>]*>/gu) ?? []
-  if (matches.length !== 1) {
+  const themedLinks = matches.length === 2
+    && matches.some((link) => link.includes('media="(prefers-color-scheme: dark)"'))
+    && matches.some((link) => link.includes('media="(prefers-color-scheme: light)"'))
+  if (matches.length !== 1 && !themedLinks) {
     throw new Error(
-      `Could not update DSH Desktop branding in ${file}: expected one icon link, found ${String(matches.length)}`
+      `Could not update DSH Desktop branding in ${file}: expected one icon link or a light/dark pair, found ${String(matches.length)}`
     )
   }
-  return contents.replace(matches[0], desktop)
+  return themedLinks
+    ? contents.replace(matches[0], desktop).replace(matches[1], '')
+    : contents.replace(matches[0], desktop)
 }
 
 /**

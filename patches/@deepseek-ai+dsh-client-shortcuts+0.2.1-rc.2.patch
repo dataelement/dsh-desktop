@@ -1,0 +1,14 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js b/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
+--- a/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-shortcuts/lib/client.js
+@@ -1342,9 +1342,9 @@
+ 		function detectEnvironment(document, navigator) {
+ 			const desktop = document.documentElement.dataset.platform;
+ 			const device = desktop ?? navigator.platform;
+ 			return {
+-				runtime: desktop === void 0 ? "web" : "desktop",
++				runtime: desktop === void 0 || document.documentElement.dataset.dshDesktopWebShortcuts === "true" ? "web" : "desktop",
+ 				platform: /darwin|mac|iphone|ipad/iu.test(device) ? "macos" : /win/iu.test(device) ? "windows" : "linux"
+ 			};
+ 		}
+ 		/**

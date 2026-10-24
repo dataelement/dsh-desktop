@@ -12,6 +12,25 @@ import {
 
 describe('plugin-market-check', () => {
   beforeEach(() => clearManifestCache())
+  it('remembers a failed lookup only for the window the caller asks for', async () => {
+    const fetchFn = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    const check = (failureTtlMs?: number) => evaluatePluginMarketCompatibility({
+      packageName: 'offline-plugin',
+      installedVersion: '1.0.0',
+      currentRuntimeVersion: '0.1.5',
+      fetchFn,
+      ...(failureTtlMs !== undefined ? { failureTtlMs } : {})
+    })
+    expect((await check(60_000)).healthStatus).toBe('check-failed')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    const again = await check(60_000)
+    expect(again.healthStatus).toBe('check-failed')
+    expect(again.detail).toContain('offline')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    await check()
+    expect(fetchFn).toHaveBeenCalledTimes(4)
+  })
+
   it('parses and compares semver correctly', () => {
     expect(parseSemver('1.2.3')).toEqual({
       major: 1,
@@ -138,6 +157,22 @@ describe('plugin-market-check', () => {
     // Same version list is re-evaluated for another host, not cached as a verdict.
     expect(await check(fetchFn, { currentRuntimeVersion: '0.2.0' })).toMatchObject({ upgradeVersion: '2.0.0' })
     expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['zh', 'en'] as const)('distinguishes current, newer and filtered updates (%s)', async (locale) => {
+    const fetchFn = registry([
+      { version: '1.0.0' },
+      { version: '2.0.0', engines: { dsh: '>=0.2.0' } }
+    ])
+    for (const [installedVersion, label] of [
+      ['2.0.0', locale === 'zh' ? '已是最新版' : 'Up to date'],
+      ['3.0.0', locale === 'zh' ? '当前版本高于市场最新版' : 'Installed version is newer than market latest'],
+      ['1.0.0', locale === 'zh' ? '暂无适用于当前 DSH 的更新' : 'No update available for the current DSH']
+    ]) {
+      const report = await check(fetchFn, { installedVersion, locale })
+      expect(report).toMatchObject({ healthStatus: 'up-to-date', healthLabel: label, upgradeReady: false })
+      expect(report.upgradeVersion).toBeUndefined()
+    }
   })
 
   it('does not downgrade, reinstall the current version or go beyond latest', async () => {

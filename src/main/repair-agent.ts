@@ -374,12 +374,12 @@ function repairPlaybooks(): RepairPlaybook[] {
         en: '`agent-presets: preset "<id>" failed to mount: ...` with `missing required value` / `expected … but got …` / `names no plugin` / `not valid YAML`, usually naming the key. If the broken one is the default, no session can be created at all.'
       },
       cause: {
-        zh: '`.agent-presets/<id>/agent.cordis.yml` 是从旧版内置 preset 复制的，升级后配置键改了名或类型。',
-        en: '`.agent-presets/<id>/agent.cordis.yml` was copied from an older shipped preset and an upgrade renamed a key or changed its type.'
+        zh: '`.agent-presets/<id>/agent.cordis.yml` 是从旧版内置 preset 复制的，升级后配置键改了名或类型。启动和导入会先把 persona 的 `text` 改成 `prefix`，第一次原文在 `.agent-presets/.persona-prefix-backups/<id>/`。仍挂不上才需要手修。',
+        en: '`.agent-presets/<id>/agent.cordis.yml` was copied from an older shipped preset and an upgrade renamed a key or changed its type. Startup and import already rename a persona `text` key to `prefix`; the first original is in `.agent-presets/.persona-prefix-backups/<id>/`. Hand repair is only for what that rewrite could not fix.'
       },
       fix: {
-        zh: '以内置同源那份为基准，备份后只改报错指到的键，改完确认 YAML 能解析。',
-        en: 'Use the shipped original as the baseline, back up, change only the key the error names, and confirm the YAML parses.'
+        zh: '以内置同源那份为基准，备份后只改报错指到的键，改完确认 YAML 能解析。对照时可以用 `.persona-prefix-backups` 里的原文，不要删掉它。',
+        en: 'Use the shipped original as the baseline, back up, change only the key the error names, and confirm the YAML parses. The copy in `.persona-prefix-backups` is the original to compare against; do not delete it.'
       },
       avoid: {
         zh: '不要删整个 preset 目录，也不要改内置 preset。',

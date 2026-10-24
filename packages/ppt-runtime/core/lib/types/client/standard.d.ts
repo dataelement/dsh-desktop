@@ -15,7 +15,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         /** Product mode controls beside the blank-session agent preset. */
         'conversation.hero.modeActions': {
             kind: 'list';
-            scope: 'session';
+            scope: 'session-maybe';
             owner: StandardInputZone;
         };
     }

@@ -7,8 +7,11 @@ import { dirname, join, posix, win32 } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { RuntimePhase, RuntimeSnapshot } from '../../shared/contracts'
 import { SAFE_MODE_PROFILE } from '../state/safe-mode-profile'
+import { prepareHostDisabledPluginsPatch } from '../state/host-disabled-plugins'
+import { prepareHostPluginSourcesPatch } from '../state/host-plugin-sources'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../../shared/plugin-startup-failure'
 import { removeStaleWriterLocks } from './stale-writer-locks'
+import { inspectStartupConfiguration, repairStartupConfig, validModelEndpoint } from '../state/startup-config-recovery'
 
 export interface HarnessRuntimeOptions {
   dshEntryPath: string
@@ -29,6 +32,16 @@ export interface HarnessRuntimeOptions {
   startupTimeoutMs?: number
   /** Mirror log lines to the console (development builds only). */
   echoLogs?: boolean
+  /**
+   * Packaged pnpm script. Plugin manager uses this instead of PATH `pnpm`,
+   * which on Windows is a `.cmd` shim and flashes a console on every
+   * add-plugin click.
+   */
+  pnpmEntryPath?: string
+  /** Lock-recovery runner placed ahead of `pnpmEntryPath` when the file exists. */
+  pnpmRunnerPath?: string
+  /** Windows console-hide bootstrap passed to the Harness as an absolute path. */
+  hideConsoleBootstrapPath?: string
   onChanged(snapshot: RuntimeSnapshot): void
 }
 
@@ -286,25 +299,37 @@ export function resolveEnvironmentPath(
   return ''
 }
 
+/** Paths the Harness entry turns into `runCli({ packageManager })`. */
+export interface PackagedPnpmLaunchPaths {
+  entryPath?: string
+  runnerPath?: string
+  /** Absolute path of the Windows `--import` bootstrap, when the file exists. */
+  hideConsoleBootstrapPath?: string
+}
+
 export function buildHarnessSpawnOptions(
   launchDirectory: string,
   dshHome: string,
   platform: NodeJS.Platform = process.platform,
   environment: NodeJS.ProcessEnv = process.env,
-  profile: string = 'web'
+  profile: string = 'web',
+  packagedPnpm: PackagedPnpmLaunchPaths = {}
 ): SpawnOptionsWithoutStdio {
   const {
     ELECTRON_RUN_AS_NODE: _runAsNode,
     DSH_DESKTOP_HOST_RESOLVED: _hostResolved,
+    // The desktop, not the parent shell, decides which pnpm the Harness uses.
+    DSH_DESKTOP_PNPM_ENTRY: _pnpmEntry,
+    DSH_DESKTOP_PNPM_RUNNER: _pnpmRunner,
+    DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: _hideConsoleBootstrap,
     ...parentEnvironment
   } = environment
   const pathKey = platform === 'win32' ? 'Path' : 'PATH'
   const pathApi = platform === 'win32' ? win32 : posix
 
-  // ELECTRON_RUN_AS_NODE must not reach the Harness process itself: the macOS
-  // utility process is launched with Chromium switches (--type=utility, …)
-  // that Node rejects as bad options. The Harness entry re-declares Node mode
-  // from the inside, for its children only.
+  // Windows and Linux run Harness through the Electron executable as Node. macOS
+  // uses a utility process, which must not receive this flag before Chromium
+  // parses its switches. Its entry declares Node mode only for children.
   //
   // On Windows, `detached: true` puts the Harness in its own process group
   // and console. Without it, a child process that calls `os.kill(pid, 0)`
@@ -313,10 +338,22 @@ export function buildHarnessSpawnOptions(
   // exits silently. This is the same isolation that the Harness's own
   // subprocess layer is expected to apply; we apply it here so the desktop
   // shell never becomes collateral damage for a buggy child (issue #208).
+  const cleanedEnvironment: NodeJS.ProcessEnv = { ...parentEnvironment }
+  const rawDeepSeekKey = platform === 'win32'
+    ? Object.keys(cleanedEnvironment).find(k => k.toUpperCase() === 'DEEPSEEK_BASE_URL')
+    : 'DEEPSEEK_BASE_URL'
+  if (rawDeepSeekKey) {
+    const rawValue = cleanedEnvironment[rawDeepSeekKey]
+    if (rawValue !== undefined && !validModelEndpoint(rawValue, true)) {
+      delete cleanedEnvironment[rawDeepSeekKey]
+    }
+  }
+
   return {
     cwd: launchDirectory,
     env: {
-      ...parentEnvironment,
+      ...cleanedEnvironment,
+      ...(platform !== 'darwin' && { ELECTRON_RUN_AS_NODE: '1' }),
       DSH_HOME: dshHome,
       NO_COLOR: '1',
       // package-import-method/child-concurrency are left at pnpm's defaults
@@ -332,6 +369,13 @@ export function buildHarnessSpawnOptions(
       // resolves them from its own installation and never touches the shared
       // `profiles/node_modules` fallback, whose junctions Windows can refuse.
       ...(profile === SAFE_MODE_PROFILE && { DSH_DESKTOP_HOST_RESOLVED: '1' }),
+      // Read by harness-node-entry before runCli. Plugin manager then spawns
+      // the Electron executable directly instead of PATH `pnpm.cmd`.
+      ...(packagedPnpm.entryPath ? { DSH_DESKTOP_PNPM_ENTRY: packagedPnpm.entryPath } : {}),
+      ...(packagedPnpm.runnerPath ? { DSH_DESKTOP_PNPM_RUNNER: packagedPnpm.runnerPath } : {}),
+      ...(platform === 'win32' && packagedPnpm.hideConsoleBootstrapPath
+        ? { DSH_DESKTOP_HIDE_CONSOLE_BOOTSTRAP: packagedPnpm.hideConsoleBootstrapPath }
+        : {}),
       NODE_COMPILE_CACHE: environment.NODE_COMPILE_CACHE ?? pathApi.join(dshHome, 'cache', 'compile-cache'),
       [pathKey]: resolveEnvironmentPath(environment, platform)
     },
@@ -461,7 +505,7 @@ export class HarnessRuntime {
       return
     }
     if (!existsSync(this.options.nodeExecutablePath)) {
-      this.setState('failed', `Bundled Node.js runtime was not found: ${this.options.nodeExecutablePath}`)
+      this.setState('failed', `Harness Node executable was not found: ${this.options.nodeExecutablePath}`)
       return
     }
     if (!existsSync(this.options.nodeEntryPath)) {
@@ -470,13 +514,49 @@ export class HarnessRuntime {
     }
     // Profile isolation alone is insufficient: --patch is applied afterwards.
     // Never reintroduce optional product plugins into the recovery profile.
-    const patchPath = profile === SAFE_MODE_PROFILE
+    const sourcePatchPath = profile === SAFE_MODE_PROFILE
       ? this.options.dshSafePatchPath
       : this.options.dshPatchPath
-    if (!existsSync(patchPath)) {
-      this.setState('failed', `DSH Desktop patch was not found: ${patchPath}`)
+    if (!existsSync(sourcePatchPath)) {
+      this.setState('failed', `DSH Desktop patch was not found: ${sourcePatchPath}`)
       return
     }
+    await mkdir(this.options.dshHome, { recursive: true })
+    const shellEnvironment = await prewarmShellEnvironment()
+    let configurationProblems
+    try {
+      configurationProblems = await inspectStartupConfiguration(this.options.dshHome, profile, shellEnvironment, launchDirectory)
+    } catch (error) {
+      this.writeLog(`[desktop] configuration inspection failed: ${error instanceof Error ? error.message : String(error)}`)
+      this.setState('failed', 'Startup configuration could not be inspected; check file access permissions.')
+      return
+    }
+    const autoMigratable = configurationProblems.filter(problem => problem.kind === 'legacy-workflow' && problem.repair)
+    for (const problem of autoMigratable) {
+      try {
+        const backup = await repairStartupConfig(this.options.dshHome, problem)
+        this.writeLog(`[desktop] auto-migrated legacy-workflow to workflow-ptc; backup: ${backup}`)
+      } catch (error) {
+        this.writeLog(`[desktop] auto-migration of legacy-workflow failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    if (autoMigratable.length > 0) {
+      configurationProblems = await inspectStartupConfiguration(this.options.dshHome, profile, shellEnvironment, launchDirectory)
+    }
+    const blockingProblems = configurationProblems.filter(problem => problem.blocking !== false)
+    if (blockingProblems.length > 0) {
+      const detail = blockingProblems.map(problem => `${problem.kind}: ${problem.source} ${problem.path}`).join('\n')
+      this.writeLog(`[desktop] startup configuration requires recovery: ${detail}`)
+      this.setState('failed', `Startup configuration requires recovery:\n${detail}`)
+      return
+    }
+    if (configurationProblems.length > 0) {
+      const nonBlockingDetail = configurationProblems.map(problem => `${problem.kind}: ${problem.source} ${problem.path}`).join('\n')
+      this.writeLog(`[desktop] non-blocking configuration notice (editable in UI):\n${nonBlockingDetail}`)
+    }
+    const patchPath = profile === SAFE_MODE_PROFILE
+      ? sourcePatchPath
+      : await prepareHostPluginSourcesPatch(this.options.dshHome, sourcePatchPath, this.options.dshEntryPath)
     const marketPatchPath = this.options.dshMarketPatchPath
     const patchPaths = profile !== SAFE_MODE_PROFILE &&
       marketPatchPath !== undefined &&
@@ -484,6 +564,10 @@ export class HarnessRuntime {
       await profileBootsMarket(join(this.options.dshHome, 'profiles', profile))
       ? [patchPath, marketPatchPath]
       : [patchPath]
+    if (profile !== SAFE_MODE_PROFILE) {
+      const disabledPatch = await prepareHostDisabledPluginsPatch(this.options.dshHome, sourcePatchPath)
+      if (disabledPatch) patchPaths.push(disabledPatch)
+    }
 
     await mkdir(this.options.dshHome, { recursive: true })
     await mkdir(dirname(this.options.logPath), { recursive: true })
@@ -518,7 +602,6 @@ export class HarnessRuntime {
     this.writeLog(`[desktop] endpoint ${url}`)
     this.setState('starting', 'Starting DeepSeek Harness…')
 
-    const shellEnvironment = await prewarmShellEnvironment()
     let child: HarnessChildProcess
     try {
       child = this.options.launchProcess(
@@ -529,7 +612,12 @@ export class HarnessRuntime {
           this.options.dshHome,
           process.platform,
           shellEnvironment,
-          profile
+          profile,
+          {
+            entryPath: this.options.pnpmEntryPath,
+            runnerPath: this.options.pnpmRunnerPath,
+            hideConsoleBootstrapPath: this.options.hideConsoleBootstrapPath
+          }
         )
       )
     } catch (error) {
@@ -565,7 +653,7 @@ export class HarnessRuntime {
         this.writeLog(`[desktop] failed to stop rejected Harness launch: ${detail}`)
       })
     })
-    child.once('spawn', () => this.writeLog('[desktop] Bundled Node.js Harness process started'))
+    child.once('spawn', () => this.writeLog('[desktop] Harness process started'))
     child.once('error', (error) => {
       this.writeLog(`[node] ${error.stack ?? error.message}`)
       if (this.child !== child) return

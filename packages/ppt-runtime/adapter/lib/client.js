@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
 		const CURATED_TEMPLATE_PREVIEWS = /* GENERATED_PPT_PREVIEWS */ {};
 		//#endregion
 		//#region \0dsh-css:ppt-composer.css.mjs
-		const css = "._2S_x-q_modeRoot{box-sizing:border-box;width:100%;padding:0 var(--dsh-composer-side-clearance);position:relative}._2S_x-q_modeRow{flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:8px;min-height:32px;display:flex}._2S_x-q_modeChip{border:1px solid var(--dsw-alias-border-l2-darkmode-thin);color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;background:0 0;border-radius:999px;align-items:center;gap:6px;padding:7px 13px;font-size:12px;line-height:16px;display:inline-flex}._2S_x-q_modeChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._2S_x-q_modeChip[data-selected=true]{border-color:color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);color:var(--dsw-alias-state-business-primary)}._2S_x-q_templatePanel{box-sizing:border-box;z-index:2;width:100%;max-width:calc(var(--dsh-composer-card-max-width) + 32px);height:var(--office-ppt-template-panel-height,calc(100dvh - 178px));max-height:var(--office-ppt-template-panel-height,calc(100dvh - 178px));background:0 0;flex-direction:column;margin-top:8px;display:flex;position:absolute;top:100%;left:50%;overflow:hidden;transform:translate(-50%)}._2S_x-q_modeRoot[data-placement=fixed]{height:0;overflow:visible}._2S_x-q_modeRoot[data-placement=fixed] ._2S_x-q_templatePanel{max-height:none;top:0}._2S_x-q_modeRoot[data-placement=fixed] ._2S_x-q_templateViewport{overscroll-behavior:contain;flex:auto;padding-bottom:12px;overflow-y:auto}._2S_x-q_templateToolbar{z-index:2;background:0 0;flex:none;justify-content:space-between;align-items:center;gap:12px;min-height:38px;display:flex;position:relative}._2S_x-q_templateViewport{box-sizing:border-box;overscroll-behavior:contain;scrollbar-width:none;min-height:0;padding-bottom:12px;overflow-y:auto}._2S_x-q_templateViewport::-webkit-scrollbar{display:none}._2S_x-q_categoryTabs{scrollbar-width:none;gap:4px;min-width:0;display:flex;overflow-x:auto}._2S_x-q_categoryTabs::-webkit-scrollbar{display:none}._2S_x-q_categoryTabs button{color:var(--dsw-alias-label-caption);font:inherit;cursor:pointer;background:0 0;border:0;border-radius:999px;flex:none;padding:5px 10px;font-size:11px;line-height:16px}._2S_x-q_categoryTabs button:hover{color:var(--dsw-alias-label-primary)}._2S_x-q_categoryTabs button[data-selected=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._2S_x-q_templateGrid{background:0 0;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 14px;display:grid}._2S_x-q_templateCard{min-width:0;min-height:0;position:relative}._2S_x-q_templateSelect{width:100%;min-width:0;color:var(--dsw-alias-label-tertiary);font:inherit;cursor:pointer;background:0 0;border:0;outline:0;flex-direction:column;padding:0;display:flex}._2S_x-q_previewViewport,._2S_x-q_selectionPreview{container-type:inline-size}._2S_x-q_previewViewport{aspect-ratio:16/9;border:2px solid #0000;border-radius:9px;width:100%;transition:border-color .12s,transform .12s;display:block;position:relative;overflow:hidden}._2S_x-q_previewViewport:after{content:\"\";position:absolute;inset:0;z-index:2;border-radius:7px;box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-label-primary) 25%, transparent);pointer-events:none}._2S_x-q_previewViewport>._2S_x-q_preview{aspect-ratio:auto;width:100%;height:100%;animation:.18s _2S_x-q_previewReveal}@keyframes _2S_x-q_previewReveal{0%{opacity:.72}to{opacity:1}}._2S_x-q_templateCard:hover ._2S_x-q_previewViewport{transform:translateY(-1px)}._2S_x-q_templateSelect:active ._2S_x-q_previewViewport{transform:scale(.985)}._2S_x-q_templateCard[data-selected=true] ._2S_x-q_previewViewport{border-color:var(--dsw-alias-state-business-primary)}._2S_x-q_templateSelect:focus-visible ._2S_x-q_previewViewport{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._2S_x-q_templateName{text-align:center;text-overflow:ellipsis;white-space:nowrap;padding-top:5px;font-size:12px;line-height:16px;overflow:hidden}._2S_x-q_templateCard[data-selected=true] ._2S_x-q_templateName{color:var(--dsw-alias-label-primary)}._2S_x-q_panelState{min-height:160px;color:var(--dsw-alias-label-tertiary);place-items:center;gap:10px;font-size:12px;display:grid}._2S_x-q_templateError{border:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 40%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);color:var(--dsw-alias-state-error-primary);border-radius:8px;margin-bottom:8px;padding:7px 10px;font-size:11px;line-height:16px}._2S_x-q_retryButton{border:1px solid var(--dsw-alias-border-l2-darkmode-thin);color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;background:0 0;border-radius:999px;padding:6px 12px}._2S_x-q_retryButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._2S_x-q_selection{align-items:flex-start;display:flex}._2S_x-q_selectionPreview{aspect-ratio:16/9;transform-origin:50%;flex:none;width:clamp(76px,10vw,92px);transition:transform .2s cubic-bezier(.34,1.56,.64,1);display:block;position:relative;transform:rotate(-3deg)scale(1)}._2S_x-q_selectionFrame{border:2px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-base);border-radius:9px;width:100%;height:100%;display:block;overflow:hidden;box-shadow:0 4px 14px #0000002e}._2S_x-q_selectionRemove{z-index:2;color:#fff;opacity:0;pointer-events:none;cursor:pointer;background:#111111e0;border:1px solid #ffffff4d;border-radius:50%;place-items:center;width:20px;height:20px;padding:0;font:500 15px/1 ui-sans-serif,system-ui,sans-serif;transition:opacity .12s,transform .12s;display:grid;position:absolute;top:-8px;right:-8px;transform:rotate(3deg)scale(.88);box-shadow:0 3px 10px #00000047}._2S_x-q_selectionPreview:hover ._2S_x-q_selectionRemove,._2S_x-q_selectionPreview:focus-within ._2S_x-q_selectionRemove{opacity:1;pointer-events:auto;transform:rotate(3deg)scale(1)}._2S_x-q_selectionRemove:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._2S_x-q_preview{box-sizing:border-box;aspect-ratio:16/9;background:var(--office-bg);color:var(--office-text);flex-direction:column;justify-content:center;padding:12% 10%;display:flex;position:relative;overflow:hidden}._2S_x-q_preview[data-source-preview=true]{background:#fff;padding:0}._2S_x-q_preview[data-source-preview=true]:before,._2S_x-q_preview[data-source-preview=true]:after{display:none}._2S_x-q_previewImage{object-fit:cover;width:100%;height:100%;display:block;position:absolute;inset:0}._2S_x-q_preview:before,._2S_x-q_preview:after{content:\"\";pointer-events:none;position:absolute}._2S_x-q_preview:before{border-left:1px solid color-mix(in srgb, var(--office-accent) 35%, transparent);background:color-mix(in srgb, var(--office-surface) 92%, transparent);width:34%;height:100%;top:0;right:0}._2S_x-q_preview:after{background:var(--office-accent);width:18%;height:clamp(1px,1.3cqi,3px);bottom:13%;right:8%}._2S_x-q_previewAccent{background:var(--office-accent);width:18%;height:clamp(1px,1.3cqi,3px);position:absolute;top:16%;left:10%}._2S_x-q_preview strong,._2S_x-q_preview small{z-index:1;text-overflow:ellipsis;white-space:nowrap;width:66%;display:block;position:relative;overflow:hidden}._2S_x-q_preview strong{margin-top:8%;font-size:clamp(4px,6cqi,14px);font-weight:650;line-height:1.12}._2S_x-q_preview small{color:var(--office-muted);margin-top:4px;font-size:clamp(3px,3.4cqi,8px)}._2S_x-q_preview[data-variant=blue-professional]:before{clip-path:polygon(25% 0,100% 0,100% 100%,0 100%);background:var(--office-surface);border:0;width:40%}._2S_x-q_preview[data-variant=blue-professional]:after{width:15%;height:2px;bottom:14%;right:8%}._2S_x-q_preview[data-variant=editorial-forest]{background:var(--office-surface);color:var(--office-accent);justify-content:flex-end;padding:10%;font-family:Georgia,Times New Roman,serif}._2S_x-q_preview[data-variant=editorial-forest]:before{aspect-ratio:1;border:1px solid var(--office-accent);background:0 0;border-radius:50%;width:16%;height:auto;top:11%;right:9%}._2S_x-q_preview[data-variant=editorial-forest]:after{background:var(--office-accent);width:80%;height:1px;bottom:10%;right:10%}._2S_x-q_preview[data-variant=editorial-forest] ._2S_x-q_previewAccent{background:var(--office-accent);width:26%;height:1px;top:13%}._2S_x-q_preview[data-variant=editorial-forest] strong,._2S_x-q_preview[data-variant=editorial-forest] small{width:78%}._2S_x-q_preview[data-variant=editorial-forest] strong{margin-bottom:11%;font-size:clamp(5px,7.4cqi,17px);font-weight:500}._2S_x-q_preview[data-variant=editorial-forest] small{color:var(--office-bg);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;position:absolute;top:16%;left:10%}._2S_x-q_preview[data-variant=signal]{background:var(--office-bg);color:var(--office-text);font-family:Georgia,Times New Roman,serif}._2S_x-q_preview[data-variant=signal]:before{background-image:linear-gradient(color-mix(in srgb, var(--office-secondary) 55%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--office-secondary) 55%, transparent) 1px, transparent 1px);opacity:.45;background-size:18% 31%;border:0;width:100%;height:100%;inset:0}._2S_x-q_preview[data-variant=signal]:after{background:var(--office-secondary);width:80%;height:1px;bottom:15%;left:10%;right:auto}._2S_x-q_preview[data-variant=signal] ._2S_x-q_previewAccent{background:var(--office-accent);width:14%;height:1px;top:18%}._2S_x-q_preview[data-variant=signal] strong{font-size:clamp(5px,6.8cqi,16px);font-weight:600}._2S_x-q_preview[data-variant=signal] small{color:var(--office-muted);letter-spacing:.08em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}._2S_x-q_preview[data-variant=orange-data]{color:#111;background:#fff;justify-content:flex-start;padding:15% 8%;font-family:Arial,sans-serif}._2S_x-q_preview[data-variant=orange-data]:before{background:linear-gradient(90deg, var(--office-accent) 0 25%, var(--office-secondary) 25% 50%, #f19309 50% 75%, #f9c22b 75%) 0 21% / 100% 28% no-repeat, linear-gradient(#f2f2f2 0 0) 0 70% / 72% 24% no-repeat;border:0;border-top:clamp(1px,.9cqi,2px) solid #111;width:84%;height:45%;inset:8% 8% auto}._2S_x-q_preview[data-variant=orange-data]:after{background:#111;width:84%;height:11%;bottom:11%;right:8%}._2S_x-q_preview[data-variant=orange-data] ._2S_x-q_previewAccent{background:var(--office-accent);width:22%;height:clamp(1px,.9cqi,2px);top:8%;left:8%}._2S_x-q_preview[data-variant=orange-data] strong,._2S_x-q_preview[data-variant=orange-data] small{z-index:2;width:52%}._2S_x-q_preview[data-variant=orange-data] strong{margin-top:10%;font-size:clamp(4px,5.8cqi,13px)}._2S_x-q_preview[data-variant=orange-data] small{color:#5b626d;letter-spacing:.06em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}._2S_x-q_preview[data-variant=custom]:before{background:linear-gradient(145deg, var(--office-surface), var(--office-secondary));width:40%}._2S_x-q_preview[data-page=\"1\"],._2S_x-q_preview[data-page=\"2\"]{background:color-mix(in srgb, var(--office-bg) 92%, var(--office-surface));color:var(--office-text);font-family:var(--font-sans,ui-sans-serif, system-ui, sans-serif);justify-content:flex-start;padding:8% 8% 7%}._2S_x-q_preview[data-page=\"1\"]:before,._2S_x-q_preview[data-page=\"2\"]:before{background:linear-gradient(90deg, color-mix(in srgb, var(--office-accent) 13%, transparent) 1px, transparent 1px), linear-gradient(color-mix(in srgb, var(--office-accent) 13%, transparent) 1px, transparent 1px);clip-path:none;opacity:.48;background-size:20% 25%;border:0;width:100%;height:100%;inset:0}._2S_x-q_preview[data-page=\"1\"]:after,._2S_x-q_preview[data-page=\"2\"]:after{background:var(--office-accent);width:18%;height:2px;top:8%;bottom:auto;right:8%}._2S_x-q_preview[data-page=\"1\"] ._2S_x-q_previewAccent,._2S_x-q_preview[data-page=\"2\"] ._2S_x-q_previewAccent{background:color-mix(in srgb, var(--office-muted) 38%, transparent);width:84%;height:1px;top:auto;bottom:7%;left:8%}._2S_x-q_preview[data-page=\"1\"] strong,._2S_x-q_preview[data-page=\"2\"] strong{width:78%;margin-top:3%;font-size:clamp(4px,5.3cqi,12px);line-height:1.12}._2S_x-q_previewEyebrow{letter-spacing:.06em;width:74%!important;color:var(--office-muted)!important;margin:0!important;font:500 clamp(3px,2.7cqi,6px)/1.1 ui-monospace,SFMono-Regular,Menlo,monospace!important}._2S_x-q_previewKpis{z-index:1;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;width:100%;margin-top:auto;display:grid;position:relative}._2S_x-q_previewKpis>span{border:1px solid color-mix(in srgb, var(--office-accent) 18%, transparent);background:color-mix(in srgb, var(--office-surface) 88%, transparent);border-radius:3px;justify-content:space-between;align-items:baseline;min-width:0;padding:7% 8%;display:flex}._2S_x-q_previewKpis b{font-size:clamp(4px,4.8cqi,11px);font-weight:700}._2S_x-q_previewKpis i{color:var(--office-muted);font:clamp(2px,2.2cqi,5px)/1 ui-monospace,monospace}._2S_x-q_previewFooter,._2S_x-q_previewInsight{z-index:1;width:100%;color:var(--office-muted);text-overflow:ellipsis;white-space:nowrap;margin-top:4px;font-size:clamp(2px,2.3cqi,5px);line-height:1.15;display:block;position:relative;overflow:hidden}._2S_x-q_previewChart{z-index:1;border-bottom:1px solid color-mix(in srgb, var(--office-muted) 34%, transparent);align-items:flex-end;gap:7%;height:43%;margin-top:auto;padding:4% 5% 0;display:flex;position:relative}._2S_x-q_previewChart i{background:var(--office-accent);border-radius:2px 2px 0 0;width:11%}._2S_x-q_previewChart i:first-child{opacity:.52;height:28%}._2S_x-q_previewChart i:nth-child(2){opacity:.64;height:46%}._2S_x-q_previewChart i:nth-child(3){opacity:.76;height:41%}._2S_x-q_previewChart i:nth-child(4){opacity:.88;height:72%}._2S_x-q_previewChart i:nth-child(5){height:91%}@media (prefers-reduced-motion:reduce){._2S_x-q_previewViewport,._2S_x-q_selectionPreview{transition:none}._2S_x-q_previewViewport>._2S_x-q_preview{animation:none}}";
+		const css = "._2S_x-q_modeRoot{box-sizing:border-box;width:100%;padding:0 var(--dsh-composer-side-clearance);position:relative}._2S_x-q_modeRow{flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:8px;min-height:32px;display:flex}._2S_x-q_modeChip{border:1px solid var(--dsw-alias-border-l2-darkmode-thin);color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;background:0 0;border-radius:999px;align-items:center;gap:6px;padding:7px 13px;font-size:12px;line-height:16px;display:inline-flex}._2S_x-q_modeChip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._2S_x-q_modeChip[data-selected=true]{border-color:color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);color:var(--dsw-alias-state-business-primary)}._2S_x-q_templatePanel{box-sizing:border-box;z-index:2;width:100%;max-width:calc(var(--dsh-composer-card-max-width) + 32px);height:var(--office-ppt-template-panel-height,calc(100dvh - 178px));max-height:var(--office-ppt-template-panel-height,calc(100dvh - 178px));background:0 0;flex-direction:column;margin-top:8px;display:flex;position:absolute;top:100%;left:50%;overflow:hidden;transform:translate(-50%)}._2S_x-q_modeRoot[data-placement=fixed]{height:0;overflow:visible}._2S_x-q_modeRoot[data-placement=fixed] ._2S_x-q_templatePanel{width:var(--office-ppt-template-panel-width,var(--dsh-composer-card-max-width));max-height:none;top:0}._2S_x-q_modeRoot[data-placement=fixed] ._2S_x-q_templateViewport{overscroll-behavior:contain;flex:auto;padding-bottom:12px;overflow-y:auto}._2S_x-q_templateToolbar{padding-inline:4px;z-index:2;background:0 0;flex:none;justify-content:space-between;align-items:center;gap:12px;min-height:38px;display:flex;position:relative}._2S_x-q_templateViewport{box-sizing:border-box;overscroll-behavior:contain;scrollbar-width:none;min-height:0;padding:4px 4px 12px;overflow-x:hidden;overflow-y:auto}._2S_x-q_templateViewport::-webkit-scrollbar{display:none}._2S_x-q_categoryTabs{scrollbar-width:none;gap:4px;min-width:0;display:flex;overflow-x:auto}._2S_x-q_categoryTabs::-webkit-scrollbar{display:none}._2S_x-q_categoryTabs button{color:var(--dsw-alias-label-caption);font:inherit;cursor:pointer;background:0 0;border:0;border-radius:999px;flex:none;padding:5px 10px;font-size:11px;line-height:16px}._2S_x-q_categoryTabs button:hover{color:var(--dsw-alias-label-primary)}._2S_x-q_categoryTabs button[data-selected=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._2S_x-q_templateGrid{background:0 0;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 14px;display:grid}._2S_x-q_templateCard{min-width:0;min-height:0;position:relative}._2S_x-q_templateSelect{width:100%;min-width:0;color:var(--dsw-alias-label-tertiary);font:inherit;cursor:pointer;background:0 0;border:0;outline:0;flex-direction:column;padding:0;display:flex}._2S_x-q_previewViewport,._2S_x-q_selectionPreview{container-type:inline-size}._2S_x-q_previewViewport{box-sizing:border-box;aspect-ratio:16/9;border:2px solid #0000;border-radius:9px;width:100%;transition:border-color .12s,transform .12s;display:block;position:relative;overflow:hidden}._2S_x-q_previewViewport>._2S_x-q_preview{aspect-ratio:auto;width:100%;height:100%;animation:.18s _2S_x-q_previewReveal}@keyframes _2S_x-q_previewReveal{0%{opacity:.72}to{opacity:1}}._2S_x-q_templateCard:hover ._2S_x-q_previewViewport{transform:translateY(-1px)}._2S_x-q_templateSelect:active ._2S_x-q_previewViewport{transform:scale(.985)}._2S_x-q_templateCard[data-selected=true] ._2S_x-q_previewViewport{border-color:var(--dsw-alias-state-business-primary)}._2S_x-q_templateSelect:focus-visible ._2S_x-q_previewViewport{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._2S_x-q_templateName{text-align:center;text-overflow:ellipsis;white-space:nowrap;padding-top:5px;font-size:12px;line-height:16px;overflow:hidden}._2S_x-q_templateCard[data-selected=true] ._2S_x-q_templateName{color:var(--dsw-alias-label-primary)}._2S_x-q_panelState{min-height:160px;color:var(--dsw-alias-label-tertiary);place-items:center;gap:10px;font-size:12px;display:grid}._2S_x-q_templateError{border:1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 40%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent);color:var(--dsw-alias-state-error-primary);border-radius:8px;margin-bottom:8px;padding:7px 10px;font-size:11px;line-height:16px}._2S_x-q_retryButton{border:1px solid var(--dsw-alias-border-l2-darkmode-thin);color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;background:0 0;border-radius:999px;padding:6px 12px}._2S_x-q_retryButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._2S_x-q_selection{align-items:flex-start;display:flex}._2S_x-q_selectionPreview{aspect-ratio:16/9;transform-origin:50%;flex:none;width:clamp(76px,10vw,92px);transition:transform .2s cubic-bezier(.34,1.56,.64,1);display:block;position:relative;transform:rotate(-3deg)scale(1)}._2S_x-q_selectionFrame{border:2px solid var(--dsw-alias-state-business-primary);background:var(--dsw-alias-bg-base);border-radius:9px;width:100%;height:100%;display:block;overflow:hidden;box-shadow:0 4px 14px #0000002e}._2S_x-q_selectionRemove{z-index:2;color:#fff;opacity:0;pointer-events:none;cursor:pointer;background:#111111e0;border:1px solid #ffffff4d;border-radius:50%;place-items:center;width:20px;height:20px;padding:0;font:500 15px/1 ui-sans-serif,system-ui,sans-serif;transition:opacity .12s,transform .12s;display:grid;position:absolute;top:-8px;right:-8px;transform:rotate(3deg)scale(.88);box-shadow:0 3px 10px #00000047}._2S_x-q_selectionPreview:hover ._2S_x-q_selectionRemove,._2S_x-q_selectionPreview:focus-within ._2S_x-q_selectionRemove{opacity:1;pointer-events:auto;transform:rotate(3deg)scale(1)}._2S_x-q_selectionRemove:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._2S_x-q_preview{box-sizing:border-box;aspect-ratio:16/9;background:var(--office-bg);color:var(--office-text);flex-direction:column;justify-content:center;padding:12% 10%;display:flex;position:relative;overflow:hidden}._2S_x-q_preview[data-source-preview=true]{background:#fff;padding:0}._2S_x-q_preview[data-source-preview=true]:before,._2S_x-q_preview[data-source-preview=true]:after{display:none}._2S_x-q_previewImage{object-fit:cover;-webkit-user-drag:none;width:100%;height:100%;display:block;position:absolute;inset:0}._2S_x-q_preview:before,._2S_x-q_preview:after{content:\"\";pointer-events:none;position:absolute}._2S_x-q_preview:before{border-left:1px solid color-mix(in srgb, var(--office-accent) 35%, transparent);background:color-mix(in srgb, var(--office-surface) 92%, transparent);width:34%;height:100%;top:0;right:0}._2S_x-q_preview:after{background:var(--office-accent);width:18%;height:clamp(1px,1.3cqi,3px);bottom:13%;right:8%}._2S_x-q_previewAccent{background:var(--office-accent);width:18%;height:clamp(1px,1.3cqi,3px);position:absolute;top:16%;left:10%}._2S_x-q_preview strong,._2S_x-q_preview small{z-index:1;text-overflow:ellipsis;white-space:nowrap;width:66%;display:block;position:relative;overflow:hidden}._2S_x-q_preview strong{margin-top:8%;font-size:clamp(4px,6cqi,14px);font-weight:650;line-height:1.12}._2S_x-q_preview small{color:var(--office-muted);margin-top:4px;font-size:clamp(3px,3.4cqi,8px)}._2S_x-q_preview[data-variant=blue-professional]:before{clip-path:polygon(25% 0,100% 0,100% 100%,0 100%);background:var(--office-surface);border:0;width:40%}._2S_x-q_preview[data-variant=blue-professional]:after{width:15%;height:2px;bottom:14%;right:8%}._2S_x-q_preview[data-variant=editorial-forest]{background:var(--office-surface);color:var(--office-accent);justify-content:flex-end;padding:10%;font-family:Georgia,Times New Roman,serif}._2S_x-q_preview[data-variant=editorial-forest]:before{aspect-ratio:1;border:1px solid var(--office-accent);background:0 0;border-radius:50%;width:16%;height:auto;top:11%;right:9%}._2S_x-q_preview[data-variant=editorial-forest]:after{background:var(--office-accent);width:80%;height:1px;bottom:10%;right:10%}._2S_x-q_preview[data-variant=editorial-forest] ._2S_x-q_previewAccent{background:var(--office-accent);width:26%;height:1px;top:13%}._2S_x-q_preview[data-variant=editorial-forest] strong,._2S_x-q_preview[data-variant=editorial-forest] small{width:78%}._2S_x-q_preview[data-variant=editorial-forest] strong{margin-bottom:11%;font-size:clamp(5px,7.4cqi,17px);font-weight:500}._2S_x-q_preview[data-variant=editorial-forest] small{color:var(--office-bg);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;position:absolute;top:16%;left:10%}._2S_x-q_preview[data-variant=signal]{background:var(--office-bg);color:var(--office-text);font-family:Georgia,Times New Roman,serif}._2S_x-q_preview[data-variant=signal]:before{background-image:linear-gradient(color-mix(in srgb, var(--office-secondary) 55%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--office-secondary) 55%, transparent) 1px, transparent 1px);opacity:.45;background-size:18% 31%;border:0;width:100%;height:100%;inset:0}._2S_x-q_preview[data-variant=signal]:after{background:var(--office-secondary);width:80%;height:1px;bottom:15%;left:10%;right:auto}._2S_x-q_preview[data-variant=signal] ._2S_x-q_previewAccent{background:var(--office-accent);width:14%;height:1px;top:18%}._2S_x-q_preview[data-variant=signal] strong{font-size:clamp(5px,6.8cqi,16px);font-weight:600}._2S_x-q_preview[data-variant=signal] small{color:var(--office-muted);letter-spacing:.08em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}._2S_x-q_preview[data-variant=orange-data]{color:#111;background:#fff;justify-content:flex-start;padding:15% 8%;font-family:Arial,sans-serif}._2S_x-q_preview[data-variant=orange-data]:before{background:linear-gradient(90deg, var(--office-accent) 0 25%, var(--office-secondary) 25% 50%, #f19309 50% 75%, #f9c22b 75%) 0 21% / 100% 28% no-repeat, linear-gradient(#f2f2f2 0 0) 0 70% / 72% 24% no-repeat;border:0;border-top:clamp(1px,.9cqi,2px) solid #111;width:84%;height:45%;inset:8% 8% auto}._2S_x-q_preview[data-variant=orange-data]:after{background:#111;width:84%;height:11%;bottom:11%;right:8%}._2S_x-q_preview[data-variant=orange-data] ._2S_x-q_previewAccent{background:var(--office-accent);width:22%;height:clamp(1px,.9cqi,2px);top:8%;left:8%}._2S_x-q_preview[data-variant=orange-data] strong,._2S_x-q_preview[data-variant=orange-data] small{z-index:2;width:52%}._2S_x-q_preview[data-variant=orange-data] strong{margin-top:10%;font-size:clamp(4px,5.8cqi,13px)}._2S_x-q_preview[data-variant=orange-data] small{color:#5b626d;letter-spacing:.06em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}._2S_x-q_preview[data-variant=custom]:before{background:linear-gradient(145deg, var(--office-surface), var(--office-secondary));width:40%}._2S_x-q_preview[data-page=\"1\"],._2S_x-q_preview[data-page=\"2\"]{background:color-mix(in srgb, var(--office-bg) 92%, var(--office-surface));color:var(--office-text);font-family:var(--font-sans,ui-sans-serif, system-ui, sans-serif);justify-content:flex-start;padding:8% 8% 7%}._2S_x-q_preview[data-page=\"1\"]:before,._2S_x-q_preview[data-page=\"2\"]:before{background:linear-gradient(90deg, color-mix(in srgb, var(--office-accent) 13%, transparent) 1px, transparent 1px), linear-gradient(color-mix(in srgb, var(--office-accent) 13%, transparent) 1px, transparent 1px);clip-path:none;opacity:.48;background-size:20% 25%;border:0;width:100%;height:100%;inset:0}._2S_x-q_preview[data-page=\"1\"]:after,._2S_x-q_preview[data-page=\"2\"]:after{background:var(--office-accent);width:18%;height:2px;top:8%;bottom:auto;right:8%}._2S_x-q_preview[data-page=\"1\"] ._2S_x-q_previewAccent,._2S_x-q_preview[data-page=\"2\"] ._2S_x-q_previewAccent{background:color-mix(in srgb, var(--office-muted) 38%, transparent);width:84%;height:1px;top:auto;bottom:7%;left:8%}._2S_x-q_preview[data-page=\"1\"] strong,._2S_x-q_preview[data-page=\"2\"] strong{width:78%;margin-top:3%;font-size:clamp(4px,5.3cqi,12px);line-height:1.12}._2S_x-q_previewEyebrow{letter-spacing:.06em;width:74%!important;color:var(--office-muted)!important;margin:0!important;font:500 clamp(3px,2.7cqi,6px)/1.1 ui-monospace,SFMono-Regular,Menlo,monospace!important}._2S_x-q_previewKpis{z-index:1;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;width:100%;margin-top:auto;display:grid;position:relative}._2S_x-q_previewKpis>span{border:1px solid color-mix(in srgb, var(--office-accent) 18%, transparent);background:color-mix(in srgb, var(--office-surface) 88%, transparent);border-radius:3px;justify-content:space-between;align-items:baseline;min-width:0;padding:7% 8%;display:flex}._2S_x-q_previewKpis b{font-size:clamp(4px,4.8cqi,11px);font-weight:700}._2S_x-q_previewKpis i{color:var(--office-muted);font:clamp(2px,2.2cqi,5px)/1 ui-monospace,monospace}._2S_x-q_previewFooter,._2S_x-q_previewInsight{z-index:1;width:100%;color:var(--office-muted);text-overflow:ellipsis;white-space:nowrap;margin-top:4px;font-size:clamp(2px,2.3cqi,5px);line-height:1.15;display:block;position:relative;overflow:hidden}._2S_x-q_previewChart{z-index:1;border-bottom:1px solid color-mix(in srgb, var(--office-muted) 34%, transparent);align-items:flex-end;gap:7%;height:43%;margin-top:auto;padding:4% 5% 0;display:flex;position:relative}._2S_x-q_previewChart i{background:var(--office-accent);border-radius:2px 2px 0 0;width:11%}._2S_x-q_previewChart i:first-child{opacity:.52;height:28%}._2S_x-q_previewChart i:nth-child(2){opacity:.64;height:46%}._2S_x-q_previewChart i:nth-child(3){opacity:.76;height:41%}._2S_x-q_previewChart i:nth-child(4){opacity:.88;height:72%}._2S_x-q_previewChart i:nth-child(5){height:91%}@media (prefers-reduced-motion:reduce){._2S_x-q_previewViewport,._2S_x-q_selectionPreview{transition:none}._2S_x-q_previewViewport>._2S_x-q_preview{animation:none}}";
 		const tagId = "dsh-ppt-composer/OfficePptHero.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -96,11 +96,16 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 		const TEMPLATE_PREVIEW_WHEEL_LOCK_MS = 180;
 		const TEMPLATE_DOCK_BOTTOM_PX = 12;
 		const TEMPLATE_PANEL_MIN_HEIGHT_PX = 200;
+		const STAGED_MODE_KEY = "\0dsh-ppt-unbound";
+		function modeKey(sessionId) {
+			return typeof sessionId === "string" && sessionId.trim().length > 0 ? sessionId : STAGED_MODE_KEY;
+		}
 		const EMPTY_STATE = {
 			activeMode: null,
 			loading: false,
 			templates: [],
 			selectedId: null,
+			engaged: false,
             notice: false,
 			error: ""
 		};
@@ -111,21 +116,32 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				this.listeners = /* @__PURE__ */ new Map();
 			}
 			snapshot(sessionId) {
-				return this.states.get(sessionId) ?? EMPTY_STATE;
+				return this.states.get(modeKey(sessionId)) ?? EMPTY_STATE;
 			}
 			subscribe(sessionId, listener) {
-				const listeners = this.listeners.get(sessionId) ?? /* @__PURE__ */ new Set();
+				const key = modeKey(sessionId);
+				const listeners = this.listeners.get(key) ?? /* @__PURE__ */ new Set();
 				listeners.add(listener);
-				this.listeners.set(sessionId, listeners);
+				this.listeners.set(key, listeners);
 				return () => {
 					listeners.delete(listener);
-					if (listeners.size === 0) this.listeners.delete(sessionId);
+					if (listeners.size === 0) this.listeners.delete(key);
 				};
 			}
+			revision(sessionId) {
+				return this.revisions?.get(modeKey(sessionId)) ?? 0;
+			}
+			bump(sessionId) {
+				this.revisions ??= /* @__PURE__ */ new Map();
+				const key = modeKey(sessionId);
+				this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+			}
 			setMode(sessionId, activeMode) {
+				this.bump(sessionId);
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
+					engaged: true,
 					error: ""
 				}));
 			}
@@ -146,6 +162,17 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 					error
 				}));
 			}
+			setTemplateState(sessionId, next) {
+                this.update(sessionId, current => ({
+                    ...current,
+                    templates: next.templates,
+                    selectedId: next.templates.some(template => template.id === next.selectedTemplateId) ? next.selectedTemplateId : null,
+                    activeMode: next.presentationMode ?? current.activeMode,
+                    notice: next.templateMigration?.reason ?? null,
+                    loading: false,
+                    error: ""
+                }));
+            }
 			setTemplates(sessionId, templates) {
 				this.update(sessionId, (current) => ({
 					...current,
@@ -156,27 +183,136 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				}));
 			}
 			select(sessionId, template, activeMode) {
+				this.bump(sessionId);
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
 					loading: false,
 					selectedId: template.id,
+					engaged: true,
                     notice: false,
 					error: ""
 				}));
 			}
 			deselect(sessionId, activeMode) {
+				this.bump(sessionId);
 				this.update(sessionId, (current) => ({
 					...current,
 					activeMode,
 					loading: false,
 					selectedId: null,
+					engaged: true,
 					error: ""
 				}));
 			}
 			update(sessionId, transform) {
-				this.states.set(sessionId, transform(this.snapshot(sessionId)));
+				const key = modeKey(sessionId);
+				this.states.set(key, transform(this.states.get(key) ?? EMPTY_STATE));
+				this.notify(key);
+			}
+			notify(sessionId) {
 				for (const listener of this.listeners.get(sessionId) ?? []) listener();
+			}
+			clearStaged() {
+				if (!this.states.has(STAGED_MODE_KEY)) return;
+				this.states.delete(STAGED_MODE_KEY);
+				this.notify(STAGED_MODE_KEY);
+			}
+			adopt(sessionId, client) {
+				this.inflight ??= /* @__PURE__ */ new Map();
+				this.adopted ??= /* @__PURE__ */ new Set();
+				if (!client?.bound || typeof sessionId !== "string" || sessionId.trim().length === 0) return Promise.resolve("idle");
+				const pending = this.inflight.get(sessionId);
+				if (pending) return pending;
+				if (this.adopted.has(sessionId)) return Promise.resolve("done");
+				const staged = this.states.get(STAGED_MODE_KEY);
+				if (!staged?.engaged) {
+					this.adopted.add(sessionId);
+					return Promise.resolve("idle");
+				}
+				const work = this.applyStaged(sessionId, client, staged).finally(() => {
+					if (this.inflight.get(sessionId) === work) this.inflight.delete(sessionId);
+				});
+				this.inflight.set(sessionId, work);
+				return work;
+			}
+			async applyStaged(sessionId, client, staged) {
+				if (staged.activeMode !== "ppt") {
+					this.clearStaged();
+					this.adopted.add(sessionId);
+					return "idle";
+				}
+				this.bump(sessionId);
+				this.update(sessionId, () => ({ ...staged, loading: true, error: "" }));
+				try {
+					const remote = await client.call("state");
+					const occupied = remote?.presentationMode === "ppt" || remote?.documentMode === "word" || remote?.documentMode === "excel" || typeof remote?.selectedTemplateId === "string";
+					if (occupied) {
+						this.clearStaged();
+						this.update(sessionId, (current) => ({
+							...current,
+							templates: Array.isArray(remote?.templates) ? remote.templates : current.templates,
+							selectedId: typeof remote?.selectedTemplateId === "string" ? remote.selectedTemplateId : null,
+							activeMode: remote?.presentationMode === "ppt" ? "ppt" : null,
+							loading: false,
+							engaged: false,
+							error: ""
+						}));
+						this.adopted.add(sessionId);
+						return "kept";
+					}
+					if (staged.selectedId) {
+						try {
+							await client.call("template/select", { templateId: staged.selectedId, mode: "ppt" });
+						} catch (reason) {
+							await client.call("presentation/mode", { mode: "ppt" });
+							this.update(sessionId, (current) => ({
+								...current,
+								activeMode: "ppt",
+								selectedId: null,
+								loading: false,
+								engaged: true,
+								error: reason instanceof Error ? reason.message : String(reason)
+							}));
+							this.clearStaged();
+							this.adopted.add(sessionId);
+							return "partial";
+						}
+					} else if (staged.activeMode === "ppt") {
+						await client.call("presentation/mode", { mode: "ppt" });
+					}
+					const next = await client.call("state");
+					this.setTemplateState(sessionId, next);
+					this.clearStaged();
+					this.adopted.add(sessionId);
+					return "applied";
+				} catch (reason) {
+					this.update(sessionId, (current) => ({
+						...current,
+						loading: false,
+						engaged: true,
+						error: reason instanceof Error ? reason.message : String(reason)
+					}));
+					this.clearStaged();
+					this.adopted.add(sessionId);
+					return "failed";
+				}
+			}
+			applyLoadedTemplates(sessionId, client, seenRevision, next, request) {
+				if (request != null && (request.client !== client || modeKey(request.sessionId) !== modeKey(sessionId))) return false;
+				if (this.revision(sessionId) !== seenRevision) return false;
+				const activeMode = this.snapshot(sessionId).activeMode ?? (next?.presentationMode === "ppt" ? "ppt" : null);
+				this.setTemplates(sessionId, next?.templates ?? []);
+				if (!client?.bound || activeMode === null) return true;
+				this.setMode(sessionId, activeMode);
+				this.setNotice(sessionId, next?.templateMigration?.reason ?? null);
+				const selected = (next?.templates ?? []).find((template) => template.id === next.selectedTemplateId && (template.supportedModes?.includes("ppt") ?? true));
+				if (selected === void 0) {
+					this.deselect(sessionId, activeMode);
+					return true;
+				}
+				this.select(sessionId, selected, activeMode);
+				return true;
 			}
 		};
 		function useMode(mode, sessionId) {
@@ -193,6 +329,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			};
 		}
 		function templateCategory(template) {
+            if (template.origin === "personal") return "personal";
 			if (template.origin === "extracted") return "custom";
 			return template.category ?? "business";
 		}
@@ -200,10 +337,10 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			return template.source?.visualGrammar ?? "custom";
 		}
 		function templatePreviewPages(template) {
-			return CURATED_TEMPLATE_PREVIEWS[template.id]?.length ?? FALLBACK_TEMPLATE_PREVIEW_PAGE_COUNT;
+			return (template.previewImages ?? CURATED_TEMPLATE_PREVIEWS[template.id])?.length ?? FALLBACK_TEMPLATE_PREVIEW_PAGE_COUNT;
 		}
 		function TemplatePreview({ template, page = 0 }) {
-			const previewImage = CURATED_TEMPLATE_PREVIEWS[template.id]?.[page];
+			const previewImage = (template.previewImages ?? CURATED_TEMPLATE_PREVIEWS[template.id])?.[page];
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 				className: OfficePptHero_module_css_default.preview,
 				"data-page": page,
@@ -213,6 +350,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				children: [previewImage !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 					className: OfficePptHero_module_css_default.previewImage,
 					src: previewImage,
+					draggable: false,
 					loading: "lazy",
 					decoding: "async",
 					alt: "",
@@ -362,6 +500,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: OfficePptHero_module_css_default.templateName,
+							title: template.name,
 							children: template.name
 						})
 					]
@@ -388,21 +527,39 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			});
 		}
 		function deselectTemplate(client, mode, sessionId, activeMode) {
+            mode.bump(sessionId);
+            const revision = mode.revision(sessionId);
 			mode.setLoading(sessionId, true);
+			if (!client.bound) {
+				mode.deselect(sessionId, activeMode);
+                announcePptMode(sessionId);
+				return;
+			}
 			client.call("template/deselect").then(() => {
+                if (mode.revision(sessionId) !== revision) return;
 				return client.call("presentation/mode", { mode: activeMode });
 			}).then(() => {
+                if (mode.revision(sessionId) !== revision) return;
+                announcePptMode(sessionId);
 				mode.deselect(sessionId, activeMode);
 			}).catch((reason) => {
-				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+                if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 			});
 		}
 		function selectPresentationMode(client, mode, sessionId, activeMode) {
-			mode.setMode(sessionId, activeMode);
-			client.call("presentation/mode", { mode: activeMode }).catch((reason) => {
-				mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
-			});
-		}
+            if (!client.bound) { mode.setMode(sessionId, activeMode); announcePptMode(sessionId); return; }
+            mode.bump(sessionId);
+            const revision = mode.revision(sessionId);
+            mode.setLoading(sessionId, true);
+            client.call("presentation/mode", { mode: activeMode }).then(() => {
+                if (mode.revision(sessionId) !== revision) return;
+                announcePptMode(sessionId);
+                mode.setMode(sessionId, activeMode);
+                mode.setLoading(sessionId, false);
+            }).catch((reason) => {
+                if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+            });
+        }
 		/** Compact selected-template thumbnail inside the resident input card. */
 		function OfficePptInputAccessory({ client, mode, sessionId, t }) {
 			const state = useMode(mode, sessionId);
@@ -476,9 +633,180 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				})
 			});
 		}
+		const OPENING_TEMPLATE_STYLE_ID = "dsh-ppt-opening-template";
+		function ensureOpeningTemplateStyles() {
+			if (typeof document === "undefined" || document.getElementById(OPENING_TEMPLATE_STYLE_ID) !== null) return;
+			const tag = document.createElement("style");
+			tag.id = OPENING_TEMPLATE_STYLE_ID;
+			tag.dataset.pluginCss = OPENING_TEMPLATE_STYLE_ID;
+			tag.textContent = ".dsh-ppt-opening-row{display:flex;align-items:center;gap:6px;min-width:0;color:var(--dsw-alias-label-secondary)}.dsh-ppt-opening-row:not(:first-child){margin-top:8px;padding-top:8px;border-top:.5px solid var(--dsw-alias-border-l2)}.dsh-ppt-opening-file{flex:none;color:var(--dsw-static-amber-500)}.dsh-ppt-opening-file-fold{fill:var(--dsw-static-neutral-00);fill-opacity:.7}.dsh-ppt-opening-file-mark{fill:var(--dsw-static-neutral-00)}.dsh-ppt-opening-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:transparent;padding:0;color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 68%,var(--dsw-alias-label-primary));font:inherit;font-size:13px;line-height:20px;text-align:left;text-decoration:none;cursor:pointer}.dsh-ppt-opening-title:hover{color:color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,var(--dsw-alias-label-primary))}.dsh-ppt-opening-stage{position:relative;overflow:hidden;width:100%;aspect-ratio:16/9;border-radius:10px;background:var(--dsw-alias-bg-base)}.dsh-ppt-opening-stage>*{position:absolute;inset:0;width:100%;height:100%}.dsh-ppt-opening-dialog{box-sizing:border-box;width:min(760px,calc(100vw - 48px));max-height:calc(100dvh - 48px);margin:auto;padding:20px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-panel,16px);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit}.dsh-ppt-opening-dialog::backdrop{background:color-mix(in srgb,var(--dsw-alias-label-primary) 40%,transparent)}.dsh-ppt-opening-dialog[open]{display:flex;flex-direction:column;gap:16px}.dsh-ppt-opening-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}.dsh-ppt-opening-dialog h2{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;line-height:24px;font-weight:600}.dsh-ppt-opening-close{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font:inherit;font-size:18px}.dsh-ppt-opening-pages{display:flex;align-items:center;justify-content:center;gap:16px;color:var(--dsw-alias-label-secondary);font-size:13px}.dsh-ppt-opening-pages button{display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit}.dsh-ppt-opening-pages button:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}.dsh-ppt-opening-title:focus-visible,.dsh-ppt-opening-dialog :focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}@media (prefers-reduced-motion:reduce){.dsh-ppt-opening-stage *{animation:none!important}}";
+			document.head.appendChild(tag);
+		}
+		/** Orange document mark matching the PPT file icon: folded page and a white P. */
+		function OpeningPptFileIcon() {
+			return (0, react_jsx_runtime.jsxs)("svg", {
+				className: "dsh-ppt-opening-file",
+				width: 14,
+				height: 14,
+				viewBox: "0 0 28 28",
+				fill: "none",
+				"aria-hidden": true,
+				focusable: false,
+				children: [
+					(0, react_jsx_runtime.jsx)("path", { fill: "currentColor", d: "M8.48924 28H19.5108C21.6479 28 22.7165 28 23.5594 27.6509C24.6833 27.1853 25.5762 26.2924 26.0417 25.1685C26.3909 24.3256 26.3909 23.257 26.3909 21.1199V8.79443C26.3909 8.32877 26.3909 8.09593 26.3471 7.87507C26.2887 7.58058 26.173 7.30042 26.0067 7.05048C25.882 6.86303 25.7177 6.69799 25.3893 6.36792L20.0611 1.01354C19.7304 0.681235 19.5651 0.515081 19.3769 0.38885C19.126 0.220541 18.8443 0.103463 18.5481 0.0443412C18.3259 0 18.0915 0 17.6226 0H8.48924C6.35209 0 5.28351 0 4.4406 0.349145C3.31672 0.814671 2.4238 1.70759 1.95828 2.83147C1.60913 3.67438 1.60913 4.74296 1.60913 6.88011V21.1199C1.60913 23.257 1.60913 24.3256 1.95828 25.1685C2.4238 26.2924 3.31672 27.1853 4.4406 27.6509C5.28351 28 6.35209 28 8.48924 28Z" }),
+					(0, react_jsx_runtime.jsx)("path", { className: "dsh-ppt-opening-file-fold", d: "M26.3909 7.37445L19.0525 0V3.77445C19.0525 4.89271 19.0525 5.45184 19.2352 5.89289C19.4788 6.48096 19.946 6.94818 20.5341 7.19176C20.9751 7.37445 21.5342 7.37445 22.6525 7.37445H26.3909Z" }),
+					(0, react_jsx_runtime.jsx)("path", { className: "dsh-ppt-opening-file-mark", transform: "translate(14 16) scale(1.22) translate(-14 -16)", d: "M11.0132 20.5V13.5H14.2132C14.8532 13.5 15.4032 13.6033 15.8632 13.81C16.3299 14.0167 16.6899 14.3167 16.9432 14.71C17.1966 15.0967 17.3232 15.5567 17.3232 16.09C17.3232 16.6167 17.1966 17.0733 16.9432 17.46C16.6899 17.8467 16.3299 18.1467 15.8632 18.36C15.4032 18.5667 14.8532 18.67 14.2132 18.67H12.1132L12.9932 17.81V20.5H11.0132ZM12.9932 18.02L12.1132 17.11H14.0932C14.5066 17.11 14.8132 17.02 15.0132 16.84C15.2199 16.66 15.3232 16.41 15.3232 16.09C15.3232 15.7633 15.2199 15.51 15.0132 15.33C14.8132 15.15 14.5066 15.06 14.0932 15.06H12.1132L12.9932 14.15V18.02Z" })
+				]
+			});
+		}
+		/** Selected template pinned under the opening user message after PPT starts. */
+		function OfficePptOpeningTemplateCard({ client, mode, sessionId, leading, t }) {
+			ensureOpeningTemplateStyles();
+			const state = useMode(mode, sessionId);
+			const bindingRef = (0, react.useRef)({ client, sessionId });
+			bindingRef.current = { client, sessionId };
+			const catalogRevision = mode.revision(sessionId);
+			const [open, setOpen] = (0, react.useState)(false);
+			const [page, setPage] = (0, react.useState)(0);
+			const buttonRef = (0, react.useRef)(null);
+			const dialogRef = (0, react.useRef)(null);
+			const openedRef = (0, react.useRef)(false);
+			(0, react.useEffect)(() => {
+				if (leading !== true || !client?.bound || state.templates.length > 0 || state.error !== "") return;
+				const request = { client, sessionId };
+				const seenRevision = catalogRevision;
+				mode.setLoading(sessionId, true);
+				let active = true;
+				loadTemplateState(client, t("templates.loadTimeout")).then((next) => {
+					if (!active) return;
+					const current = bindingRef.current;
+					mode.applyLoadedTemplates(current.sessionId, current.client, seenRevision, next, request);
+				}).catch((reason) => {
+					if (!active) return;
+					const current = bindingRef.current;
+					if (current.client !== request.client || modeKey(current.sessionId) !== modeKey(request.sessionId)) return;
+					if (mode.revision(request.sessionId) !== seenRevision) return;
+					mode.setError(request.sessionId, reason instanceof Error ? reason.message : String(reason));
+				});
+				return () => {
+					active = false;
+				};
+			}, [
+				catalogRevision,
+				client,
+				leading,
+				mode,
+				sessionId,
+				state.error,
+				state.templates.length,
+				t
+			]);
+			const selected = state.activeMode === "ppt" ? state.templates.find((template) => template.id === state.selectedId) : void 0;
+			const pageCount = selected === void 0 ? 0 : templatePreviewPages(selected);
+			(0, react.useEffect)(() => {
+				const node = dialogRef.current;
+				if (!open || node === null) return;
+				if (!node.open) node.showModal();
+				return () => {
+					if (node.open) node.close();
+				};
+			}, [open]);
+			(0, react.useEffect)(() => {
+				if (open) {
+					openedRef.current = true;
+					return;
+				}
+				if (openedRef.current) buttonRef.current?.focus();
+			}, [open]);
+			if (leading !== true || selected === void 0) return null;
+			const closePreview = () => {
+				setOpen(false);
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "dsh-ppt-opening-row",
+				"data-ppt-opening-template": selected.id,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpeningPptFileIcon, {}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					ref: buttonRef,
+					type: "button",
+					className: "dsh-ppt-opening-title",
+					"aria-haspopup": "dialog",
+					"aria-label": t("opening.preview", { name: selected.name }),
+					onClick: () => {
+						setPage(0);
+						setOpen(true);
+					},
+					children: selected.name
+				})]
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("dialog", {
+				ref: dialogRef,
+				className: "dsh-ppt-opening-dialog",
+				"aria-modal": true,
+				"aria-labelledby": "dsh-ppt-opening-title",
+				onCancel: (event) => {
+					event.preventDefault();
+					closePreview();
+				},
+				onKeyDown: (event) => {
+					if (event.key !== "Tab") return;
+					const fields = [...event.currentTarget.querySelectorAll("button:not(:disabled)")];
+					const first = fields[0];
+					const last = fields.at(-1);
+					if (event.shiftKey && (document.activeElement === first || !event.currentTarget.contains(document.activeElement))) {
+						event.preventDefault();
+						last?.focus();
+					} else if (!event.shiftKey && (document.activeElement === last || !event.currentTarget.contains(document.activeElement))) {
+						event.preventDefault();
+						first?.focus();
+					}
+				},
+				onClick: (event) => {
+					if (event.target !== event.currentTarget) return;
+					const rect = event.currentTarget.getBoundingClientRect();
+					if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closePreview();
+				},
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+					id: "dsh-ppt-opening-title",
+					children: selected.name
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: "dsh-ppt-opening-close",
+					"aria-label": t("opening.close"),
+					onClick: closePreview,
+					children: "×"
+				})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "dsh-ppt-opening-stage",
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplatePreview, {
+						template: selected,
+						page
+					}, page)
+				}), pageCount > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "dsh-ppt-opening-pages",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						"aria-label": t("opening.previous"),
+						disabled: page === 0,
+						onClick: () => {
+							setPage((current) => Math.max(0, current - 1));
+						},
+						children: "‹"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						role: "status",
+						children: t("opening.page", { page: page + 1, total: pageCount })
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						"aria-label": t("opening.next"),
+						disabled: page >= pageCount - 1,
+						onClick: () => {
+							setPage((current) => Math.min(pageCount - 1, current + 1));
+						},
+						children: "›"
+					})]
+				})]
+			})] });
+		}
 		/** Selected-template reference shown only while the standard Session is blank. */
 		function OfficePptStandardInputAccessory(props) {
-			if (!props.session.blank) return null;
+			if (props.session == null || !props.session.blank) return null;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OfficePptInputAccessory, { ...props });
 		}
 		/** Monochrome presentation screen used by both PPT mode controls. */
@@ -493,37 +821,45 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			});
 		}
 		/** PPT option and template chooser shared by both Composer layouts. */
+		/* PERSONAL_TEMPLATE_MANAGER */
 		function OfficePptChooser({ client, mode, sessionId, t, placement, loadTemplates = true }) {
 			const state = useMode(mode, sessionId);
 			const modeRootRef = (0, react.useRef)(null);
 			const templatePanelRef = (0, react.useRef)(null);
 			const templateViewportRef = (0, react.useRef)(null);
 			const [category, setCategory] = (0, react.useState)("all");
+			const bindingRef = (0, react.useRef)({ client, sessionId });
+			bindingRef.current = { client, sessionId };
+			const catalogRevision = mode.revision(sessionId);
 			(0, react.useEffect)(() => {
-				if (!loadTemplates || state.loading || state.templates.length > 0 || state.error !== "") return;
+				if (!loadTemplates || state.templates.length > 0 || state.error !== "") return;
+				const request = { client, sessionId };
+				const seenRevision = catalogRevision;
 				mode.setLoading(sessionId, true);
+				let active = true;
 				loadTemplateState(client, t("templates.loadTimeout")).then((next) => {
-					const activeMode = mode.snapshot(sessionId).activeMode ?? (next.presentationMode === "ppt" ? "ppt" : null);
-					mode.setTemplates(sessionId, next.templates);
-					if (activeMode === null) return;
-					mode.setMode(sessionId, activeMode);
-					const selected = next.templates.find((template) => template.id === next.selectedTemplateId && templateSupportsMode(template, "ppt"));
-					if (selected === void 0) {
-						mode.deselect(sessionId, activeMode);
-						return;
-					}
-					mode.select(sessionId, selected, activeMode);
-                    mode.setNotice(sessionId, next.templateMigration?.reason === "template-retired");
+					if (!active) return;
+					const current = bindingRef.current;
+					mode.applyLoadedTemplates(current.sessionId, current.client, seenRevision, next, request);
 				}).catch((reason) => {
-					mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+					if (!active) return;
+					const current = bindingRef.current;
+					if (current.client !== request.client || modeKey(current.sessionId) !== modeKey(request.sessionId)) return;
+					if (mode.revision(request.sessionId) !== seenRevision) return;
+					mode.setError(request.sessionId, reason instanceof Error ? reason.message : String(reason));
 				});
+				return () => {
+					active = false;
+				};
+				// loading is not a dependency: setLoading would cancel this request.
+				// catalogRevision is: a mode click invalidates the response, so the effect loads again.
 			}, [
+				catalogRevision,
 				client,
 				loadTemplates,
 				mode,
 				sessionId,
 				state.error,
-				state.loading,
 				state.templates.length,
 				t
 			]);
@@ -531,14 +867,23 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				deselectTemplate(client, mode, sessionId, state.activeMode ?? "ppt");
 			};
 			const select = (template, activeMode = state.activeMode ?? "ppt") => {
+				if (!client.bound) {
+					mode.select(sessionId, template, activeMode);
+                    announcePptMode(sessionId);
+					return;
+				}
+                mode.bump(sessionId);
+                const revision = mode.revision(sessionId);
 				mode.setLoading(sessionId, true);
 				client.call("template/select", {
 					templateId: template.id,
 					mode: activeMode
 				}).then(() => {
+                    if (mode.revision(sessionId) !== revision) return;
+                    announcePptMode(sessionId);
 					mode.select(sessionId, template, activeMode);
 				}).catch((reason) => {
-					mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
+					if (mode.revision(sessionId) === revision) mode.setError(sessionId, reason instanceof Error ? reason.message : String(reason));
 				});
 			};
 			const choose = (template) => {
@@ -565,8 +910,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				select(selected, "ppt");
 			};
 			const modeTemplates = state.templates.filter((template) => templateSupportsMode(template, "ppt"));
-			const templateCategories = ["all", ...new Set(modeTemplates.map(templateCategory))];
-			const visibleTemplates = modeTemplates.filter((template) => category === "all" || templateCategory(template) === category);
+			const templateCategories = ["all", ...new Set(modeTemplates.filter(item => item.origin !== "personal").map(templateCategory)), "personal"];
+			const visibleTemplates = modeTemplates.filter((template) => category === "all" ? template.origin !== "personal" : templateCategory(template) === category);
 			(0, react.useEffect)(() => {
 				if (!templateCategories.includes(category)) setCategory("all");
 			}, [category, templateCategories]);
@@ -580,6 +925,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				if (scrollBody === null || composerCard === null) return;
 				const syncGeometry = () => {
 					const scrollRect = scrollBody.getBoundingClientRect();
+					const cardRect = composerCard.getBoundingClientRect();
+					root.style.setProperty("--office-ppt-template-panel-width", `${Math.min(cardRect.width, scrollRect.width)}px`);
 					const panelRect = panel.getBoundingClientRect();
 					const availableHeight = Math.max(TEMPLATE_PANEL_MIN_HEIGHT_PX, Math.floor(scrollRect.bottom - panelRect.top - TEMPLATE_DOCK_BOTTOM_PX));
 					root.style.setProperty("--office-ppt-template-panel-height", `${availableHeight}px`);
@@ -594,6 +941,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 					resizeObserver?.disconnect();
 					window.removeEventListener("resize", syncGeometry);
 					root.style.removeProperty("--office-ppt-template-panel-height");
+					root.style.removeProperty("--office-ppt-template-panel-width");
 				};
 			}, [placement, state.activeMode]);
 			if (placement === "trigger") return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -603,6 +951,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				"aria-expanded": state.activeMode === "ppt",
 				"aria-pressed": state.activeMode === "ppt",
 				"data-desktop-ppt": "",
+                "aria-busy": state.loading,
+                disabled: state.loading,
 				onClick: togglePpt,
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DesktopPptIcon, {}), t("mode.label")]
 			});
@@ -621,6 +971,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 						"aria-expanded": state.activeMode === "ppt",
 						"aria-pressed": state.activeMode === "ppt",
 						"data-desktop-ppt": "",
+                        "aria-busy": state.loading,
+                        disabled: state.loading,
 						onClick: togglePpt,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(DesktopPptIcon, {}), t("mode.label")]
 					})
@@ -650,11 +1002,11 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 						className: OfficePptHero_module_css_default.templateViewport,
 						"data-office-ppt-template-viewport": "",
 						"data-native-wheel-owner": "",
-						children: [state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						children: [(category === "all" || category === "personal") && react.createElement(PersonalTemplateManager, { key: sessionId, client, mode, sessionId, state, choose, t, mutable: client.bound === true, builtInCards: category === "all" ? visibleTemplates.map(template => react.createElement(TemplatePreviewCard, { key: template.id, template, selected: template.id === state.selectedId, choose, client, t })) : [] }), state.error !== "" && state.templates.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateError,
 							role: "alert",
 							children: state.error
-						}), state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						}), (category === "all" || category === "personal") ? null : state.loading && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.panelState,
 							children: t("status.loading")
 						}) : state.error !== "" && state.templates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -673,7 +1025,8 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 							children: t("templates.empty")
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: OfficePptHero_module_css_default.templateGrid,
-							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplateCard, {
+							children: visibleTemplates.map((template) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TemplatePreviewCard, {
+                                client, t,
 								template,
 								selected: template.id === state.selectedId,
 								choose
@@ -685,7 +1038,7 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 		}
 		/** Standard Composer chooser rendered in normal flow below the resident input card. */
 		function OfficePptStandardComposerDock(props) {
-			if (!props.session.blank) return null;
+			if (props.session != null && props.session.blank !== true) return null;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OfficePptChooser, {
 				...props,
 				placement: "fixed",
@@ -695,12 +1048,23 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 		/** PPT mode control beside the blank-session agent preset. */
 		function OfficePptStandardModeAction(props) {
             const state = useMode(props.mode, props.sessionId);
+            (0, react.useEffect)(() => {
+                if (!props.client?.bound) return;
+                let active = true;
+                props.mode.adopt(props.sessionId, props.client).then(result => {
+                    if (active && ['applied', 'partial'].includes(result) && props.mode.snapshot(props.sessionId).activeMode === 'ppt') announcePptMode(props.sessionId);
+                }).catch(reason => {
+                    if (active) props.mode.setError(props.sessionId, reason instanceof Error ? reason.message : String(reason));
+                });
+                return () => { active = false; };
+            }, [props.client, props.mode, props.sessionId]);
             return (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [
                 (0, react_jsx_runtime.jsx)(OfficePptChooser, { ...props, placement: "trigger" }),
+                state.error && state.activeMode === null ? (0, react_jsx_runtime.jsx)("span", { role: "alert", children: state.error }) : null,
                 state.notice && state.activeMode !== null ? (0, react_jsx_runtime.jsx)("span", {
                     role: "status", "data-ppt-template-migration": "",
                     style: { fontSize: 11, color: "var(--dsw-alias-label-secondary)", maxWidth: 300 },
-                    children: props.t("templates.migrated")
+                    children: props.t(state.notice === "personal-template-deleted" ? "personal.deletedSelection" : "templates.migrated")
                 }) : null
             ] });
         }
@@ -715,6 +1079,11 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"mode.region": "演示文稿模式",
 			"composer.selectedTemplate": "已选模板",
 			"composer.removeTemplate": "取消选择模板",
+			"opening.preview": "预览模板 {name}",
+			"opening.close": "关闭预览",
+			"opening.previous": "上一页",
+			"opening.next": "下一页",
+			"opening.page": "第 {page} 页，共 {total} 页",
 			"templates.title": "选择模板",
             "templates.migrated": "原模板已下架，已切换为工程蓝图。已有文件不受影响。",
 			"templates.categories": "模板分类",
@@ -722,6 +1091,44 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"templates.loadTimeout": "模板加载超时，请重试",
 			"templates.retry": "重新加载模板",
 			"templates.category.all": "全部",
+"templates.category.personal": "自定义",
+"personal.deletedSelection": "已选个人模板已被删除，请重新选择。",
+"personal.upload": "上传 PPT 模板",
+"personal.create": "新建自定义模板",
+"personal.selected": "已选中",
+"personal.local": "保存在当前 Desktop · PPTX",
+"personal.fileType": "请选择 PPTX 文件",
+"personal.readFailed": "文件读取失败，请重新选择",
+"personal.duplicate": "这份文件已在我的模板中，可直接选择使用",
+"personal.useSame": "做同款",
+"personal.view": "预览",
+"personal.zoomIn": "放大",
+"personal.zoomOut": "缩小",
+"personal.fit": "适应窗口",
+"personal.previewFailed": "预览加载失败，请重试",
+"personal.processing": "正在处理模板…",
+"personal.completedPages": "已完成",
+"personal.placeholderNotice": "部分对象已使用占位图，可在 PPT 中替换。",
+"personal.layouts": "版式",
+"personal.chooseFile": "重新选择 PPT",
+"personal.preview": "模板预览",
+"personal.name": "模板名称",
+"personal.previous": "上一页",
+"personal.next": "下一页",
+"personal.save": "保存模板",
+"personal.saved": "模板已保存",
+"personal.cancel": "取消",
+"personal.edit": "编辑模板",
+"personal.editTitle": "编辑自定义模板",
+"personal.description": "模板描述",
+"personal.descriptionPlaceholder": "描述模板的风格或适用场景（选填）",
+"personal.update": "保存修改",
+"personal.close": "关闭",
+"personal.deleteTitle": "删除模板",
+"personal.rename": "重命名",
+"personal.delete": "删除",
+"personal.deleteHint": "删除模板后，已生成的文件继续保留。",
+"personal.confirmDelete": "确认删除",
 			"templates.category.custom": "自定义",
 			"templates.category.business": "商务",
 			"templates.category.strategy": "策略",
@@ -779,6 +1186,11 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"mode.region": "Presentation modes",
 			"composer.selectedTemplate": "Selected template",
 			"composer.removeTemplate": "Remove selected template",
+			"opening.preview": "Preview template {name}",
+			"opening.close": "Close preview",
+			"opening.previous": "Previous page",
+			"opening.next": "Next page",
+			"opening.page": "Page {page} of {total}",
 			"templates.title": "Select template",
             "templates.migrated": "The previous template was retired. Engineering Blueprint is selected; existing files are unchanged.",
 			"templates.categories": "Template categories",
@@ -786,6 +1198,44 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			"templates.loadTimeout": "Template loading timed out. Try again.",
 			"templates.retry": "Reload templates",
 			"templates.category.all": "All",
+"templates.category.personal": "Custom",
+"personal.deletedSelection": "The selected personal template was deleted. Choose another template.",
+"personal.upload": "Upload PPT template",
+"personal.create": "Create custom template",
+"personal.selected": "Selected",
+"personal.local": "Saved in this Desktop profile · PPTX",
+"personal.fileType": "Choose a PPTX file",
+"personal.readFailed": "Could not read the file. Choose it again.",
+"personal.duplicate": "This file is already in My templates. Select it to reuse it.",
+"personal.useSame": "Use this template",
+"personal.view": "Preview",
+"personal.zoomIn": "Zoom in",
+"personal.zoomOut": "Zoom out",
+"personal.fit": "Fit to window",
+"personal.previewFailed": "Could not load preview. Please retry.",
+"personal.processing": "Processing template…",
+"personal.completedPages": "Completed",
+"personal.placeholderNotice": "Some objects use placeholders. You can replace them in the PPT.",
+"personal.layouts": "Layouts",
+"personal.chooseFile": "Choose another PPT",
+"personal.preview": "Template preview",
+"personal.name": "Template name",
+"personal.previous": "Previous page",
+"personal.next": "Next page",
+"personal.save": "Save template",
+"personal.saved": "Template saved",
+"personal.cancel": "Cancel",
+"personal.edit": "Edit template",
+"personal.editTitle": "Edit custom template",
+"personal.description": "Template description",
+"personal.descriptionPlaceholder": "Describe its style or use cases (optional)",
+"personal.update": "Save changes",
+"personal.close": "Close",
+"personal.deleteTitle": "Delete template",
+"personal.rename": "Rename",
+"personal.delete": "Delete",
+"personal.deleteHint": "Generated files are preserved when you delete a template.",
+"personal.confirmDelete": "Confirm delete",
 			"templates.category.custom": "Custom",
 			"templates.category.business": "Business",
 			"templates.category.strategy": "Strategy",
@@ -845,17 +1295,21 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 		* @param sessionId - Active conversation session.
 		* @returns Session-bound Office PPT client.
 		*/
+        function announcePptMode(sessionId) {
+            window.dispatchEvent(new CustomEvent('dsh-office-mode-change', { detail: { sessionId, origin: 'ppt' } }));
+        }
 		function createOfficePptClient(rpc, sessionId) {
-			return { async call(endpoint, payload = {}, signal) {
-				const outer = await rpc.call("/dsh-ppt", endpoint, {
-					sessionId,
-					...payload
-				}, signal);
+			const bound = typeof sessionId === "string" && sessionId.trim().length > 0;
+			return { bound, async call(endpoint, payload = {}, signal) {
+				const route = !bound && (endpoint === "state" || endpoint === "template/catalog") ? "template/catalog" : endpoint;
+				if (!bound && route !== "template/catalog") throw new Error("PPT session is not ready");
+				const outer = await rpc.call("/dsh-ppt", route, bound ? { sessionId, ...payload } : {}, signal);
 				if (!outer.ok) throw new Error(outer.error.message);
 				const raw = outer.value;
 				if (raw === null || typeof raw !== "object" || !("status" in raw)) throw new Error("Office PPT returned an invalid response");
 				const inner = raw;
 				if (inner.status === "error") throw new Error(inner.error.message);
+				if (!bound && endpoint === "state") return { templates: inner.data?.templates ?? [], selectedTemplateId: null, presentationMode: null };
 				return inner.data;
 			} };
 		}
@@ -875,6 +1329,16 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 			}), "dsh-ppt: dictionaries");
 			const connection = ctx.get("connection");
 			const mode = new OfficePptHeroStore();
+            ctx.effect(() => {
+                const listener = event => {
+                    const detail = event.detail;
+                    if (detail?.origin !== 'office') return;
+                    mode.bump(detail.sessionId);
+                    mode.update(detail.sessionId, current => ({ ...current, activeMode: null, selectedId: null, engaged: false, loading: false, error: '' }));
+                };
+                window.addEventListener('dsh-office-mode-change', listener);
+                return () => window.removeEventListener('dsh-office-mode-change', listener);
+            }, 'PPT / Office mode synchronization');
 			return (sessionId) => ({
 				client: createOfficePptClient(connection.rpc, sessionId),
 				mode
@@ -900,6 +1364,20 @@ button[data-desktop-ppt]:focus-visible{outline:2px solid var(--dsw-alias-label-p
 				locale: NS,
 				inject: injectHero
 			}, OfficePptStandardInputAccessory));
+			ctx.slots.inject("conversation.chat.userMessageFooter", () => ctx.slots.register({
+				name: "conversation.chat.userMessageFooter",
+				id: "dsh-ppt",
+				order: 20,
+				locale: NS,
+				inject: injectHero
+			}, OfficePptOpeningTemplateCard));
+			ctx.slots.inject("conversation.hero.dock", () => ctx.slots.register({
+				name: "conversation.hero.dock",
+				id: "dsh-ppt",
+				order: 20,
+				locale: NS,
+				inject: injectHero
+			}, OfficePptStandardComposerDock));
 			ctx.slots.inject("conversation.composer.dock", () => ctx.slots.register({
 				name: "conversation.composer.dock",
 				id: "dsh-ppt",

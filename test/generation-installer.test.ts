@@ -319,6 +319,43 @@ describe('the generation installer', () => {
     ).rejects.toThrow()
   })
 
+  it('keeps an @deepseek-ai plugin in its own generation while hoisting its host singletons', async () => {
+    // The singleton pattern covers the whole @deepseek-ai scope, which once
+    // removed the plugin itself: migration then failed with ENOENT on its
+    // package.json and rolled the Profile back.
+    const home = await freshHome()
+    const plugin = '@deepseek-ai/dsh-subagent-demo'
+    const result = await installGeneration({
+      dshHome: home,
+      pluginSpec: `${plugin}@0.1.0`,
+      expectedPluginName: plugin,
+      nodeExecutablePath: 'node',
+      pnpmEntryPath: 'pnpm',
+      runInstall: stubInstall(async (staging) => {
+        const modules = join(staging, 'node_modules')
+        await writeFile(join(staging, 'package.json'), JSON.stringify({ dependencies: { [plugin]: '0.1.0' } }))
+        await mkdir(join(modules, plugin), { recursive: true })
+        await writeFile(join(modules, plugin, 'package.json'), JSON.stringify({ name: plugin, version: '0.1.0' }))
+        await mkdir(join(modules, '@deepseek-ai', 'schemastery'), { recursive: true })
+        await writeFile(join(modules, '@deepseek-ai', 'schemastery', 'index.js'), '')
+        // A nested copy of the plugin's own name is still a private host package.
+        await mkdir(join(modules, 'lodash', 'node_modules', plugin), { recursive: true })
+        await writeFile(join(modules, 'lodash', 'package.json'), JSON.stringify({ name: 'lodash', version: '4.0.0' }))
+        await writeFile(join(modules, 'lodash', 'node_modules', plugin, 'index.js'), '')
+        await writeFile(join(staging, 'pnpm-lock.yaml'), 'x\n')
+      })
+    })
+
+    expect(result.ok, result.detail).toBe(true)
+    expect(result.hoisted?.sort()).toEqual(['@deepseek-ai/dsh-subagent-demo', '@deepseek-ai/schemastery'])
+    const generation = result.generation!
+    const generationModules = join(generation.directory, 'node_modules')
+    expect(JSON.parse(await readFile(join(generationModules, plugin, 'package.json'), 'utf8')).name).toBe(plugin)
+    await expect(readFile(join(generationModules, 'lodash', 'node_modules', plugin, 'index.js'))).rejects.toThrow()
+    await expect(readFile(join(generationModules, '@deepseek-ai', 'schemastery', 'index.js'))).rejects.toThrow()
+    expect(await verifyGenerationPeers(home, generation)).toEqual({ ok: true, problems: [] })
+  })
+
   it('fails without promoting when pnpm exits non-zero', async () => {
     const home = await freshHome()
     const result = await installGeneration({
@@ -549,6 +586,40 @@ describe('the generation installer', () => {
     )
   })
 
+  it('validates current host entries when legacy Profile links point at an older installation', async () => {
+    const home = await freshHome()
+    const checkout = join(home, 'current-installation')
+    const dshEntryPath = join(checkout, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+    const directory = join(checkout, '.generations', 'plugin')
+    const plugin = join(directory, 'node_modules', 'root-plugin')
+    const name = '@deepseek-ai/dsh-llm'
+    const oldPackage = join(home, 'old-installation', 'node_modules', name)
+    const currentPackage = join(checkout, 'node_modules', name)
+    for (const root of [oldPackage, currentPackage]) {
+      await mkdir(root, { recursive: true })
+      await writeFile(join(root, 'package.json'), JSON.stringify({ name, main: 'index.js' }))
+      await writeFile(join(root, 'index.js'), 'module.exports = {}')
+    }
+    const closure = join(home, 'profiles', 'node_modules')
+    await mkdir(join(closure, '@deepseek-ai'), { recursive: true })
+    await symlink(oldPackage, join(closure, name), 'junction')
+    await mkdir(plugin, { recursive: true })
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin', peerDependencies: { [name]: '*' } }))
+    const generation = { id: 'plugin', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    expect(await verifyGenerationPeers(home, generation, { dshEntryPath })).toEqual({ ok: true, problems: [] })
+
+    // Merely being in the current checkout does not authorize arbitrary dependencies.
+    const other = join(checkout, 'node_modules', 'unrelated')
+    await mkdir(other, { recursive: true })
+    await writeFile(join(other, 'package.json'), JSON.stringify({ name: 'unrelated', main: 'index.js' }))
+    await writeFile(join(other, 'index.js'), 'module.exports = {}')
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin', dependencies: { unrelated: '*' } }))
+    expect((await verifyGenerationPeers(home, generation, { dshEntryPath })).problems).toEqual([
+      expect.stringContaining('unrelated resolves outside the generation and installation closure')
+    ])
+  })
+
   it('validates host singletons declared by a transitive package, not only the root plugin', async () => {
     const home = await freshHome()
     const directory = join(home, 'profiles', '.generations', 'live', 'transitive-peer')
@@ -634,6 +705,35 @@ describe('the generation installer', () => {
     expect((await verifyGenerationPeers(home, generation)).problems).toContain(
       'subpaths does not resolve from the generation or installation closure'
     )
+  })
+
+  it('validates CLI-only host peers by their executable while retaining closure checks', async () => {
+    const home = await freshHome()
+    const directory = join(home, 'profiles', '.generations', 'live', 'cli-peer')
+    const plugin = join(directory, 'node_modules', 'root-plugin')
+    const host = join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh')
+    await mkdir(plugin, { recursive: true })
+    await mkdir(join(host, 'lib'), { recursive: true })
+    await writeFile(join(plugin, 'package.json'), JSON.stringify({ name: 'root-plugin',
+      peerDependencies: { '@deepseek-ai/dsh': '>=0.1.7-rc.2' } }))
+    await writeFile(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh',
+      version: '0.1.7-rc.2', type: 'module', bin: { dsh: 'lib/bin.js' } }))
+    const entry = join(host, 'lib', 'bin.js')
+    await writeFile(entry, 'throw new Error("validation must not execute the CLI")')
+    const generation = { id: 'cli-peer', pluginName: 'root-plugin', version: '1.0.0', directory }
+    expect(await verifyGenerationPeers(home, generation, { dshEntryPath: entry })).toEqual({ ok: true, problems: [] })
+    await rm(entry)
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    await mkdir(entry)
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    await rm(entry, { recursive: true })
+    await writeFile(entry, '')
+    await writeFile(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh',
+      main: 'missing.js', bin: { dsh: 'lib/bin.js' } }))
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
+    await writeFile(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', bin: '../escape.js' }))
+    await writeFile(join(host, '..', 'escape.js'), '')
+    expect((await verifyGenerationPeers(home, generation)).ok).toBe(false)
   })
 
   it('does not accept a broken root entry merely because its package manifest exists', async () => {

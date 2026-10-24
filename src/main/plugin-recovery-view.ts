@@ -59,6 +59,8 @@ export interface PluginRecoveryViewModel {
   quitLabel: string
   safeModeLabel: string
   canUninstall: boolean
+  /** No plugin or market is blamed: entering Safe Mode is the only recovery on offer. */
+  safeModeOnly: boolean
 }
 
 interface FailureDescription {
@@ -87,6 +89,15 @@ export function describePluginFailure(
   locale: PluginRecoveryLocale
 ): FailureDescription {
   const text = latestAttemptText(logs)
+  if (text.includes('@deepseek-ai/dsh-workflow-worker-thread')) {
+    return locale === 'zh' ? {
+      title: '插件引用了旧版工作流组件',
+      detail: '当前 Harness 已改用 workflow-ptc。请升级该插件以适配新版工作流引擎。'
+    } : {
+      title: 'A plugin references the removed workflow implementation',
+      detail: 'Current Harness uses workflow-ptc. Update the owning plugin to support the new workflow engine.'
+    }
+  }
   const duplicateRoute = text.match(/duplicate prefix route ["']([^"']+)["']/i)?.[1]
 
   if (duplicateRoute) {
@@ -151,7 +162,7 @@ export function describePluginFailure(
         }
   }
 
-  if (/failed to import loader entry/i.test(text)) {
+  if (/failed to (?:apply|import) loader entry/i.test(text)) {
     return locale === 'zh'
       ? {
           title: '插件代码加载失败',
@@ -201,6 +212,7 @@ export function buildPluginRecoveryViewModel(options: {
   const marketCheck = options.market ? buildMarketCheck(locale, options.market) : undefined
   const marketPrimary = marketCheck !== undefined && !canUninstall
   const marketUpgrade = marketCheck?.upgradeLabel !== undefined
+  const safeModeOnly = !canUninstall && upgradeCandidate === undefined && !marketPrimary
 
   if (locale === 'zh') {
     return {
@@ -221,7 +233,9 @@ export function buildPluginRecoveryViewModel(options: {
         ? `已处理 ${removedPlugins.length} 个插件，正在继续检查剩余问题。`
         : undefined,
       notice,
-      safetyNote: '工作区、会话、模型配置和其他插件不会被删除。',
+      safetyNote: safeModeOnly
+        ? '安全模式不会删除或修改任何内容，随时可以退出。'
+        : '工作区、会话、模型配置和其他插件不会被删除。',
       primaryLabel: canUninstall
         ? multiple ? `卸载这 ${plugins.length} 个插件并继续检测` : '卸载此插件并继续检测'
         : marketPrimary ? marketUpgrade ? '升级插件并重启' : '卸载此插件并继续检测' : '进入安全模式',
@@ -250,7 +264,8 @@ export function buildPluginRecoveryViewModel(options: {
       rawError: snapshot.message,
       quitLabel: '退出 DSH Desktop',
       safeModeLabel: '进入安全模式',
-      canUninstall
+      canUninstall,
+      safeModeOnly
     }
   }
 
@@ -272,7 +287,9 @@ export function buildPluginRecoveryViewModel(options: {
       ? `${removedPlugins.length} plugin${removedPlugins.length === 1 ? '' : 's'} handled. Checking for remaining issues.`
       : undefined,
     notice,
-    safetyNote: 'Your workspaces, sessions, model settings, and other plugins will not be removed.',
+    safetyNote: safeModeOnly
+      ? 'Safe Mode does not delete or change anything, and you can exit at any time.'
+      : 'Your workspaces, sessions, model settings, and other plugins will not be removed.',
     primaryLabel: canUninstall
       ? multiple ? `Remove these ${plugins.length} plugins and continue` : 'Remove this plugin and continue'
       : marketPrimary ? marketUpgrade ? 'Upgrade plugin and restart' : 'Remove this plugin and continue' : 'Enter Safe Mode',
@@ -301,9 +318,11 @@ export function buildPluginRecoveryViewModel(options: {
     rawError: snapshot.message,
     quitLabel: 'Quit DSH Desktop',
     safeModeLabel: 'Enter Safe Mode',
-    canUninstall
+    canUninstall,
+    safeModeOnly
   }
 }
+
 
 function buildMarketCheck(
   locale: PluginRecoveryLocale,

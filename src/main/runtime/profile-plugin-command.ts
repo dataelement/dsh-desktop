@@ -3,6 +3,11 @@ import { existsSync } from 'node:fs'
 import { chmod, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join } from 'node:path'
 import { resolveEnvironmentPath } from './harness-runtime'
+import {
+  HIDE_CONSOLE_BOOTSTRAP_ENV,
+  hideConsoleCmdAssignment,
+  hideConsoleImportArguments
+} from 'dsh-desktop-market-installer/windows-hide-console'
 
 const PROFILE = 'web'
 const OPERATION_TIMEOUT_MS = 15 * 60 * 1000
@@ -44,8 +49,17 @@ export interface ProfilePluginCommandOptions {
    * recovery until Harness next rewrote them.
    */
   pnpmRunnerPath?: string
+  /**
+   * Windows console-hide bootstrap. The `.cmd` shim restores it after package
+   * commands scrub `DSH_*`, and the dsh CLI is started with `--import` so its
+   * own `pnpm.cmd` child does not open a console.
+   */
+  hideConsoleBootstrapPath?: string
   environment?: NodeJS.ProcessEnv
 }
+
+/** What a package command needs besides the dsh entry: the runtime, pnpm and shims. */
+export type PackageCommandRuntime = Omit<ProfilePluginCommandOptions, 'dshEntryPath'> & { dshEntryPath?: string }
 
 export interface ProfilePluginCommandResult {
   ok: boolean
@@ -91,7 +105,7 @@ export function buildProfileInstallArguments(dshEntryPath: string): string[] {
   return [dshEntryPath, 'plugin', '--profile', PROFILE, 'install', '--no-frozen-lockfile']
 }
 
-export function buildPnpmShimCommand(options: ProfilePluginCommandOptions): string[] {
+export function buildPnpmShimCommand(options: PackageCommandRuntime): string[] {
   const runner =
     options.pnpmRunnerPath !== undefined && existsSync(options.pnpmRunnerPath)
       ? [options.pnpmRunnerPath]
@@ -99,7 +113,7 @@ export function buildPnpmShimCommand(options: ProfilePluginCommandOptions): stri
   return [...runner, options.pnpmEntryPath]
 }
 
-export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions): Promise<string> {
+export async function ensureProfilePnpmShim(options: PackageCommandRuntime): Promise<string> {
   const directory = join(options.dshHome, '.desktop-bin')
   await mkdir(directory, { recursive: true })
   const command = buildPnpmShimCommand(options)
@@ -110,23 +124,24 @@ export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions
   }
 
   if (process.platform === 'win32') {
+    const hideConsoleAssignment = hideConsoleCmdAssignment(options.hideConsoleBootstrapPath)
     await writeFile(
       join(directory, 'pnpm.cmd'),
-      `@chcp 65001 >nul\r\n@echo off\r\n"${options.nodeExecutablePath}" ${command
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n${hideConsoleAssignment}"${options.nodeExecutablePath}" ${command
         .map((part) => `"${part}"`)
         .join(' ')} %*\r\n`,
       'utf8'
     )
     await writeFile(
       join(directory, 'node.cmd'),
-      `@chcp 65001 >nul\r\n@echo off\r\n"${options.nodeExecutablePath}" %*\r\n`,
+      `@chcp 65001 >nul\r\n@echo off\r\n@set ELECTRON_RUN_AS_NODE=1\r\n"${options.nodeExecutablePath}" %*\r\n`,
       'utf8'
     )
   } else {
     const pnpmPath = join(directory, 'pnpm')
     await writeFile(
       pnpmPath,
-      `#!/bin/sh\nexec ${shellQuote(options.nodeExecutablePath)} ${command
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(options.nodeExecutablePath)} ${command
         .map(shellQuote)
         .join(' ')} "$@"\n`,
       { encoding: 'utf8', mode: 0o755 }
@@ -135,7 +150,7 @@ export async function ensureProfilePnpmShim(options: ProfilePluginCommandOptions
     const nodePath = join(directory, 'node')
     await writeFile(
       nodePath,
-      `#!/bin/sh\nexec ${shellQuote(options.nodeExecutablePath)} "$@"\n`,
+      `#!/bin/sh\nexport ELECTRON_RUN_AS_NODE=1\nexec ${shellQuote(options.nodeExecutablePath)} "$@"\n`,
       { encoding: 'utf8', mode: 0o755 }
     )
     await chmod(nodePath, 0o755)
@@ -161,10 +176,13 @@ async function profileHasGenerationProjection(dshHome: string): Promise<boolean>
 export function buildProfilePluginCommandEnvironment(
   environment: NodeJS.ProcessEnv,
   shimDirectory: string,
-  nodeExecutablePath: string
+  nodeExecutablePath: string,
+  platform: NodeJS.Platform = process.platform
 ): NodeJS.ProcessEnv {
   const result = { ...environment }
-  delete result.ELECTRON_RUN_AS_NODE
+  // The runtime is the Electron executable on every platform (the macOS Helper),
+  // which runs the dsh CLI and pnpm as Node only in this mode.
+  result.ELECTRON_RUN_AS_NODE = '1'
 
   // The spread above keeps only the casing the OS block actually stores —
   // even for `process.env`, whose case-insensitivity does not survive a
@@ -176,13 +194,37 @@ export function buildProfilePluginCommandEnvironment(
   )
   const nextPath = [...additions, currentPath].filter(Boolean).join(delimiter)
   result.PATH = nextPath
-  if (process.platform === 'win32') result.Path = nextPath
+  if (platform === 'win32') result.Path = nextPath
   result.DSH_HOME = result.DSH_HOME ?? ''
   result.CI = 'true'
   result.NO_COLOR = '1'
   result.npm_config_side_effects_cache = 'false'
   result.PNPM_CONFIG_SIDE_EFFECTS_CACHE = 'false'
   return result
+}
+
+/**
+ * Environment for a package command run by the main process: rewrites the
+ * `.desktop-bin` shims for the current runtime first — an upgraded install may
+ * still hold shims naming a runtime that no longer exists — and puts them on
+ * PATH. pnpm adds only its own runtime's directory for lifecycle scripts, and
+ * the Electron runtime ships no `node` there, so `node` in a dependency's
+ * install script resolves only through this shim.
+ */
+export async function packageCommandEnvironment(options: PackageCommandRuntime): Promise<NodeJS.ProcessEnv> {
+  const shimDirectory = await ensureProfilePnpmShim(options)
+  const environment = buildProfilePluginCommandEnvironment(
+    options.environment ?? process.env,
+    shimDirectory,
+    options.nodeExecutablePath
+  )
+  environment.DSH_HOME = options.dshHome
+  if (options.hideConsoleBootstrapPath !== undefined) {
+    environment[HIDE_CONSOLE_BOOTSTRAP_ENV] = options.hideConsoleBootstrapPath
+  } else {
+    delete environment[HIDE_CONSOLE_BOOTSTRAP_ENV]
+  }
+  return environment
 }
 
 /**
@@ -331,17 +373,11 @@ async function runProfileCommand(
   }
 
   try {
-    const shimDirectory = await ensureProfilePnpmShim(options)
-    const environment = buildProfilePluginCommandEnvironment(
-      options.environment ?? process.env,
-      shimDirectory,
-      options.nodeExecutablePath
-    )
-    environment.DSH_HOME = options.dshHome
+    const environment = await packageCommandEnvironment(options)
 
     const child = spawn(
       options.nodeExecutablePath,
-      commandArguments,
+      [...hideConsoleImportArguments(environment), ...commandArguments],
       {
         cwd: profileDirectory,
         env: environment,

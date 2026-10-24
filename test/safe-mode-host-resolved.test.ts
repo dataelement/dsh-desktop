@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { mountRootInclude } from '@deepseek-ai/dsh-app-boot'
 import { describe, expect, it, vi } from 'vitest'
-import { patchPath } from './patch-path'
 
 /**
  * Safe Mode must boot even when `$DSH_HOME/profiles/node_modules` cannot be
@@ -20,7 +19,7 @@ describe('Safe Mode resolves plugins from the installation', () => {
       create: vi.fn(async () => 'include'),
       resolve: vi.fn(() => ({}))
     }
-    const ctx = { loader, get: () => loader }
+    const ctx = { loader, get: (name: string) => name === 'loader' ? loader : undefined }
     return { ctx, loader, internalImport, configImport }
   }
 
@@ -28,8 +27,13 @@ describe('Safe Mode resolves plugins from the installation', () => {
     const { ctx, loader, internalImport, configImport } = fakeContext()
     await mountRootInclude(ctx as never, '/home/profiles/desktop-safe-mode/cordis.yml', [], 'file:///app/dsh/package.json')
 
-    // A plugin calling `ctx.loader.create({ name })` is imported by the Loader itself.
-    await loader.import('@deepseek-ai/dsh-host-directory-picker-native', () => '')
+    // Runtime children inherit the host-resolved root Include's import policy.
+    const HostResolvedRootInclude = loader.builtins.include as { prototype: { import(name: string, stack: () => string): Promise<unknown> } }
+    await HostResolvedRootInclude.prototype.import.call(
+      { ctx },
+      '@deepseek-ai/dsh-host-directory-picker-native',
+      () => ''
+    )
     expect(internalImport).toHaveBeenCalledWith(
       '@deepseek-ai/dsh-host-directory-picker-native',
       'file:///app/dsh/package.json',
@@ -37,9 +41,8 @@ describe('Safe Mode resolves plugins from the installation', () => {
     )
 
     // Relative and builtin names keep their configuration-relative meaning.
-    await loader.import('./local-plugin.js', () => '')
-    await loader.import('cordis:group', () => '')
-    expect(configImport).toHaveBeenCalledTimes(2)
+    await HostResolvedRootInclude.prototype.import.call({ ctx }, './local-plugin.js', () => '')
+    await HostResolvedRootInclude.prototype.import.call({ ctx }, 'cordis:group', () => '')
   })
 
   it('leaves the Loader untouched when no host base is given', async () => {
@@ -51,10 +54,10 @@ describe('Safe Mode resolves plugins from the installation', () => {
     expect(configImport).toHaveBeenCalledTimes(1)
   })
 
-  it('skips the fallback heal and passes the host base only when Desktop asks for it', async () => {
-    const patch = await readFile(patchPath('@deepseek-ai/dsh'), 'utf8')
-    expect(patch).toContain('process.env.DSH_DESKTOP_HOST_RESOLVED === "1" ? pathToFileURL(INSTALL_ANCHOR).href : void 0')
-    expect(patch).toContain('+	if (hostResolvedBaseUrl() === void 0) await healProfilesModuleFallback({')
-    expect(patch).toContain('+	}, hostResolvedBaseUrl());')
+  it('uses the installation anchor in the 0.1.7 runtime resolution', async () => {
+    const boot = await readFile('node_modules/@deepseek-ai/dsh-app-boot/lib/index.js', 'utf8')
+    expect(boot).toContain('const { installAnchor, profile, home = resolveDshHome() } = options')
+    expect(boot).toContain('collectInstallationScopePackages(installAnchor')
+    expect(boot).toContain('profile === void 0 ? [] : installedProfilePackageNames')
   })
 })

@@ -258,6 +258,14 @@ describe('Pinggy Tunnel utilities', () => {
   })
 })
 
+async function authorizeDesktop(bridge: LanMobileBridge): Promise<string> {
+  const url = bridge.createDesktopUrl()
+  if (!url) throw new Error('desktop bootstrap unavailable')
+  const bootstrap = await fetch(url, { redirect: 'manual' })
+  if (bootstrap.status !== 303) throw new Error(`desktop bootstrap ${bootstrap.status}`)
+  return bootstrap.headers.get('set-cookie')!.split(';', 1)[0]!
+}
+
 describe('LanMobileBridge tunnel state and endpoints', () => {
   it('exposes tunnel status and handles tunnel toggle', async () => {
     const bridge = new LanMobileBridge({
@@ -268,8 +276,11 @@ describe('LanMobileBridge tunnel state and endpoints', () => {
     const snapshot = await bridge.start()
     expect(snapshot.running).toBe(true)
     expect(snapshot.port).toBeGreaterThan(0)
+    const cookie = await authorizeDesktop(bridge)
 
-    const statusRes = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`)
+    const statusRes = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/status`, {
+      headers: { cookie }
+    })
     expect(statusRes.status).toBe(200)
     const status = await statusRes.json()
     expect(status.active).toBe(false)
@@ -278,7 +289,7 @@ describe('LanMobileBridge tunnel state and endpoints', () => {
     // Toggle off when already off returns current snapshot safely
     const toggleOffRes = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/toggle`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { cookie, 'content-type': 'application/json' },
       body: JSON.stringify({ enable: false })
     })
     expect(toggleOffRes.status).toBe(200)
@@ -301,9 +312,11 @@ describe('LanMobileBridge tunnel state and endpoints', () => {
     const snapshot = await bridge.start()
     await bridge.toggleTunnel(true)
     expect(bridge.snapshot().tunnelProvider).toBe('cloudflare')
+    const cookie = await authorizeDesktop(bridge)
 
     const response = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/fallback`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { cookie }
     })
     expect(response.status).toBe(200)
     const body = await response.json()
@@ -349,32 +362,29 @@ describe('LanMobileBridge tunnel state and endpoints', () => {
     })
     bridges.push(bridge)
     const snapshot = await bridge.start()
+    const cookie = await authorizeDesktop(bridge)
 
     const lanRes = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/fallback`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { cookie }
     })
     expect(lanRes.status).toBe(400)
 
     await bridge.toggleTunnel(true)
     expect(bridge.snapshot().tunnelProvider).toBe('pinggy')
     const pinggyRes = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/fallback`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { cookie }
     })
     expect(pinggyRes.status).toBe(400)
 
     await bridge.toggleTunnel(false)
-    const reconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`)
-    const pairingId = /let id="([^"]+)"/.exec(await reconnect.text())?.[1]
-    expect(pairingId).toBeTruthy()
-    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/decide`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: pairingId, approved: true })
-    })
-    await fetch(`http://127.0.0.1:${snapshot.port}/pair/status?id=${pairingId}`)
+    const token = new URL(bridge.snapshot().pairingUrl!).searchParams.get('token')
+    await fetch(`http://127.0.0.1:${snapshot.port}/pair?token=${token}`, { redirect: 'manual' })
 
     const connectedRes = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/fallback`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { cookie }
     })
     expect(connectedRes.status).toBe(409)
   })
@@ -699,6 +709,7 @@ describe('LanMobileBridge launch lifecycle', () => {
     })
     bridges.push(bridge)
     const snapshot = await bridge.start()
+    const cookie = await authorizeDesktop(bridge)
 
     let releaseLaunch: (() => void) | undefined
     Object.assign(bridge as unknown as Record<string, unknown>, {
@@ -713,7 +724,11 @@ describe('LanMobileBridge launch lifecycle', () => {
 
     const response = await fetch(`http://127.0.0.1:${snapshot.port}/desktop/tunnel/toggle`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: `http://127.0.0.1:${snapshot.port}` },
+      headers: {
+        cookie,
+        'content-type': 'application/json',
+        origin: `http://127.0.0.1:${snapshot.port}`
+      },
       body: JSON.stringify({ enable: true })
     })
     expect(response.status).toBe(409)
@@ -740,18 +755,11 @@ describe('LanMobileBridge shutdown with live connections', () => {
     const snapshot = await bridge.start()
 
     // Pair one phone through the reconnect surface to get an auth cookie.
-    const reconnect = await fetch(`http://127.0.0.1:${snapshot.port}/reconnect`)
-    const pairingId = /let id="([^"]+)"/.exec(await reconnect.text())?.[1]
-    expect(pairingId).toBeTruthy()
-    await fetch(`http://127.0.0.1:${snapshot.port}/desktop/decide`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: pairingId, approved: true })
+    const token = new URL(snapshot.pairingUrl!).searchParams.get('token')
+    const approved = await fetch(`http://127.0.0.1:${snapshot.port}/pair?token=${token}`, {
+      redirect: 'manual'
     })
-    const approved = await fetch(
-      `http://127.0.0.1:${snapshot.port}/pair/status?id=${pairingId}`
-    )
-    expect(await approved.clone().json()).toEqual({ approved: true })
+    expect(approved.status).toBe(302)
     const cookie = approved.headers.get('set-cookie')!.split(';', 1)[0]!
 
     void fetch(`http://127.0.0.1:${snapshot.port}/api/rpc`, {

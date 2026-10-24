@@ -1,0 +1,162 @@
+# 工作台市场验收规范
+
+版本：2026-09-29 · 以官网版本为准，DSH Desktop 内附文档副本供离线取用。
+
+官方地址：https://dshdesktop.com/workbench/docs/market-acceptance/
+
+Markdown 原文（供 Agent 读取）：https://dshdesktop.com/workbench/docs/market-acceptance.md
+
+开发与投稿前可先看[六步速览](https://dshdesktop.com/workbench/docs/quickstart/)（[Markdown 原文](https://dshdesktop.com/workbench/docs/quickstart.md)）。
+
+本文只适用于**想把工作台上架到工作台市场**的情况。只在本地开发、自己使用的工作台，满足《工作台开发规范》（https://dshdesktop.com/workbench/docs/development/ ）并在本机自测通过即可，不需要阅读本文，也不需要公开代码或上传任何资料。
+
+上架流程与 DSH 插件市场相同：作者把代码放到自己的公开 GitHub 仓库，再向 [awesome-dsh-workbench](https://github.com/dataelement/awesome-dsh-workbench) 提交一个收录 PR。简介、截图等资料只在这一步才需要准备。收录 YAML 与客户端索引的字段以该仓库的 `catalog/README.md` 和 `schema/` 为准，本文只说明作者要满足什么、审核看什么，不重新定义字段。
+
+规则分三级：**必须**（不满足就不能收录或安装）、**建议**、**可选**。
+
+## 1. 上架前提
+
+- 市场投稿是独立的用户意图。仅收到通用开发指令、发现一个已有工作台，或完成本机开发，都不代表用户要求公开代码或投稿；未明确要求上架时停在本机交付。开发目标未明确时先执行《工作台开发规范》的需求确认闸门。
+- **必须**满足《工作台开发规范》的全部“必须”项，并通过其中的本地自测清单。
+- **必须**在真实的 DSH Desktop 上安装并实际打开验证过；记录验证过的 Desktop 版本、操作系统和架构。未验证的平台不声明兼容。
+- 投稿前核对实际证据：最终安装来源及版本、包校验结果、Desktop 安装与打开记录、自测清单和对应截图。缺少证据的项目标为“未验证”，先完成验证；不能仅凭 Agent 计划、构建成功或“应当可安装”的推断填写“已通过”并提交公开 PR。
+
+## 2. 上架流程
+
+1. **公开仓库**：把代码提交到作者自己的公开 GitHub 仓库。
+2. **准备安装来源**：发布 npm 包，或上传 GitHub Release 安装包，或确保仓库源码可以直接安装（见第 4 节）。
+3. **准备上架资料**：名称、分类、中英文简介、截图（见第 5 节）。
+4. **提交收录 PR**：向 awesome-dsh-workbench 新增一个 `data/workbenches/<owner>__<repo>.yml`。提交 PR 就是进入审核，进度以 GitHub 上的 PR 为准，本机不保存投稿状态。
+5. **审核**：自动检查 + 首次人工阅读（见第 6 节）。根据意见修改，确认最新提交的检查通过。
+6. **上架**：PR 合并、市场目录更新后，工作台出现在工作台市场中，用户可以直接安装。
+
+只创建了 PR 时称为“已提交”；合并后称为“已合并，等待目录更新”；在市场中能看到条目后才称为“已上架”。
+
+### 三条最短投稿路径
+
+三条路径都须有《工作台开发规范》要求的包校验与本机安装实测证据；将最终可安装版本的真实界面截图放入作者仓库，再提交第 5 节的 YAML。任选一种来源：
+
+| 路径 | 最短步骤 | 投稿前核对 |
+|---|---|---|
+| 仅源码 | 公开仓库默认分支包含可直接安装的 `package.json`、入口、bundle patch 和构建产物 → 本机从该提交安装 → 提交 YAML | 安装固定到该提交；市场不会代跑构建 |
+| GitHub Release | `pnpm pack` → 上传 `.tgz` 到 Release → YAML 填 `tarball` → 本机从该下载地址安装 | 下载地址可访问，包内版本与 Release 对应；`latest/download` 使用固定文件名 |
+| npm | `pnpm pack` 核对内容 → 发布同一版本到 npm → 本机从该 npm 版本安装 → 提交 YAML | npm 包的 `repository` 指回投稿仓库，版本和包名一致 |
+
+提交 PR 后查看最新提交的所有检查及实际日志；只有检查确实执行并通过才能称“验收通过”。PR **已提交**表示等待审核，**已合并**表示进入目录更新，Desktop 市场中实际可见且可安装才是**市场可见**。fork 投稿与上游分支投稿应受同一检查标准约束；检查跳过或找不到关联 PR 时记“未完成/失败”，不得当作通过。
+
+## 3. 仓库与代码要求
+
+与 DSH 插件市场的收录要求一致：
+
+- **必须**是作者自己的公开 GitHub 仓库，并有许可证。私有仓库不能进入公共市场，但可以继续在本机或团队内部使用。
+- **必须**声明 `dsh.bundle`；只有 `dsh.client` 的包不可安装，不会被收录。
+- **必须**包含真实可用的代码，不收占位、只有 README 或抢注名称的仓库；持续维护，长期失效或归档的条目会被复查处理。
+- 不收只有依赖列表的聚合包；不能是 DSH 本身的副本。
+- 依赖**必须**指向原作者的仓库或其发布的 npm 包，不能把别人的插件重新上传到自己名下再依赖。
+- 不得包含混淆代码、窃取凭证或在安装时执行意外行为的代码。
+
+工作台市场的额外要求：
+
+- v1 只支持**仓库根目录放一个工作台**，暂不支持 monorepo 子目录。
+- `package.json` 是安装契约：完整 SemVer 版本、指回本仓库的 `repository`、`dsh.bundle.patch`、包含 `dsh-desktop-workbenches` 的 `dsh.client.inject`，以及真实存在的 `exports["./client"]`。新包的 `register()` 不声明 `id`；市场以 GitHub 仓库的 `owner/repository` 作为唯一身份。
+- 《工作台开发规范》第 4–7 节的界面边界、目录选择、会话归属和模式切换规则必须全部通过；市场验收不另设一套运行规则。
+
+## 4. 包与安装来源
+
+市场按 **npm → GitHub Release 安装包 → GitHub 源码** 的顺序选择来源，安装时锁定到具体版本或 commit，校验失败就报错，不会自动换来源。
+
+| 来源 | 作者要做什么 |
+|---|---|
+| npm 包（建议） | 发布真实版本；`package.json` 的 `name` 与 npm 包名一致，`repository` **必须**指回收录的仓库，否则市场不会采用 npm 来源 |
+| GitHub Release 安装包 | 上传 `pnpm pack` 生成的 `.tgz` 或 `.tar.gz`，在收录 YAML 的 `tarball` 中填写地址。使用 `releases/latest/download/<固定文件名>` 时文件名不要带版本号；否则固定 tag |
+| GitHub 源码 | 默认分支包含可直接安装的入口、构建产物和 bundle patch |
+
+- 打包后**必须**不超过 8 MiB。
+- 包内**不得**包含 `.env`、token、密钥、客户数据、数据库、本机绝对路径或无权公开的素材。
+- **建议**发布已构建的包。从源码安装只下载源码，不会运行 `build`；需要 `prepare` 等构建脚本时，用户必须单独授权，体验更差。
+- 不要依赖需要本机工具链的原生模块（node-gyp、Python、Rust 等），除非只通过预构建包分发。
+
+## 5. 上架资料
+
+资料写在收录 YAML 里，格式以 awesome-dsh-workbench 的 `catalog/README.md` 为准：
+
+```yaml
+url: https://github.com/owner/repo
+name: 项目助手
+category: productivity
+description:
+  zh: 帮助整理项目资料、跟进任务并生成工作报告。
+  en: Organize project materials, track tasks, and generate work reports.
+screenshots:
+  - https://raw.githubusercontent.com/owner/repo/main/docs/images/overview.webp
+```
+
+这是三条路径共用的**最小 YAML**；仅 GitHub Release 路径额外加入 `tarball: https://github.com/owner/repo/releases/latest/download/my-workbench.tgz`。仅源码与 npm 路径不加该字段。旧包迁移才可能保留 `workbenchId: wb-owner-repo`，新投稿不要加。
+
+| 资料 | 级别 | 要求 |
+|---|---|---|
+| `url` | 必须 | 仓库主页，与文件名 `<owner>__<repo>.yml` 一致 |
+| `workbenchId` | 可选，仅兼容旧包 | 新投稿不填写。旧 ID 迁移时若填写，必须是仓库派生的 `wb-<owner>-<repo>`；它不代替仓库身份，也不要求新包填写 `register({ id })` |
+| `name` | 必须 | 市场展示名称，一行 |
+| `category` | 必须 | 市场仓库 `data/categories.json` 中的分类之一 |
+| `description.zh`、`description.en` | 必须 | 中英文都要，各一行；**必须**属实，会对照代码核对，不写夸大或营销用语 |
+| `screenshots` | 必须 | 1–5 张，第一张为封面 |
+| `tarball` | 可选 | 只在需要指定 Release 安装包时填写 |
+
+截图要求：
+
+- 图片放在作者自己的仓库里，填写完整 HTTPS 地址（`raw.githubusercontent.com` 或 `github.com/.../blob/...`），不接受相对路径、其他仓库或第三方图床。
+- PNG、JPEG 或 WebP，单张不超过 2 MiB；建议横向 16:9、宽度至少 1280px。
+- **必须**在**最终提交的可安装版本**上实际打开 Desktop 拍摄真实产品画面；修订包后若画面有变化，重新截图。截图须与可安装版本相符、拥有使用权，不含凭证、个人信息或客户数据。
+
+不要在 YAML 里填写版本、npm 包名、校验值或作者 ID，这些由自动探测得到；不要修改市场仓库中生成的文件；只改自己的条目。
+
+PR 描述写明：工作台用途、本机验收结果、验证过的 Desktop 版本和平台、安装来源，以及需要注意的外部依赖、网络访问和数据位置。
+
+### 与 DSH 插件市场的不同之处
+
+| 项目 | DSH 插件市场 | 工作台市场 |
+|---|---|---|
+| 收录仓库 | `awesome-dsh-plugin` | `dataelement/awesome-dsh-workbench` |
+| 文件 | `data/plugins/<owner>__<repo>.yml` | `data/workbenches/<owner>__<repo>.yml` |
+| 分类 | 23 个插件分类 | 7 个工作台分类 |
+| 简介 | `en` 必填，`zh` 可选 | `zh` 和 `en` 都必填 |
+| 截图 | 作者仓库的 `screenshots.json`，1–8 张 | 写在收录 YAML 中，1–5 张 |
+| monorepo | 支持子包 | v1 暂不支持 |
+| 额外检查 | — | `package.json` 安装契约、客户端入口、包体积 |
+
+## 6. 审核与验收
+
+**自动检查**（PR 上运行）：
+
+- YAML 格式、字段、分类、文件名、重复条目和改动范围。
+- 仓库可以访问、未归档、有真实代码、`package.json` 满足安装契约、有许可证。
+- 按安装来源下载实际的包，核对包名、版本、工作台 id、入口、bundle patch 和体积。
+- 截图可以访问，格式、大小和数量符合要求。
+
+检查因网络或配额没有完成时，结果是“未完成”，不能算作通过；合并前以最新提交的检查结果为准。
+作者可以在市场仓库运行 `npm run check` 预检，再查看 PR 工作流日志，确认关联 PR 探测实际执行；“工作流成功但探测跳过”不算验收通过。
+
+**首次人工阅读**：维护者对照代码核对描述是否属实、是否重复、有无明显异常行为、是否符合《工作台开发规范》的运行规则。这不是完整的安全审计。
+
+**验收清单**（作者提交前自查，审核者据此核对）：
+
+- [ ] 有最终安装来源与版本的包校验记录、本机安装和实际打开证据；本地自测逐项记录结果及未验证项，并记录 Desktop 版本和平台。
+- [ ] 公开仓库，有许可证；代码真实可用，没有密钥或用户数据。
+- [ ] 至少有一个可用的安装来源；npm 包的 `repository` 指回该仓库；打包不超过 8 MiB。
+- [ ] 《工作台开发规范》第 4–7 节已逐项验证，包括目录选择、会话归属、模式切换、侧栏状态和工作台图标。
+- [ ] 收录 YAML 字段完整，以 `owner/repo` 作为身份；中英文简介属实，截图在最终可安装版本中实拍。
+- [ ] PR 只新增自己的一个 YAML 文件，描述写明验收结果和平台。
+
+## 7. 上架之后
+
+- **更新版本**：源码 PR 合并或只修改 `package.json` 版本号不等于市场版本发布。npm 来源必须发布新的 npm 版本；GitHub Release 来源必须创建新 Release，并上传收录条目约定的安装包文件名。使用 `releases/latest/download/<固定文件名>` 时通常不需要再提收录 PR，但必须验证固定地址、包内版本和完整性；固定地址或文件名变化时才提 PR 修改 `tarball`。源码安装来源更新提交后可由市场重新发现。每个版本仍由作者自己测试和验收。
+- **修改资料**：修改名称、分类、简介、截图地址或仓库地址时，提 PR 修改 YAML。
+- **用户侧**：安装和更新都由用户在 Desktop 市场中点击触发，重启 Harness 后生效，不会静默升级；卸载只移除包和入口，保留会话、项目文件、笔记和收藏。
+- **下架**：由市场仓库处理索引。条目不在索引中后，市场不再展示，也不能新装；已安装的用户可以继续使用。
+
+## 参考
+
+- DSH 插件市场收录规则：[awesome-dsh-plugin contributing.md](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)、[dsh-market](https://github.com/dsh-market/dsh-market)。
+- 工作台市场收录格式：[awesome-dsh-workbench](https://github.com/dataelement/awesome-dsh-workbench) 的 `catalog/README.md` 与 `schema/`。
+- 开发阶段的规则：《工作台开发规范》：https://dshdesktop.com/workbench/docs/development/ 。

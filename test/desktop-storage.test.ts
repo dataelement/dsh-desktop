@@ -1,8 +1,23 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DesktopStorageManager, STORAGE_FILENAME } from '../src/main/state/desktop-storage'
+
+const lockedDirectoryCodes = new Set(['EBUSY', 'EPERM', 'EACCES'])
+
+async function removeTempDir(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      await rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!code || !lockedDirectoryCodes.has(code) || attempt === 7) throw error
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)))
+    }
+  }
+}
 
 describe('DesktopStorageManager', () => {
   it('starts with empty store when storage file does not exist', async () => {
@@ -12,7 +27,7 @@ describe('DesktopStorageManager', () => {
       expect(manager.getAll()).toEqual({})
       expect(manager.getItem('foo')).toBeNull()
     } finally {
-      await rm(tempDir, { recursive: true, force: true })
+      await removeTempDir(tempDir)
     }
   })
 
@@ -34,7 +49,7 @@ describe('DesktopStorageManager', () => {
       manager.clear()
       expect(manager.getAll()).toEqual({})
     } finally {
-      await rm(tempDir, { recursive: true, force: true })
+      await removeTempDir(tempDir)
     }
   })
 
@@ -58,24 +73,35 @@ describe('DesktopStorageManager', () => {
       expect(manager2.getItem('plugin-theme')).toBe('dark')
       expect(manager2.getItem('plugin-token')).toBe('abc-xyz-999')
     } finally {
-      await rm(tempDir, { recursive: true, force: true })
+      await removeTempDir(tempDir)
     }
   })
 
   it('debounces async flushes', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'dsh-storage-test-'))
+    const manager = new DesktopStorageManager(tempDir, { debounceMs: 50 })
+    const flush = vi.spyOn(manager, 'flush')
+    vi.useFakeTimers()
     try {
-      const manager = new DesktopStorageManager(tempDir, { debounceMs: 50 })
       manager.setItem('async-key', 'first')
       manager.setItem('async-key', 'second')
 
-      // Wait for debounce timeout
-      await new Promise((resolve) => setTimeout(resolve, 100))
+      vi.advanceTimersByTime(49)
+      expect(flush).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(flush).toHaveBeenCalledTimes(1)
+      // The timer starts the real asynchronous write; wait for its rename to finish.
+      await flush.mock.results[0]?.value
 
       const fileContent = await readFile(join(tempDir, STORAGE_FILENAME), 'utf8')
       expect(JSON.parse(fileContent)).toEqual({ 'async-key': 'second' })
+      vi.runAllTimers()
+      expect(flush).toHaveBeenCalledTimes(1)
     } finally {
-      await rm(tempDir, { recursive: true, force: true })
+      await Promise.allSettled(flush.mock.results.map((result) => result.value))
+      flush.mockRestore()
+      vi.useRealTimers()
+      await removeTempDir(tempDir)
     }
   })
 
@@ -101,7 +127,7 @@ describe('DesktopStorageManager', () => {
       const restored = new DesktopStorageManager(tempDir)
       expect(restored.getItem('recovered')).toBe('true')
     } finally {
-      await rm(tempDir, { recursive: true, force: true })
+      await removeTempDir(tempDir)
     }
   })
 
@@ -119,7 +145,7 @@ describe('DesktopStorageManager', () => {
       manager.applyAction({ type: 'clear' })
       expect(manager.getAll()).toEqual({})
     } finally {
-      await rm(tempDir, { recursive: true, force: true })
+      await removeTempDir(tempDir)
     }
   })
 
@@ -142,8 +168,8 @@ describe('DesktopStorageManager', () => {
       expect(restored1.getItem('p1')).toBe('val1')
       expect(restored2.getItem('p2')).toBe('val2')
     } finally {
-      await rm(dir1, { recursive: true, force: true })
-      await rm(dir2, { recursive: true, force: true })
+      await removeTempDir(dir1)
+      await removeTempDir(dir2)
     }
   })
 })

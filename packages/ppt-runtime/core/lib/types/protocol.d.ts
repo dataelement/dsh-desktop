@@ -137,15 +137,17 @@ export interface OfficeTemplateSource {
 /** Presentation workflow that owns the selected template and authoring format. */
 export type OfficePresentationMode = 'ppt';
 /** Product-facing category retained from the Kimi design-system library. */
-export type OfficeTemplateCategory = 'strategy' | 'business' | 'work' | 'promotion' | 'academic' | 'consulting' | 'finance' | 'custom';
+export type OfficeTemplateCategory = 'strategy' | 'business' | 'work' | 'promotion' | 'academic' | 'consulting' | 'finance' | 'custom' | 'personal';
 /** Selectable presentation theme, page references, and model-facing visual guidance. */
 export interface OfficeTemplate {
+    readonly templateSamples?: import('./personal-template-samples.js').PersonalTemplateSamples;
+    readonly templateProfile?: import('./personal-template-profile.js').PersonalTemplateProfile;
     readonly id: OfficeTemplateId;
     readonly name: string;
     readonly description: string;
     /** Deck-level color roles that remain authoritative while adapting individual source pages. */
     readonly colorGuidance?: string;
-    readonly origin: 'built-in' | 'extracted';
+    readonly origin: 'built-in' | 'extracted' | 'personal';
     /** Explicit workflow availability. Older persisted templates default to both modes. */
     readonly supportedModes?: readonly OfficePresentationMode[];
     readonly category?: OfficeTemplateCategory;
@@ -158,6 +160,15 @@ export interface OfficeTemplate {
     readonly previewTitle: string;
     readonly previewSubtitle: string;
     readonly source?: OfficeTemplateSource;
+    readonly previewImages?: readonly string[];
+    readonly slideCount?: number;
+    readonly createdAt?: string;
+    readonly updatedAt?: string;
+    readonly sha256?: string;
+    readonly pageIndex?: readonly { slideNumber: number; file: string }[];
+    readonly diagnostics?: readonly { slide: number; feature: string; level: string; message: string }[];
+    /** Source objects retained as replaceable image slots at their original geometry. */
+    readonly resourcePlaceholders?: readonly { slide: number; feature: string; elementId: string; message: string; bounds: readonly [number, number, number, number] }[];
 }
 /**
  * Resolve workflow availability while preserving compatibility with older extracted templates.
@@ -457,8 +468,11 @@ export interface OfficePptState {
     readonly templates: readonly OfficeTemplate[];
     /** Active composer workflow. It is model context, never visible draft text. */
     readonly presentationMode?: OfficePresentationMode;
+    readonly documentMode?: 'word' | 'excel';
+    readonly selectedDocumentTemplate?: { readonly id: string; readonly mode: 'word' | 'excel'; readonly revision: string };
     /** Template selected by the resident composer. The model tool uses it when template_id is omitted. */
     readonly selectedTemplateId?: OfficeTemplateId;
+    readonly templateMigration?: { readonly reason: 'template-retired' | 'personal-template-deleted'; readonly replacementId?: OfficeTemplateId };
     readonly decks: readonly OfficeDeck[];
     readonly activities: readonly OfficeActivity[];
 }

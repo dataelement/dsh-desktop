@@ -465,13 +465,16 @@ def send_feishu_notification(
     release_tag: str,
     release_notes: str,
     prerelease: bool = False,
+    test_build: bool = False,
 ) -> None:
     card_title = (
-        f"🧪 DSH Desktop {release_tag}（预发布）已发布"
+        f"🧪 DSH Desktop {release_tag} 测试打包完成"
+        if test_build
+        else f"🧪 DSH Desktop {release_tag}（预发布）已发布"
         if prerelease
         else f"✅ DSH Desktop {release_tag} 发布成功"
     )
-    card_template = "orange" if prerelease else "green"
+    card_template = "orange" if prerelease or test_build else "green"
     payload = {
         "msg_type": "interactive",
         "card": {

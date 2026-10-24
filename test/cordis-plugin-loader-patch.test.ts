@@ -1,34 +1,20 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { patchPath } from './patch-path'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 
 describe('cordis-plugin-loader resolution patch', () => {
-  it('falls back to resolving bare plugins relative to ctx.baseUrl', async () => {
-    const patch = await readFile(
-      path.join(
-        projectRoot,
-        'patches',
-        '@deepseek-ai+cordis-plugin-loader+1.0.3.patch'
-      ),
-      'utf8'
-    )
-
-    expect(patch).toContain('const req = createRequire(new URL("package.json", this.ctx.baseUrl).href)')
-    expect(patch).toContain('const resolved = req.resolve(name)')
-    expect(patch).toContain('return await import(pathToFileURL(resolved).href)')
+  it('passes ctx.baseUrl into the new Harness runtime resolver', async () => {
+    const loader = await readFile(path.join(projectRoot, 'node_modules', '@deepseek-ai', 'cordis-plugin-loader', 'lib', 'index.js'), 'utf8')
+    const boot = await readFile(path.join(projectRoot, 'node_modules', '@deepseek-ai', 'dsh-app-boot', 'lib', 'index.js'), 'utf8')
+    expect(loader).toContain('this.ctx.loader.internal.import(name, this.ctx.baseUrl, {})')
+    expect(boot).toContain('async function createRuntimeResolution(options)')
   })
 
   it('includes configurable timeout and logs stuck plugin entries', async () => {
-    const patch = await readFile(
-      path.join(
-        projectRoot,
-        'patches',
-        '@deepseek-ai+cordis-plugin-loader+1.0.3.patch'
-      ),
-      'utf8'
-    )
+    const patch = await readFile(patchPath('@deepseek-ai/cordis-plugin-loader'), 'utf8')
 
     expect(patch).toContain('DSH_LOADER_TIMEOUT_MS')
     expect(patch).toContain('plugin tree initialization timed out after')

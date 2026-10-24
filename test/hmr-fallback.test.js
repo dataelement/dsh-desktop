@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,6 +23,14 @@ function fakeContext(internal) {
     plugin: (value) => plugins.push(value),
     plugins
   }
+}
+
+function bareService() {
+  const service = Object.create(ConfigWatchHmr.prototype)
+  service.ctx = { logger: { warn: () => undefined } }
+  service.operations = Promise.resolve()
+  service.executing = new AsyncLocalStorage()
+  return service
 }
 
 describe('desktop HMR fallback', () => {
@@ -57,14 +66,44 @@ describe('desktop HMR fallback', () => {
     expect(dshPatch).toContain('"dsh-desktop-hmr-fallback": "0.1.0"')
   })
 
+  it('serializes Plugin Manager mutations and recovers after failure', async () => {
+    const service = bareService()
+    const events = []
+    let release
+    const first = service.runExclusive(async () => {
+      events.push('first:start')
+      await new Promise((resolve) => { release = resolve })
+      events.push('first:end')
+      return 'first result'
+    })
+    const second = service.runExclusive(async () => {
+      events.push('second')
+      return 'second result'
+    })
+
+    await vi.waitFor(() => expect(events).toEqual(['first:start']))
+    release()
+    await expect(first).resolves.toBe('first result')
+    await expect(second).resolves.toBe('second result')
+    expect(events).toEqual(['first:start', 'first:end', 'second'])
+
+    await expect(service.runExclusive(async () => { throw new Error('failed mutation') })).rejects.toThrow('failed mutation')
+    await expect(service.runExclusive(async () => 'later mutation')).resolves.toBe('later mutation')
+  })
+
+  it('rejects a nested HMR transaction', async () => {
+    const service = bareService()
+    await expect(service.runExclusive(() => service.runExclusive(async () => undefined)))
+      .rejects.toThrow('HMR transactions cannot be nested')
+  })
+
   it('refreshes on a change to the watched config, and not on its neighbours', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-hmr-fallback-'))
     const watched = join(directory, 'cordis.patch.yml')
     await writeFile(watched, '[]\n', 'utf8')
     const refresh = vi.fn(async () => undefined)
 
-    const service = Object.create(ConfigWatchHmr.prototype)
-    service.ctx = { logger: { warn: () => undefined } }
+    const service = bareService()
     const dispose = await service.registerConfig(watched, refresh)
 
     await writeFile(join(directory, 'unrelated.yml'), 'x\n', 'utf8')

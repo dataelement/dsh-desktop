@@ -1,0 +1,153 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
+--- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/client.js
+@@ -1283,19 +1283,82 @@
+ 		function producedFileMentions(paths, openFile, label, operations = []) {
+ 			return { resolve(value) {
+ 				const matches = new Set(paths.filter((path) => path === value || basename(path) === value));
+ 				for (const operation of operations) if (operation.argumentPath === value) matches.add(operation.path);
+-				const path = matches.size === 1 ? matches.values().next().value : void 0;
+-				if (path === void 0) return void 0;
+-				return {
+-					open: () => {
+-						openFile(path);
+-					},
+-					label: label(path),
+-					title: path
+-				};
++				const known = matches.size === 1 ? matches.values().next().value : void 0;
++				if (known !== void 0) return fileMention(known, "file", openFile, label);
++				const local = localPathReference(value);
++				if (local === void 0) return void 0;
++				return fileMention(local.path, local.kind, openFile, label);
+ 			} };
+ 		}
++		/**
++		* A known or heuristic path. Folders open in the system file manager;
++		* files stay on the document-preview opener. `kind` selects the icon.
++		*/
++		function fileMention(path, kind, openFile, label) {
++			return {
++				open: () => {
++					if (kind === "folder") openFile(path, { revealInFileManager: true });
++					else openFile(path);
++				},
++				label: label(path, kind),
++				title: path,
++				kind
++			};
++		}
++		/**
++		* Resolve local path references that were not produced by a tool in the
++		* current turn. Branch names (`codex/foo`, `origin/main`) and bare tokens
++		* (`package.json`, `console.log`) stay inert: a relative slash path is a
++		* file only when its last segment has a lowercase extension, and a bare
++		* name is never guessed. Explicit prefixes, a trailing separator, and a
++		* worktree id (a segment suffix containing an uppercase letter, such as
++		* `name.UWeor9`) still resolve. The last segment's extension chooses
++		* `file` or `folder`; callers open folders outside the document preview.
++		*
++		* A leading `@` plus a single slash is a scoped package name, and a bare
++		* `local@domain.tld` is an email address. URI schemes other than a Windows
++		* drive are not local paths. An explicit `./@scope/pkg` still resolves.
++		*/
++		function localPathReference(value) {
++			const candidate = value.trim();
++			if (candidate === "" || /[\r\n]/.test(candidate)) return void 0;
++			if (/^[a-z][a-z\d+.-]*:/i.test(candidate) && !/^[a-z]:[\\/]/i.test(candidate)) return void 0;
++			const path = candidate.replace(/(?:#L\d+(?:C\d+)?|:\d+(?::\d+)?)$/, "");
++			if (path === "") return void 0;
++			if (/^@[^\\/@\s]+\/[^\\/@\s]+(?:@[^\\/\s]+)?$/.test(path)) return void 0;
++			if (/^[^@\s\\/]+@[^@\s\\/]+\.[A-Za-z]{2,}$/.test(path)) return void 0;
++			if (/^v?\d+(?:\.\d+){1,4}(?:-[A-Za-z0-9.-]+)?$/.test(path)) return void 0;
++			const segments = path.split(/[\\/]/).filter((segment) => segment !== "");
++			const last = segments[segments.length - 1] ?? "";
++			const extension = fileExtensionOf(last);
++			const explicit = /^(?:\/|~[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path);
++			const trailingDir = /[\\/]$/.test(path);
++			const separated = /[\\/]/.test(path);
++			const worktree = segments.some((segment) => /[A-Z]/.test(rawSuffix(segment)));
++			if (!explicit && !trailingDir && !(separated && extension !== "") && !worktree) return void 0;
++			return {
++				path,
++				kind: !trailingDir && extension !== "" ? "file" : "folder"
++			};
++		}
++		/** Characters after the segment's last dot, or "" when there is none. */
++		function rawSuffix(name) {
++			const dot = name.lastIndexOf(".");
++			if (dot <= 0 || dot === name.length - 1) return "";
++			return name.slice(dot + 1);
++		}
++		/** Lowercase filename suffix, or "" when the segment has none. */
++		function fileExtensionOf(name) {
++			const extension = rawSuffix(name);
++			return /^[a-z0-9]{1,10}$/.test(extension) ? extension : "";
++		}
++		/** The single supplied path whose basename is exactly `value`, else undefined. */
++		function onlyPathWithBasename(paths, value) {
++			const matches = paths.filter((path) => basename(path) === value);
++			return matches.length === 1 ? matches[0] : void 0;
++		}
+ 		//#endregion
+ 		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-deliverables/src/client/ChangedFiles.module.css.mjs
+ 		const css$2 = ".hz8-rW_card{--changes-fill:var(--dsw-static-neutral-50);--changes-hover:var(--dsw-static-neutral-100);border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-1);min-width:0;color:var(--dsw-alias-label-primary);flex-direction:column;margin-top:4px;display:flex;overflow:hidden}.hz8-rW_card[data-single=true]{border-color:var(--dsw-alias-border-l1)}body[data-ds-dark-theme] .hz8-rW_card{--changes-fill:var(--dsw-static-neutral-850);--changes-hover:var(--dsw-static-neutral-800)}.hz8-rW_header{box-sizing:border-box;background:var(--changes-fill);width:100%;min-width:0;height:60px;color:inherit;font:inherit;text-align:left;border:0;align-items:center;gap:10px;margin:0;padding:8px 10px;display:flex}button.hz8-rW_header{cursor:pointer;transition:background-color .12s}button.hz8-rW_header:hover:not(:disabled),button.hz8-rW_header:focus-visible{background:var(--changes-hover)}button.hz8-rW_header:focus-visible{box-shadow:inset 0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline:none}button.hz8-rW_header:disabled{cursor:progress}.hz8-rW_tile{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l1);background:color-mix(in srgb, var(--dsw-static-neutral-00) 50%, transparent);border-radius:10px;flex:none;place-items:center;width:40px;height:40px;display:grid}body[data-ds-dark-theme] .hz8-rW_tile{background:color-mix(in srgb, var(--dsw-static-neutral-00) 5%, transparent)}.hz8-rW_titles{flex-direction:column;flex:1;min-width:0;display:flex}.hz8-rW_title{text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500;line-height:20px;overflow:hidden}.hz8-rW_stat{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:16px;display:inline-flex}.hz8-rW_statCounts{font-family:var(--ds-font-family-code);gap:6px;display:inline-flex}.hz8-rW_previewHint,.hz8-rW_header:hover .hz8-rW_statCounts,.hz8-rW_header:focus-visible .hz8-rW_statCounts{display:none}.hz8-rW_header:hover .hz8-rW_previewHint,.hz8-rW_header:focus-visible .hz8-rW_previewHint{display:inline}.hz8-rW_stat[data-error=true],.hz8-rW_counts[data-error=true]{color:var(--dsw-alias-state-error-primary)}.hz8-rW_added{color:var(--dsw-alias-state-success-primary)}.hz8-rW_deleted{color:var(--dsw-alias-state-error-primary)}.hz8-rW_list{border-top:.5px solid var(--dsw-alias-border-l2);margin:0;padding:0;list-style:none}.hz8-rW_row{box-sizing:border-box;width:100%;min-width:0;min-height:24px;color:var(--dsw-alias-label-tertiary);cursor:pointer;font-family:var(--ds-font-family-code);text-align:left;background:0 0;border:0;justify-content:space-between;align-items:center;gap:10px;margin:0;padding:7px 18px 7px 14px;font-size:11px;line-height:18px;display:flex}.hz8-rW_row:hover:not(:disabled),.hz8-rW_row:focus-visible{background:var(--dsw-alias-interactive-bg-hover)}.hz8-rW_row:focus-visible{box-shadow:inset 0 0 0 2px var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline:none}.hz8-rW_row:disabled{cursor:progress}.hz8-rW_path{min-width:0;font-family:var(--dsw-font-family);text-overflow:ellipsis;white-space:nowrap;font-size:12px;overflow:hidden}.hz8-rW_counts{white-space:nowrap;color:var(--dsw-alias-label-tertiary);flex:none;gap:6px;display:inline-flex}.hz8-rW_toggle{box-sizing:border-box;width:100%;color:var(--dsw-alias-label-tertiary);cursor:pointer;font:inherit;text-align:left;background:0 0;border:0;justify-content:flex-start;align-items:center;gap:4px;margin:0;padding:10px 18px 10px 14px;font-size:12px;line-height:18px;display:inline-flex}.hz8-rW_toggle:hover{background:var(--dsw-alias-interactive-bg-hover)}.hz8-rW_toggle svg{flex:none;width:14px;height:14px}@media (pointer:coarse){.hz8-rW_row,.hz8-rW_toggle{min-height:44px}}.hz8-rW_preview{max-height:100%;overflow:hidden}.hz8-rW_previewPath{min-width:0;color:var(--dsw-alias-label-tertiary);font-family:var(--ds-font-family-code);white-space:nowrap;flex:auto;font-size:12px;line-height:20px;overflow:auto hidden}.hz8-rW_preview [data-diff-note=metadata],.hz8-rW_preview [data-diff-hunk-header]{display:none}";
+ 		const tagId$2 = "@deepseek-ai/dsh-client-ui-deliverables/ChangedFiles.module.css";
+@@ -2121,8 +2184,9 @@
+ 			"presented.retry": "重试",
+ 			"presented.hostError": "无法读取主机桌面信息",
+ 			"presented.preview": "在侧边栏预览",
+ 			"presented.previewButton": "在侧边栏打开 {name}",
++			"presented.openFolder": "在文件管理器中打开 {name}",
+ 			"presented.previewCard": "在侧边栏预览 {name}",
+ 			"presented.all": "全部 {count} 个文件",
+ 			"presented.expandAria": "展开全部 {count} 个交付文件",
+ 			"presented.collapse": "收起",
+@@ -2184,8 +2248,9 @@
+ 			"presented.retry": "Retry",
+ 			"presented.hostError": "Could not read the Host desktop information",
+ 			"presented.preview": "Preview in sidebar",
+ 			"presented.previewButton": "Open {name} in sidebar",
++			"presented.openFolder": "Open {name} in file manager",
+ 			"presented.previewCard": "Preview {name} in sidebar",
+ 			"presented.all": "All {count} files",
+ 			"presented.expandAria": "Show all {count} delivered files",
+ 			"presented.collapse": "Collapse",
+@@ -2327,10 +2392,9 @@
+ 			}, ReviewTab)), "ui-deliverables: changes-review body");
+ 			ctx.provide("chatFileMentions", { forClosing(owner) {
+ 				const paths = selectProducedFiles(owner);
+ 				const presented = presentedForClosing(owner);
+-				if (paths === null && presented.length === 0) return void 0;
+-				return producedFileMentions([...new Set([...paths ?? [], ...presented.map((file) => file.path)])], owner.openFile, (path) => t("presented.previewButton", { name: path }), owner.turn.data.get("deliverables")?.produced.filter((operation) => operation.seq <= owner.seq));
++				return producedFileMentions([...new Set([...paths ?? [], ...presented.map((file) => file.path)])], owner.openFile, (path, kind) => t(kind === "folder" ? "presented.openFolder" : "presented.previewButton", { name: path }), owner.turn.data.get("deliverables")?.produced.filter((operation) => operation.seq <= owner.seq));
+ 			} });
+ 		}
+ 		//#endregion
+ 		exports.apply = apply;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/locales.d.ts
+@@ -14,8 +14,9 @@
+     'presented.retry': string;
+     'presented.hostError': string;
+     'presented.preview': string;
+     'presented.previewButton': string;
++    'presented.openFolder': string;
+     'presented.previewCard': string;
+     'presented.all': string;
+     'presented.expandAria': string;
+     'presented.collapse': string;
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-deliverables/lib/types/client/turn-deliverables.d.ts
+@@ -81,6 +81,6 @@
+  * @param operations - successful mutations whose literal arguments may name the same canonical targets.
+  * @returns The resolver MarkdownText consumes; the full path rides `title`,
+  * the same disambiguator the row's chips carry.
+  */
+-export declare function producedFileMentions(paths: readonly string[], openFile: (path: string) => void, label: (path: string) => string, operations?: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[]): MarkdownFileMentions;
+-//# sourceMappingURL=turn-deliverables.d.ts.map
+\ No newline at end of file
++export declare function producedFileMentions(paths: readonly string[], openFile: (path: string, options?: { readonly revealInFileManager?: boolean }) => void, label: (path: string, kind?: 'file' | 'folder') => string, operations?: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[]): MarkdownFileMentions;
++//# sourceMappingURL=turn-deliverables.d.ts.map

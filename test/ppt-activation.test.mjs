@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -9,6 +9,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SkillRegistry, isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
+import { apply as registerSkillTools } from '@deepseek-ai/dsh-tool-skill'
 import { PERSONA_PREFIX_SECTION, SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { apply } from 'dsh-ppt'
 
@@ -30,11 +31,15 @@ async function fixture(existingRoot) {
   await skills
   cleanups.push(() => skills.dispose())
   let rpc
+  let currentDirectory = root
   const tools = []
   const plugin = ctx.plugin({
     inject: ['systemPrompt', 'skills'],
     async apply(pluginCtx) {
       const host = {
+    provide() {},
+        workingDirectory: { ensure: async () => currentDirectory },
+        sandboxPolicy: { resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) },
         // The plugin scopes its webServer work under ctx.inject(['webServer'])
         // (0.1.5 owns connection routes on the reading Context). This fixture
         // has no webServer service, so run those callbacks on the same fake
@@ -90,15 +95,82 @@ async function fixture(existingRoot) {
     }
     return decision
   }
-  return { root, ctx, tools, agent, toggle, assemble, preStep, rpc: (...args) => rpc(...args) }
+  return { root, ctx, tools, agent, toggle, assemble, preStep, setDirectory: value => { currentDirectory = value }, disposePpt: () => plugin.dispose(), rpc: (...args) => rpc(...args) }
 }
 
 function automaticMessages(agent) {
-  return agent.session.deriveMessages().filter(m => m.source.kind === 'plugin'
-    && ['dsh-ppt-skill', 'dsh-ppt-composer'].includes(m.source.plugin))
+  return agent.session.deriveMessages().filter(m => {
+    const kind = m.source?.kind
+    const plugin = m.source?.plugin || (typeof kind === 'string' && kind.startsWith('plugin:') ? kind.slice('plugin:'.length) : kind)
+    return (kind === 'plugin' || (typeof kind === 'string' && kind.startsWith('plugin:')) || ['dsh-ppt-skill', 'dsh-ppt-composer'].includes(kind))
+      && ['dsh-ppt-skill', 'dsh-ppt-composer'].includes(plugin)
+  })
 }
 
 describe('PPT instructions follow the session composer button', () => {
+  it('refreshes automatic skills after a directory change within a turn', async () => {
+    const f = await fixture(), agent = await f.agent()
+    await f.toggle(agent, true)
+    await f.preStep(agent)
+    const current = path.join(f.root, 'worktree')
+    await mkdir(current)
+    f.setDirectory(current)
+    await f.preStep(agent, { step: 2 })
+    const skills = automaticMessages(agent).filter(message => message.source.plugin === 'dsh-ppt-skill')
+    expect(skills).toHaveLength(1)
+    expect(skills[0].source.cwd).toBe(current)
+    expect((await f.preStep(agent, { step: 3 })).messages).toEqual([])
+  })
+  it('routes general PPT skills per session on cached catalogs and direct loads, restoring them after mode changes', async () => {
+    const f = await fixture()
+    let skillTool
+    const office = f.ctx.plugin({
+      inject: ['skills'],
+      apply(ctx) {
+        for (const name of ['office-pptx', 'office-docx', 'office-xlsx']) {
+          ctx.skills.register({ name, description: name, content: `General ${name}`, source: 'bundled' })
+        }
+        registerSkillTools({
+          skills: ctx.skills, on: ctx.on.bind(ctx),
+          workingDirectory: { ensure: async () => f.root },
+          tools: { register: tool => { skillTool = tool }, get: () => skillTool }
+        })
+      }
+    })
+    await office
+    cleanups.push(() => office.dispose())
+    const template = await f.agent()
+    const ordinary = await f.agent()
+    const modelNames = async agent => (await f.ctx.skills.list({ scope: agent })).filter(isModelInvocable).map(skill => skill.name)
+    expect(await modelNames(template)).toContain('office-pptx')
+    await f.toggle(template, true)
+    const [templateNames, ordinaryNames] = await Promise.all([modelNames(template), modelNames(ordinary)])
+    expect(templateNames).not.toContain('office-pptx')
+    expect(templateNames).toEqual(expect.arrayContaining(['office-docx', 'office-xlsx']))
+    expect(ordinaryNames).toContain('office-pptx')
+    const cold = await f.ctx.skills.list({ sessionId: template.id })
+    expect(isModelInvocable(cold.find(skill => skill.name === 'office-pptx'))).toBe(false)
+    const loaded = await f.ctx.skills.get('office-pptx', { scope: template })
+    expect(isModelInvocable(loaded)).toBe(false)
+    expect(isUserInvocable(loaded)).toBe(true)
+    const call = agent => skillTool.execute({ name: 'office-pptx' }, { agent, signal: new AbortController().signal })
+    await expect(call(template)).rejects.toThrow('not available for model invocation')
+    await expect(call(ordinary)).resolves.toMatchObject({ name: 'office-pptx' })
+    expect(isModelInvocable(await f.ctx.skills.get('office-pptx', { scope: ordinary }))).toBe(true)
+    expect(isModelInvocable(await f.ctx.skills.get('office-pptx'))).toBe(true)
+    expect(renderPrompt(await f.assemble(template))).toContain('not switching engines')
+    await f.toggle(template, false)
+    expect(await modelNames(template)).toContain('office-pptx')
+    expect(isModelInvocable(await f.ctx.skills.get('office-pptx', { scope: template }))).toBe(true)
+    await expect(call(template)).resolves.toMatchObject({ name: 'office-pptx' })
+    expect(renderPrompt(await f.assemble(template))).not.toContain('not switching engines')
+    await f.toggle(template, true)
+    expect(await modelNames(template)).not.toContain('office-pptx')
+    await f.disposePpt()
+    expect(await modelNames(template)).toContain('office-pptx')
+    await expect(call(template)).resolves.toMatchObject({ name: 'office-pptx' })
+  })
+
   it('keeps the plugin/tools installed without changing an inactive custom preset or global assembly', async () => {
     const f = await fixture()
     const agent = await f.agent()
@@ -198,19 +270,37 @@ describe('PPT instructions follow the session composer button', () => {
 })
 
 
+describe('PPT catalog without a session', () => {
+  it('returns built-in templates without creating a session directory', async () => {
+    const f = await fixture()
+    const catalog = await f.rpc('template/catalog', {})
+    expect(catalog.ok).toBe(true)
+    expect(catalog.value.status, JSON.stringify(catalog.value)).toBe('ok')
+    expect(catalog.value.data.templates.some(template => template.origin === 'built-in')).toBe(true)
+    await expect(stat(path.join(f.root, 'sessions'))).rejects.toMatchObject({ code: 'ENOENT' })
+    const denied = await f.rpc('presentation/mode', {})
+    expect(denied.ok).toBe(true)
+    expect(denied.value.status).toBe('error')
+    expect(denied.value.error.message).toContain('sessionId')
+    await expect(stat(path.join(f.root, 'sessions'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
 describe('PPT catalog migration', () => {
-  it('refreshes the previous authoring snapshot with the validation workflow', async () => {
+  it.each(['DSH-PPT-AUTHORING-20260906-V2', 'DSH-PPT-AUTHORING-20260907-V3'])('refreshes %s with the current validation workflow', async (marker) => {
     const f = await fixture()
     const agent = await f.agent()
     await f.toggle(agent, true)
     agent.session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'DSH-PPT-AUTHORING-20260906-V2 old workflow' }],
-      source: { kind: 'plugin', plugin: 'dsh-ppt-skill', form: 'snapshot', sections: [{ name: 'dsh-ppt', text: 'DSH-PPT-AUTHORING-20260906-V2 old workflow' }] }
+      content: [{ type: 'text', text: `${marker} old workflow` }],
+      source: { kind: 'plugin', plugin: 'dsh-ppt-skill', form: 'snapshot', sections: [{ name: 'dsh-ppt', text: `${marker} old workflow` }] }
     }), { surfaceOp: 'append' })
     await f.preStep(agent)
     const messages = automaticMessages(agent).filter(m => m.source.plugin === 'dsh-ppt-skill')
     expect(messages).toHaveLength(1)
     expect(JSON.stringify(messages)).toContain('pptd_check')
+    expect(JSON.stringify(messages)).toContain('literalEscapes')
+    expect(JSON.stringify(messages)).toContain('text-escaped-newline')
     expect(JSON.stringify(messages)).not.toContain('old workflow')
   })
 
@@ -225,7 +315,10 @@ describe('PPT catalog migration', () => {
     await f.preStep(agent)
     const messages = automaticMessages(agent).filter(m => m.source.plugin === 'dsh-ppt-skill')
     expect(messages).toHaveLength(1)
-    expect(JSON.stringify(messages)).toContain('DSH-PPT-AUTHORING-20260907-V3')
+    expect(JSON.stringify(messages)).toContain('DSH-PPT-AUTHORING-20260910-V4')
+    expect(JSON.stringify(messages)).toContain('选用个人模板时')
+    expect(JSON.stringify(messages)).toContain('image_generate')
+    expect(JSON.stringify(messages)).not.toContain('IMAGE-TEMPLATES-V1')
     expect(JSON.stringify(messages)).not.toContain('Withdrawn template instructions')
   })
 
@@ -240,6 +333,7 @@ describe('PPT catalog migration', () => {
     await writeFile(path.join(dir, 'outputs/user.pptx'), 'unchanged user output')
     const state = (await f.rpc('state', { sessionId })).value.data
     expect(state.templates).toHaveLength(16)
+    expect(state.templates.map(t => t.id)).not.toContain('dsh-green-pulse')
     expect(state.templates.map(t => t.id)).not.toContain('kimi-business-curated-vitality-blue')
     expect(state.selectedTemplateId).toBe('dsh-engineering-blueprint')
     expect(state.templateMigration.reason).toBe('template-retired')
@@ -269,6 +363,18 @@ describe('PPT identity compatibility', () => {
     expect(state.templates).toHaveLength(16)
   })
 
+  it('retires a persisted Green Pulse selection onto the engineering blueprint', async () => {
+    const f = await fixture()
+    const sessionId = randomUUID()
+    const dir = path.join(f.root, 'sessions', createHash('sha256').update(sessionId).digest('hex').slice(0, 32))
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, 'state.json'), JSON.stringify({ sessionId, presentationMode: 'ppt', selectedTemplateId: 'dsh-green-pulse' }))
+    const state = (await f.rpc('state', { sessionId })).value.data
+    expect(state.templates.map(t => t.id)).not.toContain('dsh-green-pulse')
+    expect(state.selectedTemplateId).toBe('dsh-engineering-blueprint')
+    expect(state.templateMigration).toEqual({ reason: 'template-retired', replacementId: 'dsh-engineering-blueprint' })
+  })
+
   it('clears legacy automatic prompts while preserving user-authored references when PPT is off', async () => {
     const f = await fixture()
     const agent = await f.agent()
@@ -279,5 +385,54 @@ describe('PPT identity compatibility', () => {
     expect(surface).not.toContain('Old automatic instructions')
     expect(surface).toContain('Please compare Kimi and other tools.')
     expect(automaticMessages(agent)).toHaveLength(0)
+  })
+
+  it('emits format v4 producer-owned source kinds without bare plugin wrappers', async () => {
+    const f = await fixture()
+    const agent = await f.agent()
+    await f.toggle(agent, true)
+    await f.preStep(agent)
+    const messages = agent.session.deriveMessages().filter(m => m.role === 'user' && m.source?.kind !== 'user')
+    expect(messages.length).toBeGreaterThanOrEqual(2)
+    for (const msg of messages) {
+      expect(msg.source.kind).not.toBe('plugin')
+      expect(typeof msg.source.kind).toBe('string')
+      expect(msg.source.kind.startsWith('plugin:')).toBe(true)
+    }
+    const skillMsg = messages.find(m => m.source.kind === 'plugin:dsh-ppt-skill')
+    expect(skillMsg).toBeDefined()
+    expect(skillMsg.source.form).toBe('snapshot')
+    const composerMsg = messages.find(m => m.source.kind === 'plugin:dsh-ppt-composer')
+    expect(composerMsg).toBeDefined()
+    expect(composerMsg.source.form).toBe('snapshot')
+  })
+
+  it('recognizes format v4 rewritten historical sessions without duplicate skill injection', async () => {
+    const f = await fixture()
+    const agent = await f.agent()
+    await f.toggle(agent, true)
+    // In format v4, historical plugin messages have source.plugin dropped and source.kind rewritten to plugin:<name>
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Existing PPT instructions' }],
+      source: { kind: 'plugin:dsh-ppt-skill', form: 'snapshot', sections: [{ name: 'dsh-ppt', text: 'Existing PPT instructions' }] }
+    }), { surfaceOp: 'append' })
+    await f.preStep(agent)
+    const skillMessages = agent.session.deriveMessages().filter(m => m.source?.kind === 'plugin:dsh-ppt-skill' || m.source?.plugin === 'dsh-ppt-skill')
+    expect(skillMessages).toHaveLength(1)
+  })
+
+  it('clears format v4 rewritten historical automatic prompts when PPT is off', async () => {
+    const f = await fixture()
+    const agent = await f.agent()
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Old V4 rewritten composer state' }],
+      source: { kind: 'plugin:kimi-ppt-composer', form: 'snapshot', sections: [{ name: 'kimi-ppt-composer', text: 'Old V4 rewritten composer state' }] }
+    }), { surfaceOp: 'append' })
+    await f.preStep(agent)
+    const surface = JSON.stringify(agent.session.deriveMessages())
+    expect(surface).not.toContain('Old V4 rewritten composer state')
+    const cleared = agent.session.deriveMessages().find(m => m.source?.kind === 'plugin:dsh-ppt-context-cleared')
+    expect(cleared).toBeDefined()
+    expect(cleared.source.kind).not.toBe('plugin')
   })
 })

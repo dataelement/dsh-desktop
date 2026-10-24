@@ -83,9 +83,25 @@ describe('fetchAvailableReleases', () => {
   const ok = () =>
     Promise.resolve({ ok: true, json: () => Promise.resolve(index) } as Response)
 
-  it('drops the current version and sorts descending', async () => {
+  it('only returns older releases, excluding the current and newer versions', async () => {
     const releases = await fetchAvailableReleases('1.1.0', ok as unknown as typeof fetch)
-    expect(releases.map((r) => r.version)).toEqual(['1.2.0', '1.0.0'])
+    expect(releases.map((r) => r.version)).toEqual(['1.0.0'])
+  })
+
+  it('returns no rollback options when only current and newer releases exist', async () => {
+    const releases = await fetchAvailableReleases('1.0.0', ok as unknown as typeof fetch)
+    expect(releases).toEqual([])
+  })
+
+  it('keeps prereleases below the running release in numeric order', async () => {
+    const response = () => Promise.resolve({ ok: true, json: async () => ({ versions: [
+      { version: '1.2.0-rc.9', tag: 'a', archiveUrl: 'a' },
+      { version: '1.2.0-rc.10', tag: 'b', archiveUrl: 'b' },
+      { version: '1.2.0', tag: 'c', archiveUrl: 'c' },
+      { version: '1.3.0', tag: 'd', archiveUrl: 'd' }
+    ] }) } as Response)
+    const releases = await fetchAvailableReleases('1.2.0', response as unknown as typeof fetch)
+    expect(releases.map(release => release.version)).toEqual(['1.2.0-rc.10', '1.2.0-rc.9'])
   })
 
   it('throws when the request fails', async () => {

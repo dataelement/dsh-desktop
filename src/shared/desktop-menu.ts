@@ -1,4 +1,7 @@
-export const WINDOWS_TITLEBAR_HEIGHT = 36
+// Matches the 40 DIP caption row of the upstream Desktop (apps/desktop
+// windows-layout.ts). Harness 0.1.7 sizes its layout, sidebar toggle and
+// right panels from this value through --dsh-windows-titlebar-height.
+export const WINDOWS_TITLEBAR_HEIGHT = 40
 
 export const desktopMenuCommands = [
   'connect-phone',
@@ -6,7 +9,6 @@ export const desktopMenuCommands = [
   'safe-mode',
   'show-harness-log',
   'check-for-updates',
-  'export-session',
   'undo',
   'redo',
   'cut',

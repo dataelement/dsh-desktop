@@ -24,6 +24,7 @@ export interface SafeModeIssueGroupViewModel {
 
 export interface SafeModePluginViewModel {
   name: string
+  displayName?: string
   statusLabel?: string
   statusTone?: 'warning' | 'danger' | 'success'
   actionLabel: string
@@ -83,6 +84,8 @@ export interface SafeModeViewModel {
   restartConfirm?: string
   quitLabel: string
   notice?: string
+  /** A short first line for long diagnostics; notice keeps the full text. */
+  noticeSummary?: string
   noticeTone?: 'success' | 'error'
   upgradeAllLabel?: string
   upgradeAllBusyLabel?: string
@@ -90,8 +93,36 @@ export interface SafeModeViewModel {
   enableBusyLabel: string
 }
 
+/** Distinct blocking findings, counted by the group a user resolves them in. */
+export function safeModeBlockingGroupCount(issues: readonly ProfileCompatibilityIssue[]): number {
+  return new Set(
+    issues
+      .filter((issue) => issue.severity === 'blocking')
+      .map((issue) => issue.groupId ?? `${issue.resolution}:${issue.target}`)
+  ).size
+}
+
+/**
+ * The question asked before leaving Safe Mode with blocking findings left;
+ * shared by the manager's restart button and the sidebar's exit button.
+ */
+export function safeModeExitConfirmation(blockingGroups: number, locale: SafeModeLocale): string | undefined {
+  if (blockingGroups <= 0) return undefined
+  return locale === 'zh'
+    ? `仍有 ${blockingGroups} 组阻断问题。退出后会重新启用第三方插件，可能再次启动失败。仍然退出安全模式吗？`
+    : `${blockingGroups} blocking group${blockingGroups === 1 ? '' : 's'} remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?`
+}
+
 export function shouldStartInSafeMode(argv: readonly string[]): boolean {
   return argv.includes('--safe-mode')
+}
+
+function summarizeLongNotice(notice: string | undefined, locale: SafeModeLocale): string | undefined {
+  if (notice === undefined || notice.length <= 220) return undefined
+  const sentencePattern = locale === 'zh' ? /^(.+?[。！？])/s : /^(.+?[.!?])(?=\s|$)/s
+  const firstSentence = notice.match(sentencePattern)?.[1]?.trim()
+  if (firstSentence && firstSentence.length <= 160) return firstSentence
+  return locale === 'zh' ? '有更多详细信息可查看。' : 'More details are available.'
 }
 
 export function buildSafeModeViewModel(options: {
@@ -101,6 +132,8 @@ export function buildSafeModeViewModel(options: {
   suspectedPlugins?: readonly string[]
   issues?: readonly ProfileCompatibilityIssue[]
   healthReports?: readonly PluginHealthReport[]
+  /** The market check is still running; its result arrives as a page update. */
+  healthPending?: boolean
   backups?: readonly {
     removalId: string
     pluginName: string
@@ -191,6 +224,8 @@ export function buildSafeModeViewModel(options: {
     ]
     if (report?.healthLabel) {
       labels.push(report.healthLabel)
+    } else if (options.healthPending && !disabled) {
+      labels.push(options.locale === 'zh' ? '正在检查更新…' : 'checking for updates…')
     }
     const statusTone = incompatible
       ? 'danger'
@@ -267,11 +302,7 @@ export function buildSafeModeViewModel(options: {
       issues: grouped
     }
   })
-  const blockingGroups = new Set(
-    issues
-      .filter((issue) => issue.severity === 'blocking')
-      .map((issue) => issue.groupId ?? `${issue.resolution}:${issue.target}`)
-  ).size
+  const blockingGroups = safeModeBlockingGroupCount(issues)
   const backupItems = (options.backups ?? []).map((backup): SafeModeBackupViewModel => {
     const zh = options.locale === 'zh'
     const cleanupReady = backup.bootVerifiedAt !== undefined && backup.restoreStartedAt === undefined
@@ -336,7 +367,7 @@ export function buildSafeModeViewModel(options: {
       brand: 'DSH Desktop',
       badge: '安全模式',
       heading: '',
-      summary: '部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可停用近期安装的插件后重启；停用的插件可随时重新启用。',
+      summary: '安全模式暂时跳过第三方插件。停用有问题的插件后重启；插件和数据都会保留。',
       plugins,
       pluginItems,
       issueGroups,
@@ -359,11 +390,10 @@ export function buildSafeModeViewModel(options: {
       agentBusyLabel: '正在关闭…',
       restartLabel: '退出安全模式并重启',
       restartBusyLabel: '正在重启…',
-      restartConfirm: blockingGroups > 0
-        ? `仍有 ${blockingGroups} 组阻断问题。退出后会重新启用第三方插件，可能再次启动失败。仍然退出安全模式吗？`
-        : undefined,
+      restartConfirm: safeModeExitConfirmation(blockingGroups, 'zh'),
       quitLabel: '退出 DSH Desktop',
       notice: options.notice,
+      noticeSummary: summarizeLongNotice(options.notice, 'zh'),
       noticeTone: options.noticeTone,
       upgradeAllLabel: upgradeReadyCount > 0
         ? `一键升级 ${upgradeReadyCount} 个有更新的插件`
@@ -379,7 +409,7 @@ export function buildSafeModeViewModel(options: {
     brand: 'DSH Desktop',
     badge: 'Safe Mode',
     heading: '',
-    summary: 'Some third-party plugins may cause startup problems. Safe Mode temporarily disables all of them while the Agent remains available; the plugins are not deleted. Disable a recently installed plugin, then restart to try again; disabled plugins can be re-enabled at any time.',
+    summary: 'Safe Mode temporarily skips third-party plugins. Disable the faulty plugin and restart; your plugins and data stay intact.',
     plugins,
     pluginItems,
     issueGroups,
@@ -402,11 +432,10 @@ export function buildSafeModeViewModel(options: {
     agentBusyLabel: 'Closing…',
     restartLabel: 'Exit Safe Mode and restart',
     restartBusyLabel: 'Restarting…',
-    restartConfirm: blockingGroups > 0
-      ? `${blockingGroups} blocking group${blockingGroups === 1 ? '' : 's'} remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?`
-      : undefined,
+    restartConfirm: safeModeExitConfirmation(blockingGroups, 'en'),
     quitLabel: 'Quit DSH Desktop',
     notice: options.notice,
+    noticeSummary: summarizeLongNotice(options.notice, 'en'),
     noticeTone: options.noticeTone,
     upgradeAllLabel: upgradeReadyCount > 0
       ? `Upgrade ${upgradeReadyCount} plugin${upgradeReadyCount === 1 ? '' : 's'} with updates`

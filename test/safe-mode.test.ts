@@ -1,10 +1,18 @@
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildSafeModeViewModel, shouldStartInSafeMode } from '../src/main/safe-mode'
+import {
+  buildSafeModeViewModel,
+  safeModeBlockingGroupCount,
+  safeModeExitConfirmation,
+  shouldStartInSafeMode
+} from '../src/main/safe-mode'
+import type { ProfileCompatibilityIssue } from '../src/main/state/profile-compatibility'
 import {
   ensureSafeModeProfile,
+  extractSafeModePatch,
   SAFE_MODE_BUNDLES,
+  SAFE_MODE_MODEL_ENTRY_IDS,
   SAFE_MODE_PROFILE
 } from '../src/main/state/safe-mode-profile'
 
@@ -12,6 +20,37 @@ describe('Safe Mode', () => {
   it('is opt-in through an exact command-line switch', () => {
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode'])).toBe(true)
     expect(shouldStartInSafeMode(['DSH Desktop', '--safe-mode=false'])).toBe(false)
+  })
+
+  it('marks plugins as still being checked until the market check answers', () => {
+    const pending = buildSafeModeViewModel({ locale: 'zh', plugins: ['dsh-a', 'dsh-b'], disabledPlugins: ['dsh-b'], healthPending: true })
+    expect(pending.pluginItems[0]?.statusLabel).toBe('（正在检查更新…）')
+    expect(pending.pluginItems[1]?.statusLabel).toBe('（已停用）')
+    expect(pending.upgradeReadyCount).toBe(0)
+    const answered = buildSafeModeViewModel({
+      locale: 'zh', plugins: ['dsh-a'], healthPending: true,
+      healthReports: [{ packageName: 'dsh-a', installedVersion: '1.0.0', latestVersion: '1.1.0', healthStatus: 'upgrade-available', healthLabel: '有更新', upgradeReady: true, upgradeVersion: '1.1.0' }]
+    })
+    expect(answered.pluginItems[0]?.statusLabel).toBe('（有更新）')
+    expect(answered.pluginItems[0]?.upgradeButtonLabel).toBe('升级至 v1.1.0')
+  })
+
+  it('treats installed Profile plugins uniformly as Safe Mode targets', () => {
+    const model = buildSafeModeViewModel({
+      locale: 'zh', plugins: ['dsh-image-generation'],
+      suspectedPlugins: ['dsh-image-generation'], healthPending: true
+    })
+    expect(model.pluginItems[0]).toMatchObject({
+      name: 'dsh-image-generation', suspected: true,
+      statusLabel: '（本次启动日志推断，正在检查更新…）',
+      actionLabel: '停用插件（不删除）'
+    })
+    const disabled = buildSafeModeViewModel({
+      locale: 'en', plugins: ['dsh-image-generation'], disabledPlugins: ['dsh-image-generation']
+    })
+    expect(disabled.pluginItems[0]).toMatchObject({
+      disabled: true, enableButtonLabel: 'Re-enable'
+    })
   })
 
   it('shows static references as informational findings without blocking or selecting a repair', () => {
@@ -40,9 +79,7 @@ describe('Safe Mode', () => {
     })
     expect(model.badge).toBe('安全模式')
     expect(model.heading).toBe('')
-    expect(model.summary).toBe('部分第三方插件可能导致系统异常。安全模式会暂时停用所有第三方插件，确保基础功能正常使用，但不会删除插件。如需恢复正常模式，可停用近期安装的插件后重启；停用的插件可随时重新启用。')
-    expect(model.summary).toContain('确保基础功能正常使用')
-    expect(model.summary).toContain('但不会删除插件')
+    expect(model.summary).toBe('安全模式暂时跳过第三方插件。停用有问题的插件后重启；插件和数据都会保留。')
     expect(model.plugins).toEqual(['plugin-a', '@example/plugin-b'])
     expect(model.pluginItems).toEqual([
       { name: 'plugin-a', actionLabel: '停用插件（不删除）', incompatible: false, suspected: false, disabled: false },
@@ -110,6 +147,27 @@ describe('Safe Mode', () => {
     expect(model.restartConfirm).toContain('仍有 1 组阻断问题')
   })
 
+  it('asks the same exit question wherever Safe Mode can be left', () => {
+    // The sidebar exit and the manager's restart button share this text; the
+    // sidebar used to reopen an already-open manager and do nothing visible.
+    const issue = (target: string, severity: 'blocking' | 'warning', groupId?: string): ProfileCompatibilityIssue => ({
+      id: `${target}-${severity}`,
+      kind: 'core-version-mismatch',
+      severity,
+      packageName: target,
+      source: target,
+      detail: target,
+      resolution: 'disable-plugin',
+      target,
+      ...(groupId === undefined ? {} : { groupId })
+    })
+    const issues = [issue('a', 'blocking', 'plugin:a'), issue('a2', 'blocking', 'plugin:a'), issue('b', 'blocking'), issue('c', 'warning')]
+    expect(safeModeBlockingGroupCount(issues)).toBe(2)
+    expect(safeModeExitConfirmation(2, 'en')).toBe('2 blocking groups remain. Third-party plugins will be enabled again and startup may fail. Exit Safe Mode anyway?')
+    expect(safeModeExitConfirmation(1, 'zh')).toContain('仍有 1 组阻断问题')
+    expect(safeModeExitConfirmation(0, 'en')).toBeUndefined()
+  })
+
   it('keeps non-plugin compatibility repairs in the separate repair area', () => {
     const model = buildSafeModeViewModel({
       locale: 'zh',
@@ -148,6 +206,19 @@ describe('Safe Mode', () => {
     })
     expect(model.notice).toBe('成功卸载 1 个插件。')
     expect(model.noticeTone).toBe('success')
+  })
+
+  it('keeps long startup diagnostics available behind a short notice in both locales', () => {
+    const cause = 'peerDependencies: ' + '@deepseek-ai/dsh-client-runtime@0.1.0-rc.8 | '.repeat(20)
+    const enNotice = `Normal Profile startup checks failed. Safe Mode is available. ${cause}`
+    const en = buildSafeModeViewModel({ locale: 'en', plugins: ['example'], notice: enNotice, noticeTone: 'error' })
+    expect(en.noticeSummary).toBe('Normal Profile startup checks failed.')
+    expect(en.notice).toBe(enNotice)
+    const zhNotice = `正常 Profile 启动检查未通过。已进入安全模式。${cause}`
+    const zh = buildSafeModeViewModel({ locale: 'zh', plugins: ['example'], notice: zhNotice, noticeTone: 'error' })
+    expect(zh.noticeSummary).toBe('正常 Profile 启动检查未通过。')
+    expect(zh.notice).toBe(zhNotice)
+    expect(buildSafeModeViewModel({ locale: 'en', plugins: [], notice: 'Short error.' }).noticeSummary).toBeUndefined()
   })
 
   it('shows every removal generation as a separate backup and blocks cleanup until a healthy boot', () => {
@@ -268,6 +339,94 @@ describe('Safe Mode', () => {
     })
     expect(model.pluginItems[0]).toMatchObject({ name: 'plugin-a', disabled: false })
     expect(model.pluginItems[0]).not.toHaveProperty('enableButtonLabel')
+  })
+
+  it('extracts only model configurations and drops third-party plugins in safe mode patch', () => {
+    const rawPatch = `- id: ui-settings-general
+  name: "@deepseek-ai/dsh-client-ui-settings-general"
+  config:
+    welcomeNoticeVersion: 2026-08-13.1
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      vol:
+        apiKeyEnv: VOL_API_KEY
+        api: openai-completions
+        baseURL: https://ark.cn-beijing.volces.com/api/coding/v3
+        models:
+          - id: deepseek-v4-1-flash-260910
+            name: deepseek-v4-1-flash
+- id: dsh-market
+  disabled: false
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: vol
+    model: deepseek-v4-1-flash-260910
+`
+    const result = extractSafeModePatch(rawPatch)
+    expect(result).toContain('id: llm-pi-ai')
+    expect(result).toContain('id: agent-default-model')
+    expect(result).not.toContain('dsh-market')
+    expect(result).not.toContain('ui-settings-general')
+  })
+
+  it('inherits model configuration from the normal profile into safe mode profile', async () => {
+    const dshHome = join(__dirname, '.temp-safe-mode-model-inherit')
+    try {
+      const webProfileDir = join(dshHome, 'profiles', 'web')
+      const { mkdir } = await import('node:fs/promises')
+      await mkdir(webProfileDir, { recursive: true })
+      await writeFile(join(webProfileDir, 'cordis.patch.yml'), `- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      custom:
+        api: openai-completions
+        baseURL: https://api.custom.com/v1
+- id: third-party-tool
+  disabled: false
+- id: agent-default-model
+  config:
+    provider: custom
+    model: custom-model
+`)
+
+      const directory = await ensureSafeModeProfile(dshHome)
+      const safePatch = await readFile(join(directory, 'cordis.patch.yml'), 'utf8')
+      expect(safePatch).toContain('id: llm-pi-ai')
+      expect(safePatch).toContain('id: agent-default-model')
+      expect(safePatch).toContain('baseURL: https://api.custom.com/v1')
+      expect(safePatch).not.toContain('third-party-tool')
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('sanitizes invalid DeepSeek baseURL when inheriting model configuration into safe mode', async () => {
+    const dshHome = join(__dirname, '.temp-safe-mode-sanitize')
+    try {
+      const webProfileDir = join(dshHome, 'profiles', 'web')
+      const { mkdir } = await import('node:fs/promises')
+      await mkdir(webProfileDir, { recursive: true })
+      await writeFile(join(webProfileDir, 'cordis.patch.yml'), `- id: llm-deepseek
+  config:
+    baseURL: invalid-endpoint
+    maxTokens: 8000
+- id: agent-default-model
+  config:
+    provider: deepseek
+`)
+
+      const directory = await ensureSafeModeProfile(dshHome)
+      const safePatch = await readFile(join(directory, 'cordis.patch.yml'), 'utf8')
+      expect(safePatch).toContain('id: llm-deepseek')
+      expect(safePatch).toContain('maxTokens: 8000')
+      expect(safePatch).not.toContain('invalid-endpoint')
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
   })
 
   it('creates a managed core-only profile and repairs later modifications', async () => {

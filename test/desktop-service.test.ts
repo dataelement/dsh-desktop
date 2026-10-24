@@ -112,16 +112,25 @@ describe('desktop service', () => {
     request.mockImplementation(async (_url: string, init?: RequestInit) => new Response(JSON.stringify({ accepted: true, eventId: JSON.parse(String(init?.body)).eventId })))
     await Promise.all([service.flush(), service.flush()]); expect(request).toHaveBeenCalledTimes(50); expect(service.pending()).toHaveLength(0)
   })
-  it('reports an unclean exit only when the leftover marker belongs to this version', () => {
+  it('does not report unclean-exit for a leftover same-version marker', () => {
     const { service, options, dir } = fixture()
+    writeFileSync(options.logPath, 'uncaught exception\n(exit code 1)\n')
     service.beginSession()
     const next = new DesktopService({ ...options, version: '0.9.0' }); next.beginSession()
     expect(queued(next, dir)).toEqual([])
     next.markCleanExit(); new DesktopService(options).beginSession(); expect(next.pending()).toHaveLength(0)
     const same = new DesktopService(options)
     same.beginSession()
-    expect(queued(same, dir)[0]).toMatchObject({ version: '0.8.0', kind: 'unclean-exit' })
-    same.markCleanExit(); new DesktopService(options).beginSession(); expect(same.pending()).toHaveLength(1)
+    expect(queued(same, dir)).toEqual([])
+  })
+  it('discards a queued unclean-exit report without asking for consent', async () => {
+    const { service, request, options } = fixture()
+    service.capture('unclean-exit', 'stale leftover')
+    expect(service.pending()).toHaveLength(1)
+    await service.flush()
+    expect(service.pending()).toHaveLength(0)
+    expect(options.confirmUpload).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
   })
   it('does not replace a queued fatal report with a generic unclean-exit report', () => {
     const { service, options, dir } = fixture()
@@ -135,11 +144,73 @@ describe('desktop service', () => {
     new DesktopService({ ...options, version: '0.9.0' }).beginSession()
     expect(queued(service, dir).map(r => r.kind)).toEqual(['main-crash'])
   })
+  it.each([
+    ['win32', 'x64', 'windows'],
+    ['darwin', 'arm64', 'mac'],
+    ['darwin', 'x64', 'mac-intel']
+  ])('uses the strict rollout query schema for automatic and manual checks on %s/%s', async (platform, arch, expectedPlatform) => {
+    const { options, request } = fixture()
+    const service = new DesktopService({ ...options, platform, arch })
+    const selected = { updateAvailable: true, version: '0.9.0', feedUrl: 'https://dshdesktop.com/updates/archive/0.9.0/' }
+    let policy: { updateAvailable: false } | typeof selected = { updateAvailable: false }
+    request.mockImplementation(async (address, init) => {
+      const url = new URL(address)
+      const allowed = ['currentVersion', 'installationId', 'platform']
+      // Model the backend's strict schema: an extra manual/channel/arch field
+      // fails the request rather than being ignored by an accepting fixture.
+      if (url.searchParams.size !== allowed.length || [...url.searchParams.keys()].some(key => !allowed.includes(key))) {
+        return Response.json({ error: 'unrecognized_keys' }, { status: 400 })
+      }
+      expect(url.origin + url.pathname).toBe(`${SERVICE_URL}/v1/updates/check`)
+      expect(Object.fromEntries(url.searchParams)).toEqual({ installationId: service.installationId, currentVersion: options.version, platform: expectedPlatform })
+      expect(init?.redirect).toBe('error')
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+      return Response.json(policy)
+    })
+    for (const manual of [false, true]) {
+      policy = { updateAvailable: false }
+      await expect(service.checkUpdate(manual)).resolves.toEqual(policy)
+      policy = selected
+      await expect(service.checkUpdate(manual)).resolves.toEqual(selected)
+    }
+    expect(request).toHaveBeenCalledTimes(4)
+  })
+  it.each([false, true])('fails closed without a fallback feed when manual=%s', async manual => {
+    const { options, request } = fixture()
+    const service = new DesktopService({ ...options, platform: 'win32', arch: 'x64' })
+    for (const response of [
+      new Response('unrecognized_keys', { status: 400 }),
+      new Response('unavailable', { status: 503 }),
+      new Response('malformed JSON'),
+      Response.json({ updateAvailable: true, version: '0.9.0', feedUrl: 'https://evil.test/' }),
+      Response.json({ updateAvailable: true, version: '0.7.0', feedUrl: 'https://dshdesktop.com/updates/archive/0.7.0/' })
+    ]) {
+      request.mockClear()
+      request.mockResolvedValueOnce(response)
+      await expect(service.checkUpdate(manual)).rejects.toThrow()
+      expect(request).toHaveBeenCalledTimes(1)
+      const call = request.mock.calls[0]
+      if (!call) throw new Error('Expected an update policy request')
+      expect(new URL(call[0]).pathname).toBe('/crash/v1/updates/check')
+    }
+    request.mockClear()
+    const timeout = new DOMException('Update policy request timed out', 'TimeoutError')
+    request.mockRejectedValueOnce(timeout)
+    await expect(service.checkUpdate(manual)).rejects.toBe(timeout)
+    expect(request).toHaveBeenCalledTimes(1)
+    const call = request.mock.calls[0]
+    if (!call) throw new Error('Expected an update policy request')
+    expect(new URL(call[0]).pathname).toBe('/crash/v1/updates/check')
+  })
   it('queries with no channel/arch and rejects invalid or downgraded policy responses', async () => {
     const { service, request } = fixture()
     request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: false })))
     expect(await service.checkUpdate()).toEqual({ updateAvailable: false })
     const url = new URL(request.mock.calls[0]![0])
+    expect(url.searchParams.has('manual')).toBe(false)
+    request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: false })))
+    await service.checkUpdate(true)
+    expect(new URL(request.mock.calls.at(-1)![0]).searchParams.has('manual')).toBe(false)
     expect(url.searchParams.get('platform')).toBe('mac'); expect(url.searchParams.has('channel')).toBe(false); expect(url.searchParams.has('arch')).toBe(false)
     for (const version of ['0.7.0', '0.8.0', '0.9.0-rc.1', '../../evil', '0.9.0-01']) {
       request.mockResolvedValue(new Response(JSON.stringify({ updateAvailable: true, version, feedUrl: `https://dshdesktop.com/updates/archive/${version}/` })))
@@ -184,13 +255,17 @@ describe('diagnostic event integration', () => {
     expect(queued(service, dir).map(r => r.kind).sort()).toEqual(['gpu-crash', 'main-crash', 'renderer-crash'])
     app.emit('will-quit'); expect(existsSync(join(dir, 'state', 'session.json'))).toBe(false)
   })
-  it('suppresses unclean-exit report when previous session was healthy', () => {
-    const { service, options, dir } = fixture()
+  it('does not report unclean-exit whether the previous session log looks healthy or not', () => {
+    const { service, options } = fixture()
     writeFileSync(options.logPath, '[desktop] endpoint http://127.0.0.1:43129\n[desktop] Harness is ready\n[desktop] cleared 1 stale Harness authentication cookie(s)\n')
     service.beginSession()
-    const next = new DesktopService(options)
-    next.beginSession()
-    expect(next.pending()).toHaveLength(0)
+    const healthy = new DesktopService(options)
+    healthy.beginSession()
+    expect(healthy.pending()).toHaveLength(0)
+    writeFileSync(options.logPath, 'uncaught exception\nSTATUS_ACCESS_VIOLATION\n')
+    const unhealthy = new DesktopService(options)
+    unhealthy.beginSession()
+    expect(unhealthy.pending()).toHaveLength(0)
   })
   it('discards a pending report by eventId', () => {
     const { service } = fixture()

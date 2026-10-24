@@ -1,0 +1,249 @@
+[
+  {
+    "id": "meeting-minutes",
+    "title": "会议纪要 · 发布会筹备",
+    "titleEn": "Launch preparation meeting minutes",
+    "description": "发布会筹备会议的三页纪要：五个议题、十五项行动记录及后续确认，保留责任、相对期限和原文依据。",
+    "prompt": "参考「会议纪要 · 发布会筹备」的结构和版式，将我提供的会议记录整理成可编辑 Word 纪要，保留关键讨论、已定安排、待确认事项，以及任务、负责人、期限和交付要求。",
+    "mode": "word",
+    "sampleFile": "example.docx",
+    "revision": "20261012.1",
+    "category": "会议纪要",
+    "businessSkill": "meeting-recap",
+    "source": "curated/meeting-minutes",
+    "previewPages": null
+  },
+  {
+    "id": "coffee-market",
+    "title": "中国现制咖啡市场调研报告",
+    "description": "以公开披露为基础的 2024 年市场研究：品牌网络、同店表现、消费场景与门店贡献，7 页报告及来源索引。",
+    "mode": "word",
+    "sampleFile": "example.docx",
+    "revision": "20260911.6",
+    "category": "调研分析",
+    "source": "legacy/coffee-market",
+    "previewPages": null,
+    "titleEn": "Coffee market research",
+    "businessSkill": "research-writer"
+  },
+  {
+    "id": "equity-research",
+    "title": "小米汽车研究报告",
+    "description": "投资逻辑、经营数据与风险分析，配合图表和来源标注。示例文稿。",
+    "prompt": "参考「小米汽车研究报告」的章节结构与研报样式，帮我研究【公司或行业】。面向【读者】，重点分析【核心问题】，生成含图表与来源标注的 Word 报告。",
+    "revision": "20260911.5",
+    "category": "调研分析",
+    "mode": "word",
+    "source": "legacy/equity-research",
+    "sampleFile": "example.docx",
+    "previewPages": null,
+    "titleEn": "Company research report",
+    "businessSkill": "research-writer"
+  },
+  {
+    "id": "government-notice",
+    "title": "中国中车质量安全月活动通知",
+    "description": "用户提供的 2025 年公文生成样例：活动主题、重点工作、组织实施与信息报送。保留原文待补充项。",
+    "mode": "word",
+    "sampleFile": "example.docx",
+    "revision": "20260914.2",
+    "category": "公文写作",
+    "businessSkill": "gov-doc-writing",
+    "source": "legacy/government-notice",
+    "previewPages": null,
+    "titleEn": "Official notice"
+  },
+  {
+    "id": "annual-business",
+    "title": "年度经营与客户分析",
+    "description": "六张工作表联动年度经营、增长测算、收入质量与客户留存；包含日度波动、原生图表及计算明细。模拟数据。",
+    "mode": "excel",
+    "sampleFile": "example.xlsx",
+    "revision": "20260914.1",
+    "category": "经营分析",
+    "source": "legacy/annual-business",
+    "previewPages": [
+      {
+        "sheet": "经营总览",
+        "range": "A1:P51",
+        "aspectRatio": 0.7821946169772257
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A52:P101",
+        "aspectRatio": 0.9797717842323651
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A102:P149",
+        "aspectRatio": 0.94214463840399
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A150:P197",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A198:P245",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A246:P293",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A294:P341",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A342:P389",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A390:P437",
+        "aspectRatio": 0.9449724862431216
+      },
+      {
+        "sheet": "经营总览",
+        "range": "A438:P468",
+        "aspectRatio": 1.4519600307455802
+      },
+      {
+        "sheet": "增长测算",
+        "range": "A1:P44",
+        "aspectRatio": 0.9319190922545634
+      },
+      {
+        "sheet": "增长测算",
+        "range": "A45:P94",
+        "aspectRatio": 0.8259728902492348
+      },
+      {
+        "sheet": "增长测算",
+        "range": "A95:P138",
+        "aspectRatio": 0.9310004928536225
+      },
+      {
+        "sheet": "增长质量",
+        "range": "A1:P44",
+        "aspectRatio": 0.9319190922545634
+      },
+      {
+        "sheet": "增长质量",
+        "range": "A45:P95",
+        "aspectRatio": 0.8103818103818103
+      },
+      {
+        "sheet": "增长质量",
+        "range": "A96:P134",
+        "aspectRatio": 1.0529542920847268
+      },
+      {
+        "sheet": "客户留存",
+        "range": "A1:P42",
+        "aspectRatio": 0.9692149820420729
+      },
+      {
+        "sheet": "客户留存",
+        "range": "A43:P88",
+        "aspectRatio": 0.9603457041179461
+      },
+      {
+        "sheet": "月度经营数据",
+        "range": "A1:P48",
+        "aspectRatio": 0.9386834986474302
+      },
+      {
+        "sheet": "客户批次数据",
+        "range": "A1:P29",
+        "aspectRatio": 1.3708272859216255
+      }
+    ],
+    "titleEn": "Annual business and customers",
+    "businessSkill": "saas-metrics-coach"
+  },
+  {
+    "id": "port-cargo",
+    "title": "青岚港货物流向与作业效率",
+    "description": "365 天、2,190 条模拟装卸记录；吞吐波动、进出港结构、航线与作业效率。5 张工作表。",
+    "mode": "excel",
+    "sampleFile": "example.xlsx",
+    "revision": "20260911.6",
+    "category": "物流分析",
+    "source": "legacy/port-cargo",
+    "previewPages": [
+      {
+        "sheet": "港口总览",
+        "range": "A1:P54",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "货类与航线",
+        "range": "A1:L52",
+        "aspectRatio": 1.414703110273327
+      },
+      {
+        "sheet": "作业效率",
+        "range": "A1:L52",
+        "aspectRatio": 1.414703110273327
+      },
+      {
+        "sheet": "日度汇总",
+        "range": "A1:H46",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "作业明细",
+        "range": "A1:L46",
+        "aspectRatio": 0.7068620919387075
+      }
+    ],
+    "titleEn": "Port cargo and operations",
+    "businessSkills": [
+      "dataset-health-audit",
+      "data-viz-gen"
+    ]
+  },
+  {
+    "id": "bio-assay",
+    "title": "荧光酶活性筛选与批次质控",
+    "description": "3 批次、288 个模拟孔位；剂量响应、技术重复 CV、跨批次统计与三板热力图。4 张工作表。",
+    "mode": "excel",
+    "sampleFile": "example.xlsx",
+    "revision": "20260911.6",
+    "category": "实验数据",
+    "source": "legacy/bio-assay",
+    "previewPages": [
+      {
+        "sheet": "实验总览",
+        "range": "A1:P54",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "剂量响应",
+        "range": "A1:H52",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "板内质控",
+        "range": "A1:M57",
+        "aspectRatio": 0.7068620919387075
+      },
+      {
+        "sheet": "原始读数",
+        "range": "A1:G46",
+        "aspectRatio": 0.7068620919387075
+      }
+    ],
+    "titleEn": "Bioassay and batch quality",
+    "businessSkills": [
+      "dataset-health-audit",
+      "data-viz-gen"
+    ]
+  }
+]

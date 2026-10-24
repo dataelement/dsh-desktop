@@ -544,134 +544,33 @@ export async function uninstallPluginFromProfile(
   }
 }
 
-export async function resetPluginProfile(
-  dshHome: string,
-  failingPlugin?: string,
-  matchRelatedPackages = true
-): Promise<boolean> {
+/**
+ * Prune unresolvable bundle declarations and report what was removed.
+ *
+ * The boot preflight fails closed on a bundle it cannot resolve, and the Safe
+ * Mode plugin controls cannot clear that on their own: disabling writes a patch
+ * row, while the failure comes from `dsh.profile.bundles`. This removes the
+ * declaration for third-party packages that are not on disk — core bundles and
+ * `@deepseek-ai/*` are never touched — so a launch is retried once before the
+ * user is sent to Safe Mode. Package files, user patch layers and plugin data
+ * are left alone; `pnpm-lock.yaml` is dropped so the next install re-resolves.
+ *
+ * @returns the bundle names whose declaration was removed, empty when none was.
+ */
+export async function pruneUnresolvableProfileBundles(dshHome: string): Promise<string[]> {
   const manifestPath = profilePackageJsonPath(dshHome)
-  if (!existsSync(manifestPath)) return false
-  if (failingPlugin && !isThirdPartyPackageName(failingPlugin)) return false
-
-  try {
-    const raw = await readFile(manifestPath, 'utf8')
-    const manifest = JSON.parse(raw) as ProfileManifest
-    let modified = false
-
-    if (failingPlugin) {
-      const scope = failingPlugin.startsWith('@') ? failingPlugin.split('/')[0] : undefined
-      if (manifest.dependencies) {
-        if (failingPlugin in manifest.dependencies) {
-          delete manifest.dependencies[failingPlugin]
-          modified = true
-        }
-        for (const dep of Object.keys(manifest.dependencies)) {
-          if (
-            matchRelatedPackages && (
-              failingPlugin.includes(dep) ||
-              dep.includes(failingPlugin) ||
-              (scope && dep.startsWith(scope))
-            )
-          ) {
-            delete manifest.dependencies[dep]
-            modified = true
-          }
-        }
-      }
-      if (manifest.dsh?.profile?.bundles) {
-        const origLen = manifest.dsh.profile.bundles.length
-        manifest.dsh.profile.bundles = manifest.dsh.profile.bundles.filter(
-          (b) =>
-            b !== failingPlugin &&
-            (!matchRelatedPackages || (
-              !failingPlugin.includes(b) &&
-              !b.includes(failingPlugin) &&
-              (!scope || !b.startsWith(scope))
-            ))
-        )
-        if (manifest.dsh.profile.bundles.length !== origLen) {
-          modified = true
-        }
-      }
-    } else {
-      // If no specific plugin given, reset to safe core bundles and clean all third-party dependencies
-      const safeBundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
-      if (manifest.dependencies?.dshmarket) safeBundles.push('dshmarket')
-      manifest.dsh ??= {}
-      manifest.dsh.profile ??= {}
-      manifest.dsh.profile.bundles = safeBundles
-      modified = true
-      if (manifest.dependencies) {
-        for (const dep of Object.keys(manifest.dependencies)) {
-          if (!CORE_BUNDLES.has(dep)) {
-            delete manifest.dependencies[dep]
-            modified = true
-          }
-        }
-      }
+  const readBundles = async (): Promise<string[]> => {
+    try {
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as ProfileManifest
+      return manifest.dsh?.profile?.bundles ?? []
+    } catch {
+      return []
     }
-
-    if (modified) {
-      await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')
-    }
-
-    // The user patch layer is the user's own work. Removing one plugin takes
-    // the rows aimed at that plugin and nothing else; only a reset with no
-    // plugin named — the deliberate "start over" — clears the whole layer.
-    const patchPath = profileCordisPatchPath(dshHome)
-    if (existsSync(patchPath)) {
-      if (failingPlugin) {
-        const entryIds = await pluginDeclaredEntryIds(dirname(manifestPath), failingPlugin)
-        const removed = await prunePluginPatchLayer(dshHome, failingPlugin, entryIds)
-        if (removed.length > 0) modified = true
-      } else {
-        const patchContent = await readFile(patchPath, 'utf8')
-        if (patchContent.trim() !== '[]') {
-          await writeFile(patchPath, '[]\n', 'utf8')
-          modified = true
-        }
-      }
-    }
-
-    // Physically clean plugin files from node_modules to guarantee thorough uninstallation
-    const nodeModulesPath = join(dshHome, 'profiles', 'web', 'node_modules')
-    if (existsSync(nodeModulesPath)) {
-      if (failingPlugin) {
-        const pluginDir = join(nodeModulesPath, failingPlugin)
-        await removeTree(pluginDir).catch(() => undefined)
-        if (failingPlugin.startsWith('@')) {
-          const scope = failingPlugin.split('/')[0]
-          if (scope) {
-            const scopeDir = join(nodeModulesPath, scope)
-            try {
-              const files = await readdir(scopeDir)
-              if (files.length === 0) {
-                await removeTree(scopeDir).catch(() => undefined)
-              }
-            } catch { }
-          }
-        }
-      }
-    }
-
-    const packagesDir = join(dshHome, 'profiles', 'web', 'packages')
-    if (failingPlugin && existsSync(packagesDir)) {
-      const packageSourceDir = join(packagesDir, failingPlugin)
-      if (existsSync(packageSourceDir)) {
-        await removeTree(packageSourceDir).catch(() => undefined)
-      }
-    }
-
-    // Remove stale pnpm-lock.yaml so pnpm regenerates a clean hoisted dependency graph
-    const lockfilePath = join(dshHome, 'profiles', 'web', 'pnpm-lock.yaml')
-    if (existsSync(lockfilePath)) {
-      await rm(lockfilePath, { force: true }).catch(() => undefined)
-    }
-
-    return modified
-  } catch {
-    return false
   }
+  const before = await readBundles()
+  if (!(await pruneMissingProfileBundles(dshHome))) return []
+  const after = new Set(await readBundles())
+  return before.filter((name) => !after.has(name))
 }
 
 /**

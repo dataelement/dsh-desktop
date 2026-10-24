@@ -1,0 +1,431 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
+@@ -92,8 +92,25 @@
+ 		function fileMediaUrl(base, path) {
+ 			if (!/^https?:/u.test(base) && !base.startsWith("dsh-app://app/") || !isAbsoluteWorkspacePath(path) || /^[/\\]{2}/u.test(path) || /[\u0000-\u001f\u007f]/u.test(path)) return void 0;
+ 			return new URL(`api/file?path=${encodeURIComponent(path)}`, base).href;
+ 		}
++		function hostPathForOpen(cwd, path) {
++			const normalized = path.replace(/\\/g, "/");
++			if (isAbsoluteWorkspacePath(normalized)) return path;
++			const root = cwd === void 0 ? "" : cwd.replace(/\\/g, "/").replace(/\/+$/, "");
++			if (root === "") return path;
++			return `${root}/${normalized.replace(/^\/+/, "")}`;
++		}
++		async function openResolvedHostFile(ctx, sessionId, cwd, hostPath, options) {
++			const address = fileAddressFor(sessionId, cwd, hostPath);
++			if (ctx.sidebarRightTabs.candidates(address).length === 0) {
++				const opened = await ctx.remote.session.openWorkspacePath({ path: hostPath });
++				if (!opened.ok) throw opened.error;
++				return;
++			}
++			if (options?.line === void 0) ctx.sidebarRight.openResource(address);
++			else ctx.sidebarRight.openResource(address, { params: { line: options.line } });
++		}
+ 		//#endregion
+ 		//#region lib/types/client/contract/snapshot.js
+ 		const EMPTY_LIST$1 = [];
+ 		const EMPTY_TIMELINE = {
+@@ -2713,8 +2730,14 @@
+ 		function openFailureMessage(error, fallback) {
+ 			const message = error instanceof Error ? error.message : String(error);
+ 			return message === "" ? fallback : message;
+ 		}
++		function openingUserMessageTarget(hasMore, order, kindAt, pendingInputs) {
++			if (hasMore !== false) return { leadingUserKey: null, leadingPendingId: null };
++			for (const key of order) if (kindAt(key) === "user") return { leadingUserKey: key, leadingPendingId: null };
++			const pending = pendingInputs.find((item) => "requestId" in item && item.placement === "transcript");
++			return { leadingUserKey: null, leadingPendingId: pending?.requestId ?? null };
++		}
+ 		/**
+ 		* Durable input identities suppress matching echoes in the same render.
+ 		* The last input's Turn also distinguishes an empty opening control from
+ 		* one whose human input or trigger notice is already present.
+@@ -2801,8 +2824,9 @@
+ 				}, (error) => {
+ 					if (id !== fileOpenRequest.current) return;
+ 					setFileOpenError({
+ 						path,
++						options,
+ 						message: openFailureMessage(error, t("fileOpen.unknown"))
+ 					});
+ 					setFileOpenBusy(false);
+ 				});
+@@ -2945,9 +2969,9 @@
+ 						message: fileOpenError.message,
+ 						busy: fileOpenBusy,
+ 						onClose: closeFileOpenError,
+ 						onRetry: () => {
+-							requestOpenFile(fileOpenError.path);
++							requestOpenFile(fileOpenError.path, fileOpenError.options);
+ 						},
+ 						t
+ 					})
+ 				]
+@@ -3708,9 +3732,9 @@
+ 		* Subscribe, apply Turn-process visibility, and dispatch one stable Context key.
+ 		* Policy reads select this seat's own conclusion, so a mode change re-renders
+ 		* only seats whose visibility actually changes.
+ 		*/
+-		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions, useStore, actions, renderSlot, t, useChatNodeBottom, deferCollapse, useGroupAction }) {
++		const ChatNodeSeat = (0, react.memo)(function ChatNodeSeat({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions, useStore, actions, renderSlot, t, useChatNodeBottom, deferCollapse, useGroupAction, leadingUserKey = null, messageFooter = null }) {
+ 			const bottom = useChatNodeBottom(nodeKey);
+ 			const node = useChatNode(nodeKey);
+ 			const routedNode = node;
+ 			const turn = turnOf$1(routedNode);
+@@ -3795,8 +3819,9 @@
+ 			]);
+ 			if (routedNode === void 0 || owner === null) return null;
+ 			const routedOwner = {
+ 				...owner,
++				...nodeKey === leadingUserKey && messageFooter != null ? { messageFooter } : {},
+ 				node: routedNode
+ 			};
+ 			const flowKey = groupPart === void 0 || groupPart === "response" ? routedNode.key : JSON.stringify([routedNode.key, groupPart]);
+ 			return (0, react_jsx_runtime.jsx)("div", {
+@@ -4291,8 +4316,9 @@
+ 			"compactionSummary": "Sixlwa_compactionSummary",
+ 			"compactionTitle": "Sixlwa_compactionTitle",
+ 			"contextRow": "Sixlwa_contextRow",
+ 			"fileCard": "Sixlwa_fileCard",
++			"fileCardButton": "Sixlwa_fileCardButton",
+ 			"fileContent": "Sixlwa_fileContent",
+ 			"fileIcon": "Sixlwa_fileIcon",
+ 			"fileMeta": "Sixlwa_fileMeta",
+ 			"fileName": "Sixlwa_fileName",
+@@ -5279,8 +5305,9 @@
+ 			if (code === "ACCOUNT_SIGNED_OUT") return t("message.failure.accountSignedOut");
+ 			if (code === "INTERRUPTED") return t("message.failure.interrupted");
+ 			if (code === "ACCOUNT_SIGN_IN_REQUIRED") return t("message.failure.accountSignInRequired");
+ 			if (code === "QUOTA" || code === "ACCOUNT_QUOTA") return t("message.failure.quota");
++			if (code === "FORBIDDEN") return t("message.failure.forbidden");
+ 			return code === "AUTH" ? t("message.failure.auth") : message;
+ 		}
+ 		function ModelRetryItem({ node, active, t }) {
+ 			const deadline = (0, react.useMemo)(() => Date.now() + node.delayMs, [node.delayMs, node.seq]);
+@@ -5388,9 +5415,9 @@
+ 				})]
+ 			});
+ 		}
+ 		/** Right-aligned bubble shared by user and steering rows. */
+-		function UserStyleBubble({ content, loadImage, renderFactorySlot, actions, pending = false, echo = false, referenceLabels, skillNames, previewAttachments, facts: inputFacts = EMPTY_TEXT_FACTS, interactive = false }) {
++		function UserStyleBubble({ content, loadImage, renderFactorySlot, actions, pending = false, echo = false, referenceLabels, skillNames, previewAttachments, facts: inputFacts = EMPTY_TEXT_FACTS, interactive = false, footer = null }) {
+ 			const parts = (0, react.useMemo)(() => contentParts(content), [content]);
+ 			const prepared = (0, react.useMemo)(() => ({
+ 				text: parts.text,
+ 				attachments: previewAttachments ?? parts.attachments,
+@@ -5415,8 +5442,9 @@
+ 				"data-pending-steering": pending || void 0,
+ 				"data-submission-echo": echo || void 0,
+ 				children: [renderFactorySlot("conversation.chat.user.content", {
+ 					content: prepared,
++					footer,
+ 					loadImage,
+ 					facts,
+ 					interactive
+ 				}), actions?.(prepared.text)]
+@@ -5449,10 +5477,11 @@
+ 		* until the durable `user/message` or steering occurrence renders.
+ 		* @param props - the pending submission, authorized image loader, and render seats.
+ 		* @returns the echoed user bubble.
+ 		*/
+-		function PendingSubmissionBubble({ submission, loadImage, renderFactorySlot, t }) {
++		function PendingSubmissionBubble({ submission, loadImage, renderFactorySlot, t, footer = null }) {
+ 			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
++				footer,
+ 				content: (0, react.useMemo)(() => submission.text === "" ? [] : [{
+ 					type: "text",
+ 					text: submission.text
+ 				}], [submission.text]),
+@@ -5481,12 +5510,13 @@
+ 				})
+ 			});
+ 		}
+ 		/** User and admitted-steering keyed Chat renderer. */
+-		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, renderFactorySlot, loadImage, t }) {
++		const UserMessageNodeView = (0, react.memo)(function UserMessageNodeView({ node, renderFactorySlot, loadImage, t, messageFooter = null }) {
+ 			const data = node.data;
+ 			return (0, react_jsx_runtime.jsx)(UserStyleBubble, {
+ 				content: data.content,
++				footer: messageFooter,
+ 				interactive: true,
+ 				renderFactorySlot,
+ 				loadImage,
+ 				...data.referenceLabels === void 0 ? {} : { referenceLabels: data.referenceLabels },
+@@ -5640,8 +5670,12 @@
+ 		/** Ordered Chat rows, local echoes, and running status share the flow slot's parent. */
+ 		/** Render the flow without adding a DOM parent or changing keyed row positions. */
+ 		const ChatFlow = (0, react.memo)(function ChatFlow({ entries, pendingInputs, lastInputTurn, deferCollapse, useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useStore, actions, renderSlot, renderFactorySlot, t, useGroupAction, useGroupHeaderAction, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions }) {
+ 			const nodeStore = useChat((snapshot) => snapshot.nodes);
++			const hasMore = useChat((snapshot) => snapshot.hasMore);
++			const order = useChat((snapshot) => snapshot.order);
++			const { leadingUserKey, leadingPendingId } = openingUserMessageTarget(hasMore, order, (key) => nodeStore.get(key)?.kind, pendingInputs);
++			const messageFooter = leadingUserKey !== null || leadingPendingId !== null ? renderSlot("conversation.chat.userMessageFooter", { leading: true }) : null;
+ 			const running = useSession((snapshot) => snapshot.running);
+ 			const runningStartTime = useChatNode(useChat((snapshot) => snapshot.navigation.items().at(-1)?.anchorKey) ?? "", (node) => {
+ 				const location = node?.location;
+ 				return location?.kind === "turn" || location?.kind === "step" ? location.turn.status === "open" ? location.turn.start?.time : void 0 : void 0;
+@@ -5670,8 +5704,10 @@
+ 					case "node": return (0, react.createElement)(ChatNodeSeat, {
+ 						...seatProps,
+ 						key: chatRenderKey(entry),
+ 						nodeKey: entry.key,
++						leadingUserKey,
++						messageFooter,
+ 						...entry.groupPart === void 0 ? {} : { groupPart: entry.groupPart }
+ 					});
+ 					case "group": return (0, react.createElement)(ChatGroupSeat, {
+ 						...seatProps,
+@@ -5684,8 +5720,9 @@
+ 				}
+ 			});
+ 			const pendingRows = pendingInputs.map((item) => "requestId" in item ? (0, react_jsx_runtime.jsx)(PendingSubmissionBubble, {
+ 				submission: item,
++				footer: item.requestId === leadingPendingId ? messageFooter : null,
+ 				loadImage,
+ 				renderFactorySlot,
+ 				t
+ 			}, item.requestId) : (0, react_jsx_runtime.jsx)(PendingSteeringBubble, {
+@@ -5879,9 +5916,10 @@
+ 			"message.taskStopped": "任务已停止",
+ 			"message.failure.accountSignedOut": "任务已因退出 DeepSeek 登录而停止。",
+ 			"message.failure.interrupted": "DSH 进程在本轮完成前退出（例如被强制结束、崩溃或关闭超时），重新启动后本轮已中止。未完成的工具调用结果未知。",
+ 			"message.failure.accountSignInRequired": "请先登录 DeepSeek，并确认请求地址支持账号认证。",
+-			"message.failure.quota": "当前请求的额度已用尽",
++			"message.failure.quota": "账户额度或余额不足，请充值或检查服务商的用量限制。",
++			"message.failure.forbidden": "模型服务商拒绝了本次请求，请检查账号权限、地区限制或模型开通情况。",
+ 			"message.turnError": "本轮运行失败",
+ 			"message.maxTokens": "已达到输出 token 上限",
+ 			"message.maxTokens.hint": "回答被截断，已有输出保留在对话中。发送“继续”可让模型接着输出。",
+ 			"message.tokensPerSecond": "{tps} tok/s",
+@@ -6073,9 +6111,10 @@
+ 			"message.taskStopped": "Task stopped",
+ 			"message.failure.accountSignedOut": "Stopped because you signed out of DeepSeek.",
+ 			"message.failure.interrupted": "The DSH process exited before this turn finished (for example, it was killed, crashed, or timed out while shutting down), so the turn was closed when DSH restarted. Unfinished tool calls have unknown outcomes.",
+ 			"message.failure.accountSignInRequired": "Sign in to DeepSeek and ensure the request destination supports account authentication.",
+-			"message.failure.quota": "Request quota exhausted.",
++			"message.failure.quota": "Your account has insufficient quota or balance. Add credits or check your provider's usage limits.",
++			"message.failure.forbidden": "The model provider denied this request. Check your account permissions, region, or model access.",
+ 			"message.turnError": "This turn failed",
+ 			"message.maxTokens": "Output token limit reached",
+ 			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
+ 			"message.tokensPerSecond": "{tps} tok/s",
+@@ -7293,13 +7332,14 @@
+ 		* The caller owns row identity, pending/echo state, time, and message actions.
+ 		* @param props - prepared content, facts, authorized image loader, and framework Factory/locale seats.
+ 		* @returns the content stack using the existing user-message layout.
+ 		*/
+-		function UserContent({ content, loadImage, facts, interactive = false, ellipsis = false, renderSlot, renderFactorySlot, t }) {
++		function UserContent({ content, loadImage, facts, interactive = false, ellipsis = false, renderSlot, renderFactorySlot, t, footer = null, onOpenUploadedFile }) {
++			const [openError, setOpenError] = (0, react.useState)(null);
+ 			const { text, attachments, extraBlocks, referenceLabels = EMPTY_LABELS } = content;
+ 			const compactImages = attachments.length > 1;
+ 			const truncated = (total) => t("json.truncated", { total });
+-			const showBubble = text !== "" || extraBlocks.length > 0;
++			const showBubble = text !== "" || extraBlocks.length > 0 || footer != null;
+ 			return (0, react_jsx_runtime.jsxs)("div", {
+ 				className: MessageItem_module_css_default.userStack,
+ 				children: [
+ 					attachments.length > 0 && (0, react_jsx_runtime.jsx)("div", {
+@@ -7309,10 +7349,13 @@
+ 							images: [attachment.image],
+ 							loadImage,
+ 							align: "end",
+ 							compact: compactImages
+-						}) }, `image:${index}`) : (0, react_jsx_runtime.jsxs)("span", {
+-							className: MessageItem_module_css_default.fileCard,
++						}) }, `image:${index}`) : (0, react_jsx_runtime.jsxs)(onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? "button" : "span", {
++							type: onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? "button" : void 0,
++							style: onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? { cursor: "pointer", font: "inherit", color: "inherit", textAlign: "left" } : void 0,
++							onClick: onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? () => { onOpenUploadedFile(attachment.file.attachmentId).catch((error) => setOpenError(openFailureMessage(error, t("fileOpen.unknown")))); } : void 0,
++							className: MessageItem_module_css_default.fileCard + (onOpenUploadedFile !== void 0 && attachment.file.attachmentId !== void 0 ? " dshUploadedFileButton" : ""),
+ 							title: attachment.file.name,
+ 							children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
+ 								path: attachment.file.name,
+ 								className: MessageItem_module_css_default.fileIcon
+@@ -7338,10 +7381,11 @@
+ 						}), extraBlocks.map((block, index) => (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.JsonBlock, {
+ 							label: t("message.extraBlock"),
+ 							payload: block,
+ 							truncatedLabel: truncated
+-						}, index))]
++						}, index)), footer]
+ 					}),
++					openError !== null && (0, react_jsx_runtime.jsx)("div", { role: "alert", children: openError }),
+ 					referenceLabels.length > 0 && (0, react_jsx_runtime.jsx)("div", {
+ 						className: MessageItem_module_css_default.referenceSummary,
+ 						children: t("message.referenceSummary", { labels: referenceLabels.join(t("message.referenceSeparator")) })
+ 					})
+@@ -13053,9 +13097,10 @@
+ 			"locale",
+ 			"configForms",
+ 			"remote",
+ 			"remote.session",
+-			"sidebarRight"
++			"sidebarRight",
++			"sidebarRightTabs"
+ 		];
+ 		/**
+ 		* Mount all Chat-owned contributions.
+ 		* @param ctx - Client root context.
+@@ -13143,8 +13188,16 @@
+ 					})
+ 				}, LinkOpeningRow));
+ 			});
+ 			const transcriptView = new TranscriptViewPolicy(chatSettings, "dshDesktop" in globalThis ? "standard" : DEFAULT_TRANSCRIPT_VIEW_MODE);
++			ctx.provide("openUploadedAttachment", { open: async (sessionId, attachmentId) => {
++				const binding = ctx.sessions.binding(sessionId);
++				if (binding === void 0) throw new Error(`ui-chat: unknown session "${sessionId}"`);
++				const result = await binding.session.readFileHostPath(attachmentId);
++				if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
++				const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
++				await openResolvedHostFile(ctx, sessionId, cwd, result.value.path);
++			} });
+ 			const presentation = derivePresentationPolicy(transcriptView.mode, transcriptView.collapseTiming);
+ 			const performancePolicy = new PerformanceUsagePolicy(chatSettings);
+ 			ctx.effect(() => () => {
+ 				transcriptView.dispose();
+@@ -13155,8 +13208,9 @@
+ 			ctx.slots.registerFactory({
+ 				name: "conversation.chat.user.content",
+ 				scope: "session",
+ 				locale: NS,
++				inject: (sessionId) => ({ onOpenUploadedFile: (attachmentId) => ctx.get("openUploadedAttachment").open(sessionId, attachmentId) }),
+ 				children: { "conversation.chat.user.images": {
+ 					kind: "single",
+ 					scope: "session"
+ 				} }
+@@ -13207,9 +13261,9 @@
+ 			ctx.slots.inject("conversation.chat.flow", () => ctx.slots.register({
+ 				name: "conversation.chat.flow",
+ 				locale: NS,
+ 				store: chatStore,
+-				children: { "conversation.chat.node": {
++				children: { "conversation.chat.userMessageFooter": { kind: "list", scope: "session" }, "conversation.chat.node": {
+ 					kind: "keyed",
+ 					scope: "session",
+ 					inject: CHAT_NODE_INJECT
+ 				} },
+@@ -13241,13 +13295,25 @@
+ 							...nodeSources(binding),
+ 							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
+ 							openFile: async (path, options) => {
+ 								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
+-								const url = fileAddressFor(sessionId, cwd, path);
+-								if (options?.line === void 0) ctx.sidebarRight.openResource(url);
+-								else ctx.sidebarRight.openResource(url, { params: { line: options.line } });
+-								await Promise.resolve();
++								if (options?.revealInFileManager === true) {
++									const opened = await ctx.remote.session.openWorkspacePath({ path: hostPathForOpen(cwd, path) });
++									if (!opened.ok) throw opened.error;
++									return;
++								}
++								const byName = await session.readFileHostPath({ name: path });
++								if (byName.ok) {
++									await openResolvedHostFile(ctx, sessionId, cwd, byName.value.path);
++									return;
++								}
++								await openResolvedHostFile(ctx, sessionId, cwd, hostPathForOpen(cwd, path), options);
+ 							},
++							openUploadedFile: async (attachmentId) => {
++								const opener = ctx.get("openUploadedAttachment");
++								if (opener === void 0) throw new Error("ui-chat: openUploadedAttachment is unavailable");
++								await opener.open(sessionId, attachmentId);
++							},
+ 							openExternalLink: (url) => {
+ 								if (linkOpening.getSnapshot() === "sidebar" && ctx.get("sidebarRightTabs")?.get("browser") !== void 0) ctx.sidebarRight.openTab("browser", { params: { url } });
+ 								else window.open(url, "_blank", "noopener,noreferrer");
+ 							},
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
+--- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
++++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
+@@ -32,14 +32,20 @@
+ /** Where in a file an open should land. */
+ export interface OpenFileOptions {
+     /** 1-based line to reveal; absent = the file's beginning. */
+     readonly line?: number;
++    /**
++     * Open the path in the system file manager instead of the document preview.
++     * Directory-shaped inline references set this so a missing folder does not
++     * become a "file not found" preview tab.
++     */
++    readonly revealInFileManager?: boolean;
+ }
+ /** Owner currency of the completed-Turn extension chain. */
+ export interface TurnTailOwnerProps {
+     turn: TurnLocation;
+     seq: number;
+-    openFile: (path: string) => void;
++    openFile: (path: string, options?: OpenFileOptions) => void;
+ }
+ /** Owner currency of finalized-assistant actions. */
+ export interface AssistantActionOwnerProps {
+     messageId: MessageId;
+@@ -165,8 +171,9 @@
+     };
+ }
+ /** Stable owner currency delivered to a keyed Chat renderer. */
+ export interface ChatNodeOwnerProps {
++    messageFooter?: React.ReactNode;
+     /** Renderer-owned Node portion selected by the grouping Definition. */
+     groupPart?: string;
+     cwd?: string | undefined;
+     openFile: (path: string, options?: OpenFileOptions) => void;
+@@ -196,8 +203,9 @@
+     readonly referenceLabels?: readonly string[];
+ }
+ /** Public content rendering input; reference renderers own their injected actions. */
+ export interface UserContentInput extends Pick<ChatNodeOwnerProps, 'loadImage'>, Pick<UserTextInput, 'interactive' | 'ellipsis'> {
++    readonly footer?: React.ReactNode;
+     readonly content: UserContentData;
+     /** Transform inputs passed unchanged to UserText, separate from summary and rendering props. */
+     readonly facts: Readonly<Partial<UserTextFacts>>;
+ }
+@@ -280,13 +288,18 @@
+     readonly lastInputTurn: number | undefined;
+     readonly deferCollapse: boolean;
+ }
+ /** Full props of the Chat-owned flow renderer. */
+-export type ChatFlowSlotProps = PropsRuntime<'conversation.chat.flow'> & PropsRenderSlots<'conversation.chat.node'> & PropsRenderFactories & PropsStore<ChatStore> & InjectFace<ChatFlowDataInjected> & PropsLocale<'chat'>;
++export type ChatFlowSlotProps = PropsRuntime<'conversation.chat.flow'> & PropsRenderSlots<'conversation.chat.node' | 'conversation.chat.userMessageFooter'> & PropsRenderFactories & PropsStore<ChatStore> & InjectFace<ChatFlowDataInjected> & PropsLocale<'chat'>;
+ /** Full Chat view props. */
+ export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.flow'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
+ /** Full props shared by the user and output image entries. */
+ export type MessageImagesProps = PropsRuntime<'conversation.chat.user.images' | 'conversation.chat.message.images'> & PropsRenderFactories;
++/** Owner currency of the opening user-message footer. */
++export interface UserMessageFooterOwnerProps {
++    /** True only for the loaded conversation's first user message. */
++    readonly leading: true;
++}
+ declare module '@deepseek-ai/dsh-client-ui-slots' {
+     interface SessionStandardProps {
+         /** Selector hook over the current Conversation binding's Chat target. */
+         useChat: UseChat;
+@@ -357,8 +370,18 @@
+             scope: 'session';
+             owner: MessageImagesOwnerProps;
+         };
+         /**
++         * Ordered contributions under the loaded conversation's first user message.
++         * The host renders nothing when older history is still paged out, and mounts
++         * the same slot on the opening echo until the durable user node arrives.
++         */
++        'conversation.chat.userMessageFooter': {
++            kind: 'list';
++            scope: 'session';
++            owner: UserMessageFooterOwnerProps;
++        };
++        /**
+          * Command row keyed by the command name. The component receives the folded
+          * command lifecycle and linked compaction when present. Reusing a key
+          * replaces that command renderer; an unoccupied key uses the generic card.
+          */
+@@ -410,5 +433,5 @@
+             owner: QuotaNoticeOwnerProps;
+         };
+     }
+ }
+-//# sourceMappingURL=slots.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=slots.d.ts.map
