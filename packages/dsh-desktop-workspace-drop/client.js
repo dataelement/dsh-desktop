@@ -2,15 +2,17 @@
  * Opens a folder dropped on the DSH Desktop window as a Harness workspace.
  *
  * A page cannot read the real path of a dropped folder — Chromium hides it — so
- * the preload bridge `window.dshDesktopFiles.getPathForFile` supplies it and
- * this plugin performs the adoption through the public client services
- * (`ctx.workspaces.create` + `ctx.uiWorkspace.openWorkspace`). Outside the
- * desktop host that bridge is absent, so the plugin installs nothing and leaves
- * drops to the composer's file-attachment flow.
+ * the preload bridge `window.__DSH_HOST_PATHS__.pathFor` supplies it and this
+ * plugin performs the adoption through the public client services
+ * (`ctx.workspaces.create` + `ctx.uiWorkspace.openWorkspace`). That bridge is
+ * the same one the composer uses to turn host files into `@path` references, so
+ * the plugin adds no new preload surface. Outside the desktop host it is absent,
+ * so the plugin installs nothing and leaves drops to the composer.
  *
  * Folder drops are claimed in the capture phase because the composer owns a
- * document-level bubble listener that would otherwise take the directory as a
- * zero-byte attachment. File drops are never claimed here.
+ * document-level bubble listener that would otherwise consume the directory
+ * itself instead of opening it as a workspace. File drops are never claimed
+ * here.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-desktop-workspace-drop',
@@ -77,12 +79,24 @@ window.__ModuleLoader__.load({
      * @returns the disposer removing every listener, node and timer it added.
      */
     function installWorkspaceDrop(ctx, t) {
-      const bridge = window.dshDesktopFiles
-      if (bridge === undefined || typeof bridge.getPathForFile !== 'function') return () => {}
+      const bridge = window.__DSH_HOST_PATHS__
+      if (bridge === undefined || typeof bridge.pathFor !== 'function') return () => {}
 
       let notice = null
       let noticeTimer
       let noticeStyle = null
+      /**
+       * Adoption is asynchronous, and the plugin can be disposed while a create
+       * is in flight. Every run gets a generation: a resolution or rejection
+       * whose generation is no longer current must not navigate, and must not
+       * redraw a notice the disposer already cleared.
+       */
+      let disposed = false
+      let adoption = 0
+
+      function isCurrent(generation) {
+        return disposed !== true && generation === adoption
+      }
 
       function installNoticeStyle() {
         if (noticeStyle !== null) return
@@ -105,6 +119,9 @@ window.__ModuleLoader__.load({
        * Auto-dismisses, so it carries no pointer-only affordance.
        */
       function showNotice(message) {
+        // The disposer removed the node it owned; a late rejection must not
+        // bring it back.
+        if (disposed === true) return
         if (document.body === null || document.body === undefined) return
         installNoticeStyle()
         if (notice === null || notice.isConnected !== true) {
@@ -128,6 +145,7 @@ window.__ModuleLoader__.load({
       }
 
       async function adopt(files) {
+        const generation = (adoption += 1)
         const [file] = files
         if (file === undefined) return
         if (files.length > 1) {
@@ -139,7 +157,7 @@ window.__ModuleLoader__.load({
         }
         let path
         try {
-          path = bridge.getPathForFile(file)
+          path = bridge.pathFor(file)
         } catch (reason) {
           showNotice(t('failed', { message: messageOf(reason) }))
           return
@@ -150,8 +168,12 @@ window.__ModuleLoader__.load({
         }
         try {
           const workspace = await ctx.workspaces.create({ path })
+          // Disposed while the create was pending: the plugin no longer owns
+          // the window, so this run must not navigate or report anything.
+          if (!isCurrent(generation)) return
           await ctx.uiWorkspace.openWorkspace(workspace.workspaceId)
         } catch (reason) {
+          if (!isCurrent(generation)) return
           showNotice(t('failed', { message: messageOf(reason) }))
         }
       }
@@ -182,6 +204,11 @@ window.__ModuleLoader__.load({
       document.addEventListener('dragover', onDragOver, true)
       document.addEventListener('drop', onDrop, true)
       return () => {
+        // Retire every in-flight adoption before tearing down: a create that
+        // resolves later must not open a workspace, and one that rejects must
+        // not reinsert the notice removed below.
+        disposed = true
+        adoption += 1
         document.removeEventListener('dragenter', onDragEnter, true)
         document.removeEventListener('dragover', onDragOver, true)
         document.removeEventListener('drop', onDrop, true)

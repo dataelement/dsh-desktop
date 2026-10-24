@@ -126,7 +126,7 @@ function eventFor(dataTransfer: unknown): FakeEvent {
 }
 
 interface HarnessOptions {
-  bridge?: { getPathForFile: (file: { name: string }) => string } | undefined
+  bridge?: { pathFor: (file: { name: string }) => string } | undefined
   create?: (input: { path: string }) => Promise<{ workspaceId: string }>
   open?: (workspaceId: string) => Promise<void>
 }
@@ -182,7 +182,7 @@ async function loadPlugin(options: HarnessOptions = {}) {
       },
       ...(options.bridge === undefined
         ? {}
-        : { dshDesktopFiles: options.bridge })
+        : { __DSH_HOST_PATHS__: options.bridge })
     },
     document: dom.document,
     console: { warn: vi.fn() },
@@ -201,7 +201,12 @@ async function loadPlugin(options: HarnessOptions = {}) {
 }
 
 const bridge = {
-  getPathForFile: (file: { name: string }): string => `/Users/me/${file.name}`
+  pathFor: (file: { name: string }): string => `/Users/me/${file.name}`
+}
+
+/** Let continuations scheduled behind a settled adoption promise run. */
+async function flushMicrotasks(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0))
 }
 
 describe('desktop workspace folder drop', () => {
@@ -322,5 +327,57 @@ describe('desktop workspace folder drop', () => {
     for (const dispose of effects) dispose()
     expect(dom.listenerCount('drop', true)).toBe(0)
     expect(dom.bodyChildren[0]!.isConnected).toBe(false)
+  })
+
+  it('does not open a workspace whose create resolves after dispose', async () => {
+    let settleCreate: ((workspace: { workspaceId: string }) => void) | undefined
+    const { plugin, ctx, dom, create, open, effects } = await loadPlugin({
+      bridge,
+      create: () =>
+        new Promise<{ workspaceId: string }>(resolve => {
+          settleCreate = resolve
+        })
+    })
+    plugin.apply(ctx)
+
+    dom.dispatch('drop', eventFor(transferFor([{ isDirectory: true, name: 'project' }])))
+    // The adoption is now parked on ctx.workspaces.create.
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(create).toHaveBeenCalledWith({ path: '/Users/me/project' })
+
+    for (const dispose of effects) dispose()
+    settleCreate?.({ workspaceId: 'ws-late' })
+    await flushMicrotasks()
+
+    // Navigating here would move the window to a workspace the disposed
+    // plugin no longer owns.
+    expect(open).not.toHaveBeenCalled()
+    expect(dom.bodyChildren).toHaveLength(0)
+  })
+
+  it('does not reinsert its notice when a pending create rejects after dispose', async () => {
+    let rejectCreate: ((reason: Error) => void) | undefined
+    const { plugin, ctx, dom, create, effects } = await loadPlugin({
+      bridge,
+      create: () =>
+        new Promise<{ workspaceId: string }>((_resolve, reject) => {
+          rejectCreate = reject
+        })
+    })
+    plugin.apply(ctx)
+
+    dom.dispatch('drop', eventFor(transferFor([{ isDirectory: true, name: 'project' }])))
+    expect(create).toHaveBeenCalledTimes(1)
+
+    for (const dispose of effects) dispose()
+    expect(dom.listenerCount('drop', true)).toBe(0)
+
+    rejectCreate?.(new Error('workspace/name-conflict'))
+    await flushMicrotasks()
+
+    // The disposer removed the notice; a late rejection must stay silent
+    // instead of resurrecting it.
+    expect(dom.bodyChildren).toHaveLength(0)
+    expect(dom.headChildren).toHaveLength(0)
   })
 })
