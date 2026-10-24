@@ -16,7 +16,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/lib/bin.js b/node_modules/@deepseek-a
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -104,9 +104,21 @@
+@@ -104,9 +104,22 @@
      "@deepseek-ai/dsh-experimental-session-titles-bundle": "0.2.1-rc.2",
      "@deepseek-ai/dsh-experimental-terminal-bundle": "0.2.1-rc.2",
      "@deepseek-ai/dsh-experimental-session-search": "0.2.1-rc.2",
@@ -34,6 +34,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 +    "react-dom": "18.3.1",
 +    "dsh-desktop-onboarding": "0.1.0",
 +    "dsh-desktop-workbenches": "0.1.0",
++    "dsh-desktop-workspace-drop": "0.1.0",
 +    "dsh-desktop-office": "0.1.0"
    },
    "devDependencies": {

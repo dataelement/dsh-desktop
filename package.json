@@ -281,6 +281,7 @@
     "dsh-desktop-office": "file:packages/dsh-desktop-office",
     "dsh-desktop-onboarding": "file:packages/dsh-desktop-onboarding",
     "dsh-desktop-preset-transfer": "file:packages/dsh-desktop-preset-transfer",
+    "dsh-desktop-workspace-drop": "file:packages/dsh-desktop-workspace-drop",
     "dsh-desktop-workbenches": "file:packages/dsh-desktop-workbenches",
     "dsh-image-generation": "file:packages/dsh-image-generation",
     "dsh-ppt": "file:packages/ppt-runtime/core",

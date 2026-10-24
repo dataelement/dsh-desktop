@@ -26,6 +26,14 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    # Dropping a folder on the window opens it as a Workspace. The page cannot
+    # read a dropped folder's real path, so the plugin pairs with the
+    # `__DSH_HOST_PATHS__` preload bridge; without that bridge it installs
+    # nothing. Deliberately absent from the Safe Mode composition, which keeps
+    # only Desktop branding: recovery must not depend on the Workspace services.
+    - id: dsh-desktop-workspace-drop
+      name: dsh-desktop-workspace-drop
+
     - id: dsh-desktop-workbenches
       name: dsh-desktop-workbenches
       config:
