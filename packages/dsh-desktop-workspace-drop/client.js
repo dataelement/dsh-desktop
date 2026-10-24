@@ -46,11 +46,12 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The dropped `File` handles when every dropped item is a directory, else
-     * null. Null also means "cannot tell": `webkitGetAsEntry` is the only
-     * synchronous entry probe Chromium exposes, and an unreadable entry must
-     * leave the event to the attachment flow rather than guess that a folder is
-     * involved.
+     * The dropped `File` handles when at least one file item was dropped and
+     * every one of them is a directory, else null. Non-file items are ignored:
+     * they describe the drag, not the target. Null also means "cannot tell":
+     * `webkitGetAsEntry` is the only synchronous entry probe Chromium exposes,
+     * and an unreadable entry must leave the event to the attachment flow
+     * rather than guess that a folder is involved.
      * @param transfer - the event's DataTransfer, possibly absent.
      * @returns one File per dropped directory, or null to leave the drop alone.
      */
@@ -61,7 +62,10 @@ window.__ModuleLoader__.load({
       const files = []
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index]
-        if (item.kind !== 'file') return null
+        // A drag may carry non-file payloads next to the files — Chromium adds a
+        // `text/uri-list` mirror for some sources. They say nothing about what is
+        // being dropped, so only file items decide whether this is a folder.
+        if (item.kind !== 'file') continue
         const entry =
           typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null
         if (entry === null || entry === undefined || entry.isDirectory !== true) return null

@@ -117,6 +117,22 @@ function transferFor(entries: Array<{ isDirectory: boolean; name: string }>) {
   }
 }
 
+/**
+ * The transfer Chromium builds for an OS drag: the files plus a `text/uri-list`
+ * mirror. The mirror is a string item, so it must not be read as "cannot tell".
+ */
+function transferWithUriList(entries: Array<{ isDirectory: boolean; name: string }>) {
+  const transfer = transferFor(entries)
+  return {
+    ...transfer,
+    types: ['text/uri-list', 'Files'],
+    items: [
+      { kind: 'string', webkitGetAsEntry: () => null, getAsFile: () => null },
+      ...transfer.items
+    ]
+  }
+}
+
 function eventFor(dataTransfer: unknown): FakeEvent {
   return {
     dataTransfer,
@@ -255,6 +271,41 @@ describe('desktop workspace folder drop', () => {
     expect(composerDrop).toHaveBeenCalledTimes(1)
     expect(create).not.toHaveBeenCalled()
     expect(open).not.toHaveBeenCalled()
+  })
+
+  it('claims a folder drop that also carries a uri-list mirror', async () => {
+    const { plugin, ctx, dom, create, open } = await loadPlugin({ bridge })
+    plugin.apply(ctx)
+
+    const composerDrop = vi.fn()
+    dom.onBubbleDrop(composerDrop)
+    dom.dispatch(
+      'drop',
+      eventFor(transferWithUriList([{ isDirectory: true, name: 'project' }]))
+    )
+
+    expect(composerDrop).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledWith({ path: '/Users/me/project' })
+    await vi.waitFor(() => expect(open).toHaveBeenCalledWith('id:/Users/me/project'))
+  })
+
+  it('leaves a string-only payload to the composer', async () => {
+    const { plugin, ctx, dom, create } = await loadPlugin({ bridge })
+    plugin.apply(ctx)
+
+    const composerDrop = vi.fn()
+    dom.onBubbleDrop(composerDrop)
+    dom.dispatch(
+      'drop',
+      eventFor({
+        types: ['text/uri-list'],
+        dropEffect: '',
+        items: [{ kind: 'string', webkitGetAsEntry: () => null, getAsFile: () => null }]
+      })
+    )
+
+    expect(composerDrop).toHaveBeenCalledTimes(1)
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('leaves a mixed folder-and-file drop to the composer', async () => {
