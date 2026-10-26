@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { PluginManager } from '@deepseek-ai/dsh-plugin-manager'
 import {
   ConfigWatchHmr,
   apply,
@@ -89,6 +90,46 @@ describe('desktop HMR fallback', () => {
 
     await expect(service.runExclusive(async () => { throw new Error('failed mutation') })).rejects.toThrow('failed mutation')
     await expect(service.runExclusive(async () => 'later mutation')).resolves.toBe('later mutation')
+  })
+
+  it('reports limited capabilities and defers reconciliation without claiming activation', async () => {
+    const service = bareService()
+    expect(service.capabilities).toEqual({
+      configWatching: true, profileReconciliation: false, moduleReplacement: false
+    })
+    await expect(service.reconcileProfile(['required-entry']))
+      .rejects.toThrow('HMR profile reconciliation must run inside runExclusive')
+    for (const ids of [undefined, [], ['required-entry']]) {
+      await expect(service.runExclusive(() => service.reconcileProfile(ids))).resolves.toEqual({
+        warnings: [], pending: [], restartReason: 'module-comparison'
+      })
+    }
+  })
+
+  it.each([true, false])('reports restart-required through PluginManager bundle switch (enabled=%s)', async (enabled) => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-hmr-manager-'))
+    const service = bareService()
+    const reconcile = vi.spyOn(service, 'reconcileProfile')
+    const emit = vi.fn()
+    // Keep the real configure/change/reload path; substitute only bundle storage
+    // and discovery, which are independent of this HMR service contract.
+    const manager = Object.create(PluginManager.prototype)
+    manager.profile = { dir: directory }
+    manager.abort = new AbortController()
+    manager.lockWaitMs = 1000
+    manager.ownerContext = { get: (key) => key === 'hmr' ? service : undefined, emit }
+    manager.selectBundle = vi.fn(async () => {
+      await writeFile(join(directory, 'package.json'), JSON.stringify({ enabled }))
+    })
+    manager.recordBundleSwitch = vi.fn(async () => undefined)
+    manager.bundleRows = () => [{ id: 'required-entry' }]
+
+    await expect(manager.setBundleEnabled('fixture-bundle', enabled)).resolves.toMatchObject({
+      changed: true, application: 'restart-required', restartReason: 'module-comparison',
+      warnings: []
+    })
+    expect(reconcile).toHaveBeenCalledWith(enabled ? ['required-entry'] : [])
+    expect(emit).toHaveBeenCalledWith('plugin-manager/changed', { reason: 'bundle' })
   })
 
   it('rejects a nested HMR transaction', async () => {

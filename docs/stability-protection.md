@@ -32,3 +32,10 @@ node scripts/verify-stability-runtime.mjs
 ```
 
 原生脚本使用临时 userData/DSH_HOME，启动实际 renderer 和 Harness 子进程并记录默认堆大小；输出 `customHeapLimit: false`，不人为降低内存上限。Windows 原生环境可手动运行同一脚本与相关回归。它们不执行系统注销，也不能代替正式安装包中的注销/取消注销、远程桌面、睡眠唤醒、低内存长任务和真实用户 Profile 验收。
+
+## 恢复职责边界
+
+- `ProcessRecovery` 是应用级进程故障恢复的唯一状态所有者：退出证据、设备丢失探测、窗口/GPU/OOM 提示互斥、OOM 停止与退出清理均在同一生命周期内。OOM 可以升级已有窗口或 GPU 恢复，不能被提示互斥挡住。
+- `RendererNavigationRecovery` 保持窗口级导航串行化与有限重试；通过显式取消回调服从进程恢复门禁，不自行管理 OOM/GPU 状态。
+- `gpu-fallback.ts` 只保留退出分类与跨启动降级策略；`window-restart-prompt.ts` 只负责本地化原生交互与有期限的日志刷新，不拥有恢复状态。
+- 故障上报通过注入回调取得退出上下文快照，不读全局注册表，也不依赖控制器实现。配置/Profile/插件修复属于数据恢复，仍保留独立领域边界。

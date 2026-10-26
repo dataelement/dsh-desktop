@@ -1657,12 +1657,12 @@ describe('desktop workbench client navigation', () => {
         expect(dom.window.document.querySelector('.dshWbNotice')).toBeNull()
         expect(dom.window.document.querySelector('.dshWbConversation').textContent).toContain('Native session')
       }
-      await React.act(async () => { service.restartNeeded = true; service.publish() })
+      await React.act(async () => { service.recordApplication('writer', { application: 'restart-required' }); service.publish() })
       expect(dom.window.document.querySelector('.dshWbNotice').textContent).toContain('工作台安装变更需要重启 Harness')
       await React.act(async () => { service.error = 'Local state failed'; service.publish() })
       expect(dom.window.document.querySelector('.dshWbNotice').getAttribute('role')).toBe('alert')
       expect(dom.window.document.querySelector('.dshWbNotice').textContent).toContain('Local state failed')
-      await React.act(async () => { service.error = ''; service.restartNeeded = false; service.ready = false; service.publish() })
+      await React.act(async () => { service.error = ''; service.applicationOutcomes.clear(); service.ready = false; service.publish() })
       expect(dom.window.document.querySelector('.dshWbNotice').textContent).toBe('正在读取本地工作台…')
     } finally {
       if (root) await React.act(async () => root.unmount())
@@ -2557,6 +2557,243 @@ describe('workbench market screenshot and metadata display', () => {
     return calls
   }
 
+
+  function lifecycleMarket(service, initial = {}) {
+    const snapshot = { installs: {}, packages: {}, lifecycle: { bundles: [], plugins: [] }, ...initial }
+    const original = service.request
+    service.request = vi.fn((url, options) => String(url).startsWith('/api/desktop-workbenches/market-installs')
+      ? Promise.resolve(Response.json(snapshot)) : original(url, options))
+    return snapshot
+  }
+  const changeEnvelope = (application, install, extra = {}) => ({
+    result: { changed: true, application, ...extra }, application,
+    restartRequired: application === 'restart-required', reloadRequired: false,
+    actionRequired: application === 'restart-required' ? 'restart' : 'none', ...(install ? { install } : {})
+  })
+
+  it('reconciles pending results from authoritative manager snapshots after external operations', async () => {
+    const { service } = await fixture(boundState())
+    const snapshot = lifecycleMarket(service, {
+      installs: { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper' } },
+      lifecycle: { bundles: [{ name: 'helper', installed: true, enabled: true }], plugins: [], applications: [{ bundle: 'helper', target: 'helper', stage: 'enable', application: 'restart-required', restartReason: 'module-comparison' }] }
+    })
+    await service.refreshNative()
+    expect(service.restartNeeded).toBe(true)
+    expect(service.pendingRestart.has('o/helper')).toBe(true)
+    snapshot.lifecycle.applications = [{ target: 'helper', stage: 'enable', application: 'applied' }]
+    await service.refreshNative()
+    expect(service.restartNeeded).toBe(false)
+    expect(service.pendingRestart.size).toBe(0)
+    snapshot.lifecycle.applications = []
+    await service.refreshNative()
+    expect(service.applicationOutcomes.size).toBe(0)
+  })
+
+  it('applies market installs immediately without inventing pending restart or reload state', async () => {
+    const { service, ctx, saved } = await fixture(boundState())
+    service.remoteCatalog = [listed()]
+    const snapshot = lifecycleMarket(service)
+    const install = { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => {
+      snapshot.installs = { 'o/helper': install }
+      snapshot.packages = { helper: { origin: 'market', version: '1.0.0' } }
+      snapshot.lifecycle.bundles = [{ name: 'helper', installed: true, enabled: true, version: '1.0.0' }]
+      setFiberPackage(ctx, 'helper')
+      service.register({ title: 'Helper' }, () => null)
+      return Response.json(changeEnvelope('applied', install))
+    } })
+    await service.installFromMarket('o/helper')
+    expect(service.getSnapshot()).toMatchObject({ installing: null, restartNeeded: false, reloadNeeded: false })
+    expect(service.pendingRestart.size).toBe(0)
+    expect(service.pendingReload.size).toBe(0)
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: true, pendingRestart: false, pendingReload: false, loadFailure: '' })
+    expect(service.originFor(service.getSnapshot().catalog[0])).toBe('market')
+    expect(saved().state.notes).toEqual(boundState().notes)
+    expect(saved().state.sessionBindings).toEqual(boundState().sessionBindings)
+    expect(saved().state.pinned).toContain('o/helper')
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+  })
+
+  it('does not hide a missing applied provider behind an invented pending state', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    const install = { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }
+    lifecycleMarket(service, { installs: { 'o/helper': install }, lifecycle: { bundles: [{ name: 'helper', installed: true, enabled: true }], plugins: [] } })
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json(changeEnvelope('applied', install)) })
+    await service.installFromMarket('o/helper')
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ pendingRestart: false, pendingReload: false, failureKind: 'load' })
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper').loadFailure).not.toBe('')
+    expect(service.getSnapshot().restartNeeded).toBe(false)
+  })
+
+  it.each(['failed', 'cancelled'])('preserves the full HTTP 409 %s result without changing local state or navigation', async application => {
+    const initial = { ...boundState(), active: 'writer', pinned: ['writer'] }
+    const { service, ctx, saved } = await fixture(initial)
+    ctx.uiWorkspace.openSession.mockClear()
+    ctx.layout.selectPanel.mockClear()
+    service.remoteCatalog = [listed()]
+    const result = { changed: false, application, error: { code: 'activation_failed', diagnostic: 'Activation declined' }, revision: 19 }
+    lifecycleMarket(service)
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => Response.json({ ...changeEnvelope(application), result, error: 'Activation declined' }, { status: 409 }) })
+    await expect(service.installFromMarket('o/helper')).rejects.toMatchObject({ message: 'Activation declined', application, result })
+    expect(service.getSnapshot()).toMatchObject({ installing: null, restartNeeded: false, reloadNeeded: false })
+    expect(service.installFailures.get('o/helper')).toMatchObject({ kind: 'install', message: 'Activation declined' })
+    expect(saved().state).toEqual(initial)
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    expect(ctx.layout.selectPanel).not.toHaveBeenCalled()
+    await service.refreshNative()
+    expect(service.installFailures.get('o/helper').message).toBe('Activation declined')
+  })
+
+
+  it('replaces restart-required with the latest applied install result for the same package', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    const install = { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }
+    const snapshot = lifecycleMarket(service)
+    let application = 'restart-required'
+    withMarket(service, { '/api/desktop-workbenches/market-install': () => {
+      snapshot.installs = { 'o/helper': install }
+      snapshot.lifecycle.bundles = [{ name: 'helper', installed: true, enabled: true, version: '1.0.0' }]
+      return Response.json(changeEnvelope(application, install, { restartReason: application === 'restart-required' ? 'server-code-changed' : undefined }))
+    } })
+    await service.installFromMarket('o/helper')
+    expect(service.getSnapshot()).toMatchObject({ restartNeeded: true, reloadNeeded: false })
+    expect(service.pendingRestart.has('o/helper')).toBe(true)
+    application = 'applied'
+    await service.installFromMarket('o/helper')
+    expect(service.getSnapshot()).toMatchObject({ restartNeeded: false, reloadNeeded: false })
+    expect(service.pendingRestart.size).toBe(0)
+    expect(service.pendingReload.size).toBe(0)
+    expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ pendingRestart: false, pendingReload: false })
+  })
+
+  it('clears a prior package restart outcome when its removal is applied, preserving business data', async () => {
+    const initial = { ...boundState(), added: [...boundState().added, 'o/helper'], pinned: ['o/helper'], notes: { 'o/helper': 'Retain after uninstall' }, sessionBindings: { old: 'o/helper' } }
+    const { service, saved } = await fixture(initial)
+    service.remoteCatalog = [listed()]
+    const install = { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }
+    const snapshot = lifecycleMarket(service, { installs: { 'o/helper': install }, lifecycle: { bundles: [{ name: 'helper', installed: true, enabled: true }], plugins: [] } })
+    await service.refreshNative()
+    withMarket(service, {
+      '/api/desktop-workbenches/market-enabled': () => Response.json(changeEnvelope('restart-required', install)),
+      '/api/desktop-workbenches/market-uninstall': () => {
+        snapshot.installs = {}
+        snapshot.lifecycle = { bundles: [], plugins: [] }
+        return Response.json(changeEnvelope('applied'))
+      }
+    })
+    await service.setPluginEnabled('helper', true)
+    expect(service.restartNeeded).toBe(true)
+    await service.removeWorkbench('o/helper')
+    expect(service.getSnapshot()).toMatchObject({ restartNeeded: false, reloadNeeded: false, installs: {} })
+    expect(saved().state.added).not.toContain('o/helper')
+    expect(saved().state.pinned).not.toContain('o/helper')
+    expect(saved().state.notes).toEqual(initial.notes)
+    expect(saved().state.sessionBindings).toEqual(initial.sessionBindings)
+  })
+
+  it('ignores an older install/lifecycle snapshot arriving after a newer refresh', async () => {
+    const { service } = await fixture()
+    const older = deferred()
+    const newer = deferred()
+    const original = service.request
+    let count = 0
+    service.request = (url, options) => String(url).startsWith('/api/desktop-workbenches/market-installs')
+      ? (++count === 1 ? older.promise : newer.promise) : original(url, options)
+    const first = service.refreshNative()
+    const second = service.refreshNative()
+    newer.resolve(Response.json({ installs: {}, packages: {}, lifecycle: { bundles: [{ name: 'helper', installed: true, enabled: false, version: '2.0.0' }], plugins: [] } }))
+    await second
+    older.resolve(Response.json({ installs: { stale: { pluginName: 'old' } }, packages: { old: { origin: 'market' } }, lifecycle: { bundles: [{ name: 'old', installed: true, enabled: true }], plugins: [] } }))
+    await first
+    expect(service.installs).toEqual({})
+    expect(service.packageEvidence).toEqual({})
+    expect(Object.keys(service.native.bundles)).toEqual(['helper'])
+    expect(service.native.bundles.helper).toMatchObject({ enabled: false, version: '2.0.0' })
+  })
+
+  it('falls back to the native manager when lifecycle is null while retaining fresh market records', async () => {
+    const { service, ctx } = await fixture()
+    const install = { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }
+    lifecycleMarket(service, { installs: { 'o/helper': install }, packages: { helper: { origin: 'market' } }, lifecycle: null })
+    ctx.remote = { pluginManager: {
+      listBundles: vi.fn(async () => ({ ok: true, value: [{ name: 'helper', installed: true, enabled: false }] })),
+      listPlugins: vi.fn(async () => ({ ok: true, value: [{ id: 'helper:main', name: 'helper' }] }))
+    } }
+    await service.refreshNative()
+    expect(service.installs).toEqual({ 'o/helper': install })
+    expect(service.packageEvidence).toEqual({ helper: { origin: 'market' } })
+    expect(service.native).toMatchObject({ status: 'ready', bundles: { helper: { enabled: false } }, plugins: [{ id: 'helper:main', name: 'helper' }] })
+    expect(ctx.remote.pluginManager.listBundles).toHaveBeenCalledOnce()
+    expect(ctx.remote.pluginManager.listPlugins).toHaveBeenCalledOnce()
+  })
+
+  it('uses market-enabled with repository identity and retains local notes and session bindings', async () => {
+    const initial = { ...boundState(), active: null }
+    const { service, ctx, saved } = await fixture(initial)
+    service.remoteCatalog = [listed()]
+    const install = { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' }
+    const snapshot = lifecycleMarket(service, { installs: { 'o/helper': install }, lifecycle: { bundles: [{ name: 'helper', installed: true, enabled: true }], plugins: [] } })
+    ctx.remote = { pluginManager: { setBundleEnabled: vi.fn() } }
+    await service.refreshNative()
+    const bodies = []
+    withMarket(service, { '/api/desktop-workbenches/market-enabled': options => {
+      bodies.push(JSON.parse(options.body))
+      snapshot.lifecycle.bundles[0].enabled = false
+      return Response.json(changeEnvelope('applied', install))
+    } })
+    await service.setPluginEnabled('helper', false)
+    expect(bodies).toEqual([{ id: 'o/helper', enabled: false }])
+    expect(ctx.remote.pluginManager.setBundleEnabled).not.toHaveBeenCalled()
+    expect(service.activationFor(service.getSnapshot().catalog[0])).toBe('off')
+    expect(service.getSnapshot()).toMatchObject({ restartNeeded: false, reloadNeeded: false, togglingPlugin: null })
+    expect(saved().state).toEqual(initial)
+  })
+
+  it('refreshes market records and manager lifecycle on change/reset events and cleans up subscriptions', async () => {
+    const fixtureResult = await fixture(boundState())
+    const handlers = new Map()
+    const cleanup = []
+    const disposeChanged = vi.fn(() => handlers.delete('plugin-manager/changed'))
+    const disposeReset = vi.fn(() => handlers.delete('connection/reset'))
+    let service
+    const ctx = { ...fixtureResult.ctx,
+      reflect: { provide: (_name, value) => { service = value } },
+      remote: { $on: vi.fn((name, callback) => { handlers.set(name, callback); return disposeChanged }) },
+      on: vi.fn((name, callback) => { handlers.set(name, callback); return disposeReset }),
+      effect: (callback, label) => { if (['workbenches: service', 'workbenches: native plugin status'].includes(label)) cleanup.push(callback()) },
+      slots: { inject: () => {} }
+    }
+    apply(ctx)
+    service.request = fixtureResult.service.request
+    service.state = structuredClone(boundState())
+    service.ready = true
+    service.remoteCatalog = [listed()]
+    const snapshot = lifecycleMarket(service)
+    const before = structuredClone(service.state)
+    snapshot.installs = { 'o/helper': { catalogId: 'o/helper', pluginName: 'helper', version: '2.0.0' } }
+    snapshot.packages = { helper: { origin: 'market', version: '2.0.0' } }
+    snapshot.lifecycle = { bundles: [{ name: 'helper', installed: true, enabled: false, version: '2.0.0' }], plugins: [{ id: 'helper:main', name: 'helper' }] }
+    handlers.get('plugin-manager/changed')()
+    await vi.waitFor(() => expect(service.getSnapshot().installs['o/helper']?.version).toBe('2.0.0'))
+    expect(service.native).toMatchObject({ status: 'ready', bundles: { helper: { enabled: false, version: '2.0.0' } }, plugins: snapshot.lifecycle.plugins })
+    expect(service.packageEvidence).toEqual(snapshot.packages)
+    expect(service.state).toEqual(before)
+    snapshot.installs = {}
+    snapshot.packages = {}
+    snapshot.lifecycle = { bundles: [], plugins: [] }
+    handlers.get('connection/reset')()
+    await vi.waitFor(() => expect(service.installs).toEqual({}))
+    expect(service.native.bundles).toEqual({})
+    expect(service.packageEvidence).toEqual({})
+    expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+    cleanup.forEach(dispose => dispose?.())
+    expect(disposeChanged).toHaveBeenCalledOnce()
+    expect(disposeReset).toHaveBeenCalledOnce()
+    service.dispose()
+  })
+
   it('shows one installed card for old and market IDs of the same package without changing stored state', async () => {
     const initial = { ...emptyState(), added: ['o/old', 'o/new'], pinned: ['o/old'],
       notes: { 'o/old': 'Keep notes' }, sessionBindings: { old: 'o/old' } }
@@ -2838,8 +3075,15 @@ describe('workbench market screenshot and metadata display', () => {
     expect(switches[0].props['aria-checked']).toBe(true)
     expect(switches[0].props['aria-label']).toContain('运行状态')
     expect(cardButtons(card)).toEqual([])
+    const bodies = []
+    withMarket(service, { '/api/desktop-workbenches/market-enabled': options => {
+      bodies.push(JSON.parse(options.body))
+      enabled = false
+      return Response.json(changeEnvelope('applied'))
+    } })
     switches[0].props.onClick()
-    await vi.waitFor(() => expect(ctx.remote.pluginManager.setBundleEnabled).toHaveBeenCalledWith('helper', false))
+    await vi.waitFor(() => expect(bodies).toEqual([{ id: 'o/helper', enabled: false }]))
+    expect(ctx.remote.pluginManager.setBundleEnabled).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(service.activationFor(service.getSnapshot().catalog[0])).toBe('off'))
     card = ui.find(ui.render(), node => node.type === 'article')[0]
     switches = ui.find(card, node => node.props?.role === 'switch')
@@ -2925,6 +3169,29 @@ describe('workbench market screenshot and metadata display', () => {
     expect(service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')).toMatchObject({ installed: false, pendingRestart: true, loadFailure: '' })
     expect(JSON.stringify(marketCard(service))).toContain('已安装')
     expect(cardButtons(marketCard(service))).not.toContain('打开工作台')
+  })
+
+  it('installs a pure-client workbench requesting reload rather than restart', async () => {
+    const { service } = await fixture()
+    service.remoteCatalog = [listed()]
+    withMarket(service, {
+      '/api/desktop-workbenches/market-install': () => Response.json({
+        install: { catalogId: 'o/helper', pluginName: 'helper', version: '1.0.0' },
+        restartRequired: false,
+        reloadRequired: true,
+        actionRequired: 'reload'
+      })
+    })
+    await service.installFromMarket('o/helper')
+    expect(service.getSnapshot()).toMatchObject({
+      installing: null,
+      restartNeeded: false,
+      reloadNeeded: true,
+      installs: { 'o/helper': { pluginName: 'helper' } }
+    })
+    const card = service.getSnapshot().catalog.find(entry => entry.catalogId === 'o/helper')
+    expect(card).toMatchObject({ installed: false, pendingRestart: false, pendingReload: true })
+    expect(JSON.stringify(marketCard(service))).toContain('刷新后生效')
   })
 
   it('merges the installed provider through its caller package identity', async () => {
@@ -3572,6 +3839,8 @@ describe('workbench market screenshot and metadata display', () => {
     await expect(service.installFromMarket('o/helper')).rejects.toThrow('安装记录无效')
     expect(calls).toEqual(['/api/desktop-workbenches/market-install'])
     expect(service.getSnapshot().installs).toEqual({})
+    expect(service.getSnapshot()).toMatchObject({ restartNeeded: false, reloadNeeded: false })
+    expect(service.pendingRestart.size).toBe(0)
     expect(saved().state.added).toEqual([])
     await expect(service.installFromMarket('o/gone')).rejects.toThrow('已不在工作台市场')
   })

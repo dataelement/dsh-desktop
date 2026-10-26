@@ -1,11 +1,9 @@
 import { isMemoryExit } from './resource-diagnostics'
-import { GpuDeviceRecovery } from './gpu-device-recovery'
-import { ProcessFailureRecovery } from './process-failure-recovery'
-import { getGpuExitContext, trackGpuExitContext } from './gpu-exit-context'
+import { ProcessRecovery } from './process-recovery'
 import { ApplicationRollbackFlow } from './application-rollback-flow'
 import { developmentEnvironment } from './development-environment'
 import { createDevelopmentRepairDemo } from './development-repair-demo'
-import { desktopFileUrl, navigateDesktopWindow } from './desktop-navigation'
+import { desktopFileUrl, navigateDesktopWindow, registerNavigationOwner } from './desktop-navigation'
 import { recoverStartupConfiguration } from './startup-config-recovery'
 import { inspectStartupConfiguration, repairStartupConfig } from './state/startup-config-recovery'
 import { initializeDesktopService, desktopDiagnostics } from './desktop-service'
@@ -36,7 +34,8 @@ import {
   type IpcMainInvokeEvent,
   type MessageBoxOptions
 } from 'electron'
-import { clearStaleLoopbackHttpCache } from './cache-maintenance'
+import { HarnessShell } from './harness-shell'
+import { HARNESS_SHELL_URL, HARNESS_BOOT_CHANNEL, HARNESS_BOOT_FAILED_CHANNEL, isHarnessShellUrl } from '../shared/harness-boot'
 import {
   DEFAULT_HARNESS_PORT,
   extractFailureCause,
@@ -149,10 +148,8 @@ import {
   quarantineAppBundleLaunchAgents
 } from './state/launch-agent-audit'
 import {
-  clearStaleHarnessAuthCookies,
   desktopHarnessUrl,
-  isAbortedNavigationError,
-  shouldLoadHarnessUrl
+  isAbortedNavigationError
 } from './window-navigation'
 import {
   DesktopStorageManager,
@@ -173,7 +170,7 @@ import {
 } from './update/update-manager'
 import type { RuntimeSnapshot } from '../shared/contracts'
 import { rollbackUnavailableDescription } from './update/rollback-description'
-import { resolveHarnessLocale } from './application-locale'
+import { applicationText, resolveHarnessLocale } from './application-locale'
 import { installContextMenu } from './context-menu'
 import {
   WINDOWS_TITLEBAR_HEIGHT,
@@ -207,10 +204,12 @@ import { upgradeMarketInSharedTree, upgradePluginToGeneration } from './state/pl
 import { aboutDetail, bundledHarnessVersion } from './version-info'
 import { parseWindowsMenuRequest, windowsMenuTemplate, type EditingKey } from './windows-menu'
 import { shouldKeepRunningInBackground } from './close-to-tray'
-import {
-  MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS,
-  shouldReloadAfterMainWindowRendererLoss
-} from './main-window-recovery'
+import { RendererNavigationRecovery } from './main-window-recovery'
+import { rendererDiagnosticText, rendererDiagnosticUrl } from './renderer-diagnostics'
+import { requestWindowRestart } from './window-restart-prompt'
+import { freemem, release, totalmem } from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { loadDesktopWindowAfterStop } from './desktop-window-load'
 
 type PluginRecoveryAction = `agent:${string}` | 'show-log' | 'quit' | 'restart' | 'refresh' | 'safe-mode' | 'auto-process' | 'check-updates' | 'rollback'
 type WebImportAction = 'import' | 'skip'
@@ -240,6 +239,8 @@ let mainWindow: BrowserWindow | undefined
 let mobileWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 let runtime: HarnessRuntime
+let harnessShell: HarnessShell
+let harnessPagePreparation: Promise<boolean> | undefined
 let desktopStorageManager: DesktopStorageManager | undefined
 let windowStateManager: WindowStateManager | undefined
 let mobileBridge: LanMobileBridge
@@ -268,7 +269,6 @@ const HARNESS_CURRENT_SESSION_KEY = 'dsh.sessions.current'
 let lastCrashEvidence: CrashEvidence | undefined
 let launchDirectory: string
 let quitting = false
-let nativeRecoveryActive = false
 let configurationRecoveryOperation: Promise<'retry' | 'continue'> | undefined
 let failureRecoveryVisible = false
 let harnessLaunchOperation: Promise<void> | undefined
@@ -298,14 +298,6 @@ let profileRendererHealthAt = 0
 let profileBootNavigationVersion = 0
 let profileBootConfirmationComplete = false
 let safeModeSuspectedPlugins: string[] = []
-// A renderer that crashes (render-process-gone) and reloads that fails the
-// same way produces a permanent black window the user has to close by hand.
-// The cooldown keeps reloads from stacking up when the underlying crash
-// (almost always the GPU process) keeps recurring, and the counter gives us
-// a way to give up after enough attempts and surface the harness failure
-// page instead of hammering the GPU.
-let mainWindowRecoveryReloadAt = 0
-let mainWindowRecoveryReloadCount = 0
 const startInSafeMode = shouldStartInSafeMode(process.argv)
 // The GPU process can die before the harness is ever on screen, which is the
 // whole reason the fallback exists; tracking the first harness render is what
@@ -316,9 +308,16 @@ let harnessRendered = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
-const processFailureRecovery = new ProcessFailureRecovery({
+const processRecovery = new ProcessRecovery({
+  cancelled: () => quitting || gpuFallbackRelaunching,
+  probe: async () => {
+    const contents = mainWindow?.webContents
+    if (!contents || contents.isDestroyed() || contents.isCrashed() || !harnessRendered) return false
+    // A bounded response check, not proof that every plugin or GPU surface painted.
+    return await contents.executeJavaScript('document.readyState === "complete" && document.body !== null') === true
+  },
+  note: message => runtime?.note('[desktop] ' + message),
   stop: async () => {
-    gpuDeviceRecovery.dispose()
     await runtime?.stop()
     await mobileBridge?.stop()
   },
@@ -334,40 +333,21 @@ const processFailureRecovery = new ProcessFailureRecovery({
       ]).finally(() => { if (timer) clearTimeout(timer) })
     }
   },
-  prompt: async kind => {
-    const zh = harnessLocale() === 'zh'
-    const memory = kind === 'memory'
-    const { response } = await dialog.showMessageBox({
-      type: 'error', title: 'DSH Desktop', noLink: true, defaultId: 0, cancelId: 0,
-      message: memory
-        ? (zh ? '应用内存不足，已停止运行以释放资源' : 'The application ran out of memory and has stopped to release resources')
-        : (zh ? '图形进程反复异常，页面未能恢复响应' : 'Repeated graphics failures: page recovery could not be confirmed'),
-      detail: memory
-        ? (zh ? '已保存的会话和配置不会被删除。重启可能再次触发同一问题，请先关闭其他高内存应用。' : 'Saved sessions and configuration are preserved. Restarting may repeat the failure; close other memory-intensive applications first.')
-        : (zh ? '可以退出，或关闭硬件加速后重新启动。软件渲染可能增加 CPU 占用。' : 'Quit, or restart with hardware acceleration disabled. Software rendering may increase CPU usage.'),
-      buttons: memory
-        ? (zh ? ['退出', '重新启动'] : ['Quit', 'Restart'])
-        : (zh ? ['退出', '关闭硬件加速并重启'] : ['Quit', 'Restart without hardware acceleration'])
-    })
-    return response === 0 ? 'quit' : memory ? 'restart' : 'software'
-  },
+  prompt: kind => requestWindowRestart({
+    locale: harnessLocale(),
+    cancelled: () => quitting || gpuFallbackRelaunching,
+    flushDiagnostics: () => runtime?.flushLog() ?? Promise.resolve(),
+    show: options => dialog.showMessageBox(options),
+    note: line => runtime?.note(rendererDiagnosticText(line))
+  }, kind),
   restart: software => {
     if (software) writeGpuFallbackState({ level: 'gpu-disabled', failures: 0, stableLaunches: 0 })
     app.relaunch()
   },
   quit: () => app.quit(),
-  onError: showUnexpectedError
+  onError: reportNativeRecoveryFailure
 })
-const gpuDeviceRecovery = new GpuDeviceRecovery({
-  probe: async () => {
-    const contents = mainWindow?.webContents
-    if (!contents || contents.isDestroyed() || contents.isCrashed() || !harnessRendered) return false
-    // A bounded response check, not proof that every plugin or GPU surface painted.
-    return await contents.executeJavaScript('document.readyState === "complete" && document.body !== null') === true
-  },
-  recover: () => { if (!quitting && !gpuFallbackRelaunching) processFailureRecovery.start('graphics') },
-  note: message => runtime?.note(`[desktop] ${message}`)
-})
+
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -474,42 +454,41 @@ function recordMainWindowRendererLoss(
   runtime.note(`[desktop] main window ${source}: ${details}`)
 }
 
-function reloadMainWindowAfterRendererLoss(window: BrowserWindow): void {
-  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || window.webContents.isDestroyed()) return
-  const now = Date.now()
-  if (!shouldReloadAfterMainWindowRendererLoss({
-    now,
-    lastReloadAt: mainWindowRecoveryReloadAt,
-    reloadCount: mainWindowRecoveryReloadCount
-  })) {
-    recordMainWindowRendererLoss(
-      'render-process-gone',
-      'reload throttled; surfacing harness failure instead'
-    )
-    showUnexpectedError(new Error('Harness web view stopped responding after repeated renderer failures.'))
-    return
-  }
-  mainWindowRecoveryReloadAt = now
-  mainWindowRecoveryReloadCount += 1
-  // Schedule a counter reset long after the cooldown so a single, isolated
-  // crash recovers cleanly while a sustained failure still trips the cap.
-  setTimeout(() => {
-    mainWindowRecoveryReloadCount = 0
-  }, MAIN_WINDOW_RECOVERY_RELOAD_COOLDOWN_MS * 4).unref?.()
-  try {
-    void window.webContents.reload()
-  } catch (error) {
-    recordMainWindowRendererLoss(
-      'render-process-gone',
-      `reload threw: ${error instanceof Error ? error.message : String(error)}`
-    )
-  }
-}
-
 function installMainWindowRendererRecovery(window: BrowserWindow): void {
   const webContents = window.webContents
+  const recoveryId = randomUUID()
+  let contextRecorded = false
+  let lastRendererPid = 0
+  const noteRecovery = (phase: string, details: Record<string, unknown> = {}) => {
+    runtime?.note('[desktop] renderer recovery: ' + JSON.stringify({
+      recoveryId, windowId: window.id, webContentsId: webContents.id,
+      stage: harnessRendered ? 'running' : 'startup', uptimeSeconds: Math.round(process.uptime()),
+      harnessPhase: runtime?.snapshot().phase, phase, ...details
+    }))
+  }
+  const recovery = new RendererNavigationRecovery({
+    load: (url, cancelled) => loadDesktopWindowAfterStop(window, url, cancelled),
+    cancelled: () => processRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || webContents.isDestroyed(),
+    onError: showUnexpectedError,
+    onDiagnostic: diagnostic => {
+      if (!contextRecorded) {
+        contextRecorded = true
+        noteRecovery('environment', {
+          desktop: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
+          node: process.versions.node, platform: process.platform, arch: process.arch, osRelease: release()
+        })
+      }
+      if (diagnostic.phase === 'load-completed') {
+        try { lastRendererPid = webContents.getOSProcessId() } catch { /* Process may have exited already. */ }
+      }
+      noteRecovery(diagnostic.phase, { ...diagnostic })
+    }
+  })
+  const unregister = registerNavigationOwner(window, (url, cancelled) => recovery.navigate(url, false, cancelled))
+  window.once('closed', () => { unregister(); recovery.dispose() })
   webContents.on('render-process-gone', (event, details) => {
-    if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || details.reason === 'clean-exit') return
+    if (quitting || gpuFallbackRelaunching || window.isDestroyed() || details.reason === 'clean-exit') return
+    if (processRecovery.blocked && !isMemoryExit(details.reason, details.exitCode)) return
     clearProfileBootConfirmation()
     // Take control: by default the window stays drawn but blank, which is
     // exactly the black screen this recovery is meant to prevent.
@@ -524,18 +503,22 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     })()
     recordMainWindowRendererLoss(
       'render-process-gone',
-      `reason=${reason} exitCode=${exitCode}${currentUrl ? ` url=${currentUrl}` : ''}${gpuStatus ? ` gpu=${gpuStatus}` : ''}`
+      `reason=${reason} exitCode=${exitCode}${currentUrl ? ` url=${rendererDiagnosticUrl(currentUrl)}` : ''}${gpuStatus ? ` gpu=${gpuStatus}` : ''}`
     )
     // `did-finish-load` can win the race by milliseconds before a broken
     // graphics stack takes the renderer down. The first post-render crash is
     // allowed the normal bounded reload; if that freshly reloaded renderer
     // dies with the same native signature, the launch is still unusable and
     // must take the same immediate relaunch path as a pre-render GPU loss.
+    noteRecovery('renderer-gone', {
+      reason, exitCode, lastRendererPid, gpuStatus,
+      systemMemory: { freeBytes: freemem(), totalBytes: totalmem() }
+    })
     if (isMemoryExit(reason, exitCode)) {
-      processFailureRecovery.start('memory')
+      processRecovery.start('memory')
       return
     }
-    const unusableLaunch = !harnessRendered || mainWindowRecoveryReloadCount > 0
+    const unusableLaunch = !harnessRendered || recovery.reloadCount > 0
     if (
       isRendererGpuFallbackCandidate({ platform: process.platform, reason, exitCode }) &&
       respondToGpuFallbackSignal(
@@ -543,19 +526,19 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
         { unusableLaunch }
       )
     ) return
-    reloadMainWindowAfterRendererLoss(window)
+    recovery.rendererGone(currentUrl, { reason, exitCode })
   })
   webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame || errorCode === -3 || processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed()) return
+    if (!isMainFrame || errorCode === -3 || processRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed()) return
     clearProfileBootConfirmation()
     // The harness web server is local; a failure to reach it is almost
     // always the renderer dropping, not a real network error. Surface the
     // failure and let the recovery path try to reload the page.
     recordMainWindowRendererLoss(
       'did-fail-load',
-      `errorCode=${errorCode} description=${errorDescription} url=${validatedURL}`
+      `errorCode=${errorCode} description=${rendererDiagnosticText(errorDescription)} url=${rendererDiagnosticUrl(validatedURL)}`
     )
-    reloadMainWindowAfterRendererLoss(window)
+    recovery.loadFailed(validatedURL, errorCode, webContents.getURL())
   })
   webContents.on('unresponsive', () => {
     clearProfileBootConfirmation()
@@ -800,7 +783,7 @@ function normalProfileBootIsHealthy(expectedNavigationVersion: number): boolean 
     !window.isDestroyed() &&
     expectedNavigationVersion === mainWindowNavigationVersion &&
     Date.now() - profileRendererHealthAt <= PROFILE_RENDERER_HEARTBEAT_MAX_AGE_MS &&
-    window.webContents.getURL().startsWith('http://127.0.0.1:')
+    isHarnessShellUrl(window.webContents.getURL())
   )
 }
 
@@ -878,18 +861,18 @@ function markHarnessRendered(): void {
  * update cannot cost this machine its GPU sandbox.
  */
 function installGpuFallbackWatch(): void {
-  trackGpuExitContext(app)
-  app.once('quit', () => gpuDeviceRecovery.dispose())
+  processRecovery.attach(app)
   app.on('child-process-gone', (_event, details) => {
     if (details.type !== 'GPU') return
-    if (processFailureRecovery.blocked || gpuFallbackRelaunching || quitting) return
+    if (gpuFallbackRelaunching || quitting) return
+    if (processRecovery.blocked && !isMemoryExit(details.reason, details.exitCode)) return
     // Chromium tears the GPU process down on shutdown and Electron reports it
     // here like any other loss; degrading on that would degrade everyone.
     // A device-loss exit (TDR) is Chromium recovering on its own, not evidence
     // of a broken sandbox, so it is logged but excluded from the same check.
-    if (!isGpuLossFatal(details.reason, details.exitCode, { platform: process.platform, context: getGpuExitContext(app) })) {
+    if (!isGpuLossFatal(details.reason, details.exitCode, { platform: process.platform, context: processRecovery.exitContext })) {
       if (details.reason === 'crashed' && details.exitCode === 34) {
-        gpuDeviceRecovery.recordLoss()
+        processRecovery.recordGpuLoss()
         runtime?.note(
           `[desktop] GPU process device-loss self-recovery: reason=${details.reason} exitCode=${details.exitCode}`
         )
@@ -897,7 +880,7 @@ function installGpuFallbackWatch(): void {
       return
     }
     if (isMemoryExit(details.reason, details.exitCode)) {
-      processFailureRecovery.start('memory')
+      processRecovery.start('memory')
       return
     }
     respondToGpuFallbackSignal(
@@ -915,7 +898,7 @@ function respondToGpuFallbackSignal(
   details: string,
   options: { unusableLaunch?: boolean } = {}
 ): boolean {
-  if (processFailureRecovery.blocked || gpuFallbackRelaunching || quitting) return false
+  if (processRecovery.blocked || gpuFallbackRelaunching || quitting) return false
   if (gpuStableLaunchTimer) {
     clearTimeout(gpuStableLaunchTimer)
     gpuStableLaunchTimer = undefined
@@ -936,7 +919,7 @@ function respondToGpuFallbackSignal(
   if (escalated) runtime?.note(`[desktop] GPU fallback raised to ${plan.state.level}`)
   if (!plan.relaunch) {
     if (hasExhaustedGpuRecovery(gpuFallbackState, options.unusableLaunch === true || !harnessRendered)) {
-      processFailureRecovery.start('graphics')
+      processRecovery.start('graphics')
       return true
     }
     return false
@@ -1132,7 +1115,7 @@ function createWindow(): BrowserWindow {
   window.webContents.on('console-message', (details) => {
     if (details.level !== 'error') return
     const sourceUrl = details.sourceId || window.webContents.getURL()
-    if (!sourceUrl.startsWith('http://127.0.0.1:')) return
+    if (!isHarnessShellUrl(sourceUrl) && !sourceUrl.startsWith('http://127.0.0.1:')) return
     appendRendererPluginFailureLog(details.message)
   })
   installPluginRecoveryNavigation(window)
@@ -1152,11 +1135,27 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+/** Prepare the existing Harness shell while Profile work and child boot continue. */
+function prepareHarnessPage(): void {
+  harnessShell.reset()
+  rendererPluginFailureLogs = []
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  const navigationVersion = ++mainWindowNavigationVersion
+  window.webContents.stop()
+  harnessPagePreparation = navigateDesktopWindow(window, desktopHarnessUrl(HARNESS_SHELL_URL, process.platform),
+    () => processRecovery.blocked || quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
+  void harnessPagePreparation.then((loaded) => {
+    if (loaded) runtime.note('[desktop] local Harness shell prepared; waiting for backend boot')
+  }).catch((error: unknown) => {
+    runtime.note('[desktop] local Harness shell failed: ' + (error instanceof Error ? error.message : String(error)))
+  })
+}
+
 async function openHarness(
   url: string,
   focusIntent: WindowFocusIntent = 'automatic'
 ): Promise<void> {
-  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
+  if (processRecovery.blocked || quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
   if (!safeModeVisible && returnToNormalAfterRepair) {
     returnToNormalAfterRepair = false
     try {
@@ -1167,55 +1166,40 @@ async function openHarness(
     }
   }
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
-  const rendererUrl = desktopHarnessUrl(url, process.platform, runtime.snapshot().authToken)
-  if (shouldLoadHarnessUrl(window.webContents.getURL(), url)) {
-    // Taken before the first await: the Recovery page's fallback below runs
-    // as soon as the Safe Mode launch resolves, and must see it gone.
-    const repairPrompt = safeModeVisible ? takePendingRepairPrompt() : undefined
-    const navigationVersion = ++mainWindowNavigationVersion
-    rendererPluginFailureLogs = []
-    window.webContents.stop()
-    // Open the repair session before the page loads, so the UI lands on it.
-    if (repairPrompt !== undefined) {
-      const started = await startRepairAgentPrompt(repairPrompt)
-      repairAgentLaunchError = started.ok ? undefined : started.error
-    }
-    await clearStaleLoopbackHttpCache(
-      window.webContents.session,
-      join(app.getPath('userData'), 'http-cache-origin'),
-      new URL(url).origin,
-      (line) => runtime.note(line)
-    )
-    const clearedCookies = await clearStaleHarnessAuthCookies(
-      window.webContents.session.cookies,
-      rendererUrl,
-      runtime.snapshot().authToken
-    ).catch((error) => {
-      runtime.note(
-        `[desktop] stale Harness cookie cleanup failed: ${error instanceof Error ? error.message : String(error)
-        }`
-      )
-      return 0
-    })
-    if (clearedCookies > 0) {
-      runtime.note(`[desktop] cleared ${clearedCookies} stale Harness authentication cookie(s)`)
-    }
-    try {
-      const loaded = await navigateDesktopWindow(window, rendererUrl,
-        () => processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
-      if (!loaded) return
-    } catch (error) {
-      if (navigationVersion !== mainWindowNavigationVersion) return
-      if (isAbortedNavigationError(error)) return
-      const snapshot = runtime.snapshot()
-      if (snapshot.phase !== 'ready' || snapshot.url !== url) return
-      throw error
-    }
-    if (navigationVersion !== mainWindowNavigationVersion) return
+  let navigationVersion = mainWindowNavigationVersion
+  const launchAttemptId = runtime.launchAttemptId
+  const authToken = runtime.snapshot().authToken
+  const repairPrompt = safeModeVisible ? takePendingRepairPrompt() : undefined
+  if (repairPrompt !== undefined) {
+    const started = await startRepairAgentPrompt(repairPrompt)
+    repairAgentLaunchError = started.ok ? undefined : started.error
   }
+  if (harnessPagePreparation) await harnessPagePreparation
+  if (processRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() ||
+    navigationVersion !== mainWindowNavigationVersion || runtime.snapshot().url !== url) return
+  if (!isHarnessShellUrl(window.webContents.getURL())) {
+    navigationVersion = ++mainWindowNavigationVersion
+    const loaded = await navigateDesktopWindow(window, desktopHarnessUrl(HARNESS_SHELL_URL, process.platform),
+      () => processRecovery.blocked || quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
+    if (!loaded) return
+  }
+  const stillCurrent = (): boolean => !processRecovery.blocked && !quitting && !gpuFallbackRelaunching &&
+    mainWindow === window && !window.isDestroyed() && navigationVersion === mainWindowNavigationVersion &&
+    runtime.launchAttemptId === launchAttemptId && runtime.snapshot().phase === 'ready' &&
+    runtime.snapshot().url === url && runtime.snapshot().authToken === authToken &&
+    isHarnessShellUrl(window.webContents.getURL())
+  try {
+    await harnessShell.connect(url, authToken)
+  } catch (error) {
+    if (!stillCurrent()) return
+    runtime.note('[desktop] ' + (error instanceof Error ? error.message : String(error)))
+    await showPluginRecovery({ message: error instanceof Error ? error.message : String(error), logs: runtime.snapshot().logs })
+    return
+  }
+  if (!stillCurrent()) return
   markHarnessRendered()
-  if (runtime.snapshot().url !== url || window.isDestroyed()) return
   await syncNativeTheme(window)
+  if (!stillCurrent()) return
   raiseWindowWithoutStealingFocus(
     window,
     process.platform,
@@ -1297,7 +1281,7 @@ async function showWebHomeImport(
 }
 
 async function showSplash(): Promise<void> {
-  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
+  if (processRecovery.blocked || quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
   clearProfileBootConfirmation()
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const navigationVersion = ++mainWindowNavigationVersion
@@ -1306,7 +1290,7 @@ async function showSplash(): Promise<void> {
     query: { theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }
   })
   if (!loaded) return
-  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
+  if (processRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
   raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
 }
 
@@ -1480,7 +1464,7 @@ async function enterMigrationSafeRecovery(
     ? '[desktop] safe mode: normal Profile startup failed preflight; plugin repair remains available'
     : '[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
   await migratePersonaPrefixesBeforeStart(dshHome)
-  if (processFailureRecovery.blocked) return
+  if (processRecovery.blocked) return
   await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
   if (runtime.snapshot().phase === 'ready') void mobileBridge.start().catch(showUnexpectedError)
   // The native manager remains usable even if shared settings prevent the
@@ -1501,7 +1485,7 @@ async function enterMigrationSafeRecovery(
 }
 
 function launchHarness(): Promise<void> {
-  if (processFailureRecovery.blocked) return Promise.resolve()
+  if (processRecovery.blocked) return Promise.resolve()
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
@@ -1516,6 +1500,8 @@ function launchHarness(): Promise<void> {
     await runtime.stop()
     runtime.note('[desktop] previous Harness stopped; starting profile maintenance')
     await maybeImportWebHome(dshHome)
+    desktopStorageManager?.switchProfile(join(dshHome, 'profiles', 'web'))
+    prepareHarnessPage()
     const maintenance = await runProfileStartupMaintenance({
       note: (line) => runtime.note(line),
       recoverInterruptedMigration: () =>
@@ -1605,9 +1591,9 @@ function launchHarness(): Promise<void> {
     await migratePersonaPrefixesBeforeStart(dshHome)
     await migrateLegacyAgentPresets(dshHome, (line) => runtime.note(line))
     runtime.note('[desktop] preset migrations done; starting Harness')
-    if (processFailureRecovery.blocked) return
+    if (processRecovery.blocked) return
     await runtime.start(launchDirectory)
-    if (processFailureRecovery.blocked) return
+    if (processRecovery.blocked) return
 
     // A failed launch must not rewrite the user's enabled plugin set. Recovery
     // and Safe Mode operate on explicit, exact plugin selections; automatically
@@ -1622,7 +1608,8 @@ function launchHarness(): Promise<void> {
         const rollback = await rollBackMigration(dshHome, (line) => runtime.note(line))
         if (rollback.outcome === 'restored') {
           runtime.note('[desktop] restarting the verified pre-upgrade Profile without package repair')
-          if (processFailureRecovery.blocked) return
+          if (processRecovery.blocked) return
+          prepareHarnessPage()
           await runtime.start(launchDirectory)
         } else {
           const reason = rollback.outcome === 'recovery-required'
@@ -1640,7 +1627,7 @@ function launchHarness(): Promise<void> {
 }
 
 function launchSafeHarness(): Promise<void> {
-  if (processFailureRecovery.blocked) return Promise.resolve()
+  if (processRecovery.blocked) return Promise.resolve()
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
@@ -1650,11 +1637,13 @@ function launchSafeHarness(): Promise<void> {
     await refreshMigrationRecoveryLock(dshHome)
     await showSplash()
     await runtime.stop()
+    desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
+    prepareHarnessPage()
     await ensureSafeModeProfile(dshHome)
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
     await migratePersonaPrefixesBeforeStart(dshHome)
-    if (processFailureRecovery.blocked) return
+    if (processRecovery.blocked) return
     await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
     if (runtime.snapshot().phase === 'ready') {
       void mobileBridge.start().catch(showUnexpectedError)
@@ -1744,7 +1733,7 @@ function takePendingRepairPrompt(): string | undefined {
 function reloadHarnessWindow(): void {
   const url = runtime.snapshot().url
   if (!url || !mainWindow || mainWindow.isDestroyed()) return
-  if (!shouldLoadHarnessUrl(mainWindow.webContents.getURL(), url)) mainWindow.webContents.reload()
+  if (isHarnessShellUrl(mainWindow.webContents.getURL())) mainWindow.webContents.reload()
 }
 
 function restartHarness(): Promise<void> {
@@ -2123,32 +2112,20 @@ async function waitForPluginRecoveryAction(options: {
 }
 
 function showUnexpectedError(error: unknown): void {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error)
+  const message = rendererDiagnosticText(error instanceof Error ? error.stack ?? error.message : String(error))
   runtime?.note(`[desktop] unexpected error: ${message}`)
   console.error('[desktop] unexpected error:', message)
-  if (nativeRecoveryActive || quitting || gpuFallbackRelaunching) return
-  nativeRecoveryActive = true
-  const zh = harnessLocale() === 'zh'
-  void (async () => {
-    while (!quitting && !gpuFallbackRelaunching) {
-      const { response } = await dialog.showMessageBox({
-        type: 'error', title: 'DSH Desktop',
-        message: zh ? '应用窗口无法继续加载' : 'The application window could not load',
-        detail: message, buttons: zh ? ['退出', '重新启动', '恢复配置'] : ['Quit', 'Restart', 'Recover Configuration'],
-        defaultId: 0, cancelId: 0, noLink: true
-      })
-      if (response === 2) {
-        if (await recoverCoreConfiguration() === 'retry') { app.relaunch(); app.quit(); return }
-        continue
-      }
-      if (response === 1) app.relaunch()
-      app.quit()
-      return
-    }
-  })().catch((failure: unknown) => {
-    console.error('[desktop] native recovery failed', failure)
-    dialog.showErrorBox('DSH Desktop', message)
-  }).finally(() => { nativeRecoveryActive = false })
+  processRecovery.start('window')
+}
+
+function reportNativeRecoveryFailure(failure: unknown): void {
+  const failureMessage = rendererDiagnosticText(String(failure))
+  runtime?.note('[desktop] native recovery failed: ' + failureMessage)
+  console.error('[desktop] native recovery failed', failureMessage)
+  if (quitting || gpuFallbackRelaunching) return
+  const locale = harnessLocale()
+  dialog.showErrorBox('DSH Desktop', applicationText(locale, 'windowRecovery.heading') + '\n\n' +
+    applicationText(locale, 'windowRecovery.description'))
 }
 
 function recoverCoreConfiguration(): Promise<'retry' | 'continue'> {
@@ -2174,7 +2151,7 @@ async function showPluginRecovery(options?: {
   logs?: readonly string[]
   followRendererLogs?: boolean
 }): Promise<void> {
-  if (processFailureRecovery.blocked || failureRecoveryVisible || quitting) return
+  if (processRecovery.blocked || failureRecoveryVisible || quitting) return
   failureRecoveryVisible = true
 
   const dshHome = join(app.getPath('userData'), 'harness')
@@ -2554,6 +2531,19 @@ async function showPluginRecovery(options?: {
   }
 }
 
+function handleFrontendPluginFailure(message: string | undefined): { ok: true } {
+  desktopDiagnostics?.discardPendingPluginFailure()
+  if (message) appendRendererPluginFailureLog(message)
+  const logs = [...rendererPluginFailureLogs]
+  appendRendererPluginRecoveryLog(logs)
+  if (failureRecoveryVisible) {
+    queuePendingFrontendPluginRecovery(message)
+    return { ok: true }
+  }
+  void showPluginRecovery({ message, logs, followRendererLogs: true })
+  return { ok: true }
+}
+
 async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
   await showPluginRecovery({ message: snapshot.message, logs: snapshot.logs })
 }
@@ -2770,7 +2760,7 @@ async function removeProfilePluginCompletely(
 }
 
 async function showSafeMode(): Promise<void> {
-  if (processFailureRecovery.blocked || quitting) return
+  if (processRecovery.blocked || quitting) return
   if (failureRecoveryVisible) {
     resolvePluginRecoveryAction('safe-mode')
     return
@@ -3382,7 +3372,10 @@ async function showMobilePairing(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   desktopDiagnostics?.startSending()
-  installDesktopProtocol(desktopResourcePath)
+  harnessShell = new HarnessShell({
+    frontendRoot: join(bundledRuntimeRoot(), 'node_modules', '@deepseek-ai', 'dsh-web-frontend', 'dist')
+  })
+  installDesktopProtocol(desktopResourcePath, request => harnessShell.handle(request))
   if (process.platform === 'darwin') app.dock?.setIcon(desktopIconPath())
   launchDirectory = await ensureLaunchRoot(app.getPath('userData'))
   registerUpdateHandlers({ locale: harnessLocale })
@@ -3430,10 +3423,10 @@ async function bootstrap(): Promise<void> {
         }
       }
       if (snapshot.phase === 'failed' && snapshot.failureReason === 'memory-exhausted') {
-        processFailureRecovery.start('memory')
+        processRecovery.start('memory')
         return
       }
-      if (processFailureRecovery.blocked) return
+      if (processRecovery.blocked) return
       if (!applicationRollbackVisible && snapshot.phase === 'ready' && snapshot.url) {
         void openHarness(snapshot.url).catch(showUnexpectedError)
       } else if (!applicationRollbackVisible && snapshot.phase === 'failed') {
@@ -3441,7 +3434,38 @@ async function bootstrap(): Promise<void> {
       }
     }
   })
+  // Native sockets cannot pass through protocol.handle. Match the owned backend
+  // authority and the Harness main window before attaching its private cookie.
+  mainWindow?.webContents.session.webRequest.onBeforeSendHeaders(
+    { urls: ['ws://127.0.0.1/*', 'ws://localhost/*'] },
+    (details, callback) => {
+      if (details.resourceType !== 'webSocket' || details.webContentsId !== mainWindow?.webContents.id ||
+        !mainWindow || !isHarnessShellUrl(mainWindow.webContents.getURL())) {
+        callback({})
+        return
+      }
+      callback(harnessShell.authorizeWebSocket(details.url, details.requestHeaders) ?? {})
+    }
+  )
   registerHarnessHandlers()
+  ipcMain.handle(HARNESS_BOOT_CHANNEL, async event => {
+    assertTrustedMainWindowEvent(event)
+    if (!isHarnessShellUrl(event.sender.getURL())) throw new Error('The Harness shell is not active.')
+    const version = mainWindowNavigationVersion
+    const payload = await harnessShell.waitUntilReady()
+    assertTrustedMainWindowEvent(event)
+    if (version !== mainWindowNavigationVersion || !isHarnessShellUrl(event.sender.getURL())) {
+      throw new Error('Harness page boot was superseded.')
+    }
+    return payload
+  })
+  ipcMain.handle(HARNESS_BOOT_FAILED_CHANNEL, (event, message: unknown) => {
+    assertTrustedMainWindowEvent(event)
+    if (!isHarnessShellUrl(event.sender.getURL()) || typeof message !== 'string' || message.length > 20_000) {
+      throw new Error('Invalid Harness boot failure report.')
+    }
+    return handleFrontendPluginFailure(message)
+  })
   mobileBridge = new LanMobileBridge({
     harnessUrl: () => runtime.snapshot().url,
     harnessAuthToken: () => runtime.snapshot().authToken,
@@ -3531,17 +3555,17 @@ async function bootstrap(): Promise<void> {
   })
   ipcMain.handle('repair-agent:draft/get', (event, sessionId: unknown) => {
     assertTrustedMainWindowEvent(event)
-    if (!event.sender.getURL().startsWith('http://127.0.0.1:')) return {}
+    if (!isHarnessShellUrl(event.sender.getURL())) return {}
     return typeof sessionId === 'string' ? repairDrafts.get(sessionId) : {}
   })
   ipcMain.handle('repair-agent:draft/ack', (event, sessionId: unknown, token: unknown) => {
     assertTrustedMainWindowEvent(event)
-    if (!event.sender.getURL().startsWith('http://127.0.0.1:')) return { ok: false }
+    if (!isHarnessShellUrl(event.sender.getURL())) return { ok: false }
     return { ok: typeof sessionId === 'string' && typeof token === 'string' && repairDrafts.acknowledge(sessionId, token) }
   })
   ipcMain.handle('repair-agent:open', async event => {
     assertTrustedMainWindowEvent(event)
-    if (!event.sender.getURL().startsWith('http://127.0.0.1:')) return { ok: false, error: 'Repair requires a running Harness interface' }
+    if (!isHarnessShellUrl(event.sender.getURL())) return { ok: false, error: 'Repair requires a running Harness interface' }
     const started = await startRepairAgentPrompt(harnessLocale() === 'zh'
       ? '请协助排查使用中的问题，先询问我遇到的问题和复现步骤，再结合已有诊断信息分析。'
       : 'Help diagnose a problem during use. First ask what happened and how to reproduce it, then inspect the available diagnostics.', { fresh: true })
@@ -3551,17 +3575,8 @@ async function bootstrap(): Promise<void> {
   ipcMain.removeHandler('harness:open-recovery')
   ipcMain.handle('harness:open-recovery', async (event, frontendErrorMessage?: unknown) => {
     assertTrustedMainWindowEvent(event)
-    desktopDiagnostics?.discardPendingPluginFailure()
     const message = typeof frontendErrorMessage === 'string' ? frontendErrorMessage : undefined
-    if (message) appendRendererPluginFailureLog(message)
-    const logs = [...rendererPluginFailureLogs]
-    appendRendererPluginRecoveryLog(logs)
-    if (failureRecoveryVisible) {
-      queuePendingFrontendPluginRecovery(message)
-      return { ok: true }
-    }
-    void showPluginRecovery({ message, logs, followRendererLogs: true })
-    return { ok: true }
+    return handleFrontendPluginFailure(message)
   })
   ipcMain.removeHandler('recovery:action')
   ipcMain.handle('recovery:action', (event, action: unknown, options?: unknown) => {
@@ -3835,7 +3850,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
       userDataPath: app.getPath('userData'),
       appVersion: app.getVersion(),
       developmentBuild
-    }, initializeDesktopService)
+    }, () => initializeDesktopService({ getExitContext: () => processRecovery.exitContext }))
     app.on('second-instance', (_event, argv) => {
       if (!isUserInitiatedInstance(argv)) return
       if (shouldStartInSafeMode(argv)) {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { graphicsSnapshot, isMemoryExit, resourceSnapshot } from '../src/main/resource-diagnostics'
-import { GpuDeviceRecovery } from '../src/main/gpu-device-recovery'
-import { ProcessFailureRecovery } from '../src/main/process-failure-recovery'
+import { createProcessRecovery } from './helpers/process-recovery'
+import { ProcessRecovery } from '../src/main/process-recovery'
 
 afterEach(() => vi.useRealTimers())
 
@@ -27,12 +27,12 @@ describe('device-loss bursts', () => {
   it('allows isolated device loss and leaves a responsive page alone after a burst', async () => {
     vi.useFakeTimers()
     const probe = vi.fn(async () => true), recover = vi.fn()
-    const controller = new GpuDeviceRecovery({ probe, recover, note: vi.fn() })
-    controller.recordLoss()
+    const controller = createProcessRecovery({ probe, prompt: async () => { recover(); return 'quit' } })
+    controller.recordGpuLoss()
     await vi.advanceTimersByTimeAsync(120_001)
-    controller.recordLoss()
+    controller.recordGpuLoss()
     expect(probe).not.toHaveBeenCalled()
-    controller.recordLoss(); controller.recordLoss()
+    controller.recordGpuLoss(); controller.recordGpuLoss()
     await vi.advanceTimersByTimeAsync(0)
     expect(probe).toHaveBeenCalledTimes(1)
     expect(recover).not.toHaveBeenCalled()
@@ -42,13 +42,13 @@ describe('device-loss bursts', () => {
     vi.useFakeTimers()
     let finish: (value: boolean) => void = () => {}
     const probe = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve })), recover = vi.fn()
-    const controller = new GpuDeviceRecovery({ probe, recover, note: vi.fn() })
-    for (let i = 0; i < 10; i++) controller.recordLoss()
+    const controller = createProcessRecovery({ probe, prompt: async () => { recover(); return 'quit' } })
+    for (let i = 0; i < 10; i++) controller.recordGpuLoss()
     await vi.advanceTimersByTimeAsync(3001)
     expect(probe).toHaveBeenCalledTimes(1)
     expect(recover).toHaveBeenCalledTimes(1)
     finish(true)
-    controller.recordLoss()
+    controller.recordGpuLoss()
     await vi.advanceTimersByTimeAsync(10000)
     expect(recover).toHaveBeenCalledTimes(1)
     controller.dispose()
@@ -56,8 +56,8 @@ describe('device-loss bursts', () => {
   it('does not act on a disposed in-flight probe', async () => {
     vi.useFakeTimers()
     const recover = vi.fn()
-    const controller = new GpuDeviceRecovery({ probe: async () => false, recover, note: vi.fn() })
-    controller.recordLoss(); controller.recordLoss(); controller.recordLoss()
+    const controller = createProcessRecovery({ probe: async () => false, prompt: async () => { recover(); return 'quit' } })
+    controller.recordGpuLoss(); controller.recordGpuLoss(); controller.recordGpuLoss()
     controller.dispose()
     await vi.advanceTimersByTimeAsync(4000)
     expect(recover).not.toHaveBeenCalled()
@@ -67,7 +67,7 @@ describe('device-loss bursts', () => {
 describe('explicit failure recovery', () => {
   it('blocks reloads immediately, stops the workload before prompting and never restarts automatically', async () => {
     const calls: string[] = []
-    const controller = new ProcessFailureRecovery({
+    const controller = new ProcessRecovery({
       stop: async () => { calls.push('stop') }, releasePage: async () => { calls.push('release') },
       prompt: async () => { calls.push('prompt'); return 'quit' },
       restart: () => { calls.push('restart') }, quit: () => { calls.push('quit') }, onError: vi.fn()
@@ -78,7 +78,7 @@ describe('explicit failure recovery', () => {
   })
   it('changes graphics mode only after the user selects software restart', async () => {
     const restart = vi.fn(), stop = vi.fn(), quit = vi.fn()
-    const controller = new ProcessFailureRecovery({ stop, releasePage: vi.fn(), prompt: async () => 'software', restart, quit, onError: vi.fn() })
+    const controller = new ProcessRecovery({ stop, releasePage: vi.fn(), prompt: async () => 'software', restart, quit, onError: vi.fn() })
     controller.start('graphics')
     await vi.waitFor(() => expect(restart).toHaveBeenCalledWith(true))
     expect(stop).not.toHaveBeenCalled()
@@ -90,7 +90,7 @@ it('a pending graphics prompt cannot mask a later memory emergency', async () =>
   const stop = vi.fn(async () => {}), releasePage = vi.fn(async () => {}), restart = vi.fn()
   let answer: (action: 'quit') => void = () => {}
   const prompt = vi.fn(() => new Promise<'quit'>(resolve => { answer = resolve }))
-  const controller = new ProcessFailureRecovery({ stop, releasePage, restart, prompt, quit: vi.fn(), onError: vi.fn() })
+  const controller = new ProcessRecovery({ stop, releasePage, restart, prompt, quit: vi.fn(), onError: vi.fn() })
   controller.start('graphics')
   controller.start('memory')
   controller.start('memory')
@@ -99,4 +99,44 @@ it('a pending graphics prompt cannot mask a later memory emergency', async () =>
   expect(prompt).toHaveBeenCalledTimes(1)
   expect(restart).not.toHaveBeenCalled()
   answer('quit')
+})
+
+it('OOM cancels a pending GPU probe and stops once across overlapping failures', async () => {
+  vi.useFakeTimers()
+  const stop = vi.fn(async () => {}), prompt = vi.fn(async () => 'quit' as const)
+  const controller = createProcessRecovery({ stop, prompt, probe: () => new Promise(() => {}) })
+  controller.recordGpuLoss(); controller.recordGpuLoss(); controller.recordGpuLoss()
+  controller.start('memory'); controller.start('memory')
+  await vi.advanceTimersByTimeAsync(4000)
+  expect(stop).toHaveBeenCalledTimes(1)
+  expect(prompt).toHaveBeenCalledExactlyOnceWith('memory')
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('OOM during a window prompt stops the workload and keeps the terminal gate', async () => {
+  const stop = vi.fn(async () => {}), releasePage = vi.fn(async () => {})
+  let answer: (action: 'restart') => void = () => {}
+  const prompt = vi.fn(() => new Promise<'restart'>(resolve => { answer = resolve }))
+  const controller = createProcessRecovery({ stop, releasePage, prompt })
+  controller.start('window')
+  controller.start('memory')
+  await vi.waitFor(() => expect(releasePage).toHaveBeenCalledTimes(1))
+  answer('restart')
+  await Promise.resolve()
+  expect(controller.blocked).toBe(true)
+  expect(prompt).toHaveBeenCalledTimes(1)
+})
+
+it('disposal prevents a late prompt answer from restarting or quitting', async () => {
+  let answer: (action: 'software') => void = () => {}
+  const restart = vi.fn(), quit = vi.fn()
+  const controller = createProcessRecovery({
+    prompt: () => new Promise<'software'>(resolve => { answer = resolve }), restart, quit
+  })
+  controller.start('graphics')
+  controller.dispose()
+  answer('software')
+  await Promise.resolve()
+  expect(restart).not.toHaveBeenCalled()
+  expect(quit).not.toHaveBeenCalled()
 })

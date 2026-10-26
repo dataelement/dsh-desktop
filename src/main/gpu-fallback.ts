@@ -1,5 +1,18 @@
-import type { GpuExitContext } from './gpu-exit-context'
-import { classifyGpuExit } from './gpu-exit-context'
+export interface GpuExitContext {
+  sessionEndRequested: boolean
+  sessionEnding: boolean
+  quitRequested: boolean
+  appExiting: boolean
+}
+
+export function emptyGpuExitContext(): GpuExitContext {
+  return { sessionEndRequested: false, sessionEnding: false, quitRequested: false, appExiting: false }
+}
+
+export function classifyGpuExit(platform: NodeJS.Platform, exitCode: number, context: GpuExitContext): 'unclassified' | 'logoff-during-exit' | 'logoff-impact-unknown' {
+  if (platform !== 'win32' || (exitCode >>> 0) !== 0xc000026b) return 'unclassified'
+  return context.sessionEnding || context.appExiting ? 'logoff-during-exit' : 'logoff-impact-unknown'
+}
 
 /** Graphics failures can leave the window blank before the user can recover.
  * Persist a bounded software-rendering fallback without removing the sandbox.

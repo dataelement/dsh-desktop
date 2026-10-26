@@ -1,4 +1,12 @@
 import { pathToFileURL } from 'node:url'
+import { isAbortedNavigationError } from './window-navigation'
+
+const navigationOwners = new WeakMap<NavigationTarget, (url: string, cancelled: () => boolean) => Promise<boolean>>()
+
+export function registerNavigationOwner(target: NavigationTarget, navigate: (url: string, cancelled: () => boolean) => Promise<boolean>): () => void {
+  navigationOwners.set(target, navigate)
+  return () => { navigationOwners.delete(target) }
+}
 
 export interface NavigationTarget {
   isDestroyed(): boolean
@@ -6,8 +14,8 @@ export interface NavigationTarget {
 }
 
 export function isCancelledNavigation(error: unknown): boolean {
-  return error instanceof Error && 'code' in error &&
-    (error.code === 'ERR_ABORTED' || error.code === -3)
+  return isAbortedNavigationError(error) ||
+    (error instanceof Error && 'code' in error && error.code === -3)
 }
 
 /** A failed navigation must never start a second load on a closing or superseded window. */
@@ -18,7 +26,10 @@ export async function navigateDesktopWindow(
 ): Promise<boolean> {
   if (cancelled() || target.isDestroyed()) return false
   try {
-    await target.loadURL(url)
+    const owner = navigationOwners.get(target)
+    if (owner) {
+      if (!await owner(url, cancelled)) return false
+    } else await target.loadURL(url)
   } catch (error) {
     if (cancelled() || target.isDestroyed() || isCancelledNavigation(error)) return false
     throw error

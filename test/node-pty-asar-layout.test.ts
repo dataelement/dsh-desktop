@@ -21,14 +21,19 @@ afterEach(async () => {
 
 // Only macOS launches the shell through node-pty's spawn-helper binary.
 describe.runIf(process.platform === 'darwin')('node-pty in the packaged asar layout', () => {
-  it.each(['default', 'external'])('starts a terminal with %s helper resolution in the asar layout', async resolution => {
+  it.each([
+    ['app.asar', 'default'],
+    ['app.asar', 'external'],
+    ['app.asar.unpacked', 'default'],
+    ['app.asar.unpacked', 'external']
+  ])('starts a terminal from %s with %s helper resolution', async (layout, resolution) => {
     // Packaged Harness loads node-pty through app.asar while asarUnpack keeps
     // spawn-helper and pty.node in app.asar.unpacked. Upstream node-pty maps
     // the one to the other; the external-helper override must also preserve this default.
     const root = await mkdtemp(join(tmpdir(), 'dsh-node-pty-'))
     roots.push(root)
     const resources = join(root, 'DSH Desktop.app', 'Contents', 'Resources')
-    const packaged = join(resources, 'app.asar', 'node_modules', 'node-pty')
+    const packaged = join(resources, layout, 'node_modules', 'node-pty')
     await cp(nodePtyRoot, packaged, { recursive: true })
     await cp(join(nodePtyRoot, 'prebuilds'), join(resources, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds'), { recursive: true })
     if (resolution === 'external') {

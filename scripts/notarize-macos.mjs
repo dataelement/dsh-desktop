@@ -26,19 +26,28 @@ export async function notarizeWithStapleRetry(options, {
     await submit(options)
   } catch (error) {
     if (!transientStapleFailure(error)) throw error
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      log(`App ticket stapling failed; retrying in ${attempt * 10}s (${attempt}/5)`)
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      log(`App ticket stapling failed; retrying in ${attempt * 10}s (${attempt}/6)`)
       await wait(attempt * 10_000)
       try {
         await run('xcrun', ['stapler', 'staple', options.appPath], { timeout: 60_000 })
         break
       } catch (retryError) {
-        if (attempt === 5 || !transientCommandFailure(retryError)) throw retryError
+        if (attempt === 6 || !transientCommandFailure(retryError)) throw retryError
       }
     }
   }
   // A build cannot proceed to archive creation with an unverified ticket.
-  await run('xcrun', ['stapler', 'validate', options.appPath], { timeout: 60_000 })
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      await run('xcrun', ['stapler', 'validate', options.appPath], { timeout: 60_000 })
+      break
+    } catch (validateError) {
+      if (attempt === 6 || !transientCommandFailure(validateError)) throw validateError
+      log(`App ticket validation failed; retrying in ${attempt * 10}s (${attempt}/6)`)
+      await wait(attempt * 10_000)
+    }
+  }
 }
 
 /** electron-builder hook: completes before DMG/ZIP creation on both macOS architectures. */

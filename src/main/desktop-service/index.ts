@@ -1,3 +1,4 @@
+import type { GpuExitContext } from '../gpu-fallback'
 import { totalmem, freemem, release } from 'node:os'
 import { resourceSnapshot, graphicsSnapshot } from '../resource-diagnostics'
 import { app, dialog, net } from 'electron'
@@ -10,7 +11,7 @@ let service: DesktopService | undefined
 export let desktopDiagnostics: ReturnType<typeof attachDiagnostics> | undefined
 
 /** Call only after the single-instance lock, before bootstrap writes this session's log. */
-export function initializeDesktopService(): void {
+export function initializeDesktopService(options: { getExitContext?: () => GpuExitContext } = {}): void {
   if (!app.isPackaged || service) return
   try {
     service = new DesktopService({
@@ -38,6 +39,7 @@ export function initializeDesktopService(): void {
       gpuInfo = graphicsSnapshot(await app.getGPUInfo('basic'))
     }).catch(error => console.warn('[desktop-service] GPU metadata unavailable', error instanceof Error ? error.name : 'unknown'))
     desktopDiagnostics = attachDiagnostics(app, service, {
+      getExitContext: options.getExitContext,
       resourceEvidence: () => `os=${release()} acceleration=${app.isHardwareAccelerationEnabled()} gpu=${gpuInfo} ${resourceSnapshot(totalmem(), freemem(), app.getAppMetrics())}`,
       onError: error => console.warn('[desktop-service]', error instanceof Error ? error.name : 'Diagnostic failure')
     })

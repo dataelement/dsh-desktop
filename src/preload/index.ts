@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { installHarnessBootBridge } from './harness-boot'
 import type { UpdateLocale } from './update-view'
 import { setupDesktopStoragePersistence } from './desktop-storage'
 import { setupDesktopNotificationBridge } from './desktop-notification'
@@ -25,6 +26,7 @@ if (process.platform === 'win32') markWindowsTitlebar(document)
 // Intercept and persist localStorage to disk storage before any page script executes
 setupDesktopStoragePersistence()
 setupDesktopNotificationBridge()
+installHarnessBootBridge()
 
 const SAFE_MODE_BANNER_ID = 'dsh-desktop-safe-mode-banner'
 const locale: UpdateLocale = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'

@@ -30,6 +30,16 @@ describe('macOS app notarization', () => {
     expect(deps.run).toHaveBeenCalledExactlyOnceWith('xcrun', ['stapler', 'validate', options.appPath], { timeout: 60_000 })
   })
 
+  it('retries transient validation failures with bounded backoff', async () => {
+    const deps = dependencies()
+    deps.run.mockRejectedValueOnce(commandError(68))
+      .mockResolvedValue({})
+    await notarizeWithStapleRetry(options, deps)
+    expect(deps.submit).toHaveBeenCalledTimes(1)
+    expect(deps.wait).toHaveBeenCalledExactlyOnceWith(10_000)
+    expect(deps.run).toHaveBeenCalledTimes(2)
+  })
+
   it('fails after the bounded number of transient retries', async () => {
     const deps = dependencies()
     deps.submit.mockRejectedValue(stapleError)
@@ -37,7 +47,7 @@ describe('macOS app notarization', () => {
     deps.run.mockRejectedValue(error)
     await expect(notarizeWithStapleRetry(options, deps)).rejects.toBe(error)
     expect(deps.submit).toHaveBeenCalledTimes(1)
-    expect(deps.run).toHaveBeenCalledTimes(5)
+    expect(deps.run).toHaveBeenCalledTimes(6)
   })
 
   it('never retries rejected notarization, permanent stapling errors or failed validation', async () => {

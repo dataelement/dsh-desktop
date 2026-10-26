@@ -290,11 +290,11 @@ jobs:
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER" \
             --wait
-          for attempt in 1 2 3 4 5; do
+          for attempt in 1 2 3 4 5 6; do
             if xcrun stapler staple "$dmg_path"; then break; fi
-            if [ "$attempt" -eq 5 ]; then exit 1; fi
-            echo "stapler staple failed, waiting for Apple ticket propagation in 10s (attempt $attempt/5)..."
-            sleep 10
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            echo "stapler staple failed, waiting for Apple ticket propagation in $((attempt * 15))s (attempt $attempt/6)..."
+            sleep $((attempt * 15))
           done
       - name: Remove temporary signing keychain
         if: always() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease')))
@@ -320,19 +320,19 @@ jobs:
           app_path="dist/${{ matrix.app-directory }}/DSH Desktop.app"
           codesign --verify --deep --strict --verbose=2 "$app_path"
           spctl --assess --type execute --verbose=4 "$app_path"
-          for attempt in 1 2 3 4 5; do
+          for attempt in 1 2 3 4 5 6; do
             if xcrun stapler validate "$app_path"; then break; fi
-            if [ "$attempt" -eq 5 ]; then exit 1; fi
-            echo "stapler validate failed on app_path, retrying in $((attempt * 5))s (attempt $attempt/5)..."
-            sleep $((attempt * 5))
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            echo "stapler validate failed on app_path, retrying in $((attempt * 10))s (attempt $attempt/6)..."
+            sleep $((attempt * 10))
           done
           codesign --verify --verbose=2 dist/dsh-desktop-mac-${{ matrix.arch }}.dmg
           spctl --assess --type open --context context:primary-signature --verbose=4 dist/dsh-desktop-mac-${{ matrix.arch }}.dmg
-          for attempt in 1 2 3 4 5; do
+          for attempt in 1 2 3 4 5 6; do
             if xcrun stapler validate dist/dsh-desktop-mac-${{ matrix.arch }}.dmg; then break; fi
-            if [ "$attempt" -eq 5 ]; then exit 1; fi
-            echo "stapler validate failed on dmg, retrying in $((attempt * 5))s (attempt $attempt/5)..."
-            sleep $((attempt * 5))
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            echo "stapler validate failed on dmg, retrying in $((attempt * 10))s (attempt $attempt/6)..."
+            sleep $((attempt * 10))
           done
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'signed' || inputs.mode == 'prerelease'))
@@ -715,7 +715,7 @@ jobs:
           installer_count="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' | wc -l | tr -d ' ')"
           test "$installer_count" = '1'
           installer="$(find "$WINDOWS_SIGNING_WORK_DIR/release" -maxdepth 1 -type f -name '*.exe' -print -quit)"
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5 6; do
             if java -jar "$JSIGN_JAR" \
               --storetype ETOKEN \
               --storepass "file:$pin_file" \
@@ -730,12 +730,12 @@ jobs:
               "$installer"; then
               break
             fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "::error::Signing final installer failed after 3 attempts"
+            if [ "$attempt" -eq 6 ]; then
+              echo "::error::Signing final installer failed after 6 attempts"
               exit 1
             fi
-            echo "Signing final installer failed, retrying in $((attempt * 3))s (attempt $attempt/3)..."
-            sleep $((attempt * 3))
+            echo "Signing final installer failed, retrying in $((attempt * 10))s (attempt $attempt/6)..."
+            sleep $((attempt * 10))
           done
           java -jar "$JSIGN_JAR" extract --format DER "$installer"
           test -s "$installer.sig"

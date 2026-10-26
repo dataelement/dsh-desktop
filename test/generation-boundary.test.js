@@ -440,7 +440,8 @@ describe('the market install boundary', () => {
       ['add', 'widget@2.0.0'], join(home, 'profiles', 'web')
     ))
     expect(result.exitCode).toBe(1)
-    expect(result.stderr).toContain('generation peer validation failed')
+    // Required private peers now fail in staging, before generation promotion.
+    expect(result.stderr).toContain('ERR_PRIVATE_PEER_MISSING: dsh-test-missing-peer')
     expect(await readDesired(home)).toEqual([])
     const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web/package.json'), 'utf8'))
     expect(manifest.dependencies.widget).toBeUndefined()

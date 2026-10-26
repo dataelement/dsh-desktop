@@ -121,3 +121,51 @@ export async function readInstallEvidence(installs, home = process.env.DSH_HOME 
   }
   return packages
 }
+
+/**
+ * Inspects an installed workbench package to decide whether applying its
+ * changes requires restarting the Harness process or only reloading the page.
+ * Pure-client workbenches need only a Web reload; packages declaring server
+ * entries, Cordis services, or non-empty patch insertions require a restart.
+ */
+export async function inspectWorkbenchReloadRequirement(pluginName, home = process.env.DSH_HOME || join(homedir(), '.dsh')) {
+  try {
+    const profile = join(home, 'profiles', 'web')
+    const candidate = join(profile, 'node_modules', pluginName)
+    const directory = await realpath(candidate).catch(() => candidate)
+    const manifestPath = join(directory, 'package.json')
+    const manifest = await json(manifestPath).catch(() => null)
+    if (!manifest) {
+      return { restartRequired: true, reloadRequired: false, actionRequired: 'restart', reason: 'unreadable-manifest' }
+    }
+    const patchRelative = manifest.dsh?.bundle?.patch || manifest.bundle?.patch
+    let hasServerPatch = false
+    if (typeof patchRelative === 'string') {
+      const patchPath = join(directory, patchRelative)
+      const patchContent = await readFile(patchPath, 'utf8').catch(() => null)
+      if (patchContent) {
+        const trimmed = patchContent.trim()
+        if (trimmed && trimmed !== '[]' && !trimmed.startsWith('#') && trimmed.includes('insert:')) {
+          hasServerPatch = true
+        }
+      }
+    }
+    const hasServerEntry = Boolean(
+      hasServerPatch ||
+      manifest.cordis?.service ||
+      manifest.cordis?.entry ||
+      (typeof manifest.main === 'string' && manifest.main && !manifest.main.includes('client'))
+    )
+    const hasClientEntry = Boolean(manifest.dsh?.client || manifest['dsh.client'] || manifest.exports?.['./client'])
+
+    if (hasServerEntry) {
+      return { restartRequired: true, reloadRequired: false, actionRequired: 'restart', reason: 'server-plugin' }
+    }
+    if (hasClientEntry) {
+      return { restartRequired: false, reloadRequired: true, actionRequired: 'reload', reason: 'client-only' }
+    }
+    return { restartRequired: true, reloadRequired: false, actionRequired: 'restart', reason: 'unknown' }
+  } catch {
+    return { restartRequired: true, reloadRequired: false, actionRequired: 'restart', reason: 'inspection-failed' }
+  }
+}
