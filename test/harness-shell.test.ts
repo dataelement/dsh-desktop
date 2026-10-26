@@ -154,6 +154,70 @@ describe('packaged Harness shell', () => {
     expect((await shell.handle(request('api/echo'))).status).toBe(503)
   })
 
+  it('reloads the current boot graph after multiple HMR revisions without authenticating again', async () => {
+    let revision = 1
+    let authentications = 0
+    const origin = await server((req, res) => {
+      if (req.url === '/?token=secret') {
+        authentications++
+        res.writeHead(303, { location: '/', 'set-cookie': 'session=owned; Path=/' }).end()
+      } else if (req.headers.cookie !== 'session=owned') {
+        res.writeHead(401).end()
+      } else if (req.url === '/api/desktop/boot') {
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ injections: [{ kind: 'script-src', src: `/plugins/app.js?rev=${revision}` }] }))
+      } else if (req.url === `/plugins/app.js?rev=${revision}`) {
+        res.end('current bundle')
+      } else {
+        res.writeHead(404).end()
+      }
+    })
+    const initialPage = shell.waitUntilReady()
+    await shell.connect(origin, 'secret')
+    expect((await initialPage).injections).toEqual([{ kind: 'script-src', src: '/plugins/app.js?rev=1' }])
+    for (const next of [2, 3]) {
+      revision = next
+      await shell.connect(origin, 'secret')
+      const boot = await shell.waitUntilReady()
+      expect(boot.injections).toEqual([{ kind: 'script-src', src: `/plugins/app.js?rev=${next}` }])
+      expect((await shell.handle(request(`plugins/app.js?rev=${next}`))).status).toBe(200)
+    }
+    expect((await shell.handle(request('plugins/app.js?rev=1'))).status).toBe(404)
+    expect(authentications).toBe(1)
+  })
+
+  it('rejects a failed page refresh without serving stale injections, and allows retry', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(authResponse()).mockResolvedValueOnce(Response.json({ injections: ['initial'] }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ injections: ['current'] }))
+    shell = new HarnessShell({ frontendRoot: root, fetch: fetcher })
+    await shell.connect('http://127.0.0.1:9999')
+    await expect(shell.waitUntilReady()).rejects.toMatchObject({ cause: { message: 'Harness boot request failed (HTTP 503)' } })
+    expect((await shell.waitUntilReady()).injections).toEqual(['current'])
+  })
+
+  it('cancels pending page refreshes on reset and rejects late results from the old backend', async () => {
+    let completeOld!: (response: Response) => void
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(authResponse()).mockResolvedValueOnce(Response.json({ injections: ['initial'] }))
+      .mockImplementationOnce(() => new Promise(resolve => { completeOld = resolve }))
+      .mockResolvedValueOnce(authResponse()).mockResolvedValueOnce(Response.json({ injections: ['new'] }))
+      .mockImplementation(() => Promise.resolve(Response.json({ injections: ['new'] })))
+    shell = new HarnessShell({ frontendRoot: root, fetch: fetcher })
+    await shell.connect('http://127.0.0.1:9999')
+    const refresh = shell.waitUntilReady()
+    const assertion = expect(refresh).rejects.toMatchObject({ cause: { message: 'Harness connection superseded' } })
+    const signal = fetcher.mock.calls[2]?.[1]?.signal
+    shell.reset()
+    expect(signal?.aborted).toBe(true)
+    const pendingPage = shell.waitUntilReady()
+    await shell.connect('http://127.0.0.1:9998')
+    completeOld(Response.json({ injections: ['stale'] }))
+    await assertion
+    expect((await pendingPage).injections).toEqual(['new'])
+  })
+
   it.each([new Response('no', { status: 401 }), new Response(null, { status: 303, headers: { location: 'https://example.com/', 'set-cookie': 'session=secret' } })])('rejects failed auth without forwarding credentials or exposing secrets', async response => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response)
     shell = new HarnessShell({ frontendRoot: root, fetch: fetcher })
@@ -178,6 +242,7 @@ describe('packaged Harness shell', () => {
       .mockResolvedValueOnce(authResponse())
       .mockImplementationOnce(() => new Promise(resolve => { completeOld = resolve }))
       .mockResolvedValueOnce(authResponse()).mockResolvedValueOnce(Response.json({ injections: ['new'] }))
+      .mockImplementation(() => Promise.resolve(Response.json({ injections: ['new'] })))
     shell = new HarnessShell({ frontendRoot: root, fetch: fetcher })
     const oldWaiter = shell.waitUntilReady()
     const old = shell.connect('http://127.0.0.1:9999')

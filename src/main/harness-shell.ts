@@ -78,7 +78,42 @@ export class HarnessShell {
 
   begin(): void { this.reset() }
 
-  waitUntilReady(): Promise<HarnessShellBoot> { return this.readiness }
+  async waitUntilReady(): Promise<HarnessShellBoot> {
+    const generation = this.generation
+    const backend = this.backend
+    if (!backend) {
+      const boot = await this.readiness
+      if (generation !== this.generation) throw new Error('Harness connection superseded')
+      return boot
+    }
+    // Authentication survives page reloads, but graph revisions and injection
+    // rows can change through HMR without restarting the backend.
+    const operation = this.operation()
+    try {
+      const boot = await this.readBootPayload(backend, operation.signal)
+      if (generation !== this.generation || operation.signal.aborted) throw new Error('Harness connection superseded')
+      return boot
+    } catch (cause) {
+      throw new Error('Harness shell page boot payload request failed', { cause })
+    } finally {
+      operation.finish()
+    }
+  }
+
+  private async readBootPayload(backend: { origin: string, cookie: string }, signal: AbortSignal): Promise<HarnessShellBoot> {
+    const response = await this.fetcher(new URL('/api/desktop/boot', backend.origin), {
+      headers: { cookie: backend.cookie }, redirect: 'manual', signal
+    })
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error(`Harness boot request failed (HTTP ${response.status})`)
+    }
+    const payload: unknown = await response.json()
+    if (!payload || typeof payload !== 'object' || !('injections' in payload) || !Array.isArray(payload.injections)) {
+      throw new Error('Invalid Harness boot payload')
+    }
+    return { injections: payload.injections, streamBaseUrl: backend.origin }
+  }
 
   private operation(signal?: AbortSignal): { signal: AbortSignal, finish: () => void, headersReceived: () => void } {
     const controller = new AbortController()
@@ -128,20 +163,8 @@ export class HarnessShell {
         throw new Error('Harness authentication failed')
       }
       stage = 'boot payload request'
-      const response = await this.fetcher(new URL('/api/desktop/boot', url.origin), {
-        headers: { cookie }, redirect: 'manual', signal: operation.signal
-      })
-      stage = `boot payload (HTTP ${response.status})`
-      if (!response.ok) {
-        await response.body?.cancel()
-        throw new Error('Harness boot request failed')
-      }
-      const payload: unknown = await response.json()
-      if (!payload || typeof payload !== 'object' || !('injections' in payload) || !Array.isArray(payload.injections)) {
-        throw new Error('Invalid Harness boot payload')
-      }
+      const boot = await this.readBootPayload({ origin: url.origin, cookie }, operation.signal)
       if (generation !== this.generation || operation.signal.aborted) throw new Error('Harness connection superseded')
-      const boot = { injections: payload.injections, streamBaseUrl: url.origin }
       this.backend = { origin: url.origin, cookie }
       this.resolveReady(boot)
       return boot
