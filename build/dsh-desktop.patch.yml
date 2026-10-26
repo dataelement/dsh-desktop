@@ -40,6 +40,13 @@
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
 
+    # Per-provider API-key account pools for Settings -> Models: manual,
+    # on-error, and round-robin account switching over the llm/stream
+    # waterfall. State lives in a harness credential record; the plugin is
+    # inert until a provider gains its first account.
+    - id: dsh-desktop-multi-account
+      name: dsh-desktop-multi-account
+
     # One shared image tool for conversations and Office workflows.
     - id: dsh-image-generation
       name: dsh-image-generation

@@ -16,7 +16,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/lib/bin.js b/node_modules/@deepseek-a
 diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek-ai/dsh/package.json
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -104,9 +104,21 @@
+@@ -104,9 +104,22 @@
      "@deepseek-ai/dsh-experimental-session-titles-bundle": "0.2.1-rc.2",
      "@deepseek-ai/dsh-experimental-terminal-bundle": "0.2.1-rc.2",
      "@deepseek-ai/dsh-experimental-session-search": "0.2.1-rc.2",
@@ -29,6 +29,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 +    "dsh-desktop-hmr-fallback": "0.1.0",
 +    "dsh-desktop-log-bridge": "0.1.0",
 +    "dsh-desktop-market-installer": "0.1.0",
++    "dsh-desktop-multi-account": "0.1.0",
 +    "dsh-desktop-preset-transfer": "0.1.0",
 +    "dsh-image-generation": "0.1.0",
 +    "react-dom": "18.3.1",
@@ -39,7 +40,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
    "devDependencies": {
      "@deepseek-ai/dsh-skill-badge": "0.2.1-rc.2",
      "@deepseek-ai/dsh-webhook-github": "0.2.1-rc.2",
-@@ -169,5 +181,5 @@
+@@ -169,5 +182,5 @@
      },
      "./lib/*": "./lib/*",
      "./package.json": "./package.json"
