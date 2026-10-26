@@ -7,6 +7,7 @@ import {
   gpuFallbackStateEquals,
   gpuFallbackSwitches,
   isGpuLossFatal,
+  hasExhaustedGpuRecovery,
   isRendererGpuFallbackCandidate,
   parseGpuFallbackState,
   planGpuFallbackResponse,
@@ -259,5 +260,17 @@ describe('gpu fallback persistence', () => {
     expect(gpuFallbackStateEquals(state(), state({ failures: 1 }))).toBe(false)
     expect(gpuFallbackStateEquals(state(), state({ stableLaunches: 1 }))).toBe(false)
     expect(gpuFallbackStateEquals(state(), state({ level: 'gpu-disabled' }))).toBe(false)
+  })
+})
+
+
+describe('exhausted graphics recovery', () => {
+  it('surfaces a GPU-only startup failure even when no renderer crash event arrives', () => {
+    expect(hasExhaustedGpuRecovery(state({ level: 'gpu-disabled', failures: 1 }), true)).toBe(true)
+    expect(hasExhaustedGpuRecovery(state(), true)).toBe(false)
+  })
+  it('stops repeated software-rendering failures even when renderer reload cooldowns reset', () => {
+    expect(hasExhaustedGpuRecovery(state({ level: 'gpu-disabled', failures: 1 }), false)).toBe(false)
+    expect(hasExhaustedGpuRecovery(state({ level: 'gpu-disabled', failures: 3 }), false)).toBe(true)
   })
 })

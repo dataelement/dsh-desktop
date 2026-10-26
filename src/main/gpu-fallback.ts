@@ -164,6 +164,12 @@ export function planStableLaunch(state: GpuFallbackState): GpuFallbackState {
   return { level: previous ?? state.level, failures: 0, stableLaunches: 0 }
 }
 
+/** No lower graphics mode remains: stop retrying an unusable launch or a
+ * repeated failure burst at the software-rendering level. */
+export function hasExhaustedGpuRecovery(state: GpuFallbackState, unusableLaunch: boolean): boolean {
+  return state.level === 'gpu-disabled' && (unusableLaunch || state.failures >= GPU_FALLBACK_FAILURE_THRESHOLD)
+}
+
 export function gpuFallbackStateEquals(a: GpuFallbackState, b: GpuFallbackState): boolean {
   return (
     a.level === b.level && a.failures === b.failures && a.stableLaunches === b.stableLaunches

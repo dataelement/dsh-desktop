@@ -96,6 +96,7 @@ import {
   gpuFallbackStateEquals,
   gpuFallbackSwitches,
   isGpuLossFatal,
+  hasExhaustedGpuRecovery,
   isRendererGpuFallbackCandidate,
   parseGpuFallbackState,
   planGpuFallbackResponse,
@@ -949,7 +950,7 @@ function respondToGpuFallbackSignal(
   }
   if (escalated) runtime?.note(`[desktop] GPU fallback raised to ${plan.state.level}`)
   if (!plan.relaunch) {
-    if (options.unusableLaunch && gpuFallbackState.level === 'gpu-disabled') {
+    if (hasExhaustedGpuRecovery(gpuFallbackState, options.unusableLaunch === true || !harnessRendered)) {
       processFailureRecovery.start('graphics')
       return true
     }
