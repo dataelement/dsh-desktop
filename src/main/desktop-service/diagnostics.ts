@@ -5,6 +5,7 @@ import { DesktopService, type FailureKind } from './service'
 
 /** Bind before webContents are created. Capture synchronously before recovery can app.exit(). */
 export function attachDiagnostics(app: EventEmitter, service: DesktopService, options: {
+  resourceEvidence?: () => string
   platform?: NodeJS.Platform
   processEvents?: EventEmitter
   onError?: (error: unknown) => void
@@ -24,7 +25,10 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
   let pendingPluginFailureEventId: string | undefined
   let suppressPluginFailure = false
   const capture = (kind: FailureKind, message: string, eventId?: string) => {
-    safe(() => service.capture(kind, message, eventId))
+    let evidence = ''
+    try { evidence = options.resourceEvidence?.() ?? '' }
+    catch (error) { options.onError?.(error) }
+    safe(() => service.capture(kind, evidence ? `${message.slice(0, 2200)}\nresources=${evidence.slice(0, 1700)}` : message, eventId))
     // A plugin-attributed startup failure waits: recovery may still discard it.
     if (canSend && (eventId === undefined || eventId !== pendingPluginFailureEventId)) flush()
   }
@@ -113,6 +117,7 @@ export function attachDiagnostics(app: EventEmitter, service: DesktopService, op
         pendingPluginFailureEventId = undefined
       }
     },
+    resourceLimit(message: string) { capture('harness-crash', `Desktop stopped runtime for resource protection: ${message}`) },
     startupFailed(error: unknown) { capture('startup-failure', error instanceof Error ? error.stack ?? error.message : String(error)) },
     markCleanExit: clean,
     dispose() {

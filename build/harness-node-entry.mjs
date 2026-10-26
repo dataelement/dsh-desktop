@@ -1,3 +1,4 @@
+import { getHeapStatistics } from 'node:v8'
 import childProcess from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -26,6 +27,25 @@ if (process.versions.electron !== undefined) {
 }
 
 const [dshEntryPath, ...dshArguments] = process.argv.slice(2)
+
+// The host supplies this budget, then removes it so tools do not inherit a
+// Desktop protocol. Electron UtilityProcess does not honor V8 old-space argv;
+// its independent main-process RSS watchdog is supplemented by this check.
+const memoryBudgetMb = Number(process.env.DSH_DESKTOP_MEMORY_BUDGET_MB)
+delete process.env.DSH_DESKTOP_MEMORY_BUDGET_MB
+if (Number.isInteger(memoryBudgetMb) && memoryBudgetMb >= 128 && memoryBudgetMb <= 4096) {
+  process.stderr.write(`[harness-node] memory-budget: ${memoryBudgetMb}MiB actual-heap-limit=${Math.round(getHeapStatistics().heap_size_limit / 1024 ** 2)}MiB\n`)
+  const resourceTimer = setInterval(() => {
+    const memory = process.memoryUsage()
+    if (memory.heapUsed <= memoryBudgetMb * 1024 ** 2 && memory.rss <= (memoryBudgetMb + 512) * 1024 ** 2) return
+    clearInterval(resourceTimer)
+    process.stderr.write(`[harness-node] resource-budget-exceeded: heap=${Math.round(memory.heapUsed / 1024 ** 2)}MiB rss=${Math.round(memory.rss / 1024 ** 2)}MiB\n`)
+    // Parent owns graceful shutdown. If it is unavailable, do not keep growing.
+    setTimeout(() => process.exit(86), 5000).unref()
+  }, 30_000)
+  resourceTimer.unref()
+}
+
 
 function report(label, value) {
   process.stderr.write(`[harness-node] ${label}: ${value}\n`)

@@ -1,3 +1,8 @@
+import { ProcessMemoryWatch } from './process-memory-watch'
+import { totalmem } from 'node:os'
+import { desktopHeapBudget, isMemoryExit } from './resource-budget'
+import { GpuDeviceRecovery } from './gpu-device-recovery'
+import { ProcessFailureRecovery } from './process-failure-recovery'
 import { getGpuExitContext, trackGpuExitContext } from './gpu-exit-context'
 import { ApplicationRollbackFlow } from './application-rollback-flow'
 import { developmentEnvironment } from './development-environment'
@@ -312,6 +317,70 @@ let harnessRendered = false
 let gpuFallbackState: GpuFallbackState = defaultGpuFallbackState
 let gpuFallbackRelaunching = false
 let gpuStableLaunchTimer: NodeJS.Timeout | undefined
+const processMemoryWatch = new ProcessMemoryWatch({
+  totalBytes: totalmem(),
+  sample: () => quitting || getGpuExitContext(app).sessionEnding ? [] : app.getAppMetrics(),
+  harnessPid: () => runtime?.processId,
+  onLimit: evidence => {
+    runtime?.note(`[desktop] resource budget exceeded: ${evidence}`)
+    desktopDiagnostics?.resourceLimit(evidence)
+    processFailureRecovery.start('memory')
+  },
+  onError: error => runtime?.note(`[desktop] resource safety check failed: ${String(error)}`)
+})
+const processFailureRecovery = new ProcessFailureRecovery({
+  stop: async () => {
+    processMemoryWatch.dispose()
+    gpuDeviceRecovery.dispose()
+    await runtime?.stop()
+    await mobileBridge?.stop()
+  },
+  releasePage: async () => {
+    desktopStorageManager?.flushSync()
+    mainWindowNavigationVersion += 1
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      mainWindow.webContents.stop()
+      await Promise.race([
+        mainWindow.loadURL('about:blank').catch(error => runtime?.note(`[desktop] recovery blank page failed: ${String(error)}`)),
+        new Promise<void>(resolve => { timer = setTimeout(resolve, 3000) })
+      ]).finally(() => { if (timer) clearTimeout(timer) })
+    }
+  },
+  prompt: async kind => {
+    const zh = harnessLocale() === 'zh'
+    const memory = kind === 'memory'
+    const { response } = await dialog.showMessageBox({
+      type: 'error', title: 'DSH Desktop', noLink: true, defaultId: 0, cancelId: 0,
+      message: memory
+        ? (zh ? '应用内存不足，已停止运行以释放资源' : 'The application ran out of memory and has stopped to release resources')
+        : (zh ? '图形进程反复异常，页面未能恢复响应' : 'Repeated graphics failures: page recovery could not be confirmed'),
+      detail: memory
+        ? (zh ? '已保存的会话和配置不会被删除。重启可能再次触发同一问题，请先关闭其他高内存应用。' : 'Saved sessions and configuration are preserved. Restarting may repeat the failure; close other memory-intensive applications first.')
+        : (zh ? '可以退出，或关闭硬件加速后重新启动。软件渲染可能增加 CPU 占用。' : 'Quit, or restart with hardware acceleration disabled. Software rendering may increase CPU usage.'),
+      buttons: memory
+        ? (zh ? ['退出', '重新启动'] : ['Quit', 'Restart'])
+        : (zh ? ['退出', '关闭硬件加速并重启'] : ['Quit', 'Restart without hardware acceleration'])
+    })
+    return response === 0 ? 'quit' : memory ? 'restart' : 'software'
+  },
+  restart: software => {
+    if (software) writeGpuFallbackState({ level: 'gpu-disabled', failures: 0, stableLaunches: 0 })
+    app.relaunch()
+  },
+  quit: () => app.quit(),
+  onError: showUnexpectedError
+})
+const gpuDeviceRecovery = new GpuDeviceRecovery({
+  probe: async () => {
+    const contents = mainWindow?.webContents
+    if (!contents || contents.isDestroyed() || contents.isCrashed() || !harnessRendered) return false
+    // A bounded response check, not proof that every plugin or GPU surface painted.
+    return await contents.executeJavaScript('document.readyState === "complete" && document.body !== null') === true
+  },
+  recover: () => { if (!quitting && !gpuFallbackRelaunching) processFailureRecovery.start('graphics') },
+  note: message => runtime?.note(`[desktop] ${message}`)
+})
 
 function appendRendererPluginFailureLog(message: string): void {
   const trimmed = message.trim()
@@ -419,7 +488,7 @@ function recordMainWindowRendererLoss(
 }
 
 function reloadMainWindowAfterRendererLoss(window: BrowserWindow): void {
-  if (quitting || gpuFallbackRelaunching || window.isDestroyed() || window.webContents.isDestroyed()) return
+  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || window.webContents.isDestroyed()) return
   const now = Date.now()
   if (!shouldReloadAfterMainWindowRendererLoss({
     now,
@@ -453,7 +522,7 @@ function reloadMainWindowAfterRendererLoss(window: BrowserWindow): void {
 function installMainWindowRendererRecovery(window: BrowserWindow): void {
   const webContents = window.webContents
   webContents.on('render-process-gone', (event, details) => {
-    if (quitting || gpuFallbackRelaunching || window.isDestroyed() || details.reason === 'clean-exit') return
+    if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || details.reason === 'clean-exit') return
     clearProfileBootConfirmation()
     // Take control: by default the window stays drawn but blank, which is
     // exactly the black screen this recovery is meant to prevent.
@@ -475,6 +544,10 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     // allowed the normal bounded reload; if that freshly reloaded renderer
     // dies with the same native signature, the launch is still unusable and
     // must take the same immediate relaunch path as a pre-render GPU loss.
+    if (isMemoryExit(reason, exitCode)) {
+      processFailureRecovery.start('memory')
+      return
+    }
     const unusableLaunch = !harnessRendered || mainWindowRecoveryReloadCount > 0
     if (
       isRendererGpuFallbackCandidate({ platform: process.platform, reason, exitCode }) &&
@@ -486,7 +559,7 @@ function installMainWindowRendererRecovery(window: BrowserWindow): void {
     reloadMainWindowAfterRendererLoss(window)
   })
   webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame || errorCode === -3 || quitting || gpuFallbackRelaunching || window.isDestroyed()) return
+    if (!isMainFrame || errorCode === -3 || processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed()) return
     clearProfileBootConfirmation()
     // The harness web server is local; a failure to reach it is almost
     // always the renderer dropping, not a real network error. Surface the
@@ -708,7 +781,7 @@ function configureGpuFallback(): void {
   }
   // Electron wants hardware acceleration turned off through its own call
   // rather than the switch alone; the switches stay because they also cover
-  // compositing and the sandbox, which this API does not.
+  // compositing. Neither path disables the GPU sandbox.
   if (gpuFallbackState.level === 'gpu-disabled') app.disableHardwareAcceleration()
 }
 
@@ -819,19 +892,26 @@ function markHarnessRendered(): void {
  */
 function installGpuFallbackWatch(): void {
   trackGpuExitContext(app)
+  app.once('quit', () => { gpuDeviceRecovery.dispose(); processMemoryWatch.dispose() })
+  void app.whenReady().then(() => processMemoryWatch.start()).catch(showUnexpectedError)
   app.on('child-process-gone', (_event, details) => {
     if (details.type !== 'GPU') return
-    if (gpuFallbackRelaunching || quitting) return
+    if (processFailureRecovery.blocked || gpuFallbackRelaunching || quitting) return
     // Chromium tears the GPU process down on shutdown and Electron reports it
     // here like any other loss; degrading on that would degrade everyone.
     // A device-loss exit (TDR) is Chromium recovering on its own, not evidence
     // of a broken sandbox, so it is logged but excluded from the same check.
     if (!isGpuLossFatal(details.reason, details.exitCode, { platform: process.platform, context: getGpuExitContext(app) })) {
       if (details.reason === 'crashed' && details.exitCode === 34) {
+        gpuDeviceRecovery.recordLoss()
         runtime?.note(
           `[desktop] GPU process device-loss self-recovery: reason=${details.reason} exitCode=${details.exitCode}`
         )
       }
+      return
+    }
+    if (isMemoryExit(details.reason, details.exitCode)) {
+      processFailureRecovery.start('memory')
       return
     }
     respondToGpuFallbackSignal(
@@ -849,7 +929,7 @@ function respondToGpuFallbackSignal(
   details: string,
   options: { unusableLaunch?: boolean } = {}
 ): boolean {
-  if (gpuFallbackRelaunching || quitting) return false
+  if (processFailureRecovery.blocked || gpuFallbackRelaunching || quitting) return false
   if (gpuStableLaunchTimer) {
     clearTimeout(gpuStableLaunchTimer)
     gpuStableLaunchTimer = undefined
@@ -868,11 +948,17 @@ function respondToGpuFallbackSignal(
     writeGpuFallbackState(plan.state)
   }
   if (escalated) runtime?.note(`[desktop] GPU fallback raised to ${plan.state.level}`)
-  if (!plan.relaunch) return false
+  if (!plan.relaunch) {
+    if (options.unusableLaunch && gpuFallbackState.level === 'gpu-disabled') {
+      processFailureRecovery.start('graphics')
+      return true
+    }
+    return false
+  }
   gpuFallbackRelaunching = true
   app.relaunch()
   desktopDiagnostics?.markCleanExit()
-  app.exit(0)
+  app.quit()
   return true
 }
 
@@ -1084,7 +1170,7 @@ async function openHarness(
   url: string,
   focusIntent: WindowFocusIntent = 'automatic'
 ): Promise<void> {
-  if (quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
+  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
   if (!safeModeVisible && returnToNormalAfterRepair) {
     returnToNormalAfterRepair = false
     try {
@@ -1130,7 +1216,7 @@ async function openHarness(
     }
     try {
       const loaded = await navigateDesktopWindow(window, rendererUrl,
-        () => quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
+        () => processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || navigationVersion !== mainWindowNavigationVersion)
       if (!loaded) return
     } catch (error) {
       if (navigationVersion !== mainWindowNavigationVersion) return
@@ -1225,7 +1311,7 @@ async function showWebHomeImport(
 }
 
 async function showSplash(): Promise<void> {
-  if (quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
+  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || applicationRollbackVisible) return
   clearProfileBootConfirmation()
   const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
   const navigationVersion = ++mainWindowNavigationVersion
@@ -1234,7 +1320,7 @@ async function showSplash(): Promise<void> {
     query: { theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' }
   })
   if (!loaded) return
-  if (quitting || gpuFallbackRelaunching || window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
+  if (processFailureRecovery.blocked || quitting || gpuFallbackRelaunching || window.isDestroyed() || navigationVersion !== mainWindowNavigationVersion) return
   raiseWindowWithoutStealingFocus(window, process.platform, () => app.isActive())
 }
 
@@ -1408,6 +1494,7 @@ async function enterMigrationSafeRecovery(
     ? '[desktop] safe mode: normal Profile startup failed preflight; plugin repair remains available'
     : '[desktop] safe mode: normal Profile maintenance is blocked until recovery succeeds')
   await migratePersonaPrefixesBeforeStart(dshHome)
+  if (processFailureRecovery.blocked) return
   await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
   if (runtime.snapshot().phase === 'ready') void mobileBridge.start().catch(showUnexpectedError)
   // The native manager remains usable even if shared settings prevent the
@@ -1428,6 +1515,7 @@ async function enterMigrationSafeRecovery(
 }
 
 function launchHarness(): Promise<void> {
+  if (processFailureRecovery.blocked) return Promise.resolve()
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
@@ -1531,7 +1619,9 @@ function launchHarness(): Promise<void> {
     await migratePersonaPrefixesBeforeStart(dshHome)
     await migrateLegacyAgentPresets(dshHome, (line) => runtime.note(line))
     runtime.note('[desktop] preset migrations done; starting Harness')
+    if (processFailureRecovery.blocked) return
     await runtime.start(launchDirectory)
+    if (processFailureRecovery.blocked) return
 
     // A failed launch must not rewrite the user's enabled plugin set. Recovery
     // and Safe Mode operate on explicit, exact plugin selections; automatically
@@ -1546,6 +1636,7 @@ function launchHarness(): Promise<void> {
         const rollback = await rollBackMigration(dshHome, (line) => runtime.note(line))
         if (rollback.outcome === 'restored') {
           runtime.note('[desktop] restarting the verified pre-upgrade Profile without package repair')
+          if (processFailureRecovery.blocked) return
           await runtime.start(launchDirectory)
         } else {
           const reason = rollback.outcome === 'recovery-required'
@@ -1563,6 +1654,7 @@ function launchHarness(): Promise<void> {
 }
 
 function launchSafeHarness(): Promise<void> {
+  if (processFailureRecovery.blocked) return Promise.resolve()
   if (harnessLaunchOperation) return harnessLaunchOperation
 
   harnessLaunchOperation = (async () => {
@@ -1576,6 +1668,7 @@ function launchSafeHarness(): Promise<void> {
     runtime.note('[desktop] safe mode: third-party web profile bundles are blocked')
     desktopStorageManager?.switchProfile(join(dshHome, 'profiles', SAFE_MODE_PROFILE))
     await migratePersonaPrefixesBeforeStart(dshHome)
+    if (processFailureRecovery.blocked) return
     await runtime.start(launchDirectory, SAFE_MODE_PROFILE)
     if (runtime.snapshot().phase === 'ready') {
       void mobileBridge.start().catch(showUnexpectedError)
@@ -2095,7 +2188,7 @@ async function showPluginRecovery(options?: {
   logs?: readonly string[]
   followRendererLogs?: boolean
 }): Promise<void> {
-  if (failureRecoveryVisible || quitting) return
+  if (processFailureRecovery.blocked || failureRecoveryVisible || quitting) return
   failureRecoveryVisible = true
 
   const dshHome = join(app.getPath('userData'), 'harness')
@@ -2691,7 +2784,7 @@ async function removeProfilePluginCompletely(
 }
 
 async function showSafeMode(): Promise<void> {
-  if (quitting) return
+  if (processFailureRecovery.blocked || quitting) return
   if (failureRecoveryVisible) {
     resolvePluginRecoveryAction('safe-mode')
     return
@@ -3350,6 +3443,11 @@ async function bootstrap(): Promise<void> {
           pluginFailures: snapshot.pluginFailures
         }
       }
+      if (snapshot.phase === 'failed' && snapshot.failureReason === 'memory-exhausted') {
+        processFailureRecovery.start('memory')
+        return
+      }
+      if (processFailureRecovery.blocked) return
       if (!applicationRollbackVisible && snapshot.phase === 'ready' && snapshot.url) {
         void openHarness(snapshot.url).catch(showUnexpectedError)
       } else if (!applicationRollbackVisible && snapshot.phase === 'failed') {
@@ -3734,6 +3832,7 @@ if (isDaemonLaunch(process.env, process.platform)) {
 } else {
   configureAppIdentity()
   configureApplicationLocale()
+  app.commandLine.appendSwitch('js-flags', `--max-old-space-size=${desktopHeapBudget(totalmem()).rendererMb}`)
   configureGpuFallback()
   installGpuFallbackWatch()
   const singleInstance = app.requestSingleInstanceLock()

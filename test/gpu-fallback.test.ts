@@ -23,13 +23,12 @@ describe('gpu fallback switches', () => {
     expect(gpuFallbackSwitches('default')).toEqual([])
   })
 
-  it('drops only the GPU sandbox at the first fallback level', () => {
-    expect(gpuFallbackSwitches('sandbox-disabled')).toEqual(['disable-gpu-sandbox'])
+  it('migrates legacy sandbox bypass to sandboxed software rendering', () => {
+    expect(gpuFallbackSwitches('sandbox-disabled')).toEqual(['disable-gpu', 'disable-gpu-compositing'])
   })
 
   it('turns hardware acceleration off entirely at the last fallback level', () => {
     expect(gpuFallbackSwitches('gpu-disabled')).toEqual([
-      'disable-gpu-sandbox',
       'disable-gpu',
       'disable-gpu-compositing'
     ])
@@ -122,22 +121,22 @@ describe('gpu loss classification', () => {
 })
 
 describe('gpu fallback planning before the harness renders', () => {
-  it('drops the GPU sandbox and relaunches on the first loss', () => {
+  it('uses software rendering without dropping the sandbox on first startup loss', () => {
     expect(planGpuFallbackResponse({ state: state(), harnessRendered: false })).toEqual({
-      state: { level: 'sandbox-disabled', failures: 0, stableLaunches: 0 },
+      state: { level: 'gpu-disabled', failures: 0, stableLaunches: 0 },
       relaunch: true
     })
   })
 
-  it('escalates to a fully disabled GPU when the sandbox-less launch also failed', () => {
+  it('does not relaunch repeatedly for a legacy software-rendering state', () => {
     expect(
       planGpuFallbackResponse({
         state: state({ level: 'sandbox-disabled' }),
         harnessRendered: false
       })
     ).toEqual({
-      state: { level: 'gpu-disabled', failures: 0, stableLaunches: 0 },
-      relaunch: true
+      state: { level: 'sandbox-disabled', failures: 1, stableLaunches: 0 },
+      relaunch: false
     })
   })
 
@@ -166,7 +165,7 @@ describe('gpu fallback planning while the user is working', () => {
       expect(current.level).toBe('default')
     }
     expect(planGpuFallbackResponse({ state: current, harnessRendered: true })).toEqual({
-      state: { level: 'sandbox-disabled', failures: 0, stableLaunches: 0 },
+      state: { level: 'gpu-disabled', failures: 0, stableLaunches: 0 },
       relaunch: false
     })
   })
@@ -215,7 +214,7 @@ describe('climbing back out of the fallback', () => {
       planStableLaunch(
         state({ level: 'gpu-disabled', stableLaunches: GPU_FALLBACK_PROBE_LAUNCHES - 1 })
       )
-    ).toEqual({ level: 'sandbox-disabled', failures: 0, stableLaunches: 0 })
+    ).toEqual({ level: 'default', failures: 0, stableLaunches: 0 })
   })
 
   it('walks all the way back to an untouched Chromium', () => {
@@ -243,7 +242,7 @@ describe('gpu fallback persistence', () => {
 
   it('reads a level written before the counters existed', () => {
     expect(parseGpuFallbackState('{"level":"sandbox-disabled"}')).toEqual({
-      level: 'sandbox-disabled',
+      level: 'gpu-disabled',
       failures: 0,
       stableLaunches: 0
     })

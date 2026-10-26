@@ -1,22 +1,9 @@
 import type { GpuExitContext } from './gpu-exit-context'
 import { classifyGpuExit } from './gpu-exit-context'
 
-/**
- * Some Windows machines cannot start Chromium's GPU process inside its
- * sandbox at all: a virtual display driver (Todesk, GameViewer) stacked on
- * an AMD integrated GPU takes the GPU process down with 0x80000003, the
- * renderer follows it, and loading the harness page fails with ERR_FAILED
- * before the user ever sees a window. Nothing in the app can recover from
- * that after the fact — the switches have to be in place before Chromium
- * boots — so the level that worked is remembered on disk and applied on the
- * next launch.
- *
- * Degrading is not free: it costs the GPU sandbox and eventually hardware
- * acceleration, on a machine that may only have hiccuped once. So the
- * fallback is deliberately hard to enter and never permanent — see
- * `planGpuFallbackResponse` for the thresholds and `planStableLaunch` for
- * the way back down.
- */
+/** Graphics failures can leave the window blank before the user can recover.
+ * Persist a bounded software-rendering fallback without removing the sandbox.
+ * The legacy sandbox-disabled value is accepted only for state migration. */
 export type GpuFallbackLevel = 'default' | 'sandbox-disabled' | 'gpu-disabled'
 
 export interface GpuFallbackState {
@@ -27,7 +14,7 @@ export interface GpuFallbackState {
   stableLaunches: number
 }
 
-const levels: readonly GpuFallbackLevel[] = ['default', 'sandbox-disabled', 'gpu-disabled']
+const levels: readonly GpuFallbackLevel[] = ['default', 'gpu-disabled']
 
 export const defaultGpuFallbackState: GpuFallbackState = {
   level: 'default',
@@ -116,19 +103,16 @@ export function isRendererGpuFallbackCandidate(options: {
   return windowsRendererFallbackCodes.has(options.exitCode >>> 0)
 }
 
-/**
- * The command line switches a level asks Chromium for. Each level keeps the
- * previous level's switches: a machine that needed the sandbox dropped still
- * needs it dropped once hardware acceleration is off as well.
- */
+/** Software rendering preserves Chromium's sandbox, including when reading
+ * an old persisted sandbox-disabled state. */
 export function gpuFallbackSwitches(level: GpuFallbackLevel): string[] {
   switch (level) {
     case 'default':
       return []
     case 'sandbox-disabled':
-      return ['disable-gpu-sandbox']
+      return ['disable-gpu', 'disable-gpu-compositing']
     case 'gpu-disabled':
-      return ['disable-gpu-sandbox', 'disable-gpu', 'disable-gpu-compositing']
+      return ['disable-gpu', 'disable-gpu-compositing']
   }
 }
 
@@ -151,7 +135,7 @@ export function planGpuFallbackResponse(options: {
 }): { state: GpuFallbackState; relaunch: boolean } {
   const { state, harnessRendered } = options
   const failures = state.failures + 1
-  const next = levels[levels.indexOf(state.level) + 1]
+  const next = state.level === 'default' ? 'gpu-disabled' : undefined
   if (next === undefined) {
     return { state: { ...state, failures, stableLaunches: 0 }, relaunch: false }
   }
@@ -170,6 +154,7 @@ export function planGpuFallbackResponse(options: {
  * above, so a machine only stays degraded as long as it still needs to be.
  */
 export function planStableLaunch(state: GpuFallbackState): GpuFallbackState {
+  if (state.level === 'sandbox-disabled') return planStableLaunch({ ...state, level: 'gpu-disabled' })
   if (state.level === 'default') return defaultGpuFallbackState
   const stableLaunches = state.stableLaunches + 1
   if (stableLaunches < GPU_FALLBACK_PROBE_LAUNCHES) {
@@ -196,7 +181,9 @@ function readCount(value: unknown): number {
 export function parseGpuFallbackState(raw: string): GpuFallbackState {
   try {
     const parsed = JSON.parse(raw) as Partial<Record<keyof GpuFallbackState, unknown>>
-    const level = parsed.level
+    // Migrate old sandbox-disabled installations to software rendering while
+    // restoring the GPU sandbox. New failures never remove the sandbox.
+    const level = parsed.level === 'sandbox-disabled' ? 'gpu-disabled' : parsed.level
     if (!levels.includes(level as GpuFallbackLevel)) return defaultGpuFallbackState
     return {
       level: level as GpuFallbackLevel,

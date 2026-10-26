@@ -1,3 +1,5 @@
+import { totalmem } from 'node:os'
+import { desktopHeapBudget, isMemoryExit } from '../resource-budget'
 import { execFile, execFileSync, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import type { EventEmitter } from 'node:events'
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from 'node:fs'
@@ -46,6 +48,7 @@ export interface HarnessRuntimeOptions {
 }
 
 export interface HarnessChildProcess extends EventEmitter {
+  readonly pid?: number
   readonly stdout: NodeJS.ReadableStream
   readonly stderr: NodeJS.ReadableStream
   readonly exitCode: number | null
@@ -302,6 +305,7 @@ export function resolveEnvironmentPath(
 /** Paths the Harness entry turns into `runCli({ packageManager })`. */
 export interface PackagedPnpmLaunchPaths {
   entryPath?: string
+  memoryBudgetMb?: number
   runnerPath?: string
   /** Absolute path of the Windows `--import` bootstrap, when the file exists. */
   hideConsoleBootstrapPath?: string
@@ -355,6 +359,7 @@ export function buildHarnessSpawnOptions(
       ...cleanedEnvironment,
       ...(platform !== 'darwin' && { ELECTRON_RUN_AS_NODE: '1' }),
       DSH_HOME: dshHome,
+      DSH_DESKTOP_MEMORY_BUDGET_MB: packagedPnpm.memoryBudgetMb === undefined ? undefined : String(packagedPnpm.memoryBudgetMb),
       NO_COLOR: '1',
       // package-import-method/child-concurrency are left at pnpm's defaults
       // (hardlink, auto concurrency): forcing clone-or-copy made every
@@ -390,10 +395,15 @@ export function buildNodeArguments(
   dshEntryPath: string,
   port: number,
   patchPaths?: string | readonly string[],
-  profile = 'web'
+  profile = 'web',
+  heapMb?: number
 ): string[] {
+  if (heapMb !== undefined && (!Number.isSafeInteger(heapMb) || heapMb < 128)) {
+    throw new Error('Invalid Harness heap budget')
+  }
   return [
     '--expose-internals',
+    ...(heapMb === undefined ? [] : [`--max-old-space-size=${heapMb}`]),
     nodeEntryPath,
     dshEntryPath,
     ...buildHarnessArguments(port, patchPaths, profile)
@@ -486,8 +496,10 @@ export class HarnessRuntime {
     }
   }
 
+  private resourceStop: Promise<void> | undefined
   private launchAttempts = 0
   get launchAttemptId(): number { return this.launchAttempts }
+  get processId(): number | undefined { return this.child?.pid }
 
   async start(launchDirectory: string, profile = 'web'): Promise<void> {
     await this.stop()
@@ -579,18 +591,21 @@ export class HarnessRuntime {
     const preferredPort = this.options.preferredPort ?? DEFAULT_HARNESS_PORT
     const { port, usedPreferredPort } = await reserveLoopbackPort(preferredPort)
     const url = `http://127.0.0.1:${port}`
+    const heapBudget = desktopHeapBudget(totalmem())
     const args = buildNodeArguments(
       this.options.nodeEntryPath,
       this.options.dshEntryPath,
       port,
       patchPaths,
-      profile
+      profile,
+      heapBudget.harnessMb
     )
     const startupTimeoutMs =
       this.options.startupTimeoutMs ?? (process.platform === 'win32' ? 180_000 : 45_000)
 
     this.launchClock ??= Date.now()
     this.writeLog(`[desktop] starting ${new Date().toISOString()}`)
+    this.writeLog(`[desktop] Harness old-space budget=${heapBudget.harnessMb}MiB (not an RSS limit)`)
     this.writeLog(`[desktop] launch directory ${launchDirectory}`)
     this.writeLog(`[desktop] profile ${profile}`)
     for (const path of patchPaths) this.writeLog(`[desktop] patch ${path}`)
@@ -614,6 +629,7 @@ export class HarnessRuntime {
           shellEnvironment,
           profile,
           {
+            memoryBudgetMb: heapBudget.harnessMb,
             entryPath: this.options.pnpmEntryPath,
             runnerPath: this.options.pnpmRunnerPath,
             hideConsoleBootstrapPath: this.options.hideConsoleBootstrapPath
@@ -627,13 +643,31 @@ export class HarnessRuntime {
       return
     }
     this.child = child
+    let fatalMemoryFailure = false
+    let memoryEvidenceTail = ''
 
     child.stdout.on('data', (chunk: Buffer) => {
       if (this.child === child) this.writeChunk('stdout', chunk)
     })
     child.stderr.on('data', (chunk: Buffer) => {
       if (this.child !== child) return
+      memoryEvidenceTail = (memoryEvidenceTail + chunk.toString()).slice(-8192)
+      fatalMemoryFailure ||= /(?:^|\n)FATAL ERROR:.*(?:heap|[Aa]llocation)|OOM error in V8:/.test(memoryEvidenceTail)
       this.writeChunk('stderr', chunk)
+      if (memoryEvidenceTail.includes('[harness-node] resource-budget-exceeded:')) {
+        this.child = undefined
+        this.url = undefined
+        this.launchToken = undefined
+        this.resourceStop = this.stopChild(child).catch(error => {
+          this.writeLog(`[desktop] stopping over-budget Harness failed: ${String(error)}`)
+          throw error
+        })
+        // Publish failure before readiness returns, but stop() must still await
+        // the detached child so recovery cannot race its termination.
+        this.setState('failed', 'Harness exceeded its memory budget and was stopped. Saved sessions are preserved.', 'memory-exhausted')
+        void this.resourceStop.catch(() => { /* stop() retains and surfaces this failure */ })
+        return
+      }
       if (this.child !== child || this.phase !== 'starting') return
 
       const cause = extractDshEntryFailureCause(this.logLines)
@@ -672,7 +706,8 @@ export class HarnessRuntime {
         cause
           ? `Harness stopped unexpectedly (${detail}).
 ${cause}`
-          : `Harness stopped unexpectedly (${detail}).`
+          : `Harness stopped unexpectedly (${detail}).`,
+        fatalMemoryFailure || isMemoryExit('', code ?? -1) ? 'memory-exhausted' : undefined
       )
     })
 
@@ -705,6 +740,11 @@ ${cause}`
   }
 
   async stop(): Promise<void> {
+    if (this.resourceStop) {
+      const stopping = this.resourceStop
+      await stopping
+      if (this.resourceStop === stopping) this.resourceStop = undefined
+    }
     const child = this.child
     if (!child) {
       this.closeLog()

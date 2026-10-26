@@ -1,0 +1,28 @@
+name: Desktop stability native checks
+on:
+  pull_request:
+    branches: [V0.13.0]
+    paths:
+      - 'src/main/**'
+      - 'build/harness-node-entry.mjs'
+      - 'scripts/verify-stability-runtime.mjs'
+      - 'test/*stability*'
+      - 'test/*memory*'
+      - '.github/workflows/stability-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx --no-install vitest run test/stability-protection.test.ts test/memory-failure-runtime.test.ts test/gpu-exit-context.test.ts test/gpu-fallback.test.ts test/desktop-service.test.ts test/runtime.test.ts
+      - run: node scripts/verify-stability-runtime.mjs
