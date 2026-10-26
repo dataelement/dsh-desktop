@@ -104,6 +104,14 @@ window.__ModuleLoader__.load({
       }, unread ? (chinese ? '标为已读' : 'Mark as read') : (chinese ? '标为未读' : 'Mark as unread'))
     }
 
+    const ENTERPRISE_NS = 'dsh-desktop-enterprise-entry'
+    function EnterpriseEntry({ t }) {
+      return React.createElement('a', {
+        href: 'https://dshdesktop.com/zh/enterprise/', target: '_blank', rel: 'noopener noreferrer',
+        'data-dsh-enterprise-entry': true
+      }, t('learnMore'), React.createElement('span', { 'aria-hidden': true }, ' ↗'))
+    }
+
     const REPAIR_NS = 'dsh-desktop-repair'
     function DesktopUtilityActions({ t, wide }) {
       const [busy, setBusy] = React.useState(false)
@@ -187,6 +195,14 @@ window.__ModuleLoader__.load({
 
     const inject = ['locale', 'slots', 'remote.session', 'sessions', 'uiWorkspace']
     function apply(ctx) {
+      ctx.effect(() => ctx.locale.register(ENTERPRISE_NS, {
+        zh: { learnMore: '了解企业版' }, en: { learnMore: 'Explore Enterprise' }
+      }))
+      const enterpriseText = ctx.locale.bind(ENTERPRISE_NS)
+      ctx.slots.inject('settings.sidebar.footer', () => ctx.slots.register({
+        name: 'settings.sidebar.footer', id: 'desktop-enterprise-entry', locale: ENTERPRISE_NS,
+        inject: () => ({ t: enterpriseText })
+      }, EnterpriseEntry))
       ctx.effect(() => ctx.locale.register(REPAIR_NS, {
         zh: { open: '进入维修模式', description: '维修 Agent：协助排查和修复问题。点击进入修复模式，描述问题后发送。', opening: '正在打开维修…', failed: '无法打开维修会话，请重试', phone: '连接手机', phoneManage: '管理手机连接', phoneFailed: '无法读取手机连接状态' },
         en: { open: 'Enter repair mode', description: 'Repair Agent helps diagnose and resolve problems. Click to enter repair mode, describe the issue, and send when ready.', opening: 'Opening repair…', failed: 'Could not open repair. Please retry.', phone: 'Connect phone', phoneManage: 'Manage phone connection', phoneFailed: 'Could not read phone connection status.' }
@@ -205,6 +221,13 @@ window.__ModuleLoader__.load({
         const style = document.createElement('style')
         style.id = id
         style.textContent = `
+          [data-dsh-enterprise-entry] {
+            display:flex; align-items:center; gap:4px; min-height:36px; padding:0 12px;
+            border-radius:8px; color:var(--dsw-alias-label-secondary); font-size:13px;
+            line-height:20px; text-decoration:none;
+          }
+          [data-dsh-enterprise-entry]:hover { color:var(--dsw-alias-label-primary); background:var(--dsw-alias-interactive-bg-hover); }
+          [data-dsh-enterprise-entry]:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:1px; }
           :root { --dsh-page-title-top-spacing:56px; }
           [data-dsh-sidebar-settings] { display:flex; align-items:center; }
           [data-dsh-sidebar-settings-content] { flex:1; min-width:0; }

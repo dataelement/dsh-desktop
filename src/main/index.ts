@@ -3148,6 +3148,10 @@ function installMenu(): void {
               accelerator: 'CmdOrCtrl+U',
               click: () => void checkForUpdates(true).catch(showUnexpectedError)
             },
+            {
+              label: isChinese ? '了解企业版' : 'Explore Enterprise',
+              click: () => void shell.openExternal('https://dshdesktop.com/zh/enterprise/').catch(showUnexpectedError)
+            },
             { type: 'separator' as const },
             { role: 'hide' as const },
             { role: 'hideOthers' as const },

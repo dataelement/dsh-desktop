@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-index 3e0cc495d3..5942f5c7ca 100644
+index 3e0cc49..0acccad 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 @@ -63,7 +63,7 @@ window.__ModuleLoader__.load({
@@ -7,11 +7,21 @@ index 3e0cc495d3..5942f5c7ca 100644
  			tag.dataset.plugin = "@deepseek-ai/dsh-client-ui-settings-general";
  			tag.dataset.pluginCss = tagId$7;
 -			tag.textContent = css$7;
-+			tag.textContent = css$7 + "\n.VOzbGW_nav{min-height:0;overflow-y:auto;padding-bottom:22px}";
++			tag.textContent = css$7 + "\n.VOzbGW_nav{min-height:0;padding-bottom:22px}.VOzbGW_navList{min-height:0;flex-shrink:1}[data-dsh-settings-sidebar-footer]{margin-top:auto;flex:none}";
  			document.head.appendChild(tag);
  		}
  		var SettingsRoot_module_css_default = {
-@@ -360,10 +360,7 @@ window.__ModuleLoader__.load({
+@@ -315,6 +315,9 @@ window.__ModuleLoader__.load({
+ 									children: row.label
+ 								})]
+ 							}, row.id))
++						}), (0, react_jsx_runtime.jsx)("div", {
++							"data-dsh-settings-sidebar-footer": true,
++							children: renderSlot("settings.sidebar.footer", {})
+ 						})]
+ 					}), (0, react_jsx_runtime.jsxs)("div", {
+ 						className: SettingsRoot_module_css_default.content,
+@@ -360,10 +363,7 @@ window.__ModuleLoader__.load({
  			const connectionState = useConnectionState((state) => state);
  			const previousConnectionState = (0, react.useRef)(connectionState);
  			const onboardingSteps = useOnboardingSteps((s) => s);
@@ -23,3 +33,14 @@ index 3e0cc495d3..5942f5c7ca 100644
  			const onboardingStep = requestedOnboarding !== void 0 ? onboardingSteps.find((step) => step.id === requestedOnboarding) : onboardingActive ? onboardingSteps.find((step) => !completedOnboarding.has(step.id)) : void 0;
  			(0, react.useEffect)(() => {
  				if (onboardingActive) return;
+@@ -1253,6 +1253,10 @@ window.__ModuleLoader__.load({
+ 							kind: "single",
+ 							scope: "root"
+ 						},
++						"settings.sidebar.footer": {
++							kind: "list",
++							scope: "root"
++						},
+ 						"settings.action": {
+ 							kind: "list",
+ 							scope: "root"
