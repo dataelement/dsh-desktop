@@ -978,17 +978,19 @@ describe('desktop workbench client navigation', () => {
     expect(source).toContain("'aria-selected': tab === 'favorites'")
     expect(source).toContain('我的收藏')
     expect(source).toContain('已安装')
-    expect(source).toContain('把开发指令交给 Agent')
-    expect(source).toContain('若你还没说明要做什么，它会先确认业务场景、目标用户和核心流程')
-    expect(source).toContain('装到本机，自测确认能用')
-    expect(source).toContain('需求确认并完成开发后，Agent 会把工作台装到这台 Desktop')
-    expect(source).toContain('想上架，再按验收规范提交')
+    expect(source).toContain('把开发指令发给你的 AI 助手')
+    expect(source).toContain('发给你常用的 AI 助手（DSH、WorkBuddy、Codex 等）')
+    expect(source).toContain('重启 DSH，试试你的工作台')
+    expect(source).toContain('来开发并安装到本机')
+    expect(source).toContain('安装完成后，重启一下 DSH')
+    expect(source).toContain('试试你平时会用到的功能，看看是否符合预期')
+    expect(source).toContain('想上架？把提交指令发给 AI 助手')
     // The website is the only visible document entry point in this flow.
     expect(source).toContain('href: developmentPageUrl()')
     expect(source).toContain('href: acceptancePageUrl()')
     expect(source).not.toContain('离线查看')
     expect(source).toContain('复制开发指令')
-    expect(source).toContain('复制投稿指令')
+    expect(source).toContain('复制提交指令')
     // Self-use must not read as a parallel alternative to submitting.
     expect(source).not.toContain('选择交付方式')
     expect(source).not.toContain('提交到工作台广场')
@@ -1066,6 +1068,21 @@ describe('desktop workbench client navigation', () => {
     expect(submissionAgentPrompt('submission')).toBe(submission)
   })
 
+  it.each([false, true])('ends the copied development prompt with a truthful three-point usage handoff (English: %s)', english => {
+    const prompt = developmentWorkbenchAgentPrompt(english)
+    const heading = english ? 'After every workbench development handoff' : '每次完成工作台开发后'
+    const handoff = prompt.slice(prompt.indexOf(heading))
+    expect(prompt.indexOf(heading)).toBeGreaterThan(prompt.indexOf(english ? 'Report changed files' : '报告修改的文件'))
+    expect(handoff).toContain(english ? 'after all change descriptions, self-test results, file links, and technical appendices' : '放在所有修改说明、自测结果、文件链接和技术附录之后')
+    expect(handoff).toContain(english ? 'do not append any content after these three points' : '不能在这三点之后追加内容')
+    const required = english
+      ? ['1. Development result:', 'actual workbench name', 'installation failed', 'Do not claim it loaded', '2. How to restart:', 'fully quit DSH Desktop and reopen', 'macOS use ⌘Q', 'Windows choose Quit', 'rather than only closing the window', '3. Where to open it:', 'upper left', 'Workbench Market → Installed', 'marked “Local,”', 'Restart complete', 'returning to the conversation is not required']
+      : ['1. 开发结果：', '工作台实际名称', '安装失败', '不得声称已加载', '2. 如何重启：', '完整退出 DSH Desktop，再重新打开', 'macOS 可按 ⌘Q', 'Windows 从应用菜单选择「退出」', '不是只关闭窗口', '3. 去哪里打开：', '左上角「工作台」', '工作台市场 → 已安装', '带「本地」标识', '重启好了', '不必返回对话才能使用']
+    for (const phrase of required) expect(handoff).toContain(phrase)
+    expect(handoff.indexOf(required[0])).toBeLessThan(handoff.indexOf(english ? '2. How to restart:' : '2. 如何重启：'))
+    expect(prompt.endsWith(english ? 'If installation is incomplete, state that this entry remains unconfirmed until installation and loading succeed.' : '安装未完成时明确此入口仍待安装和加载后确认。')).toBe(true)
+  })
+
   it('provides English Agent prompts and English documentation URLs in English mode', () => {
     const development = developmentWorkbenchAgentPrompt(true)
     expect(development).toContain('https://dshdesktop.com/workbench/docs/development-en.md')
@@ -1101,7 +1118,7 @@ describe('desktop workbench client navigation', () => {
 
   it('offers the category picker only when the market list is available', () => {
     expect(code).toContain("marketCategories.length > 0 && h('div', { className: 'dshWbSubmitCategory' }")
-    expect(code).toContain("h('option', { value: '' }, tr('让 Agent 按规范选择'))")
+    expect(code).toContain("h('option', { value: '' }, tr('让 AI 助手帮我选'))")
     expect(code).toContain("submitCategory === 'other' && h('label'")
   })
 
@@ -1124,7 +1141,7 @@ describe('desktop workbench client navigation', () => {
     expect(code).toContain('.dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}')
   })
 
-  it.each([['复制开发指令', '本地开发'], ['复制投稿指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
+  it.each([['复制开发指令', '本地开发'], ['复制提交指令', '市场验收']])('shows the same success toast after %s', async (label, promptFragment) => {
     const { service } = await fixture()
     const writeText = vi.fn(async () => {})
     const ui = interactiveMarket(service, 'submit', { writeText })
@@ -3715,7 +3732,8 @@ describe('workbench market screenshot and metadata display', () => {
     expect(source).not.toContain('SubmitSuccess')
     expect(source).not.toContain('localDrafts')
     expect(fullSource).not.toContain('投稿已保存到本机')
-    expect(source).toContain('提交 PR 就是进入审核')
+    expect(source).toContain('PR 是 GitHub 上的提交审核请求')
+    expect(source).toContain('审核通过、PR 合并并且市场目录更新后，工作台才会上架')
     expect(source).toContain('工作台市场仓库')
   })
   it('uses a focused confirmation dialog for removal instead of inline card copy', () => {
