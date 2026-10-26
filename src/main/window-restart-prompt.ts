@@ -1,7 +1,8 @@
 import type { MessageBoxOptions } from 'electron'
+import { applicationText, type HarnessLocale } from './application-locale'
 
-export interface NativeWindowRecoveryOptions {
-  chinese: boolean
+export interface WindowRestartPromptOptions {
+  locale: HarnessLocale
   cancelled: () => boolean
   flushDiagnostics: () => Promise<void>
   show: (options: MessageBoxOptions) => Promise<{ response: number }>
@@ -11,7 +12,7 @@ export interface NativeWindowRecoveryOptions {
 }
 
 /** Keeps the final recovery path available even when no renderer can load. */
-export async function runNativeWindowRecovery(options: NativeWindowRecoveryOptions): Promise<void> {
+export async function showWindowRestartPrompt(options: WindowRestartPromptOptions): Promise<void> {
   if (options.cancelled()) return
 
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -34,12 +35,11 @@ export async function runNativeWindowRecovery(options: NativeWindowRecoveryOptio
 
   if (options.cancelled()) return
   const { response } = await options.show({
-    type: 'error',
+    type: 'none',
     title: 'DSH Desktop',
-    message: options.chinese
-      ? '应用窗口无法加载。请重新启动 DSH Desktop。'
-      : 'The application window could not load. Please restart DSH Desktop.',
-    buttons: options.chinese ? ['重新启动'] : ['Restart'],
+    message: applicationText(options.locale, 'windowRecovery.heading'),
+    detail: applicationText(options.locale, 'windowRecovery.description'),
+    buttons: [applicationText(options.locale, 'common.restart')],
     defaultId: 0,
     cancelId: 0,
     noLink: true
